@@ -3,19 +3,21 @@
 //!
 //! Cell steps, line starts, pages, and the ends of history are plain
 //! arithmetic on screen-buffer coordinates and happen here. Motions that
-//! depend on the text (words, line ends, paragraphs) are the daemon's: they
-//! go out as `pane.copy_motion`, one at a time, and keys typed meanwhile wait
-//! in a bounded queue so a fast typist's sequence still runs in order.
-//! Nothing here touches the window or the socket.
+//! depend on the text (words, line ends, paragraphs) and searches are the
+//! daemon's: they go out as `pane.copy_motion` and `pane.copy_search`, one at
+//! a time, and keys typed meanwhile wait in a bounded queue so a fast
+//! typist's sequence still runs in order. Nothing here touches the window or
+//! the socket.
 
 use crate::{
-    scrollback::{push_range, viewport_top},
+    scrollback::{match_count, push_matches, push_range, viewport_top},
     terminal_painter::{Highlight, Tint},
 };
 use herdr_client::{
     protocol::PaneSurfacePane,
     scrollback::{
-        CopyMotion, CopyMotionParams, CopyMotionResult, EndpointErrorCode, TextPoint, TextRange,
+        CopyMotion, CopyMotionParams, CopySearchParams, CopySearchResult, EndpointErrorCode,
+        ScrollbackResponse, SearchDirection, TextPoint, TextRange,
     },
 };
 use std::collections::VecDeque;
@@ -25,7 +27,7 @@ use std::collections::VecDeque;
 const MAX_QUEUED: usize = 32;
 
 /// One copy-mode key, already parsed from the keystroke.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Command {
     /// Rows and columns to step; negative moves up or left.
     Step {
@@ -43,13 +45,28 @@ pub(crate) enum Command {
         half: bool,
     },
     Motion(CopyMotion),
+    /// Opens the search prompt: `/` searches toward newer output, `?` toward
+    /// older.
+    Prompt(SearchDirection),
+    /// Searches for a submitted query from the cursor. The daemon matches it
+    /// literally, ignoring case unless the query has an uppercase letter.
+    Search {
+        query: String,
+        direction: SearchDirection,
+    },
+    /// Repeats the last search: `n` the same way, `N` the opposite way.
+    Repeat {
+        reverse: bool,
+    },
     /// Starts (or restarts) a selection at the cursor: by cell, or by line.
     Mark {
         lines: bool,
     },
-    /// Copies the selection, if any, and leaves copy mode.
+    /// Copies the selection, or else the current search match, and leaves
+    /// copy mode.
     Copy,
-    /// Clears the selection, or leaves copy mode when there is none.
+    /// Clears the selection and the search, or leaves copy mode when there
+    /// is neither.
     Cancel,
     Exit,
 }
@@ -105,6 +122,9 @@ impl Command {
             ("e", true) => Some(Self::Motion(NextBigWordEnd)),
             ("{", _) | ("[", true) => Some(Self::Motion(PreviousParagraph)),
             ("}", _) | ("]", true) => Some(Self::Motion(NextParagraph)),
+            ("/", false) => Some(Self::Prompt(SearchDirection::Forward)),
+            ("?", _) | ("/", true) => Some(Self::Prompt(SearchDirection::Backward)),
+            ("n", reverse) => Some(Self::Repeat { reverse }),
             ("g", false) => Some(Self::History { top: true }),
             ("g", true) => Some(Self::History { top: false }),
             ("v", false) | ("space", false) => Some(Self::Mark { lines: false }),
@@ -123,7 +143,7 @@ impl Command {
         let shift = c.is_ascii_uppercase();
         match c {
             ' ' => Self::from_key("space", false, false),
-            '$' | '^' | '{' | '}' | '0' => Self::from_key(&c.to_string(), false, false),
+            '$' | '^' | '{' | '}' | '0' | '/' | '?' => Self::from_key(&c.to_string(), false, false),
             _ => Self::from_key(&lower, shift, false),
         }
     }
@@ -136,27 +156,71 @@ enum Mark {
     Line(u32),
 }
 
+/// A request for the daemon, built from the cursor as it is now.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Request {
+    Motion(CopyMotionParams),
+    /// A repeated search (`n`, `N`) keeps the direction the query was
+    /// entered with, so `N` does not turn `n` around.
+    Search {
+        params: CopySearchParams,
+        repeat: bool,
+    },
+}
+
 /// What the window has to do after a command.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Outcome {
-    /// Nothing visible changed, or the command waits behind a motion.
+    /// Nothing visible changed, or the command waits behind a request.
     Nothing,
-    /// The cursor or the selection moved; repaint and keep the cursor shown.
+    /// The cursor, the selection, or the search moved; repaint and keep the
+    /// cursor shown.
     Moved,
-    /// Ask the daemon for this motion.
-    Motion(CopyMotionParams),
+    /// Show the search prompt for this direction.
+    Prompt(SearchDirection),
+    /// Ask the daemon.
+    Send(Request),
     /// Read this range and copy it, then leave copy mode.
     Copy(TextRange),
     /// Leave copy mode without copying.
     Exit,
 }
 
+/// What a request in flight, or refused as stale, was for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Operation {
+    Motion(CopyMotion),
+    Search {
+        query: String,
+        direction: SearchDirection,
+        repeat: bool,
+    },
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct InFlight {
     request: String,
     origin: TextPoint,
-    motion: CopyMotion,
+    operation: Operation,
     content_revision: u64,
+}
+
+/// The last search the daemon answered, kept for `n`, `N`, its highlights,
+/// and its count.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Found {
+    query: String,
+    direction: SearchDirection,
+    matches: Vec<TextRange>,
+    current: Option<usize>,
+    current_global: Option<u64>,
+    total: u64,
+}
+
+impl Found {
+    fn current_match(&self) -> Option<TextRange> {
+        self.matches.get(self.current?).copied()
+    }
 }
 
 #[derive(Debug)]
@@ -164,15 +228,16 @@ pub(crate) struct CopyMode {
     pane_id: String,
     cursor: TextPoint,
     mark: Option<Mark>,
+    found: Option<Found>,
     /// The pane's offset when copy mode began, restored when it ends.
     entry_offset: Option<u64>,
     /// The offset last asked for, so a held key asks once per change.
     asked_offset: Option<u64>,
     in_flight: Option<InFlight>,
     queued: VecDeque<Command>,
-    /// A motion the daemon refused as stale, sent again once the surface
+    /// A request the daemon refused as stale, sent again once the surface
     /// shows a newer revision than this.
-    retry: Option<(CopyMotion, u64)>,
+    retry: Option<(Operation, u64)>,
 }
 
 impl CopyMode {
@@ -198,6 +263,7 @@ impl CopyMode {
             pane_id: pane.pane_id.clone(),
             cursor,
             mark: None,
+            found: None,
             entry_offset: pane.scroll.map(|scroll| scroll.offset_from_bottom),
             asked_offset: None,
             in_flight: None,
@@ -218,8 +284,13 @@ impl CopyMode {
         self.in_flight.as_ref().map(|sent| sent.request.as_str())
     }
 
-    /// Runs `command` against `pane` as the surface shows it now.
+    /// Runs `command` against `pane` as the surface shows it now. Opening the
+    /// prompt never waits, so what is typed next goes into it; the search it
+    /// submits then queues behind a request in flight like any other key.
     pub(crate) fn command(&mut self, command: Command, pane: &PaneSurfacePane) -> Outcome {
+        if let Command::Prompt(direction) = command {
+            return Outcome::Prompt(direction);
+        }
         if self.in_flight.is_some() || self.retry.is_some() {
             if self.queued.len() < MAX_QUEUED {
                 self.queued.push_back(command);
@@ -255,7 +326,37 @@ impl CopyMode {
                     offset(self.cursor.row, if down { lines } else { -lines }).min(last_row);
             }
             Command::Motion(motion) => {
-                return Outcome::Motion(self.motion_params(motion, pane.content_revision));
+                return Outcome::Send(
+                    self.request(&Operation::Motion(motion), pane.content_revision),
+                );
+            }
+            Command::Prompt(direction) => return Outcome::Prompt(direction),
+            Command::Search { query, direction } => {
+                if query.is_empty() {
+                    return Outcome::Nothing;
+                }
+                let operation = Operation::Search {
+                    query,
+                    direction,
+                    repeat: false,
+                };
+                return Outcome::Send(self.request(&operation, pane.content_revision));
+            }
+            Command::Repeat { reverse } => {
+                let Some(found) = &self.found else {
+                    return Outcome::Nothing;
+                };
+                let direction = if reverse {
+                    opposite(found.direction)
+                } else {
+                    found.direction
+                };
+                let operation = Operation::Search {
+                    query: found.query.clone(),
+                    direction,
+                    repeat: true,
+                };
+                return Outcome::Send(self.request(&operation, pane.content_revision));
             }
             Command::Mark { lines } => {
                 self.mark = Some(if lines {
@@ -265,37 +366,86 @@ impl CopyMode {
                 });
             }
             Command::Copy => {
-                return match self.selection(last_col) {
+                let copied = self
+                    .selection(last_col)
+                    .or_else(|| self.found.as_ref()?.current_match());
+                return match copied {
                     Some(range) => Outcome::Copy(range),
                     None => Outcome::Exit,
                 };
             }
-            Command::Cancel if self.mark.is_some() => self.mark = None,
+            Command::Cancel if self.mark.is_some() || self.found.is_some() => {
+                self.mark = None;
+                self.found = None;
+            }
             Command::Cancel | Command::Exit => return Outcome::Exit,
         }
         Outcome::Moved
     }
 
-    fn motion_params(&self, motion: CopyMotion, content_revision: u64) -> CopyMotionParams {
-        CopyMotionParams {
-            pane_id: self.pane_id.clone(),
-            cursor: self.cursor,
-            motion,
-            content_revision: Some(content_revision),
+    /// The request for `operation` from the cursor. A repeated search moves
+    /// past the current match when the cursor is still on it.
+    fn request(&self, operation: &Operation, content_revision: u64) -> Request {
+        match operation {
+            Operation::Motion(motion) => Request::Motion(CopyMotionParams {
+                pane_id: self.pane_id.clone(),
+                cursor: self.cursor,
+                motion: *motion,
+                content_revision: Some(content_revision),
+            }),
+            Operation::Search {
+                query,
+                direction,
+                repeat,
+            } => {
+                let previous = self
+                    .found
+                    .as_ref()
+                    .filter(|_| *repeat)
+                    .and_then(Found::current_match)
+                    .filter(|current| current.start == self.cursor);
+                Request::Search {
+                    params: CopySearchParams {
+                        pane_id: self.pane_id.clone(),
+                        query: query.clone(),
+                        direction: *direction,
+                        cursor: self.cursor,
+                        content_revision,
+                        previous,
+                    },
+                    repeat: *repeat,
+                }
+            }
         }
     }
 
-    pub(crate) fn sent(&mut self, request: String, params: &CopyMotionParams) {
+    pub(crate) fn sent(&mut self, request: String, sent: &Request) {
         self.retry = None;
+        let (origin, operation, content_revision) = match sent {
+            Request::Motion(params) => (
+                params.cursor,
+                Operation::Motion(params.motion),
+                params.content_revision.unwrap_or_default(),
+            ),
+            Request::Search { params, repeat } => (
+                params.cursor,
+                Operation::Search {
+                    query: params.query.clone(),
+                    direction: params.direction,
+                    repeat: *repeat,
+                },
+                params.content_revision,
+            ),
+        };
         self.in_flight = Some(InFlight {
             request,
-            origin: params.cursor,
-            motion: params.motion,
-            content_revision: params.content_revision.unwrap_or_default(),
+            origin,
+            operation,
+            content_revision,
         });
     }
 
-    /// The motion could not be queued: drop it and what waited behind it.
+    /// The request could not be queued: drop it and what waited behind it.
     pub(crate) fn send_failed(&mut self) {
         self.in_flight = None;
         self.retry = None;
@@ -303,11 +453,13 @@ impl CopyMode {
     }
 
     /// Applies the daemon's answer to `request`. `true` when the cursor
-    /// moved. A stale answer is retried once the surface moves on.
+    /// moved and should be kept in view. A stale answer is retried once the
+    /// surface moves on; an answer for a cursor that has since moved is
+    /// dropped.
     pub(crate) fn answer(
         &mut self,
         request: &str,
-        answer: herdr_client::Result<CopyMotionResult>,
+        answer: herdr_client::Result<ScrollbackResponse>,
     ) -> herdr_client::Result<bool> {
         if self
             .in_flight
@@ -319,38 +471,96 @@ impl CopyMode {
         let Some(sent) = self.in_flight.take() else {
             return Ok(false);
         };
-        match answer {
-            Ok(result) if result.pane_id == self.pane_id && self.cursor == sent.origin => {
+        let current = self.cursor == sent.origin;
+        match (answer, sent.operation) {
+            (Ok(ScrollbackResponse::PaneCopyMotion(result)), Operation::Motion(_)) => {
+                if !current || result.pane_id != self.pane_id {
+                    return Ok(false);
+                }
                 let moved = self.cursor != result.cursor;
                 self.cursor = result.cursor;
                 Ok(moved)
             }
-            Ok(_) => Ok(false),
-            Err(herdr_client::Error::Endpoint {
-                code: EndpointErrorCode::StaleContent,
-                ..
-            }) => {
-                self.retry = Some((sent.motion, sent.content_revision));
+            (
+                Ok(ScrollbackResponse::PaneCopySearch(result)),
+                Operation::Search {
+                    query,
+                    direction,
+                    repeat,
+                },
+            ) => {
+                if !current || result.pane_id != self.pane_id {
+                    return Ok(false);
+                }
+                Ok(self.found(query, direction, repeat, result))
+            }
+            (Ok(_), _) => {
+                self.queued.clear();
+                Err(herdr_client::Error::ResponseType)
+            }
+            (
+                Err(herdr_client::Error::Endpoint {
+                    code: EndpointErrorCode::StaleContent,
+                    ..
+                }),
+                operation,
+            ) => {
+                self.retry = Some((operation, sent.content_revision));
                 Ok(false)
             }
-            Err(error) => {
+            (Err(error), _) => {
                 self.queued.clear();
                 Err(error)
             }
         }
     }
 
-    /// A refused motion to send again, once `pane` shows settled content
-    /// newer than the revision it was refused at.
-    pub(crate) fn due_retry(&self, pane: &PaneSurfacePane) -> Option<CopyMotionParams> {
-        let (motion, refused) = self.retry?;
-        (self.in_flight.is_none()
-            && pane.content_revision != refused
-            && pane.content_revision.is_multiple_of(2))
-        .then(|| self.motion_params(motion, pane.content_revision))
+    /// Keeps a search's answer and moves the cursor to its current match.
+    fn found(
+        &mut self,
+        query: String,
+        direction: SearchDirection,
+        repeat: bool,
+        result: CopySearchResult,
+    ) -> bool {
+        let current = result
+            .current
+            .and_then(|index| usize::try_from(index).ok())
+            .filter(|index| *index < result.matches.len());
+        let direction = match &self.found {
+            Some(found) if repeat => found.direction,
+            _ => direction,
+        };
+        let found = Found {
+            query,
+            direction,
+            matches: result.matches,
+            current,
+            current_global: result.current_global.filter(|_| current.is_some()),
+            total: result.total,
+        };
+        let target = found.current_match();
+        self.found = Some(found);
+        match target {
+            Some(target) => {
+                self.cursor = target.start;
+                true
+            }
+            None => false,
+        }
     }
 
-    /// The next key that waited behind a motion, once none is in flight.
+    /// A refused request to send again, once `pane` shows settled content
+    /// newer than the revision it was refused at.
+    pub(crate) fn due_retry(&self, pane: &PaneSurfacePane) -> Option<Request> {
+        let (operation, refused) = self.retry.as_ref()?;
+        (self.in_flight.is_none()
+            && pane.content_revision != *refused
+            && pane.content_revision.is_multiple_of(2))
+        .then(|| self.request(operation, pane.content_revision))
+    }
+
+    /// The next key that waited behind a request, once none is in flight.
     pub(crate) fn next_queued(&mut self) -> Option<Command> {
         if self.in_flight.is_some() || self.retry.is_some() {
             return None;
@@ -411,11 +621,30 @@ impl CopyMode {
             .flatten()
     }
 
-    /// The selection and the cursor, tinted, in the surface frame's grid.
+    /// The last search and its count, as the badge shows it: "/needle 2 of
+    /// 5", with `?` for a search toward older output.
+    pub(crate) fn search_label(&self) -> Option<String> {
+        let found = self.found.as_ref()?;
+        let marker = match found.direction {
+            SearchDirection::Forward => '/',
+            SearchDirection::Backward => '?',
+        };
+        Some(format!(
+            "{marker}{} {}",
+            found.query,
+            match_count(found.total, found.current_global)
+        ))
+    }
+
+    /// Search matches, the selection, and the cursor, tinted, in the surface
+    /// frame's grid; later highlights paint over earlier ones.
     pub(crate) fn highlights(&self, pane: &PaneSurfacePane) -> Vec<Highlight> {
         let mut highlights = Vec::new();
         if pane.pane_id != self.pane_id {
             return highlights;
+        }
+        if let Some(found) = &self.found {
+            push_matches(pane, &found.matches, found.current, &mut highlights);
         }
         if let Some(range) = self.selection(pane.inner_rect.width.saturating_sub(1)) {
             push_range(pane, range, Tint::Selection, &mut highlights);
@@ -430,6 +659,13 @@ impl CopyMode {
             &mut highlights,
         );
         highlights
+    }
+}
+
+fn opposite(direction: SearchDirection) -> SearchDirection {
+    match direction {
+        SearchDirection::Forward => SearchDirection::Backward,
+        SearchDirection::Backward => SearchDirection::Forward,
     }
 }
 

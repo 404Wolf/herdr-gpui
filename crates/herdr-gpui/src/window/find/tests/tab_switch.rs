@@ -17,7 +17,7 @@ fn focus_tab_of(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, pane_id:
             let surface = Arc::make_mut(view.live.surface.as_mut().unwrap());
             surface.panes[0].pane_id = pane_id.into();
             view.poll_find(window, cx);
-            view.poll_copy_mode(cx);
+            view.poll_copy_mode(window, cx);
         })
     });
 }

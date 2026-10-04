@@ -1,5 +1,5 @@
 use super::*;
-use crate::scrollback::reveal_offset;
+use crate::{scrollback::reveal_offset, terminal_painter::Tint};
 use herdr_client::protocol::{PaneSurfaceScrollMetrics, SurfaceRect};
 
 mod memory;

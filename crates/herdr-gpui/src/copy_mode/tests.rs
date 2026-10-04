@@ -1,5 +1,6 @@
 use super::*;
 use herdr_client::protocol::{PaneSurfaceScrollMetrics, SurfaceRect};
+use herdr_client::scrollback::CopyMotionResult;
 
 /// A 20x10 pane with 50 rows of history, scrolled `offset` up.
 fn pane(offset: u64) -> PaneSurfacePane {
@@ -117,14 +118,14 @@ fn local_steps_clamp_to_the_pane_and_its_history() {
 fn motions_go_to_the_daemon_one_at_a_time_and_keys_wait_in_order() {
     let shown = pane(0);
     let mut mode = CopyMode::new(&shown, None);
-    let Outcome::Motion(params) =
+    let Outcome::Send(Request::Motion(params)) =
         mode.command(Command::Motion(CopyMotion::PreviousWordStart), &shown)
     else {
         panic!("a word motion asks the daemon");
     };
     assert_eq!(params.cursor, point(59, 0));
     assert_eq!(params.content_revision, Some(4));
-    mode.sent("1".into(), &params);
+    mode.sent("1".into(), &Request::Motion(params));
     assert_eq!(
         mode.command(Command::Step { rows: 0, cols: 1 }, &shown),
         Outcome::Nothing
@@ -135,6 +136,7 @@ fn motions_go_to_the_daemon_one_at_a_time_and_keys_wait_in_order() {
         cursor: point(58, 12),
         content_revision: 4,
     };
+    let landed = ScrollbackResponse::PaneCopyMotion(landed);
     assert!(!mode.answer("other", Ok(landed.clone())).unwrap());
     assert!(mode.answer("1", Ok(landed)).unwrap());
     assert_eq!(mode.cursor, point(58, 12));
@@ -142,8 +144,8 @@ fn motions_go_to_the_daemon_one_at_a_time_and_keys_wait_in_order() {
     assert_eq!(mode.command(next, &shown), Outcome::Moved);
     assert_eq!(mode.cursor, point(58, 13));
     // A held key stops queueing at the bound.
-    let params = mode.motion_params(CopyMotion::NextWordEnd, 4);
-    mode.sent("2".into(), &params);
+    let request = mode.request(&Operation::Motion(CopyMotion::NextWordEnd), 4);
+    mode.sent("2".into(), &request);
     for _ in 0..100 {
         mode.command(Command::Step { rows: 1, cols: 0 }, &shown);
     }
@@ -154,8 +156,8 @@ fn motions_go_to_the_daemon_one_at_a_time_and_keys_wait_in_order() {
 fn a_stale_motion_retries_on_newer_settled_content() {
     let mut shown = pane(0);
     let mut mode = CopyMode::new(&shown, None);
-    let params = mode.motion_params(CopyMotion::NextParagraph, 4);
-    mode.sent("1".into(), &params);
+    let request = mode.request(&Operation::Motion(CopyMotion::NextParagraph), 4);
+    mode.sent("1".into(), &request);
     let stale = herdr_client::Error::Endpoint {
         code: EndpointErrorCode::StaleContent,
         message: "pane content changed".into(),
@@ -167,8 +169,11 @@ fn a_stale_motion_retries_on_newer_settled_content() {
     assert!(mode.due_retry(&shown).is_none(), "mid-write");
     shown.content_revision = 6;
     let retry = mode.due_retry(&shown).unwrap();
-    assert_eq!(retry.motion, CopyMotion::NextParagraph);
-    assert_eq!(retry.content_revision, Some(6));
+    let Request::Motion(params) = &retry else {
+        panic!("the motion is retried");
+    };
+    assert_eq!(params.motion, CopyMotion::NextParagraph);
+    assert_eq!(params.content_revision, Some(6));
     mode.sent("2".into(), &retry);
     // Any other failure drops what waited behind it.
     let failure = herdr_client::Error::Endpoint {
@@ -248,3 +253,5 @@ fn highlights_show_the_selection_and_the_cursor() {
     other.pane_id = "q".into();
     assert!(mode.highlights(&other).is_empty());
 }
+
+mod search;
