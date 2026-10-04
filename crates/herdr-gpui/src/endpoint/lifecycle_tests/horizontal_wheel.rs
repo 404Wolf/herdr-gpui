@@ -28,9 +28,16 @@ fn connected_horizontal_wheel_reaches_only_mouse_reporting_panes_and_popups(
                 (reporting, gpui::ScrollDelta::Lines(point(-2., 0.))),
                 (reporting, gpui::ScrollDelta::Pixels(point(px(15.), px(0.)))),
                 // Herdr drops a horizontal wheel without mouse reporting, but
-                // still scrolls that pane's scrollback vertically.
+                // still scrolls that pane's scrollback vertically, one notch
+                // by Herdr's default `mouse_scroll_lines`.
                 (plain, gpui::ScrollDelta::Lines(point(-3., 0.))),
-                (plain, gpui::ScrollDelta::Lines(point(0., 1.))),
+                (
+                    plain,
+                    gpui::ScrollDelta::Lines(point(
+                        0.,
+                        f32::from(crate::terminal::PLATFORM_NOTCH_LINES),
+                    )),
+                ),
             ] {
                 view.scroll_wheel(&wheel(position, delta), window, cx);
             }
@@ -73,7 +80,7 @@ fn connected_horizontal_wheel_reaches_only_mouse_reporting_panes_and_popups(
     for (pane_id, event) in [
         ("w1:p1", scroll(ClientMouseKind::ScrollRight, 2, 3, 2)),
         ("w1:p1", scroll(ClientMouseKind::ScrollLeft, 2, 3, 1)),
-        ("w1:p2", scroll(ClientMouseKind::ScrollUp, 4, 5, 1)),
+        ("w1:p2", scroll(ClientMouseKind::ScrollUp, 4, 5, 3)),
         ("w1:p1", ClientPaneInputEvent::TextCommit("panes".into())),
     ] {
         assert_eq!(
