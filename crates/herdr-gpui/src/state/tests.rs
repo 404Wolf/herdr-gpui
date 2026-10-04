@@ -12,6 +12,7 @@ mod local_peer_warning;
 mod requests;
 mod surfaces;
 mod version_mismatch;
+mod workspace_move;
 
 fn snapshot() -> Arc<ClientShellSnapshot> {
     Arc::new(
