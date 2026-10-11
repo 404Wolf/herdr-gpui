@@ -2,7 +2,9 @@
 //! The caller supplies the compile-time HERDR_UPDATE_PUBLIC_KEY, never a secret.
 
 use super::UpdateChannel;
+mod format;
 use super::error::{Result, UpdateError as Error};
+pub(super) use format::Format;
 use std::{
     fs::{File, OpenOptions},
     io::{Read, Write},
@@ -134,17 +136,29 @@ fn asset_name(version: &str, target: &str) -> Result<String> {
 }
 
 fn validate_manifest(manifest: &Manifest) -> Result<()> {
-    if manifest.schema != 1 || parse_version(&manifest.version).is_none() {
+    if !matches!(manifest.schema, 1 | 2) || parse_version(&manifest.version).is_none() {
         return Err(Error::ManifestSchema);
     }
-    if manifest.assets.is_empty() || manifest.assets.len() > 3 {
+    let maximum = if manifest.schema == 1 { 3 } else { 6 };
+    if manifest.assets.is_empty() || manifest.assets.len() > maximum {
         return Err(Error::ManifestAssetCount);
     }
     for (index, asset) in manifest.assets.iter().enumerate() {
-        if asset.name != asset_name(&manifest.version, &asset.target)?
-            || manifest.assets[..index]
-                .iter()
-                .any(|other| other.target == asset.target)
+        let valid_name = if manifest.schema == 1 {
+            asset.name == asset_name(&manifest.version, &asset.target)?
+        } else {
+            [Format::Deb, Format::Rpm, Format::Arch]
+                .into_iter()
+                .any(|format| {
+                    format
+                        .name(&manifest.version, &asset.target)
+                        .is_ok_and(|name| name == asset.name)
+                })
+        };
+        if !valid_name
+            || manifest.assets[..index].iter().any(|other| {
+                other.name == asset.name || (manifest.schema == 1 && other.target == asset.target)
+            })
         {
             return Err(Error::ManifestAsset);
         }
@@ -405,6 +419,7 @@ pub(super) fn check(
     current_version: &str,
     key_hex: &str,
     channel: UpdateChannel,
+    format: Format,
     cancel: &AtomicBool,
 ) -> Result<Option<Offer>> {
     cancelled(cancel)?;
@@ -431,16 +446,18 @@ pub(super) fn check(
     if parse_version(&release.version).ok_or(Error::ReleaseVersion)? <= current {
         return Ok(None);
     }
-    for (name, limit) in [
-        ("update-manifest.json", MANIFEST_LIMIT as u64),
-        ("update-manifest.sig", 64),
-    ] {
+    let (manifest_name, signature_name) = format.manifest();
+    for (name, limit) in [(manifest_name, MANIFEST_LIMIT as u64), (signature_name, 64)] {
         let asset = release
             .assets
             .iter()
             .find(|asset| asset.name == name)
-            .ok_or(Error::MissingSignedMetadata)?;
-        if asset.size > limit || (name == "update-manifest.sig" && asset.size != 64) {
+            .ok_or(if format == Format::Archive {
+                Error::MissingSignedMetadata
+            } else {
+                Error::MissingPackageMetadata
+            })?;
+        if asset.size > limit || (name == signature_name && asset.size != 64) {
             return Err(Error::SignedMetadataSize);
         }
     }
@@ -457,13 +474,14 @@ pub(super) fn check(
             cancel,
         )
     };
-    let manifest_bytes = fetch("update-manifest.json", MANIFEST_LIMIT)?;
-    let signature = fetch("update-manifest.sig", 64)?;
+    let manifest_bytes = fetch(manifest_name, MANIFEST_LIMIT)?;
+    let signature = fetch(signature_name, 64)?;
     let manifest = verify_manifest(&manifest_bytes, &signature, key_hex, &release.version)?;
+    let name = format.name(&release.version, target)?;
     let asset = manifest
         .assets
         .iter()
-        .find(|asset| asset.target == target)
+        .find(|asset| asset.target == target && asset.name == name)
         .ok_or(Error::MissingPlatformAsset)?
         .clone();
     if !release

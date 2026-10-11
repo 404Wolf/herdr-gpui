@@ -82,23 +82,26 @@ test modes skip this state. Up to 64 main windows are restored.
 The Rust GitHub updater verifies signed archive manifests and presents a shared
 GPUI panel through **app updates** in the sidebar menu or **Herdr > Check for
 Updates...**. Background offers change the status version label without taking
-focus. Download and **Install and Restart** are separate approvals; closing the
+focus. **Download** and **Install Update** are separate approvals; closing the
 panel does not cancel work. Explicit **Cancel** requests cancellation.
 The panel shows archive download progress and an animated bar for work without a
 known percentage. Homebrew-managed installs use `brew upgrade --cask herdr-gpui`;
 if the installed version is behind the offer, `brew update` refreshes metadata
-before one retry. Homebrew upgrades cannot be cancelled mid-install.
+before one retry. Linux distribution installs download the signed package matching
+the owning package manager and invoke APT, DNF, or pacman through PolicyKit.
+Package-manager upgrades cannot be cancelled mid-install and offer **Restart**
+on completion. Standalone installs restart as part of installation.
 The existing UI timer polls the updater mailbox; workers own blocking work, and
 the restart helper is dispatched before CLI parsing or GPUI startup.
 
 Only normal launches with a calendar release version `YYYYMMDD.COUNTER` (tag
 `vYYYYMMDD.COUNTER`) and embedded public signing key start the service. Test
 fixtures use a disabled, worker-free updater. Update targets are macOS app
-bundles and user-owned Linux executables under `HOME` on x86_64/aarch64
-GNU systems, not arbitrary packages or a claim of full Linux app support.
+bundles, published Linux `.deb`, `.rpm`, and Arch packages, and user-owned Linux
+executables under `HOME` on x86_64/aarch64 GNU systems.
 **QA > Show app update available** and the sidebar's **preview app update** use
-independent synthetic version `9999.0.0`: Download becomes Ready and Install and
-Restart only dismisses the panel. No preview action reaches the updater service or quits.
+independent synthetic version `9999.0.0`: Download becomes Ready and Install Update
+only dismisses the panel. No preview action reaches the updater service or quits.
 **QA > Show update download progress (50%)** displays a half-filled bar;
 **QA > Show Homebrew update progress** displays the animated activity bar.
 Both remain visible until dismissed and never run a real update.

@@ -314,7 +314,7 @@ class ReleaseSecurity(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name)
         for name in MANIFEST.base_names(VERSION):
-            data = b"s" * 64 if name == "update-manifest.sig" else name.encode()
+            data = b"s" * 64 if name in ("update-manifest.sig", "package-manifest.sig") else name.encode()
             (self.path / name).write_bytes(data)
             for algorithm in ("sha256", "sha512"):
                 checksum = hashlib.new(algorithm, data).hexdigest()
@@ -341,9 +341,9 @@ class ReleaseSecurity(unittest.TestCase):
             "herdr-gpui-20260920.1-macos-universal.app.tar.gz",
             "herdr-gpui-20260920.1-x86_64-unknown-linux-gnu-update.tar.gz",
             "herdr-gpui-20260920.1-aarch64-unknown-linux-gnu-update.tar.gz",
-            "update-manifest.json", "update-manifest.sig"})
-        self.assertEqual(len((self.path / "SHA256SUMS").read_text().splitlines()), 85)
-        self.assertEqual(len(self.run_manifest("names").splitlines()), 86)
+            "update-manifest.json", "update-manifest.sig", "package-manifest.json", "package-manifest.sig"})
+        self.assertEqual(len((self.path / "SHA256SUMS").read_text().splitlines()), 95)
+        self.assertEqual(len(self.run_manifest("names").splitlines()), 96)
         self.assertEqual(self.run_manifest("base-names").splitlines(), MANIFEST.base_names(VERSION))
         with tempfile.TemporaryDirectory() as temp:
             name = MANIFEST.base_names(VERSION)[0]
@@ -366,11 +366,13 @@ class ReleaseSecurity(unittest.TestCase):
         self.run_manifest("verify", False)
 
     def test_raw_updater_signature_length(self):
-        path = self.path / "update-manifest.sig"
-        for size in (1, 63, 65, 128):
-            path.write_bytes(b"s" * size)
-            with self.subTest(size=size), self.assertRaisesRegex(ValueError, "raw 64-byte"):
-                MANIFEST.check_files(self.path, MANIFEST.asset_names(VERSION) + ["SHA256SUMS"])
+        for name in ("update-manifest.sig", "package-manifest.sig"):
+            path = self.path / name
+            for size in (1, 63, 65, 128):
+                path.write_bytes(b"s" * size)
+                with self.subTest(name=name, size=size), self.assertRaisesRegex(ValueError, "raw 64-byte"):
+                    MANIFEST.check_files(self.path, MANIFEST.asset_names(VERSION) + ["SHA256SUMS"])
+            path.write_bytes(b"s" * 64)
 
     def test_corrupt_sidecar(self):
         (self.path / (MANIFEST.base_names(VERSION)[0] + ".sha512")).write_text("invalid")

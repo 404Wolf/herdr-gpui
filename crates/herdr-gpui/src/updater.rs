@@ -8,6 +8,8 @@ use error::{Result, UpdateError as Error};
 mod brew;
 #[cfg(unix)]
 mod install;
+#[cfg(target_os = "linux")]
+mod linux;
 mod release;
 #[cfg(not(unix))]
 mod unsupported;
@@ -108,6 +110,52 @@ struct Mailbox {
     relaunched: bool,
 }
 
+enum Prepared {
+    Standalone(install::Prepared),
+    #[cfg(target_os = "linux")]
+    Package(linux::Prepared),
+}
+
+enum Restart {
+    Homebrew,
+    #[cfg(target_os = "linux")]
+    Package(std::path::PathBuf),
+}
+
+impl Restart {
+    fn launch(&self) -> Result<()> {
+        match self {
+            Self::Homebrew => brew::relaunch(&cask().ok_or(Error::MissingCask)?),
+            #[cfg(target_os = "linux")]
+            Self::Package(executable) => linux::relaunch(executable),
+        }
+    }
+}
+
+fn installation_format(cancel: &AtomicBool) -> Result<release::Format> {
+    #[cfg(target_os = "linux")]
+    {
+        Ok(linux::detect(cancel)?.map_or(release::Format::Archive, |package| package.format))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = cancel;
+        Ok(release::Format::Archive)
+    }
+}
+
+fn prepare(
+    offer: &release::Offer,
+    cancel: &AtomicBool,
+    progress: impl FnMut(u64, u64),
+) -> Result<Prepared> {
+    #[cfg(target_os = "linux")]
+    if let Some(package) = linux::detect(cancel)? {
+        return linux::prepare(package, offer, cancel, progress).map(Prepared::Package);
+    }
+    install::prepare(offer, cancel, progress).map(Prepared::Standalone)
+}
+
 pub(super) struct Updater {
     state: State,
     commands: Option<SyncSender<Command>>,
@@ -122,6 +170,7 @@ pub(super) struct Updater {
     channel: UpdateChannel,
     /// The channel of the last queued check, which produced any current offer.
     checked: UpdateChannel,
+    latest_version: Option<String>,
 }
 
 impl Default for Updater {
@@ -139,6 +188,7 @@ impl Default for Updater {
             next_check: Instant::now() + CHECK_INTERVAL,
             channel: UpdateChannel::default(),
             checked: UpdateChannel::default(),
+            latest_version: None,
         }
     }
 }
@@ -208,6 +258,10 @@ impl Updater {
         &self.state
     }
 
+    pub(super) fn latest_version(&self) -> Option<&str> {
+        self.latest_version.as_deref()
+    }
+
     /// A newer release is waiting for the user, either still to download or
     /// already staged. Transient checking/downloading states are not a result.
     pub(super) fn update_available(&self) -> bool {
@@ -249,6 +303,11 @@ impl Updater {
     /// A staged download is kept rather than rechecked, unless it came from
     /// a channel the user has since left.
     pub(super) fn check(&mut self) {
+        // Package installation has already replaced this executable. Keep its
+        // restart offer instead of checking against the old in-memory version.
+        if matches!(self.state, State::Restart { .. }) {
+            return;
+        }
         if !matches!(self.state, State::Ready { .. }) || self.checked != self.channel {
             self.send(Operation::Check(self.channel), State::Checking);
         }
@@ -268,7 +327,14 @@ impl Updater {
 
     pub(super) fn install(&mut self) {
         if matches!(self.state, State::Ready { .. }) {
-            self.send(Operation::Install, State::Installing);
+            // Installation cannot be cancelled once a system package transaction
+            // starts. The worker publishes its own progress through this state.
+            self.send(
+                Operation::Install,
+                State::Upgrading {
+                    detail: "Preparing installation...".into(),
+                },
+            );
         }
     }
 
@@ -289,8 +355,7 @@ impl Updater {
         }
     }
 
-    /// Homebrew is never interrupted: killing it while it moves the bundle can
-    /// leave no installed app at all.
+    /// Package managers are never interrupted mid-transaction.
     fn interruptible(&self) -> bool {
         self.state.busy()
             && !matches!(
@@ -342,6 +407,16 @@ impl Updater {
         let changed =
             self.state != message.state || message.restart.is_some() || message.relaunched;
         self.state = message.state;
+        match &self.state {
+            State::Available { version, .. }
+            | State::Ready { version }
+            | State::Homebrew { version, .. }
+            | State::Restart { version } => {
+                self.latest_version = Some(version.clone());
+            }
+            State::Current => self.latest_version = Some(crate::APP_VERSION.into()),
+            _ => (),
+        }
         self.restart = message.restart;
         self.relaunched |= message.relaunched;
         changed || scheduled
@@ -440,6 +515,7 @@ fn worker(
 ) {
     let mut offer: Option<release::Offer> = None;
     let mut prepared = None;
+    let mut restart = Restart::Homebrew;
     while let Ok(command) = commands.recv() {
         if stopped.load(Ordering::Acquire) {
             break;
@@ -459,27 +535,32 @@ fn worker(
                 } else {
                     channel
                 };
-                release::check(crate::APP_VERSION, key, channel, &cancelled).map(|found| {
-                    prepared = restage(staged, version(offer.as_ref()), version(found.as_ref()));
-                    offer = found;
-                    match (&offer, homebrew, prepared.is_some()) {
-                        (Some(offer), true, _) => State::Homebrew {
-                            version: offer.manifest.version.clone(),
-                            notes: offer.notes.clone(),
-                        },
-                        (Some(offer), false, true) => State::Ready {
-                            version: offer.manifest.version.clone(),
-                        },
-                        (Some(offer), false, false) => State::Available {
-                            version: offer.manifest.version.clone(),
-                            notes: offer.notes.clone(),
-                        },
-                        (None, ..) => State::Current,
-                    }
-                })
+                installation_format(&cancelled)
+                    .and_then(|format| {
+                        release::check(crate::APP_VERSION, key, channel, format, &cancelled)
+                    })
+                    .map(|found| {
+                        prepared =
+                            restage(staged, version(offer.as_ref()), version(found.as_ref()));
+                        offer = found;
+                        match (&offer, homebrew, prepared.is_some()) {
+                            (Some(offer), true, _) => State::Homebrew {
+                                version: offer.manifest.version.clone(),
+                                notes: offer.notes.clone(),
+                            },
+                            (Some(offer), false, true) => State::Ready {
+                                version: offer.manifest.version.clone(),
+                            },
+                            (Some(offer), false, false) => State::Available {
+                                version: offer.manifest.version.clone(),
+                                notes: offer.notes.clone(),
+                            },
+                            (None, ..) => State::Current,
+                        }
+                    })
             }
             Operation::Download => match &offer {
-                Some(offer) => install::prepare(offer, &cancelled, |received, total| {
+                Some(offer) => prepare(offer, &cancelled, |received, total| {
                     publish(
                         &mailbox,
                         generation,
@@ -496,15 +577,30 @@ fn worker(
                 None => Err(Error::MissingOffer),
             },
             Operation::Install => match prepared.take() {
-                Some(candidate) => match install::install_and_restart(candidate, &cancelled) {
-                    Ok(guard) => {
-                        publish(&mailbox, generation, State::Installing, Some(guard));
-                        // Keep receiving commands: cancellation/commit failure may leave
-                        // this app alive even after the helper becomes ready.
-                        continue;
+                Some(Prepared::Standalone(candidate)) => {
+                    publish(&mailbox, generation, State::Installing, None);
+                    match install::install_and_restart(candidate, &cancelled) {
+                        Ok(guard) => {
+                            publish(&mailbox, generation, State::Installing, Some(guard));
+                            // Keep receiving commands: cancellation/commit failure may leave
+                            // this app alive even after the helper becomes ready.
+                            continue;
+                        }
+                        Err(error) => Err(error),
                     }
-                    Err(error) => Err(error),
-                },
+                }
+                #[cfg(target_os = "linux")]
+                Some(Prepared::Package(candidate)) => {
+                    linux::install(candidate, &cancelled, |detail| {
+                        publish(&mailbox, generation, State::Upgrading { detail }, None);
+                    })
+                    .and_then(|executable| {
+                        restart = Restart::Package(executable);
+                        Ok(State::Restart {
+                            version: version(offer.as_ref()).ok_or(Error::MissingOffer)?.into(),
+                        })
+                    })
+                }
                 None => Err(Error::MissingPrepared),
             },
             Operation::Upgrade => match (&offer, cask()) {
@@ -514,17 +610,24 @@ fn worker(
                     &offer.manifest.version,
                     &cancelled,
                     |detail| {
-                        publish(&mailbox, generation, State::Upgrading { detail }, None);
+                        publish(
+                            &mailbox,
+                            generation,
+                            State::Upgrading {
+                                detail: format!("Homebrew: {detail}"),
+                            },
+                            None,
+                        );
                     },
                 )
-                .map(|version| State::Restart { version }),
+                .map(|version| {
+                    restart = Restart::Homebrew;
+                    State::Restart { version }
+                }),
                 (None, _) => Err(Error::MissingOffer),
                 (_, None) => Err(Error::MissingCask),
             },
-            Operation::Restart => match cask()
-                .ok_or(Error::MissingCask)
-                .and_then(|cask| brew::relaunch(&cask))
-            {
+            Operation::Restart => match restart.launch() {
                 Ok(()) => {
                     // The upgraded app is starting, so this one must quit. The
                     // mailbox keeps only the latest message: publishing the
@@ -553,6 +656,10 @@ fn worker(
 }
 
 pub(super) fn run_helper(args: &[OsString]) -> Option<ExitCode> {
+    #[cfg(target_os = "linux")]
+    if let Some(code) = linux::run_helper(args) {
+        return Some(code);
+    }
     install::run_helper(args)
 }
 

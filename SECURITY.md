@@ -49,10 +49,11 @@ open a normal issue for those rather than a private advisory.
 
 ## Verifying a Release
 
-Each of the seventeen base artifacts (universal DMG; experimental x86_64 and ARM64
+Each of the nineteen base artifacts (universal DMG; experimental x86_64 and ARM64
 manual Linux archives with their `.deb`, `.rpm` and Arch packages; experimental
 x86_64 and ARM64 Windows zips; CycloneDX SBOM; three updater archives; updater
-manifest JSON; and its raw Ed25519 signature) has checksums, a Sigstore
+manifest JSON and its raw Ed25519 signature; Linux package manifest JSON and its
+raw Ed25519 signature) has checksums, a Sigstore
 signature/certificate, and GitHub provenance.
 Checksums alone are not authentication:
 

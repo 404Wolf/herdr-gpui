@@ -4,6 +4,7 @@ use ed25519_dalek::{Signer, SigningKey};
 
 mod beta_channel;
 mod null_body;
+mod packages;
 
 #[test]
 fn request_profiles_allow_slow_archives_with_finite_deadlines() {
