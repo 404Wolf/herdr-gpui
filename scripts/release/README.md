@@ -348,6 +348,36 @@ Only after signing succeeds and produces a nonempty DMG is the directory promote
 to `VERSION`. Helper diagnostics remain visible on stderr; the final DMG path is
 printed on stdout after promotion. Existing version artifacts are never overwritten.
 
+## Contributor CI Approval
+
+In repository **Settings > Actions > General**, keep **Require approval for all
+external contributors** enabled. This GitHub setting, outside the workflow YAML,
+controls whether fork pull-request workflows can start. Review the proposed
+changes (especially workflows and build scripts), then use **Approve workflows
+to run**. Any maintainer with write access can approve; adding collaborators with
+write access also gives them that authority.
+
+The CI workflow accepts `pull_request` runs without requiring the PR author,
+original actor, or source repository to be the owner. An owner rerun only changes
+`github.triggering_actor`; approval does not change the other identities.
+Pushes and manual dispatches remain restricted to owner-triggered `main` runs.
+The final **Format, lint, and test** gate requires successful platform checks for
+code changes and permits skipped platform jobs only for confirmed non-code edits.
+
+Fork PR execution uses GitHub-hosted runners and read-only permissions. GitHub
+withholds repository secrets from fork `pull_request` runs, including after
+approval. PR jobs must not request protected environments or OIDC, and checkouts
+must not persist credentials. Do not switch to `pull_request_target` to run PR
+code or add a privileged `workflow_run` consumer of PR artifacts. CI caches are
+public data: never place credentials in them. Release builds use their own
+workflow and must not consume fork-produced artifacts or caches; signing and
+publication retain their owner/main restrictions and protected environments.
+
+After changing this policy, validate with a real external fork: confirm its run
+waits for approval, approve it and confirm the platform jobs execute, then push
+another contributor commit and check approval is required again. Offline tests
+cover job eligibility and credential declarations, not GitHub's approval service.
+
 ## Local Validation
 
 ```sh
