@@ -493,9 +493,14 @@ impl HerdrWindow {
             Some(layout.claimed(&pick).unwrap_or(layout.active()))
         });
         // The group holding the connection keeps it for a tab of its own,
-        // without becoming the group in use.
+        // without becoming the group in use: an agent must not take that
+        // from a group showing a tab. A group in use that shows none has
+        // nothing to keep, and Close Tab there would close the group rather
+        // than the tab the focus just moved to.
+        let idle = layout.pick(layout.active(), None).is_none();
         let own = target.is_some()
             && target == primary
+            && !idle
             && primary.is_some_and(|primary| layout.pick(primary, None).is_some());
         match (target, primary) {
             (Some(group), Some(primary)) if group != primary && left_closed && asked.is_none() => {}

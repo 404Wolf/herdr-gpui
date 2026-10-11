@@ -365,6 +365,75 @@ fn a_group_whose_last_tab_the_daemon_closed_closes(cx: &mut gpui::TestAppContext
     assert_eq!(shown(&view, cx), [Shown::Terminal]);
 }
 
+/// The daemon focuses `tab`, which is already open, on the window's
+/// connection, as an agent or a shortcut does.
+fn focus_herdr_tab(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, tab: &str) {
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
+            snapshot.focused_tab_id = Some(tab.to_owned());
+            view.terminal_focus_moved(tab, false, cx);
+        })
+    });
+    draw(cx);
+}
+
+#[gpui::test]
+fn focus_moving_within_a_group_uses_it_only_when_the_group_in_use_shows_nothing(
+    cx: &mut gpui::TestAppContext,
+) {
+    let (view, cx) = window(cx);
+    // A third tab, so the left group keeps two after one moves away.
+    cx.update(|_, cx| {
+        view.update(cx, |view, _| {
+            let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
+            let mut spare = snapshot.tabs[0].clone();
+            spare.tab_id = "spare".into();
+            spare.workspace_id = "w0".into();
+            snapshot.tabs.push(spare);
+        })
+    });
+    draw(cx);
+    run(&view, cx, Command::SplitEditor);
+    let [left, right] = groups(&view, cx)[..] else {
+        panic!("two groups")
+    };
+    // Since the split, the group in use has no tab. The left group, which
+    // holds the connection, changes tab: it becomes the group in use, so
+    // Close Tab acts on the tab the focus moved to rather than closing the
+    // empty group.
+    assert_eq!(
+        view.read_with(cx, |view, _| view.active_group()),
+        Some(right)
+    );
+    focus_herdr_tab(&view, cx, "spare");
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.active_group(), Some(left));
+        assert_eq!(view.group_pick(left), Some(herdr("spare")));
+    });
+    assert_eq!(groups(&view, cx), [left, right]);
+
+    // With a tab of its own to show, the group in use is not taken away
+    // when the left group changes tab again, as when an agent does it while
+    // the user reads the other group.
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.ensure_layout().unwrap().show(right, herdr("t1"));
+            view.activate_group(right, window, cx);
+        })
+    });
+    assert_eq!(
+        view.read_with(cx, |view, _| view.active_group()),
+        Some(right)
+    );
+    focus_herdr_tab(&view, cx, "t0");
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.active_group(), Some(right));
+        assert_eq!(view.group_pick(left), Some(herdr("t0")));
+        assert_eq!(view.group_pick(right), Some(herdr("t1")));
+    });
+}
+
 #[gpui::test]
 fn switching_tabs_keeps_the_terminal_until_the_daemon_focuses(cx: &mut gpui::TestAppContext) {
     let (view, cx) = window(cx);
