@@ -44,8 +44,9 @@ pub(super) enum Step {
     TrustKey(setup::Request, NewHostKey),
     /// Setup needs prompts, so the user decides whether to run it locally.
     Confirm(setup::Request, Offer),
-    /// Checking the catalog on disk again before opening the setup workspace.
-    Verifying(setup::Request),
+    /// Checking the catalog on disk again before opening the setup workspace
+    /// for the offer the user accepted.
+    Verifying(setup::Request, Offer),
     /// Waiting for the local daemon to create the setup workspace.
     Opening(setup::Request, LocalSpace),
 }
@@ -59,6 +60,9 @@ pub(super) enum Offer {
     Terminal,
     /// Herdr restarts the host's server before saving, once confirmed.
     Restart,
+    /// SSH accepted none of the user's keys: install one with the password,
+    /// so the device then connects without a prompt.
+    InstallKey,
 }
 
 impl Offer {
@@ -68,6 +72,7 @@ impl Offer {
             HostProbe::Running | HostProbe::Stopped => None,
             HostProbe::Missing => Some(Self::Install),
             HostProbe::Outdated => Some(Self::Update),
+            HostProbe::SshFailed(SshFailure::Auth) => Some(Self::InstallKey),
             HostProbe::SshFailed(_) => Some(Self::Terminal),
         }
     }
@@ -86,6 +91,9 @@ impl Offer {
             Self::Restart => format!(
                 "Restart the Herdr server on {target}? A local terminal asks you to confirm."
             ),
+            Self::InstallKey => format!(
+                "{target} accepted none of your SSH keys. Install your key there? A local terminal runs ssh-copy-id, which asks for the password once, then saves the device."
+            ),
         }
     }
 
@@ -94,6 +102,7 @@ impl Offer {
             Self::Install => "Install",
             Self::Update => "Update",
             Self::Terminal | Self::Restart => "Open terminal",
+            Self::InstallKey => "Set up key login",
         }
     }
 }
@@ -282,7 +291,7 @@ impl HerdrWindow {
                 None
             }
             Step::Confirm(request, offer) => Some(offer.question(request.target())),
-            Step::Verifying(request) => {
+            Step::Verifying(request, _) => {
                 Some(format!("Checking {} is not saved yet…", request.target()))
             }
             Step::Opening(..) => Some("Opening a local workspace…".into()),
@@ -487,7 +496,11 @@ impl HerdrWindow {
                 None => return self.save_device(request, probe, claim, cx),
                 Some(offer) => {
                     // Say what SSH refused, since the terminal may not need to.
-                    if let HostProbe::SshFailed(failure) = probe {
+                    // The key offer already says it, without the advice
+                    // about agents that does not apply to a new host.
+                    if let HostProbe::SshFailed(failure) = probe
+                        && offer != Offer::InstallKey
+                    {
                         self.menu.error = Some(format!("SSH to {}: {failure}", request.target()));
                     }
                     offer
@@ -572,12 +585,12 @@ impl HerdrWindow {
         let Some(form) = &mut self.menu.device_setup else {
             return;
         };
-        let Step::Confirm(request, _) = &form.step else {
+        let Step::Confirm(request, offer) = &form.step else {
             return;
         };
-        let request = request.clone();
+        let (request, offer) = (request.clone(), *offer);
         let claim = form.claim.take();
-        form.step = Step::Verifying(request.clone());
+        form.step = Step::Verifying(request.clone(), offer);
         self.menu.error = None;
         let background = cx.background_executor().spawn(async move {
             // A failed probe left no claim; take one now.
@@ -599,13 +612,13 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) {
         let Some(Setup {
-            step: Step::Verifying(request),
+            step: Step::Verifying(request, offer),
             ..
         }) = &self.menu.device_setup
         else {
             return;
         };
-        let request = request.clone();
+        let (request, offer) = (request.clone(), *offer);
         let claim = match result {
             Ok(claim) => claim,
             Err(error) => {
@@ -616,7 +629,7 @@ impl HerdrWindow {
                 if !self.refuse_duplicate(&error, cx) {
                     self.menu.error = Some(format!("Open a local workspace: {error}"));
                     if let Some(form) = &mut self.menu.device_setup {
-                        form.step = Step::Confirm(request, Offer::Terminal);
+                        form.step = Step::Confirm(request, offer);
                     }
                     cx.notify();
                 }
@@ -625,7 +638,10 @@ impl HerdrWindow {
         };
         let local = &self.endpoints[0];
         let result = (|| {
-            let setup = setup::terminal_command(&request)?;
+            let setup = match offer {
+                Offer::InstallKey => setup::key_setup_command(&request)?,
+                _ => setup::terminal_command(&request)?,
+            };
             let boot = local
                 .live
                 .snapshot
@@ -655,7 +671,7 @@ impl HerdrWindow {
         match result {
             Ok(space) => form.step = Step::Opening(request, space),
             Err(error) => {
-                form.step = Step::Confirm(request, Offer::Terminal);
+                form.step = Step::Confirm(request, offer);
                 self.menu.error = Some(format!("Open a local workspace: {error}"));
             }
         }

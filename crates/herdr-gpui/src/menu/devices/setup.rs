@@ -616,5 +616,20 @@ pub(super) fn terminal_command(request: &Request) -> Result<TerminalSetup> {
     Ok(shell_command(executable, request, &environment))
 }
 
+/// [`terminal_command`] after `ssh-copy-id`, which asks for the password
+/// once and installs the user's public key, so the save that follows, and
+/// every later connection, authenticates with the key. The save runs only
+/// when the key was installed.
+pub(super) fn key_setup_command(request: &Request) -> Result<TerminalSetup> {
+    let mut setup = terminal_command(request)?;
+    setup.command = format!(
+        "{} {} && {}",
+        quote("ssh-copy-id"),
+        quote(request.target()),
+        setup.command
+    );
+    Ok(setup)
+}
+
 #[cfg(test)]
 mod tests;

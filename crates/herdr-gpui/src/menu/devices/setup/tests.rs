@@ -340,3 +340,17 @@ fn terminal_shell_preserves_exact_arguments_without_expansion() -> Result<()> {
 mod long_environment;
 #[cfg(unix)]
 mod server_restart;
+
+#[cfg(unix)]
+#[test]
+fn key_setup_installs_the_key_before_saving() -> Result<()> {
+    let request = Request::new("penso@m5mini.local", "Mini", "")?;
+    let plain = terminal_command(&request)?;
+    let setup = key_setup_command(&request)?;
+    assert_eq!(
+        setup.command,
+        format!("'ssh-copy-id' 'penso@m5mini.local' && {}", plain.command)
+    );
+    assert_eq!(setup.environment, plain.environment);
+    Ok(())
+}
