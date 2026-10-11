@@ -227,6 +227,8 @@ fn the_menu_opens_from_the_strip_and_steps_with_the_keyboard(cx: &mut TestAppCon
 
 mod new_tabs;
 mod orchestrator;
+#[cfg(unix)]
+mod tunnels;
 
 /// Showing and hiding VS Code from the menu, in place of a title bar button.
 mod vs_code;

@@ -122,9 +122,13 @@ pub(crate) fn chips(
                 return div().flex_none().child(chip);
             };
             let close = match &link {
-                Link::Tunnel(key) if tunnels.is_open(key) => {
-                    Some(close_button(key, endpoint, workspace, glyph, theme, cx))
-                }
+                Link::Tunnel(key) if tunnels.is_open(key) => Some(close_button(
+                    format!("port-close-{endpoint}-{workspace}-{}", key.port).into(),
+                    key,
+                    glyph,
+                    theme,
+                    cx,
+                )),
                 _ => None,
             };
             let (endpoint, workspace) = (endpoint.to_owned(), workspace.to_owned());
@@ -146,17 +150,15 @@ pub(crate) fn chips(
 }
 
 /// The small `x` after a port whose SSH tunnel is open; clicking it closes
-/// the tunnel, which frees its local port.
-fn close_button(
+/// the tunnel, which frees its local port. `id` is unique per place it shows.
+pub(crate) fn close_button(
+    id: SharedString,
     key: &Key,
-    endpoint: &str,
-    workspace: &str,
     glyph: f32,
     theme: &Theme,
     cx: &mut Context<HerdrWindow>,
 ) -> Stateful<Div> {
     let (muted, foreground, surface) = (theme.muted, theme.foreground, theme.surface);
-    let id = SharedString::from(format!("port-close-{endpoint}-{workspace}-{}", key.port));
     let hint = SharedString::from(format!(
         "Close the SSH tunnel to {}:{}",
         key.target, key.port
