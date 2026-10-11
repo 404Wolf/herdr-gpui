@@ -84,6 +84,11 @@ pub(crate) enum Error {
         "Teleport needs a local session or SSH host; custom socket, WSL, and cloud endpoints are unsupported"
     )]
     UnsupportedHost,
+    /// The `herdr` CLI addresses only the release installation's sessions,
+    /// so a script for a development session would act on the release
+    /// session that shares its name.
+    #[error("Host scripts cannot reach a development (--dev) session")]
+    DevelopmentSession,
     #[error("The workspace is no longer open on its host")]
     WorkspaceGone,
     #[error("{reference} does not name a commit on the source")]

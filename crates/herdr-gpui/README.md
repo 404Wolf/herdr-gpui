@@ -1331,7 +1331,11 @@ Right-click a linked worktree and choose Teleport... to move it to another
 connected host: its branch and commits, staged, unstaged and untracked changes,
 tabs and splits, the programs running in them, and agent sessions. It is offered
 on Linux and macOS clients when the worktree's host is the local session or a
-saved SSH host; custom socket endpoints are not scripted.
+saved SSH host; custom socket endpoints are not scripted. Neither is a
+development (`--dev`) session: the `herdr` CLI names sessions of the release
+installation only, so Teleport, fan-out, and dispatch are not offered there,
+and an orchestrator action that drives that session through the CLI reports an
+error instead of reaching the release session of the same name.
 
 1. **Choose a host.** Every other enabled host is listed at once, connected or
    not; nothing is probed until one is chosen. The review then finds where the
