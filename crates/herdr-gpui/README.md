@@ -2831,7 +2831,8 @@ records when reporting the failure.
   wheel, a dragged scrollbar thumb, a frame placing images, an open popup,
   keyboard scrolling, and any change to the pane's rows besides the scroll move
   the content to the daemon's whole row. Only the moving pane repaints; other
-  panes replay their cached paint.
+  panes replay their cached paint. Set top-level `smooth_scroll = false`, or
+  turn off **Smooth scrolling** in Settings, to scroll by whole rows.
 - Direct semantic cell canvas: named ANSI colors, indexed 256-color palette,
   RGB, reset foreground/background, reverse, dim, hidden, bold, italic,
   underline, strikeout, wide-cell skip handling, and cursor shapes.

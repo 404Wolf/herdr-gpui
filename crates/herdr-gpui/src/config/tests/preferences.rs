@@ -77,6 +77,7 @@ fn appearance_and_close_options_preserve_defaults() -> anyhow::Result<()> {
         assert!(config.confirm_close_tab);
         assert!(config.confirm_close_pane);
         assert!(config.show_agents);
+        assert!(config.smooth_scroll);
     }
     let config = Config::parse("confirm_close_tab = false\nshow_agents = false")?;
     assert!(!config.confirm_close_tab);
@@ -88,6 +89,8 @@ fn appearance_and_close_options_preserve_defaults() -> anyhow::Result<()> {
     assert!(Config::parse("confirm_close_tab = 'false'").is_err());
     assert!(Config::parse("confirm_close_pane = 0").is_err());
     assert!(Config::parse("show_agents = 0").is_err());
+    assert!(!Config::parse("smooth_scroll = false")?.smooth_scroll);
+    assert!(Config::parse("smooth_scroll = 0").is_err());
     Ok(())
 }
 

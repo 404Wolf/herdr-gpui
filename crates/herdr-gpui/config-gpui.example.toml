@@ -57,6 +57,10 @@ agent_checkpoints = true
 # scanned every five seconds with ss or lsof, a remote one over SSH; false
 # stops all scanning. Also under Settings > General.
 show_listening_ports = true
+# Draw wheel and trackpad scrollback between rows, following the OS deltas
+# and momentum; false scrolls by whole rows. Applications reading the mouse
+# always get whole rows. Also under Settings > General.
+smooth_scroll = true
 # macOS only: whether Option-letter reaches a pane as an Alt shortcut (Alt-P
 # for Option-P) or types the character the keyboard layout puts there. "auto"
 # sends Alt from the left Option on the U.S. and ABC layouts, while the right

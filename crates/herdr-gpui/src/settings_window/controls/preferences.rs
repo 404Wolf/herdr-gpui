@@ -213,6 +213,11 @@ mod tests {
             ),
             (
                 Section::General,
+                "settings-smooth-scroll",
+                Preference::SmoothScroll(false),
+            ),
+            (
+                Section::General,
                 "settings-clipboard-enabled",
                 Preference::ClipboardEnabled(Some(false)),
             ),

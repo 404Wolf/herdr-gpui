@@ -90,6 +90,8 @@ pub struct Config {
     pub agent_checkpoints: bool,
     /// Ports each workspace listens on, in the sidebar and the status bar.
     pub show_listening_ports: bool,
+    /// Wheel scrollback draws panes between rows, following the OS deltas.
+    pub smooth_scroll: bool,
     /// Which status bar items show, and how compactly.
     pub status_bar: StatusBar,
     /// How far the app's own marks and labels stand off its chrome.
@@ -420,6 +422,7 @@ impl Default for Config {
             show_system_load: true,
             agent_checkpoints: true,
             show_listening_ports: true,
+            smooth_scroll: true,
             status_bar: StatusBar::default(),
             contrast: Contrast::default(),
             usage: crate::usage::UsageConfig::default(),
@@ -467,6 +470,7 @@ struct Settings {
     show_system_load: Option<bool>,
     agent_checkpoints: Option<bool>,
     show_listening_ports: Option<bool>,
+    smooth_scroll: Option<bool>,
     status_bar: StatusBar,
     contrast: Contrast,
     usage: crate::usage::UsageConfig,
@@ -820,6 +824,7 @@ impl Config {
         config.show_system_load = settings.show_system_load.unwrap_or(true);
         config.agent_checkpoints = settings.agent_checkpoints.unwrap_or(true);
         config.show_listening_ports = settings.show_listening_ports.unwrap_or(true);
+        config.smooth_scroll = settings.smooth_scroll.unwrap_or(true);
         config.status_bar = settings.status_bar;
         config.contrast = settings.contrast;
         config.usage = settings.usage;

@@ -701,6 +701,13 @@ impl SettingsWindow {
                 cx,
             ))
             .child(self.preference_switch(
+                "settings-smooth-scroll",
+                "Smooth scrolling",
+                self.config.smooth_scroll,
+                crate::config::preferences::Preference::SmoothScroll(!self.config.smooth_scroll),
+                cx,
+            ))
+            .child(self.preference_switch(
                 "settings-confirm-close",
                 "Confirm tab close",
                 self.config.confirm_close_tab,
