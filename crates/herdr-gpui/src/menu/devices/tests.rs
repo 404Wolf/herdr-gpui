@@ -77,7 +77,7 @@ fn install_needs_a_connected_local_daemon(cx: &mut gpui::TestAppContext) {
             let request = setup::Request::new("dev@box", "Box", "").unwrap();
             view.endpoints[0].live.status = ConnectionStatus::Disconnected;
             open_form(view, Step::Verifying(request, Offer::Install), cx);
-            view.setup_space_verified(Ok(setup::Claim::fixture("disconnected.test")), cx);
+            view.setup_space_verified(Ok(setup::Claim::fixture("disconnected.test")), None, cx);
             // The same offer stays, so trying again does what was accepted.
             assert!(matches!(step(view), Step::Confirm(_, Offer::Install)));
             // The claim stays with the dialog for a retry.
@@ -169,7 +169,7 @@ fn a_host_already_saved_or_being_added_returns_to_the_form(cx: &mut gpui::TestAp
                 assert_eq!(view.menu.error.as_deref(), Some(message));
             }
             open_form(view, Step::Verifying(again.clone(), Offer::Install), cx);
-            view.setup_space_verified(Err(crate::Error::DeviceExists("m5max-ms".into())), cx);
+            view.setup_space_verified(Err(crate::Error::DeviceExists("m5max-ms".into())), None, cx);
             assert!(matches!(step(view), Step::Form));
         });
     });

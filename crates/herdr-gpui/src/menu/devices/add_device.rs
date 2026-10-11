@@ -598,14 +598,19 @@ impl HerdrWindow {
         self.menu.error = None;
         let background = cx.background_executor().spawn(async move {
             // A failed probe left no claim; take one now.
-            match claim {
+            let claim = match claim {
                 Some(claim) => setup::verify_unsaved(&request, &claim).map(|()| claim),
                 None => setup::claim(&request),
-            }
+            };
+            // The terminal gets the user's login `PATH`, as SSH children do;
+            // resolving it can block the first time.
+            (claim, crate::login_env::path())
         });
         form.task = Some(cx.spawn(async move |this, cx| {
-            let result = background.await;
-            let _ = this.update(cx, |this, cx| this.setup_space_verified(result, cx));
+            let (result, path) = background.await;
+            let _ = this.update(cx, |this, cx| {
+                this.setup_space_verified(result, path.as_deref(), cx)
+            });
         }));
         cx.notify();
     }
@@ -613,6 +618,7 @@ impl HerdrWindow {
     pub(super) fn setup_space_verified(
         &mut self,
         result: crate::Result<setup::Claim>,
+        path: Option<&std::ffi::OsStr>,
         cx: &mut Context<Self>,
     ) {
         let Some(Setup {
@@ -643,8 +649,8 @@ impl HerdrWindow {
         let local = &self.endpoints[0];
         let result = (|| {
             let setup = match offer {
-                Offer::InstallKey => setup::key_setup_command(&request)?,
-                _ => setup::terminal_command(&request)?,
+                Offer::InstallKey => setup::key_setup_command(&request, path)?,
+                _ => setup::terminal_command(&request, path)?,
             };
             let boot = local
                 .live

@@ -592,7 +592,13 @@ pub(super) fn last_line(output: &[u8]) -> String {
 }
 
 /// The shell command a local workspace runs to set the host up interactively.
-pub(super) fn terminal_command(request: &Request) -> Result<TerminalSetup> {
+/// `path` is the `PATH` the setup runs with, normally the login shell's: the
+/// pane's own would do, but the command restores this window's environment.
+/// Without one, this process's `PATH` is used.
+pub(super) fn terminal_command(
+    request: &Request,
+    path: Option<&std::ffi::OsStr>,
+) -> Result<TerminalSetup> {
     if cfg!(windows) {
         return Err(Error::DeviceSetupInput(
             "Saved SSH devices are unavailable on Windows.",
@@ -604,7 +610,11 @@ pub(super) fn terminal_command(request: &Request) -> Result<TerminalSetup> {
     ))?;
     let mut environment = Vec::new();
     for key in ["HOME", "PATH"].into_iter().chain(CATALOG_ROOTS) {
-        if let Some(value) = std::env::var_os(key) {
+        let value = match (key, path) {
+            ("PATH", Some(path)) => Some(path.to_owned()),
+            _ => std::env::var_os(key),
+        };
+        if let Some(value) = value {
             environment.push((
                 key.into(),
                 value
@@ -626,8 +636,11 @@ pub(super) fn terminal_command(request: &Request) -> Result<TerminalSetup> {
 /// "no route to host" for a LAN host, while the system's `/usr/bin/ssh` is
 /// exempt. `ssh-copy-id` runs `ssh` from `PATH`, so the system one goes
 /// first; it also signs with a security key held by the agent.
-pub(super) fn key_setup_command(request: &Request) -> Result<TerminalSetup> {
-    let mut setup = terminal_command(request)?;
+pub(super) fn key_setup_command(
+    request: &Request,
+    path: Option<&std::ffi::OsStr>,
+) -> Result<TerminalSetup> {
+    let mut setup = terminal_command(request, path)?;
     let path = if cfg!(target_os = "macos") {
         "\"PATH=/usr/bin:$PATH\" "
     } else {
