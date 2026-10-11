@@ -42,6 +42,8 @@ mod transfers;
 pub(crate) use transfers::tests::Peer as MockPeer;
 
 #[cfg(test)]
+mod agent_model_tests;
+#[cfg(test)]
 mod font_size_tests;
 #[cfg(test)]
 mod key_action_tests;
