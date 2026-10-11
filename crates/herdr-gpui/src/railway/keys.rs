@@ -6,7 +6,7 @@
 use super::{Error, Result, identity};
 use std::{
     fs,
-    io::{self, Read},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
@@ -35,24 +35,33 @@ pub(crate) fn check_tools() -> Result<()> {
     run("ssh-keygen", "-?").map_err(Error::KeygenMissing)
 }
 
-fn run(mut command: Command, cancelled: &impl Fn() -> bool) -> Result<(Option<i32>, String)> {
+fn run(
+    mut command: Command,
+    input: &str,
+    cancelled: &impl Fn() -> bool,
+) -> Result<(Option<i32>, String)> {
     let mut child = command
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
         .map_err(Error::KeygenMissing)?;
+    // A short public key fits the pipe buffer; closing stdin ends the input.
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(input.as_bytes());
+    }
     let deadline = Instant::now() + TIMEOUT;
     let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) => {}
-            Err(error) => return Err(Error::KeygenMissing(error)),
-        }
+        // Checked first, so a cancel request wins over a child that just ended.
         if cancelled() {
             let _ = child.kill();
             let _ = child.wait();
             return Err(Error::Cloud(crate::cloud::Error::Cancelled));
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {}
+            Err(error) => return Err(Error::KeygenMissing(error)),
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
@@ -93,18 +102,29 @@ fn id_of(fingerprint: &str) -> Option<String> {
     (id.len() == 16).then(|| format!("key-{id}"))
 }
 
-/// The full fingerprint (`SHA256:…`) of the key at `path`. An empty
-/// passphrase is supplied so a protected key falls back to its `.pub` file
-/// instead of prompting.
+/// The full fingerprint (`SHA256:…`) of the key at `path`, taken from the
+/// private key itself. Reading it through `ssh-keygen -l -f <key>` would trust
+/// a `.pub` beside it, which stays behind when the private file is replaced.
+/// Only a passphrase-protected key, which cannot be read unattended, falls back
+/// to its `.pub`.
 pub(super) fn fingerprint_text(path: &Path, cancelled: &impl Fn() -> bool) -> Result<String> {
-    let mut command = Command::new("ssh-keygen");
-    command
-        .args(["-l", "-E", "sha256", "-P", ""])
-        .arg("-f")
-        .arg(path);
-    match run(command, cancelled)? {
-        (Some(0), output) => digest(&output).ok_or_else(|| Error::UnusableKey(path.to_owned())),
-        _ => Err(Error::UnusableKey(path.to_owned())),
+    let unusable = || Error::UnusableKey(path.to_owned());
+    let mut derive = Command::new("ssh-keygen");
+    derive.args(["-y", "-P", ""]).arg("-f").arg(path);
+    let mut list = Command::new("ssh-keygen");
+    list.args(["-l", "-E", "sha256", "-f", "-"]);
+    let output = match run(derive, "", cancelled)? {
+        (Some(0), public) => run(list, &public, cancelled)?,
+        _ => {
+            let mut list = Command::new("ssh-keygen");
+            list.args(["-l", "-E", "sha256", "-f"])
+                .arg(identity::public_path(path));
+            run(list, "", cancelled)?
+        }
+    };
+    match output {
+        (Some(0), output) => digest(&output).ok_or_else(unusable),
+        _ => Err(unusable()),
     }
 }
 
@@ -183,11 +203,13 @@ pub(crate) fn key_directory(home: Option<&Path>, state: &Path) -> KeyDirectory {
     }
 }
 
-/// A key just made: where, and its fingerprint.
+/// A key just made: where, its full fingerprint, and the device ID that
+/// fingerprint names.
 #[derive(Debug)]
 pub(super) struct Made {
     pub(super) path: PathBuf,
     pub(super) fingerprint: String,
+    pub(super) id: String,
 }
 
 fn exists(path: &Path) -> bool {
@@ -197,66 +219,64 @@ fn exists(path: &Path) -> bool {
 
 /// Generate an ed25519 key named `name` in `directory`, with no passphrase
 /// (the app must use it unattended on every reconnect). Never replaces
-/// anything: the pair is made under scratch names and then linked to its
-/// final names, which fails if either is taken. `ssh-keygen` creates the
-/// private half readable only by this user; Herdr's own folder is created
-/// only this user can open, and `~/.ssh` is left as the user has it.
+/// anything: the pair is made inside a scratch directory this call owns, then
+/// hard-linked to its final names, which fails if either is taken. Only that
+/// scratch directory is ever removed. `ssh-keygen` creates the private half
+/// readable only by this user; Herdr's own folder is created only this user
+/// can open, and `~/.ssh` is left as the user has it.
 pub(super) fn generate(
     directory: &KeyDirectory,
     name: &str,
     cancelled: &impl Fn() -> bool,
 ) -> Result<Made> {
     valid_name(name)?;
+    let store = |path: &Path| {
+        let path = path.to_owned();
+        move |source| Error::Store { path, source }
+    };
     if !directory.user {
-        private_directory(&directory.path).map_err(|source| Error::Store {
-            path: directory.path.clone(),
-            source,
-        })?;
+        private_directory(&directory.path).map_err(store(&directory.path))?;
     }
     let target = directory.path.join(name);
     let public_target = identity::public_path(&target);
     if exists(&target) || exists(&public_target) {
         return Err(Error::KeyExists(target));
     }
-    let mut random = [0u8; 4];
-    // Only names a scratch file; a clash fails `ssh-keygen` rather than
-    // overwriting.
-    let _ = getrandom::fill(&mut random);
-    let scratch = directory
-        .path
-        .join(format!(".herdr-new-{:08x}", u32::from_le_bytes(random)));
-    let public_scratch = identity::public_path(&scratch);
-    let made = (|| {
-        let mut command = Command::new("ssh-keygen");
-        command
-            .args(["-q", "-t", "ed25519", "-N", "", "-C", COMMENT])
-            .arg("-f")
-            .arg(&scratch);
-        match run(command, cancelled)? {
-            (Some(0), _) => {}
-            (code, _) => return Err(Error::Keygen(code)),
-        }
-        let fingerprint = fingerprint_text(&scratch, cancelled)?;
-        place(&scratch, &target)?;
-        if let Err(error) = place(&public_scratch, &public_target) {
-            let _ = fs::remove_file(&target);
-            return Err(error);
-        }
-        Ok(Made {
-            path: target.clone(),
-            fingerprint,
-        })
-    })();
-    let _ = fs::remove_file(&scratch);
-    let _ = fs::remove_file(&public_scratch);
-    made
+    // Beside the final names, so linking never crosses a file system.
+    let scratch = tempfile::Builder::new()
+        .prefix(".herdr-new-")
+        .tempdir_in(&directory.path)
+        .map_err(store(&directory.path))?;
+    let key = scratch.path().join("key");
+    let mut command = Command::new("ssh-keygen");
+    command
+        .args(["-q", "-t", "ed25519", "-N", "", "-C", COMMENT])
+        .arg("-f")
+        .arg(&key);
+    match run(command, "", cancelled)? {
+        (Some(0), _) => {}
+        (code, _) => return Err(Error::Keygen(code)),
+    }
+    let fingerprint = fingerprint_text(&key, cancelled)?;
+    let id = id_of(&fingerprint).ok_or_else(|| Error::UnusableKey(target.clone()))?;
+    place(&key, &target)?;
+    if let Err(error) = place(&identity::public_path(&key), &public_target) {
+        // The private half was linked just above, by this call.
+        let _ = fs::remove_file(&target);
+        return Err(error);
+    }
+    Ok(Made {
+        path: target,
+        fingerprint,
+        id,
+    })
 }
 
-/// Give `from` the name `to` without replacing whatever has it. A link fails
-/// if `to` exists; a file system without links falls back to a rename after
-/// a last check.
+/// Give `from` the name `to` without replacing whatever has it: a hard link
+/// fails if `to` exists, atomically. There is no fallback; a file system
+/// without hard links makes key generation fail rather than risk an overwrite.
 fn place(from: &Path, to: &Path) -> Result<()> {
-    let failed = |source: io::Error| {
+    fs::hard_link(from, to).map_err(|source| {
         if source.kind() == io::ErrorKind::AlreadyExists {
             Error::KeyExists(to.to_owned())
         } else {
@@ -265,39 +285,7 @@ fn place(from: &Path, to: &Path) -> Result<()> {
                 source,
             }
         }
-    };
-    match fs::hard_link(from, to) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Err(failed(error)),
-        Err(_) if exists(to) => Err(Error::KeyExists(to.to_owned())),
-        Err(_) => fs::rename(from, to).map_err(failed),
-    }
-}
-
-/// Private keys in `~/.ssh` that have a `.pub` beside them, for the settings
-/// card to offer. Bounded; names only, nothing is read from the files.
-pub(crate) fn detected(home: &Path) -> Vec<PathBuf> {
-    const SCAN: usize = 64;
-    const OFFERED: usize = 8;
-    let Ok(entries) = fs::read_dir(home.join(".ssh")) else {
-        return Vec::new();
-    };
-    let mut keys: Vec<PathBuf> = entries
-        .flatten()
-        .take(SCAN)
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().is_none_or(|ext| ext != "pub"))
-        .filter(|path| {
-            path.is_file()
-                && path
-                    .file_name()
-                    .is_some_and(|name| !name.to_string_lossy().starts_with('.'))
-                && PathBuf::from(format!("{}.pub", path.display())).is_file()
-        })
-        .collect();
-    keys.sort();
-    keys.truncate(OFFERED);
-    keys
+    })
 }
 
 // Tests drive `ssh`, `ssh-keygen`, and `/bin/sh`; cloud devices are Unix-only.

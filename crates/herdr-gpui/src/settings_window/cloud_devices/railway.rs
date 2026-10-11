@@ -1,9 +1,8 @@
-//! The Railway tab of Settings > Cloud Devices. Railway's free VM needs no
-//! account, so the tab is about the SSH identity: choose a key the user
-//! already has or let Herdr generate one, then connect, install Herdr there
-//! (after approval), and save the device with that key attached. Setup runs as
-//! a job in the main window, which shows progress in the device picker; reads
-//! and removals run through `cloud::worker`, never on the UI thread.
+//! The Railway tab of Settings > Cloud Devices. There is no account: the tab is
+//! about the SSH key. Choose one the user already has or generate a named one,
+//! then set up the VM (installing Herdr after approval) and save the device with
+//! that key. Setup runs as a job in the main window, which shows progress in the
+//! device picker; reads and removals run through `cloud::worker`.
 
 use super::super::{Section, SettingsWindow};
 use super::input;
@@ -12,12 +11,10 @@ use crate::{
         CloudProvider,
         worker::{self, Worker},
     },
-    config::corners,
-    railway::setup::{self, AddRequest, Choice, Overview, PendingKey},
+    railway::setup::{self, AddRequest, Choice, Overview},
     search_input::SearchInput,
 };
 use gpui::{prelude::*, *};
-use std::path::{Path, PathBuf};
 
 /// Where the key for a new device comes from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,11 +28,6 @@ enum Update {
     Done(crate::railway::Result<()>),
 }
 
-enum Account {
-    Checking,
-    Known(Overview),
-}
-
 pub(in crate::settings_window) struct RailwayCard {
     path: Entity<SearchInput>,
     /// The name for a key to generate.
@@ -43,7 +35,8 @@ pub(in crate::settings_window) struct RailwayCard {
     source: KeySource,
     /// The user's approval to install Herdr on VMs set up from here.
     install: bool,
-    account: Account,
+    /// `None` until the first read finishes.
+    overview: Option<Overview>,
     message: Option<String>,
     job: Option<Worker>,
     /// Tests build the card without the user's real saved devices.
@@ -62,7 +55,7 @@ impl RailwayCard {
             name: input("herdr-railway", "herdr-railway", config, theme, cx),
             source: KeySource::Generate,
             install: true,
-            account: Account::Checking,
+            overview: None,
             message: None,
             job: None,
             #[cfg(test)]
@@ -71,47 +64,20 @@ impl RailwayCard {
     }
 
     fn devices(&self) -> &[setup::Device] {
-        match &self.account {
-            Account::Known(overview) => &overview.devices,
-            Account::Checking => &[],
-        }
+        self.overview
+            .as_ref()
+            .map_or(&[], |overview| &overview.devices)
     }
 }
 
-/// Where a key named `name` will be created, and what removing a device that
-/// uses it does to it.
+/// Where a key named `name` will be created.
 fn location_note(directory: &crate::railway::KeyDirectory, name: &str) -> String {
     let folder = directory.path.display();
     if directory.user {
-        format!(
-            "Creates {folder}/{name} and {name}.pub. Removing the device keeps them unless you delete the key."
-        )
+        format!("Creates {folder}/{name} and {name}.pub.")
     } else {
-        format!(
-            "No ~/.ssh folder, so this creates {folder}/{name} and {name}.pub, readable only by you. Removing the device deletes them."
-        )
+        format!("No ~/.ssh folder, so this creates {folder}/{name} and {name}.pub.")
     }
-}
-
-/// What a device row says about its key and the VM's window.
-fn describe(device: &setup::Device, now: u64) -> String {
-    let path = device
-        .key_path
-        .as_ref()
-        .map(|path| path.display().to_string())
-        .unwrap_or_default();
-    let key = match device.record.as_ref().map(|record| &record.source) {
-        None => "no saved key".to_owned(),
-        Some(crate::railway::Source::Generated { .. }) => format!("generated key {path}"),
-        Some(crate::railway::Source::Borrowed { .. }) => format!("key {path}"),
-    };
-    let state = match &device.record {
-        Some(_) if !device.key_present => " · key file missing",
-        Some(record) if record.claimed => " · claimed",
-        Some(record) if record.window_ended(now) => " · build window probably ended",
-        _ => "",
-    };
-    format!("{} · {key}{state}", device.saved.machine)
 }
 
 impl SettingsWindow {
@@ -160,9 +126,6 @@ impl SettingsWindow {
         {
             return;
         }
-        if let Some(card) = &mut self.railway_card {
-            card.account = Account::Checking;
-        }
         self.railway_job(cx, |_, send| send(Update::Overview(setup::overview())));
     }
 
@@ -171,16 +134,8 @@ impl SettingsWindow {
             return;
         };
         match update {
-            Update::Overview(Ok(overview)) => card.account = Account::Known(overview),
-            Update::Overview(Err(error)) => {
-                card.account = Account::Known(Overview {
-                    devices: Vec::new(),
-                    pending_key: None,
-                    new_key_directory: Default::default(),
-                    detected: Vec::new(),
-                });
-                card.message = Some(error.to_string());
-            }
+            Update::Overview(Ok(overview)) => card.overview = Some(overview),
+            Update::Overview(Err(error)) => card.message = Some(error.to_string()),
             Update::Done(result) => {
                 card.message = result.err().map(|error| error.to_string());
                 self.refresh_railway(cx);
@@ -194,11 +149,10 @@ impl SettingsWindow {
         }
     }
 
-    /// `delete_key` is the user's explicit request to also delete a key
-    /// generated in `~/.ssh`, which removing the device alone keeps.
-    fn forget_railway_device(&mut self, id: String, delete_key: bool, cx: &mut Context<Self>) {
+    /// Forget the device. Its key files are left alone.
+    fn forget_railway_device(&mut self, id: String, cx: &mut Context<Self>) {
         self.railway_job(cx, move |_, send| {
-            send(Update::Done(setup::forget_device(&id, delete_key)));
+            send(Update::Done(setup::forget_device(&id)));
         });
     }
 
@@ -221,29 +175,6 @@ impl SettingsWindow {
         });
     }
 
-    /// Delete the waiting generated key, because the user said to.
-    fn discard_railway_key(&mut self, cx: &mut Context<Self>) {
-        self.railway_job(cx, |_, send| {
-            send(Update::Done(setup::discard_pending()));
-        });
-    }
-
-    fn claim_railway_device(&mut self, id: String, cx: &mut Context<Self>) {
-        self.railway_job(cx, move |_, send| {
-            send(Update::Done(setup::mark_claimed(&id)));
-        });
-    }
-
-    fn use_railway_key(&mut self, path: &Path, cx: &mut Context<Self>) {
-        if let Some(card) = &mut self.railway_card {
-            card.source = KeySource::Existing;
-            card.path.update(cx, |input, cx| {
-                input.set_text_selected(&path.to_string_lossy(), cx)
-            });
-        }
-        cx.notify();
-    }
-
     /// The system file dialog; the chosen path fills the field, and nothing is
     /// read from it until setup runs.
     fn browse_railway_key(&mut self, cx: &mut Context<Self>) {
@@ -257,65 +188,40 @@ impl SettingsWindow {
             let Ok(Ok(Some(paths))) = paths.await else {
                 return;
             };
-            if let Some(path) = paths.into_iter().next() {
-                let _ = this.update(cx, |this, cx| this.use_railway_key(&path, cx));
-            }
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
+            let _ = this.update(cx, |this, cx| {
+                if let Some(card) = &mut this.railway_card {
+                    card.path.update(cx, |input, cx| {
+                        input.set_text_selected(&path.to_string_lossy(), cx)
+                    });
+                }
+                cx.notify();
+            });
         })
         .detach();
     }
 
     /// Hand a setup to the main window, which runs and reports the job so it
-    /// survives this window closing. The choice was made explicitly here;
-    /// nothing else starts one.
-    fn start_railway_setup(&mut self, choice: Choice, name: String, cx: &mut Context<Self>) {
-        let Some(card) = &mut self.railway_card else {
-            return;
-        };
-        let request = AddRequest {
-            choice,
-            install: card.install,
-        };
-        let started = self.source.update(cx, |window, cx| {
-            if window.cloud_jobs.has(CloudProvider::Railway) {
-                return Ok(Err(crate::cloud::Error::Unavailable(
-                    "A Railway setup is already running.",
-                )
-                .into()));
-            }
-            window
-                .start_cloud_job(
-                    CloudProvider::Railway,
-                    name.clone(),
-                    move |cancelled, report| setup::add_device(request, cancelled, report),
-                    cx,
-                )
-                .map(Ok)
-        });
-        if let Some(card) = &mut self.railway_card {
-            card.message = Some(match started {
-                Ok(Ok(Ok(()))) => {
-                    format!("Connecting {name}. The device picker shows its progress.")
-                }
-                Ok(Ok(Err(error)) | Err(error)) => error.to_string(),
-                Err(_) => "Open a main Herdr window to set up a VM.".into(),
-            });
-        }
-        cx.notify();
-    }
-
-    fn setup_railway_new(&mut self, cx: &mut Context<Self>) {
+    /// survives this window closing. Nothing else starts one.
+    fn setup_railway(&mut self, cx: &mut Context<Self>) {
         let Some(card) = &mut self.railway_card else {
             return;
         };
         let choice = match card.source {
-            KeySource::Generate => {
-                let waiting = matches!(&card.account, Account::Known(overview) if overview.pending_key.is_some());
-                if !waiting {
-                    card.message = Some("Generate a key first.".into());
-                    cx.notify();
-                    return;
-                }
+            KeySource::Generate
+                if card
+                    .overview
+                    .as_ref()
+                    .is_some_and(|o| o.pending_key.is_some()) =>
+            {
                 Choice::Generated
+            }
+            KeySource::Generate => {
+                card.message = Some("Generate a key first.".into());
+                cx.notify();
+                return;
             }
             KeySource::Existing => {
                 let text = card.path.read(cx).text().trim().to_owned();
@@ -327,11 +233,33 @@ impl SettingsWindow {
                 Choice::Existing(setup::expand(&text))
             }
         };
-        self.start_railway_setup(choice, setup::random_name(), cx);
-    }
-
-    fn reconnect_railway_device(&mut self, id: String, label: String, cx: &mut Context<Self>) {
-        self.start_railway_setup(Choice::Saved(id), label, cx);
+        let request = AddRequest {
+            choice,
+            install: card.install,
+        };
+        let name = setup::random_name();
+        let started = self.source.update(cx, |window, cx| {
+            if window.cloud_jobs.has(CloudProvider::Railway) {
+                return Err(crate::cloud::Error::Unavailable(
+                    "A Railway setup is already running.",
+                )
+                .into());
+            }
+            window.start_cloud_job(
+                CloudProvider::Railway,
+                name.clone(),
+                move |cancelled, report| setup::add_device(request, cancelled, report),
+                cx,
+            )
+        });
+        if let Some(card) = &mut self.railway_card {
+            card.message = Some(match started {
+                Ok(Ok(())) => format!("Connecting {name}. The device picker shows its progress."),
+                Ok(Err(error)) => error.to_string(),
+                Err(_) => "Open a main Herdr window to set up a VM.".into(),
+            });
+        }
+        cx.notify();
     }
 
     fn railway_button(
@@ -356,17 +284,12 @@ impl SettingsWindow {
         ready: bool,
         cx: &mut Context<Self>,
     ) -> Div {
-        let (id, label) = (device.saved.id.clone(), device.saved.label.clone());
-        let claim = device.record.as_ref().is_some_and(|record| !record.claimed);
-        let reconnect = ready && device.record.is_some() && crate::cloud::unavailable().is_none();
-        let button = |name: &'static str, text: &'static str, enabled: bool| {
-            self.cloud_button(
-                SharedString::from(format!("cloud-railway-{name}-{index}")),
-                text,
-                enabled,
-            )
-            .debug_selector(move || format!("cloud-railway-{name}-{index}"))
-        };
+        let id = device.saved.id.clone();
+        let key = device
+            .key_path
+            .as_ref()
+            .map_or("no saved key".into(), |path| path.display().to_string());
+        let remove = SharedString::from(format!("cloud-railway-remove-{index}"));
         div()
             .flex()
             .flex_wrap()
@@ -381,46 +304,24 @@ impl SettingsWindow {
                         div()
                             .truncate()
                             .text_color(rgb(self.theme.muted))
-                            .child(describe(device, crate::railway::now())),
+                            .child(format!(
+                                "{} · {key}{}",
+                                device.saved.machine,
+                                if device.key_present {
+                                    ""
+                                } else {
+                                    " · key file missing"
+                                }
+                            )),
                     ),
             )
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap(px(8.))
-                    .child(
-                        button("reconnect", "Reconnect", reconnect).when(reconnect, |b| {
-                            let (id, label) = (id.clone(), label.clone());
-                            b.on_click(cx.listener(move |this, _, _, cx| {
-                                this.reconnect_railway_device(id.clone(), label.clone(), cx)
-                            }))
-                        }),
-                    )
-                    .when(claim, |row| {
-                        let id = id.clone();
-                        row.child(button("claimed", "Mark claimed", ready).when(ready, |b| {
-                            b.on_click(cx.listener(move |this, _, _, cx| {
-                                this.claim_railway_device(id.clone(), cx)
-                            }))
+                self.cloud_button(remove.clone(), "Remove", ready)
+                    .debug_selector(move || remove.to_string())
+                    .when(ready, |button| {
+                        button.on_click(cx.listener(move |this, _, _, cx| {
+                            this.forget_railway_device(id.clone(), cx)
                         }))
-                    })
-                    .child(button("remove", "Remove", ready).when(ready, |b| {
-                        let id = id.clone();
-                        b.on_click(cx.listener(move |this, _, _, cx| {
-                            this.forget_railway_device(id.clone(), false, cx)
-                        }))
-                    }))
-                    .when(device.key_kept, |row| {
-                        let id = id.clone();
-                        row.child(button("remove-key", "Remove and delete key", ready).when(
-                            ready,
-                            |b| {
-                                b.on_click(cx.listener(move |this, _, _, cx| {
-                                    this.forget_railway_device(id.clone(), true, cx)
-                                }))
-                            },
-                        ))
                     }),
             )
     }
@@ -431,21 +332,13 @@ impl SettingsWindow {
         };
         let ready = !self.busy();
         let available = ready && crate::cloud::unavailable().is_none();
-        let (pending, detected, directory): (Option<&PendingKey>, &[PathBuf], _) =
-            match &card.account {
-                Account::Known(overview) => (
-                    overview.pending_key.as_ref(),
-                    &overview.detected,
-                    Some(&overview.new_key_directory),
-                ),
-                Account::Checking => (None, &[], None),
-            };
+        let overview = card.overview.as_ref();
         let mut about = self
             .control_card("Railway")
             .debug_selector(|| "cloud-railway-card".into())
-            .child(self.control_note(
-                "Temporary VM from railway.new: 2 vCPU, 2 GB, 60 minutes. Claim it at Railway to keep it.",
-            ));
+            .child(
+                self.control_note("Temporary VM from railway.new, created with the SSH key below."),
+            );
         if let Some(reason) = crate::cloud::unavailable() {
             about = about.child(self.control_note(reason));
         }
@@ -475,133 +368,51 @@ impl SettingsWindow {
                     )),
             );
         key = match card.source {
-            KeySource::Generate => match pending {
-                Some(waiting) => {
-                    let mut waiting_key = key.child(
-                        div()
-                            .debug_selector(|| "cloud-railway-pending".into())
-                            .min_w_0()
-                            .child(div().child("Generated key"))
-                            .child(
-                                div()
-                                    .text_color(rgb(self.theme.muted))
-                                    .child(waiting.path.display().to_string()),
-                            ),
-                    );
-                    if let Some(fingerprint) = &waiting.fingerprint {
-                        waiting_key = waiting_key.child(self.control_note(fingerprint.clone()));
-                    }
-                    waiting_key
-                        .child(self.control_note(if waiting.kept {
-                            "In ~/.ssh. Removing the device keeps it unless you delete the key."
-                        } else {
-                            "In Herdr's data folder. Removing the device deletes it."
-                        }))
-                        .child(div().flex().justify_end().child(self.railway_button(
-                            "cloud-railway-discard",
-                            "Discard key",
-                            ready,
-                            |this, cx| this.discard_railway_key(cx),
-                            cx,
-                        )))
-                }
+            KeySource::Generate => match overview.and_then(|overview| overview.pending_key.as_ref()) {
+                // One generated key waits for its device; setup uses it.
+                Some(waiting) => key.child(
+                    self.control_note(format!(
+                        "Key for the next setup: {}{}",
+                        waiting.path.display(),
+                        waiting
+                            .fingerprint
+                            .as_ref()
+                            .map(|fingerprint| format!(" ({fingerprint})"))
+                            .unwrap_or_default(),
+                    ))
+                    .debug_selector(|| "cloud-railway-pending".into()),
+                ),
                 None => {
                     let name = card.name.read(cx).text().trim().to_owned();
                     let valid = crate::railway::valid_name(&name).is_ok();
-                    let location = directory.map(|directory| location_note(directory, &name));
+                    let note = match overview {
+                        _ if !valid => crate::railway::NAME_RULE.to_owned(),
+                        Some(overview) => location_note(&overview.new_key_directory, &name),
+                        None => "Checking where the key goes…".to_owned(),
+                    };
                     key.child(self.cloud_field("Key name", card.name.clone().into()))
-                        .child(self.control_note(match location {
-                            _ if !valid => crate::railway::NAME_RULE.to_owned(),
-                            Some(location) => location,
-                            None => "Checking where the key goes…".to_owned(),
-                        }))
-                        .child(self.control_note(
-                            "No passphrase. Never replaces an existing file. This does not create a VM.",
-                        ))
+                        .child(self.control_note(note))
                         .child(div().flex().justify_end().child(self.railway_button(
                             "cloud-railway-generate",
                             "Generate key",
-                            available && valid && directory.is_some(),
+                            available && valid && overview.is_some(),
                             |this, cx| this.generate_railway_key(cx),
                             cx,
                         )))
                 }
             },
-            KeySource::Existing => {
-                let mut existing = key
-                    .child(self.cloud_field("Private key path", card.path.clone().into()))
-                    .child(self.control_note(
-                        "The file is never changed or deleted. A passphrase-protected key needs its .pub file beside it and a loaded SSH agent.",
-                    ));
-                let mut row = div()
-                    .flex()
-                    .flex_wrap()
-                    .gap(px(8.))
-                    .child(self.railway_button(
-                        "cloud-railway-browse",
-                        "Browse…",
-                        ready,
-                        |this, cx| this.browse_railway_key(cx),
-                        cx,
-                    ));
-                for (index, path) in detected.iter().enumerate() {
-                    let name = path
-                        .file_name()
-                        .map(|name| name.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    let path = path.clone();
-                    row = row.child(
-                        self.cloud_button(
-                            SharedString::from(format!("cloud-railway-detected-{index}")),
-                            format!("~/.ssh/{name}"),
-                            ready,
-                        )
-                        .debug_selector(move || format!("cloud-railway-detected-{index}"))
-                        .when(ready, |button| {
-                            button.on_click(
-                                cx.listener(move |this, _, _, cx| this.use_railway_key(&path, cx)),
-                            )
-                        }),
-                    );
-                }
-                existing = existing.child(row);
-                existing
-            }
-        };
-        // The first connection for a key must be made by the user.
-        let first_use = match card.source {
-            KeySource::Generate => pending.map(|waiting| waiting.path.clone()),
-            KeySource::Existing => {
-                let text = card.path.read(cx).text().trim().to_owned();
-                (!text.is_empty()).then(|| setup::expand(&text))
-            }
-        };
-        key = match first_use {
-            Some(path) => {
-                let command = setup::first_use_command(&path);
-                key.child(self.control_note(
-                    "Railway creates the VM only from an interactive connection. Run this once in a terminal, then exit. Skip it if the key already has a VM.",
+            KeySource::Existing => key
+                .child(self.cloud_field("Private key path", card.path.clone().into()))
+                .child(self.control_note(
+                    "The file is never changed or deleted. A passphrase-protected key needs its .pub file beside it and a loaded SSH agent.",
                 ))
-                .child(
-                    div()
-                        .debug_selector(|| "cloud-railway-first-use".into())
-                        .min_w_0()
-                        .p(px(10.))
-                        .rounded(px(corners::CONTROL))
-                        .border_1()
-                        .border_color(rgb(self.theme.active))
-                        .bg(rgb(self.theme.background))
-                        .child(command.clone()),
-                )
-                .child(div().flex().justify_end().child(self.railway_button(
-                    "cloud-railway-copy",
-                    "Copy command",
-                    true,
-                    move |_, cx| cx.write_to_clipboard(ClipboardItem::new_string(command.clone())),
+                .child(self.railway_button(
+                    "cloud-railway-browse",
+                    "Browse…",
+                    ready,
+                    |this, cx| this.browse_railway_key(cx),
                     cx,
-                )))
-            }
-            None => key,
+                )),
         };
         key = key
             .child(
@@ -620,12 +431,11 @@ impl SettingsWindow {
                     }))
                 }),
             )
-            .child(self.control_note("Connects to the key's existing VM and saves it as a device."))
             .child(div().flex().justify_end().child(self.railway_button(
                 "cloud-railway-create",
                 "Connect and set up",
                 available,
-                |this, cx| this.setup_railway_new(cx),
+                |this, cx| this.setup_railway(cx),
                 cx,
             )));
         if let Some(message) = &card.message {

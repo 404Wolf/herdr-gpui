@@ -56,20 +56,14 @@ pub enum Error {
         .0.display()
     )]
     KeyChanged(PathBuf),
-    #[error(
-        "This Railway free VM's build window has ended, so Herdr stopped reconnecting. Use Reconnect in Settings > Cloud Devices > Railway to check it again, or Mark claimed if you claimed it."
-    )]
-    WindowEnded,
-    #[error(
-        "Railway refused this device in a way retrying cannot fix, so it was switched off. Use Reconnect in Settings > Cloud Devices > Railway after fixing the cause."
-    )]
-    Suspended,
-    #[error(
-        "Railway only creates a VM for a new key from an interactive terminal; it refuses scripted first connections. Run this once yourself, exit the VM shell, then connect again: {command}"
-    )]
-    FirstUseRequired { command: String },
-    #[error("Railway says this VM's build window has already ended, so it is not set up.")]
-    Expired,
+    #[error("Could not open a terminal to create the Railway VM.")]
+    Terminal(#[source] io::Error),
+    #[error("Creating the VM needs a terminal, which this build of Herdr cannot open.")]
+    TerminalUnsupported,
+    #[error("Railway did not finish creating the VM within 90 seconds.")]
+    CreateTimeout,
+    #[error("Railway did not create a VM for this key: {0}")]
+    CreateRefused(String),
     #[error("Could not reach railway.new: {0}")]
     Unreachable(String),
     #[error("This device belongs to a different Railway service than railway.new.")]

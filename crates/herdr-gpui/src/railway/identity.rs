@@ -1,81 +1,46 @@
 //! The SSH identity attached to each Railway device. The shared device list
 //! holds no key material (and its schema is fixed), so the association lives
-//! here, in a provider-private file next to it, keyed by the device ID. A
-//! device ID is derived from the key's fingerprint, so one key is one device,
-//! and a record says where the private key is and who owns it:
-//!
-//! - `Borrowed`: a key the user already had. Only its path is saved; the file
-//!   is never copied, modified, or deleted.
-//! - `Generated`: a key this app made under a name the user chose, in `~/.ssh`
-//!   when that exists, else in a private directory beside the state files. The
-//!   exact path and fingerprint are saved. One in the state folder is Herdr's
-//!   own and goes with its device; one in `~/.ssh` is the user's to keep, and
-//!   is deleted only when they explicitly ask.
+//! here, in a provider-private file next to it, keyed by the device ID. The ID
+//! is derived from the key's fingerprint, so one key is one device. A record
+//! only says where the private key is: forgetting it never touches the key.
 
-use super::{Error, Result, WINDOW_SECONDS};
+use super::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
     io::{self, Read, Write},
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 const FILE: &str = "railway-identities.json";
 const KEYS: &str = "railway-keys";
+const VERSION: u32 = 2;
 const LIMIT: u64 = 64 * 1024;
 const MAX_RECORDS: usize = 64;
 const PATH_LIMIT: usize = 4096;
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum Source {
-    /// `path` is where the key was created; records from before keys were
-    /// named have none, and their key is `<id>` in the state folder.
-    Generated {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        path: Option<String>,
-    },
-    Borrowed {
-        path: String,
-    },
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Record {
     /// The device ID: `key-` and part of the key's SHA-256 fingerprint.
     pub(crate) id: String,
-    pub(crate) source: Source,
+    /// Absolute path of the private key.
+    pub(crate) path: String,
     /// Whether a saved device uses this identity. A generated key that setup
     /// did not finish with stays unattached, and the next setup that asks for
     /// a generated key reuses it, so a retry reaches the same VM instead of
     /// spending another of Railway's three daily VMs.
     pub(crate) attached: bool,
-    /// Unix seconds when the VM's build window ends: Railway's own
-    /// `build_expires_at` when its manifest gave one, else an upper bound
-    /// (the VM was created no later than setup last reached it).
-    pub(crate) window_ends_by: Option<u64>,
-    /// The user said they claimed the VM, so it has no build window.
-    pub(crate) claimed: bool,
-    /// The key's full fingerprint (`SHA256:…`) as it was when saved, for
-    /// display; the device ID is the part of it that is checked.
+    /// The key's full fingerprint (`SHA256:…`), for display; the device ID is
+    /// the part of it that is checked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) fingerprint: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct Document {
     version: u32,
     identities: Vec<Record>,
-}
-
-pub(crate) fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_secs())
-        .unwrap_or_default()
 }
 
 /// Device IDs become file names and endpoint IDs: plain characters only.
@@ -89,62 +54,27 @@ pub(super) fn valid_id(id: &str) -> bool {
 impl Record {
     fn valid(&self) -> bool {
         valid_id(&self.id)
-            && match &self.source {
-                Source::Generated { path: None } => true,
-                Source::Generated { path: Some(path) } | Source::Borrowed { path } => {
-                    path.len() <= PATH_LIMIT
-                        && Path::new(path).is_absolute()
-                        && !path.chars().any(char::is_control)
-                }
-            }
+            && self.path.len() <= PATH_LIMIT
+            && Path::new(&self.path).is_absolute()
+            && !self.path.chars().any(char::is_control)
     }
 
-    /// The private key file.
-    pub(crate) fn key_path(&self, dir: &Path) -> PathBuf {
-        match &self.source {
-            Source::Generated { path: None } => keys_dir(dir).join(&self.id),
-            Source::Generated { path: Some(path) } | Source::Borrowed { path } => {
-                PathBuf::from(path)
-            }
-        }
-    }
-
-    /// A key this app made, which it may delete (see [`Self::kept`]).
-    pub(crate) fn owned(&self) -> bool {
-        matches!(self.source, Source::Generated { .. })
-    }
-
-    /// A generated key outside Herdr's own folder, in the user's `~/.ssh`:
-    /// removing the device keeps the file unless they ask for it to go.
-    pub(crate) fn kept(&self, dir: &Path) -> bool {
-        self.owned() && !self.key_path(dir).starts_with(keys_dir(dir))
-    }
-
-    /// Whether connecting again could land on a VM other than the one setup
-    /// reached: its build window has ended and the user has not said it was
-    /// claimed. Checked on every reconnect; never guessed from attach time.
-    pub(crate) fn window_ended(&self, now: u64) -> bool {
-        !self.claimed && self.window_ends_by.is_none_or(|end| now > end)
-    }
-
-    /// The record after setup reached the VM at `now`. `deadline` is the
-    /// one Railway reported. Without one, the window is bounded by assuming
-    /// the VM was created no later than now, and never extends a deadline
-    /// already recorded for it that has not passed: the same VM does not get
-    /// longer by being reached again.
-    pub(crate) fn reached(mut self, now: u64, deadline: Option<u64>) -> Self {
-        let bound = now.saturating_add(WINDOW_SECONDS);
-        self.attached = true;
-        self.window_ends_by = Some(deadline.unwrap_or_else(|| match self.window_ends_by {
-            Some(earlier) if earlier > now => earlier.min(bound),
-            _ => bound,
-        }));
-        self
+    pub(crate) fn key_path(&self) -> PathBuf {
+        PathBuf::from(&self.path)
     }
 }
 
+/// Herdr's own folder for keys it generates when there is no `~/.ssh`.
 pub(super) fn keys_dir(dir: &Path) -> PathBuf {
     dir.join(KEYS)
+}
+
+/// Where the public half of the key at `path` is: `<path>.pub`. Appended to
+/// the whole name, since key names may hold dots.
+pub(super) fn public_path(path: &Path) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(".pub");
+    PathBuf::from(name)
 }
 
 fn io_error(path: &Path) -> impl FnOnce(io::Error) -> Error + '_ {
@@ -168,11 +98,13 @@ fn read_in(dir: &Path) -> Result<Vec<Record>> {
     if bytes.len() as u64 > LIMIT {
         return Err(Error::Invalid(FILE));
     }
-    let document: Document = serde_json::from_slice(&bytes).map_err(Error::Json)?;
-    if document.version != 1
-        || document.identities.len() > MAX_RECORDS
-        || !document.identities.iter().all(Record::valid)
-    {
+    let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(Error::Json)?;
+    // A file from before this format was settled holds no usable identity.
+    if value.get("version").and_then(|version| version.as_u64()) != Some(u64::from(VERSION)) {
+        return Ok(Vec::new());
+    }
+    let document: Document = serde_json::from_value(value).map_err(Error::Json)?;
+    if document.identities.len() > MAX_RECORDS || !document.identities.iter().all(Record::valid) {
         return Err(Error::Invalid(FILE));
     }
     Ok(document.identities)
@@ -183,18 +115,20 @@ fn write_in(dir: &Path, identities: Vec<Record>) -> Result<()> {
         return Err(Error::Invalid("Railway identity"));
     }
     let path = dir.join(FILE);
+    let mut bytes = serde_json::to_vec_pretty(&Document {
+        version: VERSION,
+        identities,
+    })
+    .map_err(Error::Json)?;
+    bytes.push(b'\n');
+    // Refuse what could not be read back, before replacing what can.
+    if bytes.len() as u64 > LIMIT {
+        return Err(Error::Invalid(FILE));
+    }
     fs::create_dir_all(dir).map_err(io_error(dir))?;
     // Created 0600; it names where private keys are.
     let mut file = tempfile::NamedTempFile::new_in(dir).map_err(io_error(dir))?;
-    serde_json::to_writer_pretty(
-        &mut file,
-        &Document {
-            version: 1,
-            identities,
-        },
-    )
-    .map_err(Error::Json)?;
-    file.write_all(b"\n").map_err(io_error(&path))?;
+    file.write_all(&bytes).map_err(io_error(&path))?;
     file.as_file().sync_all().map_err(io_error(&path))?;
     file.persist(&path)
         .map_err(|error| io_error(&path)(error.error))?;
@@ -227,94 +161,41 @@ pub(super) fn load(dir: &Path, id: &str) -> Result<Option<Record>> {
     Ok(load_all(dir)?.into_iter().find(|record| record.id == id))
 }
 
-/// Add `record` or replace the one with its ID.
-pub(super) fn save(dir: &Path, record: Record) -> Result<()> {
+/// Set the record for `id` to `record`, or remove it when there is none: the
+/// way to put an identity back exactly as it was.
+pub(super) fn restore(dir: &Path, id: &str, record: Option<Record>) -> Result<()> {
     transaction(dir, |identities| {
-        match identities.iter_mut().find(|saved| saved.id == record.id) {
-            Some(saved) => *saved = record,
-            None => identities.push(record),
-        }
+        identities.retain(|saved| saved.id != id);
+        identities.extend(record);
         Ok(())
     })
 }
 
-/// The generated key setup did not finish with, if one is waiting.
-pub(super) fn unattached_generated(dir: &Path) -> Result<Option<Record>> {
-    Ok(load_all(dir)?
-        .into_iter()
-        .find(|record| record.owned() && !record.attached))
+/// Add `record` or replace the one with its ID.
+pub(super) fn save(dir: &Path, record: Record) -> Result<()> {
+    let id = record.id.clone();
+    restore(dir, &id, Some(record))
 }
 
-/// Forget the identity for `id`. A key in Herdr's own folder is deleted with
-/// it. One generated in the user's `~/.ssh` is kept unless `delete_kept` says
-/// they asked for it to go; a borrowed key's file is never touched.
-pub(super) fn forget(dir: &Path, home: Option<&Path>, id: &str, delete_kept: bool) -> Result<()> {
-    let removed = transaction(dir, |identities| {
-        let index = identities.iter().position(|record| record.id == id);
-        Ok(index.map(|index| identities.remove(index)))
-    })?;
-    match removed.filter(Record::owned) {
-        Some(record) if delete_kept || !record.kept(dir) => {
-            remove_generated(dir, home, &record.key_path(dir))
-        }
-        _ => Ok(()),
-    }
+/// The generated key setup did not finish with, if one is waiting. Only
+/// generated keys are saved before a device uses them.
+pub(super) fn pending(dir: &Path) -> Result<Option<Record>> {
+    Ok(load_all(dir)?.into_iter().find(|record| !record.attached))
 }
 
-/// Where the public half of the key at `path` is: `<path>.pub`. Appended to
-/// the whole name, since key names may hold dots.
-pub(super) fn public_path(path: &Path) -> PathBuf {
-    let mut name = path.as_os_str().to_owned();
-    name.push(".pub");
-    PathBuf::from(name)
-}
-
-/// Whether `path` is somewhere this app creates keys, with a name it could
-/// have given: a saved record is a file the user can edit, and must never be
-/// able to point a deletion at an arbitrary file.
-fn ours(dir: &Path, home: Option<&Path>, path: &Path) -> bool {
-    let name = path.file_name().and_then(|name| name.to_str());
-    let parent = path.parent();
-    name.is_some_and(|name| super::keys::valid_name(name).is_ok())
-        && (parent == Some(keys_dir(dir).as_path())
-            || home.is_some_and(|home| parent == Some(home.join(".ssh").as_path())))
-}
-
-/// Delete the key pair this app generated at `path`, if it is where and named
-/// as it would have made it. Only called for a key it made itself.
-pub(super) fn remove_generated(dir: &Path, home: Option<&Path>, path: &Path) -> Result<()> {
-    if !ours(dir, home, path) {
-        tracing::warn!(
-            category = "railway_identity",
-            "Not deleting a key outside Herdr's key locations"
-        );
-        return Ok(());
-    }
-    for path in [public_path(path), path.to_owned()] {
-        match fs::remove_file(&path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => {
-                return Err(Error::KeyFile {
-                    path,
-                    source: error,
-                });
-            }
-        }
-    }
-    Ok(())
+/// Forget the identity for `id`. The key files stay where they are.
+pub(super) fn forget(dir: &Path, id: &str) -> Result<()> {
+    restore(dir, id, None)
 }
 
 #[cfg(test)]
 impl Record {
-    /// A record no device uses yet, for tests.
-    pub(crate) fn unattached(id: &str, source: Source) -> Self {
+    /// A record for a key at `path`, no device using it yet, for tests.
+    pub(crate) fn unattached(id: &str, path: &str) -> Self {
         Self {
             id: id.into(),
-            source,
+            path: path.into(),
             attached: false,
-            window_ends_by: None,
-            claimed: false,
             fingerprint: None,
         }
     }

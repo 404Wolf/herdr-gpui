@@ -11,8 +11,6 @@ mod jobs;
 pub(crate) mod names;
 pub(crate) mod worker;
 
-#[cfg(feature = "railway")]
-pub(crate) use catalog::set_enabled;
 pub(crate) use catalog::{SavedDevice, load, remove, save};
 pub(crate) use herdr_client::CloudProvider;
 pub(crate) use jobs::Jobs;

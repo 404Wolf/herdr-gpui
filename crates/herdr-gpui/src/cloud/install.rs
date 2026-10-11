@@ -37,7 +37,7 @@ fn quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-fn remote(script: &str) -> String {
+pub(crate) fn remote(script: &str) -> String {
     format!("/bin/sh -c {}", quote(script))
 }
 
@@ -50,7 +50,7 @@ pub(crate) struct Finished {
 
 /// Keep the last `OUTPUT_LIMIT` bytes a pipe produced, draining it to EOF so
 /// a chatty child can never block on a full pipe.
-fn drain(
+pub(crate) fn drain(
     mut pipe: impl Read + Send + 'static,
     into: Arc<Mutex<Vec<u8>>>,
 ) -> thread::JoinHandle<()> {
@@ -80,6 +80,21 @@ fn run(mut command: Command, timeout: Duration, cancelled: &impl Fn() -> bool) -
         child.stdout.take().map(|pipe| drain(pipe, output.clone())),
         child.stderr.take().map(|pipe| drain(pipe, output.clone())),
     ];
+    supervise(child, readers, &output, timeout, cancelled)
+}
+
+/// Wait for `child`, killing it on cancellation or timeout, then return how it
+/// ended with the tail of what `readers` drained into `output`. A killed
+/// child's readers are not joined: a grandchild may still hold their pipes
+/// open, and waiting for it would stall cancellation on that process's
+/// lifetime.
+pub(crate) fn supervise(
+    mut child: std::process::Child,
+    readers: impl IntoIterator<Item = Option<thread::JoinHandle<()>>>,
+    output: &Mutex<Vec<u8>>,
+    timeout: Duration,
+    cancelled: &impl Fn() -> bool,
+) -> Result<Finished> {
     let deadline = Instant::now() + timeout;
     let status = loop {
         if let Some(status) = child.try_wait().map_err(Error::Process)? {
@@ -98,9 +113,6 @@ fn run(mut command: Command, timeout: Duration, cancelled: &impl Fn() -> bool) -
         Err(error) => {
             let _ = child.kill();
             let _ = child.wait();
-            // A grandchild may still hold the pipes open; the readers end
-            // when it does, and their output is not needed here, so waiting
-            // for them would stall cancellation on that process's lifetime.
             return Err(error);
         }
     };
@@ -155,12 +167,12 @@ pub(crate) fn installed(mut ssh: Command, cancelled: &impl Fn() -> bool) -> Resu
     }
 }
 
-/// Run a trivial remote command and report how it ended, for a provider whose
-/// own connection says whether a machine exists and for how long. Unlike
-/// [`installed`], it classifies nothing: the caller reads the exit code.
+/// Run `ssh` exactly as given, with no remote command appended, and report how
+/// it ended, for a provider whose own connection says whether a machine exists
+/// and for how long. Unlike [`installed`], it classifies nothing: the caller
+/// reads the exit code and what the connection printed.
 #[cfg(feature = "railway")]
-pub(crate) fn reach(mut ssh: Command, cancelled: &impl Fn() -> bool) -> Result<Finished> {
-    ssh.arg(remote("true"));
+pub(crate) fn reach(ssh: Command, cancelled: &impl Fn() -> bool) -> Result<Finished> {
     run(ssh, PROBE_TIMEOUT, cancelled)
 }
 

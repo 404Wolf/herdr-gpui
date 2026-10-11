@@ -7,9 +7,8 @@
 //!
 //! Railway documents no host key for `railway.new`, so the first one seen is
 //! pinned in a GUI-owned `known_hosts` and a later change is refused.
-//! Railway prints a one-line JSON manifest on stderr for headless
-//! connections; `manifest` reads its deadline during setup and nothing else.
-//! Its links are never stored, logged, or opened.
+//! Anything Railway prints that carries a link is never stored, logged, or
+//! opened.
 
 use super::{Error, Result};
 use std::{
@@ -86,13 +85,25 @@ impl Config {
         Ok(Self { file })
     }
 
-    /// A fresh `ssh` command reading this config; append the remote command.
+    /// A fresh headless `ssh` command reading this config; append the remote
+    /// command.
     pub(crate) fn command(&self) -> Command {
+        self.with("-T")
+    }
+
+    /// Like [`Self::command`] but asking for a terminal on the VM even though
+    /// this process has none, for the one connection that creates it. Only
+    /// `first_use` may run it, on a pseudo-terminal it provides.
+    pub(super) fn terminal_command(&self) -> Command {
+        self.with("-tt")
+    }
+
+    fn with(&self, terminal: &str) -> Command {
         let mut command = base();
         command
             .arg("-F")
             .arg(self.file.path())
-            .args(["-T", "--", ALIAS]);
+            .args([terminal, "--", ALIAS]);
         command
     }
 }
