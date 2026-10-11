@@ -121,7 +121,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$(gh api "repos/penso/herdr-gpui/git/ref/tags/v$VERSION" --jq .object.sha)" == "$RELEASE_SHA" ]]
-          gh release edit "v$VERSION" --prerelease=false --latest --title "Herdr GPUI $VERSION"
+          gh release edit "v$VERSION" --prerelease=false --latest --title "Herdr UI $VERSION"
           gh release view "v$VERSION" --json isDraft,isPrerelease | jq -e '.isDraft == false and .isPrerelease == false'
           [[ "$(gh api repos/penso/herdr-gpui/releases/latest --jq .tag_name)" == "v$VERSION" ]]
 

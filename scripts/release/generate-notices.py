@@ -63,7 +63,7 @@ def render(evidence, lock_bytes):
     if any(entry["license"] in ("Unknown", "Ignore") for entry in evidence["crates"]):
         raise ValueError("cargo-about returned unresolved or ignored licenses")
     sections = [
-        "Herdr GPUI - Third-Party Notices\n",
+        "Herdr UI - Third-Party Notices\n",
         f"Generated with {ABOUT_VERSION}.\n"
         "Scope: locked workspace, all features, including build/dev dependencies;\n"
         "union of aarch64/x86_64 macOS, GNU/Linux, and Windows packaging\n"

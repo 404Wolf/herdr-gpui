@@ -612,7 +612,7 @@ jobs:
           # A beta is a GitHub prerelease: /releases/latest, and so the stable
           # updater channel and Homebrew, never see it until promote.yml flips it.
           channel=()
-          title="Herdr GPUI $VERSION"
+          title="Herdr UI $VERSION"
           if [[ "$CHANNEL" == beta ]]; then
             channel=(--prerelease --latest=false)
             title="$title (beta)"
