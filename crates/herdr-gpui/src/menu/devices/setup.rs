@@ -620,10 +620,22 @@ pub(super) fn terminal_command(request: &Request) -> Result<TerminalSetup> {
 /// once and installs the user's public key, so the save that follows, and
 /// every later connection, authenticates with the key. The save runs only
 /// when the key was installed.
+///
+/// On macOS the pane's shell belongs to the Herdr daemon, which may lack
+/// Local Network permission: a third-party `ssh` such as Homebrew's then gets
+/// "no route to host" for a LAN host, while the system's `/usr/bin/ssh` is
+/// exempt. `ssh-copy-id` runs `ssh` from `PATH`, so the system one goes
+/// first; it also signs with a security key held by the agent.
 pub(super) fn key_setup_command(request: &Request) -> Result<TerminalSetup> {
     let mut setup = terminal_command(request)?;
+    let path = if cfg!(target_os = "macos") {
+        "\"PATH=/usr/bin:$PATH\" "
+    } else {
+        ""
+    };
     setup.command = format!(
-        "{} {} && {}",
+        "{} {path}{} {} && {}",
+        quote("env"),
         quote("ssh-copy-id"),
         quote(request.target()),
         setup.command
