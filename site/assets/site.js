@@ -5,6 +5,30 @@
   // captured yet, so the layout can be reviewed before the media exists.
   const DRAFT = new URLSearchParams(location.search).has('draft');
 
+  // ---- Theme toggle: system → light → dark. The <head> script applies a
+  // stored choice before first paint; "system" stores nothing. ----
+  (function () {
+    const btn = document.getElementById('theme');
+    const meta = document.querySelector('meta[name="theme-color"]');
+    const root = document.documentElement;
+    const media = matchMedia('(prefers-color-scheme: light)');
+    const ORDER = ['system', 'light', 'dark'];
+    const sync = () => {
+      const mode = root.dataset.theme || 'system';
+      btn.querySelectorAll('svg').forEach(s => { s.hidden = s.dataset.t !== mode; });
+      btn.title = btn.ariaLabel = 'Theme: ' + mode;
+      meta.content = getComputedStyle(root).getPropertyValue('--g0').trim();
+    };
+    btn.addEventListener('click', () => {
+      const next = ORDER[(ORDER.indexOf(root.dataset.theme || 'system') + 1) % ORDER.length];
+      if (next === 'system') delete root.dataset.theme; else root.dataset.theme = next;
+      try { if (next === 'system') localStorage.removeItem('theme'); else localStorage.setItem('theme', next); } catch (e) {}
+      sync();
+    });
+    media.addEventListener('change', sync);
+    sync();
+  })();
+
   // ---- TUI rendering: a character grid with coloured regions ----
   (function () {
     const W = 150, H = 26;

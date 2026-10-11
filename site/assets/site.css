@@ -1,4 +1,7 @@
-:root { --g0:#17181b; --g1:#1d1f23; --g2:#26282d; --g3:#34373d; --fg:#e7e8ea; --mut:#9a9ea6; --dim:#6c7078; --acc:#ffb547; }
+:root { --g0:#17181b; --g1:#1d1f23; --g2:#26282d; --g3:#34373d; --fg:#e7e8ea; --mut:#9a9ea6; --dim:#6c7078; --acc:#ffb547; --acc-ink:var(--acc); --ok:#57d38c; color-scheme:dark; }
+/* Light follows the system unless the toggle pinned a theme. The terminal and app mockups stay dark. */
+:root[data-theme="light"] { --g0:#fbfaf8; --g1:#f3f2ef; --g2:#e6e5e1; --g3:#d3d2cd; --fg:#1d1f23; --mut:#5a5e66; --dim:#7c8088; --acc-ink:#a35f00; --ok:#1d8048; color-scheme:light; }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --g0:#fbfaf8; --g1:#f3f2ef; --g2:#e6e5e1; --g3:#d3d2cd; --fg:#1d1f23; --mut:#5a5e66; --dim:#7c8088; --acc-ink:#a35f00; --ok:#1d8048; color-scheme:light; } }
 * { box-sizing:border-box; }
 html, body { margin:0; }
 html { scroll-behavior:smooth; }
@@ -17,6 +20,10 @@ nav .gh { color:var(--fg); border:1px solid var(--g3); border-radius:8px; paddin
 nav .gh svg { width:14px; height:14px; fill:currentColor; flex:none; }
 nav .gh .stars { display:inline-flex; align-items:center; gap:4px; padding-left:8px; margin-left:1px; border-left:1px solid var(--g3); color:var(--mut); font-variant-numeric:tabular-nums; }
 nav .gh .stars[hidden] { display:none; }
+nav .theme { all:unset; cursor:pointer; display:grid; place-items:center; width:30px; height:30px; border-radius:8px; color:var(--mut); }
+nav .theme:hover { color:var(--fg); background:var(--g2); }
+nav .theme svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+nav .theme svg[hidden] { display:none; }
 nav .gh .stars svg { width:12px; height:12px; fill:#f5b84a; }
 
 .hero { padding:72px 0 28px; text-align:center; }
@@ -52,7 +59,7 @@ section { padding:90px 0 0; scroll-margin-top:20px; }
 .sh { margin-bottom:26px; }
 .sh h2 { font-size:36px; letter-spacing:-.025em; line-height:1.08; margin:0; }
 .sh p { margin:8px 0 0; color:var(--mut); max-width:640px; }
-.eyebrow { font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--acc); font-weight:700; }
+.eyebrow { font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--acc-ink); font-weight:700; }
 
 .film { max-width:1120px; margin:0 auto; border:1px solid var(--g3); border-radius:15px; overflow:hidden; --vr:14px; }
 .film video { display:block; width:100%; height:auto; background:#000; }
@@ -64,8 +71,8 @@ section { padding:90px 0 0; scroll-margin-top:20px; }
 .row h3 { margin:6px 0 8px; font-size:21px; letter-spacing:-.015em; }
 .row p { margin:0 0 12px; color:var(--mut); font-size:14px; }
 .verdict { display:inline-flex; gap:7px; align-items:center; font-size:12px; padding:4px 9px; border-radius:6px; border:1px solid var(--g3); color:var(--mut); }
-.verdict.only { color:var(--acc); border-color:rgba(255,181,71,.4); background:rgba(255,181,71,.07); }
-.verdict.both, .verdict.more { color:#57d38c; border-color:rgba(87,211,140,.35); background:rgba(87,211,140,.06); }
+.verdict.only { color:var(--acc-ink); border-color:rgba(255,181,71,.4); background:rgba(255,181,71,.07); }
+.verdict.both, .verdict.more { color:var(--ok); border-color:rgba(87,211,140,.35); background:rgba(87,211,140,.06); }
 .side-lbl { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); margin-bottom:8px; display:flex; justify-content:space-between; gap:12px; }
 .mini-tui { background:#0d0e10; border:1px solid var(--g3); border-radius:9px; height:250px; padding:12px 14px; overflow:hidden; }
 .mini-tui pre { margin:0; font:11.5px/1.6 ui-monospace, "SF Mono", Menlo, monospace; color:#b9bdc4; white-space:pre; }
