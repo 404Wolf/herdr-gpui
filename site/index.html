@@ -45,6 +45,7 @@
     <div class="hero-cta"><a class="btn pri" href="#install">Install</a><a class="btn" href="https://github.com/penso/herdr-gpui/releases">Releases</a></div>
   </header>
 
+  <div class="cmp-tabs" id="cmp-tabs" role="group" aria-label="Show one client"><button type="button" data-view="tui">herdr TUI</button><button type="button" data-view="gpui" aria-pressed="true">Herdr GPUI</button></div>
   <div class="compare-fit" id="cmp-fit">
     <div class="compare" id="cmp" aria-label="Drag to compare the Herdr TUI with Herdr GPUI">
       <div class="layer"><div class="tui"><pre id="tui" aria-hidden="true"></pre></div></div>
@@ -52,7 +53,7 @@
       <div class="handle" id="handle" role="slider" aria-label="Comparison position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0"><span>‹›</span></div>
     </div>
   </div>
-  <div class="labels"><span><b>herdr</b> in any terminal, local or over SSH</span><span><b>Herdr GPUI</b> a native, GPU-painted window</span></div>
+  <div class="labels"><span data-view="tui"><b>herdr</b> in any terminal, local or over SSH</span><span data-view="gpui"><b>Herdr GPUI</b> a native, GPU-painted window</span></div>
   <div class="same"><span>herdr TUI</span><span class="ln"></span><span class="daemon mono">herdr server · owns PTYs, agents, sessions</span><span class="ln"></span><span>Herdr GPUI</span></div>
 
   <section id="film" hidden>
