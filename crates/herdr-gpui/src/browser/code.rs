@@ -10,7 +10,7 @@
 //! only after an answer of its own. Until then the tab says why it is
 //! empty. The server is the one at `[code] url`, or the one the app starts
 //! (see [`crate::code_server::launcher`]).
-use super::{GroupId, Location, Scope, Store, TabId, WebUrl, view::store};
+use super::{GroupId, Location, Pick, Scope, Store, TabId, WebUrl, view::store};
 use crate::{
     HerdrWindow,
     code_server::{self, Launcher, Server, Startup},
@@ -105,7 +105,12 @@ impl HerdrWindow {
             self.show_flash(Flash::warning("Too many browser tabs are open"), cx);
             return;
         };
-        self.show_browser_tab_in(group, id, window, cx);
+        // A workspace has one VS Code tab: asked for again, it moves to the
+        // group that asked, or else to the group in use.
+        match group.or_else(|| self.ensure_layout().map(|layout| layout.active())) {
+            Some(group) => self.move_tab_to_group(Pick::Page(id), group, window, cx),
+            None => self.show_browser_tab_in(None, id, window, cx),
+        }
     }
 
     /// Closes this window's VS Code pages, keeping their tabs, and forgets why

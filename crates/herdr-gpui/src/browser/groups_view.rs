@@ -279,8 +279,9 @@ impl HerdrWindow {
     }
 
     /// Moves `pick` to `group` and shows it there, as dropping its tab on
-    /// the group does. The group it leaves goes to the tab after it in its
-    /// strip, or before it, and closes when it was its last.
+    /// the group does, or asking there for a tab a workspace has one of. The
+    /// group it leaves goes to the tab after it in its strip, or before it,
+    /// and closes when it was its last.
     pub(crate) fn move_tab_to_group(
         &mut self,
         pick: Pick,
@@ -288,10 +289,14 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(source) = self.layout().map(|layout| layout.owner(&pick)) else {
+        let Some(source) = self.ensure_layout().map(|layout| layout.owner(&pick)) else {
             return;
         };
-        if source == group || !self.group_slots().iter().any(|slot| slot.id == group) {
+        if !self.group_slots().iter().any(|slot| slot.id == group) {
+            return;
+        }
+        if source == group {
+            self.show_group_tab(group, pick, window, cx);
             return;
         }
         let before = self.group_tabs(source, cx);

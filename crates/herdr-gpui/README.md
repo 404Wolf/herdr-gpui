@@ -2210,12 +2210,11 @@ the page's storage, which belongs to one address.
   opens the space's VS Code tab in that group. The row appears once a
   server is set, or VS Code is found to start, in builds that can show
   pages. **Open VS Code** in the Terminal menu or the command palette opens
-  it in the group in use, or shows it in the group it already belongs to, as
-  does a key you bind to `open_code` under `[keybindings]`. It has no default
-  key.
+  it in the group in use, as does a key you bind to `open_code` under
+  `[keybindings]`. It has no default key.
 - Each space has one VS Code tab, listed with the other tabs of the group it
   belongs to. Opening it again moves that same tab to the group it is opened
-  from, so
+  from, and a group left without tabs closes, so
   one group can show VS Code beside another showing a terminal, or a lone
   group can show it alone. It splits, resizes, and is covered by dialogs as
   any page is, and its page keeps running, keeping its state, while no group
