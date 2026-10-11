@@ -135,10 +135,33 @@ fn decoding_refuses_what_is_not_a_picture() -> anyhow::Result<()> {
     fs::write(&text, "not a picture")?;
     let error = decode(&text).err().unwrap();
     assert!(matches!(error, Error::Decode { .. }));
-    assert!(std::error::Error::source(&error).is_some());
+    // The cause reaches the message people read, not only the source chain.
+    let source = std::error::Error::source(&error).unwrap().to_string();
+    assert!(error.to_string().ends_with(&source), "{error}");
+    let missing = decode(&directory.path().join("missing.png")).err().unwrap();
+    let source = std::error::Error::source(&missing).unwrap().to_string();
+    assert!(missing.to_string().ends_with(&source), "{missing}");
     let large = directory.path().join("large.png");
     let file = fs::File::create(&large)?;
     file.set_len(MAX_FILE_BYTES + 1)?;
     assert!(matches!(decode(&large), Err(Error::TooLarge { .. })));
+    Ok(())
+}
+
+/// A FIFO with no writer would block an open forever; it must be refused
+/// before then, so neither the decode nor a Settings save waiting on it hangs.
+#[cfg(unix)]
+#[test]
+fn decoding_refuses_a_fifo_without_waiting_for_a_writer() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let fifo = directory.path().join("picture.png");
+    let status = std::process::Command::new("mkfifo").arg(&fifo).status()?;
+    anyhow::ensure!(status.success(), "mkfifo failed");
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(decode(&fifo).map(|_| ()));
+    });
+    let result = receiver.recv_timeout(std::time::Duration::from_secs(5))?;
+    assert!(matches!(result, Err(Error::NotAFile { .. })));
     Ok(())
 }

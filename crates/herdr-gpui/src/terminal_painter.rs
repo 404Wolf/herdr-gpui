@@ -225,11 +225,13 @@ fn paint_glyphs(
     Ok(())
 }
 
+/// Runs of one background in `columns`: start, end, color, and whether it is
+/// the theme's default rather than a color the program chose.
 fn background_spans<'a>(
     row: &'a [CellData],
     columns: std::ops::Range<usize>,
     theme: &'a Theme,
-) -> impl Iterator<Item = (usize, usize, u32)> + 'a {
+) -> impl Iterator<Item = (usize, usize, u32, bool)> + 'a {
     // A wide glyph's continuation cell shows the glyph's background, as a host
     // terminal does: Herdr's ANSI renderer never draws that cell, so its own
     // background is not meant to be seen. Like that renderer, a halfwidth
@@ -252,18 +254,21 @@ fn background_spans<'a>(
         } else {
             x
         };
-        cell_colors(&row[x], theme).1
+        (
+            cell_colors(&row[x], theme).1,
+            on_default_background(&row[x]),
+        )
     };
     let mut start = columns.start;
     let stop = columns.end.min(row.len());
     std::iter::from_fn(move || {
         (start < stop).then_some(())?;
-        let color = bg(start);
+        let (color, default) = bg(start);
         let mut end = start + 1;
-        while end < stop && bg(end) == color {
+        while end < stop && bg(end) == (color, default) {
             end += 1;
         }
-        let span = (start, end, color);
+        let span = (start, end, color, default);
         start = end;
         Some(span)
     })
@@ -503,6 +508,10 @@ impl TerminalPainter {
             }
         };
         let draws = |layer| part.is_none_or(|part| part.layer == layer);
+        // Over a backdrop a hidden cell's background is not painted, so its
+        // glyphs, graphics, and decorations, drawn in that color, would show.
+        let shows_through =
+            |cell: &CellData| ground == Ground::Backdrop && cell.modifier & HIDDEN != 0;
         // The daemon's cell scrollbar is replaced by the pixel thumb painted below.
         let bars: Vec<SurfaceRect> = panes.iter().filter_map(|p| p.scrollbar_rect).collect();
         let in_bar = |index: usize| {
@@ -563,18 +572,21 @@ impl TerminalPainter {
                             counts.quads += 1;
                         }
                     };
-                    let shown = |color| ground == Ground::Opaque || color != self.theme.background;
+                    // Over a backdrop the ground is the theme's default; a
+                    // color the program chose stays solid, even that one.
+                    let shown = |default: bool| ground == Ground::Opaque || !default;
                     if cached {
-                        for (start, end, color) in background_spans(row, columns, &self.theme) {
-                            if shown(color) {
+                        for (start, end, color, default) in
+                            background_spans(row, columns, &self.theme)
+                        {
+                            if shown(default) {
                                 paint(start, end, color);
                             }
                         }
                     } else {
                         for x in columns {
-                            let color = cell_colors(&row[x], &self.theme).1;
-                            if shown(color) {
-                                paint(x, x + 1, color);
+                            if shown(on_default_background(&row[x])) {
+                                paint(x, x + 1, cell_colors(&row[x], &self.theme).1);
                             }
                         }
                     }
@@ -617,6 +629,7 @@ impl TerminalPainter {
                         font,
                         cached,
                         &in_bar,
+                        &shows_through,
                         window,
                         #[cfg(feature = "integration-test")]
                         &mut counts,
@@ -635,6 +648,7 @@ impl TerminalPainter {
                     font,
                     cached,
                     &in_bar,
+                    &shows_through,
                     window,
                     #[cfg(feature = "integration-test")]
                     &mut counts,
@@ -648,7 +662,9 @@ impl TerminalPainter {
                 // and wide-glyph continuation cells.
                 for index in cell_ranges(frame, area).flatten() {
                     let cell = &frame.cells[index];
-                    if in_bar(index) {
+                    // Hidden cells draw in their background's color, which
+                    // over a backdrop's skipped quad would show.
+                    if in_bar(index) || shows_through(cell) {
                         continue;
                     }
                     let position = origin
@@ -823,6 +839,7 @@ impl TerminalPainter {
         font: &Font,
         cached: bool,
         in_bar: &impl Fn(usize) -> bool,
+        shows_through: &impl Fn(&CellData) -> bool,
         window: &mut Window,
         #[cfg(feature = "integration-test")] counts: &mut crate::performance::Counts,
     ) -> u64 {
@@ -832,6 +849,7 @@ impl TerminalPainter {
             if cell.skip
                 || cell.symbol.is_empty()
                 || cell.symbol == " "
+                || shows_through(cell)
                 || in_bar(index)
                 || Graphic::from_symbol(&cell.symbol).is_some()
             {

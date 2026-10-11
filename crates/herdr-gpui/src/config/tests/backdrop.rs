@@ -1,6 +1,12 @@
 use super::*;
 use crate::config::backdrop::Edit;
 
+/// A path absolute on every platform, which a Unix root path is not on
+/// Windows.
+fn picture() -> PathBuf {
+    env::temp_dir().join("sea.jpg")
+}
+
 #[test]
 fn the_backdrop_defaults_to_an_opaque_window() -> anyhow::Result<()> {
     for config in [
@@ -17,15 +23,17 @@ fn the_backdrop_defaults_to_an_opaque_window() -> anyhow::Result<()> {
 
 #[test]
 fn backdrop_keys_parse_and_bad_values_are_refused() -> anyhow::Result<()> {
-    let config = Config::parse(
-        "[backdrop]\nopacity = 0.8\nblur = true\nimage = '/pictures/sea.jpg'\nfit = 'tile'\n",
-    )?;
+    // A literal string, so a Windows path's backslashes stay as they are.
+    let config = Config::parse(&format!(
+        "[backdrop]\nopacity = 0.8\nblur = true\nimage = '{}'\nfit = 'tile'\n",
+        picture().display()
+    ))?;
     assert_eq!(
         config.backdrop,
         Backdrop {
             opacity: 0.8,
             blur: true,
-            image: Some("/pictures/sea.jpg".into()),
+            image: Some(picture()),
         }
     );
     assert!(config.backdrop.translucent());
@@ -70,7 +78,7 @@ fn backdrop_edits_round_trip_and_keep_the_rest_of_the_file() -> anyhow::Result<(
     )?;
     Config::save_backdrop_path(&Edit::Opacity(0.700_000_1), &path)?;
     Config::save_backdrop_path(&Edit::Blur(true), &path)?;
-    Config::save_backdrop_path(&Edit::Image(Some("/pictures/sea.jpg".into())), &path)?;
+    Config::save_backdrop_path(&Edit::Image(Some(picture())), &path)?;
     let text = fs::read_to_string(&path)?;
     assert!(
         text.contains("# mine") && text.contains("future = 1"),
@@ -83,7 +91,7 @@ fn backdrop_edits_round_trip_and_keep_the_rest_of_the_file() -> anyhow::Result<(
         Backdrop {
             opacity: 0.7,
             blur: true,
-            image: Some("/pictures/sea.jpg".into()),
+            image: Some(picture()),
         }
     );
     Config::save_backdrop_path(&Edit::Image(None), &path)?;

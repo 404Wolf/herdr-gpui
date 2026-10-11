@@ -38,7 +38,7 @@ pub enum Error {
     RelativeImage,
     #[error("backdrop.image must be a UTF-8 path")]
     ImagePathEncoding,
-    #[error("Could not read the backdrop image {path}")]
+    #[error("Could not read the backdrop image {path}: {source}")]
     Read {
         path: PathBuf,
         #[source]
@@ -48,7 +48,7 @@ pub enum Error {
     NotAFile { path: PathBuf },
     #[error("The backdrop image {path} exceeds the {MAX_FILE_BYTES}-byte limit")]
     TooLarge { path: PathBuf },
-    #[error("Could not decode the backdrop image {path}")]
+    #[error("Could not decode the backdrop image {path}: {source}")]
     Decode {
         path: PathBuf,
         #[source]
@@ -63,12 +63,25 @@ pub(crate) fn decode(path: &Path) -> Result<RenderImage, Error> {
         path: path.to_path_buf(),
         source,
     };
-    let file = fs::File::open(path).map_err(read)?;
-    let metadata = file.metadata().map_err(read)?;
-    if !metadata.is_file() {
-        return Err(Error::NotAFile {
-            path: path.to_path_buf(),
-        });
+    let not_a_file = || Error::NotAFile {
+        path: path.to_path_buf(),
+    };
+    // Checked before opening: opening a FIFO with no writer blocks, and with
+    // it the decode and any Settings save waiting on it.
+    if !fs::metadata(path).map_err(read)?.is_file() {
+        return Err(not_a_file());
+    }
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    // Should the path become a FIFO after the check, the open still returns.
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::custom_flags(
+        &mut options,
+        rustix::fs::OFlags::NONBLOCK.bits() as i32,
+    );
+    let file = options.open(path).map_err(read)?;
+    if !file.metadata().map_err(read)?.is_file() {
+        return Err(not_a_file());
     }
     // Bounded by the read, not the metadata, which can change underneath.
     let mut bytes = Vec::new();
