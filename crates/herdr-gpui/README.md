@@ -2507,7 +2507,10 @@ Cmd examples elsewhere in this document describe the macOS profile.
    validated URL. Cache-only menu opening shows prefetched results immediately,
    or loading for an initial miss; no separate Open/Refresh controls or O/R shortcuts.
    One background Git/native HTTPS GraphQL worker refreshes the selected device's
-   eligible workspace metadata every 90 seconds, with a 128-entry LRU cache, 128 queued jobs, and
+   eligible workspace metadata every 90 seconds. A successful “no PR” result for
+   the focused workspace (or the workspace whose menu is open) is eligible for
+   another lookup after 15 seconds, so newly created PRs appear sooner. It uses
+   a 128-entry LRU cache, 128 queued jobs, and
    alternating open/focused priority and round-robin scheduling. Failed refreshes
    retain successful data. Ordinary failures back off five minutes; auth/rate-limit
    errors pause the account for an hour by default, honoring numeric retry/reset

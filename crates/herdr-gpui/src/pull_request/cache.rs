@@ -9,6 +9,7 @@ use std::{
 
 pub(super) const CACHE_LIMIT: usize = 128;
 pub(super) const REFRESH: Duration = Duration::from_secs(90);
+const MISSING_REFRESH: Duration = Duration::from_secs(15);
 pub(super) const ERROR_BACKOFF: Duration = Duration::from_secs(300);
 
 pub(super) struct Entry {
@@ -98,6 +99,19 @@ impl Cache {
 
     pub fn scan_due(&self, now: Instant) -> bool {
         self.next_scan.is_none_or(|next| now >= next)
+    }
+
+    /// A PR may have been created since the last successful empty lookup. Check
+    /// the workspace being viewed sooner, without bypassing errors or changing
+    /// queue fairness. Only the background poll calls this, never rendering.
+    pub fn expire_missing(&mut self, input: &Input, now: Instant) {
+        if let Some(entry) = self.entries.iter_mut().find(|entry| &entry.input == input)
+            && entry.value.is_none()
+            && entry.message.is_none()
+            && now >= entry.checked + MISSING_REFRESH
+        {
+            entry.due = entry.due.min(now);
+        }
     }
 
     /// Request fresh details without discarding the visible value or interrupting

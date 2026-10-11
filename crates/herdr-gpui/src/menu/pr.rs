@@ -155,7 +155,16 @@ impl HerdrWindow {
                         .target
                         .as_ref()
                         .filter(|_| self.menu.page == Some(Page::Workspace))
-                        .map(|target| target.id.as_str());
+                        .map(|target| target.id.as_str())
+                        .or(snapshot.focused_workspace_id.as_deref());
+                    if let Some(workspace) = snapshot
+                        .workspaces
+                        .iter()
+                        .find(|workspace| Some(workspace.workspace_id.as_str()) == priority)
+                        && let Ok(input) = workspace_input(workspace, &origin)
+                    {
+                        self.menu.pr_cache.expire_missing(&input, now);
+                    }
                     let inputs =
                         workspace_pr_inputs(snapshot, &origin, priority, self.menu.pr_cache.cursor);
                     self.menu.pr_cache.schedule(inputs, now);
