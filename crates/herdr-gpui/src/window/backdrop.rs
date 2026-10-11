@@ -8,6 +8,9 @@ use crate::{
 };
 use gpui::{prelude::*, *};
 
+#[cfg(target_os = "macos")]
+mod macos_blur;
+
 /// What one window has done about its backdrop so far.
 #[derive(Default)]
 pub(crate) struct State {
@@ -57,7 +60,22 @@ impl HerdrWindow {
         }
         let appearance = backdrop::appearance(config, state.picture.covers());
         if appearance != state.appearance {
-            window.set_background_appearance(appearance);
+            let blurred = appearance == WindowBackgroundAppearance::Blurred;
+            // GPUI's blur does nothing on recent macOS; the window server
+            // blurs instead, behind a plainly transparent window.
+            #[cfg(target_os = "macos")]
+            let platform = if blurred {
+                WindowBackgroundAppearance::Transparent
+            } else {
+                appearance
+            };
+            #[cfg(not(target_os = "macos"))]
+            let platform = appearance;
+            window.set_background_appearance(platform);
+            #[cfg(target_os = "macos")]
+            if blurred || state.appearance == WindowBackgroundAppearance::Blurred {
+                macos_blur::set(window, blurred);
+            }
             state.appearance = appearance;
         }
     }
