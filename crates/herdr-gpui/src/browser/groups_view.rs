@@ -312,6 +312,7 @@ impl HerdrWindow {
                     layout.show(source, next);
                 }
                 self.reconcile_group_terminals(cx);
+                self.steer_primary_group(source, cx);
             }
             None => self.close_group(source, window, cx),
         }
@@ -329,6 +330,23 @@ impl HerdrWindow {
         match pick {
             Pick::Herdr(tab) => self.choose_herdr_tab(group, &tab, window, cx),
             Pick::Page(id) => self.show_browser_tab_in(Some(group), id, window, cx),
+        }
+    }
+
+    /// Steers a group's existing primary connection after replacing its tab,
+    /// without activating the group or taking keyboard focus from a page.
+    fn steer_primary_group(&mut self, group: GroupId, cx: &mut Context<Self>) {
+        if Some(group) != self.primary_group() {
+            return;
+        }
+        if let Some(Pick::Herdr(tab)) = self.group_pick(group)
+            && self.focused_herdr_tab() != Some(tab.as_str())
+        {
+            if self.input_ready() && self.menu.page.is_none() {
+                self.navigate(NavigationTarget::Tab(&tab), cx);
+            } else {
+                self.pending_navigation = Some(NavigationTarget::Tab(tab));
+            }
         }
     }
 
@@ -550,7 +568,6 @@ impl HerdrWindow {
         layout.adopt(tabs);
         let mut changed = !closed.is_empty();
         if layout.len() > 1 {
-            let primary = self.primary_group();
             for slot in self.group_slots() {
                 if self.group_pick(slot.id).is_some() {
                     continue;
@@ -558,17 +575,11 @@ impl HerdrWindow {
                 match self.group_tabs(slot.id, cx).into_iter().next() {
                     Some(next) => {
                         if let Some(layout) = self.browser.layouts.get_mut(&key) {
-                            layout.show(slot.id, next.clone());
+                            layout.show(slot.id, next);
                         }
                         // The window's connection goes to its group's tab;
                         // a parked one is steered there as it is reconciled.
-                        if let (Pick::Herdr(tab), true) = (next, Some(slot.id) == primary) {
-                            if self.navigation_ready() {
-                                self.navigate(NavigationTarget::Tab(&tab), cx);
-                            } else {
-                                self.pending_navigation = Some(NavigationTarget::Tab(tab));
-                            }
-                        }
+                        self.steer_primary_group(slot.id, cx);
                         changed = true;
                     }
                     None if emptied.contains(&slot.id) => {
