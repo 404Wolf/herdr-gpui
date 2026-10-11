@@ -209,58 +209,57 @@ fn runs_group_by_what_needs_the_user_first() {
 }
 
 #[test]
-fn pull_requests_list_in_every_state_unless_narrowed() {
-    let mut open = item(Provider::Github, "pr/1", "Open one", "2026-10-04T00:00:00Z");
-    let mut merged = item(
-        Provider::Github,
-        "pr/2",
-        "Merged one",
-        "2026-10-05T00:00:00Z",
-    );
-    for (pr, number) in [(&mut open, 1), (&mut merged, 2)] {
-        pr.pull_request = Some(crate::orchestrator::PullRequest {
-            number,
-            additions: None,
-            deletions: None,
-            base_ref: "main".into(),
-            head_ref: "x".into(),
-            base_sha: String::new(),
-            head_sha: String::new(),
-            head_repository: None,
-        });
-    }
-    merged.state = "merged".into();
-    merged.author = Some("someone".into());
-    let items = vec![open, merged];
+fn pull_requests_hide_merged_and_closed_until_asked_for() {
+    let states = [
+        ("open", "2026-10-04T00:00:00Z"),
+        ("draft", "2026-10-03T00:00:00Z"),
+        ("merged", "2026-10-05T00:00:00Z"),
+        ("closed", "2026-10-06T00:00:00Z"),
+    ];
+    let items: Vec<Item> = states
+        .into_iter()
+        .zip(1..)
+        .map(|((state, updated), number)| {
+            let mut pr = item(Provider::Github, &format!("pr/{number}"), state, updated);
+            pr.state = state.into();
+            if state != "open" {
+                pr.author = Some("someone".into());
+            }
+            pr.pull_request = Some(crate::orchestrator::PullRequest {
+                number,
+                additions: None,
+                deletions: None,
+                base_ref: "main".into(),
+                head_ref: "x".into(),
+                base_sha: String::new(),
+                head_sha: String::new(),
+                head_repository: None,
+            });
+            pr
+        })
+        .collect();
     let runs = Runs::new(&[], &[], &[]);
-    let all = pull_request_rows(
-        &items,
-        &runs,
-        "",
-        Filters::default(),
-        None,
-        false,
-        Sort::Updated,
-    );
-    assert_eq!(all.iter().map(|row| row.item).collect::<Vec<_>>(), [1, 0]);
-    let open_only = Filters {
-        open_only: true,
+    let listed = |filters: Filters, mine: bool| {
+        pull_request_rows(
+            &items,
+            &runs,
+            "",
+            filters,
+            Some("penso"),
+            mine,
+            Sort::Updated,
+        )
+        .iter()
+        .map(|row| row.item)
+        .collect::<Vec<_>>()
+    };
+    assert_eq!(listed(Filters::default(), false), [0, 1]);
+    let every_state = Filters {
+        open_only: false,
         ..Filters::default()
     };
-    assert_eq!(
-        pull_request_rows(&items, &runs, "", open_only, None, false, Sort::Updated).len(),
-        1
-    );
-    let mine = pull_request_rows(
-        &items,
-        &runs,
-        "",
-        Filters::default(),
-        Some("penso"),
-        true,
-        Sort::Updated,
-    );
-    assert_eq!(mine.iter().map(|row| row.item).collect::<Vec<_>>(), [0]);
+    assert_eq!(listed(every_state, false), [3, 2, 0, 1]);
+    assert_eq!(listed(every_state, true), [0]);
 }
 
 #[test]

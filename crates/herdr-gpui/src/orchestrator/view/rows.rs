@@ -78,7 +78,7 @@ impl Sort {
 }
 
 /// Narrowing beyond the search text.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Filters {
     /// Only one provider's items.
     pub(crate) provider: Option<Provider>,
@@ -86,6 +86,18 @@ pub(crate) struct Filters {
     pub(crate) blocked: bool,
     /// Pull requests: only open and draft ones.
     pub(crate) open_only: bool,
+}
+
+/// Merged and closed pull requests are hidden until asked for, as on GitHub.
+impl Default for Filters {
+    fn default() -> Self {
+        Self {
+            provider: None,
+            has_run: false,
+            blocked: false,
+            open_only: true,
+        }
+    }
 }
 
 /// What a run is doing, from Herdr's snapshot when its agent is there, else
@@ -444,7 +456,7 @@ pub(crate) fn issue_rows(
     rows
 }
 
-/// The Pull requests tab, in every state unless `open_only`.
+/// The Pull requests tab: open and draft ones unless `open_only` is off.
 pub(crate) fn pull_request_rows(
     items: &[Item],
     runs: &Runs<'_>,
