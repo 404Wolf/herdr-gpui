@@ -7,7 +7,10 @@ use super::{
     HerdrWindow, MockPeer,
     status_bar::{has_model_picker, model_label},
 };
-use crate::sidebar::layout_tests::{fixture_window, full_draw};
+use crate::{
+    NavigationTarget,
+    sidebar::layout_tests::{fixture_window, full_draw},
+};
 use gpui::{Modifiers, TestAppContext, VisualTestContext};
 use herdr_client::protocol::{ClientMessage, ClientPaneInputEvent, ClientShellAgent};
 use std::sync::Arc;
@@ -142,10 +145,16 @@ fn a_click_types_model_into_claude_only(cx: &mut TestAppContext) {
             crate::menu::enter_key(),
         ])
     );
+    // The pane gets the focus, here once the window can navigate.
+    let focus =
+        |cx: &mut VisualTestContext| view.update(cx, |view, _| view.pending_navigation.take());
+    assert_eq!(focus(cx), Some(NavigationTarget::Pane("w1:p1".into())));
 
-    // Another agent's click sends nothing: the next input is one sent after it.
+    // Another agent's click sends nothing and moves no focus: the next input
+    // is one sent after it.
     set_first_agent_kind(&view, "codex", cx);
     click_model(cx);
+    assert_eq!(focus(cx), None);
     let sentinel = ClientPaneInputEvent::TextCommit("sentinel".into());
     peer.client
         .handle
