@@ -21,7 +21,8 @@ use std::{
 use tempfile::TempDir;
 
 mod helper;
-pub(super) use helper::run_helper;
+mod restart;
+pub(super) use restart::{RestartGuard, relaunch};
 
 const SYSTEM_EXECUTABLE: &str = "/usr/bin/herdr-gpui";
 
@@ -344,17 +345,8 @@ fn apply(
     Ok(())
 }
 
-pub(super) fn relaunch(executable: &Path) -> Result<()> {
-    let meta = fs::metadata(executable)?;
-    if !meta.is_file() {
-        return Err(Error::RelaunchMissing(executable.into()));
-    }
-    Command::new(executable)
-        .args(env::args_os().skip(1))
-        .stdin(Stdio::null())
-        .spawn()
-        .map_err(Error::Io)?;
-    Ok(())
+pub(super) fn run_helper(args: &[std::ffi::OsString]) -> Option<std::process::ExitCode> {
+    restart::run_helper(args).or_else(|| helper::run_helper(args))
 }
 
 #[cfg(test)]

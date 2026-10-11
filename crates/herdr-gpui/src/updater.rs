@@ -105,7 +105,7 @@ struct Command {
 struct Mailbox {
     generation: u64,
     state: State,
-    restart: Option<install::RestartGuard>,
+    restart: Option<RestartGuard>,
     /// The upgraded app is already starting; this one only has to quit.
     relaunched: bool,
 }
@@ -122,12 +122,30 @@ enum Restart {
     Package(std::path::PathBuf),
 }
 
-impl Restart {
-    fn launch(&self) -> Result<()> {
+enum RestartGuard {
+    Standalone(install::RestartGuard),
+    #[cfg(target_os = "linux")]
+    Package(linux::RestartGuard),
+}
+
+impl RestartGuard {
+    fn commit(&mut self) -> Result<()> {
         match self {
-            Self::Homebrew => brew::relaunch(&cask().ok_or(Error::MissingCask)?),
+            Self::Standalone(guard) => guard.commit(),
             #[cfg(target_os = "linux")]
-            Self::Package(executable) => linux::relaunch(executable),
+            Self::Package(guard) => guard.commit(),
+        }
+    }
+}
+
+impl Restart {
+    fn launch(&self) -> Result<Option<RestartGuard>> {
+        match self {
+            Self::Homebrew => brew::relaunch(&cask().ok_or(Error::MissingCask)?).map(|()| None),
+            #[cfg(target_os = "linux")]
+            Self::Package(executable) => {
+                linux::relaunch(executable).map(|guard| Some(RestartGuard::Package(guard)))
+            }
         }
     }
 }
@@ -163,7 +181,7 @@ pub(super) struct Updater {
     stopped: Arc<AtomicBool>,
     mailbox: Arc<Mutex<Option<Mailbox>>>,
     generation: u64,
-    restart: Option<install::RestartGuard>,
+    restart: Option<RestartGuard>,
     relaunched: bool,
     committed: bool,
     next_check: Instant,
@@ -463,7 +481,7 @@ fn publish(
     mailbox: &Mutex<Option<Mailbox>>,
     generation: u64,
     state: State,
-    restart: Option<install::RestartGuard>,
+    restart: Option<RestartGuard>,
 ) {
     publish_relaunch(mailbox, generation, state, restart, false);
 }
@@ -472,7 +490,7 @@ fn publish_relaunch(
     mailbox: &Mutex<Option<Mailbox>>,
     generation: u64,
     state: State,
-    restart: Option<install::RestartGuard>,
+    restart: Option<RestartGuard>,
     relaunched: bool,
 ) {
     if let Ok(mut slot) = mailbox.lock() {
@@ -581,7 +599,12 @@ fn worker(
                     publish(&mailbox, generation, State::Installing, None);
                     match install::install_and_restart(candidate, &cancelled) {
                         Ok(guard) => {
-                            publish(&mailbox, generation, State::Installing, Some(guard));
+                            publish(
+                                &mailbox,
+                                generation,
+                                State::Installing,
+                                Some(RestartGuard::Standalone(guard)),
+                            );
                             // Keep receiving commands: cancellation/commit failure may leave
                             // this app alive even after the helper becomes ready.
                             continue;
@@ -628,7 +651,11 @@ fn worker(
                 (_, None) => Err(Error::MissingCask),
             },
             Operation::Restart => match restart.launch() {
-                Ok(()) => {
+                Ok(Some(guard)) => {
+                    publish(&mailbox, generation, State::Restarting, Some(guard));
+                    continue;
+                }
+                Ok(None) => {
                     // The upgraded app is starting, so this one must quit. The
                     // mailbox keeps only the latest message: publishing the
                     // relaunch last is what keeps it from being overwritten.

@@ -373,8 +373,13 @@ be cancelled or killed by closing the GUI: a non-elevated helper retains the use
 staging and drains progress from the privileged helper until it exits, even after
 the GUI closes. Root staging is removed after the transaction. A successful transaction must report
 the expected installed package version before **Restart** is offered. The new
-executable is launched with the original arguments and working directory before
-the current GUI quits. The daemon and terminal sessions are never stopped.
+executable is launched with the original arguments and working directory by a
+restart helper. Before acknowledging readiness, it opens a Linux pidfd for the
+current GUI; only after the GUI commits the restart and that exact process exits
+does it launch the replacement. This releases `control.sock` before the new app
+tries to bind its browser-command server. An uncommitted handoff launches nothing;
+the committed exit wait is bounded at two minutes. The daemon and terminal sessions
+are never stopped.
 
 Older installed clients with the blanket package-manager rejection require one
 manual upgrade. Releases without `package-manifest.json` and its signature cannot
