@@ -20,8 +20,9 @@ use std::{
 /// How often a drag held past a pane's edge scrolls it by another step.
 const AUTOSCROLL_INTERVAL: Duration = Duration::from_millis(50);
 
-/// How many offsets a drag remembers while frames fall behind its steps. A
-/// frame that lags further than this starts the next step from what it shows.
+/// How many of its newest offsets a drag remembers while frames fall behind
+/// its steps. A frame that lags further than this starts the next step from
+/// what it shows.
 const AUTOSCROLL_LAG: usize = 32;
 
 /// What a drag needs beyond the selection itself: where the pointer last was,
@@ -64,9 +65,11 @@ impl Sent {
             Some(sent)
                 if sent
                     .ahead_of(&pane_id, shown)
-                    .is_some_and(|last| last != shown)
-                    && sent.path.len() < AUTOSCROLL_LAG =>
+                    .is_some_and(|last| last != shown) =>
             {
+                if sent.path.len() == AUTOSCROLL_LAG {
+                    sent.path.remove(0);
+                }
                 sent.path.push(offset);
             }
             _ => {

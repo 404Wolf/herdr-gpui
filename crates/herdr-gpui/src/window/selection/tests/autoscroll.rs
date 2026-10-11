@@ -279,3 +279,15 @@ fn a_frame_that_shows_an_older_step_does_not_repeat_the_last_one(cx: &mut TestAp
     drag.frame_shows(2);
     assert_eq!(drag.requested_offset(), 6);
 }
+
+/// Frames that stay one step behind for a long drag never make a step repeat,
+/// however many steps the drag has sent.
+#[gpui::test]
+fn a_long_drag_with_frames_one_step_behind_never_repeats_a_step(cx: &mut TestAppContext) {
+    let mut drag = Drag::hold(cx, 0, 100, Drag::above(1));
+    for step in 1..=80 {
+        assert_eq!(drag.requested_offset(), step);
+        drag.answer_before_the_frame();
+        drag.frame_shows(step - 1);
+    }
+}
