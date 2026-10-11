@@ -42,7 +42,8 @@ class CiChanges(unittest.TestCase):
         for path in ("setup.sh", "README.md", "crates/herdr-gpui/README.md",
                      "scripts/release/README.md", "assets/social-preview-dark.png",
                      "assets/social-preview-light.svg", "assets/icons/herdr-ui-icon-badge.png",
-                     "assets/icons/herdr-ui-icon-badge.svg"):
+                     "assets/icons/herdr-ui-icon-badge.svg", "site/index.html",
+                     "site/assets/site.js", ".github/workflows/site.yml"):
             self.commit_path(path)
             self.assertEqual(self.detect(), "code=false", path)
 

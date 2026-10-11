@@ -2,6 +2,8 @@
 # Keep the required PR gate running while skipping native jobs for non-code edits.
 # Documentation-only images are excluded by name so any new asset is treated
 # as a build input until proven otherwise; keep updater.yml's paths in sync.
+# The website workflow only publishes site/, which no build or test reads; the
+# zizmor job still audits it on every run.
 set -euo pipefail
 
 if [[ "$EVENT" == workflow_dispatch ]] ||
@@ -22,7 +24,8 @@ if git diff --quiet "$BASE" "$HEAD_SHA" -- \
   clippy.toml .clippy.toml justfile mise.toml cliff.toml \
   ':(exclude)**/*.md' \
   ':(exclude)assets/social-preview-*' \
-  ':(exclude)assets/icons/herdr-ui-icon-badge.*'; then
+  ':(exclude)assets/icons/herdr-ui-icon-badge.*' \
+  ':(exclude).github/workflows/site.yml'; then
   printf 'code=false\n'
 else
   status=$?
