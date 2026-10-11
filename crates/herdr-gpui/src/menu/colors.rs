@@ -29,10 +29,21 @@ pub(crate) fn teleported(theme: &crate::config::Theme) -> Rgba {
     tint(theme, 6)
 }
 
-/// The theme's red, as destructive actions and errors use it.
+/// The theme's bright red, as destructive actions and errors use it. Many
+/// themes' normal red is too dark to lift without turning a dusty grey-pink on
+/// dark surfaces, and errors are text, so this keeps the WCAG text minimum
+/// rather than a mark's.
 pub(crate) fn danger(theme: &crate::config::Theme) -> Rgba {
-    tint(theme, 1)
+    let red = crate::config::mix(theme.foreground, theme.palette[9], TINT_PERCENT);
+    rgb(crate::contrast::ink_on_chrome(
+        red,
+        [theme.background, theme.surface, theme.active],
+        TEXT_RATIO,
+    ))
 }
+
+/// WCAG's minimum contrast for body text.
+const TEXT_RATIO: f32 = 4.5;
 
 /// Lift the button above both the normal hover row and the current-session tint.
 pub(super) fn action_hover(theme: &crate::config::Theme) -> Rgba {
@@ -86,6 +97,30 @@ mod tests {
     fn contrast(a: Rgba, b: Rgba) -> f32 {
         let (a, b) = (luminance(a), luminance(b));
         (a.max(b) + 0.05) / (a.min(b) + 0.05)
+    }
+
+    #[test]
+    fn error_text_reads_on_every_theme() {
+        let themes = crate::config::Theme::BUILTIN_NAMES
+            .iter()
+            .map(|name| {
+                let theme = crate::config::Theme::builtin(name)
+                    .unwrap_or_else(|| panic!("missing theme {name}"));
+                (*name, theme)
+            })
+            .chain([("default", crate::config::Theme::default())]);
+        for (name, theme) in themes {
+            let red = danger(&theme);
+            for background in [theme.background, theme.surface, theme.active] {
+                let ratio = contrast(red, rgb(background));
+                assert!(ratio >= 4.5, "{name}: {ratio:.2} against {background:06x}");
+            }
+            // Still red: the red channel leads.
+            assert!(red.r > red.g && red.r > red.b, "{name}: {red:?}");
+        }
+        // The dark normal red it replaces read as a dim grey-pink.
+        let theme = crate::config::Theme::default();
+        assert!(contrast(danger(&theme), rgb(theme.surface)) > 6.);
     }
 
     #[test]
