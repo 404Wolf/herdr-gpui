@@ -34,16 +34,20 @@ fn the_mode_follows_the_config_and_switching_writes_only_what_differs() {
 }
 
 #[test]
-fn the_stepper_moves_on_a_five_percent_grid_within_its_range() {
+fn the_stepper_moves_to_the_next_mark_and_never_the_wrong_way() {
     assert_eq!(stepped(0.85, false), Some(0.8));
     assert_eq!(stepped(0.85, true), Some(0.9));
-    // A value from the file lands on the grid.
-    assert_eq!(stepped(0.83, true), Some(0.9));
+    // A value from the file steps to the nearest mark in that direction.
+    assert_eq!(stepped(0.83, true), Some(0.85));
+    assert_eq!(stepped(0.83, false), Some(0.8));
     assert_eq!(stepped(0.95, true), Some(1.));
     assert_eq!(stepped(1., true), None);
     assert_eq!(stepped(0.1, false), None);
-    // Below the floor, stepping up lands on it.
+    // Below the floor, stepping down must not raise it; up lands on it.
+    assert_eq!(stepped(0.05, false), None);
+    assert_eq!(stepped(0., false), None);
     assert_eq!(stepped(0., true), Some(0.1));
+    assert_eq!(stepped(0.05, true), Some(0.1));
 }
 
 #[gpui::test]

@@ -9,7 +9,7 @@ use crate::config::{
 
 /// The opacity Translucent starts at from a solid window.
 const TRANSLUCENT_OPACITY: f32 = 0.85;
-/// The stepper moves in whole steps of this many percent, between these.
+/// The stepper moves between marks this many percent apart, from this floor.
 const STEP: i32 = 5;
 const MIN_PERCENT: i32 = 10;
 
@@ -61,12 +61,20 @@ impl Mode {
     }
 }
 
-/// `opacity` moved one step up or down, onto the stepper's grid, or `None`
-/// at either end.
+/// `opacity` moved to the next 5% mark up or down, within the stepper's
+/// range, or `None` when that would not move it that way: a value from the
+/// file below the floor must not rise when stepped down.
 pub(in crate::settings_window) fn stepped(opacity: f32, up: bool) -> Option<f32> {
-    let percent = (opacity * 100. / STEP as f32).round() as i32 * STEP;
-    let next = (percent + if up { STEP } else { -STEP }).clamp(MIN_PERCENT, 100);
-    (next != percent).then(|| next as f32 / 100.)
+    // Tenths of a percent, so 0.85 is exactly on its mark despite f32.
+    let current = (opacity * 1000.).round() as i32;
+    let step = STEP * 10;
+    let next = match up {
+        true => current.div_euclid(step) * step + step,
+        false => (current + step - 1).div_euclid(step) * step - step,
+    }
+    .clamp(MIN_PERCENT * 10, 1000);
+    let moves = if up { next > current } else { next < current };
+    moves.then(|| next as f32 / 1000.)
 }
 
 /// A thumbnail-size window: a title strip, a sidebar, and a few terminal
