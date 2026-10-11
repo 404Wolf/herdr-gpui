@@ -311,6 +311,21 @@ impl HerdrWindow {
             let selector = action.selector();
             let (label, process) = (format!("{selector}-label"), format!("{selector}-detail"));
             let capped = matches!(action, Action::Port { .. });
+            // An open tunnel can be closed from its row, as from its chip.
+            let close = match &action {
+                Action::Port {
+                    number,
+                    link: Link::Tunnel(key),
+                    ..
+                } if self.tunnels.is_open(key) => Some(crate::listening_ports::close_button(
+                    format!("group-menu-close-Port{number}").into(),
+                    key,
+                    ICON_SIZE,
+                    theme,
+                    cx,
+                )),
+                _ => None,
+            };
             panel = panel.child(
                 div()
                     .id(("group-menu-action", index))
@@ -356,6 +371,7 @@ impl HerdrWindow {
                                 .child(detail),
                         )
                     })
+                    .children(close)
                     .on_hover(cx.listener(move |this, hovered, _, cx| {
                         if *hovered && let Some(menu) = &mut this.menu.group {
                             menu.selected = Some(index);
