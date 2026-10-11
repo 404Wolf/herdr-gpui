@@ -242,7 +242,15 @@ impl HerdrWindow {
             .primary
             .is_none_or(|group| !slots.iter().any(|slot| slot.id == group))
         {
-            self.browser.terminals.primary = active;
+            // The connection belongs with the group showing its tab; the
+            // group in use may be one without tabs.
+            let showing = focused.clone().map(Pick::Herdr).and_then(|focused| {
+                slots
+                    .iter()
+                    .map(|slot| slot.id)
+                    .find(|group| pick(self, *group).as_ref() == Some(&focused))
+            });
+            self.browser.terminals.primary = showing.or(active);
         }
         self.steer_restored(&key, cx);
         let primary = self.browser.terminals.primary;
@@ -677,11 +685,11 @@ pub(crate) mod tests;
 mod mirror_tests {
     #![allow(clippy::unwrap_used)]
     use super::tests::{fixture_window_on_t0, surface};
-    use crate::{controls::Command, sidebar::layout_tests::full_draw};
+    use crate::{browser::Pick, controls::Command, sidebar::layout_tests::full_draw};
     use gpui::TestAppContext;
 
     #[gpui::test]
-    fn a_split_shows_the_same_terminal_in_both_groups(cx: &mut TestAppContext) {
+    fn a_tab_moved_to_another_group_paints_there_at_once(cx: &mut TestAppContext) {
         let (view, cx) = fixture_window_on_t0(cx);
         cx.update(|_, cx| {
             view.update(cx, |view, _| {
@@ -694,21 +702,27 @@ mod mirror_tests {
         assert!(cx.debug_bounds("terminal").is_some());
         cx.update(|window, cx| {
             view.update(cx, |view, cx| {
-                view.command(Command::SplitEditor, window, cx)
+                view.command(Command::SplitEditor, window, cx);
+                // The tab moves to the new group while the connection
+                // showing it still belongs to the group it left.
+                let slots = view.group_slots();
+                let (left, right) = (slots[0].id, slots[1].id);
+                let layout = view.ensure_layout().unwrap();
+                layout.show(right, Pick::Herdr("t0".into()));
+                layout.activate(left);
+                view.set_primary_group(left);
             })
         });
         cx.update(|window, cx| full_draw(window, cx).clear(cx));
-        // The new group holds the live terminal; the one it split from
-        // paints the same frame rather than standing empty.
-        let mirror = cx.debug_bounds("mirror-terminal").unwrap();
-        let terminal = cx.debug_bounds("terminal").unwrap();
-        assert!(mirror.right() <= terminal.left());
-        assert!(cx.debug_bounds("stand-in").is_none());
+        // Until the group has a connection on the tab, it paints the frame
+        // the other connection has rather than standing empty.
+        let mirror = cx.debug_bounds("g1-mirror-terminal").unwrap();
+        assert!(cx.debug_bounds("g1-stand-in").is_none());
         // Pressing the mirror brings the live terminal to it.
         cx.simulate_click(mirror.center(), gpui::Modifiers::none());
         cx.update(|window, cx| full_draw(window, cx).clear(cx));
         let terminal = cx.debug_bounds("terminal").unwrap();
-        let mirror = cx.debug_bounds("g1-mirror-terminal").unwrap();
-        assert!(terminal.right() <= mirror.left());
+        let left = cx.debug_bounds("group").unwrap();
+        assert!(left.right() <= terminal.left());
     }
 }

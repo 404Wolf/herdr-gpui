@@ -219,6 +219,16 @@ fn window(cx: &mut TestAppContext) -> (Entity<HerdrWindow>, &mut VisualTestConte
     })
 }
 
+/// After a split: `right` takes "t0", which the window's connection shows,
+/// with that connection, and is the group in use; `left` shows "t1".
+pub(crate) fn terminals_side_by_side(view: &mut HerdrWindow, left: GroupId, right: GroupId) {
+    let layout = view.ensure_layout().unwrap();
+    layout.show(right, Pick::Herdr("t0".into()));
+    layout.choose(left, Pick::Herdr("t1".into()));
+    layout.activate(right);
+    view.set_primary_group(right);
+}
+
 fn draw(cx: &mut VisualTestContext) {
     cx.update(|window, cx| full_draw(window, cx).clear(cx));
 }
@@ -237,16 +247,16 @@ fn using_a_parked_group_swaps_its_connection_in(cx: &mut TestAppContext) {
         let slots = view.group_slots();
         [slots[0].id, slots[1].id]
     });
-    view.read_with(cx, |view, _| assert_eq!(view.primary_group(), Some(right)));
+    // The split moves no tab and leaves the connection where it was.
+    view.read_with(cx, |view, _| assert_eq!(view.primary_group(), Some(left)));
 
-    // The left group picks the other Herdr tab through a connection of
-    // its own, already on that tab.
+    // The right group takes the tab the window's connection shows, and the
+    // left one shows the other Herdr tab through a connection of its own,
+    // already on that tab.
     let peer = MockPeer::new();
     cx.update(|_, cx| {
         view.update(cx, |view, cx| {
-            let layout = view.ensure_layout().unwrap();
-            layout.choose(left, Pick::Herdr("t1".into()));
-            layout.activate(right);
+            terminals_side_by_side(view, left, right);
             let mut on_t1 = snapshot(40);
             on_t1.focused_workspace_id = Some("w0".into());
             on_t1.focused_tab_id = Some("t1".into());
@@ -337,10 +347,7 @@ fn leaving_the_workspace_drops_parked_connections(cx: &mut TestAppContext) {
             view.command(Command::SplitEditor, window, cx);
             let slots = view.group_slots();
             let key = view.browser_key().unwrap();
-            view.ensure_layout()
-                .unwrap()
-                .choose(slots[0].id, Pick::Herdr("t1".into()));
-            view.ensure_layout().unwrap().activate(slots[1].id);
+            terminals_side_by_side(view, slots[0].id, slots[1].id);
             let mut on_t1 = snapshot(40);
             on_t1.focused_workspace_id = Some("w0".into());
             on_t1.focused_tab_id = Some("t1".into());

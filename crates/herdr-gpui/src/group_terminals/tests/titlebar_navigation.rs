@@ -31,9 +31,7 @@ fn split_history<'a>(
             view.command(Command::SplitEditor, window, cx);
             let slots = view.group_slots();
             let (left, right) = (slots[0].id, slots[1].id);
-            let layout = view.ensure_layout().unwrap();
-            layout.choose(left, Pick::Herdr("t1".into()));
-            layout.activate(right);
+            terminals_side_by_side(view, left, right);
 
             let fixture = fixture_snapshot();
             let mut shown = (**view.live.snapshot.as_ref().unwrap()).clone();

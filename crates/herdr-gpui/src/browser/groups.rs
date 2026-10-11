@@ -1,12 +1,11 @@
 //! Editor groups: a workspace's view split into side-by-side groups, each
-//! listing the same tabs and showing one of them, as an editor's groups do.
+//! listing its own tabs and showing one of them.
 //!
-//! Each group that shows a terminal has a client connection of its own, and
-//! the daemon keeps a focused tab per client, so groups show different Herdr
-//! tabs side by side. A tab is still live in just one group at a time: the
-//! daemon sizes a tab for one client, and a native page is placed only once.
-//! Of the groups that picked the same tab, the one used last shows it and
-//! the others stand in for it until they are used again.
+//! A tab belongs to exactly one group, so it is listed in one strip and live
+//! in one place: the daemon sizes a tab for one client, and a native page is
+//! placed only once. Each group that shows a terminal has a client connection
+//! of its own, and the daemon keeps a focused tab per client, so groups show
+//! different Herdr tabs side by side.
 use super::TabId;
 use serde::{Deserialize, Serialize};
 
@@ -15,8 +14,8 @@ use serde::{Deserialize, Serialize};
 const MIN_SHARE: f32 = 0.08;
 /// A saved layout with more groups than this is not restored.
 const MAX_SAVED_GROUPS: usize = 32;
-/// Nor one whose group removed more tabs from its strip than this.
-const MAX_SAVED_HIDDEN: usize = 512;
+/// Nor one whose group names more tabs than this.
+const MAX_SAVED_TABS: usize = 512;
 const MAX_TAB_ID_BYTES: usize = 256;
 
 /// Names a group within a window. Unique across the window's workspaces, so
@@ -67,27 +66,22 @@ pub(crate) enum Shown {
     /// The daemon's focused tab.
     Terminal,
     Page(TabId),
-    /// A tab live in another group, or a Herdr tab the daemon does not
-    /// focus: using the group brings it here.
-    Elsewhere(Pick),
-    /// Nothing to show yet.
+    /// A Herdr tab the group's connection does not focus yet.
+    Elsewhere(String),
+    /// Nothing to show: a group without tabs, or a page that is gone.
     Empty,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 struct Group {
     id: GroupId,
-    /// `None` follows the daemon's focused tab. Only a lone group follows:
-    /// beside another, following would move it whenever the other focuses
-    /// a tab of its own.
+    /// The tab the group shows, always one of its own. `None` follows the
+    /// daemon's focused tab in a lone group, and shows nothing beside
+    /// another: following there would move the group whenever the other
+    /// focuses a tab of its own.
     pick: Option<Pick>,
-    /// When the group was last used; the latest one holds a shared tab.
-    used: u64,
     /// The group's share of the row's width.
     share: f32,
-    /// Tabs closed in this group: gone from its strip, still open in Herdr
-    /// and in every other group.
-    hidden: Vec<Pick>,
 }
 
 /// One workspace's groups, left to right.
@@ -95,10 +89,13 @@ struct Group {
 pub(crate) struct Layout {
     groups: Vec<Group>,
     active: GroupId,
-    clock: u64,
+    /// The group each tab belongs to, in the order the tabs were claimed.
+    /// Empty while the layout has one group, which owns every tab. Beside
+    /// another, a tab not named here yet belongs to the group in use.
+    owners: Vec<(Pick, GroupId)>,
 }
 
-/// A layout as saved across restarts: each group's tab and width, left to
+/// A layout as saved across restarts: each group's tabs and width, left to
 /// right, and the group in use. Group IDs are the window's own and are
 /// handed out anew on restore.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -111,7 +108,12 @@ pub(crate) struct SavedLayout {
 struct SavedGroup {
     pick: Option<Pick>,
     share: f32,
+    /// The tabs the group owns.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    tabs: Vec<Pick>,
+    /// Read from layouts saved before tabs belonged to one group, when each
+    /// group named the tabs it had closed. Never written.
+    #[serde(default, skip_serializing)]
     hidden: Vec<Pick>,
 }
 
@@ -133,9 +135,49 @@ impl SavedLayout {
                 group.share.is_finite()
                     && group.share > 0.
                     && group.pick.as_ref().is_none_or(valid_pick)
-                    && group.hidden.len() <= MAX_SAVED_HIDDEN
+                    && group.tabs.len() <= MAX_SAVED_TABS
+                    && group.tabs.iter().all(valid_pick)
+                    && group.hidden.len() <= MAX_SAVED_TABS
                     && group.hidden.iter().all(valid_pick)
             })
+    }
+
+    /// The group each tab belongs to, by position. A layout saved before
+    /// tabs belonged to one group names what each group had closed instead.
+    /// Such a tab goes to a group that kept it: one showing it, so no group
+    /// loses the tab it shows, then one only listing it, the group in use
+    /// first either way. A tab every group had closed goes to the group in
+    /// use, where it was still listed.
+    fn owners(&self) -> Vec<(Pick, usize)> {
+        let mut owners: Vec<(Pick, usize)> = Vec::new();
+        let mut claim = |pick: &Pick, group: usize| {
+            if !owners.iter().any(|(owned, _)| owned == pick) {
+                owners.push((pick.clone(), group));
+            }
+        };
+        for (index, group) in self.groups.iter().enumerate() {
+            for pick in &group.tabs {
+                claim(pick, index);
+            }
+        }
+        let kept = |pick: &Pick, group: &SavedGroup| !group.hidden.contains(pick);
+        let closed = self.groups.iter().flat_map(|group| &group.hidden);
+        let shown = self.groups.iter().filter_map(|group| group.pick.as_ref());
+        for pick in shown.chain(closed) {
+            let shows = |group: &SavedGroup| group.pick.as_ref() == Some(pick) && kept(pick, group);
+            let keeps = |group: &SavedGroup| kept(pick, group);
+            let active = self.groups.get(self.active);
+            let using = |wanted: &dyn Fn(&SavedGroup) -> bool| {
+                Some(self.active).filter(|_| active.is_some_and(wanted))
+            };
+            let owner = using(&shows)
+                .or_else(|| self.groups.iter().position(shows))
+                .or_else(|| using(&keeps))
+                .or_else(|| self.groups.iter().position(keeps))
+                .unwrap_or(self.active);
+            claim(pick, owner);
+        }
+        owners
     }
 }
 
@@ -143,10 +185,7 @@ impl Layout {
     /// The layout to save, or `None` for one group following the terminal,
     /// which is what a workspace shows without one.
     pub(crate) fn saved(&self) -> Option<SavedLayout> {
-        if self.groups.len() == 1
-            && self.groups[0].pick.is_none()
-            && self.groups[0].hidden.is_empty()
-        {
+        if self.groups.len() == 1 && self.groups[0].pick.is_none() {
             return None;
         }
         Some(SavedLayout {
@@ -156,7 +195,13 @@ impl Layout {
                 .map(|group| SavedGroup {
                     pick: group.pick.clone(),
                     share: group.share,
-                    hidden: group.hidden.clone(),
+                    tabs: self
+                        .owners
+                        .iter()
+                        .filter(|(_, owner)| *owner == group.id)
+                        .map(|(pick, _)| pick.clone())
+                        .collect(),
+                    hidden: Vec::new(),
                 })
                 .collect(),
             active: self
@@ -168,27 +213,44 @@ impl Layout {
     }
 
     /// A layout rebuilt from `saved`, with IDs from `ids`. Widths are
-    /// scaled to fill the row, and the group in use is the latest used, so
-    /// it holds any tab it shares.
+    /// scaled to fill the row. A group saved showing a tab that is not its
+    /// own shows nothing until it is given one.
     pub(crate) fn restore(saved: &SavedLayout, ids: &mut GroupIds) -> Self {
         let total: f32 = saved.groups.iter().map(|group| group.share).sum();
-        let groups: Vec<Group> = saved
+        let mut groups: Vec<Group> = saved
             .groups
             .iter()
-            .enumerate()
-            .map(|(index, group)| Group {
+            .map(|group| Group {
                 id: ids.next(),
                 pick: group.pick.clone(),
-                used: if index == saved.active { 1 } else { 0 },
                 share: group.share / total,
-                hidden: group.hidden.clone(),
             })
             .collect();
         let active = groups[saved.active.min(groups.len() - 1)].id;
+        let owners: Vec<(Pick, GroupId)> = if groups.len() > 1 {
+            saved
+                .owners()
+                .into_iter()
+                .map(|(pick, index)| (pick, groups[index].id))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        for group in &mut groups {
+            let owned = |pick: &Pick| {
+                owners
+                    .iter()
+                    .any(|(tab, owner)| tab == pick && *owner == group.id)
+            };
+            if owners.is_empty() || group.pick.as_ref().is_some_and(owned) {
+                continue;
+            }
+            group.pick = None;
+        }
         Self {
             groups,
             active,
-            clock: 1,
+            owners,
         }
     }
 
@@ -198,12 +260,10 @@ impl Layout {
             groups: vec![Group {
                 id,
                 pick: None,
-                used: 0,
                 share: 1.,
-                hidden: Vec::new(),
             }],
             active: id,
-            clock: 0,
+            owners: Vec::new(),
         }
     }
 
@@ -234,164 +294,188 @@ impl Layout {
         self.group(id).map_or(0., |group| group.share)
     }
 
-    /// The tab `id` picked, reading a group that follows the terminal as
-    /// the daemon's `focused` tab.
+    /// The tab `id` shows, reading a lone group that follows the terminal
+    /// as the daemon's `focused` tab.
     pub(crate) fn pick(&self, id: GroupId, focused: Option<&str>) -> Option<Pick> {
         let group = self.group(id)?;
-        group
-            .pick
-            .clone()
-            .or_else(|| focused.map(|tab| Pick::Herdr(tab.to_owned())))
+        group.pick.clone().or_else(|| {
+            focused
+                .filter(|_| self.groups.len() == 1)
+                .map(|tab| Pick::Herdr(tab.to_owned()))
+        })
     }
 
     /// What `id` draws, where `focused` names the tab each group's own
     /// connection focuses.
     pub(crate) fn shown(&self, id: GroupId, focused: impl Fn(GroupId) -> Option<String>) -> Shown {
-        let Some(pick) = self.pick(id, focused(id).as_deref()) else {
+        let focused = focused(id);
+        match self.pick(id, focused.as_deref()) {
+            Some(Pick::Page(page)) => Shown::Page(page),
+            Some(Pick::Herdr(tab)) if focused.as_deref() == Some(tab.as_str()) => Shown::Terminal,
+            Some(Pick::Herdr(tab)) => Shown::Elsewhere(tab),
             // Following a terminal the daemon has not focused: the terminal
             // area still shows, as it does before a workspace connects.
-            let follower = self
-                .groups
-                .iter()
-                .filter(|group| group.pick.is_none())
-                .max_by_key(|group| group.used)
-                .map(|group| group.id);
-            return if follower == Some(id) {
-                Shown::Terminal
-            } else {
-                Shown::Empty
-            };
-        };
-        let live = match &pick {
-            Pick::Herdr(tab) if focused(id).as_deref() != Some(tab.as_str()) => false,
-            _ => self.holder(&pick, &focused) == Some(id),
-        };
-        match (live, pick) {
-            (true, Pick::Herdr(_)) => Shown::Terminal,
-            (true, Pick::Page(page)) => Shown::Page(page),
-            (false, pick) => Shown::Elsewhere(pick),
+            None if self.groups.len() == 1 => Shown::Terminal,
+            None => Shown::Empty,
         }
     }
 
-    /// The group a tab is live in: the latest used of those that picked it.
-    pub(crate) fn holder(
-        &self,
-        pick: &Pick,
-        focused: &impl Fn(GroupId) -> Option<String>,
-    ) -> Option<GroupId> {
+    /// The Herdr tab each group shows: the groups that need a terminal
+    /// connection. A group following the terminal is left out; it shows
+    /// whatever the window's own connection focuses.
+    pub(crate) fn terminal_holders(&self) -> Vec<(GroupId, String)> {
         self.groups
             .iter()
-            .filter(|group| {
-                self.pick(group.id, focused(group.id).as_deref()).as_ref() == Some(pick)
+            .filter_map(|group| match &group.pick {
+                Some(Pick::Herdr(tab)) => Some((group.id, tab.clone())),
+                _ => None,
             })
-            .max_by_key(|group| group.used)
-            .map(|group| group.id)
-    }
-
-    /// The Herdr tab each group picked, for the groups that hold it: the
-    /// ones that need a terminal connection. A group following the terminal
-    /// is left out; it shows whatever the window's own connection focuses.
-    pub(crate) fn terminal_holders(&self) -> Vec<(GroupId, String)> {
-        let mut holders: Vec<(GroupId, String, u64)> = Vec::new();
-        for group in &self.groups {
-            let Some(Pick::Herdr(tab)) = &group.pick else {
-                continue;
-            };
-            match holders.iter_mut().find(|(_, held, _)| held == tab) {
-                Some(holder) if holder.2 < group.used => {
-                    *holder = (group.id, tab.clone(), group.used)
-                }
-                Some(_) => {}
-                None => holders.push((group.id, tab.clone(), group.used)),
-            }
-        }
-        holders
-            .into_iter()
-            .map(|(group, tab, _)| (group, tab))
             .collect()
     }
 
     /// Makes `id` the group in use. Returns whether anything changed.
     pub(crate) fn activate(&mut self, id: GroupId) -> bool {
-        let clock = self.clock;
-        let active = self.active;
-        let Some(group) = self.group_mut(id) else {
-            return false;
-        };
-        if active == id && group.used == clock {
+        if self.active == id || self.group(id).is_none() {
             return false;
         }
-        group.used = clock + 1;
-        self.clock = clock + 1;
+        self.settle_owners();
         self.active = id;
         true
     }
 
-    /// Picks `pick` in `id` and uses the group. A tab picked here is back
-    /// in the group's strip.
-    pub(crate) fn choose(&mut self, id: GroupId, pick: Pick) {
-        if let Some(group) = self.group_mut(id) {
-            group.hidden.retain(|hidden| *hidden != pick);
-            group.pick = Some(pick);
-            self.activate(id);
-        }
-    }
-
-    /// Whether `id`'s strip lists `pick`. A tab closed in every group is
-    /// still listed in `fallback`, the group in use, so no open tab is ever
-    /// out of reach.
-    pub(crate) fn lists(&self, id: GroupId, pick: &Pick, fallback: GroupId) -> bool {
-        let hidden_in = |group: &Group| group.hidden.contains(pick);
-        let Some(group) = self.group(id) else {
-            return false;
-        };
-        !hidden_in(group) || (id == fallback && self.groups.iter().all(hidden_in))
-    }
-
-    /// Closes `picks` in `id`: gone from its strip, open everywhere else.
-    pub(crate) fn hide(&mut self, id: GroupId, picks: impl IntoIterator<Item = Pick>) {
-        let Some(group) = self.group_mut(id) else {
+    /// Names the group in use as the owner of each tab in `tabs` that has
+    /// none yet. A lone group owns every tab without being named.
+    pub(crate) fn adopt(&mut self, tabs: impl IntoIterator<Item = Pick>) {
+        if self.groups.len() < 2 {
             return;
-        };
-        for pick in picks {
-            if !group.hidden.contains(&pick) {
-                group.hidden.push(pick);
+        }
+        for pick in tabs {
+            if self.claimed(&pick).is_none() {
+                self.owners.push((pick, self.active));
             }
         }
     }
 
-    /// Drops closed-in-group marks for tabs that are gone for good.
-    pub(crate) fn forget_hidden(&mut self, mut open: impl FnMut(&Pick) -> bool) {
-        for group in &mut self.groups {
-            group.hidden.retain(&mut open);
+    /// Before the group in use changes, the tabs it showed without being
+    /// named their owner stay its own.
+    fn settle_owners(&mut self) {
+        let shown: Vec<Pick> = self
+            .groups
+            .iter()
+            .filter_map(|group| group.pick.clone())
+            .collect();
+        for pick in shown {
+            if self.claimed(&pick).is_none()
+                && let Some(group) = self.groups.iter().find(|g| g.pick.as_ref() == Some(&pick))
+            {
+                self.owners.push((pick, group.id));
+            }
         }
     }
 
-    /// Splits `id`: a new group to its right picks the same tab, takes half
-    /// its width, and becomes the group in use, so the tab moves with it.
-    /// A group that followed the terminal keeps `focused`.
-    pub(crate) fn split(&mut self, id: GroupId, new: GroupId, focused: Option<&str>) -> bool {
+    /// The group named as `pick`'s owner, if any.
+    pub(crate) fn claimed(&self, pick: &Pick) -> Option<GroupId> {
+        self.owners
+            .iter()
+            .find(|(tab, _)| tab == pick)
+            .map(|(_, group)| *group)
+    }
+
+    /// The group `pick` belongs to: the one named its owner, else the group
+    /// in use, which is every tab's owner while it is the only group.
+    pub(crate) fn owner(&self, pick: &Pick) -> GroupId {
+        self.claimed(pick)
+            .filter(|_| self.groups.len() > 1)
+            .unwrap_or(self.active)
+    }
+
+    /// Whether `id`'s strip lists `pick`: a tab is listed in the one group
+    /// it belongs to.
+    pub(crate) fn lists(&self, id: GroupId, pick: &Pick) -> bool {
+        self.group(id).is_some() && self.owner(pick) == id
+    }
+
+    /// Gives `pick` to `id`, taking it from the group that had it, which
+    /// shows nothing until it is given another of its tabs.
+    fn claim(&mut self, id: GroupId, pick: &Pick) {
+        for group in &mut self.groups {
+            if group.id != id && group.pick.as_ref() == Some(pick) {
+                group.pick = None;
+            }
+        }
+        if self.groups.len() < 2 {
+            return;
+        }
+        match self.owners.iter_mut().find(|(tab, _)| tab == pick) {
+            Some(owned) => owned.1 = id,
+            None => self.owners.push((pick.clone(), id)),
+        }
+    }
+
+    /// Shows `pick` in `id` without using the group. The tab becomes the
+    /// group's own.
+    pub(crate) fn show(&mut self, id: GroupId, pick: Pick) {
+        if self.group(id).is_none() {
+            return;
+        }
+        self.claim(id, &pick);
+        if let Some(group) = self.group_mut(id) {
+            group.pick = Some(pick);
+        }
+    }
+
+    /// Shows `pick` in `id` and uses the group. The tab becomes the group's
+    /// own.
+    pub(crate) fn choose(&mut self, id: GroupId, pick: Pick) {
+        if self.group(id).is_some() {
+            self.activate(id);
+            self.show(id, pick);
+        }
+    }
+
+    /// Forgets a tab that is gone for good. Returns the group that showed
+    /// it, which now shows nothing, or follows the terminal when alone.
+    pub(crate) fn forget(&mut self, pick: &Pick) -> Option<GroupId> {
+        self.owners.retain(|(tab, _)| tab != pick);
+        let group = self
+            .groups
+            .iter_mut()
+            .find(|group| group.pick.as_ref() == Some(pick))?;
+        group.pick = None;
+        Some(group.id)
+    }
+
+    /// Splits `id`: a new group to its right, without tabs, takes half its
+    /// width and becomes the group in use. A group that followed the
+    /// terminal keeps `focused`, and every tab in `tabs` without an owner
+    /// stays with the group in use before the split.
+    pub(crate) fn split(
+        &mut self,
+        id: GroupId,
+        new: GroupId,
+        focused: Option<&str>,
+        tabs: impl IntoIterator<Item = Pick>,
+    ) -> bool {
         let Some(index) = self.groups.iter().position(|group| group.id == id) else {
             return false;
         };
-        for group in &mut self.groups {
-            if group.pick.is_none() {
-                group.pick = focused.map(|tab| Pick::Herdr(tab.to_owned()));
-            }
+        // Beside another, a group showing nothing has no tab to keep.
+        if let [lone] = &mut self.groups[..]
+            && lone.pick.is_none()
+        {
+            lone.pick = focused.map(|tab| Pick::Herdr(tab.to_owned()));
         }
         let source = &mut self.groups[index];
         source.share /= 2.;
-        // The new group lists what its source lists, as an editor's split
-        // opens with the same tabs.
         let group = Group {
             id: new,
-            pick: source.pick.clone(),
-            used: 0,
+            pick: None,
             share: source.share,
-            hidden: source.hidden.clone(),
         };
         self.groups.insert(index + 1, group);
-        self.activate(new);
+        self.adopt(tabs);
+        self.settle_owners();
+        self.active = new;
         true
     }
 
@@ -406,8 +490,8 @@ impl Layout {
         Some((index, self.groups[index].share, self.groups[into].id))
     }
 
-    /// Closes `id`, giving its width to the group on its left, or its right
-    /// when it was first. The last group never closes.
+    /// Closes `id`, giving its width and its tabs to the group on its left,
+    /// or its right when it was first. The last group never closes.
     pub(crate) fn close(&mut self, id: GroupId) -> bool {
         if self.groups.len() < 2 {
             return false;
@@ -415,12 +499,22 @@ impl Layout {
         let Some(index) = self.groups.iter().position(|group| group.id == id) else {
             return false;
         };
+        self.settle_owners();
         let closed = self.groups.remove(index);
         let neighbour = index.saturating_sub(1);
         self.groups[neighbour].share += closed.share;
+        let next = self.groups[neighbour].id;
+        for owned in &mut self.owners {
+            if owned.1 == id {
+                owned.1 = next;
+            }
+        }
         if self.active == id {
-            let next = self.groups[neighbour].id;
-            self.activate(next);
+            self.active = next;
+        }
+        // A lone group owns every tab without being named.
+        if self.groups.len() == 1 {
+            self.owners.clear();
         }
         true
     }
@@ -450,40 +544,18 @@ impl Layout {
     /// from a shortcut, an agent, or a closed tab. A group following the
     /// terminal already shows it.
     pub(crate) fn focus_moved(&mut self, group: GroupId, new: &str) {
-        if let Some(group) = self.group_mut(group)
-            && group.pick.is_some()
-        {
-            group.pick = Some(Pick::Herdr(new.to_owned()));
+        if self.group(group).is_some_and(|group| group.pick.is_some()) {
+            self.show(group, Pick::Herdr(new.to_owned()));
         }
     }
 
-    /// Replaces `closed` wherever it was picked, with `with` or, for `None`,
-    /// with the terminal: following it when alone, else the `focused` tab.
-    /// Returns whether any group had picked it.
-    pub(crate) fn replace(
-        &mut self,
-        closed: &Pick,
-        with: Option<Pick>,
-        focused: Option<&str>,
-    ) -> bool {
-        let with = with.or_else(|| {
-            (self.groups.len() > 1)
-                .then(|| focused.map(|tab| Pick::Herdr(tab.to_owned())))
-                .flatten()
-        });
-        let mut changed = false;
-        for group in &mut self.groups {
-            if group.pick.as_ref() == Some(closed) {
-                group.pick = with.clone();
-                changed = true;
-            }
-        }
-        changed
-    }
-
-    /// Every tab some group picked.
-    pub(crate) fn picks(&self) -> impl Iterator<Item = &Pick> + '_ {
-        self.groups.iter().filter_map(|group| group.pick.as_ref())
+    /// Every tab the layout names: the ones groups show and the ones they
+    /// own.
+    pub(crate) fn tabs(&self) -> impl Iterator<Item = &Pick> + '_ {
+        self.groups
+            .iter()
+            .filter_map(|group| group.pick.as_ref())
+            .chain(self.owners.iter().map(|(pick, _)| pick))
     }
 }
 

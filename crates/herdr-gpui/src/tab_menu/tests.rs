@@ -238,7 +238,7 @@ fn close_tab_confirms_closing_that_tab_in_herdr(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn close_tab_in_a_split_lets_only_its_group_go(cx: &mut TestAppContext) {
+fn close_tab_in_a_split_confirms_closing_that_tab_in_herdr(cx: &mut TestAppContext) {
     let (view, cx) = group_window(cx);
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
@@ -246,31 +246,22 @@ fn close_tab_in_a_split_lets_only_its_group_go(cx: &mut TestAppContext) {
         })
     });
     draw(cx);
-    let [left, right] = view.read_with(cx, |view, _| {
-        view.group_slots()
-            .into_iter()
-            .map(|slot| slot.id)
-            .collect::<Vec<_>>()
-    })[..] else {
-        panic!("two groups")
-    };
-    let tabs = |view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, group| {
-        cx.update(|_, cx| view.read(cx).group_tabs(group, cx))
-    };
-    choose(cx, "g1-tab-t1", "tab-menu-2");
-    // No confirmation and nothing for Herdr: the tab left one strip.
-    view.read_with(cx, |view, _| {
-        assert!(view.menu.page.is_none() && view.menu.close.is_none());
-        assert_eq!(view.live.snapshot.as_ref().unwrap().tabs.len(), 2);
-    });
-    assert!(!tabs(&view, cx, right).contains(&Pick::Herdr("t1".into())));
-    assert!(tabs(&view, cx, left).contains(&Pick::Herdr("t1".into())));
-
+    let left = view.read_with(cx, |view, _| view.group_slots()[0].id);
     // New Tab opens in the group whose strip asked for it.
-    choose(cx, "g1-tab-t0", "tab-menu-0");
+    choose(cx, "tab-t0", "tab-menu-0");
     view.read_with(cx, |view, _| {
         assert!(view.menu.page.is_none());
-        assert_eq!(view.expected_new_tab_group(), Some(right));
+        assert_eq!(view.expected_new_tab_group(), Some(left));
+    });
+    // Close is the tab's own close, as without a split.
+    choose(cx, "tab-t1", "tab-menu-2");
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.menu.page, Some(Page::ConfirmClose));
+        let snapshot = view.live.snapshot.as_ref().unwrap();
+        assert_eq!(
+            view.menu.close,
+            crate::close_modal::CloseConfirmation::capture_tab(snapshot, "t1")
+        );
     });
 }
 

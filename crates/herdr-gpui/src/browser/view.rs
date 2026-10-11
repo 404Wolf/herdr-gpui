@@ -43,6 +43,15 @@ pub(crate) struct Browser {
     /// Pages a menu covers, stood in for by a picture of themselves.
     #[cfg(any(target_os = "macos", windows))]
     frozen: HashMap<TabId, Freeze>,
+    /// Groups whose shown tab closed where their strips were not at hand:
+    /// in another window, or in a workspace not on screen. Each is given
+    /// another of its tabs, or closed, when its workspace next settles.
+    pub(super) emptied: Vec<GroupId>,
+    /// Tabs being closed one after another, as Close Others closes them.
+    pub(crate) closing: Option<crate::close_modal::CloseRun>,
+    /// Where each group drew last frame, so a carried tab knows the group
+    /// it is over.
+    pub(crate) group_bounds: std::rc::Rc<std::cell::RefCell<HashMap<GroupId, Bounds<Pixels>>>>,
     /// Each group's address field, and the tab whose address it last showed.
     pub(super) addresses: HashMap<GroupId, (Entity<SearchInput>, Option<TabId>)>,
     /// The group whose "+" asked for a new Herdr tab, which it picks once
@@ -100,6 +109,9 @@ impl Browser {
             page_bounds: Default::default(),
             #[cfg(any(target_os = "macos", windows))]
             frozen: HashMap::new(),
+            emptied: Vec::new(),
+            closing: None,
+            group_bounds: Default::default(),
             addresses: HashMap::new(),
             new_tab_group: None,
             terminals: Default::default(),
@@ -170,20 +182,15 @@ impl HerdrWindow {
                 .borrow_mut()
                 .retain(|id, _| !gone(*id));
         }
-        let key = self.browser_key();
-        let focused = self.focused_herdr_tab().map(str::to_owned);
-        for (workspace, layout) in &mut self.browser.layouts {
-            // Only the focused workspace's terminal is known here.
-            let focused = focused
-                .as_deref()
-                .filter(|_| key.as_ref() == Some(workspace));
+        let browser = &mut self.browser;
+        for layout in browser.layouts.values_mut() {
             let closed: Vec<Pick> = layout
-                .picks()
+                .tabs()
                 .filter(|pick| matches!(pick, Pick::Page(id) if gone(*id)))
                 .cloned()
                 .collect();
             for pick in closed {
-                layout.replace(&pick, None, focused);
+                browser.emptied.extend(layout.forget(&pick));
             }
         }
         #[cfg(any(target_os = "macos", windows))]
@@ -278,7 +285,7 @@ impl HerdrWindow {
                 .browser
                 .layouts
                 .values()
-                .flat_map(Layout::picks)
+                .flat_map(Layout::tabs)
                 .filter_map(|pick| match pick {
                     Pick::Page(id) => Some(*id),
                     Pick::Herdr(_) => None,
@@ -301,7 +308,8 @@ impl HerdrWindow {
             }
         }
         self.forget_closed_workspaces(cx);
-        self.forget_closed_herdr_tabs(cx);
+        self.settle_groups(window, cx);
+        self.advance_close_run(window, cx);
         self.ensure_code_page(window, cx);
         self.poll_deliveries(cx);
         self.poll_reviews(cx);
