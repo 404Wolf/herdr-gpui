@@ -85,7 +85,11 @@ impl HerdrWindow {
         else {
             return false;
         };
-        if editor.input.read(cx).is_composing() {
+        let input = editor.input.read(cx);
+        if !input.focus.is_focused(window) {
+            return false;
+        }
+        if input.is_composing() {
             return true;
         }
         match event.keystroke.key.as_str() {
