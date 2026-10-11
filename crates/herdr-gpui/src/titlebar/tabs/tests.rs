@@ -5,6 +5,7 @@ use core::prelude::v1::test;
 use gpui::{Bounds, TestAppContext, VisualTestContext, point, px, size};
 use herdr_client::protocol::ClientShellTabStatusSegment;
 
+mod navigation_gap;
 mod toggle_position;
 
 fn draw(cx: &mut VisualTestContext) {
@@ -265,7 +266,7 @@ fn a_narrow_sidebar_hands_back_and_forward_to_the_strip(cx: &mut TestAppContext)
     let (view, cx) = window(cx);
     // What the header needs differs by platform: the traffic lights'
     // clearance and each style's buttons.
-    let needed = LEADING + SIDEBAR_TOGGLE + Style::NATIVE.width() + SIDEBAR_END;
+    let needed = LEADING + SIDEBAR_TOGGLE_SIZE + Style::NATIVE.width() + SIDEBAR_END;
     for width in [None, Some(160.)] {
         cx.update(|_, cx| {
             view.update(cx, |view, cx| {
