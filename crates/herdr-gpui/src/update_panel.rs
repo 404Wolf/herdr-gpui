@@ -208,7 +208,7 @@ impl HerdrWindow {
                 if *total == 0 {
                     format!("Downloading: {received} bytes received (size unknown)")
                 } else if received >= total {
-                    "Download complete. Extracting and verifying the update...".into()
+                    "Download complete. Verifying the update...".into()
                 } else {
                     format!(
                         "Downloading: {received} / {total} bytes ({:.0}%)",
@@ -218,7 +218,7 @@ impl HerdrWindow {
                 Some(UpdateAction::Cancel),
             ),
             State::Ready { .. } => (
-                "Download verified. Install and restart when you are ready.".into(),
+                "Download verified. Install when you are ready; system packages may ask for administrator authentication.".into(),
                 Some(UpdateAction::Install),
             ),
             State::Installing => (
@@ -231,12 +231,12 @@ impl HerdrWindow {
                 Some(UpdateAction::Upgrade),
             ),
             State::Upgrading { detail } => (
-                format!("Homebrew: {detail}"),
+                detail.clone(),
                 // Homebrew is never interrupted mid-upgrade: see updater::cancel.
                 None,
             ),
             State::Restart { version } => (
-                format!("Homebrew installed {version}. Restart to finish; your daemon and terminal sessions stay running."),
+                format!("Installed {version}. Restart to finish; your daemon and terminal sessions stay running."),
                 Some(UpdateAction::Restart),
             ),
             State::Restarting => ("Starting the updated app...".into(), None),
@@ -252,7 +252,7 @@ impl HerdrWindow {
             | State::Homebrew { version, .. }
             | State::Restart { version } => version.as_str(),
             State::Current => APP_VERSION,
-            _ => "Not yet known",
+            _ => self.updater.latest_version().unwrap_or("Not yet known"),
         };
         // Notes are shown while an update is on offer, not once it is under way.
         let notes = match state {
@@ -426,7 +426,7 @@ impl HerdrWindow {
                 UpdateAction::Check if matches!(state, State::Error(_)) => "Retry",
                 UpdateAction::Check => "Check for Updates",
                 UpdateAction::Download => "Download",
-                UpdateAction::Install => "Install and Restart",
+                UpdateAction::Install => "Install Update",
                 UpdateAction::Upgrade => "Update with Homebrew",
                 UpdateAction::Restart => "Restart",
                 UpdateAction::Cancel => "Cancel",

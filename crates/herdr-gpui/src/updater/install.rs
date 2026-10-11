@@ -98,7 +98,7 @@ fn private_directory(parent: &Path) -> Result<TempDir> {
 }
 
 // Drain both pipes concurrently, with a hard memory cap and a finite deadline.
-fn output(command: &mut Command, cancel: &AtomicBool) -> Result<String> {
+pub(super) fn output(command: &mut Command, cancel: &AtomicBool) -> Result<String> {
     check(cancel)?;
     command
         .env_clear()
@@ -169,6 +169,9 @@ fn authenticate(request: &Request) -> Result<release::Offer> {
         option_env!("HERDR_UPDATE_PUBLIC_KEY").ok_or(Error::LocalBuild)?,
         &request.version,
     )?;
+    if manifest.schema != 1 {
+        return Err(Error::ManifestSchema);
+    }
     let asset = manifest
         .assets
         .iter()

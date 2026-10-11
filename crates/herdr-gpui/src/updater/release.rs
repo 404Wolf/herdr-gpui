@@ -2,7 +2,9 @@
 //! The caller supplies the compile-time HERDR_UPDATE_PUBLIC_KEY, never a secret.
 
 use super::UpdateChannel;
+mod format;
 use super::error::{Result, UpdateError as Error};
+pub(super) use format::Format;
 use std::{
     fs::{File, OpenOptions},
     io::{Read, Write},
@@ -139,17 +141,29 @@ fn asset_name(version: &str, target: &str) -> Result<String> {
 }
 
 fn validate_manifest(manifest: &Manifest) -> Result<()> {
-    if manifest.schema != 1 || parse_version(&manifest.version).is_none() {
+    if !matches!(manifest.schema, 1 | 2) || parse_version(&manifest.version).is_none() {
         return Err(Error::ManifestSchema);
     }
-    if manifest.assets.is_empty() || manifest.assets.len() > 3 {
+    let maximum = if manifest.schema == 1 { 3 } else { 6 };
+    if manifest.assets.is_empty() || manifest.assets.len() > maximum {
         return Err(Error::ManifestAssetCount);
     }
     for (index, asset) in manifest.assets.iter().enumerate() {
-        if asset.name != asset_name(&manifest.version, &asset.target)?
-            || manifest.assets[..index]
-                .iter()
-                .any(|other| other.target == asset.target)
+        let valid_name = if manifest.schema == 1 {
+            asset.name == asset_name(&manifest.version, &asset.target)?
+        } else {
+            [Format::Deb, Format::Rpm, Format::Arch]
+                .into_iter()
+                .any(|format| {
+                    format
+                        .name(&manifest.version, &asset.target)
+                        .is_ok_and(|name| name == asset.name)
+                })
+        };
+        if !valid_name
+            || manifest.assets[..index].iter().any(|other| {
+                other.name == asset.name || (manifest.schema == 1 && other.target == asset.target)
+            })
         {
             return Err(Error::ManifestAsset);
         }
@@ -410,25 +424,50 @@ pub(super) fn check(
     current_version: &str,
     key_hex: &str,
     channel: UpdateChannel,
+    format: Format,
     cancel: &AtomicBool,
+) -> Result<Option<Offer>> {
+    let Some(target) = target() else {
+        return Ok(None);
+    };
+    check_with(
+        current_version,
+        key_hex,
+        channel,
+        format,
+        target,
+        cancel,
+        |url, limit| {
+            read_bounded(
+                request(url, RequestProfile::Metadata, cancel)?
+                    .into_body()
+                    .into_reader(),
+                limit,
+                cancel,
+            )
+        },
+    )
+}
+
+/// Inject only transport, so offline fixtures exercise the complete production
+/// selection/authentication path rather than a second implementation of it.
+fn check_with(
+    current_version: &str,
+    key_hex: &str,
+    channel: UpdateChannel,
+    format: Format,
+    target: &str,
+    cancel: &AtomicBool,
+    mut fetch: impl FnMut(&str, usize) -> Result<Vec<u8>>,
 ) -> Result<Option<Offer>> {
     cancelled(cancel)?;
     let current = parse_version(current_version).ok_or(Error::CurrentVersion)?;
     VerifyingKey::from_bytes(&hex32(key_hex)?).map_err(Error::PublicKey)?;
-    let Some(target) = target() else {
-        return Ok(None);
-    };
     let (url, limit) = match channel {
         UpdateChannel::Stable => (LATEST_URL, METADATA_LIMIT),
         UpdateChannel::Beta => (RELEASES_URL, RELEASE_LIST_LIMIT),
     };
-    let metadata = read_bounded(
-        request(url, RequestProfile::Metadata, cancel)?
-            .into_body()
-            .into_reader(),
-        limit,
-        cancel,
-    )?;
+    let metadata = fetch(url, limit)?;
     let release = match channel {
         UpdateChannel::Stable => parse_release(&metadata)?,
         UpdateChannel::Beta => parse_releases(&metadata)?,
@@ -436,39 +475,32 @@ pub(super) fn check(
     if parse_version(&release.version).ok_or(Error::ReleaseVersion)? <= current {
         return Ok(None);
     }
-    for (name, limit) in [
-        ("update-manifest.json", MANIFEST_LIMIT as u64),
-        ("update-manifest.sig", 64),
-    ] {
+    let (manifest_name, signature_name) = format.manifest();
+    for (name, limit) in [(manifest_name, MANIFEST_LIMIT as u64), (signature_name, 64)] {
         let asset = release
             .assets
             .iter()
             .find(|asset| asset.name == name)
-            .ok_or(Error::MissingSignedMetadata)?;
-        if asset.size > limit || (name == "update-manifest.sig" && asset.size != 64) {
+            .ok_or(if format == Format::Archive {
+                Error::MissingSignedMetadata
+            } else {
+                Error::MissingPackageMetadata
+            })?;
+        if asset.size > limit || (name == signature_name && asset.size != 64) {
             return Err(Error::SignedMetadataSize);
         }
     }
-    let fetch = |name, limit| {
-        read_bounded(
-            request(
-                &release_url(&release.version, name),
-                RequestProfile::Metadata,
-                cancel,
-            )?
-            .into_body()
-            .into_reader(),
-            limit,
-            cancel,
-        )
-    };
-    let manifest_bytes = fetch("update-manifest.json", MANIFEST_LIMIT)?;
-    let signature = fetch("update-manifest.sig", 64)?;
+    let manifest_bytes = fetch(
+        &release_url(&release.version, manifest_name),
+        MANIFEST_LIMIT,
+    )?;
+    let signature = fetch(&release_url(&release.version, signature_name), 64)?;
     let manifest = verify_manifest(&manifest_bytes, &signature, key_hex, &release.version)?;
+    let name = format.name(&release.version, target)?;
     let asset = manifest
         .assets
         .iter()
-        .find(|asset| asset.target == target)
+        .find(|asset| asset.target == target && asset.name == name)
         .ok_or(Error::MissingPlatformAsset)?
         .clone();
     if !release
@@ -492,7 +524,7 @@ pub(super) fn check(
 // `updater::unsupported`). These stay compiled and tested everywhere because
 // they are portable; they are simply unreachable where the updater is disabled.
 #[cfg_attr(not(unix), allow(dead_code))]
-fn copy_archive(
+pub(super) fn copy_archive(
     mut reader: impl Read,
     mut writer: impl Write,
     asset: &Asset,

@@ -10,10 +10,9 @@ both executables into a universal app, and Linux on native Ubuntu 24.04 x86_64 a
 ARM64 runners. Linux remains experimental. Package-managed installs are updated
 through their package manager, never by overwriting managed files: a macOS
 Homebrew cask is upgraded by running Homebrew (see [Homebrew Casks](#homebrew-casks)),
-and Linux AppImage, Snap, and Flatpak containers are refused outright. An
-executable under `/usr` (other than `/usr/local`) or in `/nix/store` is reported
-as package-managed too, which covers the `.deb`, `.rpm` and Arch packages; the
-Nix flake also embeds no update key, so it never offers an update.
+and Linux `.deb`, `.rpm`, and Arch installations use their owning package manager
+(see [Linux Packages](#linux-packages)). AppImage, Snap, Flatpak, and `/nix/store`
+installations remain externally managed. The Nix flake embeds no update key.
 
 ## Repository Configuration
 
@@ -124,6 +123,14 @@ here only for readability:
   PEM, or a Sigstore signature. OpenSSL signs the exact JSON bytes using
   `pkeyutl -sign -rawin`. Any whitespace change requires regenerating the signature.
 
+Linux packages use a separate `package-manifest.json` and raw Ed25519
+`package-manifest.sig`, signed with the same key. Its schema is 2 with the same
+fields and bounds, containing up to six uniquely named assets: `.deb`, `.rpm`,
+and `.pkg.tar.zst` for each GNU Linux target, named `Herdr-VERSION-TARGET.EXT`.
+Release CI requires all six. Schema 1 remains unchanged so already-installed
+standalone clients can still update. A package updater never substitutes a
+standalone archive when package metadata is absent.
+
 The client discovers the latest stable release through
 `https://api.github.com/repos/penso/herdr-gpui/releases/latest`, which GitHub
 never resolves to a prerelease. With `[updates] channel = "beta"` (Settings >
@@ -161,6 +168,7 @@ python3 scripts/update-manifest.py package-linux path/to/herdr-gpui \
   dist/herdr-gpui-20260920.1-x86_64-unknown-linux-gnu-update.tar.gz
 # Package the aarch64 Linux archive too before requiring all release targets:
 python3 scripts/update-manifest.py create dist 20260920.1 --require-all-targets
+python3 scripts/update-manifest.py create dist 20260920.1 --packages
 HERDR_UPDATE_PUBLIC_KEY="$public" python3 scripts/update-manifest.py validate-public-key
 HERDR_UPDATE_PUBLIC_KEY="$public" python3 scripts/update-manifest.py check-key \
   "$OPENSSL" path/to/private.pem
@@ -188,6 +196,10 @@ regular, non-symlink files in bounds. The command hashes their bytes but does no
 authenticate arbitrary input archives or inspect their contents; use the package
 commands on trusted build outputs first.
 
+`create DIRECTORY VERSION --packages` instead requires the six exact Linux
+package names and writes `package-manifest.json`. It applies the same regular-file,
+size, and hash checks and never changes the legacy manifest.
+
 ## Release Pipeline
 
 1. Audit the workflow, validate owner/main/SHA/workspace version and public key,
@@ -202,16 +214,17 @@ commands on trusted build outputs first.
    USTAR before signing-script cleanup. The input `dist/Herdr.app` is still
    unsigned and must never be used for the updater. No ZIP is published.
 4. Download both current-run Linux artifacts without executing their contents.
-   Require all three updater archives, check the PEM/public-key match, sign the
-   exact JSON, verify the signature, and require 64 raw bytes. Upload the DMG,
-   macOS updater archive, JSON and raw signature for the attestation job.
+   Require all three updater archives and all six Linux packages, check the
+   PEM/public-key match, sign both exact manifest JSON files, verify both signatures,
+   and require 64 raw bytes each. Upload the DMG, macOS updater archive, both JSON
+   files and raw signatures for the attestation job.
 5. In the separate protected OIDC job, combine these with both Linux artifact
    sets (manual tarball, `.deb`, `.rpm`, Arch package and updater archive), both Windows zips (manual download only, never in the update manifest),
-   and the locked six-target SBOM. Require the exact seventeen-file base set, then
-   checksum, Sigstore-sign and attest all seventeen files. Each has four sidecars
-   (`.sha256`, `.sha512`, `.sig`, `.crt`); `SHA256SUMS` covers all 85 files.
+   and the locked six-target SBOM. Require the exact nineteen-file base set, then
+   checksum, Sigstore-sign and attest all nineteen files. Each has four sidecars
+   (`.sha256`, `.sha512`, `.sig`, `.crt`); `SHA256SUMS` covers all 95 files.
 6. The protected publication job refuses existing tags/releases, creates a
-   `vVERSION` tag at the validated SHA and a draft, uploads all 86 assets, then
+   `vVERSION` tag at the validated SHA and a draft, uploads all 96 assets, then
    re-downloads and verifies the exact set and hashes before publication. The
    separately approved Homebrew job uses only the verified published DMG.
 
@@ -276,7 +289,7 @@ Run the standalone contract tests locally:
 
 ```sh
 OPENSSL="$(brew --prefix openssl@3)/bin/openssl" \
-  python3 -m unittest discover -s scripts -p 'test_update_manifest.py' -v
+  python3 -m unittest discover -s scripts -p 'test_*manifest.py' -v
 actionlint .github/workflows/release.yml .github/workflows/promote.yml .github/workflows/updater.yml
 zizmor --offline .github/workflows/release.yml .github/workflows/promote.yml .github/workflows/updater.yml
 git diff --check
@@ -314,7 +327,7 @@ Cancel is acknowledged after the current operation releases its staging resource
 a stalled HTTP read can delay cancellation until its request deadline (up to ten
 minutes for an archive). No cancelled download is installed.
 
-Linux installation requires an ordinary user-owned executable under `HOME`, such
+Standalone Linux installation requires an ordinary user-owned executable under `HOME`, such
 as `~/.local/bin/herdr-gpui`, with safe ancestor permissions. Root, system locations,
 symlinked paths, hard-linked binaries, and known package-container environments
 are refused. Supported archive targets are x86_64 GNU and aarch64 GNU Linux.
@@ -331,6 +344,48 @@ in its `install-result.txt`. Rename or relaunch-spawn failures attempt restorati
 There is no post-launch health acknowledgement or automatic rollback if the new
 process starts successfully and later crashes. Retain recovery copies until the
 new version is confirmed working; cleanup is manual.
+
+## Linux Packages
+
+For an executable under `/usr` (excluding `/usr/local`), the worker queries
+`dpkg-query --search`, `rpm -qf`, and `pacman -Qoq`. Exactly one must identify
+`herdr-gpui` as the owner of that executable. The installed format, not the distro
+name or the presence of a tool, selects the signed package for this architecture.
+Unknown or ambiguous ownership is reported with manual-install guidance.
+
+**Download** stages and verifies the matching package in a private temporary
+directory. **Install Update** rechecks ownership, signature, size, and SHA-256,
+then uses `/usr/bin/pkexec` to invoke the fixed, root-owned
+`/usr/bin/herdr-gpui --herdr-install-package-root` entry point. After authorization,
+that helper independently authenticates the request's signed manifest, opens the
+user's staging directory and regular files without following symlinks, and copies
+the package into a private root-owned directory under `/var/cache`. The copied
+bytes must match the signed length and SHA-256 before APT (`apt-get install --yes
+--no-remove`), DNF (`dnf install --assumeyes`), or pacman (`pacman -U --noconfirm`)
+is invoked on the protected copy. Replacing the user's download while the password
+prompt is open cannot change which bytes the elevated package manager installs.
+The desktop must have a PolicyKit authentication agent; the app never collects
+passwords. Package managers resolve dependencies and update their installation
+records, desktop files, icons, and license notices along with the executable.
+
+The panel shows bounded package-manager output. Once started, installation cannot
+be cancelled or killed by closing the GUI: a non-elevated helper retains the user
+staging and drains progress from the privileged helper until it exits, even after
+the GUI closes. Root staging is removed after the transaction. A successful transaction must report
+the expected installed package version before **Restart** is offered. The new
+executable is launched with the original arguments and working directory by a
+restart helper. Before acknowledging readiness, it opens a Linux pidfd for the
+current GUI; only after the GUI commits the restart and that exact process exits
+does it launch the replacement. This releases `control.sock` before the new app
+tries to bind its browser-command server. An uncommitted handoff launches nothing;
+the committed exit wait is bounded at two minutes. The daemon and terminal sessions
+are never stopped.
+
+Older installed clients with the blanket package-manager rejection require one
+manual upgrade. Releases without `package-manifest.json` and its signature cannot
+be installed by the package updater; the panel directs users to Manual Releases.
+Native PolicyKit authorization and real two-version package upgrades still require
+QA on Debian/Ubuntu, Fedora, and Arch.
 
 ## Homebrew Casks
 

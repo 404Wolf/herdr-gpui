@@ -120,6 +120,42 @@ pub enum UpdateError {
     ReleaseVersion,
     #[error("Release is missing signed update metadata")]
     MissingSignedMetadata,
+    #[error(
+        "This release has no signed Linux package metadata. Install it from Manual Releases, or check for a newer release"
+    )]
+    MissingPackageMetadata,
+    #[error(
+        "No supported package manager owns this executable. Install a release .deb, .rpm, or Arch package, or use a standalone copy under HOME"
+    )]
+    UnknownPackage,
+    #[error(
+        "The installed package changed while the update was being prepared. Check for updates again"
+    )]
+    PackageChanged,
+    #[error(
+        "Installing packages requires /usr/bin/pkexec and a running desktop PolicyKit authentication agent"
+    )]
+    MissingPolicyKit,
+    #[error("Could not start the package installer")]
+    PackageCommand {
+        program: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("Package installation failed ({status}): {detail}")]
+    PackageFailed { status: ExitStatus, detail: String },
+    #[error(
+        "Package installation was not authorized. Retry and approve the system authentication prompt"
+    )]
+    PackageAuthorization,
+    #[error("The package helper must be authorized through PolicyKit for a non-root user")]
+    PackageElevation,
+    #[error(
+        "Package updates require a trusted root-owned /usr/bin/herdr-gpui and root-owned installer storage"
+    )]
+    UnsafePackageHelper,
+    #[error("The package manager finished, but the installed version does not match the update")]
+    PackageVersion,
     #[error("Invalid signed metadata size")]
     SignedMetadataSize,
     #[error("Release has no update for this platform")]

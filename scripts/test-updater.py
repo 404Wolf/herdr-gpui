@@ -34,6 +34,7 @@ import tomllib
 
 DEPENDENCIES = (
     "anyhow",
+    "rustix",
     "serde", "serde_json", "ureq", "ed25519-dalek", "sha2", "tempfile", "tar", "flate2", "thiserror",
 )
 # Public half of the deliberately public [42; 32] unit-test signing seed.
@@ -106,7 +107,8 @@ def generate(root, temporary):
     dependencies = {}
     references = []
     for name in DEPENDENCIES:
-        inherited = member["dependencies"][name]
+        inherited = (member["dependencies"][name] if name in member["dependencies"]
+                     else member["target"]["cfg(unix)"]["dependencies"][name])
         if not inherited.get("workspace"):
             raise ValueError(f"{name} must inherit its workspace dependency")
         definition = workspace["dependencies"][name]

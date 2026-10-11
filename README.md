@@ -157,9 +157,15 @@ sudo pacman -U Herdr-VERSION-x86_64-unknown-linux-gnu.pkg.tar.zst  # Arch Linux
 ```
 
 The package manager pulls in the runtime libraries, including the Vulkan loader;
-a Vulkan driver for your GPU must also be present. Packages are not in any
-distribution repository, so they never update themselves: install each new
-release the same way. Before a release, CI installs each package on Ubuntu 24.04,
+a Vulkan driver for your GPU must also be present. **App Updates** detects which
+package manager owns the installed executable, downloads the matching `.deb`,
+`.rpm`, or Arch package, verifies its signed release metadata and checksum, then
+installs it through APT, DNF, or pacman with a PolicyKit authentication prompt.
+The authorized helper verifies and installs a protected root-owned copy.
+Choose **Restart** after installation; daemon and terminal sessions stay running.
+This requires `pkexec` and your desktop's PolicyKit authentication agent. Older
+builds that report “Package-managed installations cannot self-update” need one
+manual package upgrade to gain this support. Before a release, CI installs each package on Ubuntu 24.04,
 Debian 13 and Fedora 42, and the x86_64 Arch package on Arch Linux, then checks that
 the executable finds every library. The ARM64 Arch package targets Arch Linux ARM
 and is not install-tested.
