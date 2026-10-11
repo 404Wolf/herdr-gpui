@@ -307,12 +307,11 @@ impl FontConfig {
     }
 }
 
-/// The requested families no installed family matches. Platforms match
-/// family names without regard to case, so this does too, rather than
-/// reporting a font that draws.
+/// An unlisted name may still be a legacy alias accepted by the font backend.
 fn missing_families<'a>(
     requested: impl IntoIterator<Item = &'a str>,
     installed: &BTreeSet<String>,
+    resolves_alias: impl Fn(&str) -> bool,
 ) -> Vec<String> {
     let installed: BTreeSet<String> = installed
         .iter()
@@ -321,8 +320,25 @@ fn missing_families<'a>(
     requested
         .into_iter()
         .filter(|family| !installed.contains(&family.to_lowercase()))
+        .filter(|family| !resolves_alias(family))
         .map(str::to_owned)
         .collect()
+}
+
+fn resolves_platform_alias(family: &str) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        // Unlike TextSystem::resolve_font, this fails instead of substituting a default.
+        font_kit::source::SystemSource::new()
+            .select_family_by_name(family)
+            .is_ok()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Preserve enumeration-based validation on the other platforms.
+        let _ = family;
+        false
+    }
 }
 
 /// Ranks an installed Nerd Font family for the automatic cascade. Symbols-only
@@ -360,10 +376,20 @@ impl Config {
     /// and replaces a default family this machine lacks. `installed`
     /// is consulted only when some face still needs it, because enumerating
     /// system fonts is slow enough to keep off the UI thread. Every family
-    /// the config names is checked against it, so a typo or an uninstalled
-    /// font is reported instead of silently drawn with a substitute.
+    /// the config names is checked against it and the platform's aliases,
+    /// so an uninstalled font is reported without rejecting a valid alias.
     pub fn resolve_fonts<I>(&mut self, installed: impl FnOnce() -> I)
     where
+        I: IntoIterator<Item = String>,
+    {
+        self.resolve_fonts_with(installed, resolves_platform_alias);
+    }
+
+    pub(super) fn resolve_fonts_with<I>(
+        &mut self,
+        installed: impl FnOnce() -> I,
+        resolves_alias: impl Fn(&str) -> bool,
+    ) where
         I: IntoIterator<Item = String>,
     {
         self.replace_undrawable_fonts(super::bitmap_fonts::is_undrawable);
@@ -381,7 +407,7 @@ impl Config {
             return;
         }
         let installed: BTreeSet<String> = installed().into_iter().collect();
-        self.missing_fonts = missing_families(requested, &installed);
+        self.missing_fonts = missing_families(requested, &installed, resolves_alias);
         let mut faces = [
             &mut self.sidebar,
             &mut self.tabs,

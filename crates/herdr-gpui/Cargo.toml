@@ -100,6 +100,7 @@ nix.workspace          = true
 oo7.workspace          = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
+font-kit.workspace              = true
 block2.workspace                = true
 dispatch2.workspace             = true
 objc2-core-foundation.workspace = true
