@@ -17,7 +17,7 @@
     const ORDER = ['system', 'light', 'dark'];
     const sync = () => {
       const mode = root.dataset.theme || 'system';
-      btn.querySelectorAll('svg').forEach(s => { s.hidden = s.dataset.t !== mode; });
+      btn.querySelectorAll('svg').forEach(s => { s.toggleAttribute('hidden', s.dataset.t !== mode); });
       btn.title = btn.ariaLabel = 'Theme: ' + mode;
       meta.content = getComputedStyle(root).getPropertyValue('--g0').trim();
     };
