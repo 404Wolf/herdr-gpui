@@ -3532,7 +3532,7 @@ dependencies = [
  "fontdb 0.24.0",
  "foreign-types",
  "futures-lite",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "gpui-pre",
  "gpui-pre-platform",
  "gpui-wry",
