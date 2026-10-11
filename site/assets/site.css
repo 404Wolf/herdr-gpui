@@ -94,7 +94,7 @@ section { padding:90px 0 0; scroll-margin-top:20px; }
 
 /* Install */
 .install { display:grid; grid-template-columns:1.1fr 1fr; gap:40px; align-items:center; padding:44px; border:1px solid var(--g3); border-radius:16px; background:linear-gradient(180deg, var(--g1), var(--g0)); }
-.install h2 { font-size:34px; letter-spacing:-.025em; margin:0 0 8px; }
+.install h2 { font-size:34px; line-height:1.1; letter-spacing:-.025em; margin:0 0 10px; }
 .install p { margin:0; color:var(--mut); }
 .cmd { display:flex; justify-content:space-between; align-items:center; gap:14px; background:#0d0e10; border:1px solid var(--g3); border-radius:10px; padding:14px 16px; font-size:14.5px; }
 .cmd .p { color:var(--acc); margin-right:8px; user-select:none; }
@@ -124,6 +124,11 @@ footer .disc { margin-left:auto; max-width:460px; text-align:right; color:var(--
 @media (max-width: 560px) {
   .gal { grid-template-columns:1fr; } .gal .t.big { grid-column:auto; }
   .cmd { font-size:12.5px; }
+  .install h2 { font-size:28px; }
+  footer { margin-top:64px; padding:24px 0 calc(28px + env(safe-area-inset-bottom)); }
+  footer .wrap { flex-direction:column; gap:12px; text-align:center; }
+  footer .links { order:-1; gap:22px; font-size:13.5px; color:var(--mut); }
+  footer .disc { max-width:320px; text-align:center; font-size:11.5px; color:var(--dim); }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior:auto; }
