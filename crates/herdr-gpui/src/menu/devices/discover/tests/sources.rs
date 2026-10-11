@@ -100,6 +100,20 @@ fn tailscale_status_without_peers_or_with_bad_json() {
 }
 
 #[test]
+fn tailscale_switched_off_suggests_nothing() {
+    for state in ["Stopped", "NeedsLogin", "NoState", "Starting"] {
+        let json = STATUS.replace(
+            r#""BackendState": "Running""#,
+            &format!(r#""BackendState": "{state}""#),
+        );
+        assert!(
+            tailscale::parse(json.as_bytes()).unwrap().is_empty(),
+            "{state}"
+        );
+    }
+}
+
+#[test]
 fn tailscale_is_found_on_path_before_install_locations() {
     // A real absolute directory, so the search reads the same on every system.
     let custom = tempfile::tempdir().unwrap();

@@ -635,11 +635,6 @@ pub enum Error {
     Bonjour(#[from] mdns_sd::Error),
     #[error("Could not list this machine's network addresses: {0}")]
     LocalAddresses(#[source] io::Error),
-    #[error("Tailscale is unavailable ({status}){}", if detail.is_empty() { String::new() } else { format!(": {detail}") })]
-    TailscaleStatus {
-        status: std::process::ExitStatus,
-        detail: String,
-    },
     #[error("Tailscale did not answer in time")]
     TailscaleTimeout,
     #[error("Tailscale returned an unreadable status: {0}")]
