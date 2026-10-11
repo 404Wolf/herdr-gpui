@@ -81,6 +81,11 @@ impl HerdrWindow {
     }
 
     #[cfg(feature = "cloud")]
+    // Providers that need no setting never read the environment.
+    #[cfg_attr(
+        not(any(feature = "coder", feature = "daytona")),
+        allow(unused_variables)
+    )]
     fn cloud_providers_with_env(
         &self,
         var: impl Fn(&str) -> Option<std::ffi::OsString>,
@@ -100,6 +105,9 @@ impl HerdrWindow {
                 crate::cloud::CloudProvider::Daytona => {
                     self.config.daytona.api_url.is_some() || var("HERDR_DAYTONA_API_URL").is_some()
                 }
+                // Needs no account or URL: the SSH key is chosen in Settings.
+                #[cfg(feature = "railway")]
+                crate::cloud::CloudProvider::Railway => true,
             })
             .collect()
     }
@@ -624,6 +632,17 @@ impl HerdrWindow {
         cx.notify();
     }
 
+    #[cfg(any(feature = "daytona", feature = "railway"))]
+    fn open_provider_settings(
+        &mut self,
+        provider: crate::cloud::CloudProvider,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.dismiss_menu(window, cx);
+        crate::settings_window::open_cloud(cx.weak_entity(), provider, cx);
+    }
+
     fn choose_device(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(offset) = index.checked_sub(self.endpoints.len() + 2) {
             #[cfg(feature = "cloud")]
@@ -633,10 +652,15 @@ impl HerdrWindow {
                 match provider {
                     #[cfg(feature = "coder")]
                     crate::cloud::CloudProvider::Coder => self.open_coder_setup(window, cx),
+                    // These providers set up in Settings, where their
+                    // credentials or key choice live.
                     #[cfg(feature = "daytona")]
                     crate::cloud::CloudProvider::Daytona => {
-                        self.dismiss_menu(window, cx);
-                        crate::settings_window::open_cloud(cx.weak_entity(), provider, cx);
+                        self.open_provider_settings(provider, window, cx)
+                    }
+                    #[cfg(feature = "railway")]
+                    crate::cloud::CloudProvider::Railway => {
+                        self.open_provider_settings(provider, window, cx)
                     }
                 }
             }

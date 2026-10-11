@@ -41,9 +41,11 @@ fn remote(script: &str) -> String {
     format!("/bin/sh -c {}", quote(script))
 }
 
-struct Finished {
-    code: Option<i32>,
-    output: String,
+/// How a remote command ended: its exit code and the bounded, sanitized tail
+/// of its output (both streams, interleaved as they arrived).
+pub(crate) struct Finished {
+    pub(crate) code: Option<i32>,
+    pub(crate) output: String,
 }
 
 /// Keep the last `OUTPUT_LIMIT` bytes a pipe produced, draining it to EOF so
@@ -151,6 +153,15 @@ pub(crate) fn installed(mut ssh: Command, cancelled: &impl Fn() -> bool) -> Resu
             finished.output
         })),
     }
+}
+
+/// Run a trivial remote command and report how it ended, for a provider whose
+/// own connection says whether a machine exists and for how long. Unlike
+/// [`installed`], it classifies nothing: the caller reads the exit code.
+#[cfg(feature = "railway")]
+pub(crate) fn reach(mut ssh: Command, cancelled: &impl Fn() -> bool) -> Result<Finished> {
+    ssh.arg(remote("true"));
+    run(ssh, PROBE_TIMEOUT, cancelled)
 }
 
 /// Run Herdr's installer on the machine. Only called after the user approved it.

@@ -40,6 +40,8 @@ pub enum CloudProvider {
     Coder,
     #[cfg(feature = "daytona")]
     Daytona,
+    #[cfg(feature = "railway")]
+    Railway,
 }
 
 #[cfg(feature = "cloud")]
@@ -50,6 +52,8 @@ impl CloudProvider {
         Self::Coder,
         #[cfg(feature = "daytona")]
         Self::Daytona,
+        #[cfg(feature = "railway")]
+        Self::Railway,
     ];
 
     /// The stable key used in saved files and endpoint IDs.
@@ -59,6 +63,8 @@ impl CloudProvider {
             Self::Coder => "coder",
             #[cfg(feature = "daytona")]
             Self::Daytona => "daytona",
+            #[cfg(feature = "railway")]
+            Self::Railway => "railway",
         }
     }
 }

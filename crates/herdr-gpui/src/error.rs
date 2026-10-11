@@ -357,6 +357,9 @@ pub enum Error {
     #[cfg(feature = "daytona")]
     #[error(transparent)]
     Daytona(#[from] crate::daytona::Error),
+    #[cfg(feature = "railway")]
+    #[error(transparent)]
+    Railway(#[from] crate::railway::Error),
     #[cfg(feature = "cloud")]
     #[error(transparent)]
     Cloud(#[from] crate::cloud::Error),

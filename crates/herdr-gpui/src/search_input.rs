@@ -154,7 +154,7 @@ impl SearchInput {
     }
 
     // Only cloud provider secrets are masked so far.
-    #[cfg_attr(not(feature = "cloud"), allow(dead_code))]
+    #[cfg_attr(not(any(feature = "coder", feature = "daytona")), allow(dead_code))]
     pub(crate) fn set_masked(&mut self, masked: bool, cx: &mut Context<Self>) {
         self.masked = masked;
         self.layout = None;

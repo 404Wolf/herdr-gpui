@@ -1,7 +1,7 @@
 //! Independent native preferences window. Disk work never owns a window or a socket.
 #[cfg(feature = "cloud")]
 mod cloud_devices;
-#[cfg(feature = "daytona")]
+#[cfg(any(feature = "daytona", feature = "railway"))]
 pub(crate) use cloud_devices::open as open_cloud;
 mod controls;
 mod layouts;
@@ -270,6 +270,8 @@ struct SettingsWindow {
     coder_card: Option<cloud_devices::CoderCard>,
     #[cfg(feature = "daytona")]
     daytona_card: Option<cloud_devices::DaytonaCard>,
+    #[cfg(feature = "railway")]
+    railway_card: Option<cloud_devices::RailwayCard>,
     theme_loading: bool,
     theme_waiting: bool,
     theme_light: bool,
@@ -363,6 +365,8 @@ impl SettingsWindow {
             coder_card: None,
             #[cfg(feature = "daytona")]
             daytona_card: None,
+            #[cfg(feature = "railway")]
+            railway_card: None,
             theme_loading: false,
             theme_waiting: false,
             theme_light: false,

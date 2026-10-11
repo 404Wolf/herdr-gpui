@@ -206,6 +206,34 @@ pub(crate) fn remove(provider: CloudProvider, id: &str) -> Result<()> {
     transaction(|path| remove_in(path, provider, id))
 }
 
+/// Stop (or resume) connecting to a saved device on its own. A device that is
+/// not saved is left alone.
+#[cfg(feature = "railway")]
+pub(crate) fn set_enabled(provider: CloudProvider, id: &str, enabled: bool) -> Result<()> {
+    transaction(|path| set_enabled_in(path, provider, id, enabled))
+}
+
+#[cfg(feature = "railway")]
+fn set_enabled_in(path: &Path, provider: CloudProvider, id: &str, enabled: bool) -> Result<()> {
+    let mut devices = read_entries(path)?;
+    let mut changed = false;
+    for entry in &mut devices {
+        if let Entry::Known(saved) = entry
+            && saved.provider == provider
+            && saved.id == id
+            && saved.enabled != enabled
+        {
+            saved.enabled = enabled;
+            changed = true;
+        }
+    }
+    if changed {
+        write(path, devices)
+    } else {
+        Ok(())
+    }
+}
+
 fn remove_in(path: &Path, provider: CloudProvider, id: &str) -> Result<()> {
     let mut devices = read_entries(path)?;
     devices.retain(|entry| {

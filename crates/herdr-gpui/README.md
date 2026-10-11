@@ -300,7 +300,7 @@ and saved SSH devices remain unsupported on Windows.
 ### Coder workspaces
 
 Settings > **Cloud Devices** holds accounts with providers that create machines
-to use as devices; Coder is the only one so far. Its card edits the `[coder]`
+to use as devices: Coder, Daytona, and Railway. Coder's card edits the `[coder]`
 keys (see `config-gpui.example.toml`), saves the OAuth client secret to the
 credential store rather than the config file, signs in and out, and lists the
 saved Coder devices with a Remove action. A secret set in the config file or
@@ -370,11 +370,88 @@ and are unavailable on Windows. This provider is a proof of concept: the API
 path is covered by tests against a scripted server, but not yet exercised
 against a live Daytona account.
 
+### Railway free VMs (experimental)
+
+Settings > **Cloud Devices** > **Railway** sets up Railway's free, account-free
+Linux VM (`ssh railway.new`). There is no account, token, or API URL: the SSH key
+you present is the identity, and per [Railway's documentation](https://railway.com/free-vm)
+the same key always reaches the same VM. Railway gives it 2 vCPU and 2 GB, 60
+minutes to build and then 24 hours to claim before it is deleted, at most 3 new
+VMs per IP address per day, IPv4 only. Because it needs no configuration, the
+device picker always offers **Set up a free Railway VM in Settings**.
+
+Choose the key for a new device:
+
+- **Use an existing key**: type or **Browse…** to a private key you already have
+  (the tab also lists key pairs it finds in `~/.ssh`). Herdr reads only its
+  fingerprint through `ssh-keygen` and passes the path to `ssh`; the file is
+  never copied, changed, or deleted, and removing the device leaves it alone. A
+  passphrase-protected key needs its `.pub` file beside it and must be loaded in
+  your SSH agent, because every connection is non-interactive.
+- **Generate a new key**: Herdr creates an ed25519 key without a passphrase
+  (it must connect unattended) in a private `railway-keys` directory of its state
+  folder, owner-only, and attaches it to the device. Removing the device deletes
+  it. If setup fails or is cancelled, the generated key is kept and the next
+  generate reuses it, so a retry reaches the same VM instead of spending another
+  of the three daily VMs.
+
+**First connection (once per key).** Railway refuses to create a VM for a script:
+a headless first connection exits with status 13 and a message to sign up. Herdr
+does not work around that or pretend to be a terminal. The tab shows a command
+for your key, `ssh -F /dev/null -i '<key>' -o IdentitiesOnly=yes railway.new`
+(`-F /dev/null` keeps your SSH config from adding other identities), with **Copy
+command**; run it once in your own terminal and type `exit` afterwards. Skip it if
+the key already has a VM. For a generated key, **Generate key** creates it first,
+and it is kept until a device uses it, so retries and the first connection all use
+the same key (and the same one of the three daily VMs).
+
+**Connect and set up** then reaches the existing VM without a terminal, and never
+creates one: if the key has no VM it stops and shows the command again. When the
+**Install Herdr** switch is on (the default), setup installs Herdr there if it is
+missing, with the same published installer and checks as the other providers,
+before the device is saved, so the first session finds a Herdr that can run the
+bridge. A VM without `curl` must get Herdr another way. The device and its key
+association are saved together: the device in `cloud-devices.json` (with the
+account `railway.new`, no secret) and the key in `railway-identities.json` in the
+state directory. Every reconnect uses that same key; it never generates a key,
+installs anything, or falls back to a different identity. A missing key file is
+reported, not replaced, and before every connection the file's fingerprint must
+still match the device's, so a replaced file or retargeted link is refused.
+
+Connections run `ssh` from a private temporary config that replaces your own, offers
+only the chosen key, forwards nothing, and is non-interactive. Railway publishes no
+host key for `railway.new`, so the first key seen is pinned in
+`railway_known_hosts` in the state directory and a changed key is refused (your
+own interactive first connection uses your own `known_hosts`).
+Each headless connection prints a one-line JSON manifest on stderr. Herdr reads one
+field from it during setup, `build_expires_at`, and stores that as the VM's
+deadline; its preview and claim links are never stored, logged, or opened, and are
+hidden if they appear in an error. If the manifest gives no usable deadline, the
+deadline is bounded by 60 minutes from when setup last reached the VM (reaching
+the same VM again never extends a deadline already recorded). Once the deadline
+passes, the first reconnect switches the device off (it is not redialled every few
+seconds) and the tab says the build window ended. Refusals retrying cannot fix
+(a rejected key, a changed host key, no Herdr, an unexplained refusal, a replaced
+key file) switch it off the same way; only plain network outages keep the usual
+retry backoff. **Reconnect** sets the
+device up again with the same key (installing Herdr again if the switch is on and
+the VM lacks it) and switches it back on; it fails with the first-connection command
+if Railway no longer has a VM for the key. **Mark claimed** records that you
+claimed the VM at Railway, which has no such limit.
+
+Railway devices need `ssh` and `ssh-keygen` on the PATH and are unavailable on
+Windows. Observed against the live service (see `docs/cloud-providers.md`): the
+interactive first connection, headless reconnects with the same key, the manifest
+fields, a clean 256 KiB binary transfer, the Herdr installer, and the client's
+probe and bridge scripts. Not verified: a full GUI session, the bridge starting
+the server, and what happens to a VM and its key after the deadline. Unit tests use
+local stand-ins for `ssh`, and `ssh -G` checks the generated config.
+
 Each provider is a Cargo feature of `herdr-gpui`, on by default: `coder` for
-Coder and `daytona` for Daytona. A build with `--no-default-features` has no
-Cloud Devices section and no provider rows in the device picker; it still
-accepts the `[coder]` and `[daytona]` tables, so one config file serves every
-build, but never reads them.
+Coder, `daytona` for Daytona, and `railway` for Railway. A build with
+`--no-default-features` has no Cloud Devices section and no provider rows in the
+device picker; it still accepts the `[coder]` and `[daytona]` tables, so one config
+file serves every build, but never reads them.
 
 Switching revokes the old host's focus before releasing its surface, then resizes
 and activates the selected host. Input waits for the activation acknowledgement

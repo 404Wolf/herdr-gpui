@@ -19,7 +19,7 @@ pub(crate) mod preferences;
 pub(crate) mod sidebar;
 mod sidebar_style;
 pub(crate) mod status_bar;
-#[cfg(feature = "cloud")]
+#[cfg(any(feature = "coder", feature = "daytona"))]
 mod table;
 mod theme;
 mod updates;
