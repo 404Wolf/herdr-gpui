@@ -4,7 +4,7 @@
 
 use super::{Candidate, Source, valid_host};
 use crate::{Error, Result};
-use mdns_sd::ServiceDaemon;
+use mdns_sd::{RecvTimeoutError, ServiceDaemon};
 use std::{
     collections::HashSet,
     io,
@@ -13,10 +13,18 @@ use std::{
 };
 
 const SERVICE: &str = "_ssh._tcp.local.";
+/// How often the query is sent again while nothing has answered.
+const REQUERY: Duration = Duration::from_secs(1);
 
 /// Listen for `duration`, reporting each resolved announcement that is not
 /// this machine until `found` returns `false`. Blocks: call it from the
 /// background executor.
+///
+/// The first time a process reaches the local network, macOS checks its
+/// Local Network permission and drops replies until the check is done, so
+/// the first queries of a fresh launch can go unanswered. The library backs
+/// off to queries 1, 3 and 7 seconds in; until something answers, the browse
+/// restarts every second instead, which sends a new query each time.
 pub(super) fn browse(duration: Duration, mut found: impl FnMut(Candidate) -> bool) -> Result<()> {
     let local: HashSet<IpAddr> = if_addrs::get_if_addrs()
         .map_err(Error::LocalAddresses)?
@@ -27,13 +35,32 @@ pub(super) fn browse(duration: Duration, mut found: impl FnMut(Candidate) -> boo
         local_network_allowed()?;
     }
     let daemon = ServiceDaemon::new()?;
-    let events = daemon.browse(SERVICE)?;
+    let mut events = daemon.browse(SERVICE)?;
     let deadline = Instant::now() + duration;
-    // Times out, or the daemon stopped on its own.
-    while let Ok(event) = events.recv_deadline(deadline) {
+    let mut answered = false;
+    loop {
+        let wake = if answered {
+            deadline
+        } else {
+            deadline.min(Instant::now() + REQUERY)
+        };
+        let event = match events.recv_deadline(wake) {
+            Ok(event) => event,
+            Err(RecvTimeoutError::Timeout) if !answered && Instant::now() < deadline => {
+                // Replaces the listener, so the old receiver gets nothing more.
+                let Ok(again) = daemon.browse(SERVICE) else {
+                    break;
+                };
+                events = again;
+                continue;
+            }
+            // Timed out, or the daemon stopped on its own.
+            Err(_) => break,
+        };
         let mdns_sd::ServiceEvent::ServiceResolved(service) = event else {
             continue;
         };
+        answered = true;
         let addresses: Vec<IpAddr> = service
             .get_addresses()
             .iter()

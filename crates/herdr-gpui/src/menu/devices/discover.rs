@@ -18,8 +18,9 @@ use std::{
     time::Duration,
 };
 
-/// How long Bonjour listens for announcements before the search is done.
-const BROWSE_TIME: Duration = Duration::from_secs(5);
+/// How long Bonjour listens for announcements before the search is done:
+/// long enough for macOS to finish its Local Network check on a fresh launch.
+const BROWSE_TIME: Duration = Duration::from_secs(10);
 /// How often the form takes what the sources found so far.
 const POLL: Duration = Duration::from_millis(150);
 /// Machines listed at most; later reports of new machines are dropped.
