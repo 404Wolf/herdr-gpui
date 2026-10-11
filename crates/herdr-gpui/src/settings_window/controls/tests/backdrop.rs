@@ -1,6 +1,6 @@
 use super::*;
 use crate::config::{Backdrop, backdrop::Edit};
-use crate::settings_window::controls::backdrop::{Mode, stepped};
+use crate::settings_window::controls::backdrop::{Mode, fraction, opacity_at};
 
 fn backdrop(opacity: f32, image: Option<&str>) -> Backdrop {
     Backdrop {
@@ -34,20 +34,89 @@ fn the_mode_follows_the_config_and_switching_writes_only_what_differs() {
 }
 
 #[test]
-fn the_stepper_moves_to_the_next_mark_and_never_the_wrong_way() {
-    assert_eq!(stepped(0.85, false), Some(0.8));
-    assert_eq!(stepped(0.85, true), Some(0.9));
-    // A value from the file steps to the nearest mark in that direction.
-    assert_eq!(stepped(0.83, true), Some(0.85));
-    assert_eq!(stepped(0.83, false), Some(0.8));
-    assert_eq!(stepped(0.95, true), Some(1.));
-    assert_eq!(stepped(1., true), None);
-    assert_eq!(stepped(0.1, false), None);
-    // Below the floor, stepping down must not raise it; up lands on it.
-    assert_eq!(stepped(0.05, false), None);
-    assert_eq!(stepped(0., false), None);
-    assert_eq!(stepped(0., true), Some(0.1));
-    assert_eq!(stepped(0.05, true), Some(0.1));
+fn the_ruler_maps_whole_percents_from_ten_to_a_hundred() {
+    assert_eq!(opacity_at(0.), 0.1);
+    assert_eq!(opacity_at(1.), 1.);
+    assert_eq!(opacity_at(0.5), 0.55);
+    // 95% is one step from the end, not a guess between marks.
+    assert_eq!(opacity_at(85. / 90.), 0.95);
+    assert_eq!(opacity_at(-3.), 0.1);
+    assert_eq!(opacity_at(7.), 1.);
+    for percent in 10..=100 {
+        let opacity = percent as f32 / 100.;
+        assert_eq!(opacity_at(fraction(opacity)), opacity, "{percent}%");
+    }
+    // A value from the file outside the ruler pins to its end.
+    assert_eq!(fraction(0.05), 0.);
+    assert_eq!(fraction(1.5), 1.);
+}
+
+#[gpui::test]
+fn the_ruler_follows_a_drag_and_writes_nothing_until_release(cx: &mut TestAppContext) {
+    let (view, cx) = cx.add_window_view(skill_fixture);
+    cx.simulate_resize(size(px(960.), px(3200.)));
+    view.update(cx, |view, cx| {
+        view.section = Section::Appearance;
+        view.config.backdrop = backdrop(0.85, None);
+        cx.notify();
+    });
+    let draw = |cx: &mut VisualTestContext| {
+        cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
+    };
+    draw(cx);
+    let track = cx.debug_bounds("settings-backdrop-ruler").unwrap();
+    let knob_x = |cx: &mut VisualTestContext| {
+        cx.debug_bounds("settings-backdrop-knob")
+            .unwrap()
+            .center()
+            .x
+    };
+    let at = |fraction: f32| point(track.left() + track.size.width * fraction, track.center().y);
+    // 85% sits 75/90 along the track.
+    assert!((knob_x(cx) - at(75. / 90.).x).abs() < px(1.));
+
+    // A press lands at once, then the knob follows the pointer.
+    cx.simulate_mouse_down(at(0.5), MouseButton::Left, Modifiers::default());
+    draw(cx);
+    assert_eq!(
+        view.read_with(cx, |view, _| view.controls.ruler_held()),
+        Some(0.55)
+    );
+    assert!((knob_x(cx) - at(0.5).x).abs() < px(1.));
+    cx.simulate_mouse_move(at(0.25), MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_move(at(0.), MouseButton::Left, Modifiers::default());
+    draw(cx);
+    assert_eq!(
+        view.read_with(cx, |view, _| view.controls.ruler_held()),
+        Some(0.1)
+    );
+    assert!((knob_x(cx) - at(0.).x).abs() < px(1.));
+    // The config is untouched while the button is down.
+    assert_eq!(
+        view.read_with(cx, |view, _| view.config.backdrop.opacity),
+        0.85
+    );
+
+    // Released while a save runs, the value is dropped, not written, and
+    // the knob returns to the saved value. A release while idle writes the
+    // user's configuration, which tests leave alone.
+    view.update(cx, |view, _| view.saving = true);
+    cx.simulate_mouse_up(at(0.), MouseButton::Left, Modifiers::default());
+    draw(cx);
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.controls.ruler_held(), None);
+        assert_eq!(view.config.backdrop.opacity, 0.85);
+    });
+    assert!((knob_x(cx) - at(75. / 90.).x).abs() < px(1.));
+    for mark in [
+        "settings-backdrop-mark-10",
+        "settings-backdrop-mark-25",
+        "settings-backdrop-mark-50",
+        "settings-backdrop-mark-75",
+        "settings-backdrop-mark-100",
+    ] {
+        assert!(cx.debug_bounds(mark).is_some(), "{mark}");
+    }
 }
 
 #[gpui::test]

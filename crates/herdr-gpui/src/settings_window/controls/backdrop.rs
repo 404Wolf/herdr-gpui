@@ -7,12 +7,14 @@ use crate::config::{
     backdrop::{Edit, IMAGE_OPACITY},
 };
 
+mod ruler;
+
+pub(in crate::settings_window) use ruler::Ruler;
+#[cfg(test)]
+pub(in crate::settings_window) use ruler::{fraction, opacity_at};
+
 /// The opacity Translucent starts at from a solid window.
 const TRANSLUCENT_OPACITY: f32 = 0.85;
-/// The stepper moves between marks this many percent apart, from this floor.
-const STEP: i32 = 5;
-const MIN_PERCENT: i32 = 10;
-
 /// What the window shows behind its background.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::settings_window) enum Mode {
@@ -59,22 +61,6 @@ impl Mode {
             Self::Picture => Vec::new(),
         }
     }
-}
-
-/// `opacity` moved to the next 5% mark up or down, within the stepper's
-/// range, or `None` when that would not move it that way: a value from the
-/// file below the floor must not rise when stepped down.
-pub(in crate::settings_window) fn stepped(opacity: f32, up: bool) -> Option<f32> {
-    // Tenths of a percent, so 0.85 is exactly on its mark despite f32.
-    let current = (opacity * 1000.).round() as i32;
-    let step = STEP * 10;
-    let next = match up {
-        true => current.div_euclid(step) * step + step,
-        false => (current + step - 1).div_euclid(step) * step - step,
-    }
-    .clamp(MIN_PERCENT * 10, 1000);
-    let moves = if up { next > current } else { next < current };
-    moves.then(|| next as f32 / 1000.)
 }
 
 /// A thumbnail-size window: a title strip, a sidebar, and a few terminal
@@ -149,7 +135,7 @@ impl SettingsWindow {
                     .flex()
                     .flex_col()
                     .gap(px(4.))
-                    .child(self.backdrop_stepper(backdrop.opacity, cx))
+                    .child(self.backdrop_ruler(cx))
                     .child(
                         self.control_switch("settings-backdrop-blur", "Blur behind", blur, true)
                             .on_click(cx.listener(move |this, _, _, cx| {
@@ -162,7 +148,7 @@ impl SettingsWindow {
                 .flex_col()
                 .gap(px(4.))
                 .child(self.backdrop_picture_row(cx))
-                .child(self.backdrop_stepper(backdrop.opacity, cx))
+                .child(self.backdrop_ruler(cx))
                 .child(self.control_note(
                     "The window stays opaque over the picture; lower opacity shows more of it.",
                 )),
@@ -231,59 +217,6 @@ impl SettingsWindow {
                         }
                     }))
             })
-    }
-
-    fn backdrop_stepper(&self, opacity: f32, cx: &mut Context<Self>) -> Div {
-        let theme = &self.theme;
-        let step = |id: &'static str, label: &'static str, up: bool, cx: &mut Context<Self>| {
-            let next = stepped(opacity, up);
-            div()
-                .id(id)
-                .debug_selector(move || id.into())
-                .w(px(28.))
-                .h(px(26.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(corners::CONTROL))
-                .border_1()
-                .border_color(rgb(theme.active))
-                .bg(rgb(theme.background))
-                .child(label)
-                .map(|button| match next {
-                    Some(next) => {
-                        button
-                            .cursor_pointer()
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.save_backdrop(vec![Edit::Opacity(next)], cx)
-                            }))
-                    }
-                    None => button.opacity(0.5),
-                })
-        };
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap(px(12.))
-            .py(px(8.))
-            .child("Background opacity")
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .child(step("settings-backdrop-less", "\u{2212}", false, cx))
-                    .child(
-                        div()
-                            .debug_selector(|| "settings-backdrop-opacity".into())
-                            .w(px(44.))
-                            .flex()
-                            .justify_center()
-                            .child(format!("{}%", (opacity * 100.).round())),
-                    )
-                    .child(step("settings-backdrop-more", "+", true, cx)),
-            )
     }
 
     fn backdrop_picture_row(&self, cx: &mut Context<Self>) -> Div {
