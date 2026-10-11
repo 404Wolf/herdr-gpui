@@ -592,16 +592,18 @@ impl HerdrWindow {
     /// Listening ports are scanned on the same hosts as CPU and memory.
     fn update_listening_ports(&mut self) -> bool {
         if !self.config.show_listening_ports {
-            self.tunnels = Default::default();
+            self.tunnels.close_all();
             return self.listening_ports.poll(Vec::new());
         }
         let hosts = self.watched_hosts();
         let changed = self.listening_ports.poll(hosts);
-        // A tunnel lives as long as its remote port is listed.
+        // A tunnel lives as long as its remote port is listed and its SSH
+        // child runs; either ending removes its close button.
         let ports = &self.listening_ports;
-        self.tunnels
+        let closed = self
+            .tunnels
             .retain(|key| ports.listening(&crate::usage::Host::Ssh(key.target.clone()), key.port));
-        changed
+        changed || closed
     }
 
     /// The machines background monitors watch: this one always, a remote

@@ -408,7 +408,10 @@ fn a_bad_target_never_starts_ssh() {
         target: "-oProxyCommand=bad".into(),
         port: 3000,
     };
-    assert!(matches!(tunnel::open(&key, None), Err(Error::Client(_))));
+    assert!(matches!(
+        tunnel::open(&key, None, &tunnel::Attempt::default()),
+        Err(Error::Client(_))
+    ));
 }
 
 /// A child that runs until killed, standing in for `ssh -N`.
@@ -522,6 +525,106 @@ fn closing_a_tunnel_still_opening_drops_its_result() {
 
 #[cfg(unix)]
 #[test]
+fn closing_all_kills_a_tunnel_that_is_still_connecting() {
+    let key = Key {
+        target: "devbox".into(),
+        port: 3002,
+    };
+    let mut tunnels = tunnel::Tunnels::default();
+    assert!(tunnels.begin(&key).is_some());
+    // The background task's child, owned by the attempt while connecting.
+    let attempt = tunnels.attempt(&key).unwrap();
+    let child = idle_child();
+    let pid = child.id();
+    attempt.adopt(child);
+
+    tunnels.close_all();
+
+    assert!(
+        gone_after_kill(pid),
+        "the connecting child outlived close_all"
+    );
+    assert!(
+        !tunnels.fail(&key),
+        "nobody waits for the cancelled attempt"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn closing_a_connecting_port_by_hand_or_when_it_unlists_kills_its_child() {
+    for by_hand in [true, false] {
+        let key = Key {
+            target: "devbox".into(),
+            port: 3003,
+        };
+        let mut tunnels = tunnel::Tunnels::default();
+        assert!(tunnels.begin(&key).is_some());
+        let attempt = tunnels.attempt(&key).unwrap();
+        let child = idle_child();
+        let pid = child.id();
+        attempt.adopt(child);
+
+        if by_hand {
+            assert!(tunnels.close(&key));
+        } else {
+            assert!(!tunnels.retain(|_| false), "no open tunnel went away");
+        }
+
+        assert!(gone_after_kill(pid), "by_hand={by_hand}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn an_attempt_cancelled_before_its_child_exists_kills_it_on_arrival() {
+    let attempt = tunnel::Attempt::default();
+    attempt.cancel();
+    let child = idle_child();
+    let pid = child.id();
+    attempt.adopt(child);
+    assert!(gone_after_kill(pid));
+}
+
+#[cfg(unix)]
+#[test]
+fn retain_reports_when_a_dead_tunnel_is_pruned() {
+    let key = Key {
+        target: "devbox".into(),
+        port: 9001,
+    };
+    let mut tunnels = tunnel::Tunnels::default();
+    let mut child = idle_child();
+    child.kill().unwrap();
+    child.wait().unwrap();
+    tunnels.insert(key.clone(), tunnel::Tunnel::around(child, 41008));
+    assert!(tunnels.retain(|_| true), "the redraw must be requested");
+    assert!(!tunnels.is_open(&key));
+    assert!(!tunnels.retain(|_| true), "nothing more changed");
+}
+
+/// Whether the child `attempt` held has died. The attempt only kills it;
+/// reaping is its owner's job, so it lingers as a zombie here until the
+/// test process reaps it, which `kill -0` still sees as alive.
+#[cfg(unix)]
+fn gone_after_kill(pid: u32) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while std::time::Instant::now() < deadline {
+        let state = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
+        // "pid (comm) S ..." : Z is a zombie, empty means fully gone.
+        let dead = state
+            .rsplit_once(") ")
+            .is_none_or(|(_, rest)| rest.starts_with('Z'));
+        if dead {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    false
+}
+
+#[cfg(unix)]
+#[test]
 fn closing_all_tunnels_kills_every_child_and_drops_late_results() {
     let (open, opening) = (
         Key {
@@ -614,7 +717,7 @@ fn another_process_on_the_port_is_never_taken_for_the_tunnel() {
     let _port = squatter.local_addr().unwrap().port();
     let (mut child, stdout) = scripted("exec sleep 600");
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(300);
-    let result = tunnel::ready(&mut child, stdout, deadline);
+    let result = tunnel::ready(|| child.try_wait(), stdout, deadline);
     child.kill().unwrap();
     child.wait().unwrap();
     assert!(matches!(result, Err(Error::TunnelTimeout)), "{result:?}");
@@ -626,7 +729,7 @@ fn a_tunnel_is_ready_once_ssh_prints_its_line() {
     let (mut child, stdout) =
         scripted("echo 'shell noise'; echo herdr-forward-ready; exec sleep 600");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    let result = tunnel::ready(&mut child, stdout, deadline);
+    let result = tunnel::ready(|| child.try_wait(), stdout, deadline);
     child.kill().unwrap();
     child.wait().unwrap();
     assert!(result.is_ok(), "{result:?}");
@@ -638,7 +741,7 @@ fn ssh_ending_before_its_forward_is_bound_reports_why() {
     // ExitOnForwardFailure: a taken port ends SSH before LocalCommand runs.
     let (mut child, stdout) = scripted("echo 'bind failed' >&2; exit 255");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    match tunnel::ready(&mut child, stdout, deadline) {
+    match tunnel::ready(|| child.try_wait(), stdout, deadline) {
         Err(Error::TunnelExited(status)) => assert_eq!(status.code(), Some(255)),
         other => panic!("expected the exit status, got {other:?}"),
     }

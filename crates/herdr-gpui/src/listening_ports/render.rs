@@ -234,9 +234,10 @@ impl HerdrWindow {
             return;
         };
         let opening = key.clone();
+        let attempt = self.tunnels.attempt(&key).unwrap_or_default();
         let task = cx
             .background_executor()
-            .spawn(async move { tunnel::open(&opening, preferred) });
+            .spawn(async move { tunnel::open(&opening, preferred, &attempt) });
         let (endpoint, workspace) = (endpoint.to_owned(), workspace.to_owned());
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
@@ -247,12 +248,14 @@ impl HerdrWindow {
                     }
                 }
                 Err(error) => {
-                    this.tunnels.fail(&key);
-                    // The display boundary for a failed tunnel.
-                    this.show_flash(
-                        Flash::warning(format!("Could not open :{}: {error}", key.port)),
-                        cx,
-                    );
+                    // Not worth a complaint once the user closed the port.
+                    if this.tunnels.fail(&key) {
+                        // The display boundary for a failed tunnel.
+                        this.show_flash(
+                            Flash::warning(format!("Could not open :{}: {error}", key.port)),
+                            cx,
+                        );
+                    }
                 }
             });
         })

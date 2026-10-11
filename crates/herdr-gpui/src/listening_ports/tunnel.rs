@@ -5,11 +5,11 @@
 
 use crate::{Error, Result};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     io::{BufRead, BufReader, Read},
     net::{Ipv4Addr, TcpListener},
-    process::{Child, Stdio},
-    sync::mpsc,
+    process::{Child, ExitStatus, Stdio},
+    sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc},
     thread,
     time::{Duration, Instant},
 };
@@ -28,6 +28,61 @@ const TUNNEL_LIMIT: usize = 32;
 pub(crate) struct Key {
     pub target: String,
     pub port: u16,
+}
+
+/// The SSH child of a tunnel that is still opening, shared so quitting or
+/// closing the port can kill it at once while the background task alone
+/// waits for it. Neither side holds the lock across a blocking call.
+#[derive(Clone, Default)]
+pub(crate) struct Attempt(Arc<Mutex<Slot>>);
+
+#[derive(Default)]
+struct Slot {
+    cancelled: bool,
+    child: Option<Child>,
+}
+
+impl Attempt {
+    fn slot(&self) -> MutexGuard<'_, Slot> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Takes the freshly spawned child. One that was cancelled meanwhile is
+    /// killed at once, which the waiting task then sees as an exit.
+    pub(super) fn adopt(&self, child: Child) {
+        let mut slot = self.slot();
+        let cancelled = slot.cancelled;
+        slot.child = Some(child);
+        if cancelled {
+            kill(&mut slot);
+        }
+    }
+
+    fn try_wait(&self) -> std::io::Result<Option<ExitStatus>> {
+        match self.slot().child.as_mut() {
+            Some(child) => child.try_wait(),
+            None => Ok(None),
+        }
+    }
+
+    fn take(&self) -> Option<Child> {
+        self.slot().child.take()
+    }
+
+    /// Kills the child without waiting for it; the task that owns the
+    /// attempt reaps it. Safe on the UI thread and while quitting.
+    pub(crate) fn cancel(&self) {
+        let mut slot = self.slot();
+        slot.cancelled = true;
+        kill(&mut slot);
+    }
+}
+
+fn kill(slot: &mut Slot) {
+    if let Some(child) = &mut slot.child {
+        // A child already reaped is not signalled again.
+        let _ = child.kill();
+    }
 }
 
 /// A running `ssh -N -L` child and the local port it forwards.
@@ -69,15 +124,19 @@ impl Drop for Tunnel {
 /// `preferred` is the local port this remote port was last forwarded to,
 /// kept when it is still free so a page reopened after a dropped connection
 /// keeps its address.
-pub(crate) fn open(key: &Key, preferred: Option<u16>) -> Result<Tunnel> {
-    match start(key, preferred) {
-        // Someone took the remembered port meanwhile; any free one will do.
-        Err(Error::TunnelExited(_)) if preferred.is_some() => start(key, None),
+/// `attempt` lets the caller kill the SSH child while this still waits.
+pub(crate) fn open(key: &Key, preferred: Option<u16>, attempt: &Attempt) -> Result<Tunnel> {
+    match start(key, preferred, attempt) {
+        // Someone took the remembered port meanwhile; any free one will do,
+        // unless the attempt was cancelled, which also looks like an exit.
+        Err(Error::TunnelExited(_)) if preferred.is_some() && !attempt.slot().cancelled => {
+            start(key, None, attempt)
+        }
         result => result,
     }
 }
 
-fn start(key: &Key, preferred: Option<u16>) -> Result<Tunnel> {
+fn start(key: &Key, preferred: Option<u16>, attempt: &Attempt) -> Result<Tunnel> {
     let local = free_port(preferred).map_err(Error::TunnelPort)?;
     let mut command = herdr_client::forward_command(&key.target, local, key.port)?;
     // Only the readiness line is read; diagnostics may carry secrets.
@@ -87,24 +146,26 @@ fn start(key: &Key, preferred: Option<u16>) -> Result<Tunnel> {
         .stderr(Stdio::null());
     let mut child = command.spawn().map_err(Error::TunnelStart)?;
     let stdout = child.stdout.take();
-    // From here on, dropping the tunnel kills the child.
-    let mut tunnel = Tunnel {
-        child: Some(child),
+    attempt.adopt(child);
+    let result = match stdout {
+        Some(stdout) => ready(|| attempt.try_wait(), stdout, Instant::now() + OPEN_TIMEOUT),
+        None => Err(Error::TunnelStart(std::io::Error::other("no stdout pipe"))),
+    };
+    // From here on, dropping the tunnel kills the child, on failure too.
+    let tunnel = Tunnel {
+        child: attempt.take(),
         local,
     };
-    let (Some(stdout), Some(child)) = (stdout, tunnel.child.as_mut()) else {
-        return Err(Error::TunnelStart(std::io::Error::other("no stdout pipe")));
-    };
-    ready(child, stdout, Instant::now() + OPEN_TIMEOUT)?;
-    Ok(tunnel)
+    result.map(|()| tunnel)
 }
 
-/// Waits for `child` to print [`herdr_client::FORWARD_READY`]. The port
+/// Waits for the child, which `exited` polls, to print
+/// [`herdr_client::FORWARD_READY`]. The port
 /// itself is never probed: a process that bound it before SSH could would
 /// answer a probe, and a page opened then would show that process instead.
 /// SSH prints the line only once it holds the port.
 pub(super) fn ready(
-    child: &mut Child,
+    mut exited: impl FnMut() -> std::io::Result<Option<ExitStatus>>,
     stdout: impl Read + Send + 'static,
     deadline: Instant,
 ) -> Result<()> {
@@ -131,7 +192,7 @@ pub(super) fn ready(
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }
         }
-        if let Some(status) = child.try_wait().map_err(Error::TunnelStart)? {
+        if let Some(status) = exited().map_err(Error::TunnelStart)? {
             return Err(Error::TunnelExited(status));
         }
         if Instant::now() >= deadline {
@@ -167,7 +228,7 @@ pub(super) fn pick(
 #[derive(Default)]
 pub(crate) struct Tunnels {
     open: HashMap<Key, Tunnel>,
-    opening: HashSet<Key>,
+    opening: HashMap<Key, Attempt>,
     /// The local port each remote port was last forwarded to.
     used: HashMap<Key, u16>,
 }
@@ -186,19 +247,22 @@ impl Tunnels {
     /// Marks `key` as opening and returns the local port to prefer, or None
     /// when it is opening already or too many tunnels are.
     pub(crate) fn begin(&mut self, key: &Key) -> Option<Option<u16>> {
-        if self.open.len() + self.opening.len() >= TUNNEL_LIMIT || !self.opening.insert(key.clone())
-        {
+        if self.open.len() + self.opening.len() >= TUNNEL_LIMIT || self.opening.contains_key(key) {
             return None;
         }
+        self.opening.insert(key.clone(), Attempt::default());
         Some(self.used.get(key).copied())
+    }
+
+    /// The handle on the attempt [`Tunnels::begin`] started for `key`.
+    pub(crate) fn attempt(&self, key: &Key) -> Option<Attempt> {
+        self.opening.get(key).cloned()
     }
 
     /// Records a finished attempt. A tunnel nobody wants any more, because
     /// its port closed while it was opening, is dropped and None returned.
     pub(crate) fn finish(&mut self, key: Key, tunnel: Tunnel) -> Option<u16> {
-        if !self.opening.remove(&key) {
-            return None;
-        }
+        self.opening.remove(&key)?;
         let local = tunnel.local;
         // A local port belongs to one remote port at a time, so a page left
         // open on another remote port's old address is never handed this one.
@@ -220,28 +284,39 @@ impl Tunnels {
     /// Returns whether there was anything to close.
     pub(crate) fn close(&mut self, key: &Key) -> bool {
         let open = self.open.remove(key).is_some();
-        let opening = self.opening.remove(key);
+        let opening = self.opening.remove(key).inspect(Attempt::cancel).is_some();
         open || opening
     }
 
-    pub(crate) fn fail(&mut self, key: &Key) {
-        self.opening.remove(key);
+    /// Records a failed attempt. Returns whether anyone still wanted it: not
+    /// when the user closed the port meanwhile, which needs no complaint.
+    pub(crate) fn fail(&mut self, key: &Key) -> bool {
+        self.opening.remove(key).is_some()
     }
 
     /// Closes every tunnel whose remote port `listening` no longer lists or
-    /// whose child has exited, and forgets those still opening, so their
-    /// result is dropped too.
-    pub(crate) fn retain(&mut self, mut listening: impl FnMut(&Key) -> bool) {
+    /// whose child has exited, and cancels those still opening, so their
+    /// result is dropped too. Returns whether an open tunnel went away.
+    pub(crate) fn retain(&mut self, mut listening: impl FnMut(&Key) -> bool) -> bool {
+        let before = self.open.len();
         self.open
             .retain(|key, tunnel| tunnel.alive() && listening(key));
-        self.opening.retain(|key| listening(key));
+        self.opening.retain(|key, attempt| {
+            let keep = listening(key);
+            if !keep {
+                attempt.cancel();
+            }
+            keep
+        });
         self.used.retain(|key, _| listening(key));
+        self.open.len() != before
     }
 
-    /// Kills every tunnel's SSH child at once and forgets those still
-    /// opening, so a result arriving later is dropped too. Reaping happens
-    /// on threads of their own, so this never waits.
+    /// Kills every tunnel's SSH child at once, those still connecting too,
+    /// and forgets them so a result arriving later is dropped. Reaping
+    /// happens on threads of their own, so this never waits.
     pub(crate) fn close_all(&mut self) {
+        self.opening.values().for_each(Attempt::cancel);
         self.open.clear();
         self.opening.clear();
         self.used.clear();
@@ -255,6 +330,13 @@ impl Tunnels {
     #[cfg(all(test, unix))]
     pub(crate) fn len(&self) -> usize {
         self.open.len()
+    }
+}
+
+impl Drop for Tunnels {
+    /// A window that goes away takes its connecting tunnels with it.
+    fn drop(&mut self) {
+        self.close_all();
     }
 }
 
