@@ -633,6 +633,11 @@ pub enum Error {
     DeviceAdding,
     #[error("Searching the local network failed: {0}")]
     Bonjour(#[from] mdns_sd::Error),
+    /// Permission granted while the app runs may only apply after a restart.
+    #[error(
+        "macOS has not allowed Herdr on your local network. Allow it when asked, or turn on Herdr in System Settings › Privacy & Security › Local Network, then quit and reopen Herdr"
+    )]
+    LocalNetworkDenied,
     #[error("Could not list this machine's network addresses: {0}")]
     LocalAddresses(#[source] io::Error),
     #[error("Tailscale did not answer in time")]
