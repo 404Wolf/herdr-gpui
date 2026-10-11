@@ -60,6 +60,7 @@ fn edge_backgrounds_reach_the_canvas_without_stretching_popups_or_prompts(cx: &m
                         &frame,
                         point(px(17.), px(23.)),
                         extend.then(|| size(px(23.), px(47.))),
+                        Ground::Opaque,
                         10.,
                         &font("Menlo"),
                         &[],
@@ -195,6 +196,7 @@ fn blank_cells_paint_decorations_without_shaping(cx: &mut TestAppContext) {
                         &frame,
                         bounds.origin,
                         None,
+                        Ground::Opaque,
                         8.5,
                         &font("Menlo"),
                         &[],
@@ -228,12 +230,12 @@ fn spans_cover_skip_cells_and_resolved_colors_without_crossing_rows() {
     row[3].bg = 0x02123456;
     assert_eq!(
         background_spans(&row, 0..row.len(), &theme).collect::<Vec<_>>(),
-        vec![(0, 2, BACKGROUND), (2, 4, 0x123456)]
+        vec![(0, 2, BACKGROUND, true), (2, 4, 0x123456, false)]
     );
     assert_eq!(background_spans(&[], 0..0, &theme).count(), 0);
     for cells in row.chunks(2) {
         let expanded: Vec<_> = background_spans(cells, 0..cells.len(), &theme)
-            .flat_map(|(a, b, color)| (a..b).map(move |_| color))
+            .flat_map(|(a, b, color, _)| (a..b).map(move |_| color))
             .collect();
         assert_eq!(
             expanded,
@@ -255,7 +257,11 @@ fn wide_continuation_cells_take_the_glyph_background() {
     row[3].bg = 0x02000000;
     assert_eq!(
         background_spans(&row, 0..row.len(), &theme).collect::<Vec<_>>(),
-        vec![(0, 2, 0x373737), (2, 3, BACKGROUND), (3, 4, 0)]
+        vec![
+            (0, 2, 0x373737, false),
+            (2, 3, BACKGROUND, true),
+            (3, 4, 0, false),
+        ]
     );
     // Halfwidth katakana with a voiced or semi-voiced mark is two columns
     // wide in Herdr although its Unicode width is one.
@@ -266,7 +272,11 @@ fn wide_continuation_cells_take_the_glyph_background() {
         row[3].bg = 0x02000000;
         assert_eq!(
             background_spans(&row, 0..row.len(), &theme).collect::<Vec<_>>(),
-            vec![(0, 2, 0x373737), (2, 3, BACKGROUND), (3, 4, 0)],
+            vec![
+                (0, 2, 0x373737, false),
+                (2, 3, BACKGROUND, true),
+                (3, 4, 0, false),
+            ],
             "{kana}"
         );
     }
@@ -291,7 +301,12 @@ fn spans_and_styles_use_custom_theme() {
     ];
     assert_eq!(
         background_spans(&row, 0..row.len(), &theme).collect::<Vec<_>>(),
-        vec![(0, 2, theme.background)]
+        // The same color, but only the first is the theme's own: a backdrop
+        // shows through it and not through the color the program chose.
+        vec![
+            (0, 1, theme.background, true),
+            (1, 2, theme.background, false)
+        ]
     );
     assert_eq!(cell_colors(&row[0], &theme).0, theme.foreground);
     assert_eq!(cell_colors(&row[1], &theme).0, theme.palette[1]);
@@ -342,6 +357,7 @@ fn terminal_graphics_bypass_fonts_but_keep_decorations_and_skip_cells(cx: &mut T
                         &frame,
                         bounds.origin,
                         None,
+                        Ground::Opaque,
                         12.81,
                         &font(family),
                         &[],
@@ -366,6 +382,7 @@ fn terminal_graphics_bypass_fonts_but_keep_decorations_and_skip_cells(cx: &mut T
                     &frame,
                     bounds.origin,
                     None,
+                    Ground::Opaque,
                     12.81,
                     &font("Menlo"),
                     &[],

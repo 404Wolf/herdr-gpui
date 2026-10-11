@@ -41,12 +41,18 @@ class AppNameTests(unittest.TestCase):
         for recipe, profile in (("run", "release"), ("run-debug", "debug")):
             body = re.search(rf"(?m)^{re.escape(recipe)} \*args:\n((?:[ \t]+.*\n|\n)+)", justfile)
             self.assertIsNotNone(body, recipe)
-            launch = f"exec target/{profile}/Herdr.app/Contents/MacOS/Herdr {{{{args}}}}"
-            self.assertIn(launch, body.group(1))
             self.assertNotIn(f"target/{profile}/herdr-gpui", body.group(1))
             if recipe == "run":
+                # Opened through LaunchServices, so macOS asks for Local
+                # Network access instead of denying it to a shell's child.
+                self.assertIn('app="$PWD/target/release/Herdr.app"', body.group(1))
+                self.assertIn('"$app" --args {{args}}', body.group(1))
+                self.assertRegex(body.group(1), r"\n\s*open -n -W ")
                 self.assertIn("{{just_executable()}} bundle release qa-menu", body.group(1))
                 self.assertIn("--features qa-menu -- {{args}}", body.group(1))
+            else:
+                launch = f"exec target/{profile}/Herdr.app/Contents/MacOS/Herdr {{{{args}}}}"
+                self.assertIn(launch, body.group(1))
 
     def test_bundle_recipe_installs_the_executable_and_icon_as_herdr(self):
         justfile = (ROOT / "justfile").read_text()

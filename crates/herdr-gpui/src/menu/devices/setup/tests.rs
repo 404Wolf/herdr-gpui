@@ -338,3 +338,44 @@ fn terminal_shell_preserves_exact_arguments_without_expansion() -> Result<()> {
 
 #[cfg(unix)]
 mod long_environment;
+#[cfg(unix)]
+mod server_restart;
+
+#[cfg(unix)]
+#[test]
+fn key_setup_installs_the_key_before_saving() -> Result<()> {
+    let request = Request::new("penso@m5mini.local", "Mini", "")?;
+    let plain = terminal_command(&request, None)?;
+    let setup = key_setup_command(&request, None)?;
+    let path = if cfg!(target_os = "macos") {
+        "\"PATH=/usr/bin:$PATH\" "
+    } else {
+        ""
+    };
+    assert_eq!(
+        setup.command,
+        format!(
+            "'env' {path}'ssh-copy-id' 'penso@m5mini.local' && {}",
+            plain.command
+        )
+    );
+    assert_eq!(setup.environment, plain.environment);
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn the_setup_terminal_runs_with_the_login_path() -> Result<()> {
+    let request = Request::new("penso@m5mini.local", "Mini", "")?;
+    let login = "/opt/homebrew/bin:/usr/bin:/bin";
+    let setup = terminal_command(&request, Some(std::ffi::OsStr::new(login)))?;
+    assert_eq!(
+        setup
+            .environment
+            .get("HERDR_GPUI_SETUP_PATH")
+            .map(String::as_str),
+        Some(login)
+    );
+    assert!(setup.command.contains("\"PATH=$HERDR_GPUI_SETUP_PATH\""));
+    Ok(())
+}

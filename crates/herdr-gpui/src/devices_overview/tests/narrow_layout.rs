@@ -54,6 +54,12 @@ fn load_columns_fit_a_narrow_editor_group(cx: &mut gpui::TestAppContext) {
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
             view.command(Command::SplitEditor, window, cx);
+            // The new group opens without tabs; the overview moves to it.
+            let slots = view.group_slots();
+            let Some(crate::browser::Pick::Page(overview)) = view.group_pick(slots[0].id) else {
+                panic!("the overview is shown")
+            };
+            view.show_browser_tab_in(Some(slots[1].id), overview, window, cx);
         })
     });
     draw(cx);

@@ -4,32 +4,63 @@
 
 use super::{Candidate, Source, valid_host};
 use crate::{Error, Result};
-use mdns_sd::ServiceDaemon;
+use mdns_sd::{RecvTimeoutError, ServiceDaemon};
 use std::{
     collections::HashSet,
-    net::IpAddr,
+    io,
+    net::{IpAddr, Ipv4Addr, UdpSocket},
     time::{Duration, Instant},
 };
 
 const SERVICE: &str = "_ssh._tcp.local.";
+/// How often the query is sent again while nothing has answered.
+const REQUERY: Duration = Duration::from_secs(1);
 
 /// Listen for `duration`, reporting each resolved announcement that is not
 /// this machine until `found` returns `false`. Blocks: call it from the
 /// background executor.
+///
+/// The first time a process reaches the local network, macOS checks its
+/// Local Network permission and drops replies until the check is done, so
+/// the first queries of a fresh launch can go unanswered. The library backs
+/// off to queries 1, 3 and 7 seconds in; until something answers, the browse
+/// restarts every second instead, which sends a new query each time.
 pub(super) fn browse(duration: Duration, mut found: impl FnMut(Candidate) -> bool) -> Result<()> {
     let local: HashSet<IpAddr> = if_addrs::get_if_addrs()
         .map_err(Error::LocalAddresses)?
         .into_iter()
         .map(|interface| interface.ip())
         .collect();
+    if cfg!(target_os = "macos") && local.iter().any(|ip| ip.is_ipv4() && !ip.is_loopback()) {
+        local_network_allowed()?;
+    }
     let daemon = ServiceDaemon::new()?;
-    let events = daemon.browse(SERVICE)?;
+    let mut events = daemon.browse(SERVICE)?;
     let deadline = Instant::now() + duration;
-    // Times out, or the daemon stopped on its own.
-    while let Ok(event) = events.recv_deadline(deadline) {
+    let mut answered = false;
+    loop {
+        let wake = if answered {
+            deadline
+        } else {
+            deadline.min(Instant::now() + REQUERY)
+        };
+        let event = match events.recv_deadline(wake) {
+            Ok(event) => event,
+            Err(RecvTimeoutError::Timeout) if !answered && Instant::now() < deadline => {
+                // Replaces the listener, so the old receiver gets nothing more.
+                let Ok(again) = daemon.browse(SERVICE) else {
+                    break;
+                };
+                events = again;
+                continue;
+            }
+            // Timed out, or the daemon stopped on its own.
+            Err(_) => break,
+        };
         let mdns_sd::ServiceEvent::ServiceResolved(service) = event else {
             continue;
         };
+        answered = true;
         let addresses: Vec<IpAddr> = service
             .get_addresses()
             .iter()
@@ -52,6 +83,27 @@ pub(super) fn browse(duration: Duration, mut found: impl FnMut(Candidate) -> boo
     // cleanly; it exits with this process either way.
     let _ = daemon.shutdown();
     Ok(())
+}
+
+/// macOS fails a multicast send with "no route to host" while Herdr lacks
+/// Local Network permission. The mDNS daemon only logs that, so the browse
+/// would find nothing and look like an empty network; one send first tells
+/// the two apart. The packet is a DNS header asking nothing, which responders
+/// ignore. Any other failure is left to the browse.
+fn local_network_allowed() -> Result<()> {
+    let Ok(socket) = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)) else {
+        return Ok(());
+    };
+    multicast_sent(socket.send_to(&[0; 12], (Ipv4Addr::new(224, 0, 0, 251), 5353)))
+}
+
+pub(super) fn multicast_sent(result: io::Result<usize>) -> Result<()> {
+    match result {
+        Err(error) if error.kind() == io::ErrorKind::HostUnreachable => {
+            Err(Error::LocalNetworkDenied)
+        }
+        _ => Ok(()),
+    }
 }
 
 /// The suggestion for one announcement, or `None` for this machine or a host

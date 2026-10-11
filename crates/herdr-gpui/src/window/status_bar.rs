@@ -10,6 +10,10 @@ use std::time::Duration;
 /// this size to look as large as the 12px ring of the report-issue button.
 const STATUS_GLYPH: f32 = 16.;
 
+/// The widest the focused agent's model gets, so a long name cannot crowd out
+/// the usage after it.
+const MODEL_WIDTH: f32 = 160.;
+
 impl HerdrWindow {
     pub(super) fn render_status_bar(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let status = (!matches!(self.live.status, ConnectionStatus::Connected)
@@ -35,8 +39,9 @@ impl HerdrWindow {
             .items_center()
             .gap(px(6.))
             .px_3()
-            .bg(rgb(self.theme.surface))
+            .bg(self.fill().panel(self.theme.surface))
             .text_color(rgb(self.theme.foreground))
+            .children(self.render_agent_model(cx))
             .children(self.render_usage(cx))
             .when_some(
                 self.prefix_armed
@@ -149,6 +154,66 @@ impl HerdrWindow {
                         this.open_app_update(false, window, cx);
                     })),
             )
+    }
+
+    /// The focused agent's model, from the `model` and `effort` tokens its
+    /// integration reports. For Claude, clicking it opens Claude's own model
+    /// picker; other agents show the model only.
+    fn render_agent_model(&self, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
+        let agent = self.focused_agent()?;
+        let label = model_label(agent)?;
+        let segment = div()
+            .id("agent-model")
+            .debug_selector(|| "agent-model".into())
+            .flex_none()
+            .max_w(px(MODEL_WIDTH))
+            .truncate()
+            .px(px(6.))
+            .rounded(px(crate::config::corners::CONTROL))
+            .text_color(rgb(self.theme.muted))
+            .child(label);
+        if !has_model_picker(agent) {
+            return Some(segment);
+        }
+        Some(
+            segment
+                .cursor_pointer()
+                .hover(|s| s.bg(rgb(self.theme.active)))
+                .tooltip(self.hint("Change model"))
+                .on_click(cx.listener(|this, _, _, cx| this.open_agent_model_picker(cx))),
+        )
+    }
+
+    fn focused_agent(&self) -> Option<&herdr_client::protocol::ClientShellAgent> {
+        let snapshot = self.live.snapshot.as_ref()?;
+        snapshot.agents.iter().find(|agent| agent.focused)
+    }
+
+    /// Types `/model` into the focused agent and focuses its pane, so the
+    /// agent's own picker, with its full list and effort control, takes over.
+    fn open_agent_model_picker(&mut self, cx: &mut Context<Self>) {
+        let Some(pane) = self
+            .focused_agent()
+            .filter(|agent| has_model_picker(agent))
+            .map(|agent| agent.pane_id.clone())
+        else {
+            return;
+        };
+        let Some(boot) = self.live.snapshot.as_ref().map(|s| s.boot_id.clone()) else {
+            return;
+        };
+        let endpoint = self.endpoints[self.selected_endpoint].id.clone();
+        let typed = self.endpoints[self.selected_endpoint]
+            .connection
+            .handle
+            .as_ref()
+            .ok_or(crate::Error::NotConnected)
+            .and_then(|handle| Ok(handle.send_input(&boot, &pane, model_picker_input())?));
+        if let Err(error) = typed {
+            tracing::warn!(%error, "Could not open the agent's model picker");
+            return;
+        }
+        self.navigate_endpoint(&endpoint, crate::NavigationTarget::Pane(&pane), cx);
     }
 
     fn connection_dot(&self) -> AnyElement {
@@ -278,6 +343,39 @@ impl HerdrWindow {
             .into()
         }
     }
+}
+
+/// The agent's reported model, followed by its effort level when one is
+/// reported too, or `None` when no model is reported.
+pub(super) fn model_label(agent: &herdr_client::protocol::ClientShellAgent) -> Option<String> {
+    let token = |key: &str| {
+        agent
+            .tokens
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.as_str())
+    };
+    let model = token("model")?;
+    Some(match token("effort") {
+        Some(effort) => format!("{model} \u{b7} {effort}"),
+        None => model.to_owned(),
+    })
+}
+
+/// Whether typing `/model` in the agent opens its model picker. Only Claude's
+/// is known; in another agent the text could be sent as a prompt.
+pub(super) fn has_model_picker(agent: &herdr_client::protocol::ClientShellAgent) -> bool {
+    agent.agent.as_deref() == Some("claude")
+}
+
+/// `/model` and Enter, which open Claude's full picker. The text goes after
+/// an unsent prompt, if there is one. Alt+P keeps that prompt, but its picker
+/// hides the effort control in a pane of fewer than about 40 rows.
+fn model_picker_input() -> [herdr_client::protocol::ClientPaneInputEvent; 2] {
+    [
+        herdr_client::protocol::ClientPaneInputEvent::TextCommit("/model".into()),
+        crate::menu::enter_key(),
+    ]
 }
 
 fn glyph(path: &'static str, color: u32) -> Svg {

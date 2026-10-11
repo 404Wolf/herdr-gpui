@@ -7,6 +7,7 @@ mod add_device;
 pub(super) mod coder;
 pub(crate) use add_device::enter;
 mod discover;
+mod host_key;
 mod host_menu;
 mod setup;
 mod wsl;

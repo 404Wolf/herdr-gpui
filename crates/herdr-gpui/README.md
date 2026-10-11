@@ -741,6 +741,32 @@ graphics) to 4.5:1 (the level for text), lifts dim labels to it too, and makes
 selected rows stand further off the surface. Terminal output is never
 adjusted; programs keep the colors they asked for.
 
+**Settings > Appearance > Window backdrop** offers three tiles: **Solid** (the
+default), **Translucent**, and **Picture**, each showing only its own controls.
+Translucent starts at 85%, and its **Background opacity** stepper moves in 5%
+steps between 10% and 100%; `[backdrop] opacity` in `config-gpui.local.toml`
+takes any value from 0 to 1. The theme's background is painted once, at the
+window's root, and the terminal grid skips the cells that would only repaint
+it, so a translucent window draws fewer quads than an opaque one rather than
+more. The sidebar, tab strip, title bar, and status bar keep their own colors
+at the same opacity, which leaves them a little more solid than the terminal.
+Colors a program chooses, popups, menus, dialogs, and the Settings window stay
+opaque.
+
+**Blur behind** (`blur = true`) asks the platform to blur the desktop behind a
+translucent window, through GPUI's public window API: macOS and Windows blur;
+on Linux only Wayland compositors with KDE's blur protocol do, and X11 needs a
+compositing window manager for any translucency at all.
+
+The **Picture** tile opens a file chooser and puts an image behind the window
+instead (`image`, an absolute path or one under `~/`), and starts it at 75%
+opacity if the window was opaque, so the picture shows. The picture covers the
+desktop, so the window itself stays opaque and blur does not apply. It is
+decoded off the UI thread, scaled to at most 3840 pixels on its longest side,
+and uploaded once; files over 64 MiB are refused. A picture that cannot be read
+leaves the window translucent over the desktop and logs why; choosing one in
+Settings reports the error there.
+
 Choose the sidebar layout from **View > Layout**, which lists every layout,
 checks the one in use, switches at once, and saves the choice to
 `config-gpui.local.toml`. The same setting can be written by hand as a
@@ -788,9 +814,10 @@ Three more layouts draw rows with a design of their own, each with fixed
 spacing:
 
 - `superset`: one line per row. An icon slot carries the pull request's state
-  or the repository owner, with the activity status as a dot on its corner; the
-  PR's change counts sit on the right, and the focused row is filled with a
-  stripe down its leading edge. Agents show where they run after their name.
+  or the repository owner, with the activity status as a compact corner badge
+  (dot or symbol, following the indicator setting) that leaves the main icon
+  visible. The PR's change counts sit on the right, and the focused row is filled
+  with a stripe down its leading edge. Agents show where they run after their name.
 - `orca`: inset cards with a status column, the name and a `primary` mark on a
   repository's own checkout, then a meta line with the host, the branch when it
   differs from the name, and the pull request. Agents are single compact lines.
@@ -1120,9 +1147,10 @@ maximize/restore, and the shadow.
 ## Terminal Selection And Copy
 
 Mouse-aware applications receive clicks, button releases, drags, and pointer
-motion. Hold Shift to select/copy locally instead. In applications without mouse
-reporting, selection works without Shift. A forwarded drag stays in the pane or
-popup where it started, including when the pointer moves outside it.
+motion. Hold Shift to select locally instead; releasing a selection of terminal
+text in a pane also offers the annotation pill described below. In applications
+without mouse reporting, selection works without Shift. A forwarded drag stays
+in the pane or popup where it started, including when the pointer moves outside it.
 
 Right-click opens the GUI pane menu unless Herdr routes that pane's right-clicks
 to the application (`herdr pane input --right-click pane`, or **Send
@@ -1138,6 +1166,22 @@ Drag across the terminal to select cells; releasing the button copies them and
 shows the `copied to clipboard` flash described under
 [Configuration](#configuration). Selection is client-local: it reads the surface
 the client already has, and asks the daemon only for rows scrolled out of view.
+
+To annotate terminal text, hold **Shift** while starting a selection in a pane.
+Releasing the mouse shows a small, borderless **Annotate** pill beside the
+selection. Copying still follows your normal settings, and the terminal keeps
+keyboard focus. Click **Annotate** to open a compact, borderless note field
+beside the selected text. Its **Message to agent…** field accepts comments,
+questions, or requests.
+Press **Enter** to send the note, **Shift+Enter** to queue it and select more text,
+or **Escape** to dismiss the field; the popover also has Send, Queue, and close
+buttons. Typing in the terminal or clicking elsewhere dismisses the pill.
+The whole selection must be visible on screen.
+This also works with copying on selection disabled or the highlight set to clear
+after copying. For an existing selection, use **Annotate Selection for the Agent**
+in the command palette (Cmd+Shift+A on macOS, Ctrl+Alt+Shift+A on Linux).
+Notes go to the agent in that pane, falling back to the first agent in its
+workspace; with no agent, they are copied to the clipboard.
 
 A program that copies with OSC 52 — many editors and agent CLIs do, especially
 when they own the mouse — is honored too: the daemon forwards the bytes to this
@@ -1314,7 +1358,11 @@ Right-click a linked worktree and choose Teleport... to move it to another
 connected host: its branch and commits, staged, unstaged and untracked changes,
 tabs and splits, the programs running in them, and agent sessions. It is offered
 on Linux and macOS clients when the worktree's host is the local session or a
-saved SSH host; custom socket endpoints are not scripted.
+saved SSH host; custom socket endpoints are not scripted. Neither is a
+development (`--dev`) session: the `herdr` CLI names sessions of the release
+installation only, so Teleport, fan-out, and dispatch are not offered there,
+and an orchestrator action that drives that session through the CLI reports an
+error instead of reaching the release session of the same name.
 
 1. **Choose a host.** Every other enabled host is listed at once, connected or
    not; nothing is probed until one is chosen. The review then finds where the
@@ -1806,29 +1854,31 @@ empty.
 The split button at the right end of the tab strip (or **Split Editor**,
 `Cmd-\`) splits the view into side-by-side groups, as an editor does: keep an
 agent's terminal in one group and its page in another. Split as often as you
-like; each split opens a group to the right of the one it came from, showing
-the same tab. Splitting opens nothing new.
+like; each split opens a group to the right of the one it came from, without
+tabs. Splitting opens nothing new and moves no tab.
 
-- Every group lists the same tabs. Groups show different Herdr tabs live
-  side by side: each group showing a terminal has its own client connection
-  to the daemon, which keeps a focused tab per client. The group in use holds
-  the window's connection and gets the keyboard; the others only display
-  their tab, report themselves unfocused so notifications, sounds, and the
-  title follow the group in use, and focus their own tab again when an agent
-  or the CLI moves every client. Pressing a group swaps its connection in.
-- A tab is live in one group at a time: the daemon sizes a tab for a single
-  client, and a page is placed once. A terminal tab picked in two groups is
-  live in the one used last, and the other paints the same picture of it, as
-  an editor shows one file twice; a group of another width shows it clipped
-  or padded. Pressing that group brings the live tab there. A page shown in
-  another group is stood in for with **Show Here**.
+- A tab belongs to one group, and only that group's strip lists it. A new
+  group says how to open a tab in it; a tab opened in a group is that
+  group's own. A tab opened elsewhere, by an agent, the CLI, or another
+  client, goes to the group in use.
+- Drag a tab onto another group to move it there: the group it is carried
+  over is outlined, and dropping the tab shows it in that group. The group it
+  left goes to the tab beside it, and closes when that was its last tab.
+- Groups show different Herdr tabs live side by side: each group showing a
+  terminal has its own client connection to the daemon, which keeps a focused
+  tab per client. The group in use holds the window's connection and gets the
+  keyboard; the others only display their tab, report themselves unfocused so
+  notifications, sounds, and the title follow the group in use, and focus
+  their own tab again when an agent or the CLI moves every client. Pressing a
+  group swaps its connection in. When the daemon moves the window's focus to
+  a tab of another group, that group becomes the group in use.
 - The group in use has the keyboard, and its chosen tab carries the accent.
   **+** opens a terminal tab in that group. The group's **…**, at the end
   of its strip, offers the other kinds of tab: **New Browser Tab**
   (`cmd-shift-b`), **Review Changes** when the Git chip tracks a checkout,
   and the workspace's listening ports, each opening its page. `cmd-t` and
   `cmd-shift-b` open in the group in use, where Close Tab acts too. Close
-  Tab in an empty group closes the group.
+  Tab in a group without tabs closes the group.
 - Drag a divider to resize the groups beside it. Groups are the window's own,
   per workspace. A group's own connection closes with the group, or when the
   window leaves the workspace or host; returning reconnects it.
@@ -1838,15 +1888,17 @@ the same tab. Splitting opens nothing new.
   workspace in Herdr forgets its groups, and a damaged file starts every
   workspace unsplit. With several windows on one workspace, the last change
   is what is saved.
-- Closing in a group only takes tabs out of that group's strip, as an
-  editor's groups do: they stay open in Herdr, in the browser, and in every
-  other group. Split, a tab's close button and its right-click **Close Tab**
-  do this; **…** offers **Close**,
-  **Close Others**, and **Close All**, which closes the group. A group left
-  with no tabs closes, and a tab closed in every group stays in the group in
-  use. Unsplit, a tab's close button and **Close Tab** close it in Herdr,
-  through its confirmation, as before; nothing in **…** ever closes a Herdr
-  tab.
+- Closing a tab closes it for good, split or not: a tab's close button and
+  its right-click **Close Tab** close a page at once and a Herdr tab in
+  Herdr, through its confirmation. Split, **…** offers **Close Tab**, which
+  does the same for the tab the group shows; **Close Others**, which closes
+  the group's other tabs one after another, each as its own close button
+  would, and stops at the first close you decline; and **Close Group**,
+  which closes no tab: the group's tabs go to the group that takes its room.
+  A group whose last tab closes, closes too.
+- A layout saved by an earlier version, where every group listed every tab
+  except the ones closed in it, still restores: each tab goes to a group
+  that had kept it.
 - Right-click a tab for **New Tab** (opening in that group), **Rename**, and
   **Close Tab**, as in Herdr's own tab menu. A zoomed tab, where one pane
   fills the tab, shows a corner mark after its title, and the pane menu
@@ -1855,8 +1907,8 @@ the same tab. Splitting opens nothing new.
 - A split's new group opens from the right, sliding in at its own width
   while the group it came from gives up the room; a closed group folds away
   to the right as its neighbour takes the room back.
-- A tab that opens grows into its strip, and one that closes, in Herdr or
-  in a group, shrinks out where it stood. The tabs a strip already has when
+- A tab that opens grows into its strip, and one that closes or moves to
+  another group shrinks out where it stood. The tabs a strip already has when
   the window first draws it appear at once.
 
 ## Browser Tabs
@@ -2208,8 +2260,9 @@ the page's storage, which belongs to one address.
   pages. **Open VS Code** in the Terminal menu or the command palette opens
   it in the group in use, as does a key you bind to `open_code` under
   `[keybindings]`. It has no default key.
-- Each space has one VS Code tab, listed in its strips with its other tabs.
-  Opening it again shows that same tab in the group it is opened from, so
+- Each space has one VS Code tab, listed with the other tabs of the group it
+  belongs to. Opening it again moves that same tab to the group it is opened
+  from, and a group left without tabs closes, so
   one group can show VS Code beside another showing a terminal, or a lone
   group can show it alone. It splits, resizes, and is covered by dialogs as
   any page is, and its page keeps running, keeping its state, while no group

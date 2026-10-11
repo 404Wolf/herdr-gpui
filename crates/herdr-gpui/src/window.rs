@@ -5,6 +5,7 @@
 
 mod annotate;
 mod announcement;
+mod backdrop;
 mod clipboard;
 mod commands;
 mod config_diagnostic;
@@ -40,6 +41,8 @@ mod transfers;
 #[cfg(test)]
 pub(crate) use transfers::tests::Peer as MockPeer;
 
+#[cfg(test)]
+mod agent_model_tests;
 #[cfg(test)]
 mod font_size_tests;
 #[cfg(test)]
@@ -164,6 +167,8 @@ pub(crate) struct HerdrWindow {
     /// Tells a sleep from the clocks, so connections are checked on waking.
     pub(crate) wake: endpoint::WakeClock,
     pub(crate) painter: std::rc::Rc<std::cell::RefCell<terminal_painter::TerminalPainter>>,
+    /// The picture and platform appearance `[backdrop]` asks for.
+    pub(crate) backdrop: backdrop::State,
     /// The terminal grid's cached regions; see `regions`.
     pub(crate) regions: Vec<regions::RegionLayers>,
     pub(crate) marked: String,
@@ -592,16 +597,18 @@ impl HerdrWindow {
     /// Listening ports are scanned on the same hosts as CPU and memory.
     fn update_listening_ports(&mut self) -> bool {
         if !self.config.show_listening_ports {
-            self.tunnels = Default::default();
+            self.tunnels.close_all();
             return self.listening_ports.poll(Vec::new());
         }
         let hosts = self.watched_hosts();
         let changed = self.listening_ports.poll(hosts);
-        // A tunnel lives as long as its remote port is listed.
+        // A tunnel lives as long as its remote port is listed and its SSH
+        // child runs; either ending removes its close button.
         let ports = &self.listening_ports;
-        self.tunnels
+        let closed = self
+            .tunnels
             .retain(|key| ports.listening(&crate::usage::Host::Ssh(key.target.clone()), key.port));
-        changed
+        changed || closed
     }
 
     /// The machines background monitors watch: this one always, a remote
@@ -824,6 +831,7 @@ impl HerdrWindow {
             presentation: Default::default(),
             wake: endpoint::WakeClock::new(std::time::Instant::now(), std::time::SystemTime::now()),
             painter: Default::default(),
+            backdrop: Default::default(),
             regions: Vec::new(),
             marked: String::new(),
             marked_selection: None,
@@ -927,10 +935,12 @@ impl HerdrWindow {
                 cx.notify();
             }),
         };
-        // Quitting need not drop this window, so its SSH children are killed
-        // here rather than left forwarding after the app is gone.
+        // Quitting need not drop this window, so its SSH children (port
+        // forwards and listening-port tunnels) are killed here rather than
+        // left forwarding after the app is gone.
         cx.on_app_quit(|this, _| {
             this.port_forwards.stop_all();
+            this.tunnels.close_all();
             async {}
         })
         .detach();

@@ -122,7 +122,7 @@ impl HerdrWindow {
                             // Split, the page closes in its group alone.
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 cx.stop_propagation();
-                                this.close_strip_tab(slot.id, Pick::Page(id), window, cx);
+                                this.close_strip_tab(Pick::Page(id), window, cx);
                             })),
                     )
                     .on_click(cx.listener(move |this, _, window, cx| {

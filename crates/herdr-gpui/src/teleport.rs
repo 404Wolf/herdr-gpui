@@ -40,9 +40,15 @@ pub(crate) use {
 #[cfg(test)]
 pub(crate) use {job::Repository, marks::Destination as MarkDestination};
 
-/// The host Teleport scripts for an endpoint, if it can script it at all.
+/// The host Teleport, fan-out, and dispatch script for an endpoint, if they
+/// can: each drives the endpoint's session through `herdr_cli`, which cannot
+/// reach a development session.
 pub(crate) fn host_for(target: &herdr_client::ConnectTarget) -> error::Result<Host> {
-    Host::new(target)
+    let host = Host::new(target)?;
+    if !host.scripts_herdr() {
+        return Err(Error::DevelopmentSession);
+    }
+    Ok(host)
 }
 
 // Host scripts need /bin/sh; Teleport is not offered on other clients.

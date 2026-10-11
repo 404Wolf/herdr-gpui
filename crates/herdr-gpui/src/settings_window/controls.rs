@@ -1,4 +1,5 @@
 //! Prepared controls for the standalone window; persistence belongs to its serial save path.
+mod backdrop;
 pub(super) mod code;
 mod fonts;
 pub(super) mod plugins;
@@ -44,6 +45,7 @@ pub(super) struct Controls {
     saving_sizes: Vec<(FontFace, f32)>,
     size_editor: Option<SizeEditor>,
     local_path: String,
+    ruler: backdrop::Ruler,
     _search_changed: Subscription,
 }
 
@@ -106,6 +108,7 @@ impl Controls {
             local_path: Config::local_path()
                 .map(|path| path.display().to_string())
                 .unwrap_or_else(|error| format!("Unavailable ({error})")),
+            ruler: backdrop::Ruler::default(),
             _search_changed: subscription,
         }
     }
@@ -180,6 +183,7 @@ impl SettingsWindow {
         self.refresh_control_appearance(cx);
         if !self.busy() {
             self.controls.saving_sizes.clear();
+            self.controls.ruler.settle();
             self.flush_control_sizes(cx);
             self.flush_code_url(cx);
         }

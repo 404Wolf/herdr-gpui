@@ -1,5 +1,6 @@
 //! Reordering tabs by dragging them along their strip, as workspace rows are
-//! dragged in the sidebar. Holding a press on a tab, or moving it a few
+//! dragged in the sidebar, and moving one to another editor group by
+//! dropping it there. Holding a press on a tab, or moving it a few
 //! pixels, lifts it; the tabs it passes slide aside, so the gap they open is
 //! where it lands, and the strip scrolls when it is carried to either end.
 //!
@@ -14,7 +15,7 @@ use crate::{
     motion,
     reorder::{Beside, LIFT_DELAY, LIFT_DISTANCE, SETTLE_TIMEOUT, SLIDE, Slide, preview, slot_for},
 };
-use gpui::{Context, Pixels, Point, ScrollHandle, Task, px};
+use gpui::{Context, Pixels, Point, ScrollHandle, Task, Window, px};
 use herdr_client::{Method, protocol::ClientShellSnapshot};
 use std::{
     cell::{Cell, RefCell},
@@ -223,15 +224,23 @@ impl HerdrWindow {
         if self.menu.page.is_some() {
             return;
         }
+        // A tab that cannot be reordered, for want of a daemon that moves
+        // tabs or of another tab of its kind, can still be carried to
+        // another group.
+        let split = self.is_split();
         let boot = match pick {
             Pick::Herdr(_) => {
-                let Some(snapshot) = &self.live.snapshot else {
-                    return;
-                };
-                if !self.live.status.is_connected() || !self.live.supports_tab_move {
+                let movable = self.live.status.is_connected() && self.live.supports_tab_move;
+                let boot = self
+                    .live
+                    .snapshot
+                    .as_ref()
+                    .filter(|_| movable)
+                    .map(|snapshot| snapshot.boot_id.clone());
+                if boot.is_none() && !split {
                     return;
                 }
-                Some(snapshot.boot_id.clone())
+                boot
             }
             Pick::Page(_) => None,
         };
@@ -240,7 +249,7 @@ impl HerdrWindow {
             .into_iter()
             .filter(|candidate| same_kind(candidate, pick))
             .count();
-        if kin < 2 {
+        if kin < 2 && !split {
             return;
         }
         let lift = cx.spawn(async move |this, cx| {
@@ -303,9 +312,27 @@ impl HerdrWindow {
         false
     }
 
-    /// Ends the drag on release, moving the tab if it was lifted over a gap.
-    /// Returns whether it had lifted, in which case the release is not a click.
-    pub(super) fn release_tab_drag(&mut self, cx: &mut Context<Self>) -> bool {
+    /// The group a lifted tab is carried over, when it is not its own:
+    /// dropped there, the tab moves to it.
+    pub(super) fn drop_group(&self) -> Option<GroupId> {
+        let drag = self.tab_drag.as_ref().filter(|drag| drag.floating())?;
+        let bounds = self.browser.group_bounds.borrow();
+        self.group_slots()
+            .into_iter()
+            .map(|slot| slot.id)
+            .filter(|group| *group != drag.group)
+            .find(|group| {
+                bounds
+                    .get(group)
+                    .is_some_and(|bounds| bounds.contains(&drag.pointer))
+            })
+    }
+
+    /// Ends the drag on release, moving the tab if it was lifted over a gap
+    /// or another group. Returns whether it had lifted, in which case the
+    /// release is not a click.
+    pub(super) fn release_tab_drag(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let over = self.drop_group();
         let Some(drag) = self.tab_drag.take() else {
             return false;
         };
@@ -313,6 +340,10 @@ impl HerdrWindow {
             return false;
         }
         cx.notify();
+        if let Some(group) = over {
+            self.move_tab_to_group(drag.pick.clone(), group, window, cx);
+            return true;
+        }
         let Some(target) = drag.target.clone() else {
             return true;
         };
@@ -409,6 +440,7 @@ impl HerdrWindow {
         now: Instant,
     ) -> Option<StripDrag> {
         let snapshot = self.live.snapshot.clone();
+        let away = self.drop_group().is_some();
         let drag = self.tab_drag.as_mut().filter(|drag| drag.group == group)?;
         if !drag.previewing(snapshot.as_deref()) {
             // The daemon's new order has arrived; the strip now shows it.
@@ -462,7 +494,12 @@ impl HerdrWindow {
             let high = f32::from(view.right()) - (on_screen + right - left);
             lift.clamp(low.min(high), high.max(low))
         });
-        if floating {
+        // Over another group the drop moves the tab there, and a Herdr tab
+        // the daemon cannot move has no place to take in its own strip.
+        let reorders = !away && (drag.boot.is_some() || matches!(drag.pick, Pick::Page(_)));
+        if floating && !reorders {
+            drag.target = None;
+        } else if floating {
             let kin_picks: Vec<Pick> = kin.iter().map(|(pick, _)| (*pick).clone()).collect();
             drag.target = spans.as_ref().and_then(|spans| {
                 let card = (

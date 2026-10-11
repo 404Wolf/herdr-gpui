@@ -371,7 +371,7 @@ fn control_path(socket: &Path) -> String {
 /// `RemoteForward` from the user's config that is busy elsewhere cannot end it.
 #[cfg(unix)]
 fn master_command(target: &str, socket: &Path) -> Command {
-    let mut command = Command::new("ssh");
+    let mut command = crate::environment::command("ssh");
     command
         .args([
             "-N",
@@ -411,7 +411,7 @@ fn master_command(target: &str, socket: &Path) -> Command {
 /// once that master holds the port.
 #[cfg(unix)]
 fn forward_command(target: &str, socket: &Path, local_port: u16, remote_port: u16) -> Command {
-    let mut command = Command::new("ssh");
+    let mut command = crate::environment::command("ssh");
     command
         .args(["-o", "BatchMode=yes", "-o"])
         .arg(control_path(socket))

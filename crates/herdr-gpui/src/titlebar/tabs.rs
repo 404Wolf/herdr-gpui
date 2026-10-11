@@ -8,7 +8,7 @@
 //! more tabs than fit still scroll.
 
 use super::{
-    HEIGHT, LEADING, SIDEBAR_TOGGLE_MARGIN, SIDEBAR_TOGGLE_SIZE, movable, navigation::Style,
+    HEIGHT, LEADING, SIDEBAR_TOGGLE_INSET, SIDEBAR_TOGGLE_SIZE, movable, navigation::Style,
 };
 use crate::{HerdrWindow, browser::GroupId, herdr_settings::TabBarPosition, sidebar::SidebarMode};
 use gpui::{prelude::*, *};
@@ -23,8 +23,6 @@ pub(crate) const DRAG_ROOM: f32 = 40.;
 /// to any tab row.
 const NAVIGATION_SHRINK: f32 = 0.001;
 
-/// The sidebar toggle's 28px button and the 4px after it.
-const SIDEBAR_TOGGLE: f32 = SIDEBAR_TOGGLE_SIZE + SIDEBAR_TOGGLE_MARGIN;
 /// Room kept after Back and Forward at the sidebar header's end.
 const SIDEBAR_END: f32 = 8.;
 
@@ -58,7 +56,7 @@ impl HerdrWindow {
     fn sidebar_header_has_toggle(&self, window: &Window) -> bool {
         self.sidebar_mode()
             .width(self.sidebar_width, f32::from(window.viewport_size().width))
-            .is_some_and(|width| width >= LEADING + SIDEBAR_TOGGLE)
+            .is_some_and(|width| width >= LEADING + SIDEBAR_TOGGLE_SIZE)
     }
 
     /// Whether Back and Forward fit in the expanded sidebar's header after
@@ -70,7 +68,7 @@ impl HerdrWindow {
             .width(self.sidebar_width, f32::from(window.viewport_size().width))
             .unwrap_or(0.);
         mode == SidebarMode::Expanded
-            && column >= LEADING + SIDEBAR_TOGGLE + Style::NATIVE.width() + SIDEBAR_END
+            && column >= LEADING + SIDEBAR_TOGGLE_SIZE + Style::NATIVE.width() + SIDEBAR_END
     }
 
     /// The sidebar column's first row, level with the strips beside it. It
@@ -85,7 +83,7 @@ impl HerdrWindow {
             .w_full()
             .h(px(self.tab_strip_height()))
             .overflow_hidden()
-            .bg(rgb(self.theme.sidebar_background()))
+            .bg(self.fill().panel(self.theme.sidebar_background()))
             .child(div().flex_none().w(px(LEADING)).h_full())
             .when(self.sidebar_header_has_toggle(window), |header| {
                 header.child(self.sidebar_toggle(cx))
@@ -152,7 +150,13 @@ impl HerdrWindow {
         // Keep the toggle in the rail or expanded sidebar when it fits;
         // Back and Forward alone lead the content beside it.
         if self.sidebar_header_has_toggle(window) {
-            return Some(leading.pl(px(6.)).child(self.strip_navigation(cx)));
+            // No toggle precedes them here, so its inset is not there to
+            // complete the room before them.
+            return Some(
+                leading
+                    .pl(px(SIDEBAR_TOGGLE_INSET))
+                    .child(self.strip_navigation(cx)),
+            );
         }
         let column = mode
             .width(self.sidebar_width, f32::from(window.viewport_size().width))

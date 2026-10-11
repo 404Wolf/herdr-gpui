@@ -7,6 +7,9 @@ on:
   workflow_dispatch:
 
 # Deny by default; every job below declares the scopes it actually needs.
+# Fork PRs rely on Settings > Actions > General > Require approval for all
+# external contributors. Approval permits execution, not access to secrets:
+# keep pull_request, hosted runners, and secret-free/read-only PR jobs.
 permissions: {}
 
 concurrency:
@@ -16,16 +19,14 @@ concurrency:
 jobs:
   # Audits the workflows themselves for injection, over-broad permissions,
   # unpinned actions, and credential persistence. Gates the application
-  # jobs to catch workflow mistakes early; approval/ref protection remains the
-  # credential boundary, not the scanner.
+  # jobs to catch workflow mistakes early; GitHub's fork isolation and protected
+  # release environments remain the credential boundary, not the scanner.
   zizmor:
     if: >-
       github.repository == 'penso/herdr-gpui' &&
-      github.actor == 'penso' && github.triggering_actor == 'penso' &&
-      ((github.event_name == 'pull_request' &&
-        github.event.pull_request.user.login == 'penso' &&
-        github.event.pull_request.head.repo.full_name == 'penso/herdr-gpui') ||
+      (github.event_name == 'pull_request' ||
        ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+        github.actor == 'penso' && github.triggering_actor == 'penso' &&
         github.ref == 'refs/heads/main'))
     name: Workflow Security
     runs-on: ubuntu-latest
@@ -46,11 +47,9 @@ jobs:
   commits:
     if: >-
       github.repository == 'penso/herdr-gpui' &&
-      github.actor == 'penso' && github.triggering_actor == 'penso' &&
-      ((github.event_name == 'pull_request' &&
-        github.event.pull_request.user.login == 'penso' &&
-        github.event.pull_request.head.repo.full_name == 'penso/herdr-gpui') ||
+      (github.event_name == 'pull_request' ||
        ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+        github.actor == 'penso' && github.triggering_actor == 'penso' &&
         github.ref == 'refs/heads/main'))
     name: Commit messages
     needs: zizmor
@@ -90,11 +89,9 @@ jobs:
     if: >-
       needs.commits.outputs.code == 'true' &&
       github.repository == 'penso/herdr-gpui' &&
-      github.actor == 'penso' && github.triggering_actor == 'penso' &&
-      ((github.event_name == 'pull_request' &&
-        github.event.pull_request.user.login == 'penso' &&
-        github.event.pull_request.head.repo.full_name == 'penso/herdr-gpui') ||
+      (github.event_name == 'pull_request' ||
        ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+        github.actor == 'penso' && github.triggering_actor == 'penso' &&
         github.ref == 'refs/heads/main'))
     name: Format, lint, and test (${{ matrix.runner }})
     needs: [zizmor, commits]
@@ -153,11 +150,9 @@ jobs:
     if: >-
       needs.commits.outputs.code == 'true' &&
       github.repository == 'penso/herdr-gpui' &&
-      github.actor == 'penso' && github.triggering_actor == 'penso' &&
-      ((github.event_name == 'pull_request' &&
-        github.event.pull_request.user.login == 'penso' &&
-        github.event.pull_request.head.repo.full_name == 'penso/herdr-gpui') ||
+      (github.event_name == 'pull_request' ||
        ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+        github.actor == 'penso' && github.triggering_actor == 'penso' &&
         github.ref == 'refs/heads/main'))
     name: Windows check (${{ matrix.runner }})
     needs: [zizmor, commits]
@@ -197,11 +192,9 @@ jobs:
     if: >-
       always() &&
       github.repository == 'penso/herdr-gpui' &&
-      github.actor == 'penso' && github.triggering_actor == 'penso' &&
-      ((github.event_name == 'pull_request' &&
-        github.event.pull_request.user.login == 'penso' &&
-        github.event.pull_request.head.repo.full_name == 'penso/herdr-gpui') ||
+      (github.event_name == 'pull_request' ||
        ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+        github.actor == 'penso' && github.triggering_actor == 'penso' &&
         github.ref == 'refs/heads/main'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5

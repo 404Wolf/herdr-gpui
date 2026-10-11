@@ -6,7 +6,7 @@
 use super::{Event, LiveAgent, LiveBranch, Look, OrchestratorView, Request, Timing};
 use crate::{
     HerdrWindow, NavigationTarget,
-    browser::{Location, OrchestratorRepo, Slot, Store, Tab, TabId, WebUrl},
+    browser::{Location, OrchestratorRepo, Pick, Slot, Store, Tab, TabId, WebUrl},
     window::Flash,
 };
 use gpui::{prelude::*, *};
@@ -102,7 +102,12 @@ impl HerdrWindow {
             return;
         }
         self.ensure_orchestrator(id, cx);
-        self.show_browser_tab(id, window, cx);
+        // A workspace has one orchestrator tab: asked for again, it moves
+        // to the group in use.
+        match self.ensure_layout().map(|layout| layout.active()) {
+            Some(group) => self.move_tab_to_group(Pick::Page(id), group, window, cx),
+            None => self.show_browser_tab(id, window, cx),
+        }
         if let Some(orchestrator) = self.orchestrators.get(&id) {
             let focus = orchestrator.view.read(cx).focus_handle().clone();
             window.focus(&focus, cx);
