@@ -50,8 +50,9 @@ fn linux_shortcuts_preserve_terminal_keys_and_shifted_actions() {
     let keymap = Keymap::default();
     for (command, key) in [
         (Command::Tab, "ctrl-shift-t"),
-        (Command::NewWindow, "ctrl-shift-n"),
-        (Command::NewWorktree, "ctrl-shift-r"),
+        (Command::NewWindow, "ctrl-alt-n"),
+        (Command::NewWorktree, "ctrl-shift-n"),
+        (Command::Workspace, "ctrl-alt-shift-n"),
         (Command::Palette, "ctrl-shift-p"),
         (Command::SplitRight, "ctrl-shift-d"),
         (Command::SplitDown, "ctrl-alt-shift-d"),

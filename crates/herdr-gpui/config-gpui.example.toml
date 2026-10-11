@@ -158,8 +158,8 @@ project_roots = []
 # Herdr's own [keys] in config.toml (prefix chords included) add to these
 # defaults; a command named here keeps only the keystrokes listed here.
 # The examples below use the macOS defaults. Linux has its own Ctrl+Shift
-# defaults (not Super): new_tab = "ctrl-shift-t", new_window = "ctrl-shift-n",
-# new_workspace = "ctrl-alt-shift-n", new_worktree = "ctrl-shift-r",
+# defaults (not Super): new_tab = "ctrl-shift-t", new_window = "ctrl-alt-n",
+# new_workspace = "ctrl-alt-shift-n", new_worktree = "ctrl-shift-n",
 # split_right = "ctrl-shift-d", split_down = "ctrl-alt-shift-d",
 # command_palette = "ctrl-shift-p", toggle_full_screen = "f11".
 # See Keyboard Shortcuts for the full platform-specific list. Explicit values

@@ -2373,8 +2373,8 @@ whose plain Ctrl editing shortcuts also work in the app's text fields.
 
 | Action | Linux default |
 | --- | --- |
-| New tab / New window | Ctrl+Shift+T / Ctrl+Shift+N |
-| New workspace / New worktree | Ctrl+Alt+Shift+N / Ctrl+Shift+R |
+| New tab / New window | Ctrl+Shift+T / Ctrl+Alt+N |
+| New workspace / New worktree | Ctrl+Alt+Shift+N / Ctrl+Shift+N |
 | Copy / Paste | Ctrl+Shift+C / Ctrl+Shift+V |
 | Find / Command palette | Ctrl+Shift+F / Ctrl+Shift+P |
 | Split right / Split down | Ctrl+Shift+D / Ctrl+Alt+Shift+D |

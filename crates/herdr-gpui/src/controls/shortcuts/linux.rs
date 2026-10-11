@@ -7,10 +7,10 @@ pub(super) fn defaults(command: Command) -> &'static [&'static str] {
     use Command::*;
     match command {
         OpenNotificationTarget => &["ctrl-alt-shift-u"],
-        NewWindow => &["ctrl-shift-n"],
+        NewWindow => &["ctrl-alt-n"],
         Workspace => &["ctrl-alt-shift-n"],
-        // Ctrl-Shift-U belongs to GNOME/IBus Unicode code-point entry.
-        NewWorktree => &["ctrl-shift-r"],
+        // Keep the frequent creation action on N; Ctrl-Shift-U is Unicode entry.
+        NewWorktree => &["ctrl-shift-n"],
         Tab => &["ctrl-shift-t"],
         SplitRight => &["ctrl-shift-d"],
         SplitDown => &["ctrl-alt-shift-d"],
