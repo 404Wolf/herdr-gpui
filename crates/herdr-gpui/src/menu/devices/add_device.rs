@@ -57,6 +57,8 @@ pub(super) enum Offer {
     Update,
     /// SSH needs a prompt, or saving without a terminal failed.
     Terminal,
+    /// Herdr restarts the host's server before saving, once confirmed.
+    Restart,
 }
 
 impl Offer {
@@ -81,6 +83,9 @@ impl Offer {
             Self::Terminal => format!(
                 "Setting up {target} needs your input, such as an SSH password or host key. Continue in a local terminal?"
             ),
+            Self::Restart => format!(
+                "Restart the Herdr server on {target}? A local terminal asks you to confirm."
+            ),
         }
     }
 
@@ -88,7 +93,7 @@ impl Offer {
         match self {
             Self::Install => "Install",
             Self::Update => "Update",
-            Self::Terminal => "Open terminal",
+            Self::Terminal | Self::Restart => "Open terminal",
         }
     }
 }
@@ -547,8 +552,12 @@ impl HerdrWindow {
                     return;
                 }
                 this.menu.error = Some(error.to_string());
+                let offer = match error {
+                    crate::Error::DeviceServerRestart => Offer::Restart,
+                    _ => Offer::Terminal,
+                };
                 if let Some(form) = &mut this.menu.device_setup {
-                    form.step = Step::Confirm(request, Offer::Terminal);
+                    form.step = Step::Confirm(request, offer);
                     form.claim = Some(claim);
                 }
                 cx.notify();

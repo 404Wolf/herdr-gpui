@@ -425,10 +425,13 @@ fn save_with(
     ensure_unsaved(request, claim, &load()?, resolve)?;
     let (status, stdout, stderr) = run_cli(executable, &request.arguments(), SAVE_TIMEOUT)?;
     if !status.success() {
-        return Err(Error::DeviceSetup {
-            status,
-            detail: last_line(&stderr),
-        });
+        let detail = last_line(&stderr);
+        // Without a terminal to confirm in, the CLI refuses rather than
+        // restart a server whose panes would stop.
+        if detail.contains(RESTART_REFUSAL) {
+            return Err(Error::DeviceServerRestart);
+        }
+        return Err(Error::DeviceSetup { status, detail });
     }
     // Without the ID the CLI printed, there is no profile known to be ours.
     let Some(id) = saved_id(&stdout) else {
@@ -454,6 +457,9 @@ fn save_with(
         _ => Ok(()),
     }
 }
+
+/// How `machine add` ends when the running server must be restarted first.
+const RESTART_REFUSAL: &str = "remote server is not ready for saved machines";
 
 /// The profile ID from `Saved SSH machine <id>. Remote server is ready.`
 fn saved_id(stdout: &[u8]) -> Option<String> {

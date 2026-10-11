@@ -338,3 +338,5 @@ fn terminal_shell_preserves_exact_arguments_without_expansion() -> Result<()> {
 
 #[cfg(unix)]
 mod long_environment;
+#[cfg(unix)]
+mod server_restart;

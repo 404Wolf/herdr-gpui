@@ -625,6 +625,12 @@ pub enum Error {
         status: std::process::ExitStatus,
         detail: String,
     },
+    /// Herdr's `machine add` refused to save the host until its running
+    /// server is restarted, which it only does after a confirmation.
+    #[error(
+        "The Herdr server on this host was started in a way that may not survive a dropped SSH connection, so Herdr has to restart it before saving the device. Restarting stops the panes running there."
+    )]
+    DeviceServerRestart,
     #[error("Saving the device timed out")]
     DeviceSetupTimeout,
     #[error("This host and session are already saved as \u{201c}{0}\u{201d}.")]
