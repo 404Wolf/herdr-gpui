@@ -152,7 +152,21 @@ fn copy_keys_keep_the_pill_but_typing_and_outside_clicks_dismiss_it(cx: &mut Tes
     cx.simulate_keystrokes("x");
     assert!(view.read_with(cx, |view, _| view.terminal_notes.offer.is_none()));
     offer(&view, cx);
-    cx.simulate_click(point(px(5.), px(5.)), Modifiers::default());
+    // Click within the terminal, not the native title bar: a window-relative
+    // (5, 5) starts a window drag on macOS, unsupported by GPUI's test window.
+    let outside = view.read_with(cx, |view, _| {
+        view.bounds.origin
+            + point(
+                px(12. * view.cell_width),
+                px(4. * view.config.terminal.line_height()),
+            )
+    });
+    assert!(
+        !cx.debug_bounds("terminal-annotate")
+            .unwrap()
+            .contains(&outside)
+    );
+    cx.simulate_click(outside, Modifiers::default());
     assert!(view.read_with(cx, |view, _| view.terminal_notes.offer.is_none()));
     assert!(!view.read_with(cx, |view, _| view.terminal_notes.composing()));
 }
