@@ -26,6 +26,8 @@ const AUTOSCROLL_INTERVAL: Duration = Duration::from_millis(50);
 /// against, and the copy the daemon is reading for a released selection.
 #[derive(Default)]
 pub(crate) struct Follow {
+    /// Shift at the start offers annotation, even when released before the mouse.
+    offer_annotation: bool,
     pointer: Option<Point<Pixels>>,
     scrolled: Option<Instant>,
     /// The pane and offset of the drag's last `pane.scroll`. The daemon's
@@ -46,11 +48,14 @@ impl HerdrWindow {
         &mut self,
         position: Point<Pixels>,
         clicks: usize,
+        offer_annotation: bool,
         cx: &mut Context<Self>,
     ) {
         // A click hands the terminal back from copy mode.
         self.leave_copy_mode(cx);
         let cleared = self.selection.take().is_some();
+        self.clear_terminal_annotation_offer(cx);
+        self.selection_follow.offer_annotation = offer_annotation;
         self.selection_follow.sent = None;
         if let Some(surface) = self.selectable_surface(position) {
             let (x, y) = self.grid_position(position);
@@ -100,7 +105,8 @@ impl HerdrWindow {
             .is_none_or(|shared| shared.copy_on_select)
     }
 
-    /// Ends a drag: what it chose goes to the clipboard and the flash says so.
+    /// Ends a drag: a Shift-selection offers annotation, and what it chose
+    /// goes to the clipboard with a flash when copying on selection is on.
     /// The highlight stays while `keep_selection_after_copy` is on, so tools
     /// that read the selection find it and Cmd-C copies it again. With Herdr's
     /// `copy_on_select` off, nothing is copied yet and the highlight stays for
@@ -123,6 +129,11 @@ impl HerdrWindow {
             selection.remember_text(surface, self.cell_width, cell_height);
         }
         let selected = !self.selection_is_empty();
+        if selected && self.selection_follow.offer_annotation {
+            // Keep the selection readable by the pill even if copying clears
+            // its highlight. Offering annotation never takes keyboard focus.
+            self.offer_terminal_annotation(cx);
+        }
         if selected && !self.copy_on_select() {
             cx.notify();
             return true;
@@ -173,6 +184,7 @@ impl HerdrWindow {
 
     /// Drops a selection kept on release, as any other key does in Herdr.
     pub(crate) fn clear_retained_selection(&mut self, cx: &mut Context<Self>) {
+        self.clear_terminal_annotation_offer(cx);
         if self
             .selection
             .as_ref()
