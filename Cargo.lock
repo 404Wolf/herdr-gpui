@@ -3566,6 +3566,7 @@ dependencies = [
  "ureq",
  "url",
  "uuid",
+ "zed-font-kit",
  "zeroize",
 ]
 

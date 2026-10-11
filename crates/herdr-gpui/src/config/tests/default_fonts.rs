@@ -104,7 +104,10 @@ fn chosen_aliased_and_unmatched_families_are_left_alone() {
 fn resolution_replaces_missing_platform_defaults_only() -> anyhow::Result<()> {
     let mut config = Config::parse("[terminal]\nfamily = 'Iosevka'")?;
     let default = Config::default();
-    config.resolve_fonts(|| ["Noto Sans Mono", "Noto Sans", "Consolas"].map(str::to_owned));
+    config.resolve_fonts_with(
+        || ["Noto Sans Mono", "Noto Sans", "Consolas"].map(str::to_owned),
+        |_| false,
+    );
     let monospace = if cfg!(target_os = "linux") {
         "Noto Sans Mono"
     } else if cfg!(windows) {
