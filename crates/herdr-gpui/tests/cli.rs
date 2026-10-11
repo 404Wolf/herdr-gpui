@@ -165,7 +165,7 @@ fn browser_commands_answer_without_a_window() {
     assert!(output.status.success(), "{output:?}");
     let help = String::from_utf8(output.stdout).unwrap();
     assert!(help.contains("browser open URL"), "{help}");
-    assert!(help.contains("3 Herdr GPUI not running"), "{help}");
+    assert!(help.contains("3 Herdr UI not running"), "{help}");
 
     let output = cli(&["browser", "skill"]);
     assert!(output.status.success(), "{output:?}");

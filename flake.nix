@@ -1,5 +1,5 @@
 {
-  description = "Herdr GPUI: a native GPUI client for an existing local Herdr daemon";
+  description = "Herdr UI: a native GPUI client for an existing local Herdr daemon";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

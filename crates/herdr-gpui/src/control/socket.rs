@@ -205,10 +205,10 @@ fn answer(request: Request, queue: &SyncSender<Event>, stream: &UnixStream) -> R
     })) {
         Ok(()) => {}
         Err(TrySendError::Full(_)) => {
-            return Response::error(ErrorCode::Busy, "Herdr GPUI is handling other requests");
+            return Response::error(ErrorCode::Busy, "Herdr UI is handling other requests");
         }
         Err(TrySendError::Disconnected(_)) => {
-            return Response::error(ErrorCode::NoWindow, "Herdr GPUI is shutting down");
+            return Response::error(ErrorCode::NoWindow, "Herdr UI is shutting down");
         }
     }
     let until = Instant::now() + timeout;
@@ -224,7 +224,7 @@ fn answer(request: Request, queue: &SyncSender<Event>, stream: &UnixStream) -> R
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             reply.live = false;
             return answer.try_recv().unwrap_or_else(|_| {
-                Response::error(ErrorCode::Timeout, "Herdr GPUI did not answer in time")
+                Response::error(ErrorCode::Timeout, "Herdr UI did not answer in time")
             });
         }
     }
@@ -239,7 +239,7 @@ fn peer_closed(mut stream: &UnixStream) -> bool {
 /// Answers a connection over the bound without reading it.
 fn refuse(stream: &UnixStream) {
     let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
-    let busy = Response::error(ErrorCode::Busy, "Herdr GPUI is handling other requests");
+    let busy = Response::error(ErrorCode::Busy, "Herdr UI is handling other requests");
     if let Err(error) = write_line(stream, &busy) {
         tracing::debug!(%error, "Control refusal failed");
     }

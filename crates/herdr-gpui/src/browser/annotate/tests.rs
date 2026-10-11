@@ -161,7 +161,7 @@ fn the_prompt_names_the_page_and_quotes_each_note() {
     let text = prompt(&tab(), &notes, &[], "herdr-gpui browser reload");
     assert!(
         text.starts_with(
-            "Feedback on the page you showed me in Herdr GPUI: http://localhost:3000/\n"
+            "Feedback on the page you showed me in Herdr UI: http://localhost:3000/\n"
         )
     );
     assert!(!text.contains("Screenshots show"));
@@ -210,7 +210,7 @@ fn empty_notes_are_refused_and_markers_are_json_data() {
         .unwrap(),
     ];
     let script = arm_script(&notes);
-    assert!(script.starts_with("// Herdr GPUI's annotation picker."));
+    assert!(script.starts_with("// Herdr UI's annotation picker."));
     // The markers are the call's one argument, as JSON data.
     let markers = script
         .strip_prefix(SCRIPT)

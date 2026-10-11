@@ -1,5 +1,5 @@
 //! What "Send to agent" hands back: the user's picks and notes as Markdown.
-//! They go to the agent's pane through the running Herdr GPUI, as page notes
+//! They go to the agent's pane through the running Herdr UI, as page notes
 //! do, or else to a file written whole so a waiting agent never reads half.
 use crate::control::NotesTo;
 use std::{
@@ -81,16 +81,16 @@ pub(super) type SendNotes = fn(String) -> crate::Result<NotesTo>;
 pub(super) enum Sent {
     /// To the agent, through the window showing its pane.
     Agent,
-    /// Held by Herdr GPUI for `browser feedback` rather than queued to an agent.
+    /// Held by Herdr UI for `browser feedback` rather than queued to an agent.
     Kept,
     /// The request may have reached the app; a file fallback could duplicate it.
     Unconfirmed { source: crate::Error },
-    /// Herdr GPUI could not take them, so they went to the file.
+    /// Herdr UI could not take them, so they went to the file.
     File {
         path: PathBuf,
         unreached: crate::Error,
     },
-    /// Neither Herdr GPUI nor a file: only the terminal has them.
+    /// Neither Herdr UI nor a file: only the terminal has them.
     Printed { unreached: crate::Error },
 }
 

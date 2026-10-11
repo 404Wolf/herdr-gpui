@@ -1,5 +1,5 @@
 # DO NOT EDIT -- WILL BE OVERWRITTEN
-# Managed Herdr GPUI defaults, refreshed on startup and GUI config reload.
+# Managed Herdr UI defaults, refreshed on startup and GUI config reload.
 # Put your overrides in config-gpui.local.toml beside this file.
 # Herdr GUI settings. Independent of the daemon config, except where a setting
 # below says it starts from one the daemon config already carries.

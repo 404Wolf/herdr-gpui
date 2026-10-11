@@ -79,8 +79,8 @@ capture() {
         printf 'unchanged\n'
     else
         commit=$(printf '%s\n\nHerdr-Branch: %s\n' "$1" "$branch" \
-            | GIT_AUTHOR_NAME='Herdr GPUI' GIT_AUTHOR_EMAIL='herdr-gpui@localhost' \
-              GIT_COMMITTER_NAME='Herdr GPUI' GIT_COMMITTER_EMAIL='herdr-gpui@localhost' \
+            | GIT_AUTHOR_NAME='Herdr UI' GIT_AUTHOR_EMAIL='herdr-gpui@localhost' \
+              GIT_COMMITTER_NAME='Herdr UI' GIT_COMMITTER_EMAIL='herdr-gpui@localhost' \
               git -c core.fsmonitor=false commit-tree --no-gpg-sign -p "$head" "$tree")
         g update-ref -m 'herdr-gpui: checkpoint' "$namespace$2" "$commit" ''
         printf 'created %s\n' "$2"

@@ -74,7 +74,7 @@ fn missing_capabilities_and_newer_generations_point_at_the_right_side() {
             server_version: Some("2.0.0".into())
         })
     );
-    assert!(newer.to_string().ends_with("update Herdr GPUI"), "{newer}");
+    assert!(newer.to_string().ends_with("update Herdr UI"), "{newer}");
 }
 
 #[test]

@@ -582,17 +582,17 @@ pub enum Error {
     InvalidDispatchHistory,
     #[error("Invalid saved editor groups")]
     InvalidGroupLayouts,
-    #[error("Herdr GPUI is not running, or its control socket {} is unreachable: {source}", path.display())]
+    #[error("Herdr UI is not running, or its control socket {} is unreachable: {source}", path.display())]
     ControlUnavailable {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("Another Herdr GPUI already serves {}", path.display())]
+    #[error("Another Herdr UI already serves {}", path.display())]
     ControlSocketInUse { path: PathBuf },
     #[error("Control request or response exceeds {limit} bytes")]
     ControlMessageSize { limit: usize },
-    #[error("Herdr GPUI closed the control connection without answering")]
+    #[error("Herdr UI closed the control connection without answering")]
     ControlNoResponse,
     #[error("{message}")]
     ControlRejected {
@@ -600,7 +600,7 @@ pub enum Error {
         message: String,
     },
     #[error(
-        "Controlling a running Herdr GPUI needs a Unix socket, which this platform build does not provide"
+        "Controlling a running Herdr UI needs a Unix socket, which this platform build does not provide"
     )]
     ControlUnsupported,
     #[cfg(any(target_os = "macos", windows))]

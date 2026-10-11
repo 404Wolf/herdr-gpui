@@ -37,7 +37,7 @@ fn notice_names_the_side_to_update_and_where() {
             server_version: Some("2.0.0".into()),
         },
     };
-    assert_eq!(newer.title(), "Herdr GPUI needs an update");
+    assert_eq!(newer.title(), "Herdr UI needs an update");
     assert_eq!(
         newer.body(),
         "The Herdr server on build box (version 2.0.0) is newer than this app supports. Update this app to connect."

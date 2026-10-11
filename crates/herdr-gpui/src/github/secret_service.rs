@@ -11,7 +11,7 @@ use oo7::{Keyring, zbus};
 use secrecy::{ExposeSecret, SecretString};
 
 const SERVICE: &str = "dev.herdr.gpui.github";
-const LABEL: &str = "Herdr GPUI GitHub sign-in";
+const LABEL: &str = "Herdr UI GitHub sign-in";
 
 // `oo7::Error` is several times larger than the crate's other variants.
 fn read_error(error: oo7::Error) -> Error {

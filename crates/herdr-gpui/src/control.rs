@@ -148,7 +148,7 @@ fn open_browser(request: &BrowserOpen, cx: &mut App) -> Response {
     }
     let windows = main_windows(cx);
     if windows.is_empty() {
-        return Response::error(ErrorCode::NoWindow, "Herdr GPUI has no window open");
+        return Response::error(ErrorCode::NoWindow, "Herdr UI has no window open");
     }
     let caller = &request.caller;
     let target = Target {
@@ -187,8 +187,8 @@ fn open_browser(request: &BrowserOpen, cx: &mut App) -> Response {
     Response::error(
         ErrorCode::WorkspaceNotFound,
         match &caller.workspace_id {
-            Some(id) => format!("No Herdr GPUI window shows workspace {id}"),
-            None => "No Herdr GPUI window shows a workspace".into(),
+            Some(id) => format!("No Herdr UI window shows workspace {id}"),
+            None => "No Herdr UI window shows a workspace".into(),
         },
     )
 }
@@ -509,7 +509,7 @@ fn rejected(response: Response) -> crate::Error {
 }
 
 /// Sends the user's notes to the agent in this process's Herdr pane, through
-/// the running Herdr GPUI. Blocking: call it off the UI thread.
+/// the running Herdr UI. Blocking: call it off the UI thread.
 #[cfg(feature = "mockup")]
 pub(crate) fn send_notes(text: String) -> crate::Result<NotesTo> {
     let mut caller = caller(None)?;
@@ -599,7 +599,7 @@ fn browser_feedback(wait: u64) -> crate::Result<Option<String>> {
 const BROWSER_USAGE: &str = "\
 herdr-gpui browser open URL|FILE [--workspace ID] [--no-focus]
     Show a web address, or a local HTML file, in a browser tab of the running
-    Herdr GPUI. The tab joins the caller's own workspace (HERDR_WORKSPACE_ID),
+    Herdr UI. The tab joins the caller's own workspace (HERDR_WORKSPACE_ID),
     or the frontmost one outside Herdr. Showing the same page again from the
     same pane reuses and reloads its tab. Bare hosts such as localhost:3000
     are accepted. A file is served with the other files in its folder.
@@ -611,7 +611,7 @@ herdr-gpui browser feedback [--wait SECONDS]
     Notes are otherwise typed into this pane as a prompt once it is idle.
 herdr-gpui browser skill
     Print the agent skill that explains these commands.
-Exit status: 0 done, 1 refused, 2 invalid arguments, 3 Herdr GPUI not running,
+Exit status: 0 done, 1 refused, 2 invalid arguments, 3 Herdr UI not running,
 4 no notes (feedback).";
 
 fn report(result: crate::Result<String>) -> ExitCode {
