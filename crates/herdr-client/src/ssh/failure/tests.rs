@@ -173,7 +173,7 @@ fn a_closed_child_is_diagnosed_from_its_real_exit_and_stderr() {
         .unwrap();
     let stderr = drain(child.stderr.take().unwrap()).unwrap();
     let stop = AtomicBool::new(false);
-    assert_eq!(diagnose(&mut child, &stderr, &stop), SshFailure::Auth);
+    assert_eq!(diagnose(&mut child, &stderr, &stop).1, SshFailure::Auth);
 }
 
 #[test]
@@ -187,7 +187,7 @@ fn a_child_that_will_not_exit_is_not_waited_on_past_cancellation() {
     let stderr = drain(child.stderr.take().unwrap()).unwrap();
     let stop = AtomicBool::new(true);
     let started = Instant::now();
-    assert_eq!(diagnose(&mut child, &stderr, &stop), SshFailure::Other);
+    assert_eq!(diagnose(&mut child, &stderr, &stop).1, SshFailure::Other);
     assert!(started.elapsed() < DIAGNOSE_TIMEOUT);
     child.kill().unwrap();
     child.wait().unwrap();
