@@ -338,6 +338,10 @@ fn quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
+/// The variables that choose where Herdr keeps its device catalog. Every CLI
+/// run for a device gets this process's values, so it edits the same catalog.
+const CATALOG_ROOTS: [&str; 3] = ["HERDR_CONFIG_PATH", "XDG_STATE_HOME", "XDG_CONFIG_HOME"];
+
 /// Prefix of the workspace variables that carry the GUI's environment to the
 /// setup command.
 const STAGED_PREFIX: &str = "HERDR_GPUI_SETUP_";
@@ -472,7 +476,8 @@ fn run_cli(
 /// Runs a program with closed stdin and a deadline, keeping at most `limit`
 /// bytes of each of stdout and stderr. Both pipes are drained so a chatty
 /// program never blocks on a full one. A missed deadline kills the program and
-/// returns `DeviceSetupTimeout`. Blocks: call it from the background executor.
+/// returns `DeviceSetupTimeout`. Blocks, also on the first login-environment
+/// lookup: call it from the background executor.
 pub(super) fn run_bounded(
     executable: &std::ffi::OsStr,
     args: &[&str],
@@ -509,7 +514,18 @@ fn run_bounded_untraced(
     timeout: Duration,
     limit: u64,
 ) -> Result<(ExitStatus, Vec<u8>, Vec<u8>)> {
-    let mut child = Command::new(executable)
+    let mut command = Command::new(executable);
+    // The user's `PATH` and agent, not launchd's: `machine add` runs `ssh`,
+    // and the Tailscale CLI finds the Mac app's daemon with `/usr/sbin/lsof`.
+    crate::login_env::apply(&mut command);
+    // The catalog `machine add` writes must be the one this window reads.
+    for key in CATALOG_ROOTS {
+        match std::env::var_os(key) {
+            Some(value) => command.env(key, value),
+            None => command.env_remove(key),
+        };
+    }
+    let mut child = command
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -581,13 +597,7 @@ pub(super) fn terminal_command(request: &Request) -> Result<TerminalSetup> {
         "The Herdr executable path must be UTF-8.",
     ))?;
     let mut environment = Vec::new();
-    for key in [
-        "HOME",
-        "PATH",
-        "HERDR_CONFIG_PATH",
-        "XDG_STATE_HOME",
-        "XDG_CONFIG_HOME",
-    ] {
+    for key in ["HOME", "PATH"].into_iter().chain(CATALOG_ROOTS) {
         if let Some(value) = std::env::var_os(key) {
             environment.push((
                 key.into(),

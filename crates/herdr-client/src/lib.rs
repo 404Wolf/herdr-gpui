@@ -8,6 +8,7 @@ mod clipboard;
 mod compat;
 mod connect;
 mod discovery;
+mod environment;
 mod error;
 mod event;
 mod forward;
@@ -50,6 +51,7 @@ pub use discovery::CloudProvider;
 pub use discovery::{ConnectTarget, session_socket};
 /// Error returned when queueing commands; also available as the crate's `Error`.
 pub use error::Error as SendError;
+pub use environment::set_command_environment;
 pub use error::{Error, Result, StorageOperation};
 pub use event::ClientEvent;
 pub use forward::{ForwardEvent, PortForward, preferred_local_port};

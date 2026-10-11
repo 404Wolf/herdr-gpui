@@ -65,7 +65,7 @@ struct Peer {
 /// The tailnet's online peers, or none when Tailscale is not installed.
 /// Blocks on a process: call it from the background executor.
 pub(super) fn peers() -> Result<Vec<Candidate>> {
-    let path = std::env::var_os("PATH").unwrap_or_default();
+    let path = crate::login_env::path().unwrap_or_default();
     let Some(executable) = executable(&path, |path| path.is_file()) else {
         return Ok(Vec::new());
     };

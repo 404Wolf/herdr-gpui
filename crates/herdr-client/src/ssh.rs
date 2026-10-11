@@ -254,7 +254,7 @@ pub struct Destination {
 #[cfg(unix)]
 pub fn resolve_destination(target: &str) -> Result<Destination> {
     validate_target(target)?;
-    let mut command = Command::new("ssh");
+    let mut command = crate::environment::command("ssh");
     command.args(["-G", "--", target]);
     let (status, output) = run(&mut command, Duration::from_secs(5), || false)?;
     if !status.success() {
@@ -418,7 +418,7 @@ pub(super) fn command(target: &str, remote_command: &str) -> Command {
 /// `ssh` with the bridge's connection policy and nothing to connect yet.
 #[cfg(unix)]
 fn noninteractive() -> Command {
-    let mut command = Command::new("ssh");
+    let mut command = crate::environment::command("ssh");
     command.args([
         "-T",
         "-C",
