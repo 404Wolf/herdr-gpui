@@ -1,7 +1,8 @@
 # Website
 
-The project site, published to <https://penso.github.io/herdr-gpui/> by
-`.github/workflows/site.yml` whenever `site/` changes on `main`. It is plain
+The project site, served at <https://herdrui.dev> by the `herdrui-site`
+Cloudflare Worker. `.github/workflows/site.yml` deploys it whenever `site/`
+changes on `main`. It is plain
 HTML, CSS and JavaScript with no build step. Its one external request is the
 GitHub API call in `assets/site.js` that fills in the star count on the GitHub
 button; if it fails, the button simply reads "GitHub".
@@ -10,7 +11,12 @@ button; if it fails, the button simply reads "GitHub".
 python3 -m http.server -d site 8000   # then open http://localhost:8000/
 ```
 
-Opening `site/index.html` directly also works.
+Opening `site/index.html` directly also works. To run it as Cloudflare serves
+it, with the headers from `_headers` and the www redirect:
+
+```sh
+cd site && npx wrangler@4.144.0 dev
+```
 
 ## Layout
 
@@ -21,9 +27,12 @@ Opening `site/index.html` directly also works.
 | `assets/kit.css`, `assets/kit.js` | HTML renderings of the app window and the screenshot list (`HM.SHOTS`) |
 | `assets/shots/` | Screenshot captures, one `<id>.webp` per entry in `HM.SHOTS` |
 | `assets/film.mp4`, `assets/film-poster.webp` | The showcase film and its poster frame |
+| `wrangler.jsonc`, `worker/index.js` | The Worker: custom domains, static assets, and the www-to-apex redirect |
+| `_headers` | Response headers for every page and the cache lifetime of `assets/` |
+| `.assetsignore` | Files in `site/` that are never published |
 
 Every path is relative, so the site works under any prefix, such as
-`/herdr-gpui/` on GitHub Pages or behind a proxy.
+`/herdr-gpui/` behind a proxy.
 
 ## Film and screenshots
 
@@ -48,8 +57,8 @@ keep the unaffiliated notice in the footer.
 ## Serving at pen.so
 
 To serve the same site at `https://pen.so/herdr-gpui/`, add this rule to the
-blog's Netlify `_redirects`, which fetches each page from GitHub Pages:
+blog's Netlify `_redirects`, which fetches each page from herdrui.dev:
 
 ```text
-/herdr-gpui/*  https://penso.github.io/herdr-gpui/:splat  200
+/herdr-gpui/*  https://herdrui.dev/:splat  200
 ```

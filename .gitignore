@@ -26,3 +26,6 @@ id_ed25519*
 
 # Machine-local mise overrides.
 mise.local.toml
+
+# Wrangler local state for the site Worker.
+.wrangler/
