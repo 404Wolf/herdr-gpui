@@ -15,7 +15,7 @@ Opening `site/index.html` directly also works. To run it as Cloudflare serves
 it, with the headers from `_headers` and the www redirect:
 
 ```sh
-cd site && npx wrangler@4.144.0 dev
+npx wrangler@4.144.0 dev --config site/wrangler.jsonc
 ```
 
 ## Layout
