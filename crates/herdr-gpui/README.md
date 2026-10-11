@@ -2374,7 +2374,7 @@ whose plain Ctrl editing shortcuts also work in the app's text fields.
 | Action | Linux default |
 | --- | --- |
 | New tab / New window | Ctrl+Shift+T / Ctrl+Shift+N |
-| New workspace / New worktree | Ctrl+Alt+Shift+N / Ctrl+Shift+U |
+| New workspace / New worktree | Ctrl+Alt+Shift+N / Ctrl+Shift+R |
 | Copy / Paste | Ctrl+Shift+C / Ctrl+Shift+V |
 | Find / Command palette | Ctrl+Shift+F / Ctrl+Shift+P |
 | Split right / Split down | Ctrl+Shift+D / Ctrl+Alt+Shift+D |
@@ -2386,6 +2386,8 @@ whose plain Ctrl editing shortcuts also work in the app's text fields.
 
 The in-app reference lists all platform defaults and current overrides. The
 Cmd examples elsewhere in this document describe the macOS profile.
+Ctrl+Shift+U is left unbound for
+[GNOME/IBus Unicode character entry](https://help.gnome.org/users/gnome-help/stable/tips-specialchars.html.en#ctrlshiftu).
 
 ## Supported
 

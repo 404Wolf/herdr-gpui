@@ -51,6 +51,7 @@ fn linux_shortcuts_preserve_terminal_keys_and_shifted_actions() {
     for (command, key) in [
         (Command::Tab, "ctrl-shift-t"),
         (Command::NewWindow, "ctrl-shift-n"),
+        (Command::NewWorktree, "ctrl-shift-r"),
         (Command::Palette, "ctrl-shift-p"),
         (Command::SplitRight, "ctrl-shift-d"),
         (Command::SplitDown, "ctrl-alt-shift-d"),
@@ -66,6 +67,7 @@ fn linux_shortcuts_preserve_terminal_keys_and_shifted_actions() {
         "ctrl-v",
         "ctrl-shift-c",
         "ctrl-shift-v",
+        "ctrl-shift-u", // GNOME/IBus Unicode input must keep this chord.
         "cmd-t",
     ] {
         assert!(

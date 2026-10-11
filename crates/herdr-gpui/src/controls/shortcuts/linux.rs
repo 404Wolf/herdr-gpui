@@ -9,7 +9,8 @@ pub(super) fn defaults(command: Command) -> &'static [&'static str] {
         OpenNotificationTarget => &["ctrl-alt-shift-u"],
         NewWindow => &["ctrl-shift-n"],
         Workspace => &["ctrl-alt-shift-n"],
-        NewWorktree => &["ctrl-shift-u"],
+        // Ctrl-Shift-U belongs to GNOME/IBus Unicode code-point entry.
+        NewWorktree => &["ctrl-shift-r"],
         Tab => &["ctrl-shift-t"],
         SplitRight => &["ctrl-shift-d"],
         SplitDown => &["ctrl-alt-shift-d"],
