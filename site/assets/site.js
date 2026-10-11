@@ -211,7 +211,33 @@ copy notes across by hand.</span>`, g: 'terminal' },
     }
   })();
 
-  // ---- install ----
+  // ---- GitHub stars: live count from the public API, cached per tab ----
+  // The unauthenticated API allows 60 requests an hour per IP, so the count is
+  // kept in sessionStorage; on any failure the button just reads "GitHub".
+  (function () {
+    const KEY = 'herdr-gpui-stars', TTL = 10 * 60 * 1000;
+    const show = (n) => {
+      if (typeof n !== 'number' || !isFinite(n)) return;
+      document.getElementById('stars-n').textContent =
+        n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
+      const el = document.getElementById('stars');
+      el.hidden = false;
+      el.parentElement.setAttribute('aria-label', `GitHub, ${n} stars`);
+    };
+    try {
+      const c = JSON.parse(sessionStorage.getItem(KEY) || 'null');
+      if (c && Date.now() - c.t < TTL) return show(c.n);
+    } catch {}
+    fetch('https://api.github.com/repos/penso/herdr-gpui', { headers: { Accept: 'application/vnd.github+json' } })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (!d || typeof d.stargazers_count !== 'number') return;
+        show(d.stargazers_count);
+        try { sessionStorage.setItem(KEY, JSON.stringify({ n: d.stargazers_count, t: Date.now() })); } catch {}
+      })
+      .catch(() => {});
+  })();
+
   document.getElementById('brew').textContent = HM.FACTS.install;
   document.getElementById('plat').textContent = HM.FACTS.platforms;
   document.getElementById('disc').textContent = HM.FACTS.disclaimer;

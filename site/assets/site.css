@@ -13,7 +13,11 @@ a:hover { color:var(--fg); }
 nav { display:flex; align-items:center; gap:26px; height:64px; font-size:14px; color:var(--mut); border-bottom:1px solid var(--g2); }
 nav .brand { display:flex; align-items:center; gap:10px; color:var(--fg); font-weight:650; margin-right:auto; }
 nav .brand img { width:26px; height:26px; border-radius:6px; }
-nav .gh { color:var(--fg); border:1px solid var(--g3); border-radius:8px; padding:6px 12px; }
+nav .gh { color:var(--fg); border:1px solid var(--g3); border-radius:8px; padding:6px 12px; display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
+nav .gh svg { width:14px; height:14px; fill:currentColor; flex:none; }
+nav .gh .stars { display:inline-flex; align-items:center; gap:4px; padding-left:8px; margin-left:1px; border-left:1px solid var(--g3); color:var(--mut); font-variant-numeric:tabular-nums; }
+nav .gh .stars[hidden] { display:none; }
+nav .gh .stars svg { width:12px; height:12px; fill:#f5b84a; }
 
 .hero { padding:72px 0 28px; text-align:center; }
 .kicker { display:inline-flex; gap:8px; align-items:center; font-size:12.5px; color:var(--mut); border:1px solid var(--g3); border-radius:999px; padding:4px 12px; }

@@ -2,7 +2,9 @@
 
 The project site, published to <https://penso.github.io/herdr-gpui/> by
 `.github/workflows/site.yml` whenever `site/` changes on `main`. It is plain
-HTML, CSS and JavaScript with no build step and no external requests.
+HTML, CSS and JavaScript with no build step. Its one external request is the
+GitHub API call in `assets/site.js` that fills in the star count on the GitHub
+button; if it fails, the button simply reads "GitHub".
 
 ```sh
 python3 -m http.server -d site 8000   # then open http://localhost:8000/
