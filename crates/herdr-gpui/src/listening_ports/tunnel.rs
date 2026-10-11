@@ -220,6 +220,15 @@ impl Tunnels {
         self.used.retain(|key, _| listening(key));
     }
 
+    /// Kills every tunnel's SSH child at once and forgets those still
+    /// opening, so a result arriving later is dropped too. Reaping happens
+    /// on threads of their own, so this never waits.
+    pub(crate) fn close_all(&mut self) {
+        self.open.clear();
+        self.opening.clear();
+        self.used.clear();
+    }
+
     #[cfg(all(test, unix))]
     pub(crate) fn insert(&mut self, key: Key, tunnel: Tunnel) {
         self.open.insert(key, tunnel);

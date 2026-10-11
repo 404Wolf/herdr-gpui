@@ -927,10 +927,12 @@ impl HerdrWindow {
                 cx.notify();
             }),
         };
-        // Quitting need not drop this window, so its SSH children are killed
-        // here rather than left forwarding after the app is gone.
+        // Quitting need not drop this window, so its SSH children (port
+        // forwards and listening-port tunnels) are killed here rather than
+        // left forwarding after the app is gone.
         cx.on_app_quit(|this, _| {
             this.port_forwards.stop_all();
+            this.tunnels.close_all();
             async {}
         })
         .detach();

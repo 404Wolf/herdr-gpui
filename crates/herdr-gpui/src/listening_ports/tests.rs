@@ -470,6 +470,40 @@ fn tunnels_close_with_their_port_and_never_open_twice() {
 
 #[cfg(unix)]
 #[test]
+fn closing_all_tunnels_kills_every_child_and_drops_late_results() {
+    let (open, opening) = (
+        Key {
+            target: "devbox".into(),
+            port: 3000,
+        },
+        Key {
+            target: "devbox".into(),
+            port: 3001,
+        },
+    );
+    let mut tunnels = tunnel::Tunnels::default();
+    let child = idle_child();
+    let pid = child.id();
+    tunnels.insert(open.clone(), tunnel::Tunnel::around(child, 41003));
+    assert!(tunnels.begin(&opening).is_some());
+
+    tunnels.close_all();
+
+    assert_eq!(tunnels.len(), 0);
+    assert!(gone(pid), "the tunnel's child outlived close_all");
+    // The attempt still in flight finds nobody waiting for it.
+    let late = idle_child();
+    let late_pid = late.id();
+    assert_eq!(
+        tunnels.finish(opening, tunnel::Tunnel::around(late, 41004)),
+        None
+    );
+    assert!(gone(late_pid));
+    assert_eq!(tunnels.begin(&open), Some(None), "no stale local port kept");
+}
+
+#[cfg(unix)]
+#[test]
 fn a_tunnel_finished_after_its_port_closed_is_dropped() {
     let key = Key {
         target: "devbox".into(),
