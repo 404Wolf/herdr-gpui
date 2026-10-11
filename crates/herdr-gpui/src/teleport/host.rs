@@ -23,6 +23,11 @@ pub(crate) const TRANSFER_IDLE: Duration = Duration::from_secs(300);
 pub(crate) struct Host {
     ssh: Option<String>,
     session: Option<String>,
+    /// The session belongs to the development installation, which
+    /// `herdr --session NAME` cannot address: NAME would resolve to the
+    /// release session that shares it. Scripts still run (Git, `bd`), but
+    /// `herdr_cli` refuses.
+    development: bool,
     /// Tests run "remote" hosts locally in their own environment (home,
     /// daemon socket), exported at the start of every script.
     #[cfg(test)]
@@ -37,18 +42,21 @@ impl Host {
             ConnectTarget::Local => Ok(Self {
                 ssh: None,
                 session: None,
+                development: false,
                 #[cfg(test)]
                 env: Vec::new(),
             }),
-            ConnectTarget::Session { name, .. } => Ok(Self {
+            ConnectTarget::Session { name, development } => Ok(Self {
                 ssh: None,
                 session: Some(name.clone()),
+                development: *development,
                 #[cfg(test)]
                 env: Vec::new(),
             }),
             ConnectTarget::Ssh { target, session } => Ok(Self {
                 ssh: Some(target.clone()),
                 session: Some(session.clone()),
+                development: false,
                 #[cfg(test)]
                 env: Vec::new(),
             }),
@@ -60,9 +68,14 @@ impl Host {
         }
     }
 
+    /// Whether `herdr_cli` can reach this host's session; see `development`.
+    pub(crate) fn scripts_herdr(&self) -> bool {
+        !self.development
+    }
+
     /// The prelude every script starts with: strict mode, a `PATH` that finds
     /// user-installed tools in a non-interactive SSH shell, and `herdr_cli`
-    /// bound to this host's session.
+    /// bound to this host's session, or refusing when it cannot be reached.
     fn prelude(&self) -> String {
         let session = self
             .session
@@ -77,11 +90,17 @@ impl Host {
             .collect::<String>();
         #[cfg(not(test))]
         let home = "";
+        let herdr_cli = if self.development {
+            r#"herdr_cli() { echo "herdr: a development (--dev) session cannot be scripted" >&2; return 97; }"#
+                .to_owned()
+        } else {
+            format!(r#"herdr_cli() {{ herdr{session} "$@"; }}"#)
+        };
         format!(
             r#"set -eu
 {home}PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$HOME/.bun/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.nix-profile/bin:$PATH"
 export PATH
-herdr_cli() {{ herdr{session} "$@"; }}
+{herdr_cli}
 "#
         )
     }
@@ -249,6 +268,7 @@ mod tests {
             Host {
                 ssh: None,
                 session: None,
+                development: false,
                 env: Vec::new(),
             }
         );
@@ -263,6 +283,52 @@ mod tests {
             Host::new(&ConnectTarget::Socket("/tmp/s".into())),
             Err(Error::UnsupportedHost)
         ));
+        // A `--dev` window's session lives in the development installation,
+        // which `herdr --session` cannot name: its host still runs scripts,
+        // but Teleport, fan-out, and dispatch are not offered there.
+        let development = ConnectTarget::Session {
+            name: "default".into(),
+            development: true,
+        };
+        let host = Host::new(&development).unwrap();
+        assert!(!host.scripts_herdr());
+        assert!(!host.prelude().contains("herdr --session"));
+        assert!(matches!(
+            crate::teleport::host_for(&development),
+            Err(Error::DevelopmentSession)
+        ));
+        let release = ConnectTarget::Session {
+            name: "default".into(),
+            development: false,
+        };
+        assert!(Host::new(&release).unwrap().scripts_herdr());
+        assert!(crate::teleport::host_for(&release).is_ok());
+    }
+
+    /// Git and `bd` scripts still run on a development host (the orchestrator
+    /// reads its repository that way); only `herdr_cli` refuses, so nothing
+    /// reaches the release session of the same name.
+    #[test]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn development_hosts_run_scripts_but_not_herdr() {
+        let host = Host::new(&ConnectTarget::Session {
+            name: "default".into(),
+            development: true,
+        })
+        .unwrap();
+        let cancelled = AtomicBool::new(false);
+        assert_eq!(host.capture("printf ok", &cancelled).unwrap(), b"ok");
+        let refused = host
+            .capture(&Host::herdr_line(&["workspace", "list"]), &cancelled)
+            .unwrap_err();
+        assert!(
+            matches!(
+                &refused,
+                herdr_client::Error::ScriptExit { status, stderr }
+                    if status.code() == Some(97) && stderr.contains("--dev")
+            ),
+            "{refused:?}"
+        );
     }
 
     #[test]
