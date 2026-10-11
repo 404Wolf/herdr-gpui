@@ -1,9 +1,11 @@
 //! POSIX discovery/stdio bridge adapted from upstream remote/attach.rs.
 //! No installers, daemon restarts, SSH config edits, or trust-on-first-use.
-//! The remote host is always POSIX; the local half needs a socket pair it can
+//! The remote host is POSIX or Windows; the local half needs a socket pair it can
 //! hand to the `ssh` child as its standard streams, which only Unix provides.
 //! The bridge and probe scripts, and the handshake that reads them, are shared
-//! with WSL distributions, which run the same scripts through `wsl.exe`.
+//! with WSL distributions, which run the same scripts through `wsl.exe`. A host
+//! that cannot run `/bin/sh`, such as Windows OpenSSH, is retried through
+//! PowerShell; see `powershell`.
 #[cfg(unix)]
 use crate::limits::POLL;
 use crate::{Error, Result, catalog::validate_target, session_socket, transport::Stream};
@@ -19,6 +21,8 @@ use std::{
 
 mod failure;
 pub use failure::SshFailure;
+#[cfg(unix)]
+mod powershell;
 
 const READY: &[u8] = b"herdr-remote-output-ready:1\n";
 
@@ -113,9 +117,17 @@ printf '%s\n' '{PROBE_DONE}'"#,
 /// `None` when the script never finished, so partial output is not mistaken
 /// for a host without Herdr.
 pub(crate) fn classify_probe(output: &[u8]) -> Option<HostProbe> {
+    classify_probe_with(output, compatible)
+}
+
+/// [`classify_probe`] with the host's rule for a compatible client status.
+fn classify_probe_with(
+    output: &[u8],
+    compatible: impl Fn(&serde_json::Value) -> Option<bool>,
+) -> Option<HostProbe> {
     // Each block holds one candidate's client status, then its server status.
     let mut blocks: Vec<Vec<serde_json::Value>> = Vec::new();
-    for line in output.split(|b| *b == b'\n') {
+    for line in lines(output) {
         if line == PROBE_DONE.as_bytes() {
             let Some(statuses) = blocks
                 .iter()
@@ -146,6 +158,14 @@ pub(crate) fn classify_probe(output: &[u8]) -> Option<HostProbe> {
     None
 }
 
+/// `output`'s lines without their `\n` or `\r\n` endings, since a Windows
+/// host's PowerShell ends its lines with both.
+fn lines(output: &[u8]) -> impl Iterator<Item = &[u8]> {
+    output
+        .split(|b| *b == b'\n')
+        .map(|line| line.strip_suffix(b"\r").unwrap_or(line))
+}
+
 /// Blocks for at most `PROBE_TIMEOUT`: call it from a background thread.
 #[cfg(unix)]
 pub fn probe_host(target: &str, session: &str) -> Result<HostProbe> {
@@ -170,6 +190,10 @@ pub fn probe_host(target: &str, session: &str) -> Result<HostProbe> {
         return Ok(HostProbe::SshFailed(failure));
     }
     let probe = classify_probe(&output);
+    if probe.is_none() && powershell::rejected_posix(status.code()) {
+        tracing::info!(category = "probe", %status, "host cannot run /bin/sh; probing PowerShell");
+        return probe_powershell_host(target, session);
+    }
     tracing::info!(
         category = "probe",
                 %status,
@@ -180,6 +204,23 @@ pub fn probe_host(target: &str, session: &str) -> Result<HostProbe> {
         elapsed_ms,
         "probe finished"
     );
+    probe.ok_or(Error::SshClosed)
+}
+
+/// [`probe_host`] for a host whose shell is `cmd.exe` or PowerShell.
+#[cfg(unix)]
+fn probe_powershell_host(target: &str, session: &str) -> Result<HostProbe> {
+    let mut command = command(target, &powershell::probe_command(session));
+    command.stderr(Stdio::piped());
+    let (status, output, stderr) = run_with_stderr(&mut command, PROBE_TIMEOUT, || false)?;
+    if status.code() == Some(255) {
+        return Ok(HostProbe::SshFailed(SshFailure::classify(
+            status.code(),
+            &stderr,
+        )));
+    }
+    let probe = classify_probe_with(&output, powershell::compatible);
+    tracing::info!(category = "probe", %status, ?probe, "PowerShell probe finished");
     probe.ok_or(Error::SshClosed)
 }
 
@@ -508,7 +549,57 @@ pub(crate) fn connect(
 ) -> Result<(Stream, ChildGuard)> {
     validate_target(target)?;
     session_socket(Path::new(""), session)?;
-    bridge(command(target, &bridge_command(session)), stop)
+    match start_bridge(command(target, &bridge_command(session)), stop, handshake)? {
+        Ok(bridge) => Ok(bridge),
+        Err(closed) if powershell::rejected_posix(closed.code) => {
+            tracing::info!(code = ?closed.code, "host cannot run /bin/sh; trying PowerShell");
+            connect_powershell(target, session, stop, closed.failure)
+        }
+        Err(closed) => Err(Error::SshRefused(closed.failure)),
+    }
+}
+
+/// [`connect`] for a host whose shell is `cmd.exe` or PowerShell: discover a
+/// compatible `herdr.exe` over one connection, then bridge it over another.
+/// `posix` is why the POSIX bridge closed, kept for a host that turns out to
+/// have no PowerShell either.
+#[cfg(unix)]
+fn connect_powershell(
+    target: &str,
+    session: &str,
+    stop: &AtomicBool,
+    posix: SshFailure,
+) -> Result<(Stream, ChildGuard)> {
+    let mut probe = command(target, &powershell::probe_command(session));
+    probe.stderr(Stdio::piped());
+    let (status, output, stderr) =
+        run_with_stderr(&mut probe, PROBE_TIMEOUT, || stop.load(Ordering::Acquire))?;
+    if status.code() == Some(255) {
+        return Err(Error::SshRefused(SshFailure::classify(
+            status.code(),
+            &stderr,
+        )));
+    }
+    if !lines(&output).any(|line| line == PROBE_DONE.as_bytes()) {
+        return Err(Error::SshRefused(posix));
+    }
+    let candidates = powershell::candidates(&output);
+    let Some((path, idle_timeout)) = candidates.iter().find_map(|candidate| {
+        powershell::compatible(&candidate.status).map(|idle| (candidate.path.as_str(), idle))
+    }) else {
+        return Err(match candidates.first() {
+            None => Error::SshRefused(SshFailure::HerdrMissing),
+            Some(candidate) => incompatible(&candidate.status),
+        });
+    };
+    let bridge = command(
+        target,
+        &powershell::bridge_command(path, session, idle_timeout),
+    );
+    start_bridge(bridge, stop, |stream, stop| {
+        await_ready(stream, stop, Instant::now()).map(drop)
+    })?
+    .map_err(|closed| Error::SshRefused(closed.failure))
 }
 
 /// The stdio bridge through an application-built remote command, such as
@@ -537,7 +628,26 @@ pub struct Bridge {
 }
 
 #[cfg(unix)]
-fn bridge(mut command: Command, stop: &AtomicBool) -> Result<(Stream, ChildGuard)> {
+fn bridge(command: Command, stop: &AtomicBool) -> Result<(Stream, ChildGuard)> {
+    start_bridge(command, stop, handshake)?.map_err(|closed| Error::SshRefused(closed.failure))
+}
+
+/// A bridge whose child closed its stdout before answering, with the exit
+/// code that tells a failed `ssh` from a remote shell that could not run.
+#[cfg(unix)]
+struct Closed {
+    code: Option<i32>,
+    failure: SshFailure,
+}
+
+/// Spawn `command` as a bridge and let `answer` read its banner. The outer
+/// error is any failure but an early close, which is the inner one.
+#[cfg(unix)]
+fn start_bridge(
+    mut command: Command,
+    stop: &AtomicBool,
+    answer: impl FnOnce(&mut Stream, &AtomicBool) -> Result<()>,
+) -> Result<std::result::Result<(Stream, ChildGuard), Closed>> {
     let (mut stream, child_stream) = Stream::pair()?;
     stream.set_read_timeout(Some(POLL))?;
     stream.set_write_timeout(Some(Duration::from_secs(1)))?;
@@ -548,19 +658,21 @@ fn bridge(mut command: Command, stop: &AtomicBool) -> Result<(Stream, ChildGuard
         // failed start, then dropped; see `failure`.
         .stderr(Stdio::piped());
     let mut child = ChildGuard(command.spawn()?);
+    // The command still owns the child's end of the socket; while it lives,
+    // a bridge that exits early never reads as closed, only as timed out.
+    drop(command);
     let stderr = match child.0.stderr.take() {
         Some(stderr) => failure::drain(stderr)?,
         None => return Err(Error::SshClosed),
     };
-    match handshake(&mut stream, stop) {
+    match answer(&mut stream, stop) {
         // Every other way the bridge can close already says why; this one is
         // read from what `ssh` reported.
-        Err(Error::SshClosed) => Err(Error::SshRefused(failure::diagnose(
-            &mut child.0,
-            &stderr,
-            stop,
-        ))),
-        result => result.map(|()| (stream, child)),
+        Err(Error::SshClosed) => {
+            let (code, failure) = failure::diagnose(&mut child.0, &stderr, stop);
+            Ok(Err(Closed { code, failure }))
+        }
+        result => result.map(|()| Ok((stream, child))),
     }
 }
 
@@ -594,12 +706,17 @@ fn incompatible_status(output: &[u8]) -> Option<Error> {
     let status = output
         .split(|b| *b == b'\n')
         .find_map(|line| serde_json::from_slice::<serde_json::Value>(line).ok())?;
-    Some(Error::BridgeIncompatible {
+    Some(incompatible(&status))
+}
+
+/// The refusal for one `status client --json` object that cannot serve.
+fn incompatible(status: &serde_json::Value) -> Error {
+    Error::BridgeIncompatible {
         generation: status["endpoint_protocol_generation"]
             .as_u64()
             .and_then(|generation| u32::try_from(generation).ok()),
         version: status["version"].as_str().and_then(crate::compat::label),
-    })
+    }
 }
 
 /// Windows rejects SSH endpoints before spawning anything: saved SSH hosts are
@@ -678,7 +795,7 @@ fn await_ready(
                 }
                 line.push(byte[0]);
                 if byte[0] == b'\n' {
-                    if line == READY {
+                    if line == READY || is_crlf(&line, READY) {
                         return Ok(output);
                     }
                     output.extend_from_slice(&line);
@@ -695,6 +812,13 @@ fn await_ready(
             Err(e) => return Err(e.into()),
         }
     }
+}
+
+/// Whether `line` is `expected` with a `\r` before its final `\n`.
+fn is_crlf(line: &[u8], expected: &[u8]) -> bool {
+    line.strip_suffix(b"\r\n")
+        .zip(expected.strip_suffix(b"\n"))
+        .is_some_and(|(line, expected)| line == expected)
 }
 
 // The bridge is POSIX-only; its fixtures spawn real shells over a socket pair.
