@@ -191,6 +191,7 @@ fn created_space_runs_setup_in_its_root_pane(cx: &mut gpui::TestAppContext) {
             request,
             boot,
             command: "'herdr' 'machine' 'add'".into(),
+            offer: Offer::Terminal,
         }
     };
     cx.update(|window, cx| {

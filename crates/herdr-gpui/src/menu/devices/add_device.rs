@@ -112,6 +112,8 @@ pub(super) struct LocalSpace {
     pub(super) request: String,
     pub(super) boot: String,
     pub(super) command: String,
+    /// What the user accepted, so a retry after a failure runs it again.
+    pub(super) offer: Offer,
 }
 
 impl HerdrWindow {
@@ -672,6 +674,7 @@ impl HerdrWindow {
                 request: id,
                 boot,
                 command: setup.command,
+                offer,
             })
         })();
         let Some(form) = &mut self.menu.device_setup else {
@@ -714,9 +717,9 @@ impl HerdrWindow {
         let fail = |this: &mut Self, error: String, cx: &mut Context<Self>| {
             tracing::warn!(category = "device_setup", "Setup workspace failed");
             if let Some(form) = &mut this.menu.device_setup
-                && let Step::Opening(request, _) = &form.step
+                && let Step::Opening(request, space) = &form.step
             {
-                form.step = Step::Confirm(request.clone(), Offer::Terminal);
+                form.step = Step::Confirm(request.clone(), space.offer);
             }
             this.menu.error = Some(format!("Open a local workspace: {error}"));
             cx.notify();
