@@ -111,8 +111,23 @@ fn a_lone_group_offers_no_close(cx: &mut TestAppContext) {
     );
 }
 
+/// Moves page `id` to `group` and shows it there.
+fn move_page(
+    view: &Entity<HerdrWindow>,
+    cx: &mut VisualTestContext,
+    group: GroupId,
+    id: crate::browser::TabId,
+) {
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.show_browser_tab_in(Some(group), id, window, cx)
+        })
+    });
+    draw(cx);
+}
+
 #[gpui::test]
-fn closing_in_a_group_never_closes_a_tab(cx: &mut TestAppContext) {
+fn a_split_group_closes_its_tab_for_good_and_itself_without_closing_any(cx: &mut TestAppContext) {
     let (view, cx) = window(cx);
     open_pages(&view, cx, 2);
     let herdr = herdr_tabs(&view, cx);
@@ -125,49 +140,80 @@ fn closing_in_a_group_never_closes_a_tab(cx: &mut TestAppContext) {
     let [left, right] = groups(&view, cx)[..] else {
         panic!("two groups")
     };
-    // Split, both groups list every tab.
-    assert_eq!(tabs(&view, cx, left), tabs(&view, cx, right));
+    // Every tab stays with the group that was split; the new one has none
+    // to close.
+    assert_eq!(tabs(&view, cx, left).len(), herdr + pages.len());
+    assert_eq!(tabs(&view, cx, right), []);
     assert_eq!(
         actions(&view, cx, right),
-        [
-            Action::NewBrowserTab,
-            Action::Close,
-            Action::CloseOthers,
-            Action::CloseAll,
-            Action::Split
-        ]
+        [Action::NewBrowserTab, Action::CloseGroup, Action::Split]
+    );
+    assert!(actions(&view, cx, left).contains(&Action::Close));
+
+    // A tab is listed in the one group it was moved to.
+    move_page(&view, cx, right, pages[0]);
+    move_page(&view, cx, right, pages[1]);
+    assert_eq!(
+        tabs(&view, cx, right),
+        [Pick::Page(pages[0]), Pick::Page(pages[1])]
+    );
+    assert_eq!(tabs(&view, cx, left).len(), herdr);
+    assert!(cx.debug_bounds("g1-browser-tab-0").is_some());
+    assert!(cx.debug_bounds("browser-tab-0").is_none());
+
+    // Close Tab closes the tab the group shows, for good, and the group
+    // moves to another of its own.
+    run(&view, cx, right, Action::Close);
+    assert_eq!(
+        cx.update(|_, cx| view.read(cx).browser_tab_ids(cx)),
+        [pages[0]]
+    );
+    assert_eq!(
+        view.read_with(cx, |view, _| view.group_pick(right)),
+        Some(Pick::Page(pages[0]))
     );
 
-    // Close Others leaves the right group its own tab alone.
-    let shown = view
-        .read_with(cx, |view, _| view.group_pick(right))
-        .unwrap();
-    run(&view, cx, right, Action::CloseOthers);
-    assert_eq!(tabs(&view, cx, right), std::slice::from_ref(&shown));
-    assert_eq!(tabs(&view, cx, left).len(), herdr + pages.len());
-    assert!(cx.debug_bounds("browser-tab-0").is_some());
-    assert!(cx.debug_bounds("g1-browser-tab-0").is_none());
-
-    // Close takes the left group to the next tab it lists.
-    let left_shown = view.read_with(cx, |view, _| view.group_pick(left)).unwrap();
-    run(&view, cx, left, Action::Close);
-    let now = view.read_with(cx, |view, _| view.group_pick(left)).unwrap();
-    assert_ne!(now, left_shown);
-    assert!(!tabs(&view, cx, left).contains(&left_shown));
-
-    // Close All closes the group, not its tabs.
-    run(&view, cx, right, Action::CloseAll);
+    // Close Group closes no tab: its tabs go to the group beside it.
+    run(&view, cx, right, Action::CloseGroup);
     assert_eq!(groups(&view, cx), [left]);
-    // Nothing was closed in Herdr or the browser, and no dialog opened.
+    assert_eq!(
+        cx.update(|_, cx| view.read(cx).browser_tab_ids(cx)),
+        [pages[0]]
+    );
+    assert_eq!(tabs(&view, cx, left).len(), herdr + 1);
     assert_eq!(herdr_tabs(&view, cx), herdr);
-    assert_eq!(cx.update(|_, cx| view.read(cx).browser_tab_ids(cx)), pages);
     view.read_with(cx, |view, _| assert!(view.menu.page.is_none()));
 }
 
 #[gpui::test]
-fn a_tabs_close_button_in_a_split_closes_it_in_its_group_alone(cx: &mut TestAppContext) {
+fn a_tabs_close_button_in_a_split_closes_the_tab_through_its_confirmation(cx: &mut TestAppContext) {
     let (view, cx) = window(cx);
-    let herdr = herdr_tabs(&view, cx);
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.command(Command::SplitEditor, window, cx)
+        })
+    });
+    draw(cx);
+    let close = cx.debug_bounds("close-tab-t1").unwrap();
+    cx.simulate_click(close.center(), Modifiers::none());
+    draw(cx);
+    // As without a split: the tab is closed in Herdr, which the dialog
+    // guards, rather than taken out of one strip.
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.menu.page, Some(Page::ConfirmClose));
+        let snapshot = view.live.snapshot.as_ref().unwrap();
+        assert_eq!(
+            view.menu.close,
+            crate::close_modal::CloseConfirmation::capture_tab(snapshot, "t1")
+        );
+    });
+}
+
+#[gpui::test]
+fn a_group_whose_last_tab_closes_closes_too(cx: &mut TestAppContext) {
+    let (view, cx) = window(cx);
+    open_pages(&view, cx, 1);
+    let pages = cx.update(|_, cx| view.read(cx).browser_tab_ids(cx));
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
             view.command(Command::SplitEditor, window, cx)
@@ -176,32 +222,15 @@ fn a_tabs_close_button_in_a_split_closes_it_in_its_group_alone(cx: &mut TestAppC
     let [left, right] = groups(&view, cx)[..] else {
         panic!("two groups")
     };
-    let close = cx.debug_bounds("g1-close-tab-t1").unwrap();
-    cx.simulate_click(close.center(), Modifiers::none());
-    draw(cx);
-    // No confirmation, nothing sent to Herdr: the tab left one strip.
-    view.read_with(cx, |view, _| assert!(view.menu.page.is_none()));
-    assert_eq!(herdr_tabs(&view, cx), herdr);
-    assert!(!tabs(&view, cx, right).contains(&Pick::Herdr("t1".into())));
-    assert!(tabs(&view, cx, left).contains(&Pick::Herdr("t1".into())));
-    assert!(cx.debug_bounds("tab-t1").is_some());
-    assert!(cx.debug_bounds("g1-tab-t1").is_none());
-}
-
-#[gpui::test]
-fn a_group_left_with_nothing_closes(cx: &mut TestAppContext) {
-    let (view, cx) = window(cx);
+    // Empty since the split, the new group stays open.
+    assert_eq!(groups(&view, cx).len(), 2);
+    move_page(&view, cx, right, pages[0]);
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
-            view.command(Command::SplitEditor, window, cx)
+            view.close_strip_tab(Pick::Page(pages[0]), window, cx)
         })
     });
-    let [_, right] = groups(&view, cx)[..] else {
-        panic!("two groups")
-    };
-    let all = tabs(&view, cx, right);
-    cx.update(|window, cx| view.update(cx, |view, cx| view.close_in_group(right, all, window, cx)));
-    assert_eq!(groups(&view, cx).len(), 1);
+    assert_eq!(groups(&view, cx), [left]);
 }
 
 #[gpui::test]
@@ -215,7 +244,7 @@ fn the_menu_opens_from_the_strip_and_steps_with_the_keyboard(cx: &mut TestAppCon
     for row in ["group-menu-NewBrowserTab", "group-menu-Split"] {
         assert!(cx.debug_bounds(row).is_some(), "{row}");
     }
-    assert!(cx.debug_bounds("group-menu-CloseAll").is_none());
+    assert!(cx.debug_bounds("group-menu-CloseGroup").is_none());
     cx.simulate_keystrokes("down");
     assert_eq!(
         view.read_with(cx, |view, _| view.menu.group.as_ref().unwrap().selected),
@@ -225,6 +254,7 @@ fn the_menu_opens_from_the_strip_and_steps_with_the_keyboard(cx: &mut TestAppCon
     assert!(view.read_with(cx, |view, _| view.menu.page.is_none()));
 }
 
+mod close_others;
 mod new_tabs;
 mod orchestrator;
 

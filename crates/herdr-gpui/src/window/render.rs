@@ -6,7 +6,7 @@ use super::{HerdrWindow, PressedLink};
 use crate::{
     CheckForUpdates, Minimize, PlaySound, RunCommand, ShowHerdrNotDetected, ShowUpdatePreview,
     actions::{RingBellPreview, ShowToastPreview},
-    browser::{Pick, Shown, Slot},
+    browser::{Shown, Slot},
     config::ClipboardToastPosition,
     fonts::StyledFont,
     terminal::*,
@@ -653,19 +653,17 @@ impl Render for HerdrWindow {
                 (Shown::Page(_), Some(tab)) => {
                     self.render_browser(slot, &tab, gap, owns_keyboard, cx)
                 }
-                (Shown::Elsewhere(Pick::Herdr(tab)), _) => {
-                    match self.live_frame_of(tab, window_frame.clone()) {
-                        Some(frame) => self.render_terminal_mirror(
-                            slot,
-                            gap,
-                            Some(frame),
-                            parked_font.clone(),
-                            cell_height,
-                            cx,
-                        ),
-                        None => self.render_stand_in(slot, &shown, gap, owns_keyboard, cx),
-                    }
-                }
+                (Shown::Elsewhere(tab), _) => match self.live_frame_of(tab, window_frame.clone()) {
+                    Some(frame) => self.render_terminal_mirror(
+                        slot,
+                        gap,
+                        Some(frame),
+                        parked_font.clone(),
+                        cell_height,
+                        cx,
+                    ),
+                    None => self.render_stand_in(slot, &shown, gap, owns_keyboard, cx),
+                },
                 _ => self.render_stand_in(slot, &shown, gap, owns_keyboard, cx),
             };
             let ends = merged.then(|| crate::titlebar::Ends::of(slot.index, count));

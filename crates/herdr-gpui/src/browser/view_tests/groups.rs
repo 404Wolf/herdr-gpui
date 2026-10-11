@@ -49,17 +49,25 @@ fn splitting_only_splits(cx: &mut gpui::TestAppContext) {
     draw(cx);
     assert_eq!(shown(&view, cx), [Shown::Terminal]);
     click(cx, "split-editor");
-    // The new group takes the tab; nothing new opens.
-    assert_eq!(
-        shown(&view, cx),
-        [Shown::Elsewhere(herdr("t0")), Shown::Terminal]
-    );
+    // The new group opens without tabs, and says so; every tab stays where
+    // it was and nothing new opens.
+    assert_eq!(shown(&view, cx), [Shown::Terminal, Shown::Empty]);
     assert!(
         cx.update(|_, cx| view.read(cx).browser_tab_ids(cx))
             .is_empty()
     );
-    assert!(cx.debug_bounds("stand-in").is_some());
-    assert!(cx.debug_bounds("g1-tab-t0").is_some());
+    assert!(cx.debug_bounds("g1-stand-in").is_some());
+    assert!(cx.debug_bounds("stand-in").is_none());
+    assert!(cx.debug_bounds("tab-t0").is_some());
+    assert!(cx.debug_bounds("g1-tab-t0").is_none());
+    let [left, right] = groups(&view, cx)[..] else {
+        panic!("two groups")
+    };
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert!(!view.group_tabs(left, cx).is_empty());
+        assert!(view.group_tabs(right, cx).is_empty());
+    });
     // Split as often as wanted, from any group.
     click(cx, "g1-split-editor");
     run(&view, cx, Command::SplitEditor);
@@ -68,8 +76,7 @@ fn splitting_only_splits(cx: &mut gpui::TestAppContext) {
         let selector = selector(format!("group-divider-{divider}"));
         assert!(cx.debug_bounds(selector).is_some(), "{selector}");
     }
-    // Showing it here brings the terminal back to the first group.
-    click(cx, "show-here");
+    // The terminal never left the first group.
     let terminal = cx.debug_bounds("terminal").unwrap();
     let first = cx.debug_bounds("group").unwrap();
     assert!(terminal.left() < first.right());
@@ -96,26 +103,21 @@ fn a_page_and_the_terminal_sit_side_by_side(cx: &mut gpui::TestAppContext) {
     assert_eq!(shown(&view, cx), [Shown::Terminal, Shown::Page(page)]);
     assert!(cx.debug_bounds("terminal").is_some());
     assert!(cx.debug_bounds("g1-browser").is_some());
-    // Every group lists every tab.
-    for selector in ["tab-t0", "browser-tab-0", "g1-tab-t0", "g1-browser-tab-0"] {
+    // Each group lists its own tabs only.
+    for selector in ["tab-t0", "g1-browser-tab-0"] {
         assert!(cx.debug_bounds(selector).is_some(), "{selector}");
     }
-    // Picking the page on the left as well moves it there.
-    click(cx, "browser-tab-0");
-    assert_eq!(
-        shown(&view, cx),
-        [Shown::Page(page), Shown::Elsewhere(Pick::Page(page))]
-    );
-    // Closing the page leaves both groups following the terminal again.
+    for selector in ["browser-tab-0", "g1-tab-t0"] {
+        assert!(cx.debug_bounds(selector).is_none(), "{selector}");
+    }
+    // Closing the page closes the group it was the last tab of.
+    cx.update(|window, cx| view.update(cx, |view, cx| view.activate_group(right, window, cx)));
     run(&view, cx, Command::CloseTab);
     assert!(
         cx.update(|_, cx| view.read(cx).browser_tab_ids(cx))
             .is_empty()
     );
-    assert_eq!(
-        shown(&view, cx),
-        [Shown::Terminal, Shown::Elsewhere(herdr("t0"))]
-    );
+    assert_eq!(shown(&view, cx), [Shown::Terminal]);
 }
 
 #[gpui::test]
@@ -134,11 +136,11 @@ fn picking_another_herdr_tab_focuses_it_in_the_daemon(cx: &mut gpui::TestAppCont
     let Some(other) = other else {
         return;
     };
-    click(cx, selector(format!("g1-tab-{other}")));
+    click(cx, selector(format!("tab-{other}")));
     // Until the daemon focuses it, the group keeps drawing the
     // terminal's frame rather than flashing a stand-in.
-    assert_eq!(shown(&view, cx)[1], Shown::Terminal);
-    assert!(cx.debug_bounds("g1-stand-in").is_none());
+    assert_eq!(shown(&view, cx)[0], Shown::Terminal);
+    assert!(cx.debug_bounds("stand-in").is_none());
     assert!(cx.debug_bounds("terminal").is_some());
     // Once it does, the group shows it and the other keeps its tab.
     cx.update(|_, cx| {
@@ -148,10 +150,219 @@ fn picking_another_herdr_tab_focuses_it_in_the_daemon(cx: &mut gpui::TestAppCont
             view.terminal_focus_moved(&other, false, cx);
         })
     });
+    assert_eq!(shown(&view, cx), [Shown::Terminal, Shown::Empty]);
+}
+
+/// The daemon opens `tab` in the focused workspace and focuses it on the
+/// window's connection, as it answers a new tab.
+fn open_herdr_tab(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, tab: &str) {
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
+            let mut new = snapshot.tabs[0].clone();
+            new.tab_id = tab.to_owned();
+            new.workspace_id = snapshot.focused_workspace_id.clone().unwrap();
+            snapshot.tabs.push(new);
+            snapshot.focused_tab_id = Some(tab.to_owned());
+            view.terminal_focus_moved(tab, false, cx);
+        })
+    });
+    draw(cx);
+}
+
+fn tabs(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, group: GroupId) -> Vec<Pick> {
+    cx.update(|_, cx| view.read(cx).group_tabs(group, cx))
+}
+
+#[gpui::test]
+fn a_new_tab_belongs_to_the_group_that_asked_for_it(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = window(cx);
+    draw(cx);
+    run(&view, cx, Command::SplitEditor);
+    let [left, right] = groups(&view, cx)[..] else {
+        panic!("two groups")
+    };
+    let before = tabs(&view, cx, left);
+    // The right group's "+" asks; the daemon answers on the window's
+    // connection, which the right group then holds.
+    click(cx, "g1-new-tab");
+    open_herdr_tab(&view, cx, "new-right");
+    assert_eq!(tabs(&view, cx, right), [herdr("new-right")]);
+    assert_eq!(tabs(&view, cx, left), before);
+    assert_eq!(shown(&view, cx)[1], Shown::Terminal);
     assert_eq!(
-        shown(&view, cx),
-        [Shown::Elsewhere(herdr("t0")), Shown::Terminal]
+        view.read_with(cx, |view, _| view.active_group()),
+        Some(right)
     );
+    assert!(cx.debug_bounds("g1-tab-new-right").is_some());
+    assert!(cx.debug_bounds("tab-new-right").is_none());
+
+    // A tab nobody's "+" asked for, from a shortcut or an agent, goes to
+    // the group in use.
+    cx.update(|window, cx| view.update(cx, |view, cx| view.activate_group(left, window, cx)));
+    open_herdr_tab(&view, cx, "new-left");
+    assert!(tabs(&view, cx, left).contains(&herdr("new-left")));
+    assert_eq!(tabs(&view, cx, right), [herdr("new-right")]);
+}
+
+#[gpui::test]
+fn focus_moving_to_another_groups_tab_uses_that_group(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = window(cx);
+    draw(cx);
+    run(&view, cx, Command::SplitEditor);
+    let [left, right] = groups(&view, cx)[..] else {
+        panic!("two groups")
+    };
+    // The right group owns "t1"; the left one is in use, showing "t0" on
+    // the window's connection.
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.ensure_layout().unwrap().show(right, herdr("t1"));
+            view.activate_group(left, window, cx);
+        })
+    });
+    assert_eq!(
+        view.read_with(cx, |view, _| view.active_group()),
+        Some(left)
+    );
+    let left_tabs = tabs(&view, cx, left);
+    // The daemon focuses the right group's tab, as an agent or the next-tab
+    // shortcut does: the tab stays where it is and its group is used.
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
+            snapshot.focused_tab_id = Some("t1".into());
+            view.terminal_focus_moved("t1", false, cx);
+        })
+    });
+    draw(cx);
+    assert_eq!(
+        view.read_with(cx, |view, _| view.active_group()),
+        Some(right)
+    );
+    assert_eq!(tabs(&view, cx, right), [herdr("t1")]);
+    assert_eq!(tabs(&view, cx, left), left_tabs);
+    assert_eq!(shown(&view, cx)[1], Shown::Terminal);
+}
+
+/// One window tick's worth of keeping groups in step with their tabs.
+fn settle(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) {
+    cx.update(|window, cx| view.update(cx, |view, cx| view.settle_groups(window, cx)));
+    draw(cx);
+}
+
+/// The daemon closes `tab` and focuses `next` on the window's connection.
+fn close_herdr_tab(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, tab: &str, next: &str) {
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
+            snapshot.tabs.retain(|candidate| candidate.tab_id != tab);
+            snapshot.focused_tab_id = Some(next.to_owned());
+            view.terminal_focus_moved(next, false, cx);
+        })
+    });
+    settle(view, cx);
+}
+
+#[gpui::test]
+fn a_tab_opened_behind_the_window_stays_with_the_group_in_use(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = window(cx);
+    draw(cx);
+    run(&view, cx, Command::SplitEditor);
+    let [left, right] = groups(&view, cx)[..] else {
+        panic!("two groups")
+    };
+    // An agent opens a tab without focusing it while the right group is in
+    // use.
+    cx.update(|_, cx| {
+        view.update(cx, |view, _| {
+            let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
+            let mut new = snapshot.tabs[0].clone();
+            new.tab_id = "quiet".into();
+            new.workspace_id = "w0".into();
+            snapshot.tabs.push(new);
+        })
+    });
+    settle(&view, cx);
+    assert_eq!(tabs(&view, cx, right), [herdr("quiet")]);
+    // It gives the group something to show, and does not follow the group
+    // in use around afterwards.
+    assert_eq!(
+        view.read_with(cx, |view, _| view.group_pick(right)),
+        Some(herdr("quiet"))
+    );
+    cx.update(|window, cx| view.update(cx, |view, cx| view.activate_group(left, window, cx)));
+    settle(&view, cx);
+    assert_eq!(tabs(&view, cx, right), [herdr("quiet")]);
+    assert!(!tabs(&view, cx, left).contains(&herdr("quiet")));
+}
+
+#[gpui::test]
+fn a_group_whose_tab_the_daemon_closed_goes_to_another_of_its_own(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = window(cx);
+    // A third tab, so the left group has one to go to.
+    cx.update(|_, cx| {
+        view.update(cx, |view, _| {
+            let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
+            let mut spare = snapshot.tabs[0].clone();
+            spare.tab_id = "spare".into();
+            spare.workspace_id = "w0".into();
+            snapshot.tabs.push(spare);
+        })
+    });
+    draw(cx);
+    run(&view, cx, Command::SplitEditor);
+    let [left, right] = groups(&view, cx)[..] else {
+        panic!("two groups")
+    };
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.ensure_layout().unwrap().show(right, herdr("t1"));
+            view.activate_group(left, window, cx);
+        })
+    });
+    assert!(tabs(&view, cx, left).len() > 1);
+    // The daemon closes the left group's tab and lands on the right
+    // group's: the left group stays in use, on a tab of its own, and the
+    // right one keeps what it showed.
+    close_herdr_tab(&view, cx, "t0", "t1");
+    let left_tabs = tabs(&view, cx, left);
+    assert!(!left_tabs.contains(&herdr("t0")));
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.active_group(), Some(left));
+        assert_eq!(view.group_pick(left).as_ref(), left_tabs.first());
+        assert_eq!(view.group_pick(right), Some(herdr("t1")));
+    });
+    assert_eq!(tabs(&view, cx, right), [herdr("t1")]);
+}
+
+#[gpui::test]
+fn a_group_whose_last_tab_the_daemon_closed_closes(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = window(cx);
+    draw(cx);
+    run(&view, cx, Command::SplitEditor);
+    let [left, right] = groups(&view, cx)[..] else {
+        panic!("two groups")
+    };
+    // Without tabs since the split, the right group stays open.
+    settle(&view, cx);
+    assert_eq!(groups(&view, cx), [left, right]);
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.ensure_layout().unwrap().show(right, herdr("t1"));
+            view.activate_group(left, window, cx);
+        })
+    });
+    // Its only tab closes in Herdr, as after the close confirmation.
+    cx.update(|_, cx| {
+        view.update(cx, |view, _| {
+            let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
+            snapshot.tabs.retain(|tab| tab.tab_id != "t1");
+        })
+    });
+    settle(&view, cx);
+    assert_eq!(groups(&view, cx), [left]);
+    assert_eq!(shown(&view, cx), [Shown::Terminal]);
 }
 
 #[gpui::test]
@@ -178,7 +389,7 @@ fn switching_tabs_keeps_the_terminal_until_the_daemon_focuses(cx: &mut gpui::Tes
 #[gpui::test]
 fn a_saved_layout_comes_back_and_changes_are_recorded(cx: &mut gpui::TestAppContext) {
     let (view, cx) = window(cx);
-    let saved = r#"{"groups":[{"pick":{"kind":"herdr","id":"t0"},"share":0.3},{"pick":{"kind":"herdr","id":"t1"},"share":0.7}],"active":0}"#;
+    let saved = r#"{"groups":[{"pick":{"kind":"herdr","id":"t0"},"share":0.3,"tabs":[{"kind":"herdr","id":"t0"}]},{"pick":{"kind":"herdr","id":"t1"},"share":0.7,"tabs":[{"kind":"herdr","id":"t1"}]}],"active":0}"#;
     cx.update(|_, cx| {
         view.update(cx, |view, _| {
             // As on a first show of the workspace since the restart.
@@ -194,7 +405,7 @@ fn a_saved_layout_comes_back_and_changes_are_recorded(cx: &mut gpui::TestAppCont
     // The group in use shows its tab; the other waits for its own
     // connection, which the fixture never gets.
     assert_eq!(shown[0], Shown::Terminal);
-    assert_eq!(shown[1], Shown::Elsewhere(herdr("t1")));
+    assert_eq!(shown[1], Shown::Elsewhere("t1".into()));
     let (key, share) = view.read_with(cx, |view, _| {
         let slots = view.group_slots();
         (view.browser_key().unwrap(), view.group_share(slots[0].id))
@@ -220,7 +431,7 @@ fn a_saved_layout_comes_back_and_changes_are_recorded(cx: &mut gpui::TestAppCont
         view.update(cx, |view, cx| {
             let group = view.group_slots()[0].id;
             let layout = view.ensure_layout().unwrap();
-            layout.replace(&herdr("t0"), None, None);
+            layout.forget(&herdr("t0"));
             let _ = group;
             view.save_group_layouts(cx);
         })

@@ -1806,29 +1806,31 @@ empty.
 The split button at the right end of the tab strip (or **Split Editor**,
 `Cmd-\`) splits the view into side-by-side groups, as an editor does: keep an
 agent's terminal in one group and its page in another. Split as often as you
-like; each split opens a group to the right of the one it came from, showing
-the same tab. Splitting opens nothing new.
+like; each split opens a group to the right of the one it came from, without
+tabs. Splitting opens nothing new and moves no tab.
 
-- Every group lists the same tabs. Groups show different Herdr tabs live
-  side by side: each group showing a terminal has its own client connection
-  to the daemon, which keeps a focused tab per client. The group in use holds
-  the window's connection and gets the keyboard; the others only display
-  their tab, report themselves unfocused so notifications, sounds, and the
-  title follow the group in use, and focus their own tab again when an agent
-  or the CLI moves every client. Pressing a group swaps its connection in.
-- A tab is live in one group at a time: the daemon sizes a tab for a single
-  client, and a page is placed once. A terminal tab picked in two groups is
-  live in the one used last, and the other paints the same picture of it, as
-  an editor shows one file twice; a group of another width shows it clipped
-  or padded. Pressing that group brings the live tab there. A page shown in
-  another group is stood in for with **Show Here**.
+- A tab belongs to one group, and only that group's strip lists it. A new
+  group says how to open a tab in it; a tab opened in a group is that
+  group's own. A tab opened elsewhere, by an agent, the CLI, or another
+  client, goes to the group in use.
+- Drag a tab onto another group to move it there: the group it is carried
+  over is outlined, and dropping the tab shows it in that group. The group it
+  left goes to the tab beside it, and closes when that was its last tab.
+- Groups show different Herdr tabs live side by side: each group showing a
+  terminal has its own client connection to the daemon, which keeps a focused
+  tab per client. The group in use holds the window's connection and gets the
+  keyboard; the others only display their tab, report themselves unfocused so
+  notifications, sounds, and the title follow the group in use, and focus
+  their own tab again when an agent or the CLI moves every client. Pressing a
+  group swaps its connection in. When the daemon moves the window's focus to
+  a tab of another group, that group becomes the group in use.
 - The group in use has the keyboard, and its chosen tab carries the accent.
   **+** opens a terminal tab in that group. The group's **…**, at the end
   of its strip, offers the other kinds of tab: **New Browser Tab**
   (`cmd-shift-b`), **Review Changes** when the Git chip tracks a checkout,
   and the workspace's listening ports, each opening its page. `cmd-t` and
   `cmd-shift-b` open in the group in use, where Close Tab acts too. Close
-  Tab in an empty group closes the group.
+  Tab in a group without tabs closes the group.
 - Drag a divider to resize the groups beside it. Groups are the window's own,
   per workspace. A group's own connection closes with the group, or when the
   window leaves the workspace or host; returning reconnects it.
@@ -1838,15 +1840,17 @@ the same tab. Splitting opens nothing new.
   workspace in Herdr forgets its groups, and a damaged file starts every
   workspace unsplit. With several windows on one workspace, the last change
   is what is saved.
-- Closing in a group only takes tabs out of that group's strip, as an
-  editor's groups do: they stay open in Herdr, in the browser, and in every
-  other group. Split, a tab's close button and its right-click **Close Tab**
-  do this; **…** offers **Close**,
-  **Close Others**, and **Close All**, which closes the group. A group left
-  with no tabs closes, and a tab closed in every group stays in the group in
-  use. Unsplit, a tab's close button and **Close Tab** close it in Herdr,
-  through its confirmation, as before; nothing in **…** ever closes a Herdr
-  tab.
+- Closing a tab closes it for good, split or not: a tab's close button and
+  its right-click **Close Tab** close a page at once and a Herdr tab in
+  Herdr, through its confirmation. Split, **…** offers **Close Tab**, which
+  does the same for the tab the group shows; **Close Others**, which closes
+  the group's other tabs one after another, each as its own close button
+  would, and stops at the first close you decline; and **Close Group**,
+  which closes no tab: the group's tabs go to the group that takes its room.
+  A group whose last tab closes, closes too.
+- A layout saved by an earlier version, where every group listed every tab
+  except the ones closed in it, still restores: each tab goes to a group
+  that had kept it.
 - Right-click a tab for **New Tab** (opening in that group), **Rename**, and
   **Close Tab**, as in Herdr's own tab menu. A zoomed tab, where one pane
   fills the tab, shows a corner mark after its title, and the pane menu
@@ -1855,8 +1859,8 @@ the same tab. Splitting opens nothing new.
 - A split's new group opens from the right, sliding in at its own width
   while the group it came from gives up the room; a closed group folds away
   to the right as its neighbour takes the room back.
-- A tab that opens grows into its strip, and one that closes, in Herdr or
-  in a group, shrinks out where it stood. The tabs a strip already has when
+- A tab that opens grows into its strip, and one that closes or moves to
+  another group shrinks out where it stood. The tabs a strip already has when
   the window first draws it appear at once.
 
 ## Browser Tabs
@@ -2206,10 +2210,12 @@ the page's storage, which belongs to one address.
   opens the space's VS Code tab in that group. The row appears once a
   server is set, or VS Code is found to start, in builds that can show
   pages. **Open VS Code** in the Terminal menu or the command palette opens
-  it in the group in use, as does a key you bind to `open_code` under
-  `[keybindings]`. It has no default key.
-- Each space has one VS Code tab, listed in its strips with its other tabs.
-  Opening it again shows that same tab in the group it is opened from, so
+  it in the group in use, or shows it in the group it already belongs to, as
+  does a key you bind to `open_code` under `[keybindings]`. It has no default
+  key.
+- Each space has one VS Code tab, listed with the other tabs of the group it
+  belongs to. Opening it again moves that same tab to the group it is opened
+  from, so
   one group can show VS Code beside another showing a terminal, or a lone
   group can show it alone. It splits, resizes, and is covered by dialogs as
   any page is, and its page keeps running, keeping its state, while no group

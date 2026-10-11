@@ -1,9 +1,5 @@
 use crate::{
-    HerdrWindow,
-    browser::{GroupId, Pick},
-    controls::Command,
-    menu::Page,
-    search_input::SearchInput,
+    HerdrWindow, browser::GroupId, controls::Command, menu::Page, search_input::SearchInput,
 };
 use gpui::{prelude::*, *};
 use herdr_client::{Method, protocol::ClientShellSnapshot};
@@ -168,15 +164,8 @@ impl HerdrWindow {
                 }
                 self.command(Command::Tab, window, cx);
             }
-            // As the tab's own close button: split, a group lets go of the
-            // tab and Herdr keeps it; otherwise the close confirmation decides.
-            Action::Close => match group {
-                Some(group) if self.is_split() => {
-                    self.dismiss_menu(window, cx);
-                    self.close_in_group(group, vec![Pick::Herdr(target.tab)], window, cx);
-                }
-                _ => self.open_tab_close(&target.tab, window, cx),
-            },
+            // As the tab's own close button: the close confirmation decides.
+            Action::Close => self.open_tab_close(&target.tab, window, cx),
             Action::Rename => {
                 let input = cx.new(SearchInput::new);
                 input.update(cx, |input, cx| {
