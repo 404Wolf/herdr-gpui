@@ -107,9 +107,9 @@ pub(crate) fn offer(provider: CloudProvider) -> &'static str {
         // cannot be attached yet.
         #[cfg(feature = "daytona")]
         CloudProvider::Daytona => "Create a Daytona sandbox in Settings",
-        // No account: the row opens Settings, where an SSH key is chosen.
+        // Offered through "Add Cloud Device…" rather than a row of its own.
         #[cfg(feature = "railway")]
-        CloudProvider::Railway => "Set up a free Railway VM in Settings",
+        CloudProvider::Railway => "Set up a Railway VM in Settings",
     }
 }
 

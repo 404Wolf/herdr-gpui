@@ -25,10 +25,13 @@ use crate::{
 };
 use gpui::{prelude::*, *};
 
-/// Open Settings on `provider`'s tab, for the device picker's row that sets
-/// that provider up.
-#[cfg(any(feature = "daytona", feature = "railway"))]
-pub(crate) fn open(source: WeakEntity<crate::HerdrWindow>, provider: CloudProvider, cx: &mut App) {
+/// Open Settings > Cloud Devices, on `provider`'s tab when the device picker's
+/// row sets that provider up, or on the first tab for its general row.
+pub(crate) fn open(
+    source: WeakEntity<crate::HerdrWindow>,
+    provider: Option<CloudProvider>,
+    cx: &mut App,
+) {
     super::open(source, cx);
     // Queued after `open`'s own deferred work, so the window exists by now.
     cx.defer(move |cx| {
@@ -36,7 +39,9 @@ pub(crate) fn open(source: WeakEntity<crate::HerdrWindow>, provider: CloudProvid
             return;
         };
         let _ = handle.update(cx, |view, window, cx| {
-            view.cloud_tab = provider;
+            if let Some(provider) = provider {
+                view.cloud_tab = provider;
+            }
             view.select_section(super::Section::CloudDevices, window, cx);
         });
     });

@@ -1,7 +1,7 @@
 //! Independent native preferences window. Disk work never owns a window or a socket.
 #[cfg(feature = "cloud")]
 mod cloud_devices;
-#[cfg(any(feature = "daytona", feature = "railway"))]
+#[cfg(feature = "cloud")]
 pub(crate) use cloud_devices::open as open_cloud;
 mod controls;
 mod layouts;

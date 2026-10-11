@@ -1,18 +1,6 @@
 use super::*;
 use crate::cloud::CloudProvider;
 
-/// Providers that need no account or URL, so the picker always offers them.
-fn anonymous(provider: CloudProvider) -> bool {
-    match provider {
-        #[cfg(feature = "coder")]
-        CloudProvider::Coder => false,
-        #[cfg(feature = "daytona")]
-        CloudProvider::Daytona => false,
-        #[cfg(feature = "railway")]
-        CloudProvider::Railway => true,
-    }
-}
-
 /// The setting that makes `provider` suggested, or none for an account-free one.
 fn setting(view: &mut HerdrWindow, provider: CloudProvider) -> Option<&mut Option<String>> {
     match provider {
@@ -45,6 +33,7 @@ fn available() -> bool {
 }
 
 /// What the picker offers when only `configured` is set up, in picker order.
+/// An account-free provider has no row: "Add Cloud Device…" reaches it.
 fn expected(configured: &[CloudProvider]) -> Vec<CloudProvider> {
     if !available() {
         return Vec::new();
@@ -52,7 +41,7 @@ fn expected(configured: &[CloudProvider]) -> Vec<CloudProvider> {
     CloudProvider::ALL
         .iter()
         .copied()
-        .filter(|&provider| anonymous(provider) || configured.contains(&provider))
+        .filter(|provider| configured.contains(provider))
         .collect()
 }
 
@@ -63,12 +52,10 @@ fn provider_suggestions_follow_configuration_changes(cx: &mut gpui::TestAppConte
         view.update(cx, |view, _| {
             for &provider in CloudProvider::ALL {
                 let Some((_, url)) = account(provider) else {
-                    // No configuration to change: it is offered wherever
-                    // cloud devices can connect, and nowhere else.
-                    assert_eq!(
-                        view.cloud_providers_with_env(|_| None).contains(&provider),
-                        available(),
-                        "an account-free provider is offered without configuration",
+                    // No configuration to change, so no row of its own.
+                    assert!(
+                        !view.cloud_providers_with_env(|_| None).contains(&provider),
+                        "an account-free provider is reached through Add Cloud Device",
                     );
                     assert!(setting(view, provider).is_none());
                     continue;
@@ -88,7 +75,11 @@ fn provider_suggestions_follow_configuration_changes(cx: &mut gpui::TestAppConte
                     !view.cloud_providers_with_env(|_| None).contains(&provider),
                     "removing configuration must hide the suggestion again",
                 );
-                assert_eq!(view.cloud_provider_rows(), view.cloud_providers().len());
+                assert_eq!(
+                    view.cloud_provider_rows(),
+                    view.cloud_providers().len() + usize::from(available()),
+                    "Add Cloud Device follows the providers' rows",
+                );
             }
         });
     });
@@ -105,16 +96,18 @@ fn provider_suggestions_follow_environment_only_configuration(cx: &mut gpui::Tes
                 }
             }
             let mut configured = Vec::new();
+            let mut with_accounts = Vec::new();
             for &provider in CloudProvider::ALL {
                 // Nothing to configure, in the environment or the file.
                 let Some((variable, url)) = account(provider) else {
                     continue;
                 };
                 configured.push((variable, url));
+                with_accounts.push(provider);
                 assert_eq!(
                     view.cloud_providers_with_env(|name| (name == variable).then(|| url.into())),
                     expected(&[provider]),
-                    "{variable} alone must suggest only {provider:?} besides account-free ones",
+                    "{variable} alone must suggest only {provider:?}",
                 );
                 assert_eq!(
                     view.cloud_providers_with_env(|_| None),
@@ -127,7 +120,7 @@ fn provider_suggestions_follow_environment_only_configuration(cx: &mut gpui::Tes
                     .iter()
                     .find(|(variable, _)| *variable == name)
                     .map(|(_, url)| (*url).into())),
-                expected(CloudProvider::ALL),
+                expected(&with_accounts),
                 "environment-only providers must retain picker order",
             );
         });
