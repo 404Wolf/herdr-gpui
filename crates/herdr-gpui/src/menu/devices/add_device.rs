@@ -8,7 +8,7 @@ use crate::{
 };
 use gpui::{prelude::*, *};
 use herdr_client::{
-    HostProbe, Method, SshFailure,
+    HostProbe, Method, NewHostKey, SshFailure,
     protocol::{ClientKeyCode, ClientKeyKind, ClientPaneInputEvent},
 };
 
@@ -38,6 +38,10 @@ pub(super) enum Step {
     Saving(setup::Request, HostProbe),
     /// Saved; the next frame closes the dialog (see `poll_device_setup`).
     Saved,
+    /// SSH refused an unknown host key; fetching it for the user to approve.
+    FetchingKey(setup::Request),
+    /// The user compares the host key's fingerprint before trusting it.
+    TrustKey(setup::Request, NewHostKey),
     /// Setup needs prompts, so the user decides whether to run it locally.
     Confirm(setup::Request, Offer),
     /// Checking the catalog on disk again before opening the setup workspace.
@@ -265,6 +269,13 @@ impl HerdrWindow {
                 request.target()
             )),
             Step::Saved => None,
+            Step::FetchingKey(request) => {
+                Some(format!("Fetching the host key of {}…", request.target()))
+            }
+            Step::TrustKey(request, key) => {
+                body = body.child(self.render_host_key(request.target(), key));
+                None
+            }
             Step::Confirm(request, offer) => Some(offer.question(request.target())),
             Step::Verifying(request) => {
                 Some(format!("Checking {} is not saved yet…", request.target()))
@@ -304,23 +315,25 @@ impl HerdrWindow {
             .flex()
             .justify_end()
             .gap(px(8.));
+        let cancel = button("device-setup-cancel", "Cancel".into(), true).on_click(cx.listener(
+            |this, _, _, cx| {
+                if let Some(setup) = &mut this.menu.device_setup {
+                    setup.step = Step::Form;
+                    this.menu.error = None;
+                    cx.notify();
+                }
+            },
+        ));
         footer = match &setup.step {
-            Step::Confirm(_, offer) => footer
-                .child(
-                    button("device-setup-cancel", "Cancel".into(), true).on_click(cx.listener(
-                        |this, _, _, cx| {
-                            if let Some(setup) = &mut this.menu.device_setup {
-                                setup.step = Step::Form;
-                                this.menu.error = None;
-                                cx.notify();
-                            }
-                        },
-                    )),
-                )
-                .child(
-                    button("device-setup-submit", offer.action().into(), true)
-                        .on_click(cx.listener(|this, _, _, cx| this.open_setup_space(cx))),
-                ),
+            Step::Confirm(_, offer) => footer.child(cancel).child(
+                button("device-setup-submit", offer.action().into(), true)
+                    .on_click(cx.listener(|this, _, _, cx| this.open_setup_space(cx))),
+            ),
+            // Enter does not trust a key: only this button does.
+            Step::TrustKey(..) => footer.child(cancel).child(
+                button("device-setup-trust", "Trust key".into(), true)
+                    .on_click(cx.listener(|this, _, _, cx| this.trust_host_key(cx))),
+            ),
             step => {
                 let ready = matches!(step, Step::Form);
                 footer.child(
@@ -448,6 +461,11 @@ impl HerdrWindow {
                 "Device probed"
             ),
             Err(_) => tracing::warn!(category = "device_setup", "Device probe failed"),
+        }
+        // An unknown key can be approved here; a changed one is refused while
+        // fetching it, and the terminal is offered instead.
+        if let Ok(HostProbe::SshFailed(SshFailure::HostKey)) = probe {
+            return self.fetch_host_key(request, claim, cx);
         }
         // A terminal cannot help: the permission belongs to this app. Back on
         // the form, the user grants it and submits again; the claim drops.

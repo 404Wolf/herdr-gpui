@@ -183,6 +183,9 @@ pub enum Error {
         generation: Option<u32>,
         version: Option<String>,
     },
+    /// `ssh -G` named no user known hosts file a host key could be saved to.
+    #[error("SSH has no user known hosts file to save the host key to")]
+    KnownHostsUnavailable,
     #[error("SSH startup output exceeds limit")]
     SshOutputLimit,
     #[error("invalid WSL distribution name")]

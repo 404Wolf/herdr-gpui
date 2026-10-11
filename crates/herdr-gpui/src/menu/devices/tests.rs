@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 #[cfg(feature = "cloud")]
 mod cloud_providers;
+mod host_key;
 mod local_network;
 
 #[test]

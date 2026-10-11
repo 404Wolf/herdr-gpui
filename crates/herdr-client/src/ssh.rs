@@ -1,5 +1,6 @@
 //! POSIX discovery/stdio bridge adapted from upstream remote/attach.rs.
-//! No installers, daemon restarts, SSH config edits, or trust-on-first-use.
+//! No installers, daemon restarts, or SSH config edits. A host key is trusted
+//! only after the user approves its fingerprint (see `host_key`).
 //! The remote host is always POSIX; the local half needs a socket pair it can
 //! hand to the `ssh` child as its standard streams, which only Unix provides.
 //! The bridge and probe scripts, and the handshake that reads them, are shared
@@ -18,7 +19,9 @@ use std::{
 };
 
 mod failure;
+mod host_key;
 pub use failure::SshFailure;
+pub use host_key::{HostKeyFingerprint, HostKeyScan, NewHostKey, scan_host_key, trust_host_key};
 
 const READY: &[u8] = b"herdr-remote-output-ready:1\n";
 
@@ -419,30 +422,35 @@ pub(super) fn command(target: &str, remote_command: &str) -> Command {
 #[cfg(unix)]
 fn noninteractive() -> Command {
     let mut command = crate::environment::command("ssh");
-    command.args([
-        "-T",
-        "-C",
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "NumberOfPasswordPrompts=0",
-        "-o",
-        "StrictHostKeyChecking=yes",
-        "-o",
-        "ConnectTimeout=10",
-        "-o",
-        "ConnectionAttempts=1",
-        "-o",
-        "ServerAliveInterval=15",
-        "-o",
-        "ServerAliveCountMax=4",
-        "-o",
-        "ForwardX11=no",
-        "-o",
-        "ControlMaster=no",
-    ]);
+    command.args(POLICY);
     command
 }
+
+/// The bridge's connection policy. OpenSSH keeps the first value it reads for
+/// an option, so a caller that needs another value passes it before these.
+#[cfg(unix)]
+const POLICY: [&str; 20] = [
+    "-T",
+    "-C",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "NumberOfPasswordPrompts=0",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "ConnectionAttempts=1",
+    "-o",
+    "ServerAliveInterval=15",
+    "-o",
+    "ServerAliveCountMax=4",
+    "-o",
+    "ForwardX11=no",
+    "-o",
+    "ControlMaster=no",
+];
 
 /// The line a [`forward_command`] child prints on stdout once its forward is
 /// bound.
