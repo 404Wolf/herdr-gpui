@@ -67,6 +67,7 @@ fn look() -> Look {
         cell_width: 8.5,
         cell_height: 17.,
         theme: crate::config::Theme::default(),
+        ground: Default::default(),
     }
 }
 

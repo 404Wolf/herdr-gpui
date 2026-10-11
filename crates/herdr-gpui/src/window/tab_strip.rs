@@ -125,7 +125,7 @@ impl HerdrWindow {
             .whitespace_nowrap()
             .border_r_1()
             .border_color(rgb(self.theme.active))
-            .bg(rgb(self.theme.surface))
+            .bg(self.fill().over(self.theme.surface, self.theme.surface))
             .text_color(rgb(self.theme.muted))
             .child(leaving.label.clone())
             .into_any_element()
@@ -216,7 +216,7 @@ impl HerdrWindow {
             .text_size(px(self.config.tabs.size))
             .overflow_x_scroll()
             .track_scroll(&scroll)
-            .bg(rgb(self.theme.surface))
+            .bg(self.fill().over(self.theme.surface, self.theme.surface))
             .text_color(rgb(self.theme.foreground));
         if let Some(snapshot) = &self.live.snapshot {
             for tab in snapshot.tabs.iter().filter(|t| {
@@ -251,7 +251,7 @@ impl HerdrWindow {
                         .items_center()
                         .gap(px(10.))
                         .cursor_pointer()
-                        .bg(rgb(background))
+                        .bg(self.fill().over(self.theme.surface, background))
                         .text_color(rgb(text))
                         .child(
                             div()
@@ -433,7 +433,7 @@ impl HerdrWindow {
             .flex()
             .flex_none()
             .relative()
-            .bg(rgb(self.theme.surface))
+            .bg(self.fill().panel(self.theme.surface))
             .text_color(rgb(self.theme.foreground))
             .when(self.tab_drag_in(slot.id), |strip| {
                 strip.child(self.tab_drag_listeners(cx))
@@ -715,7 +715,7 @@ impl HerdrWindow {
             .items_center()
             .justify_center()
             .gap(px(10.))
-            .bg(rgb(self.theme.background))
+            .bg(self.fill().base(self.theme.background))
             .text_color(rgb(self.theme.muted))
             .when(keyboard, |stand_in| stand_in.track_focus(&self.focus))
             .when(!title.is_empty(), |stand_in| {
@@ -859,7 +859,7 @@ impl HerdrWindow {
             .flex_col()
             .border_l_1()
             .border_color(rgb(self.theme.active))
-            .bg(rgb(self.theme.background))
+            .bg(self.fill().base(self.theme.background))
             .when(self.tab_bar_position() == TabBarPosition::Bottom, |group| {
                 group.justify_end()
             })
@@ -867,7 +867,7 @@ impl HerdrWindow {
                 div()
                     .flex_none()
                     .h(px(self.tab_strip_height()))
-                    .bg(rgb(self.theme.surface)),
+                    .bg(self.fill().panel(self.theme.surface)),
             )
             .into_any_element()
     }
@@ -921,7 +921,7 @@ impl HerdrWindow {
                         .w(px(5.))
                         .flex()
                         .justify_center()
-                        .bg(rgb(self.theme.background))
+                        .bg(self.fill().base(self.theme.background))
                         .cursor(CursorStyle::ResizeLeftRight)
                         .child(div().w(px(1.)).h_full().bg(rgb(self.theme.active)))
                         .on_drag(DividerDrag(index), |_, _, _, cx| cx.new(|_| EmptyView)),

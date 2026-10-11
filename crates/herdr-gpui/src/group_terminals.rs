@@ -21,7 +21,7 @@ use crate::{
     presentation::{Picture, Presentation},
     state::{ConnectionStatus, LiveState},
     terminal::{popup_origin, viewport},
-    terminal_painter::{ImageTarget, PlacedImages},
+    terminal_painter::{Ground, ImageTarget, PlacedImages},
 };
 use gpui::{prelude::*, *};
 use herdr_client::{ConnectOptions, Method};
@@ -573,6 +573,7 @@ impl HerdrWindow {
         let entity = cx.entity();
         let painter = self.painter.clone();
         let cell_width = self.cell_width;
+        let ground = self.ground();
         div()
             .id(SharedString::from(slot.selector(name)))
             .debug_selector(move || slot.selector(name))
@@ -581,7 +582,7 @@ impl HerdrWindow {
             .min_w_0()
             .pl(px(gap))
             .overflow_hidden()
-            .bg(rgb(self.theme.background))
+            .bg(self.fill().base(self.theme.background))
             .child(
                 canvas(
                     move |bounds, _, cx| {
@@ -605,6 +606,7 @@ impl HerdrWindow {
                                 &surface.frame,
                                 bounds.origin,
                                 Some(bounds.size),
+                                ground,
                                 cell_width,
                                 &font,
                                 &[],
@@ -629,6 +631,7 @@ impl HerdrWindow {
                                     &popup.frame,
                                     bounds.origin + offset,
                                     None,
+                                    Ground::Opaque,
                                     cell_width,
                                     &font,
                                     &[],

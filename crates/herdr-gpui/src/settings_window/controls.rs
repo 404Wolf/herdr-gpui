@@ -1,4 +1,5 @@
 //! Prepared controls for the standalone window; persistence belongs to its serial save path.
+mod backdrop;
 pub(super) mod code;
 mod fonts;
 pub(super) mod plugins;

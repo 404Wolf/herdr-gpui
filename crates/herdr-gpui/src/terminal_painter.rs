@@ -9,6 +9,7 @@ pub(crate) use self::area::{Layer, Part, Span, cell_ranges, clip, covers};
 use self::glyphs::GlyphCache;
 pub(crate) use self::graphics::CellSeparator;
 use self::graphics::Graphic;
+pub(crate) use self::grid::Ground;
 use self::grid::{background_extent, grid_corners, grid_rect, last_row_has_separator};
 use self::images::{ImageCache, ImageGeometry, below_text};
 pub(crate) use self::images::{ImageTarget, PlacedImages};
@@ -452,6 +453,7 @@ impl TerminalPainter {
         frame: &FrameData,
         origin: Point<Pixels>,
         available: Option<Size<Pixels>>,
+        ground: Ground,
         cell_width: f32,
         font: &Font,
         highlights: &[Highlight],
@@ -561,13 +563,19 @@ impl TerminalPainter {
                             counts.quads += 1;
                         }
                     };
+                    let shown = |color| ground == Ground::Opaque || color != self.theme.background;
                     if cached {
                         for (start, end, color) in background_spans(row, columns, &self.theme) {
-                            paint(start, end, color);
+                            if shown(color) {
+                                paint(start, end, color);
+                            }
                         }
                     } else {
                         for x in columns {
-                            paint(x, x + 1, cell_colors(&row[x], &self.theme).1);
+                            let color = cell_colors(&row[x], &self.theme).1;
+                            if shown(color) {
+                                paint(x, x + 1, color);
+                            }
                         }
                     }
                 }

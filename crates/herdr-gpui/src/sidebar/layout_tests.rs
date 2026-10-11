@@ -566,6 +566,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
             std::time::SystemTime::now(),
         ),
         painter: Default::default(),
+        backdrop: Default::default(),
         regions: Vec::new(),
         marked: String::new(),
         marked_selection: None,

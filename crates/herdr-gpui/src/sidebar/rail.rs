@@ -377,7 +377,7 @@ impl HerdrWindow {
             .text_size(px(font.size))
             .line_height(px(line_height(font)))
             .text_color(rgb(theme.foreground))
-            .bg(rgb(theme.sidebar_background()))
+            .bg(self.fill().panel(theme.sidebar_background()))
             .border_r_1()
             .border_color(rgb(theme.active))
             // No expand control of its own: the title bar's sidebar toggle,

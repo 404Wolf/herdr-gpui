@@ -348,6 +348,19 @@ size = 12
 # is saved in its own 0600 daytona-api-key file. Default is false.
 # allow_plaintext_credentials = false
 
+# What shows behind the main window, also under Settings > Appearance. At the
+# default opacity the window paints as it always has.
+# [backdrop]
+# How solid the theme's background is, from 0 (clear) to 1 (opaque). Terminal
+# colors a program chooses, popups, and dialogs stay opaque.
+# opacity = 1.0
+# Blur the desktop behind a translucent window: macOS, Windows, and Wayland
+# compositors with KDE's blur protocol.
+# blur = false
+# A picture behind the window, absolute or under ~/. The window stays opaque
+# over it; lower opacity shows more of it.
+# image = "~/Pictures/wallpaper.jpg"
+
 # What the status bar shows, also under Settings > Status bar. Whether usage
 # and CPU/memory show at all is [usage] show and show_system_load.
 # [status_bar]
