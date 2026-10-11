@@ -351,6 +351,8 @@ pub enum Error {
     GitHubTokenType,
     #[error("GitHub {0} worker stopped.")]
     GitHubWorker(&'static str),
+    #[error(transparent)]
+    Backdrop(#[from] crate::backdrop::Error),
     #[cfg(feature = "coder")]
     #[error(transparent)]
     Coder(#[from] crate::coder::Error),

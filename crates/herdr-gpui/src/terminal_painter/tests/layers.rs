@@ -37,6 +37,7 @@ fn each_layer_paints_only_its_share_of_the_whole(cx: &mut TestAppContext) {
                         &frame,
                         bounds.origin,
                         None,
+                        Ground::Opaque,
                         12.81,
                         &font("Menlo"),
                         &[],

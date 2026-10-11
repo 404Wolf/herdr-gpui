@@ -59,6 +59,7 @@ fn paint_row(
                     &frame,
                     point(px(x), px(8.)),
                     None,
+                    Ground::Opaque,
                     cell_width,
                     &font("Menlo"),
                     &highlights,

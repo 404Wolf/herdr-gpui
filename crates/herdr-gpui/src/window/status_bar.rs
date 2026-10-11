@@ -35,7 +35,7 @@ impl HerdrWindow {
             .items_center()
             .gap(px(6.))
             .px_3()
-            .bg(rgb(self.theme.surface))
+            .bg(self.fill().panel(self.theme.surface))
             .text_color(rgb(self.theme.foreground))
             .children(self.render_usage(cx))
             .when_some(

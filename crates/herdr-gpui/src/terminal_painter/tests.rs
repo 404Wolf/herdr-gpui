@@ -1,6 +1,7 @@
 use super::*;
 use core::prelude::v1::test;
 
+mod backdrop;
 mod cells;
 mod composition;
 mod diagnostics;

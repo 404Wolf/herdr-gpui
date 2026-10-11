@@ -741,6 +741,32 @@ graphics) to 4.5:1 (the level for text), lifts dim labels to it too, and makes
 selected rows stand further off the surface. Terminal output is never
 adjusted; programs keep the colors they asked for.
 
+**Settings > Appearance > Window backdrop** offers three tiles: **Solid** (the
+default), **Translucent**, and **Picture**, each showing only its own controls.
+Translucent starts at 85%, and its **Background opacity** stepper moves in 5%
+steps between 10% and 100%; `[backdrop] opacity` in `config-gpui.local.toml`
+takes any value from 0 to 1. The theme's background is painted once, at the
+window's root, and the terminal grid skips the cells that would only repaint
+it, so a translucent window draws fewer quads than an opaque one rather than
+more. The sidebar, tab strip, title bar, and status bar keep their own colors
+at the same opacity, which leaves them a little more solid than the terminal.
+Colors a program chooses, popups, menus, dialogs, and the Settings window stay
+opaque.
+
+**Blur behind** (`blur = true`) asks the platform to blur the desktop behind a
+translucent window, through GPUI's public window API: macOS and Windows blur;
+on Linux only Wayland compositors with KDE's blur protocol do, and X11 needs a
+compositing window manager for any translucency at all.
+
+The **Picture** tile opens a file chooser and puts an image behind the window
+instead (`image`, an absolute path or one under `~/`), and starts it at 75%
+opacity if the window was opaque, so the picture shows. The picture covers the
+desktop, so the window itself stays opaque and blur does not apply. It is
+decoded off the UI thread, scaled to at most 3840 pixels on its longest side,
+and uploaded once; files over 64 MiB are refused. A picture that cannot be read
+leaves the window translucent over the desktop and logs why; choosing one in
+Settings reports the error there.
+
 Choose the sidebar layout from **View > Layout**, which lists every layout,
 checks the one in use, switches at once, and saves the choice to
 `config-gpui.local.toml`. The same setting can be written by hand as a

@@ -412,6 +412,12 @@ pub fn color(value: u32, default: u32, theme: &Theme) -> u32 {
     }
 }
 
+/// Whether `cell` shows the theme's own background rather than a color its
+/// program chose, even one equal to it.
+pub(crate) fn on_default_background(cell: &CellData) -> bool {
+    is_default(cell.bg) && cell.modifier & REVERSED == 0
+}
+
 fn is_default(value: u32) -> bool {
     match value >> 24 {
         0 => !(1..=16).contains(&(value & 255)),

@@ -29,6 +29,7 @@ pub(super) struct Look {
     pub(super) cell_width: f32,
     pub(super) cell_height: f32,
     pub(super) theme: Theme,
+    pub(super) ground: terminal_painter::Ground,
 }
 
 #[derive(Clone)]
@@ -223,6 +224,7 @@ impl Render for RegionView {
                         frame,
                         origin,
                         available,
+                        look.ground,
                         look.cell_width,
                         &look.font,
                         highlights,

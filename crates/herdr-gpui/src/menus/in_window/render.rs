@@ -77,7 +77,12 @@ impl HerdrWindow {
             .w_full()
             .h(px(height))
             .px(px(6.))
-            .bg(rgb(theme.surface))
+            // The overlay copy lies on the one in the window, so only that
+            // one takes the window's translucency.
+            .bg(match layer {
+                BarLayer::Base => self.fill().panel(theme.surface),
+                BarLayer::Overlay => rgb(theme.surface).into(),
+            })
             .border_b_1()
             .border_color(rgb(theme.active))
             .text_font(font)

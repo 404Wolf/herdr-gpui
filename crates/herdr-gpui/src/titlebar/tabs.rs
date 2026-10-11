@@ -83,7 +83,7 @@ impl HerdrWindow {
             .w_full()
             .h(px(self.tab_strip_height()))
             .overflow_hidden()
-            .bg(rgb(self.theme.sidebar_background()))
+            .bg(self.fill().panel(self.theme.sidebar_background()))
             .child(div().flex_none().w(px(LEADING)).h_full())
             .when(self.sidebar_header_has_toggle(window), |header| {
                 header.child(self.sidebar_toggle(cx))

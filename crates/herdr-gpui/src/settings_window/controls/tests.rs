@@ -1,6 +1,7 @@
 use super::*;
 use core::prelude::v1::test;
 
+mod backdrop;
 mod session_restore;
 mod sidebar_search;
 mod update_channel;
