@@ -39,7 +39,7 @@ flate2               = "1"
 # Use the same strict macOS family lookup as GPUI, including legacy aliases.
 font-kit             = { package = "zed-font-kit", version = "=0.14.1-zed" }
 # Locates installed font files on Linux, as GPUI's own text system does.
-fontdb               = "0.23"
+fontdb               = "0.24"
 foreign-types        = "0.5"
 futures-lite         = "2"
 getrandom            = "0.3.4"
