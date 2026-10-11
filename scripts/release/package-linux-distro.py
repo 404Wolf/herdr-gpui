@@ -92,7 +92,7 @@ def config(version, target, root, mtime):
         "section": "devel",
         "priority": "optional",
         "maintainer": MAINTAINER,
-        "vendor": "Herdr GPUI",
+        "vendor": "Herdr UI",
         "homepage": "https://herdrui.dev",
         "license": "Apache-2.0",
         "description": "Native GPUI client for an existing local Herdr daemon.\n"

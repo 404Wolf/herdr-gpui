@@ -62,7 +62,7 @@ style details.
      variant and `0` shows all. `Esc` leaves a note field.
 
    Where the notes go: in a Herdr pane (`HERDR_PANE_ID` is set) with Herdr
-   GPUI running, Send hands them to Herdr GPUI, which types them into your
+   GPUI running, Send hands them to Herdr UI, which types them into your
    pane as your next prompt once you are idle, the way browser page notes
    arrive. If no agent is detected, the app keeps them for `browser feedback`
    and reports that. If the app cannot accept the send (including an older

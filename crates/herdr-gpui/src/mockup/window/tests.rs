@@ -1,7 +1,7 @@
 use super::*;
 use core::prelude::v1::test;
 
-/// Herdr GPUI as seen from outside a Herdr pane. Tests never reach the real
+/// Herdr UI as seen from outside a Herdr pane. Tests never reach the real
 /// control socket, which would type into the developer's own agent.
 fn unreachable(_: String) -> crate::Result<crate::control::NotesTo> {
     Err(crate::Error::ControlUnsupported)

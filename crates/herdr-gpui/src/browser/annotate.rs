@@ -403,7 +403,7 @@ pub(crate) fn prompt(
     screenshots: &[Option<PathBuf>],
     reload: &str,
 ) -> String {
-    let mut text = String::from("Feedback on the page you showed me in Herdr GPUI");
+    let mut text = String::from("Feedback on the page you showed me in Herdr UI");
     match &tab.location {
         Some(location @ Location::Local { .. }) => {
             text.push_str(&format!(

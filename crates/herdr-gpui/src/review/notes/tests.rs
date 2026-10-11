@@ -29,7 +29,7 @@ fn the_prompt_places_and_quotes_each_note() {
         .unwrap(),
     ];
     let text = prompt("/work/repo", &notes);
-    assert!(text.starts_with("Review notes on your changes in /work/repo, from Herdr GPUI.\n"));
+    assert!(text.starts_with("Review notes on your changes in /work/repo, from Herdr UI.\n"));
     assert!(text.contains(
         "\n1. On `src/lib.rs:42` (added line)\n   Code: `` let x = `y`; ``\n   Note: Use a constant here\n"
     ));

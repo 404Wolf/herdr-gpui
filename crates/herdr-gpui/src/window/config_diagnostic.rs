@@ -17,7 +17,7 @@ impl HerdrWindow {
             let drawn = lines.clone();
             self.render_diagnostic_card(
                 "gui-config-diagnostic",
-                "Herdr GPUI".into(),
+                "Herdr UI".into(),
                 lines,
                 None,
                 move |this, cx| {
@@ -34,7 +34,7 @@ impl HerdrWindow {
                 crate::icon_font_notice::COMMAND.map(|command| self.command_chip(command, cx));
             self.render_diagnostic_card(
                 "icon-font-notice",
-                "Herdr GPUI".into(),
+                "Herdr UI".into(),
                 lines,
                 command,
                 move |this, cx| {

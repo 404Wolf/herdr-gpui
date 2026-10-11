@@ -1,4 +1,4 @@
-// Herdr GPUI's annotation picker. The app evaluates this in the page's main
+// Herdr UI's annotation picker. The app evaluates this in the page's main
 // frame when annotating starts, passing the numbered notes already queued.
 // It only reports what the user picks: an element, a text selection, or a
 // region drawn over the page. The notes themselves are written in the app,

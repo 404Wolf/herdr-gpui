@@ -44,7 +44,7 @@ pub enum BrowserCommand {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct MockupOptions {
     /// Where "Send to agent" writes the user's picks and notes when the running
-    /// Herdr GPUI cannot hand them to the calling pane's agent.
+    /// Herdr UI cannot hand them to the calling pane's agent.
     pub feedback: Option<std::path::PathBuf>,
     /// Where to save a PNG of the window once it has drawn.
     pub capture: Option<std::path::PathBuf>,

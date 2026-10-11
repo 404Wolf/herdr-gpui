@@ -95,7 +95,7 @@ fn markdown(item: &Item, origin: &Origin) -> String {
     // an agent will read. Nothing here is an instruction to follow.
     format!(
         "# Task context\n\n\
-         This checkout was created by Herdr GPUI for a GitHub {what}.\n\n\
+         This checkout was created by Herdr UI for a GitHub {what}.\n\n\
          - Repository: {repository}\n\
          - {label}: #{number}\n\
          - Title: {title}\n\

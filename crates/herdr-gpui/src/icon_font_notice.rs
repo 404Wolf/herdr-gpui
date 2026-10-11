@@ -11,11 +11,11 @@ mod tests;
 /// Names the fix without running it: installing fonts is the user's call.
 const TEXT: &str = if cfg!(target_os = "macos") {
     "Prompt icons need a Nerd Font, and none is installed.\n\
-     Install one with Homebrew, then restart Herdr GPUI:"
+     Install one with Homebrew, then restart Herdr UI:"
 } else {
     "Prompt icons need a Nerd Font, and none is installed.\n\
      Install Symbols Nerd Font Mono from nerdfonts.com,\n\
-     then restart Herdr GPUI."
+     then restart Herdr UI."
 };
 
 /// The command that installs one, where a single command does. The card

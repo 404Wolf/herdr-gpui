@@ -1,4 +1,4 @@
-// Page behaviour for the Herdr GPUI site. Runs at the end of <body>, before
+// Page behaviour for the Herdr UI site. Runs at the end of <body>, before
 // kit.js mounts the [data-hm-app] renderings on DOMContentLoaded.
 (function () {
   // `?draft` shows placeholders for the film and screenshots that have not been
@@ -170,7 +170,7 @@ copy notes across by hand.</span>`, g: 'terminal' },
       <div><div class="eyebrow">${r.k}</div><h3>${r.t}</h3><p>${r.p}</p><span class="verdict ${r.v[0]}">${r.v[0] === 'only' ? '◐' : '●●'} ${r.v[1]}</span></div>
       <div><div class="side-lbl"><span>herdr TUI</span><span>${r.tl}</span></div>
         ${r.tui ? `<div class="mini-tui"><pre>${r.tui}</pre></div>` : `<div class="mini-tui empty"><b>—</b><div>${r.tl}.<br>The daemon keeps running the agents either way.</div></div>`}</div>
-      <div><div class="side-lbl"><span>Herdr GPUI</span><span>${r.v[0] === 'both' ? 'Same data' : 'Built in'}</span></div>
+      <div><div class="side-lbl"><span>Herdr UI</span><span>${r.v[0] === 'both' ? 'Same data' : 'Built in'}</span></div>
         <div class="mini-gpui" aria-hidden="true"><div class="scaler" data-fit-width="780" data-fit-max="0.5"><div data-hm-app="${r.g}" data-no-sidebar></div></div></div></div>
     </div>`).join('');
 
