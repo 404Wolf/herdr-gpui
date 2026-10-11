@@ -17,7 +17,9 @@ use gpui::{prelude::*, *};
 const AVATAR: f32 = 20.;
 
 const SIDEBAR_TOGGLE_SIZE: f32 = 28.;
-const SIDEBAR_TOGGLE_MARGIN: f32 = 4.;
+const SIDEBAR_GLYPH_WIDTH: f32 = 18.;
+/// Empty room between the toggle's edge and the glyph drawn inside it.
+const SIDEBAR_TOGGLE_INSET: f32 = (SIDEBAR_TOGGLE_SIZE - SIDEBAR_GLYPH_WIDTH) / 2.;
 
 /// Native chrome the window draws above its body; popups must clear it.
 pub(super) const HEIGHT: f32 = 34.;
@@ -251,7 +253,6 @@ impl HerdrWindow {
             .debug_selector(|| "toggle-sidebar".into())
             .flex_none()
             .self_center()
-            .mr(px(SIDEBAR_TOGGLE_MARGIN))
             .size(px(SIDEBAR_TOGGLE_SIZE))
             .flex()
             .items_center()
@@ -424,7 +425,7 @@ pub(super) fn options(title: &str) -> TitlebarOptions {
 /// A window with its sidebar panel, filled while the sidebar is expanded.
 pub(crate) fn sidebar_glyph(expanded: bool, theme: &crate::config::Theme) -> Div {
     div()
-        .w(px(18.))
+        .w(px(SIDEBAR_GLYPH_WIDTH))
         .h(px(14.))
         .flex_none()
         .border_1()
@@ -672,8 +673,10 @@ mod native_chrome_tests {
                     window.refresh();
                     let _ = window.draw(cx);
                 });
-                // The draggable center starts where Back and Forward end.
-                let leading = cx.debug_bounds("titlebar-navigation").unwrap().right();
+                // The draggable center starts after Back and Forward and
+                // the room they keep.
+                let leading = cx.debug_bounds("titlebar-navigation").unwrap().right()
+                    + px(super::navigation::NAVIGATION_MARGIN);
                 assert_eq!(
                     cx.debug_bounds("titlebar-center").unwrap(),
                     Bounds::new(
