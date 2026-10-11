@@ -37,7 +37,7 @@ crossbeam-channel    = "0.5"
 ed25519-dalek        = { default-features = false, features = ["std"], version = "2.2" }
 flate2               = "1"
 # Locates installed font files on Linux, as GPUI's own text system does.
-fontdb               = "0.23"
+fontdb               = "0.24"
 foreign-types        = "0.5"
 futures-lite         = "2"
 getrandom            = "0.3.4"
