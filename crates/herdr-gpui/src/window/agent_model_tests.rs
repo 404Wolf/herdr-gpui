@@ -4,12 +4,12 @@
 #![allow(clippy::unwrap_used)]
 
 use super::{
-    HerdrWindow,
+    HerdrWindow, MockPeer,
     status_bar::{has_model_picker, model_label},
 };
 use crate::sidebar::layout_tests::{fixture_window, full_draw};
-use gpui::TestAppContext;
-use herdr_client::protocol::ClientShellAgent;
+use gpui::{Modifiers, TestAppContext, VisualTestContext};
+use herdr_client::protocol::{ClientMessage, ClientPaneInputEvent, ClientShellAgent};
 use std::sync::Arc;
 
 fn agent(kind: &str, tokens: &[(&str, &str)]) -> ClientShellAgent {
@@ -57,7 +57,7 @@ fn set_first_agent(
     view: &gpui::Entity<HerdrWindow>,
     focused: bool,
     tokens: &[(&str, &str)],
-    cx: &mut gpui::VisualTestContext,
+    cx: &mut VisualTestContext,
 ) {
     let tokens: Vec<(String, String)> = tokens
         .iter()
@@ -73,7 +73,7 @@ fn set_first_agent(
     });
 }
 
-fn model_segment_drawn(cx: &mut gpui::VisualTestContext) -> bool {
+fn model_segment_drawn(cx: &mut VisualTestContext) -> bool {
     cx.update(|window, cx| full_draw(window, cx).clear(cx));
     cx.debug_bounds("agent-model").is_some()
 }
@@ -91,4 +91,65 @@ fn the_bar_shows_the_focused_agents_model_only(cx: &mut TestAppContext) {
 
     set_first_agent(&view, true, &[], cx);
     assert!(!model_segment_drawn(cx));
+}
+
+fn set_first_agent_kind(view: &gpui::Entity<HerdrWindow>, kind: &str, cx: &mut VisualTestContext) {
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
+            snapshot.agents[0].agent = Some(kind.into());
+            cx.notify();
+        });
+    });
+}
+
+fn click_model(cx: &mut VisualTestContext) {
+    cx.update(|window, cx| full_draw(window, cx).clear(cx));
+    let segment = cx.debug_bounds("agent-model").unwrap();
+    cx.simulate_click(segment.center(), Modifiers::default());
+}
+
+/// The next input typed into a pane, skipping the resize and focus traffic
+/// a drawn window sends on its own.
+fn next_pane_input(peer: &mut MockPeer) -> ClientMessage {
+    loop {
+        let message = peer.receive();
+        if matches!(message, ClientMessage::ClientShellPaneInput { .. }) {
+            return message;
+        }
+    }
+}
+
+fn typed(events: Vec<ClientPaneInputEvent>) -> ClientMessage {
+    ClientMessage::ClientShellPaneInput {
+        pane_id: "w1:p1".into(),
+        events,
+    }
+}
+
+#[gpui::test]
+fn a_click_types_model_into_claude_only(cx: &mut TestAppContext) {
+    let mut peer = MockPeer::new();
+    let (view, cx) = cx.add_window_view(fixture_window);
+    cx.update(|_, cx| view.update(cx, |view, cx| peer.prepare(view, cx)));
+    set_first_agent(&view, true, &[("model", "Opus 5.5")], cx);
+
+    click_model(cx);
+    assert_eq!(
+        next_pane_input(&mut peer),
+        typed(vec![
+            ClientPaneInputEvent::TextCommit("/model".into()),
+            crate::menu::enter_key(),
+        ])
+    );
+
+    // Another agent's click sends nothing: the next input is one sent after it.
+    set_first_agent_kind(&view, "codex", cx);
+    click_model(cx);
+    let sentinel = ClientPaneInputEvent::TextCommit("sentinel".into());
+    peer.client
+        .handle
+        .send_input("boot-v1", "w1:p1", [sentinel.clone()])
+        .unwrap();
+    assert_eq!(next_pane_input(&mut peer), typed(vec![sentinel]));
 }

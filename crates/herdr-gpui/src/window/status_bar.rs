@@ -10,6 +10,10 @@ use std::time::Duration;
 /// this size to look as large as the 12px ring of the report-issue button.
 const STATUS_GLYPH: f32 = 16.;
 
+/// The widest the focused agent's model gets, so a long name cannot crowd out
+/// the usage after it.
+const MODEL_WIDTH: f32 = 160.;
+
 impl HerdrWindow {
     pub(super) fn render_status_bar(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let status = (!matches!(self.live.status, ConnectionStatus::Connected)
@@ -162,7 +166,8 @@ impl HerdrWindow {
             .id("agent-model")
             .debug_selector(|| "agent-model".into())
             .flex_none()
-            .whitespace_nowrap()
+            .max_w(px(MODEL_WIDTH))
+            .truncate()
             .px(px(6.))
             .rounded(px(crate::config::corners::CONTROL))
             .text_color(rgb(self.theme.muted))
@@ -203,16 +208,7 @@ impl HerdrWindow {
             .handle
             .as_ref()
             .ok_or(crate::Error::NotConnected)
-            .and_then(|handle| {
-                Ok(handle.send_input(
-                    &boot,
-                    &pane,
-                    [
-                        herdr_client::protocol::ClientPaneInputEvent::TextCommit("/model".into()),
-                        crate::menu::enter_key(),
-                    ],
-                )?)
-            });
+            .and_then(|handle| Ok(handle.send_input(&boot, &pane, model_picker_input())?));
         if let Err(error) = typed {
             tracing::warn!(%error, "Could not open the agent's model picker");
             return;
@@ -370,6 +366,16 @@ pub(super) fn model_label(agent: &herdr_client::protocol::ClientShellAgent) -> O
 /// is known; in another agent the text could be sent as a prompt.
 pub(super) fn has_model_picker(agent: &herdr_client::protocol::ClientShellAgent) -> bool {
     agent.agent.as_deref() == Some("claude")
+}
+
+/// `/model` and Enter, which open Claude's full picker. The text goes after
+/// an unsent prompt, if there is one. Alt+P keeps that prompt, but its picker
+/// hides the effort control in a pane of fewer than about 40 rows.
+fn model_picker_input() -> [herdr_client::protocol::ClientPaneInputEvent; 2] {
+    [
+        herdr_client::protocol::ClientPaneInputEvent::TextCommit("/model".into()),
+        crate::menu::enter_key(),
+    ]
 }
 
 fn glyph(path: &'static str, color: u32) -> Svg {
