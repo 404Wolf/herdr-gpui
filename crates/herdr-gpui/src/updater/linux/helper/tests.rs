@@ -70,5 +70,23 @@ fn helper_requests_authenticate_and_reject_stale_or_tampered_packages() -> anyho
 #[test]
 fn malformed_helper_arguments_fail_before_gui_startup() {
     assert_eq!(run_helper(&[FLAG.into()]), Some(ExitCode::FAILURE));
+    assert_eq!(run_helper(&[ROOT_FLAG.into()]), Some(ExitCode::FAILURE));
     assert_eq!(run_helper(&[]), None);
+}
+
+#[test]
+fn elevation_runs_only_the_fixed_installed_verifier() {
+    let stage = Path::new("/tmp/user stage; not a command");
+    let command = authorization_command(stage);
+    assert_eq!(command.get_program(), "/usr/bin/pkexec");
+    let args: Vec<_> = command.get_args().collect();
+    assert_eq!(
+        args,
+        [
+            std::ffi::OsStr::new(SYSTEM_EXECUTABLE),
+            ROOT_FLAG.as_ref(),
+            stage.as_os_str()
+        ]
+    );
+    assert_eq!(command.get_current_dir(), Some(Path::new("/")));
 }

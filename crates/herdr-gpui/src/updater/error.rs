@@ -148,6 +148,12 @@ pub enum UpdateError {
         "Package installation was not authorized. Retry and approve the system authentication prompt"
     )]
     PackageAuthorization,
+    #[error("The package helper must be authorized through PolicyKit for a non-root user")]
+    PackageElevation,
+    #[error(
+        "Package updates require a trusted root-owned /usr/bin/herdr-gpui and root-owned installer storage"
+    )]
+    UnsafePackageHelper,
     #[error("The package manager finished, but the installed version does not match the update")]
     PackageVersion,
     #[error("Invalid signed metadata size")]

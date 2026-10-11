@@ -422,23 +422,47 @@ pub(super) fn check(
     format: Format,
     cancel: &AtomicBool,
 ) -> Result<Option<Offer>> {
-    cancelled(cancel)?;
-    let current = parse_version(current_version).ok_or(Error::CurrentVersion)?;
-    VerifyingKey::from_bytes(&hex32(key_hex)?).map_err(Error::PublicKey)?;
     let Some(target) = target() else {
         return Ok(None);
     };
+    check_with(
+        current_version,
+        key_hex,
+        channel,
+        format,
+        target,
+        cancel,
+        |url, limit| {
+            read_bounded(
+                request(url, RequestProfile::Metadata, cancel)?
+                    .into_body()
+                    .into_reader(),
+                limit,
+                cancel,
+            )
+        },
+    )
+}
+
+/// Inject only transport, so offline fixtures exercise the complete production
+/// selection/authentication path rather than a second implementation of it.
+fn check_with(
+    current_version: &str,
+    key_hex: &str,
+    channel: UpdateChannel,
+    format: Format,
+    target: &str,
+    cancel: &AtomicBool,
+    mut fetch: impl FnMut(&str, usize) -> Result<Vec<u8>>,
+) -> Result<Option<Offer>> {
+    cancelled(cancel)?;
+    let current = parse_version(current_version).ok_or(Error::CurrentVersion)?;
+    VerifyingKey::from_bytes(&hex32(key_hex)?).map_err(Error::PublicKey)?;
     let (url, limit) = match channel {
         UpdateChannel::Stable => (LATEST_URL, METADATA_LIMIT),
         UpdateChannel::Beta => (RELEASES_URL, RELEASE_LIST_LIMIT),
     };
-    let metadata = read_bounded(
-        request(url, RequestProfile::Metadata, cancel)?
-            .into_body()
-            .into_reader(),
-        limit,
-        cancel,
-    )?;
+    let metadata = fetch(url, limit)?;
     let release = match channel {
         UpdateChannel::Stable => parse_release(&metadata)?,
         UpdateChannel::Beta => parse_releases(&metadata)?,
@@ -461,21 +485,11 @@ pub(super) fn check(
             return Err(Error::SignedMetadataSize);
         }
     }
-    let fetch = |name, limit| {
-        read_bounded(
-            request(
-                &release_url(&release.version, name),
-                RequestProfile::Metadata,
-                cancel,
-            )?
-            .into_body()
-            .into_reader(),
-            limit,
-            cancel,
-        )
-    };
-    let manifest_bytes = fetch(manifest_name, MANIFEST_LIMIT)?;
-    let signature = fetch(signature_name, 64)?;
+    let manifest_bytes = fetch(
+        &release_url(&release.version, manifest_name),
+        MANIFEST_LIMIT,
+    )?;
+    let signature = fetch(&release_url(&release.version, signature_name), 64)?;
     let manifest = verify_manifest(&manifest_bytes, &signature, key_hex, &release.version)?;
     let name = format.name(&release.version, target)?;
     let asset = manifest
@@ -505,7 +519,7 @@ pub(super) fn check(
 // `updater::unsupported`). These stay compiled and tested everywhere because
 // they are portable; they are simply unreachable where the updater is disabled.
 #[cfg_attr(not(unix), allow(dead_code))]
-fn copy_archive(
+pub(super) fn copy_archive(
     mut reader: impl Read,
     mut writer: impl Write,
     asset: &Asset,

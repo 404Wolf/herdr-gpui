@@ -56,22 +56,25 @@ fn ownership_selects_the_installed_format_not_available_tools() -> Result<()> {
 #[test]
 fn package_commands_pass_a_literal_absolute_path_and_fixed_manager() {
     let path = Path::new("/tmp/private dir/Herdr-20261010.1-x86_64-unknown-linux-gnu.deb");
-    for (format, expected) in [
+    for (format, program, expected) in [
         (
             Format::Deb,
-            vec!["/usr/bin/apt-get", "install", "--yes", "--no-remove", "--"],
+            "/usr/bin/apt-get",
+            vec!["install", "--yes", "--no-remove", "--"],
         ),
         (
             Format::Rpm,
-            vec!["/usr/bin/dnf", "install", "--assumeyes", "--"],
+            "/usr/bin/dnf",
+            vec!["install", "--assumeyes", "--"],
         ),
         (
             Format::Arch,
-            vec!["/usr/bin/pacman", "-U", "--noconfirm", "--"],
+            "/usr/bin/pacman",
+            vec!["-U", "--noconfirm", "--"],
         ),
     ] {
         let command = install_command(format, path);
-        assert_eq!(command.get_program(), "/usr/bin/pkexec");
+        assert_eq!(command.get_program(), program);
         let args: Vec<_> = command.get_args().collect();
         assert_eq!(&args[..args.len() - 1], expected);
         assert_eq!(args.last().copied(), Some(path.as_os_str()));

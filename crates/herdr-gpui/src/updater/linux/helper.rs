@@ -1,16 +1,34 @@
-//! Own the package transaction outside the GUI's lifetime. This helper is never
-//! elevated; only pkexec's fixed package-manager command obtains privileges.
+//! Own the package transaction outside the GUI's lifetime. The non-elevated
+//! owner drains progress; pkexec invokes the fixed installed executable to
+//! authenticate and install a root-owned copy after authorization.
 use super::*;
 use std::{
-    ffi::OsString,
-    fs::OpenOptions,
-    io::Write,
-    os::unix::fs::{MetadataExt, OpenOptionsExt},
-    process::ExitCode,
+    ffi::OsString, fs::OpenOptions, io::Write, os::unix::fs::OpenOptionsExt, process::ExitCode,
 };
 
 pub(super) const FLAG: &str = "--herdr-install-package";
+const ROOT_FLAG: &str = "--herdr-install-package-root";
 const LIMIT: u64 = 128 * 1024;
+
+mod privileged;
+
+pub(super) fn elevated_command(stage: &Path) -> Result<Command> {
+    privileged::trusted_executable()?;
+    Ok(authorization_command(stage))
+}
+
+fn authorization_command(stage: &Path) -> Command {
+    let mut command = Command::new("/usr/bin/pkexec");
+    command
+        .args([SYSTEM_EXECUTABLE, ROOT_FLAG])
+        .arg(stage)
+        .env_clear()
+        .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
+        .env("LC_ALL", "C")
+        .current_dir("/")
+        .stdin(Stdio::null());
+    command
+}
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -46,31 +64,30 @@ pub(super) fn write_request(prepared: &Prepared) -> Result<()> {
 
 fn request(stage: &Path, key: &str, current: &str) -> Result<(Request, release::Manifest)> {
     let uid = install::effective_uid()?;
-    let meta = fs::symlink_metadata(stage)?;
-    if uid == 0
-        || !meta.is_dir()
-        || meta.uid() != uid
-        || meta.mode() & 0o7777 != 0o700
-        || fs::canonicalize(stage)? != stage
-    {
-        return Err(Error::StagePermissions);
+    if uid == 0 {
+        return Err(Error::RootUser);
     }
-    let path = stage.join("request.json");
-    let meta = fs::symlink_metadata(&path)?;
-    if !meta.is_file() || meta.uid() != uid || meta.nlink() != 1 || meta.mode() & 0o7777 != 0o600 {
-        return Err(Error::StagePermissions);
-    }
+    let stage = privileged::open_stage(stage, uid)?;
+    decode_request(
+        privileged::regular_file(&stage, "request.json", uid)?,
+        key,
+        current,
+    )
+}
+
+fn decode_request(
+    reader: impl Read,
+    key: &str,
+    current: &str,
+) -> Result<(Request, release::Manifest)> {
     let mut bytes = Vec::new();
-    fs::File::open(path)?
-        .take(LIMIT + 1)
-        .read_to_end(&mut bytes)?;
+    reader.take(LIMIT + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > LIMIT {
         return Err(Error::RequestLimit);
     }
     let request: Request = serde_json::from_slice(&bytes)?;
     if request.format == Format::Archive
-        || !request.executable.starts_with("/usr")
-        || request.executable.starts_with("/usr/local")
+        || request.executable != Path::new(SYSTEM_EXECUTABLE)
         || release::parse_version(current).is_none()
         || release::parse_version(&request.version) <= release::parse_version(current)
     {
@@ -127,13 +144,22 @@ fn apply_request(stage: &Path, key: &str) -> Result<()> {
 mod tests;
 
 pub(in crate::updater) fn run_helper(args: &[OsString]) -> Option<ExitCode> {
-    if args.first().is_none_or(|arg| arg != FLAG) {
+    if args
+        .first()
+        .is_none_or(|arg| arg != FLAG && arg != ROOT_FLAG)
+    {
         return None;
     }
     let result = match args {
-        [_, stage] => option_env!("HERDR_UPDATE_PUBLIC_KEY")
+        [flag, stage] => option_env!("HERDR_UPDATE_PUBLIC_KEY")
             .ok_or(Error::LocalBuild)
-            .and_then(|key| apply_request(Path::new(stage), key)),
+            .and_then(|key| {
+                if flag == ROOT_FLAG {
+                    privileged::apply_request(Path::new(stage), key)
+                } else {
+                    apply_request(Path::new(stage), key)
+                }
+            }),
         _ => Err(Error::MalformedRequest),
     };
     Some(match result {

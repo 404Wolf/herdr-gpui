@@ -355,17 +355,23 @@ Unknown or ambiguous ownership is reported with manual-install guidance.
 
 **Download** stages and verifies the matching package in a private temporary
 directory. **Install Update** rechecks ownership, signature, size, and SHA-256,
-then uses `/usr/bin/pkexec` to run APT (`apt-get install --yes --no-remove`), DNF
-(`dnf install --assumeyes`), or pacman (`pacman -U --noconfirm`) on that exact file.
+then uses `/usr/bin/pkexec` to invoke the fixed, root-owned
+`/usr/bin/herdr-gpui --herdr-install-package-root` entry point. After authorization,
+that helper independently authenticates the request's signed manifest, opens the
+user's staging directory and regular files without following symlinks, and copies
+the package into a private root-owned directory under `/var/cache`. The copied
+bytes must match the signed length and SHA-256 before APT (`apt-get install --yes
+--no-remove`), DNF (`dnf install --assumeyes`), or pacman (`pacman -U --noconfirm`)
+is invoked on the protected copy. Replacing the user's download while the password
+prompt is open cannot change which bytes the elevated package manager installs.
 The desktop must have a PolicyKit authentication agent; the app never collects
 passwords. Package managers resolve dependencies and update their installation
 records, desktop files, icons, and license notices along with the executable.
 
 The panel shows bounded package-manager output. Once started, installation cannot
-be cancelled or killed by closing the GUI: a non-elevated helper owns the package
-and drains the installer's output until it exits, even after the GUI closes.
-The helper independently authenticates the staged request and package before
-requesting elevation. A successful transaction must report
+be cancelled or killed by closing the GUI: a non-elevated helper retains the user
+staging and drains progress from the privileged helper until it exits, even after
+the GUI closes. Root staging is removed after the transaction. A successful transaction must report
 the expected installed package version before **Restart** is offered. The new
 executable is launched with the original arguments and working directory before
 the current GUI quits. The daemon and terminal sessions are never stopped.

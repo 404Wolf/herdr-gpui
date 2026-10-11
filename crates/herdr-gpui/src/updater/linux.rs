@@ -23,6 +23,8 @@ use tempfile::TempDir;
 mod helper;
 pub(super) use helper::run_helper;
 
+const SYSTEM_EXECUTABLE: &str = "/usr/bin/herdr-gpui";
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Package {
     pub(super) format: Format,
@@ -145,26 +147,33 @@ pub(super) fn prepare(
     })
 }
 
+/// Only the privileged helper calls this, with a protected, verified copy.
 fn install_command(format: Format, path: &Path) -> Command {
-    let mut command = Command::new("/usr/bin/pkexec");
-    match format {
+    let mut command = match format {
         Format::Deb => {
-            command.args(["/usr/bin/apt-get", "install", "--yes", "--no-remove", "--"]);
+            let mut command = Command::new("/usr/bin/apt-get");
+            command.args(["install", "--yes", "--no-remove", "--"]);
+            command
         }
         Format::Rpm => {
-            command.args(["/usr/bin/dnf", "install", "--assumeyes", "--"]);
+            let mut command = Command::new("/usr/bin/dnf");
+            command.args(["install", "--assumeyes", "--"]);
+            command
         }
         Format::Arch => {
-            command.args(["/usr/bin/pacman", "-U", "--noconfirm", "--"]);
+            let mut command = Command::new("/usr/bin/pacman");
+            command.args(["-U", "--noconfirm", "--"]);
+            command
         }
         Format::Archive => unreachable!(),
-    }
+    };
     command
         .arg(path)
         .env_clear()
         .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
         .env("LC_ALL", "C")
         .env("DEBIAN_FRONTEND", "noninteractive")
+        .current_dir("/")
         .stdin(Stdio::null());
     command
 }
@@ -325,7 +334,7 @@ fn apply(
         return Err(Error::MissingPolicyKit);
     }
     progress("Approve the system authentication prompt to install the package...".into());
-    transact(install_command(package.format, &path), &mut progress)?;
+    transact(helper::elevated_command(stage)?, &mut progress)?;
     // Ignore cancellation after the transaction starts, including GUI teardown.
     let uncancelled = AtomicBool::new(false);
     let version = installed_version(package.format, &uncancelled)?;

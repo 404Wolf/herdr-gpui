@@ -161,6 +161,7 @@ a Vulkan driver for your GPU must also be present. **App Updates** detects which
 package manager owns the installed executable, downloads the matching `.deb`,
 `.rpm`, or Arch package, verifies its signed release metadata and checksum, then
 installs it through APT, DNF, or pacman with a PolicyKit authentication prompt.
+The authorized helper verifies and installs a protected root-owned copy.
 Choose **Restart** after installation; daemon and terminal sessions stay running.
 This requires `pkexec` and your desktop's PolicyKit authentication agent. Older
 builds that report “Package-managed installations cannot self-update” need one
