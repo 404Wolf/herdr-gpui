@@ -1,0 +1,417 @@
+//! The Boat tab of Settings > Cloud Devices. Account fields save to `[boat]`;
+//! its API key saves to the credential store. API reads and removals stay off
+//! the UI thread, and creation jobs belong to the main window.
+
+use super::{
+    super::{Section, SettingsWindow},
+    follow_config, input,
+};
+use crate::{
+    boat::{
+        Settings,
+        setup::{self, AddRequest, Key, Overview},
+    },
+    cloud::{
+        CloudProvider, SavedDevice,
+        worker::{self, Worker},
+    },
+    config::{BoatFields, Config},
+    github::Store,
+    search_input::SearchInput,
+};
+use gpui::{prelude::*, *};
+use secrecy::SecretString;
+
+const FIELDS: [(&str, &str); 4] = [
+    ("API URL", crate::boat::DEFAULT_API_URL),
+    (
+        "Organization",
+        "Optional; the active personal or organization wallet if empty",
+    ),
+    ("Machine type", "Optional: small, default, large, or xlarge"),
+    (
+        "Environment",
+        "Optional; the account's default environment if empty",
+    ),
+];
+
+enum Update {
+    Overview(crate::boat::Result<Overview>),
+    Done(crate::boat::Result<()>),
+}
+
+enum Account {
+    Checking,
+    Known(Overview),
+}
+
+pub(in crate::settings_window) struct BoatCard {
+    fields: [Entity<SearchInput>; 4],
+    loaded: BoatFields,
+    key: Entity<SearchInput>,
+    account: Account,
+    install: bool,
+    message: Option<String>,
+    job: Option<Worker>,
+}
+
+impl BoatCard {
+    fn new(
+        config: &Config,
+        theme: &crate::config::Theme,
+        cx: &mut Context<SettingsWindow>,
+    ) -> Self {
+        let loaded = loaded(config);
+        let texts = texts(&loaded);
+        let fields =
+            std::array::from_fn(|index| input(FIELDS[index].1, texts[index], config, theme, cx));
+        let key = input("boat_…", "", config, theme, cx);
+        key.update(cx, |input, cx| input.set_masked(true, cx));
+        Self {
+            fields,
+            loaded,
+            key,
+            account: Account::Checking,
+            install: true,
+            message: None,
+            job: None,
+        }
+    }
+
+    fn values(&self, cx: &App) -> BoatFields {
+        let text = |index: usize| self.fields[index].read(cx).text().trim().to_owned();
+        BoatFields {
+            api_url: text(0),
+            organization: text(1),
+            machine_type: text(2),
+            environment: text(3),
+        }
+    }
+
+    fn devices(&self) -> &[SavedDevice] {
+        match &self.account {
+            Account::Known(overview) => &overview.devices,
+            Account::Checking => &[],
+        }
+    }
+}
+
+fn loaded(config: &Config) -> BoatFields {
+    let mut values = BoatFields::from_config(&config.boat);
+    if values.api_url.is_empty() {
+        values.api_url = crate::boat::DEFAULT_API_URL.into();
+    }
+    values
+}
+
+fn texts(values: &BoatFields) -> [&str; 4] {
+    [
+        &values.api_url,
+        &values.organization,
+        &values.machine_type,
+        &values.environment,
+    ]
+}
+
+impl SettingsWindow {
+    pub(super) fn open_boat_card(&mut self, cx: &mut Context<Self>) {
+        if self.boat_card.is_none() {
+            self.boat_card = Some(BoatCard::new(&self.config, &self.theme, cx));
+        }
+        self.refresh_boat(cx);
+    }
+
+    fn boat_settings(&self) -> Option<Settings> {
+        self.config.boat.settings().ok().flatten()
+    }
+
+    fn boat_job(
+        &mut self,
+        cx: &mut Context<Self>,
+        work: impl FnOnce(&dyn Fn() -> bool, &dyn Fn(Update)) + Send + 'static,
+    ) {
+        let Some(card) = &mut self.boat_card else {
+            return;
+        };
+        card.job = None;
+        match worker::spawn(
+            "herdr-boat-settings",
+            cx,
+            work,
+            |this: &mut Self, update, cx| this.apply_boat(update, cx),
+        ) {
+            Ok(job) => {
+                if let Some(card) = &mut self.boat_card {
+                    card.job = Some(job);
+                }
+            }
+            Err(error) => {
+                tracing::error!(category = "boat_worker", error_kind = ?error.kind(), "Could not start Boat settings worker");
+                if let Some(card) = &mut self.boat_card {
+                    card.message = Some(crate::cloud::Error::Worker("settings").to_string());
+                }
+            }
+        }
+    }
+
+    fn refresh_boat(&mut self, cx: &mut Context<Self>) {
+        let Some(settings) = self.boat_settings() else {
+            if let Some(card) = &mut self.boat_card {
+                card.job = None;
+                card.account = Account::Known(Overview {
+                    key: Key::Missing,
+                    sandboxes: None,
+                    devices: Vec::new(),
+                });
+            }
+            return;
+        };
+        if let Some(card) = &mut self.boat_card {
+            card.account = Account::Checking;
+        }
+        self.boat_job(cx, move |_, send| {
+            send(Update::Overview(setup::overview(&settings)));
+        });
+    }
+
+    fn apply_boat(&mut self, update: Update, cx: &mut Context<Self>) {
+        let Some(card) = &mut self.boat_card else {
+            return;
+        };
+        match update {
+            Update::Overview(Ok(overview)) => card.account = Account::Known(overview),
+            Update::Overview(Err(error)) => {
+                card.account = Account::Known(Overview {
+                    key: Key::Missing,
+                    sandboxes: None,
+                    devices: Vec::new(),
+                });
+                card.message = Some(error.to_string());
+            }
+            Update::Done(result) => {
+                card.message = result.err().map(|error| error.to_string());
+                self.refresh_boat(cx);
+            }
+        }
+    }
+
+    fn save_boat(&mut self, cx: &mut Context<Self>) {
+        let Some(card) = &mut self.boat_card else {
+            return;
+        };
+        let values = card.values(cx);
+        let existing = self.config.boat.clone();
+        let key = card.key.read(cx).text().trim().to_owned();
+        let key = (!key.is_empty()).then(|| SecretString::from(key));
+        let store = Store::for_policy(existing.allow_plaintext_credentials);
+        card.key.update(cx, SearchInput::clear);
+        card.message = None;
+        self.save_native(
+            move || {
+                Config::save_boat(&values, &existing)?;
+                if let Some(key) = &key {
+                    setup::save_key(store, Some(key))?;
+                }
+                Ok(())
+            },
+            cx,
+        );
+    }
+
+    fn forget_boat_key(&mut self, cx: &mut Context<Self>) {
+        let store = Store::for_policy(self.config.boat.allow_plaintext_credentials);
+        self.boat_job(cx, move |_, send| {
+            send(Update::Done(setup::save_key(store, None)));
+        });
+    }
+
+    fn forget_boat_device(&mut self, id: String, cx: &mut Context<Self>) {
+        self.boat_job(cx, move |_, send| {
+            send(Update::Done(setup::forget_device(&id)));
+        });
+    }
+
+    fn create_boat_sandbox(&mut self, cx: &mut Context<Self>) {
+        let Some(settings) = self.boat_settings() else {
+            return;
+        };
+        let Some(card) = &mut self.boat_card else {
+            return;
+        };
+        let name = setup::random_name();
+        let request = AddRequest {
+            settings,
+            name: name.clone(),
+            install: card.install,
+        };
+        let started = self.source.update(cx, |window, cx| {
+            window.start_cloud_job(
+                CloudProvider::Boat,
+                name.clone(),
+                move |cancelled, report| setup::add_device(request, cancelled, report),
+                cx,
+            )
+        });
+        if let Some(card) = &mut self.boat_card {
+            card.message = Some(match started {
+                Ok(Ok(())) => {
+                    format!("Creating {name}. The device picker shows its progress.")
+                }
+                Ok(Err(error)) => error.to_string(),
+                Err(_) => "Open a main Herdr window to create a sandbox.".into(),
+            });
+        }
+        cx.notify();
+    }
+
+    pub(super) fn boat_config_changed(&mut self, cx: &mut Context<Self>) {
+        if let Some(card) = &mut self.boat_card {
+            let loaded = loaded(&self.config);
+            follow_config(&card.fields, texts(&card.loaded), texts(&loaded), cx);
+            card.loaded = loaded;
+        }
+        if self.boat_card.is_some() && self.section == Section::CloudDevices {
+            self.refresh_boat(cx);
+        }
+    }
+
+    pub(super) fn render_boat_card(&self, cx: &mut Context<Self>) -> Div {
+        let Some(card) = &self.boat_card else {
+            return div();
+        };
+        let ready = !self.busy();
+        let configured = self.boat_settings().is_some();
+        let (status, key) = match &card.account {
+            _ if !configured => (
+                "Not configured. Check the API URL, add an API key, then save.".to_owned(),
+                Key::Missing,
+            ),
+            Account::Checking => ("Checking…".to_owned(), Key::Missing),
+            Account::Known(overview) => (
+                match (&overview.key, &overview.sandboxes) {
+                    (Key::Missing, _) => "No API key saved.".to_owned(),
+                    (_, Some(Ok(count))) => format!(
+                        "Connected. The key sees {count} sandbox{}.",
+                        if *count == 1 { "" } else { "es" }
+                    ),
+                    (_, Some(Err(error))) => format!("The API key could not be used: {error}"),
+                    (_, None) => "Checking…".to_owned(),
+                },
+                overview.key,
+            ),
+        };
+        let usable = matches!(&card.account, Account::Known(overview)
+            if matches!(overview.sandboxes, Some(Ok(_))));
+        let key_note = match key {
+            Key::Environment => "Set by HERDR_BOAT_API_KEY, which takes precedence.",
+            Key::Saved => "Saved. Type a new key to replace it.",
+            Key::Missing => "Not saved yet. Create one in the Boat dashboard under API Keys.",
+        };
+        let mut account = self
+            .control_card("Boat")
+            .debug_selector(|| "cloud-boat-card".into())
+            .child(self.control_note(
+                "Create Boat sandboxes and use them as devices. Herdr authorizes a GUI-owned SSH key and pins each machine's host key from Boat's authenticated API.",
+            ))
+            .child(div().min_w_0().child(status));
+        for (index, (label, _)) in FIELDS.iter().enumerate() {
+            account = account.child(self.cloud_field(label, card.fields[index].clone().into()));
+            if index == 0 {
+                account = account
+                    .child(self.cloud_field("API key", card.key.clone().into()))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .justify_between()
+                            .gap(px(12.))
+                            .child(self.control_note(key_note))
+                            .when(key == Key::Saved, |row| {
+                                row.child(
+                                    self.cloud_button("cloud-boat-forget-key", "Forget key", ready)
+                                        .when(ready, |button| {
+                                            button.on_click(cx.listener(|this, _, _, cx| {
+                                                this.forget_boat_key(cx)
+                                            }))
+                                        }),
+                                )
+                            }),
+                    );
+            }
+        }
+        account = account.child(
+            div().flex().justify_end().child(
+                self.cloud_button("cloud-boat-save", "Save", ready)
+                    .debug_selector(|| "cloud-boat-save".into())
+                    .when(ready, |button| {
+                        button.on_click(cx.listener(|this, _, _, cx| this.save_boat(cx)))
+                    }),
+            ),
+        );
+        let create = ready && usable && crate::cloud::unavailable().is_none();
+        let mut sandboxes = self
+            .control_card("New sandbox")
+            .debug_selector(|| "cloud-boat-new".into())
+            .child(self.control_note(
+                "Creates a sandbox with a generated name and adds it as a device once it is ready.",
+            ))
+            .child(
+                self.control_switch(
+                    "cloud-boat-install",
+                    "Install Herdr in it when missing",
+                    card.install,
+                    ready,
+                )
+                .when(ready, |row| {
+                    row.on_click(cx.listener(|this, _, _, cx| {
+                        if let Some(card) = &mut this.boat_card {
+                            card.install = !card.install;
+                        }
+                        cx.notify();
+                    }))
+                }),
+            )
+            .child(
+                div().flex().justify_end().child(
+                    self.cloud_button("cloud-boat-create", "Create sandbox", create)
+                        .debug_selector(|| "cloud-boat-create".into())
+                        .when(create, |button| {
+                            button.on_click(
+                                cx.listener(|this, _, _, cx| this.create_boat_sandbox(cx)),
+                            )
+                        }),
+                ),
+            );
+        if let Some(message) = &card.message {
+            sandboxes = sandboxes.child(div().min_w_0().child(message.clone()));
+        }
+        let mut devices = self
+            .control_card("Boat devices")
+            .debug_selector(|| "cloud-boat-devices".into());
+        if card.devices().is_empty() {
+            devices = devices.child(self.control_note("None yet."));
+        }
+        for (index, device) in card.devices().iter().enumerate() {
+            devices = devices.child(self.cloud_device_row(
+                index,
+                device,
+                format!("{} · {}", device.machine, device.session),
+                ready,
+                Self::forget_boat_device,
+                cx,
+            ));
+        }
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(24.))
+            .min_w_0()
+            .child(account)
+            .child(sandboxes)
+            .child(devices)
+    }
+}
+
+#[cfg(test)]
+mod tests;

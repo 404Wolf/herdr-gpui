@@ -9,6 +9,7 @@ use crate::{
 };
 pub(crate) mod backdrop;
 mod bitmap_fonts;
+mod boat;
 mod coder;
 mod daytona;
 mod edit;
@@ -22,13 +23,16 @@ pub(crate) mod preferences;
 pub(crate) mod sidebar;
 mod sidebar_style;
 pub(crate) mod status_bar;
-#[cfg(any(feature = "coder", feature = "daytona"))]
+#[cfg(any(feature = "boat", feature = "coder", feature = "daytona"))]
 mod table;
 mod theme;
 mod updates;
 pub(crate) mod watch;
 
 pub use backdrop::Backdrop;
+pub use boat::BoatConfig;
+#[cfg(feature = "boat")]
+pub(crate) use boat::BoatFields;
 pub use coder::CoderConfig;
 #[cfg(feature = "coder")]
 pub(crate) use coder::CoderFields;
@@ -129,6 +133,7 @@ pub struct Config {
     pub terminal: FontConfig,
     pub ui: FontConfig,
     pub github: GitHubConfig,
+    pub boat: BoatConfig,
     pub coder: CoderConfig,
     pub daytona: DaytonaConfig,
     pub features: Features,
@@ -433,6 +438,7 @@ impl Default for Config {
         Self {
             theme: "Default".into(),
             github: GitHubConfig::default(),
+            boat: BoatConfig::default(),
             coder: CoderConfig::default(),
             daytona: DaytonaConfig::default(),
             confirm_close_tab: true,
@@ -514,6 +520,7 @@ struct Settings {
     terminal: FontSettings,
     ui: FontSettings,
     github: GitHubConfig,
+    boat: BoatConfig,
     coder: CoderConfig,
     daytona: DaytonaConfig,
     features: Features,
@@ -824,6 +831,9 @@ impl Config {
         };
         settings.github.client_id_with_override(None)?;
         config.github = settings.github;
+        #[cfg(feature = "boat")]
+        settings.boat.settings_with(|_| None)?;
+        config.boat = settings.boat;
         // Check what the file says so a bad value is reported at load; the
         // environment may still fill or override keys when Coder is used.
         #[cfg(feature = "coder")]

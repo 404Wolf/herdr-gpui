@@ -1,0 +1,100 @@
+//! The validated `[boat]` table. Parsed once at the boundary so every later
+//! request works with a known-good API root and create options.
+
+use super::{Error, Result};
+use crate::{config::BoatConfig, github::Store};
+use std::ffi::OsString;
+use url::Url;
+
+/// The API root of Boat's cloud, offered when Settings is empty.
+pub(crate) const DEFAULT_API_URL: &str = "https://boat.dev/api/v1";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Settings {
+    pub(crate) base: String,
+    pub(crate) organization: Option<String>,
+    pub(crate) machine_type: Option<String>,
+    pub(crate) environment: Option<String>,
+    pub(crate) store: Store,
+}
+
+impl Settings {
+    pub(crate) fn resolve(
+        config: &BoatConfig,
+        var: impl Fn(&str) -> Option<OsString>,
+    ) -> Result<Option<Self>> {
+        let url = match var("HERDR_BOAT_API_URL") {
+            Some(value) => Some(
+                value
+                    .into_string()
+                    .map_err(|_| Error::Encoding("HERDR_BOAT_API_URL"))?,
+            ),
+            None => config.api_url.clone(),
+        };
+        let Some(url) = url else {
+            return Ok(None);
+        };
+        let plain = |value: &Option<String>, field| match value {
+            Some(text) if !plain_value(text) => Err(Error::Field(field)),
+            _ => Ok(value.clone()),
+        };
+        if config
+            .machine_type
+            .as_deref()
+            .is_some_and(|kind| !matches!(kind, "small" | "default" | "large" | "xlarge"))
+        {
+            return Err(Error::Field("boat.machine_type"));
+        }
+        Ok(Some(Self {
+            base: api_root(&url)?,
+            organization: plain(&config.organization, "boat.organization")?,
+            machine_type: config.machine_type.clone(),
+            environment: plain(&config.environment, "boat.environment")?,
+            store: Store::for_policy(config.allow_plaintext_credentials),
+        }))
+    }
+
+    /// Stable account identity saved with devices. Organization changes must
+    /// not silently move a device to a different billing wallet.
+    pub(crate) fn account(&self) -> String {
+        match &self.organization {
+            Some(organization) => format!("{}#{organization}", self.base),
+            None => self.base.clone(),
+        }
+    }
+}
+
+fn plain_value(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && value.trim() == value
+        && !value.contains('#')
+        && value
+            .bytes()
+            .all(|byte| byte == b' ' || byte.is_ascii_graphic())
+}
+
+fn loopback(url: &Url) -> bool {
+    match url.host() {
+        Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        None => false,
+    }
+}
+
+fn api_root(text: &str) -> Result<String> {
+    let url = Url::parse(text.trim()).map_err(|_| Error::Url("boat.api_url"))?;
+    let plain = url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && url.host().is_some();
+    if !plain || !(url.scheme() == "https" || (url.scheme() == "http" && loopback(&url))) {
+        return Err(Error::Url("boat.api_url"));
+    }
+    Ok(url.as_str().trim_end_matches('/').to_owned())
+}
+
+#[cfg(test)]
+mod tests;

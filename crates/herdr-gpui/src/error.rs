@@ -360,6 +360,9 @@ pub enum Error {
     #[cfg(feature = "coder")]
     #[error(transparent)]
     Coder(#[from] crate::coder::Error),
+    #[cfg(feature = "boat")]
+    #[error(transparent)]
+    Boat(#[from] crate::boat::Error),
     #[cfg(feature = "daytona")]
     #[error(transparent)]
     Daytona(#[from] crate::daytona::Error),
