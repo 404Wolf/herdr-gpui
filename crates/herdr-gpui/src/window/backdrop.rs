@@ -60,22 +60,10 @@ impl HerdrWindow {
         }
         let appearance = backdrop::appearance(config, state.picture.covers());
         if appearance != state.appearance {
-            let blurred = appearance == WindowBackgroundAppearance::Blurred;
-            // GPUI's blur does nothing on recent macOS; the window server
-            // blurs instead, behind a plainly transparent window.
             #[cfg(target_os = "macos")]
-            let platform = if blurred {
-                WindowBackgroundAppearance::Transparent
-            } else {
-                appearance
-            };
+            macos_blur::apply(window, state.appearance, appearance);
             #[cfg(not(target_os = "macos"))]
-            let platform = appearance;
-            window.set_background_appearance(platform);
-            #[cfg(target_os = "macos")]
-            if blurred || state.appearance == WindowBackgroundAppearance::Blurred {
-                macos_blur::set(window, blurred);
-            }
+            window.set_background_appearance(appearance);
             state.appearance = appearance;
         }
     }

@@ -13,7 +13,7 @@
 //! so both need `unsafe`.
 #![allow(unsafe_code)]
 
-use gpui::Window;
+use gpui::{Window, WindowBackgroundAppearance};
 use std::ffi::c_int;
 use wry::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
@@ -29,8 +29,26 @@ unsafe extern "C" {
     fn CGSSetWindowBackgroundBlurRadius(connection: c_int, window: isize, radius: c_int) -> c_int;
 }
 
+/// Moves `window` from the appearance `was` to `appearance`, blurring
+/// through the window server rather than GPUI.
+pub(super) fn apply(
+    window: &mut Window,
+    was: WindowBackgroundAppearance,
+    appearance: WindowBackgroundAppearance,
+) {
+    let blurred = appearance == WindowBackgroundAppearance::Blurred;
+    window.set_background_appearance(if blurred {
+        WindowBackgroundAppearance::Transparent
+    } else {
+        appearance
+    });
+    if blurred || was == WindowBackgroundAppearance::Blurred {
+        set(window, blurred);
+    }
+}
+
 /// Blurs the desktop behind `window`, or stops blurring it.
-pub(super) fn set(window: &Window, blur: bool) {
+fn set(window: &Window, blur: bool) {
     let Some(number) = window_number(window) else {
         tracing::warn!("Could not find the native window to blur behind");
         return;
