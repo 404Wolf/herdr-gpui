@@ -85,24 +85,12 @@ fn a_host_with_any_trusted_key_is_found_in_user_or_global_files() {
     let root = tempfile::tempdir().unwrap();
     let user = root.path().join("known_hosts");
     let global = root.path().join("global");
-    std::fs::write(
-        &user,
-        "other ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJx\n",
-    )
-    .unwrap();
-    std::fs::write(
-        &global,
-        "box ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJx\n",
-    )
-    .unwrap();
-    let known = |name: &str, global: Vec<PathBuf>| KnownHosts {
-        user: vec![user.clone(), root.path().join("missing")],
-        global,
-        name: name.into(),
-    };
-    assert!(known("box", vec![global.clone()]).lists_host().unwrap());
-    assert!(!known("box", Vec::new()).lists_host().unwrap());
-    assert!(!known("[box]:2222", vec![global]).lists_host().unwrap());
+    std::fs::write(&user, BOX_KEY.replacen("box", "other", 1)).unwrap();
+    std::fs::write(&global, BOX_KEY).unwrap();
+    let missing = root.path().join("missing");
+    assert!(lists_host("box", [&user, &missing, &global]).unwrap());
+    assert!(!lists_host("box", [&user, &missing]).unwrap());
+    assert!(!lists_host("[box]:2222", [&user, &global]).unwrap());
 }
 
 #[test]
@@ -152,8 +140,41 @@ fn key(known_hosts: PathBuf) -> NewHostKey {
     NewHostKey {
         fingerprints: Vec::new(),
         entries: "box ssh-ed25519 AAAA\n".into(),
+        checked: vec![known_hosts.clone()],
         known_hosts,
+        name: "box".into(),
     }
+}
+
+const BOX_KEY: &str =
+    "box ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJx\n";
+
+#[test]
+fn a_key_trusted_meanwhile_is_never_replaced() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("known_hosts");
+    std::fs::write(&path, BOX_KEY).unwrap();
+    assert!(matches!(
+        trust_host_key(&key(path.clone())),
+        Err(Error::SshRefused(SshFailure::HostKey))
+    ));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), BOX_KEY);
+}
+
+#[test]
+fn an_unreadable_known_hosts_file_fails_the_check() {
+    let root = tempfile::tempdir().unwrap();
+    // A directory stands in for a file that cannot be checked.
+    let directory = root.path().join("known_hosts");
+    std::fs::create_dir(&directory).unwrap();
+    assert!(matches!(
+        lists_host("box", [&directory]),
+        Err(Error::Storage {
+            operation: StorageOperation::Metadata,
+            ..
+        })
+    ));
+    assert!(!lists_host("box", [&root.path().join("missing")]).unwrap());
 }
 
 #[test]
@@ -189,7 +210,12 @@ fn a_failed_append_names_the_operation() {
     // A directory where the file should be cannot be opened for appending.
     let path = root.path().join("known_hosts");
     std::fs::create_dir(&path).unwrap();
-    let error = trust_host_key(&key(path.clone())).unwrap_err();
+    // Checked elsewhere, so the append itself is what fails.
+    let key = NewHostKey {
+        checked: Vec::new(),
+        ..key(path.clone())
+    };
+    let error = trust_host_key(&key).unwrap_err();
     assert!(matches!(
         &error,
         Error::Storage { operation: StorageOperation::Open, path: failed, .. } if failed == &path

@@ -45,6 +45,10 @@ pub struct NewHostKey {
     pub fingerprints: Vec<HostKeyFingerprint>,
     entries: String,
     known_hosts: PathBuf,
+    /// The name the host's keys are stored under, and every known hosts file
+    /// checked for it, checked again right before the entries are saved.
+    name: String,
+    checked: Vec<PathBuf>,
 }
 
 /// One key as `ssh-keygen -l` describes it, for the user to compare.
@@ -98,7 +102,7 @@ pub fn scan_host_key(target: &str) -> Result<HostKeyScan> {
         // `accept-new` treats a host with a known key of another type as
         // changed in current OpenSSH; older releases may record the new type.
         // Either way, a host that already has a trusted key is never offered.
-        if known.lists_host()? {
+        if lists_host(&known.name, known.files())? {
             tracing::warn!(category = "host_key", "host offered a key of another type");
             return Ok(HostKeyScan::Refused(SshFailure::HostKey));
         }
@@ -112,6 +116,8 @@ pub fn scan_host_key(target: &str) -> Result<HostKeyScan> {
             fingerprints,
             entries: valid_entries(&entries)?,
             known_hosts: files[0].clone(),
+            name: known.name.clone(),
+            checked: known.files().cloned().collect(),
         }));
     }
     Ok(match status.code() {
@@ -179,24 +185,39 @@ struct KnownHosts {
 
 #[cfg(unix)]
 impl KnownHosts {
-    /// Whether any user or global file already lists a key for the host.
-    /// `ssh-keygen -F` also matches hashed entries.
-    fn lists_host(&self) -> Result<bool> {
-        for file in self.user.iter().chain(&self.global) {
-            if !file.is_file() {
-                continue;
-            }
-            let mut command = crate::environment::command("ssh-keygen");
-            command.args(["-F", &self.name, "-f"]).arg(file);
-            let (status, _) = super::run(&mut command, Duration::from_secs(5), || false)?;
-            match status.code() {
-                Some(0) => return Ok(true),
-                Some(1) => {}
-                _ => return Err(Error::RemoteCommand(status)),
-            }
-        }
-        Ok(false)
+    fn files(&self) -> impl Iterator<Item = &PathBuf> {
+        self.user.iter().chain(&self.global)
     }
+}
+
+/// Whether any of `files` already lists a key under `name`; `ssh-keygen -F`
+/// also matches hashed entries. Only a missing file is skipped: one that
+/// cannot be read fails the check rather than passing it.
+#[cfg(unix)]
+fn lists_host<'a>(name: &str, files: impl IntoIterator<Item = &'a PathBuf>) -> Result<bool> {
+    for file in files {
+        match std::fs::metadata(file) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(Error::storage(StorageOperation::Metadata, file, error)),
+            Ok(metadata) if !metadata.is_file() => {
+                return Err(Error::storage(
+                    StorageOperation::Metadata,
+                    file,
+                    Error::StorageDestinationNotFile,
+                ));
+            }
+            Ok(_) => {}
+        }
+        let mut command = crate::environment::command("ssh-keygen");
+        command.args(["-F", name, "-f"]).arg(file);
+        let (status, _) = super::run(&mut command, Duration::from_secs(5), || false)?;
+        match status.code() {
+            Some(0) => return Ok(true),
+            Some(1) => {}
+            _ => return Err(Error::RemoteCommand(status)),
+        }
+    }
+    Ok(false)
 }
 
 #[cfg(unix)]
@@ -320,6 +341,15 @@ fn valid_entries(entries: &str) -> Result<String> {
 #[cfg(unix)]
 pub fn trust_host_key(key: &NewHostKey) -> Result<()> {
     use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    // The files may have changed since the key was shown: a key trusted for
+    // the host meanwhile makes this one a replacement, which is never saved.
+    if lists_host(&key.name, &key.checked)? {
+        tracing::warn!(
+            category = "host_key",
+            "host gained a trusted key before approval"
+        );
+        return Err(Error::SshRefused(SshFailure::HostKey));
+    }
     let path = key.known_hosts.as_path();
     if let Some(parent) = path.parent() {
         std::fs::DirBuilder::new()
