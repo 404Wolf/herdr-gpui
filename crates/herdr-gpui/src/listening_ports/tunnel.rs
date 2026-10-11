@@ -30,9 +30,10 @@ pub(crate) struct Key {
     pub port: u16,
 }
 
-/// The SSH child of a tunnel that is still opening, shared so quitting or
-/// closing the port can kill it at once while the background task alone
-/// waits for it. Neither side holds the lock across a blocking call.
+/// The SSH child of a tunnel, shared so quitting or closing the port can kill
+/// it at once while the background task alone waits for it, and while its
+/// finished [`Tunnel`] is still on its way to the UI thread. Neither side
+/// holds the lock across a blocking call.
 #[derive(Clone, Default)]
 pub(crate) struct Attempt(Arc<Mutex<Slot>>);
 
@@ -58,15 +59,12 @@ impl Attempt {
         }
     }
 
-    fn try_wait(&self) -> std::io::Result<Option<ExitStatus>> {
+    /// The child's exit, if it has one yet; never blocks.
+    pub(super) fn try_wait(&self) -> std::io::Result<Option<ExitStatus>> {
         match self.slot().child.as_mut() {
             Some(child) => child.try_wait(),
             None => Ok(None),
         }
-    }
-
-    fn take(&self) -> Option<Child> {
-        self.slot().child.take()
     }
 
     /// Kills the child without waiting for it; the task that owns the
@@ -85,16 +83,26 @@ fn kill(slot: &mut Slot) {
     }
 }
 
-/// A running `ssh -N -L` child and the local port it forwards.
+/// A running `ssh -N -L` child and the local port it forwards. The child
+/// stays in its [`Attempt`], so cancelling that attempt still kills it.
 pub(crate) struct Tunnel {
-    child: Option<Child>,
+    attempt: Attempt,
     local: u16,
 }
 
 impl Tunnel {
+    pub(super) fn new(attempt: &Attempt, local: u16) -> Self {
+        Self {
+            attempt: attempt.clone(),
+            local,
+        }
+    }
+
     /// Whether the child is still forwarding. Never blocks.
-    fn alive(&mut self) -> bool {
-        self.child
+    fn alive(&self) -> bool {
+        self.attempt
+            .slot()
+            .child
             .as_mut()
             .is_some_and(|child| matches!(child.try_wait(), Ok(None)))
     }
@@ -104,7 +112,7 @@ impl Drop for Tunnel {
     /// Kills the child and reaps it on a thread of its own, so closing a
     /// tunnel never waits on the UI thread.
     fn drop(&mut self) {
-        let Some(mut child) = self.child.take() else {
+        let Some(mut child) = self.attempt.slot().child.take() else {
             return;
         };
         let _ = child.kill();
@@ -152,10 +160,7 @@ fn start(key: &Key, preferred: Option<u16>, attempt: &Attempt) -> Result<Tunnel>
         None => Err(Error::TunnelStart(std::io::Error::other("no stdout pipe"))),
     };
     // From here on, dropping the tunnel kills the child, on failure too.
-    let tunnel = Tunnel {
-        child: attempt.take(),
-        local,
-    };
+    let tunnel = Tunnel::new(attempt, local);
     result.map(|()| tunnel)
 }
 
@@ -236,7 +241,7 @@ pub(crate) struct Tunnels {
 impl Tunnels {
     /// The local port of a live tunnel to `key`; a dead one is dropped.
     pub(crate) fn local(&mut self, key: &Key) -> Option<u16> {
-        let tunnel = self.open.get_mut(key)?;
+        let tunnel = self.open.get(key)?;
         if tunnel.alive() {
             return Some(tunnel.local);
         }
@@ -344,9 +349,8 @@ impl Drop for Tunnels {
 impl Tunnel {
     /// A tunnel around any child, standing in for `ssh` in tests.
     pub(crate) fn around(child: Child, local: u16) -> Self {
-        Self {
-            child: Some(child),
-            local,
-        }
+        let attempt = Attempt::default();
+        attempt.adopt(child);
+        Self::new(&attempt, local)
     }
 }

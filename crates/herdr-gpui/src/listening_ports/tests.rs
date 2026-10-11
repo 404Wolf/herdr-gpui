@@ -534,16 +534,11 @@ fn closing_all_kills_a_tunnel_that_is_still_connecting() {
     assert!(tunnels.begin(&key).is_some());
     // The background task's child, owned by the attempt while connecting.
     let attempt = tunnels.attempt(&key).unwrap();
-    let child = idle_child();
-    let pid = child.id();
-    attempt.adopt(child);
+    attempt.adopt(idle_child());
 
     tunnels.close_all();
 
-    assert!(
-        gone_after_kill(pid),
-        "the connecting child outlived close_all"
-    );
+    assert!(killed(&attempt), "the connecting child outlived close_all");
     assert!(
         !tunnels.fail(&key),
         "nobody waits for the cancelled attempt"
@@ -561,9 +556,7 @@ fn closing_a_connecting_port_by_hand_or_when_it_unlists_kills_its_child() {
         let mut tunnels = tunnel::Tunnels::default();
         assert!(tunnels.begin(&key).is_some());
         let attempt = tunnels.attempt(&key).unwrap();
-        let child = idle_child();
-        let pid = child.id();
-        attempt.adopt(child);
+        attempt.adopt(idle_child());
 
         if by_hand {
             assert!(tunnels.close(&key));
@@ -571,7 +564,7 @@ fn closing_a_connecting_port_by_hand_or_when_it_unlists_kills_its_child() {
             assert!(!tunnels.retain(|_| false), "no open tunnel went away");
         }
 
-        assert!(gone_after_kill(pid), "by_hand={by_hand}");
+        assert!(killed(&attempt), "by_hand={by_hand}");
     }
 }
 
@@ -580,10 +573,31 @@ fn closing_a_connecting_port_by_hand_or_when_it_unlists_kills_its_child() {
 fn an_attempt_cancelled_before_its_child_exists_kills_it_on_arrival() {
     let attempt = tunnel::Attempt::default();
     attempt.cancel();
-    let child = idle_child();
-    let pid = child.id();
-    attempt.adopt(child);
-    assert!(gone_after_kill(pid));
+    attempt.adopt(idle_child());
+    assert!(killed(&attempt));
+}
+
+#[cfg(unix)]
+#[test]
+fn quitting_kills_a_finished_tunnel_still_on_its_way_to_the_window() {
+    let key = Key {
+        target: "devbox".into(),
+        port: 3004,
+    };
+    let mut tunnels = tunnel::Tunnels::default();
+    assert!(tunnels.begin(&key).is_some());
+    let attempt = tunnels.attempt(&key).unwrap();
+    attempt.adopt(idle_child());
+    // SSH reported ready; the result has not reached `finish` yet.
+    let in_flight = tunnel::Tunnel::new(&attempt, 41011);
+
+    tunnels.close_all();
+
+    assert!(
+        killed(&attempt),
+        "the finished tunnel's child outlived quit"
+    );
+    assert_eq!(tunnels.finish(key, in_flight), None);
 }
 
 #[cfg(unix)]
@@ -603,20 +617,17 @@ fn retain_reports_when_a_dead_tunnel_is_pruned() {
     assert!(!tunnels.retain(|_| true), "nothing more changed");
 }
 
-/// Whether the child `attempt` held has died. The attempt only kills it;
-/// reaping is its owner's job, so it lingers as a zombie here until the
-/// test process reaps it, which `kill -0` still sees as alive.
+/// Whether the child `attempt` holds was killed, waiting a bounded while.
+/// The attempt only kills it; reaping is its owner's job, so this reaps it
+/// here, which works on every Unix rather than reading `/proc`.
 #[cfg(unix)]
-fn gone_after_kill(pid: u32) -> bool {
+fn killed(attempt: &tunnel::Attempt) -> bool {
+    use std::os::unix::process::ExitStatusExt;
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     while std::time::Instant::now() < deadline {
-        let state = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
-        // "pid (comm) S ..." : Z is a zombie, empty means fully gone.
-        let dead = state
-            .rsplit_once(") ")
-            .is_none_or(|(_, rest)| rest.starts_with('Z'));
-        if dead {
-            return true;
+        if let Some(status) = attempt.try_wait().unwrap() {
+            // `Child::kill` sends SIGKILL on every Unix.
+            return status.signal() == Some(9);
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
