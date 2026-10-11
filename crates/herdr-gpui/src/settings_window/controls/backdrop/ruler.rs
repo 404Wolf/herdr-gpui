@@ -26,6 +26,18 @@ pub(in crate::settings_window) struct Ruler {
     track: Rc<Cell<Bounds<Pixels>>>,
     /// The opacity under the pointer while the button is down, not yet saved.
     held: Option<f32>,
+    /// The opacity being written, shown until the write finishes. It is kept
+    /// apart from the config, so a failed write leaves the saved value shown
+    /// and a click on the same value tries again.
+    saving: Option<f32>,
+}
+
+impl Ruler {
+    /// Forgets the value being written once no write runs, whether it
+    /// succeeded or not; the reloaded config shows what was saved.
+    pub(in crate::settings_window) fn settle(&mut self) {
+        self.saving = None;
+    }
 }
 
 /// Where `opacity` sits along the ruler, from 0 to 1.
@@ -63,9 +75,9 @@ impl SettingsWindow {
         if self.busy() || opacity == self.config.backdrop.opacity {
             return;
         }
-        // Shown at once rather than after the reload, which confirms it.
-        self.config.backdrop.opacity = opacity;
         self.save_backdrop(vec![Edit::Opacity(opacity)], cx);
+        // Shown at once rather than after the reload, which confirms it.
+        self.controls.ruler.saving = self.saving.then_some(opacity);
     }
 
     pub(in crate::settings_window) fn backdrop_ruler(&self, cx: &mut Context<Self>) -> Div {
@@ -76,10 +88,10 @@ impl SettingsWindow {
             .fold(0, |color, channel| {
                 (color << 8) | (channel * 255.).round() as u32
             });
-        let opacity = self
-            .controls
-            .ruler
+        let ruler = &self.controls.ruler;
+        let opacity = ruler
             .held
+            .or(ruler.saving.filter(|_| self.saving))
             .unwrap_or(self.config.backdrop.opacity);
         let along = fraction(opacity);
         let percent = (opacity * 100.).round() as i32;
@@ -217,5 +229,9 @@ impl SettingsWindow {
 impl Controls {
     pub(in crate::settings_window) fn ruler_held(&self) -> Option<f32> {
         self.ruler.held
+    }
+
+    pub(in crate::settings_window) fn set_ruler_saving(&mut self, saving: Option<f32>) {
+        self.ruler.saving = saving;
     }
 }

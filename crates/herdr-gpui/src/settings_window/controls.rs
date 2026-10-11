@@ -183,6 +183,7 @@ impl SettingsWindow {
         self.refresh_control_appearance(cx);
         if !self.busy() {
             self.controls.saving_sizes.clear();
+            self.controls.ruler.settle();
             self.flush_control_sizes(cx);
             self.flush_code_url(cx);
         }

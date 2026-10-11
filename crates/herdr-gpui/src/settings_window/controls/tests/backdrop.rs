@@ -120,6 +120,45 @@ fn the_ruler_follows_a_drag_and_writes_nothing_until_release(cx: &mut TestAppCon
 }
 
 #[gpui::test]
+fn a_write_shows_its_value_only_while_it_runs(cx: &mut TestAppContext) {
+    let (view, cx) = cx.add_window_view(skill_fixture);
+    cx.simulate_resize(size(px(960.), px(3200.)));
+    view.update(cx, |view, cx| {
+        view.section = Section::Appearance;
+        view.config.backdrop = backdrop(0.85, None);
+        view.saving = true;
+        view.controls.set_ruler_saving(Some(0.1));
+        cx.notify();
+    });
+    let draw = |cx: &mut VisualTestContext| {
+        cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
+    };
+    draw(cx);
+    let track = cx.debug_bounds("settings-backdrop-ruler").unwrap();
+    let knob_x = |cx: &mut VisualTestContext| {
+        cx.debug_bounds("settings-backdrop-knob")
+            .unwrap()
+            .center()
+            .x
+    };
+    // While the write runs, the knob shows the value being written.
+    assert!((knob_x(cx) - track.left()).abs() < px(1.));
+    // Once it ends, failed or not, the config's value shows again: the
+    // config was never changed ahead of the write.
+    view.update(cx, |view, cx| {
+        view.saving = false;
+        cx.notify();
+    });
+    draw(cx);
+    let saved = track.left() + track.size.width * (75. / 90.);
+    assert!((knob_x(cx) - saved).abs() < px(1.));
+    assert_eq!(
+        view.read_with(cx, |view, _| view.config.backdrop.opacity),
+        0.85
+    );
+}
+
+#[gpui::test]
 fn each_mode_shows_three_tiles_and_only_its_own_controls(cx: &mut TestAppContext) {
     let (view, cx) = cx.add_window_view(skill_fixture);
     cx.simulate_resize(size(px(960.), px(3200.)));
