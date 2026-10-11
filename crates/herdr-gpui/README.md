@@ -1120,9 +1120,10 @@ maximize/restore, and the shadow.
 ## Terminal Selection And Copy
 
 Mouse-aware applications receive clicks, button releases, drags, and pointer
-motion. Hold Shift to select/copy locally instead. In applications without mouse
-reporting, selection works without Shift. A forwarded drag stays in the pane or
-popup where it started, including when the pointer moves outside it.
+motion. Hold Shift to select locally instead; releasing a selection of terminal
+text in a pane also offers the annotation pill described below. In applications
+without mouse reporting, selection works without Shift. A forwarded drag stays
+in the pane or popup where it started, including when the pointer moves outside it.
 
 Right-click opens the GUI pane menu unless Herdr routes that pane's right-clicks
 to the application (`herdr pane input --right-click pane`, or **Send
@@ -1138,6 +1139,22 @@ Drag across the terminal to select cells; releasing the button copies them and
 shows the `copied to clipboard` flash described under
 [Configuration](#configuration). Selection is client-local: it reads the surface
 the client already has, and asks the daemon only for rows scrolled out of view.
+
+To annotate terminal text, hold **Shift** while starting a selection in a pane.
+Releasing the mouse shows a small, borderless **Annotate** pill beside the
+selection. Copying still follows your normal settings, and the terminal keeps
+keyboard focus. Click **Annotate** to open a compact, borderless note field
+beside the selected text. Its **Message to agent…** field accepts comments,
+questions, or requests.
+Press **Enter** to send the note, **Shift+Enter** to queue it and select more text,
+or **Escape** to dismiss the field; the popover also has Send, Queue, and close
+buttons. Typing in the terminal or clicking elsewhere dismisses the pill.
+The whole selection must be visible on screen.
+This also works with copying on selection disabled or the highlight set to clear
+after copying. For an existing selection, use **Annotate Selection for the Agent**
+in the command palette (Cmd+Shift+A on macOS, Ctrl+Alt+Shift+A on Linux).
+Notes go to the agent in that pane, falling back to the first agent in its
+workspace; with no agent, they are copied to the clipboard.
 
 A program that copies with OSC 52 — many editors and agent CLIs do, especially
 when they own the mouse — is honored too: the daemon forwards the bytes to this

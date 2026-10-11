@@ -91,6 +91,7 @@ fn application_mouse_takes_precedence_and_shift_keeps_copy_and_links(cx: &mut Te
         Some(url.into())
     );
     assert!(cx.opened_url().is_none());
+    assert!(!view.read_with(cx, |view, _| view.terminal_notes.composing()));
     cx.simulate_click(at(1.), shift);
     assert_eq!(cx.opened_url().as_deref(), Some(url));
 }
@@ -154,14 +155,16 @@ fn a_menu_page_holds_the_gesture(cx: &mut TestAppContext) {
     let at = |column: f32| origin + point(px(column * cell.0), px(0.5 * cell.1));
 
     cx.update(|_, cx| cx.write_to_clipboard(ClipboardItem::new_string("kept".into())));
-    view.update(cx, |view, cx| {
-        view.menu.page = Some(crate::menu::Page::Menu);
-        view.begin_selection(at(0.), 1, cx);
-        assert!(view.selection.is_none());
-        assert!(!view.extend_selection(at(6.), cx));
-        assert!(!view.release_selection(cx));
-        assert!(view.flash.is_none());
-        view.menu.page = None;
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            view.menu.page = Some(crate::menu::Page::Menu);
+            view.begin_selection(at(0.), 1, true, cx);
+            assert!(view.selection.is_none());
+            assert!(!view.extend_selection(at(6.), cx));
+            assert!(!view.release_selection(cx));
+            assert!(view.flash.is_none());
+            view.menu.page = None;
+        })
     });
     assert_eq!(
         cx.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text())),

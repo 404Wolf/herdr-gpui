@@ -10,7 +10,10 @@ use std::sync::Arc;
 mod delayed_origin;
 mod host_batches;
 mod multi_agent_fallbacks;
+mod offer_safety;
+mod presentation;
 mod queue_safety;
+mod shift_selection;
 
 /// Workspace `w0` with pane `w0:p1`, and an agent in it with
 /// `status` when one is given; otherwise the workspace's agent, if any, is in
@@ -50,8 +53,10 @@ fn window(
 ) -> (Entity<HerdrWindow>, &mut VisualTestContext) {
     let (view, cx) = cx.add_window_view(|window, cx| {
         let mut view = fixture_window(window, cx);
-        let mut frame =
-            crate::window::selection::tests::surface(&["$ cargo test", "failed to connect"], 20);
+        let mut rows = vec![""; 24];
+        rows[0] = "$ cargo test";
+        rows[1] = "failed to connect";
+        let mut frame = crate::window::selection::tests::surface(&rows, 80);
         frame.panes[0].pane_id = "w0:p1".into();
         frame.boot_id = snapshot.boot_id.clone();
         frame.projection_revision = snapshot.revision;
