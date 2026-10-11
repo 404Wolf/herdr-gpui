@@ -9,7 +9,8 @@ use super::{
     model::{Backend, Workspace},
 };
 use crate::teleport::{
-    self, AgentKind, Envelope, FreshOrigin, Host, HostRepositories, WorktreeCreated,
+    self, AgentKind, Envelope, FreshOrigin, Host, HostRepositories, HostSnapshot, SnapshotResult,
+    WorkspaceCreated, WorktreeCreated,
 };
 use chrono::Utc;
 use herdr_client::{ConnectTarget, shell_quote};
@@ -355,10 +356,75 @@ fn destination(
     Ok(Destination {
         host: site.host.clone(),
         target: site.target.clone(),
-        workspace_id: request.workspace_id.clone(),
+        workspace_id: parent_workspace(site, &request.workspace_id, cancelled)?,
         commit,
         prepared: None,
     })
+}
+
+/// The workspace new worktrees of `workspace_id`'s repository are created
+/// from. Herdr creates them only from a repository's parent workspace, so a
+/// view opened in a linked worktree goes through its parent, opening one on
+/// the main checkout when none is.
+fn parent_workspace(site: &Site, workspace_id: &str, cancelled: &AtomicBool) -> Result<String> {
+    const READING: &str = "Reading the workspaces";
+    const OPENING: &str = "Opening the repository";
+    let output = herdr(&site.host, &["api", "snapshot"], READING, cancelled)?;
+    let snapshot = serde_json::from_slice::<Envelope<SnapshotResult>>(&output)
+        .map_err(|source| Error::OutputJson {
+            operation: READING,
+            source,
+        })?
+        .result
+        .snapshot;
+    if let Some(parent) = parent_of(&snapshot, workspace_id) {
+        return Ok(parent.to_owned());
+    }
+    let output = herdr(
+        &site.host,
+        &[
+            "workspace",
+            "create",
+            "--cwd",
+            &site.main_root,
+            "--no-focus",
+        ],
+        OPENING,
+        cancelled,
+    )?;
+    Ok(
+        serde_json::from_slice::<Envelope<WorkspaceCreated>>(&output)
+            .map_err(|source| Error::OutputJson {
+                operation: OPENING,
+                source,
+            })?
+            .result
+            .workspace
+            .workspace_id,
+    )
+}
+
+/// `workspace_id` unless it is a linked worktree, else an open parent
+/// workspace of its repository; `None` when no parent is open. A workspace
+/// the snapshot lacks is passed through for Herdr to report.
+pub(super) fn parent_of<'a>(snapshot: &'a HostSnapshot, workspace_id: &'a str) -> Option<&'a str> {
+    let Some(linked) = snapshot
+        .workspace(workspace_id)
+        .and_then(|workspace| workspace.worktree.as_ref())
+        .filter(|tree| tree.is_linked_worktree)
+    else {
+        return Some(workspace_id);
+    };
+    snapshot
+        .workspaces
+        .iter()
+        .find(|workspace| {
+            workspace
+                .worktree
+                .as_ref()
+                .is_some_and(|tree| tree.repo_key == linked.repo_key && !tree.is_linked_worktree)
+        })
+        .map(|workspace| workspace.workspace_id.as_str())
 }
 
 fn launch(

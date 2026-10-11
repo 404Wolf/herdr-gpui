@@ -31,7 +31,10 @@ pub(crate) use {
     job::{HostRepositories, Place, Retired, Source, open_repositories},
     launch::AgentKind,
     marks::{Mark, Marks},
-    snapshot::{Envelope, ProcessInfo, ProcessInfoResult, WorktreeCreated},
+    snapshot::{
+        Envelope, HostSnapshot, ProcessInfo, ProcessInfoResult, SnapshotResult, WorkspaceCreated,
+        WorktreeCreated,
+    },
     ui::{Follow, Teleport},
 };
 #[cfg(test)]
