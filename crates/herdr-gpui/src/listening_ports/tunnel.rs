@@ -208,14 +208,32 @@ impl Tunnels {
         Some(local)
     }
 
+    /// Whether a live tunnel to `key` is open. Dead ones are dropped on the
+    /// next [`Tunnels::retain`], so this may lag a just-exited child briefly.
+    pub(crate) fn is_open(&self, key: &Key) -> bool {
+        self.open.contains_key(key)
+    }
+
+    /// Closes the tunnel to `key` by the user's choice: its child is killed
+    /// and reaped, and one still opening is forgotten so its result is
+    /// dropped. The remembered local port is kept so reopening prefers it.
+    /// Returns whether there was anything to close.
+    pub(crate) fn close(&mut self, key: &Key) -> bool {
+        let open = self.open.remove(key).is_some();
+        let opening = self.opening.remove(key);
+        open || opening
+    }
+
     pub(crate) fn fail(&mut self, key: &Key) {
         self.opening.remove(key);
     }
 
-    /// Closes every tunnel whose remote port `listening` no longer lists,
-    /// and forgets those still opening, so their result is dropped too.
+    /// Closes every tunnel whose remote port `listening` no longer lists or
+    /// whose child has exited, and forgets those still opening, so their
+    /// result is dropped too.
     pub(crate) fn retain(&mut self, mut listening: impl FnMut(&Key) -> bool) {
-        self.open.retain(|key, _| listening(key));
+        self.open
+            .retain(|key, tunnel| tunnel.alive() && listening(key));
         self.opening.retain(|key| listening(key));
         self.used.retain(|key, _| listening(key));
     }

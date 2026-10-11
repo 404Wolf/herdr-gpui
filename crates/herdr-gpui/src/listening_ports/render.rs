@@ -26,7 +26,14 @@ impl HerdrWindow {
                 .flex_none()
                 .h_full()
                 .px(px(6.))
-                .child(chips(listed, (endpoint, workspace), &self.theme, 14., cx)),
+                .child(chips(
+                    listed,
+                    (endpoint, workspace),
+                    &self.tunnels,
+                    &self.theme,
+                    14.,
+                    cx,
+                )),
         )
     }
 
@@ -70,10 +77,12 @@ impl HerdrWindow {
 }
 
 /// A globe and one clickable number per port. `place` is the endpoint and
-/// workspace whose browser tab a click opens.
+/// workspace whose browser tab a click opens. A port reached through an open
+/// SSH tunnel also gets a small close button that shuts that tunnel.
 pub(crate) fn chips(
     listed: super::Listed<'_>,
     (endpoint, workspace): (&str, &str),
+    tunnels: &super::Tunnels,
     theme: &Theme,
     glyph: f32,
     cx: &mut Context<HerdrWindow>,
@@ -110,15 +119,78 @@ pub(crate) fn chips(
                     .into()
                 });
             let Some(link) = link else {
-                return chip;
+                return div().flex_none().child(chip);
+            };
+            let close = match &link {
+                Link::Tunnel(key) if tunnels.is_open(key) => {
+                    Some(close_button(key, endpoint, workspace, glyph, theme, cx))
+                }
+                _ => None,
             };
             let (endpoint, workspace) = (endpoint.to_owned(), workspace.to_owned());
-            chip.cursor_pointer()
+            let chip = chip
+                .cursor_pointer()
                 .hover(|style| style.text_color(rgb(foreground)).underline())
                 .on_click(cx.listener(move |this, _, window, cx| {
                     cx.stop_propagation();
                     this.open_port_link(&endpoint, &workspace, &link, window, cx);
-                }))
+                }));
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap(px(2.))
+                .child(chip)
+                .children(close)
+        }))
+}
+
+/// The small `x` after a port whose SSH tunnel is open; clicking it closes
+/// the tunnel, which frees its local port.
+fn close_button(
+    key: &Key,
+    endpoint: &str,
+    workspace: &str,
+    glyph: f32,
+    theme: &Theme,
+    cx: &mut Context<HerdrWindow>,
+) -> Stateful<Div> {
+    let (muted, foreground, surface) = (theme.muted, theme.foreground, theme.surface);
+    let id = SharedString::from(format!("port-close-{endpoint}-{workspace}-{}", key.port));
+    let hint = SharedString::from(format!(
+        "Close the SSH tunnel to {}:{}",
+        key.target, key.port
+    ));
+    let key = key.clone();
+    div()
+        .id(id.clone())
+        .debug_selector(|| id.to_string())
+        .flex_none()
+        .cursor_pointer()
+        .child(
+            svg()
+                .path("icons/close.svg")
+                .size(px((glyph * 0.8).round()))
+                .text_color(rgb(muted)),
+        )
+        .hover(|style| style.bg(rgb(surface)))
+        .tooltip(move |_, cx| {
+            cx.new(|_| crate::usage::Hint {
+                text: hint.clone(),
+                foreground,
+                surface,
+            })
+            .into()
+        })
+        .on_click(cx.listener(move |this, _, _, cx| {
+            cx.stop_propagation();
+            if this.tunnels.close(&key) {
+                this.show_flash(
+                    Flash::success(format!("Closed the SSH tunnel to :{}", key.port)),
+                    cx,
+                );
+                cx.notify();
+            }
         }))
 }
 

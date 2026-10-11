@@ -470,6 +470,58 @@ fn tunnels_close_with_their_port_and_never_open_twice() {
 
 #[cfg(unix)]
 #[test]
+fn a_tunnel_can_be_closed_by_hand_and_reopens_on_its_old_port() {
+    let (mine, other) = (
+        Key {
+            target: "devbox".into(),
+            port: 5173,
+        },
+        Key {
+            target: "devbox".into(),
+            port: 5174,
+        },
+    );
+    let mut tunnels = tunnel::Tunnels::default();
+    let (child, kept) = (idle_child(), idle_child());
+    let (pid, kept_pid) = (child.id(), kept.id());
+    assert!(tunnels.begin(&mine).is_some());
+    tunnels.finish(mine.clone(), tunnel::Tunnel::around(child, 41005));
+    assert!(tunnels.begin(&other).is_some());
+    tunnels.finish(other.clone(), tunnel::Tunnel::around(kept, 41006));
+    assert!(tunnels.is_open(&mine));
+
+    assert!(tunnels.close(&mine));
+
+    assert!(!tunnels.is_open(&mine));
+    assert!(gone(pid), "the closed tunnel's child outlived it");
+    assert!(tunnels.is_open(&other), "other tunnels stay open");
+    assert!(!gone(kept_pid));
+    assert!(!tunnels.close(&mine), "nothing left to close");
+    assert_eq!(tunnels.begin(&mine), Some(Some(41005)));
+}
+
+#[cfg(unix)]
+#[test]
+fn closing_a_tunnel_still_opening_drops_its_result() {
+    let key = Key {
+        target: "devbox".into(),
+        port: 8081,
+    };
+    let mut tunnels = tunnel::Tunnels::default();
+    assert!(tunnels.begin(&key).is_some());
+    assert!(tunnels.close(&key));
+    let child = idle_child();
+    let pid = child.id();
+    assert_eq!(
+        tunnels.finish(key.clone(), tunnel::Tunnel::around(child, 41007)),
+        None
+    );
+    assert!(!tunnels.is_open(&key));
+    assert!(gone(pid));
+}
+
+#[cfg(unix)]
+#[test]
 fn closing_all_tunnels_kills_every_child_and_drops_late_results() {
     let (open, opening) = (
         Key {

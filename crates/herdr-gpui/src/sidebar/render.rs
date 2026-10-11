@@ -356,6 +356,7 @@ impl HerdrWindow {
                             .child(crate::listening_ports::chips(
                                 listed,
                                 (&endpoint_id, &workspace.workspace_id),
+                                &self.tunnels,
                                 theme,
                                 (font.size * 0.85).round(),
                                 cx,
