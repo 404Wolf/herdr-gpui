@@ -209,7 +209,7 @@ fn runs_group_by_what_needs_the_user_first() {
 }
 
 #[test]
-fn pull_requests_list_in_every_state_unless_narrowed() {
+fn pull_requests_hide_merged_and_closed_until_asked_for() {
     let mut open = item(Provider::Github, "pr/1", "Open one", "2026-10-04T00:00:00Z");
     let mut merged = item(
         Provider::Github,
@@ -233,7 +233,7 @@ fn pull_requests_list_in_every_state_unless_narrowed() {
     merged.author = Some("someone".into());
     let items = vec![open, merged];
     let runs = Runs::new(&[], &[], &[]);
-    let all = pull_request_rows(
+    let open = pull_request_rows(
         &items,
         &runs,
         "",
@@ -242,20 +242,18 @@ fn pull_requests_list_in_every_state_unless_narrowed() {
         false,
         Sort::Updated,
     );
-    assert_eq!(all.iter().map(|row| row.item).collect::<Vec<_>>(), [1, 0]);
-    let open_only = Filters {
-        open_only: true,
+    assert_eq!(open.iter().map(|row| row.item).collect::<Vec<_>>(), [0]);
+    let every_state = Filters {
+        open_only: false,
         ..Filters::default()
     };
-    assert_eq!(
-        pull_request_rows(&items, &runs, "", open_only, None, false, Sort::Updated).len(),
-        1
-    );
+    let all = pull_request_rows(&items, &runs, "", every_state, None, false, Sort::Updated);
+    assert_eq!(all.iter().map(|row| row.item).collect::<Vec<_>>(), [1, 0]);
     let mine = pull_request_rows(
         &items,
         &runs,
         "",
-        Filters::default(),
+        every_state,
         Some("penso"),
         true,
         Sort::Updated,
