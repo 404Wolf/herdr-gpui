@@ -202,14 +202,15 @@ fn tail(mut stderr: impl Read) -> Vec<u8> {
     }
 }
 
-/// Classify a bridge whose stdout closed before it was ready. Waits on the
-/// connection worker, at most `DIAGNOSE_TIMEOUT`, for the exit and stderr.
+/// Classify a bridge whose stdout closed before it was ready, with its exit
+/// code when it had one. Waits on the connection worker, at most
+/// `DIAGNOSE_TIMEOUT`, for the exit and stderr.
 #[cfg(unix)]
 pub(super) fn diagnose(
     child: &mut Child,
     stderr: &Receiver<Vec<u8>>,
     stop: &AtomicBool,
-) -> SshFailure {
+) -> (Option<i32>, SshFailure) {
     let deadline = Instant::now() + DIAGNOSE_TIMEOUT;
     let code = loop {
         match child.try_wait() {
@@ -217,13 +218,13 @@ pub(super) fn diagnose(
             Ok(None) if Instant::now() < deadline && !stop.load(Ordering::Acquire) => {
                 thread::sleep(Duration::from_millis(10));
             }
-            _ => return SshFailure::Other,
+            _ => return (None, SshFailure::Other),
         }
     };
     let stderr = stderr
         .recv_timeout(deadline.saturating_duration_since(Instant::now()))
         .unwrap_or_default();
-    SshFailure::classify(code, &stderr)
+    (code, SshFailure::classify(code, &stderr))
 }
 
 #[cfg(all(test, unix))]

@@ -1,6 +1,8 @@
 use super::*;
 use anyhow::Context as _;
 
+mod packages;
+
 #[test]
 fn homebrew_work_is_never_cancelled_and_a_relaunch_only_quits() -> Result<()> {
     let mut updater = Updater::default();

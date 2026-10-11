@@ -177,14 +177,15 @@ signing step of `sign` receives it; builds, tests, metadata, OIDC and publicatio
 never do. The public key is validated before builds and matched against the
 private key before signing exact JSON bytes. See [updater setup](../../docs/updating.md).
 
-The exact release base set is seventeen files: the DMG, two manual Linux archives,
+The exact release base set is nineteen files: the DMG, two manual Linux archives,
 their `.deb`, `.rpm` and Arch packages, two Windows zips, SBOM, three updater archives, `update-manifest.json`, and its
-raw 64-byte Ed25519 `update-manifest.sig`. All seventeen receive checksum and Sigstore sidecars and GitHub
+raw 64-byte Ed25519 `update-manifest.sig`, plus `package-manifest.json` and
+`package-manifest.sig` for the six Linux packages. All nineteen receive checksum and Sigstore sidecars and GitHub
 provenance in the separate protected OIDC job. The raw signature is not overwritten:
 its Sigstore sidecar is `update-manifest.sig.sig`; the JSON's is
-`update-manifest.json.sig`. `SHA256SUMS` covers all 85 base/sidecar files; the
-immutable release has exactly 86 assets. Missing or additional files fail closed.
-`artifact-manifest.py base-names VERSION DIRECTORY` lists the seventeen base names.
+`update-manifest.json.sig` (and likewise for the package manifest). `SHA256SUMS` covers all 95 base/sidecar files; the
+immutable release has exactly 96 assets. Missing or additional files fail closed.
+`artifact-manifest.py base-names VERSION DIRECTORY` lists the nineteen base names.
 The publication job verifies downloaded draft bytes and the complete exact asset
 set before making it public; Homebrew still verifies and uses only the final DMG.
 
@@ -354,7 +355,7 @@ for script in scripts/release/*.sh; do bash -n "$script" || exit; done
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/release/tests -v
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/release/test-release-security.py
 OPENSSL="$(brew --prefix openssl@3)/bin/openssl" \
-  python3 -m unittest discover -s scripts -p 'test_update_manifest.py' -v
+  python3 -m unittest discover -s scripts -p 'test_*manifest.py' -v
 actionlint .github/workflows/release.yml
 zizmor --offline .github/workflows/release.yml
 ```

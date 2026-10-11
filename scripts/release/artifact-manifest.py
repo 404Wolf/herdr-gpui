@@ -25,7 +25,8 @@ def base_names(version):
             f"herdr-gpui-{version}-macos-universal.app.tar.gz",
             f"herdr-gpui-{version}-x86_64-unknown-linux-gnu-update.tar.gz",
             f"herdr-gpui-{version}-aarch64-unknown-linux-gnu-update.tar.gz",
-            "update-manifest.json", "update-manifest.sig"]
+            "update-manifest.json", "update-manifest.sig",
+            "package-manifest.json", "package-manifest.sig"]
 
 
 def asset_names(version):
@@ -39,8 +40,9 @@ def check_files(directory, names):
         p.is_symlink() or not p.is_file() or not p.stat().st_size for p in files
     ):
         raise ValueError("Missing, empty, symlink, or unexpected release artifact")
-    if "update-manifest.sig" in names and (directory / "update-manifest.sig").stat().st_size != 64:
-        raise ValueError("Updater signature must be raw 64-byte Ed25519")
+    for signature in ("update-manifest.sig", "package-manifest.sig"):
+        if signature in names and (directory / signature).stat().st_size != 64:
+            raise ValueError("Updater signature must be raw 64-byte Ed25519")
 
 
 def digest(path, algorithm):
