@@ -2,20 +2,21 @@
 use super::*;
 
 fn generated(id: &str) -> Record {
-    Record {
-        id: id.into(),
-        source: Source::Generated,
-        attached: false,
-        window_ends_by: None,
-        claimed: false,
-    }
+    Record::unattached(id, Source::Generated { path: None })
 }
 
 fn borrowed(id: &str, path: &str) -> Record {
-    Record {
-        source: Source::Borrowed { path: path.into() },
-        ..generated(id)
-    }
+    Record::unattached(id, Source::Borrowed { path: path.into() })
+}
+
+/// A key generated at an exact path, as a named key is.
+fn named(id: &str, path: &Path) -> Record {
+    Record::unattached(
+        id,
+        Source::Generated {
+            path: Some(path.display().to_string()),
+        },
+    )
 }
 
 #[test]
@@ -125,7 +126,7 @@ fn only_an_unfinished_generated_key_is_waiting_for_reuse() {
 }
 
 #[test]
-fn forgetting_deletes_a_generated_key_and_never_a_borrowed_one() {
+fn forgetting_deletes_a_key_in_herdrs_folder_and_never_a_borrowed_one() {
     let dir = tempfile::tempdir().unwrap();
     let keys = keys_dir(dir.path());
     fs::create_dir_all(&keys).unwrap();
@@ -138,17 +139,125 @@ fn forgetting_deletes_a_generated_key_and_never_a_borrowed_one() {
     save(dir.path(), generated("key-a").reached(1, None)).unwrap();
     save(dir.path(), borrowed("key-b", theirs.to_str().unwrap())).unwrap();
 
-    forget(dir.path(), "key-a").unwrap();
+    forget(dir.path(), None, "key-a", false).unwrap();
     assert!(!keys.join("key-a").exists() && !keys.join("key-a.pub").exists());
     assert!(keys.join("key-other").exists(), "only its own key goes");
     assert_eq!(load(dir.path(), "key-a").unwrap(), None);
 
-    forget(dir.path(), "key-b").unwrap();
+    // Not even an explicit request deletes a key the user brought.
+    forget(dir.path(), None, "key-b", true).unwrap();
     assert_eq!(fs::read_to_string(&theirs).unwrap(), "theirs");
     assert!(dir.path().join("id_ed25519.pub").exists());
     assert_eq!(load(dir.path(), "key-b").unwrap(), None);
     // Forgetting what is not there is not an error.
-    forget(dir.path(), "key-b").unwrap();
+    forget(dir.path(), None, "key-b", false).unwrap();
+}
+
+#[test]
+fn a_key_generated_in_ssh_stays_unless_deleting_it_was_requested() {
+    let state = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let ssh = home.path().join(".ssh");
+    fs::create_dir_all(&ssh).unwrap();
+    let key = ssh.join("herdr-railway");
+    let public = public_path(&key);
+    let write = || {
+        fs::write(&key, "private").unwrap();
+        fs::write(&public, "public").unwrap();
+    };
+    write();
+    let record = named("key-a", &key).reached(1, None);
+    assert!(record.kept(state.path()) && record.owned());
+    save(state.path(), record.clone()).unwrap();
+
+    forget(state.path(), Some(home.path()), "key-a", false).unwrap();
+    assert!(
+        key.exists() && public.exists(),
+        "removing the device keeps it"
+    );
+    assert_eq!(load(state.path(), "key-a").unwrap(), None);
+
+    save(state.path(), record).unwrap();
+    forget(state.path(), Some(home.path()), "key-a", true).unwrap();
+    assert!(
+        !key.exists() && !public.exists(),
+        "explicit deletion removes the pair"
+    );
+}
+
+#[test]
+fn a_saved_path_can_never_point_a_deletion_at_another_file() {
+    let state = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    fs::create_dir_all(home.path().join(".ssh")).unwrap();
+    let precious = elsewhere.path().join("precious");
+    fs::write(&precious, "data").unwrap();
+    fs::write(public_path(&precious), "data").unwrap();
+    // Outside both key folders, in a folder beside one, and with an odd name.
+    let sneaky = [
+        precious.clone(),
+        home.path().join(".ssh/../precious"),
+        home.path().join(".ssh/sub/key"),
+        home.path().join(".ssh/.hidden"),
+        home.path().join(".ssh/config.pub"),
+        home.path().join("key"),
+    ];
+    for path in sneaky {
+        fs::write(&path, "data").ok();
+        save(state.path(), named("key-x", &path).reached(1, None)).unwrap();
+        forget(state.path(), Some(home.path()), "key-x", true).unwrap();
+        assert!(
+            precious.exists() && public_path(&precious).exists(),
+            "{}",
+            path.display()
+        );
+    }
+    assert!(home.path().join(".ssh/.hidden").exists());
+    assert!(home.path().join("key").exists());
+}
+
+#[test]
+fn records_from_before_named_keys_still_load_and_find_their_key() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join(FILE),
+        r#"{"version":1,"identities":[{"id":"key-old","source":{"kind":"generated"},"attached":true,"window_ends_by":5,"claimed":false}]}"#,
+    )
+    .unwrap();
+    let record = load(dir.path(), "key-old").unwrap().unwrap();
+    assert_eq!(record.source, Source::Generated { path: None });
+    assert_eq!(record.fingerprint, None);
+    assert_eq!(
+        record.key_path(dir.path()),
+        keys_dir(dir.path()).join("key-old")
+    );
+    assert!(
+        !record.kept(dir.path()),
+        "a legacy key is in Herdr's folder"
+    );
+}
+
+#[test]
+fn a_named_key_saves_its_exact_path_and_fingerprint() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut record = named("key-n", Path::new("/home/u/.ssh/my.key"));
+    record.fingerprint = Some("SHA256:abcdef".into());
+    save(dir.path(), record.clone()).unwrap();
+    let loaded = load(dir.path(), "key-n").unwrap().unwrap();
+    assert_eq!(loaded, record);
+    assert_eq!(
+        loaded.key_path(dir.path()),
+        Path::new("/home/u/.ssh/my.key")
+    );
+    // A relative or control-laden saved path is refused on read.
+    for path in ["relative/key", "/k\u{7}ey"] {
+        let mut bad = named("key-bad", Path::new(path));
+        bad.source = Source::Generated {
+            path: Some(path.into()),
+        };
+        assert!(save(dir.path(), bad).is_err(), "{path}");
+    }
 }
 
 #[test]

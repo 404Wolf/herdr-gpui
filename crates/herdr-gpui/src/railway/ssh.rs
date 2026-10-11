@@ -88,12 +88,33 @@ impl Config {
 
     /// A fresh `ssh` command reading this config; append the remote command.
     pub(crate) fn command(&self) -> Command {
-        let mut command = Command::new("ssh");
+        let mut command = base();
         command
             .arg("-F")
             .arg(self.file.path())
             .args(["-T", "--", ALIAS]);
         command
+    }
+}
+
+/// The command every `ssh` run starts from. Tests on one thread may stand in
+/// a script that checks what `ssh` would be handed, such as a config file that
+/// must still exist when the process starts.
+fn base() -> Command {
+    #[cfg(test)]
+    if let Some(command) = stand_in::base() {
+        return command;
+    }
+    Command::new("ssh")
+}
+
+/// A stand-in for `ssh` that reports, like OpenSSH, a config file that is gone.
+#[cfg(all(test, unix))]
+pub(super) mod stand_in;
+#[cfg(all(test, not(unix)))]
+mod stand_in {
+    pub(super) fn base() -> Option<std::process::Command> {
+        None
     }
 }
 

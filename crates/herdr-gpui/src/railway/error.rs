@@ -18,6 +18,14 @@ pub enum Error {
         .0.display()
     )]
     UnusableKey(PathBuf),
+    #[error("{}", super::keys::NAME_RULE)]
+    KeyName,
+    #[error("{} already exists, and Herdr never replaces a key. Choose another name.", .0.display())]
+    KeyExists(PathBuf),
+    #[error("A generated key is waiting to be used: {}. Use or discard it before making another.", .0.display())]
+    KeyWaiting(PathBuf),
+    #[error("Generate a key first.")]
+    NoPendingKey,
     #[error("Choose an absolute path to an SSH private key.")]
     KeyPath,
     #[error("Could not use the key file {}.", path.display())]

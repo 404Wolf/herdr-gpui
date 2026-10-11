@@ -388,12 +388,30 @@ Choose the key for a new device:
   never copied, changed, or deleted, and removing the device leaves it alone. A
   passphrase-protected key needs its `.pub` file beside it and must be loaded in
   your SSH agent, because every connection is non-interactive.
-- **Generate a new key**: Herdr creates an ed25519 key without a passphrase
-  (it must connect unattended) in a private `railway-keys` directory of its state
-  folder, owner-only, and attaches it to the device. Removing the device deletes
-  it. If setup fails or is cancelled, the generated key is kept and the next
-  generate reuses it, so a retry reaches the same VM instead of spending another
-  of the three daily VMs.
+- **Generate a new key**: type a name and press **Generate key**. The name must
+  be one safe file name (1 to 64 letters, digits, `.`, `_` or `-`, not starting
+  with `.` or `-`, not ending in `.pub`; no separators or `..`). Herdr creates an
+  ed25519 key without a passphrase (it must connect unattended) as `<name>` and
+  `<name>.pub` in your `~/.ssh` folder when that exists, otherwise in a private
+  `railway-keys` folder of its own state directory (created readable only by you).
+  The tab states which before you generate. It never replaces an existing file or
+  link of that name, and the key is made under scratch names and linked into place,
+  so nothing is overwritten even if one appears meanwhile. The exact path and
+  fingerprint are saved with the key's record and shown in the tab. One generated
+  key waits until a device uses it, so retries and the first connection all use
+  the same key; **Discard key** deletes it if you decide not to use it.
+  Generating only makes a key on this computer: it creates nothing at Railway.
+
+What happens to a generated key when its device is removed:
+
+| Where it is | Remove | Remove and delete key |
+| --- | --- | --- |
+| Your `~/.ssh` | the key pair stays | deletes the pair |
+| Herdr's own state folder | deletes it | n/a |
+
+A key you chose with **Use an existing key** is never deleted by Herdr, whichever
+button is used. A saved path can only delete files in those two folders, with a
+name Herdr would have given.
 
 **First connection (once per key).** Railway refuses to create a VM for a script:
 a headless first connection exits with status 13 and a message to sign up. Herdr
@@ -401,9 +419,10 @@ does not work around that or pretend to be a terminal. The tab shows a command
 for your key, `ssh -F /dev/null -i '<key>' -o IdentitiesOnly=yes railway.new`
 (`-F /dev/null` keeps your SSH config from adding other identities), with **Copy
 command**; run it once in your own terminal and type `exit` afterwards. Skip it if
-the key already has a VM. For a generated key, **Generate key** creates it first,
-and it is kept until a device uses it, so retries and the first connection all use
-the same key (and the same one of the three daily VMs).
+the key already has a VM. Generating a key and creating the VM are separate: the
+first makes a local file, the second is Railway's own requirement. A generated key
+is made first so the command can name it, and every later step uses that same key
+(and the same one of the three daily VMs).
 
 **Connect and set up** then reaches the existing VM without a terminal, and never
 creates one: if the key has no VM it stops and shows the command again. When the

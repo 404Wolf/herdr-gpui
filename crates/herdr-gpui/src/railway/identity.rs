@@ -6,8 +6,11 @@
 //!
 //! - `Borrowed`: a key the user already had. Only its path is saved; the file
 //!   is never copied, modified, or deleted.
-//! - `Generated`: a key this app made, kept in a private directory beside the
-//!   state files and deleted with its device.
+//! - `Generated`: a key this app made under a name the user chose, in `~/.ssh`
+//!   when that exists, else in a private directory beside the state files. The
+//!   exact path and fingerprint are saved. One in the state folder is Herdr's
+//!   own and goes with its device; one in `~/.ssh` is the user's to keep, and
+//!   is deleted only when they explicitly ask.
 
 use super::{Error, Result, WINDOW_SECONDS};
 use serde::{Deserialize, Serialize};
@@ -27,8 +30,15 @@ const PATH_LIMIT: usize = 4096;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Source {
-    Generated,
-    Borrowed { path: String },
+    /// `path` is where the key was created; records from before keys were
+    /// named have none, and their key is `<id>` in the state folder.
+    Generated {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path: Option<String>,
+    },
+    Borrowed {
+        path: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,6 +58,10 @@ pub(crate) struct Record {
     pub(crate) window_ends_by: Option<u64>,
     /// The user said they claimed the VM, so it has no build window.
     pub(crate) claimed: bool,
+    /// The key's full fingerprint (`SHA256:…`) as it was when saved, for
+    /// display; the device ID is the part of it that is checked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) fingerprint: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -76,8 +90,8 @@ impl Record {
     fn valid(&self) -> bool {
         valid_id(&self.id)
             && match &self.source {
-                Source::Generated => true,
-                Source::Borrowed { path } => {
+                Source::Generated { path: None } => true,
+                Source::Generated { path: Some(path) } | Source::Borrowed { path } => {
                     path.len() <= PATH_LIMIT
                         && Path::new(path).is_absolute()
                         && !path.chars().any(char::is_control)
@@ -88,13 +102,22 @@ impl Record {
     /// The private key file.
     pub(crate) fn key_path(&self, dir: &Path) -> PathBuf {
         match &self.source {
-            Source::Generated => keys_dir(dir).join(&self.id),
-            Source::Borrowed { path } => PathBuf::from(path),
+            Source::Generated { path: None } => keys_dir(dir).join(&self.id),
+            Source::Generated { path: Some(path) } | Source::Borrowed { path } => {
+                PathBuf::from(path)
+            }
         }
     }
 
+    /// A key this app made, which it may delete (see [`Self::kept`]).
     pub(crate) fn owned(&self) -> bool {
-        self.source == Source::Generated
+        matches!(self.source, Source::Generated { .. })
+    }
+
+    /// A generated key outside Herdr's own folder, in the user's `~/.ssh`:
+    /// removing the device keeps the file unless they ask for it to go.
+    pub(crate) fn kept(&self, dir: &Path) -> bool {
+        self.owned() && !self.key_path(dir).starts_with(keys_dir(dir))
     }
 
     /// Whether connecting again could land on a VM other than the one setup
@@ -222,25 +245,52 @@ pub(super) fn unattached_generated(dir: &Path) -> Result<Option<Record>> {
         .find(|record| record.owned() && !record.attached))
 }
 
-/// Forget the identity for `id`. A generated key is deleted with it; a
-/// borrowed key's file is never touched.
-pub(super) fn forget(dir: &Path, id: &str) -> Result<()> {
+/// Forget the identity for `id`. A key in Herdr's own folder is deleted with
+/// it. One generated in the user's `~/.ssh` is kept unless `delete_kept` says
+/// they asked for it to go; a borrowed key's file is never touched.
+pub(super) fn forget(dir: &Path, home: Option<&Path>, id: &str, delete_kept: bool) -> Result<()> {
     let removed = transaction(dir, |identities| {
         let index = identities.iter().position(|record| record.id == id);
         Ok(index.map(|index| identities.remove(index)))
     })?;
     match removed.filter(Record::owned) {
-        Some(record) => remove_generated(dir, &record.id),
-        None => Ok(()),
+        Some(record) if delete_kept || !record.kept(dir) => {
+            remove_generated(dir, home, &record.key_path(dir))
+        }
+        _ => Ok(()),
     }
 }
 
-/// Delete the key pair this app generated for `id`. Only ever called for a
-/// key it made itself; the public half is named `<id>.pub`, and `valid_id`
-/// keeps ids free of dots, so `with_extension` cannot misname it.
-pub(super) fn remove_generated(dir: &Path, id: &str) -> Result<()> {
-    let key = keys_dir(dir).join(id);
-    for path in [key.with_extension("pub"), key] {
+/// Where the public half of the key at `path` is: `<path>.pub`. Appended to
+/// the whole name, since key names may hold dots.
+pub(super) fn public_path(path: &Path) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(".pub");
+    PathBuf::from(name)
+}
+
+/// Whether `path` is somewhere this app creates keys, with a name it could
+/// have given: a saved record is a file the user can edit, and must never be
+/// able to point a deletion at an arbitrary file.
+fn ours(dir: &Path, home: Option<&Path>, path: &Path) -> bool {
+    let name = path.file_name().and_then(|name| name.to_str());
+    let parent = path.parent();
+    name.is_some_and(|name| super::keys::valid_name(name).is_ok())
+        && (parent == Some(keys_dir(dir).as_path())
+            || home.is_some_and(|home| parent == Some(home.join(".ssh").as_path())))
+}
+
+/// Delete the key pair this app generated at `path`, if it is where and named
+/// as it would have made it. Only called for a key it made itself.
+pub(super) fn remove_generated(dir: &Path, home: Option<&Path>, path: &Path) -> Result<()> {
+    if !ours(dir, home, path) {
+        tracing::warn!(
+            category = "railway_identity",
+            "Not deleting a key outside Herdr's key locations"
+        );
+        return Ok(());
+    }
+    for path in [public_path(path), path.to_owned()] {
         match fs::remove_file(&path) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -253,6 +303,21 @@ pub(super) fn remove_generated(dir: &Path, id: &str) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+impl Record {
+    /// A record no device uses yet, for tests.
+    pub(crate) fn unattached(id: &str, source: Source) -> Self {
+        Self {
+            id: id.into(),
+            source,
+            attached: false,
+            window_ends_by: None,
+            claimed: false,
+            fingerprint: None,
+        }
+    }
 }
 
 // Tests drive `ssh`, `ssh-keygen`, and `/bin/sh`; cloud devices are Unix-only.

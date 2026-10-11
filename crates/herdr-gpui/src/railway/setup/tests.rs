@@ -7,34 +7,96 @@ fn tools() -> bool {
 }
 
 fn generated(id: &str) -> Record {
-    Record {
-        id: id.into(),
-        source: Source::Generated,
-        attached: false,
-        window_ends_by: None,
-        claimed: false,
+    Record::unattached(id, Source::Generated { path: None })
+}
+
+/// A home directory, with a `~/.ssh` unless `ssh` is false.
+fn home(ssh: bool) -> tempfile::TempDir {
+    let home = tempfile::tempdir().unwrap();
+    if ssh {
+        fs::create_dir(home.path().join(".ssh")).unwrap();
+    }
+    home
+}
+
+/// A key pair of the user's own, outside Herdr's care, in `dir`.
+fn their_key(dir: &Path, name: &str) -> (PathBuf, String) {
+    let directory = keys::KeyDirectory {
+        path: dir.to_owned(),
+        user: true,
+    };
+    let made = keys::generate(&directory, name, &|| false).unwrap();
+    let id = keys::fingerprint(&made.path, &|| false).unwrap();
+    (made.path, id)
+}
+
+#[test]
+fn a_named_key_is_recorded_with_its_exact_path_and_fingerprint_for_the_device() {
+    if !tools() {
+        return;
+    }
+    for ssh in [true, false] {
+        let state = tempfile::tempdir().unwrap();
+        let home = home(ssh);
+        let path =
+            generate_key_in(state.path(), Some(home.path()), "herdr-railway", &|| false).unwrap();
+        let expected = if ssh {
+            home.path().join(".ssh/herdr-railway")
+        } else {
+            identity::keys_dir(state.path()).join("herdr-railway")
+        };
+        assert_eq!(path, expected, "~/.ssh when it exists, else Herdr's folder");
+        let record = resolve(state.path(), Choice::Generated, &|| false).unwrap();
+        assert_eq!(
+            record.source,
+            Source::Generated {
+                path: Some(path.display().to_string())
+            }
+        );
+        assert!(!record.attached, "not attached until setup succeeds");
+        assert_eq!(record.kept(state.path()), ssh);
+        assert_eq!(
+            keys::fingerprint_text(&path, &|| false).unwrap(),
+            record.fingerprint.clone().unwrap()
+        );
+        assert_eq!(keys::fingerprint(&path, &|| false).unwrap(), record.id);
+        assert_eq!(identity::load_all(state.path()).unwrap().len(), 1);
+        // A retry or the first connection keeps using this very key; making
+        // another waits until a device has used it.
+        let waiting =
+            generate_key_in(state.path(), Some(home.path()), "second", &|| false).unwrap_err();
+        assert!(matches!(waiting, Error::KeyWaiting(waiting) if waiting == path));
+        assert!(!expected.with_file_name("second").exists());
+        identity::save(state.path(), record.clone().reached(1, None)).unwrap();
+        let next = generate_key_in(state.path(), Some(home.path()), "second", &|| false).unwrap();
+        assert_ne!(next, path);
+        assert_eq!(identity::load_all(state.path()).unwrap().len(), 2);
     }
 }
 
 #[test]
-fn generating_creates_one_owned_key_and_a_retry_reuses_it() {
+fn a_name_that_is_taken_or_unsafe_creates_nothing_and_records_nothing() {
     if !tools() {
         return;
     }
-    let dir = tempfile::tempdir().unwrap();
-    let first = resolve(dir.path(), Choice::Generate, &|| false).unwrap();
-    assert_eq!(first.source, Source::Generated);
-    assert!(!first.attached, "not attached until setup succeeds");
-    assert!(first.key_path(dir.path()).is_file());
-    // A failed or cancelled setup spent a VM; the retry reaches the same one.
-    let retry = resolve(dir.path(), Choice::Generate, &|| false).unwrap();
-    assert_eq!(retry, first);
-    assert_eq!(identity::load_all(dir.path()).unwrap().len(), 1);
-    // Once a device uses it, the next request is for a new key and a new VM.
-    identity::save(dir.path(), first.clone().reached(1, None)).unwrap();
-    let next = resolve(dir.path(), Choice::Generate, &|| false).unwrap();
-    assert_ne!(next.id, first.id);
-    assert_eq!(identity::load_all(dir.path()).unwrap().len(), 2);
+    let state = tempfile::tempdir().unwrap();
+    let home = home(true);
+    let existing = home.path().join(".ssh/id_work");
+    fs::write(&existing, "the user's own key").unwrap();
+    for (name, check) in [("id_work", 1), ("../x", 2), ("a/b", 2), (".hidden", 2)] {
+        let error = generate_key_in(state.path(), Some(home.path()), name, &|| false).unwrap_err();
+        match check {
+            1 => assert!(matches!(error, Error::KeyExists(path) if path == existing)),
+            _ => assert!(matches!(error, Error::KeyName), "{name}: {error:?}"),
+        }
+    }
+    assert_eq!(fs::read_to_string(&existing).unwrap(), "the user's own key");
+    assert!(identity::load_all(state.path()).unwrap().is_empty());
+    assert_eq!(fs::read_dir(home.path().join(".ssh")).unwrap().count(), 1);
+    assert!(matches!(
+        resolve(state.path(), Choice::Generated, &|| false),
+        Err(Error::NoPendingKey)
+    ));
 }
 
 #[test]
@@ -44,8 +106,7 @@ fn an_existing_key_is_borrowed_by_path_and_never_copied() {
     }
     let state = tempfile::tempdir().unwrap();
     let theirs = tempfile::tempdir().unwrap();
-    let id = keys::generate(theirs.path(), &|| false).unwrap();
-    let key = identity::keys_dir(theirs.path()).join(&id);
+    let (key, id) = their_key(theirs.path(), "theirs");
     let before = fs::read(&key).unwrap();
     let record = resolve(state.path(), Choice::Existing(key.clone()), &|| false).unwrap();
     assert_eq!(record.id, id);
@@ -55,7 +116,7 @@ fn an_existing_key_is_borrowed_by_path_and_never_copied() {
             path: key.display().to_string()
         }
     );
-    assert!(!record.owned());
+    assert!(!record.owned() && !record.kept(state.path()));
     assert_eq!(fs::read(&key).unwrap(), before);
     assert!(
         !identity::keys_dir(state.path()).exists(),
@@ -70,32 +131,30 @@ fn pointing_at_a_known_key_keeps_who_owns_it() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
-    let ours = resolve(dir.path(), Choice::Generate, &|| false).unwrap();
-    let path = ours.key_path(dir.path());
-    let again = resolve(dir.path(), Choice::Existing(path), &|| false).unwrap();
-    assert_eq!(
-        again.source,
-        Source::Generated,
-        "never downgraded to borrowed"
-    );
+    let home = home(true);
+    let path = generate_key_in(dir.path(), Some(home.path()), "mine", &|| false).unwrap();
+    let again = resolve(dir.path(), Choice::Existing(path.clone()), &|| false).unwrap();
+    assert!(again.owned(), "never downgraded to borrowed");
+    assert_eq!(again.key_path(dir.path()), path);
 
     // A borrowed key that moved follows the path chosen now.
     let other = tempfile::tempdir().unwrap();
-    let id = keys::generate(other.path(), &|| false).unwrap();
-    let old = identity::keys_dir(other.path()).join(&id);
+    let (old, id) = their_key(other.path(), "old");
     let moved = other.path().join("moved");
     fs::copy(&old, &moved).unwrap();
-    fs::copy(old.with_extension("pub"), other.path().join("moved.pub")).unwrap();
+    fs::copy(identity::public_path(&old), identity::public_path(&moved)).unwrap();
     identity::save(
         dir.path(),
         Record {
-            id: id.clone(),
-            source: Source::Borrowed {
-                path: "/gone/key".into(),
-            },
             attached: true,
             window_ends_by: Some(5),
             claimed: true,
+            ..Record::unattached(
+                &id,
+                Source::Borrowed {
+                    path: "/gone/key".into(),
+                },
+            )
         },
     )
     .unwrap();
@@ -420,24 +479,33 @@ fn other_failures_hide_links_and_never_pose_as_a_first_use_request() {
 }
 
 #[test]
-fn simultaneous_generate_requests_share_one_key() {
+fn simultaneous_generate_requests_make_one_key() {
     if !tools() {
         return;
     }
-    let dir = tempfile::tempdir().unwrap();
-    let ids: Vec<_> = std::thread::scope(|scope| {
+    let state = tempfile::tempdir().unwrap();
+    let home = home(true);
+    let results: Vec<_> = std::thread::scope(|scope| {
         (0..4)
-            .map(|_| scope.spawn(|| resolve(dir.path(), Choice::Generate, &|| false).unwrap().id))
+            .map(|index| {
+                let (state, home) = (state.path(), home.path());
+                scope.spawn(move || {
+                    generate_key_in(state, Some(home), &format!("key{index}"), &|| false)
+                })
+            })
             .collect::<Vec<_>>()
             .into_iter()
             .map(|handle| handle.join().unwrap())
             .collect()
     });
-    assert!(ids.iter().all(|id| *id == ids[0]), "{ids:?}");
-    assert_eq!(identity::load_all(dir.path()).unwrap().len(), 1);
-    let files = fs::read_dir(identity::keys_dir(dir.path()))
-        .unwrap()
+    let made = results.iter().filter(|result| result.is_ok()).count();
+    let waiting = results
+        .iter()
+        .filter(|result| matches!(result, Err(Error::KeyWaiting(_))))
         .count();
+    assert_eq!((made, waiting), (1, 3), "{results:?}");
+    assert_eq!(identity::load_all(state.path()).unwrap().len(), 1);
+    let files = fs::read_dir(home.path().join(".ssh")).unwrap().count();
     assert_eq!(files, 2, "one private and one public half");
 }
 
@@ -447,26 +515,26 @@ fn a_generated_key_that_cannot_be_recorded_is_not_left_behind() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
+    let home = home(true);
     // The record file is full, so saving the new key's record must fail.
     for index in 0..64 {
         identity::save(
             dir.path(),
             Record {
-                id: format!("key-full{index}"),
-                source: Source::Borrowed {
-                    path: format!("/keys/{index}"),
-                },
                 attached: true,
-                window_ends_by: None,
                 claimed: true,
+                ..Record::unattached(
+                    &format!("key-full{index}"),
+                    Source::Borrowed {
+                        path: format!("/keys/{index}"),
+                    },
+                )
             },
         )
         .unwrap();
     }
-    assert!(resolve(dir.path(), Choice::Generate, &|| false).is_err());
-    let leftovers = fs::read_dir(identity::keys_dir(dir.path()))
-        .unwrap()
-        .count();
+    assert!(generate_key_in(dir.path(), Some(home.path()), "orphan", &|| false).is_err());
+    let leftovers = fs::read_dir(home.path().join(".ssh")).unwrap().count();
     assert_eq!(leftovers, 0, "no private key without a record");
 }
 
@@ -476,20 +544,21 @@ fn setup_refuses_a_key_file_that_is_no_longer_the_devices_key() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
-    let first = keys::generate(dir.path(), &|| false).unwrap();
-    let second = keys::generate(dir.path(), &|| false).unwrap();
+    let keys_at = tempfile::tempdir().unwrap();
+    let (_first_key, first) = their_key(keys_at.path(), "first");
+    let (swapped, _second) = their_key(keys_at.path(), "second");
     // The device was set up with `first`, but its saved path now holds `second`.
-    let swapped = identity::keys_dir(dir.path()).join(&second);
     identity::save(
         dir.path(),
         Record {
-            id: first.clone(),
-            source: Source::Borrowed {
-                path: swapped.display().to_string(),
-            },
             attached: true,
             window_ends_by: Some(u64::MAX),
-            claimed: false,
+            ..Record::unattached(
+                &first,
+                Source::Borrowed {
+                    path: swapped.display().to_string(),
+                },
+            )
         },
     )
     .unwrap();
@@ -499,4 +568,50 @@ fn setup_refuses_a_key_file_that_is_no_longer_the_devices_key() {
     };
     let result = add_device_in(dir.path(), request, &|| false, &|_| {});
     assert!(matches!(result, Err(Error::KeyChanged(path)) if path == swapped));
+}
+
+#[test]
+fn the_overview_says_where_a_key_will_go_and_what_removal_keeps() {
+    if !tools() {
+        return;
+    }
+    let state = tempfile::tempdir().unwrap();
+    let with_ssh = home(true);
+    let without = home(false);
+
+    let overview = overview_in(state.path(), Some(without.path()), Vec::new()).unwrap();
+    assert!(
+        !overview.new_key_directory.user,
+        "no ~/.ssh: Herdr's folder"
+    );
+    assert_eq!(
+        overview.new_key_directory.path,
+        identity::keys_dir(state.path())
+    );
+    assert!(overview.pending_key.is_none() && overview.devices.is_empty());
+
+    let path = generate_key_in(
+        state.path(),
+        Some(with_ssh.path()),
+        "herdr-railway",
+        &|| false,
+    )
+    .unwrap();
+    let overview = overview_in(state.path(), Some(with_ssh.path()), Vec::new()).unwrap();
+    assert!(overview.new_key_directory.user);
+    let pending = overview.pending_key.unwrap();
+    assert_eq!(pending.path, path);
+    assert!(pending.kept && pending.fingerprint.unwrap().starts_with("SHA256:"));
+
+    // Once a device uses it, the row offers the extra delete action.
+    let record = identity::unattached_generated(state.path())
+        .unwrap()
+        .unwrap();
+    identity::save(state.path(), record.clone().reached(1, None)).unwrap();
+    let device = saved(&record.id, "Mine");
+    let overview = overview_in(state.path(), Some(with_ssh.path()), vec![device]).unwrap();
+    assert!(overview.pending_key.is_none());
+    let row = &overview.devices[0];
+    assert!(row.key_kept && row.key_present);
+    assert_eq!(row.key_path.as_deref(), Some(path.as_path()));
 }

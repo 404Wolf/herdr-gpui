@@ -5,11 +5,9 @@ use std::{fs, sync::atomic::AtomicBool};
 
 fn record(source: Source, window_ends_by: Option<u64>) -> Record {
     Record {
-        id: "key-abcd".into(),
-        source,
         attached: true,
         window_ends_by,
-        claimed: false,
+        ..Record::unattached("key-abcd", source)
     }
 }
 
@@ -48,7 +46,7 @@ fn a_device_without_an_identity_is_never_given_one() {
 fn a_missing_key_is_reported_not_replaced() {
     let dir = tempfile::tempdir().unwrap();
     for source in [
-        Source::Generated,
+        Source::Generated { path: None },
         Source::Borrowed {
             path: dir.path().join("gone").display().to_string(),
         },
@@ -159,4 +157,38 @@ fn a_suspended_device_stays_off_until_set_up_again() {
     assert!(matches!(connect(), Err(Error::Suspended)));
     resume("key-suspend1");
     assert_eq!(connect().unwrap(), key);
+}
+
+/// A key `ssh-keygen` made, saved as a borrowed identity the way setup does.
+fn saved_key(dir: &Path) -> String {
+    let key = dir.join("id");
+    let made = std::process::Command::new("ssh-keygen")
+        .args(["-q", "-t", "ed25519", "-N", "", "-f"])
+        .arg(&key)
+        .status();
+    assert!(made.is_ok_and(|status| status.success()), "ssh-keygen");
+    let id = keys::fingerprint(&key, &|| false).unwrap();
+    let mut saved = record(
+        Source::Borrowed {
+            path: key.display().to_string(),
+        },
+        Some(u64::MAX),
+    );
+    saved.id.clone_from(&id);
+    identity::save(dir, saved).unwrap();
+    id
+}
+
+/// The regression behind "Can't open user config file …/.tmpXXXX: No such file
+/// or directory": the temporary config was removed before `ssh` started.
+#[test]
+fn a_reconnect_hands_ssh_a_config_that_still_exists() {
+    let dir = tempfile::tempdir().unwrap();
+    let id = saved_key(dir.path());
+    let ssh = ssh::stand_in::install();
+    let stop = AtomicBool::new(false);
+    let result = connect_saved(dir.path(), &id, "default", &stop);
+    // The stand-in refuses the key, which is an ordinary failed connection.
+    assert!(matches!(result, Err(Error::Bridge(_))));
+    assert_eq!(ssh.runs(), ["readable"], "ssh must find its config");
 }

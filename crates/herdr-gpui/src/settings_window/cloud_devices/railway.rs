@@ -13,7 +13,7 @@ use crate::{
         worker::{self, Worker},
     },
     config::corners,
-    railway::setup::{self, AddRequest, Choice, Overview},
+    railway::setup::{self, AddRequest, Choice, Overview, PendingKey},
     search_input::SearchInput,
 };
 use gpui::{prelude::*, *};
@@ -38,6 +38,8 @@ enum Account {
 
 pub(in crate::settings_window) struct RailwayCard {
     path: Entity<SearchInput>,
+    /// The name for a key to generate.
+    name: Entity<SearchInput>,
     source: KeySource,
     /// The user's approval to install Herdr on VMs set up from here.
     install: bool,
@@ -57,6 +59,7 @@ impl RailwayCard {
     ) -> Self {
         Self {
             path: input("/Users/you/.ssh/id_ed25519", "", config, theme, cx),
+            name: input("herdr-railway", "herdr-railway", config, theme, cx),
             source: KeySource::Generate,
             install: true,
             account: Account::Checking,
@@ -75,12 +78,32 @@ impl RailwayCard {
     }
 }
 
+/// Where a key named `name` will be created, and what removing a device that
+/// uses it does to it.
+fn location_note(directory: &crate::railway::KeyDirectory, name: &str) -> String {
+    let folder = directory.path.display();
+    if directory.user {
+        format!(
+            "Creates {folder}/{name} and {name}.pub. Removing the device keeps them unless you delete the key."
+        )
+    } else {
+        format!(
+            "No ~/.ssh folder, so this creates {folder}/{name} and {name}.pub, readable only by you. Removing the device deletes them."
+        )
+    }
+}
+
 /// What a device row says about its key and the VM's window.
 fn describe(device: &setup::Device, now: u64) -> String {
+    let path = device
+        .key_path
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_default();
     let key = match device.record.as_ref().map(|record| &record.source) {
         None => "no saved key".to_owned(),
-        Some(crate::railway::Source::Generated) => "generated key".to_owned(),
-        Some(crate::railway::Source::Borrowed { path }) => format!("key {path}"),
+        Some(crate::railway::Source::Generated { .. }) => format!("generated key {path}"),
+        Some(crate::railway::Source::Borrowed { .. }) => format!("key {path}"),
     };
     let state = match &device.record {
         Some(_) if !device.key_present => " · key file missing",
@@ -153,6 +176,7 @@ impl SettingsWindow {
                 card.account = Account::Known(Overview {
                     devices: Vec::new(),
                     pending_key: None,
+                    new_key_directory: Default::default(),
                     detected: Vec::new(),
                 });
                 card.message = Some(error.to_string());
@@ -170,15 +194,37 @@ impl SettingsWindow {
         }
     }
 
-    fn forget_railway_device(&mut self, id: String, cx: &mut Context<Self>) {
+    /// `delete_key` is the user's explicit request to also delete a key
+    /// generated in `~/.ssh`, which removing the device alone keeps.
+    fn forget_railway_device(&mut self, id: String, delete_key: bool, cx: &mut Context<Self>) {
         self.railway_job(cx, move |_, send| {
-            send(Update::Done(setup::forget_device(&id)));
+            send(Update::Done(setup::forget_device(&id, delete_key)));
         });
     }
 
+    /// Make the key named in the field. Nothing is created at Railway.
     fn generate_railway_key(&mut self, cx: &mut Context<Self>) {
-        self.railway_job(cx, |cancelled, send| {
-            send(Update::Done(setup::generate_key(cancelled).map(drop)));
+        let Some(card) = &mut self.railway_card else {
+            return;
+        };
+        let name = card.name.read(cx).text().trim().to_owned();
+        if crate::railway::valid_name(&name).is_err() {
+            card.message = Some(crate::railway::NAME_RULE.into());
+            cx.notify();
+            return;
+        }
+        card.message = None;
+        self.railway_job(cx, move |cancelled, send| {
+            send(Update::Done(
+                setup::generate_key(&name, cancelled).map(drop),
+            ));
+        });
+    }
+
+    /// Delete the waiting generated key, because the user said to.
+    fn discard_railway_key(&mut self, cx: &mut Context<Self>) {
+        self.railway_job(cx, |_, send| {
+            send(Update::Done(setup::discard_pending()));
         });
     }
 
@@ -262,7 +308,15 @@ impl SettingsWindow {
             return;
         };
         let choice = match card.source {
-            KeySource::Generate => Choice::Generate,
+            KeySource::Generate => {
+                let waiting = matches!(&card.account, Account::Known(overview) if overview.pending_key.is_some());
+                if !waiting {
+                    card.message = Some("Generate a key first.".into());
+                    cx.notify();
+                    return;
+                }
+                Choice::Generated
+            }
             KeySource::Existing => {
                 let text = card.path.read(cx).text().trim().to_owned();
                 if text.is_empty() {
@@ -354,9 +408,20 @@ impl SettingsWindow {
                     .child(button("remove", "Remove", ready).when(ready, |b| {
                         let id = id.clone();
                         b.on_click(cx.listener(move |this, _, _, cx| {
-                            this.forget_railway_device(id.clone(), cx)
+                            this.forget_railway_device(id.clone(), false, cx)
                         }))
-                    })),
+                    }))
+                    .when(device.key_kept, |row| {
+                        let id = id.clone();
+                        row.child(button("remove-key", "Remove and delete key", ready).when(
+                            ready,
+                            |b| {
+                                b.on_click(cx.listener(move |this, _, _, cx| {
+                                    this.forget_railway_device(id.clone(), true, cx)
+                                }))
+                            },
+                        ))
+                    }),
             )
     }
 
@@ -366,21 +431,20 @@ impl SettingsWindow {
         };
         let ready = !self.busy();
         let available = ready && crate::cloud::unavailable().is_none();
-        let (pending, detected): (Option<&Path>, &[PathBuf]) = match &card.account {
-            Account::Known(overview) => (overview.pending_key.as_deref(), &overview.detected),
-            Account::Checking => (None, &[]),
-        };
+        let (pending, detected, directory): (Option<&PendingKey>, &[PathBuf], _) =
+            match &card.account {
+                Account::Known(overview) => (
+                    overview.pending_key.as_ref(),
+                    &overview.detected,
+                    Some(&overview.new_key_directory),
+                ),
+                Account::Checking => (None, &[], None),
+            };
         let mut about = self
             .control_card("Railway")
             .debug_selector(|| "cloud-railway-card".into())
             .child(self.control_note(
-                "Railway gives anyone a free Linux VM over SSH, with no account: connecting to railway.new creates one for the SSH key you present, and the same key always reaches the same VM.",
-            ))
-            .child(self.control_note(
-                "Railway's limits: 2 vCPU and 2 GB, 60 minutes to build and then 24 hours to claim it before it is deleted, 3 new VMs per IP address per day, IPv4 only.",
-            ))
-            .child(self.control_note(
-                "Herdr connects only with the key saved on each device and remembers railway.new's SSH host key the first time. Reconnecting never creates a key or installs anything. After the build window Herdr stops and asks first, because connecting again could create a different, empty VM.",
+                "Temporary VM from railway.new: 2 vCPU, 2 GB, 60 minutes. Claim it at Railway to keep it.",
             ));
         if let Some(reason) = crate::cloud::unavailable() {
             about = about.child(self.control_note(reason));
@@ -411,24 +475,75 @@ impl SettingsWindow {
                     )),
             );
         key = match card.source {
-            KeySource::Generate => key.child(self.control_note(if pending.is_some() {
-                "Herdr generated this key and keeps it until a device uses it, so a retry reaches the same VM. Removing a device deletes its generated key."
-            } else {
-                "Herdr creates an ed25519 key without a passphrase in its private state folder, saves it with the device, and uses it for every reconnect. Removing the device deletes it."
-            })),
+            KeySource::Generate => match pending {
+                Some(waiting) => {
+                    let mut waiting_key = key.child(
+                        div()
+                            .debug_selector(|| "cloud-railway-pending".into())
+                            .min_w_0()
+                            .child(div().child("Generated key"))
+                            .child(
+                                div()
+                                    .text_color(rgb(self.theme.muted))
+                                    .child(waiting.path.display().to_string()),
+                            ),
+                    );
+                    if let Some(fingerprint) = &waiting.fingerprint {
+                        waiting_key = waiting_key.child(self.control_note(fingerprint.clone()));
+                    }
+                    waiting_key
+                        .child(self.control_note(if waiting.kept {
+                            "In ~/.ssh. Removing the device keeps it unless you delete the key."
+                        } else {
+                            "In Herdr's data folder. Removing the device deletes it."
+                        }))
+                        .child(div().flex().justify_end().child(self.railway_button(
+                            "cloud-railway-discard",
+                            "Discard key",
+                            ready,
+                            |this, cx| this.discard_railway_key(cx),
+                            cx,
+                        )))
+                }
+                None => {
+                    let name = card.name.read(cx).text().trim().to_owned();
+                    let valid = crate::railway::valid_name(&name).is_ok();
+                    let location = directory.map(|directory| location_note(directory, &name));
+                    key.child(self.cloud_field("Key name", card.name.clone().into()))
+                        .child(self.control_note(match location {
+                            _ if !valid => crate::railway::NAME_RULE.to_owned(),
+                            Some(location) => location,
+                            None => "Checking where the key goes…".to_owned(),
+                        }))
+                        .child(self.control_note(
+                            "No passphrase. Never replaces an existing file. This does not create a VM.",
+                        ))
+                        .child(div().flex().justify_end().child(self.railway_button(
+                            "cloud-railway-generate",
+                            "Generate key",
+                            available && valid && directory.is_some(),
+                            |this, cx| this.generate_railway_key(cx),
+                            cx,
+                        )))
+                }
+            },
             KeySource::Existing => {
                 let mut existing = key
                     .child(self.cloud_field("Private key path", card.path.clone().into()))
                     .child(self.control_note(
-                        "Herdr passes this path to ssh and reads only the key's fingerprint. The file is never copied, changed, or deleted. A passphrase-protected key needs its .pub file beside it and must be loaded in your SSH agent.",
+                        "The file is never changed or deleted. A passphrase-protected key needs its .pub file beside it and a loaded SSH agent.",
                     ));
-                let mut row = div().flex().flex_wrap().gap(px(8.)).child(self.railway_button(
-                    "cloud-railway-browse",
-                    "Browse…",
-                    ready,
-                    |this, cx| this.browse_railway_key(cx),
-                    cx,
-                ));
+                let mut row = div()
+                    .flex()
+                    .flex_wrap()
+                    .gap(px(8.))
+                    .child(self.railway_button(
+                        "cloud-railway-browse",
+                        "Browse…",
+                        ready,
+                        |this, cx| this.browse_railway_key(cx),
+                        cx,
+                    ));
                 for (index, path) in detected.iter().enumerate() {
                     let name = path
                         .file_name()
@@ -455,19 +570,19 @@ impl SettingsWindow {
         };
         // The first connection for a key must be made by the user.
         let first_use = match card.source {
-            KeySource::Generate => pending.map(Path::to_path_buf),
+            KeySource::Generate => pending.map(|waiting| waiting.path.clone()),
             KeySource::Existing => {
                 let text = card.path.read(cx).text().trim().to_owned();
                 (!text.is_empty()).then(|| setup::expand(&text))
             }
         };
-        key = key.child(self.control_note(
-            "A new key needs one interactive connection first: Railway refuses to create a VM for a script, so Herdr cannot do this step for you. Run the command below once in your own terminal, then type exit. Skip this if the key already has a VM.",
-        ));
         key = match first_use {
             Some(path) => {
                 let command = setup::first_use_command(&path);
-                key.child(
+                key.child(self.control_note(
+                    "Railway creates the VM only from an interactive connection. Run this once in a terminal, then exit. Skip it if the key already has a VM.",
+                ))
+                .child(
                     div()
                         .debug_selector(|| "cloud-railway-first-use".into())
                         .min_w_0()
@@ -483,15 +598,6 @@ impl SettingsWindow {
                     "Copy command",
                     true,
                     move |_, cx| cx.write_to_clipboard(ClipboardItem::new_string(command.clone())),
-                    cx,
-                )))
-            }
-            None if card.source == KeySource::Generate => {
-                key.child(div().flex().justify_end().child(self.railway_button(
-                    "cloud-railway-generate",
-                    "Generate key",
-                    available,
-                    |this, cx| this.generate_railway_key(cx),
                     cx,
                 )))
             }
@@ -514,18 +620,14 @@ impl SettingsWindow {
                     }))
                 }),
             )
-            .child(self.control_note(
-                "Connect and set up reaches the existing VM without a terminal, installs Herdr there when missing, and saves the device. It never creates a VM.",
-            ))
-            .child(
-                div().flex().justify_end().child(self.railway_button(
-                    "cloud-railway-create",
-                    "Connect and set up",
-                    available,
-                    |this, cx| this.setup_railway_new(cx),
-                    cx,
-                )),
-            );
+            .child(self.control_note("Connects to the key's existing VM and saves it as a device."))
+            .child(div().flex().justify_end().child(self.railway_button(
+                "cloud-railway-create",
+                "Connect and set up",
+                available,
+                |this, cx| this.setup_railway_new(cx),
+                cx,
+            )));
         if let Some(message) = &card.message {
             key = key.child(div().min_w_0().child(message.clone()));
         }

@@ -68,15 +68,23 @@ fn run(mut command: Command, cancelled: &impl Fn() -> bool) -> Result<(Option<i3
     Ok((status.code(), output))
 }
 
-/// A device ID from `ssh-keygen -l` output such as
+/// The `SHA256:…` word of `ssh-keygen -l` output such as
 /// `256 SHA256:abc… comment (ED25519)`.
+fn digest(output: &str) -> Option<String> {
+    let word = output.lines().next()?.split_whitespace().nth(1)?;
+    word.strip_prefix("SHA256:")?;
+    (word.len() <= 128 && word.bytes().all(|b| b.is_ascii_graphic())).then(|| word.to_owned())
+}
+
+/// A device ID from `ssh-keygen -l` output.
+#[cfg(test)]
 pub(super) fn device_id(output: &str) -> Option<String> {
-    let digest = output
-        .lines()
-        .next()?
-        .split_whitespace()
-        .nth(1)?
-        .strip_prefix("SHA256:")?;
+    id_of(&digest(output)?)
+}
+
+/// A device ID from a `SHA256:…` fingerprint: its first 16 letters and digits.
+fn id_of(fingerprint: &str) -> Option<String> {
+    let digest = fingerprint.strip_prefix("SHA256:")?;
     let id: String = digest
         .chars()
         .filter(char::is_ascii_alphanumeric)
@@ -85,18 +93,25 @@ pub(super) fn device_id(output: &str) -> Option<String> {
     (id.len() == 16).then(|| format!("key-{id}"))
 }
 
-/// The device ID for the key at `path`. An empty passphrase is supplied so a
-/// protected key falls back to its `.pub` file instead of prompting.
-pub(super) fn fingerprint(path: &Path, cancelled: &impl Fn() -> bool) -> Result<String> {
+/// The full fingerprint (`SHA256:…`) of the key at `path`. An empty
+/// passphrase is supplied so a protected key falls back to its `.pub` file
+/// instead of prompting.
+pub(super) fn fingerprint_text(path: &Path, cancelled: &impl Fn() -> bool) -> Result<String> {
     let mut command = Command::new("ssh-keygen");
     command
         .args(["-l", "-E", "sha256", "-P", ""])
         .arg("-f")
         .arg(path);
     match run(command, cancelled)? {
-        (Some(0), output) => device_id(&output).ok_or_else(|| Error::UnusableKey(path.to_owned())),
+        (Some(0), output) => digest(&output).ok_or_else(|| Error::UnusableKey(path.to_owned())),
         _ => Err(Error::UnusableKey(path.to_owned())),
     }
+}
+
+/// The device ID for the key at `path`.
+pub(super) fn fingerprint(path: &Path, cancelled: &impl Fn() -> bool) -> Result<String> {
+    let text = fingerprint_text(path, cancelled)?;
+    id_of(&text).ok_or_else(|| Error::UnusableKey(path.to_owned()))
 }
 
 /// A key chosen from the user's own files: an absolute path to a regular
@@ -130,22 +145,87 @@ fn private_directory(path: &Path) -> io::Result<()> {
     fs::create_dir_all(path)
 }
 
-/// Generate an ed25519 key with no passphrase (the app must use it unattended
-/// on every reconnect) in `dir`, named by its fingerprint. `ssh-keygen`
-/// creates the private half readable only by this user, inside a directory
-/// only this user can open. Returns the device ID.
-pub(super) fn generate(dir: &Path, cancelled: &impl Fn() -> bool) -> Result<String> {
-    let keys = identity::keys_dir(dir);
-    private_directory(&keys).map_err(|source| Error::Store {
-        path: keys.clone(),
-        source,
-    })?;
+/// The rule for key names, stated once for the UI and the backend alike.
+pub(crate) const NAME_RULE: &str = "Use 1 to 64 letters, digits, dots, underscores or hyphens, not starting with a dot or hyphen and not ending in .pub.";
+
+/// A key name that is one safe file name: no separators, traversal, hidden or
+/// option-like names, and nothing that collides with a public key's name.
+pub(crate) fn valid_name(name: &str) -> Result<()> {
+    let plain = !name.is_empty()
+        && name.len() <= 64
+        && !name.starts_with(['.', '-'])
+        && !name.ends_with(".pub")
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
+    plain.then_some(()).ok_or(Error::KeyName)
+}
+
+/// Where new keys go: the user's `~/.ssh` when it is a directory, else
+/// Herdr's own private folder.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct KeyDirectory {
+    pub(crate) path: PathBuf,
+    /// Whether this is the user's `~/.ssh`, whose keys are theirs to keep.
+    pub(crate) user: bool,
+}
+
+pub(crate) fn key_directory(home: Option<&Path>, state: &Path) -> KeyDirectory {
+    match home
+        .map(|home| home.join(".ssh"))
+        .filter(|ssh| ssh.is_dir())
+    {
+        Some(path) => KeyDirectory { path, user: true },
+        None => KeyDirectory {
+            path: identity::keys_dir(state),
+            user: false,
+        },
+    }
+}
+
+/// A key just made: where, and its fingerprint.
+#[derive(Debug)]
+pub(super) struct Made {
+    pub(super) path: PathBuf,
+    pub(super) fingerprint: String,
+}
+
+fn exists(path: &Path) -> bool {
+    // A symlink, even a dangling one, is a name already taken.
+    fs::symlink_metadata(path).is_ok()
+}
+
+/// Generate an ed25519 key named `name` in `directory`, with no passphrase
+/// (the app must use it unattended on every reconnect). Never replaces
+/// anything: the pair is made under scratch names and then linked to its
+/// final names, which fails if either is taken. `ssh-keygen` creates the
+/// private half readable only by this user; Herdr's own folder is created
+/// only this user can open, and `~/.ssh` is left as the user has it.
+pub(super) fn generate(
+    directory: &KeyDirectory,
+    name: &str,
+    cancelled: &impl Fn() -> bool,
+) -> Result<Made> {
+    valid_name(name)?;
+    if !directory.user {
+        private_directory(&directory.path).map_err(|source| Error::Store {
+            path: directory.path.clone(),
+            source,
+        })?;
+    }
+    let target = directory.path.join(name);
+    let public_target = identity::public_path(&target);
+    if exists(&target) || exists(&public_target) {
+        return Err(Error::KeyExists(target));
+    }
     let mut random = [0u8; 4];
-    // Only names a scratch file inside a private directory; a clash fails
-    // `ssh-keygen` rather than overwriting.
+    // Only names a scratch file; a clash fails `ssh-keygen` rather than
+    // overwriting.
     let _ = getrandom::fill(&mut random);
-    let scratch = keys.join(format!(".new-{:08x}", u32::from_le_bytes(random)));
-    let public = |path: &Path| PathBuf::from(format!("{}.pub", path.display()));
+    let scratch = directory
+        .path
+        .join(format!(".herdr-new-{:08x}", u32::from_le_bytes(random)));
+    let public_scratch = identity::public_path(&scratch);
     let made = (|| {
         let mut command = Command::new("ssh-keygen");
         command
@@ -156,26 +236,42 @@ pub(super) fn generate(dir: &Path, cancelled: &impl Fn() -> bool) -> Result<Stri
             (Some(0), _) => {}
             (code, _) => return Err(Error::Keygen(code)),
         }
-        let id = fingerprint(&scratch, cancelled)?;
-        let target = keys.join(&id);
-        if target.exists() {
-            return Err(Error::Invalid("generated key name"));
+        let fingerprint = fingerprint_text(&scratch, cancelled)?;
+        place(&scratch, &target)?;
+        if let Err(error) = place(&public_scratch, &public_target) {
+            let _ = fs::remove_file(&target);
+            return Err(error);
         }
-        let moved = |from: &Path, to: &Path| {
-            fs::rename(from, to).map_err(|source| Error::Store {
+        Ok(Made {
+            path: target.clone(),
+            fingerprint,
+        })
+    })();
+    let _ = fs::remove_file(&scratch);
+    let _ = fs::remove_file(&public_scratch);
+    made
+}
+
+/// Give `from` the name `to` without replacing whatever has it. A link fails
+/// if `to` exists; a file system without links falls back to a rename after
+/// a last check.
+fn place(from: &Path, to: &Path) -> Result<()> {
+    let failed = |source: io::Error| {
+        if source.kind() == io::ErrorKind::AlreadyExists {
+            Error::KeyExists(to.to_owned())
+        } else {
+            Error::Store {
                 path: to.to_owned(),
                 source,
-            })
-        };
-        moved(&scratch, &target)?;
-        moved(&public(&scratch), &public(&target))?;
-        Ok(id)
-    })();
-    if made.is_err() {
-        let _ = fs::remove_file(&scratch);
-        let _ = fs::remove_file(public(&scratch));
+            }
+        }
+    };
+    match fs::hard_link(from, to) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Err(failed(error)),
+        Err(_) if exists(to) => Err(Error::KeyExists(to.to_owned())),
+        Err(_) => fs::rename(from, to).map_err(failed),
     }
-    made
 }
 
 /// Private keys in `~/.ssh` that have a `.pub` beside them, for the settings

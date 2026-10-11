@@ -21,39 +21,161 @@ fn a_device_id_comes_from_the_sha256_fingerprint() {
     assert!(identity::valid_id(&id.unwrap()));
 }
 
+/// A key directory holding no keys yet, in Herdr's own folder or a `~/.ssh`.
+fn directory(root: &Path, user: bool) -> KeyDirectory {
+    key_directory(user.then_some(root), root)
+}
+
 #[test]
-fn a_generated_key_is_private_named_by_its_fingerprint_and_distinct() {
+fn key_names_are_one_safe_file_name() {
+    for good in ["herdr-railway", "a", "Key_1.work", "x.y.z", &"k".repeat(64)] {
+        assert!(valid_name(good).is_ok(), "{good}");
+    }
+    for bad in [
+        "",
+        ".hidden",
+        "-option",
+        "a/b",
+        "../escape",
+        "..",
+        ".",
+        "a\\b",
+        "name.pub",
+        "with space",
+        "tab\t",
+        "nul\0",
+        "é",
+        &"k".repeat(65),
+    ] {
+        assert!(matches!(valid_name(bad), Err(Error::KeyName)), "{bad:?}");
+    }
+}
+
+#[test]
+fn new_keys_go_to_dot_ssh_when_it_exists_else_to_herdrs_folder() {
+    let root = tempfile::tempdir().unwrap();
+    let state = root.path().join("state");
+    // No ~/.ssh: Herdr's folder, which is not the user's.
+    let fallback = key_directory(Some(root.path()), &state);
+    assert_eq!(fallback.path, identity::keys_dir(&state));
+    assert!(!fallback.user);
+    assert!(!key_directory(None, &state).user);
+    // A file named .ssh is not a directory.
+    fs::write(root.path().join(".ssh"), "file").unwrap();
+    assert!(!key_directory(Some(root.path()), &state).user);
+    fs::remove_file(root.path().join(".ssh")).unwrap();
+    fs::create_dir(root.path().join(".ssh")).unwrap();
+    let ssh = key_directory(Some(root.path()), &state);
+    assert_eq!(ssh.path, root.path().join(".ssh"));
+    assert!(ssh.user);
+}
+
+#[test]
+fn a_named_key_is_created_private_where_asked_with_nothing_left_over() {
     if !tools() {
         return;
     }
-    let dir = tempfile::tempdir().unwrap();
-    let first = generate(dir.path(), &|| false).unwrap();
-    let second = generate(dir.path(), &|| false).unwrap();
-    assert_ne!(first, second);
-    assert!(identity::valid_id(&first));
-    let keys = identity::keys_dir(dir.path());
-    let private = keys.join(&first);
-    assert_eq!(fingerprint(&private, &|| false).unwrap(), first);
-    assert!(keys.join(format!("{first}.pub")).is_file());
-    let text = fs::read_to_string(&private).unwrap();
-    assert!(text.contains("PRIVATE KEY"));
-    assert!(
-        !fs::read_to_string(keys.join(format!("{first}.pub")))
+    for user in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        if user {
+            fs::create_dir(root.path().join(".ssh")).unwrap();
+        }
+        let directory = directory(root.path(), user);
+        let made = generate(&directory, "herdr-railway", &|| false).unwrap();
+        assert_eq!(made.path, directory.path.join("herdr-railway"));
+        assert!(made.fingerprint.starts_with("SHA256:"));
+        // The fingerprint saved is the one the file has.
+        assert_eq!(
+            fingerprint_text(&made.path, &|| false).unwrap(),
+            made.fingerprint
+        );
+        let public = identity::public_path(&made.path);
+        assert!(
+            fs::read_to_string(&made.path)
+                .unwrap()
+                .contains("PRIVATE KEY")
+        );
+        assert!(!fs::read_to_string(&public).unwrap().contains("PRIVATE"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode(&made.path), 0o600);
+            if !user {
+                assert_eq!(
+                    mode(&directory.path),
+                    0o700,
+                    "Herdr's own folder is private"
+                );
+            }
+        }
+        let names: Vec<_> = fs::read_dir(&directory.path)
             .unwrap()
-            .contains("PRIVATE")
-    );
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode(&private), 0o600);
-        assert_eq!(mode(&keys), 0o700);
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names.len(), 2, "no scratch files are left: {names:?}");
     }
-    let names: Vec<_> = fs::read_dir(&keys)
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
-    assert_eq!(names.len(), 4, "no scratch files are left: {names:?}");
+}
+
+#[test]
+fn generating_never_replaces_anything_that_has_the_name() {
+    if !tools() {
+        return;
+    }
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join(".ssh")).unwrap();
+    let directory = directory(root.path(), true);
+    let target = directory.path.join("taken");
+    let public = identity::public_path(&target);
+    // Each of these must stop the run and leave the existing file as it was.
+    #[cfg(unix)]
+    let victim = root.path().join("victim");
+    for create in [0, 1, 2] {
+        match create {
+            0 => fs::write(&target, "mine").unwrap(),
+            1 => {
+                fs::remove_file(&target).unwrap();
+                fs::write(&public, "mine").unwrap();
+            }
+            _ => {
+                fs::remove_file(&public).unwrap();
+                // A dangling link is a name already taken, and must not be
+                // followed into the file it points at.
+                #[cfg(unix)]
+                {
+                    std::os::unix::fs::symlink(&victim, &target).unwrap();
+                }
+                #[cfg(not(unix))]
+                continue;
+            }
+        }
+        let result = generate(&directory, "taken", &|| false);
+        assert!(
+            matches!(&result, Err(Error::KeyExists(path)) if *path == target),
+            "{result:?}"
+        );
+        #[cfg(unix)]
+        assert!(!victim.exists(), "nothing was written through the link");
+        let leftovers = fs::read_dir(&directory.path).unwrap().count();
+        assert_eq!(leftovers, 1, "no scratch files after a refusal");
+    }
+    assert_eq!(fs::read_to_string(&public).unwrap_or_default(), "");
+}
+
+#[test]
+fn generate_refuses_an_unsafe_name_before_touching_the_disk() {
+    let root = tempfile::tempdir().unwrap();
+    let directory = directory(root.path(), false);
+    for bad in ["../escape", "a/b", ".hidden", "x.pub", ""] {
+        assert!(matches!(
+            generate(&directory, bad, &|| false),
+            Err(Error::KeyName)
+        ));
+    }
+    assert!(
+        !directory.path.exists(),
+        "not even the folder is created for a bad name"
+    );
 }
 
 #[test]
@@ -61,14 +183,15 @@ fn an_existing_key_keeps_its_file_and_names_the_same_device() {
     if !tools() {
         return;
     }
-    let dir = tempfile::tempdir().unwrap();
-    let id = generate(dir.path(), &|| false).unwrap();
-    let path = identity::keys_dir(dir.path()).join(&id);
-    let before = fs::read(&path).unwrap();
-    assert_eq!(existing(&path).unwrap(), path);
-    assert_eq!(fingerprint(&path, &|| false).unwrap(), id);
+    let root = tempfile::tempdir().unwrap();
+    let directory = directory(root.path(), false);
+    let made = generate(&directory, "mine", &|| false).unwrap();
+    let before = fs::read(&made.path).unwrap();
+    assert_eq!(existing(&made.path).unwrap(), made.path);
+    let id = fingerprint(&made.path, &|| false).unwrap();
+    assert_eq!(Some(id), id_of(&made.fingerprint));
     assert_eq!(
-        fs::read(&path).unwrap(),
+        fs::read(&made.path).unwrap(),
         before,
         "reading never changes the key"
     );
@@ -99,19 +222,18 @@ fn cancellation_stops_key_work_and_leaves_no_key_behind() {
     if !tools() {
         return;
     }
-    let dir = tempfile::tempdir().unwrap();
-    let result = generate(dir.path(), &|| true);
+    let root = tempfile::tempdir().unwrap();
+    let directory = directory(root.path(), false);
+    let result = generate(&directory, "cancelled", &|| true);
     // A cancelled run may finish before the first check on a fast machine;
     // either way no half-made key remains, and a cancel is not a failure to
     // use the tools.
     match result {
         Err(Error::Cloud(crate::cloud::Error::Cancelled)) => {
-            let leftovers = fs::read_dir(identity::keys_dir(dir.path()))
-                .unwrap()
-                .count();
+            let leftovers = fs::read_dir(&directory.path).unwrap().count();
             assert_eq!(leftovers, 0);
         }
-        Ok(id) => assert!(identity::valid_id(&id)),
+        Ok(made) => assert!(made.path.exists()),
         Err(error) => panic!("{error}"),
     }
 }

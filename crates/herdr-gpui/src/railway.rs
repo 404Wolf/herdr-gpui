@@ -26,6 +26,7 @@ pub use error::Error;
 #[cfg(test)]
 pub(crate) use identity::Record;
 pub(crate) use identity::{Source, now};
+pub(crate) use keys::{KeyDirectory, NAME_RULE, valid_name};
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 

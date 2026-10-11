@@ -1,12 +1,14 @@
 //! The blocking jobs behind Railway's Settings tab and its device picker row:
-//! pick the identity (generate, borrow, or the one a device already has),
+//! make a named key, pick the identity (that key, a borrowed one, or the one a
+//! device already has),
 //! reach `railway.new` headlessly with it, check for (and on approval install)
 //! Herdr, and save the device. Also what the tab shows and what removal does.
 //!
 //! Setup never creates the VM. Railway refuses a scripted first connection
 //! for a new key (exit 13), so the user makes that one connection themselves
 //! in an interactive terminal, with a command shown here; setup then reaches
-//! the existing VM headlessly. Nothing here pretends to be a terminal.
+//! the existing VM headlessly. Nothing here pretends to be a terminal. Making
+//! the local key is a separate, earlier step and creates nothing at Railway.
 
 use super::{
     ACCOUNT, Error, Result,
@@ -23,9 +25,8 @@ const NAME_LIMIT: usize = 40;
 /// Which SSH identity setup uses.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Choice {
-    /// A new key this app generates and owns, or the one a previous setup
-    /// generated and did not finish with.
-    Generate,
+    /// The key this app generated that no device uses yet.
+    Generated,
     /// A private key the user already has, by absolute path.
     Existing(PathBuf),
     /// The identity an already saved device has, to set that device up again.
@@ -56,45 +57,76 @@ pub(crate) fn first_use_command(key: &Path) -> String {
     format!("ssh -F /dev/null -i '{quoted}' -o IdentitiesOnly=yes railway.new")
 }
 
-/// Generate the key a new device will use, if none is waiting, and return its
-/// path, so the user can make the first connection with it before setup.
-pub(crate) fn generate_key(cancelled: &dyn Fn() -> bool) -> Result<PathBuf> {
-    keys::check_tools()?;
-    let dir = identity::state_dir()?;
-    let record = resolve(&dir, Choice::Generate, &cancelled)?;
-    Ok(record.key_path(&dir))
+/// The user's home directory, where `~/.ssh` is looked for.
+fn home() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(PathBuf::from)
 }
 
-/// Pick the identity, creating a key only for `Generate` and only when no
-/// unfinished one is waiting.
+/// Make the key a new device will use, named `name`, and return its path so
+/// the user can make the first connection with it. Creates only a local key
+/// pair; nothing reaches Railway. Refuses to make a second while one waits.
+pub(crate) fn generate_key(name: &str, cancelled: &dyn Fn() -> bool) -> Result<PathBuf> {
+    keys::check_tools()?;
+    let dir = identity::state_dir()?;
+    generate_key_in(&dir, home().as_deref(), name, &cancelled)
+}
+
+fn generate_key_in(
+    dir: &Path,
+    home: Option<&Path>,
+    name: &str,
+    cancelled: &impl Fn() -> bool,
+) -> Result<PathBuf> {
+    // Checking for a waiting key and making one is one step: two jobs (a
+    // double click) must not each make their own.
+    static GENERATING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _one_at_a_time = GENERATING.lock().unwrap_or_else(|error| error.into_inner());
+    if let Some(waiting) = identity::unattached_generated(dir)? {
+        return Err(Error::KeyWaiting(waiting.key_path(dir)));
+    }
+    let made = keys::generate(&keys::key_directory(home, dir), name, cancelled)?;
+    let id = keys::fingerprint(&made.path, cancelled).inspect_err(|_| {
+        let _ = identity::remove_generated(dir, home, &made.path);
+    })?;
+    let record = Record {
+        id,
+        source: Source::Generated {
+            path: Some(
+                made.path
+                    .to_str()
+                    .map(str::to_owned)
+                    .ok_or(Error::KeyPath)?,
+            ),
+        },
+        attached: false,
+        window_ends_by: None,
+        claimed: false,
+        fingerprint: Some(made.fingerprint),
+    };
+    // A key nothing records can never be reused or deleted: take it back if
+    // the record cannot be saved.
+    if let Err(error) = identity::save(dir, record) {
+        let _ = identity::remove_generated(dir, home, &made.path);
+        return Err(error);
+    }
+    Ok(made.path)
+}
+
+/// Discard the generated key no device uses, at the user's explicit request:
+/// the one action that deletes a key from `~/.ssh`.
+pub(crate) fn discard_pending() -> Result<()> {
+    let dir = identity::state_dir()?;
+    match identity::unattached_generated(&dir)? {
+        Some(record) => identity::forget(&dir, home().as_deref(), &record.id, true),
+        None => Ok(()),
+    }
+}
+
+/// Pick the identity. A key is made only by [`generate_key`], never here.
 fn resolve(dir: &Path, choice: Choice, cancelled: &impl Fn() -> bool) -> Result<Record> {
     match choice {
         Choice::Saved(id) => identity::load(dir, &id)?.ok_or(Error::NoIdentity),
-        Choice::Generate => {
-            // Checking for a waiting key and making one is one step: two
-            // jobs (a double click, or Generate beside a setup) must not
-            // each make their own.
-            static GENERATING: std::sync::Mutex<()> = std::sync::Mutex::new(());
-            let _one_at_a_time = GENERATING.lock().unwrap_or_else(|error| error.into_inner());
-            if let Some(record) = identity::unattached_generated(dir)? {
-                return Ok(record);
-            }
-            let id = keys::generate(dir, cancelled)?;
-            let record = Record {
-                id: id.clone(),
-                source: Source::Generated,
-                attached: false,
-                window_ends_by: None,
-                claimed: false,
-            };
-            // A key nothing records can never be reused or deleted: take it
-            // back if the record cannot be saved.
-            if let Err(error) = identity::save(dir, record.clone()) {
-                let _ = identity::remove_generated(dir, &id);
-                return Err(error);
-            }
-            Ok(record)
-        }
+        Choice::Generated => identity::unattached_generated(dir)?.ok_or(Error::NoPendingKey),
         Choice::Existing(path) => {
             let path = keys::existing(&path)?;
             let id = keys::fingerprint(&path, cancelled)?;
@@ -114,6 +146,7 @@ fn resolve(dir: &Path, choice: Choice, cancelled: &impl Fn() -> bool) -> Result<
                     attached: false,
                     window_ends_by: None,
                     claimed: false,
+                    fingerprint: None,
                 },
             })
         }
@@ -280,46 +313,67 @@ pub(crate) struct Device {
     pub(crate) saved: SavedDevice,
     pub(crate) record: Option<Record>,
     pub(crate) key_present: bool,
+    /// The key's file, if the device has an identity.
+    pub(crate) key_path: Option<PathBuf>,
+    /// Removing the device keeps its generated key in `~/.ssh`, and an extra
+    /// action may delete it.
+    pub(crate) key_kept: bool,
+}
+
+/// The generated key no device uses yet, which the next setup uses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PendingKey {
+    pub(crate) path: PathBuf,
+    pub(crate) fingerprint: Option<String>,
+    /// In the user's `~/.ssh`: it stays when a device using it is removed.
+    pub(crate) kept: bool,
 }
 
 /// What the Settings tab shows.
 #[derive(Debug)]
 pub(crate) struct Overview {
     pub(crate) devices: Vec<Device>,
-    /// The generated key no device uses yet, which the next setup reuses.
-    pub(crate) pending_key: Option<PathBuf>,
+    pub(crate) pending_key: Option<PendingKey>,
+    /// Where a newly generated key will be created.
+    pub(crate) new_key_directory: keys::KeyDirectory,
     /// Keys in the user's `~/.ssh` the tab can offer.
     pub(crate) detected: Vec<PathBuf>,
 }
 
 pub(crate) fn overview() -> Result<Overview> {
     let dir = identity::state_dir()?;
-    let records = identity::load_all(&dir)?;
-    let devices = cloud::load()?
+    overview_in(&dir, home().as_deref(), cloud::load()?)
+}
+
+fn overview_in(dir: &Path, home: Option<&Path>, saved: Vec<SavedDevice>) -> Result<Overview> {
+    let records = identity::load_all(dir)?;
+    let devices = saved
         .into_iter()
         .filter(|saved| saved.provider == CloudProvider::Railway)
         .map(|saved| {
             let record = records.iter().find(|record| record.id == saved.id).cloned();
-            let key_present = record
-                .as_ref()
-                .is_some_and(|record| record.key_path(&dir).is_file());
+            let key_path = record.as_ref().map(|record| record.key_path(dir));
             Device {
+                key_present: key_path.as_ref().is_some_and(|path| path.is_file()),
+                key_kept: record.as_ref().is_some_and(|record| record.kept(dir)),
+                key_path,
                 saved,
                 record,
-                key_present,
             }
         })
         .collect();
-    let detected = std::env::var_os("HOME")
-        .map(|home| keys::detected(Path::new(&home)))
-        .unwrap_or_default();
     Ok(Overview {
         devices,
         pending_key: records
             .iter()
             .find(|record| record.owned() && !record.attached)
-            .map(|record| record.key_path(&dir)),
-        detected,
+            .map(|record| PendingKey {
+                path: record.key_path(dir),
+                fingerprint: record.fingerprint.clone(),
+                kept: record.kept(dir),
+            }),
+        new_key_directory: keys::key_directory(home, dir),
+        detected: home.map(keys::detected).unwrap_or_default(),
     })
 }
 
@@ -337,12 +391,13 @@ pub(crate) fn mark_claimed(id: &str) -> Result<()> {
 }
 
 /// Forget one saved device and its identity. The VM is left alone at Railway
-/// (it expires on its own); a generated key is deleted with the device, and a
-/// borrowed key's file is never touched.
-pub(crate) fn forget_device(id: &str) -> Result<()> {
+/// (it expires on its own). A key in Herdr's own folder is deleted with the
+/// device, a borrowed key's file is never touched, and a key generated in the
+/// user's `~/.ssh` stays unless `delete_key` is the user's explicit request.
+pub(crate) fn forget_device(id: &str, delete_key: bool) -> Result<()> {
     let dir = identity::state_dir()?;
     cloud::remove(CloudProvider::Railway, id)?;
-    identity::forget(&dir, id)
+    identity::forget(&dir, home().as_deref(), id, delete_key)
 }
 
 /// Expand a leading `~/` in a typed path.
