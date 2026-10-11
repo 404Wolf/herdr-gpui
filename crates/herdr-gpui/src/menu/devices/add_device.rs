@@ -329,15 +329,8 @@ impl HerdrWindow {
             .flex()
             .justify_end()
             .gap(px(8.));
-        let cancel = button("device-setup-cancel", "Cancel".into(), true).on_click(cx.listener(
-            |this, _, _, cx| {
-                if let Some(setup) = &mut this.menu.device_setup {
-                    setup.step = Step::Form;
-                    this.menu.error = None;
-                    cx.notify();
-                }
-            },
-        ));
+        let cancel = button("device-setup-cancel", "Cancel".into(), true)
+            .on_click(cx.listener(|this, _, _, cx| this.cancel_device_step(cx)));
         footer = match &setup.step {
             Step::Confirm(_, offer) => footer.child(cancel).child(
                 button("device-setup-submit", offer.action().into(), true)
@@ -577,6 +570,17 @@ impl HerdrWindow {
             });
         }));
         cx.notify();
+    }
+
+    /// Back to the form, giving up the host: the next submit, for this host or
+    /// another, claims it again.
+    pub(super) fn cancel_device_step(&mut self, cx: &mut Context<Self>) {
+        if let Some(setup) = &mut self.menu.device_setup {
+            setup.step = Step::Form;
+            setup.claim = None;
+            self.menu.error = None;
+            cx.notify();
+        }
     }
 
     /// Check the catalog on disk once more, then ask the local daemon for a

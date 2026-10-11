@@ -88,3 +88,22 @@ fn a_key_fetch_for_a_closed_or_changed_dialog_is_ignored(cx: &mut gpui::TestAppC
         });
     });
 }
+
+#[gpui::test]
+fn cancel_gives_up_the_host_so_it_can_be_tried_again(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = cx.add_window_view(fixture_window);
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            let request = setup::Request::new("dev@box", "", "").unwrap();
+            open_form(view, Step::Confirm(request, Offer::Terminal), cx);
+            view.menu.device_setup.as_mut().unwrap().claim =
+                Some(setup::Claim::fixture("cancel-retry"));
+            view.menu.error = Some("SSH to dev@box: refused".into());
+            view.cancel_device_step(cx);
+            assert!(matches!(step(view), Step::Form));
+            // A held claim would refuse the next submit as DeviceAdding.
+            assert!(view.menu.device_setup.as_ref().unwrap().claim.is_none());
+            assert!(view.menu.error.is_none());
+        });
+    });
+}
