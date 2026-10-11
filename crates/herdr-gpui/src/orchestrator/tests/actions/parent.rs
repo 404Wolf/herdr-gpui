@@ -20,6 +20,17 @@ fn a_linked_worktree_creates_through_its_repositorys_parent() {
 }
 
 #[test]
+fn another_repositorys_parent_is_never_used() {
+    let mut snapshot = decoded(&[("other", false), ("w1", true), ("w2", false)]);
+    if let Some(tree) = snapshot.workspaces[0].worktree.as_mut() {
+        tree.repo_key = "/elsewhere/.git".into();
+    }
+    assert_eq!(parent_of(&snapshot, "w1"), Some("w2"));
+    snapshot.workspaces.truncate(2);
+    assert_eq!(parent_of(&snapshot, "w1"), None);
+}
+
+#[test]
 fn dispatch_from_a_linked_worktree_uses_the_open_parent() {
     let dir = tempfile::tempdir().unwrap();
     let site = site(dir.path(), "");
