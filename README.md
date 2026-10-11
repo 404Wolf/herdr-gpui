@@ -2,7 +2,7 @@
   <img src="assets/icons/herdr-ui-icon-badge.png" alt="Herdr ram on a simple ivory tile with a red notification badge showing 1" width="176" height="176">
 </p>
 
-<h1 align="center">Herdr GPUI</h1>
+<h1 align="center">Herdr UI</h1>
 
 <p align="center">
   <a href="https://github.com/penso/herdr-gpui/actions/workflows/ci.yml"><img src="https://github.com/penso/herdr-gpui/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -28,7 +28,7 @@ running another terminal emulator or wrapping the TUI.
 ## Gallery
 
 <p align="center">
-  <img src="docs/screenshots/workspaces.png" alt="Herdr GPUI window: a sidebar with the local host's CPU and memory, a repository with two linked worktrees, and every agent with its status dot; tabs in the title bar; three split panes running Neovim, git log, and cargo test" width="900">
+  <img src="docs/screenshots/workspaces.png" alt="Herdr UI window: a sidebar with the local host's CPU and memory, a repository with two linked worktrees, and every agent with its status dot; tabs in the title bar; three split panes running Neovim, git log, and cargo test" width="900">
   <br>
   <sub><b>Workspaces, worktrees, and agents in one sidebar.</b> Each agent carries the daemon's status dot (idle, working, or waiting on you), and tabs and splits are painted natively from the daemon's cells.</sub>
 </p>
@@ -269,7 +269,7 @@ console-subsystem, so launching it from Explorer also opens a console window.
 
 ```mermaid
 flowchart LR
-    subgraph app["Herdr GPUI (this repo)"]
+    subgraph app["Herdr UI (this repo)"]
         ui["herdr-gpui<br/>window, painting, input"]
         client["herdr-client<br/>discovery, socket worker, sessions"]
         proto["herdr-protocol<br/>framing, surface patches"]

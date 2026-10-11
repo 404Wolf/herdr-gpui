@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-Herdr GPUI is pre-1.0 and has no published releases yet. Only the current
+Herdr UI is pre-1.0 and has no published releases yet. Only the current
 `main` branch receives fixes. Pin a commit if you need a stable reference.
 
 ## Reporting a Vulnerability

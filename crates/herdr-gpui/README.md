@@ -1703,7 +1703,7 @@ the daemon exposes to clients:
 
 ## Code Navigation
 
-Herdr GPUI is not an editor, but it can get you to the right line quickly,
+Herdr UI is not an editor, but it can get you to the right line quickly,
 next to the agent that is changing the code.
 
 - **Open in your editor.** Cmd-click (Ctrl-click elsewhere) a printed path
