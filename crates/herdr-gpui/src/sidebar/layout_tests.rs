@@ -65,6 +65,8 @@ mod status_bar;
 #[cfg(test)]
 mod sticky_hosts;
 #[cfg(test)]
+mod superset_badges;
+#[cfg(test)]
 mod superset_dots;
 #[cfg(test)]
 mod text_width;

@@ -788,9 +788,10 @@ Three more layouts draw rows with a design of their own, each with fixed
 spacing:
 
 - `superset`: one line per row. An icon slot carries the pull request's state
-  or the repository owner, with the activity status as a dot on its corner; the
-  PR's change counts sit on the right, and the focused row is filled with a
-  stripe down its leading edge. Agents show where they run after their name.
+  or the repository owner, with the activity status as a compact corner badge
+  (dot or symbol, following the indicator setting) that leaves the main icon
+  visible. The PR's change counts sit on the right, and the focused row is filled
+  with a stripe down its leading edge. Agents show where they run after their name.
 - `orca`: inset cards with a status column, the name and a `primary` mark on a
   repository's own checkout, then a meta line with the host, the branch when it
   differs from the name, and the pull request. Agents are single compact lines.
