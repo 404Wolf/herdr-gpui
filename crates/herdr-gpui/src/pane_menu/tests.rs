@@ -6,6 +6,9 @@ use std::sync::Arc;
 
 pub(crate) mod close_option;
 mod menu_width;
+// Moves run POSIX host scripts and are never offered on other clients.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod moves;
 
 fn snapshot() -> ClientShellSnapshot {
     let mut snapshot: ClientShellSnapshot = serde_json::from_str(include_str!(

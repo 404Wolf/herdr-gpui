@@ -79,6 +79,7 @@ mod orchestrator;
 mod osc52;
 mod palette;
 mod pane_menu;
+mod pane_move;
 mod panel_resize;
 mod plugin_values;
 mod port_forward;

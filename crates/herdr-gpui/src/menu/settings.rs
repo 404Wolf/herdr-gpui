@@ -375,6 +375,7 @@ impl HerdrWindow {
                 | Command::ResizeDown
                 | Command::ResizeMode
                 | Command::RenamePane
+                | Command::MovePane
                 | Command::RenameWorkspace
                 | Command::CloseWorkspace => 0,
                 Command::NextTab
