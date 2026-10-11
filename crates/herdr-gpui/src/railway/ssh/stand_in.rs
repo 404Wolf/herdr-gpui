@@ -1,6 +1,5 @@
 //! A stand-in for `ssh` that lets the setup and reconnect flows run end to end
-//! without a network. [`install`] fails exactly as OpenSSH does when the `-F`
-//! config it was handed no longer exists; [`install_script`] runs any script.
+//! without a network: [`install_script`] runs any script in `ssh`'s place.
 #![allow(clippy::unwrap_used)]
 
 use std::{cell::RefCell, path::PathBuf, process::Command};
@@ -23,26 +22,6 @@ pub(super) fn base() -> Option<Command> {
 
 pub(crate) struct StandIn {
     dir: tempfile::TempDir,
-}
-
-/// Route this thread's `ssh` commands to a stand-in that ends like a refused
-/// key (exit 255) and notes whether its config could be read.
-pub(crate) fn install() -> StandIn {
-    install_script(
-        r#"config=
-while [ $# -gt 0 ]; do
-    case "$1" in -F) config=$2; shift 2;; *) shift;; esac
-done
-if [ -r "$config" ]; then
-    echo readable >> '@LOG@'
-    echo 'Permission denied (publickey).' >&2
-else
-    echo missing >> '@LOG@'
-    echo "command-line: line 0: Can't open user config file $config: No such file or directory" >&2
-fi
-exit 255
-"#,
-    )
 }
 
 /// Route this thread's `ssh` commands to `sh` running `body`, in which `@LOG@`

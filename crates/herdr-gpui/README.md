@@ -378,12 +378,12 @@ pick an existing private key or generate one by name (an ed25519 key without a
 passphrase, in `~/.ssh` when that exists, otherwise in Herdr's state directory;
 an existing file is never replaced). **Connect and set up** creates the VM if the
 key has none, installs Herdr in it when the **Install Herdr** switch is on, and
-saves the device with that key's path and fingerprint in `railway-identities.json`.
-Every reconnect uses the same key, never creates a VM or installs anything, and
-refuses a key file whose fingerprint changed. Removing a device keeps its key
-files. Connections use a private `ssh` config that offers only that key and pins
-`railway.new`'s host key on first use (`railway_known_hosts`). The VM is
-temporary: Railway limits its lifetime and how many a network can create. Needs
+saves the device with the key's path (as its account). Every reconnect uses the
+same key, never creates a VM or installs anything, and refuses a key file whose
+fingerprint changed. Removing a device keeps its key files. Connections run
+`ssh -F /dev/null` with options that offer only that key and pin `railway.new`'s
+host key on first use (`railway_known_hosts`). The VM is temporary: Railway
+limits its lifetime and how many a network can create. Needs
 `ssh` and `ssh-keygen` on the PATH; unavailable on Windows.
 
 Each provider is a Cargo feature of `herdr-gpui`, on by default: `coder` for

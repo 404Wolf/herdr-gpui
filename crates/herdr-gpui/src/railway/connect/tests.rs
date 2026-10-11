@@ -1,92 +1,79 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
-use crate::railway::identity::Record;
-use std::{fs, path::PathBuf, sync::atomic::AtomicBool};
+use crate::railway::{
+    ssh::stand_in,
+    tests::{key, tools},
+};
+use std::fs;
 
-/// A key `ssh-keygen` made at `dir/name`, saved as an attached identity.
-fn saved_key(dir: &Path, name: &str) -> (PathBuf, String) {
-    let key = dir.join(name);
-    let made = std::process::Command::new("ssh-keygen")
-        .args(["-q", "-t", "ed25519", "-N", "", "-f"])
-        .arg(&key)
-        .status();
-    assert!(made.is_ok_and(|status| status.success()), "ssh-keygen");
-    let id = keys::fingerprint(&key, &|| false).unwrap();
-    let record = Record {
-        attached: true,
-        ..Record::unattached(&id, &key.display().to_string())
-    };
-    identity::save(dir, record).unwrap();
-    (key, id)
-}
-
-fn connect(dir: &Path, id: &str) -> Result<Bridge> {
-    connect_saved(dir, id, "default", &AtomicBool::new(false))
+fn connect(dir: &Path, account: &Path, id: &str) -> Result<Bridge> {
+    connect_saved(
+        dir,
+        &account.display().to_string(),
+        id,
+        "default",
+        &AtomicBool::new(false),
+    )
 }
 
 #[test]
-fn a_device_without_a_usable_identity_is_reported_never_given_one() {
+fn a_device_without_its_key_is_reported_and_never_given_another() {
+    if !tools() {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
-    assert!(matches!(
-        connect(dir.path(), "key-abcd"),
-        Err(Error::NoIdentity)
-    ));
-    let (key, id) = saved_key(dir.path(), "id");
-    let before = fs::read_dir(dir.path()).unwrap().count();
-    fs::remove_file(&key).unwrap();
-    assert!(matches!(
-        connect(dir.path(), &id),
-        Err(Error::KeyMissing(_))
-    ));
-    // Nothing was generated to take the missing key's place.
-    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), before - 1);
-}
+    // An account that is not a key path, like one saved before keys were.
+    let old = connect_saved(
+        dir.path(),
+        "railway.new",
+        "key-a",
+        "default",
+        &AtomicBool::new(false),
+    );
+    assert!(matches!(old, Err(Error::NoIdentity)));
 
-#[test]
-fn a_replaced_key_file_never_reaches_another_vm() {
-    let dir = tempfile::tempdir().unwrap();
-    let (key, id) = saved_key(dir.path(), "id");
-    let (other, _) = saved_key(dir.path(), "other");
-    fs::copy(&other, &key).unwrap();
-    fs::copy(identity::public_path(&other), identity::public_path(&key)).unwrap();
-    let ssh = ssh::stand_in::install();
+    let (saved, id) = key(dir.path(), "id");
+    let (other, _) = key(dir.path(), "other");
+    let ssh = stand_in::install_script("echo ran >> '@LOG@'; exit 255");
+    // A replaced key file never reaches another VM: ssh does not even run.
+    fs::copy(&other, &saved).unwrap();
+    fs::copy(keys::public_path(&other), keys::public_path(&saved)).unwrap();
     assert!(matches!(
-        connect(dir.path(), &id),
+        connect(dir.path(), &saved, &id),
         Err(Error::KeyChanged(_))
     ));
-    assert!(ssh.runs().is_empty(), "ssh must not run with another key");
+    // A missing one is reported; nothing is generated in its place.
+    fs::remove_file(&saved).unwrap();
+    let before = fs::read_dir(dir.path()).unwrap().count();
+    assert!(matches!(
+        connect(dir.path(), &saved, &id),
+        Err(Error::KeyMissing(_))
+    ));
+    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), before);
+    assert!(ssh.runs().is_empty(), "ssh must not run without the key");
 }
 
-/// A reconnect is headless every time, with a config that still exists when
-/// `ssh` starts (the regression behind "Can't open user config file …: No such
-/// file or directory"). Only setup ever runs a terminal session, which is what
-/// can create a VM.
+/// A reconnect is headless every time: only setup ever runs a terminal
+/// session, which is what can create a VM.
 #[test]
-fn a_reconnect_is_headless_and_hands_ssh_a_config_that_still_exists() {
+fn a_reconnect_is_headless_every_time() {
+    if !tools() {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
-    let (_, id) = saved_key(dir.path(), "id");
-    let ssh = ssh::stand_in::install_script(
-        r#"mode=headless; config=
-while [ $# -gt 0 ]; do
-    case "$1" in -F) config=$2; shift 2;; -tt) mode=terminal; shift;; *) shift;; esac
-done
-[ -r "$config" ] && state=readable || state=missing
-echo "$mode $state" >> '@LOG@'
+    let (saved, id) = key(dir.path(), "id");
+    let ssh = stand_in::install_script(
+        r#"mode=headless
+for argument in "$@"; do [ "$argument" = -tt ] && mode=terminal; done
+echo "$mode" >> '@LOG@'
 exit 255
 "#,
     );
     for _ in 0..3 {
-        assert!(matches!(connect(dir.path(), &id), Err(Error::Bridge(_))));
+        assert!(matches!(
+            connect(dir.path(), &saved, &id),
+            Err(Error::Bridge(_))
+        ));
     }
-    assert_eq!(ssh.runs(), ["headless readable"; 3]);
-}
-
-#[test]
-fn another_service_is_refused() {
-    let stop = AtomicBool::new(true);
-    let Err(error) = super::connect("https://app.daytona.io/api", "key-abcd", "default", &stop)
-    else {
-        panic!("a different account must not reach railway.new");
-    };
-    assert!(error.get_ref().is_some_and(|inner| inner.is::<Error>()));
+    assert_eq!(ssh.runs(), ["headless"; 3]);
 }

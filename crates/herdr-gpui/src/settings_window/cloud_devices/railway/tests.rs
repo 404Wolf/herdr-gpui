@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used)]
 use super::{
     super::super::{Section, SettingsWindow},
-    CloudProvider, KeySource, Overview, setup,
+    CloudProvider, KeySource, Overview, Update, setup,
 };
 use crate::{cloud::SavedDevice, railway::KeyDirectory};
 use gpui::{Entity, TestAppContext, VisualTestContext, px, size};
@@ -39,12 +39,11 @@ fn device(index: usize) -> setup::Device {
             provider: CloudProvider::Railway,
             id: format!("key-{index}"),
             label: format!("A long Railway device label number {index} that must truncate"),
-            account: crate::railway::ACCOUNT.into(),
+            account: format!("/home/u/.ssh/key-{index}"),
             machine: format!("railway-box-{index}"),
             session: "default".into(),
             enabled: true,
         },
-        key_path: Some(PathBuf::from(format!("/home/u/.ssh/key-{index}"))),
         key_present: true,
     }
 }
@@ -54,7 +53,6 @@ fn show(view: &Entity<SettingsWindow>, devices: Vec<setup::Device>, cx: &mut Vis
         view.update(cx, |view, _| {
             view.railway_card.as_mut().unwrap().overview = Some(Overview {
                 devices,
-                pending_key: None,
                 new_key_directory: KeyDirectory {
                     path: PathBuf::from("/home/u/.ssh"),
                     user: true,
@@ -65,10 +63,10 @@ fn show(view: &Entity<SettingsWindow>, devices: Vec<setup::Device>, cx: &mut Vis
 }
 
 #[gpui::test]
-fn the_key_choices_and_install_consent_fit_the_narrowest_width(cx: &mut TestAppContext) {
+fn the_key_choices_install_consent_and_devices_fit_the_narrowest_width(cx: &mut TestAppContext) {
     let ((view, cx), _main) = open(cx);
-    show(&view, Vec::new(), cx);
-    cx.simulate_resize(size(px(680.), px(1600.)));
+    show(&view, vec![device(0), device(1)], cx);
+    cx.simulate_resize(size(px(680.), px(2000.)));
     draw(cx);
     for selector in [
         "cloud-railway-card",
@@ -77,6 +75,8 @@ fn the_key_choices_and_install_consent_fit_the_narrowest_width(cx: &mut TestAppC
         "cloud-railway-install",
         "cloud-railway-create",
         "cloud-railway-devices",
+        "cloud-railway-remove-0",
+        "cloud-railway-remove-1",
     ] {
         let bounds = cx.debug_bounds(selector);
         assert!(bounds.is_some_and(|b| b.right() <= px(680.)), "{selector}");
@@ -107,15 +107,7 @@ fn setup_without_a_usable_key_starts_nothing(cx: &mut TestAppContext) {
         })
     };
     cx.update(|_, cx| view.update(cx, |view, cx| view.setup_railway(cx)));
-    assert_eq!(message(cx), "Generate a key first.");
-    cx.update(|_, cx| {
-        view.update(cx, |view, cx| {
-            let card = view.railway_card.as_mut().unwrap();
-            card.source = KeySource::Existing;
-            view.setup_railway(cx);
-        })
-    });
-    assert!(message(cx).contains("path"));
+    assert!(message(cx).contains("Generate a key"));
     // A name that is not one safe file name is explained, not generated.
     cx.update(|_, cx| {
         view.update(cx, |view, cx| {
@@ -136,58 +128,43 @@ fn setup_without_a_usable_key_starts_nothing(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn saved_devices_only_offer_remove(cx: &mut TestAppContext) {
-    let ((view, cx), _main) = open(cx);
-    show(&view, vec![device(0), device(1)], cx);
-    cx.simulate_resize(size(px(680.), px(2000.)));
-    draw(cx);
-    let devices = cx.debug_bounds("cloud-railway-devices").unwrap();
-    for index in 0..2 {
-        let remove = cx
-            .debug_bounds(Box::leak(
-                format!("cloud-railway-remove-{index}").into_boxed_str(),
-            ))
-            .unwrap();
-        assert!(remove.left() >= devices.left() && remove.right() <= devices.right());
-    }
-    for selector in ["cloud-railway-reconnect-0", "cloud-railway-claimed-0"] {
-        assert!(cx.debug_bounds(selector).is_none(), "{selector}");
-    }
-}
-
-#[gpui::test]
-fn a_refresh_never_cancels_a_change_and_a_removal_waits_for_a_setup(cx: &mut TestAppContext) {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    };
+fn a_generated_key_fills_the_path_a_refresh_keeps_a_change_and_removal_waits_for_setup(
+    cx: &mut TestAppContext,
+) {
     let ((view, cx), main) = open(cx);
     show(&view, vec![device(0)], cx);
-    // A change in progress survives a config-driven refresh.
-    let cancelled = Arc::new(AtomicBool::new(false));
-    let seen = cancelled.clone();
+    // A generated key becomes the key to set up with.
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            let key = PathBuf::from("/home/u/.ssh/herdr-railway");
+            view.apply_railway(Update::Generated(Ok(key)), cx);
+            let card = view.railway_card.as_ref().unwrap();
+            assert_eq!(card.source, KeySource::Existing);
+            assert_eq!(card.path.read(cx).text(), "/home/u/.ssh/herdr-railway");
+        })
+    });
+    // A change in progress is not replaced, which would cancel it, by a
+    // config-driven refresh.
     cx.update(|_, cx| {
         view.update(cx, |view, cx| {
             let job = crate::cloud::worker::spawn::<SettingsWindow, ()>(
                 "railway-test-change",
                 cx,
-                move |stop, _| {
+                |stop, _| {
                     while !stop() {
                         std::thread::sleep(std::time::Duration::from_millis(5));
                     }
-                    seen.store(true, Ordering::Release);
                 },
                 |_, (), _| {},
             )
             .unwrap();
             let card = view.railway_card.as_mut().unwrap();
-            (card.job, card.changing) = (Some(job), true);
-            card.reads_disk = true;
+            (card.job, card.changing, card.reads_disk) = (Some(job), true, true);
             view.railway_config_changed(cx);
+            let card = view.railway_card.as_ref().unwrap();
+            assert!(card.job.is_some() && card.changing);
         })
     });
-    std::thread::sleep(std::time::Duration::from_millis(100));
-    assert!(!cancelled.load(Ordering::Acquire));
     // With a setup running, a removal is refused and starts nothing.
     cx.update(|_, cx| {
         view.update(cx, |view, _| {

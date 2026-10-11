@@ -224,17 +224,17 @@ impl SettingsWindow {
 
     /// A saved device with its Remove button; removal leaves the machine
     /// itself untouched at the provider.
-    #[cfg(any(feature = "coder", feature = "daytona"))]
+    #[cfg(any(feature = "coder", feature = "daytona", feature = "railway"))]
     fn cloud_device_row(
         &self,
-        provider: CloudProvider,
         index: usize,
         device: &crate::cloud::SavedDevice,
+        detail: String,
         ready: bool,
         forget: impl Fn(&mut Self, String, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>,
     ) -> Div {
-        let key = provider.key();
+        let key = device.provider.key();
         let id = device.id.clone();
         div()
             .flex()
@@ -249,7 +249,7 @@ impl SettingsWindow {
                         div()
                             .truncate()
                             .text_color(rgb(self.theme.muted))
-                            .child(format!("{} · {}", device.machine, device.session)),
+                            .child(detail),
                     ),
             )
             .child(

@@ -1,13 +1,12 @@
 //! Setup against a stand-in for Railway: a headless probe is refused until a
 //! session with an 80x32 terminal has run, as with the real service.
 #![allow(clippy::unwrap_used)]
-use super::{tests::their_key, *};
-use crate::railway::ssh::stand_in;
-use std::{
-    cell::RefCell,
-    sync::atomic::{AtomicBool, Ordering},
-    time::Duration,
+use super::*;
+use crate::railway::{
+    ssh::stand_in,
+    tests::{key, tools},
 };
+use std::cell::RefCell;
 
 /// Logs what each run was (`@LOG@`) and keeps whether a VM exists in `@STATE@`.
 /// A terminal run (`-tt`) does what `terminal` says; headless runs are refused
@@ -29,7 +28,7 @@ if [ ! -e '@STATE@/vm' ]; then
 fi
 case "$last" in
     *'exit 3'*) echo probe >> '@LOG@' ;;
-    herdr-railway) echo reach >> '@LOG@' ;;
+    railway.new) echo reach >> '@LOG@' ;;
     *) echo "reach with a command" >> '@LOG@' ;;
 esac
 exit 0
@@ -54,32 +53,35 @@ struct Fixture {
 }
 
 fn fixture() -> Option<Fixture> {
-    keys::check_tools().ok()?;
-    let keys = tempfile::tempdir().unwrap();
-    let (key, id) = their_key(keys.path(), "theirs");
-    Some(Fixture {
-        dir: tempfile::tempdir().unwrap(),
-        _keys: keys,
-        key,
-        id,
+    tools().then(|| {
+        let keys = tempfile::tempdir().unwrap();
+        let (key, id) = key(keys.path(), "theirs");
+        Fixture {
+            dir: tempfile::tempdir().unwrap(),
+            _keys: keys,
+            key,
+            id,
+        }
     })
 }
 
+/// Set up `key` under `name`; `saved` is the device list, which a success adds to.
 fn run(
     fixture: &Fixture,
-    cancelled: &dyn Fn() -> bool,
+    (key, name): (&Path, &str),
     steps: &RefCell<Vec<String>>,
     saved: &RefCell<Vec<SavedDevice>>,
 ) -> Result<SavedDevice> {
     add_device_in(
         fixture.dir.path(),
         AddRequest {
-            choice: Choice::Existing(fixture.key.clone()),
+            key: key.to_owned(),
+            name: name.to_owned(),
             install: false,
         },
-        cancelled,
+        &|| false,
         &|step| steps.borrow_mut().push(step.text()),
-        || Ok(Vec::new()),
+        || Ok(saved.borrow().clone()),
         |device| {
             saved.borrow_mut().push(device);
             Ok(())
@@ -92,26 +94,31 @@ fn a_key_with_no_vm_gets_one_from_an_80x32_terminal_once_then_only_headless_runs
     let Some(fixture) = fixture() else { return };
     let ssh = stand_in::install_script(&railway(CREATES));
     let (steps, saved) = (RefCell::new(Vec::new()), RefCell::new(Vec::new()));
-    let device = run(&fixture, &|| false, &steps, &saved).unwrap();
+    let device = run(&fixture, (&fixture.key, "first"), &steps, &saved).unwrap();
     assert_eq!(
         ssh.runs(),
         ["refused", "terminal 32 80", "reach", "probe"],
         "a bare probe, one terminal session, a bare probe, then the installer's probe"
     );
     assert_eq!(*steps.borrow(), ["Connecting…", "Creating…", "Connecting…"]);
+    // The device is the key's: its ID names the key, its account is the path.
     assert_eq!(device.id, fixture.id);
-    assert!(
-        identity::load(fixture.dir.path(), &fixture.id)
-            .unwrap()
-            .unwrap()
-            .attached
+    assert_eq!(device.account, fixture.key.display().to_string());
+    assert_eq!(
+        (device.label.as_str(), device.machine.as_str()),
+        ("first", "first")
     );
 
-    // The VM exists now: setting up again never opens a terminal.
+    // The VM exists now: setting up again never opens a terminal, and the
+    // device keeps its name.
     steps.borrow_mut().clear();
-    run(&fixture, &|| false, &steps, &saved).unwrap();
+    let again = run(&fixture, (&fixture.key, "second"), &steps, &saved).unwrap();
     assert_eq!(ssh.runs()[4..], ["reach", "probe"]);
     assert_eq!(*steps.borrow(), ["Connecting…"]);
+    assert_eq!(
+        (again.label.as_str(), again.machine.as_str()),
+        ("first", "first")
+    );
 }
 
 #[test]
@@ -159,7 +166,7 @@ exit 13
         };
         let ssh = stand_in::install_script(&script);
         let (steps, saved) = (RefCell::new(Vec::new()), RefCell::new(Vec::new()));
-        let error = run(&fixture, &|| false, &steps, &saved)
+        let error = run(&fixture, (&fixture.key, "n"), &steps, &saved)
             .unwrap_err()
             .to_string();
         assert!(error.contains(expected), "{name}: {error}");
@@ -170,49 +177,34 @@ exit 13
 }
 
 #[test]
-fn a_generated_key_survives_a_failed_creation_for_the_next_attempt() {
+fn a_key_or_device_list_that_cannot_be_used_costs_no_vm() {
     let Some(fixture) = fixture() else { return };
-    let _ssh = stand_in::install_script(&railway("    exit 1"));
-    let home = tempfile::tempdir().unwrap();
-    let key = generate_key_in(fixture.dir.path(), Some(home.path()), "mine", &|| false).unwrap();
-    let request = || AddRequest {
-        choice: Choice::Generated,
-        install: false,
-    };
-    for _ in 0..2 {
-        let error = add_device_in(
-            fixture.dir.path(),
-            request(),
-            &|| false,
-            &|_| {},
-            || Ok(Vec::new()),
-            |_| Ok(()),
-        )
-        .unwrap_err();
-        assert!(matches!(error, Error::Unreachable(_)), "{error:?}");
-        let waiting = identity::pending(fixture.dir.path()).unwrap().unwrap();
-        assert_eq!(waiting.key_path(), key, "the same key is reused");
-    }
-}
-
-#[test]
-fn cancelling_during_creation_stops_the_session_and_saves_nothing() {
-    let Some(fixture) = fixture() else { return };
-    let _ssh = stand_in::install_script(&railway("    exec sleep 30"));
-    let stop = std::sync::Arc::new(AtomicBool::new(false));
-    let flag = stop.clone();
-    let canceller = std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(1500));
-        flag.store(true, Ordering::Release);
-    });
+    let ssh = stand_in::install_script(&railway(CREATES));
     let (steps, saved) = (RefCell::new(Vec::new()), RefCell::new(Vec::new()));
-    let started = std::time::Instant::now();
-    let error = run(&fixture, &|| stop.load(Ordering::Acquire), &steps, &saved).unwrap_err();
-    canceller.join().unwrap();
-    assert!(
-        matches!(error, Error::Cloud(cloud::Error::Cancelled)),
-        "{error:?}"
+    let junk = fixture.dir.path().join("junk");
+    std::fs::write(&junk, "not a key\n").unwrap();
+    for bad in [
+        junk.as_path(),
+        Path::new("relative"),
+        &fixture.dir.path().join("absent"),
+    ] {
+        assert!(
+            run(&fixture, (bad, "n"), &steps, &saved).is_err(),
+            "{bad:?}"
+        );
+    }
+    let unreadable = add_device_in(
+        fixture.dir.path(),
+        AddRequest {
+            key: fixture.key.clone(),
+            name: "n".into(),
+            install: false,
+        },
+        &|| false,
+        &|_| {},
+        || Err(cloud::Error::StateDirectory),
+        |_| Ok(()),
     );
-    assert!(started.elapsed() < Duration::from_secs(20));
-    assert!(saved.borrow().is_empty());
+    assert!(matches!(unreadable, Err(Error::Cloud(_))));
+    assert!(ssh.runs().is_empty(), "nothing reached Railway");
 }
