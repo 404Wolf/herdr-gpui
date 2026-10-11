@@ -399,6 +399,49 @@ fn layouts_saved_with_tabs_closed_per_group_give_each_tab_one_group() {
     assert_eq!(each(&restored, &["t1", "t1"]), [Empty, Terminal]);
 }
 
+/// Which group takes a tab that several groups of an old layout had kept.
+#[test]
+fn old_layouts_prefer_a_group_showing_a_tab_then_the_group_in_use() {
+    let (_, mut ids, _) = layout();
+    let restore = |json: &str, ids: &mut GroupIds| {
+        let old: SavedLayout = serde_json::from_str(json).unwrap();
+        assert!(old.valid());
+        Layout::restore(&old, ids)
+    };
+    // Closed in the first group only and shown by none: of the two groups
+    // that kept it, the group in use takes it, not the first one.
+    let listed_twice = restore(
+        r#"{"groups":[
+            {"pick":{"kind":"herdr","id":"t1"},"share":0.4,"hidden":[{"kind":"page","id":9}]},
+            {"pick":{"kind":"herdr","id":"t2"},"share":0.3},
+            {"pick":{"kind":"herdr","id":"t3"},"share":0.3}
+        ],"active":2}"#,
+        &mut ids,
+    );
+    assert_eq!(
+        listed(&listed_twice, &[page(9)]),
+        [vec![], vec![], vec![page(9)]]
+    );
+    // A group showing the tab keeps it, though the group in use listed it
+    // too: no group loses the tab it shows.
+    let shown_elsewhere = restore(
+        r#"{"groups":[
+            {"pick":{"kind":"herdr","id":"t1"},"share":0.4,"hidden":[{"kind":"page","id":9}]},
+            {"pick":{"kind":"page","id":9},"share":0.3},
+            {"pick":{"kind":"herdr","id":"t3"},"share":0.3}
+        ],"active":2}"#,
+        &mut ids,
+    );
+    assert_eq!(
+        listed(&shown_elsewhere, &[page(9)]),
+        [vec![], vec![page(9)], vec![]]
+    );
+    assert_eq!(
+        each(&shown_elsewhere, &["t1", "t1", "t3"]),
+        [Terminal, Page(TabId::test(9)), Terminal]
+    );
+}
+
 #[test]
 fn selectors_keep_their_names_in_the_first_group() {
     let (_, mut ids, _) = layout();

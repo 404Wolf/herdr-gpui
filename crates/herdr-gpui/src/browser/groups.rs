@@ -143,10 +143,11 @@ impl SavedLayout {
     }
 
     /// The group each tab belongs to, by position. A layout saved before
-    /// tabs belonged to one group names what each group had closed instead:
-    /// such a tab goes to a group that kept it, first the group in use and
-    /// then one showing it, and to the group in use when every group had
-    /// closed it.
+    /// tabs belonged to one group names what each group had closed instead.
+    /// Such a tab goes to a group that kept it: one showing it, so no group
+    /// loses the tab it shows, then one only listing it, the group in use
+    /// first either way. A tab every group had closed goes to the group in
+    /// use, where it was still listed.
     fn owners(&self) -> Vec<(Pick, usize)> {
         let mut owners: Vec<(Pick, usize)> = Vec::new();
         let mut claim = |pick: &Pick, group: usize| {
@@ -164,11 +165,17 @@ impl SavedLayout {
         let shown = self.groups.iter().filter_map(|group| group.pick.as_ref());
         for pick in shown.chain(closed) {
             let shows = |group: &SavedGroup| group.pick.as_ref() == Some(pick) && kept(pick, group);
-            let using =
-                Some(self.active).filter(|active| self.groups.get(*active).is_some_and(shows));
-            let showing = self.groups.iter().position(shows);
-            let keeping = self.groups.iter().position(|group| kept(pick, group));
-            claim(pick, using.or(showing).or(keeping).unwrap_or(self.active));
+            let keeps = |group: &SavedGroup| kept(pick, group);
+            let active = self.groups.get(self.active);
+            let using = |wanted: &dyn Fn(&SavedGroup) -> bool| {
+                Some(self.active).filter(|_| active.is_some_and(wanted))
+            };
+            let owner = using(&shows)
+                .or_else(|| self.groups.iter().position(shows))
+                .or_else(|| using(&keeps))
+                .or_else(|| self.groups.iter().position(keeps))
+                .unwrap_or(self.active);
+            claim(pick, owner);
         }
         owners
     }
