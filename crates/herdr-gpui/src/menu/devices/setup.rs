@@ -338,6 +338,10 @@ fn quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
+/// The variables that choose where Herdr keeps its device catalog. Every CLI
+/// run for a device gets this process's values, so it edits the same catalog.
+const CATALOG_ROOTS: [&str; 3] = ["HERDR_CONFIG_PATH", "XDG_STATE_HOME", "XDG_CONFIG_HOME"];
+
 /// Prefix of the workspace variables that carry the GUI's environment to the
 /// setup command.
 const STAGED_PREFIX: &str = "HERDR_GPUI_SETUP_";
@@ -421,10 +425,13 @@ fn save_with(
     ensure_unsaved(request, claim, &load()?, resolve)?;
     let (status, stdout, stderr) = run_cli(executable, &request.arguments(), SAVE_TIMEOUT)?;
     if !status.success() {
-        return Err(Error::DeviceSetup {
-            status,
-            detail: last_line(&stderr),
-        });
+        let detail = last_line(&stderr);
+        // Without a terminal to confirm in, the CLI refuses rather than
+        // restart a server whose panes would stop.
+        if detail.contains(RESTART_REFUSAL) {
+            return Err(Error::DeviceServerRestart);
+        }
+        return Err(Error::DeviceSetup { status, detail });
     }
     // Without the ID the CLI printed, there is no profile known to be ours.
     let Some(id) = saved_id(&stdout) else {
@@ -451,6 +458,9 @@ fn save_with(
     }
 }
 
+/// How `machine add` ends when the running server must be restarted first.
+const RESTART_REFUSAL: &str = "remote server is not ready for saved machines";
+
 /// The profile ID from `Saved SSH machine <id>. Remote server is ready.`
 fn saved_id(stdout: &[u8]) -> Option<String> {
     String::from_utf8_lossy(stdout).lines().find_map(|line| {
@@ -472,7 +482,8 @@ fn run_cli(
 /// Runs a program with closed stdin and a deadline, keeping at most `limit`
 /// bytes of each of stdout and stderr. Both pipes are drained so a chatty
 /// program never blocks on a full one. A missed deadline kills the program and
-/// returns `DeviceSetupTimeout`. Blocks: call it from the background executor.
+/// returns `DeviceSetupTimeout`. Blocks, also on the first login-environment
+/// lookup: call it from the background executor.
 pub(super) fn run_bounded(
     executable: &std::ffi::OsStr,
     args: &[&str],
@@ -509,7 +520,18 @@ fn run_bounded_untraced(
     timeout: Duration,
     limit: u64,
 ) -> Result<(ExitStatus, Vec<u8>, Vec<u8>)> {
-    let mut child = Command::new(executable)
+    let mut command = Command::new(executable);
+    // The user's `PATH` and agent, not launchd's: `machine add` runs `ssh`,
+    // and the Tailscale CLI finds the Mac app's daemon with `/usr/sbin/lsof`.
+    crate::login_env::apply(&mut command);
+    // The catalog `machine add` writes must be the one this window reads.
+    for key in CATALOG_ROOTS {
+        match std::env::var_os(key) {
+            Some(value) => command.env(key, value),
+            None => command.env_remove(key),
+        };
+    }
+    let mut child = command
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -570,7 +592,13 @@ pub(super) fn last_line(output: &[u8]) -> String {
 }
 
 /// The shell command a local workspace runs to set the host up interactively.
-pub(super) fn terminal_command(request: &Request) -> Result<TerminalSetup> {
+/// `path` is the `PATH` the setup runs with, normally the login shell's: the
+/// pane's own would do, but the command restores this window's environment.
+/// Without one, this process's `PATH` is used.
+pub(super) fn terminal_command(
+    request: &Request,
+    path: Option<&std::ffi::OsStr>,
+) -> Result<TerminalSetup> {
     if cfg!(windows) {
         return Err(Error::DeviceSetupInput(
             "Saved SSH devices are unavailable on Windows.",
@@ -581,14 +609,12 @@ pub(super) fn terminal_command(request: &Request) -> Result<TerminalSetup> {
         "The Herdr executable path must be UTF-8.",
     ))?;
     let mut environment = Vec::new();
-    for key in [
-        "HOME",
-        "PATH",
-        "HERDR_CONFIG_PATH",
-        "XDG_STATE_HOME",
-        "XDG_CONFIG_HOME",
-    ] {
-        if let Some(value) = std::env::var_os(key) {
+    for key in ["HOME", "PATH"].into_iter().chain(CATALOG_ROOTS) {
+        let value = match (key, path) {
+            ("PATH", Some(path)) => Some(path.to_owned()),
+            _ => std::env::var_os(key),
+        };
+        if let Some(value) = value {
             environment.push((
                 key.into(),
                 value
@@ -598,6 +624,36 @@ pub(super) fn terminal_command(request: &Request) -> Result<TerminalSetup> {
         }
     }
     Ok(shell_command(executable, request, &environment))
+}
+
+/// [`terminal_command`] after `ssh-copy-id`, which asks for the password
+/// once and installs the user's public key, so the save that follows, and
+/// every later connection, authenticates with the key. The save runs only
+/// when the key was installed.
+///
+/// On macOS the pane's shell belongs to the Herdr daemon, which may lack
+/// Local Network permission: a third-party `ssh` such as Homebrew's then gets
+/// "no route to host" for a LAN host, while the system's `/usr/bin/ssh` is
+/// exempt. `ssh-copy-id` runs `ssh` from `PATH`, so the system one goes
+/// first; it also signs with a security key held by the agent.
+pub(super) fn key_setup_command(
+    request: &Request,
+    path: Option<&std::ffi::OsStr>,
+) -> Result<TerminalSetup> {
+    let mut setup = terminal_command(request, path)?;
+    let path = if cfg!(target_os = "macos") {
+        "\"PATH=/usr/bin:$PATH\" "
+    } else {
+        ""
+    };
+    setup.command = format!(
+        "{} {path}{} {} && {}",
+        quote("env"),
+        quote("ssh-copy-id"),
+        quote(request.target()),
+        setup.command
+    );
+    Ok(setup)
 }
 
 #[cfg(test)]
