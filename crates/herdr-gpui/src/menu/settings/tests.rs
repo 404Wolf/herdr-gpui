@@ -359,6 +359,7 @@ fn keycaps_split_modifiers_from_the_key() {
 #[gpui::test]
 #[allow(clippy::unwrap_used)]
 fn config_reload_rebinds_the_keymap(cx: &mut gpui::TestAppContext) {
+    use crate::controls::platform_default as default;
     use crate::{
         Command, RunCommand,
         config::Config,
@@ -377,15 +378,15 @@ fn config_reload_rebinds_the_keymap(cx: &mut gpui::TestAppContext) {
                 .any(|binding| binding.action().partial_eq(&RunCommand { command }))
         })
     };
-    assert!(runs("cmd-t", Command::Tab, cx));
+    assert!(runs(default("cmd-t"), Command::Tab, cx));
     assert!(!runs("cmd-n", Command::Tab, cx));
-    assert!(runs("cmd-shift-n", Command::Workspace, cx));
+    assert!(runs(default("cmd-shift-n"), Command::Workspace, cx));
 
     view.update(cx, |view, cx| {
         view.load_gui_config_with(
             || {
                 let overrides = [
-                    ("new_workspace", Binding::One("cmd-t".into())),
+                    ("new_workspace", Binding::One(default("cmd-t").into())),
                     ("toggle_sidebar", Binding::Many(Vec::new())),
                 ]
                 .into_iter()
@@ -405,18 +406,27 @@ fn config_reload_rebinds_the_keymap(cx: &mut gpui::TestAppContext) {
         )
     });
     cx.run_until_parked();
-    assert!(runs("cmd-t", Command::Workspace, cx));
-    assert!(!runs("cmd-t", Command::Tab, cx));
-    assert!(!runs("cmd-shift-n", Command::Workspace, cx));
-    assert!(!runs("cmd-b", Command::ToggleSidebar, cx));
+    assert!(runs(default("cmd-t"), Command::Workspace, cx));
+    assert!(!runs(default("cmd-t"), Command::Tab, cx));
+    assert!(!runs(default("cmd-shift-n"), Command::Workspace, cx));
+    assert!(!runs(default("cmd-b"), Command::ToggleSidebar, cx));
     cx.update(|_, cx| {
         let keymap = cx.key_bindings();
         let keymap = keymap.borrow();
-        let console = keymap.all_bindings_for_input(&[Keystroke::parse("cmd-l").unwrap()]);
+        let console =
+            keymap.all_bindings_for_input(&[Keystroke::parse(if cfg!(target_os = "linux") {
+                "ctrl-l"
+            } else {
+                "cmd-l"
+            })
+            .unwrap()]);
         assert_eq!(console.len(), 1);
     });
     view.read_with(cx, |view, _| {
-        assert_eq!(view.config.keybindings.primary(Command::Workspace), "cmd-t");
+        assert_eq!(
+            view.config.keybindings.primary(Command::Workspace),
+            default("cmd-t")
+        );
         // Only Herdr's default chord is left once cmd-t moves away.
         assert_eq!(view.config.keybindings.primary(Command::Tab), "ctrl-b c");
     });
@@ -425,7 +435,7 @@ fn config_reload_rebinds_the_keymap(cx: &mut gpui::TestAppContext) {
         view.load_gui_config_with(|| Ok((Config::default(), Default::default())), cx)
     });
     cx.run_until_parked();
-    assert!(runs("cmd-t", Command::Tab, cx));
+    assert!(runs(default("cmd-t"), Command::Tab, cx));
     view.read_with(cx, |view, _| {
         assert_eq!(view.config.keybindings, Keymap::default())
     });

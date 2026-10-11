@@ -98,13 +98,20 @@ fn chords_without_a_usable_prefix_keep_separate_keys() {
 #[test]
 fn reserved_and_keymap_keystrokes_never_reach_a_custom_command() {
     let keymap = Keymap::default();
+    let [_, _, paste_key, select_all_key] = crate::actions::EDIT_KEYS;
     let commands = [custom(
         "conflicts",
-        &["cmd+v", "cmd+a", "prefix+c", "prefix+ctrl+b", "u"],
+        &[
+            &paste_key.replace('-', "+"),
+            &select_all_key.replace('-', "+"),
+            "prefix+c",
+            "prefix+ctrl+b",
+            "u",
+        ],
     )];
     // Labels read in GPUI's platform spelling (`super-v` on Linux).
-    let paste = keystroke("cmd-v").unparse();
-    let select_all = keystroke("cmd-a").unparse();
+    let paste = keystroke(paste_key).unparse();
+    let select_all = keystroke(select_all_key).unparse();
     assert_eq!(
         reference(&keymap, &commands),
         [vec![
@@ -115,7 +122,7 @@ fn reserved_and_keymap_keystrokes_never_reach_a_custom_command() {
             entry("u", Reach::NeedsModifier),
         ]]
     );
-    for typed in ["cmd-v", "cmd-a"] {
+    for typed in [paste_key, select_all_key] {
         assert!(
             keymap
                 .custom_command(&commands, &keystroke(typed), false)

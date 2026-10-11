@@ -127,7 +127,10 @@ fn device_keybindings_save_in_place_and_local_removes_them() -> anyhow::Result<(
 fn keybindings_override_defaults_and_reject_bad_entries() -> anyhow::Result<()> {
     use crate::Command;
     let config = Config::parse("")?;
-    assert_eq!(config.keybindings.primary(Command::Tab), "cmd-t");
+    assert_eq!(
+        config.keybindings.primary(Command::Tab),
+        crate::controls::platform_default("cmd-t")
+    );
     let config = Config::parse(
         "[keybindings]\nnew_workspace = \"cmd-n\"\nnew_tab = [\"cmd-t\", \"ctrl-t\"]\nquit = \"\"",
     )?;
@@ -141,7 +144,10 @@ fn keybindings_override_defaults_and_reject_bad_entries() -> anyhow::Result<()> 
         &Daemon::default(),
     )?;
     assert_eq!(layered.keybindings.primary(Command::Themes), "cmd-k");
-    assert_eq!(layered.keybindings.primary(Command::Tab), "cmd-t");
+    assert_eq!(
+        layered.keybindings.primary(Command::Tab),
+        crate::controls::platform_default("cmd-t")
+    );
     // A command this build does not have is ignored, not fatal.
     let config = Config::parse("[keybindings]\nnew_space = \"cmd-n\"\nthemes = \"cmd-k\"")?;
     assert_eq!(config.unknown_keys, ["keybindings.new_space"]);
@@ -175,7 +181,10 @@ fn daemon_keys_layer_under_gui_keybindings() -> anyhow::Result<()> {
     };
 
     // No daemon file: Herdr's defaults.
-    assert_eq!(shortcuts(&load()?, Command::Tab), ["cmd-t", "ctrl-b c"]);
+    assert_eq!(
+        shortcuts(&load()?, Command::Tab),
+        [crate::controls::platform_default("cmd-t"), "ctrl-b c"]
+    );
 
     fs::write(
         &daemon,
@@ -184,11 +193,19 @@ fn daemon_keys_layer_under_gui_keybindings() -> anyhow::Result<()> {
     let config = load()?;
     assert_eq!(
         shortcuts(&config, Command::SplitRight),
-        ["cmd-d", "ctrl-a v", "ctrl-a \\"]
+        [
+            crate::controls::platform_default("cmd-d"),
+            "ctrl-a v",
+            "ctrl-a \\"
+        ]
     );
     assert_eq!(
         shortcuts(&config, Command::TabNumber(2)),
-        ["cmd-2", "ctrl-a 2", "alt-2"]
+        [
+            crate::controls::platform_default("cmd-2"),
+            "ctrl-a 2",
+            "alt-2"
+        ]
     );
     assert!(
         config
@@ -203,7 +220,10 @@ fn daemon_keys_layer_under_gui_keybindings() -> anyhow::Result<()> {
 
     fs::write(&local, "")?;
     fs::write(&daemon, "[keys\nprefix = ")?;
-    assert_eq!(shortcuts(&load()?, Command::Tab), ["cmd-t", "ctrl-b c"]);
+    assert_eq!(
+        shortcuts(&load()?, Command::Tab),
+        [crate::controls::platform_default("cmd-t"), "ctrl-b c"]
+    );
     Ok(())
 }
 
@@ -221,7 +241,14 @@ fn pane_keys_reach_the_keymap_as_written() -> anyhow::Result<()> {
     assert_eq!(sent("cmd-k").as_deref(), Some("ctrl-l"));
     assert_eq!(sent("cmd-.").as_deref(), Some("alt-."));
     assert_eq!(sent("cmd-left"), None);
-    assert_eq!(keymap.primary(crate::controls::Command::ClearPane), "");
+    assert_eq!(
+        keymap.primary(crate::controls::Command::ClearPane),
+        if cfg!(target_os = "linux") {
+            "ctrl-shift-k"
+        } else {
+            ""
+        }
+    );
     assert_eq!(config.pane_keys.len(), 3);
     assert!(config.unknown_keys.is_empty(), "{:?}", config.unknown_keys);
     assert!(matches!(

@@ -39,6 +39,9 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.shortcut_editor_key(event, window, cx) {
+            return;
+        }
         if self.settings_key(event, window, cx) {
             return;
         }

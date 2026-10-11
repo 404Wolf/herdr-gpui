@@ -21,10 +21,15 @@ actions!(log_window, [Close, FocusSearch, FocusLevel]);
 /// The console's own keys, scoped to its window. They are bound with the app
 /// keymap so a config reload, which replaces every binding, keeps them.
 pub(crate) fn key_bindings() -> [KeyBinding; 5] {
+    let [close, search, level] = if cfg!(target_os = "linux") {
+        ["ctrl-w", "ctrl-f", "ctrl-l"]
+    } else {
+        ["cmd-w", "cmd-f", "cmd-l"]
+    };
     [
-        KeyBinding::new("cmd-w", Close, Some("LogWindow")),
-        KeyBinding::new("cmd-f", FocusSearch, Some("LogWindow")),
-        KeyBinding::new("cmd-l", FocusLevel, Some("LogWindow")),
+        KeyBinding::new(close, Close, Some("LogWindow")),
+        KeyBinding::new(search, FocusSearch, Some("LogWindow")),
+        KeyBinding::new(level, FocusLevel, Some("LogWindow")),
         KeyBinding::new("tab", FocusLevel, Some("LogWindow")),
         KeyBinding::new("shift-tab", FocusSearch, Some("LogWindow")),
     ]

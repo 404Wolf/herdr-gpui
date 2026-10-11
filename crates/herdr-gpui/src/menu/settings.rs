@@ -306,6 +306,7 @@ impl HerdrWindow {
 
         let theme = &self.theme;
         let font = &self.config.ui;
+        let editor = self.render_shortcut_editor(cx);
         let query = self
             .menu
             .keybinds_search
@@ -321,15 +322,17 @@ impl HerdrWindow {
             .overflow_y_scroll()
             .track_scroll(&self.menu.keybinds_scroll)
             .px(px(16.))
-            .py(px(8.));
+            .py(px(8.))
+            .children(editor);
         let mut groups = [
             ("WORKSPACES & PANES", Vec::new()),
             ("NAVIGATION", Vec::new()),
             (
                 "APPLICATION",
                 vec![(
-                    vec![(Cow::Borrowed("cmd-v"), None)],
+                    vec![(Cow::Borrowed(crate::actions::EDIT_KEYS[2]), None)],
                     Cow::Borrowed(PASTE_LABEL),
+                    None,
                 )],
             ),
             ("PLUGIN & CUSTOM COMMANDS", Vec::new()),
@@ -338,9 +341,6 @@ impl HerdrWindow {
             let mut keys: Vec<&str> = self.keymap().shortcuts(info.command).collect();
             if info.command == Command::Palette && self.config.palette.double_shift {
                 keys.push("shift shift");
-            }
-            if keys.is_empty() {
-                continue;
             }
             let group = match info.command {
                 Command::Workspace
@@ -428,6 +428,7 @@ impl HerdrWindow {
                     .map(|key| (Cow::Borrowed(key), None))
                     .collect(),
                 Cow::Borrowed(info.label),
+                Some(info),
             ));
         }
         if let Some(snapshot) = self
@@ -466,6 +467,7 @@ impl HerdrWindow {
                                 })
                                 .collect(),
                             Cow::Owned(description),
+                            None,
                         )
                     },
                 ));
@@ -475,7 +477,7 @@ impl HerdrWindow {
         for (section, shortcuts) in groups {
             let shortcuts: Vec<_> = shortcuts
                 .into_iter()
-                .filter(|(keys, description)| {
+                .filter(|(keys, description, _)| {
                     shortcut_matches(query, "", description, section)
                         || keys
                             .iter()
@@ -495,7 +497,7 @@ impl HerdrWindow {
                     .text_color(accent)
                     .child(section),
             );
-            for (keys, description) in shortcuts {
+            for (keys, description, info) in shortcuts {
                 body = body.child(
                     div()
                         .debug_selector(|| format!("shortcut-{description}"))
@@ -556,7 +558,23 @@ impl HerdrWindow {
                                 .flex_1()
                                 .min_w_0()
                                 .child(description),
-                        ),
+                        )
+                        .when_some(info, |row, info| {
+                            row.child(
+                                div()
+                                    .id(SharedString::from(format!("edit-shortcut-{}", info.name)))
+                                    .debug_selector(move || format!("edit-shortcut-{}", info.name))
+                                    .flex_none()
+                                    .px(px(6.))
+                                    .py(px(4.))
+                                    .cursor_pointer()
+                                    .text_color(accent)
+                                    .child("Edit")
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.edit_shortcut(info, window, cx)
+                                    })),
+                            )
+                        }),
                 );
             }
         }
@@ -610,7 +628,7 @@ impl HerdrWindow {
                             .child(
                                 div()
                                     .text_color(rgb(theme.muted))
-                                    .child("Your Herdr quick reference"),
+                                    .child("View and edit shortcuts"),
                             ),
                     )
                     .child(

@@ -138,5 +138,5 @@ pub(crate) async fn run(handle: WindowHandle<HerdrWindow>, cx: &mut AsyncApp) ->
             Ok(())
         })??;
     }
-    Ok(())
+    crate::menu::verify_shortcut_editor(handle, cx).await
 }

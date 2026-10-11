@@ -12,6 +12,7 @@ mod coder;
 mod daytona;
 mod files;
 mod fonts;
+mod keybindings;
 mod layout;
 mod notifications;
 pub(crate) mod preferences;

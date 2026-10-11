@@ -228,6 +228,10 @@ configuration intact.
 
 ### Linux Builds
 
+Application shortcuts use **Ctrl+Shift** on Linux, including Ctrl+Shift+T for a
+new tab and Ctrl+Shift+C/V for copy/paste. Customize them from **Herdr > Keyboard
+Shortcuts**; see [keyboard shortcuts](crates/herdr-gpui/README.md#keyboard-shortcuts).
+
 On Ubuntu 24.04 (x86_64 or ARM64), run `bash scripts/install-linux-deps.sh`
 before building. This installs GPUI's X11/Wayland/font development dependencies
 and `libasound2-dev` for Rodio/CPAL native audio. CI and release builds use the

@@ -15,6 +15,9 @@ mod pr;
 mod pr_actions;
 mod sessions;
 mod settings;
+mod shortcut_editor;
+#[cfg(all(feature = "integration-test", target_os = "linux"))]
+pub(crate) use shortcut_editor::verify_native as verify_shortcut_editor;
 mod state;
 mod teleport;
 mod version_mismatch;

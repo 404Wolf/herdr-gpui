@@ -149,7 +149,7 @@ fn the_configured_shortcut_opens_the_list_where_the_button_sits(cx: &mut TestApp
     // the running app, where the terminal holds focus from the first frame.
     cx.update(|window, cx| view.read(cx).focus.clone().focus(window, cx));
     draw(cx);
-    cx.simulate_keystrokes("cmd-shift-s");
+    cx.simulate_keystrokes(crate::controls::platform_default("cmd-shift-s"));
     draw(cx);
     cx.update(|_, cx| {
         let view = view.read(cx);

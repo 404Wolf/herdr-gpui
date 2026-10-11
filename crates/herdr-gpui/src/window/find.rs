@@ -392,13 +392,16 @@ impl HerdrWindow {
                         .cursor_pointer()
                         .hover(|button| button.bg(rgba((theme.foreground << 8) | 0x14)))
                 })
-                .child(svg().path(icon).size(px(14.)).text_color(rgb(
-                    if step.is_none() || has_matches {
-                        theme.foreground
-                    } else {
-                        theme.muted
-                    },
-                )))
+                .child(
+                    svg()
+                        .path(icon)
+                        .size(px(if step.is_none() { 12. } else { 14. }))
+                        .text_color(rgb(if step.is_none() || has_matches {
+                            theme.foreground
+                        } else {
+                            theme.muted
+                        })),
+                )
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(move |this, _, window, cx| {
                     cx.stop_propagation();
@@ -461,7 +464,7 @@ impl HerdrWindow {
                             "icons/chevron-down.svg",
                             Some(Step::Newer),
                         ))
-                        .child(button("find-close", "icons/x.svg", None)),
+                        .child(button("find-close", "icons/close.svg", None)),
                 ),
         )
     }

@@ -255,7 +255,8 @@ impl SearchInput {
         if matches!(key, "up" | "down" | "enter" | "escape") {
             return;
         }
-        if modifiers.platform && !modifiers.control && !modifiers.alt {
+        let edit = actions::edit_modifiers(modifiers) && matches!(key, "a" | "c" | "v" | "x");
+        if edit || (modifiers.platform && !modifiers.control && !modifiers.alt) {
             match key {
                 // As in every macOS text field: Cmd-Left and Cmd-Right go to
                 // the line's ends, Cmd-Backspace and Cmd-Delete delete to them.
@@ -278,7 +279,7 @@ impl SearchInput {
                     }
                     self.replace_text_in_range(None, "", window, cx);
                 }
-                _ if modifiers.shift => return,
+                _ if modifiers.shift && !edit => return,
                 "a" => {
                     self.edit.anchor = 0;
                     self.edit.cursor = self.edit.text.len();

@@ -150,7 +150,10 @@ fn gui_overrides_still_layer_over_server_keys(cx: &mut TestAppContext) {
     view.update(cx, |view, cx| {
         opt_in(view, KeybindingSource::Server);
         select(view, 1, Some(PROFILE), cx);
-        assert_eq!(view.keymap().primary(Command::Tab), "cmd-t");
+        assert_eq!(
+            view.keymap().primary(Command::Tab),
+            crate::controls::platform_default("cmd-t")
+        );
         // A reload with new overrides rebuilds the server keymap.
         view.config
             .keybinding_overrides

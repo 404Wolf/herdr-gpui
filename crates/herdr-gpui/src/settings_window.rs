@@ -32,7 +32,15 @@ actions!(settings_window, [Close]);
 
 pub(crate) fn key_bindings() -> [KeyBinding; 2] {
     [
-        KeyBinding::new("cmd-w", Close, Some("SettingsWindow")),
+        KeyBinding::new(
+            if cfg!(target_os = "linux") {
+                "ctrl-shift-w"
+            } else {
+                "cmd-w"
+            },
+            Close,
+            Some("SettingsWindow"),
+        ),
         KeyBinding::new("ctrl-w", Close, Some("SettingsWindow")),
     ]
 }
