@@ -39,6 +39,9 @@ pub(in crate::settings_window) struct RailwayCard {
     overview: Option<Overview>,
     message: Option<String>,
     job: Option<Worker>,
+    /// A generate or remove job is running. Its worker is cancelled when
+    /// dropped, so nothing else may replace it until it reports.
+    changing: bool,
     /// Tests build the card without the user's real saved devices.
     #[cfg(test)]
     reads_disk: bool,
@@ -58,6 +61,7 @@ impl RailwayCard {
             overview: None,
             message: None,
             job: None,
+            changing: false,
             #[cfg(test)]
             reads_disk: false,
         }
@@ -111,6 +115,7 @@ impl SettingsWindow {
             Err(error) => {
                 tracing::error!(category = "railway_worker", error_kind = ?error.kind(), "Could not start Railway settings worker");
                 if let Some(card) = &mut self.railway_card {
+                    card.changing = false;
                     card.message = Some(crate::cloud::Error::Worker("settings").to_string());
                 }
             }
@@ -118,6 +123,11 @@ impl SettingsWindow {
     }
 
     fn refresh_railway(&mut self, cx: &mut Context<Self>) {
+        // A read must not replace, and so cancel, a change in progress; the
+        // change refreshes when it reports.
+        if self.railway_card.as_ref().is_some_and(|card| card.changing) {
+            return;
+        }
         #[cfg(test)]
         if self
             .railway_card
@@ -137,6 +147,7 @@ impl SettingsWindow {
             Update::Overview(Ok(overview)) => card.overview = Some(overview),
             Update::Overview(Err(error)) => card.message = Some(error.to_string()),
             Update::Done(result) => {
+                card.changing = false;
                 card.message = result.err().map(|error| error.to_string());
                 self.refresh_railway(cx);
             }
@@ -149,9 +160,34 @@ impl SettingsWindow {
         }
     }
 
+    /// Start a generate or remove job unless one is already running. A device
+    /// is not removed while a setup runs, which would save it again.
+    fn change_railway(
+        &mut self,
+        cx: &mut Context<Self>,
+        work: impl FnOnce(&dyn Fn() -> bool, &dyn Fn(Update)) + Send + 'static,
+    ) {
+        let setting_up = self
+            .source
+            .read_with(cx, |window, _| {
+                window.cloud_jobs.has(CloudProvider::Railway)
+            })
+            .unwrap_or(false);
+        let Some(card) = &mut self.railway_card else {
+            return;
+        };
+        if card.changing || setting_up {
+            card.message = Some("Wait for the current Railway action to finish.".into());
+            cx.notify();
+            return;
+        }
+        card.changing = true;
+        self.railway_job(cx, work);
+    }
+
     /// Forget the device. Its key files are left alone.
     fn forget_railway_device(&mut self, id: String, cx: &mut Context<Self>) {
-        self.railway_job(cx, move |_, send| {
+        self.change_railway(cx, move |_, send| {
             send(Update::Done(setup::forget_device(&id)));
         });
     }
@@ -168,7 +204,7 @@ impl SettingsWindow {
             return;
         }
         card.message = None;
-        self.railway_job(cx, move |cancelled, send| {
+        self.change_railway(cx, move |cancelled, send| {
             send(Update::Done(
                 setup::generate_key(&name, cancelled).map(drop),
             ));

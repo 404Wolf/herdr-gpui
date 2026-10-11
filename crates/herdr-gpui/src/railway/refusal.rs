@@ -48,8 +48,13 @@ pub(super) fn hide_links(text: &str) -> String {
         .map(|line| {
             line.split(' ')
                 .map(|word| {
-                    // JSON puts the link after a quote or colon.
-                    match word.find("http://").or_else(|| word.find("https://")) {
+                    // JSON puts the link after a quote or colon. The earliest of
+                    // either scheme, so nothing before a later link survives.
+                    match ["http://", "https://"]
+                        .iter()
+                        .filter_map(|scheme| word.find(scheme))
+                        .min()
+                    {
                         Some(start) => format!("{}[link hidden]", &word[..start]),
                         None => word.to_owned(),
                     }

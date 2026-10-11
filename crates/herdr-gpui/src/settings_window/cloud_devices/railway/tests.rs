@@ -154,3 +154,69 @@ fn saved_devices_only_offer_remove(cx: &mut TestAppContext) {
         assert!(cx.debug_bounds(selector).is_none(), "{selector}");
     }
 }
+
+#[gpui::test]
+fn a_refresh_never_cancels_a_change_and_a_removal_waits_for_a_setup(cx: &mut TestAppContext) {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    let ((view, cx), main) = open(cx);
+    show(&view, vec![device(0)], cx);
+    // A change in progress survives a config-driven refresh.
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let seen = cancelled.clone();
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            let job = crate::cloud::worker::spawn::<SettingsWindow, ()>(
+                "railway-test-change",
+                cx,
+                move |stop, _| {
+                    while !stop() {
+                        std::thread::sleep(std::time::Duration::from_millis(5));
+                    }
+                    seen.store(true, Ordering::Release);
+                },
+                |_, (), _| {},
+            )
+            .unwrap();
+            let card = view.railway_card.as_mut().unwrap();
+            (card.job, card.changing) = (Some(job), true);
+            card.reads_disk = true;
+            view.railway_config_changed(cx);
+        })
+    });
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    assert!(!cancelled.load(Ordering::Acquire));
+    // With a setup running, a removal is refused and starts nothing.
+    cx.update(|_, cx| {
+        view.update(cx, |view, _| {
+            let card = view.railway_card.as_mut().unwrap();
+            (card.job, card.changing) = (None, false);
+        });
+        let started = main
+            .update(cx, |main, _, cx| {
+                main.start_cloud_job(
+                    CloudProvider::Railway,
+                    "box".into(),
+                    |stop, _| {
+                        while !stop() {
+                            std::thread::sleep(std::time::Duration::from_millis(5));
+                        }
+                        Err(crate::cloud::Error::Cancelled.into())
+                    },
+                    cx,
+                )
+            })
+            .unwrap();
+        started.unwrap();
+        view.update(cx, |view, cx| {
+            view.forget_railway_device("key-0".into(), cx)
+        });
+    });
+    view.read_with(cx, |view, _| {
+        let card = view.railway_card.as_ref().unwrap();
+        assert!(card.job.is_none() && !card.changing);
+        assert!(card.message.as_deref().unwrap().contains("Wait"));
+    });
+}

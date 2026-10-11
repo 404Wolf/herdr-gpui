@@ -7,6 +7,11 @@ fn links_are_hidden_wherever_they_sit() {
         hide_links(r#"{"status":"trial_ready","human_claim_url":"https://claim.example/secret"}"#);
     assert!(!hidden.contains("claim.example") && !hidden.contains("secret"));
     assert!(hidden.contains("[link hidden]") && hidden.contains("trial_ready"));
+    // An `https` link before an `http` one on a compact line is hidden too.
+    let mixed = hide_links(
+        r#"{"human_claim_url":"https://claim.example/secret","preview_url":"http://p.example"}"#,
+    );
+    assert!(!mixed.contains("claim.example") && !mixed.contains("secret"));
     assert_eq!(
         hide_links("see http://a.b/c now\nnext"),
         "see [link hidden] now\nnext"
