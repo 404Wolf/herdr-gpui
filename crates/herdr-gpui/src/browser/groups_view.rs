@@ -157,6 +157,7 @@ impl HerdrWindow {
             .group_bounds
             .borrow_mut()
             .retain(|group, _| live(*group));
+        self.browser.emptied.retain(|group| live(*group));
         // The group drawn before any workspace has a layout keeps its strip.
         let fallback = self.browser.fallback_group;
         self.browser
@@ -529,7 +530,15 @@ impl HerdrWindow {
             .filter(|pick| !tabs.contains(pick))
             .cloned()
             .collect();
-        let mut emptied = Vec::new();
+        // With the groups whose tab was found closed before this ran.
+        let mut emptied: Vec<GroupId> = layout
+            .slots()
+            .map(|slot| slot.id)
+            .filter(|group| self.browser.emptied.contains(group))
+            .collect();
+        self.browser
+            .emptied
+            .retain(|group| !emptied.contains(group));
         for pick in &closed {
             emptied.extend(layout.forget(pick));
         }
@@ -663,6 +672,9 @@ impl HerdrWindow {
             .and_then(|layout| layout.forget(&pick));
         crate::browser::Store::update(cx, |store| store.close(id));
         self.forget_browser_tabs(|tab| tab == id);
+        if !focused {
+            self.browser.emptied.extend(shown);
+        }
         if let (Some(group), Some(shown)) = (group, shown)
             && group == shown
         {

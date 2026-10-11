@@ -43,6 +43,10 @@ pub(crate) struct Browser {
     /// Pages a menu covers, stood in for by a picture of themselves.
     #[cfg(any(target_os = "macos", windows))]
     frozen: HashMap<TabId, Freeze>,
+    /// Groups whose shown tab closed where their strips were not at hand:
+    /// in another window, or in a workspace not on screen. Each is given
+    /// another of its tabs, or closed, when its workspace next settles.
+    pub(super) emptied: Vec<GroupId>,
     /// Tabs being closed one after another, as Close Others closes them.
     pub(crate) closing: Option<crate::close_modal::CloseRun>,
     /// Where each group drew last frame, so a carried tab knows the group
@@ -105,6 +109,7 @@ impl Browser {
             page_bounds: Default::default(),
             #[cfg(any(target_os = "macos", windows))]
             frozen: HashMap::new(),
+            emptied: Vec::new(),
             closing: None,
             group_bounds: Default::default(),
             addresses: HashMap::new(),
@@ -177,14 +182,15 @@ impl HerdrWindow {
                 .borrow_mut()
                 .retain(|id, _| !gone(*id));
         }
-        for layout in self.browser.layouts.values_mut() {
+        let browser = &mut self.browser;
+        for layout in browser.layouts.values_mut() {
             let closed: Vec<Pick> = layout
                 .tabs()
                 .filter(|pick| matches!(pick, Pick::Page(id) if gone(*id)))
                 .cloned()
                 .collect();
             for pick in closed {
-                layout.forget(&pick);
+                browser.emptied.extend(layout.forget(&pick));
             }
         }
         #[cfg(any(target_os = "macos", windows))]
