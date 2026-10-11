@@ -88,6 +88,21 @@ impl<'a> Drag<'a> {
         self.origin + point(px(column * self.cell.0), px(row * self.cell.1))
     }
 
+    /// Moves the held pointer to `row`, as a drag that changes direction.
+    fn move_to(&mut self, row: f32) {
+        let position = self.at(3.2, row);
+        self.cx
+            .simulate_mouse_move(position, MouseButton::Left, Modifiers::default());
+    }
+
+    /// A frame arrives that shows the pane at `offset`.
+    fn frame_shows(&mut self, offset: u64) {
+        self.view.update(self.cx, |view, _| {
+            let live = Arc::make_mut(view.live.surface.as_mut().unwrap());
+            live.panes[0].scroll.as_mut().unwrap().offset_from_bottom = offset;
+        });
+    }
+
     fn follow(&mut self) {
         self.view
             .update(self.cx, |view, cx| view.follow_selection(cx));
@@ -200,4 +215,67 @@ fn holding_below_a_pane_at_the_bottom_sends_no_scroll(cx: &mut TestAppContext) {
     let mut drag = Drag::hold(cx, 0, 100, Drag::below(3));
     drag.follow();
     assert!(!drag.scroll_in_flight());
+}
+
+/// A drag that turns back before the frame shows its last step continues
+/// from the offset it asked for, not from the older offset on screen.
+#[gpui::test]
+fn turning_down_before_the_frame_scrolls_back_from_the_requested_offset(cx: &mut TestAppContext) {
+    let mut drag = Drag::hold(cx, 10, 100, Drag::above(4));
+    assert_eq!(drag.requested_offset(), 14);
+    drag.answer_before_the_frame();
+    drag.move_to(Drag::below(2));
+    assert_eq!(drag.requested_offset(), 12);
+}
+
+/// The same when the frame still shows the bottom: the pane is not at the
+/// bottom, so turning down must still scroll.
+#[gpui::test]
+fn turning_down_before_the_frame_scrolls_even_when_the_frame_shows_the_bottom(
+    cx: &mut TestAppContext,
+) {
+    let mut drag = Drag::hold(cx, 0, 100, Drag::above(4));
+    assert_eq!(drag.requested_offset(), 4);
+    drag.answer_before_the_frame();
+    drag.move_to(Drag::below(1));
+    assert_eq!(drag.requested_offset(), 3);
+}
+
+/// Turning up before the frame shows a downward step continues from the
+/// offset asked for.
+#[gpui::test]
+fn turning_up_before_the_frame_scrolls_from_the_requested_offset(cx: &mut TestAppContext) {
+    let mut drag = Drag::hold(cx, 30, 100, Drag::below(10));
+    assert_eq!(drag.requested_offset(), 20);
+    drag.answer_before_the_frame();
+    drag.move_to(Drag::above(2));
+    assert_eq!(drag.requested_offset(), 22);
+}
+
+/// Once a frame shows the pane somewhere else, such as after a wheel scroll,
+/// the next step starts from that frame, in either direction.
+#[gpui::test]
+fn a_frame_that_moved_the_pane_elsewhere_is_where_the_next_step_starts(cx: &mut TestAppContext) {
+    let mut drag = Drag::hold(cx, 0, 100, Drag::above(2));
+    assert_eq!(drag.requested_offset(), 2);
+    drag.answer_before_the_frame();
+    drag.frame_shows(50);
+    assert_eq!(drag.requested_offset(), 52);
+    drag.answer_before_the_frame();
+    drag.frame_shows(40);
+    drag.move_to(Drag::below(1));
+    assert_eq!(drag.requested_offset(), 39);
+}
+
+/// A frame two steps behind shows an older step, not a new position: the next
+/// step continues from the last one asked for instead of repeating it.
+#[gpui::test]
+fn a_frame_that_shows_an_older_step_does_not_repeat_the_last_one(cx: &mut TestAppContext) {
+    let mut drag = Drag::hold(cx, 0, 100, Drag::above(2));
+    assert_eq!(drag.requested_offset(), 2);
+    drag.answer_before_the_frame();
+    assert_eq!(drag.requested_offset(), 4);
+    drag.answer_before_the_frame();
+    drag.frame_shows(2);
+    assert_eq!(drag.requested_offset(), 6);
 }
