@@ -93,7 +93,7 @@ def config(version, target, root, mtime):
         "priority": "optional",
         "maintainer": MAINTAINER,
         "vendor": "Herdr GPUI",
-        "homepage": "https://github.com/penso/herdr-gpui",
+        "homepage": "https://herdrui.dev",
         "license": "Apache-2.0",
         "description": "Native GPUI client for an existing local Herdr daemon.\n"
                        "Herdr itself is not included and must be installed separately.",

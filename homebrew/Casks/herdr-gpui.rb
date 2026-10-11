@@ -5,7 +5,7 @@ cask "herdr-gpui" do
   url "https://github.com/penso/herdr-gpui/releases/download/v#{version}/Herdr-#{version}-universal-apple-darwin.dmg"
   name "Herdr"
   desc "Native GUI client for an existing local Herdr daemon"
-  homepage "https://github.com/penso/herdr-gpui"
+  homepage "https://herdrui.dev"
 
   depends_on macos: :sonoma
 

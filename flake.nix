@@ -104,7 +104,7 @@
           '';
           meta = {
             description = "Native GPUI client for an existing local Herdr daemon";
-            homepage = "https://github.com/penso/herdr-gpui";
+            homepage = "https://herdrui.dev";
             license = lib.licenses.asl20;
             mainProgram = "herdr-gpui";
             platforms = systems;

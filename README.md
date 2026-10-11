@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://herdrui.dev"><b>herdrui.dev</b></a> ·
   <a href="https://github.com/penso/herdr-gpui/releases">Releases</a> ·
   <a href="docs/updating.md">App updates</a> ·
   <a href="crates/herdr-gpui/README.md">GUI scope &amp; configuration</a> ·
