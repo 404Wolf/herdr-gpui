@@ -62,18 +62,20 @@ impl HerdrWindow {
         }
     }
 
-    /// Paints the window's ground on `root`: the theme's background, solid
-    /// or translucent, over the picture when there is one.
+    /// Paints what lies behind everything on `root`. An opaque window takes
+    /// the theme's background there. A translucent one leaves the root clear,
+    /// or shows the picture, and each region paints its own translucent
+    /// color instead: a panel over a translucent ground would cover twice and
+    /// read as more solid than the opacity chosen.
     pub(super) fn with_backdrop(&self, root: Div) -> Div {
-        let fill = self.fill();
-        if !fill.translucent() {
+        if !self.fill().translucent() {
             return root.bg(rgb(self.theme.background));
         }
         let Some(texture) = self.backdrop.picture.texture() else {
-            return root.bg(fill.ground());
+            return root;
         };
-        // Absolute, so neither takes part in the column's layout, and first,
-        // so everything else paints over them.
+        // Absolute, so it takes no part in the column's layout, and first, so
+        // everything else paints over it.
         root.child(
             img(texture)
                 .absolute()
@@ -81,14 +83,6 @@ impl HerdrWindow {
                 .left_0()
                 .size_full()
                 .object_fit(ObjectFit::Cover),
-        )
-        .child(
-            div()
-                .absolute()
-                .top_0()
-                .left_0()
-                .size_full()
-                .bg(fill.ground()),
         )
     }
 }

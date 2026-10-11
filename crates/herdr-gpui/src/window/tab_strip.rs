@@ -806,6 +806,16 @@ impl HerdrWindow {
         let share = (self.is_split() || !self.folding_groups().is_empty())
             .then(|| self.group_share(slot.id));
         let opened = self.group_opened(slot.id);
+        // The body's ground, beside the strip rather than under it, so the
+        // strip's own color is no more solid than the rest of the window.
+        let body = div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .bg(self.fill().ground())
+            .child(body);
         let column = div()
             .id(SharedString::from(slot.selector("group")))
             .debug_selector(move || slot.selector("group"))
@@ -859,9 +869,8 @@ impl HerdrWindow {
             .flex_col()
             .border_l_1()
             .border_color(rgb(self.theme.active))
-            .bg(self.fill().base(self.theme.background))
             .when(self.tab_bar_position() == TabBarPosition::Bottom, |group| {
-                group.justify_end()
+                group.flex_col_reverse()
             })
             .child(
                 div()
@@ -869,6 +878,7 @@ impl HerdrWindow {
                     .h(px(self.tab_strip_height()))
                     .bg(self.fill().panel(self.theme.surface)),
             )
+            .child(div().flex_1().bg(self.fill().ground()))
             .into_any_element()
     }
 
@@ -921,7 +931,7 @@ impl HerdrWindow {
                         .w(px(5.))
                         .flex()
                         .justify_center()
-                        .bg(self.fill().base(self.theme.background))
+                        .bg(self.fill().ground())
                         .cursor(CursorStyle::ResizeLeftRight)
                         .child(div().w(px(1.)).h_full().bg(rgb(self.theme.active)))
                         .on_drag(DividerDrag(index), |_, _, _, cx| cx.new(|_| EmptyView)),

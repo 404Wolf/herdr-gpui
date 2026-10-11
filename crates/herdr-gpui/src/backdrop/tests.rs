@@ -39,10 +39,13 @@ fn a_translucent_layer_on_its_own_color_paints_nothing() {
     assert_eq!(fill.ground(), translucent(theme.background));
     // Directly on the ground, the theme's background would stack its alpha.
     assert_eq!(fill.base(theme.background), transparent_black());
-    assert_eq!(fill.base(theme.surface), translucent(theme.surface));
+    // Anything else on a translucent surface is a mark, at the opacity
+    // squared, so it shows without turning the window solid there.
+    let mark = |color| Hsla::from(rgb(color)).opacity(0.8 * 0.8);
+    assert_eq!(fill.base(theme.surface), mark(theme.surface));
     // Tabs on their strip: the strip's own color clears, a selection shows.
     assert_eq!(fill.over(theme.surface, theme.surface), transparent_black());
-    assert_eq!(fill.over(theme.surface, 0x123456), translucent(0x123456));
+    assert_eq!(fill.over(theme.surface, 0x123456), mark(0x123456));
     assert_eq!(fill.panel(theme.background), translucent(theme.background));
 }
 

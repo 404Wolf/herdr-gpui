@@ -155,7 +155,17 @@ impl Fill {
         self.alpha < 1.
     }
 
-    /// The window's ground, painted once at its root.
+    /// How solid a mark lying on a translucent panel paints, such as a
+    /// selected row or tab. Nothing can lie on a panel without covering the
+    /// desktop more than the panel alone does, so a mark takes the square of
+    /// the window's opacity: still seen, close to the panel's clarity, and
+    /// opaque with an opaque window.
+    pub(crate) fn mark(self) -> f32 {
+        self.alpha * self.alpha
+    }
+
+    /// The theme's background, translucent with the window: what a region
+    /// with nothing else under it paints, such as a group's body.
     pub(crate) fn ground(self) -> Hsla {
         self.tint(rgb(self.background).into())
     }
@@ -167,16 +177,17 @@ impl Fill {
 
     /// A layer of `color` over one of `under`. Under a backdrop, a layer the
     /// color of what it lies on paints nothing, so the two read as one
-    /// surface rather than a darker band; any other color is translucent.
+    /// surface rather than a darker band; any other color is a [`Self::mark`].
     pub(crate) fn over(self, under: u32, color: u32) -> Hsla {
         if self.translucent() && color == under {
             transparent_black()
         } else {
-            self.panel(color)
+            Hsla::from(rgb(color)).opacity(self.mark())
         }
     }
 
-    /// A surface of its own color, translucent with the window.
+    /// A surface of its own color, translucent with the window. It must lie
+    /// on nothing else translucent, or the two cover the desktop twice.
     pub(crate) fn panel(self, color: u32) -> Hsla {
         self.tint(rgb(color).into())
     }

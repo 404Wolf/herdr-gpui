@@ -8,6 +8,7 @@ use crate::{
 };
 use std::sync::Arc;
 
+mod backdrop;
 mod detach;
 
 fn main_windows(cx: &mut gpui::App) -> Vec<gpui::WindowHandle<HerdrWindow>> {

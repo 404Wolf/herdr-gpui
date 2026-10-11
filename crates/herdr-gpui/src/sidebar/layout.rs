@@ -5,9 +5,13 @@
 use super::{
     CHILD_INDENT, HOST_GAP, LABEL_GAP, ROW_PADDING, STATUS_WIDTH, cell::RowState, row::RowLift,
 };
-use crate::config::{Density, LayoutMode, SidebarOverrides, Style, Theme};
+use crate::{
+    backdrop::Fill,
+    config::{Density, LayoutMode, SidebarOverrides, Style, Theme},
+};
 use gpui::{
-    Div, InteractiveElement, ParentElement, Styled, div, prelude::FluentBuilder, px, rgb, rgba,
+    Div, Hsla, InteractiveElement, ParentElement, Styled, div, prelude::FluentBuilder, px, rgb,
+    rgba,
 };
 
 /// The spacing, indents, and highlight shape one layout name selects. A
@@ -242,6 +246,8 @@ pub(crate) enum HeaderCase {
 #[derive(Clone, Copy)]
 pub(super) struct SidebarLook {
     pub(super) density: SidebarMetrics,
+    /// How solid a row's highlight paints; see [`crate::backdrop::Fill::mark`].
+    pub(super) mark: f32,
 }
 
 /// Group every row joins, so its highlight layer can follow the row's hover.
@@ -334,10 +340,10 @@ impl SidebarLook {
             .rounded(px(self.density.radius));
         match self.density.highlight {
             Highlight::Fill => {
-                let active = theme.active;
+                let active = Hsla::from(rgb(theme.active)).opacity(self.mark);
                 layer
-                    .when(focused || highlighted, |layer| layer.bg(rgb(active)))
-                    .group_hover(ROW_GROUP, move |s| s.bg(rgb(active)))
+                    .when(focused || highlighted, |layer| layer.bg(active))
+                    .group_hover(ROW_GROUP, move |s| s.bg(active))
             }
             Highlight::Outline => {
                 let wash = |alpha: u32| rgba((theme.foreground << 8) | alpha);
@@ -404,12 +410,15 @@ const LIFT_RADIUS: f32 = 4.;
 pub(super) fn for_mode(mode: LayoutMode) -> SidebarLook {
     SidebarLook {
         density: SidebarMetrics::for_mode(mode),
+        mark: 1.,
     }
 }
 
-/// The look a window's config asks for: its layout with its overrides.
-pub(super) fn for_config(config: &crate::config::Config) -> SidebarLook {
+/// The look a window's config asks for: its layout with its overrides, and
+/// highlights as translucent as its backdrop's panels allow.
+pub(super) fn for_config(config: &crate::config::Config, fill: Fill) -> SidebarLook {
     SidebarLook {
         density: SidebarMetrics::for_mode(config.layout.mode).with(&config.sidebar_style.overrides),
+        mark: fill.mark(),
     }
 }

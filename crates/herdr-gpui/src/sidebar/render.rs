@@ -36,7 +36,7 @@ impl HerdrWindow {
     ) -> Stateful<Div> {
         let width = sidebar_width(self.sidebar_width, f32::from(window.viewport_size().width));
         let split = self.sidebar_split.unwrap_or(0.5).clamp(0.1, 0.9);
-        let look = layout::for_config(&self.config);
+        let look = layout::for_config(&self.config, self.fill());
         let rows = layout_for(self.config.layout.mode);
         // The row a workspace menu was opened for keeps looking hovered while
         // the pointer is over the menu.
@@ -51,6 +51,12 @@ impl HerdrWindow {
         self.sidebar_search.input.update(cx, |input, cx| {
             input.set_appearance(self.config.ui.clone(), theme.clone(), cx);
         });
+        let field = self
+            .fill()
+            .over(theme.sidebar_background(), theme.background);
+        self.sidebar_search
+            .input
+            .update(cx, |input, cx| input.set_fill(field, cx));
         // The Devices layout heads every device, even a lone one, and lists
         // its agents under it in place of its workspaces. Its own field
         // narrows that tree in place, so the sidebar's search, whose results
