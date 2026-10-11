@@ -3,26 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Herdr GPUI: a native window for the Herdr daemon</title>
-<meta name="description" content="Herdr GPUI is a native client for the Herdr daemon you already run. Same daemon, same sessions: the window adds dispatch from issues, side-by-side review, checkpoints, Teleport and a Devices overview.">
+<title>Herdr UI: a native window for the Herdr daemon</title>
+<meta name="description" content="Herdr UI is a native client for the Herdr daemon you already run. Same daemon, same sessions: the window adds dispatch from issues, side-by-side review, checkpoints, Teleport and a Devices overview.">
 <link rel="canonical" href="https://herdrui.dev/">
 <link rel="icon" type="image/png" href="assets/herdr-ui-icon-badge.png">
 <meta name="theme-color" content="#17181b">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Herdr GPUI: a native window for the Herdr daemon">
+<meta property="og:title" content="Herdr UI: a native window for the Herdr daemon">
 <meta property="og:description" content="Herdr's TUI is great. Here's what a window adds.">
 <meta property="og:url" content="https://herdrui.dev/">
-<meta property="og:site_name" content="Herdr GPUI">
+<meta property="og:site_name" content="Herdr UI">
 <meta property="og:image" content="https://herdrui.dev/assets/social-preview-dark.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1280">
 <meta property="og:image:height" content="640">
-<meta property="og:image:alt" content="Herdr GPUI: native client for the Herdr daemon on macOS, Linux and Windows, beside a window with a workspace sidebar and terminal panes.">
+<meta property="og:image:alt" content="Herdr UI: native client for the Herdr daemon on macOS, Linux and Windows, beside a window with a workspace sidebar and terminal panes.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Herdr GPUI: a native window for the Herdr daemon">
+<meta name="twitter:title" content="Herdr UI: a native window for the Herdr daemon">
 <meta name="twitter:description" content="Herdr's TUI is great. Here's what a window adds.">
 <meta name="twitter:image" content="https://herdrui.dev/assets/social-preview-dark.png">
-<meta name="twitter:image:alt" content="Herdr GPUI: native client for the Herdr daemon on macOS, Linux and Windows, beside a window with a workspace sidebar and terminal panes.">
+<meta name="twitter:image:alt" content="Herdr UI: native client for the Herdr daemon on macOS, Linux and Windows, beside a window with a workspace sidebar and terminal panes.">
 <link rel="stylesheet" href="assets/kit.css">
 <link rel="stylesheet" href="assets/site.css">
 <script src="assets/kit.js"></script>
@@ -31,7 +31,7 @@
 
 <div class="wrap">
   <nav>
-    <a class="brand" href="./"><img src="assets/herdr-ui-icon-badge.png" alt="">Herdr GPUI</a>
+    <a class="brand" href="./"><img src="assets/herdr-ui-icon-badge.png" alt="">Herdr UI</a>
     <a class="sec" href="#compare">Compare</a><a class="sec" href="#film" data-film-link hidden>Film</a><a class="sec" href="#shots" data-shots-link hidden>Screenshots</a><a class="sec" href="#install">Install</a>
     <a class="gh" href="https://github.com/penso/herdr-gpui"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>GitHub<span class="stars" id="stars" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><span id="stars-n"></span></span></a>
   </nav>
@@ -39,19 +39,19 @@
   <header class="hero">
     <span class="kicker"><i></i>Same daemon. Same sessions. Use both at once.</span>
     <h1>Herdr’s TUI is great.<br><span class="soft">Here’s what a window adds.</span></h1>
-    <p class="lede">Herdr GPUI is a native client for the Herdr daemon you already run. Your terminals and agents stay in the daemon; the window adds dispatch from issues, side-by-side review, checkpoints, Teleport and a Devices overview.</p>
+    <p class="lede">Herdr UI is a native client for the Herdr daemon you already run. Your terminals and agents stay in the daemon; the window adds dispatch from issues, side-by-side review, checkpoints, Teleport and a Devices overview.</p>
     <div class="hero-cta"><a class="btn pri" href="#install">Install</a><a class="btn" href="https://github.com/penso/herdr-gpui/releases">Releases</a></div>
   </header>
 
   <div class="compare-fit" id="cmp-fit">
-    <div class="compare" id="cmp" aria-label="Drag to compare the Herdr TUI with Herdr GPUI">
+    <div class="compare" id="cmp" aria-label="Drag to compare the Herdr TUI with Herdr UI">
       <div class="layer"><div class="tui"><pre id="tui" aria-hidden="true"></pre></div></div>
       <div class="layer gpui"><div data-hm-app="terminal" style="--h:420px"></div></div>
       <div class="handle" id="handle" role="slider" aria-label="Comparison position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0"><span>‹›</span></div>
     </div>
   </div>
-  <div class="labels"><span><b>herdr</b> in any terminal, local or over SSH</span><span><b>Herdr GPUI</b> a native, GPU-painted window</span></div>
-  <div class="same"><span>herdr TUI</span><span class="ln"></span><span class="daemon mono">herdr server · owns PTYs, agents, sessions</span><span class="ln"></span><span>Herdr GPUI</span></div>
+  <div class="labels"><span><b>herdr</b> in any terminal, local or over SSH</span><span><b>Herdr UI</b> a native, GPU-painted window</span></div>
+  <div class="same"><span>herdr TUI</span><span class="ln"></span><span class="daemon mono">herdr server · owns PTYs, agents, sessions</span><span class="ln"></span><span>Herdr UI</span></div>
 
   <section id="film" hidden>
     <div class="sh"><div class="eyebrow">The film</div><h2>What the window does, in one take.</h2><p>From an issue to a merged change across two machines, while the TUI stays attached to the same session.</p></div>
@@ -73,12 +73,12 @@
       <div><h2>Keep the TUI. Add the window.</h2><p>Install the app next to the Herdr you already have. It attaches to your daemon and never installs or upgrades it.</p></div>
       <div><div class="cmd mono"><span><span class="p">$</span><span id="brew"></span></span><button type="button" id="copy">Copy</button></div>
         <div class="plat"><span id="plat"></span> · <a href="https://github.com/penso/herdr-gpui#install">all install options</a></div>
-        <div class="both-note">Then run <span class="mono">herdr</span> in a terminal and open Herdr GPUI: both show the same panes.</div></div>
+        <div class="both-note">Then run <span class="mono">herdr</span> in a terminal and open Herdr UI: both show the same panes.</div></div>
     </div>
   </section>
 </div>
 
-<footer><div class="wrap"><span>Herdr GPUI · Apache-2.0 · <a href="https://pen.so">Fabien Penso</a></span>
+<footer><div class="wrap"><span>Herdr UI · Apache-2.0 · <a href="https://pen.so">Fabien Penso</a></span>
   <span class="links"><a href="https://github.com/penso/herdr-gpui">GitHub</a><a href="https://github.com/penso/herdr-gpui/releases">Releases</a><a href="https://github.com/penso/herdr-gpui/blob/main/crates/herdr-gpui/README.md">Docs</a><a href="https://herdr.dev/">Herdr</a></span>
   <span class="disc" id="disc"></span></div></footer>
 
