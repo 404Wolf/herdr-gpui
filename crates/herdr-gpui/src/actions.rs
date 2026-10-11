@@ -42,7 +42,9 @@ pub(crate) fn edit_key(key: &str) -> KeyDownEvent {
     KeyDownEvent {
         keystroke: Keystroke {
             modifiers: Modifiers {
-                platform: true,
+                platform: !cfg!(target_os = "linux"),
+                control: cfg!(target_os = "linux"),
+                shift: cfg!(target_os = "linux"),
                 ..Modifiers::default()
             },
             key: key.into(),
@@ -126,7 +128,26 @@ pub(crate) fn bind_keys(cx: &mut App) {
 }
 
 /// The Edit menu's keystrokes: cut, copy, paste, and select all.
-const EDIT_KEYS: [&str; 4] = ["cmd-x", "cmd-c", "cmd-v", "cmd-a"];
+pub(crate) const EDIT_KEYS: [&str; 4] = if cfg!(target_os = "linux") {
+    [
+        "ctrl-shift-x",
+        "ctrl-shift-c",
+        "ctrl-shift-v",
+        "ctrl-shift-a",
+    ]
+} else {
+    ["cmd-x", "cmd-c", "cmd-v", "cmd-a"]
+};
+
+/// Fields also accept plain Ctrl on Linux, where there is no terminal
+/// program to receive it. Keep the terminal's Ctrl-Shift aliases working in
+/// fields so Edit menu clicks and keyboard shortcuts share the same path.
+pub(crate) fn edit_modifiers(modifiers: Modifiers) -> bool {
+    !modifiers.alt
+        && !modifiers.function
+        && ((modifiers.platform && !modifiers.control && !modifiers.shift)
+            || (cfg!(target_os = "linux") && modifiers.control && !modifiers.platform))
+}
 
 /// macOS's Hide, Hide Others, and Minimize, bound there alone.
 const SYSTEM_KEYS: [&str; 3] = ["cmd-h", "cmd-alt-h", "cmd-m"];

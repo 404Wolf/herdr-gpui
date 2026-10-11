@@ -107,16 +107,16 @@ impl DialogInput {
             .find(|i| *i > cursor)
             .unwrap_or(self.text.len());
         match key.key.as_str() {
-            "a" if key.modifiers.platform => {
+            "a" if crate::actions::edit_modifiers(key.modifiers) => {
                 self.selection = 0..self.text.len();
                 self.reversed = false;
             }
-            "v" if key.modifiers.platform => {
+            "v" if crate::actions::edit_modifiers(key.modifiers) => {
                 if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
                     self.replace(None, &text, false, None);
                 }
             }
-            "c" | "x" if key.modifiers.platform => {
+            "c" | "x" if crate::actions::edit_modifiers(key.modifiers) => {
                 if !self.selection.is_empty() {
                     cx.write_to_clipboard(ClipboardItem::new_string(
                         self.text[self.selection.clone()].into(),

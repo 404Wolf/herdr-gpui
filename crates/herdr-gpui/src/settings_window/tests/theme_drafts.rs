@@ -29,7 +29,7 @@ fn keyboard_close_writes_final_draft_once_and_browsing_never_reloads_config(
         assert_eq!(reloads.load(Ordering::SeqCst), 0);
         view.read_with(cx, |view, _| assert!(view.theme_dirty()));
     }
-    cx.simulate_keystrokes("cmd-w");
+    cx.simulate_keystrokes(crate::controls::platform_default("cmd-w"));
     cx.run_until_parked();
     assert_eq!(*writes.lock().unwrap(), ["Nord"]);
     assert_eq!(reloads.load(Ordering::SeqCst), 1);

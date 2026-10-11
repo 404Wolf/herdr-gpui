@@ -51,7 +51,7 @@ fn command_w_closes_only_settings(cx: &mut TestAppContext) {
         window.draw(cx).clear(cx);
         assert!(view.read(cx).focus.is_focused(window));
     });
-    cx.simulate_keystrokes("cmd-w");
+    cx.simulate_keystrokes(crate::controls::platform_default("cmd-w"));
     assert_eq!(cx.windows(), vec![source.into()]);
 }
 
@@ -85,8 +85,8 @@ fn settings_shortcut_and_session_shortcuts_do_not_route_to_source(cx: &mut TestA
         window.focus(&view.focus, cx);
         view
     });
-    cx.simulate_keystrokes("cmd-,");
-    cx.simulate_keystrokes("cmd-shift-w");
+    cx.simulate_keystrokes(crate::controls::platform_default("cmd-,"));
+    cx.simulate_keystrokes(crate::controls::platform_default("cmd-shift-w"));
     cx.update(|_, cx| {
         assert_eq!(cx.windows().len(), 2);
         assert!(source.read(cx).unwrap().menu.page.is_none());
@@ -95,10 +95,10 @@ fn settings_shortcut_and_session_shortcuts_do_not_route_to_source(cx: &mut TestA
             .update(cx, |_, window, _| window.remove_window())
             .unwrap();
     });
-    cx.simulate_keystrokes("cmd-,");
+    cx.simulate_keystrokes(crate::controls::platform_default("cmd-,"));
     assert_eq!(cx.windows().len(), 1);
     view.read_with(cx, |view, _| assert!(!view.busy()));
-    cx.simulate_keystrokes("cmd-w");
+    cx.simulate_keystrokes(crate::controls::platform_default("cmd-w"));
     assert!(cx.windows().is_empty());
 }
 

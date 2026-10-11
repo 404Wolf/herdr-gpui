@@ -1,8 +1,10 @@
 use super::*;
+use crate::controls::platform_default as default;
 use herdr_client::protocol::ClientShellCommand;
 
 mod custom_reference;
 mod literal_plus;
+mod platform_defaults;
 
 fn overrides(entries: &[(&str, Binding)]) -> BTreeMap<String, Binding> {
     entries
@@ -40,13 +42,13 @@ fn list(keymap: &Keymap, command: Command) -> Vec<&str> {
 #[test]
 fn defaults_follow_the_catalog_and_herdr() {
     let keymap = Keymap::default();
-    assert_eq!(list(&keymap, Command::Tab), ["cmd-t", "ctrl-b c"]);
-    assert_eq!(keymap.primary(Command::Tab), "cmd-t");
-    assert_eq!(keymap.primary(Command::Workspace), "cmd-shift-n");
+    assert_eq!(list(&keymap, Command::Tab), [default("cmd-t"), "ctrl-b c"]);
+    assert_eq!(keymap.primary(Command::Tab), default("cmd-t"));
+    assert_eq!(keymap.primary(Command::Workspace), default("cmd-shift-n"));
     assert_eq!(keymap.primary(Command::Themes), "");
     assert_eq!(
         list(&keymap, Command::SplitDown),
-        ["cmd-shift-d", "ctrl-b -"]
+        [default("cmd-shift-d"), "ctrl-b -"]
     );
     assert_eq!(
         Keymap::with_overrides(
@@ -58,7 +60,10 @@ fn defaults_follow_the_catalog_and_herdr() {
         Keymap::default()
     );
     // Herdr's defaults are all chords, so GPUI binds only the catalog.
-    let bound: usize = COMMANDS.iter().map(|info| info.shortcuts.len()).sum();
+    let bound: usize = COMMANDS
+        .iter()
+        .map(|info| info.default_shortcuts().len())
+        .sum();
     assert_eq!(keymap.bindings().count(), bound);
     assert!(
         keymap
@@ -73,28 +78,28 @@ fn overrides_replace_lists_and_empty_values_unbind() {
         ("new_workspace", one("cmd-alt-t")),
         (
             "themes",
-            Binding::Many(vec!["ctrl-shift-t".into(), " cmd-k ".into()]),
+            Binding::Many(vec!["ctrl-alt-t".into(), " cmd-k ".into()]),
         ),
         ("close_pane", one("")),
         ("toggle_sidebar", Binding::Many(Vec::new())),
     ])
     .unwrap();
     assert_eq!(list(&keymap, Command::Workspace), ["cmd-alt-t"]);
-    assert_eq!(list(&keymap, Command::Themes), ["ctrl-shift-t", "cmd-k"]);
+    assert_eq!(list(&keymap, Command::Themes), ["ctrl-alt-t", "cmd-k"]);
     assert!(list(&keymap, Command::ClosePane).is_empty());
     assert!(list(&keymap, Command::ToggleSidebar).is_empty());
-    assert_eq!(list(&keymap, Command::Tab), ["cmd-t"]);
+    assert_eq!(list(&keymap, Command::Tab), [default("cmd-t")]);
 }
 
 /// Taking a default keystroke must not force the user to also unbind it
 /// from the command that shipped with it.
 #[test]
 fn configured_keystroke_moves_from_its_default_owner() {
-    let keymap = with(&[("new_workspace", one("cmd-t"))]).unwrap();
-    assert_eq!(list(&keymap, Command::Workspace), ["cmd-t"]);
+    let keymap = with(&[("new_workspace", one(default("cmd-t")))]).unwrap();
+    assert_eq!(list(&keymap, Command::Workspace), [default("cmd-t")]);
     assert!(list(&keymap, Command::Tab).is_empty());
     // Spelling differences still name the same keystroke.
-    let keymap = with(&[("about", one("CMD-shift-P"))]).unwrap();
+    let keymap = with(&[("about", one(&default("cmd-shift-p").to_uppercase()))]).unwrap();
     assert!(list(&keymap, Command::Palette).is_empty());
     let keys: Vec<_> = keymap.bindings().map(|(_, keystroke)| keystroke).collect();
     let unique: HashSet<_> = keys.iter().collect();
@@ -190,7 +195,10 @@ fn gui_overrides_replace_daemon_bindings() {
     .unwrap();
     assert_eq!(list(&keymap, Command::Tab), ["cmd-y"]);
     assert_eq!(keymap.chord(&keystroke("c")), None);
-    assert_eq!(list(&keymap, Command::SplitRight), ["cmd-d", "ctrl-a v"]);
+    assert_eq!(
+        list(&keymap, Command::SplitRight),
+        [default("cmd-d"), "ctrl-a v"]
+    );
     assert_eq!(keymap.chord(&keystroke("v")), Some(Command::SplitRight));
     // An empty GUI entry unbinds the daemon's chords too.
     let keymap = Keymap::with_overrides(
@@ -209,7 +217,7 @@ fn daemon_keystrokes_move_from_gui_defaults_but_not_from_gui_config() {
         prefixes: vec![keystroke("ctrl-a")],
         bindings: vec![
             // cmd-d is Split Right's catalog default.
-            (Command::Zoom, Trigger::Direct(keystroke("cmd-d"))),
+            (Command::Zoom, Trigger::Direct(keystroke(default("cmd-d")))),
             // The first daemon binding for a keystroke wins.
             (Command::Tab, Trigger::Direct(keystroke("alt-1"))),
             (Command::TabNumber(1), Trigger::Direct(keystroke("alt-1"))),
@@ -231,19 +239,25 @@ fn daemon_keystrokes_move_from_gui_defaults_but_not_from_gui_config() {
     )
     .unwrap();
     // Daemon keystrokes read in GPUI's platform spelling (`super-d` on Linux).
-    let moved = keystroke("cmd-d").unparse();
+    let moved = keystroke(default("cmd-d")).unparse();
     assert_eq!(
         list(&keymap, Command::Zoom),
-        ["cmd-shift-enter", moved.as_str()]
+        [default("cmd-shift-enter"), moved.as_str()]
     );
     assert!(list(&keymap, Command::SplitRight).is_empty());
-    assert_eq!(list(&keymap, Command::Tab), ["cmd-t", "alt-1", "ctrl-a c"]);
-    assert_eq!(list(&keymap, Command::TabNumber(1)), ["cmd-1"]);
-    assert_eq!(list(&keymap, Command::CloseTab), ["cmd-shift-w"]);
-    assert_eq!(list(&keymap, Command::ClosePane), ["cmd-w"]);
+    assert_eq!(
+        list(&keymap, Command::Tab),
+        [default("cmd-t"), "alt-1", "ctrl-a c"]
+    );
+    assert_eq!(list(&keymap, Command::TabNumber(1)), [default("cmd-1")]);
+    assert_eq!(list(&keymap, Command::CloseTab), [default("cmd-shift-w")]);
+    assert_eq!(list(&keymap, Command::ClosePane), [default("cmd-w")]);
     assert_eq!(list(&keymap, Command::About), ["cmd-e"]);
-    assert_eq!(list(&keymap, Command::NextTab), ["cmd-shift-]"]);
-    assert_eq!(list(&keymap, Command::PreviousTab), ["cmd-shift-["]);
+    assert_eq!(list(&keymap, Command::NextTab), [default("cmd-shift-]")]);
+    assert_eq!(
+        list(&keymap, Command::PreviousTab),
+        [default("cmd-shift-[")]
+    );
     let keys: Vec<_> = keymap.bindings().map(|(_, keystroke)| keystroke).collect();
     let unique: HashSet<_> = keys.iter().collect();
     assert_eq!(keys.len(), unique.len());
@@ -257,10 +271,14 @@ fn the_prefix_yields_to_gui_config_and_typing() {
         ..no_keys()
     };
     // cmd-b is Toggle Sidebar's catalog default; the prefix takes it.
-    let keymap =
-        Keymap::with_overrides(&BTreeMap::new(), &Default::default(), &keys("cmd-b")).unwrap();
+    let keymap = Keymap::with_overrides(
+        &BTreeMap::new(),
+        &Default::default(),
+        &keys(default("cmd-b")),
+    )
+    .unwrap();
     assert!(list(&keymap, Command::ToggleSidebar).is_empty());
-    assert!(keymap.is_prefix(&keystroke("cmd-b")));
+    assert!(keymap.is_prefix(&keystroke(default("cmd-b"))));
     // A GUI-configured keystroke keeps its command and disables chords.
     let keymap = Keymap::with_overrides(
         &overrides(&[("themes", one("ctrl-b"))]),
@@ -270,7 +288,7 @@ fn the_prefix_yields_to_gui_config_and_typing() {
     .unwrap();
     assert!(!keymap.is_prefix(&keystroke("ctrl-b")));
     assert_eq!(keymap.chord(&keystroke("c")), None);
-    assert_eq!(list(&keymap, Command::Tab), ["cmd-t"]);
+    assert_eq!(list(&keymap, Command::Tab), [default("cmd-t")]);
     for (prefix, usable) in [
         ("f12", true),
         ("escape", true),
@@ -309,7 +327,10 @@ fn custom_commands_bind_after_the_keymap() {
     let commands = [
         custom("git", &["prefix+y", "ctrl+alt+g"]),
         // Herdr's own chord for New Tab, which the keymap keeps.
-        custom("shadowed", &["prefix+c", "cmd+t"]),
+        custom(
+            "shadowed",
+            &["prefix+c", &default("cmd-t").replace('-', "+")],
+        ),
         // A bare key would swallow typing, and the prefix is the prefix.
         custom("typing", &["u", "ctrl+b"]),
         custom("legacy", &[]),
@@ -326,7 +347,7 @@ fn custom_commands_bind_after_the_keymap() {
     assert_eq!(find("g", true), None);
     assert_eq!(find("ctrl-alt-g", true), None);
     assert_eq!(find("c", true), None);
-    assert_eq!(find("cmd-t", false), None);
+    assert_eq!(find(default("cmd-t"), false), None);
     assert_eq!(find("u", false), None);
     assert_eq!(find("ctrl-b", false), None);
     assert_eq!(running(&keymap, &commands, 0), ["ctrl-b y", "ctrl-alt-g"]);
@@ -410,10 +431,10 @@ fn every_prefix_arms_and_the_first_labels_chords() {
     assert_eq!(keymap.prefix_label().as_deref(), Some(first.as_str()));
     assert_eq!(
         list(&keymap, Command::Tab),
-        ["cmd-t".to_owned(), format!("{first} c")]
+        [default("cmd-t").to_owned(), format!("{first} c")]
     );
     assert_eq!(keymap.chord(&keystroke("ctrl-s")), None);
-    assert_eq!(list(&keymap, Command::NextTab), ["cmd-shift-]"]);
+    assert_eq!(list(&keymap, Command::NextTab), [default("cmd-shift-]")]);
 
     // A prefix the GUI config claims, or that would swallow typing, is
     // dropped, and the next one labels chords.
@@ -431,7 +452,7 @@ fn every_prefix_arms_and_the_first_labels_chords() {
     assert!(!keymap.is_prefix(&keystroke("ctrl-b")));
     assert!(!keymap.is_prefix(&keystroke("a")));
     assert!(keymap.is_prefix(&keystroke("ctrl-s")));
-    assert_eq!(list(&keymap, Command::Tab), ["cmd-t", "ctrl-s c"]);
+    assert_eq!(list(&keymap, Command::Tab), [default("cmd-t"), "ctrl-s c"]);
 }
 
 fn pane_keys(entries: &[(&str, &str)]) -> PaneKeys {
@@ -490,17 +511,21 @@ fn pane_keys_take_keystrokes_from_default_and_daemon_commands() {
         ..no_keys()
     };
     let table = pane_keys(&[
-        ("cmd-k", "ctrl-l"),
+        (default("cmd-k"), "ctrl-l"),
         ("ctrl-alt-t", "f5"),
         ("ctrl-b", "ctrl-a"),
     ]);
     let keymap = Keymap::with_overrides(&BTreeMap::new(), &table, &keys).unwrap();
-    assert_eq!(sent(&keymap, "cmd-k"), Some(&keystroke("ctrl-l")));
+    assert_eq!(sent(&keymap, default("cmd-k")), Some(&keystroke("ctrl-l")));
     assert_eq!(keymap.primary(Command::ClearPane), "");
     assert_eq!(keymap.primary(Command::Themes), "");
     assert!(!keymap.is_prefix(&keystroke("ctrl-b")));
     assert_eq!(keymap.prefix_label(), Some(keystroke("ctrl-s").unparse()));
-    assert!(keymap.bindings().all(|(_, label)| label != "cmd-k"));
+    assert!(
+        keymap
+            .bindings()
+            .all(|(_, label)| label != default("cmd-k"))
+    );
     assert_eq!(sent(&keymap, "cmd-j"), None);
 }
 

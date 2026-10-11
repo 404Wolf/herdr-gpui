@@ -90,6 +90,7 @@ pub(crate) struct MenuState {
     pub(super) worktree_open: Option<super::worktree_open::Picker>,
     pub(super) keybinds_scroll: ScrollHandle,
     pub(crate) keybinds_search: Option<Entity<crate::search_input::SearchInput>>,
+    pub(super) shortcut_editor: Option<super::shortcut_editor::Editor>,
     pub(super) _keybinds_subscription: Option<Subscription>,
     pub(crate) preferences_scroll: ScrollHandle,
     pub(crate) font_size_editor: Option<crate::preferences::FontSizeEditor>,
@@ -294,6 +295,7 @@ impl MenuState {
             worktree_open: None,
             keybinds_scroll: ScrollHandle::new(),
             keybinds_search: None,
+            shortcut_editor: None,
             _keybinds_subscription: None,
             preferences_scroll: ScrollHandle::new(),
             font_size_editor: None,
@@ -351,6 +353,7 @@ impl MenuState {
         self.code_search = None;
         self.fonts = None;
         self.font_size_editor = None;
+        self.shortcut_editor = None;
         self.selected = None;
         self.workspace_selected = None;
         self.git_selected = None;

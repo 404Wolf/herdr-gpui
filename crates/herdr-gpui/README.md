@@ -2336,6 +2336,57 @@ error codes (for example, `5` for Windows access denied). A successful plain
 pipe client alone does not establish why the GUI was denied; include these
 records when reporting the failure.
 
+## Keyboard Shortcuts
+
+Open **Herdr > Keyboard Shortcuts** to search every application command,
+including commands with no binding. Click **Edit**, enter a shortcut such as
+`ctrl-shift-t`, and choose **Save** (or press Enter). Separate alternatives with
+spaces, for example `ctrl-shift-t alt-t`. **Unbind** removes all shortcuts for
+that command; **Reset** removes its GUI override and restores platform defaults
+and inherited daemon bindings. Escape cancels the draft. Invalid shortcuts,
+duplicate configured bindings, and save failures are shown beside the editor.
+
+Edits are saved in `config-gpui.local.toml` under `[keybindings]` and reload live
+in menus, the command palette, and open windows. The same configuration can be
+edited by hand:
+
+```toml
+[keybindings]
+new_tab = "ctrl-shift-t"
+split_right = ["ctrl-shift-d", "alt-d"]
+close_tab = [] # unbind; remove this line to restore inherited defaults
+```
+
+Saving a command replaces its whole shortcut list, including inherited daemon
+prefix chords. Assigning a default shortcut to another command moves it there;
+two explicitly configured commands cannot share a shortcut. Daemon/plugin
+shortcuts remain visible in the reference and are configured in Herdr's own
+`[keys]` / `[[keys.command]]` tables. Clipboard shortcuts are fixed Edit actions.
+
+Defaults are selected independently for Linux, macOS, and Windows. macOS uses
+Cmd; the experimental Windows profile currently retains its existing bindings.
+Linux uses **Ctrl+Shift** for terminal-facing application actions, keeping Super
+available to the desktop and plain Ctrl keys available to terminal programs.
+This follows terminal conventions alongside the
+[GNOME keyboard guidelines](https://developer.gnome.org/hig/reference/keyboard.html),
+whose plain Ctrl editing shortcuts also work in the app's text fields.
+
+| Action | Linux default |
+| --- | --- |
+| New tab / New window | Ctrl+Shift+T / Ctrl+Shift+N |
+| New workspace / New worktree | Ctrl+Alt+Shift+N / Ctrl+Shift+U |
+| Copy / Paste | Ctrl+Shift+C / Ctrl+Shift+V |
+| Find / Command palette | Ctrl+Shift+F / Ctrl+Shift+P |
+| Split right / Split down | Ctrl+Shift+D / Ctrl+Alt+Shift+D |
+| Close pane / Close tab | Ctrl+Shift+W / Ctrl+Alt+Shift+W |
+| Next / Previous tab | Ctrl+PageDown / Ctrl+PageUp |
+| Toggle sidebar / New browser tab | Ctrl+Shift+B / Ctrl+Alt+Shift+B |
+| Settings / Keyboard Shortcuts | Ctrl+Shift+, / Ctrl+Shift+/ |
+| Full screen | F11 |
+
+The in-app reference lists all platform defaults and current overrides. The
+Cmd examples elsewhere in this document describe the macOS profile.
+
 ## Supported
 
 - Workspace/worktree sidebar with main-checkout parents, indented linked
@@ -2731,7 +2782,7 @@ records when reporting the failure.
   `split_right`, `focus_tab_1`, `quit`, ...). A value is one keystroke or a list;
   an empty string or list unbinds the command. A keystroke assigned there moves
   away from its default command, keystrokes need a cmd, ctrl, alt, or fn
-  modifier, and unknown names, unparseable keys, or one key on two configured
+  modifier (or a function key F1–F24), and unknown names, unparseable keys, or one key on two configured
   commands reject the config. Saved changes rebind the keymap and menu bar live.
 - `[pane_keys]` maps a keystroke to the key the focused pane receives instead,
   like Ghostty's `text:` binds. On macOS, Cmd-Left, Cmd-Right, and
@@ -3044,8 +3095,9 @@ X11/Wayland backends are retained. Linux uses Vulkan; macOS GPUI's
 `runtime_shaders` feature compiles native Metal shaders at app launch, avoiding
 the separate downloadable build-time Metal compiler. Integrated Linux ARM64
 compilation, Clippy, default/all-feature tests, and release CLI checks were
-verified in Ubuntu 24.04, not native desktop rendering or input. Linux Cmd bindings mean
-Super and can conflict with desktop shortcuts. Linux shows an **in-window menu
+verified in Ubuntu 24.04, not native desktop rendering or input. Linux uses
+[Ctrl+Shift application shortcuts](#keyboard-shortcuts); explicitly configured
+`cmd` bindings still mean Super. Linux shows an **in-window menu
 bar** using the same Herdr, File, Edit, View, Terminal, and Window definitions as
 macOS (plus QA in `qa-menu` builds). It remains visible with the sidebar hidden
 and collapses to **Menu** in narrow windows. In client-decorated windows, the
@@ -3074,7 +3126,8 @@ cargo test --locked -p herdr-gpui --features integration-test --test live_gui na
 ```
 
 This checks native painting and geometry at wide and narrow sizes, action
-dispatch, focus restoration, and input isolation using GPUI-injected events;
+dispatch, focus restoration, input isolation, and shortcut editing, unbinding,
+resetting, and live reload using GPUI-injected events;
 it does not verify compositor-delivered keyboard input or OS IME behavior.
 
 Selection regressions cover unflagged CJK continuation cells, real spaces,

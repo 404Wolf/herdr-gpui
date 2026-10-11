@@ -153,9 +153,17 @@ project_roots = []
 # Native shortcuts. Each key is a command; the value is one keystroke or a list,
 # primary first. "" or [] unbinds it. Assigning a keystroke here takes it away
 # from its default command. Modifiers: cmd (super on Linux), ctrl, alt, shift,
-# fn; keystrokes need at least one of cmd, ctrl, alt, or fn.
+# fn; keystrokes need at least one of cmd, ctrl, alt, or fn, or a function key
+# F1 through F24. Herdr > Keyboard Shortcuts also edits, unbinds, and resets them.
 # Herdr's own [keys] in config.toml (prefix chords included) add to these
 # defaults; a command named here keeps only the keystrokes listed here.
+# The examples below use the macOS defaults. Linux has its own Ctrl+Shift
+# defaults (not Super): new_tab = "ctrl-shift-t", new_window = "ctrl-shift-n",
+# new_workspace = "ctrl-alt-shift-n", new_worktree = "ctrl-shift-u",
+# split_right = "ctrl-shift-d", split_down = "ctrl-alt-shift-d",
+# command_palette = "ctrl-shift-p", toggle_full_screen = "f11".
+# See Keyboard Shortcuts for the full platform-specific list. Explicit values
+# are used literally on every platform; cmd is not translated to Ctrl+Shift.
 # [keybindings]
 # new_tab = "cmd-t"
 # new_workspace = "cmd-shift-n"

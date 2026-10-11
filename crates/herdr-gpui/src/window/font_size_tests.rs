@@ -123,11 +123,17 @@ fn the_bound_keystrokes_reach_the_commands(cx: &mut TestAppContext) {
     let start = view.read_with(cx, |view, _| view.config.terminal.size);
 
     for (keystrokes, expected) in [
-        ("cmd-=", start + FONT_SIZE_STEP),
-        ("cmd--", start),
+        (
+            crate::controls::platform_default("cmd-="),
+            start + FONT_SIZE_STEP,
+        ),
+        (crate::controls::platform_default("cmd--"), start),
         // `+` arrives as its own key with the shift dropped, not as shift-`=`.
-        ("cmd-+", start + FONT_SIZE_STEP),
-        ("cmd-0", start),
+        (
+            crate::controls::platform_default("cmd-+"),
+            start + FONT_SIZE_STEP,
+        ),
+        (crate::controls::platform_default("cmd-0"), start),
     ] {
         cx.simulate_keystrokes(keystrokes);
         cx.run_until_parked();
