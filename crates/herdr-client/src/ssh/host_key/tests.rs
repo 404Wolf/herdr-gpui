@@ -32,24 +32,77 @@ fn fingerprints_are_read_from_ssh_keygen_lines() {
 
 #[test]
 fn known_hosts_files_come_from_ssh_g_in_order() {
-    let output = b"hostname box\nuserknownhostsfile /home/me/.ssh/known_hosts /home/me/.ssh/known_hosts2\nport 22\n";
+    let output = b"hostname Box\nport 22\nuserknownhostsfile /home/me/.ssh/known_hosts /home/me/.ssh/known_hosts2\nglobalknownhostsfile /etc/ssh/ssh_known_hosts\n";
     assert_eq!(
         parse_known_hosts(output),
-        Some(vec![
-            PathBuf::from("/home/me/.ssh/known_hosts"),
-            PathBuf::from("/home/me/.ssh/known_hosts2"),
-        ])
+        Some(KnownHosts {
+            user: vec![
+                PathBuf::from("/home/me/.ssh/known_hosts"),
+                PathBuf::from("/home/me/.ssh/known_hosts2"),
+            ],
+            global: vec![PathBuf::from("/etc/ssh/ssh_known_hosts")],
+            name: "box".into(),
+        })
     );
     for output in [
-        &b"hostname box\n"[..],
-        b"userknownhostsfile none\n",
-        b"userknownhostsfile ~/.ssh/known_hosts\n",
+        &b"hostname box\nport 22\n"[..],
+        b"hostname box\nport 22\nuserknownhostsfile none\n",
+        b"hostname box\nport 22\nuserknownhostsfile ~/.ssh/known_hosts\n",
         // A path with a space reaches `ssh -G` output as two words.
-        b"userknownhostsfile /home/my files/known_hosts\n",
-        b"userknownhostsfile \"/home/me/known_hosts\"\n",
+        b"hostname box\nport 22\nuserknownhostsfile /home/my files/known_hosts\n",
+        b"hostname box\nport 22\nuserknownhostsfile \"/home/me/known_hosts\"\n",
+        b"userknownhostsfile /k\nport 22\n",
+        b"hostname -oProxyCommand=x\nport 22\nuserknownhostsfile /k\n",
     ] {
-        assert_eq!(parse_known_hosts(output), None);
+        assert_eq!(
+            parse_known_hosts(output),
+            None,
+            "{:?}",
+            String::from_utf8_lossy(output)
+        );
     }
+}
+
+#[test]
+fn keys_are_looked_up_under_the_alias_and_port_ssh_uses() {
+    let name = |output: &[u8]| parse_known_hosts(output).unwrap().name;
+    assert_eq!(
+        name(b"hostname box\nport 2222\nuserknownhostsfile /k\n"),
+        "[box]:2222"
+    );
+    assert_eq!(
+        name(b"hostname box\nhostkeyalias Alias\nport 22\nuserknownhostsfile /k\n"),
+        "Alias"
+    );
+    assert_eq!(
+        name(b"hostname box\nport 22\nuserknownhostsfile /k\nglobalknownhostsfile none\n"),
+        "box"
+    );
+}
+
+#[test]
+fn a_host_with_any_trusted_key_is_found_in_user_or_global_files() {
+    let root = tempfile::tempdir().unwrap();
+    let user = root.path().join("known_hosts");
+    let global = root.path().join("global");
+    std::fs::write(
+        &user,
+        "other ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJx\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &global,
+        "box ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJx\n",
+    )
+    .unwrap();
+    let known = |name: &str, global: Vec<PathBuf>| KnownHosts {
+        user: vec![user.clone(), root.path().join("missing")],
+        global,
+        name: name.into(),
+    };
+    assert!(known("box", vec![global.clone()]).lists_host().unwrap());
+    assert!(!known("box", Vec::new()).lists_host().unwrap());
+    assert!(!known("[box]:2222", vec![global]).lists_host().unwrap());
 }
 
 #[test]
@@ -58,7 +111,7 @@ fn scan_options_record_into_scratch_and_offer_no_credential() {
         Path::new("/tmp/scratch/known_hosts"),
         &[PathBuf::from("/home/me/.ssh/known_hosts")],
     );
-    assert_eq!(options.len(), 18);
+    assert_eq!(options.len(), 28);
     assert!(options.iter().step_by(2).all(|flag| flag == "-o"));
     let values: Vec<&str> = options
         .iter()
@@ -76,6 +129,8 @@ fn scan_options_record_into_scratch_and_offer_no_credential() {
         "PasswordAuthentication=no",
         "KbdInteractiveAuthentication=no",
         "ControlPath=none",
+        "ForwardAgent=no",
+        "PermitLocalCommand=no",
     ] {
         assert!(values.contains(&expected), "{expected}");
     }

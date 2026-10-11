@@ -70,7 +70,8 @@ impl NewHostKey {
 #[cfg(unix)]
 pub fn scan_host_key(target: &str) -> Result<HostKeyScan> {
     validate_target(target)?;
-    let files = user_known_hosts(target)?;
+    let known = known_hosts(target)?;
+    let files = &known.user;
     let scratch = tempfile::Builder::new()
         .prefix("herdr-host-key-")
         .tempdir()?;
@@ -78,7 +79,7 @@ pub fn scan_host_key(target: &str) -> Result<HostKeyScan> {
     std::fs::File::create(&recorded)?;
     let mut command = crate::environment::command("ssh");
     command
-        .args(scan_options(&recorded, &files))
+        .args(scan_options(&recorded, files))
         .args(super::POLICY)
         .args(["-o", "ClearAllForwardings=yes", "--", target, "true"])
         .stderr(Stdio::piped());
@@ -94,6 +95,13 @@ pub fn scan_host_key(target: &str) -> Result<HostKeyScan> {
         return Err(Error::SshOutputLimit);
     }
     if !entries.trim().is_empty() {
+        // `accept-new` treats a host with a known key of another type as
+        // changed in current OpenSSH; older releases may record the new type.
+        // Either way, a host that already has a trusted key is never offered.
+        if known.lists_host()? {
+            tracing::warn!(category = "host_key", "host offered a key of another type");
+            return Ok(HostKeyScan::Refused(SshFailure::HostKey));
+        }
         let fingerprints = fingerprints(&recorded)?;
         tracing::info!(
             category = "host_key",
@@ -127,7 +135,8 @@ pub fn scan_host_key(target: &str) -> Result<HostKeyScan> {
 
 /// Options that come before [`super::POLICY`], so they win over it: record a
 /// new key into `recorded`, check the user's own files too, and never offer a
-/// credential or touch a shared connection.
+/// credential or touch a shared connection. Nothing is forwarded either, since
+/// the host is not verified: the user's config may forward the agent to it.
 #[cfg(unix)]
 fn scan_options(recorded: &Path, files: &[PathBuf]) -> Vec<String> {
     let known: Vec<String> = std::iter::once(recorded)
@@ -144,16 +153,54 @@ fn scan_options(recorded: &Path, files: &[PathBuf]) -> Vec<String> {
         "GSSAPIAuthentication=no".into(),
         "HostbasedAuthentication=no".into(),
         "ControlPath=none".into(),
+        "ForwardAgent=no".into(),
+        "ForwardX11Trusted=no".into(),
+        "PermitLocalCommand=no".into(),
+        "RemoteCommand=none".into(),
+        "Tunnel=no".into(),
     ]
     .into_iter()
     .flat_map(|option| ["-o".into(), option])
     .collect()
 }
 
-/// The user known hosts files `ssh -G` resolves for `target`, first one
-/// first: that is where `ssh` itself saves a key it was told to accept.
+/// What `ssh -G` resolves for a target's host keys.
 #[cfg(unix)]
-fn user_known_hosts(target: &str) -> Result<Vec<PathBuf>> {
+#[derive(Debug, PartialEq, Eq)]
+struct KnownHosts {
+    /// The user files, first one first: that is where `ssh` itself saves a
+    /// key it was told to accept.
+    user: Vec<PathBuf>,
+    global: Vec<PathBuf>,
+    /// The name keys are stored under: `HostKeyAlias`, or the host name,
+    /// with the port in brackets when it is not 22.
+    name: String,
+}
+
+#[cfg(unix)]
+impl KnownHosts {
+    /// Whether any user or global file already lists a key for the host.
+    /// `ssh-keygen -F` also matches hashed entries.
+    fn lists_host(&self) -> Result<bool> {
+        for file in self.user.iter().chain(&self.global) {
+            if !file.is_file() {
+                continue;
+            }
+            let mut command = crate::environment::command("ssh-keygen");
+            command.args(["-F", &self.name, "-f"]).arg(file);
+            let (status, _) = super::run(&mut command, Duration::from_secs(5), || false)?;
+            match status.code() {
+                Some(0) => return Ok(true),
+                Some(1) => {}
+                _ => return Err(Error::RemoteCommand(status)),
+            }
+        }
+        Ok(false)
+    }
+}
+
+#[cfg(unix)]
+fn known_hosts(target: &str) -> Result<KnownHosts> {
     let mut command = crate::environment::command("ssh");
     command.args(["-G", "--", target]);
     let (status, output) = super::run(&mut command, Duration::from_secs(5), || false)?;
@@ -163,23 +210,39 @@ fn user_known_hosts(target: &str) -> Result<Vec<PathBuf>> {
     parse_known_hosts(&output).ok_or(Error::KnownHostsUnavailable)
 }
 
-/// `None` unless every file is an absolute path without quotes, which also
-/// rejects a path with spaces, since `ssh -G` prints those unquoted.
+/// `None` unless every user file is an absolute path without quotes, which
+/// also rejects a path with spaces, since `ssh -G` prints those unquoted.
 #[cfg(unix)]
-fn parse_known_hosts(output: &[u8]) -> Option<Vec<PathBuf>> {
+fn parse_known_hosts(output: &[u8]) -> Option<KnownHosts> {
     let text = std::str::from_utf8(output).ok()?;
-    let value = text
-        .lines()
-        .find_map(|line| line.strip_prefix("userknownhostsfile "))?;
-    let files: Vec<PathBuf> = value
-        .split_whitespace()
-        .map(PathBuf::from)
-        .collect::<Vec<_>>();
-    let valid = !files.is_empty()
-        && files
+    let value = |key: &str| {
+        text.lines()
+            .find_map(|line| line.strip_prefix(key)?.strip_prefix(' '))
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && *value != "none")
+    };
+    let paths = |value: Option<&str>| -> Option<Vec<PathBuf>> {
+        let files: Vec<PathBuf> = value?.split_whitespace().map(PathBuf::from).collect();
+        files
             .iter()
-            .all(|file| file.is_absolute() && !file.to_string_lossy().contains(['"', '\'']));
-    valid.then_some(files)
+            .all(|file| file.is_absolute() && !file.to_string_lossy().contains(['"', '\'']))
+            .then_some(files)
+    };
+    let user = paths(value("userknownhostsfile")).filter(|files| !files.is_empty())?;
+    // Global files are only read; an unusable list just checks fewer files.
+    let global = paths(value("globalknownhostsfile")).unwrap_or_default();
+    let host = match value("hostkeyalias") {
+        Some(alias) => alias.to_owned(),
+        None => value("hostname")?.to_ascii_lowercase(),
+    };
+    let name = match value("port")?.parse::<u16>().ok()? {
+        22 => host,
+        port => format!("[{host}]:{port}"),
+    };
+    if name.starts_with('-') || name.chars().any(char::is_control) {
+        return None;
+    }
+    Some(KnownHosts { user, global, name })
 }
 
 /// Describes each key in `file`, one per distinct fingerprint.
