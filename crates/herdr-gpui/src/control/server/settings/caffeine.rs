@@ -19,6 +19,8 @@ use std::{
 
 /// How long a hold or release may take to settle.
 const SETTLE: Duration = Duration::from_secs(5);
+/// How often a timed hold looks whether it has settled.
+const POLL: Duration = Duration::from_millis(50);
 
 /// A timed hold: released at `until`, unless caffeine has changed since
 /// `changes` holds and releases had settled.
@@ -109,6 +111,12 @@ pub(super) fn serve(
             failure.borrow_mut().replace(error);
         });
     }
+    // The timer is armed by a task of its own, so a caller that hangs up
+    // before the hold settles can never leave it held for good.
+    let armed = Rc::new(std::cell::Cell::new(seconds.is_none()));
+    if let Some(seconds) = seconds {
+        arm_once_settled(seconds, before, toggled, armed.clone(), cx);
+    }
     watches.add(
         incoming,
         SETTLE,
@@ -116,23 +124,51 @@ pub(super) fn serve(
             if let Some(error) = failure.borrow_mut().take() {
                 return Some(Response::error(ErrorCode::Failed, error.to_string()));
             }
-            // A toggle that never reached the worker reports its failure on
-            // a later turn, without ever changing the state.
-            if caffeine::cup(cx) == Cup::Pending || (toggled && caffeine::changes(cx) == before) {
-                return None;
-            }
-            let timer = seconds
-                .filter(|_| caffeine::cup(cx) == Cup::On(Mode::Indefinite))
-                .map(|seconds| Timer {
-                    changes: caffeine::changes(cx),
-                    until: Instant::now() + Duration::from_secs(seconds),
-                });
-            arm(timer, cx);
-            Some(state(cx))
+            (settled(before, toggled, cx) && armed.get()).then(|| state(cx))
         },
         Response::error(ErrorCode::Timeout, "Caffeine did not settle in time"),
         cx,
     );
+}
+
+/// Whether the hold or release asked for has settled. A toggle that never
+/// reached the worker reports its failure on a later turn, without ever
+/// changing the state.
+fn settled(before: u64, toggled: bool, cx: &App) -> bool {
+    caffeine::cup(cx) != Cup::Pending && !(toggled && caffeine::changes(cx) == before)
+}
+
+/// Waits for the hold to settle, up to [`SETTLE`], then times it.
+fn arm_once_settled(
+    seconds: u64,
+    before: u64,
+    toggled: bool,
+    armed: Rc<std::cell::Cell<bool>>,
+    cx: &mut App,
+) {
+    let clock = cx.background_executor().clone();
+    let until = Instant::now() + SETTLE;
+    cx.spawn(async move |cx| {
+        loop {
+            let done = cx.update(|cx| {
+                if !settled(before, toggled, cx) {
+                    return false;
+                }
+                let timer = (caffeine::cup(cx) == Cup::On(Mode::Indefinite)).then(|| Timer {
+                    changes: caffeine::changes(cx),
+                    until: Instant::now() + Duration::from_secs(seconds),
+                });
+                arm(timer, cx);
+                true
+            });
+            if done || Instant::now() >= until {
+                armed.set(true);
+                return;
+            }
+            clock.timer(POLL).await;
+        }
+    })
+    .detach();
 }
 
 /// Puts `timer` in force, replacing any other, and ends its hold when due.
