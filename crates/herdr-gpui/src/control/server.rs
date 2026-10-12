@@ -221,6 +221,27 @@ pub(super) fn in_free_window(
     })
 }
 
+/// The window a request names with `--window`. Every request honors it or
+/// is refused: one naming a window that is gone never acts elsewhere, even
+/// where the work is app-wide.
+fn named_window(request: &Request) -> Option<u64> {
+    match request {
+        Request::Open(open) => open.caller.window,
+        Request::Reload(caller) | Request::Status(caller) => caller.window,
+        Request::Notes(notes) => notes.caller.window,
+        Request::Feedback(_) => None,
+        Request::App(call) => call.caller.window,
+        Request::Window(call) => call.caller.window,
+        Request::Ui(call) => call.caller.window,
+        Request::Command(call) => call.caller.window,
+        Request::Tab(call) => call.caller.window,
+        Request::Work(call) => call.caller.window,
+        Request::Host(call) => call.caller.window,
+        Request::Settings(call) => call.caller.window,
+        Request::Events(call) => call.caller.window,
+    }
+}
+
 fn serve(incoming: socket::Incoming, state: &mut State, cx: &mut App) {
     let may_park = matches!(
         incoming.request,
@@ -230,6 +251,14 @@ fn serve(incoming: socket::Incoming, state: &mut State, cx: &mut App) {
             | Request::Settings(_)
             | Request::Events(_)
     );
+    if let Some(id) = named_window(&incoming.request)
+        && !main_windows(cx)
+            .iter()
+            .any(|handle| handle.window_id().as_u64() == id)
+    {
+        incoming.respond(not_found(format!("Herdr UI has no window {id}")));
+        return;
+    }
     if may_park && state.watches.full() {
         incoming.respond(Response::error(
             ErrorCode::Busy,
