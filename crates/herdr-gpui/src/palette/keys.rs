@@ -1,8 +1,52 @@
 //! Keyboard handling while the palette has focus.
+//!
+//! The list moves as in Telescope and snacks.picker: arrows, Tab and
+//! Shift-Tab, Ctrl-N/Ctrl-P, and Ctrl-J/Ctrl-K. Filters cycle with
+//! Ctrl-Tab/Ctrl-Shift-Tab or Alt-]/Alt-[.
 
 use super::{AgentFilter, Filter};
 use crate::HerdrWindow;
 use gpui::*;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Direction {
+    Up,
+    Down,
+}
+
+/// What a key does in the palette, apart from typing into its query.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PaletteKey {
+    Move(Direction),
+    CycleFilter(Direction),
+    Activate,
+    Dismiss,
+}
+
+impl PaletteKey {
+    fn of(keystroke: &Keystroke) -> Option<Self> {
+        let modifiers = keystroke.modifiers;
+        let plain = !modifiers.control && !modifiers.alt && !modifiers.platform;
+        let control = modifiers.control && !modifiers.alt && !modifiers.platform;
+        let alt = modifiers.alt && !modifiers.control && !modifiers.platform;
+        let key = keystroke.key.as_str();
+        Some(match key {
+            "escape" => Self::Dismiss,
+            "enter" => Self::Activate,
+            "up" if plain => Self::Move(Direction::Up),
+            "down" if plain => Self::Move(Direction::Down),
+            "tab" if plain && modifiers.shift => Self::Move(Direction::Up),
+            "tab" if plain => Self::Move(Direction::Down),
+            "tab" if control && modifiers.shift => Self::CycleFilter(Direction::Up),
+            "tab" if control => Self::CycleFilter(Direction::Down),
+            "p" | "k" if control && !modifiers.shift => Self::Move(Direction::Up),
+            "n" | "j" if control && !modifiers.shift => Self::Move(Direction::Down),
+            "[" if alt => Self::CycleFilter(Direction::Up),
+            "]" if alt => Self::CycleFilter(Direction::Down),
+            _ => return None,
+        })
+    }
+}
 
 impl HerdrWindow {
     pub(crate) fn palette_key(
@@ -12,16 +56,13 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) {
         // Herdr's navigate-mode keys move a Go To list as its arrows do.
-        let step = match event.keystroke.key.as_str() {
-            "up" => Some(true),
-            "down" => Some(false),
-            _ => self
-                .menu
-                .palette
-                .as_ref()
-                .filter(|palette| palette.filter == Filter::Navigation)
-                .and_then(|_| self.keymap().navigates_workspace(&event.keystroke)),
-        };
+        let navigation = self
+            .menu
+            .palette
+            .as_ref()
+            .filter(|palette| palette.filter == Filter::Navigation)
+            .and_then(|_| self.keymap().navigates_workspace(&event.keystroke))
+            .map(|up| PaletteKey::Move(if up { Direction::Up } else { Direction::Down }));
         let Some(palette) = &mut self.menu.palette else {
             return;
         };
@@ -30,7 +71,7 @@ impl HerdrWindow {
         }
         // A Go To navigation binding keeps its key; otherwise Alt and a
         // navigator letter filter by agent status without typing the letter.
-        if step.is_none()
+        if navigation.is_none()
             && let Some(agent_filter) = AgentFilter::from_keystroke(&event.keystroke)
         {
             cx.stop_propagation();
@@ -38,47 +79,48 @@ impl HerdrWindow {
             self.set_palette_agent_filter(agent_filter, cx);
             return;
         }
-        match event.keystroke.key.as_str() {
-            "escape" => {
-                cx.stop_propagation();
-                window.prevent_default();
-                self.dismiss_menu(window, cx);
-            }
-            _ if !palette.filtered.is_empty() && step.is_some() => {
-                let up = step == Some(true);
-                cx.stop_propagation();
-                window.prevent_default();
+        let Some(key) = navigation.or_else(|| PaletteKey::of(&event.keystroke)) else {
+            return;
+        };
+        cx.stop_propagation();
+        window.prevent_default();
+        match key {
+            PaletteKey::Dismiss => self.dismiss_menu(window, cx),
+            PaletteKey::Move(direction) => {
                 let count = palette.filtered.len();
-                palette.selected = (palette.selected + if up { count - 1 } else { 1 }) % count;
+                if count == 0 {
+                    return;
+                }
+                palette.selected = match direction {
+                    Direction::Up => (palette.selected + count - 1) % count,
+                    Direction::Down => (palette.selected + 1) % count,
+                };
                 palette
                     .scroll
                     .scroll_to_item(palette.selected, ScrollStrategy::Center);
                 cx.notify();
             }
-            "tab" => {
-                cx.stop_propagation();
-                window.prevent_default();
+            PaletteKey::CycleFilter(direction) => {
+                let count = Filter::ALL.len();
                 let index = Filter::ALL
                     .iter()
                     .position(|filter| *filter == palette.filter)
                     .unwrap_or(0);
-                let step = if event.keystroke.modifiers.shift {
-                    Filter::ALL.len() - 1
-                } else {
-                    1
+                let index = match direction {
+                    Direction::Up => (index + count - 1) % count,
+                    Direction::Down => (index + 1) % count,
                 };
-                let filter = Filter::ALL[(index + step) % Filter::ALL.len()];
-                self.set_palette_filter(filter, cx);
+                self.set_palette_filter(Filter::ALL[index], cx);
             }
-            "enter" => {
-                cx.stop_propagation();
-                window.prevent_default();
+            PaletteKey::Activate => {
                 if let Some(entry) = palette.selected_entry() {
                     let action = entry.action.clone();
                     self.activate_palette(action, window, cx);
                 }
             }
-            _ => {}
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,5 +1,5 @@
 use crate::{
-    Error, HerdrWindow, NavigationTarget, OwnedNavigationTarget, Result,
+    Error, HerdrWindow, OwnedNavigationTarget, Result,
     controls::{COMMANDS, Command},
     keymap::Reach,
     menu::Page,

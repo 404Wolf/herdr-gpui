@@ -289,9 +289,9 @@ impl HerdrWindow {
                     .child(if palette.busy() {
                         "Opening local project... Esc to dismiss."
                     } else if palette.filter == Filter::Navigation {
-                        "↑ / ↓ navigate · Tab filter · alt-b/w/i/d/a status · Enter select · Esc cancel"
+                        "↑↓ / Tab / ⌃N ⌃P move · ⌃Tab filter · ⌥B/W/I/D/A status · ↵ select · Esc close"
                     } else {
-                        "↑ / ↓ navigate · Tab filter · Enter select · Esc cancel"
+                        "↑↓ / Tab / ⌃N ⌃P move · ⌃Tab filter · ↵ select · Esc close"
                     }),
             )
     }

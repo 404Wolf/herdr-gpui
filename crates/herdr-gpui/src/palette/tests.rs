@@ -1,4 +1,5 @@
 use super::*;
+use crate::NavigationTarget;
 use core::prelude::v1::test;
 use gpui::TestAppContext;
 use herdr_client::protocol::ClientShellCommand;

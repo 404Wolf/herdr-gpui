@@ -164,14 +164,14 @@ fn native_search_input_owns_text_and_filter_navigation(cx: &mut TestAppContext) 
         window.draw(cx).clear(cx);
     });
     cx.simulate_input("Settings");
-    cx.simulate_keystrokes("tab");
+    cx.simulate_keystrokes("ctrl-tab");
     view.read_with(cx, |view, cx| {
         let palette = view.menu.palette.as_ref().unwrap();
         assert_eq!(palette.search.read(cx).text(), "Settings");
         assert_eq!(palette.filter, Filter::Navigation);
         assert!(view.marked.is_empty());
     });
-    cx.simulate_keystrokes("shift-tab");
+    cx.simulate_keystrokes("ctrl-shift-tab");
     cx.simulate_keystrokes("escape");
     view.read_with(cx, |view, _| assert!(view.menu.palette.is_none()));
 }
@@ -218,7 +218,7 @@ fn composition_does_not_activate_or_dismiss_the_palette(cx: &mut TestAppContext)
             search.update(cx, |input, cx| {
                 input.replace_and_mark_text_in_range(None, "設定", Some(2..2), window, cx)
             });
-            for key in ["enter", "escape", "tab", "alt-b"] {
+            for key in ["enter", "escape", "tab", "ctrl-tab", "alt-b"] {
                 view.palette_key(
                     &KeyDownEvent {
                         keystroke: Keystroke::parse(key).unwrap(),
