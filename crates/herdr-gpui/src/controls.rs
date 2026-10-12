@@ -87,6 +87,7 @@ pub enum Command {
     ResizeDown,
     ResizeMode,
     RenamePane,
+    MovePane,
     PreviousWorkspace,
     NextWorkspace,
     WorkspaceNumber(u8),
@@ -350,6 +351,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         command: Command::RenamePane,
         name: "rename_pane",
         label: "Rename Pane",
+    },
+    CommandInfo {
+        command: Command::MovePane,
+        name: "move_pane",
+        label: "Move Pane\u{2026}",
     },
     CommandInfo {
         command: Command::Zoom,
@@ -813,6 +819,7 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         | Command::Forward
         | Command::ResizeMode
         | Command::RenamePane
+        | Command::MovePane
         | Command::PreviousWorkspace
         | Command::NextWorkspace
         | Command::WorkspaceNumber(_)

@@ -159,6 +159,8 @@ pub enum Error {
     },
     #[error("Workspace is no longer available. Dismiss and reopen the menu.")]
     StaleWorkspace,
+    #[error(transparent)]
+    PaneMove(#[from] crate::pane_move::Error),
     #[error("Workspace label must not be empty.")]
     EmptyWorkspaceLabel,
     #[error("{0} cannot be reached by script. Choose another host.")]

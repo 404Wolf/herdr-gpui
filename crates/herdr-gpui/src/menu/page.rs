@@ -48,6 +48,8 @@ pub(crate) enum Page {
     Group,
     Pane,
     RenamePane,
+    /// Where the pane menu's pane can move: new places, then other tabs.
+    MovePane,
     /// The processes under the pane menu's pane.
     PaneProcesses,
     /// Confirming the processes chosen there should end.
@@ -125,6 +127,7 @@ impl Page {
                 | Self::Group
                 | Self::Pane
                 | Self::RenamePane
+                | Self::MovePane
                 | Self::PaneProcesses
                 | Self::KillProcesses
                 | Self::Host
