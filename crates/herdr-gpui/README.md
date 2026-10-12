@@ -919,6 +919,7 @@ sidebar_gap = 8
 
 `sidebar_gap` (finite 0..64 logical pixels, default `0`) is optional blank space between the sidebar and the terminal beside it.
 The default keeps the first column flush with the divider; an explicit value such as `8` adds a gutter.
+Only a terminal takes the gap: a browser, VS Code, review, or orchestrator tab pads its own content and sits against the sidebar.
 The terminal keeps the remaining width, so the daemon is resized to the columns
 it actually has, and the gap is ignored while the sidebar is hidden.
 Any space smaller than one character cell at the right or bottom edge takes the adjacent terminal cells' background colors, without stretching text or changing input coordinates.
