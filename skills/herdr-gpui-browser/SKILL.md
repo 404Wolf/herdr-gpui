@@ -1,6 +1,6 @@
 ---
 name: herdr-gpui-browser
-description: Open a browser tab in Herdr UI to show the user a web page or an HTML file you wrote, next to the terminal you run in, and get back the notes the user pins on it. Use whenever the user asks to open, start, or show a browser tab, a page, a preview, or a mockup while you run inside Herdr (HERDR_ENV=1 is set in your environment); prefer it there over other browser skills and over opening Safari or another system browser. Also use it to show the user a file at a line, open a review of your changes, keep a note on a worktree, take a checkpoint, or forward a port in Herdr UI.
+description: Open a browser tab in Herdr UI to show the user a web page or an HTML file you wrote, next to the terminal you run in, and get back the notes the user pins on it. Use whenever the user asks to open, start, or show a browser tab, a page, a preview, or a mockup while you run inside Herdr (HERDR_ENV=1 is set in your environment); prefer it there over other browser skills and over opening Safari or another system browser. Also use it, inside Herdr, for anything Herdr UI itself shows or keeps rather than the herdr daemon: show a file at a line, open a review of your changes, keep a note on a worktree, take or diff a checkpoint, check your branch's pull request and CI, forward or open a port, list or focus the app's windows and tabs, wait for a tab to close or the user's notes to arrive, change a Herdr UI setting, theme, or font, or keep the machine awake.
 ---
 <!-- herdr-gpui-managed-skill v1: Herdr UI keeps this file up to date. Edit a copy under another name to keep your changes. -->
 
@@ -108,18 +108,34 @@ Run `herdr-gpui browser --help` for the full usage.
 ## More of Herdr UI from the command line
 
 The same executable drives the rest of Herdr UI's own features. Herdr's own
-`herdr` CLI still owns workspaces, terminal tabs, panes, and agents.
+`herdr` CLI still owns workspaces, terminal tabs, panes, agents, and
+scrollback (`herdr pane read`): use `herdr` for those, and the commands below
+for what only Herdr UI shows or keeps.
 
-```sh
-herdr-gpui code open src/main.rs:42     # show a file at a line, read-only
-herdr-gpui review                       # open the review of your changes
-herdr-gpui notes set waiting on CI      # a note on this worktree
-herdr-gpui checkpoint create before refactor
-herdr-gpui ports open 3000              # localhost:3000 in a tab, forwarded if remote
-herdr-gpui feedback --wait 600          # any notes the user sent this pane
-```
+| To | Run |
+| --- | --- |
+| Show a file at a line, read-only | `herdr-gpui code open src/main.rs:42` |
+| Open the review of your uncommitted changes | `herdr-gpui review` |
+| Get notes the user sent this pane (pages, reviews, terminals) | `herdr-gpui feedback --wait 600` |
+| Keep a note on this worktree (repository and branch) | `herdr-gpui notes set waiting on CI` |
+| Save the working tree before a risky change, and compare later | `herdr-gpui checkpoint create before refactor`, `herdr-gpui checkpoint diff ID` |
+| Your branch's pull request, its checks, and (with your workspace focused) its comments | `herdr-gpui pr`, `herdr-gpui pr checks`, `herdr-gpui pr comments` |
+| Open a dev server in a tab, forwarded when you run on an SSH host | `herdr-gpui ports open 3000` |
+| See the processes under a pane, with CPU and memory | `herdr-gpui processes` |
+| List or focus the app's windows and its own tabs | `herdr-gpui window`, `herdr-gpui tab`, `herdr-gpui tab focus ID` |
+| Block until something happens in the app | `herdr-gpui wait tab-closed ID --timeout 600`, `herdr-gpui events --follow` |
+| Read or change a Herdr UI setting | `herdr-gpui config get KEY`, `herdr-gpui config set KEY VALUE` |
+| Keep the machine awake during a long job | `herdr-gpui caffeine on --for 2h` |
+| Check whether the app runs, and which windows and hosts it has | `herdr-gpui status` |
 
-Add `--json` to any command for machine-readable output. Restoring a
-checkpoint, teleporting a worktree, and fanning out a prompt only open the
-dialog: the user confirms there. Run `herdr-gpui --help` to list every
-command, and `herdr-gpui COMMAND --help` for one.
+Add `--json` to any command for machine-readable output; errors then come
+back as `{"error": {"code", "message"}}`. Exit statuses are the ones in the
+table above. A command acts in the window that shows your workspace; it
+exits 5 rather than act in another session's window.
+
+Some commands only open the app's dialog and the user confirms there:
+restoring a checkpoint, teleporting a worktree, fanning out a prompt, running
+a worktree script the app has not seen, and adding a cloud machine. Say so
+when you run one, instead of waiting for it to finish. Run
+`herdr-gpui --help` to list every command, and `herdr-gpui COMMAND --help`
+for one.
