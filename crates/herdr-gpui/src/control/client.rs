@@ -19,7 +19,7 @@ use super::{
 use super::{socket, socket_path};
 use crate::cli::control::{BrowserCommand, ControlCommand, Invocation};
 use serde::Serialize;
-use std::process::ExitCode;
+use std::{io::IsTerminal as _, process::ExitCode};
 
 /// Exit statuses, the same for every command. 0 is done.
 pub(crate) mod exit {
@@ -242,6 +242,18 @@ pub(crate) fn printable(text: &str, limit: usize) -> String {
         .collect()
 }
 
+/// Successful output in full: a terminal gets it without controls, which
+/// could drive the terminal, and a pipe or file gets it unchanged, so a
+/// patch from `checkpoint diff` applies byte for byte. App answers are
+/// already bounded by the socket's message limit.
+fn for_terminal(text: &str, terminal: bool) -> std::borrow::Cow<'_, str> {
+    if terminal {
+        printable(text, usize::MAX).into()
+    } else {
+        text.into()
+    }
+}
+
 /// Prints the result and gives the exit status. Text that came from the
 /// app or the terminal is made safe before it reaches the caller's terminal.
 fn finish(result: crate::Result<Output>, json: bool) -> ExitCode {
@@ -252,11 +264,16 @@ fn finish(result: crate::Result<Output>, json: bool) -> ExitCode {
         }
         Ok(output) => {
             if !output.text.is_empty() {
-                let text = printable(&output.text, 1 << 20);
                 if output.status == exit::NOTHING {
-                    eprintln!("{text}");
+                    eprintln!(
+                        "{}",
+                        for_terminal(&output.text, std::io::stderr().is_terminal())
+                    );
                 } else {
-                    println!("{text}");
+                    println!(
+                        "{}",
+                        for_terminal(&output.text, std::io::stdout().is_terminal())
+                    );
                 }
             }
             ExitCode::from(output.status)
@@ -351,3 +368,6 @@ pub(crate) fn run(invocation: Invocation) -> ExitCode {
     };
     finish(result, context.json)
 }
+
+#[cfg(test)]
+mod tests;
