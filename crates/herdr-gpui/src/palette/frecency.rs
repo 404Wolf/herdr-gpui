@@ -65,7 +65,7 @@ impl Key {
             Self::Tab { endpoint, boot, id } | Self::Pane { endpoint, boot, id } => {
                 fits(endpoint) && fits(boot) && fits(id)
             }
-            Self::Project { path } => path.to_str().is_some_and(|path| fits(path)),
+            Self::Project { path } => path.to_str().is_some_and(fits),
         }
     }
 }
