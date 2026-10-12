@@ -21,6 +21,7 @@ mod close_sequence;
 mod dead_keys;
 mod endpoint_switch;
 mod focus_fences;
+mod group_navigation_choices;
 mod group_page_move;
 mod horizontal_wheel;
 mod image_paste;

@@ -408,12 +408,10 @@ impl HerdrWindow {
         if self.primary_group() != Some(group) {
             return;
         }
-        let focused = self.focused_herdr_tab().map(str::to_owned);
-        if let Some(Pick::Herdr(tab)) = self.group_pick(group)
-            && focused.as_deref() != Some(tab.as_str())
-        {
-            self.navigate(NavigationTarget::Tab(&tab), cx);
-        }
+        // This choice supersedes any deferred target, including when its
+        // terminal is already focused and needs no new request.
+        self.pending_navigation = None;
+        self.steer_primary_group(group, cx);
         if matches!(self.group_pick(group), Some(Pick::Herdr(_)) | None) {
             window.focus(&self.focus, cx);
         }
@@ -621,6 +619,11 @@ impl HerdrWindow {
         let layout = self.layout_for((tab.scope.clone(), tab.workspace_id.clone()));
         let group = group.unwrap_or_else(|| layout.owner(&Pick::Page(id)));
         layout.choose(group, Pick::Page(id));
+        // A page chosen in the primary group replaces its pending terminal
+        // choice. Pages in other groups leave that navigation alone.
+        if self.primary_group() == Some(group) {
+            self.pending_navigation = None;
+        }
         if tab.place.is_code() {
             // The VS Code tab's page waits for its server, and carries its
             // token.
