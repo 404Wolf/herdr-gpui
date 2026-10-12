@@ -37,6 +37,9 @@ pub(crate) fn add_device(
     cancelled: &dyn Fn() -> bool,
     report: &dyn Fn(cloud::Step),
 ) -> crate::Result<SavedDevice> {
+    if cancelled() {
+        return Err(super::Error::Cancelled.into());
+    }
     let AddRequest {
         settings,
         name,
@@ -49,7 +52,7 @@ pub(crate) fn add_device(
         key: &key,
     };
     report(cloud::Step::Creating);
-    let created = request.create(&name)?;
+    let created = request.create(&name, cancelled)?;
     let sandbox = api::wait_ready(&request, &created.id, cancelled, |readiness| {
         report(step(readiness));
     })?;
@@ -136,3 +139,6 @@ pub(crate) fn save_key(store: Store, key: Option<&SecretString>) -> Result<()> {
 pub(crate) fn forget_device(id: &str) -> Result<()> {
     Ok(cloud::remove(CloudProvider::Boat, id)?)
 }
+
+#[cfg(test)]
+mod tests;

@@ -110,16 +110,19 @@ impl Request<'_> {
             })
     }
 
-    pub(crate) fn create(&self, name: &str) -> Result<Sandbox> {
+    pub(crate) fn create(&self, name: &str, cancelled: impl Fn() -> bool) -> Result<Sandbox> {
         let idempotency = uuid::Uuid::new_v4().hyphenated().to_string();
         let payload = Create {
             machine_type: self.settings.machine_type.as_deref(),
             environment: self.settings.environment.as_deref(),
         };
         let send = || self.post_idempotent("create_sandbox", "/sandboxes", &idempotency, &payload);
+        if cancelled() {
+            return Err(Error::Cancelled);
+        }
         let mut created: Result<One> = send();
         // A lost reply may still have created a billable sandbox. Every retry
-        // keeps the same key, including while Boat finishes the first request.
+        // keeps the same key, even if cancelled after sending the first request.
         for delay in [500, 1_000, 2_000] {
             if !matches!(
                 &created,

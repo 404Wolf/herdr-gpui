@@ -34,7 +34,10 @@ fn boat_offers_its_cloud_and_installation_by_default(cx: &mut TestAppContext) {
     let (view, cx) = open(cx);
     cx.simulate_resize(size(px(960.), px(900.)));
     draw(cx);
-    assert!(cx.debug_bounds("cloud-tab-boat").is_some());
+    assert_eq!(
+        cx.debug_bounds("cloud-tab-boat").is_some(),
+        CloudProvider::ALL.len() > 1
+    );
     assert!(cx.debug_bounds("cloud-boat-card").is_some());
     assert!(cx.debug_bounds("cloud-boat-create").is_some());
     view.read_with(cx, |view, cx| {

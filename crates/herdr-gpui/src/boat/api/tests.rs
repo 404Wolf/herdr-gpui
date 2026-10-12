@@ -1,7 +1,20 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
 
+mod cancellation;
 mod creation_recovery;
+
+fn idempotency(request: &crate::cloud::tests::server::Request) -> &str {
+    request
+        .headers
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("idempotency-key")
+                .then(|| value.trim())
+        })
+        .unwrap()
+}
 
 fn sandbox(state: &str, reason: Option<&str>) -> Sandbox {
     Sandbox {

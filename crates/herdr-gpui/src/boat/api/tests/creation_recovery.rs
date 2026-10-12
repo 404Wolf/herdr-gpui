@@ -1,5 +1,5 @@
 use super::*;
-use crate::cloud::tests::server::{Request as RecordedRequest, serve_raw};
+use crate::cloud::tests::server::serve_raw;
 use secrecy::SecretString;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -11,18 +11,6 @@ fn reply(status: u16, body: &str, interrupted: bool) -> String {
     format!(
         "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n{body}"
     )
-}
-
-fn idempotency(request: &RecordedRequest) -> &str {
-    request
-        .headers
-        .lines()
-        .find_map(|line| {
-            let (name, value) = line.split_once(':')?;
-            name.eq_ignore_ascii_case("idempotency-key")
-                .then(|| value.trim())
-        })
-        .unwrap()
 }
 
 #[test]
@@ -48,7 +36,7 @@ fn interrupted_creation_replies_and_pending_retries_recover_the_same_sandbox() {
         settings: &settings,
         key: &key,
     };
-    let created = request.create("herdr-box").unwrap();
+    let created = request.create("herdr-box", || false).unwrap();
     assert_eq!(created.id, "bx_23456789");
     let log = log.lock().unwrap();
     assert_eq!(log.len(), 5);
@@ -71,7 +59,7 @@ fn interrupted_creation_retries_are_bounded_and_preserve_the_read_error() {
         settings: &settings,
         key: &key,
     };
-    let error = request.create("herdr-box").unwrap_err();
+    let error = request.create("herdr-box", || false).unwrap_err();
     assert!(matches!(error, Error::Read(_)));
     assert!(std::error::Error::source(&error).is_some());
     let log = log.lock().unwrap();
@@ -92,7 +80,7 @@ fn rejected_credentials_and_malformed_json_are_not_retried() {
             settings: &settings,
             key: &key,
         };
-        let error = request.create("herdr-box").unwrap_err();
+        let error = request.create("herdr-box", || false).unwrap_err();
         match status {
             401 => assert!(matches!(error, Error::Authentication)),
             _ => assert!(matches!(error, Error::Json(_))),
