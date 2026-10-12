@@ -30,7 +30,8 @@ pub struct Invocation {
     /// Print the answer as one JSON document instead of text.
     pub json: bool,
     /// The window to act in, by the ID `window list` prints. Absent, the
-    /// window showing the caller's workspace, else the frontmost one.
+    /// window showing the caller's workspace (none: refused), or outside
+    /// Herdr the frontmost one.
     pub window: Option<u64>,
 }
 

@@ -26,8 +26,10 @@ Every command accepts:
   `{"error": {"code", "message"}}` on standard output.
 - `--window ID`: act in that window (IDs come from `window list`). By default
   a command acts in the window showing the caller's workspace
-  (`HERDR_WORKSPACE_ID`, which Herdr sets in every pane), or else the
-  frontmost window.
+  (`HERDR_WORKSPACE_ID`, which Herdr sets in every pane). When no window shows
+  it, as for a session the app does not show, the command exits 5 rather than
+  act on another session's window. Outside Herdr, it acts in the frontmost
+  window.
 
 | Exit | Meaning |
 | --- | --- |
@@ -50,7 +52,7 @@ Every command accepts:
 | `status` | Whether the app runs, its version and control protocol, windows, and hosts |
 | `app focus\|hide\|quit` | Bring the app forward, hide it, or quit it (Herdr keeps running) |
 | `window [list]` | Windows with their IDs, size, workspace, and hosts |
-| `window new [--session NAME]` | Another window, of the same host or a local session |
+| `window new [--session NAME]` | Another window, of your own Herdr session or a named local session |
 | `window focus ID` | Bring a window forward |
 | `window fullscreen [on\|off\|toggle]` | |
 | `window size [WIDTHxHEIGHT]` | Print or set the window's size; windows cannot be moved |
