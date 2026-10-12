@@ -196,13 +196,14 @@ fn every_focus_changing_command_fences_immediate_input_until_ack_and_surface(
                     Command::WorkspacePicker => view.palette_key(&key("enter"), window, cx),
                     Command::Palette => {
                         // Filter the unified palette to commands before walking
-                        // past the native entries, except Palette and those
-                        // the daemon does not offer, to the configured command.
+                        // past the native entries, except Palette, Resume
+                        // Palette, and those the daemon does not offer, to the
+                        // configured command.
                         view.palette_key(&key("ctrl-tab"), window, cx);
                         view.palette_key(&key("ctrl-tab"), window, cx);
                         let hidden = usize::from(!view.live.supports_pane_clear)
                             + usize::from(!view.live.supports_edit_scrollback);
-                        for _ in 0..crate::controls::COMMANDS.len() - 1 - hidden {
+                        for _ in 0..crate::controls::COMMANDS.len() - 2 - hidden {
                             view.palette_key(&key("down"), window, cx);
                         }
                         view.palette_key(&key("enter"), window, cx);

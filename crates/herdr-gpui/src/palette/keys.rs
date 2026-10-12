@@ -91,6 +91,7 @@ impl HerdrWindow {
                 if count == 0 {
                     return;
                 }
+                palette.restore = None;
                 palette.selected = match direction {
                     Direction::Up => (palette.selected + count - 1) % count,
                     Direction::Down => (palette.selected + 1) % count,

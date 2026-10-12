@@ -24,6 +24,8 @@ mod project_open;
 mod projects;
 pub(crate) use projects::launch_root;
 mod render;
+mod resume;
+pub(crate) use resume::Resume;
 mod search;
 
 use agent_filter::AgentFilter;
@@ -340,6 +342,9 @@ pub(super) struct Palette {
     supports_edit_scrollback: bool,
     /// The notes revision the entries were prepared from.
     notes_revision: Option<u64>,
+    /// The row a resumed palette selects again once a ranking lists it,
+    /// until the user picks another row, filter, or query.
+    restore: Option<Identity>,
     _subscription: Subscription,
 }
 
@@ -380,21 +385,27 @@ impl Palette {
             .map(|hit| &self.entries[hit.index])
     }
 
-    /// Shows `filtered` rows of `entries`, keeping the selected destination
-    /// when asked and it is still listed.
+    /// Shows `filtered` rows of `entries`, selecting a resumed row once it is
+    /// listed, else keeping the selected destination when asked and it is
+    /// still listed.
     fn apply(&mut self, entries: Arc<[Entry]>, filtered: Vec<search::Hit>, selection: Selection) {
-        let selected = match selection {
+        let kept = match selection {
             Selection::Keep => self.selected_identity(),
             Selection::First => None,
         };
         self.entries = entries;
         self.filtered = filtered;
-        self.selected = selected
-            .and_then(|selected| {
-                self.filtered
-                    .iter()
-                    .position(|hit| self.entries[hit.index].action.identity() == selected)
-            })
+        let position = |identity: &Identity| {
+            self.filtered
+                .iter()
+                .position(|hit| self.entries[hit.index].action.identity() == *identity)
+        };
+        let restored = self.restore.as_ref().and_then(position);
+        if restored.is_some() {
+            self.restore = None;
+        }
+        self.selected = restored
+            .or_else(|| kept.as_ref().and_then(position))
             .unwrap_or(0);
         self.scroll
             .scroll_to_item(self.selected, ScrollStrategy::Nearest);
@@ -406,18 +417,26 @@ impl Palette {
 }
 
 impl HerdrWindow {
+    /// Ranks for `query`. A new query starts from the best row; the same
+    /// query again, such as a resumed one echoed by its field, keeps the row.
     pub(super) fn filter_palette(&mut self, query: &str, cx: &mut Context<Self>) {
         let roots = self.config.palette.project_roots.clone();
+        let mut selection = Selection::Keep;
         if let Some(palette) = &mut self.menu.palette {
+            if palette.query != query {
+                palette.restore = None;
+                selection = Selection::First;
+            }
             palette.query = query.to_owned();
             palette.rebuild_pending(&roots);
         }
-        self.rank_palette(Selection::First, cx);
+        self.rank_palette(selection, cx);
     }
 
     pub(super) fn set_palette_filter(&mut self, filter: Filter, cx: &mut Context<Self>) {
         if let Some(palette) = &mut self.menu.palette {
             palette.filter = filter;
+            palette.restore = None;
         }
         self.rank_palette(Selection::First, cx);
     }
@@ -541,6 +560,7 @@ impl HerdrWindow {
             supports_clear: self.live.supports_pane_clear,
             supports_edit_scrollback: self.live.supports_edit_scrollback,
             notes_revision: None,
+            restore: None,
             _subscription: subscription,
         };
         self.prepare_palette_entries(&mut palette, crate::worktree_notes::Notes::of(cx));
@@ -596,7 +616,7 @@ impl HerdrWindow {
         entries.extend(
             COMMANDS
                 .iter()
-                .filter(|info| info.command != Command::Palette)
+                .filter(|info| !matches!(info.command, Command::Palette | Command::ResumePalette))
                 .filter(|info| match info.command {
                     Command::ClearPane => self.live.supports_pane_clear,
                     Command::EditScrollback => self.live.supports_edit_scrollback,

@@ -9,6 +9,7 @@ mod background_ranking;
 mod go_to_search;
 mod notes;
 mod plugin_selection;
+mod resume;
 
 fn matches_query(text: &str, query: &str) -> bool {
     let entries = [Entry::new(

@@ -415,6 +415,7 @@ impl HerdrWindow {
                 | Command::Sessions
                 | Command::Themes
                 | Command::Palette
+                | Command::ResumePalette
                 | Command::Detach
                 | Command::Reconnect
                 | Command::Quit
