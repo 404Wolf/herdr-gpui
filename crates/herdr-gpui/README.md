@@ -2932,8 +2932,10 @@ Ctrl+Shift+U is left unbound for
   input. Choosing a destination on another host switches to it. When the window
   has room, Navigation shows a preview beside its list (Alt-P toggles it): the
   selected pane's screen when its tab is the one its host is streaming, painted
-  from cells this client already holds, or else its directory, status, and
-  place. The preview never asks the daemon for anything.
+  from cells this client already holds; else, for a tab shown earlier, its last
+  frame from before you moved on, labelled "Last seen … ago"; or else its
+  directory, status, and place. Each host remembers up to 16 tabs, forgotten
+  when its daemon restarts. The preview never asks the daemon for anything.
   Double-Shift requires two short completed taps within 400 ms; shifted typing,
   mouse interaction, held Shift, other modifiers, composition, and modal dialogs
   do not trigger it. It is window-local, not a system-wide hotkey. Native browser

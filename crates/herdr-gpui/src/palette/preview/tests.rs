@@ -2,6 +2,8 @@ use super::*;
 use core::prelude::v1::test;
 use herdr_client::protocol::{FrameData, PaneSurfacePane};
 
+mod remembered;
+
 /// w1:t1 holds the blocked agent w1:p1; w1:t2 holds the terminal w1:p2.
 fn snapshot() -> ClientShellSnapshot {
     let mut snapshot: ClientShellSnapshot = serde_json::from_str(include_str!(
@@ -92,7 +94,15 @@ fn facts(preview: Option<Preview>) -> (String, Vec<(String, String)>) {
 fn a_pane_on_the_streamed_tab_shows_its_own_cells() {
     let snapshot = snapshot();
     let surface = surface("boot-v1");
-    let look = |target| preview(Some(&snapshot), Some(&surface), "boot-v1", target);
+    let look = |target| {
+        preview(
+            Some(&snapshot),
+            Some(&surface),
+            &LastSeen::default(),
+            "boot-v1",
+            target,
+        )
+    };
     assert_eq!(shown(look(NavigationTarget::Pane("w1:p1"))), Some(INNER));
     // Its tab and workspace show the whole streamed frame.
     let whole = SurfaceRect {
@@ -109,7 +119,15 @@ fn a_pane_on_the_streamed_tab_shows_its_own_cells() {
 fn rows_off_screen_show_facts_from_the_snapshot() {
     let snapshot = snapshot();
     let surface = surface("boot-v1");
-    let look = |target| preview(Some(&snapshot), Some(&surface), "boot-v1", target);
+    let look = |target| {
+        preview(
+            Some(&snapshot),
+            Some(&surface),
+            &LastSeen::default(),
+            "boot-v1",
+            target,
+        )
+    };
     assert_eq!(
         facts(look(NavigationTarget::Pane("w1:p2"))),
         (
@@ -129,6 +147,7 @@ fn rows_off_screen_show_facts_from_the_snapshot() {
     let (_, rows) = facts(preview(
         Some(&snapshot),
         None,
+        &LastSeen::default(),
         "boot-v1",
         NavigationTarget::Pane("w1:p1"),
     ));
@@ -137,6 +156,7 @@ fn rows_off_screen_show_facts_from_the_snapshot() {
         preview(
             Some(&snapshot),
             None,
+            &LastSeen::default(),
             "boot-v1",
             NavigationTarget::Pane("gone")
         )
@@ -152,6 +172,7 @@ fn nothing_from_another_daemon_boot_is_shown() {
     let look = preview(
         Some(&snapshot),
         Some(&stale),
+        &LastSeen::default(),
         "boot-v1",
         NavigationTarget::Pane("w1:p1"),
     );
@@ -162,6 +183,7 @@ fn nothing_from_another_daemon_boot_is_shown() {
         preview(
             Some(&snapshot),
             Some(&fresh),
+            &LastSeen::default(),
             "boot-v0",
             NavigationTarget::Pane("w1:p1")
         )

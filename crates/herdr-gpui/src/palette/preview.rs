@@ -2,10 +2,12 @@
 //!
 //! It shows only what this client already holds: a pane's cells when its
 //! tab is the one its host is streaming, painted read-only from that
-//! prepared surface, or else a few facts from the host's snapshot. It never
-//! asks the daemon for anything, so there is no fetch to bound or cancel.
+//! prepared surface; else the tab's last frame from before the host moved
+//! on, labelled with its age; or else a few facts from the host's snapshot.
+//! It never asks the daemon for anything, so there is no fetch to bound or
+//! cancel.
 
-use super::{go_to::status_badge, projects};
+use super::{go_to::status_badge, last_seen::LastSeen, projects};
 use crate::{
     NavigationTarget,
     config::Theme,
@@ -26,6 +28,8 @@ pub(super) enum Preview {
     Screen {
         surface: Arc<PaneSurfaceFrame>,
         rect: SurfaceRect,
+        /// Unix seconds when a remembered frame was left; none when live.
+        seen_at: Option<u64>,
     },
     /// The row is not on any surface this client holds.
     Facts {
@@ -35,24 +39,42 @@ pub(super) enum Preview {
 }
 
 /// The preview of `target`, listed from `boot`, given what its host's
-/// connection holds. Nothing from another daemon boot is ever shown.
+/// connection holds and remembers. Nothing from another daemon boot is
+/// ever shown.
 pub(super) fn preview(
     snapshot: Option<&ClientShellSnapshot>,
     surface: Option<&Arc<PaneSurfaceFrame>>,
+    last_seen: &LastSeen,
     boot: &str,
     target: NavigationTarget<&str>,
 ) -> Option<Preview> {
     let snapshot = snapshot.filter(|snapshot| snapshot.boot_id == boot)?;
-    let surface = surface.filter(|surface| surface.boot_id == boot);
-    screen(snapshot, surface, target.clone()).or_else(|| facts(snapshot, target))
+    let live = surface
+        .filter(|surface| surface.boot_id == boot)
+        .map(|surface| (surface, None));
+    // Live cells first, then the newest remembered frame that shows it.
+    live.into_iter()
+        .chain(
+            last_seen
+                .frames(boot)
+                .map(|(surface, at)| (surface, Some(at))),
+        )
+        .find_map(|(surface, seen_at)| {
+            screen(snapshot, surface, target.clone()).map(|rect| Preview::Screen {
+                surface: surface.clone(),
+                rect,
+                seen_at,
+            })
+        })
+        .or_else(|| facts(snapshot, target))
 }
 
+/// Where `target` lies within `surface`, if the surface shows it.
 fn screen(
     snapshot: &ClientShellSnapshot,
-    surface: Option<&Arc<PaneSurfaceFrame>>,
+    surface: &Arc<PaneSurfaceFrame>,
     target: NavigationTarget<&str>,
-) -> Option<Preview> {
-    let surface = surface?;
+) -> Option<SurfaceRect> {
     let whole = SurfaceRect {
         x: 0,
         y: 0,
@@ -64,21 +86,19 @@ fn screen(
         .panes
         .first()
         .and_then(|shown| snapshot.panes.iter().find(|p| p.pane_id == shown.pane_id));
-    let rect = match target {
+    match target {
+        // A remembered frame can outlive a pane closed since.
+        NavigationTarget::Pane(id) if !snapshot.panes.iter().any(|p| p.pane_id == id) => None,
         NavigationTarget::Pane(id) => surface
             .panes
             .iter()
             .find(|pane| pane.pane_id == id)
-            .map(|pane| pane.inner_rect)?,
-        NavigationTarget::Tab(id) => shown.filter(|pane| pane.tab_id == id).map(|_| whole)?,
-        NavigationTarget::Workspace(id) => shown
-            .filter(|pane| pane.workspace_id == id)
-            .map(|_| whole)?,
-    };
-    Some(Preview::Screen {
-        surface: surface.clone(),
-        rect,
-    })
+            .map(|pane| pane.inner_rect),
+        NavigationTarget::Tab(id) => shown.filter(|pane| pane.tab_id == id).map(|_| whole),
+        NavigationTarget::Workspace(id) => {
+            shown.filter(|pane| pane.workspace_id == id).map(|_| whole)
+        }
+    }
 }
 
 fn facts(snapshot: &ClientShellSnapshot, target: NavigationTarget<&str>) -> Option<Preview> {

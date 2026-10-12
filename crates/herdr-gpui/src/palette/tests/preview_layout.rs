@@ -128,4 +128,30 @@ fn a_streamed_pane_previews_its_cells(cx: &mut TestAppContext) {
         ));
     });
     assert!(cx.debug_bounds("palette-preview").is_some());
+    assert!(cx.debug_bounds("palette-preview-age").is_none());
+
+    // Once its host streams another tab, the pane shows its last frame, aged.
+    cx.update(|window, cx| {
+        view.update(cx, |view, _| {
+            let surface = view.live.surface.take();
+            let snapshot = view.live.snapshot.clone();
+            view.endpoints[view.selected_endpoint].last_seen.observe(
+                (snapshot.as_deref(), surface.as_ref()),
+                (snapshot.as_deref(), None),
+                unix_now(),
+            );
+        });
+        window.draw(cx).clear(cx);
+    });
+    view.read_with(cx, |view, _| {
+        let palette = view.menu.palette.as_ref().unwrap();
+        assert!(matches!(
+            view.palette_preview(palette),
+            Some(preview::Preview::Screen {
+                seen_at: Some(_),
+                ..
+            })
+        ));
+    });
+    assert!(cx.debug_bounds("palette-preview-age").is_some());
 }

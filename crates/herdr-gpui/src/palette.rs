@@ -16,11 +16,13 @@ use std::sync::Arc;
 mod activate;
 mod agent_filter;
 mod frecency;
-pub(crate) use frecency::Frecency;
+pub(crate) use frecency::{Frecency, now as unix_now};
 mod go_to;
 #[cfg(test)]
 mod interaction_tests;
 mod keys;
+mod last_seen;
+pub(crate) use last_seen::LastSeen;
 mod preview;
 mod project_create;
 mod project_open;

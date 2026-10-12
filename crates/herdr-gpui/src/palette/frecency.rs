@@ -106,7 +106,7 @@ fn parse(bytes: &[u8]) -> crate::Result<Vec<Visit>> {
 }
 
 /// Unix seconds now; a clock before 1970 reads as the epoch.
-pub(super) fn now() -> u64 {
+pub(crate) fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs())

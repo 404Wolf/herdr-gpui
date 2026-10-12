@@ -234,6 +234,7 @@ impl HerdrWindow {
         preview::preview(
             live.snapshot.as_deref(),
             live.surface.as_ref(),
+            &self.endpoints[index].last_seen,
             boot,
             target.as_deref(),
         )
@@ -249,7 +250,11 @@ impl HerdrWindow {
             .border_l_1()
             .border_color(rgb(theme.active));
         match self.palette_preview(palette) {
-            Some(preview::Preview::Screen { surface, rect }) => {
+            Some(preview::Preview::Screen {
+                surface,
+                rect,
+                seen_at,
+            }) => {
                 let terminal = &self.config.terminal;
                 let look = preview::Look {
                     font: terminal.font(),
@@ -258,12 +263,35 @@ impl HerdrWindow {
                     cell_ratio: self.cell_width / terminal.size,
                     theme: theme.clone(),
                 };
-                pane.bg(rgb(theme.background)).child(preview::paint_screen(
-                    surface,
-                    rect,
-                    palette.preview_painter.clone(),
-                    look,
-                ))
+                pane.relative()
+                    .bg(rgb(theme.background))
+                    .child(preview::paint_screen(
+                        surface,
+                        rect,
+                        palette.preview_painter.clone(),
+                        look,
+                    ))
+                    .when_some(seen_at, |pane, at| {
+                        let age = crate::checkpoint::age(
+                            i64::try_from(at).unwrap_or(i64::MAX),
+                            i64::try_from(super::frecency::now()).unwrap_or(i64::MAX),
+                        );
+                        pane.child(
+                            div()
+                                .debug_selector(|| "palette-preview-age".into())
+                                .absolute()
+                                .top(px(8.))
+                                .right(px(8.))
+                                .px(px(8.))
+                                .py(px(2.))
+                                .rounded(px(4.))
+                                .bg(rgb(theme.surface))
+                                .border_1()
+                                .border_color(rgb(theme.active))
+                                .text_color(rgb(theme.muted))
+                                .child(format!("Last seen {age}")),
+                        )
+                    })
             }
             Some(preview::Preview::Facts { title, facts }) => pane
                 .p(px(16.))
