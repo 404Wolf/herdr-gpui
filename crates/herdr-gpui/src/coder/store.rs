@@ -10,7 +10,7 @@ use std::time::SystemTime;
 const ENTRY: Entry = Entry {
     service: "dev.herdr.gpui.coder",
     account: "coder",
-    label: "Herdr GPUI Coder sign-in",
+    label: "Herdr UI Coder sign-in",
     file: c"coder-credentials",
     // Decoding bounds the record at `token::LIMIT` bytes.
     validate: |value| {
@@ -25,7 +25,7 @@ const ENTRY: Entry = Entry {
 const CLIENT_SECRET: Entry = Entry {
     service: "dev.herdr.gpui.coder",
     account: "oauth-client-secret",
-    label: "Herdr GPUI Coder OAuth client secret",
+    label: "Herdr UI Coder OAuth client secret",
     file: c"coder-client-secret",
     validate: |value| {
         if super::token::valid(value.expose_secret()) {

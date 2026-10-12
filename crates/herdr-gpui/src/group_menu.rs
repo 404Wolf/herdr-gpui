@@ -1,11 +1,10 @@
 //! The menu behind a group's "…" button: tabs other than a terminal to open
 //! in the group (a blank browser tab, the focused checkout's review, the
 //! repository's orchestrator, the focused workspace's listening ports, its
-//! VS Code), closing tabs in the group, and splitting it. A terminal tab
-//! comes from the group's "+". Closing here only
-//! ever takes tabs out of this group's strip, as an editor's group menu does:
-//! the tabs stay open in Herdr, in the browser, and in every other group.
-//! Only a tab's own close, unsplit, reaches Herdr, through its confirmation.
+//! VS Code), closing the tab it shows, its other tabs, or the group itself,
+//! and splitting it. A terminal tab comes from the group's "+". Closing a
+//! tab here is the tab's own close; closing the group closes no tab: its
+//! tabs go to the group that takes its room.
 use crate::{
     HerdrWindow,
     browser::{GroupId, Pick},
@@ -38,10 +37,13 @@ enum Action {
         process: String,
         link: Link,
     },
+    /// Closes the tab the group shows, as the tab's own close button does.
     Close,
+    /// Closes every tab of the group but the one it shows, one after
+    /// another, each as its own close button does.
     CloseOthers,
-    /// Closes the group, and with it every tab in it.
-    CloseAll,
+    /// Closes the group; its tabs go to the group that takes its room.
+    CloseGroup,
     Split,
 }
 
@@ -54,9 +56,9 @@ impl Action {
             Self::Orchestrator => "Orchestrator".into(),
             Self::VsCode => "VS Code".into(),
             Self::Port { link, .. } => link.label().into(),
-            Self::Close => "Close".into(),
+            Self::Close => "Close Tab".into(),
             Self::CloseOthers => "Close Others".into(),
-            Self::CloseAll => "Close All".into(),
+            Self::CloseGroup => "Close Group".into(),
             Self::Split => "Split Right".into(),
         }
     }
@@ -69,7 +71,7 @@ impl Action {
             Self::VsCode => Some("icons/vscode.svg"),
             Self::Port { .. } => Some("icons/arrow-right.svg"),
             Self::Split => Some("icons/split.svg"),
-            Self::Close | Self::CloseOthers | Self::CloseAll => None,
+            Self::Close | Self::CloseOthers | Self::CloseGroup => None,
         }
     }
 
@@ -86,7 +88,7 @@ impl Action {
         match self {
             Self::NewBrowserTab | Self::Review | Self::Orchestrator | Self::VsCode => 0,
             Self::Port { .. } => 1,
-            Self::Close | Self::CloseOthers | Self::CloseAll => 2,
+            Self::Close | Self::CloseOthers | Self::CloseGroup => 2,
             Self::Split => 3,
         }
     }
@@ -146,7 +148,7 @@ impl HerdrWindow {
             {
                 actions.push(Action::CloseOthers);
             }
-            actions.push(Action::CloseAll);
+            actions.push(Action::CloseGroup);
         }
         actions.push(Action::Split);
         actions
@@ -191,11 +193,7 @@ impl HerdrWindow {
                 };
                 self.open_port_link(&endpoint, &workspace, &link, window, cx);
             }
-            Action::Close => {
-                if let Some(pick) = self.group_pick(group) {
-                    self.close_in_group(group, vec![pick], window, cx);
-                }
-            }
+            Action::Close => self.close_group_tab(group, window, cx),
             Action::CloseOthers => {
                 let keep = self.group_pick(group);
                 let others: Vec<Pick> = self
@@ -203,9 +201,9 @@ impl HerdrWindow {
                     .into_iter()
                     .filter(|tab| Some(tab) != keep.as_ref())
                     .collect();
-                self.close_in_group(group, others, window, cx);
+                self.close_tabs(others, window, cx);
             }
-            Action::CloseAll => self.close_group(group, window, cx),
+            Action::CloseGroup => self.close_group(group, window, cx),
             Action::Split => self.split_group(group, window, cx),
         }
     }
@@ -313,6 +311,21 @@ impl HerdrWindow {
             let selector = action.selector();
             let (label, process) = (format!("{selector}-label"), format!("{selector}-detail"));
             let capped = matches!(action, Action::Port { .. });
+            // An open tunnel can be closed from its row, as from its chip.
+            let close = match &action {
+                Action::Port {
+                    number,
+                    link: Link::Tunnel(key),
+                    ..
+                } if self.tunnels.is_open(key) => Some(crate::listening_ports::close_button(
+                    format!("group-menu-close-Port{number}").into(),
+                    key,
+                    ICON_SIZE,
+                    theme,
+                    cx,
+                )),
+                _ => None,
+            };
             panel = panel.child(
                 div()
                     .id(("group-menu-action", index))
@@ -358,6 +371,7 @@ impl HerdrWindow {
                                 .child(detail),
                         )
                     })
+                    .children(close)
                     .on_hover(cx.listener(move |this, hovered, _, cx| {
                         if *hovered && let Some(menu) = &mut this.menu.group {
                             menu.selected = Some(index);

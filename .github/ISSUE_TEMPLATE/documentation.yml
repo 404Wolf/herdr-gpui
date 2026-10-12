@@ -1,5 +1,5 @@
 name: Documentation Issue
-description: Report missing, incorrect, or unclear Herdr GPUI documentation
+description: Report missing, incorrect, or unclear Herdr UI documentation
 title: "[Docs]: "
 labels:
   - documentation

@@ -6,6 +6,8 @@ use herdr_client::protocol::ToastHerdrPosition;
 pub(crate) enum Preference {
     ConfirmCloseTab(bool),
     ConfirmClosePane(bool),
+    ConfirmCloseWorkspace(bool),
+    RemoveMergedWorktrees(bool),
     ShowSystemLoad(bool),
     AgentCheckpoints(bool),
     ShowListeningPorts(bool),
@@ -44,6 +46,12 @@ impl Config {
                 }
                 Preference::ConfirmClosePane(value) => {
                     (None, "confirm_close_pane", Some(value.into()))
+                }
+                Preference::ConfirmCloseWorkspace(value) => {
+                    (None, "confirm_close_workspace", Some(value.into()))
+                }
+                Preference::RemoveMergedWorktrees(value) => {
+                    (None, "remove_merged_worktrees", Some(value.into()))
                 }
                 Preference::ShowSystemLoad(value) => (None, "show_system_load", Some(value.into())),
                 Preference::AgentCheckpoints(value) => {
@@ -166,6 +174,8 @@ mod tests {
         for edit in [
             Preference::ConfirmCloseTab(false),
             Preference::ConfirmClosePane(false),
+            Preference::ConfirmCloseWorkspace(false),
+            Preference::RemoveMergedWorktrees(true),
             Preference::ShowSystemLoad(false),
             Preference::AgentCheckpoints(false),
             Preference::ShowListeningPorts(false),
@@ -190,6 +200,8 @@ mod tests {
         assert_eq!(table["notifications"]["future"].as_integer(), Some(42));
         assert_eq!(table["confirm_close_tab"].as_bool(), Some(false));
         assert_eq!(table["confirm_close_pane"].as_bool(), Some(false));
+        assert_eq!(table["confirm_close_workspace"].as_bool(), Some(false));
+        assert_eq!(table["remove_merged_worktrees"].as_bool(), Some(true));
         assert_eq!(table["show_system_load"].as_bool(), Some(false));
         assert_eq!(table["agent_checkpoints"].as_bool(), Some(false));
         assert_eq!(table["show_listening_ports"].as_bool(), Some(false));

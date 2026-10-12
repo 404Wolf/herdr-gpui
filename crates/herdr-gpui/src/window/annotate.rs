@@ -10,10 +10,14 @@ use crate::{
     Error,
     agent_notes::Origin,
     search_input::SearchInput,
+    terminal::Selection,
     terminal_notes::{self, MAX_NOTES, Note},
 };
 use gpui::{prelude::*, *};
 use herdr_client::protocol::ClientShellSnapshot;
+
+mod offer;
+mod render;
 
 /// A queued note and the daemon whose agent it goes to.
 struct Queued {
@@ -29,12 +33,14 @@ struct Composer {
     target: Option<String>,
     place: String,
     quote: String,
+    selection: Selection,
 }
 
 /// The window's terminal notes: the one being written and those queued.
 #[derive(Default)]
 pub(crate) struct TerminalNotes {
     composer: Option<Composer>,
+    offer: Option<offer::Offer>,
     queued: Vec<Queued>,
 }
 
@@ -83,10 +89,27 @@ fn destination(snapshot: &ClientShellSnapshot, pane_id: &str) -> (Option<String>
 impl HerdrWindow {
     /// Opens the note field over the pane holding the selection.
     pub(crate) fn annotate_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(selection) = self.selection.clone() else {
+            if self.terminal_notes.offer.is_some() {
+                self.open_terminal_annotation_offer(window, cx);
+            } else {
+                self.show_flash(Flash::warning("Select terminal text to annotate it"), cx);
+            }
+            return;
+        };
+        self.compose_terminal_selection(selection, window, cx);
+    }
+
+    fn compose_terminal_selection(
+        &mut self,
+        selection: Selection,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(snapshot) = self.live.snapshot.clone() else {
             return;
         };
-        let (Some(selection), Some(surface)) = (&self.selection, &self.live.surface) else {
+        let Some(surface) = &self.live.surface else {
             self.show_flash(Flash::warning("Select terminal text to annotate it"), cx);
             return;
         };
@@ -116,13 +139,17 @@ impl HerdrWindow {
         let (target, place) = destination(&snapshot, &pane_id);
         let input = cx.new(SearchInput::new);
         input.update(cx, |input, cx| {
-            input.set_placeholder("Note for the agent\u{2026}", cx);
-            input.set_appearance(self.config.ui.clone(), self.theme.clone(), cx);
+            input.set_placeholder("Message to agent\u{2026}", cx);
+            input.set_frameless(cx);
+            let mut font = self.config.ui.clone();
+            font.size = font.size.max(14.);
+            input.set_appearance(font, self.theme.clone(), cx);
         });
         let focus = input.read(cx).focus.clone();
         let Some(origin) = Origin::of(self) else {
             return;
         };
+        self.terminal_notes.offer = None;
         self.terminal_notes.composer = Some(Composer {
             input,
             origin,
@@ -130,6 +157,7 @@ impl HerdrWindow {
             target,
             place,
             quote,
+            selection,
         });
         window.focus(&focus, cx);
         cx.notify();
@@ -158,6 +186,7 @@ impl HerdrWindow {
     /// Runs every tick: retires the field when its pane or connection is gone
     /// or its pane left the screen.
     pub(crate) fn follow_terminal_note(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.follow_terminal_annotation_offer(cx);
         let Some(composer) = &self.terminal_notes.composer else {
             return;
         };
@@ -304,73 +333,6 @@ impl HerdrWindow {
         }
         cx.stop_propagation();
         window.prevent_default();
-    }
-
-    /// The note field, laid over the top left of its pane. `gap` is the
-    /// terminal's left padding, which absolute children sit inside of.
-    pub(crate) fn render_terminal_note(
-        &self,
-        surface: Option<&herdr_client::protocol::PaneSurfaceFrame>,
-        gap: f32,
-        cx: &mut Context<Self>,
-    ) -> Option<Div> {
-        let composer = self.terminal_notes.composer.as_ref()?;
-        let surface = surface.filter(|surface| surface.popup.is_none())?;
-        let pane = surface
-            .panes
-            .iter()
-            .find(|pane| pane.pane_id == composer.pane_id)?;
-        let cell_height = self.config.terminal.line_height();
-        let theme = &self.theme;
-        let queued = self.terminal_notes.queued.len();
-        let lines = composer.quote.lines().count();
-        let mut hint = format!("Note on {lines} line{}", if lines == 1 { "" } else { "s" });
-        if composer.target.is_none() {
-            hint.push_str(" \u{b7} no agent, so it is copied");
-        }
-        if queued > 0 {
-            hint.push_str(&format!(" \u{b7} {queued} queued"));
-        }
-        hint.push_str(" \u{b7} \u{21b5} send \u{b7} \u{21e7}\u{21b5} queue \u{b7} esc");
-        Some(
-            div()
-                .absolute()
-                .left(px(gap + f32::from(pane.rect.x) * self.cell_width))
-                .top(px(f32::from(pane.rect.y) * cell_height))
-                .w(px(f32::from(pane.rect.width) * self.cell_width))
-                .p(px(6.))
-                .child(
-                    div()
-                        .id("terminal-note")
-                        .debug_selector(|| "terminal-note".into())
-                        .occlude()
-                        .min_w_0()
-                        .max_w(px(520.))
-                        .flex()
-                        .flex_col()
-                        .gap(px(4.))
-                        .p(px(6.))
-                        .rounded(px(crate::config::corners::CONTROL))
-                        .border_1()
-                        .border_color(rgb(theme.active))
-                        .bg(rgb(theme.surface))
-                        .text_color(rgb(theme.foreground))
-                        .text_size(px(self.config.ui.size))
-                        .shadow_md()
-                        .on_key_down(cx.listener(Self::terminal_note_key_down))
-                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                        .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
-                        .child(div().min_w_0().child(composer.input.clone()))
-                        .child(
-                            div()
-                                .debug_selector(|| "terminal-note-hint".into())
-                                .text_color(rgb(theme.muted))
-                                .text_size(px(self.config.ui.size - 1.))
-                                .truncate()
-                                .child(hint),
-                        ),
-                ),
-        )
     }
 }
 

@@ -384,6 +384,7 @@ impl HerdrWindow {
                         | Page::Group
                         | Page::Pane
                         | Page::RenamePane
+                        | Page::MovePane
                         | Page::PaneProcesses
                         | Page::KillProcesses
                         | Page::Host
@@ -408,7 +409,7 @@ impl HerdrWindow {
                         } else if page == Page::PaneProcesses {
                             // Name, command, pid, CPU and memory columns.
                             560.
-                        } else if page == Page::Group {
+                        } else if matches!(page, Page::Group | Page::MovePane) {
                             240.
                         } else {
                             360.
@@ -618,6 +619,8 @@ impl HerdrWindow {
             panel = panel.child(self.render_tab_menu(cx));
         } else if page == Page::Group {
             panel = self.render_group_menu(panel, cx);
+        } else if page == Page::MovePane {
+            panel = self.render_move_picker(panel, cx);
         } else if matches!(
             page,
             Page::Pane | Page::RenamePane | Page::PaneProcesses | Page::KillProcesses

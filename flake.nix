@@ -1,5 +1,5 @@
 {
-  description = "Herdr GPUI: a native GPUI client for an existing local Herdr daemon";
+  description = "Herdr UI: a native GPUI client for an existing local Herdr daemon";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -104,7 +104,7 @@
           '';
           meta = {
             description = "Native GPUI client for an existing local Herdr daemon";
-            homepage = "https://github.com/penso/herdr-gpui";
+            homepage = "https://herdrui.dev";
             license = lib.licenses.asl20;
             mainProgram = "herdr-gpui";
             platforms = systems;

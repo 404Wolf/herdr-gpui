@@ -52,7 +52,7 @@ pub(crate) fn version_note(version: Option<&str>) -> String {
 /// this app's to fix; an older or equal one lacks what this app requires.
 pub(crate) fn generation_advice(generation: u32) -> &'static str {
     if generation > ENDPOINT_PROTOCOL_GENERATION {
-        "update Herdr GPUI"
+        "update Herdr UI"
     } else {
         "run `herdr update` and reconnect"
     }

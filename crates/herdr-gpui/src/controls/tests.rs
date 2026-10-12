@@ -16,6 +16,8 @@ fn catalog_has_all_native_commands_and_gpui_shortcuts() {
         (NewWindow, &["cmd-alt-shift-n"]),
         (Workspace, &["cmd-shift-n"]),
         (NewWorktree, &["cmd-n"]),
+        (OpenWorktree, &[]),
+        (RemoveWorktree, &[]),
         (WorktreeNotes, &[]),
         (EditWorktreeNote, &[]),
         (PreviousWorkspace, &[]),
@@ -58,6 +60,7 @@ fn catalog_has_all_native_commands_and_gpui_shortcuts() {
         (ResizeDown, &[]),
         (ResizeMode, &[]),
         (RenamePane, &[]),
+        (MovePane, &[]),
         (Zoom, &["cmd-shift-enter"]),
         (ClearPane, &["cmd-k"]),
         (Find, &["cmd-f"]),
@@ -116,20 +119,22 @@ fn catalog_has_all_native_commands_and_gpui_shortcuts() {
         (CycleWindows, &["cmd-`"]),
     ];
     assert_eq!(COMMANDS.len(), expected.len());
-    let shortcuts: std::collections::HashSet<_> =
-        COMMANDS.iter().flat_map(|info| info.shortcuts).collect();
+    let shortcuts: std::collections::HashSet<_> = COMMANDS
+        .iter()
+        .flat_map(|info| info.base_shortcuts())
+        .collect();
     assert_eq!(
         shortcuts.len(),
         COMMANDS
             .iter()
-            .map(|info| info.shortcuts.len())
+            .map(|info| info.base_shortcuts().len())
             .sum::<usize>()
     );
     let names: std::collections::HashSet<_> = COMMANDS.iter().map(|info| info.name).collect();
     assert_eq!(names.len(), COMMANDS.len());
     for (info, &(command, shortcuts)) in COMMANDS.iter().zip(expected) {
         assert_eq!(info.command, command);
-        assert_eq!(info.shortcuts, shortcuts);
+        assert_eq!(info.base_shortcuts(), shortcuts);
         assert!(!info.name.is_empty());
         assert!(!info.label.is_empty());
         let value = match command {
@@ -147,7 +152,7 @@ fn catalog_has_all_native_commands_and_gpui_shortcuts() {
 /// keystroke would fail at startup rather than here.
 #[test]
 fn every_catalog_shortcut_parses_as_a_keystroke() {
-    for shortcut in COMMANDS.iter().flat_map(|info| info.shortcuts) {
+    for shortcut in COMMANDS.iter().flat_map(|info| info.base_shortcuts()) {
         let keystroke =
             gpui::Keystroke::parse(shortcut).unwrap_or_else(|error| panic!("{shortcut}: {error}"));
         assert!(keystroke.modifiers.platform, "{shortcut}");
@@ -165,6 +170,8 @@ fn gui_commands_never_send_daemon_requests() {
         Command::Logs,
         Command::NewWindow,
         Command::NewWorktree,
+        Command::OpenWorktree,
+        Command::RemoveWorktree,
         Command::Find,
         Command::FindNext,
         Command::FindPrevious,
@@ -197,6 +204,7 @@ fn gui_commands_never_send_daemon_requests() {
         Command::Forward,
         Command::ResizeMode,
         Command::RenamePane,
+        Command::MovePane,
         Command::PreviousWorkspace,
         Command::NextWorkspace,
         Command::WorkspaceNumber(1),

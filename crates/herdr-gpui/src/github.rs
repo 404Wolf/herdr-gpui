@@ -20,7 +20,7 @@ pub(crate) use {
     store::{Account, Note, Store},
 };
 // Cloud providers keep their own secrets in the same store.
-#[cfg(feature = "cloud")]
+#[cfg(any(feature = "coder", feature = "daytona"))]
 pub(crate) use store::{Entry, read_entry, save_entry};
 
 use crate::Result;

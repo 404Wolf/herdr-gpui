@@ -12,6 +12,8 @@ mod load_save;
 mod navigation_resize;
 mod navigation_scroll;
 mod quit_saves;
+mod scrollbars;
+mod section_order;
 mod theme_drafts;
 // Saving a shared Herdr theme is Unix-only.
 #[cfg(unix)]

@@ -409,6 +409,7 @@ mod tests {
             size: 16.,
             fallbacks: None,
             line_height_multiple: None,
+            weight: gpui::FontWeight::NORMAL,
         };
         for style in [IndicatorStyle::Dots, IndicatorStyle::Symbols] {
             let indicators = Indicators {

@@ -172,6 +172,15 @@ impl HerdrWindow {
         )
     }
 
+    /// Herdr's shared `ui.mouse_scroll_lines`, its default until the shared
+    /// config loads.
+    fn mouse_scroll_lines(&self) -> std::num::NonZeroU16 {
+        self.settings.shared.as_ref().map_or(
+            crate::herdr_settings::DEFAULT_MOUSE_SCROLL_LINES,
+            |shared| shared.mouse_scroll_lines,
+        )
+    }
+
     pub(crate) fn scroll_wheel(
         &mut self,
         event: &ScrollWheelEvent,
@@ -196,15 +205,16 @@ impl HerdrWindow {
             self.wheel = WheelAccumulator::default();
             return;
         };
+        let notch_lines = self.mouse_scroll_lines();
         let mut steps = self
             .wheel
-            .steps(&target, event, self.cell_width, cell_height);
+            .steps(&target, event, self.cell_width, cell_height, notch_lines);
         // Scrollback follows the OS's motion exactly; anything else, such as an
         // application reading the wheel, gets whole steps as they accumulate.
         let smooth = match &target.target {
-            InputTarget::Pane(id) if self.slides_allowed() => {
-                self.presentation.wheel(id, wheel_rows(event, cell_height))
-            }
+            InputTarget::Pane(id) if self.slides_allowed() => self
+                .presentation
+                .wheel(id, wheel_rows(event, cell_height, notch_lines)),
             InputTarget::Pane(_) | InputTarget::Popup(_) => None,
         };
         if let Some(lines) = smooth {
@@ -254,14 +264,18 @@ impl HerdrWindow {
         // A new press goes wherever this decides; only the pane branch at the
         // end holds it again for its release.
         self.held_keys.forget(&event.keystroke.key);
-        // A keystroke bubbling out of the find field is the field's: an
-        // unhandled one is still on its way to the field's IME.
-        if self.find_focused(window, cx) || self.terminal_note_focused(window, cx) {
+        // A keystroke bubbling out of the find field, the terminal note field,
+        // or the copy-mode search prompt is the field's: an unhandled one is
+        // still on its way to the field's IME.
+        if self.find_focused(window, cx)
+            || self.terminal_note_focused(window, cx)
+            || self.copy_search_focused(window, cx)
+        {
             return;
         }
         // Copy mode owns the keyboard: its keys run and nothing else is typed.
         if self.copy_mode_active() {
-            self.copy_mode_key(event, cx);
+            self.copy_mode_key(event, window, cx);
             if !event.keystroke.modifiers.platform {
                 cx.stop_propagation();
                 window.prevent_default();

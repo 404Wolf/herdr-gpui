@@ -14,6 +14,18 @@ use std::{
 const QUERY_OUTPUT: u64 = 32 * 1024 * 1024;
 const QUERY_IDLE: Duration = Duration::from_secs(60);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Route {
+    Local,
+    Ssh(String),
+    #[cfg(feature = "cloud")]
+    Cloud {
+        provider: herdr_client::CloudProvider,
+        account: String,
+        id: String,
+    },
+}
+
 /// Largest bundle, session, or archive Teleport will carry.
 pub(crate) const TRANSFER_OUTPUT: u64 = 4 * 1024 * 1024 * 1024;
 /// Bulk Git work (bundling, fetching) can be quiet for a while.
@@ -21,8 +33,13 @@ pub(crate) const TRANSFER_IDLE: Duration = Duration::from_secs(300);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Host {
-    ssh: Option<String>,
+    route: Route,
     session: Option<String>,
+    /// The session belongs to the development installation, which
+    /// `herdr --session NAME` cannot address: NAME would resolve to the
+    /// release session that shares it. Scripts still run (Git, `bd`), but
+    /// `herdr_cli` refuses.
+    development: bool,
     /// Tests run "remote" hosts locally in their own environment (home,
     /// daemon socket), exported at the start of every script.
     #[cfg(test)]
@@ -35,34 +52,56 @@ impl Host {
     pub(crate) fn new(target: &ConnectTarget) -> Result<Self> {
         match target {
             ConnectTarget::Local => Ok(Self {
-                ssh: None,
+                route: Route::Local,
                 session: None,
+                development: false,
                 #[cfg(test)]
                 env: Vec::new(),
             }),
-            ConnectTarget::Session { name, .. } => Ok(Self {
-                ssh: None,
+            ConnectTarget::Session { name, development } => Ok(Self {
+                route: Route::Local,
                 session: Some(name.clone()),
+                development: *development,
                 #[cfg(test)]
                 env: Vec::new(),
             }),
             ConnectTarget::Ssh { target, session } => Ok(Self {
-                ssh: Some(target.clone()),
+                route: Route::Ssh(target.clone()),
                 session: Some(session.clone()),
+                development: false,
                 #[cfg(test)]
                 env: Vec::new(),
             }),
-            // WSL distributions and cloud machines are reached through their
-            // own bridge commands, which Teleport's scripts do not run over.
             ConnectTarget::Socket(_) | ConnectTarget::Wsl { .. } => Err(Error::UnsupportedHost),
             #[cfg(feature = "cloud")]
-            ConnectTarget::Cloud { .. } => Err(Error::UnsupportedHost),
+            ConnectTarget::Cloud {
+                provider,
+                account,
+                id,
+                session,
+                ..
+            } => Ok(Self {
+                route: Route::Cloud {
+                    provider: *provider,
+                    account: account.clone(),
+                    id: id.clone(),
+                },
+                session: Some(session.clone()),
+                development: false,
+                #[cfg(test)]
+                env: Vec::new(),
+            }),
         }
+    }
+
+    /// Whether `herdr_cli` can reach this host's session; see `development`.
+    pub(crate) fn scripts_herdr(&self) -> bool {
+        !self.development
     }
 
     /// The prelude every script starts with: strict mode, a `PATH` that finds
     /// user-installed tools in a non-interactive SSH shell, and `herdr_cli`
-    /// bound to this host's session.
+    /// bound to this host's session, or refusing when it cannot be reached.
     fn prelude(&self) -> String {
         let session = self
             .session
@@ -77,11 +116,17 @@ impl Host {
             .collect::<String>();
         #[cfg(not(test))]
         let home = "";
+        let herdr_cli = if self.development {
+            r#"herdr_cli() { echo "herdr: a development (--dev) session cannot be scripted" >&2; return 97; }"#
+                .to_owned()
+        } else {
+            format!(r#"herdr_cli() {{ herdr{session} "$@"; }}"#)
+        };
         format!(
             r#"set -eu
 {home}PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$HOME/.bun/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.nix-profile/bin:$PATH"
 export PATH
-herdr_cli() {{ herdr{session} "$@"; }}
+{herdr_cli}
 "#
         )
     }
@@ -109,11 +154,38 @@ herdr_cli() {{ herdr{session} "$@"; }}
         limits: ScriptLimits,
         cancelled: &AtomicBool,
     ) -> herdr_client::Result<u64> {
-        let host = self
-            .ssh
-            .as_deref()
-            .map_or(ScriptHost::Local, ScriptHost::Ssh);
         let script_text = format!("{}{body}", self.prelude());
+        let host = match &self.route {
+            Route::Local => ScriptHost::Local,
+            Route::Ssh(target) => ScriptHost::Ssh(target),
+            #[cfg(feature = "cloud")]
+            Route::Cloud {
+                provider,
+                account,
+                id,
+            } => {
+                if !cfg!(any(target_os = "linux", target_os = "macos")) {
+                    return Err(herdr_client::Error::ScriptUnsupported);
+                }
+                return crate::cloud::with_command(
+                    *provider,
+                    account,
+                    id,
+                    cancelled,
+                    |mut command| {
+                        command.arg(format!("/bin/sh -c {}", shell_quote(&script_text)));
+                        herdr_client::run_script_command(command, input, output, limits, cancelled)
+                    },
+                )
+                .map_err(|error| {
+                    if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+                        herdr_client::Error::ScriptCancelled
+                    } else {
+                        herdr_client::Error::ScriptConnect(error)
+                    }
+                })?;
+            }
+        };
         run_script(host, &script_text, input, output, limits, cancelled)
     }
 
@@ -242,13 +314,17 @@ done
 mod tests {
     use super::*;
 
+    #[cfg(feature = "cloud")]
+    mod cloud;
+
     #[test]
     fn hosts_follow_their_endpoint_target() {
         assert_eq!(
             Host::new(&ConnectTarget::Local).unwrap(),
             Host {
-                ssh: None,
+                route: Route::Local,
                 session: None,
+                development: false,
                 env: Vec::new(),
             }
         );
@@ -257,12 +333,58 @@ mod tests {
             session: "work".into(),
         })
         .unwrap();
-        assert_eq!(ssh.ssh.as_deref(), Some("me@box"));
+        assert_eq!(ssh.route, Route::Ssh("me@box".into()));
         assert!(ssh.prelude().contains("herdr --session 'work' \"$@\""));
         assert!(matches!(
             Host::new(&ConnectTarget::Socket("/tmp/s".into())),
             Err(Error::UnsupportedHost)
         ));
+        // A `--dev` window's session lives in the development installation,
+        // which `herdr --session` cannot name: its host still runs scripts,
+        // but Teleport, fan-out, and dispatch are not offered there.
+        let development = ConnectTarget::Session {
+            name: "default".into(),
+            development: true,
+        };
+        let host = Host::new(&development).unwrap();
+        assert!(!host.scripts_herdr());
+        assert!(!host.prelude().contains("herdr --session"));
+        assert!(matches!(
+            crate::teleport::host_for(&development),
+            Err(Error::DevelopmentSession)
+        ));
+        let release = ConnectTarget::Session {
+            name: "default".into(),
+            development: false,
+        };
+        assert!(Host::new(&release).unwrap().scripts_herdr());
+        assert!(crate::teleport::host_for(&release).is_ok());
+    }
+
+    /// Git and `bd` scripts still run on a development host (the orchestrator
+    /// reads its repository that way); only `herdr_cli` refuses, so nothing
+    /// reaches the release session of the same name.
+    #[test]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn development_hosts_run_scripts_but_not_herdr() {
+        let host = Host::new(&ConnectTarget::Session {
+            name: "default".into(),
+            development: true,
+        })
+        .unwrap();
+        let cancelled = AtomicBool::new(false);
+        assert_eq!(host.capture("printf ok", &cancelled).unwrap(), b"ok");
+        let refused = host
+            .capture(&Host::herdr_line(&["workspace", "list"]), &cancelled)
+            .unwrap_err();
+        assert!(
+            matches!(
+                &refused,
+                herdr_client::Error::ScriptExit { status, stderr }
+                    if status.code() == Some(97) && stderr.contains("--dev")
+            ),
+            "{refused:?}"
+        );
     }
 
     #[test]

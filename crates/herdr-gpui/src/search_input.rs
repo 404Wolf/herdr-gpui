@@ -3,9 +3,9 @@ use std::ops::Range;
 
 use gpui::{
     App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, EntityInputHandler,
-    EventEmitter, FocusHandle, Focusable, KeyDownEvent, MouseButton, Pixels, Point, ShapedLine,
-    TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window, canvas, div, fill, point,
-    prelude::*, px, rgb, size,
+    EventEmitter, FocusHandle, Focusable, Hsla, KeyDownEvent, MouseButton, Pixels, Point,
+    ShapedLine, TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window, canvas, div, fill,
+    point, prelude::*, px, rgb, size,
 };
 
 use crate::config::{Config, FontConfig, Theme};
@@ -30,6 +30,9 @@ pub struct SearchInput {
     /// Whether it draws its own border, background, and padding. A field
     /// set inside a frame its owner draws turns this off.
     framed: bool,
+    /// The framed field's fill, when its owner paints it translucent; the
+    /// theme's background otherwise.
+    fill: Option<Hsla>,
 }
 
 // Internal offsets are UTF-8 boundaries; only the platform input API uses UTF-16.
@@ -150,11 +153,12 @@ impl SearchInput {
             selecting: false,
             framed: true,
             masked: false,
+            fill: None,
         }
     }
 
     // Only cloud provider secrets are masked so far.
-    #[cfg_attr(not(feature = "cloud"), allow(dead_code))]
+    #[cfg_attr(not(any(feature = "coder", feature = "daytona")), allow(dead_code))]
     pub(crate) fn set_masked(&mut self, masked: bool, cx: &mut Context<Self>) {
         self.masked = masked;
         self.layout = None;
@@ -213,6 +217,13 @@ impl SearchInput {
 
     /// Restyles the field. An unchanged look is a no-op, so a parent may
     /// call this from its own render without redrawing the field each frame.
+    pub(crate) fn set_fill(&mut self, fill: Hsla, cx: &mut Context<Self>) {
+        if self.fill != Some(fill) {
+            self.fill = Some(fill);
+            cx.notify();
+        }
+    }
+
     pub fn set_appearance(&mut self, font: FontConfig, theme: Theme, cx: &mut Context<Self>) {
         if self.font == font && self.theme == theme {
             return;
@@ -255,7 +266,8 @@ impl SearchInput {
         if matches!(key, "up" | "down" | "enter" | "escape") {
             return;
         }
-        if modifiers.platform && !modifiers.control && !modifiers.alt {
+        let edit = actions::edit_modifiers(modifiers) && matches!(key, "a" | "c" | "v" | "x");
+        if edit || (modifiers.platform && !modifiers.control && !modifiers.alt) {
             match key {
                 // As in every macOS text field: Cmd-Left and Cmd-Right go to
                 // the line's ends, Cmd-Backspace and Cmd-Delete delete to them.
@@ -278,7 +290,7 @@ impl SearchInput {
                     }
                     self.replace_text_in_range(None, "", window, cx);
                 }
-                _ if modifiers.shift => return,
+                _ if modifiers.shift && !edit => return,
                 "a" => {
                     self.edit.anchor = 0;
                     self.edit.cursor = self.edit.text.len();
@@ -460,7 +472,9 @@ impl Render for SearchInput {
                     .rounded(px(crate::config::corners::CONTROL))
                     .border_1()
                     .border_color(rgb(self.theme.active))
-                    .bg(rgb(self.theme.background))
+                    .bg(self
+                        .fill
+                        .unwrap_or_else(|| rgb(self.theme.background).into()))
             })
             .text_color(rgb(self.theme.foreground))
             .text_font(&self.font)

@@ -2,7 +2,7 @@
 # Usage: wait.sh FEEDBACK [SECONDS]
 # Waits for the mockup window's "Send to agent" and prints the notes.
 #
-# In a Herdr pane with Herdr GPUI running, the window hands the notes to Herdr
+# In a Herdr pane with Herdr UI running, the window hands the notes to Herdr
 # GPUI, and this waits for them with `herdr-gpui browser feedback --wait`, so
 # they are not typed into the pane as well. It also watches FEEDBACK, since
 # an older app can accept feedback waits but reject notes.send. This prints

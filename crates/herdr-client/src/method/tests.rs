@@ -82,6 +82,15 @@ fn copy_search_wire_name_and_advertisement() {
 }
 
 #[test]
+fn workspace_move_is_not_the_block_move() {
+    assert_eq!(Method::WorkspaceMove.as_str(), "workspace.move");
+    assert!(Method::WorkspaceMove.advertised_in(&["workspace.move".into()]));
+    // A daemon offering only the block move does not offer the single one.
+    assert!(!Method::WorkspaceMove.advertised_in(&["workspace.move_block".into()]));
+    assert!(!Method::WorkspaceMoveBlock.advertised_in(&["workspace.move".into()]));
+}
+
+#[test]
 fn split_ratio_wire_name() {
     assert_eq!(
         Method::LayoutSetSplitRatio.as_str(),
@@ -171,6 +180,7 @@ const ALL: &[Method] = &[
     Method::WorkspaceClose,
     Method::WorkspaceCreate,
     Method::WorkspaceFocus,
+    Method::WorkspaceMove,
     Method::WorkspaceMoveBlock,
     Method::WorkspaceRename,
     Method::WorktreeCreate,
@@ -216,6 +226,7 @@ fn every_method_is_offered_to_endpoint_clients() {
             | Method::WorkspaceClose
             | Method::WorkspaceCreate
             | Method::WorkspaceFocus
+            | Method::WorkspaceMove
             | Method::WorkspaceMoveBlock
             | Method::WorkspaceRename
             | Method::WorktreeCreate

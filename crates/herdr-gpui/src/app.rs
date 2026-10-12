@@ -226,6 +226,9 @@ pub(crate) fn run() -> std::process::ExitCode {
         eprintln!("Unable to initialize diagnostics: {error}");
         return std::process::ExitCode::FAILURE;
     }
+    // SSH children use the login shell's `ssh` and agent, as the daemon does:
+    // launchd's would miss keys such as a security key held by another agent.
+    herdr_client::set_command_environment(crate::login_env::apply);
     tracing::info!(
         version = APP_VERSION,
         os = std::env::consts::OS,
@@ -308,6 +311,7 @@ pub(crate) fn run() -> std::process::ExitCode {
             }
             cx.set_global(appearance.select(light_appearance(cx)));
             app_icon::install();
+            crate::caffeine::install(cx);
             #[cfg(target_os = "macos")]
             crate::app_badge::install(cx);
             cx.on_action(|_: &Quit, cx| cx.quit());

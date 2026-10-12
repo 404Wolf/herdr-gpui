@@ -1,4 +1,7 @@
-:root { --g0:#17181b; --g1:#1d1f23; --g2:#26282d; --g3:#34373d; --fg:#e7e8ea; --mut:#9a9ea6; --dim:#6c7078; --acc:#ffb547; }
+:root { --g0:#17181b; --g1:#1d1f23; --g2:#26282d; --g3:#34373d; --fg:#e7e8ea; --mut:#9a9ea6; --dim:#6c7078; --acc:#ffb547; --acc-ink:var(--acc); --ok:#57d38c; color-scheme:dark; }
+/* Light follows the system unless the toggle pinned a theme. The terminal and app mockups stay dark. */
+:root[data-theme="light"] { --g0:#fbfaf8; --g1:#f3f2ef; --g2:#e6e5e1; --g3:#d3d2cd; --fg:#1d1f23; --mut:#5a5e66; --dim:#7c8088; --acc-ink:#a35f00; --ok:#1d8048; color-scheme:light; }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --g0:#fbfaf8; --g1:#f3f2ef; --g2:#e6e5e1; --g3:#d3d2cd; --fg:#1d1f23; --mut:#5a5e66; --dim:#7c8088; --acc-ink:#a35f00; --ok:#1d8048; color-scheme:light; } }
 * { box-sizing:border-box; }
 html, body { margin:0; }
 html { scroll-behavior:smooth; }
@@ -17,6 +20,11 @@ nav .gh { color:var(--fg); border:1px solid var(--g3); border-radius:8px; paddin
 nav .gh svg { width:14px; height:14px; fill:currentColor; flex:none; }
 nav .gh .stars { display:inline-flex; align-items:center; gap:4px; padding-left:8px; margin-left:1px; border-left:1px solid var(--g3); color:var(--mut); font-variant-numeric:tabular-nums; }
 nav .gh .stars[hidden] { display:none; }
+nav .theme { all:unset; cursor:pointer; display:grid; place-items:center; width:30px; height:30px; border-radius:8px; color:var(--mut); }
+nav .theme:hover { color:var(--fg); background:var(--g2); }
+nav .theme:focus-visible { outline:2px solid var(--acc); outline-offset:3px; }
+nav .theme svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+nav .theme svg[hidden] { display:none; }
 nav .gh .stars svg { width:12px; height:12px; fill:#f5b84a; }
 
 .hero { padding:72px 0 28px; text-align:center; }
@@ -52,7 +60,7 @@ section { padding:90px 0 0; scroll-margin-top:20px; }
 .sh { margin-bottom:26px; }
 .sh h2 { font-size:36px; letter-spacing:-.025em; line-height:1.08; margin:0; }
 .sh p { margin:8px 0 0; color:var(--mut); max-width:640px; }
-.eyebrow { font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--acc); font-weight:700; }
+.eyebrow { font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--acc-ink); font-weight:700; }
 
 .film { max-width:1120px; margin:0 auto; border:1px solid var(--g3); border-radius:15px; overflow:hidden; --vr:14px; }
 .film video { display:block; width:100%; height:auto; background:#000; }
@@ -64,8 +72,8 @@ section { padding:90px 0 0; scroll-margin-top:20px; }
 .row h3 { margin:6px 0 8px; font-size:21px; letter-spacing:-.015em; }
 .row p { margin:0 0 12px; color:var(--mut); font-size:14px; }
 .verdict { display:inline-flex; gap:7px; align-items:center; font-size:12px; padding:4px 9px; border-radius:6px; border:1px solid var(--g3); color:var(--mut); }
-.verdict.only { color:var(--acc); border-color:rgba(255,181,71,.4); background:rgba(255,181,71,.07); }
-.verdict.both, .verdict.more { color:#57d38c; border-color:rgba(87,211,140,.35); background:rgba(87,211,140,.06); }
+.verdict.only { color:var(--acc-ink); border-color:rgba(255,181,71,.4); background:rgba(255,181,71,.07); }
+.verdict.both, .verdict.more { color:var(--ok); border-color:rgba(87,211,140,.35); background:rgba(87,211,140,.06); }
 .side-lbl { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); margin-bottom:8px; display:flex; justify-content:space-between; gap:12px; }
 .mini-tui { background:#0d0e10; border:1px solid var(--g3); border-radius:9px; height:250px; padding:12px 14px; overflow:hidden; }
 .mini-tui pre { margin:0; font:11.5px/1.6 ui-monospace, "SF Mono", Menlo, monospace; color:#b9bdc4; white-space:pre; }
@@ -87,12 +95,28 @@ section { padding:90px 0 0; scroll-margin-top:20px; }
 
 /* Install */
 .install { display:grid; grid-template-columns:1.1fr 1fr; gap:40px; align-items:center; padding:44px; border:1px solid var(--g3); border-radius:16px; background:linear-gradient(180deg, var(--g1), var(--g0)); }
-.install h2 { font-size:34px; letter-spacing:-.025em; margin:0 0 8px; }
+.install > * { min-width:0; }
+.install h2 { font-size:34px; line-height:1.1; letter-spacing:-.025em; margin:0 0 10px; }
 .install p { margin:0; color:var(--mut); }
-.cmd { display:flex; justify-content:space-between; align-items:center; gap:14px; background:#0d0e10; border:1px solid var(--g3); border-radius:10px; padding:14px 16px; font-size:14.5px; }
+.cmd { display:flex; justify-content:space-between; align-items:center; gap:14px; background:#0d0e10; color:#e7e8ea; border:1px solid var(--g3); border-radius:10px; padding:14px 16px; font-size:14.5px; }
+.cmd code { font:inherit; min-width:0; overflow-wrap:anywhere; }
 .cmd .p { color:var(--acc); margin-right:8px; user-select:none; }
-.cmd button { all:unset; cursor:pointer; color:var(--mut); font-size:12px; border-left:1px solid var(--g3); padding-left:14px; }
-.cmd button:hover { color:var(--fg); }
+/* The command panel stays dark in both themes, so its text uses the dark palette. */
+.cmd button { all:unset; cursor:pointer; color:#9a9ea6; font-size:12px; border-left:1px solid #34373d; padding-left:14px; }
+.cmd button:hover { color:#e7e8ea; }
+.cmd button:focus-visible { outline:2px solid var(--acc); outline-offset:3px; border-radius:4px; }
+.install p a { text-decoration:underline; }
+.os-tabs { display:flex; gap:4px; margin-bottom:10px; }
+.os-tabs[hidden] { display:none; }
+.os-tabs button { all:unset; cursor:pointer; padding:6px 12px; border-radius:8px; font-size:13px; color:var(--mut); }
+.os-tabs button:hover { color:var(--fg); }
+.os-tabs button[aria-selected="true"] { background:var(--g2); color:var(--fg); }
+.os-tabs button:focus-visible { outline:2px solid var(--acc); outline-offset:2px; }
+.os + .os { margin-top:18px; }
+.os h3 { margin:0 0 8px; font-size:14px; color:var(--mut); }
+/* With tabs, each tab names its platform and only one panel shows. */
+.tabbed .os h3 { display:none; }
+.tabbed .os + .os { margin-top:0; }
 .plat { margin-top:10px; font-size:12.5px; color:var(--dim); }
 .plat a { text-decoration:underline; }
 .both-note { margin-top:14px; font-size:13px; color:var(--mut); }
@@ -117,7 +141,32 @@ footer .disc { margin-left:auto; max-width:460px; text-align:right; color:var(--
 @media (max-width: 560px) {
   .gal { grid-template-columns:1fr; } .gal .t.big { grid-column:auto; }
   .cmd { font-size:12.5px; }
+  .install h2 { font-size:28px; }
+  footer { margin-top:64px; padding:24px 0 calc(28px + env(safe-area-inset-bottom)); }
+  footer .wrap { flex-direction:column; gap:12px; text-align:center; }
+  footer .links { order:-1; gap:22px; font-size:13.5px; color:var(--mut); }
+  footer .disc { max-width:320px; text-align:center; font-size:11.5px; color:var(--dim); }
 }
+/* Phones: the side-by-side slider is unreadable at this width, so show one
+   client at a time, larger, and let it pan sideways. site.js sets .narrow. */
+.cmp-tabs { display:none; }
+.narrow .cmp-tabs { display:flex; justify-content:center; margin:36px auto 0; }
+.cmp-tabs button { all:unset; cursor:pointer; padding:7px 14px; font-size:13.5px; font-weight:600; color:var(--mut); border:1px solid var(--g3); }
+.cmp-tabs button:focus-visible { outline:2px solid var(--acc); outline-offset:3px; }
+.cmp-tabs button:first-child { border-radius:9px 0 0 9px; } .cmp-tabs button:last-child { border-radius:0 9px 9px 0; border-left:0; }
+.cmp-tabs button[aria-pressed="true"] { color:var(--fg); background:var(--g2); }
+.narrow .compare-fit { margin-top:14px; overflow-x:auto; overflow-y:hidden; border-radius:12px; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+.narrow .compare-fit::-webkit-scrollbar { display:none; }
+.narrow .compare { cursor:auto; touch-action:auto; }
+.narrow .compare .handle { display:none; }
+.narrow .labels { margin-top:10px; justify-content:center; text-align:center; }
+.narrow .labels span:not(.on) { display:none; }
+.narrow .same { flex-direction:column; gap:6px; font-size:13px; }
+.narrow .same .ln { width:1px; height:14px; }
+.narrow .same .daemon { font-size:11.5px; text-align:center; }
+.narrow .mini-gpui { height:auto; overflow-x:auto; overflow-y:hidden; scrollbar-width:none; }
+.narrow .mini-gpui::-webkit-scrollbar { display:none; }
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior:auto; }
   .hm-dot.work { animation:none; }

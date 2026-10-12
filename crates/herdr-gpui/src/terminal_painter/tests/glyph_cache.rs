@@ -45,6 +45,7 @@ fn cache_reuses_cells_invalidates_fonts_and_bounds_storage(cx: &mut TestAppConte
                         &frame,
                         bounds.origin,
                         None,
+                        Ground::Opaque,
                         cell_width,
                         &font,
                         &[],
@@ -118,6 +119,7 @@ fn cache_reuses_cells_invalidates_fonts_and_bounds_storage(cx: &mut TestAppConte
             size: FONT_SIZE,
             fallbacks: Some(families.iter().map(|family| (*family).to_owned()).collect()),
             line_height_multiple: None,
+            weight: FontWeight::NORMAL,
         }
         .font()
     };

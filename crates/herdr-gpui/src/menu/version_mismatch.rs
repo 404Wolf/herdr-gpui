@@ -22,7 +22,7 @@ impl Notice {
     pub(crate) fn title(&self) -> &'static str {
         match self.mismatch {
             VersionMismatch::DaemonOutdated { .. } => "Herdr needs an update",
-            VersionMismatch::ClientOutdated { .. } => "Herdr GPUI needs an update",
+            VersionMismatch::ClientOutdated { .. } => "Herdr UI needs an update",
         }
     }
 

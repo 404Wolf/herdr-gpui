@@ -63,6 +63,50 @@ impl SettingsWindow {
             .on_click(cx.listener(move |this, _, _, cx| this.save_preference(edit, cx)))
     }
 
+    /// One switch per close kind, each saving its own `confirm_close_*` key.
+    pub(super) fn confirm_close_switches(&self, cx: &mut Context<Self>) -> [Stateful<Div>; 3] {
+        let config = &self.config;
+        let switches = [
+            (
+                "settings-confirm-close",
+                "Confirm tab close",
+                config.confirm_close_tab,
+                Preference::ConfirmCloseTab(!config.confirm_close_tab),
+            ),
+            (
+                "settings-confirm-close-pane",
+                "Confirm pane close",
+                config.confirm_close_pane,
+                Preference::ConfirmClosePane(!config.confirm_close_pane),
+            ),
+            (
+                "settings-confirm-close-workspace",
+                "Confirm workspace close",
+                config.confirm_close_workspace,
+                Preference::ConfirmCloseWorkspace(!config.confirm_close_workspace),
+            ),
+        ];
+        switches.map(|(id, label, on, edit)| self.preference_switch(id, label, on, edit, cx))
+    }
+
+    /// The automatic removal switch, with the note that says what it deletes.
+    pub(super) fn merged_worktree_controls(&self, cx: &mut Context<Self>) -> [Div; 2] {
+        let on = self.config.remove_merged_worktrees;
+        [
+            div().child(self.preference_switch(
+                "settings-remove-merged-worktrees",
+                "Remove worktrees of merged PRs",
+                on,
+                Preference::RemoveMergedWorktrees(!on),
+                cx,
+            )),
+            self.control_note(
+                "Deletes a clean linked worktree and closes its workspace once its PR is merged. \
+                 The focused workspace asks first.",
+            ),
+        ]
+    }
+
     fn preference_choice(
         &self,
         id: impl Into<SharedString>,
@@ -215,6 +259,16 @@ mod tests {
                 Section::General,
                 "settings-smooth-scroll",
                 Preference::SmoothScroll(false),
+            ),
+            (
+                Section::General,
+                "settings-confirm-close-workspace",
+                Preference::ConfirmCloseWorkspace(false),
+            ),
+            (
+                Section::General,
+                "settings-remove-merged-worktrees",
+                Preference::RemoveMergedWorktrees(true),
             ),
             (
                 Section::General,

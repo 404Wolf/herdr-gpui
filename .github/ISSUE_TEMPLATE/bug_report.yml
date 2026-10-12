@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a bug or unexpected behavior in Herdr GPUI
+description: Report a bug or unexpected behavior in Herdr UI
 title: "[Bug]: "
 labels:
   - bug
@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Help us reproduce the problem in the native Herdr GPUI client.
+        Help us reproduce the problem in the native Herdr UI client.
         Redact secrets, private paths, and confidential terminal content from logs and screenshots.
   - type: checkboxes
     id: preflight
@@ -39,7 +39,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: Running Herdr GPUI version
+      label: Running Herdr UI version
       description: Copy the version shown at the right of the GUI status bar. The Report issue button prefills this field. For source builds, also include the commit if known.
       placeholder: "20260920.1 (release) or dev (local build)"
     validations:

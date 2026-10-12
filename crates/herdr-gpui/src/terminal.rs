@@ -16,6 +16,7 @@ use herdr_client::protocol::{
     ClientMousePosition, ClientPaneInputEvent, ClientSurfaceSize, CursorState, FrameData,
     PaneSurfaceFrame, PaneSurfacePane, SurfaceRect,
 };
+use std::num::NonZeroU16;
 
 #[cfg(test)]
 pub const BACKGROUND: u32 = 0x101419;
@@ -144,6 +145,14 @@ pub(crate) fn pane_at(
         .map(|pane| pane.pane_id.as_str())
 }
 
+/// Lines GPUI already reports for one discrete wheel notch. Linux and FreeBSD
+/// use GPUI's fixed three; Windows applies the system wheel setting, assumed
+/// at its default of three; macOS reports about one, with acceleration.
+#[cfg(target_os = "macos")]
+pub(crate) const PLATFORM_NOTCH_LINES: u16 = 1;
+#[cfg(not(target_os = "macos"))]
+pub(crate) const PLATFORM_NOTCH_LINES: u16 = 3;
+
 /// Whole wheel steps on each axis, signed as GPUI reports them: positive
 /// lines scroll up and positive columns scroll left.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -192,6 +201,7 @@ impl WheelAccumulator {
         event: &ScrollWheelEvent,
         cell_width: f32,
         cell_height: f32,
+        notch_lines: NonZeroU16,
     ) -> WheelSteps {
         if self.target.as_ref() != Some(&target.target)
             || matches!(event.touch_phase, TouchPhase::Started)
@@ -202,14 +212,14 @@ impl WheelAccumulator {
             };
         }
         // Dominance compares the reported motion itself: cells are not square.
-        let (raw_x, raw_y, x, y) = match event.delta {
+        let (raw_x, raw_y, x) = match event.delta {
             ScrollDelta::Pixels(delta) => {
-                let (x, y) = (delta.x.to_f64() as f32, delta.y.to_f64() as f32);
-                (x, y, x / cell_width, y / cell_height)
+                let x = delta.x.to_f64() as f32;
+                (x, delta.y.to_f64() as f32, x / cell_width)
             }
-            ScrollDelta::Lines(delta) => (delta.x, delta.y, delta.x, delta.y),
+            ScrollDelta::Lines(delta) => (delta.x, delta.y, delta.x),
         };
-        let lines = self.lines.add(y);
+        let lines = self.lines.add(wheel_rows(event, cell_height, notch_lines));
         // Herdr turns a horizontal wheel only into a mouse report, so motion
         // over a pane that does not report the mouse would do nothing. A
         // mostly vertical swipe's sideways drift is not a column either.
@@ -231,11 +241,21 @@ impl WheelAccumulator {
     }
 }
 
-/// The rows `event` scrolls, up into history being positive.
-pub(crate) fn wheel_rows(event: &ScrollWheelEvent, cell_height: f32) -> f32 {
+/// The rows `event` scrolls, up into history being positive. A discrete wheel
+/// notch scrolls `notch_lines`, Herdr's `ui.mouse_scroll_lines`, on both the
+/// smooth and whole-line paths; precise (trackpad) pixel motion keeps
+/// following the pointer one cell height per row.
+pub(crate) fn wheel_rows(
+    event: &ScrollWheelEvent,
+    cell_height: f32,
+    notch_lines: NonZeroU16,
+) -> f32 {
     match event.delta {
         ScrollDelta::Pixels(delta) => delta.y.to_f64() as f32 / cell_height,
-        ScrollDelta::Lines(delta) => delta.y,
+        // Multiply before dividing so the common equal counts stay exact.
+        ScrollDelta::Lines(delta) => {
+            delta.y * f32::from(notch_lines.get()) / f32::from(PLATFORM_NOTCH_LINES)
+        }
     }
 }
 
@@ -410,6 +430,12 @@ pub fn color(value: u32, default: u32, theme: &Theme) -> u32 {
         2 => value & 0xffffff,
         _ => default,
     }
+}
+
+/// Whether `cell` shows the theme's own background rather than a color its
+/// program chose, even one equal to it.
+pub(crate) fn on_default_background(cell: &CellData) -> bool {
+    is_default(cell.bg) && cell.modifier & REVERSED == 0
 }
 
 fn is_default(value: u32) -> bool {

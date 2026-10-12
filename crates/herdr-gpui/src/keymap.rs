@@ -242,7 +242,7 @@ impl Keymap {
             .map(|((info, configured), from_daemon)| match configured {
                 Some(keystrokes) => keystrokes.into_iter().map(Shortcut::direct).collect(),
                 None => info
-                    .shortcuts
+                    .default_shortcuts()
                     .iter()
                     .filter(|shortcut| {
                         Keystroke::parse(shortcut)
@@ -456,7 +456,12 @@ fn parse(command: &'static str, keystroke: &str) -> Result<Keystroke> {
         keystroke: keystroke.to_owned(),
         source,
     })?;
-    if !has_modifier(&parsed) {
+    let function_key = parsed
+        .key
+        .strip_prefix('f')
+        .and_then(|number| number.parse::<u8>().ok())
+        .is_some_and(|number| (1..=24).contains(&number));
+    if !has_modifier(&parsed) && !function_key {
         return Err(Error::KeystrokeWithoutModifier {
             command,
             keystroke: keystroke.to_owned(),

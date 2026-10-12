@@ -6,6 +6,7 @@
 use crate::{Error, Result, catalog::validate_target};
 use std::{
     io::{Read, Write},
+    process::Command,
     sync::atomic::AtomicBool,
     time::Duration,
 };
@@ -54,7 +55,7 @@ pub fn run_script(
     {
         let command = match host {
             ScriptHost::Local => {
-                let mut command = std::process::Command::new("/bin/sh");
+                let mut command = Command::new("/bin/sh");
                 command.args(["-c", script]);
                 command
             }
@@ -62,11 +63,36 @@ pub fn run_script(
                 crate::ssh::command(target, &format!("/bin/sh -c {}", shell_quote(script)))
             }
         };
-        posix::run(command, input, output, limits, cancelled)
+        run_script_command(command, input, output, limits, cancelled)
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         let _ = (script, input, output, limits, cancelled);
+        Err(Error::ScriptUnsupported)
+    }
+}
+
+/// Execute a caller-prepared script command with the same streaming bounds,
+/// cancellation, and child cleanup as [`run_script`]. The caller owns remote
+/// authentication and shell quoting, and must keep any temporary credentials
+/// alive until this blocking call returns. Call only on a background worker.
+pub fn run_script_command(
+    command: Command,
+    input: impl Read + Send,
+    output: impl Write + Send,
+    limits: ScriptLimits,
+    cancelled: &AtomicBool,
+) -> Result<u64> {
+    if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+        return Err(Error::ScriptCancelled);
+    }
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        posix::run(command, input, output, limits, cancelled)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let _ = (command, input, output, limits);
         Err(Error::ScriptUnsupported)
     }
 }

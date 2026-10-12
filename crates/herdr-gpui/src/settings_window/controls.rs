@@ -1,4 +1,5 @@
 //! Prepared controls for the standalone window; persistence belongs to its serial save path.
+mod backdrop;
 pub(super) mod code;
 mod fonts;
 pub(super) mod plugins;
@@ -44,6 +45,7 @@ pub(super) struct Controls {
     saving_sizes: Vec<(FontFace, f32)>,
     size_editor: Option<SizeEditor>,
     local_path: String,
+    ruler: backdrop::Ruler,
     _search_changed: Subscription,
 }
 
@@ -106,6 +108,7 @@ impl Controls {
             local_path: Config::local_path()
                 .map(|path| path.display().to_string())
                 .unwrap_or_else(|error| format!("Unavailable ({error})")),
+            ruler: backdrop::Ruler::default(),
             _search_changed: subscription,
         }
     }
@@ -180,6 +183,7 @@ impl SettingsWindow {
         self.refresh_control_appearance(cx);
         if !self.busy() {
             self.controls.saving_sizes.clear();
+            self.controls.ruler.settle();
             self.flush_control_sizes(cx);
             self.flush_code_url(cx);
         }
@@ -707,24 +711,8 @@ impl SettingsWindow {
                 crate::config::preferences::Preference::SmoothScroll(!self.config.smooth_scroll),
                 cx,
             ))
-            .child(self.preference_switch(
-                "settings-confirm-close",
-                "Confirm tab close",
-                self.config.confirm_close_tab,
-                crate::config::preferences::Preference::ConfirmCloseTab(
-                    !self.config.confirm_close_tab,
-                ),
-                cx,
-            ))
-            .child(self.preference_switch(
-                "settings-confirm-close-pane",
-                "Confirm pane close",
-                self.config.confirm_close_pane,
-                crate::config::preferences::Preference::ConfirmClosePane(
-                    !self.config.confirm_close_pane,
-                ),
-                cx,
-            ));
+            .children(self.confirm_close_switches(cx))
+            .children(self.merged_worktree_controls(cx));
         div().flex().flex_col().gap(px(24.)).child(general)
             .child(self.render_tab_bar_controls(cx))
             .child(self.render_session_controls(cx))

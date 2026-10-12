@@ -56,7 +56,7 @@ pub(super) struct Setup {
     pub themes: Vec<(SharedString, Theme)>,
     pub theme: usize,
     /// Where "Send to agent" writes when the agent cannot be reached
-    /// through Herdr GPUI; without one it only prints.
+    /// through Herdr UI; without one it only prints.
     pub feedback: Option<PathBuf>,
     pub send_notes: feedback::SendNotes,
 }

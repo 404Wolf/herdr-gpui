@@ -3,7 +3,7 @@
 use super::*;
 
 pub(super) fn check_shortcut_search(view: &Entity<HerdrWindow>, cx: &mut gpui::VisualTestContext) {
-    cx.simulate_keystrokes("cmd-/");
+    cx.simulate_keystrokes(crate::controls::platform_default("cmd-/"));
     let shortcut_search = cx.update(|window, cx| {
         full_draw(window, cx).clear(cx);
         let search = view.read(cx).menu.keybinds_search.as_ref().unwrap().clone();
@@ -20,9 +20,12 @@ pub(super) fn check_shortcut_search(view: &Entity<HerdrWindow>, cx: &mut gpui::V
     cx.simulate_input("no-shortcut-matches-xyz");
     cx.update(|window, cx| full_draw(window, cx).clear(cx));
     assert!(cx.debug_bounds("keybinds-empty").is_some());
-    cx.simulate_keystrokes("cmd-w");
+    cx.simulate_keystrokes(crate::controls::platform_default("cmd-w"));
     cx.update(|_, cx| assert!(view.read(cx).menu.page == Some(crate::menu::Page::Keybinds)));
-    cx.simulate_keystrokes("escape cmd-/");
+    cx.simulate_keystrokes(&format!(
+        "escape {}",
+        crate::controls::platform_default("cmd-/")
+    ));
     cx.update(|window, cx| {
         full_draw(window, cx).clear(cx);
         let search = view.read(cx).menu.keybinds_search.as_ref().unwrap().clone();
@@ -264,14 +267,14 @@ pub(super) fn check_theme_picker(view: &Entity<HerdrWindow>, cx: &mut gpui::Visu
 }
 
 pub(super) fn check_command_palette(view: &Entity<HerdrWindow>, cx: &mut gpui::VisualTestContext) {
-    cx.simulate_keystrokes("cmd-shift-p");
+    cx.simulate_keystrokes(crate::controls::platform_default("cmd-shift-p"));
     let palette_search = cx.update(|window, cx| {
         full_draw(window, cx).clear(cx);
         assert!(view.read(cx).menu.page == Some(crate::menu::Page::Palette));
         view.read(cx).menu.palette.as_ref().unwrap().search.clone()
     });
     // Bound native commands must not fire while a search field has focus.
-    cx.simulate_keystrokes("cmd-b");
+    cx.simulate_keystrokes(crate::controls::platform_default("cmd-b"));
     cx.update(|_, cx| assert!(view.read(cx).sidebar_visible));
     cx.simulate_input("toggle sidebar");
     cx.update(|_, cx| assert_eq!(palette_search.read(cx).text(), "toggle sidebar"));
@@ -282,7 +285,7 @@ pub(super) fn check_command_palette(view: &Entity<HerdrWindow>, cx: &mut gpui::V
         assert!(view.read(cx).menu.page.is_none());
         assert!(view.read(cx).focus.is_focused(window));
     });
-    cx.simulate_keystrokes("cmd-b");
+    cx.simulate_keystrokes(crate::controls::platform_default("cmd-b"));
     cx.update(|window, cx| {
         view.update(cx, |view, cx| view.open_preferences_fixture(window, cx));
     });
@@ -290,7 +293,10 @@ pub(super) fn check_command_palette(view: &Entity<HerdrWindow>, cx: &mut gpui::V
         assert!(view.read(cx).sidebar_visible);
         assert!(view.read(cx).menu.page == Some(crate::menu::Page::Preferences));
     });
-    cx.simulate_keystrokes("escape cmd-p");
+    cx.simulate_keystrokes(&format!(
+        "escape {}",
+        crate::controls::platform_default("cmd-p")
+    ));
     cx.update(|window, cx| {
         full_draw(window, cx).clear(cx);
         assert!(view.read(cx).menu.page == Some(crate::menu::Page::Palette));
@@ -318,7 +324,7 @@ pub(super) fn check_close_confirmation(
             cx.notify();
         });
     });
-    cx.simulate_keystrokes("cmd-w");
+    cx.simulate_keystrokes(crate::controls::platform_default("cmd-w"));
     cx.update(|_, cx| assert!(view.read(cx).menu.page == Some(crate::menu::Page::ConfirmClose)));
     cx.simulate_keystrokes("enter");
     cx.update(|_, cx| {
@@ -327,7 +333,10 @@ pub(super) fn check_close_confirmation(
             "Enter defaults to Cancel"
         )
     });
-    cx.simulate_keystrokes("cmd-shift-w tab enter");
+    cx.simulate_keystrokes(&format!(
+        "{} tab enter",
+        crate::controls::platform_default("cmd-shift-w")
+    ));
     cx.update(|window, cx| {
         full_draw(window, cx).clear(cx);
         assert!(

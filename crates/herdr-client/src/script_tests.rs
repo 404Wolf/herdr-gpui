@@ -1,6 +1,9 @@
 use super::*;
 use std::io::Cursor;
 
+#[path = "script_tests/command.rs"]
+mod command;
+
 const LIMITS: ScriptLimits = ScriptLimits {
     output: 1 << 20,
     idle: Duration::from_secs(10),

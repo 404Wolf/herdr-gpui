@@ -183,6 +183,9 @@ pub enum Error {
         generation: Option<u32>,
         version: Option<String>,
     },
+    /// `ssh -G` named no user known hosts file a host key could be saved to.
+    #[error("SSH has no user known hosts file to save the host key to")]
+    KnownHostsUnavailable,
     #[error("SSH startup output exceeds limit")]
     SshOutputLimit,
     #[error("invalid WSL distribution name")]
@@ -243,6 +246,8 @@ pub enum Error {
     ScriptUnsupported,
     #[error("could not start host script")]
     ScriptSpawn(#[source] io::Error),
+    #[error("could not reach host for script: {0}")]
+    ScriptConnect(#[source] io::Error),
     #[error("host script I/O failed")]
     ScriptIo(#[source] io::Error),
     #[error("could not read host script input")]
@@ -333,7 +338,7 @@ impl Error {
     pub fn kind(&self) -> io::ErrorKind {
         match self {
             Self::Storage { source, .. } => source.kind(),
-            Self::Io(error) => error.kind(),
+            Self::Io(error) | Self::ScriptConnect(error) => error.kind(),
             Self::UploadIo(error) => error.kind(),
             Self::UploadCleanup { source, .. } => source.kind(),
             Self::UploadUnsupported => io::ErrorKind::Unsupported,

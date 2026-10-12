@@ -11,6 +11,10 @@ use herdr_client::{
 };
 use serde_json::{Value, json};
 
+mod sequence;
+
+pub(crate) use sequence::CloseRun;
+
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct CloseConfirmation {
     boot: String,
@@ -243,9 +247,13 @@ impl HerdrWindow {
         match result {
             Ok((method, params)) => {
                 let stop_asking = close.do_not_ask_again;
+                let tab = close.pane.is_none().then(|| close.tab.clone());
                 self.request_focus_change(method.as_str(), None, |handle, boot| {
                     handle.request(boot, method, params)
                 });
+                if let Some(tab) = tab {
+                    self.close_sent(&tab);
+                }
                 self.dismiss_menu(window, cx);
                 stop_asking.then_some(Preference::ConfirmClosePane(false))
             }

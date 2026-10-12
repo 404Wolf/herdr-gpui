@@ -81,6 +81,8 @@ pub enum Error {
     CaffeineThread(#[source] io::Error),
     #[error("The keep-awake thread stopped; the display may sleep")]
     CaffeineWorkerStopped,
+    #[error("No agent is working, so there is nothing to stay awake for")]
+    CaffeineNoWorkingAgents,
     #[error(
         "PR lookup requires your owned local session socket or a saved SSH device. Other socket locations are unsupported."
     )]
@@ -159,6 +161,8 @@ pub enum Error {
     },
     #[error("Workspace is no longer available. Dismiss and reopen the menu.")]
     StaleWorkspace,
+    #[error(transparent)]
+    PaneMove(#[from] crate::pane_move::Error),
     #[error("Workspace label must not be empty.")]
     EmptyWorkspaceLabel,
     #[error("{0} cannot be reached by script. Choose another host.")]
@@ -351,12 +355,17 @@ pub enum Error {
     GitHubTokenType,
     #[error("GitHub {0} worker stopped.")]
     GitHubWorker(&'static str),
+    #[error(transparent)]
+    Backdrop(#[from] crate::backdrop::Error),
     #[cfg(feature = "coder")]
     #[error(transparent)]
     Coder(#[from] crate::coder::Error),
     #[cfg(feature = "daytona")]
     #[error(transparent)]
     Daytona(#[from] crate::daytona::Error),
+    #[cfg(feature = "railway")]
+    #[error(transparent)]
+    Railway(#[from] crate::railway::Error),
     #[cfg(feature = "cloud")]
     #[error(transparent)]
     Cloud(#[from] crate::cloud::Error),
@@ -582,17 +591,17 @@ pub enum Error {
     InvalidDispatchHistory,
     #[error("Invalid saved editor groups")]
     InvalidGroupLayouts,
-    #[error("Herdr GPUI is not running, or its control socket {} is unreachable: {source}", path.display())]
+    #[error("Herdr UI is not running, or its control socket {} is unreachable: {source}", path.display())]
     ControlUnavailable {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("Another Herdr GPUI already serves {}", path.display())]
+    #[error("Another Herdr UI already serves {}", path.display())]
     ControlSocketInUse { path: PathBuf },
     #[error("Control request or response exceeds {limit} bytes")]
     ControlMessageSize { limit: usize },
-    #[error("Herdr GPUI closed the control connection without answering")]
+    #[error("Herdr UI closed the control connection without answering")]
     ControlNoResponse,
     #[error("{message}")]
     ControlRejected {
@@ -600,7 +609,7 @@ pub enum Error {
         message: String,
     },
     #[error(
-        "Controlling a running Herdr GPUI needs a Unix socket, which this platform build does not provide"
+        "Controlling a running Herdr UI needs a Unix socket, which this platform build does not provide"
     )]
     ControlUnsupported,
     #[cfg(any(target_os = "macos", windows))]
@@ -625,6 +634,12 @@ pub enum Error {
         status: std::process::ExitStatus,
         detail: String,
     },
+    /// Herdr's `machine add` refused to save the host until its running
+    /// server is restarted, which it only does after a confirmation.
+    #[error(
+        "The Herdr server on this host was started in a way that may not survive a dropped SSH connection, so Herdr has to restart it before saving the device. Restarting stops the panes running there."
+    )]
+    DeviceServerRestart,
     #[error("Saving the device timed out")]
     DeviceSetupTimeout,
     #[error("This host and session are already saved as \u{201c}{0}\u{201d}.")]
@@ -633,13 +648,13 @@ pub enum Error {
     DeviceAdding,
     #[error("Searching the local network failed: {0}")]
     Bonjour(#[from] mdns_sd::Error),
+    /// Permission granted while the app runs may only apply after a restart.
+    #[error(
+        "macOS has not allowed Herdr on your local network. Allow it when asked, or turn on Herdr in System Settings › Privacy & Security › Local Network, then quit and reopen Herdr"
+    )]
+    LocalNetworkDenied,
     #[error("Could not list this machine's network addresses: {0}")]
     LocalAddresses(#[source] io::Error),
-    #[error("Tailscale is unavailable ({status}){}", if detail.is_empty() { String::new() } else { format!(": {detail}") })]
-    TailscaleStatus {
-        status: std::process::ExitStatus,
-        detail: String,
-    },
     #[error("Tailscale did not answer in time")]
     TailscaleTimeout,
     #[error("Tailscale returned an unreadable status: {0}")]
@@ -695,6 +710,8 @@ pub enum Error {
     InvalidFontSize(&'static str),
     #[error("{0}.line_height must be a finite number between 1 and 2 times the font size")]
     InvalidLineHeight(&'static str),
+    #[error("{0}.weight must be a weight name such as \"medium\" or a number from 100 to 900")]
+    InvalidFontWeight(&'static str),
     #[error("{0}.fallback families must not be empty")]
     EmptyFontFallback(&'static str),
     #[error("{0}.fallback must list at most 8 families")]
@@ -887,111 +904,4 @@ pub enum ThemeParseError {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::error::Error as _;
-
-    #[test]
-    fn github_network_message_names_the_transport_failure() {
-        let error = Error::GitHubNetwork(ureq::Error::Io(io::Error::other(
-            "invalid peer certificate: UnknownIssuer",
-        )));
-        let message = error.to_string();
-        assert!(message.starts_with("GitHub network request failed or timed out"));
-        assert!(
-            message.contains("invalid peer certificate: UnknownIssuer"),
-            "{message}"
-        );
-    }
-
-    #[test]
-    fn updater_wrapper_preserves_source_chain() {
-        let error = Error::from(UpdateError::Io(io::Error::from(io::ErrorKind::BrokenPipe)));
-        assert!(matches!(error, Error::Update(_)));
-        assert_eq!(
-            error
-                .source()
-                .and_then(|source| source.source())
-                .and_then(|source| source.downcast_ref::<io::Error>())
-                .map(io::Error::kind),
-            Some(io::ErrorKind::BrokenPipe)
-        );
-    }
-
-    #[test]
-    fn github_failures_keep_typed_sources_and_redact_parser_diagnostics() -> anyhow::Result<()> {
-        let source = serde_json::from_str::<u64>("\"fixture-private-value\"")
-            .err()
-            .ok_or_else(|| anyhow::anyhow!("expected JSON type error"))?;
-        let error = Error::github_json(source);
-        assert!(matches!(error, Error::GitHubJson(_)));
-        assert!(!format!("{error} {error:?}").contains("fixture-private-value"));
-        assert!(
-            error
-                .source()
-                .and_then(|source| source.source())
-                .is_some_and(|source| source.is::<serde_json::Error>())
-        );
-
-        let error = Error::CredentialIo(io::Error::from(io::ErrorKind::PermissionDenied));
-        assert!(
-            error
-                .source()
-                .and_then(|source| source.downcast_ref::<io::Error>())
-                .is_some_and(|source| source.kind() == io::ErrorKind::PermissionDenied)
-        );
-        let error = Error::GitHubRead(io::Error::from(io::ErrorKind::TimedOut));
-        assert!(
-            matches!(&error, Error::GitHubRead(source) if source.kind() == io::ErrorKind::TimedOut)
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn io_context_retains_source_kind_and_cleanup_failure() {
-        let error = Error::from(io::Error::new(io::ErrorKind::PermissionDenied, "denied"))
-            .at_path(Path::new("config.toml"));
-        assert_eq!(error.to_string(), "config.toml: denied");
-        assert!(
-            error
-                .source()
-                .and_then(|source| source.source())
-                .and_then(|source| source.downcast_ref::<io::Error>())
-                .is_some_and(|source| source.kind() == io::ErrorKind::PermissionDenied)
-        );
-
-        let error = Error::Cleanup {
-            source: io::Error::other("write failed"),
-            path: "temporary".into(),
-            cleanup: io::Error::new(io::ErrorKind::PermissionDenied, "cleanup denied"),
-        };
-        assert_eq!(
-            error.to_string(),
-            "write failed; removing temporary: cleanup denied"
-        );
-        assert!(
-            error
-                .source()
-                .is_some_and(|source| source.is::<io::Error>())
-        );
-        assert!(
-            matches!(error, Error::Cleanup { cleanup, .. } if cleanup.kind() == io::ErrorKind::PermissionDenied)
-        );
-    }
-
-    #[test]
-    fn client_schema_presentation_remains_redacted() -> anyhow::Result<()> {
-        let source = serde_json::from_str::<Vec<String>>("{}")
-            .err()
-            .ok_or_else(|| anyhow::anyhow!("expected schema error"))?;
-        let error = Error::from(herdr_client::Error::CatalogSchema(source));
-        assert_eq!(error.to_string(), "invalid endpoint catalog schema");
-        assert!(
-            error
-                .source()
-                .and_then(|source| source.source())
-                .is_some_and(|source| source.is::<serde_json::Error>())
-        );
-        Ok(())
-    }
-}
+mod tests;

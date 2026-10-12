@@ -2,6 +2,7 @@ use super::*;
 use anyhow::Context as _;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+mod backdrop;
 mod bitmap_fonts;
 mod bold_color;
 mod code;
@@ -9,6 +10,8 @@ mod code_navigation;
 mod code_start;
 mod default_fonts;
 mod discovery;
+mod font_aliases;
+mod font_weight;
 mod fonts;
 mod github;
 mod icon_font;

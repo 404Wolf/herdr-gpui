@@ -1,9 +1,35 @@
-// Page behaviour for the Herdr GPUI site. Runs at the end of <body>, before
+// Page behaviour for the Herdr UI site. Runs at the end of <body>, before
 // kit.js mounts the [data-hm-app] renderings on DOMContentLoaded.
 (function () {
   // `?draft` shows placeholders for the film and screenshots that have not been
   // captured yet, so the layout can be reviewed before the media exists.
   const DRAFT = new URLSearchParams(location.search).has('draft');
+  const NARROW = matchMedia('(max-width: 640px)');
+  const NARROW_SCALE = 0.68;
+
+  // ---- Theme toggle: system → light → dark. The <head> script applies a
+  // stored choice before first paint; "system" stores nothing. ----
+  (function () {
+    const btn = document.getElementById('theme');
+    const meta = document.querySelector('meta[name="theme-color"]');
+    const root = document.documentElement;
+    const media = matchMedia('(prefers-color-scheme: light)');
+    const ORDER = ['system', 'light', 'dark'];
+    const sync = () => {
+      const mode = root.dataset.theme || 'system';
+      btn.querySelectorAll('svg').forEach(s => { s.toggleAttribute('hidden', s.dataset.t !== mode); });
+      btn.title = btn.ariaLabel = 'Theme: ' + mode;
+      meta.content = getComputedStyle(root).getPropertyValue('--g0').trim();
+    };
+    btn.addEventListener('click', () => {
+      const next = ORDER[(ORDER.indexOf(root.dataset.theme || 'system') + 1) % ORDER.length];
+      if (next === 'system') delete root.dataset.theme; else root.dataset.theme = next;
+      try { if (next === 'system') localStorage.removeItem('theme'); else localStorage.setItem('theme', next); } catch (e) {}
+      sync();
+    });
+    media.addEventListener('change', sync);
+    sync();
+  })();
 
   // ---- TUI rendering: a character grid with coloured regions ----
   (function () {
@@ -58,6 +84,7 @@
     const at = (e) => { const r = cmp.getBoundingClientRect(); set((e.clientX - r.left) / r.width * 100); };
     let drag = false;
     cmp.addEventListener('pointerdown', (e) => {
+      if (NARROW.matches) return; // phones pan the stage instead of dragging
       // Without preventDefault, WebKit starts a text selection under the drag.
       e.preventDefault();
       window.getSelection()?.removeAllRanges();
@@ -74,6 +101,18 @@
       if (e.key === 'ArrowRight') { set(v + 5); e.preventDefault(); }
     });
     set(46);
+
+    // Phones show one client at a time; the tabs pick which.
+    const tabs = document.querySelectorAll('#cmp-tabs button');
+    const show = (view) => {
+      tabs.forEach(b => b.setAttribute('aria-pressed', b.dataset.view === view));
+      document.querySelectorAll('.labels span').forEach(s => s.classList.toggle('on', s.dataset.view === view));
+      if (NARROW.matches) { cmp.style.setProperty('--split', view === 'tui' ? '100%' : '0%'); document.getElementById('cmp-fit').scrollLeft = 0; }
+      else set(46);
+    };
+    tabs.forEach(b => b.addEventListener('click', () => show(b.dataset.view)));
+    NARROW.addEventListener('change', () => show('gpui'));
+    show('gpui');
   })();
 
   // ---- capability rows ----
@@ -131,19 +170,26 @@ copy notes across by hand.</span>`, g: 'terminal' },
       <div><div class="eyebrow">${r.k}</div><h3>${r.t}</h3><p>${r.p}</p><span class="verdict ${r.v[0]}">${r.v[0] === 'only' ? '◐' : '●●'} ${r.v[1]}</span></div>
       <div><div class="side-lbl"><span>herdr TUI</span><span>${r.tl}</span></div>
         ${r.tui ? `<div class="mini-tui"><pre>${r.tui}</pre></div>` : `<div class="mini-tui empty"><b>—</b><div>${r.tl}.<br>The daemon keeps running the agents either way.</div></div>`}</div>
-      <div><div class="side-lbl"><span>Herdr GPUI</span><span>${r.v[0] === 'both' ? 'Same data' : 'Built in'}</span></div>
+      <div><div class="side-lbl"><span>Herdr UI</span><span>${r.v[0] === 'both' ? 'Same data' : 'Built in'}</span></div>
         <div class="mini-gpui" aria-hidden="true"><div class="scaler" data-fit-width="780" data-fit-max="0.5"><div data-hm-app="${r.g}" data-no-sidebar></div></div></div></div>
     </div>`).join('');
 
   // ---- scale fixed-size renderings to their container ----
+  // Phones use a fixed, legible scale and pan sideways. `zoom` rather than a
+  // transform there, so the scaled size is what the scroll container sees.
   function fit() {
     const stage = document.getElementById('cmp'), box = document.getElementById('cmp-fit');
-    const s = Math.min(1, box.clientWidth / 1120);
-    stage.style.transform = s < 1 ? `scale(${s})` : '';
-    box.style.height = (458 * s) + 'px';
+    const narrow = NARROW.matches;
+    document.body.classList.toggle('narrow', narrow);
+    const s = narrow ? NARROW_SCALE : Math.min(1, box.clientWidth / 1120);
+    stage.style.transform = !narrow && s < 1 ? `scale(${s})` : '';
+    stage.style.zoom = narrow ? s : '';
+    box.style.height = narrow ? '' : (458 * s) + 'px';
     document.querySelectorAll('[data-fit-width]').forEach(el => {
       const max = parseFloat(el.dataset.fitMax) || 1;
-      el.style.transform = `scale(${Math.min(max, el.parentElement.clientWidth / +el.dataset.fitWidth)})`;
+      const k = narrow ? NARROW_SCALE : Math.min(max, el.parentElement.clientWidth / +el.dataset.fitWidth);
+      el.style.transform = narrow ? '' : `scale(${k})`;
+      el.style.zoom = narrow ? k : '';
     });
   }
   window.addEventListener('resize', fit);
@@ -238,16 +284,44 @@ copy notes across by hand.</span>`, g: 'terminal' },
       .catch(() => {});
   })();
 
-  document.getElementById('brew').textContent = HM.FACTS.install;
-  document.getElementById('plat').textContent = HM.FACTS.platforms;
   document.getElementById('disc').textContent = HM.FACTS.disclaimer;
-  document.getElementById('copy').addEventListener('click', async (e) => {
+
+  // Install: every platform's command is in the HTML, so the page reads fully
+  // without JavaScript; here they become tabs, opened on the visitor's platform.
+  (() => {
+    const tabs = [...document.querySelectorAll('.os-tabs [role="tab"]')];
+    const ua = `${navigator.userAgentData?.platform || ''} ${navigator.userAgent}`;
+    const guess = /windows/i.test(ua) ? 'windows' : /linux|x11|cros/i.test(ua) && !/android/i.test(ua) ? 'linux' : 'macos';
+    const select = (os) => tabs.forEach((t) => {
+      const on = t.dataset.os === os;
+      t.setAttribute('aria-selected', String(on));
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+    });
+    tabs.forEach((t, i) => {
+      t.addEventListener('click', () => select(t.dataset.os));
+      t.addEventListener('keydown', (e) => {
+        const d = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+        if (!d) return;
+        const next = tabs[(i + d + tabs.length) % tabs.length];
+        select(next.dataset.os);
+        next.focus();
+      });
+    });
+    document.querySelector('.os-tabs').hidden = false;
+    document.getElementById('install').classList.add('tabbed');
+    select(guess);
+  })();
+
+  document.querySelectorAll('.cmd .copy').forEach((b) => b.addEventListener('click', async () => {
+    const code = b.parentElement.querySelector('code');
+    const text = [...code.childNodes].filter((n) => !n.classList?.contains('p')).map((n) => n.textContent).join('').trim();
     try {
-      await navigator.clipboard.writeText(HM.FACTS.install);
-      e.target.textContent = 'Copied';
+      await navigator.clipboard.writeText(text);
+      b.textContent = 'Copied';
     } catch {
-      e.target.textContent = 'Select and copy';
+      b.textContent = 'Select and copy';
     }
-    setTimeout(() => { e.target.textContent = 'Copy'; }, 1600);
-  });
+    setTimeout(() => { b.textContent = 'Copy'; }, 1600);
+  }));
 })();

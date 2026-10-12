@@ -16,7 +16,7 @@ fn valid(key: &str) -> bool {
 const ENTRY: Entry = Entry {
     service: "dev.herdr.gpui.daytona",
     account: "api-key",
-    label: "Herdr GPUI Daytona API key",
+    label: "Herdr UI Daytona API key",
     file: c"daytona-api-key",
     validate: |value| {
         if valid(value.expose_secret()) {

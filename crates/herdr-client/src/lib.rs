@@ -8,6 +8,7 @@ mod clipboard;
 mod compat;
 mod connect;
 mod discovery;
+mod environment;
 mod error;
 mod event;
 mod forward;
@@ -27,6 +28,7 @@ mod ssh;
 mod surface_images;
 mod transport;
 mod upload;
+pub mod workspaces;
 mod wsl;
 
 #[cfg(all(test, unix))]
@@ -48,6 +50,7 @@ pub use connect::{Transport, connect, connect_with_connector, connect_with_surfa
 #[cfg(feature = "cloud")]
 pub use discovery::CloudProvider;
 pub use discovery::{ConnectTarget, session_socket};
+pub use environment::set_command_environment;
 /// Error returned when queueing commands; also available as the crate's `Error`.
 pub use error::Error as SendError;
 pub use error::{Error, Result, StorageOperation};
@@ -58,7 +61,7 @@ pub use host_theme::HostTheme;
 pub use method::Method;
 pub use options::ConnectOptions;
 pub use remote_host::RemoteHost;
-pub use script::{ScriptHost, ScriptLimits, run_script, shell_quote};
+pub use script::{ScriptHost, ScriptLimits, run_script, run_script_command, shell_quote};
 pub use sessions::{
     LocalSession, RemoteSession, SessionState, delete_local_session, delete_remote_session,
     list_local_sessions, list_remote_sessions,
@@ -67,8 +70,9 @@ pub use sessions::{
 pub use ssh::script_command;
 pub use ssh::{Bridge, connect_command};
 pub use ssh::{
-    Destination, FORWARD_READY, HostProbe, SshFailure, forward_command, probe_host,
-    remote_config_value, remote_origin_url, resolve_destination,
+    Destination, FORWARD_READY, HostKeyFingerprint, HostKeyScan, HostProbe, NewHostKey, SshFailure,
+    forward_command, probe_host, remote_config_value, remote_origin_url, resolve_destination,
+    scan_host_key, trust_host_key,
 };
 pub use surface_images::{
     MAX_IMAGE_BYTES, MAX_IMAGE_SIDE, MAX_IMAGES, MAX_PLACEMENTS, SurfaceImage, SurfaceImages,

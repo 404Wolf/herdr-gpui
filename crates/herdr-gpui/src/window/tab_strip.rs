@@ -52,6 +52,10 @@ impl Lead {
     }
 }
 
+/// What a group without tabs says, where its tab would show.
+const NO_TABS: &str =
+    "Open a terminal tab with \"+\", or another kind of tab from the \"\u{22ef}\" menu.";
+
 /// What a divider drags: the index of the group on its left. The row it
 /// resizes reads the pointer.
 #[derive(Clone, Copy)]
@@ -125,7 +129,7 @@ impl HerdrWindow {
             .whitespace_nowrap()
             .border_r_1()
             .border_color(rgb(self.theme.active))
-            .bg(rgb(self.theme.surface))
+            .bg(self.fill().over(self.theme.surface, self.theme.surface))
             .text_color(rgb(self.theme.muted))
             .child(leaving.label.clone())
             .into_any_element()
@@ -216,7 +220,7 @@ impl HerdrWindow {
             .text_size(px(self.config.tabs.size))
             .overflow_x_scroll()
             .track_scroll(&scroll)
-            .bg(rgb(self.theme.surface))
+            .bg(self.fill().over(self.theme.surface, self.theme.surface))
             .text_color(rgb(self.theme.foreground));
         if let Some(snapshot) = &self.live.snapshot {
             for tab in snapshot.tabs.iter().filter(|t| {
@@ -251,7 +255,7 @@ impl HerdrWindow {
                         .items_center()
                         .gap(px(10.))
                         .cursor_pointer()
-                        .bg(rgb(background))
+                        .bg(self.fill().over(self.theme.surface, background))
                         .text_color(rgb(text))
                         .child(
                             div()
@@ -316,12 +320,10 @@ impl HerdrWindow {
                                 .on_mouse_down(MouseButton::Left, |_, _, cx| {
                                     cx.stop_propagation();
                                 })
-                                // Split, a tab closes in its group alone, as
-                                // an editor's does.
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     cx.stop_propagation();
                                     let pick = Pick::Herdr(close_id.clone());
-                                    this.close_strip_tab(slot.id, pick, window, cx);
+                                    this.close_strip_tab(pick, window, cx);
                                 })),
                         )
                         .on_mouse_down(
@@ -433,7 +435,7 @@ impl HerdrWindow {
             .flex()
             .flex_none()
             .relative()
-            .bg(rgb(self.theme.surface))
+            .bg(self.fill().panel(self.theme.surface))
             .text_color(rgb(self.theme.foreground))
             .when(self.tab_drag_in(slot.id), |strip| {
                 strip.child(self.tab_drag_listeners(cx))
@@ -497,19 +499,14 @@ impl HerdrWindow {
             })
     }
 
-    /// Closes a strip's tab as its close button does: split, in its group
-    /// alone; otherwise a page at once and a Herdr tab through its
-    /// confirmation.
+    /// Closes a strip's tab as its close button does: a page at once and a
+    /// Herdr tab through its confirmation.
     pub(crate) fn close_strip_tab(
         &mut self,
-        group: GroupId,
         pick: Pick,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.is_split() {
-            return self.close_in_group(group, vec![pick], window, cx);
-        }
         match pick {
             Pick::Herdr(tab) => self.open_tab_close(&tab, window, cx),
             Pick::Page(id) => self.close_browser_tab(id, window, cx),
@@ -551,7 +548,7 @@ impl HerdrWindow {
                 MouseButton::Middle,
                 cx.listener(move |this, _, window, cx| {
                     cx.stop_propagation();
-                    this.close_strip_tab(slot.id, close.clone(), window, cx);
+                    this.close_strip_tab(close.clone(), window, cx);
                 }),
             )
             .when(shift != 0., |tab| tab.relative().left(px(shift)));
@@ -614,10 +611,10 @@ impl HerdrWindow {
                         });
                     }
                 });
-                window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
+                window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
                     if phase == DispatchPhase::Capture && event.button == MouseButton::Left {
                         view.update(cx, |this, cx| {
-                            if this.release_tab_drag(cx) {
+                            if this.release_tab_drag(window, cx) {
                                 cx.stop_propagation();
                             }
                         });
@@ -661,8 +658,9 @@ impl HerdrWindow {
             }))
     }
 
-    /// Stands in for a tab live in another group, or for nothing. Pressing
-    /// the group, as the button invites, brings the tab here.
+    /// Stands in for a tab the group's connection has not reached yet, or
+    /// for nothing: a group without tabs says how to open one. Pressing the
+    /// group, as the button invites, gives it the window's connection.
     pub(super) fn render_stand_in(
         &self,
         slot: Slot,
@@ -672,7 +670,7 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let (title, note): (SharedString, &str) = match shown {
-            Shown::Elsewhere(Pick::Herdr(tab)) => {
+            Shown::Elsewhere(tab) => {
                 let label = self
                     .live
                     .snapshot
@@ -684,22 +682,13 @@ impl HerdrWindow {
                             .find(|candidate| &candidate.tab_id == tab)
                     })
                     .map_or_else(|| tab.clone(), |tab| tab.label.clone());
-                let note = if self.group_connecting(slot.id) {
-                    "Opening\u{2026}"
-                } else {
-                    "Shown in another group."
-                };
-                (label.into(), note)
-            }
-            Shown::Elsewhere(Pick::Page(id)) => {
-                let title = cx
-                    .try_global::<crate::browser::Store>()
-                    .and_then(|store| store.get(*id))
-                    .map_or_else(String::new, |tab| tab.title.clone());
-                (title.into(), "Shown in another group.")
+                (label.into(), "Opening\u{2026}")
             }
             // A terminal group whose connection has not shown its tab yet.
             Shown::Terminal => ("".into(), "Opening\u{2026}"),
+            Shown::Empty if self.is_split() && self.group_tabs(slot.id, cx).is_empty() => {
+                ("No tabs".into(), NO_TABS)
+            }
             Shown::Page(_) | Shown::Empty => ("".into(), "Nothing to show."),
         };
         let elsewhere = matches!(shown, Shown::Elsewhere(_));
@@ -715,7 +704,7 @@ impl HerdrWindow {
             .items_center()
             .justify_center()
             .gap(px(10.))
-            .bg(rgb(self.theme.background))
+            .bg(self.fill().base(self.theme.background))
             .text_color(rgb(self.theme.muted))
             .when(keyboard, |stand_in| stand_in.track_focus(&self.focus))
             .when(!title.is_empty(), |stand_in| {
@@ -727,7 +716,7 @@ impl HerdrWindow {
                         .child(title),
                 )
             })
-            .child(note)
+            .child(div().max_w(px(360.)).px_4().text_center().child(note))
             // The group in use carries the window's flash, as a page's
             // toolbar and the terminal do.
             .children(
@@ -806,6 +795,16 @@ impl HerdrWindow {
         let share = (self.is_split() || !self.folding_groups().is_empty())
             .then(|| self.group_share(slot.id));
         let opened = self.group_opened(slot.id);
+        // The body's ground, beside the strip rather than under it, so the
+        // strip's own color is no more solid than the rest of the window.
+        let body = div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .bg(self.fill().ground())
+            .child(body);
         let column = div()
             .id(SharedString::from(slot.selector("group")))
             .debug_selector(move || slot.selector("group"))
@@ -830,6 +829,30 @@ impl HerdrWindow {
                 (Some(strip), false) => column.child(strip).child(body),
                 (Some(strip), true) => column.child(body).child(strip),
                 (None, _) => column.child(body),
+            })
+            .child({
+                let drawn = self.browser.group_bounds.clone();
+                canvas(
+                    move |bounds, _, _| {
+                        drawn.borrow_mut().insert(slot.id, bounds);
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full()
+            })
+            // A tab carried over the group lands in it when dropped.
+            .when(self.drop_group() == Some(slot.id), |column| {
+                let accent = crate::menu::accent(&self.theme);
+                column.child(
+                    div()
+                        .debug_selector(move || slot.selector("tab-drop"))
+                        .absolute()
+                        .inset_0()
+                        .border_2()
+                        .border_color(accent)
+                        .bg(accent.opacity(0.12)),
+                )
             });
         div()
             .flex()
@@ -859,16 +882,16 @@ impl HerdrWindow {
             .flex_col()
             .border_l_1()
             .border_color(rgb(self.theme.active))
-            .bg(rgb(self.theme.background))
             .when(self.tab_bar_position() == TabBarPosition::Bottom, |group| {
-                group.justify_end()
+                group.flex_col_reverse()
             })
             .child(
                 div()
                     .flex_none()
                     .h(px(self.tab_strip_height()))
-                    .bg(rgb(self.theme.surface)),
+                    .bg(self.fill().panel(self.theme.surface)),
             )
+            .child(div().flex_1().bg(self.fill().ground()))
             .into_any_element()
     }
 
@@ -921,7 +944,7 @@ impl HerdrWindow {
                         .w(px(5.))
                         .flex()
                         .justify_center()
-                        .bg(rgb(self.theme.background))
+                        .bg(self.fill().ground())
                         .cursor(CursorStyle::ResizeLeftRight)
                         .child(div().w(px(1.)).h_full().bg(rgb(self.theme.active)))
                         .on_drag(DividerDrag(index), |_, _, _, cx| cx.new(|_| EmptyView)),

@@ -22,7 +22,7 @@ fn shortcut_opens_the_dialog_for_the_focused_repository(cx: &mut gpui::TestAppCo
             });
         });
         draw(cx);
-        cx.simulate_keystrokes("cmd-n");
+        cx.simulate_keystrokes(crate::controls::platform_default("cmd-n"));
         cx.update(|_, cx| {
             let menu = &view.read(cx).menu;
             assert_eq!(
@@ -98,7 +98,7 @@ fn shortcut_opens_the_dialog_for_the_focused_repository(cx: &mut gpui::TestAppCo
             });
         });
         draw(cx);
-        cx.simulate_keystrokes("cmd-n");
+        cx.simulate_keystrokes(crate::controls::platform_default("cmd-n"));
         draw(cx);
         cx.update(|_, cx| {
             let view = view.read(cx);

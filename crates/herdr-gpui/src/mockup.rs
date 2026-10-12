@@ -6,7 +6,7 @@
 //! side by side in the app's own theme and fonts, so the design the user
 //! picks is the code that ships, not an HTML approximation of it. The user
 //! picks variants, writes notes, and sends them back to the agent: into its
-//! Herdr pane through the running Herdr GPUI, or else as a file.
+//! Herdr pane through the running Herdr UI, or else as a file.
 //!
 //! The mode never connects to a daemon, answers the control socket, or writes
 //! the user's settings: it only reads them for the first frame's look. "Send

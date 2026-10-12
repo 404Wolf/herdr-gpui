@@ -118,6 +118,11 @@ pub(crate) struct Gateway {
 }
 
 impl Gateway {
+    /// Keep the private SSH config alive until the operation finishes.
+    pub(crate) fn with_command<T>(self, run: impl FnOnce(Command) -> T) -> T {
+        run(self.command)
+    }
+
     pub(crate) fn new(access: &SshAccess, known_hosts: &Path) -> Result<Self> {
         let endpoint = endpoint(
             access.ssh_command.expose_secret(),

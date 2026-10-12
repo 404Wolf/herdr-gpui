@@ -6,11 +6,11 @@ use super::{HerdrWindow, PressedLink};
 use crate::{
     CheckForUpdates, Minimize, PlaySound, RunCommand, ShowHerdrNotDetected, ShowUpdatePreview,
     actions::{RingBellPreview, ShowToastPreview},
-    browser::{Pick, Shown, Slot},
+    browser::{Shown, Slot},
     config::ClipboardToastPosition,
     fonts::StyledFont,
     terminal::*,
-    terminal_painter::{self, ImageTarget, PlacedImages},
+    terminal_painter::{self, Ground, ImageTarget, PlacedImages},
 };
 use gpui::{prelude::*, *};
 use herdr_client::ConnectOptions;
@@ -55,6 +55,9 @@ impl HerdrWindow {
 impl Render for HerdrWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.restore_menu_focus(window, cx);
+        self.sync_backdrop(window, cx);
+        let fill = self.fill();
+        let ground = self.ground();
         self.viewport_width = f32::from(window.viewport_size().width);
         let font = self.config.terminal.font();
         // Parked groups paint with the same face as the window's terminal.
@@ -151,6 +154,7 @@ impl Render for HerdrWindow {
             cell_width,
             cell_height,
             theme: self.theme.clone(),
+            ground,
         };
         if !self.slides_allowed() {
             self.presentation.scroll.clear();
@@ -216,7 +220,7 @@ impl Render for HerdrWindow {
         let terminal_gap = terminal_slot.map_or(sidebar_gap, slot_gap);
         let find_bar = self.render_find_bar(surface.as_deref(), terminal_gap, cx);
         let terminal_note = self.render_terminal_note(surface.as_deref(), terminal_gap, cx);
-        let copy_badge = self.render_copy_mode_badge(surface.as_deref(), terminal_gap);
+        let copy_badge = self.render_copy_mode_badge(surface.as_deref(), terminal_gap, cx);
         let terminal = div()
             .id("terminal")
             .debug_selector(|| "terminal".into())
@@ -262,7 +266,7 @@ impl Render for HerdrWindow {
             .min_h_0()
             .min_w_0()
             .overflow_hidden()
-            .bg(rgb(self.theme.background))
+            .bg(fill.base(self.theme.background))
             .track_focus(&self.focus)
             // Screen readers and selection tools read the rows on screen and
             // the selection among them. The rows are built while GPUI
@@ -335,7 +339,12 @@ impl Render for HerdrWindow {
                     // A press on a link may still turn into a drag across it,
                     // so the selection starts either way; the click that opens
                     // the link is the one that never left its half-cell.
-                    this.begin_selection(event.position, event.click_count, cx);
+                    this.begin_selection(
+                        event.position,
+                        event.click_count,
+                        event.modifiers.shift,
+                        cx,
+                    );
                     if this.pressed_terminal_link.is_some() {
                         cx.stop_propagation();
                         return;
@@ -454,6 +463,7 @@ impl Render for HerdrWindow {
                                         &surface.frame,
                                         bounds.origin,
                                         Some(bounds.size),
+                                        ground,
                                         cell_width,
                                         &font,
                                         &highlights,
@@ -504,6 +514,7 @@ impl Render for HerdrWindow {
                                         &popup.frame,
                                         bounds.origin + offset,
                                         None,
+                                        Ground::Opaque,
                                         cell_width,
                                         &font,
                                         &popup_highlights,
@@ -653,19 +664,17 @@ impl Render for HerdrWindow {
                 (Shown::Page(_), Some(tab)) => {
                     self.render_browser(slot, &tab, gap, owns_keyboard, cx)
                 }
-                (Shown::Elsewhere(Pick::Herdr(tab)), _) => {
-                    match self.live_frame_of(tab, window_frame.clone()) {
-                        Some(frame) => self.render_terminal_mirror(
-                            slot,
-                            gap,
-                            Some(frame),
-                            parked_font.clone(),
-                            cell_height,
-                            cx,
-                        ),
-                        None => self.render_stand_in(slot, &shown, gap, owns_keyboard, cx),
-                    }
-                }
+                (Shown::Elsewhere(tab), _) => match self.live_frame_of(tab, window_frame.clone()) {
+                    Some(frame) => self.render_terminal_mirror(
+                        slot,
+                        gap,
+                        Some(frame),
+                        parked_font.clone(),
+                        cell_height,
+                        cx,
+                    ),
+                    None => self.render_stand_in(slot, &shown, gap, owns_keyboard, cx),
+                },
                 _ => self.render_stand_in(slot, &shown, gap, owns_keyboard, cx),
             };
             let ends = merged.then(|| crate::titlebar::Ends::of(slot.index, count));
@@ -784,7 +793,7 @@ impl Render for HerdrWindow {
             .relative()
             .flex()
             .flex_col()
-            .bg(rgb(self.theme.background))
+            .map(|root| self.with_backdrop(root))
             .text_color(rgb(self.theme.foreground))
             .text_font(&self.config.ui)
             .text_size(px(self.config.ui.size))

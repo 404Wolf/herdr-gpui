@@ -101,7 +101,7 @@ impl HerdrWindow {
         let width = SidebarMode::Rail
             .width(None, f32::from(window.viewport_size().width))
             .unwrap_or(0.);
-        let look = layout::for_config(&self.config);
+        let look = layout::for_config(&self.config, self.fill());
         let font = &self.config.sidebar;
         let theme = &self.theme;
         let hint = Hint::new(theme);
@@ -377,7 +377,7 @@ impl HerdrWindow {
             .text_size(px(font.size))
             .line_height(px(line_height(font)))
             .text_color(rgb(theme.foreground))
-            .bg(rgb(theme.sidebar_background()))
+            .bg(self.fill().panel(theme.sidebar_background()))
             .border_r_1()
             .border_color(rgb(theme.active))
             // No expand control of its own: the title bar's sidebar toggle,

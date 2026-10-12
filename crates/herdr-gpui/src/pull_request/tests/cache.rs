@@ -1,6 +1,8 @@
 use super::*;
 use crate::pull_request::cache::{CACHE_LIMIT, ERROR_BACKOFF, REFRESH};
 
+mod missing;
+
 fn input(branch: &str) -> Input {
     Input {
         checkout: None,

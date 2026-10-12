@@ -13,6 +13,15 @@ pub(crate) fn local_path() -> OsString {
     }
     let inherited = std::env::var_os("PATH").unwrap_or_default();
     dirs.extend(std::env::split_paths(&inherited));
+    // launchd's `PATH` stops at `/usr/bin:/bin`; system tools such as `lsof`,
+    // which the Tailscale CLI runs on macOS, live in the `sbin` directories.
+    if cfg!(unix) {
+        for system in ["/usr/sbin", "/sbin"].map(PathBuf::from) {
+            if !dirs.contains(&system) {
+                dirs.push(system);
+            }
+        }
+    }
     std::env::join_paths(dirs).unwrap_or(inherited)
 }
 
@@ -24,5 +33,14 @@ mod tests {
             std::env::split_paths(&super::local_path())
                 .any(|path| path == std::path::Path::new("/opt/homebrew/bin"))
         );
+    }
+
+    #[test]
+    fn fallback_includes_system_tools_once() {
+        let path: Vec<_> = std::env::split_paths(&super::local_path()).collect();
+        for system in ["/usr/sbin", "/sbin"] {
+            let system = std::path::Path::new(system);
+            assert_eq!(path.iter().filter(|dir| *dir == system).count(), 1);
+        }
     }
 }

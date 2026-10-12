@@ -5,6 +5,7 @@ use gpui::{prelude::*, *};
 use std::sync::{Arc, LazyLock};
 
 pub(super) const WEBSITE: &str = "https://herdr.dev/";
+const HOMEPAGE: &str = "https://herdrui.dev/";
 pub(super) const REPOSITORY: &str = "https://github.com/penso/herdr-gpui";
 const COPYRIGHT_YEAR: &str = "© 2026";
 const AUTHOR: &str = "Fabien Penso";
@@ -85,6 +86,7 @@ impl HerdrWindow {
                     .items_center()
                     .gap(px(16.))
                     .pt(px(10.))
+                    .child(self.about_link("about-homepage", "Website", HOMEPAGE))
                     .child(self.about_link("about-website", "herdr.dev", WEBSITE))
                     .child(self.about_link("about-repository", "GitHub", REPOSITORY)),
             )
@@ -258,6 +260,7 @@ mod tests {
             );
 
             for (selector, url) in [
+                ("about-homepage", HOMEPAGE.to_owned()),
                 ("about-website", WEBSITE.to_owned()),
                 ("about-repository", REPOSITORY.to_owned()),
                 ("about-author", "https://pen.so".to_owned()),

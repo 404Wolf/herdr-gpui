@@ -120,3 +120,83 @@ fn resize_reasks_when_the_daemon_frame_is_a_different_size(cx: &mut gpui::TestAp
         );
     });
 }
+
+#[gpui::test]
+fn a_full_command_queue_is_retried_without_a_status_error(cx: &mut gpui::TestAppContext) {
+    use herdr_client::Stream;
+    use std::time::{Duration, Instant};
+
+    let (view, cx) = cx.add_window_view(|window, cx| {
+        HerdrWindow::new(
+            ConnectTarget::Socket("/unused-resize-test.sock".into()),
+            window,
+            cx,
+            true,
+        )
+    });
+    view.update(cx, |view, _| {
+        // Nothing drains the queue until the gate opens and the worker connects.
+        let (stream, _server) =
+            Stream::pair().unwrap_or_else(|error| panic!("cannot create stream pair: {error}"));
+        let (open, gate) = std::sync::mpsc::channel::<()>();
+        let client = herdr_client::connect_with_connector(
+            view.endpoints[view.selected_endpoint]
+                .connection
+                .target
+                .clone(),
+            view.options,
+            true,
+            move |_, _| {
+                let _ = gate.recv();
+                Ok(stream)
+            },
+        )
+        .unwrap_or_else(|error| panic!("cannot create test client: {error}"));
+        let boot = view
+            .live
+            .snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.boot_id.clone())
+            .unwrap_or_else(|| panic!("the test window has a snapshot"));
+        while client.handle.set_focus(&boot, true).is_ok() {}
+        assert!(matches!(
+            client.handle.set_focus(&boot, true),
+            Err(herdr_client::Error::Full)
+        ));
+        view.endpoints[view.selected_endpoint].connection.handle = Some(client.handle.clone());
+        let queued = view.options;
+        view.last_queued_options = Some(queued);
+        let start = Instant::now();
+        view.options.surface_size.cols += 1;
+        view.resize_at(start);
+        view.resize_at(start + super::lifecycle::RESIZE_SETTLE);
+        assert!(
+            view.local_error.is_none(),
+            "backpressure is not reported: {:?}",
+            view.local_error
+        );
+        assert_eq!(
+            view.last_queued_options,
+            Some(queued),
+            "unqueued options stay pending for the next retry"
+        );
+
+        // The worker connects and drains the backlog (no welcome yet, so it
+        // rejects each command); the next resize then goes out.
+        open.send(())
+            .unwrap_or_else(|error| panic!("the connector is gone: {error}"));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while view.last_queued_options != Some(view.options) {
+            assert!(Instant::now() < deadline, "the resize was never retried");
+            while client.events.try_recv().is_ok() {}
+            std::thread::sleep(Duration::from_millis(1));
+            view.resize_at(start + super::lifecycle::RESIZE_SETTLE);
+        }
+        assert!(
+            view.local_error.is_none(),
+            "a retried resize leaves no status error: {:?}",
+            view.local_error
+        );
+        client.handle.disconnect();
+    });
+}

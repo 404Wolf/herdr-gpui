@@ -65,6 +65,8 @@ mod status_bar;
 #[cfg(test)]
 mod sticky_hosts;
 #[cfg(test)]
+mod superset_badges;
+#[cfg(test)]
 mod superset_dots;
 #[cfg(test)]
 mod text_width;
@@ -454,6 +456,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         app_update_notes: Default::default(),
         app_update_notes_scroll: gpui::ScrollHandle::new(),
         removal: None,
+        merged_cleanup: Default::default(),
         worktree_script: None,
         editor_open: None,
         editor_panes: Vec::new(),
@@ -566,6 +569,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
             std::time::SystemTime::now(),
         ),
         painter: Default::default(),
+        backdrop: Default::default(),
         regions: Vec::new(),
         marked: String::new(),
         marked_selection: None,

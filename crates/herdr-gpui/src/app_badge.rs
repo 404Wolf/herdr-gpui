@@ -39,6 +39,7 @@ struct Badge {
     windows: HashMap<WindowId, Contribution>,
     published: Option<usize>,
     preview: bool,
+    permission_requested: bool,
 }
 
 impl Global for Badge {}
@@ -72,6 +73,12 @@ impl Badge {
             .count()
             .max(if self.preview { 2 } else { 0 });
         if self.published != Some(count) {
+            // Asked on the first badge rather than at launch, so an app that
+            // never needs attention never prompts.
+            if count > 0 && !self.permission_requested {
+                self.permission_requested = true;
+                request_permission();
+            }
             set_native(count);
             self.published = Some(count);
         }
@@ -138,6 +145,50 @@ fn set_native(count: usize) {
 // Headless tests must never initialize AppKit or change the test runner's Dock icon.
 #[cfg(test)]
 fn set_native(_: usize) {}
+
+/// Once an app is registered with the notification center, macOS hides its
+/// Dock badge unless the badge option was authorized. GPUI requests only alert
+/// and sound when it posts a system notification, so the badge label would be
+/// set but never drawn. This request asks for the union: whichever request
+/// macOS answers first decides the permission, and a later request with other
+/// options is not prompted for again.
+#[cfg(not(test))]
+fn request_permission() {
+    use block2::RcBlock;
+    use objc2::runtime::Bool;
+    use objc2_foundation::{NSBundle, NSError};
+    use objc2_user_notifications::{UNAuthorizationOptions, UNUserNotificationCenter};
+
+    // The notification center aborts the process outside an app bundle,
+    // which is how `cargo run` builds start.
+    if NSBundle::mainBundle().bundleIdentifier().is_none() {
+        return;
+    }
+    // Runs on a notification-center queue, not the UI thread.
+    let completion = RcBlock::new(|granted: Bool, _: *mut NSError| {
+        if !granted.as_bool() {
+            tracing::info!("Dock badge permission was not granted");
+        }
+    });
+    UNUserNotificationCenter::currentNotificationCenter()
+        .requestAuthorizationWithOptions_completionHandler(
+            UNAuthorizationOptions::Alert
+                | UNAuthorizationOptions::Sound
+                | UNAuthorizationOptions::Badge,
+            &completion,
+        );
+}
+
+#[cfg(test)]
+thread_local! {
+    static PERMISSION_REQUESTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+// Headless tests must never register the test runner with the notification center.
+#[cfg(test)]
+fn request_permission() {
+    PERMISSION_REQUESTS.set(PERMISSION_REQUESTS.get() + 1);
+}
 
 #[cfg(all(target_os = "macos", feature = "integration-test"))]
 pub(super) fn verify_native() -> anyhow::Result<()> {

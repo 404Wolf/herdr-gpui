@@ -16,6 +16,10 @@ class CiChanges(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.git("init", "-q")
+        # Auto maintenance detaches a gc that can still be writing to .git
+        # when the directory is removed, failing cleanup.
+        self.git("config", "gc.auto", "0")
+        self.git("config", "maintenance.auto", "false")
         self.git("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
                  "commit", "--allow-empty", "-qm", "initial")
         self.base = self.git("rev-parse", "HEAD").strip()

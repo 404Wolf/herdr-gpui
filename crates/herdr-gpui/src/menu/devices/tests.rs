@@ -14,6 +14,8 @@ use std::sync::Arc;
 
 #[cfg(feature = "cloud")]
 mod cloud_providers;
+mod host_key;
+mod key_login;
 mod local_network;
 
 #[test]
@@ -25,6 +27,10 @@ fn only_a_present_herdr_is_saved_without_a_terminal() {
     assert_eq!(
         Offer::for_probe(HostProbe::SshFailed(herdr_client::SshFailure::HostKey)),
         Some(Offer::Terminal)
+    );
+    assert_eq!(
+        Offer::for_probe(HostProbe::SshFailed(herdr_client::SshFailure::Auth)),
+        Some(Offer::InstallKey)
     );
     assert_eq!(
         Offer::Install.question("dev@box"),
@@ -70,9 +76,10 @@ fn install_needs_a_connected_local_daemon(cx: &mut gpui::TestAppContext) {
         view.update(cx, |view, cx| {
             let request = setup::Request::new("dev@box", "Box", "").unwrap();
             view.endpoints[0].live.status = ConnectionStatus::Disconnected;
-            open_form(view, Step::Verifying(request), cx);
-            view.setup_space_verified(Ok(setup::Claim::fixture("disconnected.test")), cx);
-            assert!(matches!(step(view), Step::Confirm(_, Offer::Terminal)));
+            open_form(view, Step::Verifying(request, Offer::Install), cx);
+            view.setup_space_verified(Ok(setup::Claim::fixture("disconnected.test")), None, cx);
+            // The same offer stays, so trying again does what was accepted.
+            assert!(matches!(step(view), Step::Confirm(_, Offer::Install)));
             // The claim stays with the dialog for a retry.
             assert!(view.menu.device_setup.as_ref().unwrap().claim.is_some());
             assert!(
@@ -161,8 +168,8 @@ fn a_host_already_saved_or_being_added_returns_to_the_form(cx: &mut gpui::TestAp
                 assert!(matches!(step(view), Step::Form));
                 assert_eq!(view.menu.error.as_deref(), Some(message));
             }
-            open_form(view, Step::Verifying(again.clone()), cx);
-            view.setup_space_verified(Err(crate::Error::DeviceExists("m5max-ms".into())), cx);
+            open_form(view, Step::Verifying(again.clone(), Offer::Install), cx);
+            view.setup_space_verified(Err(crate::Error::DeviceExists("m5max-ms".into())), None, cx);
             assert!(matches!(step(view), Step::Form));
         });
     });
@@ -184,6 +191,7 @@ fn created_space_runs_setup_in_its_root_pane(cx: &mut gpui::TestAppContext) {
             request,
             boot,
             command: "'herdr' 'machine' 'add'".into(),
+            offer: Offer::Terminal,
         }
     };
     cx.update(|window, cx| {

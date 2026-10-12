@@ -7,11 +7,15 @@
 mod coder;
 #[cfg(feature = "daytona")]
 mod daytona;
+#[cfg(feature = "railway")]
+mod railway;
 
 #[cfg(feature = "coder")]
 pub(super) use coder::CoderCard;
 #[cfg(feature = "daytona")]
 pub(super) use daytona::DaytonaCard;
+#[cfg(feature = "railway")]
+pub(super) use railway::RailwayCard;
 
 use super::SettingsWindow;
 use crate::{
@@ -21,10 +25,13 @@ use crate::{
 };
 use gpui::{prelude::*, *};
 
-/// Open Settings on `provider`'s tab, for the device picker's row that sets
-/// that provider up.
-#[cfg(feature = "daytona")]
-pub(crate) fn open(source: WeakEntity<crate::HerdrWindow>, provider: CloudProvider, cx: &mut App) {
+/// Open Settings > Cloud Devices, on `provider`'s tab when the device picker's
+/// row sets that provider up, or on the first tab for its general row.
+pub(crate) fn open(
+    source: WeakEntity<crate::HerdrWindow>,
+    provider: Option<CloudProvider>,
+    cx: &mut App,
+) {
     super::open(source, cx);
     // Queued after `open`'s own deferred work, so the window exists by now.
     cx.defer(move |cx| {
@@ -32,7 +39,9 @@ pub(crate) fn open(source: WeakEntity<crate::HerdrWindow>, provider: CloudProvid
             return;
         };
         let _ = handle.update(cx, |view, window, cx| {
-            view.cloud_tab = provider;
+            if let Some(provider) = provider {
+                view.cloud_tab = provider;
+            }
             view.select_section(super::Section::CloudDevices, window, cx);
         });
     });
@@ -66,6 +75,7 @@ fn input(
 /// Follow a reloaded config in a card's inputs: a field still showing what
 /// was loaded last takes the new value, and one the user has edited keeps the
 /// edit, so a later Save neither writes stale values back nor drops typing.
+#[cfg(any(feature = "coder", feature = "daytona"))]
 fn follow_config<const N: usize>(
     inputs: &[Entity<SearchInput>; N],
     previous: [&str; N],
@@ -94,6 +104,8 @@ impl SettingsWindow {
                 CloudProvider::Coder => self.open_coder_card(cx),
                 #[cfg(feature = "daytona")]
                 CloudProvider::Daytona => self.open_daytona_card(cx),
+                #[cfg(feature = "railway")]
+                CloudProvider::Railway => self.open_railway_card(cx),
             }
         }
     }
@@ -107,6 +119,8 @@ impl SettingsWindow {
                 CloudProvider::Coder => self.coder_config_changed(cx),
                 #[cfg(feature = "daytona")]
                 CloudProvider::Daytona => self.daytona_config_changed(cx),
+                #[cfg(feature = "railway")]
+                CloudProvider::Railway => self.railway_config_changed(cx),
             }
         }
     }
@@ -153,6 +167,8 @@ impl SettingsWindow {
             CloudProvider::Coder => self.render_coder_card(cx),
             #[cfg(feature = "daytona")]
             CloudProvider::Daytona => self.render_daytona_card(cx),
+            #[cfg(feature = "railway")]
+            CloudProvider::Railway => self.render_railway_card(cx),
         };
         div()
             .flex()
@@ -208,16 +224,17 @@ impl SettingsWindow {
 
     /// A saved device with its Remove button; removal leaves the machine
     /// itself untouched at the provider.
+    #[cfg(any(feature = "coder", feature = "daytona", feature = "railway"))]
     fn cloud_device_row(
         &self,
-        provider: CloudProvider,
         index: usize,
         device: &crate::cloud::SavedDevice,
+        detail: String,
         ready: bool,
         forget: impl Fn(&mut Self, String, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>,
     ) -> Div {
-        let key = provider.key();
+        let key = device.provider.key();
         let id = device.id.clone();
         div()
             .flex()
@@ -232,7 +249,7 @@ impl SettingsWindow {
                         div()
                             .truncate()
                             .text_color(rgb(self.theme.muted))
-                            .child(format!("{} · {}", device.machine, device.session)),
+                            .child(detail),
                     ),
             )
             .child(

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for looking at Herdr GPUI. This file covers the mechanics; the
+Thanks for looking at Herdr UI. This file covers the mechanics; the
 engineering rules that actually govern changes live in
 [AGENTS.md](AGENTS.md) — architecture boundaries, Rust conventions, and
 verification expectations. Read it before a non-trivial change. It applies to

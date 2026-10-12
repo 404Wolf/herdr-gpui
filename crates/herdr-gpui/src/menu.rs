@@ -15,6 +15,9 @@ mod pr;
 mod pr_actions;
 mod sessions;
 mod settings;
+mod shortcut_editor;
+#[cfg(all(feature = "integration-test", target_os = "linux"))]
+pub(crate) use shortcut_editor::verify_native as verify_shortcut_editor;
 mod state;
 mod teleport;
 mod version_mismatch;
@@ -24,6 +27,7 @@ mod workspace_close;
 mod worktree_note;
 mod worktree_open;
 mod worktree_render;
+mod worktree_shortcut;
 mod worktree_source;
 
 #[cfg(test)]
@@ -47,6 +51,7 @@ pub(crate) use {
     page::{Page, WorkspaceAction},
     state::{MenuState, Removal},
     version_mismatch::Notice as VersionNotice,
+    worktree_shortcut::WorktreeShortcut,
     worktree_source::WorktreeSource,
 };
 
@@ -89,7 +94,7 @@ const MENU_MARGIN: f32 = 8.;
 
 /// Daemon failures arrive as an open envelope. Keep the code so callers can
 /// classify the refusal, and the message for display.
-fn endpoint_error(error: &serde_json::Value) -> (&str, &str) {
+pub(crate) fn endpoint_error(error: &serde_json::Value) -> (&str, &str) {
     (
         error["code"].as_str().unwrap_or("endpoint_error"),
         error["message"].as_str().unwrap_or("Invalid daemon error"),

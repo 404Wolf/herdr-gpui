@@ -4,6 +4,18 @@ use super::graphics::CellSeparator;
 use gpui::{Bounds, Pixels, Point, Size, Window, size};
 use herdr_client::protocol::FrameData;
 
+/// What a frame's cells on the theme's default background paint.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Ground {
+    /// The theme's background, as in an opaque window, and always for a
+    /// popup, whose cells must hide the pane beneath.
+    #[default]
+    Opaque,
+    /// Nothing: the window's translucent backdrop is already that color, and
+    /// painting it again would stack its alpha.
+    Backdrop,
+}
+
 pub(super) fn background_extent(
     grid: Size<Pixels>,
     available: Size<Pixels>,

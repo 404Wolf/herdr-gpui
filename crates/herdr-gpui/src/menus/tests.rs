@@ -158,11 +158,12 @@ fn edit_menu_carries_standard_items_and_shortcut_labels(cx: &mut gpui::TestAppCo
         .find(|menu| menu.name.as_ref() == "Edit")
         .unwrap()
         .items;
+    let [cut, copy, paste, select_all] = crate::actions::EDIT_KEYS;
     let expected = [
-        ("Cut", OsAction::Cut, "cmd-x"),
-        ("Copy", OsAction::Copy, "cmd-c"),
-        ("Paste", OsAction::Paste, "cmd-v"),
-        ("Select All", OsAction::SelectAll, "cmd-a"),
+        ("Cut", OsAction::Cut, cut),
+        ("Copy", OsAction::Copy, copy),
+        ("Paste", OsAction::Paste, paste),
+        ("Select All", OsAction::SelectAll, select_all),
     ];
     let actions: Vec<_> = items
         .iter()

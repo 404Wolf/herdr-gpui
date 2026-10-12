@@ -9,6 +9,7 @@ pub(crate) use self::area::{Layer, Part, Span, cell_ranges, clip, covers};
 use self::glyphs::GlyphCache;
 pub(crate) use self::graphics::CellSeparator;
 use self::graphics::Graphic;
+pub(crate) use self::grid::Ground;
 use self::grid::{background_extent, grid_corners, grid_rect, last_row_has_separator};
 use self::images::{ImageCache, ImageGeometry, below_text};
 pub(crate) use self::images::{ImageTarget, PlacedImages};
@@ -224,11 +225,13 @@ fn paint_glyphs(
     Ok(())
 }
 
+/// Runs of one background in `columns`: start, end, color, and whether it is
+/// the theme's default rather than a color the program chose.
 fn background_spans<'a>(
     row: &'a [CellData],
     columns: std::ops::Range<usize>,
     theme: &'a Theme,
-) -> impl Iterator<Item = (usize, usize, u32)> + 'a {
+) -> impl Iterator<Item = (usize, usize, u32, bool)> + 'a {
     // A wide glyph's continuation cell shows the glyph's background, as a host
     // terminal does: Herdr's ANSI renderer never draws that cell, so its own
     // background is not meant to be seen. Like that renderer, a halfwidth
@@ -251,18 +254,21 @@ fn background_spans<'a>(
         } else {
             x
         };
-        cell_colors(&row[x], theme).1
+        (
+            cell_colors(&row[x], theme).1,
+            on_default_background(&row[x]),
+        )
     };
     let mut start = columns.start;
     let stop = columns.end.min(row.len());
     std::iter::from_fn(move || {
         (start < stop).then_some(())?;
-        let color = bg(start);
+        let (color, default) = bg(start);
         let mut end = start + 1;
-        while end < stop && bg(end) == color {
+        while end < stop && bg(end) == (color, default) {
             end += 1;
         }
-        let span = (start, end, color);
+        let span = (start, end, color, default);
         start = end;
         Some(span)
     })
@@ -323,20 +329,12 @@ impl TerminalPainter {
     /// Glyphs for one cell symbol. Color is left to `paint_glyphs`, so one
     /// shape serves every color the symbol is drawn in.
     fn shape(&self, font: &Font, style: usize, symbol: &str, window: &Window) -> ShapedLine {
-        let mut font = font.clone();
-        let modifier = glyphs::style_modifier(style);
-        if modifier & BOLD != 0 {
-            font.weight = FontWeight::BOLD;
-        }
-        if modifier & ITALIC != 0 {
-            font.style = FontStyle::Italic;
-        }
         window.text_system().shape_line(
             SharedString::from(symbol.to_owned()),
             px(self.font_size),
             &[TextRun {
                 len: symbol.len(),
-                font,
+                font: glyphs::styled_font(font, style),
                 color: Hsla::default(),
                 background_color: None,
                 underline: None,
@@ -452,6 +450,7 @@ impl TerminalPainter {
         frame: &FrameData,
         origin: Point<Pixels>,
         available: Option<Size<Pixels>>,
+        ground: Ground,
         cell_width: f32,
         font: &Font,
         highlights: &[Highlight],
@@ -501,6 +500,10 @@ impl TerminalPainter {
             }
         };
         let draws = |layer| part.is_none_or(|part| part.layer == layer);
+        // Over a backdrop a hidden cell's background is not painted, so its
+        // glyphs, graphics, and decorations, drawn in that color, would show.
+        let shows_through =
+            |cell: &CellData| ground == Ground::Backdrop && cell.modifier & HIDDEN != 0;
         // The daemon's cell scrollbar is replaced by the pixel thumb painted below.
         let bars: Vec<SurfaceRect> = panes.iter().filter_map(|p| p.scrollbar_rect).collect();
         let in_bar = |index: usize| {
@@ -561,13 +564,22 @@ impl TerminalPainter {
                             counts.quads += 1;
                         }
                     };
+                    // Over a backdrop the ground is the theme's default; a
+                    // color the program chose stays solid, even that one.
+                    let shown = |default: bool| ground == Ground::Opaque || !default;
                     if cached {
-                        for (start, end, color) in background_spans(row, columns, &self.theme) {
-                            paint(start, end, color);
+                        for (start, end, color, default) in
+                            background_spans(row, columns, &self.theme)
+                        {
+                            if shown(default) {
+                                paint(start, end, color);
+                            }
                         }
                     } else {
                         for x in columns {
-                            paint(x, x + 1, cell_colors(&row[x], &self.theme).1);
+                            if shown(on_default_background(&row[x])) {
+                                paint(x, x + 1, cell_colors(&row[x], &self.theme).1);
+                            }
                         }
                     }
                 }
@@ -609,6 +621,7 @@ impl TerminalPainter {
                         font,
                         cached,
                         &in_bar,
+                        &shows_through,
                         window,
                         #[cfg(feature = "integration-test")]
                         &mut counts,
@@ -627,6 +640,7 @@ impl TerminalPainter {
                     font,
                     cached,
                     &in_bar,
+                    &shows_through,
                     window,
                     #[cfg(feature = "integration-test")]
                     &mut counts,
@@ -640,7 +654,9 @@ impl TerminalPainter {
                 // and wide-glyph continuation cells.
                 for index in cell_ranges(frame, area).flatten() {
                     let cell = &frame.cells[index];
-                    if in_bar(index) {
+                    // Hidden cells draw in their background's color, which
+                    // over a backdrop's skipped quad would show.
+                    if in_bar(index) || shows_through(cell) {
                         continue;
                     }
                     let position = origin
@@ -815,6 +831,7 @@ impl TerminalPainter {
         font: &Font,
         cached: bool,
         in_bar: &impl Fn(usize) -> bool,
+        shows_through: &impl Fn(&CellData) -> bool,
         window: &mut Window,
         #[cfg(feature = "integration-test")] counts: &mut crate::performance::Counts,
     ) -> u64 {
@@ -824,6 +841,7 @@ impl TerminalPainter {
             if cell.skip
                 || cell.symbol.is_empty()
                 || cell.symbol == " "
+                || shows_through(cell)
                 || in_bar(index)
                 || Graphic::from_symbol(&cell.symbol).is_some()
             {

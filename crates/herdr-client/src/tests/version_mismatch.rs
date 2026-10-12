@@ -66,7 +66,7 @@ fn generation_says_which_side_is_older_even_in_a_rejection() {
             server_version: Some("0.8.2".into())
         })
     );
-    assert!(newer.to_string().contains("update Herdr GPUI"));
+    assert!(newer.to_string().contains("update Herdr UI"));
 }
 
 #[test]

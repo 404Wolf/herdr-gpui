@@ -16,7 +16,7 @@ Engineering guidance for agents working in this repository. Read this alongside
 
 ## Architecture
 
-Herdr GPUI is a native client of an existing local Herdr daemon, not a terminal
+Herdr UI is a native client of an existing local Herdr daemon, not a terminal
 emulator, server, or TUI wrapper. Herdr owns terminal processes and session state.
 Closing or detaching the GUI must leave the daemon and its terminals running.
 

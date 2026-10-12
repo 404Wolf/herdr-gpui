@@ -9,7 +9,7 @@ use crate::{
     controls::{self, Command},
     endpoint::Step,
     log_window,
-    menu::WorkspaceAction,
+    menu::{WorkspaceAction, WorktreeShortcut},
     navigation::{NavigationTarget, OwnedNavigationTarget},
     open_additional_window, state,
 };
@@ -305,6 +305,15 @@ impl HerdrWindow {
                 self.open_new_worktree(window, cx);
                 return;
             }
+            Command::OpenWorktree | Command::RemoveWorktree => {
+                let shortcut = if command == Command::OpenWorktree {
+                    WorktreeShortcut::Open
+                } else {
+                    WorktreeShortcut::Remove
+                };
+                self.open_worktree_shortcut(shortcut, window, cx);
+                return;
+            }
             Command::WorktreeNotes => {
                 self.open_palette(crate::palette::Filter::Notes, window, cx);
                 return;
@@ -432,6 +441,10 @@ impl HerdrWindow {
             }
             Command::RenamePane => {
                 self.rename_focused_pane(window, cx);
+                return;
+            }
+            Command::MovePane => {
+                self.move_focused_pane(window, cx);
                 return;
             }
             Command::RenameWorkspace | Command::CloseWorkspace => {

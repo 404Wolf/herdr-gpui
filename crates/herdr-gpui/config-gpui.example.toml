@@ -1,5 +1,5 @@
 # DO NOT EDIT -- WILL BE OVERWRITTEN
-# Managed Herdr GPUI defaults, refreshed on startup and GUI config reload.
+# Managed Herdr UI defaults, refreshed on startup and GUI config reload.
 # Put your overrides in config-gpui.local.toml beside this file.
 # Herdr GUI settings. Independent of the daemon config, except where a setting
 # below says it starts from one the daemon config already carries.
@@ -36,6 +36,15 @@ confirm_close_tab = true
 # Ask before closing a pane, independently of tabs. The dialog's "Do not ask
 # again" checkbox sets this to false in config-gpui.local.toml.
 confirm_close_pane = true
+# Ask before closing a workspace from its menu. When false, the close goes out
+# as soon as its Git check finishes, unless it finds uncommitted files or
+# unpushed commits, which always ask.
+confirm_close_workspace = true
+# Remove a linked worktree, and close its workspace, once its pull request is
+# merged, without asking. Only on this machine's daemon, and only when the
+# checkout has no uncommitted or untracked files and sits at the merged head
+# commit. The focused workspace asks first. The branch is kept.
+remove_merged_worktrees = false
 # Show the Agents section below Spaces in the sidebar.
 show_agents = true
 # Show the search field at the top of the sidebar, which finds devices,
@@ -157,9 +166,18 @@ project_roots = []
 # Native shortcuts. Each key is a command; the value is one keystroke or a list,
 # primary first. "" or [] unbinds it. Assigning a keystroke here takes it away
 # from its default command. Modifiers: cmd (super on Linux), ctrl, alt, shift,
-# fn; keystrokes need at least one of cmd, ctrl, alt, or fn.
+# fn; keystrokes need at least one of cmd, ctrl, alt, or fn, or a function key
+# F1 through F24. Herdr > Keyboard Shortcuts also edits, unbinds, and resets them.
 # Herdr's own [keys] in config.toml (prefix chords included) add to these
 # defaults; a command named here keeps only the keystrokes listed here.
+# The examples below use the macOS defaults. Linux has its own Ctrl+Shift
+# defaults (not Super): new_tab = "ctrl-shift-t", new_window = "ctrl-alt-n",
+# new_workspace = "ctrl-alt-shift-n", new_worktree = "ctrl-shift-n",
+# split_right = "ctrl-shift-d", split_down = "ctrl-alt-shift-d",
+# command_palette = "ctrl-shift-p", toggle_full_screen = "f11".
+# See Keyboard Shortcuts for the full platform-specific list. Explicit values
+# are used literally on every platform; cmd is not translated to Ctrl+Shift.
+# Ctrl+Shift+U is left to GNOME/IBus Unicode character entry.
 # [keybindings]
 # new_tab = "cmd-t"
 # new_workspace = "cmd-shift-n"
@@ -271,6 +289,12 @@ size = 14
 # is 20 logical pixels at size 14. Lower it for tighter rows. Only [terminal]
 # takes this key.
 # line_height = 1.3
+# Weight of regular text: a name (thin, extralight, light, regular, medium,
+# semibold, bold, extrabold, black) or a number from 100 to 900. Default
+# regular. Bold text draws 300 heavier, at least bold. A weight the family has
+# no face for draws at its nearest one, and on macOS is reported. Only
+# [terminal] takes this key.
+# weight = "medium"
 
 [ui]
 # Default: ".SystemUIFont" on macOS and Windows, "DejaVu Sans" on Linux (or an installed
@@ -351,6 +375,19 @@ size = 12
 # Same meaning as [github] allow_plaintext_credentials, for the API key, which
 # is saved in its own 0600 daytona-api-key file. Default is false.
 # allow_plaintext_credentials = false
+
+# What shows behind the main window, also under Settings > Appearance. At the
+# default opacity the window paints as it always has.
+# [backdrop]
+# How solid the theme's background is, from 0 (clear) to 1 (opaque). Terminal
+# colors a program chooses, popups, and dialogs stay opaque.
+# opacity = 1.0
+# Blur the desktop behind a translucent window: macOS, Windows, and Wayland
+# compositors with KDE's blur protocol.
+# blur = false
+# A picture behind the window, absolute or under ~/. The window stays opaque
+# over it; lower opacity shows more of it.
+# image = "~/Pictures/wallpaper.jpg"
 
 # What the status bar shows, also under Settings > Status bar. Whether usage
 # and CPU/memory show at all is [usage] show and show_system_load.

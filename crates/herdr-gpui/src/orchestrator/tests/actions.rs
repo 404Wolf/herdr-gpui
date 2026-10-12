@@ -4,16 +4,24 @@ use crate::teleport::{AgentKind, Host};
 use herdr_client::ConnectTarget;
 use std::{os::unix::fs::PermissionsExt, path::Path, process::Command, sync::atomic::AtomicBool};
 
+mod agent_name;
+mod parent;
+
 /// A home whose `herdr` logs each call and answers as Herdr would. A call
-/// whose arguments contain `$FAIL` exits 1.
+/// whose arguments contain `$FAIL` exits 1. Its snapshot is `$HOME/snapshot`
+/// when written, else one where `w1` is the repository's parent workspace.
 fn fake_home(dir: &Path, fail: &str) -> Host {
     let bin = dir.join("home/.local/bin");
     std::fs::create_dir_all(&bin).unwrap();
+    let snapshot = snapshot(&[("w1", false)]);
     let script = format!(
         r#"#!/bin/sh
 printf '%s\n' "$*" >> "$HOME/calls"
 if [ -n "{fail}" ]; then case "$*" in *"{fail}"*) exit 1 ;; esac; fi
 case "$1 $2" in
+  "api snapshot")
+    if [ -f "$HOME/snapshot" ]; then cat "$HOME/snapshot"; else printf '%s' '{snapshot}'; fi ;;
+  "workspace create") printf '%s' '{{"result":{{"workspace":{{"workspace_id":"w0"}}}}}}' ;;
   "worktree create") printf '%s' '{{"result":{{"workspace":{{"workspace_id":"w9"}},"tab":{{"tab_id":"t9"}},"root_pane":{{"pane_id":"p9"}},"worktree":{{"path":"/tmp/wt/377-icons"}}}}}}' ;;
 esac
 "#
@@ -26,6 +34,31 @@ esac
         dir.join("home").to_string_lossy().into_owned(),
     )];
     host
+}
+
+/// `herdr api snapshot` output with each `(workspace, linked)` a checkout of
+/// one repository.
+fn snapshot(workspaces: &[(&str, bool)]) -> String {
+    let workspaces: Vec<_> = workspaces
+        .iter()
+        .map(|(id, linked)| {
+            serde_json::json!({
+                "workspace_id": id,
+                "worktree": {
+                    "repo_key": "/r/.git",
+                    "repo_name": "r",
+                    "repo_root": "/r",
+                    "checkout_path": format!("/r/{id}"),
+                    "is_linked_worktree": linked,
+                },
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "id": "cli:api:snapshot",
+        "result": {"snapshot": {"workspaces": workspaces, "tabs": [], "panes": []}},
+    })
+    .to_string()
 }
 
 fn repository(dir: &Path) -> String {
@@ -101,16 +134,20 @@ fn dispatch_creates_the_worktree_starts_the_agent_and_records_the_run() {
     .unwrap();
     assert_eq!(done, "Agent started");
     let calls = calls(dir.path());
-    assert!(calls[0].starts_with("worktree create --workspace w1 --branch 377-icons --base "));
-    assert!(calls[0].ends_with(" --no-focus"));
-    let name = calls[1].split(' ').nth(2).unwrap();
-    assert!(name.starts_with("herdr-gpui-") && name.len() == "herdr-gpui-".len() + 23);
-    assert_eq!(
-        calls[1],
-        format!("agent start {name} --kind claude --pane p9 --timeout 90000")
+    assert_eq!(calls[0], "api snapshot");
+    assert!(calls[1].starts_with("worktree create --workspace w1 --branch 377-icons --base "));
+    assert!(calls[1].ends_with(" --no-focus"));
+    let name = calls[2].split(' ').nth(2).unwrap();
+    assert!(
+        name.starts_with("herdr-gpui-") && name.len() == 32,
+        "{name}"
     );
     assert_eq!(
         calls[2],
+        format!("agent start {name} --kind claude --pane p9 --timeout 90000")
+    );
+    assert_eq!(
+        calls[3],
         "agent prompt p9 Fix the icons; don't break 'quotes'."
     );
 
@@ -244,7 +281,7 @@ fn a_chosen_model_reaches_the_agent_and_the_run() {
         &AtomicBool::new(false),
     )
     .unwrap();
-    let start = calls(dir.path())[1].clone();
+    let start = calls(dir.path())[2].clone();
     assert!(
         start.ends_with(" --timeout 90000 -- --model claude-opus-5-5"),
         "{start}"

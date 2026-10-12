@@ -214,7 +214,7 @@ fn a_copy_mode_mark_is_the_selection_of_its_connection(cx: &mut gpui::TestAppCon
             view.enter_copy_mode(window, cx);
             // No visible cursor: copy mode starts on the last row's first cell.
             for typed in ["v", "l", "l"] {
-                view.copy_mode_key(&key(typed), cx);
+                view.copy_mode_key(&key(typed), window, cx);
             }
         })
     });

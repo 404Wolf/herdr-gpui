@@ -39,6 +39,9 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.shortcut_editor_key(event, window, cx) {
+            return;
+        }
         if self.settings_key(event, window, cx) {
             return;
         }
@@ -130,7 +133,13 @@ impl HerdrWindow {
         }
         if matches!(
             self.menu.page,
-            Some(Page::Pane | Page::RenamePane | Page::PaneProcesses | Page::KillProcesses)
+            Some(
+                Page::Pane
+                    | Page::RenamePane
+                    | Page::MovePane
+                    | Page::PaneProcesses
+                    | Page::KillProcesses
+            )
         ) {
             self.pane_menu_key(event, window, cx);
             return;

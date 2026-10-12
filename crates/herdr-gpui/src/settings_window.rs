@@ -1,7 +1,7 @@
 //! Independent native preferences window. Disk work never owns a window or a socket.
 #[cfg(feature = "cloud")]
 mod cloud_devices;
-#[cfg(feature = "daytona")]
+#[cfg(feature = "cloud")]
 pub(crate) use cloud_devices::open as open_cloud;
 mod controls;
 mod layouts;
@@ -10,6 +10,7 @@ pub(crate) use layouts::{apply_loaded_layout, layout_load_revision};
 mod native;
 mod persistence;
 mod remote_history;
+mod scrollbar;
 #[cfg(test)]
 use persistence::SizeIo;
 use persistence::{Loaded, SaveCompletion};
@@ -32,7 +33,15 @@ actions!(settings_window, [Close]);
 
 pub(crate) fn key_bindings() -> [KeyBinding; 2] {
     [
-        KeyBinding::new("cmd-w", Close, Some("SettingsWindow")),
+        KeyBinding::new(
+            if cfg!(target_os = "linux") {
+                "ctrl-shift-w"
+            } else {
+                "cmd-w"
+            },
+            Close,
+            Some("SettingsWindow"),
+        ),
         KeyBinding::new("ctrl-w", Close, Some("SettingsWindow")),
     ]
 }
@@ -46,35 +55,37 @@ impl Global for SettingsWindowHandle {}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) enum Section {
+    General,
     #[default]
     Appearance,
-    Fonts,
-    Indicators,
-    Sound,
-    Notifications,
-    StatusBar,
-    Integrations,
-    Plugins,
-    Code,
     #[cfg(feature = "cloud")]
     CloudDevices,
-    General,
+    Code,
+    Fonts,
+    Indicators,
+    Integrations,
+    Notifications,
+    Plugins,
+    Sound,
+    StatusBar,
 }
 
 impl Section {
+    /// Sidebar order: General first, as the catch-all people look in when
+    /// they do not know where a setting lives, then alphabetical by label.
     const ALL: &[Self] = &[
+        Self::General,
         Self::Appearance,
-        Self::Fonts,
-        Self::Indicators,
-        Self::Sound,
-        Self::Notifications,
-        Self::StatusBar,
-        Self::Integrations,
-        Self::Plugins,
-        Self::Code,
         #[cfg(feature = "cloud")]
         Self::CloudDevices,
-        Self::General,
+        Self::Code,
+        Self::Fonts,
+        Self::Indicators,
+        Self::Integrations,
+        Self::Notifications,
+        Self::Plugins,
+        Self::Sound,
+        Self::StatusBar,
     ];
 
     fn label(self) -> &'static str {
@@ -221,6 +232,8 @@ struct SettingsWindow {
     body_scroll: ScrollHandle,
     /// The category list scrolls when the window is too short for it.
     navigation_scroll: ScrollHandle,
+    /// Where on a scrollbar's thumb the pointer took hold of it.
+    thumb_grab: f32,
     /// The section list's width, dragged by its right edge.
     navigation_width: crate::panel_resize::PanelWidth,
     /// The window's width at its last render, which caps the section list.
@@ -262,6 +275,8 @@ struct SettingsWindow {
     coder_card: Option<cloud_devices::CoderCard>,
     #[cfg(feature = "daytona")]
     daytona_card: Option<cloud_devices::DaytonaCard>,
+    #[cfg(feature = "railway")]
+    railway_card: Option<cloud_devices::RailwayCard>,
     theme_loading: bool,
     theme_waiting: bool,
     theme_light: bool,
@@ -322,6 +337,7 @@ impl SettingsWindow {
             focus: cx.focus_handle(),
             body_scroll: ScrollHandle::new(),
             navigation_scroll: ScrollHandle::new(),
+            thumb_grab: 0.,
             navigation_width: crate::panel_resize::SETTINGS_NAVIGATION,
             viewport_width: 0.,
             loading: false,
@@ -355,6 +371,8 @@ impl SettingsWindow {
             coder_card: None,
             #[cfg(feature = "daytona")]
             daytona_card: None,
+            #[cfg(feature = "railway")]
+            railway_card: None,
             theme_loading: false,
             theme_waiting: false,
             theme_light: false,
@@ -658,22 +676,20 @@ impl SettingsWindow {
                     ),
             )
             .child(
-                div()
-                    .id("settings-sections")
-                    .debug_selector(|| "settings-sections".into())
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .flex_col()
-                    .gap(px(4.))
-                    .overflow_y_scroll()
-                    .track_scroll(&self.navigation_scroll)
-                    .children(
-                        Section::ALL
-                            .iter()
-                            .copied()
-                            .enumerate()
-                            .map(|(index, section)| {
+                self.scroll_area(
+                    scrollbar::Pane::Sections,
+                    div()
+                        .id("settings-sections")
+                        .debug_selector(|| "settings-sections".into())
+                        .flex_1()
+                        .min_h_0()
+                        .flex()
+                        .flex_col()
+                        .gap(px(4.))
+                        .overflow_y_scroll()
+                        .track_scroll(&self.navigation_scroll)
+                        .children(Section::ALL.iter().copied().enumerate().map(
+                            |(index, section)| {
                                 let selected = self.section == section;
                                 div()
                                     .id(("settings-section", index))
@@ -711,8 +727,10 @@ impl SettingsWindow {
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         this.select_section(section, window, cx)
                                     }))
-                            }),
-                    ),
+                            },
+                        )),
+                    cx,
+                ),
             )
     }
 }
@@ -770,7 +788,7 @@ impl Render for SettingsWindow {
             .text_color(rgb(theme.foreground))
             .children(header)
             .child(
-                div().flex_1().min_h_0().flex().child(navigation).child(
+                div().flex_1().min_h_0().flex().child(navigation).child(self.scroll_area(scrollbar::Pane::Body,
                     div()
                         .id("settings-body")
                         .debug_selector(|| "settings-body".into())
@@ -794,8 +812,7 @@ impl Render for SettingsWindow {
                                 .text_color(rgb(theme.subtext()))
                                 .child(self.section.description()),
                         )
-                        .child(content),
-                ),
+                        .child(content), cx)),
             )
             .child(
                 div()

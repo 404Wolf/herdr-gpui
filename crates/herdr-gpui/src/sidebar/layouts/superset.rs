@@ -6,7 +6,7 @@
 
 use super::{
     super::{
-        agents::{status_mark, status_style},
+        agents::{status_style, status_symbol},
         cell::{AgentRow, RowContext, RowLayout, RowState, WorkspaceRow},
         line_height,
         row::{
@@ -100,12 +100,24 @@ fn slot(
     let theme = cx.theme;
     let dot = dot.map(|(color, bold)| {
         if cx.indicators.style == crate::herdr_settings::IndicatorStyle::Symbols {
-            return status_mark(status, cx.font, cx.indicators, color, bold)
-                .mt_0()
+            // A full row-status slot masks the underlying icon. Symbols here
+            // are corner badges, leaving the icon's center unobscured.
+            let diameter = (m.icon * 0.45).round();
+            return div()
+                .size(px(diameter))
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(px(diameter))
+                .line_height(px(diameter))
+                .text_color(rgb(color))
+                .when(bold, |badge| badge.font_weight(FontWeight::BOLD))
+                .child(status_symbol(status))
                 .debug_selector(|| format!("dot-{key}"))
                 .absolute()
                 .top_0()
                 .right_0()
+                .rounded_full()
                 .bg(rgb(theme.sidebar_background()));
         }
         let (diameter, filled, _) = status_style(status, theme);
@@ -352,6 +364,7 @@ mod tests {
             size: 12.,
             fallbacks: None,
             line_height_multiple: None,
+            weight: gpui::FontWeight::NORMAL,
         };
         let theme = Theme::default();
         let indicators = Indicators::new(None, false, &theme);

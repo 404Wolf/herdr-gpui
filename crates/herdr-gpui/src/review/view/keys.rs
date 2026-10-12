@@ -137,10 +137,11 @@ impl HerdrWindow {
         let modifiers = keystroke.modifiers;
         // Copy and Select All, with Cmd or, as off macOS, Ctrl: the diff
         // has no program to send Ctrl-C to.
-        let edit = (modifiers.platform != modifiers.control)
-            && !modifiers.alt
-            && !modifiers.shift
-            && !modifiers.function;
+        let edit = crate::actions::edit_modifiers(modifiers)
+            || (modifiers.platform != modifiers.control)
+                && !modifiers.alt
+                && !modifiers.shift
+                && !modifiers.function;
         match keystroke.key.as_str() {
             "c" if edit => return self.copy_review_selection(id, cx),
             "a" if edit => {

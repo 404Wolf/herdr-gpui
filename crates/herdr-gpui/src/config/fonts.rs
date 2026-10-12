@@ -1,7 +1,10 @@
 //! Font faces, their configured overrides and sizes, and the icon-font cascade.
-use super::Config;
+use super::{
+    Config,
+    font_weight::{self, MissingWeight},
+};
 use crate::{Error, Result};
-use gpui::{Font, FontFallbacks};
+use gpui::{Font, FontFallbacks, FontWeight};
 use serde::Deserialize;
 use std::{collections::BTreeSet, ops::RangeInclusive};
 
@@ -67,15 +70,21 @@ pub(super) struct FontSettings {
     /// Untyped because only the terminal takes it: elsewhere it is discarded
     /// as unknown, so its type must not fail the whole file first.
     line_height: Option<toml::Value>,
+    /// Untyped for the same reason as `line_height`.
+    weight: Option<toml::Value>,
 }
 
 impl FontSettings {
-    /// Takes `line_height` out of a face that lays out no terminal rows,
-    /// returning the key to report as unknown.
-    pub(super) fn reject_line_height(&mut self, name: &str) -> Option<String> {
-        self.line_height
-            .take()
-            .map(|_| format!("{name}.line_height"))
+    /// Takes the terminal-only keys out of a face that draws no terminal
+    /// cells, returning each one present to report as unknown.
+    pub(super) fn reject_terminal_keys(&mut self, name: &str) -> Vec<String> {
+        [
+            ("line_height", self.line_height.take()),
+            ("weight", self.weight.take()),
+        ]
+        .into_iter()
+        .filter_map(|(key, value)| value.map(|_| format!("{name}.{key}")))
+        .collect()
     }
 
     /// Merges this face's configured keys over `font`, then validates the result.
@@ -105,6 +114,9 @@ impl FontSettings {
                 return Err(Error::InvalidLineHeight(name));
             }
             font.line_height_multiple = Some(line_height);
+        }
+        if let Some(weight) = self.weight {
+            font.weight = font_weight::parse(weight, name)?;
         }
         if font.family.trim().is_empty() {
             return Err(Error::EmptyFontFamily(name));
@@ -266,6 +278,8 @@ pub struct FontConfig {
     /// Line height as a multiple of `size`, so it follows runtime font size
     /// changes. `None` keeps the default of 20/14.
     pub line_height_multiple: Option<f32>,
+    /// Weight of regular text; bold text draws at [`font_weight::bold`] of it.
+    pub weight: FontWeight,
 }
 
 impl FontConfig {
@@ -283,6 +297,7 @@ impl FontConfig {
     /// missing-glyph box unless the cascade names an icon font explicitly.
     pub fn font(&self) -> Font {
         let mut font = gpui::font(self.family.clone());
+        font.weight = self.weight;
         font.fallbacks = self
             .fallbacks
             .as_ref()
@@ -307,12 +322,11 @@ impl FontConfig {
     }
 }
 
-/// The requested families no installed family matches. Platforms match
-/// family names without regard to case, so this does too, rather than
-/// reporting a font that draws.
+/// An unlisted name may still be a legacy alias accepted by the font backend.
 fn missing_families<'a>(
     requested: impl IntoIterator<Item = &'a str>,
     installed: &BTreeSet<String>,
+    resolves_alias: impl Fn(&str) -> bool,
 ) -> Vec<String> {
     let installed: BTreeSet<String> = installed
         .iter()
@@ -321,8 +335,25 @@ fn missing_families<'a>(
     requested
         .into_iter()
         .filter(|family| !installed.contains(&family.to_lowercase()))
+        .filter(|family| !resolves_alias(family))
         .map(str::to_owned)
         .collect()
+}
+
+fn resolves_platform_alias(family: &str) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        // Unlike TextSystem::resolve_font, this fails instead of substituting a default.
+        font_kit::source::SystemSource::new()
+            .select_family_by_name(family)
+            .is_ok()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Preserve enumeration-based validation on the other platforms.
+        let _ = family;
+        false
+    }
 }
 
 /// Ranks an installed Nerd Font family for the automatic cascade. Symbols-only
@@ -360,10 +391,36 @@ impl Config {
     /// and replaces a default family this machine lacks. `installed`
     /// is consulted only when some face still needs it, because enumerating
     /// system fonts is slow enough to keep off the UI thread. Every family
-    /// the config names is checked against it, so a typo or an uninstalled
-    /// font is reported instead of silently drawn with a substitute.
+    /// the config names is checked against it and the platform's aliases,
+    /// so an uninstalled font is reported without rejecting a valid alias.
     pub fn resolve_fonts<I>(&mut self, installed: impl FnOnce() -> I)
     where
+        I: IntoIterator<Item = String>,
+    {
+        self.resolve_fonts_with(installed, resolves_platform_alias);
+        self.check_font_weight(font_weight::platform_has_weight);
+    }
+
+    /// Records whether the terminal's family lacks a face at its configured
+    /// weight. Runs after [`Self::resolve_fonts_with`], so it checks the
+    /// family that will draw, and skips one already reported missing.
+    pub(super) fn check_font_weight(&mut self, has_weight: impl Fn(&str, FontWeight) -> bool) {
+        let terminal = &self.terminal;
+        self.missing_weight = (terminal.weight != FontWeight::NORMAL
+            && !terminal.family.starts_with('.')
+            && !self.missing_fonts.contains(&terminal.family)
+            && !has_weight(&terminal.family, terminal.weight))
+        .then(|| MissingWeight {
+            family: terminal.family.clone(),
+            weight: terminal.weight,
+        });
+    }
+
+    pub(super) fn resolve_fonts_with<I>(
+        &mut self,
+        installed: impl FnOnce() -> I,
+        resolves_alias: impl Fn(&str) -> bool,
+    ) where
         I: IntoIterator<Item = String>,
     {
         self.replace_undrawable_fonts(super::bitmap_fonts::is_undrawable);
@@ -381,7 +438,7 @@ impl Config {
             return;
         }
         let installed: BTreeSet<String> = installed().into_iter().collect();
-        self.missing_fonts = missing_families(requested, &installed);
+        self.missing_fonts = missing_families(requested, &installed, resolves_alias);
         let mut faces = [
             &mut self.sidebar,
             &mut self.tabs,

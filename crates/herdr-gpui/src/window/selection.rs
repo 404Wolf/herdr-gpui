@@ -20,22 +20,68 @@ use std::{
 /// How often a drag held past a pane's edge scrolls it by another step.
 const AUTOSCROLL_INTERVAL: Duration = Duration::from_millis(50);
 
+/// How many of its newest offsets a drag remembers while frames fall behind
+/// its steps. A frame that lags further than this starts the next step from
+/// what it shows.
+const AUTOSCROLL_LAG: usize = 32;
+
 /// What a drag needs beyond the selection itself: where the pointer last was,
 /// so the selection can follow the pane as it scrolls under a still pointer,
 /// the last scroll it asked for, the last frame a kept highlight was checked
 /// against, and the copy the daemon is reading for a released selection.
 #[derive(Default)]
 pub(crate) struct Follow {
+    /// Shift at the start offers annotation, even when released before the mouse.
+    offer_annotation: bool,
     pointer: Option<Point<Pixels>>,
     scrolled: Option<Instant>,
-    /// The pane and offset of the drag's last `pane.scroll`. The daemon's
-    /// answer can arrive before the frame that shows it, so the next step
-    /// continues from here instead of repeating this one.
-    sent: Option<(String, u64)>,
+    /// The drag's last `pane.scroll`. The daemon's answer can arrive before
+    /// the frame that shows it, so the next step continues from here instead
+    /// of repeating this one or turning back from an older offset.
+    sent: Option<Sent>,
     /// The projection and surface revisions a kept highlight was last checked
     /// against, so an unchanged frame is not hashed again every tick.
     checked: Option<(u64, u64)>,
     read: Option<(Arc<Mutex<Inbox>>, String)>,
+}
+
+/// The `pane.scroll` steps a drag sent since a frame last showed the latest one.
+struct Sent {
+    pane_id: String,
+    /// The offset on screen before the first of these steps, then each step
+    /// in order: a frame showing one of them has not caught up yet.
+    path: Vec<u64>,
+}
+
+impl Sent {
+    /// The last step asked for, if a frame showing `shown` in `pane_id` is
+    /// still behind it.
+    fn ahead_of(&self, pane_id: &str, shown: u64) -> Option<u64> {
+        let last = *self.path.last()?;
+        (self.pane_id == pane_id && self.path.contains(&shown)).then_some(last)
+    }
+
+    /// Records a step to `offset`, sent while the frame showed `shown`.
+    fn record(sent: &mut Option<Self>, pane_id: String, shown: u64, offset: u64) {
+        match sent {
+            Some(sent)
+                if sent
+                    .ahead_of(&pane_id, shown)
+                    .is_some_and(|last| last != shown) =>
+            {
+                if sent.path.len() == AUTOSCROLL_LAG {
+                    sent.path.remove(0);
+                }
+                sent.path.push(offset);
+            }
+            _ => {
+                *sent = Some(Self {
+                    pane_id,
+                    path: vec![shown, offset],
+                });
+            }
+        }
+    }
 }
 
 impl HerdrWindow {
@@ -46,11 +92,14 @@ impl HerdrWindow {
         &mut self,
         position: Point<Pixels>,
         clicks: usize,
+        offer_annotation: bool,
         cx: &mut Context<Self>,
     ) {
         // A click hands the terminal back from copy mode.
         self.leave_copy_mode(cx);
         let cleared = self.selection.take().is_some();
+        self.clear_terminal_annotation_offer(cx);
+        self.selection_follow.offer_annotation = offer_annotation;
         self.selection_follow.sent = None;
         if let Some(surface) = self.selectable_surface(position) {
             let (x, y) = self.grid_position(position);
@@ -100,7 +149,8 @@ impl HerdrWindow {
             .is_none_or(|shared| shared.copy_on_select)
     }
 
-    /// Ends a drag: what it chose goes to the clipboard and the flash says so.
+    /// Ends a drag: a Shift-selection offers annotation, and what it chose
+    /// goes to the clipboard with a flash when copying on selection is on.
     /// The highlight stays while `keep_selection_after_copy` is on, so tools
     /// that read the selection find it and Cmd-C copies it again. With Herdr's
     /// `copy_on_select` off, nothing is copied yet and the highlight stays for
@@ -123,6 +173,11 @@ impl HerdrWindow {
             selection.remember_text(surface, self.cell_width, cell_height);
         }
         let selected = !self.selection_is_empty();
+        if selected && self.selection_follow.offer_annotation {
+            // Keep the selection readable by the pill even if copying clears
+            // its highlight. Offering annotation never takes keyboard focus.
+            self.offer_terminal_annotation(cx);
+        }
         if selected && !self.copy_on_select() {
             cx.notify();
             return true;
@@ -173,6 +228,7 @@ impl HerdrWindow {
 
     /// Drops a selection kept on release, as any other key does in Herdr.
     pub(crate) fn clear_retained_selection(&mut self, cx: &mut Context<Self>) {
+        self.clear_terminal_annotation_offer(cx);
         if self
             .selection
             .as_ref()
@@ -282,7 +338,7 @@ impl HerdrWindow {
         {
             return;
         }
-        let Some((pane_id, offset)) = self.selection_autoscroll(pointer) else {
+        let Some((pane_id, offset, shown)) = self.selection_autoscroll(pointer) else {
             return;
         };
         let connection = &self.endpoints[self.selected_endpoint].connection;
@@ -302,7 +358,7 @@ impl HerdrWindow {
                 state.drag_request = Some(request.clone());
                 self.live.drag_request = Some(request);
                 self.selection_follow.scrolled = Some(now);
-                self.selection_follow.sent = Some((pane_id, offset));
+                Sent::record(&mut self.selection_follow.sent, pane_id, shown, offset);
             }
             Err(error) => {
                 drop(state);
@@ -316,7 +372,8 @@ impl HerdrWindow {
     /// The pane under a pane selection and the offset one step further in the
     /// direction the pointer is held past its edge: a row per row the pointer
     /// is out, up to a pane height, so a pointer held outside the window pages.
-    fn selection_autoscroll(&self, pointer: Point<Pixels>) -> Option<(String, u64)> {
+    /// Also returns the offset on screen, to tell later when a frame has moved.
+    fn selection_autoscroll(&self, pointer: Point<Pixels>) -> Option<(String, u64, u64)> {
         let selection = self.selection.as_ref()?;
         let pane_id = selection.pane_id()?;
         let surface = self.live.surface.as_deref()?;
@@ -328,29 +385,25 @@ impl HerdrWindow {
         let bottom = top + f32::from(pane.inner_rect.height) * cell_height;
         let page = u64::from(pane.inner_rect.height).max(1);
         let rows = |distance: f32| ((distance / cell_height).ceil() as u64).clamp(1, page);
-        // Whichever of the frame and the last request is further along: an
-        // answered step may not be painted yet, and a wheel may have gone
-        // further than the drag asked.
-        let sent = self
+        // The last request while the frame shows one it has not caught up
+        // with: answers can arrive before their frames. A frame anywhere else
+        // was moved by something else, such as a wheel.
+        let shown = scroll.offset_from_bottom;
+        let from = self
             .selection_follow
             .sent
             .as_ref()
-            .filter(|(id, _)| id == pane_id)
-            .map(|(_, offset)| *offset);
-        let shown = scroll.offset_from_bottom;
-        let (from, offset) = if y < top {
-            let from = sent.map_or(shown, |sent| sent.max(shown));
-            let offset = from
-                .saturating_add(rows(top - y))
-                .min(scroll.max_offset_from_bottom);
-            (from, offset)
+            .and_then(|sent| sent.ahead_of(pane_id, shown))
+            .unwrap_or(shown);
+        let offset = if y < top {
+            from.saturating_add(rows(top - y))
+                .min(scroll.max_offset_from_bottom)
         } else if y >= bottom {
-            let from = sent.map_or(shown, |sent| sent.min(shown));
-            (from, from.saturating_sub(rows(y - bottom + 1.)))
+            from.saturating_sub(rows(y - bottom + 1.))
         } else {
             return None;
         };
-        (offset != from).then(|| (pane_id.to_owned(), offset))
+        (offset != from).then(|| (pane_id.to_owned(), offset, shown))
     }
 
     /// Copies a selection the daemon has read back, once.

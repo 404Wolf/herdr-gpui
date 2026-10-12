@@ -9,7 +9,19 @@ run *args:
         exec cargo run --locked --release -p herdr-gpui --features qa-menu -- {{args}}
     fi
     {{just_executable()}} bundle release qa-menu
-    exec target/release/Herdr.app/Contents/MacOS/Herdr {{args}}
+    # Open the bundle instead of executing its binary: macOS asks for Local
+    # Network access (Bonjour, SSH hosts on the LAN) only for an app it
+    # launched, and denies a binary started from a shell without asking.
+    # Output still reaches this terminal; Ctrl-C quits the app.
+    app="$PWD/target/release/Herdr.app"
+    out=/dev/null
+    if [ -t 0 ]; then out=$(tty); fi
+    env_args=()
+    while IFS= read -r variable; do
+        env_args+=(--env "$variable")
+    done < <(env | grep -E '^(RUST_LOG|RUST_BACKTRACE|HERDR_[A-Z0-9_]*)=' || true)
+    trap 'pkill -f "^$app/Contents/MacOS/Herdr" || true' INT TERM
+    open -n -W --stdout "$out" --stderr "$out" ${env_args[@]+"${env_args[@]}"} "$app" --args {{args}}
 
 run-debug *args:
     #!/usr/bin/env bash
@@ -70,7 +82,7 @@ test-perf budget="30":
 
 # Compare UI variants written as GPUI code in `file` (the built-in demo when
 # empty) in a native window. "Send to agent" types the notes into the calling
-# Herdr pane through the running Herdr GPUI, else writes `feedback`; `capture` gets
+# Herdr pane through the running Herdr UI, else writes `feedback`; `capture` gets
 # a PNG of the window once it has drawn. Debug build, no daemon. The process
 # left running is the app itself, so its PID is the one to stop.
 # See .claude/skills/gpui-mockup.

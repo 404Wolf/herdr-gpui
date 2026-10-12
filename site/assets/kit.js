@@ -8,8 +8,6 @@
   const I = (n) => `assets/icon-${n}.svg`;
 
   const FACTS = {
-    install: 'brew install penso/tap/herdr-gpui',
-    platforms: 'macOS 14.2+ (signed, notarized, universal) · Linux .deb/.rpm/Arch/Nix · Windows + WSL (experimental)',
     disclaimer: 'Unaffiliated project. Not affiliated with, endorsed by, or supported by Herdr or herdr.dev.',
     license: 'Apache-2.0',
     oneLiner: 'A native window for the Herdr daemon you already run: every agent on every machine, and the tools to dispatch, review and move their work.',

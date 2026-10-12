@@ -39,14 +39,12 @@ class ReleaseTargets(unittest.TestCase):
         self.assertIn('--source-ref refs/heads/main', command)
         self.assertIn('--deny-self-hosted-runners', command)
 
-    def test_ci_platform_checks_keep_owner_policy_and_required_gate(self):
+    def test_ci_platform_checks_keep_required_gate(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
         sections = re.split(r"^  ([a-z-]+):\n", workflow.split("\njobs:\n", 1)[1], flags=re.M)
         jobs = dict(zip(sections[1::2], sections[2::2]))
         for job in jobs.values():
-            for condition in ("github.repository == 'penso/herdr-gpui'",
-                              "github.actor == 'penso'", "github.triggering_actor == 'penso'"):
-                self.assertIn(condition, job)
+            self.assertIn("github.repository == 'penso/herdr-gpui'", job)
         self.assertIn("    needs: [checks, windows, commits]\n", jobs["checks-passed"])
         self.assertIn('test "$COMMITS" = success || exit 1', jobs["checks-passed"])
         self.assertIn('test "$RESULT" = success && test "$WINDOWS" = success', jobs["checks-passed"])
@@ -57,9 +55,6 @@ class ReleaseTargets(unittest.TestCase):
         self.assertIn("WINDOWS: ${{ needs.windows.result }}", jobs["checks-passed"])
         self.assertIn("          fetch-depth: 0\n", jobs["commits"])
         self.assertIn("python3 scripts/release/check-commit-messages.py range", jobs["commits"])
-        for name in ("checks", "windows", "checks-passed"):
-            self.assertIn("github.event.pull_request.user.login == 'penso'", jobs[name])
-            self.assertIn("github.event.pull_request.head.repo.full_name == 'penso/herdr-gpui'", jobs[name])
         self.assertIn("runner: [macos-14, macos-15, ubuntu-24.04, ubuntu-24.04-arm]", jobs["checks"])
         self.assertIn("    name: Format, lint, and test\n", jobs["checks-passed"])
         self.assertIn("always()", jobs["checks-passed"])

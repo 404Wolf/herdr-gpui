@@ -14,6 +14,7 @@ use herdr_client::{
 use serde_json::{Value, json};
 use std::sync::Arc;
 
+mod agent_filter;
 mod go_to;
 #[cfg(test)]
 mod interaction_tests;
@@ -24,6 +25,7 @@ pub(crate) use projects::launch_root;
 mod render;
 mod search;
 
+use agent_filter::AgentFilter;
 use go_to::{destination_exists, go_to_entries, note_entries};
 
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, Eq)]
@@ -127,6 +129,8 @@ struct Entry {
     /// Index of the earlier row this one nests under, indented only while
     /// that row is visible so a search never leaves it hanging beneath nothing.
     parent: Option<usize>,
+    /// The daemon-reported status of a Go To row's agent, if it has one.
+    status: Option<herdr_client::protocol::AgentStatus>,
     fields: search::Fields,
 }
 
@@ -163,6 +167,7 @@ impl Entry {
             badge,
             action,
             parent,
+            status: None,
             fields,
         }
     }
@@ -317,6 +322,8 @@ pub(super) struct Palette {
     scroll: UniformListScrollHandle,
     target: Option<Target>,
     filter: Filter,
+    /// Narrows Go To to agents in one status; other filters ignore it.
+    agent_filter: AgentFilter,
     query: String,
     error: Option<String>,
     projects: projects::Collection,
@@ -423,23 +430,27 @@ impl HerdrWindow {
         };
         let entries = palette.pending.clone();
         let filter = palette.filter;
+        let status = match filter {
+            Filter::Navigation => palette.agent_filter,
+            _ => AgentFilter::All,
+        };
         let candidates: Vec<_> = entries
             .iter()
             .enumerate()
-            .filter(|(_, entry)| filter.accepts(&entry.action))
+            .filter(|(_, entry)| filter.accepts(&entry.action) && status.accepts(entry.status))
             .map(|(index, _)| index)
             .collect();
         let query = search::Query::parse(&palette.query);
         if candidates.len() <= search::INLINE_CANDIDATES {
             palette.match_task = None;
-            let filtered = search::rank(&entries, candidates, &query, &mut palette.matcher);
+            let filtered = status.rank(&entries, candidates, &query, &mut palette.matcher);
             palette.apply(entries, filtered, selection);
             cx.notify();
             return;
         }
         let ranking = cx.background_spawn({
             let entries = entries.clone();
-            async move { search::rank(&entries, candidates, &query, &mut search::matcher()) }
+            async move { status.rank(&entries, candidates, &query, &mut search::matcher()) }
         });
         let token = palette.search.clone();
         palette.match_task = Some(cx.spawn(async move |this, cx| {
@@ -513,6 +524,7 @@ impl HerdrWindow {
             scroll: UniformListScrollHandle::new(),
             target,
             filter,
+            agent_filter: AgentFilter::All,
             query: String::new(),
             error: None,
             projects: projects::Collection::default(),
@@ -908,6 +920,16 @@ impl HerdrWindow {
             return;
         };
         if palette.search.read(cx).is_composing() {
+            return;
+        }
+        // A Go To navigation binding keeps its key; otherwise Alt and a
+        // navigator letter filter by agent status without typing the letter.
+        if step.is_none()
+            && let Some(agent_filter) = AgentFilter::from_keystroke(&event.keystroke)
+        {
+            cx.stop_propagation();
+            window.prevent_default();
+            self.set_palette_agent_filter(agent_filter, cx);
             return;
         }
         match event.keystroke.key.as_str() {

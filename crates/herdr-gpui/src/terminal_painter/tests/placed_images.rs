@@ -86,6 +86,7 @@ fn placed_images_decode_off_thread_then_paint_in_z_order(cx: &mut TestAppContext
                         &frame,
                         point(px(10.), px(10.)),
                         None,
+                        Ground::Opaque,
                         10.,
                         &font("Menlo"),
                         &[],

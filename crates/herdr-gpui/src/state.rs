@@ -88,6 +88,9 @@ pub struct LiveState {
     /// `tab.move` reorders a workspace's tabs; daemons that do not offer it
     /// to clients keep their tabs where they are.
     pub(crate) supports_tab_move: bool,
+    /// `workspace.move` takes a single workspace; without it a drop sends
+    /// every reorder as `workspace.move_block`.
+    pub(crate) supports_workspace_move: bool,
     /// `pane.link.resolve` and `pane.link.activate` let the daemon find links
     /// across wrapped rows and run plugin link handlers; without them links
     /// are found row by row here and always opened by this client.
@@ -110,6 +113,9 @@ pub struct LiveState {
     /// The `pane.split` an editor pane is waiting on, in its own slot for
     /// the same reason. Cleared from the mailbox once the job has read it.
     pub(crate) editor_response: Option<(String, Option<DialogResponse>)>,
+    /// The `worktree.remove` a merged worktree cleanup is waiting on, in its
+    /// own slot so it and an open dialog cannot take each other's answer.
+    pub(crate) cleanup_response: Option<(String, Option<DialogResponse>)>,
     pub(crate) notifications: std::collections::VecDeque<crate::notifications::Notice>,
     pub(crate) notifications_lost: bool,
     outer_focused: Option<bool>,
@@ -196,6 +202,7 @@ impl Default for LiveState {
             local_peer_warning: None,
             supports_pane_clear: false,
             supports_tab_move: false,
+            supports_workspace_move: false,
             supports_link_resolve: false,
             supports_link_activate: false,
             supports_copy_search: false,
@@ -206,6 +213,7 @@ impl Default for LiveState {
             dialog_response: None,
             script_response: None,
             editor_response: None,
+            cleanup_response: None,
             notifications: Default::default(),
             notifications_lost: false,
             keyboard_report_all: false,
@@ -252,6 +260,7 @@ impl LiveState {
             local_peer_warning,
             supports_pane_clear,
             supports_tab_move,
+            supports_workspace_move,
             supports_link_resolve,
             supports_link_activate,
             supports_copy_search,
@@ -262,6 +271,7 @@ impl LiveState {
             dialog_response,
             script_response,
             editor_response,
+            cleanup_response,
             notifications,
             notifications_lost,
             outer_focused,
@@ -308,6 +318,7 @@ impl LiveState {
             && *local_daemon_peer == self.local_daemon_peer
             && *supports_pane_clear == self.supports_pane_clear
             && *supports_tab_move == self.supports_tab_move
+            && *supports_workspace_move == self.supports_workspace_move
             && *supports_link_resolve == self.supports_link_resolve
             && *supports_link_activate == self.supports_link_activate
             && *supports_copy_search == self.supports_copy_search
@@ -323,6 +334,10 @@ impl LiveState {
                 (a, b) => a.is_none() && b.is_none(),
             }
             && match (editor_response, &self.editor_response) {
+                (Some((a, None)), Some((b, None))) => a == b,
+                (a, b) => a.is_none() && b.is_none(),
+            }
+            && match (cleanup_response, &self.cleanup_response) {
                 (Some((a, None)), Some((b, None))) => a == b,
                 (a, b) => a.is_none() && b.is_none(),
             }
@@ -354,6 +369,7 @@ impl LiveState {
             &self.dialog_response,
             &self.script_response,
             &self.editor_response,
+            &self.cleanup_response,
         ]
         .into_iter()
         .flatten()
@@ -455,6 +471,8 @@ impl LiveState {
                 self.settings_reload = false;
                 self.supports_pane_clear = Method::PaneClear.advertised_in(&welcome.methods);
                 self.supports_tab_move = Method::TabMove.advertised_in(&welcome.methods);
+                self.supports_workspace_move =
+                    Method::WorkspaceMove.advertised_in(&welcome.methods);
                 self.supports_announcement_dismiss =
                     Method::ProductAnnouncementDismiss.advertised_in(&welcome.methods);
                 self.supports_release_notes_dismiss =
@@ -580,6 +598,7 @@ impl LiveState {
                     &mut self.dialog_response,
                     &mut self.script_response,
                     &mut self.editor_response,
+                    &mut self.cleanup_response,
                 ]
                 .into_iter()
                 .flatten()
@@ -655,8 +674,12 @@ impl LiveState {
                 {
                     self.announcement_dismissal = None;
                 }
-                for (id, result) in [&mut self.script_response, &mut self.editor_response]
-                    .into_iter()
+                for (id, result) in [
+                    &mut self.script_response,
+                    &mut self.editor_response,
+                    &mut self.cleanup_response,
+                ]
+                .into_iter()
                     .flatten()
                 {
                     if *id == request_id {

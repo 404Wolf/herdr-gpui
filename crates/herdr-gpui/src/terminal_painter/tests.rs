@@ -1,9 +1,11 @@
 use super::*;
 use core::prelude::v1::test;
 
+mod backdrop;
 mod cells;
 mod composition;
 mod diagnostics;
+mod font_weight;
 mod glyph_cache;
 mod grid_edges;
 // Paint counts are recorded only with the integration-test feature.
