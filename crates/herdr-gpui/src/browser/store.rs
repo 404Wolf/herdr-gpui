@@ -22,6 +22,22 @@ impl TabId {
     }
 }
 
+/// An ID a control request names, as `tab list` printed it. Only ever
+/// compared with the store's own IDs.
+#[cfg(unix)]
+impl From<u64> for TabId {
+    fn from(id: u64) -> Self {
+        Self(id)
+    }
+}
+
+#[cfg(unix)]
+impl From<TabId> for u64 {
+    fn from(id: TabId) -> Self {
+        id.0
+    }
+}
+
 impl std::fmt::Display for TabId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
@@ -213,6 +229,12 @@ impl Store {
                 tabs: self.tabs.clone(),
             });
         }
+    }
+
+    /// Every tab of every workspace, in the order they were opened.
+    #[cfg(unix)]
+    pub(crate) fn tabs(&self) -> impl Iterator<Item = &Tab> {
+        self.tabs.iter()
     }
 
     pub(crate) fn get(&self, id: TabId) -> Option<&Tab> {

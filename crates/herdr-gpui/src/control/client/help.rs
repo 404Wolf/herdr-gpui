@@ -1,0 +1,164 @@
+//! Usage text for every control command.
+use crate::cli::control::FAMILIES;
+
+const COMMON: &str = "\
+Every command accepts --json, printing one JSON document, and --window ID,
+acting in that window (IDs come from `window list`). By default a command
+acts in the window showing the caller's workspace (HERDR_WORKSPACE_ID), or
+the frontmost window.
+Exit status: 0 done, 1 refused, 2 invalid arguments, 3 Herdr UI not running,
+4 nothing yet (no notes, no event), 5 not found, 6 busy (a dialog is open),
+7 timed out, 8 unsupported on this platform or by this app version.";
+
+const BROWSER: &str = "\
+herdr-gpui browser open URL|FILE [--workspace ID] [--no-focus]
+    Show a web address, or a local HTML file, in a browser tab of the running
+    Herdr UI. The tab joins the caller's own workspace (HERDR_WORKSPACE_ID),
+    or the frontmost one outside Herdr. Showing the same page again from the
+    same pane reuses and reloads its tab. Bare hosts such as localhost:3000
+    are accepted. A file is served with the other files in its folder.
+herdr-gpui browser reload
+    Reload the pages this pane opened, for example after editing the file.
+herdr-gpui browser feedback [--wait SECONDS]
+    Print the notes the user sent about this pane's pages and have not been
+    delivered yet. With --wait, wait up to SECONDS (at most 600) for them.
+    Notes are otherwise typed into this pane as a prompt once it is idle.
+herdr-gpui browser list
+    List page tabs with their IDs.
+herdr-gpui browser close|back|forward|text TAB
+    Close a page tab, go back or forward in it, or print its visible text.
+herdr-gpui browser navigate TAB URL
+    Load another web address in a page tab.
+herdr-gpui browser screenshot TAB PATH
+    Save a PNG of the page (macOS).
+herdr-gpui browser skill
+    Print the agent skill that explains these commands.
+Exit status: 0 done, 1 refused, 2 invalid arguments, 3 Herdr UI not running,
+4 no notes (feedback), 5 no such tab or workspace, 6 busy, 7 timed out,
+8 unsupported on this platform.";
+
+fn family(name: &str) -> &'static str {
+    match name {
+        "status" => {
+            "herdr-gpui status\n    Whether Herdr UI runs, its version, protocol, windows, and hosts.\n    Exits 3 when it does not run."
+        }
+        "skill" => "herdr-gpui skill\n    Print the agent skill describing these commands.",
+        "app" => {
+            "herdr-gpui app focus|hide|quit\n    Bring the app forward, hide it, or quit it. Quitting leaves Herdr\n    and its terminals running."
+        }
+        "window" => {
+            "herdr-gpui window [list]\n    The app's windows, with IDs for --window.\nherdr-gpui window new [--session NAME]\n    Open another window, of the first window's host or a local session.\nherdr-gpui window focus ID\nherdr-gpui window fullscreen [on|off|toggle]\nherdr-gpui window size [WIDTHxHEIGHT]\n    Print the window's size, or resize it. Windows cannot be moved.\nherdr-gpui window detach|reconnect\n    Detach from, or reconnect to, the window's selected host."
+        }
+        "ui" => {
+            "herdr-gpui ui sidebar [on|off|toggle]\nherdr-gpui ui statusbar [on|off|toggle]\nherdr-gpui ui font-size +|-|reset|POINTS\n    For this window and session; settings are changed with `config`."
+        }
+        "tab" => {
+            "herdr-gpui tab [list]\n    The app's own tabs: pages, code, reviews, the orchestrator, Devices.\n    Terminal tabs belong to Herdr: use `herdr tab`.\nherdr-gpui tab focus|close ID"
+        }
+        "code" => {
+            "herdr-gpui code open FILE[:LINE]\n    Show a local file read-only in a code tab, at LINE.\nherdr-gpui code edit FILE[:LINE]\n    Open it in your terminal editor ($VISUAL, $EDITOR) in a new pane."
+        }
+        "devices" => "herdr-gpui devices [open]\n    Open the Devices overview tab.",
+        "orchestrator" => {
+            "herdr-gpui orchestrator [open] [--repo PATH]\n    Open the orchestrator of the caller's checkout, or of PATH.\nherdr-gpui orchestrator items|issues|prs [--repo PATH]\n    List what it last synced, from its local database (no network)."
+        }
+        "review" => {
+            "herdr-gpui review [open]\n    Open the review of the caller's workspace's uncommitted changes."
+        }
+        "notes" => {
+            "herdr-gpui notes [list]\n    Every worktree note, most recently edited first.\nherdr-gpui notes get|clear\nherdr-gpui notes set TEXT...\n    The note on the caller's checkout (its repository and branch)."
+        }
+        "feedback" => {
+            "herdr-gpui feedback [--wait SECONDS]\n    Notes the user sent this pane: page, review, and terminal notes that\n    were not typed into it. Exits 4 when there are none."
+        }
+        "checkpoint" => {
+            "herdr-gpui checkpoint [list]\n    The current directory's checkout's checkpoints, oldest first.\nherdr-gpui checkpoint create [LABEL...]\n    Take one now. Runs here; Herdr UI need not run.\nherdr-gpui checkpoint diff CHECKPOINT [CHECKPOINT]\n    What changed between two, or since one in the working tree.\nherdr-gpui checkpoint restore [CHECKPOINT]\n    Open the checkpoints dialog in Herdr UI; the user confirms there."
+        }
+        "scripts" => {
+            "herdr-gpui scripts [list]\n    The current directory's repository's worktree scripts\n    (.herdr/worktree.toml).\nherdr-gpui scripts setup|run|archive\n    Run one in a new tab of the caller's workspace. Herdr UI asks before\n    running a script it has not seen."
+        }
+        "teleport" => {
+            "herdr-gpui teleport --to HOST\n    Open the teleport dialog for the caller's linked worktree, reviewing\n    HOST. The user confirms the move there."
+        }
+        "fan-out" => {
+            "herdr-gpui fan-out PROMPT... [--agent KIND[:COUNT]]...\n    Open the fan-out dialog for the caller's repository with PROMPT and\n    these agents chosen. The user starts it there."
+        }
+        "pr" => {
+            "herdr-gpui pr [status]|checks\n    The pull request of the caller's workspace's branch.\nherdr-gpui pr comments\n    Its review comments (the workspace must be the focused one).\nherdr-gpui pr open\n    Open it in a browser tab."
+        }
+        "host" => {
+            "herdr-gpui host [list]\n    The window's hosts and their status. Herdr's `machine` command\n    manages saved hosts.\nherdr-gpui host select ID\n    Show that host in the window, as choosing it in the sidebar does."
+        }
+        "cloud" => {
+            "herdr-gpui cloud [list]\n    Saved cloud machines (Herdr UI need not run).\nherdr-gpui cloud add\n    Open the settings that add a machine. A machine is never created or\n    destroyed from the command line."
+        }
+        "ports" => {
+            "herdr-gpui ports [list]\n    Ports the caller's workspace's processes listen on, and forwards.\nherdr-gpui ports forward|unforward PORT\n    Forward a port of the window's SSH host to this machine, or stop.\nherdr-gpui ports open PORT\n    Show localhost:PORT in a browser tab, forwarding it first if remote."
+        }
+        "processes" => {
+            "herdr-gpui processes [--pane ID]\n    The processes under a pane (default HERDR_PANE_ID), with CPU and\n    memory. Runs here; Herdr UI need not run."
+        }
+        "usage" => "herdr-gpui usage\n    AI plan usage on the window's selected host.",
+        "system" => {
+            "herdr-gpui system\n    The window's selected host's load, when Herdr UI samples it."
+        }
+        "search" => {
+            "herdr-gpui search symbol|file QUERY... [--limit N]\n    Go to Symbol or Go to File over the current directory's checkout.\n    Runs here; Herdr UI need not run."
+        }
+        "config" => {
+            "herdr-gpui config [path]\n    The settings files.\nherdr-gpui config get KEY\nherdr-gpui config set KEY VALUE\nherdr-gpui config unset KEY\n    Read or change a setting in config-gpui.local.toml; Herdr UI applies\n    it at once. KEY is dotted, such as terminal.size.\nherdr-gpui config check\n    Report invalid settings; exits 1 when there are any.\nherdr-gpui config reload\n    Reread Herdr's config and this app's."
+        }
+        "theme" => "herdr-gpui theme [list]\nherdr-gpui theme set NAME...",
+        "font" => {
+            "herdr-gpui font [list]\nherdr-gpui font set NAME...\nherdr-gpui font reset\n    The font of every face; reset goes back to the default."
+        }
+        "keybinds" => {
+            "herdr-gpui keybinds [list]\n    The window's shortcuts.\nherdr-gpui keybinds check\n    Herdr's custom commands this client cannot reach; exits 1 if any."
+        }
+        "caffeine" => {
+            "herdr-gpui caffeine [status]\nherdr-gpui caffeine on|off|toggle [--for 90s|30m|2h]\n    Keep the display and the machine awake."
+        }
+        "sound" => "herdr-gpui sound [list]\nherdr-gpui sound play [done|request]",
+        "bell" => "herdr-gpui bell\n    Ring the system bell, as a terminal bell does.",
+        "events" => {
+            "herdr-gpui events [--after SEQ] [--wait SECONDS] [--kind KIND]... [--follow]\n    What happened since SEQ: windows and tabs opening and closing, notes,\n    and host status. --follow keeps printing until interrupted. Kinds:\n    window_opened, window_closed, window_focused, tab_opened, tab_closed,\n    feedback, note, host."
+        }
+        "wait" => {
+            "herdr-gpui wait feedback|window|online|tab-closed ID [--timeout SECONDS]\n    Wait (default 60, at most 600 seconds). Exits 4 when time runs out."
+        }
+        "run" => {
+            "herdr-gpui run COMMAND\n    Run an app command by its [keybindings] name, as the command palette\n    does, for example toggle_sidebar. See `commands`."
+        }
+        "commands" => "herdr-gpui commands\n    The commands `run` accepts, with their shortcuts.",
+        "logs" => {
+            "herdr-gpui logs [--lines N] [--path]\n    The app's latest log records, or the log file's path."
+        }
+        "update" => {
+            "herdr-gpui update [status]\nherdr-gpui update check\n    Ask for the latest release. Never downloads or installs."
+        }
+        "diagnostics" => {
+            "herdr-gpui diagnostics bundle PATH\n    Write build information, settings diagnostics, and recent logs, with\n    home paths redacted, to PATH for a bug report."
+        }
+        "integrations" => {
+            "herdr-gpui integrations [list]\n    The agent integrations Herdr offers the window's host.\nherdr-gpui integrations install-skill\n    Install or update the agent skill for Claude Code and other agents."
+        }
+        _ => "",
+    }
+}
+
+/// Usage for one family, or the list of families.
+pub(super) fn usage(name: Option<&str>) -> String {
+    match name {
+        Some("browser") => BROWSER.to_owned(),
+        Some(name) => format!("{}\n\n{COMMON}", family(name)),
+        None => {
+            let mut text = String::from("herdr-gpui COMMAND ... [--json] [--window ID]\n\n");
+            for (name, summary) in FAMILIES {
+                text.push_str(&format!("  {name:<14}{summary}\n"));
+            }
+            text.push_str("\nRun `herdr-gpui COMMAND --help` for one command's usage.\n\n");
+            text.push_str(COMMON);
+            text
+        }
+    }
+}

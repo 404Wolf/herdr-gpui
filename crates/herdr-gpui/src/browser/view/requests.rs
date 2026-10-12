@@ -13,7 +13,11 @@ impl HerdrWindow {
     /// shows it. `strict` requires the caller's own daemon; otherwise any
     /// endpoint showing the named workspace qualifies. Only the Unix control
     /// socket asks.
-    fn browser_target(&self, target: &Target<'_>, strict: bool) -> Option<(usize, String)> {
+    pub(crate) fn control_target(
+        &self,
+        target: &Target<'_>,
+        strict: bool,
+    ) -> Option<(usize, String)> {
         self.endpoints
             .iter()
             .enumerate()
@@ -60,7 +64,7 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<Placed> {
-        let (index, workspace) = self.browser_target(target, strict)?;
+        let (index, workspace) = self.control_target(target, strict)?;
         let scope = scope(&self.endpoints[index]);
         // An agent showing the same page again gets its tab back, reloaded,
         // rather than another tab for every revision.

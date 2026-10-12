@@ -1,0 +1,267 @@
+//! The app's side of the control socket: requests are answered on the UI
+//! thread, a few at a time, from the windows and the app's globals. Most are
+//! answered at once; a request that waits for something (notes, an event, a
+//! page) is parked as a [`Watch`] and checked on every tick.
+mod app;
+mod browser;
+mod events;
+mod hosts;
+mod settings;
+mod tabs;
+mod work;
+
+use super::{
+    Target, main_windows, plain,
+    protocol::{Caller, ErrorCode, Request, Response},
+    socket, socket_path, valid_caller,
+};
+use crate::{
+    HerdrWindow,
+    browser::{Feedback, FeedbackKey, Scope},
+};
+use browser::{feedback, notes, open_browser, reload, serve_waiters};
+use gpui::{App, Context, Window, WindowHandle};
+use std::{
+    path::Path,
+    time::{Duration, Instant},
+};
+
+/// Requests parked at once, besides feedback waiters; the socket's own
+/// connection bound keeps the real number lower.
+const MAX_WATCHES: usize = 16;
+
+/// A request answered once `check` has an answer, or with `expired` when
+/// `until` passes or the caller hangs up.
+pub(super) struct Watch {
+    incoming: socket::Incoming,
+    until: Instant,
+    check: Box<dyn FnMut(&mut App) -> Option<Response>>,
+    expired: Response,
+}
+
+#[derive(Default)]
+pub(super) struct Watches(Vec<Watch>);
+
+impl Watches {
+    /// Parks `incoming` for up to `wait`. Checks once at once, so an answer
+    /// already there is never delayed a tick.
+    pub(super) fn add(
+        &mut self,
+        incoming: socket::Incoming,
+        wait: Duration,
+        mut check: impl FnMut(&mut App) -> Option<Response> + 'static,
+        expired: Response,
+        cx: &mut App,
+    ) {
+        if let Some(response) = check(cx) {
+            incoming.respond(response);
+            return;
+        }
+        if self.0.len() >= MAX_WATCHES {
+            incoming.respond(Response::error(
+                ErrorCode::Busy,
+                "Too many requests are waiting",
+            ));
+            return;
+        }
+        self.0.push(Watch {
+            incoming,
+            until: Instant::now() + wait,
+            check: Box::new(check),
+            expired,
+        });
+    }
+
+    fn serve(&mut self, cx: &mut App) {
+        let now = Instant::now();
+        let mut still = Vec::with_capacity(self.0.len());
+        for mut watch in self.0.drain(..) {
+            if !watch.incoming.is_live() {
+                continue;
+            }
+            if let Some(response) = (watch.check)(cx) {
+                watch.incoming.respond(response);
+            } else if now >= watch.until {
+                watch.incoming.respond(watch.expired);
+            } else {
+                still.push(watch);
+            }
+        }
+        self.0 = still;
+    }
+}
+
+/// Everything the serving loop keeps between ticks.
+#[derive(Default)]
+struct State {
+    waiters: Vec<browser::Waiter>,
+    watches: Watches,
+}
+
+fn not_found(message: impl Into<String>) -> Response {
+    Response::error(ErrorCode::NotFound, message)
+}
+
+/// The window a request acts in: the one `--window` named; else the one
+/// showing the caller's workspace, on the caller's own daemon first; else
+/// the frontmost.
+pub(super) fn window_for(
+    caller: &Caller,
+    cx: &mut App,
+) -> Result<WindowHandle<HerdrWindow>, Response> {
+    if !valid_caller(caller) {
+        return Err(Response::error(
+            ErrorCode::InvalidRequest,
+            "Invalid workspace, pane, or daemon",
+        ));
+    }
+    let windows = main_windows(cx);
+    if let Some(id) = caller.window {
+        return windows
+            .into_iter()
+            .find(|handle| handle.window_id().as_u64() == id)
+            .ok_or_else(|| not_found(format!("Herdr UI has no window {id}")));
+    }
+    if caller.workspace_id.is_some() {
+        let target = target(caller);
+        for strict in [true, false] {
+            for handle in &windows {
+                let shows = handle
+                    .read_with(cx, |view, _| view.control_target(&target, strict).is_some())
+                    .unwrap_or(false);
+                if shows {
+                    return Ok(*handle);
+                }
+            }
+        }
+    }
+    windows
+        .into_iter()
+        .next()
+        .ok_or_else(|| Response::error(ErrorCode::NoWindow, "Herdr UI has no window open"))
+}
+
+pub(super) fn target(caller: &Caller) -> Target<'_> {
+    Target {
+        daemon: caller.daemon_socket.as_deref().map(Path::new),
+        workspace: caller.workspace_id.as_deref(),
+        pane: caller.pane_id.as_deref(),
+    }
+}
+
+/// Runs `act` in the request's window. A window holding a dialog takes no
+/// commands, so a request that would act through its menus is refused
+/// rather than silently dropped.
+pub(super) fn in_window(
+    caller: &Caller,
+    cx: &mut App,
+    act: impl FnOnce(&mut HerdrWindow, &mut Window, &mut Context<HerdrWindow>) -> Response,
+) -> Response {
+    let handle = match window_for(caller, cx) {
+        Ok(handle) => handle,
+        Err(response) => return response,
+    };
+    handle
+        .update(cx, |view, window, cx| act(view, window, cx))
+        .unwrap_or_else(|_| Response::error(ErrorCode::NoWindow, "The window closed"))
+}
+
+/// Like [`in_window`], for actions a dialog would swallow.
+pub(super) fn in_free_window(
+    caller: &Caller,
+    cx: &mut App,
+    act: impl FnOnce(&mut HerdrWindow, &mut Window, &mut Context<HerdrWindow>) -> Response,
+) -> Response {
+    in_window(caller, cx, |view, window, cx| {
+        if view.menu.page.is_some() {
+            return Response::error(
+                ErrorCode::WindowBusy,
+                "A dialog is open in the window; close it first",
+            );
+        }
+        act(view, window, cx)
+    })
+}
+
+fn serve(incoming: socket::Incoming, state: &mut State, cx: &mut App) {
+    match incoming.request.clone() {
+        Request::Open(request) => incoming.respond(open_browser(&request, cx)),
+        Request::Reload(caller) => incoming.respond(reload(&caller, cx)),
+        Request::Feedback(request) => feedback(&request, incoming, &mut state.waiters, cx),
+        Request::Notes(request) => incoming.respond(notes(&request, cx)),
+        Request::Status(caller) => incoming.respond(app::status(&caller, cx)),
+        Request::App(call) => incoming.respond(app::app(call, cx)),
+        Request::Window(call) => incoming.respond(app::window(call, cx)),
+        Request::Ui(call) => incoming.respond(app::ui(call, cx)),
+        Request::Command(call) => incoming.respond(app::command(call, cx)),
+        Request::Tab(call) => tabs::serve(call, incoming, &mut state.watches, cx),
+        Request::Work(call) => work::serve(call, incoming, &mut state.watches, cx),
+        Request::Host(call) => hosts::serve(call, incoming, &mut state.watches, cx),
+        Request::Settings(call) => settings::serve(call, incoming, &mut state.watches, cx),
+        Request::Events(call) => events::serve(call, incoming, &mut state.watches, cx),
+    }
+}
+
+fn keep_undelivered(request: super::protocol::FeedbackRequest, text: String, cx: &mut App) {
+    let Some(daemon) = request.daemon_socket else {
+        return;
+    };
+    cx.default_global::<Feedback>().keep(
+        crate::browser::Batch {
+            target: FeedbackKey {
+                scope: Scope::local(Path::new(&daemon)),
+                pane_id: request.pane_id,
+            },
+            text,
+        },
+        None,
+    );
+}
+
+/// Starts answering requests. A second app instance leaves the first one's
+/// socket alone and simply does not listen.
+pub(crate) fn install(cx: &mut App) {
+    let Some(path) = socket_path() else {
+        return;
+    };
+    let server = match socket::Server::bind(&path) {
+        Ok(server) => server,
+        Err(error) => {
+            tracing::warn!(%error, "Control socket unavailable");
+            return;
+        }
+    };
+    tracing::info!(path = %server.path().display(), "Control socket listening");
+    cx.on_app_quit(move |cx| {
+        let path = path.clone();
+        cx.background_executor().spawn(async move {
+            let _ = std::fs::remove_file(path);
+        })
+    })
+    .detach();
+    let timer = cx.background_executor().clone();
+    cx.spawn(async move |cx| {
+        let mut state = State::default();
+        loop {
+            timer.timer(Duration::from_millis(50)).await;
+            cx.update(|cx| {
+                events::record(cx);
+                serve_waiters(&mut state.waiters, cx);
+                for event in server.drain() {
+                    match event {
+                        socket::Event::Request(incoming) if incoming.is_live() => {
+                            serve(incoming, &mut state, cx);
+                        }
+                        socket::Event::Request(_) => {}
+                        socket::Event::Undelivered { request, text } => {
+                            keep_undelivered(request, text, cx);
+                        }
+                    }
+                }
+                serve_waiters(&mut state.waiters, cx);
+                state.watches.serve(cx);
+            });
+        }
+    })
+    .detach();
+}

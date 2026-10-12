@@ -73,6 +73,12 @@ impl Feedback {
         })
     }
 
+    /// Whom the kept batches are for, oldest first.
+    #[cfg(unix)]
+    pub(crate) fn kept(&self) -> impl Iterator<Item = &FeedbackKey> {
+        self.kept.iter().map(|(batch, _)| &batch.target)
+    }
+
     #[cfg(any(unix, test))]
     pub(crate) fn has(&self, target: &FeedbackKey) -> bool {
         self.kept.iter().any(|(batch, _)| &batch.target == target)

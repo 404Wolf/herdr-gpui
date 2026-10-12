@@ -174,13 +174,13 @@ pub(crate) fn run() -> std::process::ExitCode {
         Ok(options) => options,
         Err(error) => {
             eprintln!(
-                "{error}\nUsage: herdr-gpui [--socket CLIENT_SOCKET | --session NAME [--dev]]\n       herdr-gpui browser open URL [--workspace ID] [--no-focus]"
+                "{error}\nUsage: herdr-gpui [--socket CLIENT_SOCKET | --session NAME [--dev]]\n       herdr-gpui browser open URL [--workspace ID] [--no-focus]\n       herdr-gpui COMMAND ... (see herdr-gpui --help)"
             );
             return std::process::ExitCode::from(2);
         }
     };
-    if let LaunchMode::Browser(command) = mode {
-        return crate::control::run(command);
+    if let LaunchMode::Control(invocation) = mode {
+        return crate::control::run(invocation);
     }
     // A separate app of its own: no daemon, control socket, stores, or updater.
     #[cfg(feature = "mockup")]
@@ -201,6 +201,10 @@ pub(crate) fn run() -> std::process::ExitCode {
         println!(
             "  browser open URL    Show URL in a browser tab of the running app (see browser --help)"
         );
+        println!("\nCommands for the running app (each with --help):");
+        for (name, summary) in cli::control::FAMILIES {
+            println!("  {name:<18}{summary}");
+        }
         #[cfg(feature = "integration-test")]
         println!(
             "  --integration-test  Run native GUI checks (requires explicit --socket)\n  --sidebar-test      Run native sidebar fixtures without connecting to a daemon\n  --performance-test  Measure native dense-terminal hover/scroll without a daemon (macOS)"

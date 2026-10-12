@@ -1,11 +1,9 @@
-//! The Unix socket behind `herdr-gpui browser`. A worker accepts
+//! The Unix socket behind `herdr-gpui <command>`. A worker accepts
 //! connections and serves each on a thread of its own, up to a bound: it
 //! reads one bounded request, hands it to the UI through a bounded queue,
 //! and writes back the answer the UI gives it. A feedback request may wait
 //! minutes for the user, so connections cannot share one thread.
-use super::protocol::{
-    ErrorCode, FeedbackRequest, MAX_MESSAGE, MAX_WAIT_SECONDS, Request, Response,
-};
+use super::protocol::{ErrorCode, FeedbackRequest, MAX_MESSAGE, Request, Response};
 use std::{
     io::{self, BufRead, BufReader, Read, Write},
     os::unix::{
@@ -31,15 +29,10 @@ const QUEUE: usize = 4;
 /// Connections served at once, waiting ones included.
 const CONNECTIONS: usize = 8;
 
-/// How long the UI may take to answer `request`: a feedback request waits
-/// for the user as long as it asked to.
+/// How long the UI may take to answer `request`: one that waits for the
+/// user, a page, or an event on purpose gets as long as it asked for.
 fn answer_timeout(request: &Request) -> Duration {
-    match request {
-        Request::Feedback(feedback) => {
-            ANSWER_TIMEOUT + Duration::from_secs(feedback.wait_seconds.min(MAX_WAIT_SECONDS))
-        }
-        _ => ANSWER_TIMEOUT,
-    }
+    ANSWER_TIMEOUT + Duration::from_secs(request.wait_seconds())
 }
 
 /// A request waiting for the UI's answer.
@@ -122,7 +115,7 @@ impl Server {
         // The worker blocks in accept for the life of the process. Nothing
         // joins it: the UI must never wait on it, and exit reclaims it.
         thread::Builder::new()
-            .name("browser-control".into())
+            .name("control-socket".into())
             .spawn(move || {
                 let open = Arc::new(AtomicUsize::new(0));
                 for stream in listener.incoming() {
@@ -140,7 +133,7 @@ impl Server {
                     }
                     let (queue, done) = (sender.clone(), open.clone());
                     let spawned = thread::Builder::new()
-                        .name("browser-control-connection".into())
+                        .name("control-connection".into())
                         .spawn(move || {
                             serve(stream, &queue);
                             done.fetch_sub(1, Ordering::AcqRel);
@@ -313,7 +306,9 @@ pub(crate) fn call(path: &Path, request: &Request) -> crate::Result<Response> {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
-    use super::super::protocol::{BrowserOpen, Caller, FeedbackRequest, OpenedIn, Page};
+    use super::super::protocol::{
+        BrowserOpen, Caller, FeedbackRequest, MAX_WAIT_SECONDS, OpenedIn, Page,
+    };
     use super::*;
 
     mod cancellation;
