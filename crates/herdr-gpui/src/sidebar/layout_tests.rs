@@ -564,6 +564,8 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         pending_images: Vec::new(),
         pending_input: Default::default(),
         held_keys: Default::default(),
+        // No AppKit event to read; a test that needs one supplies its own.
+        key_press: || None,
         file_transfer: None,
         presentation: Default::default(),
         wake: crate::endpoint::WakeClock::new(

@@ -261,6 +261,16 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A remapped function key has its name from here on, so the pane key
+        // looked up, the key sent, and the key held for its release agree.
+        let named =
+            super::function_keys::named(&event.keystroke, self.key_press).map(|keystroke| {
+                KeyDownEvent {
+                    keystroke,
+                    ..event.clone()
+                }
+            });
+        let event = named.as_ref().unwrap_or(event);
         // A new press goes wherever this decides; only the pane branch at the
         // end holds it again for its release.
         self.held_keys.forget(&event.keystroke.key);
@@ -358,7 +368,10 @@ impl HerdrWindow {
     /// terminal to report all keys. Text stays with the input handler, so
     /// only keys sent as key events are released.
     pub(crate) fn key_up(&mut self, event: &KeyUpEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(release) = self.held_keys.release(&event.keystroke.key) else {
+        // Held under the name `key_down` gave it.
+        let named = super::function_keys::named(&event.keystroke, self.key_press);
+        let key = &named.as_ref().unwrap_or(&event.keystroke).key;
+        let Some(release) = self.held_keys.release(key) else {
             return;
         };
         if self.live.keyboard_report_all && self.marked.is_empty() {
