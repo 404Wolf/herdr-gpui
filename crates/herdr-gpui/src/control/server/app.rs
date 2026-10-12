@@ -119,6 +119,37 @@ pub(super) fn app(call: Call<AppOp>, cx: &mut App) -> Response {
     }
 }
 
+/// What `window new` connects to: the caller's own daemon when it runs in
+/// a Herdr pane, as a window that knows it names it or else by its socket;
+/// outside Herdr, the frontmost window's launch target.
+fn new_window_target(caller: &Caller, cx: &mut App) -> ConnectTarget {
+    if let Some(daemon) = caller.daemon_socket.as_deref() {
+        let daemon = std::path::Path::new(daemon);
+        let known = main_windows(cx).into_iter().find_map(|handle| {
+            handle
+                .read_with(cx, |view, _| {
+                    view.endpoints
+                        .iter()
+                        .find(|endpoint| {
+                            endpoint.connection.target.socket_path().ok().as_deref() == Some(daemon)
+                        })
+                        .map(|endpoint| endpoint.connection.target.clone())
+                })
+                .ok()
+                .flatten()
+        });
+        return known.unwrap_or_else(|| ConnectTarget::Socket(daemon.to_owned()));
+    }
+    main_windows(cx)
+        .first()
+        .and_then(|handle| {
+            handle
+                .read_with(cx, |view, _| view.endpoints[0].connection.target.clone())
+                .ok()
+        })
+        .unwrap_or(ConnectTarget::Local)
+}
+
 pub(super) fn window(call: Call<WindowOp>, cx: &mut App) -> Response {
     let caller = &call.caller;
     match call.op {
@@ -138,15 +169,7 @@ pub(super) fn window(call: Call<WindowOp>, cx: &mut App) -> Response {
                         development: false,
                     }
                 }
-                None => match window_for(caller, cx) {
-                    Ok(handle) => match handle
-                        .read_with(cx, |view, _| view.endpoints[0].connection.target.clone())
-                    {
-                        Ok(target) => target,
-                        Err(_) => ConnectTarget::Local,
-                    },
-                    Err(_) => ConnectTarget::Local,
-                },
+                None => new_window_target(caller, cx),
             };
             crate::open_additional_window(target, cx);
             // Opened after this answer; a failure is only logged.

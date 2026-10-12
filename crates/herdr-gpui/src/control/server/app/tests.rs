@@ -88,3 +88,24 @@ fn commands_are_run_by_their_keybinding_names_only(cx: &mut gpui::TestAppContext
         assert_eq!(code(&known), Some(ErrorCode::NoWindow));
     });
 }
+
+#[gpui::test]
+fn a_new_window_joins_the_callers_own_session(cx: &mut gpui::TestAppContext) {
+    cx.update(|cx| {
+        let pane = Caller {
+            daemon_socket: Some("/tmp/herdr-foo.sock".into()),
+            ..Caller::default()
+        };
+        // No window knows that daemon: it is attached to by its socket, never
+        // swapped for the default session.
+        assert_eq!(
+            new_window_target(&pane, cx),
+            ConnectTarget::Socket("/tmp/herdr-foo.sock".into())
+        );
+        // Outside Herdr, with no window, the local default.
+        assert_eq!(
+            new_window_target(&Caller::default(), cx),
+            ConnectTarget::Local
+        );
+    });
+}
