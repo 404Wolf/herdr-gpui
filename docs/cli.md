@@ -71,7 +71,7 @@ Every command accepts:
 | `browser navigate ID URL` | Load another address in a page tab |
 | `browser back\|forward ID` | |
 | `browser text ID` | The page's visible text |
-| `browser screenshot ID PATH` | A PNG of the page (macOS) |
+| `browser screenshot ID PATH` | A PNG of the visible page, at most 2000 px a side (macOS) |
 | `code open FILE[:LINE]` | A read-only code tab at a line |
 | `code edit FILE[:LINE]` | Your terminal editor, in a new pane beside yours |
 | `devices` | The Devices overview |
@@ -86,13 +86,13 @@ Every command accepts:
 | `notes [list]` | Every worktree note |
 | `notes get\|clear`, `notes set TEXT` | The note on your checkout (its repository and branch) |
 | `feedback [--wait S]` | Notes the user sent your pane from pages, reviews, or terminals |
-| `checkpoint [list]` | Checkpoints of the current directory's checkout (no app needed) |
+| `checkpoint [list]` | Checkpoints of the current directory's checkout, newest first (no app needed) |
 | `checkpoint create [LABEL]` | Take one now (no app needed) |
 | `checkpoint diff A [B]` | What changed between two, or since one (no app needed) |
 | `checkpoint restore [ID]` | Open the checkpoints dialog; you confirm there |
 | `scripts [list]` | The repository's `.herdr/worktree.toml` scripts (no app needed) |
-| `scripts setup\|run\|archive` | Run one in a new tab; an unseen script still asks first |
-| `teleport --to HOST` | Open the teleport dialog reviewing HOST; you confirm there |
+| `scripts setup\|run` | Run one in a new tab; an unseen script still asks first. Archive removes the worktree, so it stays behind the app's delete dialog |
+| `teleport --to HOST` | Open the teleport dialog for your linked worktree, reviewing HOST; you confirm there |
 | `fan-out PROMPT [--agent KIND[:N]]...` | Open the fan-out dialog prefilled; you start it there |
 
 ### Hosts
@@ -100,7 +100,7 @@ Every command accepts:
 | Command | What it does |
 | --- | --- |
 | `host [list]`, `host select ID` | The window's hosts; show another one |
-| `pr [status]\|checks\|comments\|open` | Your branch's pull request |
+| `pr [status]\|checks\|comments\|open` | Your branch's pull request, on the window's selected host. `comments` needs your workspace focused |
 | `ports [list]` | Ports your workspace listens on, and forwards |
 | `ports forward\|unforward PORT` | Forward a port of the SSH host to this machine |
 | `ports open PORT` | `localhost:PORT` in a tab, forwarded first when remote |
@@ -115,7 +115,7 @@ Every command accepts:
 | Command | What it does |
 | --- | --- |
 | `config [path]` | The settings files (no app needed) |
-| `config get\|set\|unset KEY [VALUE]` | Read or change `config-gpui.local.toml`; the app applies it at once |
+| `config get\|set\|unset KEY [VALUE]` | Read or change `config-gpui.local.toml`, keeping its comments. A value that would not load, or an unknown key, is refused and nothing is written; the app applies the rest at once (no app needed) |
 | `config check` | Report invalid settings, exit 1 if any |
 | `config reload` | Reread Herdr's config and this app's |
 | `theme [list]`, `theme set NAME` | |
@@ -146,7 +146,8 @@ herdr-gpui wait window            # also waits for the app to start
 
 Commands never bypass a confirmation. Restoring a checkpoint, teleporting a
 worktree, fanning out a prompt, running a worktree script the app has not
-seen, and adding a cloud machine open the app's own dialog, already pointed
+seen, and adding a cloud machine open the app's own dialog (archiving a
+worktree has no command at all), already pointed
 at your checkout, and the user confirms there. Nothing here installs,
 starts, stops, or upgrades Herdr, and `update` never installs the app.
 
