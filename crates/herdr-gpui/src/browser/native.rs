@@ -45,9 +45,10 @@ pub(crate) enum Event<P = TabId> {
     /// a menu covers it. Only macOS takes them.
     #[cfg(target_os = "macos")]
     Frozen(P, Option<Vec<u8>>),
-    /// A message the annotation picker posted. Any script in the page can
-    /// post one, so it is parsed as untrusted input.
-    Posted(P, String),
+    /// A message the annotation picker or the page bridge posted, and the
+    /// frame that posted it. Any script in any frame can post one, so it is
+    /// parsed as untrusted input.
+    Posted(P, String, super::PostedFrom),
 }
 
 /// The page a report came from. A popup's page exists before its tab does,
@@ -79,7 +80,7 @@ impl Event<Source> {
             Self::Captured(source, capture, tiff) => Event::Captured(tab(source)?, capture, tiff),
             #[cfg(target_os = "macos")]
             Self::Frozen(source, tiff) => Event::Frozen(tab(source)?, tiff),
-            Self::Posted(source, body) => Event::Posted(tab(source)?, body),
+            Self::Posted(source, body, from) => Event::Posted(tab(source)?, body, from),
         })
     }
 }
@@ -291,9 +292,11 @@ impl Pages {
                 },
             )
             .with_ipc_handler(move |request| {
+                // wry names the frame that posted, not the page's main frame.
+                let from = super::PostedFrom::of(&request.uri().to_string());
                 let body = request.into_body();
                 if body.len() <= MAX_POST_BYTES {
-                    report(&posted, Event::Posted(Source::Tab(id), body));
+                    report(&posted, Event::Posted(Source::Tab(id), body, from));
                 }
             });
         // Window has an inherent `window_handle` of its own.

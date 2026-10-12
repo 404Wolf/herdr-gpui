@@ -3,7 +3,7 @@
 //! notes are written in the app, never in the page, and nothing reaches an
 //! agent until the user presses Send.
 use super::{
-    TabId,
+    PostedFrom, TabId,
     annotate::{self, Anchor, MAX_NOTES, Note, Rect, Report},
 };
 use crate::{
@@ -237,12 +237,13 @@ impl HerdrWindow {
         &mut self,
         id: TabId,
         body: &str,
+        from: PostedFrom,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let report = Report::parse(body);
         if let Some(Report::Sent { summary, data }) = report {
-            self.page_sent(id, summary, data, cx);
+            self.page_sent(id, summary, data, from, cx);
             return;
         }
         if !self.browser.annotations.armed(id) {
@@ -265,13 +266,21 @@ impl HerdrWindow {
 
     /// Queues a result a local page sent as a note, replacing the page's
     /// earlier result the user has not sent yet, so picking again changes
-    /// the answer rather than adding another. A web page, or a local page
-    /// that navigated to one, sends nothing.
-    fn page_sent(&mut self, id: TabId, summary: String, data: String, cx: &mut Context<Self>) {
+    /// the answer rather than adding another. Only the local page's own
+    /// frames may send: a web page it embeds, or one it is navigating to
+    /// before the tab's location catches up, sends nothing.
+    fn page_sent(
+        &mut self,
+        id: TabId,
+        summary: String,
+        data: String,
+        from: PostedFrom,
+        cx: &mut Context<Self>,
+    ) {
         let local = super::view::store(cx)
             .and_then(|store| store.get(id))
             .is_some_and(|tab| matches!(tab.location, Some(super::Location::Local { .. })));
-        if !local {
+        if !local || from != PostedFrom::Preview {
             tracing::debug!("Ignored a result from a page that is not local");
             return;
         }

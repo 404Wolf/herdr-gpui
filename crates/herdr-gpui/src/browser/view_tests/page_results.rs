@@ -1,5 +1,5 @@
 use super::*;
-use crate::browser::{LocalFile, TabId};
+use crate::browser::{LocalFile, PostedFrom, TabId};
 
 const SENT: &str = r#"{"kind":"send","summary":"Picked B","data":{"variant":"B"}}"#;
 
@@ -13,8 +13,20 @@ fn opened(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, location: Loca
     })
 }
 
+fn post_from(
+    view: &Entity<HerdrWindow>,
+    cx: &mut VisualTestContext,
+    id: TabId,
+    body: &str,
+    from: PostedFrom,
+) {
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| view.page_posted(id, body, from, window, cx))
+    });
+}
+
 fn post(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, id: TabId, body: &str) {
-    cx.update(|window, cx| view.update(cx, |view, cx| view.page_posted(id, body, window, cx)));
+    post_from(view, cx, id, body, PostedFrom::Preview);
 }
 
 fn listed(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, id: TabId) -> usize {
@@ -26,6 +38,10 @@ fn a_local_pages_result_waits_in_its_notes_without_annotating(cx: &mut gpui::Tes
     let (view, cx) = window(cx);
     let file = LocalFile::new(std::path::Path::new("/srv/mockups/index.html"), None).unwrap();
     let local = opened(&view, cx, Location::Local { file });
+    // A web frame inside the local page, or a web page it is navigating to
+    // before the tab's location catches up, cannot send.
+    post_from(&view, cx, local, SENT, PostedFrom::Elsewhere);
+    assert_eq!(listed(&view, cx, local), 0);
     post(&view, cx, local, SENT);
     // Queued as a note the user still sends, with the panel open.
     assert_eq!(listed(&view, cx, local), 1);

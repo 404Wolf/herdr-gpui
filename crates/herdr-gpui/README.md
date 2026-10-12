@@ -2097,7 +2097,10 @@ them to the agent that opened it, so it can change the page.
   and goes to the agent only when you press Send, as "The page sent a result"
   followed by the summary and the data as JSON. A newer result replaces an
   unsent one. The bridge is injected only into local pages, only while they
-  show the preview scheme, and the app drops results from any other page.
+  show the preview scheme. Any frame can still post to the app, so it checks
+  the frame that sent each result and drops it unless that frame shows a
+  local file: a web page embedded in the local page, or one it is navigating
+  to, cannot send.
   The summary is one cleaned line of at most 300 characters; data over 8 KB
   is refused rather than cut.
 

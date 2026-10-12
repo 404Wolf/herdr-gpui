@@ -389,7 +389,7 @@ impl HerdrWindow {
                     }
                     self.page_loaded(id, cx);
                 }
-                Event::Posted(id, body) => self.page_posted(id, &body, window, cx),
+                Event::Posted(id, body, from) => self.page_posted(id, &body, from, window, cx),
                 #[cfg(target_os = "macos")]
                 Event::Captured(id, capture, tiff) => self.page_captured(id, capture, tiff, cx),
                 #[cfg(target_os = "macos")]
