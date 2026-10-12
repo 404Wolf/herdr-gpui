@@ -5,6 +5,7 @@ use crate::{HerdrWindow, dialog_input::DialogInput, sidebar, worktree_scripts::A
 use herdr_client::Method;
 
 mod close;
+mod close_unconfirmed;
 mod dialog_layout;
 mod dispatch;
 mod issues;

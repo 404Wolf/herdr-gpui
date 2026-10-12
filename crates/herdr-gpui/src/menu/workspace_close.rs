@@ -211,6 +211,24 @@ impl CloseCheck {
         self.checkouts == checkouts(snapshot, target)
     }
 
+    /// Whether the close may go without the dialog once
+    /// `confirm_close_workspace` is off: the check finished without finding
+    /// uncommitted files or unpushed commits. Unverifiable status does not
+    /// hold it, since a workspace outside a Herdr worktree is never
+    /// verifiable and turning confirmation off asked not to be stopped.
+    pub fn skippable(&self, confirm: bool) -> bool {
+        !confirm
+            && self
+                .report
+                .as_ref()
+                .is_some_and(|report| !report.dirty && !report.unpushed)
+    }
+
+    /// Whether the close may be sent, with `text` typed as consent.
+    pub fn allows(&self, text: &str, confirm: bool) -> bool {
+        self.ready(text) || self.skippable(confirm)
+    }
+
     pub fn ready(&self, text: &str) -> bool {
         self.report
             .as_ref()

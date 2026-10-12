@@ -496,7 +496,7 @@ Accepted saves survive closing Settings. Family and size edits preserve configur
 fallbacks and unrelated settings in `config-gpui.local.toml`. General retains
 browser-skill installation/removal and configuration paths.
 
-General provides switches for **Show usage**, **Confirm tab close**, **Confirm pane close**, and the
+General provides switches for **Show usage**, **Confirm tab close**, **Confirm pane close**, **Confirm workspace close**, and the
 clipboard copied notification, plus all six clipboard positions. Notifications
 provides a native in-app switch, a bounded delay stepper (0-3600 seconds), and
 four corner choices. Each notification and clipboard field has a **Follow shared**
@@ -619,8 +619,11 @@ A tab asks before closing only while one of its agents is working or blocked
 on a prompt; tabs whose agents are idle or done, or that have none, close at
 once. Set top-level `confirm_close_tab = false` to never ask for tabs
 (including their running processes), `confirm_close_pane = false` to close
-panes without asking, and `show_agents = false` to hide the Agents
-section and give Spaces the full sidebar height. All three default to `true`.
+panes without asking, `confirm_close_workspace = false` to close a workspace
+from its menu without the dialog, and `show_agents = false` to hide the Agents
+section and give Spaces the full sidebar height. All four default to `true`.
+A workspace close still asks when its Git check finds uncommitted files or
+unpushed commits, whatever `confirm_close_workspace` says.
 The pane dialog's **Do not ask again** checkbox (click it or press Space) saves
 `confirm_close_pane = false` to `config-gpui.local.toml` once the close is sent. Saved edits apply automatically. The
 **Show agents** control in **Settings > Appearance > Sidebar layout** saves

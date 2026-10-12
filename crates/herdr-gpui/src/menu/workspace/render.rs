@@ -76,11 +76,12 @@ impl HerdrWindow {
                 }))
             && (action != WorkspaceAction::Close
                 || self.menu.close_check.as_ref().is_some_and(|check| {
-                    check.ready(
+                    check.allows(
                         self.menu
                             .input
                             .as_ref()
                             .map_or("", |input| input.text.as_str()),
+                        self.config.confirm_close_workspace,
                     )
                 }))
             && !creating

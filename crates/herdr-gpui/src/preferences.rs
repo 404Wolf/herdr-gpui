@@ -295,6 +295,11 @@ impl HerdrWindow {
                 self.config.confirm_close_pane.to_string(),
             ))
             .child(row(
+                "preferences-confirm-close-workspace",
+                "Confirm workspace close",
+                self.config.confirm_close_workspace.to_string(),
+            ))
+            .child(row(
                 "preferences-layout",
                 "Layout",
                 self.config.layout.mode.to_string(),
