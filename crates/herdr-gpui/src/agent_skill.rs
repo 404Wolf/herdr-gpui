@@ -43,10 +43,8 @@ pub(crate) fn text(executable: Option<&Path>) -> String {
     if executable.and_then(Path::to_str).is_none() {
         return SKILL.to_owned();
     }
-    SKILL.replace(
-        "herdr-gpui browser",
-        &format!("{} browser", command(executable)),
-    )
+    // Every command line in the skill starts with the executable's name.
+    SKILL.replace("herdr-gpui ", &format!("{} ", command(executable)))
 }
 
 fn managed(contents: &str) -> bool {
@@ -258,6 +256,9 @@ mod tests {
         )));
         assert!(bundled.contains("/Applications/Herdr.app/Contents/MacOS/Herdr browser open"));
         assert!(!bundled.contains("herdr-gpui browser"));
+        // Every command, not only the browser's, names the executable.
+        assert!(!bundled.contains("herdr-gpui "));
+        assert!(bundled.contains("/Applications/Herdr.app/Contents/MacOS/Herdr code open"));
         let spaced = text(Some(Path::new("/Users/a b/it's/Herdr")));
         assert!(spaced.contains(r"'/Users/a b/it'\''s/Herdr' browser open"));
     }
