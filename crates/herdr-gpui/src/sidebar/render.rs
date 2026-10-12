@@ -374,7 +374,7 @@ impl HerdrWindow {
                         workspace,
                         label,
                         tree,
-                        icon: if indented {
+                        icon: if indented || !self.config.show_repository_icons {
                             RowIcon::None
                         } else {
                             self.avatars

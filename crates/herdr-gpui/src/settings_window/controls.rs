@@ -976,6 +976,15 @@ impl SettingsWindow {
                 ),
                 cx,
             ))
+            .child(self.preference_switch(
+                "settings-repository-icons",
+                "Show repository icons",
+                self.config.show_repository_icons,
+                crate::config::preferences::Preference::ShowRepositoryIcons(
+                    !self.config.show_repository_icons,
+                ),
+                cx,
+            ))
             .child(self.sidebar_gap_control(cx))
     }
 }

@@ -22,6 +22,7 @@ mod loading;
 mod missing_fonts;
 mod notification_settings;
 mod preferences;
+mod repository_icons;
 mod sidebar_scope;
 mod sidebar_search;
 mod sidebar_settings;

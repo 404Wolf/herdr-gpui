@@ -49,6 +49,8 @@ mod preferences_panel;
 #[cfg(test)]
 mod probes;
 #[cfg(test)]
+mod repository_icons;
+#[cfg(test)]
 mod row_drag;
 #[cfg(test)]
 mod search;
