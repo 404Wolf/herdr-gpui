@@ -234,3 +234,27 @@ fn host_and_settings_commands() {
         }
     );
 }
+
+#[test]
+fn the_orchestrator_repository_may_come_before_the_verb() {
+    for args in [
+        &["orchestrator", "--repo", "/src/app"][..],
+        &["orchestrator", "open", "--repo", "/src/app"],
+        &["orchestrator", "--repo", "/src/app", "open"],
+    ] {
+        assert_eq!(
+            command(args),
+            ControlCommand::Orchestrator(control::OrchestratorCommand::Open {
+                repo: Some("/src/app".into())
+            }),
+            "{args:?}"
+        );
+    }
+    assert_eq!(
+        command(&["orchestrator", "--repo", "/src/app", "prs"]),
+        ControlCommand::Orchestrator(control::OrchestratorCommand::Items {
+            repo: Some("/src/app".into()),
+            items: control::Items::PullRequests,
+        })
+    );
+}

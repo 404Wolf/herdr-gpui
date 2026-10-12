@@ -106,8 +106,9 @@ pub(super) fn open_only(args: &mut Args) -> Result<(), CliError> {
 }
 
 pub(super) fn orchestrator(args: &mut Args) -> Result<OrchestratorCommand, CliError> {
-    let verb = args.verb();
+    // The option first, so `orchestrator --repo PATH` opens PATH.
     let repo = args.option("--repo")?.map(PathBuf::from);
+    let verb = args.verb();
     Ok(match verb.as_ref().and_then(|verb| verb.to_str()) {
         None | Some("open") => OrchestratorCommand::Open { repo },
         Some("items") => OrchestratorCommand::Items {
