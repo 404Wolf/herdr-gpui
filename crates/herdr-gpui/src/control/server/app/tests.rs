@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 use super::*;
 use crate::control::protocol::app::Switch;
 
@@ -99,13 +100,20 @@ fn a_new_window_joins_the_callers_own_session(cx: &mut gpui::TestAppContext) {
         // No window knows that daemon: it is attached to by its socket, never
         // swapped for the default session.
         assert_eq!(
-            new_window_target(&pane, cx),
+            new_window_target(&pane, cx).unwrap(),
             ConnectTarget::Socket("/tmp/herdr-foo.sock".into())
         );
         // Outside Herdr, with no window, the local default.
         assert_eq!(
-            new_window_target(&Caller::default(), cx),
+            new_window_target(&Caller::default(), cx).unwrap(),
             ConnectTarget::Local
         );
+        // A named window must exist: never a guess at another session.
+        let named = Caller {
+            window: Some(42),
+            ..pane
+        };
+        let refused = new_window_target(&named, cx).unwrap_err();
+        assert_eq!(code(&refused), Some(ErrorCode::NotFound));
     });
 }

@@ -119,10 +119,17 @@ pub(super) fn app(call: Call<AppOp>, cx: &mut App) -> Response {
     }
 }
 
-/// What `window new` connects to: the caller's own daemon when it runs in
-/// a Herdr pane, as a window that knows it names it or else by its socket;
-/// outside Herdr, the frontmost window's launch target.
-fn new_window_target(caller: &Caller, cx: &mut App) -> ConnectTarget {
+/// What `window new` connects to: the launch target of the window
+/// `--window` names; else the caller's own daemon when it runs in a Herdr
+/// pane, as a window that knows it names it or else by its socket; outside
+/// Herdr, the frontmost window's launch target.
+fn new_window_target(caller: &Caller, cx: &mut App) -> Result<ConnectTarget, Response> {
+    if caller.window.is_some() {
+        let handle = window_for(caller, cx)?;
+        return handle
+            .read_with(cx, |view, _| view.endpoints[0].connection.target.clone())
+            .map_err(|_| Response::error(ErrorCode::NoWindow, "The window closed"));
+    }
     if let Some(daemon) = caller.daemon_socket.as_deref() {
         let daemon = std::path::Path::new(daemon);
         let known = main_windows(cx).into_iter().find_map(|handle| {
@@ -138,16 +145,16 @@ fn new_window_target(caller: &Caller, cx: &mut App) -> ConnectTarget {
                 .ok()
                 .flatten()
         });
-        return known.unwrap_or_else(|| ConnectTarget::Socket(daemon.to_owned()));
+        return Ok(known.unwrap_or_else(|| ConnectTarget::Socket(daemon.to_owned())));
     }
-    main_windows(cx)
+    Ok(main_windows(cx)
         .first()
         .and_then(|handle| {
             handle
                 .read_with(cx, |view, _| view.endpoints[0].connection.target.clone())
                 .ok()
         })
-        .unwrap_or(ConnectTarget::Local)
+        .unwrap_or(ConnectTarget::Local))
 }
 
 pub(super) fn window(call: Call<WindowOp>, cx: &mut App) -> Response {
@@ -169,7 +176,10 @@ pub(super) fn window(call: Call<WindowOp>, cx: &mut App) -> Response {
                         development: false,
                     }
                 }
-                None => new_window_target(caller, cx),
+                None => match new_window_target(caller, cx) {
+                    Ok(target) => target,
+                    Err(response) => return response,
+                },
             };
             crate::open_additional_window(target, cx);
             // Opened after this answer; a failure is only logged.
