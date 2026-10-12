@@ -36,6 +36,10 @@ confirm_close_tab = true
 # Ask before closing a pane, independently of tabs. The dialog's "Do not ask
 # again" checkbox sets this to false in config-gpui.local.toml.
 confirm_close_pane = true
+# Ask before closing a workspace from its menu. When false, the close goes out
+# as soon as its Git check finishes, unless it finds uncommitted files or
+# unpushed commits, which always ask.
+confirm_close_workspace = true
 # Show the Agents section below Spaces in the sidebar.
 show_agents = true
 # Show the search field at the top of the sidebar, which finds devices,
@@ -276,6 +280,12 @@ size = 14
 # is 20 logical pixels at size 14. Lower it for tighter rows. Only [terminal]
 # takes this key.
 # line_height = 1.3
+# Weight of regular text: a name (thin, extralight, light, regular, medium,
+# semibold, bold, extrabold, black) or a number from 100 to 900. Default
+# regular. Bold text draws 300 heavier, at least bold. A weight the family has
+# no face for draws at its nearest one, and on macOS is reported. Only
+# [terminal] takes this key.
+# weight = "medium"
 
 [ui]
 # Default: ".SystemUIFont" on macOS and Windows, "DejaVu Sans" on Linux (or an installed

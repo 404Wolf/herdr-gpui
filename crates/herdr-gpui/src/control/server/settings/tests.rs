@@ -3,7 +3,11 @@ use super::{
     keys::reach_name,
     services::describe,
 };
-use crate::{caffeine::Cup, keymap::Reach, updater::State};
+use crate::{
+    caffeine::{Cup, Mode},
+    keymap::Reach,
+    updater::State,
+};
 use std::time::{Duration, Instant};
 
 #[test]
@@ -14,33 +18,52 @@ fn a_timed_hold_ends_only_the_hold_it_was_set_on() {
         until: now + Duration::from_secs(60),
     };
     assert_eq!(
-        remaining(timer, 3, Cup::On, now),
+        remaining(timer, 3, Cup::On(Mode::Indefinite), now),
         Some(Duration::from_secs(60))
     );
     // Due: the hold ends.
     assert_eq!(
-        remaining(timer, 3, Cup::On, now + Duration::from_secs(61)),
+        remaining(
+            timer,
+            3,
+            Cup::On(Mode::Indefinite),
+            now + Duration::from_secs(61)
+        ),
         Some(Duration::ZERO)
     );
     // Anyone changing caffeine since, even back on, cancels the timer.
     assert_eq!(
-        remaining(timer, 4, Cup::On, now + Duration::from_secs(61)),
+        remaining(
+            timer,
+            4,
+            Cup::On(Mode::Indefinite),
+            now + Duration::from_secs(61)
+        ),
         None
     );
-    assert_eq!(remaining(timer, 5, Cup::On, now), None);
+    assert_eq!(remaining(timer, 5, Cup::On(Mode::Indefinite), now), None);
     // A hold already released, or changing, is left alone.
     assert_eq!(
         remaining(timer, 3, Cup::Off, now + Duration::from_secs(61)),
         None
     );
     assert_eq!(remaining(timer, 3, Cup::Pending, now), None);
+    // A hold until agents finish is the window's, never a timer's to end.
+    assert_eq!(
+        remaining(timer, 3, Cup::On(Mode::UntilAgentsFinish), now),
+        None
+    );
 }
 
 #[test]
 fn caffeine_states_have_stable_names() {
     assert_eq!(state_name(Cup::Off), "off");
     assert_eq!(state_name(Cup::Pending), "pending");
-    assert_eq!(state_name(Cup::On), "on");
+    assert_eq!(state_name(Cup::On(Mode::Indefinite)), "on");
+    assert_eq!(
+        state_name(Cup::On(Mode::UntilAgentsFinish)),
+        "until_agents_finish"
+    );
 }
 
 #[test]

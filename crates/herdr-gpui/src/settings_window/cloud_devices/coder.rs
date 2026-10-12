@@ -417,9 +417,9 @@ impl SettingsWindow {
         }
         for (index, device) in cloud.devices.iter().enumerate() {
             devices = devices.child(self.cloud_device_row(
-                crate::cloud::CloudProvider::Coder,
                 index,
                 device,
+                format!("{} · {}", device.machine, device.session),
                 ready,
                 Self::cloud_forget,
                 cx,

@@ -40,6 +40,8 @@ pub enum CloudProvider {
     Coder,
     #[cfg(feature = "daytona")]
     Daytona,
+    #[cfg(feature = "railway")]
+    Railway,
 }
 
 #[cfg(feature = "cloud")]
@@ -50,6 +52,8 @@ impl CloudProvider {
         Self::Coder,
         #[cfg(feature = "daytona")]
         Self::Daytona,
+        #[cfg(feature = "railway")]
+        Self::Railway,
     ];
 
     /// The stable key used in saved files and endpoint IDs.
@@ -59,6 +63,8 @@ impl CloudProvider {
             Self::Coder => "coder",
             #[cfg(feature = "daytona")]
             Self::Daytona => "daytona",
+            #[cfg(feature = "railway")]
+            Self::Railway => "railway",
         }
     }
 }
@@ -77,9 +83,10 @@ pub enum ConnectTarget {
     /// A machine a cloud provider created, reached through the application's
     /// connector, which holds the provider's credential and builds the command
     /// that runs the bridge there. `account` names the provider account or
-    /// deployment; `id` is the provider's stable ID for the machine, which the
-    /// connector reaches it by, and `machine` its name when it was saved, for
-    /// display: a machine can be renamed, or deleted and its name reused.
+    /// deployment (for Railway, the path of the SSH key); `id` is the
+    /// provider's stable ID for the machine, which the connector reaches it by,
+    /// and `machine` its name when it was saved, for display: a machine can be
+    /// renamed, or deleted and its name reused.
     #[cfg(feature = "cloud")]
     Cloud {
         provider: CloudProvider,

@@ -3,7 +3,7 @@
 //! here or in a window, changed caffeine after it was set.
 use super::{Watches, socket};
 use crate::{
-    caffeine::{self, Cup},
+    caffeine::{self, Cup, Mode},
     control::protocol::{
         ErrorCode, Response,
         app::Switch,
@@ -38,14 +38,16 @@ impl Global for Timed {}
 /// changed caffeine after it was set, or the hold is off, so the timer must
 /// not touch it; zero when it is due.
 pub(super) fn remaining(timer: Timer, changes: u64, cup: Cup, now: Instant) -> Option<Duration> {
-    (timer.changes == changes && cup == Cup::On).then(|| timer.until.saturating_duration_since(now))
+    (timer.changes == changes && cup == Cup::On(Mode::Indefinite))
+        .then(|| timer.until.saturating_duration_since(now))
 }
 
 pub(super) fn state_name(cup: Cup) -> &'static str {
     match cup {
         Cup::Off => "off",
         Cup::Pending => "pending",
-        Cup::On => "on",
+        Cup::On(Mode::Indefinite) => "on",
+        Cup::On(Mode::UntilAgentsFinish) => "until_agents_finish",
     }
 }
 
@@ -89,7 +91,7 @@ pub(super) fn serve(
         ));
         return;
     }
-    let on = cup == Cup::On;
+    let on = matches!(cup, Cup::On(_));
     let wanted = switch.apply(on);
     if seconds.is_some() && !wanted {
         incoming.respond(Response::error(
@@ -120,7 +122,7 @@ pub(super) fn serve(
                 return None;
             }
             let timer = seconds
-                .filter(|_| caffeine::cup(cx) == Cup::On)
+                .filter(|_| caffeine::cup(cx) == Cup::On(Mode::Indefinite))
                 .map(|seconds| Timer {
                     changes: caffeine::changes(cx),
                     until: Instant::now() + Duration::from_secs(seconds),

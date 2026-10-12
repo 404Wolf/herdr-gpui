@@ -22,11 +22,17 @@ fn coder_row_appears_only_when_configured_and_its_dialog_fits(cx: &mut gpui::Tes
         Box::leak(format!("device-row-{index}").into_boxed_str())
     };
     let coder_row = row(rows);
-    if std::env::var_os("HERDR_CODER_URL").is_none()
-        && std::env::var_os("HERDR_DAYTONA_API_URL").is_none()
-    {
-        assert!(cx.debug_bounds(coder_row).is_none());
-    }
+    // Providers that need no account (Railway) are always offered; the rest
+    // follow their configuration. Count the provider rows rather than assume
+    // which one comes first.
+    let offered = |cx: &mut gpui::VisualTestContext| {
+        (rows..rows + 8)
+            .take_while(|&index| cx.debug_bounds(row(index)).is_some())
+            .count()
+    };
+    let configured_elsewhere = std::env::var_os("HERDR_CODER_URL").is_some()
+        || std::env::var_os("HERDR_DAYTONA_API_URL").is_some();
+    let before = offered(cx);
     cx.simulate_keystrokes("escape");
     cx.update(|window, cx| {
         view.update(cx, |view, _| {
@@ -42,6 +48,9 @@ fn coder_row_appears_only_when_configured_and_its_dialog_fits(cx: &mut gpui::Tes
         return;
     }
     assert!(cx.debug_bounds(coder_row).is_some());
+    if !configured_elsewhere {
+        assert_eq!(offered(cx), before + 1, "configuring Coder adds its row");
+    }
     cx.simulate_keystrokes("escape");
     cx.update(|window, cx| {
         view.update(cx, |view, cx| view.open_coder_fixture(window, cx));

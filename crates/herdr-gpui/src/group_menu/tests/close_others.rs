@@ -1,9 +1,45 @@
-use {super::*, crate::close_modal::CloseConfirmation, herdr_client::protocol::AgentStatus};
+use {
+    super::*,
+    crate::{close_modal::CloseConfirmation, window::MockPeer},
+    herdr_client::protocol::AgentStatus,
+};
+
+// These sequence tests drive their own projection; rendering the terminal
+// would resize it and make that projection unready between confirmations.
+struct Fixture(Entity<HerdrWindow>);
+
+impl Render for Fixture {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+    }
+}
 
 /// A split whose left group lists four Herdr tabs, each with an agent at
 /// work so its close asks first, and shows "t0".
-fn busy_split(cx: &mut TestAppContext) -> (Entity<HerdrWindow>, &mut VisualTestContext, GroupId) {
-    let (view, cx) = window(cx);
+fn busy_split(
+    cx: &mut TestAppContext,
+) -> (
+    Entity<HerdrWindow>,
+    &mut VisualTestContext,
+    GroupId,
+    MockPeer,
+) {
+    let peer = MockPeer::new();
+    let (fixture, cx) = cx.add_window_view(|window, cx| {
+        Fixture(cx.new(|cx| {
+            let mut view = fixture_window(window, cx);
+            peer.prepare(&mut view, cx);
+            let mut shown = snapshot(40);
+            shown.focused_workspace_id = Some("w0".into());
+            shown.focused_tab_id = Some("t0".into());
+            let surface = Arc::make_mut(view.live.surface.as_mut().unwrap());
+            surface.boot_id = shown.boot_id.clone();
+            surface.projection_revision = shown.revision;
+            view.live.snapshot = Some(Arc::new(shown));
+            view
+        }))
+    });
+    let view = fixture.read_with(cx, |fixture, _| fixture.0.clone());
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
             let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
@@ -20,7 +56,7 @@ fn busy_split(cx: &mut TestAppContext) -> (Entity<HerdrWindow>, &mut VisualTestC
         })
     });
     let left = groups(&view, cx)[0];
-    (view, cx, left)
+    (view, cx, left, peer)
 }
 
 fn herdr(ids: &[&str]) -> Vec<Pick> {
@@ -102,7 +138,7 @@ fn close_others_closes_pages_at_once_and_keeps_the_tab_shown(cx: &mut TestAppCon
 
 #[gpui::test]
 fn close_others_asks_about_each_herdr_tab_in_turn(cx: &mut TestAppContext) {
-    let (view, cx, left) = busy_split(cx);
+    let (view, cx, left, _peer) = busy_split(cx);
     assert_eq!(tabs(&view, cx, left), herdr(&["t0", "t1", "x", "y"]));
     run(&view, cx, left, Action::CloseOthers);
     // The tab the group shows is never asked about; the others are, in
@@ -122,7 +158,7 @@ fn close_others_asks_about_each_herdr_tab_in_turn(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn declining_one_close_leaves_the_rest_open(cx: &mut TestAppContext) {
-    let (view, cx, left) = busy_split(cx);
+    let (view, cx, left, _peer) = busy_split(cx);
     run(&view, cx, left, Action::CloseOthers);
     accept(&view, cx, "t1");
     assert_eq!(asking(&view, cx), Some("x"));

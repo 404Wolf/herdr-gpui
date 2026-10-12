@@ -63,6 +63,32 @@ impl SettingsWindow {
             .on_click(cx.listener(move |this, _, _, cx| this.save_preference(edit, cx)))
     }
 
+    /// One switch per close kind, each saving its own `confirm_close_*` key.
+    pub(super) fn confirm_close_switches(&self, cx: &mut Context<Self>) -> [Stateful<Div>; 3] {
+        let config = &self.config;
+        let switches = [
+            (
+                "settings-confirm-close",
+                "Confirm tab close",
+                config.confirm_close_tab,
+                Preference::ConfirmCloseTab(!config.confirm_close_tab),
+            ),
+            (
+                "settings-confirm-close-pane",
+                "Confirm pane close",
+                config.confirm_close_pane,
+                Preference::ConfirmClosePane(!config.confirm_close_pane),
+            ),
+            (
+                "settings-confirm-close-workspace",
+                "Confirm workspace close",
+                config.confirm_close_workspace,
+                Preference::ConfirmCloseWorkspace(!config.confirm_close_workspace),
+            ),
+        ];
+        switches.map(|(id, label, on, edit)| self.preference_switch(id, label, on, edit, cx))
+    }
+
     fn preference_choice(
         &self,
         id: impl Into<SharedString>,
@@ -210,6 +236,11 @@ mod tests {
                 Section::General,
                 "settings-confirm-close-pane",
                 Preference::ConfirmClosePane(false),
+            ),
+            (
+                Section::General,
+                "settings-confirm-close-workspace",
+                Preference::ConfirmCloseWorkspace(false),
             ),
             (
                 Section::General,

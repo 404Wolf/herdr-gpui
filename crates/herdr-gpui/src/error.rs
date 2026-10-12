@@ -81,6 +81,8 @@ pub enum Error {
     CaffeineThread(#[source] io::Error),
     #[error("The keep-awake thread stopped; the display may sleep")]
     CaffeineWorkerStopped,
+    #[error("No agent is working, so there is nothing to stay awake for")]
+    CaffeineNoWorkingAgents,
     #[error(
         "PR lookup requires your owned local session socket or a saved SSH device. Other socket locations are unsupported."
     )]
@@ -159,6 +161,8 @@ pub enum Error {
     },
     #[error("Workspace is no longer available. Dismiss and reopen the menu.")]
     StaleWorkspace,
+    #[error(transparent)]
+    PaneMove(#[from] crate::pane_move::Error),
     #[error("Workspace label must not be empty.")]
     EmptyWorkspaceLabel,
     #[error("{0} cannot be reached by script. Choose another host.")]
@@ -359,6 +363,9 @@ pub enum Error {
     #[cfg(feature = "daytona")]
     #[error(transparent)]
     Daytona(#[from] crate::daytona::Error),
+    #[cfg(feature = "railway")]
+    #[error(transparent)]
+    Railway(#[from] crate::railway::Error),
     #[cfg(feature = "cloud")]
     #[error(transparent)]
     Cloud(#[from] crate::cloud::Error),
@@ -745,6 +752,8 @@ pub enum Error {
     InvalidFontSize(&'static str),
     #[error("{0}.line_height must be a finite number between 1 and 2 times the font size")]
     InvalidLineHeight(&'static str),
+    #[error("{0}.weight must be a weight name such as \"medium\" or a number from 100 to 900")]
+    InvalidFontWeight(&'static str),
     #[error("{0}.fallback families must not be empty")]
     EmptyFontFallback(&'static str),
     #[error("{0}.fallback must list at most 8 families")]

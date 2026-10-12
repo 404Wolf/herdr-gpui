@@ -409,9 +409,9 @@ impl SettingsWindow {
         }
         for (index, device) in card.devices().iter().enumerate() {
             devices = devices.child(self.cloud_device_row(
-                CloudProvider::Daytona,
                 index,
                 device,
+                format!("{} · {}", device.machine, device.session),
                 ready,
                 Self::forget_daytona_device,
                 cx,

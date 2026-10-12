@@ -2,6 +2,7 @@ use super::*;
 
 mod detach;
 mod literal_plus;
+mod worktree;
 
 fn keys(text: &str) -> DaemonKeys {
     let table: toml::Table = text.parse().unwrap();

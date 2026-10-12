@@ -170,6 +170,15 @@ impl HerdrWindow {
         )
     }
 
+    /// Herdr's shared `ui.mouse_scroll_lines`, its default until the shared
+    /// config loads.
+    fn mouse_scroll_lines(&self) -> std::num::NonZeroU16 {
+        self.settings.shared.as_ref().map_or(
+            crate::herdr_settings::DEFAULT_MOUSE_SCROLL_LINES,
+            |shared| shared.mouse_scroll_lines,
+        )
+    }
+
     pub(crate) fn scroll_wheel(
         &mut self,
         event: &ScrollWheelEvent,
@@ -194,15 +203,16 @@ impl HerdrWindow {
             self.wheel = WheelAccumulator::default();
             return;
         };
+        let notch_lines = self.mouse_scroll_lines();
         let mut steps = self
             .wheel
-            .steps(&target, event, self.cell_width, cell_height);
+            .steps(&target, event, self.cell_width, cell_height, notch_lines);
         // Scrollback follows the OS's motion exactly; anything else, such as an
         // application reading the wheel, gets whole steps as they accumulate.
         let smooth = match &target.target {
-            InputTarget::Pane(id) if self.slides_allowed() => {
-                self.presentation.wheel(id, wheel_rows(event, cell_height))
-            }
+            InputTarget::Pane(id) if self.slides_allowed() => self
+                .presentation
+                .wheel(id, wheel_rows(event, cell_height, notch_lines)),
             InputTarget::Pane(_) | InputTarget::Popup(_) => None,
         };
         if let Some(lines) = smooth {

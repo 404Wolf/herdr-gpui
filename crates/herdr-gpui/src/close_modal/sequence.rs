@@ -1,7 +1,8 @@
 //! Closing several tabs one after another, as Close Others does. Each tab
 //! closes as its own close button would: a page at once, a Herdr tab through
-//! its confirmation. The next tab waits for the one before it to be gone, so
-//! two dialogs never overlap, and a close the user declines ends the run
+//! its confirmation. The next terminal tab waits for the one before it to
+//! be gone and the connection's surface barrier to settle, so two dialogs
+//! never overlap, and a close the user declines ends the run
 //! with the tabs that are left still open.
 
 use crate::{
@@ -97,6 +98,12 @@ impl HerdrWindow {
                 }
                 // Declined, or never answered: the rest stay open.
                 return;
+            }
+            // Removing a tab from the snapshot does not acknowledge its
+            // close's surface barrier. An immediate close would fail its
+            // readiness check and leave an error dialog instead of waiting.
+            if matches!(run.rest.front(), Some(Pick::Herdr(_))) && !self.input_ready() {
+                break;
             }
             match run.rest.pop_front() {
                 None => return,

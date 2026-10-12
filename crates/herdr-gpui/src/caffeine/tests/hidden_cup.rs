@@ -11,7 +11,12 @@ fn a_hidden_cup_stays_while_the_display_is_kept_awake(cx: &mut gpui::TestAppCont
     });
     cx.update(|window, cx| full_draw(window, cx).clear(cx));
     assert!(cx.debug_bounds("status-caffeine").is_none());
-    for (cup, shown) in [(Cup::Pending, true), (Cup::On, true), (Cup::Off, false)] {
+    for (cup, shown) in [
+        (Cup::Pending, true),
+        (Cup::On(Mode::Indefinite), true),
+        (Cup::On(Mode::UntilAgentsFinish), true),
+        (Cup::Off, false),
+    ] {
         cx.update(|window, cx| {
             cx.set_global(Caffeine {
                 cup,

@@ -77,6 +77,10 @@ impl HerdrWindow {
                         );
                     }
                 }
+                // Backpressure is transient: the options stay unqueued, so the
+                // next poll or paint retries them once the worker drains. A
+                // status error would outlive the retry that already fixed it.
+                Err(herdr_client::Error::Full) => {}
                 Err(error) => self.local_error = Some(format!("Resize: {error}")),
             }
         }

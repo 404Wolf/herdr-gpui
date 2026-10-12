@@ -306,6 +306,7 @@ mod tests {
             size: 12.,
             fallbacks: None,
             line_height_multiple: None,
+            weight: gpui::FontWeight::NORMAL,
         };
         let theme = Theme::default();
         let cx = RowContext {

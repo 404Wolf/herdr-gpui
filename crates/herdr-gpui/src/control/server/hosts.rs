@@ -278,7 +278,7 @@ fn cloud(caller: &Caller, cx: &mut App) -> Response {
     let Ok(source) = handle.entity(cx).map(|entity| entity.downgrade()) else {
         return Response::error(ErrorCode::NoWindow, "The window closed");
     };
-    crate::settings_window::open_cloud_devices(source, cx);
+    crate::settings_window::open_cloud(source, None, cx);
     Response::done("Opened Settings at Cloud Devices; add a machine there")
 }
 

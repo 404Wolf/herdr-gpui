@@ -10,6 +10,10 @@ pub enum Command {
     NewWindow,
     Workspace,
     NewWorktree,
+    /// The focused repository's "Open worktree..." dialog.
+    OpenWorktree,
+    /// The focused linked worktree's delete confirmation.
+    RemoveWorktree,
     /// Go To, listing only the checkouts that have a note.
     WorktreeNotes,
     /// The focused checkout's note.
@@ -83,6 +87,7 @@ pub enum Command {
     ResizeDown,
     ResizeMode,
     RenamePane,
+    MovePane,
     PreviousWorkspace,
     NextWorkspace,
     WorkspaceNumber(u8),
@@ -126,6 +131,16 @@ pub const COMMANDS: &[CommandInfo] = &[
         command: Command::NewWorktree,
         name: "new_worktree",
         label: "New Worktree",
+    },
+    CommandInfo {
+        command: Command::OpenWorktree,
+        name: "open_worktree",
+        label: "Open Worktree",
+    },
+    CommandInfo {
+        command: Command::RemoveWorktree,
+        name: "remove_worktree",
+        label: "Delete Worktree Checkout",
     },
     CommandInfo {
         command: Command::WorktreeNotes,
@@ -336,6 +351,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         command: Command::RenamePane,
         name: "rename_pane",
         label: "Rename Pane",
+    },
+    CommandInfo {
+        command: Command::MovePane,
+        name: "move_pane",
+        label: "Move Pane\u{2026}",
     },
     CommandInfo {
         command: Command::Zoom,
@@ -755,6 +775,8 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         }
         Command::NewWindow
         | Command::NewWorktree
+        | Command::OpenWorktree
+        | Command::RemoveWorktree
         | Command::WorktreeNotes
         | Command::EditWorktreeNote
         | Command::Find
@@ -797,6 +819,7 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         | Command::Forward
         | Command::ResizeMode
         | Command::RenamePane
+        | Command::MovePane
         | Command::PreviousWorkspace
         | Command::NextWorkspace
         | Command::WorkspaceNumber(_)

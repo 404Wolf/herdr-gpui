@@ -497,6 +497,7 @@ impl HerdrWindow {
         self.poll_copy_mode(cx);
         #[cfg(target_os = "macos")]
         crate::app_badge::sync(window.window_handle().window_id(), &self.endpoints, cx);
+        self.observe_agent_work(window, cx);
         self.cancel_stale_image();
         self.poll_file_transfer(cx);
         self.update_workspace_dialog(window, cx);

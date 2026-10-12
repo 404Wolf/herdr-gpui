@@ -300,7 +300,7 @@ and saved SSH devices remain unsupported on Windows.
 ### Coder workspaces
 
 Settings > **Cloud Devices** holds accounts with providers that create machines
-to use as devices; Coder is the only one so far. Its card edits the `[coder]`
+to use as devices: Coder, Daytona, and Railway. Coder's card edits the `[coder]`
 keys (see `config-gpui.example.toml`), saves the OAuth client secret to the
 credential store rather than the config file, signs in and out, and lists the
 saved Coder devices with a Remove action. A secret set in the config file or
@@ -370,11 +370,28 @@ and are unavailable on Windows. This provider is a proof of concept: the API
 path is covered by tests against a scripted server, but not yet exercised
 against a live Daytona account.
 
+### Railway free VMs (experimental)
+
+Settings > **Cloud Devices** > **Railway** sets up the temporary Linux VM that
+`ssh railway.new` gives out without an account. The SSH key is its identity, so
+pick an existing private key or generate one by name (an ed25519 key without a
+passphrase, in `~/.ssh` when that exists, otherwise in Herdr's state directory;
+an existing file is never replaced). **Connect and set up** creates the VM if the
+key has none, installs Herdr in it when the **Install Herdr** switch is on, and
+saves the device with the key's path (as its account). Every reconnect uses the
+same key, never creates a VM or installs anything, and refuses a key file whose
+fingerprint changed or whose readable private key disagrees with its `.pub`
+file. Removing a device keeps its key files. Connections run
+`ssh -F /dev/null` with options that offer only that key and pin `railway.new`'s
+host key on first use (`railway_known_hosts`). The VM is temporary: Railway
+limits its lifetime and how many a network can create. Needs
+`ssh` and `ssh-keygen` on the PATH; unavailable on Windows.
+
 Each provider is a Cargo feature of `herdr-gpui`, on by default: `coder` for
-Coder and `daytona` for Daytona. A build with `--no-default-features` has no
-Cloud Devices section and no provider rows in the device picker; it still
-accepts the `[coder]` and `[daytona]` tables, so one config file serves every
-build, but never reads them.
+Coder, `daytona` for Daytona, and `railway` for Railway. A build with
+`--no-default-features` has no Cloud Devices section and no provider rows in the
+device picker; it still accepts the `[coder]` and `[daytona]` tables, so one config
+file serves every build, but never reads them.
 
 Switching revokes the old host's focus before releasing its surface, then resizes
 and activates the selected host. Input waits for the activation acknowledgement
@@ -496,7 +513,7 @@ Accepted saves survive closing Settings. Family and size edits preserve configur
 fallbacks and unrelated settings in `config-gpui.local.toml`. General retains
 browser-skill installation/removal and configuration paths.
 
-General provides switches for **Show usage**, **Confirm tab close**, **Confirm pane close**, and the
+General provides switches for **Show usage**, **Confirm tab close**, **Confirm pane close**, **Confirm workspace close**, and the
 clipboard copied notification, plus all six clipboard positions. Notifications
 provides a native in-app switch, a bounded delay stepper (0-3600 seconds), and
 four corner choices. Each notification and clipboard field has a **Follow shared**
@@ -533,8 +550,21 @@ Selecting a different device does not change which settings apply:
 
 | Scope | Settings | Source |
 | --- | --- | --- |
-| GUI-wide | Theme and palette overrides, indicator style, sound, toast delivery and clipboard toast, sidebar agent rows (`state_text`), sidebar collapsing (`sidebar_collapsed_mode`, `sidebar_start_collapsed`), and `[keys]` including the prefix | Local `config.toml`, under `config-gpui.toml` overrides |
-| Per host | Worktree directory and custom commands, plus pane defaults and integrations, which the daemon applies itself | That host's daemon, through its snapshot |
+| GUI-wide | Theme and palette overrides, indicator style, sound, toast delivery and clipboard toast, sidebar agent rows (`state_text`), sidebar collapsing (`sidebar_collapsed_mode`, `sidebar_start_collapsed`), wheel and right-click input (`mouse_scroll_lines`, `right_click_passthrough_modifier`), and `[keys]` including the prefix | Local `config.toml`, under `config-gpui.toml` overrides |
+| Per host | Worktree directory and custom commands, plus pane defaults, pane borders, gaps, scrollbars, and border labels, and integrations, which the daemon applies itself | That host's daemon, through its snapshot |
+
+Herdr's pane chrome settings in `[ui]` — `pane_borders` (`auto`, `always`,
+`off`), `pane_outer_borders`, `pane_gaps`, `pane_scrollbars`, and
+`show_agent_labels_on_pane_borders` — are applied by the daemon, not this GUI:
+the daemon lays out every pane and draws its borders, gaps, and labels into
+the surface it sends, with the pane, content, and scrollbar rectangles this
+client paints and hit-tests from. The GUI therefore shows whatever the
+connected daemon's own `config.toml` chose (reloaded by the daemon's config
+reload), not the local file, and draws a pixel scrollbar thumb only where the
+daemon reserved a scrollbar column. Changing these locally has no effect on a
+remote device's daemon. `mouse_scroll_lines` and
+`right_click_passthrough_modifier` are client input settings, read from the
+local `config.toml` like the TUI does.
 
 Keybindings stay local on an SSH device, as with Herdr's default
 `--remote-keybindings local`. **Use server keybindings** in a device's
@@ -619,8 +649,11 @@ A tab asks before closing only while one of its agents is working or blocked
 on a prompt; tabs whose agents are idle or done, or that have none, close at
 once. Set top-level `confirm_close_tab = false` to never ask for tabs
 (including their running processes), `confirm_close_pane = false` to close
-panes without asking, and `show_agents = false` to hide the Agents
-section and give Spaces the full sidebar height. All three default to `true`.
+panes without asking, `confirm_close_workspace = false` to close a workspace
+from its menu without the dialog, and `show_agents = false` to hide the Agents
+section and give Spaces the full sidebar height. All four default to `true`.
+A workspace close still asks when its Git check finds uncommitted files or
+unpushed commits, whatever `confirm_close_workspace` says.
 The pane dialog's **Do not ask again** checkbox (click it or press Space) saves
 `confirm_close_pane = false` to `config-gpui.local.toml` once the close is sent. Saved edits apply automatically. The
 **Show agents** control in **Settings > Appearance > Sidebar layout** saves
@@ -927,7 +960,11 @@ all returning the crate's typed `Result`. `Config::theme()` resolves
 built-ins or Ghostty files into a `Theme` with packed 24-bit RGB colors and all
 256 palette entries. Theme resolution is a separate fallible step from loading
 and validating TOML. Font sections can override either family or size without
-repeating the other field. `FontConfig::line_height()` returns `size * 20 / 14`.
+repeating the other field. `FontConfig::line_height()` returns `size * 20 / 14` unless
+`[terminal] line_height` sets the multiple. `[terminal] weight` takes a CSS
+weight name or 100 to 900; bold cells draw `bold_font_weight` of it, 300
+heavier and at least bold. On macOS, font resolution reports a weight the
+family has no face for; other platforms do not check.
 The `[features]` table holds opt-in behaviors as `Features`, with every flag off
 by default and unknown keys rejected like the other sections; Preferences lists
 each flag and its state read-only, since only the config file turns one on.
@@ -1162,6 +1199,18 @@ Right-Click** switches the pane back. A routed pane whose application has mouse
 reporting off opens the menu, since nothing would receive the click. A
 mouse-aware popup has no pane menu and keeps its right-clicks.
 
+Herdr's shared `[ui] right_click_passthrough_modifier` (default `""`, off) is
+honored as in the TUI: a right-click held with exactly that combination goes
+to a mouse-aware application in any pane, routed or not, and the application
+receives it without that modifier for the whole press, drag, and release,
+including over a link, since a right-click opens no link. Any other
+combination still opens the menu. It accepts Herdr's values: `ctrl` or
+`control`, `alt` or `option`, `cmd`, `command`, or `super` (the Command,
+Windows, or Super key), joined with `+`; `off`, `none`, and `disabled` turn it
+off, and anything with `shift` is refused. GPUI cannot report the `meta` or
+`hyper` modifiers, so a combination naming either never matches here, and an
+invalid value leaves it off without affecting other settings.
+
 Drag across the terminal to select cells; releasing the button copies them and
 shows the `copied to clipboard` flash described under
 [Configuration](#configuration). Selection is client-local: it reads the surface
@@ -1351,6 +1400,28 @@ A note is one line of at most 500 characters. Notes stay in this client, in
 repository, and every window shows the same ones. Like teleport marks they
 belong to a host, repository and branch, so a note survives a daemon restart
 and follows its branch, and it does not travel with a teleported worktree.
+
+## Moving Panes
+
+Right-click a pane for **Move to New Tab** (in the pane's own workspace),
+**Move to New Workspace**, or **Move to Tab…**, which lists the other tabs of
+every workspace and a new tab in each other workspace. The command palette's
+**Move Pane…** (`move_pane`, unbound by default) opens the same list for the
+focused pane, with the new tab and new workspace first. Moving into an existing
+tab splits that tab's focused pane and puts the moved pane on its right. The
+terminal keeps running, and the move asks Herdr to focus the pane where it lands.
+
+Herdr does not offer `pane.move` to GUI clients, so the move runs
+`herdr [--session NAME] pane move` on the endpoint's host, locally or over SSH,
+the way Teleport does, on a background thread. The menu says **Moving pane…**
+until Herdr answers and closes when the move succeeds. Herdr's refusals appear
+in the menu: it will not move a pane out of or into a zoomed tab, and a missing
+`herdr` CLI is named as such. A failure that arrives after the menu was closed
+appears in the window's status instead. Moves are offered only on Linux and
+macOS clients and only for the local daemon, a named session, or an SSH
+device, not a custom socket endpoint or a development (`--dev`) session, whose
+panes the `herdr` CLI cannot address by session name. A tab or workspace that
+closed after the menu opened is refused before anything runs.
 
 ## Teleport
 
@@ -2716,6 +2787,7 @@ Ctrl+Shift+U is left unbound for
   always asks for confirmation with Cancel selected. Popups and stale retained
   terminal frames block pane context actions. Escape or an outside left/right
   click dismisses the menu without forwarding input to the terminal.
+  The pane menu also moves the pane; see [Moving Panes](#moving-panes).
 - Native File/Edit/Terminal menus and creation buttons: **+ New Workspace** in the
   sidebar and a persistent 18px SVG **+** in a 44px-wide button beside the horizontally
   scrolling tab strip. Each tab has a 16px SVG close cross in a 24px hit target;
@@ -2803,7 +2875,18 @@ Ctrl+Shift+U is left unbound for
   palette on **Navigation**. Choose **All**, **Navigation**, **Commands**, or
   **Projects**, or cycle filters with Tab / Shift-Tab without clearing the search.
   Search ranks exact names, word prefixes, substrings, then fuzzy matches; host,
-  workspace, path, status, and command ID are searchable context. Up / Down selects,
+  workspace, path, status, and command ID are searchable context. Navigation
+  (Go To) also filters agents by the status the daemon reports, like Herdr's
+  navigator: click **All agents**, **Blocked**, **Working**, **Idle**, or
+  **Done**, or press Alt with Herdr's letters (`alt-b`, `alt-w`, `alt-i`,
+  `alt-d`, `alt-a` for all) from any filter, which switches to Navigation.
+  Plain letters stay search text, the search still narrows within a status,
+  and while a status is chosen each workspace (and tab) is listed only as the
+  heading of its matching agents, ranked with the best of them. Each new
+  palette starts on **All agents**. Terminals without an agent appear only
+  under **All agents**, and the other filters ignore the status. A keystroke
+  already bound by `[keybindings]`, the daemon's `[keys]`, or
+  `navigate_workspace_up`/`_down` stays with that binding. Up / Down selects,
   Enter or a click activates, and Escape or an outside click dismisses without
   sending terminal input. Choosing a destination on another host switches to it.
   Double-Shift requires two short completed taps within 400 ms; shifted typing,
@@ -2862,10 +2945,16 @@ Ctrl+Shift+U is left unbound for
   chord or, when nothing is bound to it, is dropped, as in the TUI. Typing the
   prefix twice sends it to the terminal, and Escape cancels. Chords work from
   a menu's or dialog's text field too: the chord closes it and runs. Every
-  daemon action has a GUI command except `detach` (closing the window already
-  detaches), `open_worktree` and
-  `remove_worktree` (offered from the workspace menu), and the
-  `navigate_pane_*` keys (Go To has no pane cursor). `workspace_picker` and
+  daemon action has a GUI command except the `navigate_pane_*` keys (Go To
+  has no pane cursor). `open_worktree` and `remove_worktree` act on the
+  focused workspace, as in the TUI: the first opens its Open worktree...
+  dialog (a linked checkout's through its repository's main checkout), the
+  second its Delete worktree checkout confirmation, only for a linked
+  worktree. When neither applies (a main checkout, a workspace outside Git,
+  nothing focused, or no connection) nothing opens and a flash says why.
+  Herdr leaves both unbound, and so do the GUI's `open_worktree` and
+  `remove_worktree` commands, which `[keybindings]` and the palette offer
+  too. `workspace_picker` and
   `goto` open Go To, where `navigate_workspace_up`/`_down` move the selection
   when the key cannot be typed into its search. `split_vertical` and
   `split_horizontal` are Split Right and Split Down. As in the TUI,
@@ -2923,7 +3012,18 @@ Ctrl+Shift+U is left unbound for
   workspace without guessing a local path. Nothing is created while disconnected.
 - Mouse-wheel/trackpad scrolling targets the pane under the pointer (inside its
   content, not borders). Fractional pixel motion accumulates into terminal
-  lines, and horizontal motion into columns, with bounded per-event work.
+  lines, and horizontal motion into columns, with bounded per-event work (at
+  most 128 lines per event). Each discrete wheel notch scrolls Herdr's shared
+  `[ui] mouse_scroll_lines` (default 3; zero or an unreadable value keeps 3),
+  applied live when the shared config reloads, whether the pane slides through
+  scrollback or moves by whole rows. As in Herdr's TUI, the count moves only
+  scrollback: an application reading the wheel gets one wheel report per
+  event from the daemon. GPUI reports notches already
+  scaled by the platform: three lines on Linux and FreeBSD, the system wheel
+  setting on Windows (assumed to be its default of three, so a changed Windows
+  setting scales the result proportionally), and about one, with
+  acceleration, on macOS. Precise trackpad motion keeps following the pointer
+  one cell height per line and ignores the setting, as does horizontal motion.
   Horizontal scrolling reaches only a pane or popup whose application reports
   the mouse, since Herdr has nothing else to do with it; sideways drift during a
   mostly vertical swipe is ignored. Shift+wheel arrives already turned

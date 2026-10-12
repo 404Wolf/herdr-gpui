@@ -13,6 +13,7 @@ mod coder;
 mod daytona;
 mod edit;
 mod files;
+mod font_weight;
 mod fonts;
 mod keybindings;
 mod layout;
@@ -21,7 +22,7 @@ pub(crate) mod preferences;
 pub(crate) mod sidebar;
 mod sidebar_style;
 pub(crate) mod status_bar;
-#[cfg(feature = "cloud")]
+#[cfg(any(feature = "coder", feature = "daytona"))]
 mod table;
 mod theme;
 mod updates;
@@ -36,6 +37,7 @@ pub use daytona::DaytonaConfig;
 pub(crate) use daytona::DaytonaFields;
 pub(crate) use edit::{Layer, parse_value};
 use files::write_config;
+pub use font_weight::bold as bold_font_weight;
 pub(crate) use fonts::FontFace;
 use fonts::FontSettings;
 #[cfg(any(test, feature = "integration-test"))]
@@ -85,6 +87,9 @@ pub struct Config {
     pub theme: String,
     pub confirm_close_tab: bool,
     pub confirm_close_pane: bool,
+    /// Whether a workspace close shows its dialog when the check finds no
+    /// unpublished work. Uncommitted or unpushed work always asks.
+    pub confirm_close_workspace: bool,
     pub show_agents: bool,
     /// The search field at the top of the sidebar's spaces list.
     pub show_sidebar_search: bool,
@@ -152,6 +157,8 @@ pub struct Config {
     /// Configured families, sorted, that font resolution found no installed
     /// family for; `diagnostic` reports them.
     pub(crate) missing_fonts: Vec<String>,
+    /// The terminal's configured weight, when its family has no face at it.
+    pub(crate) missing_weight: Option<font_weight::MissingWeight>,
 }
 
 /// A device list larger than any real catalog is a config mistake.
@@ -414,6 +421,7 @@ impl Default for Config {
             size,
             fallbacks: None,
             line_height_multiple: None,
+            weight: gpui::FontWeight::NORMAL,
         };
         Self {
             theme: "Default".into(),
@@ -422,6 +430,7 @@ impl Default for Config {
             daytona: DaytonaConfig::default(),
             confirm_close_tab: true,
             confirm_close_pane: true,
+            confirm_close_workspace: true,
             show_agents: true,
             show_sidebar_search: true,
             show_system_load: true,
@@ -453,6 +462,7 @@ impl Default for Config {
             unknown_keys: Vec::new(),
             icon_font_missing: false,
             missing_fonts: Vec::new(),
+            missing_weight: None,
             palette: crate::palette::PaletteConfig::default(),
             sidebar: font(monospace, 12.0),
             // Tabs are terminal chrome, so they read in the monospace face the
@@ -470,6 +480,7 @@ struct Settings {
     theme: Option<String>,
     confirm_close_tab: Option<bool>,
     confirm_close_pane: Option<bool>,
+    confirm_close_workspace: Option<bool>,
     show_agents: Option<bool>,
     show_sidebar_search: Option<bool>,
     show_system_load: Option<bool>,
@@ -658,6 +669,13 @@ impl Config {
                 .collect();
             lines.push(format!("Configured fonts not installed: {}", list(&fonts)));
         }
+        if let Some(missing) = &self.missing_weight {
+            lines.push(format!(
+                "\"{}\" has no {} face; using its nearest weight",
+                missing.family,
+                font_weight::describe(missing.weight)
+            ));
+        }
         (!lines.is_empty()).then(|| lines.join("\n"))
     }
 
@@ -761,8 +779,9 @@ impl Config {
             }
             known
         });
-        // Only the terminal grid takes a line height. The other faces size
-        // fixed chrome, so there it is ignored like any other unknown key.
+        // Only the terminal grid takes a line height or weight. The other
+        // faces draw fixed chrome whose emphasis sets its own weights, so
+        // there both are ignored like any other unknown key.
         unknown_keys.extend(
             [
                 ("sidebar", &mut settings.sidebar.font),
@@ -770,7 +789,7 @@ impl Config {
                 ("ui", &mut settings.ui),
             ]
             .into_iter()
-            .filter_map(|(name, face)| face.reject_line_height(name)),
+            .flat_map(|(name, face)| face.reject_terminal_keys(name)),
         );
         // Unknown keys are ignored, but a credential pasted into the file is
         // refused so it is noticed and removed rather than left on disk.
@@ -835,6 +854,7 @@ impl Config {
         }
         config.confirm_close_tab = settings.confirm_close_tab.unwrap_or(true);
         config.confirm_close_pane = settings.confirm_close_pane.unwrap_or(true);
+        config.confirm_close_workspace = settings.confirm_close_workspace.unwrap_or(true);
         config.show_agents = settings.show_agents.unwrap_or(true);
         config.show_sidebar_search = settings.show_sidebar_search.unwrap_or(true);
         config.show_system_load = settings.show_system_load.unwrap_or(true);

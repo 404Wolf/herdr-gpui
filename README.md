@@ -113,6 +113,23 @@ symbol, file, or printed `path:line` in your terminal editor,
 
 ## Install
 
+Install the [Herdr](https://herdr.dev/) daemon first; this app is only its client.
+It starts an already-installed local `herdr server` when the target session is
+absent, but never installs or upgrades a daemon. Explicitly confirming session
+deletion stops that named session first; closing or removing the GUI leaves
+daemon sessions and shared Herdr configuration intact.
+
+Then install the latest stable release:
+
+| Platform | Command |
+| --- | --- |
+| macOS | `brew install penso/tap/herdr-gpui` |
+| Linux (APT, DNF or pacman) | `curl -fsSL https://herdrui.dev/install.sh \| sh` |
+| Windows (PowerShell, experimental) | `irm https://herdrui.dev/install.ps1 \| iex` |
+
+Details, manual downloads, and other methods follow. Coding agents can read
+[herdrui.dev/llms.txt](https://herdrui.dev/llms.txt) for the same steps.
+
 ### macOS with Homebrew
 
 Requires [Homebrew](https://brew.sh/) and macOS 14.2 Sonoma or newer, on Apple
@@ -149,7 +166,15 @@ always follow stable releases.
 Each release publishes x86_64 and ARM64 builds as a `.deb`, an `.rpm`, an Arch
 Linux package, and a plain tarball, all containing the same executable. They need
 glibc 2.39 or newer (Ubuntu 24.04, Debian 13, Fedora 40, current Arch, or later).
-Download the file for your architecture from
+The install script picks the package for your architecture and package manager,
+checks it against the release's published SHA-256, and installs it with `sudo`:
+
+```sh
+curl -fsSL https://herdrui.dev/install.sh | sh
+```
+
+Read it first at [`site/install.sh`](site/install.sh). To install by hand instead,
+download the file for your architecture from
 [Releases](https://github.com/penso/herdr-gpui/releases), then:
 
 ```sh
@@ -182,6 +207,21 @@ nix run github:penso/herdr-gpui
 
 The flake builds with the toolchain pinned in `rust-toolchain.toml` on x86_64 and
 ARM64 Linux. Like the packages, it never updates itself.
+
+### Windows (experimental)
+
+In PowerShell, on x86_64 or ARM64:
+
+```powershell
+irm https://herdrui.dev/install.ps1 | iex
+```
+
+The script ([`site/install.ps1`](site/install.ps1)) downloads the zip for your
+architecture, checks its published SHA-256, installs `herdr-gpui.exe` under
+`%LOCALAPPDATA%\Programs\Herdr UI`, adds that directory to your user `PATH`, and
+creates a **Herdr UI** Start menu shortcut. Windows builds never update
+themselves; run the command again to update. See [Windows](#windows) for what
+works on the platform.
 
 ### From source
 
@@ -222,12 +262,6 @@ Running `cargo test` or `just ci` on Unix also requires `python3` and `jq` on
 PATH: the usage-provider tests exercise each JSON parser explicitly. The Ubuntu
 dependency helper below installs both; on macOS, use `brew install python jq`.
 
-Install the Herdr daemon separately. The app starts an already-installed local
-`herdr server` when the target session is absent, but never installs or upgrades
-a daemon. Explicitly confirming session deletion stops that named session first;
-closing or removing the GUI leaves daemon sessions and shared Herdr
-configuration intact.
-
 ### Linux Builds
 
 Application shortcuts use **Ctrl+Shift** on Linux, including Ctrl+Shift+T for a
@@ -263,7 +297,8 @@ Each release publishes `Herdr-VERSION-x86_64-pc-windows-msvc.zip` and
 `herdr-gpui.exe` and its license notices. They carry the same checksums,
 Sigstore signatures, and build provenance as the other assets, but they are not
 Authenticode-signed, so SmartScreen warns on first launch, and they never update
-themselves: download each new release manually. The executable is
+themselves: rerun the [install script](#windows-experimental) or download each
+new release manually. The executable is
 console-subsystem, so launching it from Explorer also opens a console window.
 
 ## How it connects

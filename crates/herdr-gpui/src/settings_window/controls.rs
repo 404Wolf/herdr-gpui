@@ -704,24 +704,7 @@ impl SettingsWindow {
                 ),
                 cx,
             ))
-            .child(self.preference_switch(
-                "settings-confirm-close",
-                "Confirm tab close",
-                self.config.confirm_close_tab,
-                crate::config::preferences::Preference::ConfirmCloseTab(
-                    !self.config.confirm_close_tab,
-                ),
-                cx,
-            ))
-            .child(self.preference_switch(
-                "settings-confirm-close-pane",
-                "Confirm pane close",
-                self.config.confirm_close_pane,
-                crate::config::preferences::Preference::ConfirmClosePane(
-                    !self.config.confirm_close_pane,
-                ),
-                cx,
-            ));
+            .children(self.confirm_close_switches(cx));
         div().flex().flex_col().gap(px(24.)).child(general)
             .child(self.render_tab_bar_controls(cx))
             .child(self.render_session_controls(cx))
