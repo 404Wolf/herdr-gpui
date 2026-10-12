@@ -120,3 +120,62 @@ fn resize_reasks_when_the_daemon_frame_is_a_different_size(cx: &mut gpui::TestAp
         );
     });
 }
+
+#[gpui::test]
+fn a_full_command_queue_is_retried_without_a_status_error(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = cx.add_window_view(|window, cx| {
+        HerdrWindow::new(
+            ConnectTarget::Socket("/unused-resize-test.sock".into()),
+            window,
+            cx,
+            true,
+        )
+    });
+    view.update(cx, |view, _| {
+        // The connector never yields a stream, so nothing drains the queue.
+        let client = herdr_client::connect_with_connector(
+            view.endpoints[view.selected_endpoint]
+                .connection
+                .target
+                .clone(),
+            view.options,
+            true,
+            |_, stop| -> std::io::Result<herdr_client::Transport> {
+                while !stop.load(std::sync::atomic::Ordering::Acquire) {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+                Err(std::io::ErrorKind::Interrupted.into())
+            },
+        )
+        .unwrap_or_else(|error| panic!("cannot create test client: {error}"));
+        let boot = view
+            .live
+            .snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.boot_id.clone())
+            .unwrap_or_else(|| panic!("the test window has a snapshot"));
+        while client.handle.set_focus(&boot, true).is_ok() {}
+        assert!(matches!(
+            client.handle.set_focus(&boot, true),
+            Err(herdr_client::Error::Full)
+        ));
+        view.endpoints[view.selected_endpoint].connection.handle = Some(client.handle.clone());
+        let queued = view.options;
+        view.last_queued_options = Some(queued);
+        let start = std::time::Instant::now();
+        view.options.surface_size.cols += 1;
+        view.resize_at(start);
+        view.resize_at(start + super::lifecycle::RESIZE_SETTLE);
+        assert!(
+            view.local_error.is_none(),
+            "backpressure is not reported: {:?}",
+            view.local_error
+        );
+        assert_eq!(
+            view.last_queued_options,
+            Some(queued),
+            "unqueued options stay pending for the next retry"
+        );
+        client.handle.disconnect();
+    });
+}
