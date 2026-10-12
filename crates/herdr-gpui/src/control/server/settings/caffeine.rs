@@ -102,6 +102,7 @@ pub(super) fn serve(
         ));
         return;
     }
+    supersede(seconds, cx);
     let failure = Rc::new(RefCell::new(None));
     let before = caffeine::changes(cx);
     let toggled = wanted != on;
@@ -129,6 +130,27 @@ pub(super) fn serve(
         Response::error(ErrorCode::Timeout, "Caffeine did not settle in time"),
         cx,
     );
+}
+
+/// An accepted request without `--for` cancels any timer: `caffeine on`
+/// after `caffeine on --for 1m` holds until turned off, even though the
+/// hold itself does not change.
+pub(super) fn supersede(seconds: Option<u64>, cx: &mut App) {
+    if seconds.is_none() {
+        cx.set_global(Timed(None));
+    }
+}
+
+/// Whether a timer is in force, for tests.
+#[cfg(test)]
+pub(super) fn timed(cx: &App) -> bool {
+    cx.try_global::<Timed>()
+        .is_some_and(|timed| timed.0.is_some())
+}
+
+#[cfg(test)]
+pub(super) fn set_timed(timer: Timer, cx: &mut App) {
+    cx.set_global(Timed(Some(timer)));
 }
 
 /// Whether the hold or release asked for has settled. A toggle that never

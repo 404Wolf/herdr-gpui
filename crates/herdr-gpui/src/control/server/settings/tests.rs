@@ -1,5 +1,5 @@
 use super::{
-    caffeine::{Timer, remaining, state_name},
+    caffeine::{Timer, remaining, set_timed, state_name, supersede, timed},
     keys::reach_name,
     services::describe,
 };
@@ -100,4 +100,20 @@ fn update_states_are_named_with_their_version_or_reason() {
         describe(&State::Error("offline".into())),
         ("error", Some("offline"), None)
     );
+}
+
+#[gpui::test]
+fn an_untimed_request_cancels_an_earlier_timer(cx: &mut gpui::TestAppContext) {
+    cx.update(|cx| {
+        let timer = Timer {
+            changes: 0,
+            until: Instant::now() + Duration::from_secs(60),
+        };
+        set_timed(timer, cx);
+        // Another timed request replaces the timer itself, later.
+        supersede(Some(30), cx);
+        assert!(timed(cx));
+        supersede(None, cx);
+        assert!(!timed(cx));
+    });
 }
