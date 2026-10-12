@@ -4,26 +4,51 @@
 //! this client never asks it for more.
 //!
 //! Frames are the connection's own shared `Arc`s, kept as they arrived:
-//! remembering one copies nothing. Each is stamped with its daemon boot and
-//! never shown for another, and a host keeps at most [`MAX_TABS`].
+//! remembering one copies nothing, but it keeps alive a frame that would
+//! otherwise be freed, about a megabyte for a full window. So memory, not
+//! tab count, bounds them: [`HOST_BYTES`] per host and [`TOTAL_BYTES`]
+//! across hosts, the longest unseen going first. Each frame is stamped with
+//! its daemon boot and never shown for another.
 
-use herdr_client::protocol::{ClientShellSnapshot, PaneSurfaceFrame};
+use herdr_client::protocol::{CellData, ClientShellSnapshot, PaneSurfaceFrame};
 use std::{collections::VecDeque, sync::Arc};
 
-/// Tabs remembered per host; the longest unseen go first beyond this.
-const MAX_TABS: usize = 16;
+/// Bytes of frames one host keeps alive.
+pub(super) const HOST_BYTES: usize = 4 << 20;
+/// Bytes of frames all hosts together keep alive.
+pub(super) const TOTAL_BYTES: usize = 8 << 20;
+/// Frames per host whatever their size, so empty ones stay bounded too.
+const MAX_TABS: usize = 64;
+/// The least a non-empty string's heap allocation takes.
+const MIN_ALLOCATION: usize = 16;
 
 struct Seen {
     tab: String,
     surface: Arc<PaneSurfaceFrame>,
     /// Unix seconds when the tab was left.
     at: u64,
+    bytes: usize,
 }
 
 /// One host's remembered frames, oldest first.
 #[derive(Default)]
 pub(crate) struct LastSeen {
     frames: VecDeque<Seen>,
+    bytes: usize,
+}
+
+/// The heap a frame's cells hold, which dominates its size. Counted once,
+/// when a tab is left.
+fn bytes(surface: &PaneSurfaceFrame) -> usize {
+    let cells = &surface.frame.cells;
+    let symbols: usize = cells
+        .iter()
+        .map(|cell| match cell.symbol.capacity() {
+            0 => 0,
+            capacity => capacity.max(MIN_ALLOCATION),
+        })
+        .sum();
+    cells.capacity() * size_of::<CellData>() + symbols
 }
 
 /// The tab `surface` streams, by `snapshot`, when both are of one boot.
@@ -57,25 +82,69 @@ impl LastSeen {
         let left = tab_of(before.0, before.1);
         let shown = tab_of(after.0, after.1);
         if let Some(boot) = after.0.map(|snapshot| snapshot.boot_id.as_str()) {
-            self.frames.retain(|seen| seen.surface.boot_id == boot);
+            self.forget(|seen| seen.surface.boot_id != boot);
         }
         if let (Some(tab), Some(surface)) = (left, before.1)
             && shown != Some(tab)
             // A tab already gone is never chosen, so it is not worth a slot.
             && after.0.is_some_and(|snapshot| snapshot.tabs.iter().any(|t| t.tab_id == tab))
         {
-            self.frames.retain(|seen| seen.tab != tab);
-            self.frames.push_back(Seen {
-                tab: tab.to_owned(),
-                surface: surface.clone(),
-                at: now,
-            });
-            if self.frames.len() > MAX_TABS {
-                self.frames.pop_front();
+            self.forget(|seen| seen.tab == tab);
+            let bytes = bytes(surface);
+            // A frame larger than the whole budget is not worth evicting for.
+            if bytes <= HOST_BYTES {
+                self.frames.push_back(Seen {
+                    tab: tab.to_owned(),
+                    surface: surface.clone(),
+                    at: now,
+                    bytes,
+                });
+                self.bytes += bytes;
+            }
+            while self.bytes > HOST_BYTES || self.frames.len() > MAX_TABS {
+                self.forget_oldest();
             }
         }
         if let Some(tab) = shown {
-            self.frames.retain(|seen| seen.tab != tab);
+            self.forget(|seen| seen.tab == tab);
+        }
+    }
+
+    fn forget(&mut self, mut gone: impl FnMut(&Seen) -> bool) {
+        let mut freed = 0;
+        self.frames.retain(|seen| {
+            let keep = !gone(seen);
+            if !keep {
+                freed += seen.bytes;
+            }
+            keep
+        });
+        self.bytes -= freed;
+    }
+
+    fn forget_oldest(&mut self) {
+        if let Some(seen) = self.frames.pop_front() {
+            self.bytes -= seen.bytes;
+        }
+    }
+
+    /// Keeps every host's frames within [`TOTAL_BYTES`] together, forgetting
+    /// the longest unseen of any host first.
+    pub(crate) fn trim<'a>(hosts: impl IntoIterator<Item = &'a mut Self>) {
+        let mut hosts: Vec<&mut Self> = hosts.into_iter().collect();
+        let mut total: usize = hosts.iter().map(|host| host.bytes).sum();
+        while total > TOTAL_BYTES {
+            let Some(oldest) = hosts
+                .iter_mut()
+                .filter_map(|host| Some((host.frames.front()?.at, host)))
+                .min_by_key(|(at, _)| *at)
+                .map(|(_, host)| host)
+            else {
+                return;
+            };
+            let before = oldest.bytes;
+            oldest.forget_oldest();
+            total -= before - oldest.bytes;
         }
     }
 

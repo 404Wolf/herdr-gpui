@@ -2934,8 +2934,9 @@ Ctrl+Shift+U is left unbound for
   selected pane's screen when its tab is the one its host is streaming, painted
   from cells this client already holds; else, for a tab shown earlier, its last
   frame from before you moved on, labelled "Last seen … ago"; or else its
-  directory, status, and place. Each host remembers up to 16 tabs, forgotten
-  when its daemon restarts. The preview never asks the daemon for anything.
+  directory, status, and place. Remembered frames are bounded by memory, 4 MiB
+  per host and 8 MiB in all (roughly 15–30 tabs at common window sizes), and
+  forgotten when their daemon restarts. The preview never asks the daemon for anything.
   Double-Shift requires two short completed taps within 400 ms; shifted typing,
   mouse interaction, held Shift, other modifiers, composition, and modal dialogs
   do not trigger it. It is window-local, not a system-wide hotkey. Native browser

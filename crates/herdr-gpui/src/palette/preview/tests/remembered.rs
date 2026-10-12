@@ -142,11 +142,48 @@ fn closed_panes_and_tabs_are_never_previewed_from_memory() {
     assert_eq!(fresh.frames("boot-v1").count(), 0);
 }
 
-#[test]
-fn a_host_remembers_a_bounded_number_of_tabs_newest_first() {
-    let snapshot = many_tabs(20);
+/// A frame for the tab whose only pane is `pane`, holding 1.5 MiB of cells.
+fn heavy(pane: &str) -> Arc<PaneSurfaceFrame> {
+    let mut surface = Arc::unwrap_or_clone(streaming("boot-v1", pane));
+    let cell = herdr_client::protocol::CellData {
+        symbol: String::new(),
+        fg: 0,
+        bg: 0,
+        modifier: 0,
+        skip: false,
+        hyperlink: None,
+    };
+    surface.frame.cells = vec![cell; (3 << 19) / size_of::<herdr_client::protocol::CellData>()];
+    Arc::new(surface)
+}
+
+/// Leaves the tab of each of `panes` in turn, at times 1, 2, ...
+fn leave_each(snapshot: &ClientShellSnapshot, panes: &[&str]) -> LastSeen {
     let mut seen = LastSeen::default();
-    for n in 3..23u64 {
+    for (at, pane) in (1..).zip(panes) {
+        seen.observe(
+            (Some(snapshot), Some(&heavy(pane))),
+            (Some(snapshot), None),
+            at,
+        );
+    }
+    seen
+}
+
+fn ages(seen: &LastSeen) -> Vec<u64> {
+    seen.frames("boot-v1").map(|(_, at)| at).collect()
+}
+
+#[test]
+fn a_host_keeps_its_newest_frames_within_its_memory_budget() {
+    let snapshot = many_tabs(3);
+    // Two 1.5 MiB frames fit in 4 MiB; a third pushes out the oldest.
+    let seen = leave_each(&snapshot, &["w1:p3", "w1:p4", "w1:p5"]);
+    assert_eq!(ages(&seen), [3, 2]);
+    // Small frames are bounded by count instead.
+    let snapshot = many_tabs(80);
+    let mut seen = LastSeen::default();
+    for n in 3..83u64 {
         let pane = format!("w1:p{n}");
         seen.observe(
             (Some(&snapshot), Some(&streaming("boot-v1", &pane))),
@@ -154,6 +191,24 @@ fn a_host_remembers_a_bounded_number_of_tabs_newest_first() {
             n,
         );
     }
-    let ages: Vec<u64> = seen.frames("boot-v1").map(|(_, at)| at).collect();
-    assert_eq!(ages, (7..23).rev().collect::<Vec<_>>());
+    assert_eq!(ages(&seen), (19..83).rev().collect::<Vec<_>>());
+}
+
+#[test]
+fn hosts_together_keep_their_newest_frames_within_the_total_budget() {
+    let snapshot = many_tabs(6);
+    // Three hosts with 3 MiB each hold 9 MiB; the oldest frame of any goes.
+    let mut a = leave_each(&snapshot, &["w1:p3", "w1:p4"]);
+    let mut b = leave_each(&snapshot, &["w1:p5", "w1:p6"]);
+    let mut c = leave_each(&snapshot, &["w1:p7", "w1:p8"]);
+    b.observe(
+        (Some(&snapshot), Some(&heavy("w1:p6"))),
+        (Some(&snapshot), None),
+        10,
+    );
+    LastSeen::trim([&mut a, &mut b, &mut c]);
+    assert_eq!(
+        (ages(&a), ages(&b), ages(&c)),
+        (vec![2], vec![10, 1], vec![2, 1])
+    );
 }
