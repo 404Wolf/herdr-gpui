@@ -704,7 +704,8 @@ impl SettingsWindow {
                 ),
                 cx,
             ))
-            .children(self.confirm_close_switches(cx));
+            .children(self.confirm_close_switches(cx))
+            .children(self.merged_worktree_controls(cx));
         div().flex().flex_col().gap(px(24.)).child(general)
             .child(self.render_tab_bar_controls(cx))
             .child(self.render_session_controls(cx))

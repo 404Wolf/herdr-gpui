@@ -183,6 +183,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) menu: menu::MenuState,
     /// A `worktree.remove` queued after its dialog closed.
     pub(crate) removal: Option<menu::Removal>,
+    /// Removing worktrees whose pull request is merged, when enabled.
+    pub(crate) merged_cleanup: crate::merged_cleanup::Cleanup,
     /// The worktree script being located, read, trusted, or opened.
     pub(crate) worktree_script: Option<crate::worktree_scripts::Job>,
     /// The editor pane being opened, if any.
@@ -528,6 +530,7 @@ impl HerdrWindow {
         if self.update_workspace_pr() {
             cx.notify();
         }
+        self.update_merged_cleanup(window, cx);
         if self.update_git() {
             cx.notify();
         }
@@ -841,6 +844,7 @@ impl HerdrWindow {
             local_error: error,
             menu: menu::MenuState::new(cx),
             removal: None,
+            merged_cleanup: Default::default(),
             worktree_script: None,
             editor_open: None,
             editor_panes: Vec::new(),

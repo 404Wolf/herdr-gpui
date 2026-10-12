@@ -654,6 +654,16 @@ from its menu without the dialog, and `show_agents = false` to hide the Agents
 section and give Spaces the full sidebar height. All four default to `true`.
 A workspace close still asks when its Git check finds uncommitted files or
 unpushed commits, whatever `confirm_close_workspace` says.
+Set `remove_merged_worktrees = true` (**Settings > General > Remove worktrees
+of merged PRs**) to remove a linked worktree's checkout, and close its
+workspace and terminals, once its GitHub pull request is merged. It is off by
+default because it deletes a checkout without asking. It acts only on this
+machine's daemon, only on linked worktrees, and only when the checkout has no
+uncommitted or untracked files, sits exactly at the pull request's merged head
+commit, and has no agent working or waiting on a prompt. A repository with an
+archive script is left for the delete dialog. The focused workspace opens that
+dialog instead of being removed. The branch is not deleted, and a checkout
+the daemon finds dirty is never force removed.
 The pane dialog's **Do not ask again** checkbox (click it or press Space) saves
 `confirm_close_pane = false` to `config-gpui.local.toml` once the close is sent. Saved edits apply automatically. The
 **Show agents** control in **Settings > Appearance > Sidebar layout** saves
