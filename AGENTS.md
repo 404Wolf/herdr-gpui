@@ -39,6 +39,32 @@ Closing or detaching the GUI must leave the daemon and its terminals running.
 - Define shared types once in the lowest appropriate layer and re-export them. Do not create mirror enums or convert between them through strings.
 - Do not add a crate, runtime, service container, or speculative transport abstraction without a concrete need. Sibling checkouts are references, not build dependencies.
 
+## Command Line
+
+`herdr-gpui COMMAND` drives the running app over its control socket, so
+agents in Herdr panes can use what only this client shows or keeps
+(`docs/cli.md`). Agents learn about it from the managed skill in
+`skills/herdr-gpui-browser/SKILL.md`, which the app installs and refreshes.
+
+- When a feature adds something an agent or script could reasonably ask for
+  (open or focus a view, read state the app holds, change a setting, wait for
+  an event), add a command in the same change: the request in
+  `control/protocol`, its handler in `control/server`, parsing and output in
+  `control/client`, its `--help` text, and tests for each.
+- Do not add a command that repeats Herdr's own `herdr` CLI (workspaces,
+  terminal tabs, panes, agents, scrollback), that the app cannot really do,
+  or that skips a confirmation. Destructive or outward actions open the
+  app's own dialog, pointed at the caller's checkout, and the user confirms
+  there.
+- Keep the shared contract: `--json` and `--window` on every command, the
+  exit-code table in `docs/cli.md`, bounded requests and responses, and
+  targeting that refuses rather than acting in another session's window.
+- Add the command to `docs/cli.md`. When an agent should reach for it
+  unprompted, also add it to the skill's command table and, if it is a new
+  kind of task, to the skill's `description`, which is all an agent sees
+  before loading it. Keep the skill's `name`: installed copies are found
+  by it.
+
 ## Rust Conventions
 
 - Require only the capabilities an operation uses. Prefer existing traits such as `Read`, `Write`, `IntoIterator`, `AsRef<Path>`, and `AsRef<OsStr>` over specific streams, collections, or owned paths.
