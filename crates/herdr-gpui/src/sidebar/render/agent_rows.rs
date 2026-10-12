@@ -126,6 +126,9 @@ impl HerdrWindow {
             .unwrap_or_default();
         let id = agent.pane_id.clone();
         let navigate_endpoint = endpoint_id.clone();
+        let menu_endpoint = endpoint_id.clone();
+        let menu_pane = id.clone();
+        let menu_open = selected && self.pane_menu_target() == Some(id.as_str());
         Cell::new(
             rows,
             RowData::Agent(AgentRow {
@@ -145,12 +148,20 @@ impl HerdrWindow {
             row_cx,
         )
         .selected(selected && agent.focused)
+        .highlighted(menu_open)
         .row()
         .when(gap > 0., |row| row.mt(px(gap)))
         .id(SharedString::from(format!("agent-{endpoint_id}-{id}")))
         .when(multi, |row| {
             row.debug_selector(|| format!("agent-{endpoint_id}-{id}"))
         })
+        .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                cx.stop_propagation();
+                this.open_agent_menu(&menu_endpoint, &menu_pane, event.position, window, cx);
+            }),
+        )
         .on_click(cx.listener(move |this, _, window, cx| {
             this.navigate_endpoint(&navigate_endpoint, NavigationTarget::Pane(&id), cx);
             window.focus(&this.focus, cx);

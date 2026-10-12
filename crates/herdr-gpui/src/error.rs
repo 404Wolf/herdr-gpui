@@ -163,6 +163,10 @@ pub enum Error {
     StaleWorkspace,
     #[error(transparent)]
     PaneMove(#[from] crate::pane_move::Error),
+    #[error(transparent)]
+    PaneCarry(#[from] crate::pane_menu::carry::Refusal),
+    #[error(transparent)]
+    Teleport(#[from] crate::teleport::Error),
     #[error("Workspace label must not be empty.")]
     EmptyWorkspaceLabel,
     #[error("{0} cannot be reached by script. Choose another host.")]

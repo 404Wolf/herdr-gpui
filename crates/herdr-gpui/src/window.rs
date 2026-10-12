@@ -201,6 +201,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) teleport_marks: crate::teleport::Marks,
     /// The workspace a finished teleport keeps steering to until focused.
     pub(crate) teleport_follow: Option<crate::teleport::Follow>,
+    /// A pane moving to another device; a move outlives its menu.
+    pub(crate) pane_carry: Option<crate::pane_menu::carry::Carry>,
     /// A worktree or workspace being created on another host.
     pub(crate) dispatch_job: Option<crate::dispatch::Job>,
     /// Dispatched worktrees' setup scripts, waiting for their hosts in order.
@@ -508,6 +510,7 @@ impl HerdrWindow {
         self.poll_file_transfer(cx);
         self.update_workspace_dialog(window, cx);
         self.poll_teleport(window, cx);
+        self.poll_carry(window, cx);
         self.poll_fan_out(window, cx);
         self.poll_dispatch(window, cx);
         self.poll_device_setup(window, cx);
@@ -856,6 +859,7 @@ impl HerdrWindow {
             teleport: None,
             teleport_marks: crate::teleport::Marks::start(),
             teleport_follow: None,
+            pane_carry: None,
             dispatch_job: None,
             dispatch_setups: Default::default(),
             fan_out: None,

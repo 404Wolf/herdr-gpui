@@ -385,6 +385,7 @@ impl HerdrWindow {
                         | Page::Pane
                         | Page::RenamePane
                         | Page::MovePane
+                        | Page::CarryPane
                         | Page::PaneProcesses
                         | Page::KillProcesses
                         | Page::Host
@@ -594,6 +595,8 @@ impl HerdrWindow {
             ));
         } else if let Page::Dialog(action) = page {
             panel = panel.child(self.render_workspace_dialog(action, cx));
+        } else if page == Page::CarryPane {
+            panel = panel.child(self.render_carry(cx));
         } else if page == Page::Teleport {
             panel = panel.child(self.render_teleport(cx));
         } else if page == Page::Checkpoints {

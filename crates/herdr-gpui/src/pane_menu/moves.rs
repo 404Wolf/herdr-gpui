@@ -44,7 +44,7 @@ impl PaneMenu {
     /// How many rows the current page lists.
     pub(super) fn rows(&self, page: Option<Page>) -> usize {
         if page == Some(Page::MovePane) {
-            self.target.destinations().len()
+            self.target.destinations().len() + self.target.devices.len()
         } else {
             self.actions().len()
         }
@@ -54,7 +54,9 @@ impl PaneMenu {
 /// A picker row's text. A long workspace name gives way first, so the tab
 /// that tells two rows of one workspace apart stays readable.
 fn destination_label(index: usize, workspace: Option<String>, place: String) -> Div {
-    let row = div().flex().min_w(px(0.)).overflow_hidden();
+    // The label fills its row, so the tab's cap below is a share of the row:
+    // sized to its text, a short workspace name would squeeze the tab.
+    let row = div().flex().flex_1().min_w(px(0.)).overflow_hidden();
     let place = div()
         .debug_selector(move || format!("pane-move-place-{index}"))
         .min_w(px(0.))
@@ -85,7 +87,7 @@ pub(super) fn refusal(target: &herdr_client::ConnectTarget) -> Option<pane_move:
 }
 
 impl HerdrWindow {
-    /// Opens the focused pane's move picker, as its menu's "Move to Tab…" row
+    /// Opens the focused pane's move picker, as its menu's "Move to…" row
     /// would, at the pane's top-left corner.
     pub(crate) fn move_focused_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.open_focused_pane_menu(window, cx);
@@ -203,11 +205,17 @@ impl HerdrWindow {
 
     /// Enter on the move picker moves the pane to the selected row.
     pub(super) fn submit_move_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(choice) = self.menu.pane.as_ref().and_then(|pane| {
-            pane.selected
-                .and_then(|index| pane.target.destinations().into_iter().nth(index))
-        }) {
-            self.move_pane(choice.destination, window, cx);
+        let Some(pane) = &self.menu.pane else {
+            return;
+        };
+        let Some(index) = pane.selected else {
+            return;
+        };
+        let mut here = pane.target.destinations();
+        if index < here.len() {
+            self.move_pane(here.swap_remove(index).destination, window, cx);
+        } else if let Some(device) = pane.target.devices.get(index - here.len()).cloned() {
+            self.review_carry(&device, cx);
         }
     }
 
@@ -243,30 +251,35 @@ impl HerdrWindow {
                 .text_color(rgb(self.theme.muted))
                 .child("Move pane to"),
         );
-        for (index, choice) in pane.target.destinations().into_iter().enumerate() {
+        let row = |index: usize| {
+            div()
+                .id(("pane-move-destination", index))
+                .flex_none()
+                .debug_selector(move || format!("pane-move-{index}"))
+                .min_h(px(self.config.ui.line_height() + 12.))
+                .px(px(8.))
+                .flex()
+                .items_center()
+                .overflow_hidden()
+                .cursor_pointer()
+                .when(pane.selected == Some(index), |row| {
+                    row.bg(rgb(self.theme.active))
+                })
+                .hover(|row| row.bg(rgb(self.theme.active)))
+                .on_hover(cx.listener(move |this, hovered, _, cx| {
+                    if *hovered && let Some(pane) = &mut this.menu.pane {
+                        pane.selected = Some(index);
+                        cx.notify();
+                    }
+                }))
+        };
+        let here = pane.target.destinations();
+        let local = here.len();
+        for (index, choice) in here.into_iter().enumerate() {
             let destination = choice.destination;
             body = body.child(
-                div()
-                    .id(("pane-move-destination", index))
-                    .flex_none()
-                    .debug_selector(move || format!("pane-move-{index}"))
-                    .min_h(px(self.config.ui.line_height() + 12.))
-                    .px(px(8.))
-                    .flex()
-                    .items_center()
-                    .overflow_hidden()
-                    .cursor_pointer()
-                    .when(pane.selected == Some(index), |row| {
-                        row.bg(rgb(self.theme.active))
-                    })
-                    .hover(|row| row.bg(rgb(self.theme.active)))
+                row(index)
                     .child(destination_label(index, choice.workspace, choice.place))
-                    .on_hover(cx.listener(move |this, hovered, _, cx| {
-                        if *hovered && let Some(pane) = &mut this.menu.pane {
-                            pane.selected = Some(index);
-                            cx.notify();
-                        }
-                    }))
                     .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
                         // The picker replaces the menu under the pointer, and
                         // snapping it into the window can shift its rows, so
@@ -276,6 +289,31 @@ impl HerdrWindow {
                             return;
                         }
                         this.move_pane(destination.clone(), window, cx)
+                    })),
+            );
+        }
+        // A working agent cannot leave yet; its rows say so when chosen.
+        let busy = self
+            .live
+            .snapshot
+            .as_deref()
+            .is_some_and(|snapshot| super::carry::busy(snapshot, &pane.target.pane));
+        for (offset, device) in pane.target.devices.iter().enumerate() {
+            let index = local + offset;
+            let chosen = device.clone();
+            body = body.child(
+                row(index)
+                    .when(busy, |row| row.text_color(rgb(self.theme.muted)))
+                    .child(destination_label(
+                        index,
+                        Some(device.label.clone()),
+                        device.place.clone(),
+                    ))
+                    .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+                        if event.click_count() > 1 {
+                            return;
+                        }
+                        this.review_carry(&chosen, cx)
                     })),
             );
         }
