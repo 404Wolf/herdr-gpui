@@ -11,6 +11,10 @@ pub(crate) enum EventsOp {
     Poll {
         #[serde(default)]
         after: Option<u64>,
+        /// The app run `after` counts in. Another run's numbers mean
+        /// nothing here, so its caller gets every event this run kept.
+        #[serde(default)]
+        instance: Option<u64>,
         wait_seconds: u64,
         #[serde(default)]
         kinds: Vec<EventKind>,
@@ -108,12 +112,49 @@ pub(crate) struct Event {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum Reply {
-    /// `next` is the sequence number to pass back as `after`.
+    /// `next` is the sequence number to pass back as `after`, with
+    /// `instance`, the app run it counts in.
     Events {
         events: Vec<Event>,
         next: u64,
+        #[serde(default)]
+        instance: u64,
     },
     Waited {
         met: bool,
     },
+}
+
+/// Where a reader of events left off: a sequence number, and the app run it
+/// counts in. Written `INSTANCE:SEQ`, or `SEQ` alone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Cursor {
+    pub instance: Option<u64>,
+    pub seq: u64,
+}
+
+impl std::str::FromStr for Cursor {
+    type Err = ();
+
+    fn from_str(text: &str) -> Result<Self, ()> {
+        match text.split_once(':') {
+            Some((instance, seq)) => Ok(Self {
+                instance: Some(instance.parse().map_err(|_| ())?),
+                seq: seq.parse().map_err(|_| ())?,
+            }),
+            None => Ok(Self {
+                instance: None,
+                seq: text.parse().map_err(|_| ())?,
+            }),
+        }
+    }
+}
+
+impl std::fmt::Display for Cursor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.instance {
+            Some(instance) => write!(f, "{instance}:{}", self.seq),
+            None => write!(f, "{}", self.seq),
+        }
+    }
 }

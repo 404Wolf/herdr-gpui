@@ -97,3 +97,14 @@ fn every_newly_kept_batch_is_an_event_even_from_a_full_queue() {
     compare(&mut log, &kept(&[(3, "p3")]), &kept(&[(5, "p5")]));
     assert_eq!(log.after(2, &[]).len(), 1);
 }
+
+#[test]
+fn a_poll_from_another_app_run_gets_everything_this_run_kept() {
+    // Numbers from this run continue where they left off.
+    assert_eq!(start(Some(7), Some(instance()), 40), 7);
+    assert_eq!(start(Some(7), None, 40), 7);
+    // Another run's 900 means nothing here: start from the beginning.
+    assert_eq!(start(Some(900), Some(instance() ^ 1), 40), 0);
+    // No number: only what happens from now on.
+    assert_eq!(start(None, None, 40), 40);
+}

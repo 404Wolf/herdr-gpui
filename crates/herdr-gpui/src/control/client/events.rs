@@ -1,7 +1,7 @@
 //! `events` and `wait`.
 use super::{Context, Output, unexpected};
 use crate::{
-    cli::control::{EventKind, WaitFor},
+    cli::control::{Cursor, EventKind, WaitFor},
     control::protocol::{
         Request, Response,
         events::{Condition, Event, EventsOp, Reply},
@@ -30,28 +30,40 @@ fn line(event: &Event) -> String {
 }
 
 fn poll(
-    after: Option<u64>,
+    after: Option<Cursor>,
     wait: u64,
     kinds: &[EventKind],
     context: &Context,
-) -> crate::Result<(Vec<Event>, u64)> {
+) -> crate::Result<(Vec<Event>, Cursor)> {
     match context.call(
         Request::Events,
         EventsOp::Poll {
-            after,
+            after: after.map(|cursor| cursor.seq),
+            instance: after.and_then(|cursor| cursor.instance),
             wait_seconds: wait,
             kinds: kinds.to_vec(),
         },
     )? {
         Response::Events {
-            reply: Reply::Events { events, next },
-        } => Ok((events, next)),
+            reply:
+                Reply::Events {
+                    events,
+                    next,
+                    instance,
+                },
+        } => Ok((
+            events,
+            Cursor {
+                instance: Some(instance),
+                seq: next,
+            },
+        )),
         response => Err(unexpected(response)),
     }
 }
 
 pub(super) fn events(
-    after: Option<u64>,
+    after: Option<Cursor>,
     follow: bool,
     wait: u64,
     kinds: Vec<EventKind>,
@@ -62,11 +74,11 @@ pub(super) fn events(
         let text = events.iter().map(line).collect::<Vec<_>>().join("\n");
         let output = Output::data(
             if events.is_empty() {
-                format!("No events; next sequence number {next}")
+                format!("No events; continue with --after {next}")
             } else {
-                text
+                format!("{text}\nContinue with --after {next}")
             },
-            &serde_json::json!({ "events": events, "next": next }),
+            &serde_json::json!({ "events": events, "next": next.to_string() }),
         )?;
         return Ok(if events.is_empty() {
             output.nothing()

@@ -44,6 +44,29 @@ pub(super) struct Log {
 
 impl Global for Log {}
 
+/// This app run, so a reader's sequence numbers from an earlier run are
+/// told apart: the process ID with the time it first answered.
+fn instance() -> u64 {
+    static INSTANCE: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *INSTANCE.get_or_init(|| {
+        let started = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| since.as_millis() as u64);
+        (u64::from(std::process::id()) << 40) ^ started
+    })
+}
+
+/// Where a poll starts: after its sequence number when it counts in this
+/// run; from the start of what this run kept when it counts in another; and
+/// from now when it names none.
+fn start(after: Option<u64>, instance: Option<u64>, now: u64) -> u64 {
+    match (after, instance) {
+        (Some(_), Some(theirs)) if theirs != self::instance() => 0,
+        (Some(after), _) => after,
+        (None, _) => now,
+    }
+}
+
 impl Log {
     fn push(&mut self, kind: EventKind, subject: impl Into<String>, detail: Option<String>) {
         self.seq += 1;
@@ -196,10 +219,12 @@ pub(super) fn serve(
     match call.op {
         EventsOp::Poll {
             after,
+            instance,
             wait_seconds,
             kinds,
         } => {
-            let after = after.unwrap_or_else(|| cx.try_global::<Log>().map_or(0, |log| log.seq));
+            let now = cx.try_global::<Log>().map_or(0, |log| log.seq);
+            let after = start(after, instance, now);
             watches.add(
                 incoming,
                 Duration::from_secs(wait_seconds),
@@ -208,13 +233,18 @@ pub(super) fn serve(
                     let events = log.after(after, &kinds);
                     let next = events.last().map_or(after, |event| event.seq);
                     (!events.is_empty()).then_some(Response::Events {
-                        reply: Reply::Events { events, next },
+                        reply: Reply::Events {
+                            events,
+                            next,
+                            instance: self::instance(),
+                        },
                     })
                 },
                 Response::Events {
                     reply: Reply::Events {
                         events: Vec::new(),
                         next: after,
+                        instance: self::instance(),
                     },
                 },
                 cx,

@@ -258,3 +258,30 @@ fn the_orchestrator_repository_may_come_before_the_verb() {
         })
     );
 }
+
+#[test]
+fn an_events_cursor_names_its_app_run() {
+    assert_eq!(
+        command(&["events", "--after", "77:12"]),
+        ControlCommand::Events {
+            after: Some(control::Cursor {
+                instance: Some(77),
+                seq: 12
+            }),
+            follow: false,
+            wait: 0,
+            kinds: Vec::new(),
+        }
+    );
+    let ControlCommand::Events { after, .. } = command(&["events", "--after", "12"]) else {
+        panic!("not events");
+    };
+    assert_eq!(
+        after.map(|cursor| cursor.to_string()).as_deref(),
+        Some("12")
+    );
+    assert_eq!(
+        parse(&["events", "--after", "x:1"]).unwrap_err(),
+        CliError::InvalidValue("--after")
+    );
+}

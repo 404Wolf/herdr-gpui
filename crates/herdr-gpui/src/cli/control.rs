@@ -11,7 +11,7 @@ mod work;
 
 use super::CliError;
 pub(crate) use super::args::Args;
-pub use crate::control::{EventKind, FontSize, Script, Size, Sound, Switch};
+pub use crate::control::{Cursor, EventKind, FontSize, Script, Size, Sound, Switch};
 pub use app::{AppCommand, UiCommand, WindowCommand};
 pub use browser::BrowserCommand;
 pub use hosts::{CloudCommand, HostCommand, PortsCommand, PrCommand};
@@ -86,7 +86,7 @@ pub enum ControlCommand {
     Sound(SoundCommand),
     Bell,
     Events {
-        after: Option<u64>,
+        after: Option<Cursor>,
         follow: bool,
         wait: u64,
         kinds: Vec<EventKind>,
@@ -334,7 +334,14 @@ fn command(family: &'static str, args: &mut Args) -> Result<ControlCommand, CliE
                 .collect::<Result<_, _>>()?;
             ControlCommand::Events {
                 follow: args.flag("--follow"),
-                after: args.number("--after", 0..=u64::MAX)?,
+                after: args
+                    .text_option("--after")?
+                    .map(|after| {
+                        after
+                            .parse()
+                            .map_err(|()| CliError::InvalidValue("--after"))
+                    })
+                    .transpose()?,
                 wait: wait_option(args, "--wait")?,
                 kinds,
             }

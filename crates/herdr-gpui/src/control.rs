@@ -27,7 +27,7 @@ pub use protocol::ErrorCode;
 pub(crate) use protocol::NotesTo;
 pub use protocol::{
     app::{FontSize, Size, Switch},
-    events::EventKind,
+    events::{Cursor, EventKind},
     settings::Sound,
     work::Script,
 };

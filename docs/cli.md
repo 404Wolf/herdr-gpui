@@ -134,7 +134,9 @@ Every command accepts:
 `events` prints what happened in the app: windows opening, closing, and
 gaining focus; the app's tabs opening and closing; notes kept for a pane;
 worktree notes changing; and host status changes. Each event has a sequence
-number; pass the last one back with `--after` to get only newer events.
+number; pass back the `INSTANCE:SEQ` cursor a call prints with `--after` to
+get only newer events. A cursor from an earlier run of the app gets every
+event the new run has kept, so a restart never hides events.
 
 ```sh
 herdr-gpui events --follow --kind tab_closed
