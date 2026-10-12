@@ -36,6 +36,10 @@ confirm_close_tab = true
 # Ask before closing a pane, independently of tabs. The dialog's "Do not ask
 # again" checkbox sets this to false in config-gpui.local.toml.
 confirm_close_pane = true
+# Ask before closing a workspace from its menu. When false, the close goes out
+# as soon as its Git check finishes, unless it finds uncommitted files or
+# unpushed commits, which always ask.
+confirm_close_workspace = true
 # Show the Agents section below Spaces in the sidebar.
 show_agents = true
 # Show the search field at the top of the sidebar, which finds devices,

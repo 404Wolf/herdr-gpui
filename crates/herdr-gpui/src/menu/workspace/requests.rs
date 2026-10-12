@@ -100,7 +100,11 @@ impl HerdrWindow {
         if let Some(check) = &mut self.menu.close_check
             && check.poll()
         {
-            if check
+            if check.skippable(self.config.confirm_close_workspace) {
+                // Submitting rechecks the connection and the group, so a
+                // refusal still shows in the dialog.
+                self.submit_workspace_dialog(window, cx);
+            } else if check
                 .report
                 .as_ref()
                 .is_some_and(|report| report.needs_consent())
@@ -352,7 +356,7 @@ impl HerdrWindow {
                 if !check.current(snapshot, target) {
                     return Err(crate::Error::WorkspaceGroupChanged);
                 }
-                if !check.ready(text) {
+                if !check.allows(text, self.config.confirm_close_workspace) {
                     return Ok(Submission::Awaiting {
                         focus_changed: false,
                     });
