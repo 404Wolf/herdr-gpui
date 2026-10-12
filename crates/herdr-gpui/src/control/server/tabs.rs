@@ -33,7 +33,7 @@ pub(super) fn serve(
         TabOp::List { pages } => incoming.respond(list(pages, cx)),
         TabOp::Focus { id } => incoming.respond(focus(&caller, id, cx)),
         TabOp::Close { id } => incoming.respond(close(&caller, id, cx)),
-        TabOp::Navigate { id, url } => incoming.respond(page::navigate(id, &url, cx)),
+        TabOp::Navigate { id, url } => incoming.respond(page::navigate(&caller, id, &url, cx)),
         TabOp::Back { id } => incoming.respond(page::history(&caller, id, false, cx)),
         TabOp::Forward { id } => incoming.respond(page::history(&caller, id, true, cx)),
         TabOp::Text { id } => page::text(caller, id, incoming, watches, cx),

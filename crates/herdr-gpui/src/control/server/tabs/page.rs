@@ -3,13 +3,10 @@
 //! that show pages have any; the rest answer that they cannot.
 use super::{find, kind};
 #[cfg(not(target_os = "macos"))]
-use crate::control::{
-    protocol::Caller,
-    server::{Watches, socket},
-};
+use crate::control::server::{Watches, socket};
 use crate::{
     browser::{Location, Store, Tab, WebUrl},
-    control::protocol::{ErrorCode, Response},
+    control::protocol::{Caller, ErrorCode, Response},
 };
 use gpui::App;
 
@@ -65,7 +62,7 @@ fn bounded_text(text: &str, limit: usize) -> String {
 
 /// Loads another web address in a page tab. A window that made the page
 /// loads it at once; any other shows it when it next makes the page.
-pub(super) fn navigate(id: u64, url: &str, cx: &mut App) -> Response {
+pub(super) fn navigate(caller: &Caller, id: u64, url: &str, cx: &mut App) -> Response {
     if !crate::browser::EMBEDDED {
         return no_pages();
     }
@@ -77,6 +74,13 @@ pub(super) fn navigate(id: u64, url: &str, cx: &mut App) -> Response {
         Ok(tab) => tab,
         Err(response) => return response,
     };
+    // A tab is shared by every window, so a named window must be one that
+    // shows it: a wrong `--window` never replaces another window's page.
+    if let Some(window) = caller.window
+        && super::showing(caller, &tab, cx).is_none()
+    {
+        return super::not_found(format!("Window {window} does not show tab {id}"));
+    }
     Store::update(cx, |store| {
         store.visited(tab.id, Some(location.clone()), None)
     });

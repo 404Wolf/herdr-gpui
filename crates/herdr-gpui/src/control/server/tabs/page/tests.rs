@@ -46,7 +46,7 @@ fn only_page_tabs_take_page_commands(cx: &mut gpui::TestAppContext) {
             })
         ));
         assert!(page_tab(page.into(), cx).is_ok());
-        let navigated = navigate(page.into(), "https://b.test/next", cx);
+        let navigated = navigate(&Caller::default(), page.into(), "https://b.test/next", cx);
         if crate::browser::EMBEDDED {
             assert!(matches!(navigated, Response::Done { .. }));
             assert_eq!(
@@ -56,14 +56,26 @@ fn only_page_tabs_take_page_commands(cx: &mut gpui::TestAppContext) {
                 })
             );
             assert!(matches!(
-                navigate(page.into(), "file:///etc/passwd", cx),
+                navigate(&Caller::default(), page.into(), "file:///etc/passwd", cx),
                 Response::Error {
                     code: ErrorCode::InvalidUrl,
                     ..
                 }
             ));
+            // A named window that does not show the tab changes nothing.
+            let elsewhere = Caller {
+                window: Some(999_999),
+                ..Caller::default()
+            };
             assert!(matches!(
-                navigate(devices.into(), "https://b.test/", cx),
+                navigate(&elsewhere, page.into(), "https://b.test/other", cx),
+                Response::Error {
+                    code: ErrorCode::NotFound,
+                    ..
+                }
+            ));
+            assert!(matches!(
+                navigate(&Caller::default(), devices.into(), "https://b.test/", cx),
                 Response::Error {
                     code: ErrorCode::InvalidRequest,
                     ..
