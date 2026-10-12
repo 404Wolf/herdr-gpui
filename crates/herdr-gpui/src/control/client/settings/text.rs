@@ -95,6 +95,10 @@ pub(super) fn caffeine(state: &str, seconds: Option<u64>) -> String {
         }
         ("on", None) => "Caffeine is on: the display and the machine stay awake".to_owned(),
         ("pending", _) => "Caffeine is changing".to_owned(),
+        ("until_agents_finish", _) => {
+            "Caffeine is on until the agents finish: the display and the machine stay awake"
+                .to_owned()
+        }
         _ => "Caffeine is off".to_owned(),
     }
 }

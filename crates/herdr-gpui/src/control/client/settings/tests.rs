@@ -63,6 +63,8 @@ fn caffeine_and_durations_read_plainly() {
     );
     assert_eq!(text::caffeine("off", None), "Caffeine is off");
     assert_eq!(text::caffeine("pending", None), "Caffeine is changing");
+    // A hold until the agents finish is on, not off.
+    assert!(text::caffeine("until_agents_finish", None).starts_with("Caffeine is on until"));
 }
 
 #[test]
