@@ -35,6 +35,9 @@ herdr-gpui browser open http://localhost:3000
   links to CSS, scripts, and images work. Keep the page and its assets in a
   dedicated folder: never your home directory, and nothing in a hidden
   folder. Files whose names start with a dot are never served.
+- A Markdown file (`.md`, `.markdown`) opens rendered, like a note in
+  Obsidian: safe HTML in it renders, its scripts never run, and `https`
+  images load. Links to other Markdown files in the folder open rendered too.
 - Opening the same page again from the same pane reuses and reloads its tab.
   After editing a file, run `herdr-gpui browser reload` instead.
 - Add `--no-focus` to add the tab without switching to it, for example when

@@ -21,6 +21,8 @@ mod groups;
 mod groups_view;
 mod layouts;
 mod location;
+#[cfg(any(target_os = "macos", windows, test))]
+mod markdown;
 #[cfg(any(target_os = "macos", windows))]
 mod native;
 #[cfg(target_os = "macos")]
