@@ -2,7 +2,7 @@
 //! the checkouts the user keeps notes on, and the check that a chosen
 //! destination still exists.
 
-use super::{Action, Entry, Source, projects};
+use super::{Action, Entry, Source, frecency, projects};
 use crate::{Error, NavigationTarget, Result};
 use gpui::SharedString;
 use herdr_client::protocol::{AgentStatus, ClientShellSnapshot};
@@ -75,13 +75,22 @@ pub(super) fn go_to_entries(
         .collect::<Vec<_>>()
         .join("  ");
         let workspace_row = entries.len();
-        entries.push(Entry::new(
+        let mut entry = Entry::new(
             workspace.label.clone(),
             detail,
             "Workspace",
             go(NavigationTarget::Workspace(workspace.workspace_id.clone())),
             None,
-        ));
+        );
+        // Its launch path and branch outlive the daemon's workspace ID.
+        entry.frecency = projects::launch_root(snapshot, &workspace.workspace_id).map(|root| {
+            frecency::Key::Workspace {
+                endpoint: endpoint.to_owned(),
+                root: root.to_owned(),
+                branch: workspace.branch.clone(),
+            }
+        });
+        entries.push(entry);
         let tabs: Vec<_> = snapshot
             .tabs
             .iter()
@@ -97,13 +106,19 @@ pub(super) fn go_to_entries(
                     .filter(|text| !text.is_empty())
                     .collect::<Vec<_>>()
                     .join("  ");
-                entries.push(Entry::new(
+                let mut entry = Entry::new(
                     tab.label.clone(),
                     detail,
                     "Tab",
                     go(NavigationTarget::Tab(tab.tab_id.clone())),
                     Some(workspace_row),
-                ));
+                );
+                entry.frecency = Some(frecency::Key::Tab {
+                    endpoint: endpoint.to_owned(),
+                    boot: snapshot.boot_id.clone(),
+                    id: tab.tab_id.clone(),
+                });
+                entries.push(entry);
                 entries.len() - 1
             });
             let parent = Some(tab_row.unwrap_or(workspace_row));
@@ -160,6 +175,11 @@ pub(super) fn go_to_entries(
                     &keywords,
                 );
                 entry.status = agent.map(|agent| agent.agent_status);
+                entry.frecency = Some(frecency::Key::Pane {
+                    endpoint: endpoint.to_owned(),
+                    boot: snapshot.boot_id.clone(),
+                    id: pane.pane_id.clone(),
+                });
                 entries.push(entry);
             }
         }

@@ -283,6 +283,12 @@ pub(crate) fn run() -> std::process::ExitCode {
     } else {
         crate::worktree_notes::Notes::default()
     };
+    // Nor with which palette rows the user chooses.
+    let palette_frecency = if mode == LaunchMode::Normal {
+        crate::palette::Frecency::load()
+    } else {
+        crate::palette::Frecency::default()
+    };
     // Nor with where the user's worktrees went.
     let dispatch_history = if mode == LaunchMode::Normal {
         crate::dispatch::History::load()
@@ -299,6 +305,7 @@ pub(crate) fn run() -> std::process::ExitCode {
             browser_tabs.install(cx);
             group_layouts.install(cx);
             worktree_notes.install(cx);
+            palette_frecency.install(cx);
             dispatch_history.install(cx);
             agent_skill.install_global(cx);
             keychain_grants.install(cx);

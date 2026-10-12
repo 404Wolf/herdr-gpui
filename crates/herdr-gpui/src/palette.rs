@@ -15,6 +15,8 @@ use std::sync::Arc;
 
 mod activate;
 mod agent_filter;
+mod frecency;
+pub(crate) use frecency::Frecency;
 mod go_to;
 #[cfg(test)]
 mod interaction_tests;
@@ -134,6 +136,10 @@ struct Entry {
     parent: Option<usize>,
     /// The daemon-reported status of a Go To row's agent, if it has one.
     status: Option<herdr_client::protocol::AgentStatus>,
+    /// How choosing this row is remembered, for rows ranked by frecency.
+    frecency: Option<frecency::Key>,
+    /// Ranking points from how often and recently the row was chosen.
+    boost: u32,
     fields: search::Fields,
 }
 
@@ -171,6 +177,8 @@ impl Entry {
             action,
             parent,
             status: None,
+            frecency: None,
+            boost: 0,
             fields,
         }
     }
@@ -342,6 +350,8 @@ pub(super) struct Palette {
     supports_edit_scrollback: bool,
     /// The notes revision the entries were prepared from.
     notes_revision: Option<u64>,
+    /// Frecency points taken when the palette opened.
+    boosts: frecency::Boosts,
     /// The row a resumed palette selects again once a ranking lists it,
     /// until the user picks another row, filter, or query.
     restore: Option<Identity>,
@@ -416,6 +426,23 @@ impl Palette {
     }
 }
 
+/// Ranks the `filter`'s rows. The flat project list has no order of its own
+/// to keep, so with no query its most frecent projects come first.
+fn rank_rows(
+    filter: Filter,
+    status: AgentFilter,
+    entries: &[Entry],
+    candidates: Vec<usize>,
+    query: &search::Query,
+    matcher: &mut nucleo_matcher::Matcher,
+) -> Vec<search::Hit> {
+    let mut hits = status.rank(entries, candidates, query, matcher);
+    if filter == Filter::Projects && query.is_empty() {
+        hits.sort_by_key(|hit| std::cmp::Reverse(entries[hit.index].boost));
+    }
+    hits
+}
+
 impl HerdrWindow {
     /// Ranks for `query`. A new query starts from the best row; the same
     /// query again, such as a resumed one echoed by its field, keeps the row.
@@ -463,14 +490,30 @@ impl HerdrWindow {
         let query = search::Query::parse(&palette.query);
         if candidates.len() <= search::INLINE_CANDIDATES {
             palette.match_task = None;
-            let filtered = status.rank(&entries, candidates, &query, &mut palette.matcher);
+            let filtered = rank_rows(
+                filter,
+                status,
+                &entries,
+                candidates,
+                &query,
+                &mut palette.matcher,
+            );
             palette.apply(entries, filtered, selection);
             cx.notify();
             return;
         }
         let ranking = cx.background_spawn({
             let entries = entries.clone();
-            async move { status.rank(&entries, candidates, &query, &mut search::matcher()) }
+            async move {
+                rank_rows(
+                    filter,
+                    status,
+                    &entries,
+                    candidates,
+                    &query,
+                    &mut search::matcher(),
+                )
+            }
         });
         let token = palette.search.clone();
         palette.match_task = Some(cx.spawn(async move |this, cx| {
@@ -561,6 +604,8 @@ impl HerdrWindow {
             supports_edit_scrollback: self.live.supports_edit_scrollback,
             notes_revision: None,
             restore: None,
+            boosts: Frecency::of(cx)
+                .map_or_else(Default::default, |history| history.boosts(frecency::now())),
             _subscription: subscription,
         };
         self.prepare_palette_entries(&mut palette, crate::worktree_notes::Notes::of(cx));
@@ -688,14 +733,21 @@ impl HerdrWindow {
             );
         }
         entries.extend(palette.projects.projects.iter().map(|project| {
-            Entry::new(
+            let mut entry = Entry::new(
                 project.label.clone(),
                 format!("Local  {}", project.path.display()),
                 "Project",
                 Action::Project(project.clone()),
                 None,
-            )
+            );
+            entry.frecency = Some(frecency::Key::Project {
+                path: project.path.clone(),
+            });
+            entry
         }));
+        for entry in &mut entries {
+            entry.boost = palette.boosts.of(entry.frecency.as_ref());
+        }
         palette.base = entries.clone().into();
         palette.rebuild_pending(&self.config.palette.project_roots);
         palette.sources = sources;

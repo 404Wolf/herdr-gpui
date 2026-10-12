@@ -587,6 +587,8 @@ pub enum Error {
     LocalWorktreeNote,
     #[error("Invalid saved worktree notes")]
     InvalidWorktreeNotes,
+    #[error("Invalid saved palette history")]
+    InvalidPaletteFrecency,
     #[error("Invalid saved dispatch history")]
     InvalidDispatchHistory,
     #[error("Invalid saved editor groups")]

@@ -1,7 +1,7 @@
 //! Running a chosen row: commands, Go To destinations, projects, and the
 //! daemon custom commands a shortcut also reaches.
 
-use super::{Action, Palette, Target, destination_exists};
+use super::{Action, Frecency, Palette, Target, destination_exists, frecency};
 use crate::{Error, HerdrWindow, NavigationTarget, Result};
 use gpui::*;
 use herdr_client::{Method, protocol::ClientShellCommandAction};
@@ -28,6 +28,20 @@ impl HerdrWindow {
         if self.menu.palette.as_ref().is_none_or(Palette::busy) {
             return;
         }
+        // Found by identity, so a note row counts as its workspace.
+        let identity = action.identity();
+        let remembered = self.menu.palette.as_ref().and_then(|palette| {
+            palette
+                .entries
+                .iter()
+                .find(|entry| entry.action.identity() == identity)
+                .and_then(|entry| entry.frecency.clone())
+        });
+        let remember = |cx: &mut Context<Self>| {
+            if let Some(key) = remembered {
+                Frecency::update(cx, |history| history.visit(key, frecency::now()));
+            }
+        };
         if !self.menu_target_current() {
             if let Some(palette) = &mut self.menu.palette {
                 palette.error = Some("The selected connection changed. Reopen the palette.".into());
@@ -41,6 +55,7 @@ impl HerdrWindow {
             return;
         }
         if let Action::Project(project) = action {
+            remember(cx);
             self.activate_project(project, window, cx);
             return;
         }
@@ -56,6 +71,7 @@ impl HerdrWindow {
         {
             match self.go_to_ready(endpoint, boot, target.as_deref()) {
                 Ok(selected) => {
+                    remember(cx);
                     self.dismiss_menu(window, cx);
                     if selected {
                         self.navigate(target.as_deref(), cx);
