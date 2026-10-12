@@ -29,8 +29,9 @@ pub(super) use configured::{
 };
 
 /// What a row shows in its leading icon slot: a repository owner's avatar when
-/// one is cached, the GitHub mark while it is not, and nothing for the child
-/// rows that reserve no slot at all.
+/// one is cached, the GitHub mark while it is not, and nothing for a row that
+/// reserves no slot at all: a child row, or any row while the repository
+/// icons are turned off.
 pub(super) enum RowIcon {
     None,
     Mark,

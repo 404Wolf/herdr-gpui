@@ -518,8 +518,8 @@ clipboard copied notification, plus all six clipboard positions. Notifications
 provides a native in-app switch, a bounded delay stepper (0-3600 seconds), and
 four corner choices. Each notification and clipboard field has a **Follow shared**
 action that removes only its local override; effective values are shown after
-reload. Appearance provides switches for **Show agents**, **Show search**, and
-**High contrast**, and a sidebar-gap stepper (0-64 logical pixels). Sound enablement uses a switch;
+reload. Appearance provides switches for **Show agents**, **Show search**,
+**Show repository icons**, and **High contrast**, and a sidebar-gap stepper (0-64 logical pixels). Sound enablement uses a switch;
 custom sound paths and per-agent sound policies remain shared-file settings, not
 read-only preference rows in this window. Configuration paths and installation
 status are diagnostic facts rather than editable preference values.
@@ -674,6 +674,13 @@ branches by name; while it holds text, results grouped by kind replace the
 spaces list. Up and Down move through them, Enter opens one, and Escape
 clears the search. Set top-level `show_sidebar_search = false`, or turn off
 **Show search** in **Settings > Appearance > Sidebar layout**, to hide it.
+
+In the Normal, Compact, and Comfortable layouts and in Superset, each space's
+sidebar row starts with its repository owner's avatar, or the GitHub mark;
+Orca and Minimal draw neither. Set top-level `show_repository_icons = false`,
+or turn off **Show repository icons** in **Settings > Appearance > Sidebar
+layout**, to leave both out and give the name their room. The Superset layout
+keeps its icon slot and draws its branch glyph there instead.
 
 `[usage]` provides independent switches in `config-gpui.local.toml`:
 
@@ -2575,6 +2582,7 @@ Ctrl+Shift+U is left unbound for
   across launches and retained while Agents is hidden.
   Local workspace titles show repository owner avatars; remote
   workspaces use the GitHub fallback mark without resolving remote paths locally.
+  `show_repository_icons = false` leaves both out.
   Profile and owner avatars share a bounded public-image disk cache with 24-hour
   stale-while-refresh behavior; see [avatar caching](../../README.md#native-github-sign-in)
   for limits, location, and the startup authentication requirement. Neither cache

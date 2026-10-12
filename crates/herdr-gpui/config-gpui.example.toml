@@ -50,6 +50,10 @@ show_agents = true
 # Show the search field at the top of the sidebar, which finds devices,
 # worktrees, and branches. Also under Settings > Appearance > Sidebar layout.
 show_sidebar_search = true
+# Show the repository owner's avatar, or the GitHub mark, before each space's
+# name in the sidebar, in the layouts that draw one (not orca or minimal).
+# Also under Settings > Appearance > Sidebar layout.
+show_repository_icons = true
 # Show CPU and memory: the selected host's in the status bar, and each host's
 # on its sidebar row. Connected remote hosts are read over SSH every couple of
 # seconds; false stops all sampling. Also under Settings > Status bar.
