@@ -222,7 +222,8 @@ fn browser_open_reports_a_missing_app_and_a_refused_address() {
             "{output:?}"
         );
     } else {
-        assert_eq!(output.status.code(), Some(1), "{output:?}");
+        // No control socket on this platform yet: unsupported, not refused.
+        assert_eq!(output.status.code(), Some(8), "{output:?}");
     }
     assert!(output.stdout.is_empty(), "{output:?}");
 }
@@ -252,7 +253,7 @@ fn local_pages_and_feedback_need_the_app_and_a_plain_folder() {
 
     // A plain file is accepted and only the missing app stops it.
     let output = cli_in(&["browser", "open", page], Some(state.path()));
-    let expected = if cfg!(unix) { 3 } else { 1 };
+    let expected = if cfg!(unix) { 3 } else { 8 };
     assert_eq!(output.status.code(), Some(expected), "{output:?}");
 
     // A file in a hidden folder is never served.
@@ -273,4 +274,60 @@ fn local_pages_and_feedback_need_the_app_and_a_plain_folder() {
         &["browser", "feedback", "--wait", "soon"],
         "--wait requires a number of seconds",
     );
+}
+
+#[test]
+fn control_commands_list_and_explain_themselves_without_the_app() {
+    let output = cli(&["--help"]);
+    let help = String::from_utf8(output.stdout).unwrap();
+    for family in ["status", "window", "checkpoint", "events", "diagnostics"] {
+        assert!(help.contains(&format!("  {family} ")), "{family}: {help}");
+    }
+    let output = cli(&["notes", "--help"]);
+    assert!(output.status.success(), "{output:?}");
+    let usage = String::from_utf8(output.stdout).unwrap();
+    assert!(usage.contains("herdr-gpui notes set TEXT"), "{usage}");
+    assert!(usage.contains("Exit status:"), "{usage}");
+    let output = cli(&["commands", "--json"]);
+    assert!(output.status.success(), "{output:?}");
+    let commands: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        commands
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|command| command["name"] == "toggle_sidebar"),
+        "{commands}"
+    );
+    usage_error(&["window", "size", "huge"], "Invalid WIDTHxHEIGHT");
+    usage_error(&["app"], "app requires focus|hide|quit");
+    usage_error(&["tab", "focus", "x"], "Invalid ID");
+}
+
+#[test]
+fn control_commands_report_a_missing_app_by_status_and_in_json() {
+    let parent = if cfg!(unix) {
+        std::path::PathBuf::from("/tmp")
+    } else {
+        std::env::temp_dir()
+    };
+    let state = tempfile::Builder::new()
+        .prefix("hgc")
+        .tempdir_in(parent)
+        .unwrap();
+    // Windows builds have no control socket yet, and say so by status.
+    let (status, code, message) = if cfg!(unix) {
+        (3, "not_running", "Herdr UI is not running")
+    } else {
+        (8, "unsupported", "Unix socket")
+    };
+    let output = cli_in(&["status"], Some(state.path()));
+    assert_eq!(output.status.code(), Some(status), "{output:?}");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains(message), "{stderr}");
+    let output = cli_in(&["window", "list", "--json"], Some(state.path()));
+    assert_eq!(output.status.code(), Some(status), "{output:?}");
+    let error: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(error["error"]["code"], code, "{error}");
+    assert!(output.stderr.is_empty(), "{output:?}");
 }

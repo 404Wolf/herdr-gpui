@@ -257,3 +257,6 @@ pub(super) fn command(call: Call<CommandOp>, cx: &mut App) -> Response {
         }),
     }
 }
+
+#[cfg(test)]
+mod tests;
