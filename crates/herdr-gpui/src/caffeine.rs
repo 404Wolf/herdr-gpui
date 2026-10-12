@@ -127,6 +127,19 @@ pub(crate) fn toggle_until_agents_finish(
     toggle_until_agents_finish_with(cx, hold, report);
 }
 
+/// Turns a hold until agents finish into one until turned off, as asking
+/// for caffeine "on" means; whether it did. The hold itself stays.
+#[cfg(unix)]
+pub(crate) fn hold_indefinitely(cx: &mut App) -> bool {
+    let caffeine = cx.default_global::<Caffeine>();
+    if caffeine.cup != Cup::On(Mode::UntilAgentsFinish) {
+        return false;
+    }
+    caffeine.cup = Cup::On(Mode::Indefinite);
+    cx.refresh_windows();
+    true
+}
+
 /// Records whether `window` has a working agent, and ends an
 /// `UntilAgentsFinish` hold once no window does.
 pub(crate) fn observe(

@@ -95,6 +95,11 @@ pub(super) fn serve(
     }
     let on = matches!(cup, Cup::On(_));
     let wanted = switch.apply(on);
+    // "On" means until turned off (or for `--for`), so a hold that would end
+    // with the agents becomes one that does not.
+    if wanted && on {
+        caffeine::hold_indefinitely(cx);
+    }
     if seconds.is_some() && !wanted {
         incoming.respond(Response::error(
             ErrorCode::InvalidRequest,
