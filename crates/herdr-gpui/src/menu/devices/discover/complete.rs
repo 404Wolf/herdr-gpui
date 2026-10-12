@@ -112,8 +112,11 @@ pub(in crate::menu::devices) struct Completion<'s> {
     pub(super) unsaved: usize,
     /// Those that match the field, best first.
     pub(super) rows: Vec<&'s Suggestion>,
-    /// The row Tab and Enter choose.
+    /// The highlighted row.
     pub(super) highlight: Option<usize>,
+    /// Whether the user moved the highlight there with Up or Down, rather
+    /// than it following what they typed.
+    pub(super) chosen: bool,
     /// What choosing each row puts in the field, in row order.
     pub(super) fills: Vec<String>,
 }
@@ -130,7 +133,10 @@ impl HerdrWindow {
     /// The rows for what the target field holds: those that match it, or
     /// every row once it holds one of them. The highlight is the row Up
     /// and Down moved to for this text; otherwise the row already in the
-    /// field, or else the best match once something is typed.
+    /// field, or else the first whose target extends what is typed. A row
+    /// that only matches by name is never highlighted unasked: Bonjour names
+    /// are whatever the network announces, so one must not stand in for a
+    /// host the user typed.
     pub(in crate::menu::devices) fn device_completion<'s>(
         &self,
         setup: &'s Setup,
@@ -157,25 +163,32 @@ impl HerdrWindow {
         }
         let rows = matching(unsaved.iter().copied(), &query);
         let fills: Vec<String> = rows.iter().map(|row| query.fill(row)).collect();
-        let highlight = match &setup.highlight {
-            Some((typed, index)) if typed == text => Some(*index),
-            _ => fills
-                .iter()
-                .position(|fill| fill == text)
-                .or(query.filters().then_some(0)),
-        }
-        .filter(|index| *index < rows.len());
+        let typed = Query::new(text);
+        let (highlight, chosen) = match &setup.highlight {
+            Some((typed, index)) if typed == text => (Some(*index), true),
+            _ => (
+                fills
+                    .iter()
+                    .position(|fill| fill == text)
+                    .or_else(|| fills.iter().position(|fill| typed.ghost(fill).is_some())),
+                false,
+            ),
+        };
+        let highlight = highlight.filter(|index| *index < rows.len());
         Completion {
             unsaved: unsaved.len(),
             rows,
             highlight,
+            chosen,
             fills,
         }
     }
 
-    /// Up and Down move the highlight through the rows; Tab and Enter put the
-    /// highlighted row in the field unless it already holds it. Returns
-    /// whether the key was used, so Tab and Enter otherwise keep their jobs.
+    /// Up and Down move the highlight through the rows. Tab puts the
+    /// highlighted row in the field: one the user chose, or the completion
+    /// drawn after the caret. Enter does so only for a row the user chose, so
+    /// it never sends anything but what the field shows. Returns whether the
+    /// key was used, so Tab and Enter otherwise keep their jobs.
     pub(in crate::menu::devices) fn complete_device_target(
         &mut self,
         key: &str,
@@ -217,7 +230,9 @@ impl HerdrWindow {
                 else {
                     return false;
                 };
-                if *fill == text {
+                let completes =
+                    completion.chosen || (key == "tab" && Query::new(&text).ghost(fill).is_some());
+                if *fill == text || !completes {
                     return false;
                 }
                 let (fill, name) = (fill.clone(), row.name.clone());

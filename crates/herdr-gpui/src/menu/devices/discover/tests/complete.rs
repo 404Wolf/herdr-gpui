@@ -2,6 +2,7 @@ use super::*;
 use crate::menu::devices::discover::complete::{Query, matching};
 use form::{fields, open, report, settle};
 use gpui::{Entity, VisualTestContext};
+use std::sync::mpsc::SyncSender;
 
 fn list(entries: &[(Source, &str, &str)]) -> Vec<Suggestion> {
     let mut list = Vec::new();
@@ -195,13 +196,58 @@ fn arrows_choose_a_row_and_enter_fills_it(cx: &mut gpui::TestAppContext) {
         ));
     });
 
-    // Typing something else drops the arrow choice for the best match.
+    // Typing something else drops the arrow choice. Neither target starts
+    // with `n`, so nothing is highlighted until an arrow picks a row.
     type_target(&view, cx, "n");
     assert_eq!(
         rows(&view, cx),
         (
             vec!["ssh://nas.local:2222".into(), "m4max.tail1.ts.net".into()],
-            Some(0)
+            None
         )
     );
+}
+
+/// A Bonjour host announcing the name of a host the user means to type.
+fn spoof(source: Source, sender: SyncSender<Event>) {
+    if source == Source::Bonjour {
+        let _ = sender.send(Event::Found(candidate(
+            Source::Bonjour,
+            "prod.example.com",
+            "evil.local",
+            &["evil.local"],
+        )));
+    }
+    let _ = sender.send(Event::Done(source, Ok(())));
+}
+
+fn key(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, key: &str) -> bool {
+    cx.update(|window, cx| view.update(cx, |view, cx| view.complete_device_target(key, window, cx)))
+}
+
+#[gpui::test]
+fn an_announced_name_never_replaces_a_typed_host(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = open(cx, spoof);
+    settle(cx);
+    type_target(&view, cx, "prod.example.com");
+    // The row shows, since it matches, but is not highlighted or drawn
+    // after the caret, and neither Tab nor Enter puts it in the field.
+    assert_eq!(rows(&view, cx), (vec!["evil.local".into()], None));
+    assert!(!key(&view, cx, "tab"));
+    assert!(!key(&view, cx, "enter"));
+    assert_eq!(fields(&view, cx).0, "prod.example.com");
+    // Only an explicit pick fills it.
+    assert!(key(&view, cx, "down"));
+    assert!(key(&view, cx, "enter"));
+    assert_eq!(fields(&view, cx).0, "evil.local");
+}
+
+#[gpui::test]
+fn enter_sends_what_is_typed_even_with_a_completion_shown(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = open(cx, report);
+    settle(cx);
+    type_target(&view, cx, "m4");
+    assert_eq!(rows(&view, cx).1, Some(0));
+    assert!(!key(&view, cx, "enter"), "left to submit the form");
+    assert_eq!(fields(&view, cx).0, "m4");
 }
