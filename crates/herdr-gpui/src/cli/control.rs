@@ -158,8 +158,8 @@ pub const FAMILIES: &[(&str, &str)] = &[
         "fan-out",
         "Send one prompt to several agents, each in its own worktree",
     ),
-    ("pr", "The focused branch's pull request"),
-    ("host", "List, connect, or disconnect hosts"),
+    ("pr", "The pull request of the caller's branch"),
+    ("host", "List the window's hosts, or show one"),
     ("cloud", "Saved cloud machines, and adding one"),
     (
         "ports",

@@ -3,6 +3,8 @@
 mod cloud_devices;
 #[cfg(feature = "daytona")]
 pub(crate) use cloud_devices::open as open_cloud;
+#[cfg(all(feature = "cloud", unix))]
+pub(crate) use cloud_devices::open_devices as open_cloud_devices;
 mod controls;
 mod layouts;
 pub(crate) use layouts::{apply_loaded_layout, layout_load_revision};

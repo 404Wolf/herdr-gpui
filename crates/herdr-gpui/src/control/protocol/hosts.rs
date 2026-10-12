@@ -3,7 +3,9 @@
 use serde::{Deserialize, Serialize};
 
 /// How long a pull request's comments may take to load.
-const COMMENTS_WAIT_SECONDS: u64 = 20;
+pub(crate) const COMMENTS_WAIT_SECONDS: u64 = 20;
+/// How long `ports open` may wait for a new forward to listen.
+pub(crate) const FORWARD_WAIT_SECONDS: u64 = 20;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
@@ -44,6 +46,7 @@ impl HostOp {
     pub(crate) fn wait_seconds(&self) -> u64 {
         match self {
             Self::PrComments => COMMENTS_WAIT_SECONDS,
+            Self::OpenPort { .. } => FORWARD_WAIT_SECONDS,
             _ => 0,
         }
     }
@@ -96,6 +99,8 @@ pub(crate) struct ForwardInfo {
     /// "starting", "listening", or "ended".
     pub state: String,
     pub local_url: Option<String>,
+    /// Why it ended.
+    pub reason: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -110,8 +115,8 @@ pub(crate) struct UsageInfo {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct UsageWindow {
     pub label: String,
-    pub used_percent: Option<f64>,
-    pub resets_at: Option<String>,
+    pub used_percent: f32,
+    pub resets_in_seconds: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -123,6 +128,21 @@ pub(crate) struct LoadInfo {
     pub cores: Option<u32>,
     pub load: Option<[f32; 3]>,
     pub uptime_seconds: Option<u64>,
+    pub disk_available: Option<u64>,
+    pub disk_total: Option<u64>,
+}
+
+/// A workspace's listening ports, and its host's forwards. Boxed in
+/// [`Reply`], which every response carries.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Ports {
+    pub host: String,
+    pub workspace: String,
+    pub listening: Vec<PortInfo>,
+    pub forwards: Vec<ForwardInfo>,
+    /// Why the listing may be empty, such as scanning being turned off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -132,20 +152,28 @@ pub(crate) enum Reply {
         hosts: Vec<super::app::HostInfo>,
     },
     Pr {
-        pr: Option<PrInfo>,
+        pr: Option<Box<PrInfo>>,
+        /// Why there is none to show, when it is not simply that the branch
+        /// has no pull request: still looking, or the lookup failed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
     },
     Comments {
         comments: Vec<CommentInfo>,
     },
-    Ports {
-        listening: Vec<PortInfo>,
-        forwards: Vec<ForwardInfo>,
-    },
+    Ports(Box<Ports>),
     Usage {
         host: String,
         usage: Vec<UsageInfo>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
     },
     System {
-        load: Option<LoadInfo>,
+        load: Option<Box<LoadInfo>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
     },
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,34 +1,125 @@
 //! `pr`, `host`, `cloud`, `ports`, `usage`, and `system`.
-use super::{Context, Output};
-use crate::cli::control::{CloudCommand, HostCommand, PortsCommand, PrCommand};
+mod cloud;
+mod text;
 
-fn todo() -> crate::Result<Output> {
-    Err(crate::Error::ControlRejected {
-        code: crate::control::ErrorCode::Unsupported,
-        message: "Not implemented yet".into(),
-    })
+pub(super) use text::bytes;
+
+#[cfg(test)]
+mod tests;
+
+use super::{Context, Output, unexpected};
+use crate::{
+    cli::control::{CloudCommand, HostCommand, PortsCommand, PrCommand},
+    control::protocol::{
+        Request, Response,
+        hosts::{HostOp, Reply},
+    },
+};
+
+/// No pull request: said on stderr, exiting [`super::exit::NOTHING`].
+fn no_pr(note: Option<String>) -> crate::Result<Output> {
+    let text = note.unwrap_or_else(|| "No pull request for this branch".into());
+    Ok(Output::data(
+        text.clone(),
+        &serde_json::json!({ "pr": null, "note": text }),
+    )?
+    .nothing())
 }
 
-pub(super) fn pr(_: PrCommand, _: &Context) -> crate::Result<Output> {
-    todo()
+pub(super) fn pr(command: PrCommand, context: &Context) -> crate::Result<Output> {
+    let op = match command {
+        PrCommand::Status | PrCommand::Checks => HostOp::Pr,
+        PrCommand::Comments => HostOp::PrComments,
+        PrCommand::Open => HostOp::PrOpen,
+    };
+    match context.call(Request::Host, op)? {
+        Response::Done { message } => Ok(Output::message(message)),
+        Response::Host {
+            reply: Reply::Pr { pr: None, note },
+        } => no_pr(note),
+        Response::Host {
+            reply: Reply::Pr { pr: Some(pr), .. },
+        } => match command {
+            PrCommand::Checks => Output::data(text::checks(&pr.checks), &pr.checks),
+            _ => Output::data(text::pr(&pr), &pr),
+        },
+        Response::Host {
+            reply: Reply::Comments { comments },
+        } => {
+            let output = Output::data(text::comments(&comments), &comments)?;
+            Ok(if comments.is_empty() {
+                output.nothing()
+            } else {
+                output
+            })
+        }
+        response => Err(unexpected(response)),
+    }
 }
 
-pub(super) fn host(_: HostCommand, _: &Context) -> crate::Result<Output> {
-    todo()
+pub(super) fn host(command: HostCommand, context: &Context) -> crate::Result<Output> {
+    let op = match command {
+        HostCommand::List => HostOp::List,
+        HostCommand::Select(id) => HostOp::Select { id },
+    };
+    match context.call(Request::Host, op)? {
+        Response::Done { message } => Ok(Output::message(message)),
+        Response::Host {
+            reply: Reply::Hosts { hosts },
+        } => Output::data(text::hosts(&hosts), &hosts),
+        response => Err(unexpected(response)),
+    }
 }
 
-pub(super) fn cloud(_: CloudCommand, _: &Context) -> crate::Result<Output> {
-    todo()
+pub(super) fn cloud(command: CloudCommand, context: &Context) -> crate::Result<Output> {
+    match command {
+        CloudCommand::List => cloud::list(),
+        CloudCommand::Add => context.act(Request::Host, HostOp::Cloud),
+    }
 }
 
-pub(super) fn ports(_: PortsCommand, _: &Context) -> crate::Result<Output> {
-    todo()
+pub(super) fn ports(command: PortsCommand, context: &Context) -> crate::Result<Output> {
+    let op = match command {
+        PortsCommand::List => HostOp::Ports,
+        PortsCommand::Forward(port) => HostOp::Forward { port },
+        PortsCommand::Unforward(port) => HostOp::Unforward { port },
+        PortsCommand::Open(port) => HostOp::OpenPort { port },
+    };
+    match context.call(Request::Host, op)? {
+        Response::Done { message } => Ok(Output::message(message)),
+        Response::Host {
+            reply: Reply::Ports(ports),
+        } => {
+            let empty = ports.listening.is_empty() && ports.forwards.is_empty();
+            let output = Output::data(text::ports(&ports), &ports)?;
+            Ok(if empty { output.nothing() } else { output })
+        }
+        response => Err(unexpected(response)),
+    }
 }
 
-pub(super) fn usage(_: &Context) -> crate::Result<Output> {
-    todo()
+pub(super) fn usage(context: &Context) -> crate::Result<Output> {
+    match context.call(Request::Host, HostOp::Usage)? {
+        Response::Host {
+            reply: reply @ Reply::Usage { .. },
+        } => {
+            let empty = matches!(&reply, Reply::Usage { usage, .. } if usage.is_empty());
+            let output = Output::data(text::usage(&reply), &reply)?;
+            Ok(if empty { output.nothing() } else { output })
+        }
+        response => Err(unexpected(response)),
+    }
 }
 
-pub(super) fn system(_: &Context) -> crate::Result<Output> {
-    todo()
+pub(super) fn system(context: &Context) -> crate::Result<Output> {
+    match context.call(Request::Host, HostOp::System)? {
+        Response::Host {
+            reply: reply @ Reply::System { .. },
+        } => {
+            let empty = matches!(&reply, Reply::System { load: None, .. });
+            let output = Output::data(text::system(&reply), &reply)?;
+            Ok(if empty { output.nothing() } else { output })
+        }
+        response => Err(unexpected(response)),
+    }
 }

@@ -86,7 +86,7 @@ fn family(name: &str) -> &'static str {
             "herdr-gpui fan-out PROMPT... [--agent KIND[:COUNT]]...\n    Open the fan-out dialog for the caller's repository with PROMPT and\n    these agents chosen. The user starts it there."
         }
         "pr" => {
-            "herdr-gpui pr [status]|checks\n    The pull request of the caller's workspace's branch.\nherdr-gpui pr comments\n    Its review comments (the workspace must be the focused one).\nherdr-gpui pr open\n    Open it in a browser tab."
+            "herdr-gpui pr [status]|checks\n    The pull request of the caller's workspace's branch, as Herdr UI last\n    looked it up (selected host only; sign in to GitHub first). Exits 4\n    when there is none.\nherdr-gpui pr comments\n    Its review comments (the workspace must be the focused one).\nherdr-gpui pr open\n    Open it in a browser tab."
         }
         "host" => {
             "herdr-gpui host [list]\n    The window's hosts and their status. Herdr's `machine` command\n    manages saved hosts.\nherdr-gpui host select ID\n    Show that host in the window, as choosing it in the sidebar does."
@@ -95,7 +95,7 @@ fn family(name: &str) -> &'static str {
             "herdr-gpui cloud [list]\n    Saved cloud machines (Herdr UI need not run).\nherdr-gpui cloud add\n    Open the settings that add a machine. A machine is never created or\n    destroyed from the command line."
         }
         "ports" => {
-            "herdr-gpui ports [list]\n    Ports the caller's workspace's processes listen on, and forwards.\nherdr-gpui ports forward|unforward PORT\n    Forward a port of the window's SSH host to this machine, or stop.\nherdr-gpui ports open PORT\n    Show localhost:PORT in a browser tab, forwarding it first if remote."
+            "herdr-gpui ports [list]\n    Ports the caller's workspace's processes listen on, and forwards.\n    Listening ports are known only while show_listening_ports is on.\nherdr-gpui ports forward|unforward PORT\n    Forward a port of the workspace's SSH host to this machine, or stop.\nherdr-gpui ports open PORT\n    Show localhost:PORT in a browser tab, forwarding it first if remote."
         }
         "processes" => {
             "herdr-gpui processes [--pane ID]\n    The processes under a pane (default HERDR_PANE_ID), with CPU and\n    memory. Runs here; Herdr UI need not run."
@@ -105,7 +105,7 @@ fn family(name: &str) -> &'static str {
             "herdr-gpui system\n    The window's selected host's load, when Herdr UI samples it."
         }
         "search" => {
-            "herdr-gpui search symbol|file QUERY... [--limit N]\n    Go to Symbol or Go to File over the current directory's checkout.\n    Runs here; Herdr UI need not run."
+            "herdr-gpui search symbol|file QUERY... [--limit N]\n    Go to Symbol or Go to File over the current directory's checkout,\n    printing paths relative to its root. Runs here; Herdr UI need not run."
         }
         "config" => {
             "herdr-gpui config [path]\n    The settings files.\nherdr-gpui config get KEY\nherdr-gpui config set KEY VALUE\nherdr-gpui config unset KEY\n    Read or change a setting in config-gpui.local.toml; Herdr UI applies\n    it at once. KEY is dotted, such as terminal.size.\nherdr-gpui config check\n    Report invalid settings; exits 1 when there are any.\nherdr-gpui config reload\n    Reread Herdr's config and this app's."

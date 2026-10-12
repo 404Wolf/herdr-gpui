@@ -21,9 +21,16 @@ use crate::{
 };
 use gpui::{prelude::*, *};
 
+/// Open Settings on Cloud Devices, at the provider whose tab shows first,
+/// as `herdr-gpui cloud add` asks.
+#[cfg(unix)]
+pub(crate) fn open_devices(source: WeakEntity<crate::HerdrWindow>, cx: &mut App) {
+    open(source, first_tab(), cx);
+}
+
 /// Open Settings on `provider`'s tab, for the device picker's row that sets
 /// that provider up.
-#[cfg(feature = "daytona")]
+#[cfg(any(feature = "daytona", unix))]
 pub(crate) fn open(source: WeakEntity<crate::HerdrWindow>, provider: CloudProvider, cx: &mut App) {
     super::open(source, cx);
     // Queued after `open`'s own deferred work, so the window exists by now.

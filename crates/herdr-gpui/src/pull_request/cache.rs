@@ -240,6 +240,17 @@ impl Cache {
             .and_then(|entry| entry.value.as_ref())
     }
 
+    /// Pure cache read of one checkout's lookup, local checkouts included:
+    /// `None` until it was looked up once, else its pull request (if any)
+    /// and why its latest refresh failed (if it did).
+    #[cfg(unix)]
+    pub fn lookup(&self, input: &Input) -> Option<(Option<&PullRequest>, Option<&str>)> {
+        self.entries
+            .iter()
+            .find(|entry| &entry.input == input)
+            .map(|entry| (entry.value.as_ref(), entry.message.as_deref()))
+    }
+
     /// Pure cache read: opening a menu cannot launch Git, HTTPS or daemon requests.
     pub fn present(&mut self, input: &Input, view: &mut Lookup, now: Instant) {
         view.clear();
