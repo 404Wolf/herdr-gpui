@@ -3549,6 +3549,7 @@ dependencies = [
  "objc2-app-kit 0.3.2",
  "objc2-core-foundation",
  "objc2-foundation 0.3.2",
+ "objc2-user-notifications",
  "objc2-web-kit",
  "oo7",
  "pbkdf2 0.13.0",
