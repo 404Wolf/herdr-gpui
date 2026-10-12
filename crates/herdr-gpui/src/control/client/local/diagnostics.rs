@@ -98,9 +98,71 @@ fn overrides(path: &Path) -> String {
         Ok(contents) if contents.len() > MAX_OVERRIDES => {
             format!("(omitted: larger than {MAX_OVERRIDES} bytes)\n")
         }
-        Ok(contents) => contents,
-        Err(error) => format!("(unreadable: {error})\n"),
+        Ok(contents) => summary(&contents),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => "(absent)\n".into(),
+        Err(_) => "(unreadable)\n".into(),
     }
+}
+
+/// Settings whose text values name a choice, never a secret, and are kept.
+const PLAIN_TEXT_KEYS: [&str; 10] = [
+    "theme",
+    "family",
+    "mode",
+    "layout",
+    "position",
+    "placement",
+    "channel",
+    "open_links_in",
+    "style",
+    "sort",
+];
+
+/// The overrides as `key = value` lines, never the file itself: numbers,
+/// booleans, and the text of plain choices are kept, and any other text is
+/// replaced by its length, so a secret under any key name, in any TOML form,
+/// stays out of the bundle. A file that does not parse is not quoted, as a
+/// parser error would echo its text.
+fn summary(contents: &str) -> String {
+    let Ok(table) = contents.parse::<toml::Table>() else {
+        return "(does not parse as TOML)\n".into();
+    };
+    let mut lines = Vec::new();
+    flatten("", &toml::Value::Table(table), &mut lines);
+    if lines.is_empty() {
+        return "(no settings)\n".into();
+    }
+    lines.join("\n") + "\n"
+}
+
+fn flatten(key: &str, value: &toml::Value, lines: &mut Vec<String>) {
+    let name = key.rsplit('.').next().unwrap_or_default();
+    let shown = match value {
+        toml::Value::Table(table) => {
+            for (child, value) in table {
+                let child = if key.is_empty() {
+                    child.clone()
+                } else {
+                    format!("{key}.{child}")
+                };
+                flatten(&child, value, lines);
+            }
+            return;
+        }
+        toml::Value::Boolean(_) | toml::Value::Integer(_) | toml::Value::Float(_) => {
+            value.to_string()
+        }
+        toml::Value::String(text)
+            if PLAIN_TEXT_KEYS.iter().any(|plain| name.ends_with(plain))
+                && !redact::secret_name(name) =>
+        {
+            toml::Value::String(text.chars().take(200).collect()).to_string()
+        }
+        toml::Value::String(text) => format!("<text, {} characters>", text.chars().count()),
+        toml::Value::Array(items) => format!("<list of {}>", items.len()),
+        toml::Value::Datetime(_) => "<date>".into(),
+    };
+    lines.push(format!("{key} = {shown}"));
 }
 
 fn log_records() -> String {

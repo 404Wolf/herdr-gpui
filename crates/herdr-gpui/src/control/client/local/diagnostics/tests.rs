@@ -99,3 +99,17 @@ fn a_bundle_never_replaces_an_existing_file() {
     // Nothing is left behind beside it.
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
 }
+
+#[test]
+fn overrides_are_summarized_and_never_quoted() {
+    let file = "theme = \"Nord\"\n[terminal]\nsize = 14\n[github]\nprofile = { token = \"short\" }\nnote = \"hunter2\"\ntoken_mode = \"x\"\nhosts = [\"a\", \"b\"]\n";
+    assert_eq!(
+        summary(file),
+        "github.hosts = <list of 2>\ngithub.note = <text, 7 characters>\ngithub.profile.token = <text, 5 characters>\ngithub.token_mode = <text, 1 characters>\nterminal.size = 14\ntheme = \"Nord\"\n"
+    );
+    for leaked in ["short", "hunter2"] {
+        assert!(!summary(file).contains(leaked), "{leaked}");
+    }
+    // A parser error would quote the file, so none is shown.
+    assert_eq!(summary("token = \"oops"), "(does not parse as TOML)\n");
+}

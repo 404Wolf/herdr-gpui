@@ -42,7 +42,7 @@ pub(super) struct Redactor {
     home: Option<String>,
 }
 
-fn secret_name(name: &str) -> bool {
+pub(super) fn secret_name(name: &str) -> bool {
     let name = name.trim().trim_matches(['"', '\'']).to_ascii_lowercase();
     !name.is_empty() && SECRET_NAMES.iter().any(|secret| name.contains(secret))
 }
