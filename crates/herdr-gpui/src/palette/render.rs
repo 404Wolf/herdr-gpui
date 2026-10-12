@@ -4,73 +4,85 @@ use super::{AgentFilter, Filter, Palette};
 use crate::HerdrWindow;
 use gpui::{prelude::*, *};
 
+/// How much larger than the interface text the palette's query is drawn.
+const SEARCH_SCALE: f32 = 1.5;
+
+/// The interface font, enlarged for the palette's query field.
+pub(super) fn search_font(ui: &crate::config::FontConfig) -> crate::config::FontConfig {
+    crate::config::FontConfig {
+        size: ui.size * SEARCH_SCALE,
+        ..ui.clone()
+    }
+}
+
 impl HerdrWindow {
+    /// The query is the palette's focus, as in Raycast: a large frameless
+    /// field spans the top, with the filters and count quieter beneath it.
     fn palette_header(&self, palette: &Palette, cx: &mut Context<Self>) -> Div {
         let theme = &self.theme;
         div()
             .flex_none()
-            .p(px(16.))
-            .border_b_1()
-            .border_color(rgb(theme.active))
             .child(
                 div()
+                    .px(px(20.))
+                    .py(px(16.))
+                    .border_b_1()
+                    .border_color(rgb(theme.active))
+                    .child(palette.search.clone()),
+            )
+            .child(
+                div()
+                    .px(px(14.))
+                    .pt(px(8.))
+                    .pb(px(6.))
                     .flex()
                     .items_center()
                     .gap(px(12.))
+                    .text_color(rgb(theme.muted))
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
-                            .text_size(px(self.config.ui.size * 1.35))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("Command Palette"),
+                            .flex()
+                            .flex_wrap()
+                            .gap(px(4.))
+                            .children(Filter::ALL.into_iter().map(|filter| {
+                                div()
+                                    .id(("palette-filter", filter as usize))
+                                    .debug_selector(move || {
+                                        format!("palette-filter-{}", filter.label().to_lowercase())
+                                    })
+                                    .px_2()
+                                    .py_1()
+                                    .rounded(px(crate::config::corners::CONTROL))
+                                    .cursor_pointer()
+                                    .when(filter == palette.filter, |tab| {
+                                        tab.bg(rgb(theme.active)).text_color(rgb(theme.foreground))
+                                    })
+                                    .hover(|tab| tab.bg(rgb(theme.active)))
+                                    .child(filter.label())
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.set_palette_filter(filter, cx);
+                                        if let Some(palette) = &this.menu.palette {
+                                            let focus = palette.search.read(cx).focus.clone();
+                                            window.focus(&focus, cx);
+                                        }
+                                    }))
+                            })),
                     )
-                    .child(
-                        div()
-                            .id("palette-close")
-                            .px_2()
-                            .py_1()
-                            .cursor_pointer()
-                            .rounded(px(crate::config::corners::CONTROL))
-                            .hover(|s| s.bg(rgb(theme.active)))
-                            .child("Close")
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.dismiss_menu(window, cx)),
-                            ),
-                    ),
+                    .child(div().flex_none().child(format!(
+                        "{} of {}",
+                        palette.filtered.len(),
+                        palette.entries.len()
+                    ))),
             )
-            .child(div().pt(px(12.)).child(palette.search.clone()))
-            .child(div().flex().flex_wrap().gap(px(6.)).pt(px(10.)).children(
-                Filter::ALL.into_iter().map(|filter| {
-                    div()
-                        .id(("palette-filter", filter as usize))
-                        .debug_selector(move || {
-                            format!("palette-filter-{}", filter.label().to_lowercase())
-                        })
-                        .px_2()
-                        .py_1()
-                        .rounded(px(crate::config::corners::CONTROL))
-                        .cursor_pointer()
-                        .when(filter == palette.filter, |tab| tab.bg(rgb(theme.active)))
-                        .hover(|tab| tab.bg(rgb(theme.active)))
-                        .child(filter.label())
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.set_palette_filter(filter, cx);
-                            if let Some(palette) = &this.menu.palette {
-                                let focus = palette.search.read(cx).focus.clone();
-                                window.focus(&focus, cx);
-                            }
-                        }))
-                }),
-            ))
             .when(palette.filter == Filter::Navigation, |header| {
-                header.child(self.palette_agent_filters(palette, cx))
+                header.child(
+                    div()
+                        .px(px(14.))
+                        .child(self.palette_agent_filters(palette, cx)),
+                )
             })
-            .child(div().pt(px(8.)).text_color(rgb(theme.muted)).child(format!(
-                "{} of {} results",
-                palette.filtered.len(),
-                palette.entries.len()
-            )))
     }
 
     /// Go To's status chips; Alt with the chip's navigator letter picks one

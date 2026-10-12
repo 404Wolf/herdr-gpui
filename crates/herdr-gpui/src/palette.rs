@@ -510,7 +510,8 @@ impl HerdrWindow {
             });
         search.update(cx, |input, cx| {
             input.set_placeholder("Search workspaces, commands, agents, and projects...", cx);
-            input.set_appearance(self.config.ui.clone(), self.theme.clone(), cx);
+            input.set_frameless(cx);
+            input.set_appearance(render::search_font(&self.config.ui), self.theme.clone(), cx);
             window.focus(&input.focus, cx);
         });
         let mut palette = Palette {

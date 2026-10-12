@@ -427,6 +427,9 @@ impl HerdrWindow {
                         .w((viewport.width - px(32.)).max(px(0.)).min(px(
                             if page == Page::Preferences {
                                 620. * (font.size / 12.)
+                            } else if page == Page::Palette {
+                                // Wide like Raycast, so the query leads the panel.
+                                720. * (font.size / 12.)
                             } else {
                                 480.
                             },
