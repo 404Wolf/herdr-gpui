@@ -8,7 +8,11 @@ use std::{fs, path::Path, process::Command, sync::atomic::AtomicBool};
 /// Scripts run with Git isolated from the user's configuration.
 const ENV: &str = "GIT_CONFIG_GLOBAL=/dev/null\nGIT_CONFIG_NOSYSTEM=1\nexport GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM\n";
 
-fn isolated(_: &Checkout, body: &str, limits: ScriptLimits) -> Result<String> {
+fn isolated(checkout: &Checkout, body: &str, limits: ScriptLimits) -> Result<String> {
+    Ok(String::from_utf8(isolated_bytes(checkout, body, limits)?).unwrap())
+}
+
+fn isolated_bytes(_: &Checkout, body: &str, limits: ScriptLimits) -> Result<Vec<u8>> {
     let mut output = Vec::new();
     run_script(
         ScriptHost::Local,
@@ -19,7 +23,12 @@ fn isolated(_: &Checkout, body: &str, limits: ScriptLimits) -> Result<String> {
         &AtomicBool::new(false),
     )
     .map_err(script::classify)?;
-    Ok(String::from_utf8(output).unwrap())
+    Ok(output)
+}
+
+fn patch_text(checkout: &Checkout, from: &str, to: Option<&str>) -> Result<String> {
+    diff(checkout, from, to, isolated_bytes)
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
 }
 
 fn git(dir: &Path, args: &[&str]) -> String {
@@ -67,7 +76,7 @@ fn the_command_line_takes_lists_and_diffs_checkpoints_as_the_app_does() {
     );
     // Untracked work is part of a checkpoint and of the diff to the tree.
     fs::write(main.join("new.txt"), "fresh\n").unwrap();
-    let patch = diff(&checkout, &first, None, isolated).unwrap();
+    let patch = patch_text(&checkout, &first, None).unwrap();
     assert!(
         patch.contains("+++ b/new.txt") && patch.contains("+fresh"),
         "{patch}"
@@ -90,15 +99,15 @@ fn the_command_line_takes_lists_and_diffs_checkpoints_as_the_app_does() {
     assert_eq!(listed[0].label, "second");
     assert_eq!(listed[0].branch.as_deref(), Some("main"));
     assert_eq!(listed[0].diff.files, 1);
-    let between = diff(&checkout, &first, Some(&second), isolated).unwrap();
+    let between = patch_text(&checkout, &first, Some(&second)).unwrap();
     assert!(between.contains("+++ b/new.txt"), "{between}");
-    assert_eq!(diff(&checkout, &second, None, isolated).unwrap(), "");
+    assert_eq!(patch_text(&checkout, &second, None).unwrap(), "");
     assert!(matches!(
-        diff(&checkout, "0000000000000001", None, isolated),
+        patch_text(&checkout, "0000000000000001", None),
         Err(Error::CheckpointMissing)
     ));
     assert!(matches!(
-        diff(&checkout, "../heads/main", None, isolated),
+        patch_text(&checkout, "../heads/main", None),
         Err(Error::CheckpointMissing)
     ));
     let other = Checkout::new(Host::Local, key.trim(), Some("elsewhere")).unwrap();
@@ -106,4 +115,26 @@ fn the_command_line_takes_lists_and_diffs_checkpoints_as_the_app_does() {
         list(&other, isolated),
         Err(Error::CheckpointCheckout)
     ));
+}
+
+#[test]
+fn a_diff_keeps_the_bytes_git_printed() {
+    let temp = tempfile::tempdir().unwrap();
+    let main = temp.path().join("main");
+    fs::create_dir(&main).unwrap();
+    git(&main, &["init", "-q", "-b", "main"]);
+    // Latin-1 text, and a hunk that ends on a blank context line.
+    fs::write(main.join("latin.txt"), b"caf\xe9\n\n").unwrap();
+    git(&main, &["add", "-A"]);
+    git(&main, &["commit", "-q", "-m", "base"]);
+    let key = git(&main, &["rev-parse", "--absolute-git-dir"]);
+    let checkout = Checkout::new(Host::Local, key.trim(), Some("main")).unwrap();
+    let first = create(&checkout, "first", isolated).unwrap().unwrap();
+    fs::write(main.join("latin.txt"), b"na\xefve caf\xe9\n\n").unwrap();
+    let bytes = diff(&checkout, &first, None, isolated_bytes).unwrap();
+    assert!(
+        bytes.windows(4).any(|window| window == b"caf\xe9"),
+        "the file's own bytes survive"
+    );
+    assert!(bytes.ends_with(b"\n \n"), "the blank context line is kept");
 }

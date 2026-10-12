@@ -124,17 +124,20 @@ fn create(checkout: &Checkout, label: Option<String>) -> crate::Result<Output> {
     Output::data(text, &serde_json::json!({ "id": id }))
 }
 
+/// The patch exactly as Git printed it, so `checkpoint diff A > p` applies
+/// with `git apply p`; JSON carries it as text, with bytes that are not
+/// UTF-8 replaced.
 fn diff(checkout: &Checkout, from: &str, to: Option<&str>) -> crate::Result<Output> {
-    let patch = direct::diff(checkout, from, to, direct::here).map_err(rejected)?;
-    let text = if patch.is_empty() {
-        "No changes".to_owned()
-    } else {
-        patch.trim_end().to_owned()
-    };
-    Output::data(
-        text,
-        &serde_json::json!({ "from": from, "to": to, "patch": patch }),
-    )
+    let patch = direct::diff(checkout, from, to, direct::here_bytes).map_err(rejected)?;
+    let json = serde_json::json!({
+        "from": from,
+        "to": to,
+        "patch": String::from_utf8_lossy(&patch),
+    });
+    if patch.is_empty() {
+        return Output::data("No changes", &json);
+    }
+    Output::bytes(patch, &json)
 }
 
 #[cfg(test)]

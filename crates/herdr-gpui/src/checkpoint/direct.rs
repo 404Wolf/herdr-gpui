@@ -22,6 +22,11 @@ pub(crate) fn here(checkout: &Checkout, body: &str, limits: ScriptLimits) -> Res
     super::run_limited(checkout, body, limits)
 }
 
+/// [`here`], keeping the output's bytes as they are.
+pub(crate) fn here_bytes(checkout: &Checkout, body: &str, limits: ScriptLimits) -> Result<Vec<u8>> {
+    super::run_bytes(checkout, body, limits)
+}
+
 /// The checkout's checkpoints, newest first.
 pub(crate) fn list(
     checkout: &Checkout,
@@ -40,13 +45,14 @@ pub(crate) fn create(
     script::parse_capture(&run(checkout, &body, LIMITS)?)
 }
 
-/// The patch from checkpoint `from` to `to`, or to the working tree.
+/// The patch from checkpoint `from` to `to`, or to the working tree, as Git
+/// printed it: a file's bytes need not be UTF-8.
 pub(crate) fn diff(
     checkout: &Checkout,
     from: &str,
     to: Option<&str>,
-    run: impl FnOnce(&Checkout, &str, ScriptLimits) -> Result<String>,
-) -> Result<String> {
+    run: impl FnOnce(&Checkout, &str, ScriptLimits) -> Result<Vec<u8>>,
+) -> Result<Vec<u8>> {
     if !script::valid_id(from) || to.is_some_and(|to| !script::valid_id(to)) {
         return Err(Error::CheckpointMissing);
     }

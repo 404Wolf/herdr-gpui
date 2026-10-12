@@ -19,7 +19,10 @@ use super::{
 use super::{socket, socket_path};
 use crate::cli::control::{BrowserCommand, ControlCommand, Invocation};
 use serde::Serialize;
-use std::{io::IsTerminal as _, process::ExitCode};
+use std::{
+    io::{IsTerminal as _, Write as _},
+    process::ExitCode,
+};
 
 /// Exit statuses, the same for every command. 0 is done.
 pub(crate) mod exit {
@@ -46,6 +49,9 @@ pub(crate) struct Output {
     text: String,
     json: serde_json::Value,
     status: u8,
+    /// Output whose bytes matter, such as a patch: written unchanged into a
+    /// pipe or file, and shown from `text` on a terminal.
+    bytes: Option<Vec<u8>>,
 }
 
 impl Output {
@@ -56,6 +62,7 @@ impl Output {
             json: serde_json::json!({ "message": text }),
             text,
             status: 0,
+            bytes: None,
         }
     }
 
@@ -65,6 +72,17 @@ impl Output {
             text: text.into(),
             json: serde_json::to_value(data)?,
             status: 0,
+            bytes: None,
+        })
+    }
+
+    /// `bytes` exactly, for a program reading a pipe; `data` for `--json`.
+    pub(crate) fn bytes(bytes: Vec<u8>, data: &impl Serialize) -> crate::Result<Self> {
+        Ok(Self {
+            text: String::from_utf8_lossy(&bytes).trim_end().to_owned(),
+            json: serde_json::to_value(data)?,
+            status: 0,
+            bytes: Some(bytes),
         })
     }
 
@@ -261,6 +279,18 @@ fn finish(result: crate::Result<Output>, json: bool) -> ExitCode {
         Ok(output) if json => {
             println!("{}", output.json);
             ExitCode::from(output.status)
+        }
+        Ok(Output {
+            bytes: Some(bytes),
+            status,
+            ..
+        }) if !std::io::stdout().is_terminal() => {
+            let mut stdout = std::io::stdout().lock();
+            if let Err(error) = stdout.write_all(&bytes).and_then(|()| stdout.flush()) {
+                eprintln!("{error}");
+                return ExitCode::from(exit::REFUSED);
+            }
+            ExitCode::from(status)
         }
         Ok(output) => {
             if !output.text.is_empty() {
