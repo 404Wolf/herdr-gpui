@@ -93,7 +93,29 @@ pub(super) fn events(
     }
 }
 
+/// How often `wait window` looks for an app that is not running yet.
+const START_POLL: std::time::Duration = std::time::Duration::from_millis(250);
+
 pub(super) fn wait(what: WaitFor, timeout: u64, context: &Context) -> crate::Result<Output> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout);
+    loop {
+        let left = deadline
+            .saturating_duration_since(std::time::Instant::now())
+            .as_secs()
+            .max(1);
+        match wait_once(what, left, context) {
+            // `wait window` also waits for the app itself to start.
+            Err(crate::Error::ControlUnavailable { .. })
+                if what == WaitFor::Window && std::time::Instant::now() < deadline =>
+            {
+                std::thread::sleep(START_POLL);
+            }
+            result => return result,
+        }
+    }
+}
+
+fn wait_once(what: WaitFor, timeout: u64, context: &Context) -> crate::Result<Output> {
     let condition = match what {
         WaitFor::Feedback => return super::browser::feedback(timeout, context),
         WaitFor::Window => Condition::Window,
