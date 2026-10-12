@@ -1,6 +1,15 @@
 //! Commands this process answers from the app's files and its own code,
 //! whether or not Herdr UI runs.
+mod diagnostics;
+mod logs;
+mod processes;
+mod search;
+
 use super::Output;
+pub(super) use diagnostics::diagnostics;
+pub(super) use logs::logs;
+pub(super) use processes::processes;
+pub(super) use search::search;
 
 fn todo() -> crate::Result<Output> {
     Err(crate::Error::ControlRejected {
@@ -21,20 +30,4 @@ pub(super) fn commands() -> crate::Result<Output> {
         .collect::<Vec<_>>()
         .join("\n");
     Output::data(text, &commands)
-}
-
-pub(super) fn processes(_: Option<&str>) -> crate::Result<Output> {
-    todo()
-}
-
-pub(super) fn search(_: bool, _: &str, _: usize) -> crate::Result<Output> {
-    todo()
-}
-
-pub(super) fn logs(_: bool, _: usize) -> crate::Result<Output> {
-    todo()
-}
-
-pub(super) fn diagnostics(_: &std::path::Path) -> crate::Result<Output> {
-    todo()
 }
