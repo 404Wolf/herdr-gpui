@@ -39,6 +39,7 @@ mod prompts;
 mod reconnect_backoff;
 mod remote_drop;
 mod scrollbar_drag;
+mod smooth_scroll_off;
 mod sounds;
 mod split_drag;
 mod toast_handoff;
