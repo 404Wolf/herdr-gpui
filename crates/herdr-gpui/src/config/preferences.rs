@@ -12,6 +12,7 @@ pub(crate) enum Preference {
     AgentCheckpoints(bool),
     ShowListeningPorts(bool),
     ShowSidebarSearch(bool),
+    SmoothScroll(bool),
     NotificationEnabled(Option<bool>),
     NotificationDelay(Option<u64>),
     NotificationPosition(Option<ToastHerdrPosition>),
@@ -62,6 +63,7 @@ impl Config {
                 Preference::ShowSidebarSearch(value) => {
                     (None, "show_sidebar_search", Some(value.into()))
                 }
+                Preference::SmoothScroll(value) => (None, "smooth_scroll", Some(value.into())),
                 Preference::NotificationEnabled(value) => {
                     (Some("notifications"), "enabled", value.map(Into::into))
                 }
@@ -178,6 +180,7 @@ mod tests {
             Preference::AgentCheckpoints(false),
             Preference::ShowListeningPorts(false),
             Preference::ShowSidebarSearch(false),
+            Preference::SmoothScroll(false),
             Preference::NotificationEnabled(Some(true)),
             Preference::NotificationDelay(Some(3600)),
             Preference::NotificationPosition(Some(ToastHerdrPosition::TopLeft)),
@@ -203,6 +206,7 @@ mod tests {
         assert_eq!(table["agent_checkpoints"].as_bool(), Some(false));
         assert_eq!(table["show_listening_ports"].as_bool(), Some(false));
         assert_eq!(table["show_sidebar_search"].as_bool(), Some(false));
+        assert_eq!(table["smooth_scroll"].as_bool(), Some(false));
         assert_eq!(table["layout"]["mode"].as_str(), Some("orca"));
         assert_eq!(table["updates"]["channel"].as_str(), Some("beta"));
         assert_eq!(table["layout"]["sidebar_gap"].as_float(), Some(7.5));

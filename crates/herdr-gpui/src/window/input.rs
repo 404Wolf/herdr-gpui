@@ -82,11 +82,13 @@ impl HerdrWindow {
         web || (modifiers.secondary() && self.file_link_at(position).is_some())
     }
 
-    /// Whether wheel scrolling may draw panes between rows. Images paint with
-    /// the whole grid, which never slides, a dragged thumb places the content
-    /// exactly where the pointer put it, and a popup stays on its rows.
+    /// Whether wheel scrolling may draw panes between rows. Off in settings,
+    /// it never does. Images paint with the whole grid, which never slides,
+    /// a dragged thumb places the content exactly where the pointer put it,
+    /// and a popup stays on its rows.
     pub(crate) fn slides_allowed(&self) -> bool {
-        self.scrollbar_drag.is_none()
+        self.config.smooth_scroll
+            && self.scrollbar_drag.is_none()
             && (self.live.surface.as_ref()).is_none_or(|surface| {
                 surface.graphics.placements.is_empty() && surface.popup.is_none()
             })
