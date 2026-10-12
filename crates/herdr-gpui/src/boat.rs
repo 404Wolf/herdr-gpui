@@ -14,7 +14,7 @@ mod store;
 
 pub use error::{Error, Status};
 pub(crate) use {
-    connect::connect,
+    connect::{command, connect},
     settings::{DEFAULT_API_URL, Settings},
 };
 

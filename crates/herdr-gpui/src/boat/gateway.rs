@@ -133,6 +133,11 @@ pub(crate) struct Gateway {
 }
 
 impl Gateway {
+    /// Keep the pinned host-key file alive until the operation finishes.
+    pub(crate) fn with_command<T>(self, run: impl FnOnce(Command) -> T) -> T {
+        run(self.command)
+    }
+
     pub(crate) fn new(access: &SshAccess, private: &Path) -> Result<Self> {
         if !user(&access.ssh_user) || !host_key(&access.host_key) {
             return Err(Error::Gateway);

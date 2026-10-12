@@ -2,6 +2,8 @@
 use super::*;
 
 mod paths;
+#[cfg(unix)]
+mod teleport;
 
 fn access() -> SshAccess {
     SshAccess {

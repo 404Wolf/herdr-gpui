@@ -8,12 +8,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-fn connect_sandbox(
-    settings: &Settings,
-    id: &str,
-    session: &str,
-    stop: &AtomicBool,
-) -> Result<herdr_client::Bridge> {
+fn sandbox_gateway(settings: &Settings, id: &str, stop: &AtomicBool) -> Result<gateway::Gateway> {
     let key = store::key(settings)?;
     let request = Request {
         settings,
@@ -31,17 +26,12 @@ fn connect_sandbox(
             );
         },
     )?;
-    let gateway = gateway::prepare(&request, &sandbox.id)?;
-    herdr_client::connect_command(gateway.command, session, stop).map_err(Error::Bridge)
+    gateway::prepare(&request, &sandbox.id)
 }
 
-pub(crate) fn connect(
-    account: &str,
-    id: &str,
-    session: &str,
-    stop: &AtomicBool,
-) -> io::Result<Transport> {
-    let result = crate::config::Config::load()
+/// Prepare the authenticated command for a connection or background script.
+pub(crate) fn command(account: &str, id: &str, stop: &AtomicBool) -> Result<gateway::Gateway> {
+    crate::config::Config::load()
         .map_err(|error| Error::Storage(Box::new(error)))
         .and_then(|config| {
             config
@@ -54,8 +44,21 @@ pub(crate) fn connect(
             if settings.account() != account {
                 return Err(Error::Account);
             }
-            connect_sandbox(&settings, id, session, stop)
-        });
+            sandbox_gateway(&settings, id, stop)
+        })
+}
+
+pub(crate) fn connect(
+    account: &str,
+    id: &str,
+    session: &str,
+    stop: &AtomicBool,
+) -> io::Result<Transport> {
+    let result = command(account, id, stop).and_then(|gateway| {
+        gateway.with_command(|command| {
+            herdr_client::connect_command(command, session, stop).map_err(Error::Bridge)
+        })
+    });
     match result {
         Ok(bridge) => Ok(bridge.into()),
         Err(Error::Bridge(error)) => Err(io::Error::new(error.kind(), error)),
