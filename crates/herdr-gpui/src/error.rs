@@ -762,6 +762,10 @@ pub enum Error {
     PaneKeyWithoutModifier(String),
     #[error("pane_keys.{from:?}: a pane cannot receive {to:?}")]
     UnsendablePaneKey { from: String, to: String },
+    #[error("pane_keys.{0:?}: text: needs something to send")]
+    EmptyPaneKeyText(String),
+    #[error("pane_keys.{keystroke:?}: text may be at most {limit} bytes")]
+    PaneKeyTextTooLong { keystroke: String, limit: usize },
     #[error("pane_keys: {0:?} is listed twice")]
     DuplicatePaneKey(String),
     #[error("pane_keys must list at most {0} keystrokes")]

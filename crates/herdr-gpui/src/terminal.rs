@@ -6,7 +6,7 @@ pub(crate) use accessibility::Transcript;
 pub(crate) use links::{PaneLink, RowLink, RowTarget, link_at, pane_hyperlink_at, pane_link_at};
 pub(crate) use selection::{MAX_SELECTION_BYTES, Selection};
 
-use crate::config::Theme;
+use crate::{config::Theme, keymap::PaneKey};
 use gpui::{
     Bounds, KeyDownEvent, Keystroke, Modifiers, Pixels, Point, ScrollDelta, ScrollWheelEvent,
     TouchPhase, point, px, size,
@@ -481,9 +481,13 @@ pub fn key_input(event: &KeyDownEvent, alt_keys: bool) -> Option<ClientPaneInput
     keystroke_input(&event.keystroke, event.is_held, alt_keys)
 }
 
-/// A `[pane_keys]` press: the pane receives `sent`, held as `event` is.
-pub fn pane_key_input(event: &KeyDownEvent, sent: &Keystroke) -> Option<ClientPaneInputEvent> {
-    keystroke_input(sent, event.is_held, true)
+/// A `[pane_keys]` press: the pane receives `sent`, a key held as `event` is
+/// or text as typing commits it.
+pub fn pane_key_input(event: &KeyDownEvent, sent: &PaneKey) -> Option<ClientPaneInputEvent> {
+    match sent {
+        PaneKey::Key(keystroke) => keystroke_input(keystroke, event.is_held, true),
+        PaneKey::Text(text) => Some(ClientPaneInputEvent::TextCommit(text.clone())),
+    }
 }
 
 /// Whether a pane can receive `keystroke` as a key event, so `[pane_keys]`
