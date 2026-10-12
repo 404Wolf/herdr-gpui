@@ -1,9 +1,11 @@
 //! Reordering workspaces by dragging their rows. Holding a press on a row, or
 //! moving it a few pixels, lifts the row; the rows around it shift as if it
 //! had already been dropped under the pointer, so the gap they open is where
-//! it lands. Releasing sends `workspace.move_block`. The daemon owns the order,
-//! so the preview holds until the next snapshot reorders the list, the same
-//! for every attached client.
+//! it lands. Releasing sends the move: a lone workspace as `workspace.move`,
+//! as Herdr's own TUI sends an ungrouped row, and a worktree group as one
+//! `workspace.move_block`. The daemon owns the order, so the preview holds
+//! until the next snapshot reorders the list, the same for every attached
+//! client.
 //!
 //! A top-level row carries its whole worktree group, collapsed children and
 //! the group's other parents included, and lands between other top-level
@@ -15,7 +17,10 @@ use crate::{
     reorder::{LIFT_DELAY, LIFT_DISTANCE, SETTLE_TIMEOUT, SLIDE, Slide, slot_for},
 };
 use gpui::{Context, Pixels, Point, Task};
-use herdr_client::{Method, protocol::ClientShellWorkspace};
+use herdr_client::{
+    protocol::ClientShellWorkspace,
+    workspaces::{WorkspaceMoveBlockParams, WorkspaceMoveParams, WorkspaceReorder},
+};
 use std::{cell::RefCell, collections::HashMap, time::Instant};
 
 use super::workspaces::{grouped_keys, workspace_entries};
@@ -102,8 +107,8 @@ impl Target {
     }
 }
 
-/// A `workspace.move_block` request: `workspace_ids` land, in that order,
-/// before `before`, or at the end of the list without one.
+/// Where a drop lands: `workspace_ids` land, in that order, before
+/// `before`, or at the end of the list without one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct MoveBlock {
     workspace_ids: Vec<String>,
@@ -111,10 +116,39 @@ pub(super) struct MoveBlock {
 }
 
 impl MoveBlock {
+    #[cfg(test)]
     fn params(&self) -> serde_json::Value {
         serde_json::json!({
             "workspace_ids": self.workspace_ids,
             "before_workspace_id": self.before,
+        })
+    }
+
+    /// The request that makes this move against `workspaces`, the daemon's
+    /// current order. A lone workspace goes as `workspace.move` when the
+    /// daemon offers it (`single`), so it announces `workspace.moved` as the
+    /// same drag in Herdr's TUI does. A group's members may sit apart in the
+    /// daemon's order, which only `workspace.move_block` gathers in one step.
+    fn reorder(&self, workspaces: &[ClientShellWorkspace], single: bool) -> WorkspaceReorder {
+        if single && let [workspace_id] = self.workspace_ids.as_slice() {
+            // The index counts the workspace still in place, so landing
+            // before `before` is `before`'s own index, and last is the length.
+            let insert_index = match &self.before {
+                Some(before) => workspaces
+                    .iter()
+                    .position(|workspace| &workspace.workspace_id == before),
+                None => Some(workspaces.len()),
+            };
+            if let Some(insert_index) = insert_index {
+                return WorkspaceReorder::Move(WorkspaceMoveParams {
+                    workspace_id: workspace_id.clone(),
+                    insert_index,
+                });
+            }
+        }
+        WorkspaceReorder::MoveBlock(WorkspaceMoveBlockParams {
+            workspace_ids: self.workspace_ids.clone(),
+            before_workspace_id: self.before.clone(),
         })
     }
 }
@@ -334,11 +368,10 @@ impl HerdrWindow {
         if snapshot.boot_id != drag.boot {
             return true;
         }
-        match handle.request(
-            &drag.boot,
-            Method::WorkspaceMoveBlock,
-            target.request.params(),
-        ) {
+        let reorder = target
+            .request
+            .reorder(&snapshot.workspaces, self.live.supports_workspace_move);
+        match handle.reorder_workspaces(&drag.boot, &reorder) {
             Ok(_) => {
                 drag.dropped = Some(
                     snapshot
@@ -414,136 +447,4 @@ pub(super) fn resolve(
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
-mod tests {
-    use super::*;
-    use herdr_client::protocol::ClientShellWorktree;
-
-    fn workspace(id: &str, tree: Option<(&str, bool)>) -> ClientShellWorkspace {
-        ClientShellWorkspace {
-            workspace_id: id.into(),
-            active_tab_id: String::new(),
-            new_workspace_cwd: String::new(),
-            number: 0,
-            label: id.into(),
-            custom_label: false,
-            branch: None,
-            git_ahead_behind: None,
-            tokens: Vec::new(),
-            worktree: tree.map(|(key, linked)| ClientShellWorktree {
-                key: key.into(),
-                label: key.into(),
-                is_linked_worktree: linked,
-            }),
-            focused: false,
-            agent_status: herdr_client::protocol::AgentStatus::Idle,
-        }
-    }
-
-    /// `a` heads a group whose child `a2` sits after `b` in daemon order.
-    fn list() -> Vec<ClientShellWorkspace> {
-        vec![
-            workspace("a", Some(("repo-a", false))),
-            workspace("a1", Some(("repo-a", true))),
-            workspace("b", None),
-            workspace("a2", Some(("repo-a", true))),
-            workspace("c", None),
-        ]
-    }
-
-    fn request(ids: &[&str], before: Option<&str>) -> Option<MoveBlock> {
-        Some(MoveBlock {
-            workspace_ids: ids.iter().map(|&id| id.into()).collect(),
-            before: before.map(Into::into),
-        })
-    }
-
-    /// Every parent of a group carries the whole group, its other parents
-    /// included; without a linked worktree, plain checkouts move alone.
-    #[test]
-    fn a_group_s_parents_move_together_and_plain_checkouts_alone() {
-        let mut list = list();
-        list.push(workspace("a3", Some(("repo-a", false))));
-        for pressed in ["a", "a3"] {
-            let plan = Plan::new(&list, pressed).unwrap();
-            assert_eq!(plan.units, [vec![0, 5, 1, 3], vec![2], vec![4]]);
-            assert_eq!(plan.dragged, 0);
-            assert_eq!(
-                plan.request(&list, 3),
-                request(&["a", "a3", "a1", "a2"], None)
-            );
-        }
-        // A child still moves only among its siblings.
-        let plan = Plan::new(&list, "a2").unwrap();
-        assert_eq!(plan.units, [vec![1], vec![3]]);
-
-        list.retain(|w| !w.worktree.as_ref().is_some_and(|t| t.is_linked_worktree));
-        let plan = Plan::new(&list, "a3").unwrap();
-        assert_eq!(plan.units, [vec![0], vec![1], vec![2], vec![3]]);
-        assert_eq!(plan.dragged, 3);
-        assert_eq!(plan.request(&list, 1), request(&["a3"], Some("b")));
-    }
-
-    #[test]
-    fn a_top_level_row_carries_its_whole_group() {
-        let list = list();
-        let plan = Plan::new(&list, "a").unwrap();
-        assert_eq!(plan.units, [vec![0, 1, 3], vec![2], vec![4]]);
-        assert_eq!(plan.dragged, 0);
-        // The gaps around the group itself move nothing.
-        assert_eq!(plan.request(&list, 0), None);
-        assert_eq!(plan.request(&list, 1), None);
-        assert_eq!(
-            plan.request(&list, 2),
-            request(&["a", "a1", "a2"], Some("c"))
-        );
-        assert_eq!(plan.request(&list, 3), request(&["a", "a1", "a2"], None));
-        assert_eq!(plan.request(&list, 4), None);
-    }
-
-    #[test]
-    fn a_standalone_row_lands_before_a_group_s_earliest_member() {
-        let mut list = list();
-        // The group shows where `a1` sits, ahead of its own main checkout.
-        list.swap(0, 1);
-        let plan = Plan::new(&list, "c").unwrap();
-        assert_eq!(plan.units, [vec![1, 0, 3], vec![2], vec![4]]);
-        assert_eq!(plan.request(&list, 0), request(&["c"], Some("a1")));
-    }
-
-    #[test]
-    fn a_child_moves_only_among_its_siblings() {
-        let list = list();
-        let plan = Plan::new(&list, "a1").unwrap();
-        assert!(plan.children);
-        assert_eq!(plan.units, [vec![1], vec![3]]);
-        assert_eq!(plan.unit_of(2), None);
-        assert_eq!(plan.request(&list, 0), None);
-        assert_eq!(plan.request(&list, 1), None);
-        // Last among siblings stays ahead of what follows the group.
-        assert_eq!(plan.request(&list, 2), request(&["a1"], Some("c")));
-        let plan = Plan::new(&list, "a2").unwrap();
-        assert_eq!(plan.request(&list, 0), request(&["a2"], Some("a1")));
-    }
-
-    #[test]
-    fn a_last_child_moved_to_the_end_of_the_list_needs_no_anchor() {
-        let list = vec![
-            workspace("a", Some(("repo-a", false))),
-            workspace("a1", Some(("repo-a", true))),
-            workspace("a2", Some(("repo-a", true))),
-        ];
-        let plan = Plan::new(&list, "a1").unwrap();
-        assert_eq!(plan.request(&list, 2), request(&["a1"], None));
-    }
-
-    #[test]
-    fn rows_with_nowhere_to_go_do_not_arm() {
-        let list = vec![
-            workspace("a", Some(("repo-a", false))),
-            workspace("a1", Some(("repo-a", true))),
-        ];
-        assert_eq!(Plan::new(&list, "a"), None);
-        assert_eq!(Plan::new(&list, "a1"), None);
-        assert_eq!(Plan::new(&list, "missing"), None);
-    }
-}
+mod tests;

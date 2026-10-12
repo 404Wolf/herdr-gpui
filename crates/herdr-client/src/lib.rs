@@ -28,6 +28,7 @@ mod ssh;
 mod surface_images;
 mod transport;
 mod upload;
+pub mod workspaces;
 mod wsl;
 
 #[cfg(all(test, unix))]
