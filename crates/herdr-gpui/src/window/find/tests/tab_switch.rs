@@ -17,7 +17,7 @@ fn focus_tab_of(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, pane_id:
             let surface = Arc::make_mut(view.live.surface.as_mut().unwrap());
             surface.panes[0].pane_id = pane_id.into();
             view.poll_find(window, cx);
-            view.poll_copy_mode(cx);
+            view.poll_copy_mode(window, cx);
         })
     });
 }
@@ -81,17 +81,27 @@ fn a_closed_bar_reopens_with_its_last_query(cx: &mut TestAppContext) {
 }
 
 /// Copy mode holds the keyboard, so it ends when its pane leaves the screen
-/// rather than swallowing what is typed into the tab now shown.
+/// rather than swallowing what is typed into the tab now shown; an open
+/// search prompt hands the keyboard back to the terminal as it goes.
 #[gpui::test]
 fn copy_mode_ends_when_its_pane_leaves_the_screen(cx: &mut TestAppContext) {
     let (view, _peer, cx) = open(cx, &["pane.copy_search", "pane.copy_motion"]);
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
             view.live.supports_copy_motion = true;
+            view.live.supports_copy_search = true;
             view.enter_copy_mode(window, cx);
+            view.copy_mode_text("/", window, cx);
         })
     });
     assert!(view.read_with(cx, |view, _| view.copy_mode_active()));
+    assert!(cx.update(|window, cx| view.read(cx).copy_search_focused(window, cx)));
     focus_tab_of(&view, cx, "w1:p2");
     assert!(!view.read_with(cx, |view, _| view.copy_mode_active()));
+    cx.update(|window, cx| {
+        assert!(
+            view.read(cx).focus.is_focused(window),
+            "the terminal has the keyboard, not the closed prompt"
+        );
+    });
 }

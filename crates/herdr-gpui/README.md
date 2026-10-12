@@ -2845,10 +2845,23 @@ Ctrl+Shift+U is left unbound for
   start, `g`/`G` to the top of history or the last row, and Ctrl-U/D/B/F or
   Page Up/Down page. The text-aware motions `w` `b` `e` `W` `B` `E` `$` `^`
   `{` `}` come from the daemon's `pane.copy_motion`, so words and paragraphs
-  mean what they mean in Herdr. `v` or Space marks by cell and `V` by line.
-  `y` or Enter copies the selection through `pane.selection.read`. Escape
-  clears a selection or leaves, as does `q`. Leaving scrolls the pane back to
-  where it was.
+  mean what they mean in Herdr. `/` searches toward newer output and `?`
+  toward older, through the daemon's `pane.copy_search`: type the query in the
+  prompt that opens over the pane's corner and press Enter, or Escape to close
+  the prompt and stay in copy mode. The query is literal; lowercase ignores
+  case and any uppercase letter makes it case-sensitive, as in Herdr. The
+  cursor moves to the match, matches are tinted, and the corner badge shows
+  the query and "2 of 5". `n` repeats the search the way it was entered and
+  `N` the opposite way. `v` or Space marks by cell and `V` by line, from
+  wherever the cursor is, a match included. `y` or Enter copies the selection,
+  or with nothing marked the current match, through `pane.selection.read`.
+  If the pane has changed since the search, the search runs again first, so
+  the copied match is one the pane still shows; if output changes again
+  before it is read, the copy fails with a message rather than copy other
+  text. Escape clears a selection and the search, or leaves when there is
+  neither, as does `q`. While a motion or search is still waiting for the
+  daemon, Escape drops it and the keys typed after it, and `q` leaves at
+  once. Leaving scrolls the pane back to where it was.
 - Cmd-Shift-A (`annotate_selection`, also in the command palette) writes a
   note on the text selected in a pane for an agent to act on, the way
   Annotate does for a page. A field opens over the pane: Enter adds the note
