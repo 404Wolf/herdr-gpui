@@ -94,7 +94,7 @@ const MENU_MARGIN: f32 = 8.;
 
 /// Daemon failures arrive as an open envelope. Keep the code so callers can
 /// classify the refusal, and the message for display.
-fn endpoint_error(error: &serde_json::Value) -> (&str, &str) {
+pub(crate) fn endpoint_error(error: &serde_json::Value) -> (&str, &str) {
     (
         error["code"].as_str().unwrap_or("endpoint_error"),
         error["message"].as_str().unwrap_or("Invalid daemon error"),

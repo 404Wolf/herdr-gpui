@@ -9,7 +9,7 @@ use crate::terminal_painter::{Highlight, Tint};
 use herdr_client::{
     ClientEvent,
     protocol::PaneSurfacePane,
-    scrollback::{ScrollbackResponse, TextRange, decode_response},
+    scrollback::{ScrollbackResponse, SearchDirection, TextPoint, TextRange, decode_response},
 };
 use std::collections::VecDeque;
 
@@ -179,6 +179,66 @@ pub(crate) fn push_range(
             columns: inner.x.saturating_add(start)..inner.x.saturating_add(end),
             tint,
         });
+    }
+}
+
+/// Appends every search match `pane` shows, the current one tinted more
+/// strongly, in the surface frame's grid.
+pub(crate) fn push_matches(
+    pane: &PaneSurfacePane,
+    matches: &[TextRange],
+    current: Option<usize>,
+    highlights: &mut Vec<Highlight>,
+) {
+    for (index, range) in matches.iter().enumerate() {
+        let tint = if current == Some(index) {
+            Tint::CurrentMatch
+        } else {
+            Tint::Match
+        };
+        push_range(pane, *range, tint, highlights);
+    }
+}
+
+/// The count shown beside a search: "3 of 17", "17 found" while no match is
+/// current, or "No results".
+pub(crate) fn match_count(total: u64, current_global: Option<u64>) -> String {
+    match (total, current_global) {
+        (0, _) => "No results".into(),
+        (total, Some(index)) => format!("{} of {total}", index.saturating_add(1)),
+        (total, None) => format!("{total} found"),
+    }
+}
+
+/// Where a search for the same query looks from so that `current` stays the
+/// current match if the pane still has it. The daemon takes the first match
+/// starting after the cursor going forward, and the last one ending before it
+/// going backward, so this is forward from the cell just before the match, or,
+/// for a match in the very first cell, which has none before it, backward from
+/// the cell just after it. The daemon only compares points, so a column past
+/// a row's end is a valid stand-in for "the end of that row".
+pub(crate) fn refresh_from(current: TextRange) -> (SearchDirection, TextPoint) {
+    let TextPoint { row, col } = current.start;
+    match (row, col.checked_sub(1)) {
+        (_, Some(col)) => (SearchDirection::Forward, TextPoint { row, col }),
+        (1.., None) => (
+            SearchDirection::Forward,
+            TextPoint {
+                row: row - 1,
+                col: u16::MAX,
+            },
+        ),
+        (0, None) => {
+            let TextPoint { row, col } = current.end;
+            let after = match col.checked_add(1) {
+                Some(col) => TextPoint { row, col },
+                None => TextPoint {
+                    row: row.saturating_add(1),
+                    col: 0,
+                },
+            };
+            (SearchDirection::Backward, after)
+        }
     }
 }
 

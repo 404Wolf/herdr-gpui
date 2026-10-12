@@ -135,6 +135,8 @@ pub(super) struct Deletion {
     pub(super) force: bool,
     /// Whether the checkout has an archive script to run first.
     pub(super) archive: crate::worktree_scripts::ArchiveCheck,
+    /// The merged pull request that opened this dialog without being asked.
+    pub(super) merged: Option<u64>,
 }
 
 impl Deletion {
@@ -145,6 +147,7 @@ impl Deletion {
             root: None,
             force,
             archive: crate::worktree_scripts::ArchiveCheck::Unread,
+            merged: None,
         }
     }
 
@@ -172,6 +175,12 @@ pub(crate) struct Removal {
 }
 
 impl Removal {
+    /// Whether the daemon has yet to answer, rather than a refusal kept for
+    /// its force confirmation.
+    pub(crate) fn waiting(&self) -> bool {
+        self.pending.is_some()
+    }
+
     pub(crate) fn pending_for(&self, endpoint: (u64, u64), boot_id: &str, workspace: &str) -> bool {
         self.pending.is_some()
             && self.endpoint == endpoint
@@ -197,6 +206,15 @@ impl Submission {
 }
 
 impl MenuState {
+    /// Whether a menu or dialog is open on `workspace`.
+    pub(crate) fn open_on(&self, workspace: &str) -> bool {
+        self.page.is_some()
+            && self
+                .target
+                .as_ref()
+                .is_some_and(|target| target.id == workspace)
+    }
+
     /// The repository the open dialog's host picker ranks hosts for.
     pub(crate) fn dispatch_repo(&self) -> Option<String> {
         self.target

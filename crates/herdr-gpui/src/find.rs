@@ -9,8 +9,8 @@
 pub(crate) mod memory;
 
 use crate::{
-    scrollback::{push_range, viewport_top},
-    terminal_painter::{Highlight, Tint},
+    scrollback::{match_count, push_matches, refresh_from, viewport_top},
+    terminal_painter::Highlight,
 };
 use herdr_client::{
     protocol::PaneSurfacePane,
@@ -178,10 +178,10 @@ impl Search {
         let (direction, cursor, previous) = match (step, current) {
             (Step::Older, Some(current)) => (SearchDirection::Backward, self.origin, Some(current)),
             (Step::Newer, Some(current)) => (SearchDirection::Forward, self.origin, Some(current)),
-            // A refresh looks from just before the current match, so the same
-            // match stays current if the pane still has it.
+            // A refresh keeps the same match current if the pane still has it.
             (Step::Refresh, Some(current)) => {
-                (SearchDirection::Forward, before(current.start), None)
+                let (direction, cursor) = refresh_from(current);
+                (direction, cursor, None)
             }
             (Step::Newer, None) => (SearchDirection::Forward, self.origin, None),
             (Step::Query | Step::Older | Step::Refresh, _) => {
@@ -294,11 +294,7 @@ impl Search {
         let Some(results) = self.results.as_ref().filter(|r| r.query == self.query) else {
             return String::new();
         };
-        match (results.total, results.current_global) {
-            (0, _) => "No results".into(),
-            (total, Some(index)) => format!("{} of {total}", index.saturating_add(1)),
-            (total, None) => format!("{total} found"),
-        }
+        match_count(results.total, results.current_global)
     }
 
     /// Whether the shown answer has any match to move between.
@@ -320,28 +316,8 @@ impl Search {
             return Vec::new();
         };
         let mut highlights = Vec::new();
-        for (index, range) in results.matches.iter().enumerate() {
-            let tint = if results.current == Some(index) {
-                Tint::CurrentMatch
-            } else {
-                Tint::Match
-            };
-            push_range(pane, *range, tint, &mut highlights);
-        }
+        push_matches(pane, &results.matches, results.current, &mut highlights);
         highlights
-    }
-}
-
-/// The cell just before `point` in reading order. The daemon only compares
-/// points, so a column past the row's end is a valid stand-in for "the end of
-/// the previous row".
-fn before(point: TextPoint) -> TextPoint {
-    match point.col.checked_sub(1) {
-        Some(col) => TextPoint { col, ..point },
-        None => TextPoint {
-            row: point.row.saturating_sub(1),
-            col: u16::MAX,
-        },
     }
 }
 

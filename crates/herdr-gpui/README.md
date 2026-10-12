@@ -654,6 +654,16 @@ from its menu without the dialog, and `show_agents = false` to hide the Agents
 section and give Spaces the full sidebar height. All four default to `true`.
 A workspace close still asks when its Git check finds uncommitted files or
 unpushed commits, whatever `confirm_close_workspace` says.
+Set `remove_merged_worktrees = true` (**Settings > General > Remove worktrees
+of merged PRs**) to remove a linked worktree's checkout, and close its
+workspace and terminals, once its GitHub pull request is merged. It is off by
+default because it deletes a checkout without asking. It acts only on this
+machine's daemon, only on linked worktrees, and only when the checkout has no
+uncommitted or untracked files, sits exactly at the pull request's merged head
+commit, and has no agent working or waiting on a prompt. A repository with an
+archive script is left for the delete dialog. The focused workspace opens that
+dialog instead of being removed. The branch is not deleted, and a checkout
+the daemon finds dirty is never force removed.
 The pane dialog's **Do not ask again** checkbox (click it or press Space) saves
 `confirm_close_pane = false` to `config-gpui.local.toml` once the close is sent. Saved edits apply automatically. The
 **Show agents** control in **Settings > Appearance > Sidebar layout** saves
@@ -2412,7 +2422,8 @@ while the GUI runs: a click cannot reopen a closed window.
 The Dock icon shows the number of agents reporting `Done` (finished) or `Blocked`
 (waiting for input), and clears at zero. It covers all connected hosts and
 main windows, including minimized windows, without counting the same agent twice.
-Sidebar visibility, muted sounds, and dismissed toasts do not affect the badge.
+Sidebar visibility, muted sounds, dismissed toasts, and the notification
+delivery setting (including off) do not affect the badge.
 Existing attention is counted from each host's first snapshot at startup; no
 new completion or notification is needed. The first positive focus report waits
 until the terminal surface is ready so loading cannot acknowledge unseen work.
@@ -2425,6 +2436,15 @@ agents remain counted until their status changes, even after you view them.
 Disconnecting a host or closing a window removes its contribution, while other
 windows can keep the badge visible. Quitting the GUI stops monitoring; this is
 not a background notification service. Linux and Windows do not show this badge.
+
+macOS draws the badge only when **Badges** is allowed in **System Settings >
+Notifications > Herdr**. The first time the count rises above zero, Herdr asks
+for notification permission including badges, alongside the alerts and sounds
+that system delivery uses, so either feature can ask first. macOS prompts only
+once per bundle identifier. If Herdr was already allowed notifications without
+badges, turn **Badges** on there; if the switch is missing, remove Herdr from
+that list and relaunch it to be asked again. A bare `target/*/herdr-gpui`
+binary cannot ask for permission.
 
 To preview it without waiting for an agent, choose **QA > Enable badge** in the
 macOS menu bar. The preview shows at least `2` and stays on until you choose **QA > Disable badge preview**
@@ -2835,10 +2855,23 @@ Ctrl+Shift+U is left unbound for
   start, `g`/`G` to the top of history or the last row, and Ctrl-U/D/B/F or
   Page Up/Down page. The text-aware motions `w` `b` `e` `W` `B` `E` `$` `^`
   `{` `}` come from the daemon's `pane.copy_motion`, so words and paragraphs
-  mean what they mean in Herdr. `v` or Space marks by cell and `V` by line.
-  `y` or Enter copies the selection through `pane.selection.read`. Escape
-  clears a selection or leaves, as does `q`. Leaving scrolls the pane back to
-  where it was.
+  mean what they mean in Herdr. `/` searches toward newer output and `?`
+  toward older, through the daemon's `pane.copy_search`: type the query in the
+  prompt that opens over the pane's corner and press Enter, or Escape to close
+  the prompt and stay in copy mode. The query is literal; lowercase ignores
+  case and any uppercase letter makes it case-sensitive, as in Herdr. The
+  cursor moves to the match, matches are tinted, and the corner badge shows
+  the query and "2 of 5". `n` repeats the search the way it was entered and
+  `N` the opposite way. `v` or Space marks by cell and `V` by line, from
+  wherever the cursor is, a match included. `y` or Enter copies the selection,
+  or with nothing marked the current match, through `pane.selection.read`.
+  If the pane has changed since the search, the search runs again first, so
+  the copied match is one the pane still shows; if output changes again
+  before it is read, the copy fails with a message rather than copy other
+  text. Escape clears a selection and the search, or leaves when there is
+  neither, as does `q`. While a motion or search is still waiting for the
+  daemon, Escape drops it and the keys typed after it, and `q` leaves at
+  once. Leaving scrolls the pane back to where it was.
 - Cmd-Shift-A (`annotate_selection`, also in the command palette) writes a
   note on the text selected in a pane for an agent to act on, the way
   Annotate does for a page. A field opens over the pane: Enter adds the note

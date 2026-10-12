@@ -55,35 +55,37 @@ impl Global for SettingsWindowHandle {}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) enum Section {
+    General,
     #[default]
     Appearance,
-    Fonts,
-    Indicators,
-    Sound,
-    Notifications,
-    StatusBar,
-    Integrations,
-    Plugins,
-    Code,
     #[cfg(feature = "cloud")]
     CloudDevices,
-    General,
+    Code,
+    Fonts,
+    Indicators,
+    Integrations,
+    Notifications,
+    Plugins,
+    Sound,
+    StatusBar,
 }
 
 impl Section {
+    /// Sidebar order: General first, as the catch-all people look in when
+    /// they do not know where a setting lives, then alphabetical by label.
     const ALL: &[Self] = &[
+        Self::General,
         Self::Appearance,
-        Self::Fonts,
-        Self::Indicators,
-        Self::Sound,
-        Self::Notifications,
-        Self::StatusBar,
-        Self::Integrations,
-        Self::Plugins,
-        Self::Code,
         #[cfg(feature = "cloud")]
         Self::CloudDevices,
-        Self::General,
+        Self::Code,
+        Self::Fonts,
+        Self::Indicators,
+        Self::Integrations,
+        Self::Notifications,
+        Self::Plugins,
+        Self::Sound,
+        Self::StatusBar,
     ];
 
     fn label(self) -> &'static str {

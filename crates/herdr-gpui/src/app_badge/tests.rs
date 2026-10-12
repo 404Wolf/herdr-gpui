@@ -7,6 +7,8 @@ use crate::{
 };
 use herdr_client::ConnectTarget;
 
+mod permission;
+
 #[gpui::test]
 fn first_snapshot_counts_existing_attention_without_surface_or_notifications(
     cx: &mut gpui::TestAppContext,
