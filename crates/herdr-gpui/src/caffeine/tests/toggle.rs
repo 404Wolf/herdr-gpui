@@ -8,7 +8,7 @@ fn holds_then_releases_on_one_worker_thread(cx: &mut gpui::TestAppContext) {
     cx.update(|cx| toggle_with(cx, holder(&log), reports.sink()));
     assert_eq!(cup_of(cx), Cup::Pending);
     cx.run_until_parked();
-    assert_eq!(cup_of(cx), Cup::On);
+    assert_eq!(cup_of(cx), Cup::On(Mode::Indefinite));
 
     // The worker already exists, so this start must never run.
     cx.update(|cx| {
@@ -73,7 +73,7 @@ fn clicks_while_pending_are_ignored(cx: &mut gpui::TestAppContext) {
     });
     cx.run_until_parked();
 
-    assert_eq!(cup_of(cx), Cup::On);
+    assert_eq!(cup_of(cx), Cup::On(Mode::Indefinite));
     assert_eq!(log.entries().len(), 1);
 
     cx.update(|cx| {
@@ -102,7 +102,7 @@ fn a_worker_that_dies_releasing_reads_off_and_is_replaced(cx: &mut gpui::TestApp
     let (log, reports) = (Log::default(), Reports::default());
     cx.update(|cx| toggle_with(cx, || Ok(PanicsOnRelease), reports.sink()));
     cx.run_until_parked();
-    assert_eq!(cup_of(cx), Cup::On);
+    assert_eq!(cup_of(cx), Cup::On(Mode::Indefinite));
 
     cx.update(|cx| toggle_with(cx, holder(&log), reports.sink()));
     cx.run_until_parked();
@@ -115,7 +115,7 @@ fn a_worker_that_dies_releasing_reads_off_and_is_replaced(cx: &mut gpui::TestApp
     // A fresh worker takes the next click.
     cx.update(|cx| toggle_with(cx, holder(&log), reports.sink()));
     cx.run_until_parked();
-    assert_eq!(cup_of(cx), Cup::On);
+    assert_eq!(cup_of(cx), Cup::On(Mode::Indefinite));
     assert_eq!(log.entries().len(), 1);
     cx.update(|cx| toggle_with(cx, holder(&log), reports.sink()));
     cx.run_until_parked();

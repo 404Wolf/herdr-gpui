@@ -8,7 +8,10 @@ use std::{
 };
 
 mod hidden_cup;
+mod right_click;
 mod toggle;
+mod until_agents;
+mod work;
 
 /// Where a stand-in hold was made and released, in order.
 #[derive(Clone, Default)]
@@ -61,4 +64,13 @@ impl Reports {
 
 fn cup_of(cx: &mut gpui::TestAppContext) -> Cup {
     cx.update(|cx| cup(cx))
+}
+
+/// A stand-in window that a test reports work for.
+fn window(id: u64) -> WindowId {
+    WindowId::from(id)
+}
+
+fn commands(log: &Log) -> Vec<Command> {
+    log.entries().iter().map(|(command, _)| *command).collect()
 }

@@ -239,14 +239,47 @@ impl HerdrWindow {
         }
     }
 
+    /// Lets an `UntilAgentsFinish` hold go once no window's agents work.
+    pub(crate) fn observe_agent_work(&self, window: &Window, cx: &mut Context<Self>) {
+        let work = crate::caffeine::Work::of(
+            self.endpoints
+                .iter()
+                .filter(|endpoint| endpoint.enabled)
+                .map(|endpoint| {
+                    endpoint
+                        .live
+                        .snapshot
+                        .as_deref()
+                        .filter(|_| endpoint.live.status.is_connected())
+                }),
+        );
+        let report = Self::caffeine_report(cx);
+        crate::caffeine::observe(window.window_handle().window_id(), work, cx, report);
+    }
+
+    /// Shows a keep-awake failure in this window, if it is still open.
+    fn caffeine_report(cx: &Context<Self>) -> impl FnOnce(crate::Error, &mut App) + 'static {
+        let view = cx.entity().downgrade();
+        move |error, cx| {
+            let flash = super::Flash::warning(error.to_string());
+            let _ = view.update(cx, |this, cx| this.show_flash(flash, cx));
+        }
+    }
+
     /// Hidden by `keep_awake = false` only while off: the cup is the one
-    /// way to let the display sleep again.
+    /// way to let the display sleep again. A click holds until clicked again;
+    /// a right-click holds until every agent finishes.
     fn caffeine_button(&self, shown: bool, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
+        use crate::caffeine::{Cup, Mode};
         let cup = crate::caffeine::cup(cx);
-        if !shown && cup == crate::caffeine::Cup::Off {
+        if !shown && cup == Cup::Off {
             return None;
         }
-        let awake = cup == crate::caffeine::Cup::On;
+        let (icon, color) = match cup {
+            Cup::On(_) => ("icons/coffee-full.svg", self.theme.primary()),
+            Cup::Pending => ("icons/coffee.svg", self.theme.muted),
+            Cup::Off => ("icons/coffee.svg", self.theme.foreground),
+        };
         let button = div()
             .id("status-caffeine")
             .debug_selector(|| "status-caffeine".into())
@@ -257,30 +290,46 @@ impl HerdrWindow {
             .h_full()
             .cursor_pointer()
             .hover(|s| s.bg(rgb(self.theme.active)))
-            .child(glyph(
-                if awake {
-                    "icons/coffee-full.svg"
-                } else {
-                    "icons/coffee.svg"
-                },
-                match cup {
-                    crate::caffeine::Cup::On => self.theme.primary(),
-                    crate::caffeine::Cup::Pending => self.theme.muted,
-                    crate::caffeine::Cup::Off => self.theme.foreground,
+            .child(div().relative().flex().child(glyph(icon, color)).when(
+                cup == Cup::On(Mode::UntilAgentsFinish),
+                // The dot marks a hold that ends on its own.
+                |cup| {
+                    cup.child(
+                        div()
+                            .id("status-caffeine-until-agents")
+                            .debug_selector(|| "status-caffeine-until-agents".into())
+                            .absolute()
+                            .right(px(-1.))
+                            .bottom(px(0.))
+                            .size(px(6.))
+                            .rounded_full()
+                            .border_1()
+                            .border_color(rgb(self.theme.surface))
+                            .bg(rgb(color)),
+                    )
                 },
             ))
-            .tooltip(self.hint(if awake {
-                "Keeping the display awake"
-            } else {
-                "Keep the display awake"
+            .tooltip(self.hint(match cup {
+                Cup::On(Mode::UntilAgentsFinish) => "Keeping the display awake until agents finish",
+                Cup::On(Mode::Indefinite) => {
+                    "Keeping the display awake · Right-click: until agents finish"
+                }
+                Cup::Off | Cup::Pending => {
+                    "Keep the display awake · Right-click: until agents finish"
+                }
             }))
             .on_click(cx.listener(|_, _, _, cx| {
-                let view = cx.entity().downgrade();
-                crate::caffeine::toggle(cx, move |error, cx| {
-                    let flash = super::Flash::warning(error.to_string());
-                    let _ = view.update(cx, |this, cx| this.show_flash(flash, cx));
-                });
-            }));
+                let report = Self::caffeine_report(cx);
+                crate::caffeine::toggle(cx, report);
+            }))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|_, _, _, cx| {
+                    cx.stop_propagation();
+                    let report = Self::caffeine_report(cx);
+                    crate::caffeine::toggle_until_agents_finish(cx, report);
+                }),
+            );
         Some(button)
     }
 
