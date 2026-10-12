@@ -331,3 +331,19 @@ fn control_commands_report_a_missing_app_by_status_and_in_json() {
     assert_eq!(error["error"]["code"], code, "{error}");
     assert!(output.stderr.is_empty(), "{output:?}");
 }
+
+#[test]
+fn usage_errors_of_a_json_command_are_json() {
+    let output = cli(&["tab", "focus", "x", "--json"]);
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    let error: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(error["error"]["code"], "usage", "{error}");
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Invalid ID"),
+        "{error}"
+    );
+}

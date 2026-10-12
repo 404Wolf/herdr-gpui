@@ -190,6 +190,12 @@ pub const FAMILIES: &[(&str, &str)] = &[
     ("integrations", "Agent integrations and the agent skill"),
 ];
 
+/// Whether `args` are a control command asking for JSON, whose errors,
+/// usage errors included, are then printed as JSON.
+pub fn wants_json(args: &[OsString]) -> bool {
+    args.first().is_some_and(is_family) && args.iter().any(|arg| arg == "--json")
+}
+
 pub fn is_family(word: &OsString) -> bool {
     FAMILIES.iter().any(|(name, _)| word == *name)
 }

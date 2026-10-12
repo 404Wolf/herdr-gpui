@@ -170,8 +170,17 @@ pub(crate) fn run() -> std::process::ExitCode {
     if let Some(exit) = updater::run_helper(&args) {
         return exit;
     }
+    // A control command asked for JSON gets its usage errors as JSON too.
+    let json_errors = cli::control::wants_json(&args);
     let LaunchOptions { target, mode } = match LaunchOptions::parse(args) {
         Ok(options) => options,
+        Err(error) if json_errors => {
+            println!(
+                "{}",
+                serde_json::json!({ "error": { "code": "usage", "message": error.to_string() } })
+            );
+            return std::process::ExitCode::from(2);
+        }
         Err(error) => {
             eprintln!(
                 "{error}\nUsage: herdr-gpui [--socket CLIENT_SOCKET | --session NAME [--dev]]\n       herdr-gpui browser open URL [--workspace ID] [--no-focus]\n       herdr-gpui COMMAND ... (see herdr-gpui --help)"
