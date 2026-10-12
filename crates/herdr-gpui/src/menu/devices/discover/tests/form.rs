@@ -9,7 +9,7 @@ use std::sync::mpsc::SyncSender;
 
 /// Tailscale and Bonjour both see `m4max`; Tailscale also sees a device that
 /// is already saved; Bonjour fails after reporting.
-fn report(source: Source, sender: SyncSender<Event>) {
+pub(super) fn report(source: Source, sender: SyncSender<Event>) {
     let found: Vec<Candidate> = match source {
         Source::SshConfig => Vec::new(),
         Source::Tailscale => vec![
@@ -53,7 +53,7 @@ fn silent(_: Source, sender: SyncSender<Event>) {
     std::mem::forget(sender);
 }
 
-fn open(
+pub(super) fn open(
     cx: &mut gpui::TestAppContext,
     run: Runner,
 ) -> (Entity<HerdrWindow>, &mut VisualTestContext) {
@@ -77,7 +77,7 @@ fn open(
     (view, cx)
 }
 
-fn settle(cx: &mut VisualTestContext) {
+pub(super) fn settle(cx: &mut VisualTestContext) {
     cx.run_until_parked();
     cx.executor().advance_clock(POLL * 2);
     cx.run_until_parked();
@@ -104,7 +104,7 @@ fn discovery(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) -> (bool, V
     })
 }
 
-fn fields(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) -> (String, String) {
+pub(super) fn fields(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) -> (String, String) {
     cx.update(|_, cx| {
         let setup = view.read(cx).menu.device_setup.as_ref().unwrap();
         (

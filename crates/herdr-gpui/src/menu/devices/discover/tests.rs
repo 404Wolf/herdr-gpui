@@ -1,5 +1,6 @@
 use super::*;
 
+mod complete;
 mod form;
 mod sources;
 

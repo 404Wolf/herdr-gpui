@@ -46,7 +46,9 @@ fn open_form(view: &mut HerdrWindow, step: Step, cx: &mut Context<HerdrWindow>) 
         task: None,
         discovery: None,
         suggested_label: None,
-        _label_edits: None,
+        _edits: Vec::new(),
+        highlight: None,
+        suggestion_scroll: gpui::ScrollHandle::new(),
     });
     view.menu.page = Some(Page::AddDevice);
 }
