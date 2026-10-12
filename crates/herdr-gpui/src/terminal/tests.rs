@@ -3,6 +3,10 @@ use super::*;
 mod bold_color;
 mod layout_chords;
 mod wheel;
+mod wheel_notches;
+
+/// The scroll count that leaves the platform's own notch size unchanged.
+const NEUTRAL: NonZeroU16 = NonZeroU16::new(PLATFORM_NOTCH_LINES).unwrap();
 
 #[test]
 fn pane_context_hit_testing_uses_canvas_origin_and_rects_not_focus() {

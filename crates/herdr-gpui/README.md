@@ -550,8 +550,21 @@ Selecting a different device does not change which settings apply:
 
 | Scope | Settings | Source |
 | --- | --- | --- |
-| GUI-wide | Theme and palette overrides, indicator style, sound, toast delivery and clipboard toast, sidebar agent rows (`state_text`), sidebar collapsing (`sidebar_collapsed_mode`, `sidebar_start_collapsed`), and `[keys]` including the prefix | Local `config.toml`, under `config-gpui.toml` overrides |
-| Per host | Worktree directory and custom commands, plus pane defaults and integrations, which the daemon applies itself | That host's daemon, through its snapshot |
+| GUI-wide | Theme and palette overrides, indicator style, sound, toast delivery and clipboard toast, sidebar agent rows (`state_text`), sidebar collapsing (`sidebar_collapsed_mode`, `sidebar_start_collapsed`), wheel and right-click input (`mouse_scroll_lines`, `right_click_passthrough_modifier`), and `[keys]` including the prefix | Local `config.toml`, under `config-gpui.toml` overrides |
+| Per host | Worktree directory and custom commands, plus pane defaults, pane borders, gaps, scrollbars, and border labels, and integrations, which the daemon applies itself | That host's daemon, through its snapshot |
+
+Herdr's pane chrome settings in `[ui]` — `pane_borders` (`auto`, `always`,
+`off`), `pane_outer_borders`, `pane_gaps`, `pane_scrollbars`, and
+`show_agent_labels_on_pane_borders` — are applied by the daemon, not this GUI:
+the daemon lays out every pane and draws its borders, gaps, and labels into
+the surface it sends, with the pane, content, and scrollbar rectangles this
+client paints and hit-tests from. The GUI therefore shows whatever the
+connected daemon's own `config.toml` chose (reloaded by the daemon's config
+reload), not the local file, and draws a pixel scrollbar thumb only where the
+daemon reserved a scrollbar column. Changing these locally has no effect on a
+remote device's daemon. `mouse_scroll_lines` and
+`right_click_passthrough_modifier` are client input settings, read from the
+local `config.toml` like the TUI does.
 
 Keybindings stay local on an SSH device, as with Herdr's default
 `--remote-keybindings local`. **Use server keybindings** in a device's
@@ -1182,6 +1195,18 @@ Option, or Command still opens the menu, where **Open This Menu on
 Right-Click** switches the pane back. A routed pane whose application has mouse
 reporting off opens the menu, since nothing would receive the click. A
 mouse-aware popup has no pane menu and keeps its right-clicks.
+
+Herdr's shared `[ui] right_click_passthrough_modifier` (default `""`, off) is
+honored as in the TUI: a right-click held with exactly that combination goes
+to a mouse-aware application in any pane, routed or not, and the application
+receives it without that modifier for the whole press, drag, and release,
+including over a link, since a right-click opens no link. Any other
+combination still opens the menu. It accepts Herdr's values: `ctrl` or
+`control`, `alt` or `option`, `cmd`, `command`, or `super` (the Command,
+Windows, or Super key), joined with `+`; `off`, `none`, and `disabled` turn it
+off, and anything with `shift` is refused. GPUI cannot report the `meta` or
+`hyper` modifiers, so a combination naming either never matches here, and an
+invalid value leaves it off without affecting other settings.
 
 Drag across the terminal to select cells; releasing the button copies them and
 shows the `copied to clipboard` flash described under
@@ -2961,7 +2986,18 @@ Ctrl+Shift+U is left unbound for
   workspace without guessing a local path. Nothing is created while disconnected.
 - Mouse-wheel/trackpad scrolling targets the pane under the pointer (inside its
   content, not borders). Fractional pixel motion accumulates into terminal
-  lines, and horizontal motion into columns, with bounded per-event work.
+  lines, and horizontal motion into columns, with bounded per-event work (at
+  most 128 lines per event). Each discrete wheel notch scrolls Herdr's shared
+  `[ui] mouse_scroll_lines` (default 3; zero or an unreadable value keeps 3),
+  applied live when the shared config reloads, whether the pane slides through
+  scrollback or moves by whole rows. As in Herdr's TUI, the count moves only
+  scrollback: an application reading the wheel gets one wheel report per
+  event from the daemon. GPUI reports notches already
+  scaled by the platform: three lines on Linux and FreeBSD, the system wheel
+  setting on Windows (assumed to be its default of three, so a changed Windows
+  setting scales the result proportionally), and about one, with
+  acceleration, on macOS. Precise trackpad motion keeps following the pointer
+  one cell height per line and ignores the setting, as does horizontal motion.
   Horizontal scrolling reaches only a pane or popup whose application reports
   the mouse, since Herdr has nothing else to do with it; sideways drift during a
   mostly vertical swipe is ignored. Shift+wheel arrives already turned

@@ -27,6 +27,7 @@ mod horizontal_wheel;
 mod image_paste;
 mod image_paste_native;
 mod input_gap;
+mod input_settings;
 mod install_prompt;
 mod keyboard;
 mod mouse_cell_motion;
