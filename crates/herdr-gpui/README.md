@@ -2981,12 +2981,19 @@ Ctrl+Shift+U is left unbound for
   prompts jump to the line's ends or delete back to its start as in every
   other Mac terminal, and Option-Left and Option-Right send Esc-b and Esc-f
   to move by word. A value is a key a terminal can receive (`ctrl-a`,
-  `home`, `alt-b`, `shift-enter`), and an empty string removes a default. A
-  pane key takes its keystroke from a default or daemon command, so
-  `"cmd-k" = "ctrl-l"` replaces Clear; listing it under `[keybindings]` as well
-  rejects the config, as do a bare character, an unknown key, or a target with
-  cmd. The find field and dialogs answer Cmd-Left, Cmd-Right, Cmd-Backspace,
-  and Cmd-Delete themselves.
+  `home`, `alt-b`, `shift-enter`), or `text:` followed by up to 1024 bytes of
+  text, and an empty string removes a default. Text reaches the pane byte for
+  byte, so a newline in it is a line feed, not the Enter key. On a layout
+  that keeps symbols on Option, `option_as_alt = "left"` or `"right"` leaves
+  one Option key typing them with no entries here; `text:` is for
+  `option_as_alt = true`, where both send Alt: `"alt-7" = "text:|"` on a
+  Norwegian keyboard. Name the key as the layout has it without Option, so
+  Option-Shift-7 there is `"alt-/"`. A pane key takes its keystroke from a
+  default or daemon command, so `"cmd-k" = "ctrl-l"` replaces Clear; listing
+  it under `[keybindings]` as well rejects the config, as do a bare character,
+  an unknown key, a target with cmd, or an empty `text:`. The find field and
+  dialogs answer Cmd-Left, Cmd-Right, Cmd-Backspace, and Cmd-Delete
+  themselves.
 - The daemon's own `[keys]` table in `config.toml` (resolved like
   `[ui.toast.clipboard]` above) applies in the GUI too, Herdr's defaults
   included, so a TUI habit such as `prefix+v` or `alt+1..9` works in both

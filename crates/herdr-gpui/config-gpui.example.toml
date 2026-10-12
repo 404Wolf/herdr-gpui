@@ -224,8 +224,9 @@ project_roots = []
 
 # What the focused pane receives instead of a keystroke, as Ghostty's text:
 # binds do. The value is a key a terminal can receive (ctrl-a, home, alt-b,
-# shift-enter); an empty string removes a default. A keystroke here leaves its
-# default or daemon command, but naming it in [keybindings] too is an error.
+# shift-enter), or "text:" and the text to type, at most 1024 bytes; an empty
+# string removes a default. A keystroke here leaves its default or daemon
+# command, but naming it in [keybindings] too is an error.
 # On macOS these are the defaults:
 # [pane_keys]
 # "cmd-left" = "ctrl-a"
@@ -233,6 +234,11 @@ project_roots = []
 # "cmd-backspace" = "ctrl-u"
 # "alt-left" = "alt-b"
 # "alt-right" = "alt-f"
+# With option_as_alt = true on a layout that keeps symbols on Option, text
+# types them again. Name the key as the layout has it without Option: on a
+# Norwegian keyboard Option-7 is "alt-7" and Option-Shift-7 is "alt-/".
+# "alt-7" = "text:|"
+# "alt-/" = "text:\\"
 
 # Saved SSH devices use the local keybindings above, as `herdr --remote` does.
 # "server" uses the [keys] profile that device's Herdr publishes instead, like
