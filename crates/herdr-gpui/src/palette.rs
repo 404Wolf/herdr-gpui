@@ -21,6 +21,7 @@ mod go_to;
 #[cfg(test)]
 mod interaction_tests;
 mod keys;
+mod preview;
 mod project_create;
 mod project_open;
 mod projects;
@@ -350,6 +351,9 @@ pub(super) struct Palette {
     supports_edit_scrollback: bool,
     /// The notes revision the entries were prepared from.
     notes_revision: Option<u64>,
+    /// Paints Go To's preview at its own size, apart from the terminal's
+    /// painter so neither reshapes the other's glyphs.
+    preview_painter: std::rc::Rc<std::cell::RefCell<crate::terminal_painter::TerminalPainter>>,
     /// Frecency points taken when the palette opened.
     boosts: frecency::Boosts,
     /// The row a resumed palette selects again once a ranking lists it,
@@ -604,6 +608,7 @@ impl HerdrWindow {
             supports_edit_scrollback: self.live.supports_edit_scrollback,
             notes_revision: None,
             restore: None,
+            preview_painter: Default::default(),
             boosts: Frecency::of(cx)
                 .map_or_else(Default::default, |history| history.boosts(frecency::now())),
             _subscription: subscription,

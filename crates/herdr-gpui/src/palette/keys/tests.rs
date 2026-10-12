@@ -48,6 +48,8 @@ fn query_editing_keys_stay_with_the_search_field() {
     ] {
         assert_eq!(key(text), None, "{text}");
     }
+    assert_eq!(key("alt-p"), Some(PaletteKey::TogglePreview));
+    assert_eq!(key("alt-shift-p"), None);
     assert_eq!(key("enter"), Some(PaletteKey::Activate));
     assert_eq!(key("escape"), Some(PaletteKey::Dismiss));
 }

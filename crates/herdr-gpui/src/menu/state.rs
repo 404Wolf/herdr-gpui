@@ -97,6 +97,8 @@ pub(crate) struct MenuState {
     pub(crate) themes: Option<crate::theme_picker::ThemePicker>,
     pub(crate) fonts: Option<crate::font_picker::FontPicker>,
     pub(crate) palette: Option<crate::palette::Palette>,
+    /// Whether Go To shows its preview; Alt-P toggles it for the session.
+    pub(crate) palette_preview: bool,
     /// What the last closed palette leaves for Resume Palette.
     pub(crate) palette_resume: Option<crate::palette::Resume>,
     pub(crate) code_search: Option<crate::code_search::CodeSearch>,
@@ -323,6 +325,7 @@ impl MenuState {
             fonts: None,
             palette: None,
             palette_resume: None,
+            palette_preview: true,
             code_search: None,
             close: None,
             pr: Default::default(),

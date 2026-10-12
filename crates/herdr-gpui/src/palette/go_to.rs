@@ -38,7 +38,7 @@ pub(super) fn destination_exists(
     }
 }
 
-fn status_badge(status: AgentStatus) -> &'static str {
+pub(super) fn status_badge(status: AgentStatus) -> &'static str {
     match status {
         AgentStatus::Blocked => "blocked",
         AgentStatus::Done => "done",

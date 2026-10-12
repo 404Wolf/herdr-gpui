@@ -10,6 +10,7 @@ mod frecency_ranking;
 mod go_to_search;
 mod notes;
 mod plugin_selection;
+mod preview_layout;
 mod resume;
 
 fn matches_query(text: &str, query: &str) -> bool {

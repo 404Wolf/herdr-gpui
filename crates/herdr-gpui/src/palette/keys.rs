@@ -2,7 +2,7 @@
 //!
 //! The list moves as in Telescope and snacks.picker: arrows, Tab and
 //! Shift-Tab, Ctrl-N/Ctrl-P, and Ctrl-J/Ctrl-K. Filters cycle with
-//! Ctrl-Tab/Ctrl-Shift-Tab or Alt-]/Alt-[.
+//! Ctrl-Tab/Ctrl-Shift-Tab or Alt-]/Alt-[, and Alt-P toggles Go To's preview.
 
 use super::{AgentFilter, Filter};
 use crate::HerdrWindow;
@@ -19,6 +19,7 @@ enum Direction {
 enum PaletteKey {
     Move(Direction),
     CycleFilter(Direction),
+    TogglePreview,
     Activate,
     Dismiss,
 }
@@ -43,6 +44,7 @@ impl PaletteKey {
             "n" | "j" if control && !modifiers.shift => Self::Move(Direction::Down),
             "[" if alt => Self::CycleFilter(Direction::Up),
             "]" if alt => Self::CycleFilter(Direction::Down),
+            "p" if alt && !modifiers.shift => Self::TogglePreview,
             _ => return None,
         })
     }
@@ -112,6 +114,10 @@ impl HerdrWindow {
                     Direction::Down => (index + 1) % count,
                 };
                 self.set_palette_filter(Filter::ALL[index], cx);
+            }
+            PaletteKey::TogglePreview => {
+                self.menu.palette_preview = !self.menu.palette_preview;
+                cx.notify();
             }
             PaletteKey::Activate => {
                 if let Some(entry) = palette.selected_entry() {
