@@ -81,6 +81,8 @@ pub enum Error {
     CaffeineThread(#[source] io::Error),
     #[error("The keep-awake thread stopped; the display may sleep")]
     CaffeineWorkerStopped,
+    #[error("No agent is working, so there is nothing to stay awake for")]
+    CaffeineNoWorkingAgents,
     #[error(
         "PR lookup requires your owned local session socket or a saved SSH device. Other socket locations are unsupported."
     )]
