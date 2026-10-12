@@ -27,6 +27,16 @@
   if ($tag -notmatch '^v([1-9][0-9]{7}\.[1-9][0-9]*)$') { throw "Unexpected latest release tag: $tag" }
   $version = $Matches[1]
 
+  $dest = Join-Path $env:LOCALAPPDATA 'Programs\Herdr UI'
+  $exe = Join-Path $dest 'herdr-gpui.exe'
+  # Windows will not overwrite a running executable, so an update needs the
+  # installed app closed. Check before downloading and again before copying.
+  $assertNotRunning = {
+    $running = Get-Process -Name 'herdr-gpui' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }
+    if ($running) { throw "Herdr UI is running from $exe. Quit it, then run this command again; your Herdr sessions keep running." }
+  }
+  & $assertNotRunning
+
   $name = "Herdr-$version-$arch-pc-windows-msvc"
   $base = "https://github.com/$repo/releases/download/$tag"
   $tmp = Join-Path ([IO.Path]::GetTempPath()) ([IO.Path]::GetRandomFileName())
@@ -42,14 +52,13 @@
     if ($actual -ne $expected) { throw "Checksum mismatch for $name.zip" }
 
     Expand-Archive -Path $zip -DestinationPath $tmp
-    $dest = Join-Path $env:LOCALAPPDATA 'Programs\Herdr UI'
+    & $assertNotRunning
     New-Item -ItemType Directory -Force -Path $dest | Out-Null
     Copy-Item -Recurse -Force -Path (Join-Path $tmp "$name\*") -Destination $dest
   } finally {
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $tmp
   }
 
-  $exe = Join-Path $dest 'herdr-gpui.exe'
   $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
   if (-not (($userPath -split ';') -contains $dest)) {
     [Environment]::SetEnvironmentVariable('Path', (@($userPath, $dest) | Where-Object { $_ }) -join ';', 'User')
