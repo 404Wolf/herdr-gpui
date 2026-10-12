@@ -454,6 +454,12 @@ pub enum Error {
     CheckpointThread(#[source] io::Error),
     #[error("The checkpoint worker stopped.")]
     CheckpointWorker,
+    #[error("Git could not run")]
+    LocalGit(#[source] io::Error),
+    #[error("The current directory is not in a Git checkout.")]
+    NotInCheckout,
+    #[error("HEAD is detached. Check a branch out first.")]
+    DetachedHead,
     #[error("Enter a port number from 1 to 65535.")]
     ForwardPort,
     #[error("Port {0} is already forwarded from this host.")]

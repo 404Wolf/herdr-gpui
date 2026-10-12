@@ -58,3 +58,6 @@ pub(crate) enum Reply {
     Notes { notes: Vec<NoteInfo> },
     Note { note: Option<NoteInfo> },
 }
+
+#[cfg(test)]
+mod tests;

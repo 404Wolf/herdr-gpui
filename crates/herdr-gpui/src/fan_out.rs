@@ -14,4 +14,5 @@ mod spread;
 mod state;
 mod ui;
 
+pub(crate) use plan::MAX_LANES;
 pub(crate) use state::{FanOut, Origin};

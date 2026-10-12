@@ -68,22 +68,22 @@ fn family(name: &str) -> &'static str {
             "herdr-gpui review [open]\n    Open the review of the caller's workspace's uncommitted changes."
         }
         "notes" => {
-            "herdr-gpui notes [list]\n    Every worktree note, most recently edited first.\nherdr-gpui notes get|clear\nherdr-gpui notes set TEXT...\n    The note on the caller's checkout (its repository and branch)."
+            "herdr-gpui notes [list]\n    Every worktree note, most recently edited first.\nherdr-gpui notes get|clear\nherdr-gpui notes set TEXT...\n    The note on the caller's checkout (its repository and branch), or the\n    focused workspace's outside a Herdr pane. Notes are one line of at most\n    500 characters. `list` and `get` exit 4 when there is none."
         }
         "feedback" => {
             "herdr-gpui feedback [--wait SECONDS]\n    Notes the user sent this pane: page, review, and terminal notes that\n    were not typed into it. Exits 4 when there are none."
         }
         "checkpoint" => {
-            "herdr-gpui checkpoint [list]\n    The current directory's checkout's checkpoints, oldest first.\nherdr-gpui checkpoint create [LABEL...]\n    Take one now. Runs here; Herdr UI need not run.\nherdr-gpui checkpoint diff CHECKPOINT [CHECKPOINT]\n    What changed between two, or since one in the working tree.\nherdr-gpui checkpoint restore [CHECKPOINT]\n    Open the checkpoints dialog in Herdr UI; the user confirms there."
+            "herdr-gpui checkpoint [list]\n    The current directory's checkout's checkpoints, newest first.\nherdr-gpui checkpoint create [LABEL...]\n    Take one now.\nherdr-gpui checkpoint diff CHECKPOINT [CHECKPOINT]\n    What changed between two, or since one in the working tree (untracked\n    files included).\n    These run here, on the current branch; Herdr UI need not run.\nherdr-gpui checkpoint restore [CHECKPOINT]\n    Open the caller's checkout's checkpoints dialog in Herdr UI with\n    CHECKPOINT chosen; the user confirms the restore there."
         }
         "scripts" => {
-            "herdr-gpui scripts [list]\n    The current directory's repository's worktree scripts\n    (.herdr/worktree.toml).\nherdr-gpui scripts setup|run|archive\n    Run one in a new tab of the caller's workspace. Herdr UI asks before\n    running a script it has not seen."
+            "herdr-gpui scripts [list]\n    The current directory's repository's worktree scripts\n    (.herdr/worktree.toml). Runs here; Herdr UI need not run.\nherdr-gpui scripts setup|run\n    Run one in a new tab of the caller's workspace (setup: linked worktrees\n    only). Herdr UI asks before running a script it has not seen. The\n    archive script runs only when a worktree is removed in Herdr UI."
         }
         "teleport" => {
-            "herdr-gpui teleport --to HOST\n    Open the teleport dialog for the caller's linked worktree, reviewing\n    HOST. The user confirms the move there."
+            "herdr-gpui teleport --to HOST\n    Open the teleport dialog for the caller's linked worktree, reviewing\n    HOST (a host ID or label). The user confirms the move there."
         }
         "fan-out" => {
-            "herdr-gpui fan-out PROMPT... [--agent KIND[:COUNT]]...\n    Open the fan-out dialog for the caller's repository with PROMPT and\n    these agents chosen. The user starts it there."
+            "herdr-gpui fan-out PROMPT... [--agent KIND[:COUNT]]...\n    Open the fan-out dialog for the caller's repository with PROMPT and\n    these agents (claude, codex, ...; at most 6 in all) chosen once the\n    host's agents are known. The user starts it there."
         }
         "pr" => {
             "herdr-gpui pr [status]|checks\n    The pull request of the caller's workspace's branch, as Herdr UI last\n    looked it up (selected host only; sign in to GitHub first). Exits 4\n    when there is none.\nherdr-gpui pr comments\n    Its review comments (the workspace must be the focused one).\nherdr-gpui pr open\n    Open it in a browser tab."

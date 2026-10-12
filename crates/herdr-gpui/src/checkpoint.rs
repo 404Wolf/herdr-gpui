@@ -9,9 +9,12 @@
 //! a checkpoint never touches the checkout's index or files; restoring one is
 //! an explicit, confirmed action that first checkpoints the current state.
 
+pub(crate) mod direct;
 mod script;
 #[cfg(test)]
 mod tests;
+
+pub(crate) use script::valid_id;
 
 use crate::{Error, Result, usage::Host};
 use herdr_client::{
@@ -160,6 +163,10 @@ fn execute(job: &Job, stamp: &str) -> Answer {
 /// Never cancelled: killing Git halfway through a snapshot or a restore could
 /// leave a lock or a half-moved working tree behind; the idle limit ends it.
 fn run(checkout: &Checkout, body: &str) -> Result<String> {
+    run_limited(checkout, body, LIMITS)
+}
+
+fn run_limited(checkout: &Checkout, body: &str, limits: ScriptLimits) -> Result<String> {
     let host = match &checkout.host {
         Host::Local => ScriptHost::Local,
         Host::Ssh(target) => ScriptHost::Ssh(target),
@@ -171,7 +178,7 @@ fn run(checkout: &Checkout, body: &str) -> Result<String> {
         body,
         std::io::empty(),
         &mut output,
-        LIMITS,
+        limits,
         &AtomicBool::new(false),
     )
     .map_err(script::classify)?;
@@ -236,6 +243,9 @@ pub(crate) struct View {
     pub confirming: Option<String>,
     pub restoring: bool,
     pub error: Option<String>,
+    /// The checkpoint to select once the list arrives, as `checkpoint
+    /// restore ID` asks. Only selected: restoring still takes confirming.
+    pub wanted: Option<String>,
 }
 
 impl View {
@@ -404,8 +414,16 @@ impl Checkpoints {
             confirming: None,
             restoring: false,
             error: None,
+            wanted: None,
         });
         self.list(checkout);
+    }
+
+    /// Select checkpoint `id` in the open dialog once its list has loaded.
+    pub fn want(&mut self, id: String) {
+        if let Some(view) = &mut self.view {
+            view.wanted = Some(id);
+        }
     }
 
     /// Close the dialog. A restore already running still finishes and is
@@ -556,6 +574,12 @@ impl Checkpoints {
                     _ => 0,
                 };
                 view.selected = view.selected.filter(|index| *index < count);
+                if let (Some(wanted), Listing::Ready(list)) = (view.wanted.take(), &view.listing) {
+                    view.selected = list
+                        .iter()
+                        .position(|checkpoint| checkpoint.id == wanted)
+                        .or(view.selected);
+                }
                 if view.confirming_checkpoint().is_none() && !view.restoring {
                     view.confirming = None;
                 }

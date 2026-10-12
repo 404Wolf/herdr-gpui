@@ -16,7 +16,7 @@ mod config;
 mod launch;
 mod trust;
 
-pub(crate) use config::{Config, read as read_config};
+pub(crate) use config::{Config, PATH as CONFIG_PATH, read as read_config};
 pub(crate) use launch::{Checkout, main_checkout};
 pub(crate) use trust::{Grant, Trust};
 
