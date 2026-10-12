@@ -2091,6 +2091,15 @@ them to the agent that opened it, so it can change the page.
   older running app rejects scoped feedback.
 - Tabs you open yourself have no agent to send to; **Copy** is offered
   instead.
+- A local page can also queue a result for its agent with
+  `herdr.send(summary, data)`, for example the mockup variant you picked.
+  It appears in the notes panel as **Page result**, with a hint to add a note,
+  and goes to the agent only when you press Send, as "The page sent a result"
+  followed by the summary and the data as JSON. A newer result replaces an
+  unsent one. The bridge is injected only into local pages, only while they
+  show the preview scheme, and the app drops results from any other page.
+  The summary is one cleaned line of at most 300 characters; data over 8 KB
+  is refused rather than cut.
 
 ### Reviewing An Agent's Changes
 
@@ -2227,6 +2236,7 @@ Agents running in the app's panes can open a page for you:
 herdr-gpui browser open http://localhost:3000   # macOS: /Applications/Herdr.app/Contents/MacOS/Herdr
 herdr-gpui browser open design/mockup.html
 herdr-gpui browser open --no-focus https://example.com/docs
+herdr-gpui browser open --beside explainer.html # in a split beside the agent's terminal
 herdr-gpui browser reload                       # reload the pages this pane opened
 herdr-gpui browser feedback --wait 600          # wait for the notes you send it
 herdr-gpui browser --help
@@ -2239,10 +2249,32 @@ the page go back to it. The command talks to the running app over a socket at
 3 when the app is not running. Only processes on this machine can reach it:
 agents on saved SSH hosts cannot open browser tabs.
 
+`--beside` puts the page in an editor group next to the group showing the
+caller's terminal: the group the page already belongs to, the group beside
+the terminal when the window is split, or a new group split off to its
+right. The terminal's group stays in use and keeps the keyboard, so you can
+keep typing to the agent. A workspace the window is not showing gets an
+ordinary tab instead, and the command says so.
+
+#### Explainer Kit
+
+Local pages can load a small kit the app serves at `/.herdr/kit.css` and
+`/.herdr/kit.js`, for interactive explainers and UI mockups: segmented
+controls, a row of steps with their status, the selected step's detail, an
+outcome, placeholders, and mockup variants with **Pick** buttons that call
+`herdr.send`. `/.herdr/theme.css` carries the window's theme colors, so the
+page matches the app and follows a theme change on its next load. Dotted
+paths are never read from the page's folder, so these cannot hide a file of
+the page's own. Opened elsewhere, the kit falls back to its own light and
+dark colors. `herdr-gpui browser example` prints a complete page built on it.
+The kit inserts every text as text, never as HTML.
+
 Agents only use what they know about, so the app offers, once, to install a
 `herdr-gpui-browser` skill that teaches them these commands. It goes into
 `~/.claude/skills/` and `~/.agents/skills/`, for whichever of `~/.claude` and
-`~/.agents` exists, and names this app's executable. After you agree, each
+`~/.agents` exists, and names this app's executable. Claude Code reads
+`~/.claude/skills/`; Codex reads `~/.agents/skills/`; opencode reads both, as
+well as its own `~/.config/opencode/skills/`. After you agree, each
 start refreshes it off the UI thread, so it follows the app when it moves or
 updates. Only files carrying the app's managed-skill marker are rewritten or
 removed; a skill of the same name you wrote yourself is left alone.

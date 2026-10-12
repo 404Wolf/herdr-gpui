@@ -8,6 +8,7 @@ mod protocol;
 #[cfg(unix)]
 mod socket;
 
+pub(crate) use crate::cli::Placement;
 #[cfg(unix)]
 use crate::{
     HerdrWindow,
@@ -44,6 +45,10 @@ pub(crate) fn reload_command() -> String {
         .clone()
 }
 
+/// The explainer kit's example, which the agent skill points to.
+const EXAMPLE: &str =
+    include_str!("../../../skills/herdr-gpui-browser/examples/instagram-fetch.html");
+
 /// Exit status when no app is listening, so a caller can fall back to
 /// printing the address instead.
 const EXIT_NOT_RUNNING: u8 = 3;
@@ -64,10 +69,22 @@ pub(crate) struct Target<'a> {
     pub pane: Option<&'a str>,
 }
 
+/// The page a request asks a window to open, and how to show it.
+#[cfg(unix)]
+pub(crate) struct Opening<'a> {
+    pub location: &'a Location,
+    /// Whether the window switches to the tab.
+    pub focus: bool,
+    pub placement: Placement,
+}
+
 /// Where a window opened a requested tab.
 #[cfg(unix)]
 pub(crate) enum Placed {
-    Opened { workspace_id: String },
+    Opened {
+        workspace_id: String,
+        placement: Placement,
+    },
     Full,
 }
 
@@ -144,6 +161,7 @@ fn open_browser(request: &BrowserOpen, cx: &mut App) -> Response {
         return Response::Opened {
             opened_in: OpenedIn::SystemBrowser,
             workspace_id: None,
+            placement: Placement::Tab,
         };
     }
     let windows = main_windows(cx);
@@ -160,21 +178,23 @@ fn open_browser(request: &BrowserOpen, cx: &mut App) -> Response {
     // socket paths are spelled differently, any window showing its workspace.
     for strict in [true, false] {
         for handle in &windows {
+            let opening = Opening {
+                location: &location,
+                focus: request.focus,
+                placement: request.placement,
+            };
             let placed = handle.update(cx, |view, window, cx| {
-                view.open_requested_browser_tab(
-                    &target,
-                    strict,
-                    &location,
-                    request.focus,
-                    window,
-                    cx,
-                )
+                view.open_requested_browser_tab(&target, strict, &opening, window, cx)
             });
             match placed {
-                Ok(Some(Placed::Opened { workspace_id })) => {
+                Ok(Some(Placed::Opened {
+                    workspace_id,
+                    placement,
+                })) => {
                     return Response::Opened {
                         opened_in: OpenedIn::Tab,
                         workspace_id: Some(workspace_id),
+                        placement,
                     };
                 }
                 Ok(Some(Placed::Full)) => {
@@ -543,21 +563,39 @@ fn page(target: &str) -> crate::Result<(Page, String)> {
     Ok((Page::Url(url.as_str().to_owned()), url.as_str().to_owned()))
 }
 
-fn browser_open(target: &str, workspace: Option<String>, focus: bool) -> crate::Result<String> {
+fn browser_open(
+    target: &str,
+    workspace: Option<String>,
+    focus: bool,
+    placement: Placement,
+) -> crate::Result<String> {
     let (page, shown) = page(target)?;
     let request = Request::Open(BrowserOpen {
         page,
         caller: caller(workspace)?,
         focus,
+        placement,
     });
     match send(&request)? {
         Response::Opened {
             opened_in: OpenedIn::Tab,
             workspace_id,
-        } => Ok(match workspace_id {
-            Some(id) => format!("Opened {shown} in a browser tab of workspace {id}"),
-            None => format!("Opened {shown} in a browser tab"),
-        }),
+            placement: opened,
+        } => {
+            let place = match opened {
+                Placement::Beside => "beside the terminal",
+                Placement::Tab => "in a browser tab",
+            };
+            let fallback = if placement == Placement::Beside && opened == Placement::Tab {
+                " (the window could not split beside your pane)"
+            } else {
+                ""
+            };
+            Ok(match workspace_id {
+                Some(id) => format!("Opened {shown} {place} of workspace {id}{fallback}"),
+                None => format!("Opened {shown} {place}{fallback}"),
+            })
+        }
         Response::Opened {
             opened_in: OpenedIn::SystemBrowser,
             ..
@@ -597,12 +635,14 @@ fn browser_feedback(wait: u64) -> crate::Result<Option<String>> {
 }
 
 const BROWSER_USAGE: &str = "\
-herdr-gpui browser open URL|FILE [--workspace ID] [--no-focus]
+herdr-gpui browser open URL|FILE [--workspace ID] [--no-focus] [--beside]
     Show a web address, or a local HTML file, in a browser tab of the running
     Herdr UI. The tab joins the caller's own workspace (HERDR_WORKSPACE_ID),
     or the frontmost one outside Herdr. Showing the same page again from the
     same pane reuses and reloads its tab. Bare hosts such as localhost:3000
     are accepted. A file is served with the other files in its folder.
+    With --beside, the page opens in a split next to the caller's terminal,
+    which stays in view and keeps the keyboard.
 herdr-gpui browser reload
     Reload the pages this pane opened, for example after editing the file.
 herdr-gpui browser feedback [--wait SECONDS]
@@ -611,6 +651,9 @@ herdr-gpui browser feedback [--wait SECONDS]
     Notes are otherwise typed into this pane as a prompt once it is idle.
 herdr-gpui browser skill
     Print the agent skill that explains these commands.
+herdr-gpui browser example
+    Print an example explainer page built on the kit Herdr UI serves to local
+    pages at /.herdr/kit.css and /.herdr/kit.js.
 Exit status: 0 done, 1 refused, 2 invalid arguments, 3 Herdr UI not running,
 4 no notes (feedback).";
 
@@ -649,11 +692,16 @@ pub(crate) fn run(command: BrowserCommand) -> ExitCode {
             );
             ExitCode::SUCCESS
         }
+        BrowserCommand::Example => {
+            print!("{EXAMPLE}");
+            ExitCode::SUCCESS
+        }
         BrowserCommand::Open {
             target,
             workspace,
             focus,
-        } => report(browser_open(&target, workspace, focus)),
+            placement,
+        } => report(browser_open(&target, workspace, focus, placement)),
         BrowserCommand::Reload => report(browser_reload()),
         BrowserCommand::Feedback { wait } => match browser_feedback(wait) {
             // Notes keep their line breaks: they are Markdown for the agent.

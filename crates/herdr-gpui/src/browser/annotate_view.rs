@@ -240,10 +240,16 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let report = Report::parse(body);
+        if let Some(Report::Sent { summary, data }) = report {
+            self.page_sent(id, summary, data, cx);
+            return;
+        }
         if !self.browser.annotations.armed(id) {
             return;
         }
-        match Report::parse(body) {
+        match report {
+            Some(Report::Sent { .. }) => {}
             Some(Report::Picked { anchor, shot }) => {
                 self.begin_note(id, anchor, shot, window, cx);
             }
@@ -255,6 +261,42 @@ impl HerdrWindow {
             }
             None => tracing::debug!("Ignored a malformed annotation message"),
         }
+    }
+
+    /// Queues a result a local page sent as a note, replacing the page's
+    /// earlier result the user has not sent yet, so picking again changes
+    /// the answer rather than adding another. A web page, or a local page
+    /// that navigated to one, sends nothing.
+    fn page_sent(&mut self, id: TabId, summary: String, data: String, cx: &mut Context<Self>) {
+        let local = super::view::store(cx)
+            .and_then(|store| store.get(id))
+            .is_some_and(|tab| matches!(tab.location, Some(super::Location::Local { .. })));
+        if !local {
+            tracing::debug!("Ignored a result from a page that is not local");
+            return;
+        }
+        let notes = self.tab_notes(id);
+        let earlier = notes
+            .notes
+            .iter()
+            .position(|note| !note.sent && matches!(note.anchor, Anchor::Sent { .. }));
+        let note = Note::sent(summary, data);
+        match earlier {
+            Some(index) => notes.notes[index] = note,
+            None if notes.notes.len() >= MAX_NOTES => {
+                self.show_flash(
+                    Flash::warning("Clear sent notes or remove some before adding more"),
+                    cx,
+                );
+                return;
+            }
+            None => notes.notes.push(note),
+        }
+        self.show_flash(
+            Flash::success("The page added a result; send it to the agent"),
+            cx,
+        );
+        cx.notify();
     }
 
     pub(super) fn begin_note(

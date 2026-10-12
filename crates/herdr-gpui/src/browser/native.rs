@@ -100,6 +100,8 @@ pub(crate) struct Pages {
     delegates: HashMap<TabId, objc2::rc::Retained<super::popup::Closer>>,
     /// Reads local pages' files; started with the first page.
     preview: Option<Rc<Preview>>,
+    /// The theme the kit serves local pages, and the colors it came from.
+    theme: (super::kit::ThemeKey, String),
 }
 
 impl Default for Pages {
@@ -119,6 +121,7 @@ impl Default for Pages {
             #[cfg(target_os = "macos")]
             delegates: HashMap::new(),
             preview: None,
+            theme: Default::default(),
         }
     }
 }
@@ -257,6 +260,7 @@ impl Pages {
             Some(preview) => preview.clone(),
             None => {
                 let preview = Rc::new(Preview::start()?);
+                preview.set_theme(self.theme.1.clone());
                 self.preview = Some(preview.clone());
                 preview
             }
@@ -271,7 +275,14 @@ impl Pages {
             | Location::Orchestrator { .. }
             | Location::Devices => None,
         };
+        // Only a local page, which the agent wrote, gets `herdr.send`.
+        let bridge = if root.is_some() {
+            super::annotate::BRIDGE
+        } else {
+            ""
+        };
         let builder = with_handlers(wry::WebViewBuilder::new(), Source::Tab(id), &self.outbox)
+            .with_initialization_script(bridge)
             .with_url(location.page_url())
             .with_asynchronous_custom_protocol(
                 PREVIEW_SCHEME.into(),
@@ -298,6 +309,19 @@ impl Pages {
         });
         self.pages.insert(id, page);
         Ok(())
+    }
+
+    /// Serves `theme` to local pages from now on: a page picks it up when it
+    /// next loads. Cheap when the colors did not change.
+    pub(crate) fn set_theme(&mut self, theme: &crate::config::Theme) {
+        let key = super::kit::theme_key(theme);
+        if self.theme.0 == key && !self.theme.1.is_empty() {
+            return;
+        }
+        self.theme = (key, super::kit::theme_css(theme));
+        if let Some(preview) = &self.preview {
+            preview.set_theme(self.theme.1.clone());
+        }
     }
 
     /// Shows the pages in `ids` and hides every other one; an empty list

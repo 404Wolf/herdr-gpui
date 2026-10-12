@@ -263,6 +263,24 @@ mod tests {
     }
 
     #[test]
+    fn the_skill_teaches_the_split_the_kit_and_page_results() {
+        for taught in [
+            "browser open --beside",
+            "/.herdr/kit.css",
+            "HerdrKit.scenario(",
+            "HerdrKit.variants(",
+            "herdr.send(",
+            "herdr-gpui browser example",
+        ] {
+            assert!(SKILL.contains(taught), "{taught}");
+        }
+        let bundled = text(Some(Path::new(
+            "/Applications/Herdr.app/Contents/MacOS/Herdr",
+        )));
+        assert!(bundled.contains("/Applications/Herdr.app/Contents/MacOS/Herdr browser example"));
+    }
+
+    #[test]
     fn installing_keeps_to_existing_agent_directories_and_the_users_own_files() {
         let home = tempfile::tempdir().unwrap();
         assert!(matches!(

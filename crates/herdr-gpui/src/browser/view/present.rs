@@ -65,6 +65,7 @@ impl HerdrWindow {
         #[cfg(any(target_os = "macos", windows))]
         {
             use crate::menu::Cover;
+            self.browser.pages.set_theme(&self.theme);
             let live = self.live_pages(cx);
             let open = self.menu.page;
             let measured_for = std::mem::replace(&mut self.browser.cover_page, open);

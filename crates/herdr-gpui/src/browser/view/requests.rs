@@ -3,8 +3,11 @@
 use super::{scope, store};
 use crate::{
     HerdrWindow, NavigationTarget,
-    browser::{Location, Store, TabId},
-    control::{Placed, Target},
+    browser::{
+        Store, TabId,
+        groups::{GroupId, Pick},
+    },
+    control::{Opening, Placed, Placement, Target},
 };
 use gpui::*;
 
@@ -55,13 +58,20 @@ impl HerdrWindow {
         &mut self,
         target: &Target<'_>,
         strict: bool,
-        location: &Location,
-        focus: bool,
+        opening: &Opening<'_>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<Placed> {
         let (index, workspace) = self.browser_target(target, strict)?;
         let scope = scope(&self.endpoints[index]);
+        // Splitting needs the workspace's groups on screen: a workspace the
+        // window does not show yet gets an ordinary tab.
+        let Opening {
+            location,
+            focus,
+            placement,
+        } = *opening;
+        let shown = self.browser_key() == Some((scope.clone(), workspace.clone()));
         // An agent showing the same page again gets its tab back, reloaded,
         // rather than another tab for every revision.
         let origin = target.pane;
@@ -88,7 +98,10 @@ impl HerdrWindow {
                 id
             }
         };
-        if focus {
+        let beside = placement == Placement::Beside
+            && shown
+            && self.show_beside(id, target.pane, window, cx);
+        if !beside && focus {
             let focused = self
                 .live
                 .snapshot
@@ -107,7 +120,65 @@ impl HerdrWindow {
         cx.notify();
         Some(Placed::Opened {
             workspace_id: workspace,
+            placement: if beside {
+                Placement::Beside
+            } else {
+                Placement::Tab
+            },
         })
+    }
+
+    /// The group showing `pane`'s terminal: the one that picked its Herdr
+    /// tab, or else the one holding the window's connection.
+    fn terminal_group(&self, pane: Option<&str>) -> Option<GroupId> {
+        let tab = pane.and_then(|pane| {
+            let snapshot = self.live.snapshot.as_ref()?;
+            let found = snapshot.panes.iter().find(|p| p.pane_id == pane)?;
+            Some(Pick::Herdr(found.tab_id.clone()))
+        });
+        self.group_slots()
+            .into_iter()
+            .map(|slot| slot.id)
+            .find(|group| tab.is_some() && self.group_pick(*group) == tab)
+            .or_else(|| self.primary_group())
+    }
+
+    /// Shows page `id` in a group beside the caller's terminal: the group
+    /// the page already belongs to, another existing group, or a new one
+    /// split off to the terminal's right. The terminal's group stays in use
+    /// and keeps the keyboard, so the user can go on typing to the agent.
+    /// Returns whether the page is beside the terminal.
+    fn show_beside(
+        &mut self,
+        id: TabId,
+        pane: Option<&str>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(home) = self.terminal_group(pane) else {
+            return false;
+        };
+        let pick = Pick::Page(id);
+        let owner = self.ensure_layout().map(|layout| layout.owner(&pick));
+        let slots = self.group_slots();
+        let index = slots.iter().position(|slot| slot.id == home).unwrap_or(0);
+        let neighbour = slots
+            .get(index + 1)
+            .or_else(|| index.checked_sub(1).and_then(|before| slots.get(before)))
+            .map(|slot| slot.id);
+        let group = match owner.filter(|owner| *owner != home).or(neighbour) {
+            Some(group) => group,
+            None => {
+                self.split_group(home, window, cx);
+                match self.active_group().filter(|group| *group != home) {
+                    Some(group) => group,
+                    None => return false,
+                }
+            }
+        };
+        self.move_tab_to_group(pick, group, window, cx);
+        self.activate_group(home, window, cx);
+        true
     }
 
     /// Reloads this window's pages for `tabs`, as an agent asks after

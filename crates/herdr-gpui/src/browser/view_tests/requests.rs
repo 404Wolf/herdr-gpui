@@ -1,5 +1,8 @@
 use super::*;
-use crate::control::{Placed, Target};
+use crate::{
+    browser::{Pick, Shown},
+    control::{Opening, Placed, Placement, Target},
+};
 
 /// Opens a request's tab without switching to it, so no native page is made.
 fn request(
@@ -19,8 +22,11 @@ fn request(
             view.open_requested_browser_tab(
                 &target,
                 strict,
-                &url("http://localhost:3000/"),
-                false,
+                &Opening {
+                    location: &url("http://localhost:3000/"),
+                    focus: false,
+                    placement: Placement::Tab,
+                },
                 window,
                 cx,
             )
@@ -42,11 +48,11 @@ fn requests_open_tabs_only_in_a_workspace_the_window_shows(cx: &mut gpui::TestAp
     // No named workspace: the one the window shows.
     assert!(matches!(
         request(&view, cx, None, None, true),
-        Some(Placed::Opened { workspace_id }) if workspace_id == "w0"
+        Some(Placed::Opened { workspace_id, .. }) if workspace_id == "w0"
     ));
     assert!(matches!(
         request(&view, cx, None, Some("w1"), true),
-        Some(Placed::Opened { workspace_id }) if workspace_id == "w1"
+        Some(Placed::Opened { workspace_id, .. }) if workspace_id == "w1"
     ));
     assert!(request(&view, cx, None, Some("w_missing"), true).is_none());
     // Another daemon's socket never matches strictly, but its workspace ID
@@ -85,4 +91,116 @@ fn requests_open_tabs_only_in_a_workspace_the_window_shows(cx: &mut gpui::TestAp
         let store = cx.global::<Store>();
         assert_eq!(store.opened_by("w0:p1").count(), 2);
     });
+}
+
+/// Opens `page` beside pane `p0`'s terminal, in workspace `workspace`.
+fn beside(
+    view: &Entity<HerdrWindow>,
+    cx: &mut VisualTestContext,
+    workspace: &str,
+    page: &str,
+) -> Option<Placed> {
+    let placed = cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            let target = Target {
+                daemon: None,
+                workspace: Some(workspace),
+                pane: Some("p0"),
+            };
+            view.open_requested_browser_tab(
+                &target,
+                true,
+                &Opening {
+                    location: &url(page),
+                    focus: true,
+                    placement: Placement::Beside,
+                },
+                window,
+                cx,
+            )
+        })
+    });
+    draw(cx);
+    placed
+}
+
+fn shown(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) -> Vec<Shown> {
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        view.group_slots()
+            .into_iter()
+            .map(|slot| view.group_shown(slot.id, cx))
+            .collect()
+    })
+}
+
+#[gpui::test]
+fn pages_opened_beside_split_off_the_terminal_once(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = window(cx);
+    draw(cx);
+    let placed = beside(&view, cx, "w0", "http://localhost:3000/");
+    assert!(matches!(
+        placed,
+        Some(Placed::Opened {
+            placement: Placement::Beside,
+            ..
+        })
+    ));
+    let first = cx.update(|_, cx| view.read(cx).browser_tab_ids(cx))[0];
+    assert_eq!(shown(&view, cx), [Shown::Terminal, Shown::Page(first)]);
+    // The terminal's group stays in use, so typing still goes to the agent.
+    let (home, groups) = view.read_with(cx, |view, _| {
+        let groups: Vec<_> = view.group_slots().into_iter().map(|slot| slot.id).collect();
+        (view.active_group(), groups)
+    });
+    assert_eq!(home, Some(groups[0]));
+    assert!(cx.debug_bounds("terminal").is_some());
+
+    // Another page joins the page's group instead of splitting again, and
+    // showing the first page again brings it back there.
+    beside(&view, cx, "w0", "http://localhost:4000/");
+    let second = cx.update(|_, cx| view.read(cx).browser_tab_ids(cx))[1];
+    assert_eq!(shown(&view, cx), [Shown::Terminal, Shown::Page(second)]);
+    beside(&view, cx, "w0", "http://localhost:3000/");
+    assert_eq!(shown(&view, cx), [Shown::Terminal, Shown::Page(first)]);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(
+            view.group_tabs(groups[1], cx),
+            [Pick::Page(first), Pick::Page(second)]
+        );
+        assert_eq!(view.active_group(), Some(groups[0]));
+    });
+}
+
+#[gpui::test]
+fn a_page_beside_a_workspace_not_shown_opens_as_a_tab(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = window(cx);
+    draw(cx);
+    let placed = cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            let target = Target {
+                daemon: None,
+                workspace: Some("w1"),
+                pane: Some("p1"),
+            };
+            view.open_requested_browser_tab(
+                &target,
+                true,
+                &Opening {
+                    location: &url("http://localhost:3000/"),
+                    focus: false,
+                    placement: Placement::Beside,
+                },
+                window,
+                cx,
+            )
+        })
+    });
+    assert!(matches!(
+        placed,
+        Some(Placed::Opened { placement: Placement::Tab, workspace_id }) if workspace_id == "w1"
+    ));
+    draw(cx);
+    assert_eq!(shown(&view, cx), [Shown::Terminal]);
 }

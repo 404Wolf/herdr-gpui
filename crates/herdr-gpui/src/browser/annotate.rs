@@ -25,6 +25,13 @@ const MAX_COMMENT_CHARS: usize = 2000;
 const MAX_COVERED: usize = 8;
 /// Coordinates beyond this are not a real page.
 const MAX_COORDINATE: f64 = 10_000_000.;
+/// What a local page may hand the agent with `herdr.send`: a one-line
+/// summary and a JSON value, refused rather than cut when longer.
+const MAX_SUMMARY_CHARS: usize = 300;
+const MAX_DATA_BYTES: usize = 8 * 1024;
+/// Defines `herdr.send` in a local page, whose script the agent wrote.
+#[cfg(any(target_os = "macos", windows))]
+pub(crate) const BRIDGE: &str = include_str!("bridge.js");
 
 /// A rectangle in CSS pixels, checked when it is parsed.
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
@@ -95,8 +102,17 @@ struct RawCovered {
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum Message {
-    Pick { target: Picked },
+    Pick {
+        target: Picked,
+    },
     Cancel,
+    /// `herdr.send(summary, data)`: a result from the page, such as the
+    /// variant the user picked in a mockup.
+    Send {
+        summary: String,
+        #[serde(default)]
+        data: serde_json::Value,
+    },
 }
 
 #[derive(Deserialize)]
@@ -138,6 +154,12 @@ pub(crate) enum Report {
         shot: Option<Rect>,
     },
     Cancelled,
+    /// A result the page sent with `herdr.send`. Only a local page's are
+    /// kept, and only as a note the user still sends.
+    Sent {
+        summary: String,
+        data: String,
+    },
 }
 
 /// One line of page text: no controls or direction overrides, no runs of
@@ -185,6 +207,7 @@ impl Report {
         }
         let target = match serde_json::from_str::<Message>(body).ok()? {
             Message::Cancel => return Some(Self::Cancelled),
+            Message::Send { summary, data } => return Self::sent(&summary, &data),
             Message::Pick { target } => target,
         };
         Some(match target {
@@ -254,6 +277,27 @@ impl Report {
     }
 }
 
+impl Report {
+    /// A page's result: its summary as one line, and its data as compact
+    /// JSON without characters that could steer a terminal. Too much data
+    /// is refused rather than cut into JSON that does not parse.
+    fn sent(summary: &str, data: &serde_json::Value) -> Option<Self> {
+        let summary = line(summary, MAX_SUMMARY_CHARS);
+        let data = match data {
+            serde_json::Value::Null => String::new(),
+            data => serde_json::to_string(data).ok()?,
+        };
+        if data.len() > MAX_DATA_BYTES || (summary.is_empty() && data.is_empty()) {
+            return None;
+        }
+        let data = data
+            .chars()
+            .filter(|c| !crate::notifications::unsafe_char(*c))
+            .collect();
+        Some(Self::Sent { summary, data })
+    }
+}
+
 /// An element a region covers.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Covered {
@@ -286,6 +330,11 @@ pub(crate) enum Anchor {
         text: String,
     },
     Page,
+    /// A result the page sent: its summary and its data as JSON.
+    Sent {
+        summary: String,
+        data: String,
+    },
 }
 
 impl Anchor {
@@ -302,6 +351,8 @@ impl Anchor {
                 rect.height.round()
             ),
             Self::Page => "Whole page".into(),
+            Self::Sent { summary, .. } if summary.is_empty() => "Page result".into(),
+            Self::Sent { summary, .. } => format!("Page result: {}", line(summary, 60)),
         }
     }
 
@@ -335,6 +386,17 @@ pub(crate) struct Note {
 }
 
 impl Note {
+    /// A page's result, as a note the user has not written anything on.
+    pub(crate) fn sent(summary: String, data: String) -> Self {
+        Self {
+            anchor: Anchor::Sent { summary, data },
+            comment: String::new(),
+            image: None,
+            capture: None,
+            sent: false,
+        }
+    }
+
     pub(crate) fn new(anchor: Anchor, comment: &str) -> Option<Self> {
         let comment = line(comment, MAX_COMMENT_CHARS);
         (!comment.is_empty()).then_some(Self {
@@ -484,11 +546,28 @@ pub(crate) fn prompt(
                 }
             }
             Anchor::Page => text.push_str(&format!("\n{number}. On the page as a whole\n")),
+            Anchor::Sent { summary, data } => {
+                text.push_str(&format!("\n{number}. The page sent a result"));
+                if summary.is_empty() {
+                    text.push('\n');
+                } else {
+                    text.push_str(&format!(": \"{summary}\"\n"));
+                }
+                if !data.is_empty() {
+                    let fence = fence(data);
+                    text.push_str(&format!(
+                        "   Data:\n   {fence}json\n   {data}\n   {fence}\n"
+                    ));
+                }
+            }
         }
         if let Some(Some(path)) = screenshots.get(index) {
             text.push_str(&format!("   Screenshot: {}\n", path.display()));
         }
-        text.push_str(&format!("   Note: {}\n", note.comment));
+        // A page's result needs no note; the user may still add one.
+        if !note.comment.is_empty() {
+            text.push_str(&format!("   Note: {}\n", note.comment));
+        }
     }
     text.push_str(&format!(
         "\nChange the page for each note, then show it again with: {reload}\n"

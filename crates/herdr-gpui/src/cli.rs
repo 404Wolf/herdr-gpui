@@ -28,6 +28,7 @@ pub enum BrowserCommand {
         target: String,
         workspace: Option<String>,
         focus: bool,
+        placement: Placement,
     },
     Reload,
     /// Waits up to `wait` seconds for notes; zero only checks.
@@ -35,7 +36,20 @@ pub enum BrowserCommand {
         wait: u64,
     },
     Skill,
+    /// Prints the explainer kit's example page.
+    Example,
     Help,
+}
+
+/// Where `browser open` puts a new page.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Placement {
+    /// A tab of the group in use, which takes the window's view.
+    #[default]
+    Tab,
+    /// A group beside the caller's terminal, so both stay in view.
+    Beside,
 }
 
 /// `herdr-gpui --mockup [--feedback PATH] [--capture PATH]`: never connects
@@ -135,11 +149,11 @@ fn parse_browser(mut args: impl Iterator<Item = OsString>) -> Result<BrowserComm
     let command = args.next().ok_or(CliError::MissingBrowserCommand)?;
     match command.to_str() {
         Some("--help" | "-h") => return Ok(BrowserCommand::Help),
-        Some(simple @ ("skill" | "reload")) => {
-            let command = if simple == "skill" {
-                BrowserCommand::Skill
-            } else {
-                BrowserCommand::Reload
+        Some(simple @ ("skill" | "reload" | "example")) => {
+            let command = match simple {
+                "skill" => BrowserCommand::Skill,
+                "example" => BrowserCommand::Example,
+                _ => BrowserCommand::Reload,
             };
             return match args.next() {
                 None => Ok(command),
@@ -168,10 +182,12 @@ fn parse_browser(mut args: impl Iterator<Item = OsString>) -> Result<BrowserComm
         _ => return Err(CliError::UnknownBrowserCommand(command)),
     }
     let (mut target, mut workspace, mut focus) = (None, None, true);
+    let mut placement = Placement::Tab;
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--help" | "-h") => return Ok(BrowserCommand::Help),
             Some("--no-focus") => focus = false,
+            Some("--beside") => placement = Placement::Beside,
             Some("--workspace") => {
                 let value = args
                     .next()
@@ -191,6 +207,7 @@ fn parse_browser(mut args: impl Iterator<Item = OsString>) -> Result<BrowserComm
         target: target.ok_or(CliError::MissingUrl)?,
         workspace,
         focus,
+        placement,
     })
 }
 
