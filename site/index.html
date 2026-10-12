@@ -6,6 +6,7 @@
 <title>Herdr UI: a native window for the Herdr daemon</title>
 <meta name="description" content="Herdr UI is a native client for the Herdr daemon you already run. Same daemon, same sessions: the window adds dispatch from issues, side-by-side review, checkpoints, Teleport and a Devices overview.">
 <link rel="canonical" href="https://herdrui.dev/">
+<link rel="alternate" type="text/plain" href="llms.txt" title="Herdr UI for LLMs">
 <link rel="icon" type="image/png" href="assets/herdr-ui-icon-badge.png">
 <meta name="theme-color" content="#17181b">
 <script>try { var t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}</script>
@@ -73,9 +74,20 @@
 
   <section id="install">
     <div class="install">
-      <div><h2>Keep the TUI. Add Herdr UI.</h2><p>Install the app next to the Herdr you already have. It attaches to your daemon and never installs or upgrades it.</p></div>
-      <div><div class="cmd mono"><span><span class="p">$</span><span id="brew"></span></span><button type="button" id="copy">Copy</button></div>
-        <div class="plat"><span id="plat"></span> · <a href="https://github.com/penso/herdr-gpui#install">all install options</a></div>
+      <div><h2>Keep the TUI. Add Herdr UI.</h2><p>Install the app next to the Herdr you already have. It attaches to your daemon and never installs or upgrades it, so <a href="https://herdr.dev/">install Herdr</a> first.</p></div>
+      <div><div class="os-tabs" role="tablist" aria-label="Platform" hidden>
+          <button type="button" role="tab" id="tab-macos" aria-controls="os-macos" data-os="macos">macOS</button><button type="button" role="tab" id="tab-linux" aria-controls="os-linux" data-os="linux">Linux</button><button type="button" role="tab" id="tab-windows" aria-controls="os-windows" data-os="windows">Windows</button>
+        </div>
+        <div class="os" id="os-macos" role="tabpanel" aria-labelledby="tab-macos"><h3>macOS</h3>
+          <div class="cmd mono"><code><span class="p">$</span>brew install penso/tap/herdr-gpui</code><button type="button" class="copy">Copy</button></div>
+          <div class="plat">macOS 14.2+, signed, notarized, universal · or the <a href="https://github.com/penso/herdr-gpui/releases/latest">.dmg</a></div></div>
+        <div class="os" id="os-linux" role="tabpanel" aria-labelledby="tab-linux"><h3>Linux</h3>
+          <div class="cmd mono"><code><span class="p">$</span>curl -fsSL https://herdrui.dev/install.sh | sh</code><button type="button" class="copy">Copy</button></div>
+          <div class="plat">x86_64 and ARM64 · installs the checksummed .deb, .rpm or Arch package with APT, DNF or pacman (glibc 2.39+) · <a href="install.sh">read the script</a> · or <span class="mono">nix run github:penso/herdr-gpui</span></div></div>
+        <div class="os" id="os-windows" role="tabpanel" aria-labelledby="tab-windows"><h3>Windows</h3>
+          <div class="cmd mono"><code><span class="p">PS&gt;</span>irm https://herdrui.dev/install.ps1 | iex</code><button type="button" class="copy">Copy</button></div>
+          <div class="plat">Experimental · x86_64 and ARM64 · installs for the current user, adds a Start menu entry · <a href="install.ps1">read the script</a> · WSL daemons work too</div></div>
+        <div class="plat"><a href="https://github.com/penso/herdr-gpui#install">All install options</a> · <a href="llms.txt">llms.txt</a></div>
         <div class="both-note">Then run <span class="mono">herdr</span> in a terminal and open Herdr UI: both show the same panes.</div></div>
     </div>
   </section>
