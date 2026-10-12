@@ -69,11 +69,19 @@ fn id_from(listing: &str) -> Option<String> {
     (id.len() == 16).then(|| format!("key-{id}"))
 }
 
+fn digest(listing: &install::Finished) -> Option<&str> {
+    (listing.code == Some(0))
+        .then(|| listing.output.split_whitespace().nth(1))
+        .flatten()
+        .filter(|word| word.starts_with("SHA256:"))
+}
+
 /// The device ID of the key at `path`, taken from the private key itself.
 /// Reading it through `ssh-keygen -l -f <key>` would trust a `.pub` beside it,
 /// which stays behind when the private file is replaced. Only a
 /// passphrase-protected key, which cannot be read unattended, falls back to its
-/// `.pub`.
+/// `.pub`. When the private key can be read, its public half must agree:
+/// OpenSSH can otherwise authenticate with that half's key from the agent.
 pub(super) fn fingerprint(path: &Path, cancelled: &impl Fn() -> bool) -> Result<String> {
     let list = |source: &std::ffi::OsStr, input: &str| {
         let mut command = Command::new("ssh-keygen");
@@ -86,7 +94,27 @@ pub(super) fn fingerprint(path: &Path, cancelled: &impl Fn() -> bool) -> Result<
         install::Finished {
             code: Some(0),
             output: public,
-        } => list("-".as_ref(), &public)?,
+        } => {
+            let derived = list("-".as_ref(), &public)?;
+            let public = public_path(path);
+            match fs::metadata(&public) {
+                Ok(_) => {
+                    let offered = list(public.as_os_str(), "")?;
+                    // Compare the full fingerprint, not the shortened device ID.
+                    if digest(&derived).is_none() || digest(&derived) != digest(&offered) {
+                        return Err(Error::PublicKeyMismatch(path.to_owned()));
+                    }
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(source) => {
+                    return Err(Error::KeyFile {
+                        path: public,
+                        source,
+                    });
+                }
+            }
+            derived
+        }
         _ => list(public_path(path).as_os_str(), "")?,
     };
     (listing.code == Some(0))

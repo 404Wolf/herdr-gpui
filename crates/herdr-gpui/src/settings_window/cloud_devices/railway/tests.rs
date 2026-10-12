@@ -7,6 +7,8 @@ use crate::{cloud::SavedDevice, railway::KeyDirectory};
 use gpui::{Entity, TestAppContext, VisualTestContext, px, size};
 use std::path::PathBuf;
 
+mod cross_window_jobs;
+
 fn open(
     cx: &mut TestAppContext,
 ) -> (

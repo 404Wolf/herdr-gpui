@@ -46,6 +46,11 @@ pub enum Error {
         .0.display()
     )]
     KeyChanged(PathBuf),
+    #[error(
+        "The public key beside {} does not match its private key. Restore the matching .pub file before connecting.",
+        .0.display()
+    )]
+    PublicKeyMismatch(PathBuf),
     #[error("Could not open a terminal to create the Railway VM.")]
     Terminal(#[source] io::Error),
     #[error("Creating the VM needs a terminal, which this build of Herdr cannot open.")]

@@ -86,6 +86,19 @@ fn location_note(directory: &crate::railway::KeyDirectory, name: &str) -> String
     }
 }
 
+/// Settings can move between main windows while a setup stays with its owner.
+fn railway_setup_running(cx: &App) -> bool {
+    cx.windows().into_iter().any(|window| {
+        window
+            .downcast::<crate::HerdrWindow>()
+            .is_some_and(|window| {
+                window
+                    .read(cx)
+                    .is_ok_and(|window| window.cloud_jobs.has(CloudProvider::Railway))
+            })
+    })
+}
+
 impl SettingsWindow {
     pub(super) fn open_railway_card(&mut self, cx: &mut Context<Self>) {
         if self.railway_card.is_none() {
@@ -184,12 +197,7 @@ impl SettingsWindow {
         cx: &mut Context<Self>,
         work: impl FnOnce(&dyn Fn() -> bool, &dyn Fn(Update)) + Send + 'static,
     ) {
-        let setting_up = self
-            .source
-            .read_with(cx, |window, _| {
-                window.cloud_jobs.has(CloudProvider::Railway)
-            })
-            .unwrap_or(false);
+        let setting_up = railway_setup_running(cx);
         let Some(card) = &mut self.railway_card else {
             return;
         };
@@ -257,9 +265,15 @@ impl SettingsWindow {
     /// Hand a setup to the main window, which runs and reports the job so it
     /// survives this window closing. Nothing else starts one.
     fn setup_railway(&mut self, cx: &mut Context<Self>) {
+        let setting_up = railway_setup_running(cx);
         let Some(card) = &mut self.railway_card else {
             return;
         };
+        if card.changing || setting_up {
+            card.message = Some("Wait for the current Railway action to finish.".into());
+            cx.notify();
+            return;
+        }
         let text = card.path.read(cx).text().trim().to_owned();
         if card.source != KeySource::Existing || text.is_empty() {
             card.message = Some("Generate a key, or enter the path of an existing one.".into());
@@ -273,12 +287,6 @@ impl SettingsWindow {
             install: card.install,
         };
         let started = self.source.update(cx, |window, cx| {
-            if window.cloud_jobs.has(CloudProvider::Railway) {
-                return Err(crate::cloud::Error::Unavailable(
-                    "A Railway setup is already running.",
-                )
-                .into());
-            }
             window.start_cloud_job(
                 CloudProvider::Railway,
                 name.clone(),

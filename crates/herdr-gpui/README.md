@@ -380,7 +380,8 @@ an existing file is never replaced). **Connect and set up** creates the VM if th
 key has none, installs Herdr in it when the **Install Herdr** switch is on, and
 saves the device with the key's path (as its account). Every reconnect uses the
 same key, never creates a VM or installs anything, and refuses a key file whose
-fingerprint changed. Removing a device keeps its key files. Connections run
+fingerprint changed or whose readable private key disagrees with its `.pub`
+file. Removing a device keeps its key files. Connections run
 `ssh -F /dev/null` with options that offer only that key and pin `railway.new`'s
 host key on first use (`railway_known_hosts`). The VM is temporary: Railway
 limits its lifetime and how many a network can create. Needs

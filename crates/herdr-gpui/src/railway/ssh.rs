@@ -1,7 +1,8 @@
 //! The `ssh` command that reaches a Railway free VM: `ssh railway.new` with
 //! one explicit identity. `-F /dev/null` skips the user's and the system's ssh
-//! config, so no alias, proxy, forward, or agent of theirs applies, and only the
-//! chosen key is offered. Setup and every reconnect build it the same way.
+//! config, so no alias, proxy, or forward of theirs applies. An agent can sign
+//! for the chosen key, whose public half `keys::fingerprint` checks before
+//! setup or reconnect builds this command.
 //!
 //! Railway documents no host key for `railway.new`, so the first one seen is
 //! pinned in a GUI-owned `known_hosts` and a later change is refused.

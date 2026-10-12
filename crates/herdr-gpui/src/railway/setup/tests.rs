@@ -2,6 +2,8 @@
 use super::*;
 use std::{cell::RefCell, fs};
 
+mod public_identity;
+
 /// Stand in for `ssh railway.new` without a Herdr probe that depends on this
 /// host: the appended remote command is the installer's probe or its installer
 /// (told apart by the URL only the installer contains), answered against a

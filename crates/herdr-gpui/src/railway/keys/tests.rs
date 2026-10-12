@@ -2,6 +2,8 @@
 use super::*;
 use crate::railway::tests::tools;
 
+mod public_identity;
+
 /// A key directory in Herdr's own folder, or in a `~/.ssh` under `root`.
 fn directory(root: &Path, user: bool) -> KeyDirectory {
     if user {
@@ -203,6 +205,11 @@ fn a_replaced_private_key_is_not_masked_by_its_old_public_half() {
     );
     // Swap in another private key while `first.pub` stays behind.
     fs::copy(&second, &first).unwrap();
+    assert!(matches!(
+        fingerprint(&first, &|| false),
+        Err(Error::PublicKeyMismatch(path)) if path == first
+    ));
+    fs::remove_file(public_path(&first)).unwrap();
     let after = fingerprint(&first, &|| false).unwrap();
     assert_eq!(after, other);
     assert_ne!(after, before);

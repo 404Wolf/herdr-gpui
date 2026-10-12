@@ -6,6 +6,8 @@ use crate::railway::{
 };
 use std::fs;
 
+mod public_identity;
+
 fn connect(dir: &Path, account: &Path, id: &str) -> Result<Bridge> {
     connect_saved(
         dir,
