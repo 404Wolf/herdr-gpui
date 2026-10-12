@@ -2521,6 +2521,7 @@ whose plain Ctrl editing shortcuts also work in the app's text fields.
 | New workspace / New worktree | Ctrl+Alt+Shift+N / Ctrl+Shift+N |
 | Copy / Paste | Ctrl+Shift+C / Ctrl+Shift+V |
 | Find / Command palette | Ctrl+Shift+F / Ctrl+Shift+P |
+| Resume palette | Ctrl+Alt+Shift+R |
 | Split right / Split down | Ctrl+Shift+D / Ctrl+Alt+Shift+D |
 | Close pane / Close tab | Ctrl+Shift+W / Ctrl+Alt+Shift+W |
 | Next / Previous tab | Ctrl+PageDown / Ctrl+PageUp |
@@ -2906,9 +2907,15 @@ Ctrl+Shift+U is left unbound for
   workspaces on connected hosts, agents and terminal panes, native GUI actions,
   configured daemon commands, and local project folders. Cmd-P opens the same
   palette on **Navigation**. Choose **All**, **Navigation**, **Commands**, or
-  **Projects**, or cycle filters with Tab / Shift-Tab without clearing the search.
-  Search ranks exact names, word prefixes, substrings, then fuzzy matches; host,
-  workspace, path, status, and command ID are searchable context. Navigation
+  **Projects**, or cycle filters with Ctrl-Tab / Ctrl-Shift-Tab (or Alt-] /
+  Alt-[) without clearing the search. Search is fzf's: every space-separated
+  term must match, and `'exact`, `^prefix`, `suffix$`, and `!negate` apply per
+  term; host, workspace, path, status, and command ID are searchable context.
+  Rows chosen often and recently rise among the matches for a typed query, and
+  the Projects filter lists the most frecent projects first before anything is
+  typed; that history stays on this machine in `palette-frecency.json`.
+  **Resume Palette** (Cmd-Shift-R, Ctrl+Alt+Shift+R on Linux) reopens the
+  palette with its last query, filters, and selected row. Navigation
   (Go To) also filters agents by the status the daemon reports, like Herdr's
   navigator: click **All agents**, **Blocked**, **Working**, **Idle**, or
   **Done**, or press Alt with Herdr's letters (`alt-b`, `alt-w`, `alt-i`,
@@ -2919,9 +2926,14 @@ Ctrl+Shift+U is left unbound for
   palette starts on **All agents**. Terminals without an agent appear only
   under **All agents**, and the other filters ignore the status. A keystroke
   already bound by `[keybindings]`, the daemon's `[keys]`, or
-  `navigate_workspace_up`/`_down` stays with that binding. Up / Down selects,
-  Enter or a click activates, and Escape or an outside click dismisses without
-  sending terminal input. Choosing a destination on another host switches to it.
+  `navigate_workspace_up`/`_down` stays with that binding. Up / Down, Tab /
+  Shift-Tab, Ctrl-N / Ctrl-P, and Ctrl-J / Ctrl-K select, Enter or a click
+  activates, and Escape or an outside click dismisses without sending terminal
+  input. Choosing a destination on another host switches to it. When the window
+  has room, Navigation shows a preview beside its list (Alt-P toggles it): the
+  selected pane's screen when its tab is the one its host is streaming, painted
+  from cells this client already holds, or else its directory, status, and
+  place. The preview never asks the daemon for anything.
   Double-Shift requires two short completed taps within 400 ms; shifted typing,
   mouse interaction, held Shift, other modifiers, composition, and modal dialogs
   do not trigger it. It is window-local, not a system-wide hotkey. Native browser
