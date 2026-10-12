@@ -15,7 +15,9 @@ use crate::cloud::install::Finished;
 use std::process::Command;
 
 /// The terminal size `ssh` reports to Railway. Railway needs a non-zero size.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(super) const COLUMNS: u16 = 80;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(super) const ROWS: u16 = 32;
 
 /// Run `session` (an `ssh` command that already ends in its remote command)

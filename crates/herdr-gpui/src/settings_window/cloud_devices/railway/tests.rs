@@ -108,6 +108,17 @@ fn setup_without_a_usable_key_starts_nothing(cx: &mut TestAppContext) {
     };
     cx.update(|_, cx| view.update(cx, |view, cx| view.setup_railway(cx)));
     assert!(message(cx).contains("Generate a key"));
+    // A path left in the hidden field is not used while "Generate" is chosen.
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            let card = view.railway_card.as_mut().unwrap();
+            card.path
+                .update(cx, |input, cx| input.set_text_selected("/old/key", cx));
+            card.message = None;
+            view.setup_railway(cx);
+        })
+    });
+    assert!(message(cx).contains("Generate a key"));
     // A name that is not one safe file name is explained, not generated.
     cx.update(|_, cx| {
         view.update(cx, |view, cx| {

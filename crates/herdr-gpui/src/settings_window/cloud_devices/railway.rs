@@ -261,7 +261,7 @@ impl SettingsWindow {
             return;
         };
         let text = card.path.read(cx).text().trim().to_owned();
-        if text.is_empty() {
+        if card.source != KeySource::Existing || text.is_empty() {
             card.message = Some("Generate a key, or enter the path of an existing one.".into());
             cx.notify();
             return;
