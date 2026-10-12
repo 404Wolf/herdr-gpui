@@ -45,3 +45,17 @@ fn a_page_request_succeeds_only_when_a_page_opened() {
     };
     assert!(message.contains("once its tunnel connects"), "{message}");
 }
+
+#[gpui::test]
+fn a_caller_whose_workspace_no_window_shows_gets_no_window(cx: &mut TestAppContext) {
+    let (_view, cx) = window(cx);
+    cx.cx.update(|cx| {
+        // A pane of a session the app does not show: the frontmost window
+        // belongs to another session, and must not be acted on.
+        let refused = window_for(&caller(Some("w_other_session")), cx).unwrap_err();
+        assert_eq!(error_code(&refused), Some(ErrorCode::WorkspaceNotFound));
+        assert!(window_for(&caller(Some("w3")), cx).is_ok());
+        // Outside any workspace, the frontmost window serves.
+        assert!(window_for(&caller(None), cx).is_ok());
+    });
+}
