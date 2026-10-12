@@ -23,6 +23,10 @@ pub(crate) enum Page {
     /// Sign in to Coder and add one of its workspaces as a device.
     #[cfg(feature = "coder")]
     AddCoder,
+    /// A cloud provider in the Add Device rail whose machines are set up in
+    /// Settings rather than in the dialog.
+    #[cfg(feature = "cloud")]
+    AddCloud(crate::cloud::CloudProvider),
     /// Picking a WSL distribution to save as a device.
     AddWsl,
     /// Confirming a saved WSL distribution should be forgotten.

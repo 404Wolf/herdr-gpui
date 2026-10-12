@@ -183,46 +183,17 @@ impl HerdrWindow {
         cx.notify();
     }
 
-    pub(in crate::menu) fn render_add_wsl(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(in crate::menu) fn render_add_wsl(
+        &self,
+        compact: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let theme = &self.theme;
-        let view = div()
-            .debug_selector(|| "wsl-setup-dialog".into())
-            .flex()
-            .flex_col()
-            .min_h_0()
-            .child(
-                div()
-                    .flex_none()
-                    .p(px(16.))
-                    .border_b_1()
-                    .border_color(rgb(theme.active))
-                    .flex()
-                    .items_center()
-                    .gap(px(12.))
-                    .child(
-                        div()
-                            .flex_1()
-                            .text_size(px(self.config.ui.size * 1.35))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("Add WSL Distribution"),
-                    )
-                    .child(
-                        div()
-                            .id("wsl-setup-close")
-                            .debug_selector(|| "wsl-setup-close".into())
-                            .px_2()
-                            .py_1()
-                            .cursor_pointer()
-                            .rounded(px(crate::config::corners::CONTROL))
-                            .hover(|s| s.bg(rgb(theme.active)))
-                            .child("Close")
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.dismiss_menu(window, cx)),
-                            ),
-                    ),
-            );
+        let frame = |pane: Div, cx: &mut Context<Self>| {
+            self.add_device_frame("wsl-setup-dialog", "wsl-setup-close", compact, pane, cx)
+        };
         let Some(setup) = &self.menu.wsl_setup else {
-            return view;
+            return frame(div(), cx);
         };
         let saved = self.saved_distros();
         let mut list = div()
@@ -349,7 +320,16 @@ impl HerdrWindow {
                     })
                     .on_click(cx.listener(|this, _, window, cx| this.submit_add_wsl(window, cx))),
             );
-        view.child(body).child(footer)
+        frame(
+            div()
+                .flex_1()
+                .min_h_0()
+                .flex()
+                .flex_col()
+                .child(body)
+                .child(footer),
+            cx,
+        )
     }
 
     /// Ask before forgetting a saved distribution.

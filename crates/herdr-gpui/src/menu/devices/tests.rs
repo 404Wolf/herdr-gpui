@@ -17,6 +17,8 @@ mod cloud_providers;
 mod host_key;
 mod key_login;
 mod local_network;
+#[cfg(feature = "cloud")]
+mod rail;
 
 #[test]
 fn only_a_present_herdr_is_saved_without_a_terminal() {

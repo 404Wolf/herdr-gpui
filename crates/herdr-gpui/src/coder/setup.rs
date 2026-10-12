@@ -1,4 +1,4 @@
-//! The blocking jobs behind "Add Coder Workspace": sign in, list what the
+//! The blocking jobs behind Add Device's Coder form: sign in, list what the
 //! account can use, create or attach a workspace, wait for it, check for (and
 //! on approval install) Herdr, and save the device. Each runs on a worker.
 

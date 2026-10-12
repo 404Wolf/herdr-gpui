@@ -1,4 +1,4 @@
-//! "Add Coder Workspace": sign in to the configured deployment and pick a
+//! Add Device's Coder form: sign in to the configured deployment and pick a
 //! template and preset (or an existing workspace). Creating hands the work to
 //! a window-level job (see `cloud::Jobs`) and closes the dialog at once, so a
 //! slow build never blocks the next one. The dialog's own jobs (sign-in,
@@ -546,46 +546,46 @@ impl HerdrWindow {
         section
     }
 
-    pub(in crate::menu) fn render_add_coder(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(in crate::menu) fn render_add_coder(
+        &self,
+        compact: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let theme = &self.theme;
         let Some(wizard) = &self.menu.coder else {
-            return div();
+            return self.add_device_frame(
+                "coder-setup-dialog",
+                "coder-setup-close",
+                compact,
+                div(),
+                cx,
+            );
         };
-        let header = div()
+        // The deployment, and the account once signed in, head the pane now
+        // that the dialog's title is Add Device's own.
+        let account = div()
             .flex_none()
-            .p(px(16.))
-            .border_b_1()
-            .border_color(rgb(theme.active))
             .flex()
             .items_center()
-            .gap(px(12.))
+            .gap(px(8.))
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
-                    .child(
-                        div()
-                            .text_size(px(self.config.ui.size * 1.35))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("Add Coder Workspace"),
-                    )
-                    .child(
-                        div()
-                            .truncate()
-                            .text_size(px(self.config.ui.size * 0.85))
-                            .text_color(rgb(theme.muted))
-                            .child(match &wizard.account {
-                                Some(account) => {
-                                    format!("{} · {}", account.user.username, wizard.settings.base)
-                                }
-                                None => wizard.settings.base.clone(),
-                            }),
-                    ),
+                    .truncate()
+                    .text_color(rgb(theme.muted))
+                    .child(match &wizard.account {
+                        Some(account) => {
+                            format!("{} · {}", account.user.username, wizard.settings.base)
+                        }
+                        None => wizard.settings.base.clone(),
+                    }),
             )
             .when(wizard.phase == Phase::Choose, |header| {
                 header.child(
                     div()
                         .id("coder-sign-out")
+                        .flex_none()
                         .px_2()
                         .py_1()
                         .cursor_pointer()
@@ -594,18 +594,7 @@ impl HerdrWindow {
                         .child("Sign out")
                         .on_click(cx.listener(|this, _, _, cx| this.coder_sign_out(cx))),
                 )
-            })
-            .child(
-                div()
-                    .id("coder-setup-close")
-                    .px_2()
-                    .py_1()
-                    .cursor_pointer()
-                    .rounded(px(crate::config::corners::CONTROL))
-                    .hover(|s| s.bg(rgb(theme.active)))
-                    .child("Close")
-                    .on_click(cx.listener(|this, _, window, cx| this.dismiss_menu(window, cx))),
-            );
+            });
         let mut body = div()
             .id("coder-setup-body")
             .min_h_0()
@@ -613,7 +602,8 @@ impl HerdrWindow {
             .p(px(16.))
             .flex()
             .flex_col()
-            .gap(px(12.));
+            .gap(px(12.))
+            .child(account);
         let removing = matches!(
             (&wizard.choice, &wizard.account),
             (Some(Choice::Existing(id)), Some(account)) if account.saved.contains(id)
@@ -681,12 +671,11 @@ impl HerdrWindow {
             ),
             Phase::Checking | Phase::Loading => ("Working…", false),
         };
-        div()
-            .debug_selector(|| "coder-setup-dialog".into())
+        let pane = div()
+            .flex_1()
+            .min_h_0()
             .flex()
             .flex_col()
-            .min_h_0()
-            .child(header)
             .child(body)
             .child(
                 div()
@@ -717,7 +706,8 @@ impl HerdrWindow {
                                 }
                             })),
                     ),
-            )
+            );
+        self.add_device_frame("coder-setup-dialog", "coder-setup-close", compact, pane, cx)
     }
 
     pub(in crate::menu) fn coder_key(
