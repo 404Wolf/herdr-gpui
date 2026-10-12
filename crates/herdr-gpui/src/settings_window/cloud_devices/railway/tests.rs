@@ -139,10 +139,8 @@ fn setup_without_a_usable_key_starts_nothing(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn a_generated_key_fills_the_path_a_refresh_keeps_a_change_and_removal_waits_for_setup(
-    cx: &mut TestAppContext,
-) {
-    let ((view, cx), main) = open(cx);
+fn a_generated_key_fills_the_path_and_a_refresh_keeps_a_change(cx: &mut TestAppContext) {
+    let ((view, cx), _main) = open(cx);
     show(&view, vec![device(0)], cx);
     // A generated key becomes the key to set up with.
     cx.update(|_, cx| {
@@ -176,12 +174,16 @@ fn a_generated_key_fills_the_path_a_refresh_keeps_a_change_and_removal_waits_for
             assert!(card.job.is_some() && card.changing);
         })
     });
+}
+
+// Cloud jobs are unavailable on Windows, so there is no setup to wait for.
+#[cfg(unix)]
+#[gpui::test]
+fn removal_waits_for_a_running_setup(cx: &mut TestAppContext) {
+    let ((view, cx), main) = open(cx);
+    show(&view, vec![device(0)], cx);
     // With a setup running, a removal is refused and starts nothing.
     cx.update(|_, cx| {
-        view.update(cx, |view, _| {
-            let card = view.railway_card.as_mut().unwrap();
-            (card.job, card.changing) = (None, false);
-        });
         let started = main
             .update(cx, |main, _, cx| {
                 main.start_cloud_job(
