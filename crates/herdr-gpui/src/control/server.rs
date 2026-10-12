@@ -151,13 +151,14 @@ pub(super) fn window_for(
                 }
             }
         }
-        // A window of the caller's own daemon that lists no workspace, such
-        // as one detached from it, is still the caller's: `window reconnect`
-        // must reach it.
+        // A window showing the caller's own daemon but listing no workspace,
+        // such as one detached from it, is still the caller's: `window
+        // reconnect` must reach it. Only when that daemon is the shown host:
+        // window-wide commands act on the shown host.
         if let Some(daemon) = target.daemon {
             let own = windows.iter().find(|handle| {
                 handle
-                    .read_with(cx, |view, _| view.connects_to(daemon))
+                    .read_with(cx, |view, _| view.shows_daemon(daemon))
                     .unwrap_or(false)
             });
             if let Some(handle) = own {
@@ -258,16 +259,14 @@ fn keep_undelivered(request: super::protocol::FeedbackRequest, text: String, cx:
     let Some(daemon) = request.daemon_socket else {
         return;
     };
-    cx.default_global::<Feedback>().keep(
-        crate::browser::Batch {
+    cx.default_global::<Feedback>()
+        .keep_again(crate::browser::Batch {
             target: FeedbackKey {
                 scope: Scope::local(Path::new(&daemon)),
                 pane_id: request.pane_id,
             },
             text,
-        },
-        None,
-    );
+        });
 }
 
 /// Starts answering requests. A second app instance leaves the first one's

@@ -53,12 +53,15 @@ impl HerdrWindow {
             })
     }
 
-    /// Whether one of this window's hosts is the daemon at `daemon`, shown or
-    /// not, connected or not.
-    pub(crate) fn connects_to(&self, daemon: &std::path::Path) -> bool {
-        self.endpoints.iter().any(|endpoint| {
-            endpoint.connection.target.socket_path().ok().as_deref() == Some(daemon)
-        })
+    /// Whether the host this window shows is the daemon at `daemon`, listing
+    /// workspaces or not, connected or not. Window-wide commands act on the
+    /// shown host, so only that one may stand for the caller's daemon.
+    pub(crate) fn shows_daemon(&self, daemon: &std::path::Path) -> bool {
+        self.endpoints
+            .get(self.selected_endpoint)
+            .is_some_and(|endpoint| {
+                endpoint.connection.target.socket_path().ok().as_deref() == Some(daemon)
+            })
     }
 
     /// Opens the tab a control request asks for, if this window shows its
