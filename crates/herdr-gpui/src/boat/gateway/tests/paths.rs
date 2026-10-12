@@ -2,18 +2,27 @@ use super::*;
 
 #[test]
 fn quotes_paths_and_escapes_openssh_tokens() {
-    assert_eq!(
-        quoted_path(Path::new("/tmp/boat keys %u/key")).unwrap(),
-        "\"/tmp/boat keys %%u/key\""
-    );
-    for path in [
-        "relative",
-        "/tmp/\"key",
-        "/tmp/\nkey",
-        "/tmp/\rkey",
-        "/tmp/\0key",
-    ] {
-        assert!(matches!(quoted_path(Path::new(path)), Err(Error::Gateway)));
+    let (root, path, expected) = if cfg!(windows) {
+        (
+            "C:/tmp/",
+            "C:/tmp/boat keys %u/key",
+            "\"C:/tmp/boat keys %%u/key\"",
+        )
+    } else {
+        (
+            "/tmp/",
+            "/tmp/boat keys %u/key",
+            "\"/tmp/boat keys %%u/key\"",
+        )
+    };
+    assert_eq!(quoted_path(Path::new(path)).unwrap(), expected);
+    assert!(matches!(
+        quoted_path(Path::new("relative")),
+        Err(Error::Gateway)
+    ));
+    for name in ["\"key", "\nkey", "\rkey", "\0key"] {
+        let path = format!("{root}{name}");
+        assert!(matches!(quoted_path(Path::new(&path)), Err(Error::Gateway)));
     }
 }
 
