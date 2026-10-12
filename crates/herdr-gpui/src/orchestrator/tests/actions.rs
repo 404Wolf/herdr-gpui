@@ -4,6 +4,7 @@ use crate::teleport::{AgentKind, Host};
 use herdr_client::ConnectTarget;
 use std::{os::unix::fs::PermissionsExt, path::Path, process::Command, sync::atomic::AtomicBool};
 
+mod agent_name;
 mod parent;
 
 /// A home whose `herdr` logs each call and answers as Herdr would. A call
@@ -137,7 +138,10 @@ fn dispatch_creates_the_worktree_starts_the_agent_and_records_the_run() {
     assert!(calls[1].starts_with("worktree create --workspace w1 --branch 377-icons --base "));
     assert!(calls[1].ends_with(" --no-focus"));
     let name = calls[2].split(' ').nth(2).unwrap();
-    assert!(name.starts_with("herdr-gpui-") && name.len() == "herdr-gpui-".len() + 23);
+    assert!(
+        name.starts_with("herdr-gpui-") && name.len() == 32,
+        "{name}"
+    );
     assert_eq!(
         calls[2],
         format!("agent start {name} --kind claude --pane p9 --timeout 90000")
