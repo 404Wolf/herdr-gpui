@@ -49,13 +49,14 @@ pub(super) struct Found<'a> {
     pub workspace: &'a ClientShellWorkspace,
 }
 
-/// Finds the caller's workspace in `view`: on the caller's own daemon first,
-/// then on any endpoint showing a workspace of that ID.
+/// Finds the caller's workspace in `view`: on the caller's own daemon only
+/// when it names one, else on any endpoint showing a workspace of that ID.
 pub(super) fn find<'a>(view: &'a HerdrWindow, caller: &Caller) -> Result<Found<'a>, Response> {
     let target = target(caller);
-    let (index, id) = [true, false]
-        .into_iter()
-        .find_map(|strict| view.control_target(&target, strict))
+    let (index, id) = target
+        .strictness()
+        .iter()
+        .find_map(|strict| view.control_target(&target, *strict))
         .ok_or_else(|| match &caller.workspace_id {
             Some(id) => Response::error(
                 ErrorCode::WorkspaceNotFound,

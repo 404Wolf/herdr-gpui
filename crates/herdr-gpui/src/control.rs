@@ -62,6 +62,20 @@ pub(crate) struct Target<'a> {
     pub pane: Option<&'a str>,
 }
 
+#[cfg(unix)]
+impl Target<'_> {
+    /// How strictly a request's workspace is matched, strict first. A caller
+    /// that names its daemon is matched on that daemon only: another
+    /// session's workspace of the same ID must never be changed for it.
+    pub(crate) fn strictness(&self) -> &'static [bool] {
+        if self.daemon.is_some() {
+            &[true]
+        } else {
+            &[true, false]
+        }
+    }
+}
+
 /// Where a window opened a requested tab.
 #[cfg(unix)]
 pub(crate) enum Placed {

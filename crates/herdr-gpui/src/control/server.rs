@@ -127,10 +127,12 @@ pub(super) fn window_for(
     }
     if caller.workspace_id.is_some() {
         let target = target(caller);
-        for strict in [true, false] {
+        for strict in target.strictness() {
             for handle in &windows {
                 let shows = handle
-                    .read_with(cx, |view, _| view.control_target(&target, strict).is_some())
+                    .read_with(cx, |view, _| {
+                        view.control_target(&target, *strict).is_some()
+                    })
                     .unwrap_or(false);
                 if shows {
                     return Ok(*handle);

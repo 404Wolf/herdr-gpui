@@ -10,7 +10,8 @@ fn caller(workspace: Option<&str>) -> Caller {
     Caller {
         pane_id: None,
         workspace_id: workspace.map(str::to_owned),
-        daemon_socket: Some("/unused-layout-test.sock".into()),
+        // No daemon: one the window does not show would refuse the request.
+        daemon_socket: None,
         window: None,
     }
 }

@@ -58,9 +58,10 @@ fn destination(caller: &Caller, cx: &mut App) -> Result<Destination, Response> {
     let target = target(caller);
     let found = handle
         .read_with(cx, |view, _| {
-            [true, false]
-                .into_iter()
-                .find_map(|strict| view.control_target(&target, strict))
+            target
+                .strictness()
+                .iter()
+                .find_map(|strict| view.control_target(&target, *strict))
         })
         .map_err(|_| closed())?;
     let (endpoint, workspace) = found.ok_or_else(|| {
