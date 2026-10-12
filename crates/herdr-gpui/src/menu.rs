@@ -27,6 +27,7 @@ mod workspace_close;
 mod worktree_note;
 mod worktree_open;
 mod worktree_render;
+mod worktree_shortcut;
 mod worktree_source;
 
 #[cfg(test)]
@@ -50,6 +51,7 @@ pub(crate) use {
     page::{Page, WorkspaceAction},
     state::{MenuState, Removal},
     version_mismatch::Notice as VersionNotice,
+    worktree_shortcut::WorktreeShortcut,
     worktree_source::WorktreeSource,
 };
 

@@ -2862,10 +2862,16 @@ Ctrl+Shift+U is left unbound for
   chord or, when nothing is bound to it, is dropped, as in the TUI. Typing the
   prefix twice sends it to the terminal, and Escape cancels. Chords work from
   a menu's or dialog's text field too: the chord closes it and runs. Every
-  daemon action has a GUI command except `detach` (closing the window already
-  detaches), `open_worktree` and
-  `remove_worktree` (offered from the workspace menu), and the
-  `navigate_pane_*` keys (Go To has no pane cursor). `workspace_picker` and
+  daemon action has a GUI command except the `navigate_pane_*` keys (Go To
+  has no pane cursor). `open_worktree` and `remove_worktree` act on the
+  focused workspace, as in the TUI: the first opens its Open worktree...
+  dialog (a linked checkout's through its repository's main checkout), the
+  second its Delete worktree checkout confirmation, only for a linked
+  worktree. When neither applies (a main checkout, a workspace outside Git,
+  nothing focused, or no connection) nothing opens and a flash says why.
+  Herdr leaves both unbound, and so do the GUI's `open_worktree` and
+  `remove_worktree` commands, which `[keybindings]` and the palette offer
+  too. `workspace_picker` and
   `goto` open Go To, where `navigate_workspace_up`/`_down` move the selection
   when the key cannot be typed into its search. `split_vertical` and
   `split_horizontal` are Split Right and Split Down. As in the TUI,

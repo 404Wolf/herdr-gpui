@@ -4,11 +4,12 @@
 //! unparseable entry, a `hyper` modifier, an action with no GUI command) is
 //! skipped rather than turned into a GUI config error.
 //!
-//! Herdr actions with no GUI command, each for a reason:
-//! - `open_worktree` and `remove_worktree`: the workspace menu offers both,
-//!   but each needs a menu row as the target, not just the focused one.
-//! - `navigate_pane_*`: the workspace picker is a search field here, with no
-//!   pane cursor to move.
+//! `open_worktree` and `remove_worktree` act on the focused workspace, as in
+//! the TUI, by opening the dialog that workspace's menu row would open; when
+//! it has no such row, a flash says why.
+//!
+//! Herdr's `navigate_pane_*` keys have no GUI command: the workspace picker
+//! is a search field here, with no pane cursor to move.
 
 use crate::{Error, Result, controls::Command};
 use gpui::{Keystroke, Modifiers};
@@ -76,6 +77,13 @@ const ACTIONS: &[(&str, Target, &str)] = &[
         "new_worktree",
         Target::Command(Command::NewWorktree),
         "prefix+shift+g",
+    ),
+    // Herdr leaves both unbound.
+    ("open_worktree", Target::Command(Command::OpenWorktree), ""),
+    (
+        "remove_worktree",
+        Target::Command(Command::RemoveWorktree),
+        "",
     ),
     (
         "workspace_picker",
