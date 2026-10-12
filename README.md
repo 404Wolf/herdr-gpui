@@ -12,6 +12,7 @@
   <a href="https://herdrui.dev"><b>herdrui.dev</b></a> ·
   <a href="https://github.com/penso/herdr-gpui/releases">Releases</a> ·
   <a href="docs/updating.md">App updates</a> ·
+  <a href="docs/cli.md">Command line</a> ·
   <a href="crates/herdr-gpui/README.md">GUI scope &amp; configuration</a> ·
   <a href="crates/herdr-gpui/PERFORMANCE.md">Performance report</a> ·
   <a href="AGENTS.md">Contributing</a> ·
@@ -293,7 +294,9 @@ running.
 Herdr has no browser panes, so web pages shown beside a workspace's terminals
 belong to the GUI alone. Agents in your panes open them with
 `herdr-gpui browser open URL`, which reaches the running app over a local
-socket of its own.
+socket of its own. The same [command line](docs/cli.md) reaches the rest of
+what only the GUI keeps: its windows and tabs, worktree notes, checkpoints,
+forwarded ports, and its settings.
 
 ## Audio Test
 
