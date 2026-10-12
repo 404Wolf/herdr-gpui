@@ -17,6 +17,7 @@ mod find;
 mod flash;
 pub(crate) use commands::run_window_command;
 pub(crate) use flash::Flash;
+mod function_keys;
 mod image_source;
 mod images;
 mod input;
@@ -149,6 +150,9 @@ pub(crate) struct HerdrWindow {
     pub(crate) pending_images: Vec<images::PendingImage>,
     pub(crate) pending_input: pending_input::PendingInput,
     pub(crate) held_keys: crate::terminal::HeldKeys,
+    /// The key code, and Shift, of the key being handled: AppKit's current
+    /// event, which names a function key macOS delivered without its name.
+    pub(crate) key_press: fn() -> Option<(u16, bool)>,
     pub(crate) file_transfer: Option<transfers::FileTransfer>,
     /// The terminal cells the pointer is choosing. A release copies them and
     /// clears this, so a highlight only ever belongs to a drag in progress.
@@ -825,6 +829,7 @@ impl HerdrWindow {
             pending_images: Vec::new(),
             pending_input: Default::default(),
             held_keys: Default::default(),
+            key_press: function_keys::current_press,
             file_transfer: None,
             selection: None,
             selection_follow: Default::default(),
