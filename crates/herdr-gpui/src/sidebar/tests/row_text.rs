@@ -10,6 +10,7 @@ fn section_headings_use_the_configured_sidebar_font_size() {
             size,
             fallbacks: None,
             line_height_multiple: None,
+            weight: gpui::FontWeight::NORMAL,
         };
         for label in ["spaces", "agents"] {
             let mut heading = header(

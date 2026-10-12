@@ -329,20 +329,12 @@ impl TerminalPainter {
     /// Glyphs for one cell symbol. Color is left to `paint_glyphs`, so one
     /// shape serves every color the symbol is drawn in.
     fn shape(&self, font: &Font, style: usize, symbol: &str, window: &Window) -> ShapedLine {
-        let mut font = font.clone();
-        let modifier = glyphs::style_modifier(style);
-        if modifier & BOLD != 0 {
-            font.weight = FontWeight::BOLD;
-        }
-        if modifier & ITALIC != 0 {
-            font.style = FontStyle::Italic;
-        }
         window.text_system().shape_line(
             SharedString::from(symbol.to_owned()),
             px(self.font_size),
             &[TextRun {
                 len: symbol.len(),
-                font,
+                font: glyphs::styled_font(font, style),
                 color: Hsla::default(),
                 background_color: None,
                 underline: None,

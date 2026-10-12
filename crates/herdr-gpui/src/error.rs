@@ -706,6 +706,8 @@ pub enum Error {
     InvalidFontSize(&'static str),
     #[error("{0}.line_height must be a finite number between 1 and 2 times the font size")]
     InvalidLineHeight(&'static str),
+    #[error("{0}.weight must be a weight name such as \"medium\" or a number from 100 to 900")]
+    InvalidFontWeight(&'static str),
     #[error("{0}.fallback families must not be empty")]
     EmptyFontFallback(&'static str),
     #[error("{0}.fallback must list at most 8 families")]
