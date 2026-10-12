@@ -66,6 +66,7 @@ pub(crate) struct Call<T> {
 impl Request {
     /// How long the app may take to answer, beyond the usual bound: some
     /// requests wait for the user, a page, or an event on purpose.
+    #[cfg(any(unix, test))]
     pub(crate) fn wait_seconds(&self) -> u64 {
         let wait = match self {
             Self::Feedback(request) => request.wait_seconds,
@@ -233,6 +234,7 @@ impl Response {
         }
     }
 
+    #[cfg(unix)]
     pub(crate) fn done(message: impl Into<String>) -> Self {
         Self::Done {
             message: message.into(),

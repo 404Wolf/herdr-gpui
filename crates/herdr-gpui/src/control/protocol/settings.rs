@@ -7,8 +7,10 @@ use serde::{Deserialize, Serialize};
 
 /// Listing installed fonts or integrations, or asking for the latest
 /// release, can take a few seconds.
+#[cfg(any(unix, test))]
 const LIST_WAIT_SECONDS: u64 = 15;
 /// Saving a theme or a font waits for the file lock other saves may hold.
+#[cfg(any(unix, test))]
 const SAVE_WAIT_SECONDS: u64 = 10;
 /// The longest `caffeine on --for`: a day.
 pub(crate) const MAX_CAFFEINE_SECONDS: u64 = 24 * 60 * 60;
@@ -53,6 +55,7 @@ pub(crate) enum SettingsOp {
 }
 
 impl SettingsOp {
+    #[cfg(any(unix, test))]
     pub(crate) fn wait_seconds(&self) -> u64 {
         match self {
             Self::Fonts | Self::Integrations | Self::CheckUpdate => LIST_WAIT_SECONDS,

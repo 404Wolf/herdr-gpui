@@ -27,6 +27,7 @@ pub(crate) enum EventsOp {
 }
 
 impl EventsOp {
+    #[cfg(any(unix, test))]
     pub(crate) fn wait_seconds(&self) -> u64 {
         match self {
             Self::Poll { wait_seconds, .. } | Self::Wait { wait_seconds, .. } => *wait_seconds,

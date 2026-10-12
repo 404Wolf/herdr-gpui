@@ -3,8 +3,10 @@
 use serde::{Deserialize, Serialize};
 
 /// How long a pull request's comments may take to load.
+#[cfg(any(unix, test))]
 pub(crate) const COMMENTS_WAIT_SECONDS: u64 = 20;
 /// How long `ports open` may wait for a new forward to listen.
+#[cfg(any(unix, test))]
 pub(crate) const FORWARD_WAIT_SECONDS: u64 = 20;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,6 +45,7 @@ pub(crate) enum HostOp {
 }
 
 impl HostOp {
+    #[cfg(any(unix, test))]
     pub(crate) fn wait_seconds(&self) -> u64 {
         match self {
             Self::PrComments => COMMENTS_WAIT_SECONDS,

@@ -314,6 +314,7 @@ impl FanOut {
 
     /// Pick these agents, each this many times, once the host's agents are
     /// known. Only picks: the user still starts the fan-out.
+    #[cfg(any(unix, test))]
     pub(crate) fn want(&mut self, agents: Vec<(AgentKind, usize)>) {
         self.wanted = agents;
         self.pick_wanted();

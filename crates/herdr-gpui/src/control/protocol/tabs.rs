@@ -3,9 +3,11 @@
 use serde::{Deserialize, Serialize};
 
 /// How long a page may take to hand back its text or picture.
+#[cfg(any(unix, test))]
 pub(crate) const PAGE_WAIT_SECONDS: u64 = 15;
 /// How long the window may take to switch to the caller's workspace before
 /// opening a tab there.
+#[cfg(any(unix, test))]
 pub(crate) const ARRIVE_WAIT_SECONDS: u64 = 5;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,6 +68,7 @@ pub(crate) enum TabOp {
 }
 
 impl TabOp {
+    #[cfg(any(unix, test))]
     pub(crate) fn wait_seconds(&self) -> u64 {
         match self {
             Self::Text { .. } | Self::Screenshot { .. } => PAGE_WAIT_SECONDS,
@@ -100,6 +103,7 @@ impl TabKind {
     }
 
     /// Whether a page shows it: what `browser list` keeps.
+    #[cfg(any(unix, test))]
     pub(crate) fn is_page(self) -> bool {
         matches!(self, Self::Web | Self::File)
     }
