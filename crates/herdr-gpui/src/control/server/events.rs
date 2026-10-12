@@ -27,7 +27,8 @@ struct Seen {
     windows: Vec<u64>,
     active: Option<u64>,
     tabs: BTreeMap<u64, String>,
-    kept: usize,
+    /// Kept batches by number, with the pane each is for.
+    kept: Vec<(u64, String)>,
     notes: u64,
     /// `(window, host)` to status.
     hosts: BTreeMap<(u64, String), String>,
@@ -94,13 +95,16 @@ fn look(cx: &mut App) -> Seen {
             .collect();
     }
     if let Some(feedback) = cx.try_global::<crate::browser::Feedback>() {
-        seen.kept = feedback.kept().count();
+        seen.kept = feedback
+            .kept()
+            .map(|(added, target)| (added, target.pane_id.clone()))
+            .collect();
     }
     seen.notes = crate::worktree_notes::Notes::of(cx).map_or(0, |notes| notes.revision());
     seen
 }
 
-fn compare(log: &mut Log, before: &Seen, now: &Seen, cx: &App) {
+fn compare(log: &mut Log, before: &Seen, now: &Seen) {
     for id in now.windows.iter().filter(|id| !before.windows.contains(id)) {
         log.push(EventKind::WindowOpened, id.to_string(), None);
     }
@@ -130,12 +134,11 @@ fn compare(log: &mut Log, before: &Seen, now: &Seen, cx: &App) {
             );
         }
     }
-    if now.kept > before.kept
-        && let Some(target) = cx
-            .try_global::<crate::browser::Feedback>()
-            .and_then(|feedback| feedback.kept().last())
-    {
-        log.push(EventKind::Feedback, target.pane_id.clone(), None);
+    // Every batch kept since the last tick, even when the queue was full
+    // and dropped an older one to make room.
+    let newest = before.kept.last().map_or(0, |(added, _)| *added);
+    for (_, pane) in now.kept.iter().filter(|(added, _)| *added > newest) {
+        log.push(EventKind::Feedback, pane.clone(), None);
     }
     if now.notes != before.notes {
         log.push(EventKind::Note, now.notes.to_string(), None);
@@ -160,7 +163,7 @@ pub(super) fn record(cx: &mut App) {
     if let Some(before) = log.seen.take()
         && before != now
     {
-        compare(&mut log, &before, &now, cx);
+        compare(&mut log, &before, &now);
     }
     log.seen = Some(now);
     *cx.global_mut::<Log>() = log;

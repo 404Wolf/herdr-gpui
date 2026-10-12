@@ -26,7 +26,10 @@ pub(crate) struct Batch {
 
 #[derive(Default)]
 pub(crate) struct Feedback {
-    kept: VecDeque<(Batch, Option<Arc<()>>)>,
+    /// Each batch with its pending marker and its number in `added` order.
+    kept: VecDeque<(Batch, Option<Arc<()>>, u64)>,
+    /// Batches kept so far, which numbers the next one.
+    added: u64,
     /// Panes whose agents are waiting in `browser feedback --wait`.
     waiting: Vec<FeedbackKey>,
 }
@@ -53,7 +56,8 @@ impl Feedback {
         if self.kept.len() >= MAX_KEPT {
             self.kept.pop_front();
         }
-        self.kept.push_back((batch, pending));
+        self.added += 1;
+        self.kept.push_back((batch, pending, self.added));
     }
 
     /// Everything kept for this daemon and pane, oldest first, joined into one text.
@@ -62,26 +66,30 @@ impl Feedback {
         let (taken, kept): (Vec<_>, Vec<_>) = self
             .kept
             .drain(..)
-            .partition(|(batch, _)| &batch.target == target);
+            .partition(|(batch, ..)| &batch.target == target);
         self.kept = kept.into();
         (!taken.is_empty()).then(|| {
             taken
                 .into_iter()
-                .map(|(batch, _)| batch.text)
+                .map(|(batch, ..)| batch.text)
                 .collect::<Vec<_>>()
                 .join("\n")
         })
     }
 
-    /// Whom the kept batches are for, oldest first.
+    /// Whom the kept batches are for, oldest first, each with its number:
+    /// numbers only grow, so a reader tells new batches from old ones even
+    /// once the oldest are dropped.
     #[cfg(unix)]
-    pub(crate) fn kept(&self) -> impl Iterator<Item = &FeedbackKey> {
-        self.kept.iter().map(|(batch, _)| &batch.target)
+    pub(crate) fn kept(&self) -> impl Iterator<Item = (u64, &FeedbackKey)> {
+        self.kept
+            .iter()
+            .map(|(batch, _, added)| (*added, &batch.target))
     }
 
     #[cfg(any(unix, test))]
     pub(crate) fn has(&self, target: &FeedbackKey) -> bool {
-        self.kept.iter().any(|(batch, _)| &batch.target == target)
+        self.kept.iter().any(|(batch, ..)| &batch.target == target)
     }
 }
 
