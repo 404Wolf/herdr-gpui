@@ -30,12 +30,15 @@ use std::{
 /// connection bound keeps the real number lower.
 const MAX_WATCHES: usize = 16;
 
+/// Looks for a parked request's answer; `None` keeps it waiting.
+type Check = Box<dyn FnMut(&mut App) -> Option<Response>>;
+
 /// A request answered once `check` has an answer, or with `expired` when
 /// `until` passes or the caller hangs up.
 pub(super) struct Watch {
     incoming: socket::Incoming,
     until: Instant,
-    check: Box<dyn FnMut(&mut App) -> Option<Response>>,
+    check: Check,
     expired: Response,
 }
 
