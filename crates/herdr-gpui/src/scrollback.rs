@@ -9,7 +9,7 @@ use crate::terminal_painter::{Highlight, Tint};
 use herdr_client::{
     ClientEvent,
     protocol::PaneSurfacePane,
-    scrollback::{ScrollbackResponse, TextRange, decode_response},
+    scrollback::{ScrollbackResponse, TextPoint, TextRange, decode_response},
 };
 use std::collections::VecDeque;
 
@@ -207,6 +207,19 @@ pub(crate) fn match_count(total: u64, current_global: Option<u64>) -> String {
         (0, _) => "No results".into(),
         (total, Some(index)) => format!("{} of {total}", index.saturating_add(1)),
         (total, None) => format!("{total} found"),
+    }
+}
+
+/// The cell just before `point` in reading order. The daemon only compares
+/// points, so a column past the row's end is a valid stand-in for "the end of
+/// the previous row".
+pub(crate) fn before(point: TextPoint) -> TextPoint {
+    match point.col.checked_sub(1) {
+        Some(col) => TextPoint { col, ..point },
+        None => TextPoint {
+            row: point.row.saturating_sub(1),
+            col: u16::MAX,
+        },
     }
 }
 

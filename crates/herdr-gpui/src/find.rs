@@ -9,7 +9,7 @@
 pub(crate) mod memory;
 
 use crate::{
-    scrollback::{match_count, push_matches, viewport_top},
+    scrollback::{before, match_count, push_matches, viewport_top},
     terminal_painter::Highlight,
 };
 use herdr_client::{
@@ -318,19 +318,6 @@ impl Search {
         let mut highlights = Vec::new();
         push_matches(pane, &results.matches, results.current, &mut highlights);
         highlights
-    }
-}
-
-/// The cell just before `point` in reading order. The daemon only compares
-/// points, so a column past the row's end is a valid stand-in for "the end of
-/// the previous row".
-fn before(point: TextPoint) -> TextPoint {
-    match point.col.checked_sub(1) {
-        Some(col) => TextPoint { col, ..point },
-        None => TextPoint {
-            row: point.row.saturating_sub(1),
-            col: u16::MAX,
-        },
     }
 }
 

@@ -10,7 +10,7 @@
 //! the socket.
 
 use crate::{
-    scrollback::{match_count, push_matches, push_range, viewport_top},
+    scrollback::{before, match_count, push_matches, push_range, viewport_top},
     terminal_painter::{Highlight, Tint},
 };
 use herdr_client::{
@@ -156,15 +156,26 @@ enum Mark {
     Line(u32),
 }
 
+/// Why a search is sent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SearchKind {
+    /// A query submitted from the prompt.
+    New,
+    /// `n` or `N`, which keep the direction the query was entered with, so
+    /// `N` does not turn `n` around.
+    Repeat,
+    /// The same search again, from just before the current match, because
+    /// the pane changed since it was found and `y` is about to copy it.
+    Refresh,
+}
+
 /// A request for the daemon, built from the cursor as it is now.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Request {
     Motion(CopyMotionParams),
-    /// A repeated search (`n`, `N`) keeps the direction the query was
-    /// entered with, so `N` does not turn `n` around.
     Search {
         params: CopySearchParams,
-        repeat: bool,
+        kind: SearchKind,
     },
 }
 
@@ -180,8 +191,13 @@ pub(crate) enum Outcome {
     Prompt(SearchDirection),
     /// Ask the daemon.
     Send(Request),
-    /// Read this range and copy it, then leave copy mode.
-    Copy(TextRange),
+    /// Read this range and copy it, then leave copy mode. A search match is
+    /// read at the revision it was found in, so the daemon refuses it rather
+    /// than copy other text if the pane has changed since.
+    Copy {
+        range: TextRange,
+        content_revision: Option<u64>,
+    },
     /// Leave copy mode without copying.
     Exit,
 }
@@ -193,7 +209,7 @@ enum Operation {
     Search {
         query: String,
         direction: SearchDirection,
-        repeat: bool,
+        kind: SearchKind,
     },
 }
 
@@ -215,6 +231,11 @@ struct Found {
     current: Option<usize>,
     current_global: Option<u64>,
     total: u64,
+    /// The pane's revision the matches were found in.
+    content_revision: u64,
+    /// Whether this answer refreshed an older one for `y`, which then copies
+    /// it rather than refreshing again behind output that keeps changing.
+    refreshed: bool,
 }
 
 impl Found {
@@ -338,7 +359,7 @@ impl CopyMode {
                 let operation = Operation::Search {
                     query,
                     direction,
-                    repeat: false,
+                    kind: SearchKind::New,
                 };
                 return Outcome::Send(self.request(&operation, pane.content_revision));
             }
@@ -354,7 +375,7 @@ impl CopyMode {
                 let operation = Operation::Search {
                     query: found.query.clone(),
                     direction,
-                    repeat: true,
+                    kind: SearchKind::Repeat,
                 };
                 return Outcome::Send(self.request(&operation, pane.content_revision));
             }
@@ -365,15 +386,7 @@ impl CopyMode {
                     Mark::Cell(self.cursor)
                 });
             }
-            Command::Copy => {
-                let copied = self
-                    .selection(last_col)
-                    .or_else(|| self.found.as_ref()?.current_match());
-                return match copied {
-                    Some(range) => Outcome::Copy(range),
-                    None => Outcome::Exit,
-                };
-            }
+            Command::Copy => return self.copy(last_col, pane.content_revision),
             Command::Cancel if self.mark.is_some() || self.found.is_some() => {
                 self.mark = None;
                 self.found = None;
@@ -383,8 +396,47 @@ impl CopyMode {
         Outcome::Moved
     }
 
+    /// Copies the selection, read live as the user sees it, or else the
+    /// current match. A match the pane may have rewritten since it was found
+    /// is searched for again first, with the copy waiting behind it.
+    fn copy(&mut self, last_col: u16, content_revision: u64) -> Outcome {
+        if let Some(range) = self.selection(last_col) {
+            return Outcome::Copy {
+                range,
+                content_revision: None,
+            };
+        }
+        let Some(found) = &self.found else {
+            return Outcome::Exit;
+        };
+        let Some(range) = found.current_match() else {
+            // A refresh that lost the match keeps copy mode, showing so.
+            return if found.refreshed {
+                Outcome::Moved
+            } else {
+                Outcome::Exit
+            };
+        };
+        if found.content_revision == content_revision || found.refreshed {
+            return Outcome::Copy {
+                range,
+                content_revision: Some(found.content_revision),
+            };
+        }
+        let operation = Operation::Search {
+            query: found.query.clone(),
+            direction: found.direction,
+            kind: SearchKind::Refresh,
+        };
+        let request = self.request(&operation, content_revision);
+        self.queued.push_front(Command::Copy);
+        Outcome::Send(request)
+    }
+
     /// The request for `operation` from the cursor. A repeated search moves
-    /// past the current match when the cursor is still on it.
+    /// past the current match when the cursor is still on it; a refresh looks
+    /// forward from just before it, so the same match stays current if the
+    /// pane still has it.
     fn request(&self, operation: &Operation, content_revision: u64) -> Request {
         match operation {
             Operation::Motion(motion) => Request::Motion(CopyMotionParams {
@@ -396,50 +448,60 @@ impl CopyMode {
             Operation::Search {
                 query,
                 direction,
-                repeat,
+                kind,
             } => {
-                let previous = self
-                    .found
-                    .as_ref()
-                    .filter(|_| *repeat)
-                    .and_then(Found::current_match)
-                    .filter(|current| current.start == self.cursor);
+                let current = self.found.as_ref().and_then(Found::current_match);
+                let (direction, cursor, previous) = match (kind, current) {
+                    (SearchKind::Refresh, Some(current)) => {
+                        (SearchDirection::Forward, before(current.start), None)
+                    }
+                    (SearchKind::Repeat, Some(current)) if current.start == self.cursor => {
+                        (*direction, self.cursor, Some(current))
+                    }
+                    _ => (*direction, self.cursor, None),
+                };
                 Request::Search {
                     params: CopySearchParams {
                         pane_id: self.pane_id.clone(),
                         query: query.clone(),
-                        direction: *direction,
-                        cursor: self.cursor,
+                        direction,
+                        cursor,
                         content_revision,
                         previous,
                     },
-                    repeat: *repeat,
+                    kind: *kind,
                 }
             }
         }
     }
 
+    /// Records `sent` as in flight. Requests are built from the cursor just
+    /// before they go, so the cursor now is what their answer must still
+    /// find.
     pub(crate) fn sent(&mut self, request: String, sent: &Request) {
         self.retry = None;
-        let (origin, operation, content_revision) = match sent {
+        let (operation, content_revision) = match sent {
             Request::Motion(params) => (
-                params.cursor,
                 Operation::Motion(params.motion),
                 params.content_revision.unwrap_or_default(),
             ),
-            Request::Search { params, repeat } => (
-                params.cursor,
+            Request::Search { params, kind } => (
                 Operation::Search {
                     query: params.query.clone(),
-                    direction: params.direction,
-                    repeat: *repeat,
+                    // A refresh is a search the way the query was entered,
+                    // whichever way it looks this time.
+                    direction: match (kind, &self.found) {
+                        (SearchKind::Refresh, Some(found)) => found.direction,
+                        _ => params.direction,
+                    },
+                    kind: *kind,
                 },
                 params.content_revision,
             ),
         };
         self.in_flight = Some(InFlight {
             request,
-            origin,
+            origin: self.cursor,
             operation,
             content_revision,
         });
@@ -486,13 +548,13 @@ impl CopyMode {
                 Operation::Search {
                     query,
                     direction,
-                    repeat,
+                    kind,
                 },
             ) => {
                 if !current || result.pane_id != self.pane_id {
                     return Ok(false);
                 }
-                Ok(self.found(query, direction, repeat, result))
+                Ok(self.found(query, direction, kind, result))
             }
             (Ok(_), _) => {
                 self.queued.clear();
@@ -520,7 +582,7 @@ impl CopyMode {
         &mut self,
         query: String,
         direction: SearchDirection,
-        repeat: bool,
+        kind: SearchKind,
         result: CopySearchResult,
     ) -> bool {
         let current = result
@@ -528,7 +590,7 @@ impl CopyMode {
             .and_then(|index| usize::try_from(index).ok())
             .filter(|index| *index < result.matches.len());
         let direction = match &self.found {
-            Some(found) if repeat => found.direction,
+            Some(found) if kind == SearchKind::Repeat => found.direction,
             _ => direction,
         };
         let found = Found {
@@ -538,6 +600,8 @@ impl CopyMode {
             current,
             current_global: result.current_global.filter(|_| current.is_some()),
             total: result.total,
+            content_revision: result.content_revision,
+            refreshed: kind == SearchKind::Refresh,
         };
         let target = found.current_match();
         self.found = Some(found);

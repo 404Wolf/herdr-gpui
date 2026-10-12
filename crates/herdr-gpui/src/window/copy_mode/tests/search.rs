@@ -101,14 +101,15 @@ fn copy_mode_searches_from_a_prompt_and_copies_the_match(cx: &mut TestAppContext
     );
     answer(&mut peer, cx, &repeat, found(0));
 
-    // `y` with nothing marked copies the match under the cursor.
+    // `y` with nothing marked copies the match under the cursor, at the
+    // revision it was found in.
     cx.simulate_keystrokes("y");
     let read = next_request(&mut peer);
     assert_eq!(read["method"], "pane.selection.read");
     assert_eq!(
         read["params"],
         json!({"pane_id": "w1:p1", "anchor": {"row": 110, "col": 3},
-            "cursor": {"row": 110, "col": 5}})
+            "cursor": {"row": 110, "col": 5}, "content_revision": 2})
     );
     view.read_with(cx, |view, _| assert!(view.copy_mode.is_none()));
 }

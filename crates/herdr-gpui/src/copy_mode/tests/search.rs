@@ -23,15 +23,15 @@ fn search(
     command: Command,
     shown: &PaneSurfacePane,
     id: &str,
-) -> (CopySearchParams, bool) {
+) -> (CopySearchParams, SearchKind) {
     let Outcome::Send(request) = mode.command(command, shown) else {
         panic!("a search asks the daemon");
     };
     mode.sent(id.into(), &request);
-    let Request::Search { params, repeat } = request else {
+    let Request::Search { params, kind } = request else {
         panic!("not a search: {request:?}");
     };
-    (params, repeat)
+    (params, kind)
 }
 
 fn found(mode: &mut CopyMode, id: &str, result: CopySearchResult) -> bool {
@@ -84,8 +84,8 @@ fn the_prompt_opens_at_once_and_its_search_waits_its_turn() {
     mode.answer("1", Ok(ScrollbackResponse::PaneCopyMotion(landed)))
         .unwrap();
     assert_eq!(mode.next_queued(), Some(submitted.clone()));
-    let (params, repeat) = search(&mut mode, submitted, &shown, "2");
-    assert!(!repeat);
+    let (params, kind) = search(&mut mode, submitted, &shown, "2");
+    assert_eq!(kind, SearchKind::New);
     assert_eq!(
         params,
         CopySearchParams {
@@ -137,8 +137,8 @@ fn a_match_moves_the_cursor_and_n_repeats_the_way_it_was_entered() {
     assert_eq!(highlights.last().unwrap().tint, Tint::CopyCursor);
 
     // `n` goes on backward, past the match the cursor sits on.
-    let (params, repeat) = search(&mut mode, Command::Repeat { reverse: false }, &shown, "2");
-    assert!(repeat);
+    let (params, kind) = search(&mut mode, Command::Repeat { reverse: false }, &shown, "2");
+    assert_eq!(kind, SearchKind::Repeat);
     assert_eq!(params.direction, SearchDirection::Backward);
     assert_eq!(params.query, "err");
     assert_eq!(
@@ -221,10 +221,10 @@ fn a_stale_search_retries_as_the_same_search() {
     };
     assert!(!mode.answer("2", Err(stale)).unwrap());
     shown.content_revision = 6;
-    let Some(Request::Search { params, repeat }) = mode.due_retry(&shown) else {
+    let Some(Request::Search { params, kind }) = mode.due_retry(&shown) else {
         panic!("the search is retried");
     };
-    assert!(repeat);
+    assert_eq!(kind, SearchKind::Repeat);
     assert_eq!(params.direction, SearchDirection::Forward);
     assert_eq!(params.content_revision, 6);
     assert_eq!(params.previous.map(|range| range.start), Some(point(55, 1)));
@@ -240,25 +240,106 @@ fn yank_copies_the_current_match_and_escape_clears_the_search_first() {
     };
     search(&mut mode, forward, &shown, "1");
     found(&mut mode, "1", matches(&[(55, 1, 4)], Some(0), 0));
+    // The match is read at the revision it was found in.
     assert_eq!(
         mode.command(Command::Copy, &shown),
-        Outcome::Copy(TextRange {
-            start: point(55, 1),
-            end: point(55, 4),
-        })
+        Outcome::Copy {
+            range: TextRange {
+                start: point(55, 1),
+                end: point(55, 4),
+            },
+            content_revision: Some(4),
+        }
     );
-    // A selection, marked from the match, wins over the match.
+    // A selection, marked from the match, wins over the match, and is read
+    // live as the user sees it.
     mode.command(Command::Mark { lines: true }, &shown);
     assert_eq!(
         mode.command(Command::Copy, &shown),
-        Outcome::Copy(TextRange {
-            start: point(55, 0),
-            end: point(55, 19),
-        })
+        Outcome::Copy {
+            range: TextRange {
+                start: point(55, 0),
+                end: point(55, 19),
+            },
+            content_revision: None,
+        }
     );
     assert_eq!(mode.command(Command::Cancel, &shown), Outcome::Moved);
     assert_eq!(mode.search_label(), None);
     assert_eq!(mode.highlights(&shown).len(), 1, "only the cursor");
     assert_eq!(mode.command(Command::Copy, &shown), Outcome::Exit);
     assert_eq!(mode.command(Command::Cancel, &shown), Outcome::Exit);
+}
+
+/// Output that rewrote the pane since a search must not let `y` copy what
+/// now sits where the match was: the search runs again first, and the match
+/// it finds is read at the revision it was found in.
+#[test]
+fn yank_after_the_pane_changed_refreshes_the_match_first() {
+    let mut shown = pane(0);
+    let mut mode = CopyMode::new(&shown, None);
+    let backward = Command::Search {
+        query: "x".into(),
+        direction: SearchDirection::Backward,
+    };
+    search(&mut mode, backward, &shown, "1");
+    found(&mut mode, "1", matches(&[(55, 1, 4)], Some(0), 0));
+    shown.content_revision = 6;
+    let (params, kind) = search(&mut mode, Command::Copy, &shown, "2");
+    assert_eq!(kind, SearchKind::Refresh);
+    assert_eq!(
+        params,
+        CopySearchParams {
+            pane_id: "p".into(),
+            query: "x".into(),
+            direction: SearchDirection::Forward,
+            cursor: point(55, 0),
+            content_revision: 6,
+            previous: None,
+        }
+    );
+    // Keys typed meanwhile wait behind the copy.
+    assert_eq!(mode.command(Command::Exit, &shown), Outcome::Nothing);
+    let mut refreshed = matches(&[(55, 1, 4)], Some(0), 0);
+    refreshed.content_revision = 6;
+    found(&mut mode, "2", refreshed);
+    assert_eq!(mode.cursor, point(55, 1));
+    // Even if the pane moved on again, the refreshed match is copied at its
+    // own revision rather than chased behind output that keeps changing;
+    // the daemon refuses the read if it is stale.
+    shown.content_revision = 8;
+    let copy = mode.next_queued().unwrap();
+    assert_eq!(
+        mode.command(copy, &shown),
+        Outcome::Copy {
+            range: TextRange {
+                start: point(55, 1),
+                end: point(55, 4),
+            },
+            content_revision: Some(6),
+        }
+    );
+    // The search is still the one entered, toward older output.
+    assert_eq!(mode.search_label().as_deref(), Some("?x 1 of 9"));
+    assert_eq!(mode.next_queued(), Some(Command::Exit));
+}
+
+#[test]
+fn yank_stays_in_copy_mode_when_the_refresh_lost_the_match() {
+    let mut shown = pane(0);
+    let mut mode = CopyMode::new(&shown, None);
+    let forward = Command::Search {
+        query: "x".into(),
+        direction: SearchDirection::Forward,
+    };
+    search(&mut mode, forward, &shown, "1");
+    found(&mut mode, "1", matches(&[(55, 1, 4)], Some(0), 0));
+    shown.content_revision = 6;
+    search(&mut mode, Command::Copy, &shown, "2");
+    let mut gone = matches(&[], None, 0);
+    gone.content_revision = 6;
+    found(&mut mode, "2", gone);
+    let copy = mode.next_queued().unwrap();
+    assert_eq!(mode.command(copy, &shown), Outcome::Moved);
+    assert_eq!(mode.search_label().as_deref(), Some("/x 9 found"));
 }

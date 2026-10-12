@@ -197,19 +197,25 @@ fn marks_select_by_cell_or_line_and_copy_or_cancel() {
     mode.command(Command::Step { rows: -2, cols: -1 }, &shown);
     assert_eq!(
         mode.command(Command::Copy, &shown),
-        Outcome::Copy(TextRange {
-            start: point(56, 2),
-            end: point(58, 3),
-        })
+        Outcome::Copy {
+            range: TextRange {
+                start: point(56, 2),
+                end: point(58, 3),
+            },
+            content_revision: None,
+        }
     );
     mode.command(Command::Mark { lines: true }, &shown);
     mode.command(Command::Step { rows: 3, cols: 0 }, &shown);
     assert_eq!(
         mode.command(Command::Copy, &shown),
-        Outcome::Copy(TextRange {
-            start: point(56, 0),
-            end: point(59, 19),
-        })
+        Outcome::Copy {
+            range: TextRange {
+                start: point(56, 0),
+                end: point(59, 19),
+            },
+            content_revision: None,
+        }
     );
     // Escape clears a selection first, then leaves.
     assert_eq!(mode.command(Command::Cancel, &shown), Outcome::Moved);

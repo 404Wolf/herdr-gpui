@@ -179,8 +179,11 @@ impl HerdrWindow {
                 self.open_copy_search(direction, query.unwrap_or_default(), window, cx);
             }
             Outcome::Send(request) => self.send_copy_request(request, cx),
-            Outcome::Copy(range) => {
-                self.copy_range(range, cx);
+            Outcome::Copy {
+                range,
+                content_revision,
+            } => {
+                self.copy_range(range, content_revision, cx);
                 self.close_copy_search(window, cx);
                 self.leave_copy_mode(cx);
             }
@@ -315,9 +318,15 @@ impl HerdrWindow {
         }
     }
 
-    /// Reads `range` from the daemon and copies it when it comes back, the
-    /// same way a selection dragged past the screen is copied.
-    fn copy_range(&mut self, range: TextRange, cx: &mut Context<Self>) {
+    /// Reads `range` from the daemon, at `content_revision` when given, and
+    /// copies it when it comes back, the same way a selection dragged past
+    /// the screen is copied.
+    fn copy_range(
+        &mut self,
+        range: TextRange,
+        content_revision: Option<u64>,
+        cx: &mut Context<Self>,
+    ) {
         let Some(state) = &self.copy_mode else {
             return;
         };
@@ -328,7 +337,7 @@ impl HerdrWindow {
             pane_id: state.mode.pane_id().to_owned(),
             anchor: range.start,
             cursor: range.end,
-            content_revision: None,
+            content_revision,
         };
         let sent = match state.inbox.try_lock() {
             Ok(mut inbox) => inbox.send(|| handle.read_selection(&state.boot_id, &params)),
@@ -398,6 +407,7 @@ impl HerdrWindow {
         if self.live.surface_ready()
             && pane_of(self.live.surface.as_deref(), state.mode.pane_id()).is_none()
         {
+            self.close_copy_search(window, cx);
             self.leave_copy_mode(cx);
             return;
         }
