@@ -8,6 +8,7 @@ use std::{
 };
 
 mod hidden_cup;
+mod right_click;
 mod toggle;
 mod until_agents;
 mod work;
