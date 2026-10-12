@@ -491,6 +491,10 @@ impl HerdrWindow {
                         .shadow_lg()
                 },
             )
+            .when(add_device, |panel| {
+                panel.h(px(rail::HEIGHT * (font.size / 12.))
+                    .min((viewport.height - px(32.)).max(px(0.))))
+            })
             .when(page == Page::GitHub, |panel| {
                 panel
                     .w((viewport.width - px(32.)).max(px(0.)).min(px(400.)))

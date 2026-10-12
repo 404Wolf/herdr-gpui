@@ -597,6 +597,7 @@ impl HerdrWindow {
             });
         let mut body = div()
             .id("coder-setup-body")
+            .flex_1()
             .min_h_0()
             .overflow_y_scroll()
             .p(px(16.))

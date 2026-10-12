@@ -256,6 +256,7 @@ impl HerdrWindow {
         let mut body = div()
             .id("wsl-setup-body")
             .debug_selector(|| "wsl-setup-body".into())
+            .flex_1()
             .min_h_0()
             .overflow_y_scroll()
             .p(px(16.))

@@ -136,3 +136,30 @@ fn the_picker_names_cloud_machines_only_when_offered() {
     assert!(frame::add_device_offer(true).contains("cloud"));
     assert!(!frame::add_device_offer(false).contains("cloud"));
 }
+
+#[gpui::test]
+fn switching_sources_never_resizes_the_dialog(cx: &mut gpui::TestAppContext) {
+    let (_view, cx) = open(cx);
+    if crate::cloud::unavailable().is_some() {
+        return;
+    }
+    let ssh = cx.debug_bounds("menu-panel").unwrap();
+    for provider in CloudProvider::ALL {
+        let id = match provider {
+            #[cfg(feature = "coder")]
+            CloudProvider::Coder => "add-device-source-coder",
+            #[cfg(feature = "daytona")]
+            CloudProvider::Daytona => "add-device-source-daytona",
+            #[cfg(feature = "railway")]
+            CloudProvider::Railway => "add-device-source-railway",
+        };
+        click(cx, id);
+        assert_eq!(cx.debug_bounds("menu-panel").unwrap(), ssh, "{provider:?}");
+    }
+    click(cx, "add-device-source-host");
+    assert_eq!(cx.debug_bounds("menu-panel").unwrap(), ssh);
+    // The fixed height still leaves the dialog inside a short window.
+    cx.simulate_resize(size(px(900.), px(400.)));
+    draw(cx);
+    assert!(cx.debug_bounds("menu-panel").unwrap().bottom() <= px(400.));
+}
