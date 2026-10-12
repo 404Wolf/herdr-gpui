@@ -9,9 +9,6 @@ use serde_json::Value;
 /// Items per list. The tabs are a picker, not a mirror of the repository, so a
 /// query stays inside one page and one bounded response.
 pub(super) const LIMIT: usize = 50;
-/// Issue branches follow GitHub's own "create a branch" naming. The slug is
-/// bounded so a long title cannot produce an unusable checkout directory.
-const SLUG_LIMIT: usize = 60;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {
@@ -112,23 +109,10 @@ pub(crate) fn fork_branch_number(branch: &str) -> Option<u64> {
     digits.parse().ok()
 }
 
-/// GitHub's branch name for an issue: the number, then a slug of the title.
+/// GitHub's branch name for an issue: the number, then a slug of the title,
+/// following GitHub's own "create a branch" naming.
 pub(crate) fn issue_branch(number: u64, title: &str) -> String {
-    let mut slug = String::new();
-    let mut dash = false;
-    for ch in title.chars() {
-        if ch.is_ascii_alphanumeric() {
-            slug.push(ch.to_ascii_lowercase());
-            dash = false;
-        } else if !dash && !slug.is_empty() {
-            slug.push('-');
-            dash = true;
-        }
-        if slug.len() >= SLUG_LIMIT {
-            break;
-        }
-    }
-    let slug = slug.trim_matches('-');
+    let slug = crate::worktree::bounded_slug(title);
     if slug.is_empty() {
         number.to_string()
     } else {
