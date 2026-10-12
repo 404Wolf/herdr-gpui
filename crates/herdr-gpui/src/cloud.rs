@@ -6,12 +6,14 @@
 //! machine; supporting another one adds a `CloudProvider` variant and a module.
 
 mod catalog;
+mod command;
 pub(crate) mod install;
 mod jobs;
 pub(crate) mod names;
 pub(crate) mod worker;
 
 pub(crate) use catalog::{SavedDevice, load, remove, save};
+pub(crate) use command::with_command;
 pub(crate) use herdr_client::CloudProvider;
 pub(crate) use jobs::Jobs;
 

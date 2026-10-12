@@ -17,7 +17,7 @@ mod token;
 pub use error::{Error, Status};
 pub(crate) use {
     api::{Preset, Template, Workspace},
-    connect::connect,
+    connect::{command, connect},
     names::{random as random_name, valid as valid_name},
     settings::Settings,
 };

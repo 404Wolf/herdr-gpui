@@ -20,6 +20,15 @@ pub(super) fn base() -> Option<Command> {
     })
 }
 
+pub(super) fn state_dir() -> Option<PathBuf> {
+    SCRIPT.with(|script| {
+        script
+            .borrow()
+            .as_ref()
+            .map(|script| script.with_file_name("state"))
+    })
+}
+
 pub(crate) struct StandIn {
     dir: tempfile::TempDir,
 }
