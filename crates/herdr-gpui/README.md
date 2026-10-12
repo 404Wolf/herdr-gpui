@@ -300,7 +300,7 @@ and saved SSH devices remain unsupported on Windows.
 ### Coder workspaces
 
 Settings > **Cloud Devices** holds accounts with providers that create machines
-to use as devices; Coder is the only one so far. Its card edits the `[coder]`
+to use as devices: Coder, Daytona, and Railway. Coder's card edits the `[coder]`
 keys (see `config-gpui.example.toml`), saves the OAuth client secret to the
 credential store rather than the config file, signs in and out, and lists the
 saved Coder devices with a Remove action. A secret set in the config file or
@@ -370,11 +370,28 @@ and are unavailable on Windows. This provider is a proof of concept: the API
 path is covered by tests against a scripted server, but not yet exercised
 against a live Daytona account.
 
+### Railway free VMs (experimental)
+
+Settings > **Cloud Devices** > **Railway** sets up the temporary Linux VM that
+`ssh railway.new` gives out without an account. The SSH key is its identity, so
+pick an existing private key or generate one by name (an ed25519 key without a
+passphrase, in `~/.ssh` when that exists, otherwise in Herdr's state directory;
+an existing file is never replaced). **Connect and set up** creates the VM if the
+key has none, installs Herdr in it when the **Install Herdr** switch is on, and
+saves the device with the key's path (as its account). Every reconnect uses the
+same key, never creates a VM or installs anything, and refuses a key file whose
+fingerprint changed or whose readable private key disagrees with its `.pub`
+file. Removing a device keeps its key files. Connections run
+`ssh -F /dev/null` with options that offer only that key and pin `railway.new`'s
+host key on first use (`railway_known_hosts`). The VM is temporary: Railway
+limits its lifetime and how many a network can create. Needs
+`ssh` and `ssh-keygen` on the PATH; unavailable on Windows.
+
 Each provider is a Cargo feature of `herdr-gpui`, on by default: `coder` for
-Coder and `daytona` for Daytona. A build with `--no-default-features` has no
-Cloud Devices section and no provider rows in the device picker; it still
-accepts the `[coder]` and `[daytona]` tables, so one config file serves every
-build, but never reads them.
+Coder, `daytona` for Daytona, and `railway` for Railway. A build with
+`--no-default-features` has no Cloud Devices section and no provider rows in the
+device picker; it still accepts the `[coder]` and `[daytona]` tables, so one config
+file serves every build, but never reads them.
 
 Switching revokes the old host's focus before releasing its surface, then resizes
 and activates the selected host. Input waits for the activation acknowledgement

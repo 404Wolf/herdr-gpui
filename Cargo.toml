@@ -62,7 +62,7 @@ nucleo-matcher       = "0.3.1"
 # Bonjour browsing for SSH hosts in the Add Device dialog; it runs its own
 # thread and needs no async runtime.
 mdns-sd              = { default-features = false, version = "0.21.5" }
-nix                  = { default-features = false, features = ["socket", "user"], version = "=0.31.3" }
+nix                  = { default-features = false, features = ["socket", "term", "user"], version = "=0.31.3" }
 objc                 = "0.2"
 # The Secret Service client GPUI's Linux platform links, with its async-io backend.
 oo7                  = { default-features = false, features = ["async-std", "native_crypto"], version = "0.6" }

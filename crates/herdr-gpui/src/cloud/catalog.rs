@@ -25,7 +25,9 @@ pub(crate) struct SavedDevice {
     /// The provider's ID for the machine; stable across renames of the label.
     pub(crate) id: String,
     pub(crate) label: String,
-    /// The provider account or deployment the machine belongs to.
+    /// The provider account or deployment the machine belongs to. Railway has
+    /// no account, so its devices save the absolute path of their SSH key
+    /// here: a path, never a credential.
     pub(crate) account: String,
     /// The provider's name for the machine when it was saved, for display;
     /// connecting goes by `id`, so a rename or a reused name cannot misdirect it.
