@@ -10,6 +10,10 @@ pub enum Command {
     NewWindow,
     Workspace,
     NewWorktree,
+    /// The focused repository's "Open worktree..." dialog.
+    OpenWorktree,
+    /// The focused linked worktree's delete confirmation.
+    RemoveWorktree,
     /// Go To, listing only the checkouts that have a note.
     WorktreeNotes,
     /// The focused checkout's note.
@@ -126,6 +130,16 @@ pub const COMMANDS: &[CommandInfo] = &[
         command: Command::NewWorktree,
         name: "new_worktree",
         label: "New Worktree",
+    },
+    CommandInfo {
+        command: Command::OpenWorktree,
+        name: "open_worktree",
+        label: "Open Worktree",
+    },
+    CommandInfo {
+        command: Command::RemoveWorktree,
+        name: "remove_worktree",
+        label: "Delete Worktree Checkout",
     },
     CommandInfo {
         command: Command::WorktreeNotes,
@@ -755,6 +769,8 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         }
         Command::NewWindow
         | Command::NewWorktree
+        | Command::OpenWorktree
+        | Command::RemoveWorktree
         | Command::WorktreeNotes
         | Command::EditWorktreeNote
         | Command::Find

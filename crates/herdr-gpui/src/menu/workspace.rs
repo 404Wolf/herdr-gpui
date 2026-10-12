@@ -69,15 +69,8 @@ impl WorkspaceTarget {
             .branch
             .clone()
             .ok_or(NewWorktreeUnavailable::Detached)?;
-        let main = snapshot
-            .workspaces
-            .iter()
-            .find(|w| {
-                w.worktree
-                    .as_ref()
-                    .is_some_and(|other| other.key == tree.key && !other.is_linked_worktree)
-            })
-            .ok_or(NewWorktreeUnavailable::MainCheckoutClosed)?;
+        let main =
+            main_checkout(snapshot, tree).ok_or(NewWorktreeUnavailable::MainCheckoutClosed)?;
         Ok(Self {
             base: Some(branch),
             ..Self::new(snapshot, main)
@@ -259,6 +252,19 @@ fn new_worktree_source(snapshot: &ClientShellSnapshot) -> Result<String, NewWork
         .ok_or(NewWorktreeUnavailable::NoWorkspace)?;
     WorkspaceTarget::for_new_worktree(snapshot, focused)?;
     Ok(focused.workspace_id.clone())
+}
+
+/// The open main checkout of `tree`'s repository, through which the daemon
+/// lists, opens, and creates that repository's worktrees.
+pub(super) fn main_checkout<'a>(
+    snapshot: &'a ClientShellSnapshot,
+    tree: &ClientShellWorktree,
+) -> Option<&'a ClientShellWorkspace> {
+    snapshot.workspaces.iter().find(|w| {
+        w.worktree
+            .as_ref()
+            .is_some_and(|other| other.key == tree.key && !other.is_linked_worktree)
+    })
 }
 
 /// The name a new tab dialog proposes: the next number in its workspace, as
