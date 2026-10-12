@@ -225,6 +225,13 @@ impl AgentSkill {
     }
 }
 
+/// Records `choice` as the app records the user's answer, for a process
+/// without the app's global, such as the command line. Blocking.
+pub(crate) fn save_choice(choice: Choice) -> crate::Result<()> {
+    let path = AgentSkill::path().ok_or(crate::Error::MissingStateRoot)?;
+    state_file::write(&path, &Saved { choice })
+}
+
 /// Rewrites the installed skill if this app's text or location changed.
 fn refresh_installed(cx: &mut App) {
     let Ok(home) = crate::config::home() else {

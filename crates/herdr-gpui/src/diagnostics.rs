@@ -123,23 +123,31 @@ mod level_json {
     }
 }
 
+/// The log file, without a state directory none.
+pub(crate) fn log_file() -> Option<PathBuf> {
+    crate::preferences::state_dir().map(|dir| dir.join("logs").join(FILE_NAME))
+}
+
+/// Where `current` goes when it is rotated.
+pub(crate) fn previous_log_file(current: &Path) -> PathBuf {
+    current.with_file_name(PREVIOUS_FILE_NAME)
+}
+
 /// Install once, before starting workers. An existing global subscriber is an
 /// error, never silently replaced. No tracing-log bridge is installed. Without a
 /// state directory or writer thread, every event counts as dropped.
 pub(crate) fn init() -> Result<(), tracing::subscriber::SetGlobalDefaultError> {
     let (lines, queued) = mpsc::sync_channel(QUEUE);
     let counters = Arc::new(Counters::default());
-    let path = crate::preferences::state_dir()
-        .map(|dir| dir.join("logs").join(FILE_NAME))
-        .and_then(|path| {
-            let writer_path = path.clone();
-            let writer_counters = counters.clone();
-            thread::Builder::new()
-                .name("gpui-log-writer".into())
-                .spawn(move || write_lines(writer_path, queued, &writer_counters))
-                .ok()
-                .map(|_| path)
-        });
+    let path = log_file().and_then(|path| {
+        let writer_path = path.clone();
+        let writer_counters = counters.clone();
+        thread::Builder::new()
+            .name("gpui-log-writer".into())
+            .spawn(move || write_lines(writer_path, queued, &writer_counters))
+            .ok()
+            .map(|_| path)
+    });
     let _ = SINK.set(Sink {
         counters: counters.clone(),
         path,
@@ -239,7 +247,7 @@ impl LogFile {
     }
 
     fn rotate(&self) -> io::Result<()> {
-        fs::rename(&self.path, self.path.with_file_name(PREVIOUS_FILE_NAME))
+        fs::rename(&self.path, previous_log_file(&self.path))
     }
 
     fn open(&self) -> io::Result<File> {

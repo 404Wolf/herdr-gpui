@@ -40,6 +40,10 @@ struct Request {
 #[derive(Default)]
 struct Caffeine {
     cup: Cup,
+    /// Counts settled holds and releases, so a timer set after one can tell
+    /// whether anyone changed the state since.
+    #[cfg(unix)]
+    changes: u64,
     /// Dropping it ends the worker, which releases any hold on its own thread.
     worker: Option<SyncSender<Request>>,
 }
@@ -49,6 +53,13 @@ impl Global for Caffeine {}
 pub(crate) fn cup(cx: &App) -> Cup {
     cx.try_global::<Caffeine>()
         .map_or(Cup::Off, |caffeine| caffeine.cup)
+}
+
+/// How many holds and releases have settled so far.
+#[cfg(unix)]
+pub(crate) fn changes(cx: &App) -> u64 {
+    cx.try_global::<Caffeine>()
+        .map_or(0, |caffeine| caffeine.changes)
 }
 
 /// Starts or stops keeping the display awake, and redraws every window.
@@ -118,6 +129,10 @@ fn finish(
         // took its guard with it.
         (Command::Hold, Err(_)) | (Command::Release, _) => Cup::Off,
     };
+    #[cfg(unix)]
+    {
+        caffeine.changes = caffeine.changes.wrapping_add(1);
+    }
     if matches!(result, Err(Error::CaffeineWorkerStopped)) {
         caffeine.worker = None;
     }

@@ -719,6 +719,24 @@ pub enum Error {
     RelativeConfigRoot,
     #[error("Cannot migrate {}: {} already contains different settings. Merge your old settings into the local file, then remove the old config; it will be regenerated.", original.display(), local.display())]
     ConfigMigrationConflict { original: PathBuf, local: PathBuf },
+    #[error("{key}: a part of this key holds a value, not a table; unset that part first")]
+    ConfigKeyNotTable { key: String },
+    #[error("Herdr UI has no setting {}; config-gpui.toml lists every setting", .0.join(", "))]
+    UnknownConfigKeys(Vec<String>),
+    #[error("Could not read the log {}: {source}", path.display())]
+    LogRead {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("{} already exists; choose a new file name", path.display())]
+    BundleExists { path: PathBuf },
+    #[error("Could not write {}: {source}", path.display())]
+    BundleWrite {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[error("theme must not be empty")]
     EmptyTheme,
     #[error("{0}.family must not be empty")]

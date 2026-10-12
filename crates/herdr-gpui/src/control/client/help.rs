@@ -108,19 +108,23 @@ fn family(name: &str) -> &'static str {
             "herdr-gpui search symbol|file QUERY... [--limit N]\n    Go to Symbol or Go to File over the current directory's checkout,\n    printing paths relative to its root. Runs here; Herdr UI need not run."
         }
         "config" => {
-            "herdr-gpui config [path]\n    The settings files.\nherdr-gpui config get KEY\nherdr-gpui config set KEY VALUE\nherdr-gpui config unset KEY\n    Read or change a setting in config-gpui.local.toml; Herdr UI applies\n    it at once. KEY is dotted, such as terminal.size.\nherdr-gpui config check\n    Report invalid settings; exits 1 when there are any.\nherdr-gpui config reload\n    Reread Herdr's config and this app's."
+            "herdr-gpui config [path]\n    The settings files.\nherdr-gpui config get KEY\n    The setting's value, as TOML: your override, else the default.\nherdr-gpui config set KEY VALUE\nherdr-gpui config unset KEY\n    Change a setting in config-gpui.local.toml. VALUE is read as TOML\n    (14, true, [\"a\"], { show = true }), else as text. A value or key\n    Herdr UI would not load is refused and the file left as it was.\n    A running Herdr UI applies the change at once. KEY is dotted, such\n    as terminal.size. Unsetting a key that is not set exits 4.\nherdr-gpui config check\n    Report settings that do not load and unknown keys, and, when Herdr UI\n    runs, fonts that are not installed; exits 1 when there are any.\nherdr-gpui config reload\n    Reread Herdr's config and this app's.\nOnly reload needs Herdr UI running."
         }
-        "theme" => "herdr-gpui theme [list]\nherdr-gpui theme set NAME...",
+        "theme" => {
+            "herdr-gpui theme [list]\n    The themes there are; * marks the selected one.\nherdr-gpui theme set NAME...\n    Choose and save a theme, or light:NAME,dark:NAME to follow the\n    system appearance. Saved even when Herdr UI is not running."
+        }
         "font" => {
-            "herdr-gpui font [list]\nherdr-gpui font set NAME...\nherdr-gpui font reset\n    The font of every face; reset goes back to the default."
+            "herdr-gpui font [list]\n    The installed font families.\nherdr-gpui font set NAME...\nherdr-gpui font reset\n    The font of every face; reset goes back to the default.\nThese need Herdr UI running, which knows the installed fonts."
         }
         "keybinds" => {
             "herdr-gpui keybinds [list]\n    The window's shortcuts.\nherdr-gpui keybinds check\n    Herdr's custom commands this client cannot reach; exits 1 if any."
         }
         "caffeine" => {
-            "herdr-gpui caffeine [status]\nherdr-gpui caffeine on|off|toggle [--for 90s|30m|2h]\n    Keep the display and the machine awake."
+            "herdr-gpui caffeine [status]\nherdr-gpui caffeine on|off|toggle [--for 90s|30m|2h]\n    Keep the display and the machine awake. With --for (at most 24h),\n    caffeine turns off then, unless it was changed in the meantime."
         }
-        "sound" => "herdr-gpui sound [list]\nherdr-gpui sound play [done|request]",
+        "sound" => {
+            "herdr-gpui sound [list]\n    The notification sounds.\nherdr-gpui sound play [done|request]\n    Play one now, from the file Herdr's sound settings name or the\n    built-in one."
+        }
         "bell" => "herdr-gpui bell\n    Ring the system bell, as a terminal bell does.",
         "events" => {
             "herdr-gpui events [--after SEQ] [--wait SECONDS] [--kind KIND]... [--follow]\n    What happened since SEQ: windows and tabs opening and closing, notes,\n    and host status. --follow keeps printing until interrupted. Kinds:\n    window_opened, window_closed, window_focused, tab_opened, tab_closed,\n    feedback, note, host."
@@ -133,16 +137,16 @@ fn family(name: &str) -> &'static str {
         }
         "commands" => "herdr-gpui commands\n    The commands `run` accepts, with their shortcuts.",
         "logs" => {
-            "herdr-gpui logs [--lines N] [--path]\n    The app's latest log records, or the log file's path."
+            "herdr-gpui logs [--lines N] [--path]\n    The app's latest log records (default 100), or the log file's path.\n    Runs here; Herdr UI need not run. Exits 4 when there is no log yet."
         }
         "update" => {
-            "herdr-gpui update [status]\nherdr-gpui update check\n    Ask for the latest release. Never downloads or installs."
+            "herdr-gpui update [status]\nherdr-gpui update check\n    Ask for the latest release. Never downloads or installs. Local\n    builds report updates as off."
         }
         "diagnostics" => {
-            "herdr-gpui diagnostics bundle PATH\n    Write build information, settings diagnostics, and recent logs, with\n    home paths redacted, to PATH for a bug report."
+            "herdr-gpui diagnostics bundle PATH\n    Write build information, settings diagnostics, your settings\n    overrides, and recent logs to a new file at PATH for a bug report,\n    with home paths shortened and secret-looking values redacted. Read\n    it before sharing. Never replaces an existing file. Runs here."
         }
         "integrations" => {
-            "herdr-gpui integrations [list]\n    The agent integrations Herdr offers the window's host.\nherdr-gpui integrations install-skill\n    Install or update the agent skill for Claude Code and other agents."
+            "herdr-gpui integrations [list]\n    The agent integrations Herdr offers the window's host. Install them\n    from Herdr UI's integrations settings.\nherdr-gpui integrations install-skill\n    Install or update the agent skill for Claude Code and other agents.\n    Runs here; Herdr UI need not run."
         }
         _ => "",
     }

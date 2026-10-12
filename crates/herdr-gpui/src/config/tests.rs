@@ -10,6 +10,7 @@ mod code_navigation;
 mod code_start;
 mod default_fonts;
 mod discovery;
+mod edit;
 mod font_aliases;
 mod fonts;
 mod github;

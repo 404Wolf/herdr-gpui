@@ -1,17 +1,24 @@
 //! Settings and app services: config, themes, fonts, shortcuts, keeping the
-//! machine awake, sounds, updates, and integrations.
+//! machine awake, sounds, updates, and integrations. Reading and changing
+//! the settings files, listing themes and sounds, the agent skill, logs, and
+//! diagnostics need no running app, so the command line does those itself.
 use super::app::Switch;
 use serde::{Deserialize, Serialize};
 
-/// Listing installed fonts or integrations can take a few seconds.
+/// Listing installed fonts or integrations, or asking for the latest
+/// release, can take a few seconds.
 const LIST_WAIT_SECONDS: u64 = 15;
+/// Saving a theme or a font waits for the file lock other saves may hold.
+const SAVE_WAIT_SECONDS: u64 = 10;
+/// The longest `caffeine on --for`: a day.
+pub(crate) const MAX_CAFFEINE_SECONDS: u64 = 24 * 60 * 60;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum SettingsOp {
     /// Reread Herdr's config and this app's, as the shortcut does.
     ReloadConfig,
-    /// Unknown keys or missing fonts in the loaded config.
+    /// Configured fonts the app's text system does not have.
     CheckConfig,
     /// Choose and save a color theme.
     Theme {
@@ -43,14 +50,13 @@ pub(crate) enum SettingsOp {
     Update,
     /// The integrations Herdr offers the selected host.
     Integrations,
-    /// Install, or keep current, the agent skill.
-    InstallSkill,
 }
 
 impl SettingsOp {
     pub(crate) fn wait_seconds(&self) -> u64 {
         match self {
             Self::Fonts | Self::Integrations | Self::CheckUpdate => LIST_WAIT_SECONDS,
+            Self::Theme { .. } | Self::Font { .. } => SAVE_WAIT_SECONDS,
             _ => 0,
         }
     }
@@ -62,6 +68,28 @@ impl SettingsOp {
 pub enum Sound {
     Done,
     Request,
+}
+
+/// The control socket names sounds in its own JSON form; Herdr's type keeps
+/// the vendored wire form.
+impl From<Sound> for herdr_client::protocol::SemanticNotificationSound {
+    fn from(sound: Sound) -> Self {
+        match sound {
+            Sound::Done => Self::Done,
+            Sound::Request => Self::Request,
+        }
+    }
+}
+
+impl Sound {
+    pub(crate) const ALL: [Self; 2] = [Self::Done, Self::Request];
+
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Done => "done",
+            Self::Request => "request",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -84,14 +112,17 @@ pub(crate) struct CustomInfo {
 pub(crate) struct IntegrationInfo {
     pub id: String,
     pub label: String,
+    /// "not_installed", "current", "outdated", or "unavailable".
     pub status: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum Reply {
+    /// What only the running app can check about the settings: configured
+    /// fonts its text system does not have.
     Config {
-        diagnostic: Option<String>,
+        missing_fonts: Vec<String>,
     },
     Fonts {
         fonts: Vec<String>,
@@ -103,12 +134,24 @@ pub(crate) enum Reply {
     /// "off", "pending", or "on".
     Caffeine {
         state: String,
+        /// Seconds until a timed hold ends, when one was set.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        seconds: Option<u64>,
     },
+    /// `state` is "disabled", "idle", "checking", "current", "available",
+    /// "downloading", "ready", "installing", "homebrew", "upgrading",
+    /// "restart", "restarting", "cancelling", or "error".
     Update {
         state: String,
         latest: Option<String>,
+        /// Why updates are disabled, or what failed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
     },
     Integrations {
         integrations: Vec<IntegrationInfo>,
     },
 }
+
+#[cfg(test)]
+mod tests;

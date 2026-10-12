@@ -11,6 +11,7 @@ pub(crate) mod backdrop;
 mod bitmap_fonts;
 mod coder;
 mod daytona;
+mod edit;
 mod files;
 mod fonts;
 mod keybindings;
@@ -33,6 +34,7 @@ pub(crate) use coder::CoderFields;
 pub use daytona::DaytonaConfig;
 #[cfg(feature = "daytona")]
 pub(crate) use daytona::DaytonaFields;
+pub(crate) use edit::{Layer, parse_value};
 use files::write_config;
 pub(crate) use fonts::FontFace;
 use fonts::FontSettings;
@@ -670,8 +672,16 @@ impl Config {
     }
 
     fn load_startup_path(path: &Path, daemon: &Path) -> Result<Self> {
+        let (text, source) = Self::overrides_text(path)?;
+        Self::parse_layers([DEFAULT_CONFIG, &text], &daemon_settings(daemon))
+            .map_err(|error| error.at_path(&source))
+    }
+
+    /// The user's overrides as the app reads them now, and the file they
+    /// come from, without writing anything.
+    pub(super) fn overrides_text(path: &Path) -> Result<(String, PathBuf)> {
         let local = path.with_extension("local.toml");
-        let (text, source) = match fs::read_to_string(&local) {
+        Ok(match fs::read_to_string(&local) {
             Ok(text) => (text, local),
             // Without overrides or a personal config to migrate, maintenance
             // will seed the first-launch overrides; show them from frame one.
@@ -682,9 +692,7 @@ impl Config {
                 Err(error) => return Err(Error::from(error).at_path(path)),
             },
             Err(error) => return Err(Error::from(error).at_path(&local)),
-        };
-        Self::parse_layers([DEFAULT_CONFIG, &text], &daemon_settings(daemon))
-            .map_err(|error| error.at_path(&source))
+        })
     }
 
     /// `daemon` is the herdr config whose settings this GUI also honors. It is
@@ -713,7 +721,8 @@ impl Config {
         Self::parse_layers([text], base)
     }
 
-    fn parse_layers<'a>(texts: impl IntoIterator<Item = &'a str>, base: &Daemon) -> Result<Self> {
+    /// The files layered as loading layers them, later ones over earlier.
+    fn merged<'a>(texts: impl IntoIterator<Item = &'a str>) -> Result<toml::Value> {
         let mut builder = config_loader::Config::builder();
         for text in texts {
             builder = builder.add_source(config_loader::File::from_str(
@@ -724,7 +733,11 @@ impl Config {
         let loaded = builder.build()?;
         // Config's typed deserializer coerces strings/numbers. Preserve TOML
         // types so existing strict font and theme validation remains intact.
-        let value: toml::Value = loaded.try_deserialize()?;
+        Ok(loaded.try_deserialize()?)
+    }
+
+    fn parse_layers<'a>(texts: impl IntoIterator<Item = &'a str>, base: &Daemon) -> Result<Self> {
+        let value = Self::merged(texts)?;
         let mut unknown_keys = Vec::new();
         let mut settings: Settings = serde_ignored::deserialize(value, |path| {
             unknown_keys.push(path.to_string());
