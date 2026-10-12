@@ -17,7 +17,7 @@ mod refusal;
 pub(crate) mod setup;
 mod ssh;
 
-pub(crate) use connect::connect;
+pub(crate) use connect::{command, connect};
 pub use error::Error;
 pub(crate) use keys::{KeyDirectory, NAME_RULE, valid_name};
 

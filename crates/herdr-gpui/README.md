@@ -1439,13 +1439,20 @@ Right-click a linked worktree and choose Teleport... to move it to another
 connected host: its branch and commits, staged, unstaged and untracked changes,
 tabs and splits, the programs running in them, and agent sessions. It is offered
 on Linux and macOS clients when the worktree's host is the local session or a
-saved SSH host; custom socket endpoints are not scripted. Neither is a
+saved SSH host or cloud device (Coder, Daytona, or Railway); custom socket and
+WSL endpoints are not scripted. Neither is a
 development (`--dev`) session: the `herdr` CLI names sessions of the release
 installation only, so Teleport, fan-out, and dispatch are not offered there,
 and an orchestrator action that drives that session through the CLI reports an
 error instead of reaching the release session of the same name.
 
-1. **Choose a host.** Every other enabled host is listed at once, connected or
+Cloud devices use the same saved account and machine identity as their sidebar
+connection, in either direction. Coder and Daytona wait for the saved machine to
+be ready; Railway uses its saved, verified SSH key. Teleport does not create a new
+cloud device or install Herdr. Cloud authentication and command preparation run
+only after a host is chosen, on the background worker.
+
+1. **Choose a host.** Every other enabled supported host is listed at once, connected or
    not; nothing is probed until one is chosen. The review then finds where the
    worktree goes there: the checkout it once left (see below), else the
    repository if it is open, matched by normalized Git remote (`origin` first,

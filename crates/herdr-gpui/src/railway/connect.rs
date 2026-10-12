@@ -11,6 +11,7 @@ use herdr_client::{Bridge, Transport};
 use std::{
     io,
     path::{Path, PathBuf},
+    process::Command,
     sync::atomic::{AtomicBool, Ordering},
 };
 
@@ -21,6 +22,11 @@ fn connect_saved(
     session: &str,
     stop: &AtomicBool,
 ) -> Result<Bridge> {
+    let command = saved_command(dir, account, id, stop)?;
+    herdr_client::connect_command(command, session, stop).map_err(Error::Bridge)
+}
+
+fn saved_command(dir: &Path, account: &str, id: &str, stop: &AtomicBool) -> Result<Command> {
     let cancelled = || stop.load(Ordering::Acquire);
     let key = PathBuf::from(account);
     if !key.is_absolute() {
@@ -34,8 +40,12 @@ fn connect_saved(
     if keys::fingerprint(&key, &cancelled)? != id {
         return Err(Error::KeyChanged(key));
     }
-    let command = ssh::command(&key, &ssh::known_hosts(dir), false)?;
-    herdr_client::connect_command(command, session, stop).map_err(Error::Bridge)
+    ssh::command(&key, &ssh::known_hosts(dir), false)
+}
+
+/// Reuse the saved device's identity and host-key policy for background scripts.
+pub(crate) fn command(account: &str, id: &str, stop: &AtomicBool) -> Result<Command> {
+    saved_command(&ssh::state_dir()?, account, id, stop)
 }
 
 /// Reach the Railway device `id`, whose key is at `account`, for
