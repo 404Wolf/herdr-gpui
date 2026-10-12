@@ -63,6 +63,7 @@ fn status_slots_are_fixed_for_each_style_and_font_size() {
             size,
             fallbacks: None,
             line_height_multiple: None,
+            weight: gpui::FontWeight::NORMAL,
         };
         for style in [IndicatorStyle::Dots, IndicatorStyle::Symbols] {
             let mut indicators = Indicators::new(None, false, &Theme::default());
@@ -100,6 +101,7 @@ fn symbol_rows_keep_layout_density_and_expand_child_indent() {
         size: 20.,
         fallbacks: None,
         line_height_multiple: None,
+        weight: gpui::FontWeight::NORMAL,
     };
     let theme = Theme::default();
     for mode in [
@@ -249,6 +251,7 @@ fn child_gutter_lines_land_on_whole_device_pixels() {
         size: 12.,
         fallbacks: None,
         line_height_multiple: None,
+        weight: gpui::FontWeight::NORMAL,
     };
     for scale in [1., 2., 3.] {
         let row = Bounds::new(point(px(0.), px(244.)), size(px(231.), px(40.)));

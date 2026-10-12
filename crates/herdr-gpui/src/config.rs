@@ -12,6 +12,7 @@ mod bitmap_fonts;
 mod coder;
 mod daytona;
 mod files;
+mod font_weight;
 mod fonts;
 mod keybindings;
 mod layout;
@@ -34,6 +35,7 @@ pub use daytona::DaytonaConfig;
 #[cfg(feature = "daytona")]
 pub(crate) use daytona::DaytonaFields;
 use files::write_config;
+pub use font_weight::bold as bold_font_weight;
 pub(crate) use fonts::FontFace;
 use fonts::FontSettings;
 #[cfg(any(test, feature = "integration-test"))]
@@ -150,6 +152,8 @@ pub struct Config {
     /// Configured families, sorted, that font resolution found no installed
     /// family for; `diagnostic` reports them.
     pub(crate) missing_fonts: Vec<String>,
+    /// The terminal's configured weight, when its family has no face at it.
+    pub(crate) missing_weight: Option<font_weight::MissingWeight>,
 }
 
 /// A device list larger than any real catalog is a config mistake.
@@ -412,6 +416,7 @@ impl Default for Config {
             size,
             fallbacks: None,
             line_height_multiple: None,
+            weight: gpui::FontWeight::NORMAL,
         };
         Self {
             theme: "Default".into(),
@@ -451,6 +456,7 @@ impl Default for Config {
             unknown_keys: Vec::new(),
             icon_font_missing: false,
             missing_fonts: Vec::new(),
+            missing_weight: None,
             palette: crate::palette::PaletteConfig::default(),
             sidebar: font(monospace, 12.0),
             // Tabs are terminal chrome, so they read in the monospace face the
@@ -656,6 +662,13 @@ impl Config {
                 .collect();
             lines.push(format!("Configured fonts not installed: {}", list(&fonts)));
         }
+        if let Some(missing) = &self.missing_weight {
+            lines.push(format!(
+                "\"{}\" has no {} face; using its nearest weight",
+                missing.family,
+                font_weight::describe(missing.weight)
+            ));
+        }
         (!lines.is_empty()).then(|| lines.join("\n"))
     }
 
@@ -748,8 +761,9 @@ impl Config {
             }
             known
         });
-        // Only the terminal grid takes a line height. The other faces size
-        // fixed chrome, so there it is ignored like any other unknown key.
+        // Only the terminal grid takes a line height or weight. The other
+        // faces draw fixed chrome whose emphasis sets its own weights, so
+        // there both are ignored like any other unknown key.
         unknown_keys.extend(
             [
                 ("sidebar", &mut settings.sidebar.font),
@@ -757,7 +771,7 @@ impl Config {
                 ("ui", &mut settings.ui),
             ]
             .into_iter()
-            .filter_map(|(name, face)| face.reject_line_height(name)),
+            .flat_map(|(name, face)| face.reject_terminal_keys(name)),
         );
         // Unknown keys are ignored, but a credential pasted into the file is
         // refused so it is noticed and removed rather than left on disk.

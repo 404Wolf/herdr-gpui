@@ -927,7 +927,11 @@ all returning the crate's typed `Result`. `Config::theme()` resolves
 built-ins or Ghostty files into a `Theme` with packed 24-bit RGB colors and all
 256 palette entries. Theme resolution is a separate fallible step from loading
 and validating TOML. Font sections can override either family or size without
-repeating the other field. `FontConfig::line_height()` returns `size * 20 / 14`.
+repeating the other field. `FontConfig::line_height()` returns `size * 20 / 14` unless
+`[terminal] line_height` sets the multiple. `[terminal] weight` takes a CSS
+weight name or 100 to 900; bold cells draw `bold_font_weight` of it, 300
+heavier and at least bold. On macOS, font resolution reports a weight the
+family has no face for; other platforms do not check.
 The `[features]` table holds opt-in behaviors as `Features`, with every flag off
 by default and unknown keys rejected like the other sections; Preferences lists
 each flag and its state read-only, since only the config file turns one on.

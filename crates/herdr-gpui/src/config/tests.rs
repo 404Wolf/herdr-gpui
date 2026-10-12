@@ -11,6 +11,7 @@ mod code_start;
 mod default_fonts;
 mod discovery;
 mod font_aliases;
+mod font_weight;
 mod fonts;
 mod github;
 mod icon_font;

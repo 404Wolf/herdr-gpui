@@ -332,7 +332,7 @@ impl TerminalPainter {
         let mut font = font.clone();
         let modifier = glyphs::style_modifier(style);
         if modifier & BOLD != 0 {
-            font.weight = FontWeight::BOLD;
+            font.weight = crate::config::bold_font_weight(font.weight);
         }
         if modifier & ITALIC != 0 {
             font.style = FontStyle::Italic;

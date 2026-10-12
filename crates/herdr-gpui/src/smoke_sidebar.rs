@@ -18,6 +18,7 @@ fn symbol_cascade(window: &mut Window, cx: &mut App) -> Result<&'static str> {
         size: crate::terminal::FONT_SIZE,
         fallbacks: Some(detected.clone()),
         line_height_multiple: None,
+        weight: FontWeight::NORMAL,
     }
     .font();
     // Fallback faces never enter `get_font_for_id`, and a cascade gives the
