@@ -11,13 +11,6 @@ pub(super) use logs::logs;
 pub(super) use processes::processes;
 pub(super) use search::search;
 
-fn todo() -> crate::Result<Output> {
-    Err(crate::Error::ControlRejected {
-        code: crate::control::ErrorCode::Unsupported,
-        message: "Not implemented yet".into(),
-    })
-}
-
 /// Every command `run` accepts, with its name and label.
 pub(super) fn commands() -> crate::Result<Output> {
     let commands: Vec<_> = crate::controls::COMMANDS
