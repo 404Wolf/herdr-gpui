@@ -621,3 +621,6 @@ fn a_bottom_strip_still_reorders_by_dragging(cx: &mut TestAppContext) {
 /// A chosen page's tab stays in view as its title comes in.
 mod group_drop;
 mod page_title;
+
+/// The dividers between groups, and the grips that drag them.
+mod divider;
