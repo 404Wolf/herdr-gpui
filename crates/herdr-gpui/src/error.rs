@@ -668,15 +668,30 @@ pub enum Error {
     DeviceSetupTimeout,
     #[error("This host and session are already saved as \u{201c}{0}\u{201d}.")]
     DeviceExists(String),
-    #[error("This host is already being added.")]
+    #[error(
+        "This host is already being added, in another Add Device dialog or a \u{201c}Set up\u{201d} workspace that is still running. Finish or close it, then try again."
+    )]
     DeviceAdding,
     #[error("Searching the local network failed: {0}")]
     Bonjour(#[from] mdns_sd::Error),
-    /// Permission granted while the app runs may only apply after a restart.
+    /// The search waited for the permission and macOS still refused it.
+    /// Turning it on applies to the next search; the app need not restart.
     #[error(
-        "macOS has not allowed Herdr on your local network. Allow it when asked, or turn on Herdr in System Settings › Privacy & Security › Local Network, then quit and reopen Herdr"
+        "macOS has not allowed Herdr on your local network. Turn on Herdr in System Settings › Privacy & Security › Local Network, then search again"
     )]
     LocalNetworkDenied,
+    #[cfg(unix)]
+    #[error("The setup terminal sent something unreadable.")]
+    SetupRelayFrame,
+    #[cfg(unix)]
+    #[error("Herdr closed the setup before it finished. Start it again from Add Device.")]
+    SetupRelayClosed,
+    #[cfg(unix)]
+    #[error("This setup is no longer waiting. Start it again from Add Device.")]
+    SetupRelayConnect(#[source] io::Error),
+    #[cfg(unix)]
+    #[error("The device setup needs a terminal.")]
+    SetupRelayTerminal,
     #[error("Could not list this machine's network addresses: {0}")]
     LocalAddresses(#[source] io::Error),
     #[error("Tailscale did not answer in time")]

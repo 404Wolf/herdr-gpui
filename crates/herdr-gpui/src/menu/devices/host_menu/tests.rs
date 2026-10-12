@@ -208,7 +208,7 @@ fn a_removal_pulses_the_host_header_until_the_device_leaves(cx: &mut TestAppCont
             assert!(view.menu.removing_devices.is_empty());
             assert_eq!(
                 view.local_error.as_deref(),
-                Some("Remove m5max-ms: This host is already being added.")
+                Some(format!("Remove m5max-ms: {}", crate::Error::DeviceAdding).as_str())
             );
             assert!(view.menu.github_hosts.contains_key(HOST));
 

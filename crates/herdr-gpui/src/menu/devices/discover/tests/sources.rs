@@ -274,15 +274,3 @@ fn wildcards_match_like_ssh_globs() {
     assert!(!ssh_config::wildcard("*.conf", "a.conf.bak"));
     assert!(!ssh_config::wildcard("h?st", "hst"));
 }
-
-#[test]
-fn a_refused_multicast_send_means_local_network_access_is_missing() {
-    use std::io;
-    assert!(matches!(
-        bonjour::multicast_sent(Err(io::ErrorKind::HostUnreachable.into())),
-        Err(Error::LocalNetworkDenied)
-    ));
-    assert!(bonjour::multicast_sent(Ok(12)).is_ok());
-    // Other failures are left to the browse itself.
-    assert!(bonjour::multicast_sent(Err(io::ErrorKind::NetworkUnreachable.into())).is_ok());
-}

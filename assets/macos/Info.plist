@@ -14,7 +14,7 @@
     <key>NSHighResolutionCapable</key><true/>
     <key>NSMicrophoneUsageDescription</key><string>Programs running in Herdr terminals are allowed to request access to the microphone.</string>
     <key>NSPhotoLibraryUsageDescription</key><string>Programs running in Herdr terminals are allowed to request access to your photo library.</string>
-    <key>NSLocalNetworkUsageDescription</key><string>Herdr looks for computers on your local network that offer SSH, to suggest them when you add a device.</string>
+    <key>NSLocalNetworkUsageDescription</key><string>Herdr finds computers on your local network that offer SSH, and connects to the devices you add over SSH.</string>
     <key>NSBonjourServices</key>
     <array>
         <string>_ssh._tcp</string>
