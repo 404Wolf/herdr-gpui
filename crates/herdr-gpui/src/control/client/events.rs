@@ -12,7 +12,8 @@ use std::io::Write as _;
 /// How long one request of `events --follow` waits before asking again.
 const FOLLOW_WAIT: u64 = 300;
 
-fn line(event: &Event) -> String {
+/// One event as text, starting with the cursor to resume after it.
+pub(super) fn line(event: &Event, instance: Option<u64>) -> String {
     let detail = event
         .detail
         .as_deref()
@@ -21,7 +22,10 @@ fn line(event: &Event) -> String {
     super::printable(
         &format!(
             "{} {} {}{detail}",
-            event.seq,
+            Cursor {
+                instance,
+                seq: event.seq
+            },
             event.kind.name(),
             event.subject
         ),
@@ -71,7 +75,11 @@ pub(super) fn events(
 ) -> crate::Result<Output> {
     if !follow {
         let (events, next) = poll(after, wait, &kinds, context)?;
-        let text = events.iter().map(line).collect::<Vec<_>>().join("\n");
+        let text = events
+            .iter()
+            .map(|event| line(event, next.instance))
+            .collect::<Vec<_>>()
+            .join("\n");
         let output = Output::data(
             if events.is_empty() {
                 format!("No events; continue with --after {next}")
@@ -93,10 +101,20 @@ pub(super) fn events(
     loop {
         let (events, next) = poll(after, FOLLOW_WAIT, &kinds, context)?;
         for event in &events {
+            // Each line carries its cursor, so a follower can resume after
+            // any event, even across an app restart.
             let text = if context.json {
-                serde_json::to_string(event)?
+                let mut value = serde_json::to_value(event)?;
+                if let Some(object) = value.as_object_mut() {
+                    let cursor = Cursor {
+                        instance: next.instance,
+                        seq: event.seq,
+                    };
+                    object.insert("cursor".into(), cursor.to_string().into());
+                }
+                value.to_string()
             } else {
-                line(event)
+                line(event, next.instance)
             };
             writeln!(stdout, "{text}")?;
         }

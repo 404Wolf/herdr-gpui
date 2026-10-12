@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 use super::*;
 
 #[test]
@@ -33,4 +34,26 @@ fn every_error_code_has_one_exit_status() {
         assert_eq!(status(&rejected(code)), expected, "{code:?}");
     }
     assert_eq!(status(&crate::Error::ControlUnsupported), exit::UNSUPPORTED);
+}
+
+#[test]
+fn every_printed_event_starts_with_the_cursor_to_resume_after_it() {
+    let event = crate::control::protocol::events::Event {
+        seq: 3,
+        at: 0,
+        kind: crate::control::EventKind::TabOpened,
+        subject: "12".into(),
+        detail: Some("w_1".into()),
+    };
+    assert_eq!(events::line(&event, Some(77)), "77:3 tab_opened 12 w_1");
+    assert_eq!(events::line(&event, None), "3 tab_opened 12 w_1");
+}
+
+#[test]
+fn an_empty_patch_is_empty_in_a_pipe_and_said_on_a_terminal() {
+    let mut output = Output::bytes(Vec::new(), &serde_json::json!({})).unwrap();
+    assert!(output.text.is_empty());
+    output.text = "No changes".into();
+    assert_eq!(output.bytes.as_deref(), Some(&[][..]));
+    assert_eq!(for_terminal(&output.text, true), "No changes");
 }

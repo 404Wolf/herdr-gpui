@@ -134,10 +134,12 @@ fn diff(checkout: &Checkout, from: &str, to: Option<&str>) -> crate::Result<Outp
         "to": to,
         "patch": String::from_utf8_lossy(&patch),
     });
-    if patch.is_empty() {
-        return Output::data("No changes", &json);
+    // No changes: a terminal is told so, and a pipe gets the empty patch.
+    let mut output = Output::bytes(patch, &json)?;
+    if output.text.is_empty() {
+        output.text = "No changes".into();
     }
-    Output::bytes(patch, &json)
+    Ok(output)
 }
 
 #[cfg(test)]
