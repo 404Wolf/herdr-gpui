@@ -3,6 +3,7 @@ use core::prelude::v1::test;
 use gpui::TestAppContext;
 use herdr_client::protocol::ClientShellCommand;
 
+mod agent_filter;
 mod background_ranking;
 mod go_to_search;
 mod notes;
