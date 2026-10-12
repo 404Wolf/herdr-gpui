@@ -40,7 +40,7 @@ const BATCH_BYTES: usize = 256 * 1024;
 /// Newest records a reader keeps; older ones remain only on disk.
 pub(crate) const TAIL_RECORDS: usize = 5000;
 /// A reader opening an existing file starts this far from its end.
-const TAIL_BYTES: u64 = 4 * 1024 * 1024;
+pub(crate) const TAIL_BYTES: u64 = 4 * 1024 * 1024;
 const READ_CHUNK: usize = 64 * 1024;
 /// Longer lines are not ours; skip them without buffering.
 const MAX_LINE: usize = 64 * 1024;

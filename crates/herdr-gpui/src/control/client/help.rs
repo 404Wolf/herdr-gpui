@@ -137,7 +137,7 @@ fn family(name: &str) -> &'static str {
         }
         "commands" => "herdr-gpui commands\n    The commands `run` accepts, with their shortcuts.",
         "logs" => {
-            "herdr-gpui logs [--lines N] [--path]\n    The app's latest log records (default 100), or the log file's path.\n    Runs here; Herdr UI need not run. Exits 4 when there is no log yet."
+            "herdr-gpui logs [--lines N] [--path]\n    The app's latest log records (default 100, at most 5000), or the log file's path.\n    Runs here; Herdr UI need not run. Exits 4 when there is no log yet."
         }
         "update" => {
             "herdr-gpui update [status]\nherdr-gpui update check\n    Ask for the latest release. Never downloads or installs. Local\n    builds report updates as off."

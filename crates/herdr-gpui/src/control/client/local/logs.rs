@@ -24,14 +24,19 @@ pub(crate) fn logs(path: bool, lines: usize) -> crate::Result<Output> {
 }
 
 /// The newest `lines` records, oldest first, reaching into the rotated file
-/// when the current one has fewer.
+/// only when the current one was read whole and has fewer: a reader keeps
+/// the end of a long file, and older records must never stand in for the
+/// newer ones it skipped.
 pub(super) fn tail(
     previous: &Path,
     current: &Path,
     lines: usize,
 ) -> crate::Result<Vec<Arc<Record>>> {
     let mut records = read(current)?;
-    if records.len() < lines {
+    let whole = std::fs::metadata(current).map_or(true, |metadata| {
+        metadata.len() <= crate::diagnostics::TAIL_BYTES
+    });
+    if records.len() < lines && records.len() < crate::diagnostics::TAIL_RECORDS && whole {
         let mut older = read(previous)?;
         older.append(&mut records);
         records = older;

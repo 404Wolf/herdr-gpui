@@ -55,3 +55,31 @@ fn records_print_one_line_each_and_unreadable_lines_are_skipped() {
         "[2025-09-26 15:03:45] INFO   first\n[2025-09-26 15:03:45] WARN   second"
     );
 }
+
+#[test]
+fn a_current_file_longer_than_the_reader_keeps_never_reaches_into_the_rotated_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let current = dir.path().join("herdr-gpui.jsonl");
+    let previous = previous_log_file(&current);
+    write(&previous, &["rotated"]);
+    // Enough records to pass the reader's byte window, so only its end is read.
+    let long = "x".repeat(1024);
+    let messages_written: Vec<String> = (0..(crate::diagnostics::TAIL_BYTES / 1024 + 64))
+        .map(|index| format!("{index} {long}"))
+        .collect();
+    let refs: Vec<&str> = messages_written.iter().map(String::as_str).collect();
+    write(&current, &refs);
+    let records = tail(&previous, &current, crate::diagnostics::TAIL_RECORDS).unwrap();
+    assert!(!records.is_empty());
+    assert!(
+        messages(&records)
+            .iter()
+            .all(|message| *message != "rotated"),
+        "older records stood in for skipped newer ones"
+    );
+    assert_eq!(
+        messages(&records).last().copied(),
+        refs.last().copied(),
+        "the newest record is kept"
+    );
+}

@@ -349,7 +349,9 @@ fn command(family: &'static str, args: &mut Args) -> Result<ControlCommand, CliE
         "commands" => ControlCommand::Commands,
         "logs" => ControlCommand::Logs {
             path: args.flag("--path"),
-            lines: args.number("--lines", 1..=10_000)?.unwrap_or(100),
+            lines: args
+                .number("--lines", 1..=crate::diagnostics::TAIL_RECORDS)?
+                .unwrap_or(100),
         },
         "update" => ControlCommand::Update(settings::update(args)?),
         "diagnostics" => {
