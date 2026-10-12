@@ -203,6 +203,11 @@ impl HerdrWindow {
                 )
             }
             WorkspaceAction::DeleteWorktree => body
+                .children(deletion.and_then(|deletion| deletion.merged).map(|number| {
+                    div()
+                        .debug_selector(|| "dialog-merged-pr".into())
+                        .child(format!("Pull request #{number} was merged."))
+                }))
                 .child(if force {
                     "This force removes the checkout folder:"
                 } else {

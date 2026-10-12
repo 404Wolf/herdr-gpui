@@ -104,4 +104,24 @@ impl HerdrWindow {
             self.open_workspace_dialog(shortcut.action(), window, cx);
         }
     }
+
+    /// Asks to remove the focused `workspace`'s checkout because pull request
+    /// `number` was merged, with the dialog its menu row opens, so the
+    /// archive script and every refusal are handled as when asked directly.
+    pub(crate) fn ask_merged_removal(
+        &mut self,
+        workspace: &str,
+        number: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_workspace_menu(workspace, Point::default(), window, cx);
+        if self.menu.page != Some(Page::Workspace) {
+            return;
+        }
+        self.open_workspace_dialog(WorkspaceAction::DeleteWorktree, window, cx);
+        if let Some(deletion) = &mut self.menu.deletion {
+            deletion.merged = Some(number);
+        }
+    }
 }

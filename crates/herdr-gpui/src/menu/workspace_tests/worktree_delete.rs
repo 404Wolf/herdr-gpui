@@ -103,6 +103,7 @@ fn dismissed_removal_reports_refusals(cx: &mut gpui::TestAppContext) {
                 workspace: "w4".into(),
                 pending: Some(pending.into()),
                 force: false,
+                merged: None,
             };
             view.removal = Some(removal("remove"));
             // Another dialog's reply leaves the removal in flight.
@@ -149,6 +150,7 @@ fn pending_removal_shows_loading_only_on_its_worktree(cx: &mut gpui::TestAppCont
                     workspace: "w4".into(),
                     pending: Some("remove".into()),
                     force: false,
+                    merged: None,
                 });
                 match state {
                     1 => view.removal.as_mut().unwrap().pending = None,

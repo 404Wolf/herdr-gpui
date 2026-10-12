@@ -57,6 +57,14 @@ impl HerdrWindow {
                     if dialog_open {
                         self.dismiss_menu(window, cx);
                     }
+                    if let Some(number) = removal.merged {
+                        self.show_flash(
+                            crate::window::Flash::success(format!(
+                                "Removed the worktree of merged pull request #{number}"
+                            )),
+                            cx,
+                        );
+                    }
                     return;
                 };
                 let (code, message) = endpoint_error(error);
@@ -80,7 +88,9 @@ impl HerdrWindow {
             }
             self.menu.error = Some(error.clone());
         }
-        if force {
+        // An automatic removal never escalates: the checkout stays, and only
+        // a removal the user asked for leaves a force confirmation behind.
+        if force && removal.merged.is_none() {
             // Keep the record so reopening the dialog asks for the force removal
             // rather than repeating the refused one.
             self.removal = Some(Removal {

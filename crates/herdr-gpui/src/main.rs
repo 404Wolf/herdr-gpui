@@ -74,6 +74,7 @@ mod log_window;
 mod login_env;
 mod menu;
 mod menus;
+mod merged_cleanup;
 #[cfg(feature = "mockup")]
 mod mockup;
 mod motion;

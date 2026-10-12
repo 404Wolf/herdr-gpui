@@ -20,6 +20,7 @@ fn pending_deletion(
         workspace: "w4".into(),
         pending: Some("remove".into()),
         force: false,
+        merged: None,
     });
     cx.notify();
 }

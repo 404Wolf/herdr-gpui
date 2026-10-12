@@ -240,6 +240,14 @@ impl Cache {
             .and_then(|entry| entry.value.as_ref())
     }
 
+    /// Pure cache read by lookup key, for the merged worktree cleanup.
+    pub fn get(&self, input: &Input) -> Option<&PullRequest> {
+        self.entries
+            .iter()
+            .find(|entry| &entry.input == input)
+            .and_then(|entry| entry.value.as_ref())
+    }
+
     /// Pure cache read: opening a menu cannot launch Git, HTTPS or daemon requests.
     pub fn present(&mut self, input: &Input, view: &mut Lookup, now: Instant) {
         view.clear();

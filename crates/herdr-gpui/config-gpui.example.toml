@@ -40,6 +40,11 @@ confirm_close_pane = true
 # as soon as its Git check finishes, unless it finds uncommitted files or
 # unpushed commits, which always ask.
 confirm_close_workspace = true
+# Remove a linked worktree, and close its workspace, once its pull request is
+# merged, without asking. Only on this machine's daemon, and only when the
+# checkout has no uncommitted or untracked files and sits at the merged head
+# commit. The focused workspace asks first. The branch is kept.
+remove_merged_worktrees = false
 # Show the Agents section below Spaces in the sidebar.
 show_agents = true
 # Show the search field at the top of the sidebar, which finds devices,

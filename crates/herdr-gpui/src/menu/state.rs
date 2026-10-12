@@ -135,6 +135,8 @@ pub(super) struct Deletion {
     pub(super) force: bool,
     /// Whether the checkout has an archive script to run first.
     pub(super) archive: crate::worktree_scripts::ArchiveCheck,
+    /// The merged pull request that opened this dialog without being asked.
+    pub(super) merged: Option<u64>,
 }
 
 impl Deletion {
@@ -145,6 +147,7 @@ impl Deletion {
             root: None,
             force,
             archive: crate::worktree_scripts::ArchiveCheck::Unread,
+            merged: None,
         }
     }
 
@@ -169,9 +172,17 @@ pub(crate) struct Removal {
     pub(super) pending: Option<String>,
     /// Set once the daemon refused the checkout as dirty.
     pub(super) force: bool,
+    /// The merged pull request this removal was sent for without asking.
+    pub(crate) merged: Option<u64>,
 }
 
 impl Removal {
+    /// Whether the daemon has yet to answer, rather than a refusal kept for
+    /// its force confirmation.
+    pub(crate) fn waiting(&self) -> bool {
+        self.pending.is_some()
+    }
+
     pub(crate) fn pending_for(&self, endpoint: (u64, u64), boot_id: &str, workspace: &str) -> bool {
         self.pending.is_some()
             && self.endpoint == endpoint

@@ -300,6 +300,11 @@ impl HerdrWindow {
                 self.config.confirm_close_workspace.to_string(),
             ))
             .child(row(
+                "preferences-remove-merged-worktrees",
+                "Remove merged worktrees",
+                self.config.remove_merged_worktrees.to_string(),
+            ))
+            .child(row(
                 "preferences-layout",
                 "Layout",
                 self.config.layout.mode.to_string(),

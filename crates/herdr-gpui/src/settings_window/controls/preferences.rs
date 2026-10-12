@@ -89,6 +89,24 @@ impl SettingsWindow {
         switches.map(|(id, label, on, edit)| self.preference_switch(id, label, on, edit, cx))
     }
 
+    /// The automatic removal switch, with the note that says what it deletes.
+    pub(super) fn merged_worktree_controls(&self, cx: &mut Context<Self>) -> [Div; 2] {
+        let on = self.config.remove_merged_worktrees;
+        [
+            div().child(self.preference_switch(
+                "settings-remove-merged-worktrees",
+                "Remove worktrees of merged PRs",
+                on,
+                Preference::RemoveMergedWorktrees(!on),
+                cx,
+            )),
+            self.control_note(
+                "Deletes a clean linked worktree and closes its workspace once its PR is merged. \
+                 The focused workspace asks first.",
+            ),
+        ]
+    }
+
     fn preference_choice(
         &self,
         id: impl Into<SharedString>,
@@ -241,6 +259,11 @@ mod tests {
                 Section::General,
                 "settings-confirm-close-workspace",
                 Preference::ConfirmCloseWorkspace(false),
+            ),
+            (
+                Section::General,
+                "settings-remove-merged-worktrees",
+                Preference::RemoveMergedWorktrees(true),
             ),
             (
                 Section::General,

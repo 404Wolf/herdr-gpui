@@ -60,6 +60,7 @@ fn held_enter_cannot_confirm_removal_or_its_force_retry(cx: &mut gpui::TestAppCo
                 workspace: "w4".into(),
                 pending: Some("remove".into()),
                 force: false,
+                merged: None,
             });
             view.live.dialog_response = Some((
                 "remove".into(),
