@@ -567,7 +567,7 @@ impl HerdrWindow {
     }
 
     /// An orchestrator tab, drawn in `slot` where a page would be.
-    pub(crate) fn render_orchestrator_tab(&self, slot: Slot, tab: &Tab, gap: f32) -> AnyElement {
+    pub(crate) fn render_orchestrator_tab(&self, slot: Slot, tab: &Tab) -> AnyElement {
         let body = match self.orchestrators.get(&tab.id) {
             Some(orchestrator) => orchestrator.view.clone().into_any_element(),
             None => div().into_any_element(),
@@ -576,7 +576,6 @@ impl HerdrWindow {
             .id(SharedString::from(slot.selector("orchestrator-tab")))
             .size_full()
             .min_w_0()
-            .pl(px(gap))
             .child(body)
             .into_any_element()
     }
