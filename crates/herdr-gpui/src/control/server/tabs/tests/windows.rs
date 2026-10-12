@@ -91,6 +91,19 @@ fn a_tab_of_a_workspace_no_window_lists_is_not_found(cx: &mut gpui::TestAppConte
                 ..
             }
         ));
+        // A named window that does not show the tab closes nothing.
+        let named = Caller {
+            window: Some(999_999),
+            ..Caller::default()
+        };
+        assert!(matches!(
+            close(&named, elsewhere.into(), cx),
+            Response::Error {
+                code: ErrorCode::NotFound,
+                ..
+            }
+        ));
+        assert!(cx.global::<Store>().get(elsewhere).is_some());
         // Closing needs no window: the store forgets it, and windows follow.
         assert!(matches!(
             close(&Caller::default(), elsewhere.into(), cx),

@@ -194,10 +194,19 @@ fn close(caller: &Caller, id: u64, cx: &mut App) -> Response {
         Ok(tab) => tab,
         Err(response) => return response,
     };
-    if let Some((handle, _)) = showing(caller, &tab, cx) {
-        let _ = handle.update(cx, |view, window, cx| {
-            view.close_browser_tab(tab.id, window, cx);
-        });
+    match showing(caller, &tab, cx) {
+        Some((handle, _)) => {
+            let _ = handle.update(cx, |view, window, cx| {
+                view.close_browser_tab(tab.id, window, cx);
+            });
+        }
+        // A named window must be the one showing the tab: a stale or wrong
+        // `--window` never closes a tab elsewhere.
+        None => {
+            if let Some(window) = caller.window {
+                return not_found(format!("Window {window} does not show tab {id}"));
+            }
+        }
     }
     Store::update(cx, |store| store.close(tab.id));
     Response::done(format!("Closed tab {id} ({})", tab.title))
