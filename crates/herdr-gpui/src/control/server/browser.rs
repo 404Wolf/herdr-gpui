@@ -261,8 +261,9 @@ fn respond_feedback(
     if let Err(Response::Feedback { text: Some(text) }) =
         incoming.try_respond(Response::Feedback { text })
     {
+        // Back first in line: it was the oldest when it was taken.
         cx.default_global::<Feedback>()
-            .keep(crate::browser::Batch { target, text }, None);
+            .keep_again(crate::browser::Batch { target, text });
     }
 }
 

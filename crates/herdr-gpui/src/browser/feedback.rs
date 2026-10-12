@@ -16,6 +16,27 @@ const MAX_KEPT: usize = 16;
 #[cfg(any(unix, test))]
 pub(crate) const TAKE_BUDGET: usize = 240 * 1024;
 
+/// `text` cut, at a character, to fit `budget` as JSON, saying so: a batch
+/// over the budget could never be handed out in one answer.
+#[cfg(any(unix, test))]
+pub(crate) fn fit(text: String, budget: usize) -> String {
+    const CUT: &str = "\n[Notes cut: too long for one answer]";
+    if json_size(&text) <= budget {
+        return text;
+    }
+    let room = budget.saturating_sub(json_size(CUT));
+    // Quotes, then each character as JSON escapes it.
+    let mut used = 2;
+    let end = text
+        .char_indices()
+        .find(|(_, c)| {
+            used += json_size(c.encode_utf8(&mut [0; 4])) - 2;
+            used > room
+        })
+        .map_or(text.len(), |(at, _)| at);
+    format!("{}{CUT}", &text[..end])
+}
+
 /// `text`'s size inside a JSON string.
 #[cfg(any(unix, test))]
 pub(crate) fn json_size(text: &str) -> usize {
@@ -64,11 +85,31 @@ impl Feedback {
     }
 
     pub(crate) fn keep(&mut self, batch: Batch, pending: Option<Arc<()>>) {
+        #[cfg(any(unix, test))]
+        let batch = Batch {
+            text: fit(batch.text, TAKE_BUDGET),
+            ..batch
+        };
         if self.kept.len() >= MAX_KEPT {
             self.kept.pop_front();
         }
         self.added += 1;
         self.kept.push_back((batch, pending, self.added));
+    }
+
+    /// Keeps again, first in line, a batch that was taken but never reached
+    /// its agent, so it still goes before every newer one. It is no new
+    /// batch, so it raises no new event.
+    #[cfg(unix)]
+    pub(crate) fn keep_again(&mut self, batch: Batch) {
+        let batch = Batch {
+            text: fit(batch.text, TAKE_BUDGET),
+            ..batch
+        };
+        if self.kept.len() >= MAX_KEPT {
+            self.kept.pop_back();
+        }
+        self.kept.push_front((batch, None, 0));
     }
 
     /// What is kept for this daemon and pane, oldest first, joined into one

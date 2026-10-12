@@ -50,3 +50,20 @@ fn a_batch_that_does_not_fit_holds_back_every_newer_one() {
     assert!(rest.starts_with('b') && rest.ends_with("\nc, a correction"));
     assert!(feedback.take(&p1).is_none());
 }
+
+#[test]
+fn a_batch_kept_again_goes_first_and_an_oversized_one_is_cut_to_fit() {
+    let mut feedback = Feedback::default();
+    let p1 = key("/default.sock", "p1");
+    feedback.keep(batch("p1", "newer"), None);
+    feedback.keep_again(batch("p1", "older, never delivered"));
+    assert_eq!(
+        feedback.take(&p1).as_deref(),
+        Some("older, never delivered\nnewer")
+    );
+    // Too long for one answer: cut when kept, so it is never stuck.
+    feedback.keep(batch("p1", &"\u{1}".repeat(TAKE_BUDGET)), None);
+    let taken = feedback.take(&p1).unwrap();
+    assert!(json_size(&taken) <= TAKE_BUDGET, "{}", json_size(&taken));
+    assert!(taken.ends_with("[Notes cut: too long for one answer]"));
+}
