@@ -2,6 +2,8 @@
 use super::*;
 use std::fs;
 
+mod empty_defaults;
+
 #[test]
 fn saving_writes_only_edited_keys_and_validates_first() {
     let dir = tempfile::tempdir().unwrap();

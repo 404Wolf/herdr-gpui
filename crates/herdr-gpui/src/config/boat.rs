@@ -14,11 +14,11 @@ use std::{env, ffi::OsString, path::Path};
 pub struct BoatConfig {
     /// The API root, `https://boat.dev/api/v1` for Boat's cloud.
     pub api_url: Option<String>,
-    /// An organization ID or name whose wallet should pay for sandboxes.
+    /// An organization ID or name; the active wallet if unset or empty.
     pub organization: Option<String>,
-    /// `small`, `default`, `large`, or `xlarge`; Boat's default if unset.
+    /// `small`, `default`, `large`, or `xlarge`; Boat's default if unset or empty.
     pub machine_type: Option<String>,
-    /// A named Boat environment; the account's default if unset.
+    /// A named Boat environment; the account's default if unset or empty.
     pub environment: Option<String>,
     pub allow_plaintext_credentials: bool,
 }

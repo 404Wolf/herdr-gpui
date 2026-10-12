@@ -118,26 +118,21 @@ impl Request<'_> {
         };
         let send = || self.post_idempotent("create_sandbox", "/sandboxes", &idempotency, &payload);
         let mut created: Result<One> = send();
-        if matches!(
-            &created,
-            Err(Error::Network(_))
-                | Err(Error::Status(super::Status {
-                    code: 500..=599,
-                    ..
-                }))
-        ) {
-            // The first request may have created a billable sandbox even when
-            // its response was lost. The same key makes this retry return it.
-            for delay in [500, 1_000, 2_000] {
-                std::thread::sleep(Duration::from_millis(delay));
-                created = send();
-                if !matches!(
-                    &created,
-                    Err(Error::Status(super::Status { code: 409, .. }))
-                ) {
-                    break;
-                }
+        // A lost reply may still have created a billable sandbox. Every retry
+        // keeps the same key, including while Boat finishes the first request.
+        for delay in [500, 1_000, 2_000] {
+            if !matches!(
+                &created,
+                Err(Error::Network(_) | Error::Read(_))
+                    | Err(Error::Status(super::Status {
+                        code: 409 | 500..=599,
+                        ..
+                    }))
+            ) {
+                break;
             }
+            std::thread::sleep(Duration::from_millis(delay));
+            created = send();
         }
         let created = created?;
         // Boat assigns a default name during create and exposes renaming as a

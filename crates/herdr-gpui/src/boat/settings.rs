@@ -35,12 +35,15 @@ impl Settings {
             return Ok(None);
         };
         let plain = |value: &Option<String>, field| match value {
+            Some(text) if text.is_empty() => Ok(None),
             Some(text) if !plain_value(text) => Err(Error::Field(field)),
             _ => Ok(value.clone()),
         };
-        if config
+        let machine_type = config
             .machine_type
             .as_deref()
+            .filter(|kind| !kind.is_empty());
+        if machine_type
             .is_some_and(|kind| !matches!(kind, "small" | "default" | "large" | "xlarge"))
         {
             return Err(Error::Field("boat.machine_type"));
@@ -48,7 +51,7 @@ impl Settings {
         Ok(Some(Self {
             base: api_root(&url)?,
             organization: plain(&config.organization, "boat.organization")?,
-            machine_type: config.machine_type.clone(),
+            machine_type: machine_type.map(str::to_owned),
             environment: plain(&config.environment, "boat.environment")?,
             store: Store::for_policy(config.allow_plaintext_credentials),
         }))
