@@ -35,11 +35,6 @@ const FIELDS: [(&str, &str); 4] = [
     ),
 ];
 
-enum Update {
-    Overview(crate::boat::Result<Overview>),
-    Done(crate::boat::Result<()>),
-}
-
 enum Account {
     Checking,
     Known(Overview),
@@ -128,7 +123,7 @@ impl SettingsWindow {
     fn boat_job(
         &mut self,
         cx: &mut Context<Self>,
-        work: impl FnOnce(&dyn Fn() -> bool, &dyn Fn(Update)) + Send + 'static,
+        work: impl FnOnce(&dyn Fn() -> bool, &dyn Fn(crate::boat::Result<Overview>)) + Send + 'static,
     ) {
         let Some(card) = &mut self.boat_card else {
             return;
@@ -138,7 +133,7 @@ impl SettingsWindow {
             "herdr-boat-settings",
             cx,
             work,
-            |this: &mut Self, update, cx| this.apply_boat(update, cx),
+            |this: &mut Self, update, _| this.apply_boat(update),
         ) {
             Ok(job) => {
                 if let Some(card) = &mut self.boat_card {
@@ -170,17 +165,17 @@ impl SettingsWindow {
             card.account = Account::Checking;
         }
         self.boat_job(cx, move |_, send| {
-            send(Update::Overview(setup::overview(&settings)));
+            send(setup::overview(&settings));
         });
     }
 
-    fn apply_boat(&mut self, update: Update, cx: &mut Context<Self>) {
+    fn apply_boat(&mut self, update: crate::boat::Result<Overview>) {
         let Some(card) = &mut self.boat_card else {
             return;
         };
         match update {
-            Update::Overview(Ok(overview)) => card.account = Account::Known(overview),
-            Update::Overview(Err(error)) => {
+            Ok(overview) => card.account = Account::Known(overview),
+            Err(error) => {
                 card.account = Account::Known(Overview {
                     key: Key::Missing,
                     sandboxes: None,
@@ -188,14 +183,13 @@ impl SettingsWindow {
                 });
                 card.message = Some(error.to_string());
             }
-            Update::Done(result) => {
-                card.message = result.err().map(|error| error.to_string());
-                self.refresh_boat(cx);
-            }
         }
     }
 
     fn save_boat(&mut self, cx: &mut Context<Self>) {
+        if self.busy() {
+            return;
+        }
         let Some(card) = &mut self.boat_card else {
             return;
         };
@@ -220,15 +214,13 @@ impl SettingsWindow {
 
     fn forget_boat_key(&mut self, cx: &mut Context<Self>) {
         let store = Store::for_policy(self.config.boat.allow_plaintext_credentials);
-        self.boat_job(cx, move |_, send| {
-            send(Update::Done(setup::save_key(store, None)));
-        });
+        // Credential mutations share the save lifecycle: replacement waits for
+        // deletion, and account refreshes cannot drop a write's completion.
+        self.save_native(move || Ok(setup::save_key(store, None)?), cx);
     }
 
     fn forget_boat_device(&mut self, id: String, cx: &mut Context<Self>) {
-        self.boat_job(cx, move |_, send| {
-            send(Update::Done(setup::forget_device(&id)));
-        });
+        self.save_native(move || Ok(setup::forget_device(&id)?), cx);
     }
 
     fn create_boat_sandbox(&mut self, cx: &mut Context<Self>) {

@@ -1,6 +1,8 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
 
+mod paths;
+
 fn access() -> SshAccess {
     SshAccess {
         machine_ip: Some("203.0.113.10".into()),

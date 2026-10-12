@@ -16,6 +16,15 @@ const ALIAS: &str = "herdr-boat-sandbox";
 const PRIVATE_KEY: &str = "boat_ed25519";
 static KEY_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
+// OpenSSH expands percent tokens and parses whitespace even in an argv value.
+fn quoted_path(path: &Path) -> Result<String> {
+    let text = path.to_str().ok_or(Error::Gateway)?;
+    if !path.is_absolute() || text.contains(['"', '\n', '\r', '\0']) {
+        return Err(Error::Gateway);
+    }
+    Ok(format!("\"{}\"", text.replace('%', "%%")))
+}
+
 fn private_key() -> Result<PathBuf> {
     let _guard = KEY_LOCK
         .get_or_init(|| Mutex::new(()))
@@ -133,12 +142,12 @@ impl Gateway {
         writeln!(known_hosts, "{ALIAS} {}", access.host_key)
             .and_then(|()| known_hosts.flush())
             .map_err(Error::GatewayFile)?;
-        let known_hosts_path = known_hosts.path().to_str().ok_or(Error::Gateway)?;
+        let known_hosts_path = quoted_path(known_hosts.path())?;
         let mut command = Command::new("ssh");
         command
             .args(["-F", "/dev/null", "-T"])
-            .arg("-i")
-            .arg(private)
+            .arg("-o")
+            .arg(format!("IdentityFile={}", quoted_path(private)?))
             .args(["-o", "IdentitiesOnly=yes"])
             .args(["-o", "BatchMode=yes"])
             .args(["-o", "NumberOfPasswordPrompts=0"])

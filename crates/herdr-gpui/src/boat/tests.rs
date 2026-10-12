@@ -1,4 +1,5 @@
 use super::*;
+pub(crate) use super::{api::wait_ready, http::Request};
 
 pub(crate) mod mock;
 
