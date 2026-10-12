@@ -95,6 +95,29 @@ fn chords_without_a_usable_prefix_keep_separate_keys() {
     );
 }
 
+/// A custom command cannot take a macOS system key, unlike a command the
+/// keymap binds: the app holds the key, or the command bound to it does.
+#[test]
+fn a_system_key_never_reaches_a_custom_command_whoever_holds_it() {
+    let commands = [custom("hide", &["cmd+alt+h"])];
+    let label = keystroke("cmd-alt-h").unparse();
+    let reach = |keymap: &Keymap| reference(keymap, &commands);
+    // Elsewhere the keystroke is no system key, and nothing holds it.
+    let unbound = if cfg!(target_os = "macos") {
+        Reach::Shadowed
+    } else {
+        Reach::Runs
+    };
+    assert_eq!(reach(&Keymap::default()), [vec![entry(&label, unbound)]]);
+    let taken = with(&[("focus_left", one("cmd-alt-h"))]).unwrap();
+    assert_eq!(reach(&taken), [vec![entry(&label, Reach::Shadowed)]]);
+    assert!(
+        taken
+            .custom_command(&commands, &keystroke("cmd-alt-h"), false)
+            .is_none()
+    );
+}
+
 #[test]
 fn reserved_and_keymap_keystrokes_never_reach_a_custom_command() {
     let keymap = Keymap::default();
