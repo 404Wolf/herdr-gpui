@@ -138,3 +138,33 @@ fn a_diff_keeps_the_bytes_git_printed() {
     );
     assert!(bytes.ends_with(b"\n \n"), "the blank context line is kept");
 }
+
+#[test]
+fn a_diff_carries_binary_changes_so_it_applies() {
+    let temp = tempfile::tempdir().unwrap();
+    let main = temp.path().join("main");
+    fs::create_dir(&main).unwrap();
+    git(&main, &["init", "-q", "-b", "main"]);
+    fs::write(main.join("image.bin"), [0u8, 1, 2, 3, 0, 255]).unwrap();
+    git(&main, &["add", "-A"]);
+    git(&main, &["commit", "-q", "-m", "base"]);
+    let key = git(&main, &["rev-parse", "--absolute-git-dir"]);
+    let checkout = Checkout::new(Host::Local, key.trim(), Some("main")).unwrap();
+    let first = create(&checkout, "first", isolated).unwrap().unwrap();
+    fs::write(main.join("image.bin"), [0u8, 9, 9, 9, 0, 254, 7]).unwrap();
+    let patch = diff(&checkout, &first, None, isolated_bytes).unwrap();
+    assert!(
+        patch.windows(12).any(|window| window == b"GIT binary p"),
+        "{}",
+        String::from_utf8_lossy(&patch)
+    );
+    // Applied to the checkpoint's state, the patch makes the edit again.
+    git(&main, &["checkout", "--", "image.bin"]);
+    let file = temp.path().join("p.patch");
+    fs::write(&file, &patch).unwrap();
+    git(&main, &["apply", file.to_str().unwrap()]);
+    assert_eq!(
+        fs::read(main.join("image.bin")).unwrap(),
+        [0u8, 9, 9, 9, 0, 254, 7]
+    );
+}

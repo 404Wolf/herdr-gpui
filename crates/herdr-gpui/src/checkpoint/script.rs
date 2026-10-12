@@ -170,7 +170,7 @@ to=$(GIT_INDEX_FILE="$tmp" git -c core.fsmonitor=false write-tree)
         .to_owned(),
     };
     format!(
-        "{prelude}from=$(g rev-parse -q --verify \"$namespace\"{from}'^{{commit}}') || exit {EXIT_MISSING}\n{to}g diff --no-ext-diff --no-textconv --no-color \"$from\" \"$to\"\n",
+        "{prelude}from=$(g rev-parse -q --verify \"$namespace\"{from}'^{{commit}}') || exit {EXIT_MISSING}\n{to}g diff --binary --no-ext-diff --no-textconv --no-color \"$from\" \"$to\"\n",
         prelude = prelude(checkout),
         from = shell_quote(from),
     )
