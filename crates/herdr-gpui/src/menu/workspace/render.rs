@@ -3,7 +3,7 @@
 
 use crate::{
     HerdrWindow,
-    menu::{WorkspaceAction, WorkspaceMenuAction, danger},
+    menu::{WorkspaceAction, WorkspaceMenuAction, danger, workspace_close::CHECKING},
 };
 use gpui::{prelude::*, *};
 
@@ -232,20 +232,15 @@ impl HerdrWindow {
                 })),
         };
         if action == WorkspaceAction::Close {
-            body = body.child(div().debug_selector(|| "close-git-status".into()).text_color(danger).child(
-                match self.menu.close_check.as_ref().and_then(|check| check.report.as_ref()) {
-                    None => "Checking for uncommitted files and unpushed commits...".to_owned(),
-                    Some(report) => {
-                        let mut warnings = Vec::new();
-                        if report.dirty { warnings.push("Uncommitted files are present."); }
-                        if report.unpushed { warnings.push("Unpushed commits are present."); }
-                        if report.unknown { warnings.push("Git status could not be verified for every checkout."); }
-                        if report.needs_consent() { warnings.push("Type close to consent to closing anyway, or Cancel to keep working."); }
-                        else { warnings.push("No uncommitted files or unpushed commits found (using local remote-tracking refs)."); }
-                        warnings.join(" ")
-                    }
-                }
-            ));
+            body = body.child(
+                div()
+                    .debug_selector(|| "close-git-status".into())
+                    .text_color(danger)
+                    .child(self.menu.close_check.as_ref().map_or_else(
+                        || CHECKING.to_owned(),
+                        |check| check.status(self.config.confirm_close_workspace),
+                    )),
+            );
         }
         if self.menu.input.is_some() && action != WorkspaceAction::NewWorktree {
             body = body.child(self.render_dialog_input(cx));

@@ -101,3 +101,28 @@ fn unconfirmed_close_still_asks_about_unpublished_work(cx: &mut gpui::TestAppCon
         })
     });
 }
+
+#[test]
+fn status_asks_for_typed_consent_only_when_the_close_needs_it() {
+    let snapshot = sidebar::layout_tests::snapshot(7);
+    let target = WorkspaceTarget::new(&snapshot, &snapshot.workspaces[3]);
+    let mut check = CloseCheck::fixture(&snapshot, &target, None);
+    assert!(check.status(false).starts_with("Checking"));
+    let consent = "Type close";
+    check.report = Some(Report {
+        unknown: true,
+        ..Report::default()
+    });
+    assert!(check.status(true).contains(consent));
+    // A failed automatic close keeps the dialog without an input, so it must
+    // not ask for typing there.
+    assert!(!check.status(false).contains(consent));
+    assert!(check.status(false).contains("could not be verified"));
+    check.report = Some(Report {
+        dirty: true,
+        ..Report::default()
+    });
+    assert!(check.status(false).contains(consent));
+    check.report = Some(Report::default());
+    assert!(check.status(true).starts_with("No uncommitted files"));
+}

@@ -77,6 +77,8 @@ mod tests {
     }
 }
 
+pub(super) const CHECKING: &str = "Checking for uncommitted files and unpushed commits...";
+
 #[derive(Default)]
 pub(super) struct Report {
     pub dirty: bool,
@@ -227,6 +229,32 @@ impl CloseCheck {
     /// Whether the close may be sent, with `text` typed as consent.
     pub fn allows(&self, text: &str, confirm: bool) -> bool {
         self.ready(text) || self.skippable(confirm)
+    }
+
+    /// The dialog's Git line. It asks for typed consent only while the
+    /// close needs it, since the input shows only then.
+    pub fn status(&self, confirm: bool) -> String {
+        let Some(report) = &self.report else {
+            return CHECKING.to_owned();
+        };
+        let mut warnings = Vec::new();
+        if report.dirty {
+            warnings.push("Uncommitted files are present.");
+        }
+        if report.unpushed {
+            warnings.push("Unpushed commits are present.");
+        }
+        if report.unknown {
+            warnings.push("Git status could not be verified for every checkout.");
+        }
+        if !report.needs_consent() {
+            warnings.push(
+                "No uncommitted files or unpushed commits found (using local remote-tracking refs).",
+            );
+        } else if !self.skippable(confirm) {
+            warnings.push("Type close to consent to closing anyway, or Cancel to keep working.");
+        }
+        warnings.join(" ")
     }
 
     pub fn ready(&self, text: &str) -> bool {
