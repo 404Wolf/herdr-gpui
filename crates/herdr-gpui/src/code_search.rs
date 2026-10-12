@@ -9,7 +9,7 @@
 mod rank;
 mod render;
 
-pub(crate) use rank::Mode;
+pub(crate) use rank::{Mode, Query, rank};
 
 use crate::{
     HerdrWindow,
@@ -19,7 +19,7 @@ use crate::{
     search_input::{Changed, SearchInput},
 };
 use gpui::{prelude::*, *};
-use rank::{Hit, Query};
+use rank::Hit;
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -285,7 +285,7 @@ impl HerdrWindow {
         let ranked = index.clone();
         let ranking = cx
             .background_executor()
-            .spawn(async move { rank::rank(&ranked, mode, &query) });
+            .spawn(async move { rank(&ranked, mode, &query) });
         code.rank_task = Some(cx.spawn(async move |this, cx| {
             let hits = ranking.await;
             let _ = this.update(cx, |this, cx| {

@@ -156,6 +156,19 @@ pub(super) fn store(cx: &App) -> Option<&Store> {
     cx.try_global::<Store>()
 }
 
+/// What [`HerdrWindow::open_workspace_page`] did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PageOpened {
+    /// In a tab of the workspace, shown once its navigation lands.
+    Tab,
+    /// In the system browser, on a build without page tabs.
+    SystemBrowser,
+    /// Not opened: too many tabs are open.
+    Full,
+    /// Not opened: the window has no such host, or cannot go to the workspace.
+    Unreachable,
+}
+
 impl HerdrWindow {
     pub(crate) fn browser_key(&self) -> Option<(Scope, String)> {
         let workspace = self.live.snapshot.as_ref()?.focused_workspace_id.clone()?;
@@ -245,13 +258,13 @@ impl HerdrWindow {
         url: WebUrl,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> PageOpened {
         if !super::EMBEDDED {
             cx.open_url(url.as_str());
-            return;
+            return PageOpened::SystemBrowser;
         }
         let Some(index) = self.endpoints.iter().position(|e| e.id == endpoint) else {
-            return;
+            return PageOpened::Unreachable;
         };
         let scope = scope(&self.endpoints[index]);
         let location = Location::Web { url };
@@ -264,15 +277,16 @@ impl HerdrWindow {
         });
         let Some(id) = opened else {
             self.show_flash(Flash::warning("Too many browser tabs are open"), cx);
-            return;
+            return PageOpened::Full;
         };
         if !self.navigate_endpoint(endpoint, NavigationTarget::Workspace(workspace), cx) {
-            return;
+            return PageOpened::Unreachable;
         }
         // Recorded against the workspace, so the tab shows once the
         // navigation lands even if it is still in flight.
         self.show_browser_tab(id, window, cx);
         cx.notify();
+        PageOpened::Tab
     }
 
     /// Applies page reports, drops tabs other windows closed, and forgets the

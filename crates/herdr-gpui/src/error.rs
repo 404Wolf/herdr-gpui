@@ -461,6 +461,12 @@ pub enum Error {
     CheckpointThread(#[source] io::Error),
     #[error("The checkpoint worker stopped.")]
     CheckpointWorker,
+    #[error("Git could not run")]
+    LocalGit(#[source] io::Error),
+    #[error("The current directory is not in a Git checkout.")]
+    NotInCheckout,
+    #[error("HEAD is detached. Check a branch out first.")]
+    DetachedHead,
     #[error("Enter a port number from 1 to 65535.")]
     ForwardPort,
     #[error("Port {0} is already forwarded from this host.")]
@@ -612,6 +618,24 @@ pub enum Error {
         "Controlling a running Herdr UI needs a Unix socket, which this platform build does not provide"
     )]
     ControlUnsupported,
+    #[error("Could not run git in {}: {source}", path.display())]
+    GitCommonDir {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("{} is not in a Git repository", path.display())]
+    NotAGitRepository { path: PathBuf },
+    #[error("Could not read the orchestrator's database: {0}")]
+    OrchestratorItems(#[source] crate::orchestrator::Error),
+    #[error("The page's picture could not be turned into a PNG")]
+    ScreenshotImage,
+    #[error("Could not write the screenshot to {}: {source}", path.display())]
+    ScreenshotWrite {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[cfg(any(target_os = "macos", windows))]
     #[error("Could not create the page: {0}")]
     WebView(#[from] wry::Error),
@@ -702,6 +726,24 @@ pub enum Error {
     RelativeConfigRoot,
     #[error("Cannot migrate {}: {} already contains different settings. Merge your old settings into the local file, then remove the old config; it will be regenerated.", original.display(), local.display())]
     ConfigMigrationConflict { original: PathBuf, local: PathBuf },
+    #[error("{key}: a part of this key holds a value, not a table; unset that part first")]
+    ConfigKeyNotTable { key: String },
+    #[error("Herdr UI has no setting {}; config-gpui.toml lists every setting", .0.join(", "))]
+    UnknownConfigKeys(Vec<String>),
+    #[error("Could not read the log {}: {source}", path.display())]
+    LogRead {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("{} already exists; choose a new file name", path.display())]
+    BundleExists { path: PathBuf },
+    #[error("Could not write {}: {source}", path.display())]
+    BundleWrite {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[error("theme must not be empty")]
     EmptyTheme,
     #[error("{0}.family must not be empty")]

@@ -1,6 +1,6 @@
 ---
 name: herdr-gpui-browser
-description: Open a browser tab in Herdr UI to show the user a web page or an HTML file you wrote, next to the terminal you run in, and get back the notes the user pins on it. Use whenever the user asks to open, start, or show a browser tab, a page, a preview, or a mockup while you run inside Herdr (HERDR_ENV=1 is set in your environment); prefer it there over other browser skills and over opening Safari or another system browser.
+description: Open a browser tab in Herdr UI to show the user a web page or an HTML file you wrote, next to the terminal you run in, and get back the notes the user pins on it. Use whenever the user asks to open, start, or show a browser tab, a page, a preview, or a mockup while you run inside Herdr (HERDR_ENV=1 is set in your environment); prefer it there over other browser skills and over opening Safari or another system browser. Also use it to show the user a file at a line, open a review of your changes, keep a note on a worktree, take a checkpoint, or forward a port in Herdr UI.
 ---
 <!-- herdr-gpui-managed-skill v1: Herdr UI keeps this file up to date. Edit a copy under another name to keep your changes. -->
 
@@ -87,10 +87,14 @@ The commands exit with:
 | Status | Meaning | What to do |
 | --- | --- | --- |
 | 0 | Done | Nothing more |
-| 1 | Refused, for example no window shows your workspace | Print the URL or path for the user instead |
+| 1 | Refused | Print the URL or path for the user instead |
 | 2 | Not an http or https address, or a file that cannot be served | Fix the address, or move the file into a dedicated folder |
 | 3 | Herdr UI is not running | Print the URL or path for the user instead |
 | 4 | `browser feedback`: no notes yet | Wait longer, or ask the user |
+| 5 | No window shows your workspace, or no such tab | Print the URL or path for the user instead |
+| 6 | A dialog is open in Herdr UI, or it is busy | Try again later, or tell the user |
+| 7 | Herdr UI did not answer in time | Try again once |
+| 8 | Not available on this platform or this version | Print the URL or path for the user instead |
 
 If the command is not found, or you run on a remote host over SSH, browser
 tabs are not available to you: print the URL instead. The app listens only on
@@ -100,3 +104,22 @@ On Linux the app has no embedded browser yet: web pages open in the system
 browser, and local files and annotations are not available.
 
 Run `herdr-gpui browser --help` for the full usage.
+
+## More of Herdr UI from the command line
+
+The same executable drives the rest of Herdr UI's own features. Herdr's own
+`herdr` CLI still owns workspaces, terminal tabs, panes, and agents.
+
+```sh
+herdr-gpui code open src/main.rs:42     # show a file at a line, read-only
+herdr-gpui review                       # open the review of your changes
+herdr-gpui notes set waiting on CI      # a note on this worktree
+herdr-gpui checkpoint create before refactor
+herdr-gpui ports open 3000              # localhost:3000 in a tab, forwarded if remote
+herdr-gpui feedback --wait 600          # any notes the user sent this pane
+```
+
+Add `--json` to any command for machine-readable output. Restoring a
+checkpoint, teleporting a worktree, and fanning out a prompt only open the
+dialog: the user confirms there. Run `herdr-gpui --help` to list every
+command, and `herdr-gpui COMMAND --help` for one.

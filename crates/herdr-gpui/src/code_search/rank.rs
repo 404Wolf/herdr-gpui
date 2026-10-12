@@ -34,15 +34,15 @@ impl Mode {
 
 /// A query, and the line a `path:line` query names.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Query {
+pub(crate) struct Query {
     pub(super) text: String,
-    pub(super) line: Option<u32>,
+    pub(crate) line: Option<u32>,
 }
 
 impl Query {
     /// Reads `text`, bounded; in Files mode a trailing `:line` is the line
     /// to open at, as an editor's quick open reads it.
-    pub(super) fn parse(text: &str, mode: Mode) -> Self {
+    pub(crate) fn parse(text: &str, mode: Mode) -> Self {
         let end = text
             .char_indices()
             .nth(MAX_QUERY_CHARS)
@@ -66,8 +66,8 @@ impl Query {
 /// One listed row: a symbol or a file, by its index in the index, and the
 /// byte ranges of its label the query matched.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Hit {
-    pub(super) item: usize,
+pub(crate) struct Hit {
+    pub(crate) item: usize,
     pub(super) highlights: Vec<Range<usize>>,
 }
 
@@ -108,7 +108,7 @@ fn unranked(index: &Index, mode: Mode) -> Vec<usize> {
 
 /// The best rows of `index` for `query`, best first. Ties keep the shorter
 /// label first. An empty query lists [`unranked`] rows.
-pub(super) fn rank(index: &Index, mode: Mode, query: &Query) -> Vec<Hit> {
+pub(crate) fn rank(index: &Index, mode: Mode, query: &Query) -> Vec<Hit> {
     let count = match mode {
         Mode::Symbols => index.symbols().len(),
         Mode::Files => index.files().len(),

@@ -19,6 +19,12 @@ use std::{
 };
 
 pub(crate) const MAX_PENDING: usize = 32;
+
+/// Whether this process plays no sound at all, as `HERDR_DISABLE_SOUND` asks.
+#[cfg(unix)]
+pub(crate) fn muted() -> bool {
+    playback::muted()
+}
 /// How close together two identical notifications from one daemon boot must be
 /// to play once. Herdr sends each event to every attached client, so windows
 /// that share a daemon all hand the same event to the one worker.
@@ -157,6 +163,9 @@ enum PlaybackRequest {
         event: SemanticNotification,
     },
     Preview,
+    /// One sound now, from the file Herdr's settings name for it.
+    #[cfg(unix)]
+    Play(herdr_client::protocol::SemanticNotificationSound),
 }
 
 /// Notifications the worker recently accepted, compared as complete values.
@@ -283,6 +292,8 @@ impl Service {
                         PlaybackRequest::Preview => {
                             (herdr_client::protocol::SemanticNotificationSound::Done, None)
                         }
+                        #[cfg(unix)]
+                        PlaybackRequest::Play(sound) => (sound, current.path_for(sound)),
                     };
                     if let Err(error) = play(
                         sound,
@@ -303,14 +314,29 @@ impl Service {
 
     /// Explicit local test, independent of endpoint state and notification settings.
     pub(crate) fn preview(&self) {
-        if let Some(sender) = &self.sender {
-            let _ = sender.try_send(Job {
-                request: PlaybackRequest::Preview,
-                cancel: self.stop.clone(),
-                connection_cancel: self.stop.clone(),
-                queued: Instant::now(),
-            });
-        }
+        self.request(PlaybackRequest::Preview);
+    }
+
+    /// Plays `sound` now, from the file the local sound settings name for it
+    /// or the built-in one, whatever the notification settings say. Muted
+    /// like every sound when `HERDR_DISABLE_SOUND` is set. False when the
+    /// worker is not running or already has sounds queued.
+    #[cfg(unix)]
+    pub(crate) fn play(&self, sound: herdr_client::protocol::SemanticNotificationSound) -> bool {
+        self.request(PlaybackRequest::Play(sound))
+    }
+
+    fn request(&self, request: PlaybackRequest) -> bool {
+        self.sender.as_ref().is_some_and(|sender| {
+            sender
+                .try_send(Job {
+                    request,
+                    cancel: self.stop.clone(),
+                    connection_cancel: self.stop.clone(),
+                    queued: Instant::now(),
+                })
+                .is_ok()
+        })
     }
 
     #[cfg(test)]

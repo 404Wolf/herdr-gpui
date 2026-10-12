@@ -240,6 +240,17 @@ impl Cache {
             .and_then(|entry| entry.value.as_ref())
     }
 
+    /// Pure cache read of one checkout's lookup, local checkouts included:
+    /// `None` until it was looked up once, else its pull request (if any)
+    /// and why its latest refresh failed (if it did).
+    #[cfg(unix)]
+    pub fn lookup(&self, input: &Input) -> Option<(Option<&PullRequest>, Option<&str>)> {
+        self.entries
+            .iter()
+            .find(|entry| &entry.input == input)
+            .map(|entry| (entry.value.as_ref(), entry.message.as_deref()))
+    }
+
     /// Pure cache read by lookup key, for the merged worktree cleanup.
     pub fn get(&self, input: &Input) -> Option<&PullRequest> {
         self.entries
