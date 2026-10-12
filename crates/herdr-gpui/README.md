@@ -2341,7 +2341,8 @@ while the GUI runs: a click cannot reopen a closed window.
 The Dock icon shows the number of agents reporting `Done` (finished) or `Blocked`
 (waiting for input), and clears at zero. It covers all connected hosts and
 main windows, including minimized windows, without counting the same agent twice.
-Sidebar visibility, muted sounds, and dismissed toasts do not affect the badge.
+Sidebar visibility, muted sounds, dismissed toasts, and the notification
+delivery setting (including off) do not affect the badge.
 Existing attention is counted from each host's first snapshot at startup; no
 new completion or notification is needed. The first positive focus report waits
 until the terminal surface is ready so loading cannot acknowledge unseen work.
@@ -2354,6 +2355,15 @@ agents remain counted until their status changes, even after you view them.
 Disconnecting a host or closing a window removes its contribution, while other
 windows can keep the badge visible. Quitting the GUI stops monitoring; this is
 not a background notification service. Linux and Windows do not show this badge.
+
+macOS draws the badge only when **Badges** is allowed in **System Settings >
+Notifications > Herdr**. The first time the count rises above zero, Herdr asks
+for notification permission including badges, alongside the alerts and sounds
+that system delivery uses, so either feature can ask first. macOS prompts only
+once per bundle identifier. If Herdr was already allowed notifications without
+badges, turn **Badges** on there; if the switch is missing, remove Herdr from
+that list and relaunch it to be asked again. A bare `target/*/herdr-gpui`
+binary cannot ask for permission.
 
 To preview it without waiting for an agent, choose **QA > Enable badge** in the
 macOS menu bar. The preview shows at least `2` and stays on until you choose **QA > Disable badge preview**

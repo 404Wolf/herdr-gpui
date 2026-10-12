@@ -75,6 +75,8 @@ block2               = "0.6.2"
 dispatch2            = { default-features = false, features = ["objc2", "std"], version = "0.3.1" }
 objc2-core-foundation = { default-features = false, features = ["CFCGTypes", "std"], version = "0.3.2" }
 objc2-web-kit        = { default-features = false, features = ["WKSnapshotConfiguration", "WKUIDelegate", "WKWebView", "block2", "objc2-app-kit", "objc2-core-foundation", "std"], version = "0.3.2" }
+# Asks for Dock badge permission; the version GPUI's macOS platform already links.
+objc2-user-notifications ={ default-features = false, features = ["UNUserNotificationCenter", "block2", "std"], version = "0.3.2" }
 raw-window-handle    = "0.6"
 rusqlite             = { features = ["bundled"], version = "0.40" }
 rodio                = { default-features = false, features = ["playback", "symphonia-mp3", "tracing"], version = "0.22.2" }
