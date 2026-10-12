@@ -49,6 +49,9 @@ pub(crate) use layouts::Layouts;
 pub(crate) use location::{LocalFile, Location, OrchestratorRepo, ReviewCheckout};
 #[cfg(any(target_os = "macos", windows))]
 pub(crate) use native::Pages;
+/// A page screenshot as PNG, for `browser screenshot`.
+#[cfg(target_os = "macos")]
+pub(crate) use snapshot::png as page_png;
 pub(crate) use store::{Scope, Store, Tab, TabId};
 pub(crate) use tab_appear::{Leaving, Listed};
 pub(crate) use tab_scroll::{Thumb, ThumbDrag};

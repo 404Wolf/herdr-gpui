@@ -60,6 +60,12 @@ impl Scope {
     pub(crate) fn endpoint(id: &str) -> Self {
         Self(id.to_owned())
     }
+
+    /// The scope as `tab list` reports a tab's host.
+    #[cfg(unix)]
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 /// What a tab is. Every tab is listed in the tab strips; a workspace's one

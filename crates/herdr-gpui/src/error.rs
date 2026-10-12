@@ -605,6 +605,24 @@ pub enum Error {
         "Controlling a running Herdr UI needs a Unix socket, which this platform build does not provide"
     )]
     ControlUnsupported,
+    #[error("Could not run git in {}: {source}", path.display())]
+    GitCommonDir {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("{} is not in a Git repository", path.display())]
+    NotAGitRepository { path: PathBuf },
+    #[error("Could not read the orchestrator's database: {0}")]
+    OrchestratorItems(#[source] crate::orchestrator::Error),
+    #[error("The page's picture could not be turned into a PNG")]
+    ScreenshotImage,
+    #[error("Could not write the screenshot to {}: {source}", path.display())]
+    ScreenshotWrite {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[cfg(any(target_os = "macos", windows))]
     #[error("Could not create the page: {0}")]
     WebView(#[from] wry::Error),

@@ -53,14 +53,16 @@ fn family(name: &str) -> &'static str {
             "herdr-gpui ui sidebar [on|off|toggle]\nherdr-gpui ui statusbar [on|off|toggle]\nherdr-gpui ui font-size +|-|reset|POINTS\n    For this window and session; settings are changed with `config`."
         }
         "tab" => {
-            "herdr-gpui tab [list]\n    The app's own tabs: pages, code, reviews, the orchestrator, Devices.\n    Terminal tabs belong to Herdr: use `herdr tab`.\nherdr-gpui tab focus|close ID"
+            "herdr-gpui tab [list]\n    The app's own tabs: pages, code, reviews, the orchestrator, Devices.\n    Terminal tabs belong to Herdr: use `herdr tab`.\nherdr-gpui tab focus|close ID\n    Show a tab, switching to its workspace, or close it."
         }
         "code" => {
             "herdr-gpui code open FILE[:LINE]\n    Show a local file read-only in a code tab, at LINE.\nherdr-gpui code edit FILE[:LINE]\n    Open it in your terminal editor ($VISUAL, $EDITOR) in a new pane."
         }
-        "devices" => "herdr-gpui devices [open]\n    Open the Devices overview tab.",
+        "devices" => {
+            "herdr-gpui devices [open]\n    Open the Devices overview tab in the caller's workspace."
+        }
         "orchestrator" => {
-            "herdr-gpui orchestrator [open] [--repo PATH]\n    Open the orchestrator of the caller's checkout, or of PATH.\nherdr-gpui orchestrator items|issues|prs [--repo PATH]\n    List what it last synced, from its local database (no network)."
+            "herdr-gpui orchestrator [open] [--repo PATH]\n    Open the orchestrator of the caller's checkout, or of PATH.\nherdr-gpui orchestrator items|issues|prs [--repo PATH]\n    List what it last synced, from its local database (no network).\n    Runs here; Herdr UI need not run. Exits 4 before its first sync."
         }
         "review" => {
             "herdr-gpui review [open]\n    Open the review of the caller's workspace's uncommitted changes."

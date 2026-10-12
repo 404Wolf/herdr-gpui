@@ -3,7 +3,10 @@
 use serde::{Deserialize, Serialize};
 
 /// How long a page may take to hand back its text or picture.
-const PAGE_WAIT_SECONDS: u64 = 15;
+pub(crate) const PAGE_WAIT_SECONDS: u64 = 15;
+/// How long the window may take to switch to the caller's workspace before
+/// opening a tab there.
+pub(crate) const ARRIVE_WAIT_SECONDS: u64 = 5;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
@@ -66,8 +69,39 @@ impl TabOp {
     pub(crate) fn wait_seconds(&self) -> u64 {
         match self {
             Self::Text { .. } | Self::Screenshot { .. } => PAGE_WAIT_SECONDS,
-            _ => 0,
+            Self::Code { .. }
+            | Self::Edit { .. }
+            | Self::Devices
+            | Self::Orchestrator { .. }
+            | Self::Review => ARRIVE_WAIT_SECONDS,
+            Self::List { .. }
+            | Self::Focus { .. }
+            | Self::Close { .. }
+            | Self::Navigate { .. }
+            | Self::Back { .. }
+            | Self::Forward { .. } => 0,
         }
+    }
+}
+
+impl TabKind {
+    /// The kind as `--json` spells it, for the text listing.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Blank => "blank",
+            Self::Web => "web",
+            Self::File => "file",
+            Self::Code => "code",
+            Self::Review => "review",
+            Self::Orchestrator => "orchestrator",
+            Self::Devices => "devices",
+            Self::Editor => "editor",
+        }
+    }
+
+    /// Whether a page shows it: what `browser list` keeps.
+    pub(crate) fn is_page(self) -> bool {
+        matches!(self, Self::Web | Self::File)
     }
 }
 
@@ -106,3 +140,6 @@ pub(crate) enum Reply {
     Opened { id: u64, workspace: String },
     Text { text: String },
 }
+
+#[cfg(test)]
+mod tests;
