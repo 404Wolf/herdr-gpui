@@ -2981,6 +2981,11 @@ Ctrl+Shift+U is left unbound for
   away from its default command, keystrokes need a cmd, ctrl, alt, or fn
   modifier (or a function key F1–F24), and unknown names, unparseable keys, or one key on two configured
   commands reject the config. Saved changes rebind the keymap and menu bar live.
+  On macOS, Cmd-H, Cmd-Option-H, and Cmd-M are Hide, Hide Others, and
+  Minimize, which are menu items rather than commands. A command bound to one
+  of those keystrokes here or in the daemon's `[keys]` runs instead, and the
+  menu item stays without a shortcut. A `[[keys.command]]` shortcut cannot
+  take them.
 - `[pane_keys]` maps a keystroke to the key the focused pane receives instead,
   like Ghostty's `text:` binds. On macOS, Cmd-Left, Cmd-Right, and
   Cmd-Backspace send Ctrl-A, Ctrl-E, and Ctrl-U by default, so zsh and agent
