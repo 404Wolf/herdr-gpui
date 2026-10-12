@@ -34,3 +34,19 @@ fn a_batch_alone_over_the_budget_is_still_taken() {
     assert!(feedback.take(&p1).is_some(), "never kept forever");
     assert!(!feedback.has(&p1));
 }
+
+#[test]
+fn a_batch_that_does_not_fit_holds_back_every_newer_one() {
+    let mut feedback = Feedback::default();
+    let p1 = key("/default.sock", "p1");
+    let half = "a".repeat(TAKE_BUDGET / 2);
+    feedback.keep(batch("p1", &half), None);
+    feedback.keep(batch("p1", &"b".repeat(TAKE_BUDGET / 2 + 16)), None);
+    feedback.keep(batch("p1", "c, a correction"), None);
+    // The second does not fit after the first, so the third waits behind it.
+    assert_eq!(feedback.take(&p1).unwrap(), half);
+    // Then the second and the third together, still in order.
+    let rest = feedback.take(&p1).unwrap();
+    assert!(rest.starts_with('b') && rest.ends_with("\nc, a correction"));
+    assert!(feedback.take(&p1).is_none());
+}

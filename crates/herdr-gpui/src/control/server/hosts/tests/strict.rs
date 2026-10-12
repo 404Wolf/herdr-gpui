@@ -59,3 +59,26 @@ fn a_caller_whose_workspace_no_window_shows_gets_no_window(cx: &mut TestAppConte
         assert!(window_for(&caller(None), cx).is_ok());
     });
 }
+
+#[gpui::test]
+fn a_window_of_the_callers_own_daemon_serves_even_listing_nothing(cx: &mut TestAppContext) {
+    let (view, cx) = window(cx);
+    let daemon = cx.cx.update(|cx| {
+        view.read(cx).endpoints[0]
+            .connection
+            .target
+            .socket_path()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned()
+    });
+    cx.cx.update(|cx| {
+        // Detached, the window lists no workspace of the caller's, but it
+        // is the caller's daemon's window: `window reconnect` reaches it.
+        let own = Caller {
+            daemon_socket: Some(daemon),
+            ..caller(Some("w_not_listed"))
+        };
+        assert!(window_for(&own, cx).is_ok());
+    });
+}

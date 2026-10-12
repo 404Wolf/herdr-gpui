@@ -151,6 +151,19 @@ pub(super) fn window_for(
                 }
             }
         }
+        // A window of the caller's own daemon that lists no workspace, such
+        // as one detached from it, is still the caller's: `window reconnect`
+        // must reach it.
+        if let Some(daemon) = target.daemon {
+            let own = windows.iter().find(|handle| {
+                handle
+                    .read_with(cx, |view, _| view.connects_to(daemon))
+                    .unwrap_or(false)
+            });
+            if let Some(handle) = own {
+                return Ok(*handle);
+            }
+        }
         // The caller's workspace is in no window, perhaps of a session the
         // app does not show: acting on the frontmost window would change
         // another session's.

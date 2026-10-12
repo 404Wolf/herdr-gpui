@@ -79,14 +79,19 @@ impl Feedback {
         let mut used = 0;
         let mut taken = Vec::new();
         let mut rest = VecDeque::with_capacity(self.kept.len());
+        // Oldest first and in order: once one batch does not fit, every
+        // later one for this pane waits too, so a newer note never arrives
+        // before an older one.
+        let mut full = false;
         for entry in self.kept.drain(..) {
-            if &entry.0.target == target {
+            if !full && &entry.0.target == target {
                 let size = json_size(&entry.0.text) + 1;
                 if taken.is_empty() || used + size <= TAKE_BUDGET {
                     used += size;
                     taken.push(entry);
                     continue;
                 }
+                full = true;
             }
             rest.push_back(entry);
         }

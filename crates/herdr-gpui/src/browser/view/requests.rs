@@ -53,6 +53,14 @@ impl HerdrWindow {
             })
     }
 
+    /// Whether one of this window's hosts is the daemon at `daemon`, shown or
+    /// not, connected or not.
+    pub(crate) fn connects_to(&self, daemon: &std::path::Path) -> bool {
+        self.endpoints.iter().any(|endpoint| {
+            endpoint.connection.target.socket_path().ok().as_deref() == Some(daemon)
+        })
+    }
+
     /// Opens the tab a control request asks for, if this window shows its
     /// workspace. `None` leaves the request to another window.
     pub(crate) fn open_requested_browser_tab(
