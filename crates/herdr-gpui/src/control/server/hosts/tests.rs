@@ -6,6 +6,7 @@ use gpui::{Entity, TestAppContext, VisualTestContext};
 mod info;
 mod ports;
 mod pr;
+mod strict;
 
 fn caller(workspace: Option<&str>) -> Caller {
     Caller {

@@ -11,6 +11,7 @@ mod tests;
 use super::{Watches, in_free_window, in_window, socket, target, window_for};
 use crate::{
     HerdrWindow,
+    browser::PageOpened,
     control::protocol::{
         Call, Caller, ErrorCode, Response,
         hosts::{HostOp, LoadInfo, Reply, UsageInfo, UsageWindow},
@@ -70,9 +71,10 @@ pub(super) struct Place {
 impl Place {
     pub(super) fn of(view: &HerdrWindow, caller: &Caller) -> Result<Self, Response> {
         let target = target(caller);
-        let (index, workspace) = [true, false]
-            .into_iter()
-            .find_map(|strict| view.control_target(&target, strict))
+        let (index, workspace) = target
+            .strictness()
+            .iter()
+            .find_map(|strict| view.control_target(&target, *strict))
             .ok_or_else(|| {
                 Response::error(
                     ErrorCode::WorkspaceNotFound,
@@ -286,4 +288,21 @@ fn cloud(caller: &Caller, cx: &mut App) -> Response {
 fn cloud(caller: &Caller, cx: &mut App) -> Response {
     let _ = (caller, cx);
     Response::error(ErrorCode::Unsupported, "This build has no cloud providers")
+}
+
+/// The answer to a request that opened a page: done when a tab (or, on a
+/// build without tabs, the system browser) shows it, refused otherwise.
+/// `None` is a page that opens later, through a tunnel still connecting.
+pub(super) fn page_answer(how: Option<PageOpened>, done: impl FnOnce() -> String) -> Response {
+    match how {
+        Some(PageOpened::Tab | PageOpened::SystemBrowser) => Response::done(done()),
+        None => Response::done(format!("{}, once its tunnel connects", done())),
+        Some(PageOpened::Full) => {
+            Response::error(ErrorCode::TabLimit, "Too many browser tabs are open")
+        }
+        Some(PageOpened::Unreachable) => Response::error(
+            ErrorCode::Failed,
+            "The window could not go to that workspace",
+        ),
+    }
 }

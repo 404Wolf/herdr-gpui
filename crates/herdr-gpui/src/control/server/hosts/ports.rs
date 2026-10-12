@@ -3,7 +3,7 @@
 use super::{Place, Watches, socket, window_for};
 use crate::{
     HerdrWindow,
-    browser::WebUrl,
+    browser::{PageOpened, WebUrl},
     control::protocol::{
         Caller, ErrorCode, Response,
         hosts::{FORWARD_WAIT_SECONDS, ForwardInfo, PortInfo, Ports, Reply},
@@ -203,11 +203,10 @@ enum Opening {
     },
 }
 
-fn opened(port: u16, place: &Place) -> Response {
-    Response::done(format!(
-        "Opened port {port} in workspace {}",
-        place.workspace
-    ))
+fn opened(port: u16, place: &Place, how: Option<PageOpened>) -> Response {
+    super::page_answer(how, || {
+        format!("Opened port {port} in workspace {}", place.workspace)
+    })
 }
 
 fn start_open(
@@ -231,14 +230,14 @@ fn start_open(
             port.link(listed.origin)
         });
     if let Some(link) = link {
-        view.open_port_link(&place.endpoint, &place.workspace, &link, window, cx);
-        return Ok(Opening::Answered(opened(port, &place)));
+        let how = view.open_port_link(&place.endpoint, &place.workspace, &link, window, cx);
+        return Ok(Opening::Answered(opened(port, &place, how)));
     }
     if local(view, &place) {
         let url = WebUrl::try_from(format!("http://localhost:{port}/").as_str())
             .map_err(|error| Response::error(ErrorCode::InvalidUrl, error.to_string()))?;
-        view.open_workspace_page(&place.endpoint, &place.workspace, url, window, cx);
-        return Ok(Opening::Answered(opened(port, &place)));
+        let how = view.open_workspace_page(&place.endpoint, &place.workspace, url, window, cx);
+        return Ok(Opening::Answered(opened(port, &place, Some(how))));
     }
     let target = forwarding_target(view, &place)?.to_owned();
     let running = view
@@ -287,8 +286,8 @@ fn open_forwarded(
         )),
         State::Listening { .. } => {
             let url = forward.url()?;
-            view.open_workspace_page(&place.endpoint, &place.workspace, url, window, cx);
-            Some(opened(port.get(), place))
+            let how = view.open_workspace_page(&place.endpoint, &place.workspace, url, window, cx);
+            Some(opened(port.get(), place, Some(how)))
         }
     }
 }
