@@ -284,16 +284,44 @@ copy notes across by hand.</span>`, g: 'terminal' },
       .catch(() => {});
   })();
 
-  document.getElementById('brew').textContent = HM.FACTS.install;
-  document.getElementById('plat').textContent = HM.FACTS.platforms;
   document.getElementById('disc').textContent = HM.FACTS.disclaimer;
-  document.getElementById('copy').addEventListener('click', async (e) => {
+
+  // Install: every platform's command is in the HTML, so the page reads fully
+  // without JavaScript; here they become tabs, opened on the visitor's platform.
+  (() => {
+    const tabs = [...document.querySelectorAll('.os-tabs [role="tab"]')];
+    const ua = `${navigator.userAgentData?.platform || ''} ${navigator.userAgent}`;
+    const guess = /windows/i.test(ua) ? 'windows' : /linux|x11|cros/i.test(ua) && !/android/i.test(ua) ? 'linux' : 'macos';
+    const select = (os) => tabs.forEach((t) => {
+      const on = t.dataset.os === os;
+      t.setAttribute('aria-selected', String(on));
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+    });
+    tabs.forEach((t, i) => {
+      t.addEventListener('click', () => select(t.dataset.os));
+      t.addEventListener('keydown', (e) => {
+        const d = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+        if (!d) return;
+        const next = tabs[(i + d + tabs.length) % tabs.length];
+        select(next.dataset.os);
+        next.focus();
+      });
+    });
+    document.querySelector('.os-tabs').hidden = false;
+    document.getElementById('install').classList.add('tabbed');
+    select(guess);
+  })();
+
+  document.querySelectorAll('.cmd .copy').forEach((b) => b.addEventListener('click', async () => {
+    const code = b.parentElement.querySelector('code');
+    const text = [...code.childNodes].filter((n) => !n.classList?.contains('p')).map((n) => n.textContent).join('').trim();
     try {
-      await navigator.clipboard.writeText(HM.FACTS.install);
-      e.target.textContent = 'Copied';
+      await navigator.clipboard.writeText(text);
+      b.textContent = 'Copied';
     } catch {
-      e.target.textContent = 'Select and copy';
+      b.textContent = 'Select and copy';
     }
-    setTimeout(() => { e.target.textContent = 'Copy'; }, 1600);
-  });
+    setTimeout(() => { b.textContent = 'Copy'; }, 1600);
+  }));
 })();

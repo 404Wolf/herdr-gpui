@@ -95,14 +95,28 @@ section { padding:90px 0 0; scroll-margin-top:20px; }
 
 /* Install */
 .install { display:grid; grid-template-columns:1.1fr 1fr; gap:40px; align-items:center; padding:44px; border:1px solid var(--g3); border-radius:16px; background:linear-gradient(180deg, var(--g1), var(--g0)); }
+.install > * { min-width:0; }
 .install h2 { font-size:34px; line-height:1.1; letter-spacing:-.025em; margin:0 0 10px; }
 .install p { margin:0; color:var(--mut); }
 .cmd { display:flex; justify-content:space-between; align-items:center; gap:14px; background:#0d0e10; color:#e7e8ea; border:1px solid var(--g3); border-radius:10px; padding:14px 16px; font-size:14.5px; }
+.cmd code { font:inherit; min-width:0; overflow-wrap:anywhere; }
 .cmd .p { color:var(--acc); margin-right:8px; user-select:none; }
 /* The command panel stays dark in both themes, so its text uses the dark palette. */
 .cmd button { all:unset; cursor:pointer; color:#9a9ea6; font-size:12px; border-left:1px solid #34373d; padding-left:14px; }
 .cmd button:hover { color:#e7e8ea; }
 .cmd button:focus-visible { outline:2px solid var(--acc); outline-offset:3px; border-radius:4px; }
+.install p a { text-decoration:underline; }
+.os-tabs { display:flex; gap:4px; margin-bottom:10px; }
+.os-tabs[hidden] { display:none; }
+.os-tabs button { all:unset; cursor:pointer; padding:6px 12px; border-radius:8px; font-size:13px; color:var(--mut); }
+.os-tabs button:hover { color:var(--fg); }
+.os-tabs button[aria-selected="true"] { background:var(--g2); color:var(--fg); }
+.os-tabs button:focus-visible { outline:2px solid var(--acc); outline-offset:2px; }
+.os + .os { margin-top:18px; }
+.os h3 { margin:0 0 8px; font-size:14px; color:var(--mut); }
+/* With tabs, each tab names its platform and only one panel shows. */
+.tabbed .os h3 { display:none; }
+.tabbed .os + .os { margin-top:0; }
 .plat { margin-top:10px; font-size:12.5px; color:var(--dim); }
 .plat a { text-decoration:underline; }
 .both-note { margin-top:14px; font-size:13px; color:var(--mut); }
