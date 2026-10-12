@@ -270,6 +270,27 @@ fn finish_response(
     request: Option<Request>,
     response: Response,
 ) {
+    // Every answer must fit the bound the caller reads with. A feature that
+    // would send more is refused here rather than cut off mid-line; notes
+    // that cannot go out are kept again, as on any failed write.
+    let fits = serde_json::to_vec(&response).is_ok_and(|bytes| bytes.len() < MAX_MESSAGE);
+    let response = if fits {
+        response
+    } else {
+        if let (Some(Request::Feedback(request)), Response::Feedback { text: Some(text) }) =
+            (&request, &response)
+        {
+            let _ = queue.send(Event::Undelivered {
+                request: request.clone(),
+                text: text.clone(),
+            });
+        }
+        tracing::warn!("Control answer over {MAX_MESSAGE} bytes refused");
+        Response::error(
+            ErrorCode::Failed,
+            format!("Herdr UI's answer is larger than {MAX_MESSAGE} bytes"),
+        )
+    };
     let written = stream
         .set_nonblocking(false)
         .map_err(crate::Error::from)
@@ -452,6 +473,43 @@ mod tests {
             ANSWER_TIMEOUT + Duration::from_secs(MAX_WAIT_SECONDS)
         );
         assert_eq!(answer_timeout(&open("https://a.test/")), ANSWER_TIMEOUT);
+    }
+
+    #[test]
+    fn an_answer_over_the_bound_is_refused_and_its_notes_kept() {
+        let dir = socket_dir();
+        let path = dir.path().join("control.sock");
+        let server = Server::bind(&path).unwrap();
+        let request = FeedbackRequest {
+            pane_id: "w_1:p1".into(),
+            daemon_socket: Some("/tmp/daemon.sock".into()),
+            wait_seconds: 0,
+        };
+        let caller = thread::spawn({
+            let path = path.clone();
+            let request = request.clone();
+            move || call(&path, &Request::Feedback(request))
+        });
+        let notes = "n".repeat(MAX_MESSAGE);
+        server.next().unwrap().respond(Response::Feedback {
+            text: Some(notes.clone()),
+        });
+        assert!(matches!(
+            caller.join().unwrap().unwrap(),
+            Response::Error {
+                code: ErrorCode::Failed,
+                ..
+            }
+        ));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(Event::Undelivered { text, .. }) = server.drain().next() {
+                assert_eq!(text, notes, "the notes are kept again");
+                break;
+            }
+            assert!(Instant::now() < deadline, "the notes were lost");
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 
     #[test]

@@ -96,7 +96,8 @@ fn notes_are_written_and_read_for_the_callers_checkout(cx: &mut gpui::TestAppCon
             notes::list(cx),
             Response::Work {
                 reply: Reply::Notes {
-                    notes: vec![expected]
+                    notes: vec![expected],
+                    omitted: 0,
                 }
             }
         );
@@ -112,7 +113,10 @@ fn notes_are_written_and_read_for_the_callers_checkout(cx: &mut gpui::TestAppCon
         assert_eq!(
             notes::list(cx),
             Response::Work {
-                reply: Reply::Notes { notes: Vec::new() }
+                reply: Reply::Notes {
+                    notes: Vec::new(),
+                    omitted: 0,
+                }
             }
         );
     });

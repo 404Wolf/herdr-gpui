@@ -69,16 +69,20 @@ pub(super) fn notes(command: NotesCommand, context: &Context) -> crate::Result<O
     match context.call(Request::Work, op)? {
         Response::Done { message } => Ok(Output::message(message)),
         Response::Work {
-            reply: Reply::Notes { notes },
+            reply: Reply::Notes { notes, omitted },
         } => {
+            let json = serde_json::json!({ "notes": notes, "omitted": omitted });
             let mut text = String::new();
             for note in &notes {
                 let _ = writeln!(text, "{}", describe_note(note));
             }
-            if notes.is_empty() {
-                return Ok(Output::data("No worktree notes", &notes)?.nothing());
+            if omitted > 0 {
+                let _ = writeln!(text, "… and {omitted} older notes that did not fit");
             }
-            Output::data(text.trim_end(), &notes)
+            if notes.is_empty() && omitted == 0 {
+                return Ok(Output::data("No worktree notes", &json)?.nothing());
+            }
+            Output::data(text.trim_end(), &json)
         }
         Response::Work {
             reply: Reply::Note { note: Some(note) },

@@ -153,6 +153,14 @@ pub(super) fn notes(request: &NotesRequest, cx: &mut App) -> Response {
     if text.trim().is_empty() {
         return Response::error(ErrorCode::InvalidRequest, "There are no notes to send");
     }
+    // One take hands out at most this much, so a larger batch could never
+    // be fetched.
+    if crate::browser::json_size(&text) > crate::browser::TAKE_BUDGET {
+        return Response::error(
+            ErrorCode::InvalidRequest,
+            "These notes are too long to send",
+        );
+    }
     let target = Target {
         daemon: caller.daemon_socket.as_deref().map(Path::new),
         workspace: None,

@@ -10,6 +10,17 @@ use std::{collections::VecDeque, sync::Arc};
 
 /// Batches kept at once; the oldest goes first.
 const MAX_KEPT: usize = 16;
+/// Text one `take` hands out, measured as JSON, so the answer that carries
+/// it fits the control socket's message bound. Batches past it stay kept for
+/// the next take.
+#[cfg(any(unix, test))]
+pub(crate) const TAKE_BUDGET: usize = 240 * 1024;
+
+/// `text`'s size inside a JSON string.
+#[cfg(any(unix, test))]
+pub(crate) fn json_size(text: &str) -> usize {
+    serde_json::to_string(text).map_or(text.len() * 6, |json| json.len())
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct FeedbackKey {
@@ -60,14 +71,26 @@ impl Feedback {
         self.kept.push_back((batch, pending, self.added));
     }
 
-    /// Everything kept for this daemon and pane, oldest first, joined into one text.
+    /// What is kept for this daemon and pane, oldest first, joined into one
+    /// text of at most [`TAKE_BUDGET`] (always at least one batch); the rest
+    /// stays for the next take.
     #[cfg(any(unix, test))]
     pub(crate) fn take(&mut self, target: &FeedbackKey) -> Option<String> {
-        let (taken, kept): (Vec<_>, Vec<_>) = self
-            .kept
-            .drain(..)
-            .partition(|(batch, ..)| &batch.target == target);
-        self.kept = kept.into();
+        let mut used = 0;
+        let mut taken = Vec::new();
+        let mut rest = VecDeque::with_capacity(self.kept.len());
+        for entry in self.kept.drain(..) {
+            if &entry.0.target == target {
+                let size = json_size(&entry.0.text) + 1;
+                if taken.is_empty() || used + size <= TAKE_BUDGET {
+                    used += size;
+                    taken.push(entry);
+                    continue;
+                }
+            }
+            rest.push_back(entry);
+        }
+        self.kept = rest;
         (!taken.is_empty()).then(|| {
             taken
                 .into_iter()

@@ -1,0 +1,36 @@
+#![allow(clippy::unwrap_used)]
+use super::*;
+
+#[test]
+fn one_take_fits_one_answer_and_leaves_the_rest_kept() {
+    let mut feedback = Feedback::default();
+    let p1 = key("/default.sock", "p1");
+    // Two fit in one take; the third waits for the next.
+    let large = "x".repeat(TAKE_BUDGET / 3);
+    for _ in 0..3 {
+        feedback.keep(batch("p1", &large), None);
+    }
+    feedback.keep(batch("p2", "other"), None);
+    let first = feedback.take(&p1).unwrap();
+    assert!(json_size(&first) <= TAKE_BUDGET, "{}", first.len());
+    assert_eq!(first.len(), 2 * large.len() + 1);
+    assert!(
+        feedback.has(&p1),
+        "what did not fit stays for the next take"
+    );
+    assert_eq!(feedback.take(&p1).unwrap().len(), large.len());
+    assert!(!feedback.has(&p1));
+    assert_eq!(
+        feedback.take(&key("/default.sock", "p2")).as_deref(),
+        Some("other")
+    );
+}
+
+#[test]
+fn a_batch_alone_over_the_budget_is_still_taken() {
+    let mut feedback = Feedback::default();
+    let p1 = key("/default.sock", "p1");
+    feedback.keep(batch("p1", &"y".repeat(TAKE_BUDGET + 1)), None);
+    assert!(feedback.take(&p1).is_some(), "never kept forever");
+    assert!(!feedback.has(&p1));
+}

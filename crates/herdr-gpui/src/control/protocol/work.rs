@@ -55,8 +55,15 @@ pub(crate) struct NoteInfo {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum Reply {
-    Notes { notes: Vec<NoteInfo> },
-    Note { note: Option<NoteInfo> },
+    /// The most recent notes that fit one answer; `omitted` older ones did not.
+    Notes {
+        notes: Vec<NoteInfo>,
+        #[serde(default)]
+        omitted: usize,
+    },
+    Note {
+        note: Option<NoteInfo>,
+    },
 }
 
 #[cfg(test)]

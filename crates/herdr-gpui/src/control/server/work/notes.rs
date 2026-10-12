@@ -3,7 +3,7 @@
 use super::{super::window_for, find};
 use crate::{
     control::protocol::{
-        Caller, ErrorCode, Response,
+        Caller, ErrorCode, MAX_MESSAGE, Response,
         work::{NoteInfo, Reply},
     },
     worktree_notes::{Checkout, Note, Notes},
@@ -39,13 +39,34 @@ impl From<&Note> for NoteInfo {
     }
 }
 
+/// Room for notes in one answer, short of the socket's message bound.
+const LIST_BUDGET: usize = MAX_MESSAGE - 4096;
+
+/// The most recent notes that fit one answer: up to 512 notes of 500
+/// characters, with their keys, could pass the socket's bound.
 pub(super) fn list(cx: &mut App) -> Response {
-    let notes = Notes::of(cx)
+    let all: Vec<NoteInfo> = Notes::of(cx)
         .map(|notes| notes.recent().map(NoteInfo::from).collect())
         .unwrap_or_default();
+    let (notes, omitted) = within(all, LIST_BUDGET);
     Response::Work {
-        reply: Reply::Notes { notes },
+        reply: Reply::Notes { notes, omitted },
     }
+}
+
+/// The leading notes whose JSON fits `budget`, and how many did not.
+pub(super) fn within(all: Vec<NoteInfo>, budget: usize) -> (Vec<NoteInfo>, usize) {
+    let total = all.len();
+    let mut used = 0;
+    let notes: Vec<_> = all
+        .into_iter()
+        .take_while(|note| {
+            used += serde_json::to_vec(note).map_or(budget, |json| json.len() + 1);
+            used <= budget
+        })
+        .collect();
+    let omitted = total - notes.len();
+    (notes, omitted)
 }
 
 /// The caller's checkout, as the window showing its workspace names it.

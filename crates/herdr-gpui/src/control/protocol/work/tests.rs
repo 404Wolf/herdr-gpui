@@ -79,6 +79,7 @@ fn work_replies_round_trip() {
         Response::Work {
             reply: Reply::Notes {
                 notes: vec![note.clone()],
+                omitted: 2,
             },
         },
         Response::Work {
