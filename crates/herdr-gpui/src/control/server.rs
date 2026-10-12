@@ -12,7 +12,7 @@ mod work;
 
 use super::{
     Target, main_windows, plain,
-    protocol::{Caller, ErrorCode, Request, Response},
+    protocol::{Caller, ErrorCode, MAX_WAIT_SECONDS, Request, Response},
     socket, socket_path, valid_caller,
 };
 use crate::{
@@ -69,10 +69,16 @@ impl Watches {
         }
         self.0.push(Watch {
             incoming,
-            until: Instant::now() + wait,
+            until: deadline(wait, Instant::now()),
             check: Box::new(check),
             expired,
         });
+    }
+
+    /// Whether another request can park. Checked before a request that may
+    /// park acts at all, so a full list never refuses after a side effect.
+    fn full(&self) -> bool {
+        self.0.len() >= MAX_WATCHES
     }
 
     fn serve(&mut self, cx: &mut App) {
@@ -94,6 +100,12 @@ impl Watches {
     }
 }
 
+/// When a parked request expires. Clamped: a request's wait is any number a
+/// local process sent, and `Instant` addition panics on overflow.
+fn deadline(wait: Duration, now: Instant) -> Instant {
+    now + wait.min(Duration::from_secs(MAX_WAIT_SECONDS))
+}
+
 /// Everything the serving loop keeps between ticks.
 #[derive(Default)]
 struct State {
@@ -106,8 +118,8 @@ fn not_found(message: impl Into<String>) -> Response {
 }
 
 /// The window a request acts in: the one `--window` named; else the one
-/// showing the caller's workspace, on the caller's own daemon first; else
-/// the frontmost.
+/// showing the caller's workspace (on the caller's own daemon when it names
+/// one); else, for a caller outside any workspace, the frontmost.
 pub(super) fn window_for(
     caller: &Caller,
     cx: &mut App,
@@ -125,7 +137,7 @@ pub(super) fn window_for(
             .find(|handle| handle.window_id().as_u64() == id)
             .ok_or_else(|| not_found(format!("Herdr UI has no window {id}")));
     }
-    if caller.workspace_id.is_some() {
+    if let Some(workspace) = &caller.workspace_id {
         let target = target(caller);
         for strict in target.strictness() {
             for handle in &windows {
@@ -139,6 +151,13 @@ pub(super) fn window_for(
                 }
             }
         }
+        // The caller's workspace is in no window, perhaps of a session the
+        // app does not show: acting on the frontmost window would change
+        // another session's.
+        return Err(Response::error(
+            ErrorCode::WorkspaceNotFound,
+            format!("No Herdr UI window shows workspace {workspace}"),
+        ));
     }
     windows
         .into_iter()
@@ -189,6 +208,21 @@ pub(super) fn in_free_window(
 }
 
 fn serve(incoming: socket::Incoming, state: &mut State, cx: &mut App) {
+    let may_park = matches!(
+        incoming.request,
+        Request::Tab(_)
+            | Request::Work(_)
+            | Request::Host(_)
+            | Request::Settings(_)
+            | Request::Events(_)
+    );
+    if may_park && state.watches.full() {
+        incoming.respond(Response::error(
+            ErrorCode::Busy,
+            "Too many requests are waiting",
+        ));
+        return;
+    }
     match incoming.request.clone() {
         Request::Open(request) => incoming.respond(open_browser(&request, cx)),
         Request::Reload(caller) => incoming.respond(reload(&caller, cx)),
@@ -270,3 +304,6 @@ pub(crate) fn install(cx: &mut App) {
     })
     .detach();
 }
+
+#[cfg(test)]
+mod tests;

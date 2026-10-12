@@ -149,7 +149,8 @@ pub(super) fn window(call: Call<WindowOp>, cx: &mut App) -> Response {
                 },
             };
             crate::open_additional_window(target, cx);
-            Response::done("Opening a new window")
+            // Opened after this answer; a failure is only logged.
+            Response::done("Asked for a new window; `window list` shows it once open")
         }
         WindowOp::Focus => match window_for(caller, cx) {
             Ok(handle) => {

@@ -167,6 +167,12 @@ fn run(checkout: &Checkout, body: &str) -> Result<String> {
 }
 
 fn run_limited(checkout: &Checkout, body: &str, limits: ScriptLimits) -> Result<String> {
+    Ok(String::from_utf8_lossy(&run_bytes(checkout, body, limits)?).into_owned())
+}
+
+/// The script's output as it printed it, for a patch that must apply byte
+/// for byte.
+fn run_bytes(checkout: &Checkout, body: &str, limits: ScriptLimits) -> Result<Vec<u8>> {
     let host = match &checkout.host {
         Host::Local => ScriptHost::Local,
         Host::Ssh(target) => ScriptHost::Ssh(target),
@@ -182,7 +188,7 @@ fn run_limited(checkout: &Checkout, body: &str, limits: ScriptLimits) -> Result<
         &AtomicBool::new(false),
     )
     .map_err(script::classify)?;
-    Ok(String::from_utf8_lossy(&output).into_owned())
+    Ok(output)
 }
 
 struct Worker {
