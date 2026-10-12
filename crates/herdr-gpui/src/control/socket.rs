@@ -388,7 +388,13 @@ mod tests {
         // A socket file nobody listens on, as a crashed app leaves behind.
         let stale = dir.path().join("stale.sock");
         drop(UnixListener::bind(&stale).unwrap());
-        assert!(Server::bind(&stale).is_ok());
+        // A process a parallel test forks meanwhile holds a copy of the
+        // listener until it execs; wait until nothing answers on it.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while UnixStream::connect(&stale).is_ok() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        Server::bind(&stale).unwrap();
     }
 
     #[test]
