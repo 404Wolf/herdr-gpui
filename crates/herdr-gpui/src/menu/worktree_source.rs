@@ -7,6 +7,7 @@
 use super::{Page, WorkspaceAction, worktree_open::Entry};
 use crate::{
     HerdrWindow,
+    dialog_input::DialogInput,
     repo_items::{self, Branch, Item, Kind},
     search_input::SearchInput,
 };
@@ -121,6 +122,13 @@ pub(crate) struct WorktreeSource {
     /// The workspace name for a typed branch. Left empty, the daemon keeps its
     /// own default label.
     pub(super) name: Entity<SearchInput>,
+    /// The branch the dialog opened with, proposed again once the name has
+    /// nothing to derive a branch from.
+    proposal: String,
+    /// The branch the dialog itself last put in the draft. The draft follows
+    /// the name only while it still reads this, so a branch the user typed
+    /// is never replaced.
+    written: String,
     /// Indices into the open tab's listing, in listed order.
     pub(super) filtered: Vec<usize>,
     /// How many rows the search keeps in each tab, in `Tab::ALL` order.
@@ -135,7 +143,7 @@ pub(crate) struct WorktreeSource {
     /// The row a creation is running for, kept from the moment it is picked
     /// until the daemon answers.
     pub(super) pending: Option<Pending>,
-    _subscription: Subscription,
+    _subscriptions: [Subscription; 2],
 }
 
 impl WorktreeSource {
@@ -340,12 +348,25 @@ impl HerdrWindow {
             input.set_placeholder("Default name", cx);
             input.set_appearance(self.config.ui.clone(), self.theme.clone(), cx);
         });
+        let naming = cx.subscribe_in(
+            &name,
+            window,
+            |this, _, _: &crate::search_input::Changed, _, cx| this.follow_worktree_name(cx),
+        );
         // The name is what most people change, so the form opens on it.
         window.focus(&name.read(cx).focus.clone(), cx);
+        let proposal = self
+            .menu
+            .input
+            .as_ref()
+            .map(|input| input.text.clone())
+            .unwrap_or_default();
         self.menu.worktree = Some(WorktreeSource {
             tab: Tab::New,
             search,
             name,
+            written: proposal.clone(),
+            proposal,
             filtered: Vec::new(),
             hits: Default::default(),
             selected: 0,
@@ -355,12 +376,34 @@ impl HerdrWindow {
             checkouts: Default::default(),
             branches: Default::default(),
             pending: None,
-            _subscription: subscription,
+            _subscriptions: [subscription, naming],
         });
         // Both are cheap and local, so their counts are ready before a tab is
         // opened; GitHub waits for its tab or the first search.
         self.list_checkouts();
         self.list_branches(cx);
+    }
+
+    /// Propose the branch for the name just typed, in place of the proposal
+    /// the dialog made before. Once the user has edited the branch draft it
+    /// is theirs, and the name no longer reaches it.
+    fn follow_worktree_name(&mut self, cx: &mut Context<Self>) {
+        let (Some(source), Some(input)) = (&mut self.menu.worktree, &mut self.menu.input) else {
+            return;
+        };
+        if input.text != source.written {
+            return;
+        }
+        let branch = crate::worktree::branch_for_name(source.name.read(cx).text())
+            .unwrap_or_else(|| source.proposal.clone());
+        if branch == source.written {
+            return;
+        }
+        // A fresh draft, so it is selected like the first proposal and painted
+        // from its start rather than at the scroll a longer one needed.
+        *input = DialogInput::new(branch.clone());
+        source.written = branch;
+        cx.notify();
     }
 
     /// Apply a change to the shared search. It searches every listing, so the

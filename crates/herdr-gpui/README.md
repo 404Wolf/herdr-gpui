@@ -2825,7 +2825,13 @@ Ctrl+Shift+U is left unbound for
   (for a linked worktree, through its repository's main checkout, starting from
   the linked worktree's branch). The dialog opens on
   its Name field: left empty, the daemon picks the workspace name; anything
-  typed is sent as the new workspace's label. When there is none,
+  typed is sent as the new workspace's label. The proposed branch follows the
+  name, so "Fix login" proposes `worktree/fix-login`, until the Branch field
+  is edited; a name with no ASCII letters or digits keeps the random proposal.
+  As with a typed branch, one that already exists is checked out as it is, at
+  its own commit, such as a branch left behind by a removed worktree of the
+  same name, and one still checked out elsewhere is refused with Git's
+  message. When the dialog cannot open,
   because the workspace is not a Git repository, the main checkout is not open,
   a linked worktree has a detached `HEAD`, nothing is focused, or the window is disconnected, a two-second flash in the
   clipboard toast's position says why.
