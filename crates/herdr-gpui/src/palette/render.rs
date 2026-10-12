@@ -1,6 +1,6 @@
 //! The palette paints prepared entries; input and daemon operations live elsewhere.
 
-use super::{Filter, Palette};
+use super::{AgentFilter, Filter, Palette};
 use crate::HerdrWindow;
 use gpui::{prelude::*, *};
 
@@ -63,11 +63,52 @@ impl HerdrWindow {
                         }))
                 }),
             ))
+            .when(palette.filter == Filter::Navigation, |header| {
+                header.child(self.palette_agent_filters(palette, cx))
+            })
             .child(div().pt(px(8.)).text_color(rgb(theme.muted)).child(format!(
                 "{} of {} results",
                 palette.filtered.len(),
                 palette.entries.len()
             )))
+    }
+
+    /// Go To's status chips; Alt with the chip's navigator letter picks one
+    /// from the keyboard.
+    fn palette_agent_filters(&self, palette: &Palette, cx: &mut Context<Self>) -> Div {
+        let theme = &self.theme;
+        div()
+            .flex()
+            .flex_wrap()
+            .gap(px(6.))
+            .pt(px(6.))
+            .text_color(rgb(theme.muted))
+            .children(AgentFilter::ALL.into_iter().map(|filter| {
+                div()
+                    .id(("palette-agent-filter", filter as usize))
+                    .debug_selector(move || {
+                        format!(
+                            "palette-agent-filter-{}",
+                            filter.label().to_lowercase().replace(' ', "-")
+                        )
+                    })
+                    .px_2()
+                    .py_1()
+                    .rounded(px(crate::config::corners::CONTROL))
+                    .cursor_pointer()
+                    .when(filter == palette.agent_filter, |chip| {
+                        chip.bg(rgb(theme.active)).text_color(rgb(theme.foreground))
+                    })
+                    .hover(|chip| chip.bg(rgb(theme.active)))
+                    .child(filter.label())
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.set_palette_agent_filter(filter, cx);
+                        if let Some(palette) = &this.menu.palette {
+                            let focus = palette.search.read(cx).focus.clone();
+                            window.focus(&focus, cx);
+                        }
+                    }))
+            }))
     }
 
     fn palette_row(
@@ -235,6 +276,8 @@ impl HerdrWindow {
                     .text_color(rgb(theme.muted))
                     .child(if palette.busy() {
                         "Opening local project... Esc to dismiss."
+                    } else if palette.filter == Filter::Navigation {
+                        "↑ / ↓ navigate · Tab filter · alt-b/w/i/d/a status · Enter select · Esc cancel"
                     } else {
                         "↑ / ↓ navigate · Tab filter · Enter select · Esc cancel"
                     }),

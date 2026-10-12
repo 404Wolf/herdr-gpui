@@ -147,7 +147,7 @@ pub(super) fn go_to_entries(
                     .collect::<Vec<_>>()
                     .join(" ")
                 });
-                entries.push(Entry::with_keywords(
+                let mut entry = Entry::with_keywords(
                     name.to_owned(),
                     detail,
                     agent.map_or(SharedString::new_static("Terminal"), |agent| {
@@ -158,7 +158,9 @@ pub(super) fn go_to_entries(
                     go(NavigationTarget::Pane(pane.pane_id.clone())),
                     parent,
                     &keywords,
-                ));
+                );
+                entry.status = agent.map(|agent| agent.agent_status);
+                entries.push(entry);
             }
         }
     }
