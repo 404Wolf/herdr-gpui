@@ -113,6 +113,9 @@ pub struct LiveState {
     /// The `pane.split` an editor pane is waiting on, in its own slot for
     /// the same reason. Cleared from the mailbox once the job has read it.
     pub(crate) editor_response: Option<(String, Option<DialogResponse>)>,
+    /// The `worktree.remove` a merged worktree cleanup is waiting on, in its
+    /// own slot so it and an open dialog cannot take each other's answer.
+    pub(crate) cleanup_response: Option<(String, Option<DialogResponse>)>,
     pub(crate) notifications: std::collections::VecDeque<crate::notifications::Notice>,
     pub(crate) notifications_lost: bool,
     outer_focused: Option<bool>,
@@ -210,6 +213,7 @@ impl Default for LiveState {
             dialog_response: None,
             script_response: None,
             editor_response: None,
+            cleanup_response: None,
             notifications: Default::default(),
             notifications_lost: false,
             keyboard_report_all: false,
@@ -267,6 +271,7 @@ impl LiveState {
             dialog_response,
             script_response,
             editor_response,
+            cleanup_response,
             notifications,
             notifications_lost,
             outer_focused,
@@ -332,6 +337,10 @@ impl LiveState {
                 (Some((a, None)), Some((b, None))) => a == b,
                 (a, b) => a.is_none() && b.is_none(),
             }
+            && match (cleanup_response, &self.cleanup_response) {
+                (Some((a, None)), Some((b, None))) => a == b,
+                (a, b) => a.is_none() && b.is_none(),
+            }
             && notifications.is_empty()
             && !notifications_lost
             && *outer_focused == self.outer_focused
@@ -360,6 +369,7 @@ impl LiveState {
             &self.dialog_response,
             &self.script_response,
             &self.editor_response,
+            &self.cleanup_response,
         ]
         .into_iter()
         .flatten()
@@ -588,6 +598,7 @@ impl LiveState {
                     &mut self.dialog_response,
                     &mut self.script_response,
                     &mut self.editor_response,
+                    &mut self.cleanup_response,
                 ]
                 .into_iter()
                 .flatten()
@@ -663,8 +674,12 @@ impl LiveState {
                 {
                     self.announcement_dismissal = None;
                 }
-                for (id, result) in [&mut self.script_response, &mut self.editor_response]
-                    .into_iter()
+                for (id, result) in [
+                    &mut self.script_response,
+                    &mut self.editor_response,
+                    &mut self.cleanup_response,
+                ]
+                .into_iter()
                     .flatten()
                 {
                     if *id == request_id {

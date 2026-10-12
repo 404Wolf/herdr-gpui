@@ -172,8 +172,6 @@ pub(crate) struct Removal {
     pub(super) pending: Option<String>,
     /// Set once the daemon refused the checkout as dirty.
     pub(super) force: bool,
-    /// The merged pull request this removal was sent for without asking.
-    pub(crate) merged: Option<u64>,
 }
 
 impl Removal {
@@ -208,6 +206,15 @@ impl Submission {
 }
 
 impl MenuState {
+    /// Whether a menu or dialog is open on `workspace`.
+    pub(crate) fn open_on(&self, workspace: &str) -> bool {
+        self.page.is_some()
+            && self
+                .target
+                .as_ref()
+                .is_some_and(|target| target.id == workspace)
+    }
+
     /// The repository the open dialog's host picker ranks hosts for.
     pub(crate) fn dispatch_repo(&self) -> Option<String> {
         self.target

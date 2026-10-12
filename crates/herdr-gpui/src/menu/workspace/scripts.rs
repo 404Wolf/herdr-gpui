@@ -69,7 +69,6 @@ impl HerdrWindow {
             workspace: workspace.to_owned(),
             pending: Some(pending),
             force,
-            merged: None,
         });
         Ok(())
     }

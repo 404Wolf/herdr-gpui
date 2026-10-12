@@ -246,3 +246,5 @@ fn the_probe_reads_a_linked_checkouts_head_status_and_archive_script() {
     // A cancelled check is an error, never a clean report.
     assert!(probe(&input, &AtomicBool::new(true)).is_err());
 }
+
+mod window;

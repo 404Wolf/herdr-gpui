@@ -180,6 +180,8 @@ impl Drop for Probe {
 pub(crate) struct Cleanup {
     scope: Option<(u64, u64, String)>,
     probe: Option<Probe>,
+    /// The removal sent for a candidate, by request ID, until it is answered.
+    removing: Option<(Candidate, String)>,
     ledger: Ledger,
     next_scan: Option<Instant>,
 }
@@ -221,8 +223,8 @@ fn probe(input: &Input, cancelled: &AtomicBool) -> crate::Result<Report> {
 }
 
 impl HerdrWindow {
-    /// A removal still waiting on the daemon. A refused one kept for its force
-    /// confirmation does not hold the cleanup back.
+    /// A removal the user asked for, still waiting on the daemon. Cleanup
+    /// waits for it, so the daemon is never sent two removals at once.
     fn removal_pending(&self) -> bool {
         self.removal.as_ref().is_some_and(menu::Removal::waiting)
     }
@@ -247,7 +249,8 @@ impl HerdrWindow {
             && self.pr_origin() == Some(Origin::Local)
             && scope.is_some();
         if !active || self.merged_cleanup.scope != scope {
-            // The ledger is per daemon boot: workspace IDs do not outlive it.
+            // The ledger is per daemon boot: workspace IDs do not outlive it,
+            // and a reply from a replaced connection is not this removal's.
             self.merged_cleanup = Cleanup {
                 scope: scope.filter(|_| active),
                 ..Cleanup::default()
@@ -255,6 +258,10 @@ impl HerdrWindow {
             if !active {
                 return;
             }
+        }
+        if self.merged_cleanup.removing.is_some() {
+            self.finish_merged_removal(cx);
+            return;
         }
         if self.merged_cleanup.probe.is_some() {
             self.finish_merged_probe(window, cx);
@@ -330,6 +337,16 @@ impl HerdrWindow {
                 return;
             }
         };
+        // Focus the user asked for is queued before the snapshot shows it, so
+        // the focused workspace is known only once navigation has settled. A
+        // workspace whose menu is open is in use too.
+        if self.live.activation_pending()
+            || self.menu.open_on(&candidate.workspace)
+            || self.removal_pending()
+        {
+            self.merged_cleanup.next_scan = Some(now + ASK_DEFER);
+            return;
+        }
         let focused = snapshot.focused_workspace_id.as_deref() == Some(&candidate.workspace);
         match decide(&candidate, &report, workspace, focused) {
             Err(skip) => {
@@ -338,7 +355,7 @@ impl HerdrWindow {
             }
             Ok(Action::Ask) => {
                 // Never interrupt an open menu or dialog; ask once it closes.
-                if self.menu.page.is_some() || self.removal_pending() {
+                if self.menu.page.is_some() {
                     self.merged_cleanup.next_scan = Some(now + ASK_DEFER);
                     return;
                 }
@@ -346,18 +363,16 @@ impl HerdrWindow {
                 self.merged_cleanup.ledger.settle(candidate, None);
             }
             Ok(Action::Remove) => {
-                if self.removal_pending() {
-                    return;
-                }
-                let queued =
-                    self.queue_worktree_removal(&snapshot.boot_id, &candidate.workspace, false);
-                match queued {
-                    Ok(()) => {
-                        if let Some(removal) = &mut self.removal {
-                            removal.merged = Some(candidate.number);
-                        }
-                        self.merged_cleanup.ledger.settle(candidate, None);
-                    }
+                let request = self.endpoints[self.selected_endpoint]
+                    .connection
+                    .request_cleanup(
+                        &snapshot.boot_id,
+                        herdr_client::Method::WorktreeRemove,
+                        serde_json::json!({"workspace_id": candidate.workspace,
+                            "force": false, "trust_repository": false}),
+                    );
+                match request {
+                    Ok(id) => self.merged_cleanup.removing = Some((candidate, id)),
                     Err(_) => {
                         tracing::warn!(category = "not_queued", "Merged worktree kept");
                         self.merged_cleanup.ledger.settle(candidate, retry);
@@ -366,6 +381,70 @@ impl HerdrWindow {
             }
         }
         cx.notify();
+    }
+
+    /// Apply the daemon's answer to the cleanup's removal. Only success
+    /// settles the candidate for good; a refusal, such as files that appeared
+    /// after the check, is retried later and never escalated to force.
+    fn finish_merged_removal(&mut self, cx: &mut Context<Self>) {
+        let Some((_, request)) = &self.merged_cleanup.removing else {
+            return;
+        };
+        let Some((id, Some(result))) = &self.live.cleanup_response else {
+            return;
+        };
+        if id != request {
+            return;
+        }
+        let result = result.clone();
+        let request = request.clone();
+        self.live.cleanup_response = None;
+        // Not cloned into every later update once read; a newer request's
+        // slot is left alone.
+        if let Ok(mut inbox) = self.endpoints[self.selected_endpoint]
+            .connection
+            .inbox
+            .try_lock()
+            && inbox
+                .cleanup_response
+                .as_ref()
+                .is_some_and(|(id, _)| *id == request)
+        {
+            inbox.cleanup_response = None;
+        }
+        let Some((candidate, _)) = self.merged_cleanup.removing.take() else {
+            return;
+        };
+        let refusal = match result {
+            Err(error) => Some(error.to_string()),
+            Ok(response) => response
+                .get("error")
+                .filter(|error| !error.is_null())
+                .map(|error| {
+                    let (code, message) = menu::endpoint_error(error);
+                    format!("{code}: {message}")
+                }),
+        };
+        match refusal {
+            None => {
+                let number = candidate.number;
+                self.merged_cleanup.ledger.settle(candidate, None);
+                self.show_flash(
+                    crate::window::Flash::success(format!(
+                        "Removed the worktree of merged pull request #{number}"
+                    )),
+                    cx,
+                );
+            }
+            Some(error) => {
+                tracing::warn!(category = "refused", "Merged worktree kept");
+                self.merged_cleanup
+                    .ledger
+                    .settle(candidate, Some(Instant::now() + RETRY));
+                self.local_error = Some(format!("Remove merged worktree: {error}"));
+                cx.notify();
+            }
+        }
     }
 }
 
