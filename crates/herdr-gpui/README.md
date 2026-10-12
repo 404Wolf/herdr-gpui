@@ -2773,8 +2773,13 @@ Ctrl+Shift+U is left unbound for
   `N` the opposite way. `v` or Space marks by cell and `V` by line, from
   wherever the cursor is, a match included. `y` or Enter copies the selection,
   or with nothing marked the current match, through `pane.selection.read`.
-  Escape clears a selection and the search, or leaves when there is neither,
-  as does `q`. Leaving scrolls the pane back to where it was.
+  If the pane has changed since the search, the search runs again first, so
+  the copied match is one the pane still shows; if output changes again
+  before it is read, the copy fails with a message rather than copy other
+  text. Escape clears a selection and the search, or leaves when there is
+  neither, as does `q`. While a motion or search is still waiting for the
+  daemon, Escape drops it and the keys typed after it, and `q` leaves at
+  once. Leaving scrolls the pane back to where it was.
 - Cmd-Shift-A (`annotate_selection`, also in the command palette) writes a
   note on the text selected in a pane for an agent to act on, the way
   Annotate does for a page. A field opens over the pane: Enter adds the note

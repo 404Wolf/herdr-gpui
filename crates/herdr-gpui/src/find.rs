@@ -9,7 +9,7 @@
 pub(crate) mod memory;
 
 use crate::{
-    scrollback::{before, match_count, push_matches, viewport_top},
+    scrollback::{match_count, push_matches, refresh_from, viewport_top},
     terminal_painter::Highlight,
 };
 use herdr_client::{
@@ -178,10 +178,10 @@ impl Search {
         let (direction, cursor, previous) = match (step, current) {
             (Step::Older, Some(current)) => (SearchDirection::Backward, self.origin, Some(current)),
             (Step::Newer, Some(current)) => (SearchDirection::Forward, self.origin, Some(current)),
-            // A refresh looks from just before the current match, so the same
-            // match stays current if the pane still has it.
+            // A refresh keeps the same match current if the pane still has it.
             (Step::Refresh, Some(current)) => {
-                (SearchDirection::Forward, before(current.start), None)
+                let (direction, cursor) = refresh_from(current);
+                (direction, cursor, None)
             }
             (Step::Newer, None) => (SearchDirection::Forward, self.origin, None),
             (Step::Query | Step::Older | Step::Refresh, _) => {

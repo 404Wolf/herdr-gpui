@@ -10,7 +10,7 @@
 //! the socket.
 
 use crate::{
-    scrollback::{before, match_count, push_matches, push_range, viewport_top},
+    scrollback::{match_count, push_matches, push_range, refresh_from, viewport_top},
     terminal_painter::{Highlight, Tint},
 };
 use herdr_client::{
@@ -65,8 +65,9 @@ pub(crate) enum Command {
     /// Copies the selection, or else the current search match, and leaves
     /// copy mode.
     Copy,
-    /// Clears the selection and the search, or leaves copy mode when there
-    /// is neither.
+    /// Drops a request still waiting for the daemon and the keys queued
+    /// behind it; otherwise clears the selection and the search, or leaves
+    /// copy mode when there is neither.
     Cancel,
     Exit,
 }
@@ -164,8 +165,10 @@ pub(crate) enum SearchKind {
     /// `n` or `N`, which keep the direction the query was entered with, so
     /// `N` does not turn `n` around.
     Repeat,
-    /// The same search again, from just before the current match, because
-    /// the pane changed since it was found and `y` is about to copy it.
+    /// The same search again, looking so the current match stays current,
+    /// because the pane changed since it was found and `y` is about to copy
+    /// it. A refresh refused as stale is not retried: the copy goes ahead at
+    /// the old revision, which the daemon refuses with a reason the user sees.
     Refresh,
 }
 
@@ -191,6 +194,9 @@ pub(crate) enum Outcome {
     Prompt(SearchDirection),
     /// Ask the daemon.
     Send(Request),
+    /// Escape dropped the request in flight, if any, and the keys behind it;
+    /// its answer is no longer wanted.
+    Abandoned(Option<String>),
     /// Read this range and copy it, then leave copy mode. A search match is
     /// read at the revision it was found in, so the daemon refuses it rather
     /// than copy other text if the pane has changed since.
@@ -313,6 +319,18 @@ impl CopyMode {
             return Outcome::Prompt(direction);
         }
         if self.in_flight.is_some() || self.retry.is_some() {
+            // Escape and `q` never wait: a daemon that keeps answering
+            // "stale" must not hold the user in copy mode.
+            match command {
+                Command::Cancel => {
+                    self.retry = None;
+                    self.queued.clear();
+                    let request = self.in_flight.take().map(|sent| sent.request);
+                    return Outcome::Abandoned(request);
+                }
+                Command::Exit => return Outcome::Exit,
+                _ => {}
+            }
             if self.queued.len() < MAX_QUEUED {
                 self.queued.push_back(command);
             }
@@ -435,8 +453,7 @@ impl CopyMode {
 
     /// The request for `operation` from the cursor. A repeated search moves
     /// past the current match when the cursor is still on it; a refresh looks
-    /// forward from just before it, so the same match stays current if the
-    /// pane still has it.
+    /// so the same match stays current if the pane still has it.
     fn request(&self, operation: &Operation, content_revision: u64) -> Request {
         match operation {
             Operation::Motion(motion) => Request::Motion(CopyMotionParams {
@@ -453,7 +470,8 @@ impl CopyMode {
                 let current = self.found.as_ref().and_then(Found::current_match);
                 let (direction, cursor, previous) = match (kind, current) {
                     (SearchKind::Refresh, Some(current)) => {
-                        (SearchDirection::Forward, before(current.start), None)
+                        let (direction, cursor) = refresh_from(current);
+                        (direction, cursor, None)
                     }
                     (SearchKind::Repeat, Some(current)) if current.start == self.cursor => {
                         (*direction, self.cursor, Some(current))
@@ -567,7 +585,17 @@ impl CopyMode {
                 }),
                 operation,
             ) => {
-                self.retry = Some((operation, sent.content_revision));
+                if let Operation::Search {
+                    kind: SearchKind::Refresh,
+                    ..
+                } = operation
+                {
+                    if let Some(found) = &mut self.found {
+                        found.refreshed = true;
+                    }
+                } else {
+                    self.retry = Some((operation, sent.content_revision));
+                }
                 Ok(false)
             }
             (Err(error), _) => {

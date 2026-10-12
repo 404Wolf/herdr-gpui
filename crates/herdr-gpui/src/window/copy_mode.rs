@@ -174,6 +174,13 @@ impl HerdrWindow {
         };
         match state.mode.command(command, pane) {
             Outcome::Nothing => {}
+            Outcome::Abandoned(request) => {
+                if let Some(request) = request
+                    && let Ok(mut inbox) = state.inbox.try_lock()
+                {
+                    inbox.discard(&request);
+                }
+            }
             Outcome::Moved => self.reveal_copy_cursor(cx),
             Outcome::Prompt(direction) => {
                 self.open_copy_search(direction, query.unwrap_or_default(), window, cx);

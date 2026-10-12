@@ -9,7 +9,7 @@ use crate::terminal_painter::{Highlight, Tint};
 use herdr_client::{
     ClientEvent,
     protocol::PaneSurfacePane,
-    scrollback::{ScrollbackResponse, TextPoint, TextRange, decode_response},
+    scrollback::{ScrollbackResponse, SearchDirection, TextPoint, TextRange, decode_response},
 };
 use std::collections::VecDeque;
 
@@ -210,16 +210,35 @@ pub(crate) fn match_count(total: u64, current_global: Option<u64>) -> String {
     }
 }
 
-/// The cell just before `point` in reading order. The daemon only compares
-/// points, so a column past the row's end is a valid stand-in for "the end of
-/// the previous row".
-pub(crate) fn before(point: TextPoint) -> TextPoint {
-    match point.col.checked_sub(1) {
-        Some(col) => TextPoint { col, ..point },
-        None => TextPoint {
-            row: point.row.saturating_sub(1),
-            col: u16::MAX,
-        },
+/// Where a search for the same query looks from so that `current` stays the
+/// current match if the pane still has it. The daemon takes the first match
+/// starting after the cursor going forward, and the last one ending before it
+/// going backward, so this is forward from the cell just before the match, or,
+/// for a match in the very first cell, which has none before it, backward from
+/// the cell just after it. The daemon only compares points, so a column past
+/// a row's end is a valid stand-in for "the end of that row".
+pub(crate) fn refresh_from(current: TextRange) -> (SearchDirection, TextPoint) {
+    let TextPoint { row, col } = current.start;
+    match (row, col.checked_sub(1)) {
+        (_, Some(col)) => (SearchDirection::Forward, TextPoint { row, col }),
+        (1.., None) => (
+            SearchDirection::Forward,
+            TextPoint {
+                row: row - 1,
+                col: u16::MAX,
+            },
+        ),
+        (0, None) => {
+            let TextPoint { row, col } = current.end;
+            let after = match col.checked_add(1) {
+                Some(col) => TextPoint { row, col },
+                None => TextPoint {
+                    row: row.saturating_add(1),
+                    col: 0,
+                },
+            };
+            (SearchDirection::Backward, after)
+        }
     }
 }
 

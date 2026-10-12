@@ -299,7 +299,8 @@ fn yank_after_the_pane_changed_refreshes_the_match_first() {
         }
     );
     // Keys typed meanwhile wait behind the copy.
-    assert_eq!(mode.command(Command::Exit, &shown), Outcome::Nothing);
+    let step = Command::Step { rows: 1, cols: 0 };
+    assert_eq!(mode.command(step.clone(), &shown), Outcome::Nothing);
     let mut refreshed = matches(&[(55, 1, 4)], Some(0), 0);
     refreshed.content_revision = 6;
     found(&mut mode, "2", refreshed);
@@ -321,7 +322,7 @@ fn yank_after_the_pane_changed_refreshes_the_match_first() {
     );
     // The search is still the one entered, toward older output.
     assert_eq!(mode.search_label().as_deref(), Some("?x 1 of 9"));
-    assert_eq!(mode.next_queued(), Some(Command::Exit));
+    assert_eq!(mode.next_queued(), Some(step));
 }
 
 #[test]
@@ -342,4 +343,115 @@ fn yank_stays_in_copy_mode_when_the_refresh_lost_the_match() {
     let copy = mode.next_queued().unwrap();
     assert_eq!(mode.command(copy, &shown), Outcome::Moved);
     assert_eq!(mode.search_label().as_deref(), Some("/x 9 found"));
+}
+
+/// A refresh is not retried behind output that keeps changing: refused as
+/// stale, it lets the copy go ahead at the old revision, which the daemon
+/// refuses in turn rather than read other text.
+#[test]
+fn a_refresh_refused_as_stale_is_not_retried() {
+    let mut shown = pane(0);
+    let mut mode = CopyMode::new(&shown, None);
+    let forward = Command::Search {
+        query: "x".into(),
+        direction: SearchDirection::Forward,
+    };
+    search(&mut mode, forward, &shown, "1");
+    found(&mut mode, "1", matches(&[(55, 1, 4)], Some(0), 0));
+    shown.content_revision = 6;
+    search(&mut mode, Command::Copy, &shown, "2");
+    let stale = herdr_client::Error::Endpoint {
+        code: EndpointErrorCode::StaleContent,
+        message: "pane content changed".into(),
+    };
+    assert!(!mode.answer("2", Err(stale)).unwrap());
+    shown.content_revision = 8;
+    assert_eq!(mode.due_retry(&shown), None);
+    let copy = mode.next_queued().unwrap();
+    assert_eq!(
+        mode.command(copy, &shown),
+        Outcome::Copy {
+            range: TextRange {
+                start: point(55, 1),
+                end: point(55, 4),
+            },
+            content_revision: Some(4),
+        }
+    );
+}
+
+/// A match in the very first cell has no cell before it to search forward
+/// from, so its refresh looks back from just after it instead of skipping
+/// to a later occurrence.
+#[test]
+fn a_refresh_keeps_a_match_in_the_first_cell() {
+    let mut shown = pane(0);
+    let mut mode = CopyMode::new(&shown, None);
+    let forward = Command::Search {
+        query: "x".into(),
+        direction: SearchDirection::Forward,
+    };
+    search(&mut mode, forward, &shown, "1");
+    found(
+        &mut mode,
+        "1",
+        matches(&[(0, 0, 2), (30, 0, 2)], Some(0), 0),
+    );
+    shown.content_revision = 6;
+    let (params, kind) = search(&mut mode, Command::Copy, &shown, "2");
+    assert_eq!(kind, SearchKind::Refresh);
+    assert_eq!(params.direction, SearchDirection::Backward);
+    assert_eq!(params.cursor, point(0, 3));
+    let mut refreshed = matches(&[(0, 0, 2), (30, 0, 2)], Some(0), 0);
+    refreshed.content_revision = 6;
+    found(&mut mode, "2", refreshed);
+    // `n` still goes the way the query was entered.
+    assert_eq!(mode.search_label().as_deref(), Some("/x 1 of 9"));
+    let copy = mode.next_queued().unwrap();
+    assert!(matches!(
+        mode.command(copy, &shown),
+        Outcome::Copy { range, content_revision: Some(6) } if range.start == point(0, 0)
+    ));
+}
+
+/// Escape and `q` never wait behind a request: Escape drops it and what was
+/// queued behind it, and `q` leaves at once.
+#[test]
+fn escape_and_q_do_not_wait_for_the_daemon() {
+    let mut shown = pane(0);
+    let mut mode = CopyMode::new(&shown, None);
+    let forward = Command::Search {
+        query: "x".into(),
+        direction: SearchDirection::Forward,
+    };
+    search(&mut mode, forward, &shown, "1");
+    found(&mut mode, "1", matches(&[(55, 1, 4)], Some(0), 0));
+    shown.content_revision = 6;
+    search(&mut mode, Command::Copy, &shown, "2");
+    assert_eq!(mode.command(Command::Exit, &shown), Outcome::Exit);
+    assert_eq!(
+        mode.command(Command::Cancel, &shown),
+        Outcome::Abandoned(Some("2".into()))
+    );
+    assert_eq!(mode.in_flight(), None);
+    assert_eq!(mode.next_queued(), None, "the copy is dropped");
+    // The search stays: a further Escape clears it, then leaves.
+    assert_eq!(mode.command(Command::Cancel, &shown), Outcome::Moved);
+    assert_eq!(mode.command(Command::Cancel, &shown), Outcome::Exit);
+
+    // A retry waiting for newer content is dropped the same way.
+    let mut mode = CopyMode::new(&shown, None);
+    let request = mode.request(&Operation::Motion(CopyMotion::NextWordEnd), 6);
+    mode.sent("3".into(), &request);
+    let stale = herdr_client::Error::Endpoint {
+        code: EndpointErrorCode::StaleContent,
+        message: "pane content changed".into(),
+    };
+    mode.answer("3", Err(stale)).unwrap();
+    assert_eq!(
+        mode.command(Command::Cancel, &shown),
+        Outcome::Abandoned(None)
+    );
+    shown.content_revision = 8;
+    assert_eq!(mode.due_retry(&shown), None);
 }
