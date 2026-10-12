@@ -581,10 +581,14 @@ impl Checkpoints {
                 };
                 view.selected = view.selected.filter(|index| *index < count);
                 if let (Some(wanted), Listing::Ready(list)) = (view.wanted.take(), &view.listing) {
-                    view.selected = list
-                        .iter()
-                        .position(|checkpoint| checkpoint.id == wanted)
-                        .or(view.selected);
+                    match list.iter().position(|checkpoint| checkpoint.id == wanted) {
+                        Some(index) => view.selected = Some(index),
+                        // Said in the dialog, which the command line no
+                        // longer watches: nothing was chosen for the user.
+                        None => {
+                            view.error = Some(format!("Checkpoint {wanted} is not among these."));
+                        }
+                    }
                 }
                 if view.confirming_checkpoint().is_none() && !view.restoring {
                     view.confirming = None;

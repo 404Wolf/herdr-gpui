@@ -96,7 +96,7 @@ pub(super) fn restore(
         Some(id) => {
             view.checkpoints.want(id.clone());
             Response::done(format!(
-                "Opened the checkpoints of {branch} with {id} chosen; press Enter twice in Herdr UI to restore it"
+                "Opened the checkpoints of {branch}, asking to select {id}; confirm the restore in Herdr UI (the dialog says if {id} is not there)"
             ))
         }
         None => Response::done(format!(
@@ -324,12 +324,17 @@ pub(super) fn fan_out(
         .map(|found| repository(found.workspace).to_owned())
         .unwrap_or(workspace);
     view.open_fan_out(window, cx);
-    let opened = view.menu.page == Some(Page::FanOut);
-    let Some(fan_out) = view
-        .fan_out
-        .as_mut()
-        .filter(|fan_out| opened && fan_out.composing())
-    else {
+    let opened = view.menu.page == Some(Page::FanOut)
+        && view
+            .fan_out
+            .as_ref()
+            .is_some_and(|fan_out| fan_out.composing());
+    if !opened {
+        // As every other refusal here, leave no menu behind.
+        view.dismiss_menu(window, cx);
+        return Response::error(ErrorCode::Failed, "The fan-out dialog did not open");
+    }
+    let Some(fan_out) = view.fan_out.as_mut() else {
         return Response::error(ErrorCode::Failed, "The fan-out dialog did not open");
     };
     let picked: usize = agents.iter().map(|(_, count)| count).sum();

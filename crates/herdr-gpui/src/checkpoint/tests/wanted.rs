@@ -35,5 +35,11 @@ fn a_wanted_checkpoint_is_selected_once_listed_and_never_confirmed() {
         Request::List,
         Answer::Listed(Ok(vec![checkpoint("2", "feature")])),
     );
-    assert_eq!(checkpoints.view.as_ref().unwrap().selected, Some(0));
+    let view = checkpoints.view.as_ref().unwrap();
+    assert_eq!(view.selected, Some(0));
+    // And the dialog says so, since the command line asked for it.
+    assert_eq!(
+        view.error.as_deref(),
+        Some("Checkpoint 9 is not among these.")
+    );
 }

@@ -70,13 +70,10 @@ pub(super) fn notes(args: &mut Args) -> Result<NotesCommand, CliError> {
     })
 }
 
-/// A checkpoint ID as `checkpoint list` prints it: a timestamp stamp.
+/// A checkpoint ID as `checkpoint list` prints it: digits, as the app's
+/// own check accepts them.
 fn checkpoint_id(text: String) -> Result<String, CliError> {
-    let valid = !text.is_empty()
-        && text.len() <= 64
-        && text
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'));
+    let valid = !text.is_empty() && text.len() <= 32 && text.bytes().all(|b| b.is_ascii_digit());
     valid
         .then_some(text)
         .ok_or(CliError::InvalidValue("CHECKPOINT"))
