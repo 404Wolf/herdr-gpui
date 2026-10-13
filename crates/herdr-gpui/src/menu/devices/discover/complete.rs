@@ -112,7 +112,7 @@ pub(super) fn matching<'s>(
 /// The list as the target field filters it.
 pub(in crate::menu::devices) struct Completion<'s> {
     /// Suggestions not saved as devices yet.
-    pub(super) unsaved: usize,
+    pub(in crate::menu::devices) unsaved: usize,
     /// Those that match the field, best first.
     pub(super) rows: Vec<&'s Suggestion>,
     /// The highlighted row.

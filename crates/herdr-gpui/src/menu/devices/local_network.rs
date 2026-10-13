@@ -61,7 +61,7 @@ impl HerdrWindow {
             "Waiting for Local Network permission"
         );
         form.step = Step::AwaitingLocalNetwork(request.clone());
-        self.menu.error = None;
+        form.error = None;
         let alive = Arc::new(());
         let watched = Arc::downgrade(&alive);
         let background = cx.background_executor().spawn(async move {

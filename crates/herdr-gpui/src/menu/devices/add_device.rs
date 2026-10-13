@@ -31,6 +31,9 @@ pub(in crate::menu) struct Setup {
     /// identify its machine, with the target text it was chosen for: typing
     /// anything else drops it.
     pub(super) highlight: Option<(String, Vec<String>)>,
+    /// Why the last check or save failed. Each source of Add Device keeps
+    /// its own, so a job finishing while another source shows stays here.
+    pub(super) error: Option<String>,
     pub(super) suggestion_scroll: ScrollHandle,
 }
 
@@ -127,6 +130,13 @@ pub(super) struct LocalSpace {
 }
 
 impl HerdrWindow {
+    /// Set the SSH form's error, which stays with that form.
+    pub(super) fn set_device_error(&mut self, error: Option<String>) {
+        if let Some(setup) = &mut self.menu.device_setup {
+            setup.error = error;
+        }
+    }
+
     /// Show an empty Add Device form with the target field focused.
     pub(in crate::menu) fn open_add_device(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let fields = std::array::from_fn(|index| {
@@ -159,6 +169,7 @@ impl HerdrWindow {
             _edits: vec![label_edits, target_edits],
             highlight: None,
             suggestion_scroll: ScrollHandle::new(),
+            error: None,
         });
         self.menu.page = Some(Page::AddDevice);
         self.start_device_discovery(cx);
@@ -209,47 +220,23 @@ impl HerdrWindow {
         true
     }
 
-    pub(in crate::menu) fn render_add_device(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(in crate::menu) fn render_add_device(
+        &self,
+        compact: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let theme = &self.theme;
-        let view = div()
-            .debug_selector(|| "device-setup-dialog".into())
-            .flex()
-            .flex_col()
-            .min_h_0()
-            .child(
-                div()
-                    .debug_selector(|| "device-setup-header".into())
-                    .flex_none()
-                    .p(px(16.))
-                    .border_b_1()
-                    .border_color(rgb(theme.active))
-                    .flex()
-                    .items_center()
-                    .gap(px(12.))
-                    .child(
-                        div()
-                            .flex_1()
-                            .text_size(px(self.config.ui.size * 1.35))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("Add Device"),
-                    )
-                    .child(
-                        div()
-                            .id("device-setup-close")
-                            .debug_selector(|| "device-setup-close".into())
-                            .px_2()
-                            .py_1()
-                            .cursor_pointer()
-                            .rounded(px(crate::config::corners::CONTROL))
-                            .hover(|s| s.bg(rgb(theme.active)))
-                            .child("Close")
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.dismiss_menu(window, cx)),
-                            ),
-                    ),
-            );
+        let frame = |pane: Div, cx: &mut Context<Self>| {
+            self.add_device_frame(
+                "device-setup-dialog",
+                "device-setup-close",
+                compact,
+                pane,
+                cx,
+            )
+        };
         let Some(setup) = &self.menu.device_setup else {
-            return view;
+            return frame(div(), cx);
         };
         let ghost = matches!(setup.step, Step::Form)
             .then(|| {
@@ -259,6 +246,7 @@ impl HerdrWindow {
             .flatten();
         setup.fields[0].update(cx, |field, cx| field.set_completion(ghost, cx));
         let mut body = div().id("device-setup-body").debug_selector(|| "device-setup-body".into())
+            .flex_1()
             .min_h_0().overflow_y_scroll().p(px(16.)).flex().flex_col().gap(px(12.))
             .child(div().flex_none().text_color(rgb(theme.subtext()))
                 .child("Herdr checks the host over SSH and saves the device. If Herdr is missing or SSH needs your input, setup continues in a local workspace."));
@@ -289,7 +277,7 @@ impl HerdrWindow {
                 body = body.child(self.render_device_suggestions(setup, discovery, cx));
             }
         }
-        if let Some(error) = &self.menu.error {
+        if let Some(error) = &setup.error {
             body = body.child(
                 div()
                     .flex_none()
@@ -385,7 +373,16 @@ impl HerdrWindow {
                 )
             }
         };
-        view.child(body).child(footer)
+        frame(
+            div()
+                .flex_1()
+                .min_h_0()
+                .flex()
+                .flex_col()
+                .child(body)
+                .child(footer),
+            cx,
+        )
     }
 
     /// Refuse a host already in the catalog. Checked again before each step
@@ -424,7 +421,7 @@ impl HerdrWindow {
             Ok(request) => request,
             Err(error) => {
                 tracing::info!(category = "device_setup", "Device form refused");
-                self.menu.error = Some(error.to_string());
+                self.set_device_error(Some(error.to_string()));
                 cx.notify();
                 return;
             }
@@ -434,7 +431,7 @@ impl HerdrWindow {
         };
         tracing::info!(category = "device_setup", "Checking device");
         form.step = Step::Checking(request.clone());
-        self.menu.error = None;
+        form.error = None;
         // Claim before probing: a second add of this host, from any window of
         // this process, is refused from here on rather than after a slow probe.
         let background = cx.background_executor().spawn(async move {
@@ -461,7 +458,7 @@ impl HerdrWindow {
             form.step = Step::Form;
             form.claim = None;
         }
-        self.menu.error = Some(error.to_string());
+        self.set_device_error(Some(error.to_string()));
         cx.notify();
         true
     }
@@ -487,7 +484,7 @@ impl HerdrWindow {
             Err(error) => {
                 tracing::warn!(category = "device_setup", "Could not claim device");
                 if !self.refuse_duplicate(&error, cx) {
-                    self.menu.error = Some(format!("Check {}: {error}", request.target()));
+                    self.set_device_error(Some(format!("Check {}: {error}", request.target())));
                     if let Some(form) = &mut self.menu.device_setup {
                         form.step = Step::Confirm(request, Offer::Terminal);
                     }
@@ -516,7 +513,7 @@ impl HerdrWindow {
             if !waited {
                 return self.await_local_network(request, claim, cx);
             }
-            self.menu.error = Some(failure.to_string());
+            self.set_device_error(Some(failure.to_string()));
             if let Some(form) = &mut self.menu.device_setup {
                 form.step = Step::Form;
             }
@@ -533,13 +530,16 @@ impl HerdrWindow {
                     if let HostProbe::SshFailed(failure) = probe
                         && offer != Offer::InstallKey
                     {
-                        self.menu.error = Some(format!("SSH to {}: {failure}", request.target()));
+                        self.set_device_error(Some(format!(
+                            "SSH to {}: {failure}",
+                            request.target()
+                        )));
                     }
                     offer
                 }
             },
             Err(error) => {
-                self.menu.error = Some(format!("Check {}: {error}", request.target()));
+                self.set_device_error(Some(format!("Check {}: {error}", request.target())));
                 Offer::Terminal
             }
         };
@@ -596,7 +596,7 @@ impl HerdrWindow {
                 if this.refuse_duplicate(&error, cx) {
                     return;
                 }
-                this.menu.error = Some(error.to_string());
+                this.set_device_error(Some(error.to_string()));
                 let offer = match error {
                     crate::Error::DeviceServerRestart => Offer::Restart,
                     _ => Offer::Terminal,
@@ -619,7 +619,7 @@ impl HerdrWindow {
             setup.claim = None;
             // Ends a wait for Local Network permission, which holds a claim.
             setup.task = None;
-            self.menu.error = None;
+            setup.error = None;
             cx.notify();
         }
     }
@@ -636,7 +636,7 @@ impl HerdrWindow {
         let (request, offer) = (request.clone(), *offer);
         let claim = form.claim.take();
         form.step = Step::Verifying(request.clone(), offer);
-        self.menu.error = None;
+        form.error = None;
         let background = cx.background_executor().spawn(async move {
             // A failed probe left no claim; take one now.
             let claim = match claim {
@@ -676,7 +676,7 @@ impl HerdrWindow {
                     "Device setup verification failed"
                 );
                 if !self.refuse_duplicate(&error, cx) {
-                    self.menu.error = Some(format!("Open a local workspace: {error}"));
+                    self.set_device_error(Some(format!("Open a local workspace: {error}")));
                     if let Some(form) = &mut self.menu.device_setup {
                         form.step = Step::Confirm(request, offer);
                     }
@@ -718,7 +718,7 @@ impl HerdrWindow {
             Ok(space) => form.step = Step::Opening(request, space),
             Err(error) => {
                 form.step = Step::Confirm(request, offer);
-                self.menu.error = Some(format!("Open a local workspace: {error}"));
+                self.set_device_error(Some(format!("Open a local workspace: {error}")));
             }
         }
         cx.notify();
@@ -737,6 +737,12 @@ impl HerdrWindow {
             .as_ref()
             .is_some_and(|form| matches!(form.step, Step::Saved))
         {
+            // While another source of Add Device shows, only the finished
+            // SSH form goes; the next visit to SSH starts a fresh one.
+            if self.menu.page != Some(Page::AddDevice) {
+                self.menu.device_setup = None;
+                return cx.notify();
+            }
             return self.dismiss_menu(window, cx);
         }
         let Some(Setup {
@@ -754,7 +760,7 @@ impl HerdrWindow {
             {
                 form.step = Step::Confirm(request.clone(), space.offer);
             }
-            this.menu.error = Some(format!("Open a local workspace: {error}"));
+            this.set_device_error(Some(format!("Open a local workspace: {error}")));
             cx.notify();
         };
         let current = local.live.status.is_connected()

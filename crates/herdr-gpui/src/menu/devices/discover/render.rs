@@ -183,7 +183,7 @@ impl HerdrWindow {
             label_field.update(cx, |field, cx| field.set_text_selected(name, cx));
         }
         window.focus(&target_field.read(cx).focus.clone(), cx);
-        self.menu.error = None;
+        self.set_device_error(None);
         cx.notify();
     }
 }

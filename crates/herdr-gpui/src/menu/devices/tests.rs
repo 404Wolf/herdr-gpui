@@ -12,6 +12,8 @@ mod cloud_providers;
 mod host_key;
 mod key_login;
 mod local_network;
+#[cfg(feature = "cloud")]
+mod rail;
 #[cfg(unix)]
 mod setup_workspace;
 
@@ -46,6 +48,7 @@ fn open_form(view: &mut HerdrWindow, step: Step, cx: &mut Context<HerdrWindow>) 
         _edits: Vec::new(),
         highlight: None,
         suggestion_scroll: gpui::ScrollHandle::new(),
+        error: None,
     });
     view.menu.page = Some(Page::AddDevice);
 }
@@ -141,7 +144,10 @@ fn a_host_already_saved_or_being_added_returns_to_the_form(cx: &mut gpui::TestAp
                 open_form(view, Step::Checking(again.clone()), cx);
                 view.device_probed(Err(error), cx);
                 assert!(matches!(step(view), Step::Form));
-                assert_eq!(view.menu.error.as_deref(), Some(message));
+                assert_eq!(
+                    view.menu.device_setup.as_ref().unwrap().error.as_deref(),
+                    Some(message)
+                );
             }
             open_form(view, Step::Verifying(again.clone(), Offer::Install), cx);
             view.setup_space_verified(Err(crate::Error::DeviceExists("m5max-ms".into())), cx);
