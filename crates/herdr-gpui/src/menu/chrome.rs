@@ -4,7 +4,7 @@
 
 mod keys;
 
-use super::{MENU_MARGIN, Page, WorkspaceAction};
+use super::{MENU_MARGIN, Page, WorkspaceAction, devices::rail};
 use crate::{HerdrWindow, actions, fonts::StyledFont};
 use gpui::{prelude::*, *};
 use herdr_client::Method;
@@ -23,7 +23,6 @@ impl HerdrWindow {
 
     pub(crate) fn open_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         self.shift_taps.cancel();
-        self.finish_font_size_edit(true, cx);
         if !self.cancel_theme_preview(cx) {
             return false;
         }
@@ -41,7 +40,6 @@ impl HerdrWindow {
     }
 
     pub(crate) fn dismiss_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.finish_font_size_edit(true, cx);
         if !self.cancel_theme_preview(cx) {
             return;
         }
@@ -280,6 +278,10 @@ impl HerdrWindow {
         let theme = &self.theme;
         let viewport = window.viewport_size();
         let session_modal = page == Page::Sessions && self.menu.session_edit.is_some();
+        // Add Device's sources share one wide dialog; a narrow window keeps
+        // the rail to icons so the form still has room.
+        let add_device = rail::Source::of(page).is_some();
+        let compact_rail = viewport.width - px(32.) < px(rail::COMPACT_BELOW * (font.size / 12.));
         let footer_anchored =
             matches!(page, Page::Menu | Page::Devices | Page::Sessions) && !session_modal;
         // A GitHub tab of the new worktree dialog is a picker, not a form.
@@ -424,9 +426,10 @@ impl HerdrWindow {
                     && !matches!(page, Page::Dialog(_)),
                 |panel| {
                     panel
-                        .w((viewport.width - px(32.)).max(px(0.)).min(px(
-                            if page == Page::Preferences {
-                                620. * (font.size / 12.)
+                        .w((viewport.width - px(32.))
+                            .max(px(0.))
+                            .min(px(if add_device {
+                                rail::WIDTH * (font.size / 12.)
                             } else if page == Page::Palette && self.palette_previews(viewport) {
                                 // Room for Go To's list beside its preview.
                                 1120. * (font.size / 12.)
@@ -435,8 +438,7 @@ impl HerdrWindow {
                                 720. * (font.size / 12.)
                             } else {
                                 480.
-                            },
-                        )))
+                            })))
                         .max_h((viewport.height - px(32.)).max(px(0.)))
                 },
             )
@@ -445,10 +447,8 @@ impl HerdrWindow {
                     page,
                     Page::Keybinds
                         | Page::Themes
-                        | Page::Fonts
                         | Page::Palette
                         | Page::CodeSearch
-                        | Page::Preferences
                         | Page::AppUpdate
                         | Page::GitHub
                         | Page::AddDevice
@@ -474,12 +474,7 @@ impl HerdrWindow {
             .when(
                 matches!(
                     page,
-                    Page::Keybinds
-                        | Page::Themes
-                        | Page::Fonts
-                        | Page::Palette
-                        | Page::CodeSearch
-                        | Page::Preferences
+                    Page::Keybinds | Page::Themes | Page::Palette | Page::CodeSearch
                 ),
                 |panel| {
                     panel
@@ -491,6 +486,10 @@ impl HerdrWindow {
                         .shadow_lg()
                 },
             )
+            .when(add_device, |panel| {
+                panel.h(px(rail::HEIGHT * (font.size / 12.))
+                    .min((viewport.height - px(32.)).max(px(0.))))
+            })
             .when(page == Page::GitHub, |panel| {
                 panel
                     .w((viewport.width - px(32.)).max(px(0.)).min(px(400.)))
@@ -582,11 +581,11 @@ impl HerdrWindow {
         } else if let Page::Usage(provider) = page {
             panel = panel.child(self.render_usage_panel(provider, cx));
         } else if page == Page::AddDevice {
-            panel = panel.child(self.render_add_device(cx));
-        } else if let Some(dialog) = self.render_cloud_dialog(cx) {
+            panel = panel.child(self.render_add_device(compact_rail, cx));
+        } else if let Some(dialog) = self.render_cloud_dialog(compact_rail, cx) {
             panel = panel.child(dialog);
         } else if page == Page::AddWsl {
-            panel = panel.child(self.render_add_wsl(cx));
+            panel = panel.child(self.render_add_wsl(compact_rail, cx));
         } else if page == Page::RemoveWsl {
             panel = panel.child(self.render_remove_wsl(cx));
         } else if page == Page::GitHub {
@@ -636,16 +635,12 @@ impl HerdrWindow {
             panel = panel.child(self.render_keybinds(cx));
         } else if page == Page::Themes {
             panel = panel.child(self.render_theme_picker(cx));
-        } else if page == Page::Fonts {
-            panel = panel.child(self.render_font_picker(cx));
         } else if page == Page::Palette {
             panel = panel.child(self.render_palette(viewport, cx));
         } else if page == Page::CodeSearch {
             panel = panel.child(self.render_code_search(cx));
         } else if page == Page::ConfirmClose {
             panel = panel.child(self.render_close_confirmation(cx));
-        } else if page == Page::Preferences {
-            panel = panel.child(self.render_preferences(cx));
         } else if page == Page::AppUpdate {
             panel = panel.child(self.render_app_update(window, cx));
         } else if page == Page::About {

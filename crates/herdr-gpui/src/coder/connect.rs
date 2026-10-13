@@ -80,12 +80,7 @@ pub(crate) fn ssh_command(
 /// The saved workspace is reached by its ID, and `coder ssh` gets its current
 /// name: a renamed workspace still connects, and one deleted and replaced
 /// under the same name is reported deleted instead of opening the newcomer.
-fn connect_workspace(
-    settings: &Settings,
-    id: &str,
-    session: &str,
-    stop: &AtomicBool,
-) -> Result<herdr_client::Bridge> {
+fn workspace_command(settings: &Settings, id: &str, stop: &AtomicBool) -> Result<Command> {
     let tokens = |rejected| store::current_token(settings, rejected);
     let cancelled = || stop.load(Ordering::Acquire);
     let (workspace, agent) = api::wait_ready(settings, &tokens, id, cancelled, |progress| {
@@ -95,26 +90,20 @@ fn connect_workspace(
             "Waiting for Coder workspace"
         );
     })?;
-    let command = ssh_command(
+    ssh_command(
         &cli(settings)?,
         settings,
         &tokens(false)?,
         &workspace.name,
         &agent,
-    )?;
-    herdr_client::connect_command(command, session, stop).map_err(Error::Bridge)
+    )
 }
 
 /// Reach the Coder workspace with `id` on `deployment` for `cloud::connect`.
 /// Configuration is read here, on the worker, so a deployment changed in the
 /// config file applies on retry.
-pub(crate) fn connect(
-    deployment: &str,
-    id: &str,
-    session: &str,
-    stop: &AtomicBool,
-) -> io::Result<Transport> {
-    let result = crate::config::Config::load()
+pub(crate) fn command(deployment: &str, id: &str, stop: &AtomicBool) -> Result<Command> {
+    crate::config::Config::load()
         .map_err(|error| Error::Storage(Box::new(error)))
         .and_then(|config| {
             config
@@ -127,8 +116,19 @@ pub(crate) fn connect(
             if settings.base != deployment {
                 return Err(Error::Deployment);
             }
-            connect_workspace(&settings, id, session, stop)
-        });
+            workspace_command(&settings, id, stop)
+        })
+}
+
+pub(crate) fn connect(
+    deployment: &str,
+    id: &str,
+    session: &str,
+    stop: &AtomicBool,
+) -> io::Result<Transport> {
+    let result = command(deployment, id, stop).and_then(|command| {
+        herdr_client::connect_command(command, session, stop).map_err(Error::Bridge)
+    });
     match result {
         Ok(bridge) => Ok(bridge.into()),
         Err(Error::Bridge(error)) => Err(io::Error::new(error.kind(), error)),

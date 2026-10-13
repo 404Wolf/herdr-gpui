@@ -98,6 +98,10 @@ mod stand_in {
 
 /// The directory Railway keeps its own files in.
 pub(super) fn state_dir() -> Result<PathBuf> {
+    #[cfg(all(test, unix))]
+    if let Some(dir) = stand_in::state_dir() {
+        return Ok(dir);
+    }
     crate::preferences::state_dir().ok_or(Error::Cloud(crate::cloud::Error::StateDirectory))
 }
 

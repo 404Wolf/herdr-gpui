@@ -564,8 +564,10 @@ pub fn start_sidebar(handle: WindowHandle<HerdrWindow>, cx: &mut App) {
                         }
                         window.draw(cx).clear(cx);
                         if let Some(name) = name {
+                            // The branch takes the name's proposal only once this update's
+                            // events are delivered, so a draft that differs here was typed into.
                             if view.read(cx).menu.input.as_ref().map(|input| &input.text) != branch.as_ref() {
-                                bail!("typing the worktree name changed its branch draft");
+                                bail!("keys typed into the worktree name reached its branch draft");
                             }
                             name.update(cx, |input, cx| -> Result<()> {
                                 if input.text() != "long-label-\u{65e5}\u{672c}-\u{1f600}".repeat(4)

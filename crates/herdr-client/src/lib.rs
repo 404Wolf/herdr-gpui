@@ -16,6 +16,7 @@ mod frame;
 mod handle;
 mod host_theme;
 mod limits;
+mod local_network;
 mod method;
 mod options;
 mod queue;
@@ -58,10 +59,11 @@ pub use event::ClientEvent;
 pub use forward::{ForwardEvent, PortForward, preferred_local_port};
 pub use handle::{Client, ClientHandle};
 pub use host_theme::HostTheme;
+pub use local_network::{LocalNetworkAccess, local_network_access, wait_for_local_network};
 pub use method::Method;
 pub use options::ConnectOptions;
 pub use remote_host::RemoteHost;
-pub use script::{ScriptHost, ScriptLimits, run_script, shell_quote};
+pub use script::{ScriptHost, ScriptLimits, run_script, run_script_command, shell_quote};
 pub use sessions::{
     LocalSession, RemoteSession, SessionState, delete_local_session, delete_remote_session,
     list_local_sessions, list_remote_sessions,

@@ -211,7 +211,15 @@ saved-device management is unavailable on Windows or for disabled devices.
 Remote hosts need an installed Herdr supporting the session commands and
 noninteractive SSH authentication. The GUI does not install or update it.
 
-**Add Device…** accepts an SSH target, label, and optional remote session (default:
+**Add Device…** opens one dialog for every kind of device. A rail on its left
+lists SSH hosts (WSL distributions on Windows) and, under **Cloud**, each cloud
+provider the build includes, shown by its logo: a green dot marks a provider
+whose account is configured, and **Set up** one that is not. Each entry keeps
+its own form, so switching between them keeps what was typed. **Ctrl-Tab** and
+**Ctrl-Shift-Tab** move through the rail from any field. In a narrow window the
+rail shows only the logos.
+
+The SSH form accepts an SSH target, label, and optional remote session (default:
 `default`). Herdr's `machine add` saves a new profile every time and takes no
 lock, so the dialog keeps a host from being saved twice itself. A host counts as
 already saved when a profile with the same session reaches the same user, host
@@ -220,12 +228,15 @@ name, and port as `ssh -G` resolves them, so an SSH alias, `user@address`, and
 before anything else, so a second add from any window is refused while the
 first runs. The catalog file is read again right before `machine add` runs and
 right after: if another client saved the same host in between, the profile added
-second is removed, so exactly one remains. A terminal setup keeps its claim for
-15 minutes, because the GUI cannot see when its `machine add` finishes; another
-client adding the host during that window can still create a duplicate.
+second is removed, so exactly one remains. A terminal setup keeps the claim
+while it runs and releases it when it ends, saved or not, so a failed setup
+never locks the host out; if the setup workspace never runs, the claim is
+released after two minutes. Another client adding the host while a terminal
+setup runs can still create a duplicate. A host refused as already being added
+is still in another Add Device dialog or in a running "Set up" workspace.
 
 Under the SSH target, **Nearby devices** suggests hosts to add. Opening the
-dialog starts one search, shown by a sliding bar, which lasts about five seconds;
+dialog starts one search, shown by a sliding bar, which lasts about ten seconds;
 **Search again** repeats it. Suggestions come from three places, and a machine
 two of them name is listed once:
 
@@ -242,7 +253,15 @@ Choosing a suggestion fills in the target with the user's own alias when there
 is one, then the Tailscale name, then the Bonjour host. Devices already saved
 are not suggested. Nothing is scanned: a host that runs SSH without announcing
 it, or that is on another subnet, appears only through SSH config or Tailscale.
-On macOS 15 and later the first search may ask for Local Network access.
+On macOS 15 and later the first search asks for Local Network access; see
+[Local Network access](#local-network-access).
+
+Typing in the SSH target filters the suggestions by name or target, those that
+start with what was typed first. When a target extends what was typed, the rest
+is drawn dimmed after the cursor and **Tab** fills it in, along with an empty
+label. **Up** and **Down** pick any row, and **Tab** or **Enter** then fills it.
+A typed `user@` is kept. **Enter** otherwise adds exactly what the field shows:
+a row that matches only by the name a host announces is never chosen for you.
 
 Right-click a saved SSH device's header in the Spaces list to **Rename** it or
 choose **Remove device…** to forget it. Renaming runs `herdr machine rename`;
@@ -289,13 +308,48 @@ never installs or starts anything while checking:
   or saving without a terminal failed: the dialog offers to continue in a
   terminal.
 
-Accepting creates a new workspace on this device's Herdr and types
-`herdr machine add` into its shell. Herdr handles SSH prompts, approval to
-install/update remote software, server startup, and saving the machine only after
-successful setup; complete any prompts in that workspace. The saved device
-appears automatically on the next catalog refresh. No credentials are collected
-by the GUI. Explicit-socket and development-catalog windows do not offer setup,
-and saved SSH devices remain unsupported on Windows.
+Accepting creates a new workspace on this device's Herdr and shows the setup
+there. The setup itself, `herdr machine add` (after `ssh-copy-id` when the host
+refused every key), runs as a child of this app on a terminal the app owns; the
+workspace's shell only runs `herdr-gpui __device-setup-attach SOCKET`, which
+relays the pane's keys and size to it over a private, single-use socket in the
+app's state directory. It runs with your login `PATH` and agent, so it uses
+your own `ssh` (Homebrew's or any other), SSH config, and security key, exactly
+as a terminal would. Herdr handles SSH prompts, approval to install/update
+remote software, server startup, and saving the machine only after successful
+setup; complete any prompts in that workspace. The saved device appears
+automatically on the next catalog refresh. No credentials are collected by the
+GUI. Closing the workspace hangs the setup up, and so does quitting the app,
+since the setup belongs to it. Explicit-socket and development-catalog windows
+do not offer setup, and saved SSH devices remain unsupported on Windows.
+
+#### Local Network access
+
+macOS 15 and later ask before an app reaches devices on the local network, and
+judge every process by the app responsible for it. Everything the app runs for
+devices (the Bonjour search, host checks, saving, connecting, and the setup
+above) runs as Herdr's own child, so it shares the one **Herdr** entry in
+System Settings › Privacy & Security › Local Network, with whichever `ssh` you
+use. The first time, macOS shows its alert and refuses the attempt until you
+answer; the search and the host check wait up to a minute for it and continue
+on their own once you allow it. If you denied it, **Open Local Network
+Settings** in the dialog goes to the setting; turn on Herdr and search or add
+again, without restarting the app.
+
+A refused connection reads as "no route to host", which an offline device or a
+wrong route also produces, so the dialog only blames the permission when the
+app's own multicast check is refused too. Otherwise it reports no route to the
+host.
+
+Commands you type into a terminal are a different matter. Their processes
+belong to the Herdr daemon, not to this app, and a daemon started outside the
+app, as from another terminal, leaves each of them responsible for itself: macOS
+then lets Apple's own tools such as `/usr/bin/ssh` and `nc` reach the LAN but
+refuses third-party ones such as Homebrew's `ssh` with "no route to host",
+without an alert and without an entry you could turn on. This app cannot change
+how the daemon's processes are judged; that needs a change to how Herdr
+launches its daemon on macOS. Device setup is not affected, since it runs in
+the app.
 
 ### Coder workspaces
 
@@ -306,7 +360,8 @@ credential store rather than the config file, signs in and out, and lists the
 saved Coder devices with a Remove action. A secret set in the config file or
 `HERDR_CODER_OAUTH_CLIENT_SECRET` takes precedence over the saved one.
 
-Once Coder is configured, the device picker also offers **Add Coder Workspace…**. It signs in with Coder's
+Once Coder is configured, **Coder** in **Add Device…** shows its form; before
+that, it points to this Settings card. The form signs in with Coder's
 OAuth2 provider (authorization code with PKCE; the browser returns to the
 configured loopback redirect), then lists the account's templates, their presets,
 and existing workspaces. It opens with the first template, its default preset,
@@ -356,8 +411,8 @@ region, and snapshot, saved to `[daytona]`, and an API key saved to the
 credential store (`HERDR_DAYTONA_API_KEY` takes precedence). **Create sandbox**
 creates one with a generated name and, when the **Install Herdr** switch is on
 (the default), installs Herdr in it if it is missing; the device picker shows
-its progress and a toast says when it is ready. Once Daytona is configured, the
-picker's **Add Daytona Sandbox…** row opens this tab. Removing a device leaves
+its progress and a toast says when it is ready. **Daytona** in **Add Device…**
+opens this tab. Removing a device leaves
 its sandbox in Daytona.
 
 Each connection starts a stopped sandbox, asks the API for a 10-minute SSH
@@ -372,7 +427,8 @@ against a live Daytona account.
 
 ### Railway free VMs (experimental)
 
-Settings > **Cloud Devices** > **Railway** sets up the temporary Linux VM that
+Settings > **Cloud Devices** > **Railway**, which **Railway** in **Add Device…**
+also opens, sets up the temporary Linux VM that
 `ssh railway.new` gives out without an account. The SSH key is its identity, so
 pick an existing private key or generate one by name (an ed25519 key without a
 passphrase, in `~/.ssh` when that exists, otherwise in Herdr's state directory;
@@ -518,8 +574,8 @@ clipboard copied notification, plus all six clipboard positions. Notifications
 provides a native in-app switch, a bounded delay stepper (0-3600 seconds), and
 four corner choices. Each notification and clipboard field has a **Follow shared**
 action that removes only its local override; effective values are shown after
-reload. Appearance provides switches for **Show agents**, **Show search**, and
-**High contrast**, and a sidebar-gap stepper (0-64 logical pixels). Sound enablement uses a switch;
+reload. Appearance provides switches for **Show agents**, **Show search**,
+**Show repository icons**, and **High contrast**, and a sidebar-gap stepper (0-64 logical pixels). Sound enablement uses a switch;
 custom sound paths and per-agent sound policies remain shared-file settings, not
 read-only preference rows in this window. Configuration paths and installation
 status are diagnostic facts rather than editable preference values.
@@ -674,6 +730,13 @@ branches by name; while it holds text, results grouped by kind replace the
 spaces list. Up and Down move through them, Enter opens one, and Escape
 clears the search. Set top-level `show_sidebar_search = false`, or turn off
 **Show search** in **Settings > Appearance > Sidebar layout**, to hide it.
+
+In the Normal, Compact, and Comfortable layouts and in Superset, each space's
+sidebar row starts with its repository owner's avatar, or the GitHub mark;
+Orca and Minimal draw neither. Set top-level `show_repository_icons = false`,
+or turn off **Show repository icons** in **Settings > Appearance > Sidebar
+layout**, to leave both out and give the name their room. The Superset layout
+keeps its icon slot and draws its branch glyph there instead.
 
 `[usage]` provides independent switches in `config-gpui.local.toml`:
 
@@ -893,9 +956,10 @@ the rest to the name, so the whole `minimal` layout is under a hundred lines.
 Agent names have small theme-tinted icons for every agent Herdr detects, selected
 from the daemon's agent identity: brand marks for Pi, Claude Code, Codex (OpenAI),
 Gemini, Cursor, Devin, Antigravity, Cline, Mastra Code, OpenCode, GitHub Copilot,
-Kimi, Kiro, Amp, Grok, Hermes Agent, Kilo Code, Qoder CLI, and Qwen Code, and
-lettermarks for oh-my-pi, Droid, Letta, Maki, and Muse. Unknown or missing
-identities use a generic terminal icon, regardless of custom names.
+Kimi, Kiro, Amp, Grok, Hermes Agent, Kilo Code, Qoder CLI, Qwen Code, and Muse
+Code (Meta's mark), and lettermarks for oh-my-pi, Droid, Letta, and Maki.
+Unknown or missing identities use a generic terminal icon, regardless of custom
+names.
 Icons sit immediately before the name, including orphan agents whose name is
 on the first line, and reserve space before long names are truncated.
 
@@ -911,6 +975,7 @@ sidebar_gap = 8
 
 `sidebar_gap` (finite 0..64 logical pixels, default `0`) is optional blank space between the sidebar and the terminal beside it.
 The default keeps the first column flush with the divider; an explicit value such as `8` adds a gutter.
+Only a terminal takes the gap: a browser, VS Code, review, or orchestrator tab pads its own content and sits against the sidebar.
 The terminal keeps the remaining width, so the daemon is resized to the columns
 it actually has, and the gap is ignored while the sidebar is hidden.
 Any space smaller than one character cell at the right or bottom edge takes the adjacent terminal cells' background colors, without stretching text or changing input coordinates.
@@ -1439,13 +1504,20 @@ Right-click a linked worktree and choose Teleport... to move it to another
 connected host: its branch and commits, staged, unstaged and untracked changes,
 tabs and splits, the programs running in them, and agent sessions. It is offered
 on Linux and macOS clients when the worktree's host is the local session or a
-saved SSH host; custom socket endpoints are not scripted. Neither is a
+saved SSH host or cloud device (Coder, Daytona, or Railway); custom socket and
+WSL endpoints are not scripted. Neither is a
 development (`--dev`) session: the `herdr` CLI names sessions of the release
 installation only, so Teleport, fan-out, and dispatch are not offered there,
 and an orchestrator action that drives that session through the CLI reports an
 error instead of reaching the release session of the same name.
 
-1. **Choose a host.** Every other enabled host is listed at once, connected or
+Cloud devices use the same saved account and machine identity as their sidebar
+connection, in either direction. Coder and Daytona wait for the saved machine to
+be ready; Railway uses its saved, verified SSH key. Teleport does not create a new
+cloud device or install Herdr. Cloud authentication and command preparation run
+only after a host is chosen, on the background worker.
+
+1. **Choose a host.** Every other enabled supported host is listed at once, connected or
    not; nothing is probed until one is chosen. The review then finds where the
    worktree goes there: the checkout it once left (see below), else the
    repository if it is open, matched by normalized Git remote (`origin` first,
@@ -2569,6 +2641,7 @@ Ctrl+Shift+U is left unbound for
   across launches and retained while Agents is hidden.
   Local workspace titles show repository owner avatars; remote
   workspaces use the GitHub fallback mark without resolving remote paths locally.
+  `show_repository_icons = false` leaves both out.
   Profile and owner avatars share a bounded public-image disk cache with 24-hour
   stale-while-refresh behavior; see [avatar caching](../../README.md#native-github-sign-in)
   for limits, location, and the startup authentication requirement. Neither cache
@@ -2819,7 +2892,13 @@ Ctrl+Shift+U is left unbound for
   (for a linked worktree, through its repository's main checkout, starting from
   the linked worktree's branch). The dialog opens on
   its Name field: left empty, the daemon picks the workspace name; anything
-  typed is sent as the new workspace's label. When there is none,
+  typed is sent as the new workspace's label. The proposed branch follows the
+  name, so "Fix login" proposes `worktree/fix-login`, until the Branch field
+  is edited; a name with no ASCII letters or digits keeps the random proposal.
+  As with a typed branch, one that already exists is checked out as it is, at
+  its own commit, such as a branch left behind by a removed worktree of the
+  same name, and one still checked out elsewhere is refused with Git's
+  message. When the dialog cannot open,
   because the workspace is not a Git repository, the main checkout is not open,
   a linked worktree has a detached `HEAD`, nothing is focused, or the window is disconnected, a two-second flash in the
   clipboard toast's position says why.
@@ -2973,18 +3052,30 @@ Ctrl+Shift+U is left unbound for
   away from its default command, keystrokes need a cmd, ctrl, alt, or fn
   modifier (or a function key F1–F24), and unknown names, unparseable keys, or one key on two configured
   commands reject the config. Saved changes rebind the keymap and menu bar live.
+  On macOS, Cmd-H, Cmd-Option-H, and Cmd-M are Hide, Hide Others, and
+  Minimize, which are menu items rather than commands. A command bound to one
+  of those keystrokes here or in the daemon's `[keys]` runs instead, and the
+  menu item stays without a shortcut. A `[[keys.command]]` shortcut cannot
+  take them.
 - `[pane_keys]` maps a keystroke to the key the focused pane receives instead,
   like Ghostty's `text:` binds. On macOS, Cmd-Left, Cmd-Right, and
   Cmd-Backspace send Ctrl-A, Ctrl-E, and Ctrl-U by default, so zsh and agent
   prompts jump to the line's ends or delete back to its start as in every
   other Mac terminal, and Option-Left and Option-Right send Esc-b and Esc-f
   to move by word. A value is a key a terminal can receive (`ctrl-a`,
-  `home`, `alt-b`, `shift-enter`), and an empty string removes a default. A
-  pane key takes its keystroke from a default or daemon command, so
-  `"cmd-k" = "ctrl-l"` replaces Clear; listing it under `[keybindings]` as well
-  rejects the config, as do a bare character, an unknown key, or a target with
-  cmd. The find field and dialogs answer Cmd-Left, Cmd-Right, Cmd-Backspace,
-  and Cmd-Delete themselves.
+  `home`, `alt-b`, `shift-enter`), or `text:` followed by up to 1024 bytes of
+  text, and an empty string removes a default. Text reaches the pane byte for
+  byte, so a newline in it is a line feed, not the Enter key. On a layout
+  that keeps symbols on Option, `option_as_alt = "left"` or `"right"` leaves
+  one Option key typing them with no entries here; `text:` is for
+  `option_as_alt = true`, where both send Alt: `"alt-7" = "text:|"` on a
+  Norwegian keyboard. Name the key as the layout has it without Option, so
+  Option-Shift-7 there is `"alt-/"`. A pane key takes its keystroke from a
+  default or daemon command, so `"cmd-k" = "ctrl-l"` replaces Clear; listing
+  it under `[keybindings]` as well rejects the config, as do a bare character,
+  an unknown key, a target with cmd, or an empty `text:`. The find field and
+  dialogs answer Cmd-Left, Cmd-Right, Cmd-Backspace, and Cmd-Delete
+  themselves.
 - The daemon's own `[keys]` table in `config.toml` (resolved like
   `[ui.toast.clipboard]` above) applies in the GUI too, Herdr's defaults
   included, so a TUI habit such as `prefix+v` or `alt+1..9` works in both
@@ -3088,7 +3179,8 @@ Ctrl+Shift+U is left unbound for
   wheel, a dragged scrollbar thumb, a frame placing images, an open popup,
   keyboard scrolling, and any change to the pane's rows besides the scroll move
   the content to the daemon's whole row. Only the moving pane repaints; other
-  panes replay their cached paint.
+  panes replay their cached paint. Set top-level `smooth_scroll = false`, or
+  turn off **Smooth scrolling** in Settings, to scroll by whole rows.
 - Direct semantic cell canvas: named ANSI colors, indexed 256-color palette,
   RGB, reset foreground/background, reverse, dim, hidden, bold, italic,
   underline, strikeout, wide-cell skip handling, and cursor shapes.

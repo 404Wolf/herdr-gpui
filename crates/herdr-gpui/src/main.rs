@@ -54,7 +54,6 @@ mod error;
 mod fan_out;
 mod find;
 mod font_picker;
-mod font_sizes;
 mod fonts;
 mod git;
 mod github;
@@ -105,6 +104,8 @@ mod search_input;
 mod sessions;
 mod settings_panel;
 mod settings_window;
+#[cfg(unix)]
+mod setup_relay;
 mod sidebar;
 mod smooth_scroll;
 mod sound;

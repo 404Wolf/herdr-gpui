@@ -50,6 +50,10 @@ show_agents = true
 # Show the search field at the top of the sidebar, which finds devices,
 # worktrees, and branches. Also under Settings > Appearance > Sidebar layout.
 show_sidebar_search = true
+# Show the repository owner's avatar, or the GitHub mark, before each space's
+# name in the sidebar, in the layouts that draw one (not orca or minimal).
+# Also under Settings > Appearance > Sidebar layout.
+show_repository_icons = true
 # Show CPU and memory: the selected host's in the status bar, and each host's
 # on its sidebar row. Connected remote hosts are read over SSH every couple of
 # seconds; false stops all sampling. Also under Settings > Status bar.
@@ -66,6 +70,10 @@ agent_checkpoints = true
 # scanned every five seconds with ss or lsof, a remote one over SSH; false
 # stops all scanning. Also under Settings > General.
 show_listening_ports = true
+# Draw wheel and trackpad scrollback between rows, following the OS deltas
+# and momentum; false scrolls by whole rows. Applications reading the mouse
+# always get whole rows. Also under Settings > General.
+smooth_scroll = true
 # macOS only: whether Option-letter reaches a pane as an Alt shortcut (Alt-P
 # for Option-P) or types the character the keyboard layout puts there. "auto"
 # sends Alt from the left Option on the U.S. and ABC layouts, while the right
@@ -218,8 +226,9 @@ project_roots = []
 
 # What the focused pane receives instead of a keystroke, as Ghostty's text:
 # binds do. The value is a key a terminal can receive (ctrl-a, home, alt-b,
-# shift-enter); an empty string removes a default. A keystroke here leaves its
-# default or daemon command, but naming it in [keybindings] too is an error.
+# shift-enter), or "text:" and the text to type, at most 1024 bytes; an empty
+# string removes a default. A keystroke here leaves its default or daemon
+# command, but naming it in [keybindings] too is an error.
 # On macOS these are the defaults:
 # [pane_keys]
 # "cmd-left" = "ctrl-a"
@@ -227,6 +236,11 @@ project_roots = []
 # "cmd-backspace" = "ctrl-u"
 # "alt-left" = "alt-b"
 # "alt-right" = "alt-f"
+# With option_as_alt = true on a layout that keeps symbols on Option, text
+# types them again. Name the key as the layout has it without Option: on a
+# Norwegian keyboard Option-7 is "alt-7" and Option-Shift-7 is "alt-/".
+# "alt-7" = "text:|"
+# "alt-/" = "text:\\"
 
 # Saved SSH devices use the local keybindings above, as `herdr --remote` does.
 # "server" uses the [keys] profile that device's Herdr publishes instead, like

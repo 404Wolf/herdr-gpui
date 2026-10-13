@@ -80,7 +80,7 @@ objc2-user-notifications ={ default-features = false, features = ["UNUserNotific
 raw-window-handle    = "0.6"
 rusqlite             = { features = ["bundled"], version = "0.40" }
 rodio                = { default-features = false, features = ["playback", "symphonia-mp3", "tracing"], version = "0.22.2" }
-rustix               = { features = ["event", "fs", "process"], version = "=1.1.5" }
+rustix               = { features = ["event", "fs", "process", "pty", "termios"], version = "=1.1.5" }
 secrecy              = { features = ["serde"], version = "=0.10.3" }
 security-framework   = "=3.7.0"
 serde                = { features = ["derive"], version = "1" }
