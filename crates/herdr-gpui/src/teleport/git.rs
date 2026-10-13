@@ -505,6 +505,44 @@ git update-index -q --refresh >/dev/null 2>&1 || :
     host.query(Step::Restore, &body, &[], cancelled).map(drop)
 }
 
+/// Bring an existing destination checkout to the source's work: refuse
+/// unless it is still clean at `head`, fast-forward it to the source's HEAD
+/// when asked, then restore the uncommitted work and drop the temporary
+/// reference. Ignored files there are never overwritten: the status check
+/// cannot see them, so the merge and `read-tree` refuse such a collision.
+pub(crate) fn apply(
+    host: &Host,
+    checkout: &str,
+    head: &str,
+    fast_forward: bool,
+    reference: &str,
+    cancelled: &AtomicBool,
+) -> Result<()> {
+    let forward = if fast_forward {
+        format!(
+            "git merge -q --ff-only --no-overwrite-ignore {}\n",
+            shell_quote(&format!("{reference}~2"))
+        )
+    } else {
+        String::new()
+    };
+    let body = format!(
+        r#"cd -- {checkout}
+[ "$(git rev-parse HEAD)" = {head} ] || {{ echo "the checkout has moved since the review" >&2; exit 1; }}
+[ -z "$(git status --porcelain=v1 --untracked-files=all)" ] || {{ echo "the checkout has uncommitted changes" >&2; exit 1; }}
+{forward}git read-tree -m -u HEAD {reference}
+git read-tree {staged}
+git update-ref -d {reference}
+git update-index -q --refresh >/dev/null 2>&1 || :
+"#,
+        checkout = shell_quote(checkout),
+        head = shell_quote(head),
+        reference = shell_quote(reference),
+        staged = shell_quote(&format!("{reference}^")),
+    );
+    host.query(Step::Restore, &body, &[], cancelled).map(drop)
+}
+
 /// Best-effort removal of the temporary reference after a failed move.
 pub(crate) fn drop_reference(host: &Host, key: &str, reference: &str, cancelled: &AtomicBool) {
     let body = format!(
