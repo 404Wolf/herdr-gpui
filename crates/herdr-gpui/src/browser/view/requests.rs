@@ -115,7 +115,7 @@ impl HerdrWindow {
         };
         let beside = placement == Placement::Beside
             && shown
-            && self.show_beside(id, target.pane, window, cx);
+            && self.show_beside(id, target.pane, focus, window, cx);
         if !beside && focus {
             self.go_to_workspace(index, &workspace, cx);
             // Recorded against the workspace, so the tab shows once the
@@ -157,17 +157,21 @@ impl HerdrWindow {
     /// the page already belongs to, another existing group, or a new one
     /// split off to the terminal's right. The terminal's group stays in use
     /// and keeps the keyboard, so the user can go on typing to the agent.
+    /// Without `focus`, the group the user had in use keeps the keyboard
+    /// instead, so a background open never redirects their typing.
     /// Returns whether the page is beside the terminal.
     fn show_beside(
         &mut self,
         id: TabId,
         pane: Option<&str>,
+        focus: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
         let Some(home) = self.terminal_group(pane, cx) else {
             return false;
         };
+        let in_use = self.active_group();
         let pick = Pick::Page(id);
         let owner = self.ensure_layout().map(|layout| layout.owner(&pick));
         let slots = self.group_slots();
@@ -187,7 +191,8 @@ impl HerdrWindow {
             }
         };
         self.move_tab_to_group(pick, group, window, cx);
-        self.activate_group(home, window, cx);
+        let keyboard = if focus { Some(home) } else { in_use };
+        self.activate_group(keyboard.unwrap_or(home), window, cx);
         true
     }
 

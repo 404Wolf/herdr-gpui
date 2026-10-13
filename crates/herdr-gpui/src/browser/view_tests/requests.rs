@@ -117,6 +117,16 @@ fn beside(
     workspace: &str,
     page: &str,
 ) -> Option<Placed> {
+    beside_with(view, cx, workspace, page, true)
+}
+
+fn beside_with(
+    view: &Entity<HerdrWindow>,
+    cx: &mut VisualTestContext,
+    workspace: &str,
+    page: &str,
+    focus: bool,
+) -> Option<Placed> {
     let placed = cx.update(|window, cx| {
         view.update(cx, |view, cx| {
             let target = Target {
@@ -129,7 +139,7 @@ fn beside(
                 true,
                 &Opening {
                     location: &url(page),
-                    focus: true,
+                    focus,
                     placement: Placement::Beside,
                 },
                 window,
@@ -239,4 +249,36 @@ fn a_page_beside_a_terminal_the_user_left_opens_as_a_tab(cx: &mut gpui::TestAppC
         })
     ));
     assert_eq!(view.read_with(cx, |view, _| view.group_slots().len()), 1);
+}
+
+#[gpui::test]
+fn a_background_page_beside_leaves_the_keyboard_where_it_was(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = window(cx);
+    caller_in(&view, cx, "t0");
+    draw(cx);
+    beside(&view, cx, "w0", "http://localhost:3000/");
+    let groups: Vec<_> = view.read_with(cx, |view, _| {
+        view.group_slots().into_iter().map(|slot| slot.id).collect()
+    });
+    // The user moves to the page's group; a page opened with --no-focus
+    // joins it without handing the keyboard to the agent's terminal.
+    cx.update(|window, cx| view.update(cx, |view, cx| view.activate_group(groups[1], window, cx)));
+    let placed = beside_with(&view, cx, "w0", "http://localhost:4000/", false);
+    assert!(matches!(
+        placed,
+        Some(Placed::Opened {
+            placement: Placement::Beside,
+            ..
+        })
+    ));
+    assert_eq!(
+        view.read_with(cx, |view, _| view.active_group()),
+        Some(groups[1])
+    );
+    // With focus, the terminal's group takes the keyboard back.
+    beside(&view, cx, "w0", "http://localhost:5000/");
+    assert_eq!(
+        view.read_with(cx, |view, _| view.active_group()),
+        Some(groups[0])
+    );
 }
