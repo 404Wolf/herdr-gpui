@@ -308,10 +308,39 @@ fn request(
                     .ok_or(Error::InvalidRedirect)?
                     .to_owned();
             }
-            status => return Err(Error::HttpStatus(status)),
+            status => {
+                return Err(status_error(status, response.headers(), chrono::Utc::now()));
+            }
         }
     }
     Err(Error::RedirectLimit)
+}
+
+/// GitHub answers an exhausted API quota with 403 or 429 and either
+/// `x-ratelimit-remaining: 0` plus the reset epoch, or a `retry-after` delay in
+/// seconds. Any other refusal keeps its status.
+fn status_error(
+    status: u16,
+    headers: &ureq::http::HeaderMap,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Error {
+    let number = |name: &str| {
+        headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.trim().parse::<i64>().ok())
+    };
+    let exhausted = number("x-ratelimit-remaining") == Some(0);
+    if !matches!(status, 403 | 429) || !(exhausted || headers.contains_key("retry-after")) {
+        return Error::HttpStatus(status);
+    }
+    let reset = number("retry-after")
+        .and_then(|seconds| now.checked_add_signed(chrono::TimeDelta::try_seconds(seconds)?))
+        .or_else(|| {
+            number("x-ratelimit-reset").and_then(|epoch| chrono::DateTime::from_timestamp(epoch, 0))
+        })
+        .filter(|reset| *reset > now);
+    Error::RateLimited { reset }
 }
 
 fn read_bounded(mut reader: impl Read, limit: usize, cancel: &AtomicBool) -> Result<Vec<u8>> {
