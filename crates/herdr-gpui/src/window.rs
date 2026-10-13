@@ -37,6 +37,7 @@ mod status_bar;
 pub(crate) mod system_notifications;
 mod tab_drag;
 mod tab_strip;
+mod tab_tear;
 mod toasts;
 mod transfers;
 #[cfg(test)]
