@@ -21,9 +21,12 @@ pub(super) struct Query<'a> {
 impl<'a> Query<'a> {
     pub(super) fn new(text: &'a str) -> Self {
         let text = text.trim_start();
-        let (user, host) = match text.split_once('@') {
-            Some((user, host)) if !user.is_empty() && !user.contains("://") => (Some(user), host),
-            _ => (None, text),
+        // `ssh://user@host:port` names its user after the scheme, as a
+        // chosen `ssh://` row fills it in.
+        let rest = text.strip_prefix("ssh://").unwrap_or(text);
+        let (user, host) = match rest.split_once('@') {
+            Some((user, host)) if !user.is_empty() && !user.contains('/') => (Some(user), host),
+            _ => (None, rest),
         };
         Self { text, user, host }
     }
@@ -164,9 +167,16 @@ impl HerdrWindow {
         let rows = matching(unsaved.iter().copied(), &query);
         let fills: Vec<String> = rows.iter().map(|row| query.fill(row)).collect();
         let typed = Query::new(text);
-        let (highlight, chosen) = match &setup.highlight {
-            Some((typed, index)) if typed == text => (Some(*index), true),
-            _ => (
+        // An arrow choice names its row by what it fills in, since discovery
+        // keeps adding and sorting rows while the form is open.
+        let picked = setup
+            .highlight
+            .as_ref()
+            .filter(|(typed, _)| typed == text)
+            .and_then(|(_, fill)| fills.iter().position(|row| row == fill));
+        let (highlight, chosen) = match picked {
+            Some(index) => (Some(index), true),
+            None => (
                 fills
                     .iter()
                     .position(|fill| fill == text)
@@ -214,9 +224,12 @@ impl HerdrWindow {
                     (Some(index), "up") => index.saturating_sub(1),
                     (Some(index), _) => (index + 1).min(last),
                 };
+                let Some(fill) = completion.fills.get(index).cloned() else {
+                    return false;
+                };
                 if let Some(setup) = &mut self.menu.device_setup {
                     setup.suggestion_scroll.scroll_to_item(index);
-                    setup.highlight = Some((text, index));
+                    setup.highlight = Some((text, fill));
                 }
                 cx.notify();
                 true
