@@ -28,15 +28,6 @@ pub(crate) enum FontFace {
 }
 
 impl FontFace {
-    pub(crate) fn set_size(self, config: &mut Config, size: f32) {
-        match self {
-            Self::Sidebar => config.sidebar.size = size,
-            Self::Tabs => config.tabs.size = size,
-            Self::Terminal => config.terminal.size = size,
-            Self::Ui => config.ui.size = size,
-        }
-    }
-
     pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Sidebar => "sidebar",

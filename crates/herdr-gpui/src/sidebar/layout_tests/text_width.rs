@@ -34,7 +34,6 @@ fn check_sidebar(fixture: Entity<SidebarFixture>, cx: &mut gpui::VisualTestConte
 
     sidebar_rows::check_scaled_sidebar(&view, cx);
     panels::check_shortcut_search(&view, cx);
-    panels::check_preferences_scroll(&view, cx);
     panels::check_github_panel(&view, cx);
     panels::check_theme_picker(&view, cx);
     panels::check_command_palette(&view, cx);

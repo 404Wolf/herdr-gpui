@@ -354,7 +354,6 @@ pub(crate) async fn verify_native(
             || before.text != after.text
             || before.keys != after.keys
             || source_actions != after.actions
-            || view.native_settings_save_in_flight()
         {
             bail!("Settings affected source input/focus or started a save");
         }

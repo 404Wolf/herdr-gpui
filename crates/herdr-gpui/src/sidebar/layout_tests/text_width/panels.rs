@@ -1,4 +1,4 @@
-//! Shortcut search, Preferences, GitHub, theme, palette, close, keybinds,
+//! Shortcut search, GitHub, theme, palette, close, keybinds,
 //! install, and app update panel checks.
 use super::*;
 
@@ -50,35 +50,6 @@ pub(super) fn check_shortcut_search(view: &Entity<HerdrWindow>, cx: &mut gpui::V
         });
     });
     cx.simulate_keystrokes("escape");
-}
-
-pub(super) fn check_preferences_scroll(
-    view: &Entity<HerdrWindow>,
-    cx: &mut gpui::VisualTestContext,
-) {
-    // Exercise the retained modal, not the standalone Settings command.
-    cx.update(|window, cx| {
-        view.update(cx, |view, cx| view.open_preferences_fixture(window, cx));
-    });
-    // General has enough content to exercise the independent body scroll.
-    cx.simulate_keystrokes("shift-tab");
-    cx.simulate_resize(size(px(360.), px(240.)));
-    cx.update(|window, cx| full_draw(window, cx).clear(cx));
-    let header = cx.debug_bounds("preferences-header").unwrap();
-    let footer = cx.debug_bounds("preferences-footer").unwrap();
-    let body = cx.debug_bounds("preferences-body").unwrap();
-    let usage_row = cx.debug_bounds("preferences-show-usage").unwrap();
-    assert!(body.size.height > px(0.));
-    assert!(header.bottom() <= body.top());
-    assert!(body.bottom() <= footer.top());
-    cx.simulate_keystrokes("pagedown");
-    cx.update(|window, cx| full_draw(window, cx).clear(cx));
-    assert!(cx.debug_bounds("preferences-show-usage").unwrap().top() < usage_row.top());
-    assert_eq!(cx.debug_bounds("preferences-header").unwrap(), header);
-    assert_eq!(cx.debug_bounds("preferences-footer").unwrap(), footer);
-    let close = cx.debug_bounds("preferences-close").unwrap();
-    cx.simulate_click(close.center(), Default::default());
-    cx.update(|window, cx| assert!(view.read(cx).focus.is_focused(window)));
 }
 
 pub(super) fn check_github_panel(view: &Entity<HerdrWindow>, cx: &mut gpui::VisualTestContext) {
@@ -170,18 +141,6 @@ pub(super) fn check_github_panel(view: &Entity<HerdrWindow>, cx: &mut gpui::Visu
 
 pub(super) fn check_theme_picker(view: &Entity<HerdrWindow>, cx: &mut gpui::VisualTestContext) {
     cx.simulate_resize(size(px(800.), px(600.)));
-    cx.update(|window, cx| {
-        view.update(cx, |view, cx| {
-            view.open_preferences_fixture(window, cx);
-            view.select_settings_tab(crate::settings_panel::Tab::Theme, window, cx)
-        });
-    });
-    cx.update(|window, cx| full_draw(window, cx).clear(cx));
-    let choose_theme = cx.debug_bounds("preferences-choose-theme").unwrap();
-    cx.simulate_click(choose_theme.center(), Default::default());
-    cx.update(|_, cx| assert!(view.read(cx).menu.page == Some(crate::menu::Page::Themes)));
-    cx.simulate_keystrokes("escape");
-
     let search = cx.update(|window, cx| {
         view.update(cx, |view, cx| view.open_theme_picker(window, cx));
         full_draw(window, cx).clear(cx);
@@ -287,11 +246,11 @@ pub(super) fn check_command_palette(view: &Entity<HerdrWindow>, cx: &mut gpui::V
     });
     cx.simulate_keystrokes(crate::controls::platform_default("cmd-b"));
     cx.update(|window, cx| {
-        view.update(cx, |view, cx| view.open_preferences_fixture(window, cx));
+        view.update(cx, |view, cx| view.open_menu(window, cx));
     });
     cx.update(|_, cx| {
         assert!(view.read(cx).sidebar_visible);
-        assert!(view.read(cx).menu.page == Some(crate::menu::Page::Preferences));
+        assert!(view.read(cx).menu.page == Some(crate::menu::Page::Menu));
     });
     cx.simulate_keystrokes(&format!(
         "escape {}",

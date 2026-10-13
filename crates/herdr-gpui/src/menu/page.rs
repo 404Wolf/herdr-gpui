@@ -7,7 +7,6 @@ pub(crate) enum Page {
     /// The Linux window's application menu, from the native menu definitions.
     Application,
     About,
-    Preferences,
     Devices,
     /// Local sessions and remote devices, with the state of each.
     Sessions,
@@ -33,7 +32,6 @@ pub(crate) enum Page {
     RemoveWsl,
     Keybinds,
     Themes,
-    Fonts,
     Palette,
     /// Go to Symbol and Go to File over the focused pane's checkout.
     CodeSearch,
