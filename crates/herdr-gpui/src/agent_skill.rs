@@ -270,6 +270,27 @@ mod tests {
         assert!(spaced.contains(r"'/Users/a b/it'\''s/Herdr' browser open"));
     }
 
+    /// The description lists commands after a colon (`daemon: show a file`),
+    /// so as a plain YAML scalar it would parse as a nested mapping and fail
+    /// every agent's frontmatter parser, hiding the skill from agents.
+    #[test]
+    fn the_skill_description_is_a_quoted_scalar() {
+        let frontmatter = SKILL
+            .strip_prefix("---\n")
+            .and_then(|rest| rest.split_once("\n---\n"))
+            .map(|(frontmatter, _)| frontmatter)
+            .unwrap();
+        let description = frontmatter
+            .lines()
+            .find_map(|line| line.strip_prefix("description: "))
+            .unwrap();
+        let value = description
+            .strip_prefix('"')
+            .and_then(|value| value.strip_suffix('"'))
+            .unwrap();
+        assert!(!value.contains('"'));
+    }
+
     #[test]
     fn installing_keeps_to_existing_agent_directories_and_the_users_own_files() {
         let home = tempfile::tempdir().unwrap();
