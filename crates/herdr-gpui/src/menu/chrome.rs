@@ -23,7 +23,6 @@ impl HerdrWindow {
 
     pub(crate) fn open_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         self.shift_taps.cancel();
-        self.finish_font_size_edit(true, cx);
         if !self.cancel_theme_preview(cx) {
             return false;
         }
@@ -41,7 +40,6 @@ impl HerdrWindow {
     }
 
     pub(crate) fn dismiss_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.finish_font_size_edit(true, cx);
         if !self.cancel_theme_preview(cx) {
             return;
         }
@@ -428,15 +426,13 @@ impl HerdrWindow {
                     && !matches!(page, Page::Dialog(_)),
                 |panel| {
                     panel
-                        .w((viewport.width - px(32.)).max(px(0.)).min(px(
-                            if page == Page::Preferences {
-                                620. * (font.size / 12.)
-                            } else if add_device {
+                        .w((viewport.width - px(32.))
+                            .max(px(0.))
+                            .min(px(if add_device {
                                 rail::WIDTH * (font.size / 12.)
                             } else {
                                 480.
-                            },
-                        )))
+                            })))
                         .max_h((viewport.height - px(32.)).max(px(0.)))
                 },
             )
@@ -445,10 +441,8 @@ impl HerdrWindow {
                     page,
                     Page::Keybinds
                         | Page::Themes
-                        | Page::Fonts
                         | Page::Palette
                         | Page::CodeSearch
-                        | Page::Preferences
                         | Page::AppUpdate
                         | Page::GitHub
                         | Page::AddDevice
@@ -474,12 +468,7 @@ impl HerdrWindow {
             .when(
                 matches!(
                     page,
-                    Page::Keybinds
-                        | Page::Themes
-                        | Page::Fonts
-                        | Page::Palette
-                        | Page::CodeSearch
-                        | Page::Preferences
+                    Page::Keybinds | Page::Themes | Page::Palette | Page::CodeSearch
                 ),
                 |panel| {
                     panel
@@ -640,16 +629,12 @@ impl HerdrWindow {
             panel = panel.child(self.render_keybinds(cx));
         } else if page == Page::Themes {
             panel = panel.child(self.render_theme_picker(cx));
-        } else if page == Page::Fonts {
-            panel = panel.child(self.render_font_picker(cx));
         } else if page == Page::Palette {
             panel = panel.child(self.render_palette(cx));
         } else if page == Page::CodeSearch {
             panel = panel.child(self.render_code_search(cx));
         } else if page == Page::ConfirmClose {
             panel = panel.child(self.render_close_confirmation(cx));
-        } else if page == Page::Preferences {
-            panel = panel.child(self.render_preferences(cx));
         } else if page == Page::AppUpdate {
             panel = panel.child(self.render_app_update(window, cx));
         } else if page == Page::About {

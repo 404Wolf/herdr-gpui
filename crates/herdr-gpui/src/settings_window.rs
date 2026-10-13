@@ -494,12 +494,8 @@ impl SettingsWindow {
         let previewing = cx.windows().into_iter().any(|window| {
             window.downcast::<HerdrWindow>().is_some_and(|window| {
                 window.read(cx).map_or(true, |source| {
-                    matches!(
-                        source.menu.page,
-                        Some(crate::menu::Page::Themes | crate::menu::Page::Fonts)
-                    ) || source.theme_save_in_flight()
-                        || source.native_settings_save_in_flight()
-                        || source.font_size_saves.is_busy()
+                    source.menu.page == Some(crate::menu::Page::Themes)
+                        || source.theme_save_in_flight()
                 })
             })
         });
