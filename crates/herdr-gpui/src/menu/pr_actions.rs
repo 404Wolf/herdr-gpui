@@ -32,7 +32,7 @@ impl HerdrWindow {
         changed
     }
 
-    fn pr_token(&self) -> Option<std::sync::Arc<secrecy::SecretString>> {
+    pub(crate) fn pr_token(&self) -> Option<std::sync::Arc<secrecy::SecretString>> {
         self.pr_profile().map(|profile| profile.token.clone())
     }
 

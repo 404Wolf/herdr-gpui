@@ -3,6 +3,8 @@
 use super::*;
 use herdr_client::protocol::ClientShellWorktree;
 
+mod wanted;
+
 const KEY: &str = "/repo/.git";
 
 /// Two agents: p0 in w4 (a linked worktree on `feature`), p1 in w0 (no
@@ -279,7 +281,7 @@ fn stamps_always_increase() {
     let first = checkpoints.stamp();
     let second = checkpoints.stamp();
     assert!(second > first);
-    assert!(script::valid_id(&second));
+    assert!(valid_id(&second));
 }
 
 #[test]

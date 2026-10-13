@@ -96,3 +96,7 @@ mod overlays;
 
 /// What closing a workspace does to its browser tabs.
 mod workspace_close;
+
+/// The sidebar gap beside a page; only builds that show pages open one.
+#[cfg(any(target_os = "macos", windows))]
+mod sidebar_gap;

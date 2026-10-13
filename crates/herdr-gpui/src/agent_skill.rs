@@ -43,10 +43,8 @@ pub(crate) fn text(executable: Option<&Path>) -> String {
     if executable.and_then(Path::to_str).is_none() {
         return SKILL.to_owned();
     }
-    SKILL.replace(
-        "herdr-gpui browser",
-        &format!("{} browser", command(executable)),
-    )
+    // Every command line in the skill starts with the executable's name.
+    SKILL.replace("herdr-gpui ", &format!("{} ", command(executable)))
 }
 
 fn managed(contents: &str) -> bool {
@@ -227,6 +225,13 @@ impl AgentSkill {
     }
 }
 
+/// Records `choice` as the app records the user's answer, for a process
+/// without the app's global, such as the command line. Blocking.
+pub(crate) fn save_choice(choice: Choice) -> crate::Result<()> {
+    let path = AgentSkill::path().ok_or(crate::Error::MissingStateRoot)?;
+    state_file::write(&path, &Saved { choice })
+}
+
 /// Rewrites the installed skill if this app's text or location changed.
 fn refresh_installed(cx: &mut App) {
     let Ok(home) = crate::config::home() else {
@@ -258,6 +263,9 @@ mod tests {
         )));
         assert!(bundled.contains("/Applications/Herdr.app/Contents/MacOS/Herdr browser open"));
         assert!(!bundled.contains("herdr-gpui browser"));
+        // Every command, not only the browser's, names the executable.
+        assert!(!bundled.contains("herdr-gpui "));
+        assert!(bundled.contains("/Applications/Herdr.app/Contents/MacOS/Herdr code open"));
         let spaced = text(Some(Path::new("/Users/a b/it's/Herdr")));
         assert!(spaced.contains(r"'/Users/a b/it'\''s/Herdr' browser open"));
     }

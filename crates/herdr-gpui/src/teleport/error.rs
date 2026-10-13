@@ -2,7 +2,7 @@
 
 /// The part of a teleport that failed, for context in diagnostics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Step {
+pub enum Step {
     Discover,
     Review,
     Clone,
@@ -67,7 +67,7 @@ impl Step {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum Error {
+pub enum Error {
     #[error("{} failed: {source}", step.label())]
     Script {
         step: Step,

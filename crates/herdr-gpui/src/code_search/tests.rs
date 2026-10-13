@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used)]
 // Not a glob: the parent's `gpui::*` would shadow the `#[test]` that
 // `gpui::test` expands to.
-use super::{CodeSearch, HerdrWindow, Indexes, Mode, Status, rank};
+use super::{CodeSearch, HerdrWindow, Indexes, Mode, Query, Status, rank};
 use crate::code_index::{Change, Index, Kind, Symbol};
 use gpui::{Entity, TestAppContext, VisualTestContext};
 use std::{
@@ -33,7 +33,7 @@ fn fixture() -> Index {
 }
 
 fn labels(index: &Index, mode: Mode, query: &str) -> Vec<String> {
-    rank::rank(index, mode, &rank::Query::parse(query, mode))
+    rank(index, mode, &Query::parse(query, mode))
         .iter()
         .map(|hit| rank::label(index, mode, hit.item).to_owned())
         .collect()
@@ -53,11 +53,7 @@ fn symbols_rank_by_match_then_by_shorter_name() {
     // Without a query every symbol lists, in index order.
     assert_eq!(labels(&index, Mode::Symbols, "  ").len(), 4);
     assert!(labels(&index, Mode::Symbols, "zzz").is_empty());
-    let hits = rank::rank(
-        &index,
-        Mode::Symbols,
-        &rank::Query::parse("main", Mode::Symbols),
-    );
+    let hits = rank(&index, Mode::Symbols, &Query::parse("main", Mode::Symbols));
     assert_eq!(hits[0].highlights.len(), 1);
     assert_eq!(hits[0].highlights[0], 0..4);
 }
@@ -69,11 +65,11 @@ fn files_match_paths_and_take_a_line() {
         labels(&index, Mode::Files, "render"),
         ["src/window/render.rs"]
     );
-    let query = rank::Query::parse("main.rs:42", Mode::Files);
+    let query = Query::parse("main.rs:42", Mode::Files);
     assert_eq!((query.text.as_str(), query.line), ("main.rs", Some(42)));
     assert_eq!(labels(&index, Mode::Files, "main.rs:42"), ["src/main.rs"]);
     // A symbol query keeps its colon.
-    assert_eq!(rank::Query::parse("a:1", Mode::Symbols).line, None);
+    assert_eq!(Query::parse("a:1", Mode::Symbols).line, None);
 }
 
 #[test]

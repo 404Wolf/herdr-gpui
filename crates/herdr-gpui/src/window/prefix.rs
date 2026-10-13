@@ -30,7 +30,11 @@ impl HerdrWindow {
                 ) {
                     this.shift_taps.cancel();
                 }
-                this.prefix_keystroke(&event.keystroke, window, cx);
+                // Everything matched here sees the function key's name: the
+                // prefix, its chords, custom commands, and resize mode.
+                // GPUI's own bindings still see the unnamed key.
+                let named = super::function_keys::named(&event.keystroke, this.key_press);
+                this.prefix_keystroke(named.as_ref().unwrap_or(&event.keystroke), window, cx);
             });
         })
     }

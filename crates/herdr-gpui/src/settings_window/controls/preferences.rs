@@ -257,6 +257,11 @@ mod tests {
             ),
             (
                 Section::General,
+                "settings-smooth-scroll",
+                Preference::SmoothScroll(false),
+            ),
+            (
+                Section::General,
                 "settings-confirm-close-workspace",
                 Preference::ConfirmCloseWorkspace(false),
             ),

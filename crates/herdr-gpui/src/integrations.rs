@@ -143,6 +143,21 @@ enum Operation {
 }
 
 impl Integrations {
+    /// The listed integrations as `(target, label, state)`; the state is
+    /// "not_installed", "current", "outdated", or "unavailable".
+    #[cfg(unix)]
+    pub(crate) fn listed(&self) -> impl Iterator<Item = (&str, &str, &'static str)> {
+        self.rows.iter().map(|row| {
+            let state = match row.state {
+                _ if !row.available => "unavailable",
+                State::NotInstalled => "not_installed",
+                State::Current => "current",
+                State::Outdated => "outdated",
+            };
+            (row.target.as_str(), row.label.as_str(), state)
+        })
+    }
+
     fn clear_pending(&mut self) {
         if let Some((id, _)) = self.pending.take()
             && let Some(scope) = &self.scope

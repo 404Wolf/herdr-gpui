@@ -236,7 +236,10 @@ fn pane_keys_reach_the_keymap_as_written() -> anyhow::Result<()> {
     let sent = |typed| {
         keymap
             .pane_key(&gpui::Keystroke::parse(typed).unwrap_or_default())
-            .map(|sent| sent.unparse())
+            .and_then(|sent| match sent {
+                crate::keymap::PaneKey::Key(key) => Some(key.unparse()),
+                crate::keymap::PaneKey::Text(_) => None,
+            })
     };
     assert_eq!(sent("cmd-k").as_deref(), Some("ctrl-l"));
     assert_eq!(sent("cmd-.").as_deref(), Some("alt-."));

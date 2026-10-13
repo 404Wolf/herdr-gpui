@@ -99,7 +99,7 @@ impl HerdrWindow {
 
     /// The checkout the chrome acts on: the focused workspace's, when it is one
     /// this client may run Git in.
-    pub(super) fn git_input(&self) -> Option<crate::pull_request::Input> {
+    pub(crate) fn git_input(&self) -> Option<crate::pull_request::Input> {
         if !self.local_git_endpoint() {
             return None;
         }

@@ -1,7 +1,20 @@
 //! The control socket's messages: one JSON request line, one JSON response
-//! line, then the connection closes.
-use crate::cli::Placement;
+//! line, then the connection closes. Browser requests keep their original
+//! flat form; every other family sends `{"method", "caller", "op"}` with a
+//! family-specific `op`, and is answered with a family-specific `reply`.
+pub(crate) mod app;
+pub(crate) mod events;
+pub(crate) mod hosts;
+pub(crate) mod settings;
+pub(crate) mod tabs;
+pub(crate) mod work;
+
+use crate::cli::control::Placement;
 use serde::{Deserialize, Serialize};
+
+/// Raised whenever a request or reply changes shape, so `status` can tell
+/// an outdated app from a refused request. 3: `browser.open` placement.
+pub(crate) const PROTOCOL_VERSION: u32 = 3;
 
 /// Older apps and clients know only tabs, so a tab is left off the wire.
 fn is_tab(placement: &Placement) -> bool {
@@ -26,6 +39,51 @@ pub(crate) enum Request {
     Feedback(FeedbackRequest),
     #[serde(rename = "notes.send")]
     Notes(NotesRequest),
+    #[serde(rename = "status")]
+    Status(Caller),
+    #[serde(rename = "app")]
+    App(Call<app::AppOp>),
+    #[serde(rename = "window")]
+    Window(Call<app::WindowOp>),
+    #[serde(rename = "ui")]
+    Ui(Call<app::UiOp>),
+    #[serde(rename = "command")]
+    Command(Call<app::CommandOp>),
+    #[serde(rename = "tab")]
+    Tab(Call<tabs::TabOp>),
+    #[serde(rename = "work")]
+    Work(Call<work::WorkOp>),
+    #[serde(rename = "host")]
+    Host(Call<hosts::HostOp>),
+    #[serde(rename = "settings")]
+    Settings(Call<settings::SettingsOp>),
+    #[serde(rename = "events")]
+    Events(Call<events::EventsOp>),
+}
+
+/// A request of a family other than the browser's: who asks, and what.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Call<T> {
+    pub caller: Caller,
+    pub op: T,
+}
+
+impl Request {
+    /// How long the app may take to answer, beyond the usual bound: some
+    /// requests wait for the user, a page, or an event on purpose.
+    #[cfg(any(unix, test))]
+    pub(crate) fn wait_seconds(&self) -> u64 {
+        let wait = match self {
+            Self::Feedback(request) => request.wait_seconds,
+            Self::Events(call) => call.op.wait_seconds(),
+            Self::Tab(call) => call.op.wait_seconds(),
+            Self::Host(call) => call.op.wait_seconds(),
+            Self::Settings(call) => call.op.wait_seconds(),
+            _ => 0,
+        };
+        wait.min(MAX_WAIT_SECONDS)
+    }
 }
 
 /// What a tab shows: a web address, or a local file by absolute path, which
@@ -53,6 +111,9 @@ pub(crate) struct Caller {
     /// sessions' identical workspace IDs apart.
     #[serde(default)]
     pub daemon_socket: Option<String>,
+    /// The window to act in, by the ID `window list` reports.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -118,9 +179,15 @@ pub enum ErrorCode {
     Busy,
     Timeout,
     Unsupported,
+    /// The window, tab, host, checkpoint, or other thing named is not there.
+    NotFound,
+    /// The app tried and the operation failed, for example a Git error.
+    Failed,
+    /// A dialog or menu holds the window, so it takes no commands now.
+    WindowBusy,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub(crate) enum Response {
     Opened {
@@ -141,6 +208,29 @@ pub(crate) enum Response {
     NotesSent {
         to: NotesTo,
     },
+    Status(app::Status),
+    /// Done; the message says what happened, for a person.
+    Done {
+        message: String,
+    },
+    App {
+        reply: app::Reply,
+    },
+    Tab {
+        reply: tabs::Reply,
+    },
+    Work {
+        reply: work::Reply,
+    },
+    Host {
+        reply: hosts::Reply,
+    },
+    Settings {
+        reply: settings::Reply,
+    },
+    Events {
+        reply: events::Reply,
+    },
     Error {
         code: ErrorCode,
         message: String,
@@ -152,6 +242,13 @@ impl Response {
     pub(crate) fn error(code: ErrorCode, message: impl Into<String>) -> Self {
         Self::Error {
             code,
+            message: message.into(),
+        }
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn done(message: impl Into<String>) -> Self {
+        Self::Done {
             message: message.into(),
         }
     }
@@ -170,6 +267,7 @@ mod tests {
                 pane_id: Some("w_1:p1".into()),
                 workspace_id: Some("w_1".into()),
                 daemon_socket: None,
+                window: None,
             },
             focus: true,
             placement: Placement::Tab,

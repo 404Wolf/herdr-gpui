@@ -154,7 +154,6 @@ impl HerdrWindow {
         &self,
         slot: Slot,
         tab: &Tab,
-        gap: f32,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let id = tab.id;
@@ -162,7 +161,6 @@ impl HerdrWindow {
             return div()
                 .id(SharedString::from(slot.selector("review-loading")))
                 .size_full()
-                .pl(px(gap))
                 .into_any_element();
         };
         let focus = review.focus.clone();
@@ -170,7 +168,6 @@ impl HerdrWindow {
             .id(SharedString::from(slot.selector("review-tab")))
             .size_full()
             .min_w_0()
-            .pl(px(gap))
             .track_focus(&focus)
             // The review holds the keyboard while used, so typing never
             // reaches a terminal in another group.

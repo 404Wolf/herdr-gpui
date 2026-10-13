@@ -4,11 +4,11 @@
 
 use super::{Candidate, Source, valid_host};
 use crate::{Error, Result};
+use herdr_client::LocalNetworkAccess;
 use mdns_sd::{RecvTimeoutError, ServiceDaemon};
 use std::{
     collections::HashSet,
-    io,
-    net::{IpAddr, Ipv4Addr, UdpSocket},
+    net::IpAddr,
     time::{Duration, Instant},
 };
 
@@ -20,19 +20,36 @@ const REQUERY: Duration = Duration::from_secs(1);
 /// this machine until `found` returns `false`. Blocks: call it from the
 /// background executor.
 ///
-/// The first time a process reaches the local network, macOS checks its
-/// Local Network permission and drops replies until the check is done, so
-/// the first queries of a fresh launch can go unanswered. The library backs
-/// off to queries 1, 3 and 7 seconds in; until something answers, the browse
-/// restarts every second instead, which sends a new query each time.
-pub(super) fn browse(duration: Duration, mut found: impl FnMut(Candidate) -> bool) -> Result<()> {
+/// On macOS the browse first needs Local Network permission. When the
+/// system refuses it, which it also does while its alert waits for the
+/// user's answer, `waiting(true)` is reported and the permission is checked
+/// again for up to `permission_wait`, until `waiting` returns `false`. Once
+/// allowed, `waiting(false)` is reported and the full `duration` follows.
+/// The first queries of a fresh permission can still go unanswered: the
+/// library backs off to queries 1, 3 and 7 seconds in, so until something
+/// answers, the browse restarts every second, which sends a new query.
+pub(super) fn browse(
+    duration: Duration,
+    permission_wait: Duration,
+    mut waiting: impl FnMut(bool) -> bool,
+    mut found: impl FnMut(Candidate) -> bool,
+) -> Result<()> {
     let local: HashSet<IpAddr> = if_addrs::get_if_addrs()
         .map_err(Error::LocalAddresses)?
         .into_iter()
         .map(|interface| interface.ip())
         .collect();
     if cfg!(target_os = "macos") && local.iter().any(|ip| ip.is_ipv4() && !ip.is_loopback()) {
-        local_network_allowed()?;
+        let access = permitted(
+            herdr_client::local_network_access,
+            |keep_waiting| herdr_client::wait_for_local_network(permission_wait, keep_waiting),
+            &mut waiting,
+        );
+        match access {
+            Permission::Granted => {}
+            Permission::Cancelled => return Ok(()),
+            Permission::Refused => return Err(Error::LocalNetworkDenied),
+        }
     }
     let daemon = ServiceDaemon::new()?;
     let mut events = daemon.browse(SERVICE)?;
@@ -85,24 +102,43 @@ pub(super) fn browse(duration: Duration, mut found: impl FnMut(Candidate) -> boo
     Ok(())
 }
 
-/// macOS fails a multicast send with "no route to host" while Herdr lacks
-/// Local Network permission. The mDNS daemon only logs that, so the browse
-/// would find nothing and look like an empty network; one send first tells
-/// the two apart. The packet is a DNS header asking nothing, which responders
-/// ignore. Any other failure is left to the browse.
-fn local_network_allowed() -> Result<()> {
-    let Ok(socket) = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)) else {
-        return Ok(());
-    };
-    multicast_sent(socket.send_to(&[0; 12], (Ipv4Addr::new(224, 0, 0, 251), 5353)))
+/// Where the Local Network permission left the browse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Permission {
+    Granted,
+    /// Still refused when the wait ran out.
+    Refused,
+    /// The form went away while waiting.
+    Cancelled,
 }
 
-pub(super) fn multicast_sent(result: io::Result<usize>) -> Result<()> {
-    match result {
-        Err(error) if error.kind() == io::ErrorKind::HostUnreachable => {
-            Err(Error::LocalNetworkDenied)
-        }
-        _ => Ok(()),
+/// Check the permission, waiting for the user while it is refused. The mDNS
+/// daemon only logs a refused send, so without this the browse would find
+/// nothing and look like an empty network. An `Unknown` answer is left to
+/// the browse.
+pub(super) fn permitted(
+    check: impl FnOnce() -> LocalNetworkAccess,
+    wait: impl FnOnce(&mut dyn FnMut() -> bool) -> LocalNetworkAccess,
+    waiting: &mut impl FnMut(bool) -> bool,
+) -> Permission {
+    if check() != LocalNetworkAccess::Denied {
+        return Permission::Granted;
+    }
+    let mut open = waiting(true);
+    let access = wait(&mut || {
+        open = open && waiting(true);
+        open
+    });
+    if !open {
+        return Permission::Cancelled;
+    }
+    if access == LocalNetworkAccess::Denied {
+        return Permission::Refused;
+    }
+    if waiting(false) {
+        Permission::Granted
+    } else {
+        Permission::Cancelled
     }
 }
 

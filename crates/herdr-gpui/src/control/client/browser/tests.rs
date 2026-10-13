@@ -5,6 +5,7 @@ fn caller(pane_id: Option<&str>) -> Caller {
         pane_id: pane_id.map(str::to_owned),
         workspace_id: Some("w_1".into()),
         daemon_socket: None,
+        window: None,
     }
 }
 

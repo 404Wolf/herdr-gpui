@@ -12,7 +12,7 @@ use herdr_client::protocol::AgentStatus;
 
 impl HerdrWindow {
     /// The checkout the menu's workspace shows, when checkpoints can reach it.
-    pub(super) fn checkpoint_checkout(&self) -> Option<Checkout> {
+    pub(crate) fn checkpoint_checkout(&self) -> Option<Checkout> {
         let target = self.menu.target.as_ref()?;
         let endpoint = self.endpoints.get(self.selected_endpoint)?;
         let host = host_for(&endpoint.connection.target, &self.live)?;
@@ -23,7 +23,7 @@ impl HerdrWindow {
         )
     }
 
-    pub(super) fn open_checkpoints(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn open_checkpoints(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let (Some(checkout), Some(target)) = (self.checkpoint_checkout(), &self.menu.target) else {
             return;
         };

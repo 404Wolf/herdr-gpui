@@ -162,15 +162,15 @@ and missing identities use `agent-generic.svg`.
 | `kilo` | Lobe Icons `kilocode.svg` |
 | `qodercli` | Lobe Icons `qoder.svg` |
 | `qwen` | Lobe Icons `qwen.svg` |
+| `muse` | Lobe Icons `meta.svg` (Meta's mark; Muse Code has no redistributable mark of its own) |
 | `omp`, `droid`, `letta`, `maki` | Original lettermark (O, D, L, M) in a rounded square |
-| `muse` | Original lettermark (M) in a circle, to tell it apart from Maki |
 | generic | Original terminal artwork |
 
 Lobe Icons marks are MIT licensed; source attribution and the full license are
 in the root [NOTICE](../../NOTICE), shipped with releases. Their SVG wrappers
 were reduced to a 24px `currentColor` mask and titles removed; paths are
 unchanged. No redistributable monochrome mark was found for oh-my-pi, Factory
-Droid, Letta, Maki, or Muse, so their lettermarks and the generic mark are
+Droid, Letta, or Maki, so their lettermarks and the generic mark are
 original artwork under this project's Apache-2.0 license, drawn with the same
 2px round stroke as the generic mark. All are embedded SVG masks tinted with
 the adjacent name's theme color.

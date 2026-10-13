@@ -237,6 +237,12 @@ impl Pages {
         self.pages.get(&id)
     }
 
+    /// Whether tab `id`'s page is on screen, not hidden or stood in for.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn is_shown(&self, id: TabId) -> bool {
+        self.shown.contains(&id)
+    }
+
     /// Creates the page for `tab` if this window has not shown it yet and it
     /// has an address. Creating one starts the platform's web content
     /// processes, so this runs from input and ticks, never from render.

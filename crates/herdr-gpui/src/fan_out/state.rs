@@ -140,6 +140,9 @@ pub(crate) struct FanOut {
     probe: Arc<AtomicBool>,
     probing: bool,
     next_refresh: Option<Instant>,
+    /// Agents asked for before the host's agents were known, as
+    /// `herdr-gpui fan-out --agent` does; picked once the lookup lands.
+    wanted: Vec<(AgentKind, usize)>,
 }
 
 impl Drop for FanOut {
@@ -181,6 +184,7 @@ impl FanOut {
             probe: Arc::new(AtomicBool::new(false)),
             probing: false,
             next_refresh: None,
+            wanted: Vec::new(),
         };
         let host = fan_out.origin.host.clone();
         fan_out.probe(move |cancelled| Event::Installed(job::installed(&host, cancelled)));
@@ -207,11 +211,17 @@ impl FanOut {
     pub(crate) fn agents_for_test(&mut self, kinds: Vec<AgentKind>) {
         self.stop_probe();
         self.stage = Stage::Compose(Some(Ok(kinds)));
+        self.pick_wanted();
     }
 
     #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
     pub(crate) fn picked_for_test(&self) -> usize {
         self.picks.total()
+    }
+
+    #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+    pub(crate) fn error_for_test(&self) -> Option<&str> {
+        self.error.as_deref()
     }
 
     #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
@@ -300,6 +310,38 @@ impl FanOut {
         self.probe.store(true, Ordering::Release);
         self.probing = false;
         self.next_refresh = None;
+    }
+
+    /// Pick these agents, each this many times, once the host's agents are
+    /// known. Only picks: the user still starts the fan-out.
+    #[cfg(any(unix, test))]
+    pub(crate) fn want(&mut self, agents: Vec<(AgentKind, usize)>) {
+        self.wanted = agents;
+        self.pick_wanted();
+    }
+
+    /// Applies wanted picks once the lookup found the host's agents; those
+    /// the host lacks are named rather than dropped silently.
+    fn pick_wanted(&mut self) {
+        let Stage::Compose(Some(Ok(installed))) = &self.stage else {
+            return;
+        };
+        let (present, missing): (Vec<_>, Vec<_>) = std::mem::take(&mut self.wanted)
+            .into_iter()
+            .partition(|(kind, _)| installed.contains(kind));
+        for (kind, count) in present {
+            for _ in 0..count {
+                self.toggle(kind, true);
+            }
+        }
+        if !missing.is_empty() {
+            let names: Vec<_> = missing.iter().map(|(kind, _)| kind.name()).collect();
+            self.error = Some(format!(
+                "Not installed on {}: {}",
+                self.origin.endpoint_label,
+                names.join(", ")
+            ));
+        }
     }
 
     pub(super) fn toggle(&mut self, kind: AgentKind, add: bool) -> bool {
@@ -471,6 +513,7 @@ impl FanOut {
                             error.to_string()
                         }));
                     }
+                    self.pick_wanted();
                 }
                 Event::Report(Report::Base(commit)) => self.base = Some(commit),
                 Event::Report(Report::Lane(index, progress)) => {

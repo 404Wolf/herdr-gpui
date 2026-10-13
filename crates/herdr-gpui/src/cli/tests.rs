@@ -1,4 +1,7 @@
 use super::*;
+use control::BrowserCommand;
+
+mod control_commands;
 
 #[test]
 fn build_info_is_an_informational_mode() {
@@ -20,12 +23,22 @@ fn build_info_is_an_informational_mode() {
     );
 }
 
+/// A browser command as the parser should produce it: text output, the
+/// default window.
+fn browser(command: BrowserCommand) -> LaunchMode {
+    LaunchMode::Control(control::Invocation {
+        command: control::ControlCommand::Browser(command),
+        json: false,
+        window: None,
+    })
+}
+
 #[test]
 fn browser_commands_never_start_the_gui() {
     let mode = |args: &[&str]| LaunchOptions::parse(args.iter().copied()).map(|o| o.mode);
     assert_eq!(
         mode(&["browser", "open", "localhost:3000"]).unwrap(),
-        LaunchMode::Browser(BrowserCommand::Open {
+        browser(BrowserCommand::Open {
             target: "localhost:3000".into(),
             workspace: None,
             focus: true,
@@ -34,20 +47,20 @@ fn browser_commands_never_start_the_gui() {
     );
     assert_eq!(
         mode(&["browser", "open", "--beside", "demo.html"]).unwrap(),
-        LaunchMode::Browser(BrowserCommand::Open {
+        browser(BrowserCommand::Open {
             target: "demo.html".into(),
             workspace: None,
             focus: true,
-            placement: Some(Placement::Beside),
+            placement: Some(control::Placement::Beside),
         })
     );
     assert_eq!(
         mode(&["browser", "open", "--tab", "demo.html"]).unwrap(),
-        LaunchMode::Browser(BrowserCommand::Open {
+        browser(BrowserCommand::Open {
             target: "demo.html".into(),
             workspace: None,
             focus: true,
-            placement: Some(Placement::Tab),
+            placement: Some(control::Placement::Tab),
         })
     );
     assert_eq!(
@@ -60,7 +73,7 @@ fn browser_commands_never_start_the_gui() {
             "https://a.test"
         ])
         .unwrap(),
-        LaunchMode::Browser(BrowserCommand::Open {
+        browser(BrowserCommand::Open {
             target: "https://a.test".into(),
             workspace: Some("w_2".into()),
             focus: false,
@@ -69,29 +82,26 @@ fn browser_commands_never_start_the_gui() {
     );
     assert_eq!(
         mode(&["browser", "skill"]).unwrap(),
-        LaunchMode::Browser(BrowserCommand::Skill)
+        browser(BrowserCommand::Skill)
     );
     assert_eq!(
         mode(&["browser", "example"]).unwrap(),
-        LaunchMode::Browser(BrowserCommand::Example)
+        browser(BrowserCommand::Example)
     );
     assert_eq!(
         mode(&["browser", "reload"]).unwrap(),
-        LaunchMode::Browser(BrowserCommand::Reload)
+        browser(BrowserCommand::Reload)
     );
     assert_eq!(
         mode(&["browser", "feedback"]).unwrap(),
-        LaunchMode::Browser(BrowserCommand::Feedback { wait: 0 })
+        browser(BrowserCommand::Feedback { wait: 0 })
     );
     assert_eq!(
         mode(&["browser", "feedback", "--wait", "300"]).unwrap(),
-        LaunchMode::Browser(BrowserCommand::Feedback { wait: 300 })
+        browser(BrowserCommand::Feedback { wait: 300 })
     );
     for help in [&["browser", "--help"][..], &["browser", "open", "-h"]] {
-        assert_eq!(
-            mode(help).unwrap(),
-            LaunchMode::Browser(BrowserCommand::Help)
-        );
+        assert_eq!(mode(help).unwrap(), browser(BrowserCommand::Help));
     }
     for (args, expected) in [
         (&["browser"][..], CliError::MissingBrowserCommand),
