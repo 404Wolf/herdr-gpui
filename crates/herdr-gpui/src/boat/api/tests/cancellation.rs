@@ -22,7 +22,11 @@ fn cancellation_before_creation_sends_no_request() {
         key: &key,
     };
     assert!(matches!(
-        request.create("herdr-box", || true),
+        request.create(
+            "herdr-box",
+            || true,
+            |_| panic!("cancelled creation must not persist")
+        ),
         Err(Error::Cancelled)
     ));
     assert!(log.lock().unwrap().is_empty());
@@ -53,7 +57,7 @@ fn cancellation_after_sending_creation_still_recovers_with_the_original_key() {
         key: &key,
     };
     let created = request
-        .create("herdr-box", || cancelled.load(Ordering::SeqCst))
+        .create("herdr-box", || cancelled.load(Ordering::SeqCst), |_| Ok(()))
         .unwrap();
     assert_eq!(created.id, "bx_23456789");
     assert!(cancelled.load(Ordering::SeqCst));

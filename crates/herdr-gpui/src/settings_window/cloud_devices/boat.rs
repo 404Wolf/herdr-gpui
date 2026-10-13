@@ -9,7 +9,7 @@ use super::{
 use crate::{
     boat::{
         Settings,
-        setup::{self, AddRequest, Key, Overview},
+        setup::{self, AddRequest, Key, Overview, Target},
     },
     cloud::{
         CloudProvider, SavedDevice,
@@ -106,6 +106,21 @@ fn texts(values: &BoatFields) -> [&str; 4] {
         &values.machine_type,
         &values.environment,
     ]
+}
+
+fn setup_running(cx: &App) -> bool {
+    cx.windows().into_iter().any(|window| {
+        window
+            .downcast::<crate::HerdrWindow>()
+            .is_some_and(|window| {
+                window.read(cx).is_ok_and(|window| {
+                    window
+                        .cloud_jobs
+                        .iter()
+                        .any(|job| job.provider == CloudProvider::Boat)
+                })
+            })
+    })
 }
 
 impl SettingsWindow {
@@ -220,20 +235,33 @@ impl SettingsWindow {
     }
 
     fn forget_boat_device(&mut self, id: String, cx: &mut Context<Self>) {
+        if setup_running(cx) {
+            return;
+        }
         self.save_native(move || Ok(setup::forget_device(&id)?), cx);
     }
 
     fn create_boat_sandbox(&mut self, cx: &mut Context<Self>) {
+        self.start_boat_setup(Target::Create(setup::random_name()), cx);
+    }
+
+    fn start_boat_setup(&mut self, target: Target, cx: &mut Context<Self>) {
+        if self.busy() || setup_running(cx) {
+            return;
+        }
         let Some(settings) = self.boat_settings() else {
             return;
         };
         let Some(card) = &mut self.boat_card else {
             return;
         };
-        let name = setup::random_name();
+        let name = match &target {
+            Target::Create(name) => name.clone(),
+            Target::Saved(device) => device.label.clone(),
+        };
         let request = AddRequest {
             settings,
-            name: name.clone(),
+            target,
             install: card.install,
         };
         let started = self.source.update(cx, |window, cx| {
@@ -247,10 +275,10 @@ impl SettingsWindow {
         if let Some(card) = &mut self.boat_card {
             card.message = Some(match started {
                 Ok(Ok(())) => {
-                    format!("Creating {name}. The device picker shows its progress.")
+                    format!("Setting up {name}. The device picker shows its progress.")
                 }
                 Ok(Err(error)) => error.to_string(),
-                Err(_) => "Open a main Herdr window to create a sandbox.".into(),
+                Err(_) => "Open a main Herdr window to set up a sandbox.".into(),
             });
         }
         cx.notify();
@@ -272,6 +300,7 @@ impl SettingsWindow {
             return div();
         };
         let ready = !self.busy();
+        let running = setup_running(cx);
         let configured = self.boat_settings().is_some();
         let (status, key) = match &card.account {
             _ if !configured => (
@@ -341,12 +370,17 @@ impl SettingsWindow {
                     }),
             ),
         );
-        let create = ready && usable && crate::cloud::unavailable().is_none();
+        let setup = ready
+            && configured
+            && key != Key::Missing
+            && crate::cloud::unavailable().is_none()
+            && !running;
+        let create = setup && usable;
         let mut sandboxes = self
             .control_card("New sandbox")
             .debug_selector(|| "cloud-boat-new".into())
             .child(self.control_note(
-                "Creates a sandbox with a generated name and adds it as a device once it is ready.",
+                "Creates a sandbox with a generated name. Its device is saved before setup so an interruption can be retried without creating another sandbox.",
             ))
             .child(
                 self.control_switch(
@@ -380,19 +414,39 @@ impl SettingsWindow {
         }
         let mut devices = self
             .control_card("Boat devices")
-            .debug_selector(|| "cloud-boat-devices".into());
+            .debug_selector(|| "cloud-boat-devices".into())
+            .child(self.control_note(
+                "If setup was interrupted, use Finish setup to reuse that sandbox. The installation switch above also applies here.",
+            ));
         if card.devices().is_empty() {
             devices = devices.child(self.control_note("None yet."));
         }
         for (index, device) in card.devices().iter().enumerate() {
-            devices = devices.child(self.cloud_device_row(
-                index,
-                device,
-                format!("{} · {}", device.machine, device.session),
-                ready,
-                Self::forget_boat_device,
-                cx,
-            ));
+            let saved = device.clone();
+            devices = devices.child(
+                self.cloud_device_row(
+                    index,
+                    device,
+                    format!("{} · {}", device.machine, device.session),
+                    ready && !running,
+                    Self::forget_boat_device,
+                    cx,
+                )
+                .flex_wrap()
+                .child(
+                    self.cloud_button(
+                        SharedString::from(format!("cloud-boat-finish-{index}")),
+                        "Finish setup",
+                        setup,
+                    )
+                    .debug_selector(move || format!("cloud-boat-finish-{index}"))
+                    .when(setup, |button| {
+                        button.on_click(cx.listener(move |this, _, _, cx| {
+                            this.start_boat_setup(Target::Saved(saved.clone()), cx);
+                        }))
+                    }),
+                ),
+            );
         }
         div()
             .flex()

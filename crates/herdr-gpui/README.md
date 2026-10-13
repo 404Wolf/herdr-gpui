@@ -412,8 +412,13 @@ credential store (`HERDR_BOAT_API_KEY` takes precedence). The key needs
 `sandbox.create`, `sandbox.read`, `sandbox.update`, `sandbox.resume`, and `ssh`
 actions. **Create sandbox** creates one with a generated name and, when the
 **Install Herdr** switch is on (the default), installs Herdr if it is missing.
-The device picker shows progress and a toast says when it is ready. Removing a
-device leaves its sandbox in Boat.
+The device picker shows progress and a toast says when it is ready. The device
+is saved as soon as Boat returns its ID, before waiting for readiness or
+installing Herdr. If setup fails or is cancelled, **Finish setup** beside the
+saved device retries that same sandbox, using the **Install Herdr** switch
+above. It does not create a replacement. If saving the device itself fails,
+the error includes its sandbox ID so it can still be found in Boat. Removing
+a device leaves its sandbox in Boat.
 
 Each connection resumes an archived sandbox, authorizes a GUI-owned Ed25519
 public key through Boat's API, and runs Herdr's remote bridge with OpenSSH. The

@@ -36,12 +36,20 @@ impl Sandbox {
             "archived" => Readiness::Stopped,
             "error" => Readiness::Failed(
                 self.error
-                    .clone()
+                    .as_deref()
+                    .map(super::http::diagnostic)
                     .filter(|reason| !reason.is_empty())
                     .unwrap_or_else(|| self.state.clone()),
             ),
             "cancelled" => Readiness::Deleted,
-            other => Readiness::Pending(other.replace('_', " ")),
+            other => {
+                let state = super::http::diagnostic(other).replace('_', " ");
+                Readiness::Pending(if state.trim().is_empty() {
+                    "unknown".into()
+                } else {
+                    state.trim().to_owned()
+                })
+            }
         }
     }
 }
@@ -103,14 +111,24 @@ impl Request<'_> {
 
     pub(crate) fn sandbox(&self, id: &str) -> Result<Sandbox> {
         self.get::<One>("sandbox", &format!("/sandboxes/{}", segment(id)?))
-            .map(|reply| reply.sandbox)
+            .and_then(|reply| {
+                if reply.sandbox.id != id {
+                    return Err(Error::Field("Boat sandbox ID"));
+                }
+                Ok(reply.sandbox)
+            })
             .map_err(|error| match error {
                 Error::Status(super::Status { code: 404, .. }) => Error::Deleted,
                 error => error,
             })
     }
 
-    pub(crate) fn create(&self, name: &str, cancelled: impl Fn() -> bool) -> Result<Sandbox> {
+    pub(crate) fn create(
+        &self,
+        name: &str,
+        cancelled: impl Fn() -> bool,
+        remember: impl FnOnce(&Sandbox) -> Result<()>,
+    ) -> Result<Sandbox> {
         let idempotency = uuid::Uuid::new_v4().hyphenated().to_string();
         let payload = Create {
             machine_type: self.settings.machine_type.as_deref(),
@@ -138,6 +156,10 @@ impl Request<'_> {
             created = send();
         }
         let created = created?;
+        segment(&created.sandbox.id)?;
+        // The caller must record the confirmed resource before even optional
+        // HTTP work, so an interrupted rename cannot lose its identity.
+        remember(&created.sandbox)?;
         // Boat assigns a default name during create and exposes renaming as a
         // separate operation. If naming alone fails, keep the usable sandbox.
         match self.patch::<One>(
@@ -145,7 +167,14 @@ impl Request<'_> {
             &format!("/sandboxes/{}", segment(&created.sandbox.id)?),
             &Rename { name },
         ) {
-            Ok(reply) => Ok(reply.sandbox),
+            Ok(reply) if reply.sandbox.id == created.sandbox.id => Ok(reply.sandbox),
+            Ok(_) => {
+                tracing::warn!(
+                    category = "boat_api",
+                    "Boat rename returned a different sandbox ID"
+                );
+                Ok(created.sandbox)
+            }
             Err(error) => {
                 tracing::warn!(category = "boat_api", %error, "Boat sandbox could not be renamed");
                 Ok(created.sandbox)

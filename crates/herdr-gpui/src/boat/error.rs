@@ -47,6 +47,22 @@ pub enum Error {
     SshKeygen,
     #[error("Could not prepare the SSH command for Boat.")]
     GatewayFile(#[source] io::Error),
+    #[error(
+        "Boat sandbox {id} exists, but its device could not be saved: {source}. Keep this ID to recover the sandbox."
+    )]
+    SaveDevice {
+        id: String,
+        #[source]
+        source: Box<crate::Error>,
+    },
+    #[error(
+        "Boat sandbox {id} is saved. Use Finish setup in Settings > Cloud Devices > Boat to retry: {source}"
+    )]
+    Setup {
+        id: String,
+        #[source]
+        source: Box<crate::Error>,
+    },
     #[error("This device belongs to a Boat account that is no longer configured in [boat].")]
     Account,
     #[error("{0}")]

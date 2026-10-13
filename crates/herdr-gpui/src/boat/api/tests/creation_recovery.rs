@@ -36,7 +36,7 @@ fn interrupted_creation_replies_and_pending_retries_recover_the_same_sandbox() {
         settings: &settings,
         key: &key,
     };
-    let created = request.create("herdr-box", || false).unwrap();
+    let created = request.create("herdr-box", || false, |_| Ok(())).unwrap();
     assert_eq!(created.id, "bx_23456789");
     let log = log.lock().unwrap();
     assert_eq!(log.len(), 5);
@@ -59,7 +59,13 @@ fn interrupted_creation_retries_are_bounded_and_preserve_the_read_error() {
         settings: &settings,
         key: &key,
     };
-    let error = request.create("herdr-box", || false).unwrap_err();
+    let error = request
+        .create(
+            "herdr-box",
+            || false,
+            |_| panic!("unconfirmed creation must not persist"),
+        )
+        .unwrap_err();
     assert!(matches!(error, Error::Read(_)));
     assert!(std::error::Error::source(&error).is_some());
     let log = log.lock().unwrap();
@@ -80,7 +86,13 @@ fn rejected_credentials_and_malformed_json_are_not_retried() {
             settings: &settings,
             key: &key,
         };
-        let error = request.create("herdr-box", || false).unwrap_err();
+        let error = request
+            .create(
+                "herdr-box",
+                || false,
+                |_| panic!("failed creation must not persist"),
+            )
+            .unwrap_err();
         match status {
             401 => assert!(matches!(error, Error::Authentication)),
             _ => assert!(matches!(error, Error::Json(_))),

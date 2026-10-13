@@ -1,5 +1,5 @@
-//! Blocking work behind Boat's Settings tab: create, wait, check/install Herdr,
-//! save the device, and summarize the configured account.
+//! Blocking work behind Boat's Settings tab: record a created sandbox before
+//! setup, wait, check/install Herdr, and summarize the configured account.
 
 use super::{
     Result, Settings,
@@ -17,8 +17,13 @@ const NAME_LIMIT: usize = 40;
 
 pub(crate) struct AddRequest {
     pub(crate) settings: Settings,
-    pub(crate) name: String,
+    pub(crate) target: Target,
     pub(crate) install: bool,
+}
+
+pub(crate) enum Target {
+    Create(String),
+    Saved(SavedDevice),
 }
 
 pub(crate) fn random_name() -> String {
@@ -42,51 +47,121 @@ pub(crate) fn add_device(
     }
     let AddRequest {
         settings,
-        name,
+        target,
         install,
     } = request;
+    if let Target::Saved(device) = &target
+        && (device.provider != CloudProvider::Boat || device.account != settings.account())
+    {
+        return Err(super::Error::Account.into());
+    }
     gateway::check_ssh()?;
     let key = store::key(&settings)?;
     let request = Request {
         settings: &settings,
         key: &key,
     };
-    report(cloud::Step::Creating);
-    let created = request.create(&name, cancelled)?;
-    let sandbox = api::wait_ready(&request, &created.id, cancelled, |readiness| {
+    finish_setup(
+        &request,
+        target,
+        cancelled,
+        report,
+        |device| Ok(cloud::save(device)?),
+        |sandbox| ensure_herdr(&request, sandbox, install, cancelled, report),
+    )
+}
+
+fn save_device(
+    device: &SavedDevice,
+    save: &mut impl FnMut(SavedDevice) -> crate::Result<()>,
+) -> Result<()> {
+    save(device.clone()).map_err(|source| super::Error::SaveDevice {
+        id: device.id.clone(),
+        source: Box::new(source),
+    })
+}
+
+fn new_device(settings: &Settings, sandbox: &api::Sandbox, label: String) -> SavedDevice {
+    SavedDevice {
+        provider: CloudProvider::Boat,
+        id: sandbox.id.clone(),
+        label,
+        account: settings.account(),
+        machine: sandbox.name.clone(),
+        session: SESSION.to_owned(),
+        enabled: true,
+    }
+}
+
+fn finish_setup(
+    request: &Request,
+    target: Target,
+    cancelled: &dyn Fn() -> bool,
+    report: &dyn Fn(cloud::Step),
+    mut save: impl FnMut(SavedDevice) -> crate::Result<()>,
+    prepare: impl FnOnce(&api::Sandbox) -> crate::Result<()>,
+) -> crate::Result<SavedDevice> {
+    let mut device = match target {
+        Target::Create(name) => {
+            report(cloud::Step::Creating);
+            // Cancellation must not lose a billable resource whose ID we know.
+            // Save it even if cancellation arrived while create was in flight.
+            let created = request.create(&name, cancelled, |created| {
+                save_device(
+                    &new_device(request.settings, created, name.clone()),
+                    &mut save,
+                )
+            })?;
+            new_device(request.settings, &created, name)
+        }
+        Target::Saved(device) => device,
+    };
+    let setup_error = |source| super::Error::Setup {
+        id: device.id.clone(),
+        source: Box::new(source),
+    };
+    let sandbox = api::wait_ready(request, &device.id, cancelled, |readiness| {
         report(step(readiness));
-    })?;
+    })
+    .map_err(crate::Error::from)
+    .map_err(&setup_error)?;
+    prepare(&sandbox).map_err(setup_error)?;
+    device.machine = sandbox.name;
+    save_device(&device, &mut save)?;
+    Ok(device)
+}
+
+fn ensure_herdr(
+    request: &Request,
+    sandbox: &api::Sandbox,
+    install: bool,
+    cancelled: &dyn Fn() -> bool,
+    report: &dyn Fn(cloud::Step),
+) -> crate::Result<()> {
     report(cloud::Step::CheckingHerdr);
-    let installed =
-        install::installed(gateway::prepare(&request, &sandbox.id)?.command, &cancelled)?;
+    let installed = gateway::prepare(request, &sandbox.id)?
+        .with_command(|command| install::installed(command, &cancelled))?;
     if !installed {
         if !install {
             return Err(cloud::Error::Install(format!(
-                "Herdr is not installed in {}; add it and try again",
-                sandbox.name
+                "Herdr is not installed in Boat sandbox {}; enable Install Herdr and use Finish setup",
+                sandbox.id
             ))
             .into());
         }
         report(cloud::Step::InstallingHerdr);
-        install::install(gateway::prepare(&request, &sandbox.id)?.command, &cancelled)?;
-        if !install::installed(gateway::prepare(&request, &sandbox.id)?.command, &cancelled)? {
+        gateway::prepare(request, &sandbox.id)?
+            .with_command(|command| install::install(command, &cancelled))?;
+        if !gateway::prepare(request, &sandbox.id)?
+            .with_command(|command| install::installed(command, &cancelled))?
+        {
             return Err(cloud::Error::Install(
                 "the installer finished but Herdr is not on the expected paths".into(),
             )
             .into());
         }
     }
-    let device = SavedDevice {
-        provider: CloudProvider::Boat,
-        id: sandbox.id,
-        label: sandbox.name.clone(),
-        account: settings.account(),
-        machine: sandbox.name,
-        session: SESSION.to_owned(),
-        enabled: true,
-    };
-    cloud::save(device.clone())?;
-    Ok(device)
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

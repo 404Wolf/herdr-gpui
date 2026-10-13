@@ -3,6 +3,8 @@ use super::*;
 
 mod cancellation;
 mod creation_recovery;
+mod diagnostics;
+mod identity;
 
 fn idempotency(request: &crate::cloud::tests::server::Request) -> &str {
     request

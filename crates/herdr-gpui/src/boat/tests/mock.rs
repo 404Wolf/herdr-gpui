@@ -62,7 +62,9 @@ fn creating_sends_key_org_options_and_idempotency_then_renames() {
         settings: &settings,
         key: &key,
     };
-    let created = request.create("herdr-calm-otter", || false).unwrap();
+    let created = request
+        .create("herdr-calm-otter", || false, |_| Ok(()))
+        .unwrap();
     assert_eq!(created.name, "herdr-calm-otter");
     assert_eq!(request.sandboxes().unwrap().len(), 1);
     let log = log.lock().unwrap();

@@ -68,13 +68,17 @@ fn message(bytes: &[u8]) -> Option<String> {
         message: Option<String>,
     }
     let text = serde_json::from_slice::<Reply>(bytes).ok()?.message?;
+    let text = diagnostic(&text);
+    (!text.is_empty()).then_some(text)
+}
+
+pub(super) fn diagnostic(text: &str) -> String {
     let text: String = text
         .chars()
         .map(|c| if c.is_control() { ' ' } else { c })
         .take(MESSAGE_LIMIT)
         .collect();
-    let text = text.trim();
-    (!text.is_empty()).then(|| text.to_owned())
+    text.trim().to_owned()
 }
 
 fn failure(context: &'static str, status: u16, bytes: &[u8]) -> Error {

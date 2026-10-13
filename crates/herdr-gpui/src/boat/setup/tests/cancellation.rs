@@ -4,7 +4,7 @@ use super::*;
 fn already_cancelled_jobs_exit_before_preparing_ssh_or_credentials() {
     let request = AddRequest {
         settings: crate::boat::tests::settings(),
-        name: "herdr-box".into(),
+        target: Target::Create("herdr-box".into()),
         install: true,
     };
     let result = add_device(request, &|| true, &|_| {
