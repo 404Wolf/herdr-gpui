@@ -36,7 +36,9 @@ fn listed(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, id: TabId) -> 
 #[gpui::test]
 fn a_local_pages_result_waits_in_its_notes_without_annotating(cx: &mut gpui::TestAppContext) {
     let (view, cx) = window(cx);
-    let file = LocalFile::new(std::path::Path::new("/srv/mockups/index.html"), None).unwrap();
+    // An absolute path on every platform: `/srv/...` is not one on Windows.
+    let path = std::env::temp_dir().join("mockups").join("index.html");
+    let file = LocalFile::new(&path, None).unwrap();
     let local = opened(&view, cx, Location::Local { file });
     // A web frame inside the local page, or a web page it is navigating to
     // before the tab's location catches up, cannot send.
