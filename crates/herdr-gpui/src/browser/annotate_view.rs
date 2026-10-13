@@ -266,8 +266,8 @@ impl HerdrWindow {
 
     /// Queues a result a local page sent as a note, replacing the page's
     /// earlier result the user has not sent yet, so picking again changes
-    /// the answer rather than adding another. Only the local page's own
-    /// frames may send: a web page it embeds, or one it is navigating to
+    /// the answer rather than adding another; the user's comment on it
+    /// stays. Only the local page's own frames may send: a web page it embeds, or one it is navigating to
     /// before the tab's location catches up, sends nothing.
     fn page_sent(
         &mut self,
@@ -285,13 +285,15 @@ impl HerdrWindow {
             return;
         }
         let notes = self.tab_notes(id);
-        let earlier = notes
-            .notes
-            .iter()
-            .position(|note| !note.sent && matches!(note.anchor, Anchor::Sent { .. }));
+        // A result whose comment the user is editing stays as it is, so the
+        // comment never lands on a result it was not written for.
+        let earlier = notes.notes.iter().enumerate().position(|(index, note)| {
+            !note.sent && matches!(note.anchor, Anchor::Sent { .. }) && notes.editing != Some(index)
+        });
         let note = Note::sent(summary, data);
         match earlier {
-            Some(index) => notes.notes[index] = note,
+            // The user's comment on the older result carries over.
+            Some(index) => notes.notes[index].anchor = note.anchor,
             None if notes.notes.len() >= MAX_NOTES => {
                 self.show_flash(
                     Flash::warning("Clear sent notes or remove some before adding more"),

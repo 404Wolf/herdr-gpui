@@ -64,3 +64,58 @@ fn a_local_pages_result_waits_in_its_notes_without_annotating(cx: &mut gpui::Tes
     post(&view, cx, web, SENT);
     assert_eq!(listed(&view, cx, web), 0);
 }
+
+fn comment_on(
+    view: &Entity<HerdrWindow>,
+    cx: &mut VisualTestContext,
+    id: TabId,
+    text: &str,
+    save: bool,
+) {
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.edit_note(id, 0, window, cx);
+            let input = view.browser.annotations.input(id, cx);
+            input.update(cx, |input, cx| input.set_text_selected(text, cx));
+            if save {
+                view.add_note(id, window, cx);
+            }
+        })
+    });
+}
+
+#[gpui::test]
+fn a_newer_result_keeps_the_users_comment(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = window(cx);
+    let path = std::env::temp_dir().join("mockups").join("index.html");
+    let file = LocalFile::new(&path, None).unwrap();
+    let local = opened(&view, cx, Location::Local { file });
+    post(&view, cx, local, SENT);
+    comment_on(&view, cx, local, "But keep the old icon", true);
+    post(
+        &view,
+        cx,
+        local,
+        r#"{"kind":"send","summary":"Picked C","data":{"variant":"C"}}"#,
+    );
+    let listed = |view: &Entity<HerdrWindow>, cx: &mut VisualTestContext| {
+        view.read_with(cx, |view, _| view.browser.annotations.listed(local))
+    };
+    assert_eq!(listed(&view, cx), [("But keep the old icon".into(), false)]);
+    // While the user edits that comment, a newer result is added beside it
+    // rather than taking the comment being written.
+    comment_on(&view, cx, local, "Unsaved", false);
+    post(
+        &view,
+        cx,
+        local,
+        r#"{"kind":"send","summary":"Picked D","data":{"variant":"D"}}"#,
+    );
+    assert_eq!(
+        listed(&view, cx),
+        [
+            ("But keep the old icon".into(), false),
+            (String::new(), false)
+        ]
+    );
+}
