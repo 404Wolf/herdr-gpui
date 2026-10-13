@@ -176,7 +176,8 @@ project_roots = []
 # defaults; a command named here keeps only the keystrokes listed here.
 # The examples below use the macOS defaults. Linux has its own Ctrl+Shift
 # defaults (not Super): new_tab = "ctrl-shift-t", new_window = "ctrl-alt-n",
-# new_workspace = "ctrl-alt-shift-n", new_worktree = "ctrl-shift-n",
+# close_window = "ctrl-alt-w", new_workspace = "ctrl-alt-shift-n",
+# new_worktree = "ctrl-shift-n",
 # split_right = "ctrl-shift-d", split_down = "ctrl-alt-shift-d",
 # command_palette = "ctrl-shift-p", toggle_full_screen = "f11".
 # See Keyboard Shortcuts for the full platform-specific list. Explicit values
@@ -219,6 +220,7 @@ project_roots = []
 # annotate_selection = "cmd-shift-a"
 # toggle_full_screen = "ctrl-cmd-f"
 # cycle_windows = "cmd-`"
+# close_window = "cmd-alt-shift-w"
 # Unbound by default: themes, reconnect, logs, about, worktree_notes,
 # edit_worktree_note.
 
