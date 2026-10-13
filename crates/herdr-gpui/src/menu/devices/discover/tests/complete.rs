@@ -251,3 +251,60 @@ fn enter_sends_what_is_typed_even_with_a_completion_shown(cx: &mut gpui::TestApp
     assert!(!key(&view, cx, "enter"), "left to submit the form");
     assert_eq!(fields(&view, cx).0, "m4");
 }
+
+#[test]
+fn a_filled_ssh_url_names_its_user_after_the_scheme() {
+    let list = list(&[(Source::Bonjour, "nas", "ssh://nas.local:2222")]);
+    let query = Query::new("ssh://root@nas.local:2222");
+    let rows = matching(&list, &query);
+    assert_eq!(targets(&rows), ["ssh://nas.local:2222"]);
+    // Filling the row again gives back exactly what the field holds.
+    assert_eq!(query.fill(rows[0]), "ssh://root@nas.local:2222");
+}
+
+#[gpui::test]
+fn a_completed_ssh_url_still_lists_every_row(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = open(cx, report);
+    settle(cx);
+    type_target(&view, cx, "root@na");
+    cx.simulate_keystrokes("down enter");
+    assert_eq!(fields(&view, cx).0, "ssh://root@nas.local:2222");
+    assert_eq!(
+        rows(&view, cx),
+        (
+            vec![
+                "root@m4max.tail1.ts.net".into(),
+                "ssh://root@nas.local:2222".into()
+            ],
+            Some(1)
+        )
+    );
+}
+
+#[gpui::test]
+fn an_arrow_choice_follows_its_device_as_rows_arrive(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = open(cx, report);
+    settle(cx);
+    cx.simulate_keystrokes("down down");
+    assert_eq!(rows(&view, cx).1, Some(1), "nas is chosen");
+    // A later report sorts in before it.
+    cx.update(|_, cx| {
+        view.update(cx, |view, _| {
+            let discovery = view
+                .menu
+                .device_setup
+                .as_mut()
+                .and_then(|setup| setup.discovery.as_mut())
+                .unwrap();
+            merge(
+                &mut discovery.suggestions,
+                candidate(Source::Bonjour, "alpha", "alpha.local", &["alpha.local"]),
+            );
+        })
+    });
+    let (fills, highlight) = rows(&view, cx);
+    assert_eq!(fills[0], "alpha.local");
+    assert_eq!(highlight, Some(2), "still nas, now one row lower");
+    assert!(key(&view, cx, "enter"));
+    assert_eq!(fields(&view, cx).0, "ssh://nas.local:2222");
+}

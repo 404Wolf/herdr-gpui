@@ -704,6 +704,8 @@ impl Render for SearchInput {
 mod tests {
     use super::*;
 
+    mod completion;
+
     #[test]
     fn masked_offsets_count_characters_both_ways() {
         let text = "a\u{e9}\u{1f600}z";
