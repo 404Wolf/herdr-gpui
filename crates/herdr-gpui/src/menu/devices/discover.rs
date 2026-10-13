@@ -6,6 +6,7 @@
 //! user's own configuration names, are listed.
 
 mod bonjour;
+mod complete;
 mod render;
 mod ssh_config;
 mod tailscale;

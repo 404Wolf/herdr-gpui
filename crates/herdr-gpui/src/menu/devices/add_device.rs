@@ -24,8 +24,14 @@ pub(in crate::menu) struct Setup {
     /// The label a suggestion filled in, until the user edits it. Only that
     /// label is replaced when another suggestion is chosen.
     pub(super) suggested_label: Option<String>,
-    /// Clears `suggested_label` once the label field holds anything else.
-    pub(super) _label_edits: Option<Subscription>,
+    /// Clears `suggested_label` once the label field holds anything else, and
+    /// refilters the suggestions as the target changes.
+    pub(super) _edits: Vec<Subscription>,
+    /// The suggestion Up and Down moved to, by the names and addresses that
+    /// identify its machine, with the target text it was chosen for: typing
+    /// anything else drops it.
+    pub(super) highlight: Option<(String, Vec<String>)>,
+    pub(super) suggestion_scroll: ScrollHandle,
 }
 
 /// Where adding a device stands. Each step after `Form` belongs to the request
@@ -142,6 +148,7 @@ impl HerdrWindow {
                 setup.suggested_label = None;
             }
         });
+        let target_edits = cx.subscribe(&fields[0], |_, _, _: &Changed, cx| cx.notify());
         self.menu.device_setup = Some(Setup {
             fields,
             step: Step::Form,
@@ -149,7 +156,9 @@ impl HerdrWindow {
             task: None,
             discovery: None,
             suggested_label: None,
-            _label_edits: Some(label_edits),
+            _edits: vec![label_edits, target_edits],
+            highlight: None,
+            suggestion_scroll: ScrollHandle::new(),
         });
         self.menu.page = Some(Page::AddDevice);
         self.start_device_discovery(cx);
@@ -173,20 +182,24 @@ impl HerdrWindow {
         {
             return false;
         }
-        match event.keystroke.key.as_str() {
+        let key = event.keystroke.key.as_str();
+        let modifiers = event.keystroke.modifiers;
+        let in_target = form.fields[0].read(cx).focus.is_focused(window);
+        let plain = !(modifiers.shift || modifiers.platform || modifiers.control || modifiers.alt);
+        if in_target && plain && self.complete_device_target(key, window, cx) {
+            return true;
+        }
+        let Some(form) = &self.menu.device_setup else {
+            return false;
+        };
+        match key {
             "tab" => {
                 let index = form
                     .fields
                     .iter()
                     .position(|field| field.read(cx).focus.is_focused(window))
                     .unwrap_or(0);
-                let next = (index
-                    + if event.keystroke.modifiers.shift {
-                        2
-                    } else {
-                        1
-                    })
-                    % 3;
+                let next = (index + if modifiers.shift { 2 } else { 1 }) % 3;
                 window.focus(&form.fields[next].read(cx).focus.clone(), cx);
             }
             "enter" => self.submit_device_setup(cx),
@@ -238,6 +251,13 @@ impl HerdrWindow {
         let Some(setup) = &self.menu.device_setup else {
             return view;
         };
+        let ghost = matches!(setup.step, Step::Form)
+            .then(|| {
+                let text = setup.fields[0].read(cx).text().to_owned();
+                self.device_completion(setup, &text).ghost(&text)
+            })
+            .flatten();
+        setup.fields[0].update(cx, |field, cx| field.set_completion(ghost, cx));
         let mut body = div().id("device-setup-body").debug_selector(|| "device-setup-body".into())
             .min_h_0().overflow_y_scroll().p(px(16.)).flex().flex_col().gap(px(12.))
             .child(div().flex_none().text_color(rgb(theme.subtext()))
@@ -266,7 +286,7 @@ impl HerdrWindow {
                 && matches!(setup.step, Step::Form)
                 && let Some(discovery) = &setup.discovery
             {
-                body = body.child(self.render_device_suggestions(discovery, cx));
+                body = body.child(self.render_device_suggestions(setup, discovery, cx));
             }
         }
         if let Some(error) = &self.menu.error {

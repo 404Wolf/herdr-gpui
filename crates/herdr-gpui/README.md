@@ -248,6 +248,13 @@ it, or that is on another subnet, appears only through SSH config or Tailscale.
 On macOS 15 and later the first search asks for Local Network access; see
 [Local Network access](#local-network-access).
 
+Typing in the SSH target filters the suggestions by name or target, those that
+start with what was typed first. When a target extends what was typed, the rest
+is drawn dimmed after the cursor and **Tab** fills it in, along with an empty
+label. **Up** and **Down** pick any row, and **Tab** or **Enter** then fills it.
+A typed `user@` is kept. **Enter** otherwise adds exactly what the field shows:
+a row that matches only by the name a host announces is never chosen for you.
+
 Right-click a saved SSH device's header in the Spaces list to **Rename** it or
 choose **Remove device…** to forget it. Renaming runs `herdr machine rename`;
 an empty name falls back to the SSH target, as when adding. Removal runs the installed `herdr machine remove`, which
