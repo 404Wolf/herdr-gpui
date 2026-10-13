@@ -120,6 +120,9 @@ outside Herdr UI copy the result instead. The result lands in the page's
 notes panel; the user presses **Send to agent** and it reaches you like any
 note: "The page sent a result", the summary, and the data as JSON. A newer
 result replaces an unsent older one. Only local pages have `herdr.send`.
+It returns false, and sends nothing, when the result has neither a summary
+nor data or its data is over 8 KB as JSON: send a short summary and the few
+fields you need, not the page's state.
 
 ## Review loop: the user annotates, you revise
 

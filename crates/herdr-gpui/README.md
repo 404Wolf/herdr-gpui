@@ -2161,13 +2161,15 @@ them to the agent that opened it, so it can change the page.
   It appears in the notes panel as **Page result**, with a hint to add a note,
   and goes to the agent only when you press Send, as "The page sent a result"
   followed by the summary and the data as JSON. A newer result replaces an
-  unsent one. The bridge is injected only into local pages, only while they
+  unsent one and keeps the note you added to it. The bridge is injected only into local pages, only while they
   show the preview scheme. Any frame can still post to the app, so it checks
   the frame that sent each result and drops it unless that frame shows a
   local file: a web page embedded in the local page, or one it is navigating
   to, cannot send.
   The summary is one cleaned line of at most 300 characters; data over 8 KB
-  is refused rather than cut.
+  is refused rather than cut. `herdr.send` returns false for a result the
+  app would refuse, so the page can say so; whether the app kept one it was
+  handed shows in the window, as the note or a warning.
 
 ### Reviewing An Agent's Changes
 

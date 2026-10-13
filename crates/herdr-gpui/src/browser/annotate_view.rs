@@ -267,8 +267,9 @@ impl HerdrWindow {
     /// Queues a result a local page sent as a note, replacing the page's
     /// earlier result the user has not sent yet, so picking again changes
     /// the answer rather than adding another; the user's comment on it
-    /// stays. Only the local page's own frames may send: a web page it embeds, or one it is navigating to
-    /// before the tab's location catches up, sends nothing.
+    /// stays. Only the local page's own frames may send: a web page it
+    /// embeds, or one it is navigating to before the tab's location catches
+    /// up, sends nothing.
     fn page_sent(
         &mut self,
         id: TabId,

@@ -29,9 +29,10 @@
     value: Object.freeze({
       available: true,
       maxDataBytes: MAX_DATA_BYTES,
-      // True when the app was handed the result; false when it would be
-      // refused: no summary and no data, data over the limit, or data JSON
-      // cannot represent.
+      // True when the app was handed the result, which it then confirms or
+      // refuses in its own window; false when it would surely be refused:
+      // no summary and no data, data over the limit, or data JSON cannot
+      // represent.
       send: function (summary, data) {
         var message = { kind: "send", summary: String(summary == null ? "" : summary) };
         try {
@@ -41,7 +42,8 @@
               return false;
             }
             message.data = data;
-          } else if (!message.summary.trim()) {
+          } else if (!message.summary.replace(/[\s\u0000-\u001f\u007f-\u009f]/g, "")) {
+            // The app reads a summary of only spaces and controls as empty.
             return false;
           }
           post(JSON.stringify(message));

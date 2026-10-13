@@ -68,10 +68,9 @@
   // page's notes for the user to send. Elsewhere it is copied instead.
   function send(summary, data) {
     if (window.herdr) {
-      if (window.herdr.send(summary, data)) {
-        toast("Added to your notes — press Send to agent");
-        return true;
-      }
+      // Herdr UI says itself whether it kept the result, in its notes panel
+      // or a warning, so the page never claims a result the app refused.
+      if (window.herdr.send(summary, data)) return true;
       toast("Not sent: a result needs a summary or data, at most " +
         Math.floor(window.herdr.maxDataBytes / 1024) + " KB of JSON");
       return false;
