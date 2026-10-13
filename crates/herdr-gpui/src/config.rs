@@ -46,7 +46,9 @@ pub use fonts::{FONT_SIZE_RANGE, FONT_SIZE_STEP, FontConfig};
 use layout::MAX_SIDEBAR_GAP;
 pub use layout::{Density, Layout, LayoutMode, Style};
 pub(crate) use notifications::NotificationDelivery;
-pub use notifications::{BellConfig, ClipboardToast, ClipboardToastPosition, NotificationConfig};
+pub use notifications::{
+    BellConfig, ClipboardToast, ClipboardToastPosition, NotificationConfig, SoundConfig,
+};
 use notifications::{ClipboardToastSettings, NotificationSettings};
 use serde::Deserialize;
 pub(crate) use sidebar::{
@@ -136,6 +138,8 @@ pub struct Config {
     pub(crate) notification_overrides: NotificationSettings,
     pub clipboard_toast: ClipboardToast,
     pub bell: BellConfig,
+    /// How loud agent notification sounds play.
+    pub sound: SoundConfig,
     /// Which releases the in-app updater offers.
     pub updates: UpdatesConfig,
     pub layout: Layout,
@@ -461,6 +465,7 @@ impl Default for Config {
             notification_overrides: NotificationSettings::default(),
             clipboard_toast: ClipboardToast::default(),
             bell: BellConfig::default(),
+            sound: SoundConfig::default(),
             updates: UpdatesConfig::default(),
             layout: Layout::default(),
             sidebar_style: SidebarStyle::default(),
@@ -520,6 +525,7 @@ struct Settings {
     notifications: NotificationSettings,
     clipboard_toast: ClipboardToastSettings,
     bell: BellConfig,
+    sound: SoundConfig,
     updates: UpdatesConfig,
     layout: Layout,
     keybindings: BTreeMap<String, Binding>,
@@ -839,6 +845,7 @@ impl Config {
             .resolve(NotificationConfig::default());
         config.clipboard_toast = settings.clipboard_toast.resolve(base.clipboard_toast);
         config.bell = settings.bell;
+        config.sound = settings.sound;
         config.updates = settings.updates;
         config.sidebar_layout = base.sidebar_layout.clone();
         if !settings.layout.sidebar_gap.is_finite()

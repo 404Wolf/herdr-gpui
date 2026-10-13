@@ -778,6 +778,8 @@ pub enum Error {
     TooManyFontFallbacks(&'static str),
     #[error("layout.sidebar_gap must be finite and between 0 and 64 logical pixels")]
     InvalidSidebarGap,
+    #[error("sound.volume must be between 0 and 100")]
+    InvalidSoundVolume,
     #[error("sidebar.{key} must be finite and between 0 and {max} logical pixels")]
     InvalidSidebarMetric { key: &'static str, max: f32 },
     #[error("sidebar.hosts.{host:?} must be a #rgb or #rrggbb colour, not {value:?}")]

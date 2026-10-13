@@ -421,6 +421,9 @@ impl HerdrWindow {
 
     fn tick(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.updater.set_channel(self.config.updates.channel);
+        // The one sound worker is shared, and every window loads the same
+        // file, so whichever ticks last after a reload agrees with the rest.
+        self.sound.set_volume(self.config.sound.volume);
         if self.updater.poll() {
             match self.updater.commit_restart() {
                 Ok(true) => {

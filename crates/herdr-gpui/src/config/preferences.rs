@@ -20,6 +20,8 @@ pub(crate) enum Preference {
     ClipboardEnabled(Option<bool>),
     ClipboardPosition(Option<ClipboardToastPosition>),
     SidebarGap(f32),
+    /// `[sound] volume`, in percent.
+    SoundVolume(u8),
     StatusBar(status_bar::Edit),
     /// `[usage] inline`: whether the sidebar draws the daemon's configured rows.
     UsageInline(bool),
@@ -113,6 +115,12 @@ impl Config {
                 Preference::StatusBar(edit) => {
                     let (key, value) = edit.entry();
                     (Some("status_bar"), key, Some(value))
+                }
+                Preference::SoundVolume(value) => {
+                    if value > SoundConfig::MAX_VOLUME {
+                        return Err(Error::InvalidSoundVolume);
+                    }
+                    (Some("sound"), "volume", Some(i64::from(value).into()))
                 }
                 Preference::UsageInline(value) => (Some("usage"), "inline", Some(value.into())),
                 Preference::UpdateChannel(channel) => {

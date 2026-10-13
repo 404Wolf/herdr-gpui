@@ -27,6 +27,7 @@ mod sidebar_scope;
 mod sidebar_search;
 mod sidebar_settings;
 mod sidebar_style;
+mod sound_volume;
 mod status_bar;
 mod system_themes;
 mod theme_files;

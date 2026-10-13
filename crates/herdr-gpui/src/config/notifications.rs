@@ -1,4 +1,4 @@
-//! Toasts, OS notifications, and the terminal bell.
+//! Toasts, OS notifications, agent sound volume, and the terminal bell.
 use super::Config;
 use serde::Deserialize;
 
@@ -53,6 +53,36 @@ impl Default for BellConfig {
             sound: false,
         }
     }
+}
+
+/// How loud this app plays agent notification sounds. Herdr's `[ui.sound]`
+/// has no volume and plays at the file's own level, so this is the GUI's
+/// `[sound]` alone and leaves the daemon config untouched.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct SoundConfig {
+    /// Percent of the sound file's own loudness, inclusive 0..=100.
+    #[serde(deserialize_with = "sound_volume")]
+    pub volume: u8,
+}
+
+impl SoundConfig {
+    /// The loudest volume; a percentage above it is refused.
+    pub const MAX_VOLUME: u8 = 100;
+}
+
+impl Default for SoundConfig {
+    fn default() -> Self {
+        // The bundled sounds are mastered loud; full level startles.
+        Self { volume: 50 }
+    }
+}
+
+fn sound_volume<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u8, D::Error> {
+    u8::try_from(u64::deserialize(d)?)
+        .ok()
+        .filter(|volume| *volume <= SoundConfig::MAX_VOLUME)
+        .ok_or_else(|| serde::de::Error::custom("sound.volume must be between 0 and 100"))
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]

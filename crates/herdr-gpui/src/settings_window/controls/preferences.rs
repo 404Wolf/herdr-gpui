@@ -150,6 +150,28 @@ impl SettingsWindow {
             .child(self.control_note("Controls show effective values. Follow shared removes that local override; any managed-file override still takes precedence."))
     }
 
+    /// The local `[sound] volume`, editable even where Herdr's shared sound
+    /// settings are read-only, since it lives in this app's own file.
+    pub(super) fn sound_volume_controls(&self, cx: &mut Context<Self>) -> Div {
+        let volume = self.config.sound.volume;
+        let mut levels = div().flex().flex_wrap().gap(px(8.));
+        for percent in [10, 25, 50, 75, 100] {
+            levels = levels.child(self.preference_choice(
+                format!("settings-sound-volume-{percent}"),
+                format!("{percent}%"),
+                volume == percent,
+                Preference::SoundVolume(percent),
+                cx,
+            ));
+        }
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .child(self.control_row("Volume", format!("{volume}%")))
+            .child(levels)
+    }
+
     pub(super) fn clipboard_controls(&self, cx: &mut Context<Self>) -> Div {
         let config = self.config.clipboard_toast;
         let mut positions = div().flex().flex_wrap().gap(px(8.));
