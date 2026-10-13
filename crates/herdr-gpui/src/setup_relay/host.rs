@@ -15,7 +15,7 @@ use std::{
     fs::File,
     io::{self, Read, Write},
     os::unix::{
-        fs::{DirBuilderExt, PermissionsExt},
+        fs::{DirBuilderExt, MetadataExt, PermissionsExt},
         net::{UnixListener, UnixStream},
         process::ExitStatusExt,
     },
@@ -47,6 +47,9 @@ const HANGUP_GRACE: Duration = Duration::from_secs(2);
 const NOT_STARTED: i32 = 127;
 /// Used when the pane's `TERM` is missing or not a plain terminfo name.
 const DEFAULT_TERM: &str = "xterm-256color";
+/// The longest socket path that binds: `sun_path` holds 104 bytes on macOS
+/// and 108 on Linux, including the terminating NUL.
+const MAX_SOCKET_PATH: usize = 103;
 
 /// A socket waiting for the pane's relay. Dropping it before [`keep`] closes
 /// the socket, as when the workspace could not be created.
@@ -100,20 +103,19 @@ impl<T> Drop for Listening<T> {
 /// Opens a socket in `dir`, which is made private to this user, and starts
 /// the worker that runs `command` for the first relay to connect, for at
 /// most `limit`. Only this user can reach the socket, and it is removed once
-/// a relay connects or `CONNECT_WAIT` passes. Blocks on the file system:
-/// call it off the UI thread.
+/// a relay connects or `CONNECT_WAIT` passes. A `dir` too long for a socket
+/// path is swapped for a private one in the temporary directory. Blocks on
+/// the file system: call it off the UI thread.
 pub(crate) fn listen<T: Send + 'static>(
     dir: &Path,
     command: Command,
     limit: Duration,
 ) -> Result<Listening<T>> {
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(dir)?;
-    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
     let id = uuid::Uuid::new_v4().simple().to_string();
-    let path = dir.join(format!("setup-{}.sock", &id[..16]));
+    let name = format!("setup-{}.sock", &id[..16]);
+    let dir = socket_dir(dir, &std::env::temp_dir(), &name);
+    make_private(&dir)?;
+    let path = dir.join(name);
     let listener = UnixListener::bind(&path)?;
     let opened = (|| {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
@@ -144,6 +146,38 @@ pub(crate) fn listen<T: Send + 'static>(
         cancelled,
         hand_over: Some(hand_over),
     })
+}
+
+/// Where a socket called `name` fits: `preferred`, else a folder of this
+/// user's in `temp`, else in `/tmp`, as SSH's own control sockets do.
+pub(super) fn socket_dir(preferred: &Path, temp: &Path, name: &str) -> PathBuf {
+    let fits = |dir: &Path| dir.join(name).as_os_str().len() <= MAX_SOCKET_PATH;
+    if fits(preferred) {
+        return preferred.to_owned();
+    }
+    let own = format!("herdr-gpui-{}", rustix::process::getuid().as_raw());
+    let temp = temp.join(&own);
+    if fits(&temp) {
+        temp
+    } else {
+        Path::new("/tmp").join(own)
+    }
+}
+
+/// Creates `dir` if needed and makes it this user's alone. A shared parent
+/// such as `/tmp` lets anyone create the name first, so a folder that is a
+/// link or another user's is refused rather than used.
+pub(super) fn make_private(dir: &Path) -> Result<()> {
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)?;
+    let metadata = std::fs::symlink_metadata(dir)?;
+    if !metadata.is_dir() || metadata.uid() != rustix::process::getuid().as_raw() {
+        return Err(Error::SetupRelayDir(dir.to_owned()));
+    }
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    Ok(())
 }
 
 fn serve(
@@ -191,7 +225,18 @@ fn accept(
 }
 
 /// Runs the setup for one connected relay and returns how it ended.
-pub(super) fn run(stream: UnixStream, mut command: Command, limit: Duration) -> Result<ExitStatus> {
+pub(super) fn run(stream: UnixStream, command: Command, limit: Duration) -> Result<ExitStatus> {
+    relay(stream, command, limit, WRITE_WAIT)
+}
+
+/// [`run`], ending the session when a write to the relay blocks for
+/// `write_wait`.
+pub(super) fn relay(
+    stream: UnixStream,
+    mut command: Command,
+    limit: Duration,
+    write_wait: Duration,
+) -> Result<ExitStatus> {
     stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(HELLO_WAIT))?;
     let mut reader = stream.try_clone()?;
@@ -201,7 +246,7 @@ pub(super) fn run(stream: UnixStream, mut command: Command, limit: Duration) -> 
     stream.set_read_timeout(None)?;
     // A pane that stops reading ends the session rather than holding its
     // threads forever.
-    stream.set_write_timeout(Some(WRITE_WAIT))?;
+    stream.set_write_timeout(Some(write_wait))?;
     let (master, terminal) = open_terminal(size)?;
     command
         .env("TERM", term.as_deref().unwrap_or(DEFAULT_TERM))
@@ -224,6 +269,36 @@ pub(super) fn run(stream: UnixStream, mut command: Command, limit: Duration) -> 
     drop(command);
     let writer = Arc::new(Mutex::new(stream));
     let gone = Arc::new(AtomicBool::new(false));
+    let (drained, output_done) = mpsc::sync_channel(1);
+    if let Err(error) = forward(reader, master, &writer, &gone, drained) {
+        // The setup is running, and the caller releases the host's claim
+        // once this returns, so it must not outlive the relay.
+        let _ = lock(&writer).shutdown(std::net::Shutdown::Both);
+        let _ = hang_up(&mut child);
+        return Err(error);
+    }
+    let status = wait(&mut child, &gone, Instant::now() + limit)?;
+    let _ = output_done.recv_timeout(DRAIN_WAIT);
+    let code = status
+        .code()
+        .unwrap_or_else(|| 128 + status.signal().unwrap_or(0));
+    let mut stream = lock(&writer);
+    let _ = Frame::Exit(code).write(&mut *stream);
+    // Ends the input thread's read.
+    let _ = stream.shutdown(std::net::Shutdown::Both);
+    Ok(status)
+}
+
+/// Starts the two threads that copy between the relay and the terminal.
+/// Either sets `gone` when the relay is lost; the output one sends on
+/// `drained` once the setup's output has ended.
+fn forward(
+    mut reader: UnixStream,
+    master: File,
+    writer: &Arc<Mutex<UnixStream>>,
+    gone: &Arc<AtomicBool>,
+    drained: SyncSender<()>,
+) -> Result<()> {
     {
         let (mut master, gone) = (master.try_clone()?, gone.clone());
         thread::Builder::new()
@@ -233,26 +308,18 @@ pub(super) fn run(stream: UnixStream, mut command: Command, limit: Duration) -> 
                 gone.store(true, Ordering::Release);
             })?;
     }
-    let (drained, output_done) = mpsc::sync_channel(1);
-    {
-        let (mut master, writer) = (master, writer.clone());
-        thread::Builder::new()
-            .name("herdr-setup-output".into())
-            .spawn(move || {
-                forward_output(&mut master, &writer);
-                let _ = drained.send(());
-            })?;
-    }
-    let status = wait(&mut child, &gone, Instant::now() + limit)?;
-    let _ = output_done.recv_timeout(DRAIN_WAIT);
-    let code = status
-        .code()
-        .unwrap_or_else(|| 128 + status.signal().unwrap_or(0));
-    let mut stream = writer.lock().unwrap_or_else(PoisonError::into_inner);
-    let _ = Frame::Exit(code).write(&mut *stream);
-    // Ends the input thread's read.
-    let _ = stream.shutdown(std::net::Shutdown::Both);
-    Ok(status)
+    let (mut master, writer, gone) = (master, writer.clone(), gone.clone());
+    thread::Builder::new()
+        .name("herdr-setup-output".into())
+        .spawn(move || {
+            forward_output(&mut master, &writer, &gone);
+            let _ = drained.send(());
+        })?;
+    Ok(())
+}
+
+fn lock(writer: &Mutex<UnixStream>) -> std::sync::MutexGuard<'_, UnixStream> {
+    writer.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// A new terminal of `size`, as its controlling side and the side the setup
@@ -298,8 +365,10 @@ fn forward_input(reader: &mut impl Read, master: &mut File) {
     }
 }
 
-/// What the setup prints, until every copy of its terminal is closed.
-fn forward_output(master: &mut File, writer: &Mutex<UnixStream>) {
+/// What the setup prints, until every copy of its terminal is closed. A
+/// write that fails or times out means the pane no longer sees the setup,
+/// so the relay is closed and `gone` set for `wait` to hang it up.
+fn forward_output(master: &mut File, writer: &Mutex<UnixStream>, gone: &AtomicBool) {
     let mut buffer = vec![0u8; MAX_PAYLOAD];
     loop {
         let read = match master.read(&mut buffer) {
@@ -307,11 +376,14 @@ fn forward_output(master: &mut File, writer: &Mutex<UnixStream>) {
             Ok(0) | Err(_) => return,
             Ok(read) => read,
         };
-        let mut stream = writer.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut stream = lock(writer);
         if Frame::Output(buffer[..read].to_vec())
             .write(&mut *stream)
             .is_err()
         {
+            // Also ends the input thread's read and the final exit frame.
+            let _ = stream.shutdown(std::net::Shutdown::Both);
+            gone.store(true, Ordering::Release);
             return;
         }
     }

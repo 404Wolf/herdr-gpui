@@ -692,6 +692,9 @@ pub enum Error {
     #[cfg(unix)]
     #[error("The device setup needs a terminal.")]
     SetupRelayTerminal,
+    #[cfg(unix)]
+    #[error("{} is not a private folder of this user, so the setup cannot listen there.", .0.display())]
+    SetupRelayDir(PathBuf),
     #[error("Could not list this machine's network addresses: {0}")]
     LocalAddresses(#[source] io::Error),
     #[error("Tailscale did not answer in time")]

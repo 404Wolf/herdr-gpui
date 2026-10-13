@@ -1,4 +1,6 @@
 #![allow(clippy::unwrap_used)]
+mod cleanup;
+
 use super::{
     frame::{Frame, MAX_PAYLOAD, Size},
     *,
