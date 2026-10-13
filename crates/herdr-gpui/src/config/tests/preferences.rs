@@ -171,6 +171,9 @@ fn rejects_invalid_settings() {
         "[layout]\nsidebar_gap = 65",
         "[layout]\nsidebar_gap = inf",
         "[layout]\nsidebar_gap = '8'",
+        "[terminal]\npadding_x = -1",
+        "[terminal]\npadding_y = 65",
+        "[terminal]\npadding_x = '8'",
     ] {
         assert!(Config::parse(text).is_err(), "accepted {text:?}");
     }

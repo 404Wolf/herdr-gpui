@@ -504,6 +504,7 @@ impl SettingsWindow {
                     ),
             )
             .child(self.render_sidebar_layout_controls(cx))
+            .child(self.terminal_padding_controls(cx))
             .child(self.render_backdrop_controls(cx))
     }
 }

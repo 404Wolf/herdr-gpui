@@ -159,14 +159,6 @@ project_roots = []
 # [updates]
 # channel = "stable"
 
-# To customize spacing too, REPLACE the top-level layout above with this table:
-# [layout]
-# mode = "normal"
-# Blank space between the sidebar and the terminal beside it, 0 to 64.
-# The terminal keeps the remaining width, so a wide gap costs columns.
-# Ignored while the sidebar is hidden. Set 0 to sit against the divider.
-# sidebar_gap = 8
-
 # Native shortcuts. Each key is a command; the value is one keystroke or a list,
 # primary first. "" or [] unbinds it. Assigning a keystroke here takes it away
 # from its default command. Modifiers: cmd (super on Linux), ctrl, alt, shift,
@@ -305,6 +297,14 @@ size = 14
 # no face for draws at its nearest one, and on macOS is reported. Only
 # [terminal] takes this key.
 # weight = "medium"
+# Blank space between the cells and the edges of the terminal's tab group, in
+# logical pixels from 0 to 64. One number pads both sides; a pair pads each:
+# [left, right] for padding_x, [top, bottom] for padding_y. Default 0. The
+# terminal keeps the remaining size, so wide padding costs columns and rows.
+# Only [terminal] takes these keys. They replace the deprecated
+# [layout] sidebar_gap, which still loads as the left padding.
+# padding_x = 8
+# padding_y = [4, 8]
 
 [ui]
 # Default: ".SystemUIFont" on macOS and Windows, "DejaVu Sans" on Linux (or an installed

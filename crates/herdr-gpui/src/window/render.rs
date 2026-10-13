@@ -9,7 +9,7 @@ use super::{
 use crate::{
     CheckForUpdates, Minimize, PlaySound, RunCommand, ShowHerdrNotDetected, ShowUpdatePreview,
     actions::{RingBellPreview, ShowToastPreview},
-    browser::{Shown, Slot},
+    browser::Shown,
     config::ClipboardToastPosition,
     fonts::StyledFont,
     terminal::*,
@@ -195,15 +195,10 @@ impl Render for HerdrWindow {
             self.terminal_link_hovered(window.mouse_position(), window.modifiers());
         self.split_cursor = self.split_cursor_at(window.mouse_position());
         // Pad the terminal itself: the canvas bounds that painting, hit testing,
-        // and IME placement all read then already exclude the gap.
-        let sidebar_gap = if sidebar.is_some() {
-            self.config.layout.sidebar_gap
-        } else {
-            0.
-        };
-        // Only the first group meets the sidebar, so only it takes the gap,
-        // and only where it draws a terminal or stands in for one: every
+        // and IME placement all read then already exclude the padding. Only a
+        // group that draws a terminal or stands in for one takes it: every
         // other kind of tab pads its own content.
+        let padding = self.config.terminal_padding;
         self.ensure_layout();
         self.forget_gone_strips();
         let slots = self.group_slots();
@@ -211,7 +206,6 @@ impl Render for HerdrWindow {
             .iter()
             .map(|slot| self.group_shown(slot.id, cx))
             .collect();
-        let slot_gap = |slot: Slot| if slot.index == 0 { sidebar_gap } else { 0. };
         // A divider's grip keeps off a native page, which would cover it. A
         // folding group stands between two groups without a divider.
         let pages: Vec<bool> = if self.folding_groups().is_empty() {
@@ -229,14 +223,13 @@ impl Render for HerdrWindow {
                 **shown == Shown::Terminal && primary.is_none_or(|group| group == slot.id)
             })
             .map(|(slot, _)| *slot);
-        let terminal_gap = terminal_slot.map_or(sidebar_gap, slot_gap);
-        let find_bar = self.render_find_bar(surface.as_deref(), terminal_gap, cx);
-        let terminal_note = self.render_terminal_note(surface.as_deref(), terminal_gap, cx);
-        let copy_badge = self.render_copy_mode_badge(surface.as_deref(), terminal_gap, cx);
-        let terminal = div()
+        let find_bar = self.render_find_bar(surface.as_deref(), cx);
+        let terminal_note = self.render_terminal_note(surface.as_deref(), cx);
+        let copy_badge = self.render_copy_mode_badge(surface.as_deref(), cx);
+        let terminal = padding
+            .pad(div())
             .id("terminal")
             .debug_selector(|| "terminal".into())
-            .pl(px(terminal_gap))
             .when(self.hovered_terminal_link, |terminal| {
                 terminal.cursor_pointer()
             })
@@ -381,9 +374,10 @@ impl Render for HerdrWindow {
             )
             // The cached regions paint the cells; the canvas above them takes
             // input and paints what changes without them. Both fill this box,
-            // so every region shares the canvas's bounds.
-            .child(
-                div().relative().size_full().children(regions).child(
+            // so every region shares the canvas's bounds. What is laid over
+            // the cells sits in the same box, inside the terminal's padding.
+            .child({
+                let cells = div().relative().size_full().children(regions).child(
                     canvas(
                         move |bounds, _, cx| {
                             entity.update(cx, |this, _| {
@@ -562,61 +556,61 @@ impl Render for HerdrWindow {
                         },
                     )
                     .size_full(),
-                ),
-            )
-            .children(self.render_reconnecting(cx))
-            .when_some(find_bar, |terminal, bar| terminal.child(bar))
-            .when_some(terminal_note, |terminal, note| terminal.child(note))
-            .when_some(copy_badge, |terminal, badge| terminal.child(badge))
-            // Direct feedback for the user's own gesture, not a daemon notice:
-            // it sits over the cells it copied and needs no dismissing.
-            .when_some(self.flash.as_ref(), |terminal, (flash, _)| {
-                use ClipboardToastPosition::*;
-                let position = self.config.clipboard_toast.position;
-                terminal.child(
-                    div()
-                        .absolute()
-                        .map(|row| match position {
-                            TopLeft | TopCenter | TopRight => row.top(px(12.)),
-                            BottomLeft | BottomCenter | BottomRight => row.bottom(px(12.)),
-                        })
-                        .map(|row| match position {
-                            TopLeft | BottomLeft => row.justify_start(),
-                            TopCenter | BottomCenter => row.justify_center(),
-                            TopRight | BottomRight => row.justify_end(),
-                        })
-                        // The pane's own padding is not part of the terminal:
-                        // the flash spans the cells, so centering centers on
-                        // them and a corner is the corner of the grid.
-                        .left(px(terminal_gap))
-                        .right_0()
-                        .px(px(12.))
-                        .flex()
-                        .overflow_hidden()
-                        .child(
+                );
+                cells
+                    .children(self.render_reconnecting(cx))
+                    .when_some(find_bar, |terminal, bar| terminal.child(bar))
+                    .when_some(terminal_note, |terminal, note| terminal.child(note))
+                    .when_some(copy_badge, |terminal, badge| terminal.child(badge))
+                    // Direct feedback for the user's own gesture, not a daemon notice:
+                    // it sits over the cells it copied and needs no dismissing.
+                    .when_some(self.flash.as_ref(), |terminal, (flash, _)| {
+                        use ClipboardToastPosition::*;
+                        let position = self.config.clipboard_toast.position;
+                        terminal.child(
                             div()
-                                .debug_selector(|| "flash".into())
-                                .min_w_0()
-                                .flex()
-                                .items_center()
-                                .gap(px(8.))
+                                .absolute()
+                                .map(|row| match position {
+                                    TopLeft | TopCenter | TopRight => row.top(px(12.)),
+                                    BottomLeft | BottomCenter | BottomRight => row.bottom(px(12.)),
+                                })
+                                .map(|row| match position {
+                                    TopLeft | BottomLeft => row.justify_start(),
+                                    TopCenter | BottomCenter => row.justify_center(),
+                                    TopRight | BottomRight => row.justify_end(),
+                                })
+                                // The flash spans the cells, so centering centers on
+                                // them and a corner is the corner of the grid.
+                                .left_0()
+                                .right_0()
                                 .px(px(12.))
-                                .py(px(6.))
-                                .rounded(px(crate::config::corners::CONTROL))
-                                .border_1()
-                                .border_color(rgb(flash.accent(&self.theme)))
-                                .bg(rgb(self.theme.surface))
-                                .text_color(rgb(self.theme.foreground))
+                                .flex()
+                                .overflow_hidden()
                                 .child(
                                     div()
-                                        .size(px(6.))
-                                        .flex_none()
-                                        .rounded_full()
-                                        .bg(rgb(flash.accent(&self.theme))),
-                                )
-                                .child(div().truncate().child(flash.text.clone())),
-                        ),
-                )
+                                        .debug_selector(|| "flash".into())
+                                        .min_w_0()
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(8.))
+                                        .px(px(12.))
+                                        .py(px(6.))
+                                        .rounded(px(crate::config::corners::CONTROL))
+                                        .border_1()
+                                        .border_color(rgb(flash.accent(&self.theme)))
+                                        .bg(rgb(self.theme.surface))
+                                        .text_color(rgb(self.theme.foreground))
+                                        .child(
+                                            div()
+                                                .size(px(6.))
+                                                .flex_none()
+                                                .rounded_full()
+                                                .bg(rgb(flash.accent(&self.theme))),
+                                        )
+                                        .child(div().truncate().child(flash.text.clone())),
+                                ),
+                        )
+                    })
             });
         // A focus handle belongs to one element: the terminal when drawn,
         // otherwise the group in use.
@@ -631,7 +625,6 @@ impl Render for HerdrWindow {
         let count = slots.len();
         let mut groups = Vec::with_capacity(count);
         for (slot, shown) in slots.into_iter().zip(shown) {
-            let gap = slot_gap(slot);
             let owns_keyboard = keyboard == Some(slot.id);
             let tab = match &shown {
                 Shown::Page(id) => cx
@@ -646,7 +639,7 @@ impl Render for HerdrWindow {
                     .map(IntoElement::into_any_element)
                     .unwrap_or_else(|| div().into_any_element()),
                 (Shown::Terminal, _) if self.shows_parked_terminal(slot.id, cx) => {
-                    self.render_parked_terminal(slot, gap, parked_font.clone(), cell_height, cx)
+                    self.render_parked_terminal(slot, parked_font.clone(), cell_height, cx)
                 }
                 // Review and orchestrator tabs are drawn by the app, never pages.
                 (Shown::Page(_), Some(tab))
@@ -677,15 +670,14 @@ impl Render for HerdrWindow {
                 (Shown::Elsewhere(tab), _) => match self.live_frame_of(tab, window_frame.clone()) {
                     Some(frame) => self.render_terminal_mirror(
                         slot,
-                        gap,
                         Some(frame),
                         parked_font.clone(),
                         cell_height,
                         cx,
                     ),
-                    None => self.render_stand_in(slot, &shown, gap, owns_keyboard, cx),
+                    None => self.render_stand_in(slot, &shown, owns_keyboard, cx),
                 },
-                _ => self.render_stand_in(slot, &shown, gap, owns_keyboard, cx),
+                _ => self.render_stand_in(slot, &shown, owns_keyboard, cx),
             };
             let ends = merged.then(|| crate::titlebar::Ends::of(slot.index, count));
             let reach = Reach::of(&pages, slot.index);

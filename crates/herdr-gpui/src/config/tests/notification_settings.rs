@@ -349,7 +349,7 @@ fn notification_settings_defaults_bounds_corners_and_strict_types() -> anyhow::R
             let config = Config::parse(&format!(
                 "[notifications]\nenabled=true\ndelay_seconds={delay}\nposition=\"{name}\"\n[layout]\nsidebar_gap=16\n[terminal]\nsize=18"
             ))?;
-            assert_eq!(config.layout.sidebar_gap, 16.);
+            assert_eq!(config.terminal_padding.x.start(), 16.);
             assert_eq!(config.terminal.size, 18.);
             assert_eq!(
                 config.notifications,
