@@ -157,6 +157,14 @@ impl Teleport {
         self.events = events;
     }
 
+    /// Whether `endpoint_id` is among the hosts the work could move to.
+    #[cfg(unix)]
+    pub(crate) fn offers(&self, endpoint_id: &str) -> bool {
+        self.hosts
+            .iter()
+            .any(|host| host.place.endpoint_id == endpoint_id)
+    }
+
     /// Choose the host `endpoint_id` and start its review at once.
     pub(crate) fn review_host(&mut self, endpoint_id: &str) {
         self.selected = self

@@ -172,7 +172,6 @@ impl HerdrWindow {
         &mut self,
         slot: Slot,
         tab: &Tab,
-        gap: f32,
         keyboard: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -261,6 +260,7 @@ impl HerdrWindow {
             (None, true) => "Loading\u{2026}".into(),
         };
         let toolbar = div()
+            .debug_selector(move || slot.selector("browser-toolbar"))
             .flex()
             .flex_none()
             .items_center()
@@ -390,7 +390,6 @@ impl HerdrWindow {
             .flex_1()
             .min_h_0()
             .min_w_0()
-            .pl(px(gap))
             .bg(rgb(self.theme.background))
             // Keeps window shortcuts reachable while the page does not hold
             // the keyboard; nothing here types into a terminal. A focus

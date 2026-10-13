@@ -42,6 +42,9 @@ pub(in crate::menu) struct Setup {
 pub(super) enum Step {
     Form,
     Checking(setup::Request),
+    /// macOS refused the host check the local network; waiting for the user
+    /// to allow Herdr, then checking again (see `local_network`).
+    AwaitingLocalNetwork(setup::Request),
     /// Herdr is present, so the CLI saves the device without a terminal. A
     /// stopped server is started by that same command.
     Saving(setup::Request, HostProbe),
@@ -120,7 +123,8 @@ impl Offer {
 pub(super) struct LocalSpace {
     pub(super) request: String,
     pub(super) boot: String,
-    pub(super) command: String,
+    /// The relay command the workspace's shell runs, and the setup it shows.
+    pub(super) setup: setup::TerminalSetup,
     /// What the user accepted, so a retry after a failure runs it again.
     pub(super) offer: Offer,
 }
@@ -284,6 +288,9 @@ impl HerdrWindow {
         let status = match &setup.step {
             Step::Form => None,
             Step::Checking(request) => Some(format!("Checking Herdr on {}…", request.target())),
+            Step::AwaitingLocalNetwork(request) => {
+                Some(super::local_network::waiting_status(request.target()))
+            }
             Step::Saving(request, HostProbe::Stopped) => Some(format!(
                 "Herdr is installed on {} but not running. Starting it…",
                 request.target()
@@ -346,6 +353,9 @@ impl HerdrWindow {
                 button("device-setup-submit", offer.action().into(), true)
                     .on_click(cx.listener(|this, _, _, cx| this.open_setup_space(cx))),
             ),
+            Step::AwaitingLocalNetwork(_) => footer
+                .children(self.local_network_settings_button("device-setup-settings", cx))
+                .child(cancel),
             // Enter does not trust a key: only this button does.
             Step::TrustKey(..) => footer.child(cancel).child(
                 button("device-setup-trust", "Trust key".into(), true)
@@ -458,14 +468,17 @@ impl HerdrWindow {
         result: crate::Result<(setup::Claim, crate::Result<HostProbe>)>,
         cx: &mut Context<Self>,
     ) {
-        let Some(Setup {
-            step: Step::Checking(request),
-            ..
-        }) = &self.menu.device_setup
-        else {
-            return;
+        let (request, waited) = match &self.menu.device_setup {
+            Some(Setup {
+                step: Step::Checking(request),
+                ..
+            }) => (request.clone(), false),
+            Some(Setup {
+                step: Step::AwaitingLocalNetwork(request),
+                ..
+            }) => (request.clone(), true),
+            _ => return,
         };
-        let request = request.clone();
         let (claim, probe) = match result {
             Ok(result) => result,
             Err(error) => {
@@ -493,9 +506,13 @@ impl HerdrWindow {
         if let Ok(HostProbe::SshFailed(SshFailure::HostKey)) = probe {
             return self.fetch_host_key(request, claim, cx);
         }
-        // A terminal cannot help: the permission belongs to this app. Back on
-        // the form, the user grants it and submits again; the claim drops.
+        // A terminal cannot help: the permission belongs to this app. The
+        // first refusal can be the system still asking, so wait for the user;
+        // a refusal after the wait returns to the form, and the claim drops.
         if let Ok(HostProbe::SshFailed(failure @ SshFailure::LocalNetworkDenied)) = probe {
+            if !waited {
+                return self.await_local_network(request, claim, cx);
+            }
             self.set_device_error(Some(failure.to_string()));
             if let Some(form) = &mut self.menu.device_setup {
                 form.step = Step::Form;
@@ -600,7 +617,9 @@ impl HerdrWindow {
         if let Some(setup) = &mut self.menu.device_setup {
             setup.step = Step::Form;
             setup.claim = None;
-            self.set_device_error(None);
+            // Ends a wait for Local Network permission, which holds a claim.
+            setup.task = None;
+            setup.error = None;
             cx.notify();
         }
     }
@@ -623,24 +642,22 @@ impl HerdrWindow {
             let claim = match claim {
                 Some(claim) => setup::verify_unsaved(&request, &claim).map(|()| claim),
                 None => setup::claim(&request),
-            };
-            // The terminal gets the user's login `PATH`, as SSH children do;
-            // resolving it can block the first time.
-            (claim, crate::login_env::path())
+            }?;
+            // The setup runs here, with the user's login environment, which
+            // can block the first time it is read.
+            let terminal = setup::terminal_setup(&request, offer == Offer::InstallKey);
+            Ok::<_, crate::Error>((claim, terminal))
         });
         form.task = Some(cx.spawn(async move |this, cx| {
-            let (result, path) = background.await;
-            let _ = this.update(cx, |this, cx| {
-                this.setup_space_verified(result, path.as_deref(), cx)
-            });
+            let result = background.await;
+            let _ = this.update(cx, |this, cx| this.setup_space_verified(result, cx));
         }));
         cx.notify();
     }
 
     pub(super) fn setup_space_verified(
         &mut self,
-        result: crate::Result<setup::Claim>,
-        path: Option<&std::ffi::OsStr>,
+        result: crate::Result<(setup::Claim, crate::Result<setup::TerminalSetup>)>,
         cx: &mut Context<Self>,
     ) {
         let Some(Setup {
@@ -651,8 +668,8 @@ impl HerdrWindow {
             return;
         };
         let (request, offer) = (request.clone(), *offer);
-        let claim = match result {
-            Ok(claim) => claim,
+        let (claim, terminal) = match result {
+            Ok(verified) => verified,
             Err(error) => {
                 tracing::warn!(
                     category = "device_setup",
@@ -670,10 +687,7 @@ impl HerdrWindow {
         };
         let local = &self.endpoints[0];
         let result = (|| {
-            let setup = match offer {
-                Offer::InstallKey => setup::key_setup_command(&request, path)?,
-                _ => setup::terminal_command(&request, path)?,
-            };
+            let setup = terminal?;
             let boot = local
                 .live
                 .snapshot
@@ -687,13 +701,12 @@ impl HerdrWindow {
                 serde_json::json!({
                     "focus": true,
                     "label": format!("Set up {}", request.label()),
-                    "env": setup.environment,
                 }),
             )?;
             Ok::<_, crate::Error>(LocalSpace {
                 request: id,
                 boot,
-                command: setup.command,
+                setup,
                 offer,
             })
         })();
@@ -797,7 +810,7 @@ impl HerdrWindow {
                     &space.boot,
                     &pane,
                     [
-                        ClientPaneInputEvent::TextCommit(space.command.clone()),
+                        ClientPaneInputEvent::TextCommit(space.setup.command.clone()),
                         enter(),
                     ],
                 )?)
@@ -805,15 +818,14 @@ impl HerdrWindow {
         if let Err(error) = sent {
             return fail(self, error.to_string(), cx);
         }
-        // The terminal's `machine add` outlives this dialog; keep the host
-        // claimed so this process cannot start a second add meanwhile.
-        if let Some(claim) = self
-            .menu
-            .device_setup
-            .as_mut()
-            .and_then(|form| form.claim.take())
+        // The setup outlives this dialog: its relay keeps waiting, and keeps
+        // the host claimed until the setup ends, however it ends, so this
+        // process cannot start a second add meanwhile, nor stay locked out.
+        if let Some(form) = self.menu.device_setup.as_mut()
+            && let Step::Opening(_, space) = &mut form.step
+            && let Some(claim) = form.claim.take()
         {
-            claim.hold();
+            space.setup.relay.keep(claim);
         }
         let local = local.id.clone();
         self.dismiss_menu(window, cx);

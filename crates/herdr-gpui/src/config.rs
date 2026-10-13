@@ -11,6 +11,7 @@ pub(crate) mod backdrop;
 mod bitmap_fonts;
 mod coder;
 mod daytona;
+mod edit;
 mod files;
 mod font_weight;
 mod fonts;
@@ -34,6 +35,7 @@ pub(crate) use coder::CoderFields;
 pub use daytona::DaytonaConfig;
 #[cfg(feature = "daytona")]
 pub(crate) use daytona::DaytonaFields;
+pub(crate) use edit::{Layer, parse_value};
 use files::write_config;
 pub use font_weight::bold as bold_font_weight;
 pub(crate) use fonts::FontFace;
@@ -94,6 +96,8 @@ pub struct Config {
     pub show_agents: bool,
     /// The search field at the top of the sidebar's spaces list.
     pub show_sidebar_search: bool,
+    /// The repository owner's avatar, or the GitHub mark, before a space's name.
+    pub show_repository_icons: bool,
     /// CPU and memory of the selected host in the status bar.
     pub show_system_load: bool,
     /// Snapshot a checkout's files each time one of its agents starts or
@@ -101,6 +105,8 @@ pub struct Config {
     pub agent_checkpoints: bool,
     /// Ports each workspace listens on, in the sidebar and the status bar.
     pub show_listening_ports: bool,
+    /// Wheel scrollback draws panes between rows, following the OS deltas.
+    pub smooth_scroll: bool,
     /// Which status bar items show, and how compactly.
     pub status_bar: StatusBar,
     /// What shows behind the main window's terminals and chrome.
@@ -435,9 +441,11 @@ impl Default for Config {
             remove_merged_worktrees: false,
             show_agents: true,
             show_sidebar_search: true,
+            show_repository_icons: true,
             show_system_load: true,
             agent_checkpoints: true,
             show_listening_ports: true,
+            smooth_scroll: true,
             status_bar: StatusBar::default(),
             backdrop: Backdrop::default(),
             contrast: Contrast::default(),
@@ -486,9 +494,11 @@ struct Settings {
     remove_merged_worktrees: Option<bool>,
     show_agents: Option<bool>,
     show_sidebar_search: Option<bool>,
+    show_repository_icons: Option<bool>,
     show_system_load: Option<bool>,
     agent_checkpoints: Option<bool>,
     show_listening_ports: Option<bool>,
+    smooth_scroll: Option<bool>,
     status_bar: StatusBar,
     backdrop: Backdrop,
     contrast: Contrast,
@@ -693,8 +703,16 @@ impl Config {
     }
 
     fn load_startup_path(path: &Path, daemon: &Path) -> Result<Self> {
+        let (text, source) = Self::overrides_text(path)?;
+        Self::parse_layers([DEFAULT_CONFIG, &text], &daemon_settings(daemon))
+            .map_err(|error| error.at_path(&source))
+    }
+
+    /// The user's overrides as the app reads them now, and the file they
+    /// come from, without writing anything.
+    pub(super) fn overrides_text(path: &Path) -> Result<(String, PathBuf)> {
         let local = path.with_extension("local.toml");
-        let (text, source) = match fs::read_to_string(&local) {
+        Ok(match fs::read_to_string(&local) {
             Ok(text) => (text, local),
             // Without overrides or a personal config to migrate, maintenance
             // will seed the first-launch overrides; show them from frame one.
@@ -705,9 +723,7 @@ impl Config {
                 Err(error) => return Err(Error::from(error).at_path(path)),
             },
             Err(error) => return Err(Error::from(error).at_path(&local)),
-        };
-        Self::parse_layers([DEFAULT_CONFIG, &text], &daemon_settings(daemon))
-            .map_err(|error| error.at_path(&source))
+        })
     }
 
     /// `daemon` is the herdr config whose settings this GUI also honors. It is
@@ -736,7 +752,8 @@ impl Config {
         Self::parse_layers([text], base)
     }
 
-    fn parse_layers<'a>(texts: impl IntoIterator<Item = &'a str>, base: &Daemon) -> Result<Self> {
+    /// The files layered as loading layers them, later ones over earlier.
+    fn merged<'a>(texts: impl IntoIterator<Item = &'a str>) -> Result<toml::Value> {
         let mut builder = config_loader::Config::builder();
         for text in texts {
             builder = builder.add_source(config_loader::File::from_str(
@@ -747,7 +764,11 @@ impl Config {
         let loaded = builder.build()?;
         // Config's typed deserializer coerces strings/numbers. Preserve TOML
         // types so existing strict font and theme validation remains intact.
-        let value: toml::Value = loaded.try_deserialize()?;
+        Ok(loaded.try_deserialize()?)
+    }
+
+    fn parse_layers<'a>(texts: impl IntoIterator<Item = &'a str>, base: &Daemon) -> Result<Self> {
+        let value = Self::merged(texts)?;
         let mut unknown_keys = Vec::new();
         let mut settings: Settings = serde_ignored::deserialize(value, |path| {
             unknown_keys.push(path.to_string());
@@ -850,9 +871,11 @@ impl Config {
         config.remove_merged_worktrees = settings.remove_merged_worktrees.unwrap_or(false);
         config.show_agents = settings.show_agents.unwrap_or(true);
         config.show_sidebar_search = settings.show_sidebar_search.unwrap_or(true);
+        config.show_repository_icons = settings.show_repository_icons.unwrap_or(true);
         config.show_system_load = settings.show_system_load.unwrap_or(true);
         config.agent_checkpoints = settings.agent_checkpoints.unwrap_or(true);
         config.show_listening_ports = settings.show_listening_ports.unwrap_or(true);
+        config.smooth_scroll = settings.smooth_scroll.unwrap_or(true);
         config.status_bar = settings.status_bar;
         settings.backdrop.validate()?;
         config.backdrop = settings.backdrop;

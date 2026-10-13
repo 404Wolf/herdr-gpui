@@ -510,13 +510,18 @@ fn a_pane_key_sends_its_target_held_as_typed() {
         modifiers,
         kind,
         ..
-    }) = pane_key_input(&typed, &Keystroke::parse("ctrl-a").unwrap())
+    }) = pane_key_input(&typed, &PaneKey::Key(Keystroke::parse("ctrl-a").unwrap()))
     else {
         panic!("no key sent");
     };
     assert_eq!(
         (code, modifiers, kind),
         (ClientKeyCode::Char('a'), 2, ClientKeyKind::Repeat)
+    );
+    // Text is committed as typing would commit it, held or not.
+    assert_eq!(
+        pane_key_input(&typed, &PaneKey::Text("|".into())),
+        Some(ClientPaneInputEvent::TextCommit("|".into()))
     );
     // Alt-modified targets are sent whatever option_as_alt says.
     assert!(reaches_pane(&Keystroke::parse("alt-b").unwrap()));

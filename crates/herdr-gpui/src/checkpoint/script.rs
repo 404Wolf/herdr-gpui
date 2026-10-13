@@ -151,6 +151,31 @@ g reset -q "$target^"
     )
 }
 
+/// What changed from checkpoint `from` to checkpoint `to`, or to the working
+/// tree (untracked files included, through a temporary index as a capture
+/// takes them) when `to` is absent. Reads only: nothing is captured.
+pub(super) fn diff(checkout: &Checkout, from: &str, to: Option<&str>) -> String {
+    let to = match to {
+        Some(to) => format!(
+            "to=$(g rev-parse -q --verify \"$namespace\"{}'^{{commit}}') || exit {EXIT_MISSING}\n",
+            shell_quote(to)
+        ),
+        None => r#"tmp=$(mktemp "${TMPDIR:-/tmp}/herdr-checkpoint.XXXXXX")
+trap 'rm -f "$tmp"' EXIT
+index=$(g rev-parse --git-path index)
+if [ -f "$index" ]; then cp "$index" "$tmp"; else rm -f "$tmp"; fi
+GIT_INDEX_FILE="$tmp" git -c core.fsmonitor=false add -A
+to=$(GIT_INDEX_FILE="$tmp" git -c core.fsmonitor=false write-tree)
+"#
+        .to_owned(),
+    };
+    format!(
+        "{prelude}from=$(g rev-parse -q --verify \"$namespace\"{from}'^{{commit}}') || exit {EXIT_MISSING}\n{to}g diff --binary --no-ext-diff --no-textconv --no-color \"$from\" \"$to\"\n",
+        prelude = prelude(checkout),
+        from = shell_quote(from),
+    )
+}
+
 /// One line, no control characters, bounded: a label is untrusted daemon text.
 fn clean_label(label: &str) -> String {
     let label: String = label
@@ -218,7 +243,7 @@ pub(super) fn parse_list(output: &str) -> Result<Vec<Checkpoint>> {
 
 /// Stamps are the only ids this client creates: digits, so they are safe in a
 /// ref name and sort by age.
-pub(super) fn valid_id(id: &str) -> bool {
+pub(crate) fn valid_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 32 && id.bytes().all(|b| b.is_ascii_digit())
 }
 

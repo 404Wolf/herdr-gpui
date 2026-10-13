@@ -9,6 +9,7 @@ pub(crate) use add_device::enter;
 mod discover;
 mod host_key;
 mod host_menu;
+mod local_network;
 pub(super) mod rail;
 mod setup;
 mod wsl;

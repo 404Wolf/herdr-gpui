@@ -136,3 +136,18 @@ fn a_window_reports_its_working_agents(cx: &mut gpui::TestAppContext) {
         })
         .unwrap();
 }
+
+#[cfg(unix)]
+#[gpui::test]
+fn asking_for_on_keeps_the_hold_after_the_agents_finish(cx: &mut gpui::TestAppContext) {
+    let (log, reports) = (Log::default(), Reports::default());
+    observe_in(cx, 1, Work::Working, &reports);
+    until_agents_finish(cx, &log, &reports);
+    assert!(cx.update(hold_indefinitely));
+    assert_eq!(cup_of(cx), Cup::On(Mode::Indefinite));
+    // Only a hold until agents finish is turned: nothing else changes.
+    assert!(!cx.update(hold_indefinitely));
+    observe_in(cx, 1, Work::Idle, &reports);
+    assert_eq!(cup_of(cx), Cup::On(Mode::Indefinite));
+    assert_eq!(commands(&log), [Command::Hold]);
+}

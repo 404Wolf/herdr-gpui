@@ -30,7 +30,7 @@ pub(crate) fn shared_family(config: &Config) -> Option<&str> {
         .then_some(family)
 }
 
-fn font_names(names: impl IntoIterator<Item = String>) -> Vec<String> {
+pub(crate) fn font_names(names: impl IntoIterator<Item = String>) -> Vec<String> {
     let mut names: Vec<_> = names
         .into_iter()
         .filter(|name| !name.trim().is_empty())

@@ -2,7 +2,10 @@
 //! the latest projection only: it never queries the daemon, touches disk, or
 //! starts a process.
 
-use super::{HerdrWindow, PressedLink};
+use super::{
+    HerdrWindow, PressedLink,
+    tab_strip::{Reach, native_page},
+};
 use crate::{
     CheckForUpdates, Minimize, PlaySound, RunCommand, ShowHerdrNotDetected, ShowUpdatePreview,
     actions::{RingBellPreview, ShowToastPreview},
@@ -198,7 +201,9 @@ impl Render for HerdrWindow {
         } else {
             0.
         };
-        // Only the first group meets the sidebar, so only it takes the gap.
+        // Only the first group meets the sidebar, so only it takes the gap,
+        // and only where it draws a terminal or stands in for one: every
+        // other kind of tab pads its own content.
         self.ensure_layout();
         self.forget_gone_strips();
         let slots = self.group_slots();
@@ -207,6 +212,13 @@ impl Render for HerdrWindow {
             .map(|slot| self.group_shown(slot.id, cx))
             .collect();
         let slot_gap = |slot: Slot| if slot.index == 0 { sidebar_gap } else { 0. };
+        // A divider's grip keeps off a native page, which would cover it. A
+        // folding group stands between two groups without a divider.
+        let pages: Vec<bool> = if self.folding_groups().is_empty() {
+            shown.iter().map(|shown| native_page(shown, cx)).collect()
+        } else {
+            Vec::new()
+        };
         // The window's own terminal, with its input, goes to the group holding
         // its connection; other terminal groups paint parked connections.
         let primary = self.primary_group();
@@ -643,7 +655,7 @@ impl Render for HerdrWindow {
                         Some(crate::browser::Location::Orchestrator { .. })
                     ) =>
                 {
-                    self.render_orchestrator_tab(slot, &tab, gap)
+                    self.render_orchestrator_tab(slot, &tab)
                 }
                 (Shown::Page(_), Some(tab))
                     if tab
@@ -653,17 +665,15 @@ impl Render for HerdrWindow {
                 {
                     match tab.location {
                         Some(crate::browser::Location::Code { .. }) => {
-                            self.render_code_tab(slot, &tab, gap, cx)
+                            self.render_code_tab(slot, &tab, cx)
                         }
                         Some(crate::browser::Location::Devices) => {
-                            self.render_devices_tab(slot, &tab, gap, cx)
+                            self.render_devices_tab(slot, &tab, cx)
                         }
-                        _ => self.render_review_tab(slot, &tab, gap, cx),
+                        _ => self.render_review_tab(slot, &tab, cx),
                     }
                 }
-                (Shown::Page(_), Some(tab)) => {
-                    self.render_browser(slot, &tab, gap, owns_keyboard, cx)
-                }
+                (Shown::Page(_), Some(tab)) => self.render_browser(slot, &tab, owns_keyboard, cx),
                 (Shown::Elsewhere(tab), _) => match self.live_frame_of(tab, window_frame.clone()) {
                     Some(frame) => self.render_terminal_mirror(
                         slot,
@@ -678,7 +688,8 @@ impl Render for HerdrWindow {
                 _ => self.render_stand_in(slot, &shown, gap, owns_keyboard, cx),
             };
             let ends = merged.then(|| crate::titlebar::Ends::of(slot.index, count));
-            groups.push(self.render_group(slot, body, ends, window, cx));
+            let reach = Reach::of(&pages, slot.index);
+            groups.push(self.render_group(slot, body, ends, reach, window, cx));
         }
         let content = self.render_groups(groups, cx);
         // Not `||`: asking forgets group motion that has finished.

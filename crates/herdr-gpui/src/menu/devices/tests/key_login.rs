@@ -1,3 +1,5 @@
+#[cfg(unix)]
+use super::super::add_device::LocalSpace;
 use super::*;
 use herdr_client::SshFailure;
 
@@ -27,6 +29,7 @@ fn a_host_that_refuses_every_key_offers_to_install_one(cx: &mut gpui::TestAppCon
     });
 }
 
+#[cfg(unix)]
 #[gpui::test]
 fn a_failed_setup_workspace_still_offers_to_install_the_key(cx: &mut gpui::TestAppContext) {
     let (view, cx) = cx.add_window_view(fixture_window);
@@ -36,7 +39,7 @@ fn a_failed_setup_workspace_still_offers_to_install_the_key(cx: &mut gpui::TestA
             let space = LocalSpace {
                 request: "create".into(),
                 boot: "gone".into(),
-                command: "'ssh-copy-id' 'm5mini.local'".into(),
+                setup: setup::TerminalSetup::fixture("'herdr-gpui' '__device-setup-attach' 'x'"),
                 offer: Offer::InstallKey,
             };
             // The local daemon is not connected, so the workspace fails.

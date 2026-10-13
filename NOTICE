@@ -61,14 +61,16 @@ agent-devin.svg, agent-agy.svg (Antigravity), agent-cline.svg,
 agent-mastracode.svg (Mastra), agent-opencode.svg, agent-copilot.svg,
 agent-kimi.svg, agent-kiro.svg, agent-amp.svg, agent-grok.svg,
 agent-hermes.svg (Hermes Agent), agent-kilo.svg (Kilo Code),
-agent-qodercli.svg (Qoder), and agent-qwen.svg are from
+agent-qodercli.svg (Qoder), agent-qwen.svg, and agent-muse.svg (Meta mark)
+are from
 https://github.com/lobehub/lobe-icons/tree/master/packages/static-svg/icons
-(the agents added later at revision 79b551cf26aab9ea4ac701fb807160950a5b860f);
+(the agents added later at revision 79b551cf26aab9ea4ac701fb807160950a5b860f,
+and agent-muse.svg at revision bcdb7c82792a854c2967f7328e11a30205ea584d);
 assets/icons/README.md lists the source file for each.
 SVG wrappers were simplified and dimensions set to 24px; paths are unchanged.
 Brand marks identify their respective products and remain their owners' trademarks.
-The lettermarks agent-omp.svg, agent-droid.svg, agent-letta.svg, agent-maki.svg,
-and agent-muse.svg are original artwork, not those products' logos.
+The lettermarks agent-omp.svg, agent-droid.svg, agent-letta.svg, and
+agent-maki.svg are original artwork, not those products' logos.
 
 MIT License
 
