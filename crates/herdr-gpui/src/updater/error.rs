@@ -1,18 +1,23 @@
 //! Typed updater failures. Remote diagnostics are sources, never display text.
-use chrono::{DateTime, Local, TimeDelta, Utc};
+use chrono::{DateTime, DurationRound as _, Local, TimeDelta, Utc};
 use std::{io, path::PathBuf, process::ExitStatus};
 
 pub(super) type Result<T> = std::result::Result<T, UpdateError>;
 
-/// The local minute from which a retry succeeds, rounded up so retrying at the
-/// shown time is never still a few seconds early.
+/// The first whole minute at or after `reset`, so retrying at the shown minute
+/// is never still early, even by a fraction of a second.
+pub(super) fn retry_minute(reset: DateTime<Utc>) -> DateTime<Utc> {
+    // Rounding fails only for times chrono cannot represent a minute later.
+    reset
+        .duration_round_up(TimeDelta::minutes(1))
+        .unwrap_or(reset)
+}
+
 fn retry_hint(reset: Option<DateTime<Utc>>) -> String {
     match reset {
         Some(reset) => format!(
             "Retry after {}",
-            (reset + TimeDelta::seconds(59))
-                .with_timezone(&Local)
-                .format("%H:%M")
+            retry_minute(reset).with_timezone(&Local).format("%H:%M")
         ),
         None => "Retry later".to_owned(),
     }
