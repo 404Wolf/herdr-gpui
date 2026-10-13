@@ -384,6 +384,60 @@ impl Selection {
         })
     }
 
+    /// Every cell `target` holds, as Select All takes it: a pane's history and
+    /// screen, wherever it is scrolled, or a popup's whole grid. The rows are
+    /// fixed when chosen, so output that arrives later is not part of it.
+    /// `None` where the surface paints no such pane or popup.
+    pub(crate) fn all(
+        surface: &PaneSurfaceFrame,
+        target: InputTarget,
+        cell_width: f32,
+        cell_height: f32,
+    ) -> Option<Self> {
+        let region = region(surface, &target, cell_width, cell_height)?;
+        if region.columns.is_empty() || region.rows.is_empty() {
+            return None;
+        }
+        let (last_row, last_column) = (region.rows.end - 1, region.columns.end - 1);
+        // Rows below the viewport, when the pane is scrolled up into history.
+        let below = match &target {
+            InputTarget::Pane(pane_id) => surface
+                .panes
+                .iter()
+                .find(|pane| pane.pane_id == *pane_id)
+                .and_then(|pane| pane.scroll)
+                .map_or(0, |scroll| scroll.offset_from_bottom),
+            InputTarget::Popup(_) => 0,
+        };
+        let bottom = region
+            .content_row(last_row)
+            .saturating_add(u32::try_from(below).unwrap_or(u32::MAX));
+        let origin = (
+            Edge {
+                row: 0,
+                column: region.columns.start,
+                side: Side::Left,
+            },
+            Edge {
+                row: bottom,
+                column: last_column,
+                side: Side::Right,
+            },
+        );
+        Some(Self {
+            target,
+            unit: Unit::Line,
+            origin,
+            anchor: origin.0,
+            head: origin.1,
+            dragging: false,
+            // Nothing remembered: a pane that keeps printing, such as an agent
+            // redrawing its spinner, must not retire the highlight before the
+            // copy that follows it.
+            seen: Vec::new(),
+        })
+    }
+
     pub(crate) fn dragging(&self) -> bool {
         self.dragging
     }

@@ -5,6 +5,7 @@ use herdr_client::protocol::{
 };
 
 mod content_range;
+mod select_all;
 
 const CELL_WIDTH: f32 = 10.;
 const CELL_HEIGHT: f32 = 20.;
