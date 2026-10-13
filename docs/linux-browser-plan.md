@@ -22,9 +22,12 @@ verifiable on its own. Read `AGENTS.md` first; its rules apply throughout.
   for note screenshots and frozen pages (`browser/snapshot.rs`), page keys
   (`browser/page_keys.rs`). Windows does without these; Linux can too.
 - What already works on Linux and must keep working: tab strips, editor
-  groups and splits (including `browser open --beside`, which needs no page),
-  the control socket, `browser feedback`, notes sent from mockups, and the
-  agent skill.
+  groups and splits, the control socket, `browser feedback`, notes sent from
+  mockups, and the agent skill.
+- `browser open` never places a tab on Linux: `open_browser` returns before
+  any window is asked when `EMBEDDED` is false. Placement beside the
+  caller's terminal (`--beside`, and the default for local files) therefore
+  does not work yet, and comes with phase 2.
 
 ## Target
 
@@ -95,7 +98,9 @@ every Linux desktop, while pages still open outside the window.
    `all(target_os = "linux", feature-or-runtime X11)`. Prefer a runtime check
    (`EMBEDDED` becomes a function of the window's backend) so one binary
    serves X11 and Wayland, and route a Wayland window to phase 1.
-5. Bring over, in order: page creation and presentation, `herdr-preview`
+5. Bring over, in order: page creation and presentation, placement beside
+   the caller's terminal (local files by default, `--beside`, `--tab`),
+   `herdr-preview`
    custom protocol (WebKitGTK supports custom URI schemes), the bridge as an
    initialization script, title and load events, reload, annotation picker
    and notes panel, and then note screenshots with
