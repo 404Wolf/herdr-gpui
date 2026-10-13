@@ -55,6 +55,9 @@ pub(crate) fn add_device(
     {
         return Err(super::Error::Account.into());
     }
+    if let Some(reason) = cloud::unavailable() {
+        return Err(cloud::Error::Unavailable(reason).into());
+    }
     gateway::check_ssh()?;
     let key = store::key(&settings)?;
     let request = Request {

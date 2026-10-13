@@ -10,6 +10,9 @@ mod secret_service;
 mod store;
 mod token;
 
+#[cfg(all(unix, feature = "boat"))]
+pub(crate) use credentials::read_checked as read_private_entry;
+
 #[cfg(test)]
 mod tests;
 

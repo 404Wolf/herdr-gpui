@@ -31,6 +31,9 @@ fn sandbox_gateway(settings: &Settings, id: &str, stop: &AtomicBool) -> Result<g
 
 /// Prepare the authenticated command for a connection or background script.
 pub(crate) fn command(account: &str, id: &str, stop: &AtomicBool) -> Result<gateway::Gateway> {
+    if let Some(reason) = crate::cloud::unavailable() {
+        return Err(crate::cloud::Error::Unavailable(reason).into());
+    }
     crate::config::Config::load()
         .map_err(|error| Error::Storage(Box::new(error)))
         .and_then(|config| {
@@ -65,3 +68,6 @@ pub(crate) fn connect(
         Err(error) => Err(io::Error::other(error)),
     }
 }
+
+#[cfg(all(test, windows))]
+mod tests;

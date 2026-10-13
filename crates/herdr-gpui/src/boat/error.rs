@@ -69,6 +69,8 @@ pub enum Error {
     Bridge(#[source] herdr_client::Error),
     #[error(transparent)]
     Cloud(#[from] crate::cloud::Error),
+    #[error("Could not load the Boat SSH private key: {0}")]
+    KeyFile(#[source] Box<crate::Error>),
     #[error("{0}")]
     Storage(#[source] Box<crate::Error>),
 }

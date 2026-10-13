@@ -39,7 +39,7 @@ pub(super) fn read(_path: &Path, _name: &CStr) -> Result<Option<SecretString>> {
     not(unix),
     any(feature = "boat", feature = "coder", feature = "daytona")
 ))]
-pub(super) fn read_checked(
+pub(crate) fn read_checked(
     _path: &Path,
     _name: &CStr,
     _validate: fn(&SecretString) -> Result<()>,
@@ -128,7 +128,7 @@ fn github_record(value: &SecretString) -> Result<()> {
 
 /// `read` for a record another feature owns; `validate` must bound its size.
 #[cfg(unix)]
-pub(super) fn read_checked(
+pub(crate) fn read_checked(
     path: &Path,
     name: &CStr,
     validate: fn(&SecretString) -> Result<()>,
