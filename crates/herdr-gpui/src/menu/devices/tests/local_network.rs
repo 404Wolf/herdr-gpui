@@ -21,7 +21,7 @@ fn a_local_network_refusal_waits_for_the_user(cx: &mut gpui::TestAppContext) {
             open_form(view, Step::Checking(request), cx);
             view.device_probed(denied("local-network-wait"), cx);
             assert!(matches!(step(view), Step::AwaitingLocalNetwork(_)));
-            assert!(view.menu.error.is_none());
+            assert!(view.menu.device_setup.as_ref().unwrap().error.is_none());
             let form = view.menu.device_setup.as_ref().unwrap();
             assert!(form.task.is_some());
             assert!(
@@ -49,6 +49,9 @@ fn a_refusal_after_the_wait_returns_to_the_form(cx: &mut gpui::TestAppContext) {
             assert!(matches!(step(view), Step::Form));
             assert!(
                 view.menu
+                    .device_setup
+                    .as_ref()
+                    .unwrap()
                     .error
                     .as_deref()
                     .unwrap()

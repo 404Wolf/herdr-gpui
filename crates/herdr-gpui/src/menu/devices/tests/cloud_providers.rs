@@ -33,7 +33,7 @@ fn available() -> bool {
 }
 
 /// What the picker offers when only `configured` is set up, in picker order.
-/// An account-free provider has no row: "Add Cloud Device…" reaches it.
+/// An account-free provider is never configured: its rail entry says Set up.
 fn expected(configured: &[CloudProvider]) -> Vec<CloudProvider> {
     if !available() {
         return Vec::new();
@@ -52,10 +52,10 @@ fn provider_suggestions_follow_configuration_changes(cx: &mut gpui::TestAppConte
         view.update(cx, |view, _| {
             for &provider in CloudProvider::ALL {
                 let Some((_, url)) = account(provider) else {
-                    // No configuration to change, so no row of its own.
+                    // No configuration to change.
                     assert!(
                         !view.cloud_providers_with_env(|_| None).contains(&provider),
-                        "an account-free provider is reached through Add Cloud Device",
+                        "an account-free provider is never shown as configured",
                     );
                     assert!(setting(view, provider).is_none());
                     continue;
@@ -74,11 +74,6 @@ fn provider_suggestions_follow_configuration_changes(cx: &mut gpui::TestAppConte
                 assert!(
                     !view.cloud_providers_with_env(|_| None).contains(&provider),
                     "removing configuration must hide the suggestion again",
-                );
-                assert_eq!(
-                    view.cloud_provider_rows(),
-                    view.cloud_providers().len() + usize::from(available()),
-                    "Add Cloud Device follows the providers' rows",
                 );
             }
         });

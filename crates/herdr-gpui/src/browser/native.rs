@@ -99,6 +99,9 @@ pub(crate) struct Pages {
     /// Each adopted popup's UI delegate, which its view holds only weakly.
     #[cfg(target_os = "macos")]
     delegates: HashMap<TabId, objc2::rc::Retained<super::popup::Closer>>,
+    /// Where each hidden page was before it was moved out of the window.
+    #[cfg(target_os = "macos")]
+    parked: HashMap<TabId, super::parking::Parked>,
     /// Reads local pages' files; started with the first page.
     preview: Option<Rc<Preview>>,
     /// The theme the kit serves local pages, and the colors it came from.
@@ -121,6 +124,8 @@ impl Default for Pages {
             adopted: HashMap::new(),
             #[cfg(target_os = "macos")]
             delegates: HashMap::new(),
+            #[cfg(target_os = "macos")]
+            parked: HashMap::new(),
             preview: None,
             theme: Default::default(),
         }
@@ -310,13 +315,10 @@ impl Pages {
         let view = builder.build_as_child(&handle)?;
         #[cfg(target_os = "macos")]
         super::page_keys::install();
-        let page = cx.new(|cx| {
-            let mut page = WebView::new(view, window, cx);
-            // A new page appears only when the window presents it.
-            page.hide();
-            page
-        });
+        let page = cx.new(|cx| WebView::new(view, window, cx));
         self.pages.insert(id, page);
+        // A new page appears only when the window presents it.
+        self.hide(id, cx);
         Ok(())
     }
 
@@ -333,6 +335,32 @@ impl Pages {
         }
     }
 
+    /// Hides tab `id`'s page. On macOS it also leaves the window's area,
+    /// where a hidden view still takes drags; see [`super::parking`].
+    fn hide(&mut self, id: TabId, cx: &mut App) {
+        let Some(page) = self.pages.get(&id) else {
+            return;
+        };
+        page.update(cx, |page, _| page.hide());
+        // A page already hidden keeps the place it left the first time.
+        #[cfg(target_os = "macos")]
+        self.parked
+            .entry(id)
+            .or_insert_with(|| super::parking::park(page.read(cx).raw()));
+    }
+
+    /// Shows tab `id`'s page, back where it was.
+    fn show(&mut self, id: TabId, cx: &mut App) {
+        let Some(page) = self.pages.get(&id) else {
+            return;
+        };
+        #[cfg(target_os = "macos")]
+        if let Some(place) = self.parked.remove(&id) {
+            super::parking::unpark(page.read(cx).raw(), place);
+        }
+        page.update(cx, |page, _| page.show());
+    }
+
     /// Shows the pages in `ids` and hides every other one; an empty list
     /// hides them all.
     pub(crate) fn present(&mut self, ids: &[TabId], cx: &mut App) {
@@ -344,15 +372,12 @@ impl Pages {
         if self.shown == ids {
             return;
         }
-        for id in self.shown.iter().filter(|id| !ids.contains(id)) {
-            if let Some(page) = self.pages.get(id) {
-                page.update(cx, |page, _| page.hide());
-            }
+        let shown = std::mem::take(&mut self.shown);
+        for id in shown.iter().filter(|id| !ids.contains(id)) {
+            self.hide(*id, cx);
         }
-        for id in ids.iter().filter(|id| !self.shown.contains(id)) {
-            if let Some(page) = self.pages.get(id) {
-                page.update(cx, |page, _| page.show());
-            }
+        for id in ids.iter().filter(|id| !shown.contains(id)) {
+            self.show(*id, cx);
         }
         self.shown = ids;
     }
@@ -370,11 +395,12 @@ impl Pages {
         let Some(mtm) = objc2::MainThreadMarker::new() else {
             return;
         };
-        let (view, delegate) = popup.into_parts(mtm);
+        let (view, delegate, place) = popup.into_parts(mtm);
         // It was built hidden, and appears when the window presents it.
         let page = cx.new(|cx| WebView::new(view, window, cx));
         self.pages.insert(id, page);
         self.delegates.insert(id, delegate);
+        self.parked.insert(id, place);
         if let Source::Popup(key) = source {
             self.adopted.insert(key, id);
         }
@@ -385,6 +411,7 @@ impl Pages {
         {
             self.adopted.retain(|_, tab| *tab != id);
             self.delegates.remove(&id);
+            self.parked.remove(&id);
         }
         self.shown.retain(|shown| *shown != id);
         // Dropping the entity hides the view; the platform releases it with

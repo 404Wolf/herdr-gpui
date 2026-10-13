@@ -211,7 +211,15 @@ saved-device management is unavailable on Windows or for disabled devices.
 Remote hosts need an installed Herdr supporting the session commands and
 noninteractive SSH authentication. The GUI does not install or update it.
 
-**Add Device…** accepts an SSH target, label, and optional remote session (default:
+**Add Device…** opens one dialog for every kind of device. A rail on its left
+lists SSH hosts (WSL distributions on Windows) and, under **Cloud**, each cloud
+provider the build includes, shown by its logo: a green dot marks a provider
+whose account is configured, and **Set up** one that is not. Each entry keeps
+its own form, so switching between them keeps what was typed. **Ctrl-Tab** and
+**Ctrl-Shift-Tab** move through the rail from any field. In a narrow window the
+rail shows only the logos.
+
+The SSH form accepts an SSH target, label, and optional remote session (default:
 `default`). Herdr's `machine add` saves a new profile every time and takes no
 lock, so the dialog keeps a host from being saved twice itself. A host counts as
 already saved when a profile with the same session reaches the same user, host
@@ -247,6 +255,13 @@ are not suggested. Nothing is scanned: a host that runs SSH without announcing
 it, or that is on another subnet, appears only through SSH config or Tailscale.
 On macOS 15 and later the first search asks for Local Network access; see
 [Local Network access](#local-network-access).
+
+Typing in the SSH target filters the suggestions by name or target, those that
+start with what was typed first. When a target extends what was typed, the rest
+is drawn dimmed after the cursor and **Tab** fills it in, along with an empty
+label. **Up** and **Down** pick any row, and **Tab** or **Enter** then fills it.
+A typed `user@` is kept. **Enter** otherwise adds exactly what the field shows:
+a row that matches only by the name a host announces is never chosen for you.
 
 Right-click a saved SSH device's header in the Spaces list to **Rename** it or
 choose **Remove device…** to forget it. Renaming runs `herdr machine rename`;
@@ -345,7 +360,8 @@ credential store rather than the config file, signs in and out, and lists the
 saved Coder devices with a Remove action. A secret set in the config file or
 `HERDR_CODER_OAUTH_CLIENT_SECRET` takes precedence over the saved one.
 
-Once Coder is configured, the device picker also offers **Add Coder Workspace…**. It signs in with Coder's
+Once Coder is configured, **Coder** in **Add Device…** shows its form; before
+that, it points to this Settings card. The form signs in with Coder's
 OAuth2 provider (authorization code with PKCE; the browser returns to the
 configured loopback redirect), then lists the account's templates, their presets,
 and existing workspaces. It opens with the first template, its default preset,
@@ -395,8 +411,8 @@ region, and snapshot, saved to `[daytona]`, and an API key saved to the
 credential store (`HERDR_DAYTONA_API_KEY` takes precedence). **Create sandbox**
 creates one with a generated name and, when the **Install Herdr** switch is on
 (the default), installs Herdr in it if it is missing; the device picker shows
-its progress and a toast says when it is ready. Once Daytona is configured, the
-picker's **Add Daytona Sandbox…** row opens this tab. Removing a device leaves
+its progress and a toast says when it is ready. **Daytona** in **Add Device…**
+opens this tab. Removing a device leaves
 its sandbox in Daytona.
 
 Each connection starts a stopped sandbox, asks the API for a 10-minute SSH
@@ -411,7 +427,8 @@ against a live Daytona account.
 
 ### Railway free VMs (experimental)
 
-Settings > **Cloud Devices** > **Railway** sets up the temporary Linux VM that
+Settings > **Cloud Devices** > **Railway**, which **Railway** in **Add Device…**
+also opens, sets up the temporary Linux VM that
 `ssh railway.new` gives out without an account. The SSH key is its identity, so
 pick an existing private key or generate one by name (an ed25519 key without a
 passphrase, in `~/.ssh` when that exists, otherwise in Herdr's state directory;

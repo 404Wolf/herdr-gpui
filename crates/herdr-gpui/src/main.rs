@@ -54,7 +54,6 @@ mod error;
 mod fan_out;
 mod find;
 mod font_picker;
-mod font_sizes;
 mod fonts;
 mod git;
 mod github;
