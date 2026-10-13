@@ -74,7 +74,7 @@ fn open(
                 Placement::Tab => "in a browser tab",
             };
             let fallback = if placement == Placement::Beside && *opened == Placement::Tab {
-                " (the window could not split beside your pane)"
+                " (your terminal is not on screen, so the page could not go beside it)"
             } else {
                 ""
             };

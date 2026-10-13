@@ -93,6 +93,23 @@ fn requests_open_tabs_only_in_a_workspace_the_window_shows(cx: &mut gpui::TestAp
     });
 }
 
+/// Puts the caller's pane `p0` in Herdr tab `tab` of workspace `w0`.
+fn caller_in(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, tab: &str) {
+    let fixture: herdr_client::protocol::ClientShellSnapshot = serde_json::from_str(include_str!(
+        "../../../../herdr-protocol/tests/fixtures/endpoint-snapshot-v1.json"
+    ))
+    .unwrap();
+    let mut pane = fixture.panes[0].clone();
+    pane.pane_id = "p0".into();
+    pane.workspace_id = "w0".into();
+    pane.tab_id = tab.into();
+    view.update(cx, |view, _| {
+        if let Some(snapshot) = view.live.snapshot.as_mut() {
+            Arc::make_mut(snapshot).panes.push(pane);
+        }
+    });
+}
+
 /// Opens `page` beside pane `p0`'s terminal, in workspace `workspace`.
 fn beside(
     view: &Entity<HerdrWindow>,
@@ -137,6 +154,7 @@ fn shown(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) -> Vec<Shown> {
 #[gpui::test]
 fn pages_opened_beside_split_off_the_terminal_once(cx: &mut gpui::TestAppContext) {
     let (view, cx) = window(cx);
+    caller_in(&view, cx, "t0");
     draw(cx);
     let placed = beside(&view, cx, "w0", "http://localhost:3000/");
     assert!(matches!(
@@ -203,4 +221,22 @@ fn a_page_beside_a_workspace_not_shown_opens_as_a_tab(cx: &mut gpui::TestAppCont
     ));
     draw(cx);
     assert_eq!(shown(&view, cx), [Shown::Terminal]);
+}
+
+#[gpui::test]
+fn a_page_beside_a_terminal_the_user_left_opens_as_a_tab(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = window(cx);
+    // The caller runs in tab t1, but the window shows t0: splitting beside
+    // t0 would leave the caller hidden and the keyboard with another agent.
+    caller_in(&view, cx, "t1");
+    draw(cx);
+    let placed = beside(&view, cx, "w0", "http://localhost:3000/");
+    assert!(matches!(
+        placed,
+        Some(Placed::Opened {
+            placement: Placement::Tab,
+            ..
+        })
+    ));
+    assert_eq!(view.read_with(cx, |view, _| view.group_slots().len()), 1);
 }

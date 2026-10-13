@@ -2324,8 +2324,10 @@ choose instead. Beside means an editor group next to the group showing the
 caller's terminal: the group the page already belongs to, the group beside
 the terminal when the window is split, or a new group split off to its
 right. The terminal's group stays in use and keeps the keyboard, so you can
-keep typing to the agent. A workspace the window is not showing gets an
-ordinary tab instead, and the command says so.
+keep typing to the agent. A workspace the window is not showing, or a
+terminal the user has switched away from, gets an ordinary tab instead, and
+the command says so: splitting beside another terminal would leave the
+agent hidden and the keyboard with someone else.
 
 #### Explainer Kit
 

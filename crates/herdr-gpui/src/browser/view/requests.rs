@@ -5,7 +5,7 @@ use crate::{
     HerdrWindow, NavigationTarget,
     browser::{
         Scope, Store, TabId,
-        groups::{GroupId, Pick},
+        groups::{GroupId, Pick, Shown},
     },
     control::{Opening, Placed, Placement, Target},
 };
@@ -133,19 +133,24 @@ impl HerdrWindow {
         })
     }
 
-    /// The group showing `pane`'s terminal: the one that picked its Herdr
-    /// tab, or else the one holding the window's connection.
-    fn terminal_group(&self, pane: Option<&str>) -> Option<GroupId> {
-        let tab = pane.and_then(|pane| {
-            let snapshot = self.live.snapshot.as_ref()?;
-            let found = snapshot.panes.iter().find(|p| p.pane_id == pane)?;
-            Some(Pick::Herdr(found.tab_id.clone()))
-        });
+    /// The group showing `pane`'s terminal right now. With no pane, the
+    /// caller is outside Herdr and any terminal group will do. A caller whose
+    /// terminal no group shows, because the user switched away from it, has
+    /// none: a page beside some other terminal would leave the caller hidden
+    /// and the keyboard with another agent.
+    fn terminal_group(&self, pane: Option<&str>, cx: &App) -> Option<GroupId> {
+        let Some(pane) = pane else {
+            return self.primary_group();
+        };
+        let snapshot = self.live.snapshot.as_ref()?;
+        let tab = &snapshot.panes.iter().find(|p| p.pane_id == pane)?.tab_id;
         self.group_slots()
             .into_iter()
             .map(|slot| slot.id)
-            .find(|group| tab.is_some() && self.group_pick(*group) == tab)
-            .or_else(|| self.primary_group())
+            .find(|group| {
+                self.group_shown(*group, cx) == Shown::Terminal
+                    && self.group_focused_tab(*group).as_ref() == Some(tab)
+            })
     }
 
     /// Shows page `id` in a group beside the caller's terminal: the group
@@ -160,7 +165,7 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let Some(home) = self.terminal_group(pane) else {
+        let Some(home) = self.terminal_group(pane, cx) else {
             return false;
         };
         let pick = Pick::Page(id);
