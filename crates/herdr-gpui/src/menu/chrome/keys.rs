@@ -325,6 +325,9 @@ impl HerdrWindow {
             "enter" if self.menu.page == Some(Page::AgentSkill) => {
                 self.install_browser_skill(window, cx);
             }
+            "enter" if self.menu.page == Some(Page::OpenLink) => {
+                self.confirm_open_link(window, cx);
+            }
             "enter" if self.menu.page == Some(Page::VersionMismatch) => {
                 self.act_on_version_mismatch(window, cx);
             }

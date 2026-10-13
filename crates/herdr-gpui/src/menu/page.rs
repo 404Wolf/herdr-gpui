@@ -78,6 +78,8 @@ pub(crate) enum Page {
     FanOut,
     /// Asks whether to trust a repository's worktree script before it runs.
     WorktreeScript,
+    /// Asks before opening a terminal hyperlink with an unlisted scheme.
+    OpenLink,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

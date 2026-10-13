@@ -1,17 +1,23 @@
-//! Links under the pointer. While the link modifier is held over a pane, the
-//! daemon is asked which cells the link there covers, so a URL that wraps
-//! onto the next row is underlined and opened whole. A click, on a web
-//! address or a file path alike, goes to the daemon first when it offers
-//! activation, which lets a plugin link handler claim it, `file://` links
-//! included; otherwise, or when nothing claims it, this client opens the
-//! address or file itself. A handler that fails spends the click. Daemons
-//! without these methods keep the row-local detector.
+//! Links under the pointer. A pointer that only passes over text asks
+//! nothing and draws nothing. While the link modifier is held over a pane,
+//! the text there is verified and, once it is, underlined: a well-formed
+//! address at once, a file path when a check off the UI thread finds it on
+//! disk, and a web address through the daemon, which is asked which cells
+//! the link covers so that one wrapping onto the next row is underlined and
+//! opened whole.
+//!
+//! Only a click with the link modifier held opens a link. It goes to the
+//! daemon first when it offers activation, which lets a plugin link handler
+//! claim it, `file://` links included; otherwise, or when nothing claims it,
+//! this client opens the address or file itself. A handler that fails spends
+//! the click. Daemons without these methods keep the row-local detector.
 
 use super::{HerdrWindow, file_links::FileLink};
+use crate::terminal::PaneLink;
 use crate::{
     browser::WebUrl,
     links::{Activation, LinkCell, LinkInbox, LinkRequest, ResolvedLink},
-    terminal::RowLink,
+    terminal::{ExternalUrl, RowLink, RowTarget},
 };
 use gpui::{Context, Modifiers, Pixels, Point, Task, Window};
 use std::{
@@ -34,8 +40,14 @@ pub(crate) struct DaemonLinks {
     activating: Option<InFlight<PendingActivation>>,
     delay: Option<Task<()>>,
     /// What the row-local detector reads under the pointer while the link
-    /// modifier is held, underlined when the daemon resolved nothing there.
+    /// modifier is held, once it is verified: underlined when the daemon
+    /// resolved nothing there. A file path counts once it is found on disk.
     local: Option<RowLink>,
+    /// The file path last looked for on disk, and whether it is there;
+    /// `None` while the check runs.
+    checked: Option<(FileLink, Option<bool>)>,
+    /// Where the pointer last was, for the check's answer to be applied to.
+    pointer: Option<(Point<Pixels>, Modifiers)>,
 }
 
 /// A request in the mailbox it was queued on. A reconnect or another
@@ -80,6 +92,12 @@ struct PendingActivation {
 /// What this client opens itself for a click no plugin handler claimed.
 enum Fallback {
     Web(WebUrl),
+    /// An address with another scheme: opened at once when the scheme is
+    /// trusted, and after the user confirms it otherwise.
+    External(ExternalUrl),
+    /// An explicit hyperlink this client never opens, which a click only
+    /// explains.
+    Unopened(crate::Error),
     /// A file, in the terminal editor or the system's default application,
     /// as the click's modifiers chose.
     File {
@@ -95,8 +113,11 @@ pub(crate) struct PressedLink {
     pub(crate) url: Option<String>,
     /// The pane cell the daemon is asked to activate, when it can.
     pub(crate) cell: Option<LinkCell>,
-    /// A file path pressed with the link modifier, where no web link is.
+    /// A file path, where no web link is.
     pub(crate) file: Option<FileLink>,
+    /// What else the row reads there: an address with another scheme, or an
+    /// explicit hyperlink that a click only explains.
+    pub(crate) other: Option<RowTarget>,
     pub(crate) position: Point<Pixels>,
 }
 
@@ -112,6 +133,7 @@ impl PressedLink {
     fn same_link(&self, release: &Self) -> bool {
         self.url == release.url
             && self.file == release.file
+            && self.other == release.other
             && match (&self.cell, &release.cell) {
                 (Some(pressed), Some(released)) => {
                     if self.url.as_deref().is_some_and(|url| !url.is_empty()) {
@@ -143,7 +165,7 @@ impl HerdrWindow {
         )
     }
 
-    fn terminal_hyperlink_at(&self, position: Point<Pixels>) -> bool {
+    pub(crate) fn terminal_hyperlink_at(&self, position: Point<Pixels>) -> bool {
         if self.menu.page.is_some()
             || !self.live.surface_ready()
             || !self.bounds.contains(&position)
@@ -178,7 +200,8 @@ impl HerdrWindow {
             .then_some(link)
     }
 
-    /// The row-local link under the pointer while the link modifier is held.
+    /// The verified row-local link under the pointer while the link modifier
+    /// is held.
     pub(crate) fn hovered_local_link(&self) -> Option<&RowLink> {
         self.links.local.as_ref()
     }
@@ -189,19 +212,72 @@ impl HerdrWindow {
         self.hovered_daemon_link()?.covers(&cell).then_some(cell)
     }
 
-    /// Follows the pointer and the link modifier, asking the daemon about a
-    /// cell no earlier answer covers.
+    /// Whether the file `link` names is on disk, as far as is known yet. The
+    /// first question about a path starts a check on the background
+    /// executor, whose answer is applied to wherever the pointer is then.
+    fn file_found(&mut self, link: FileLink, cx: &mut Context<Self>) -> bool {
+        if let Some((checked, found)) = &self.links.checked
+            && *checked == link
+        {
+            return *found == Some(true);
+        }
+        self.links.checked = Some((link.clone(), None));
+        let asked = link.clone();
+        let found = cx.background_executor().spawn(async move { asked.found() });
+        cx.spawn(async move |this, cx| {
+            let found = found.await;
+            // The window may have closed while waiting; nothing is owed then.
+            let _ = this.update(cx, |this, cx| {
+                // The pointer may have moved on to another path meanwhile.
+                if !matches!(&this.links.checked, Some((checked, None)) if *checked == link) {
+                    return;
+                }
+                this.links.checked = Some((link, Some(found)));
+                if let Some((position, modifiers)) = this.links.pointer {
+                    this.hover_link(position, modifiers, cx);
+                }
+            });
+        })
+        .detach();
+        false
+    }
+
+    /// The file `link` names, when a click may open it: always for an
+    /// explicit hyperlink, and for printed text once it is found on disk.
+    fn clickable_file(&self, link: PaneLink) -> Option<FileLink> {
+        let file = self.file_link(link)?;
+        let found = matches!(&self.links.checked, Some((checked, Some(true))) if *checked == file);
+        (file.explicit || found).then_some(file)
+    }
+
+    /// Follows the pointer and the link modifier. Without the modifier
+    /// nothing is read, asked, or shown; with it, the text under the pointer
+    /// is verified, and the daemon is asked about a cell no earlier answer
+    /// covers.
     pub(crate) fn hover_link(
         &mut self,
         position: Point<Pixels>,
         modifiers: Modifiers,
         cx: &mut Context<Self>,
     ) {
+        self.links.pointer = Some((position, modifiers));
         let local = modifiers
             .secondary()
             .then(|| self.local_link_at(position))
             .flatten()
-            .map(|link| link.link);
+            .and_then(|link| {
+                let row = link.link.clone();
+                match row.target {
+                    // A well-formed address is all that can be verified of it.
+                    RowTarget::Web(_) | RowTarget::External(_) => Some(row),
+                    // Nothing verifies these, so they keep what they have at rest.
+                    RowTarget::OtherHost(_) | RowTarget::Malformed => None,
+                    RowTarget::Path { .. } => {
+                        let file = self.file_link(link)?;
+                        self.file_found(file, cx).then_some(row)
+                    }
+                }
+            });
         if local != self.links.local {
             self.links.local = local;
             cx.notify();
@@ -328,30 +404,40 @@ impl HerdrWindow {
         self.schedule_link_resolve(cx);
     }
 
-    /// The link a press at `position` is on, by either reading. A file path
-    /// counts only with the link modifier held, as prose is full of words
-    /// that look like paths.
+    /// The link a press at `position` is on, by either reading. Only a press
+    /// with the link modifier held is one: a plain click selects, focuses, or
+    /// goes to the application, and never opens anything.
     pub(crate) fn terminal_link_press(
         &self,
         position: Point<Pixels>,
         modifiers: Modifiers,
     ) -> Option<PressedLink> {
+        if !modifiers.secondary() {
+            return None;
+        }
         let url = self.terminal_link_at(position);
         let daemon = self.daemon_link_at(position);
         // Read whether or not a hover already resolved the cell, so a press
         // and its release agree, and a `file://` hyperlink the daemon reads
         // still has its file to open when no handler claims it.
-        let file = (url.is_none() && modifiers.secondary())
-            .then(|| self.file_link_at(position))
+        let local = url
+            .is_none()
+            .then(|| self.local_link_at(position))
             .flatten();
-        // A hyperlink this client cannot open, such as an SSH host's own
-        // `file://` link, may still be claimed by a handler on its host.
+        let other = local
+            .as_ref()
+            .map(|link| &link.link.target)
+            .filter(|target| !matches!(target, RowTarget::Path { .. } | RowTarget::Web(_)))
+            .cloned();
+        let file = local.and_then(|link| self.clickable_file(link));
+        // A hyperlink this client cannot read, such as a path on an SSH
+        // host, may still be claimed by a handler on its host.
         let claimable = url.is_none()
             && file.is_none()
-            && modifiers.secondary()
+            && other.is_none()
             && self.live.supports_link_activate
             && self.terminal_hyperlink_at(position);
-        if url.is_none() && daemon.is_none() && file.is_none() && !claimable {
+        if url.is_none() && daemon.is_none() && file.is_none() && other.is_none() && !claimable {
             return None;
         }
         // A plugin handler may claim any link the daemon can read, a file
@@ -366,6 +452,7 @@ impl HerdrWindow {
             url,
             cell,
             file,
+            other,
             position,
         })
     }
@@ -386,13 +473,20 @@ impl HerdrWindow {
         if !pressed.same_link(&release) {
             return false;
         }
-        let fallback = match release.file {
-            Some(link) => Some(Fallback::File {
+        let fallback = match (release.file, release.other) {
+            (Some(link), _) => Some(Fallback::File {
                 link,
                 in_editor: (self.config.open_files_in == crate::config::FileTarget::Editor)
                     != modifiers.alt,
             }),
-            None => release
+            (None, Some(RowTarget::External(url))) => Some(Fallback::External(url)),
+            (None, Some(RowTarget::OtherHost(host))) => {
+                Some(Fallback::Unopened(crate::Error::LinkOnAnotherHost { host }))
+            }
+            (None, Some(RowTarget::Malformed)) => {
+                Some(Fallback::Unopened(crate::Error::MalformedLink))
+            }
+            (None, _) => release
                 .url
                 .as_deref()
                 .and_then(|url| WebUrl::try_from(url).ok())
@@ -450,6 +544,11 @@ impl HerdrWindow {
         match link {
             Some(Fallback::Web(url)) => self.open_web_link(url, in_tab, window, cx),
             Some(Fallback::File { link, in_editor }) => self.open_file_link(link, in_editor, cx),
+            Some(Fallback::External(url)) if url.trusted() => cx.open_url(url.as_str()),
+            Some(Fallback::External(url)) => self.ask_to_open_link(url, window, cx),
+            Some(Fallback::Unopened(error)) => {
+                self.show_flash(super::flash::Flash::warning(error.to_string()), cx)
+            }
             None => {}
         }
     }

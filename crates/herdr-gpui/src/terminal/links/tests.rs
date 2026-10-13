@@ -241,6 +241,7 @@ fn click_dispatch_opens_browser_and_respects_menu_and_revision(cx: &mut gpui::Te
                 url: Some("https://example.com/click".into()),
                 cell: None,
                 file: None,
+                other: None,
                 position,
             });
             view.open_terminal_link(&gpui::ClickEvent::Mouse(event.clone()), window, cx);
@@ -249,6 +250,7 @@ fn click_dispatch_opens_browser_and_respects_menu_and_revision(cx: &mut gpui::Te
                 url: Some("https://different.example/".into()),
                 cell: None,
                 file: None,
+                other: None,
                 position,
             });
             view.open_terminal_link(&gpui::ClickEvent::Mouse(event), window, cx);
@@ -260,14 +262,19 @@ fn click_dispatch_opens_browser_and_respects_menu_and_revision(cx: &mut gpui::Te
         position + point(px(0.), px(20.)),
         position - point(px(20.), px(20.)),
     ] {
-        cx.simulate_mouse_down(position, gpui::MouseButton::Left, Default::default());
-        cx.simulate_mouse_move(away, gpui::MouseButton::Left, Default::default());
-        cx.simulate_mouse_move(position, gpui::MouseButton::Left, Default::default());
-        cx.simulate_mouse_up(position, gpui::MouseButton::Left, Default::default());
+        let held = gpui::Modifiers::secondary_key();
+        cx.simulate_mouse_down(position, gpui::MouseButton::Left, held);
+        cx.simulate_mouse_move(away, gpui::MouseButton::Left, held);
+        cx.simulate_mouse_move(position, gpui::MouseButton::Left, held);
+        cx.simulate_mouse_up(position, gpui::MouseButton::Left, held);
         assert!(cx.opened_url().is_none());
         view.read_with(cx, |view, _| assert!(view.pressed_terminal_link.is_none()));
     }
+    // Only a click with the link modifier held opens a link.
     cx.simulate_click(position, Default::default());
+    assert!(cx.opened_url().is_none());
+    view.read_with(cx, |view, _| assert!(view.pressed_terminal_link.is_none()));
+    cx.simulate_click(position, gpui::Modifiers::secondary_key());
     assert_eq!(
         cx.opened_url().as_deref(),
         Some("https://example.com/click")
@@ -283,4 +290,5 @@ fn click_dispatch_opens_browser_and_respects_menu_and_revision(cx: &mut gpui::Te
     });
 }
 
+mod external;
 mod paths;

@@ -1,7 +1,7 @@
 use super::*;
 
 /// A 20-column pane whose first row is an OSC 8 hyperlink to `target`.
-fn hyperlinked(target: &str) -> Arc<PaneSurfaceFrame> {
+pub(super) fn hyperlinked(target: &str) -> Arc<PaneSurfaceFrame> {
     let mut surface = wrapped(2);
     let frame = &mut Arc::make_mut(&mut surface).frame;
     frame.hyperlinks = vec![target.to_owned()];

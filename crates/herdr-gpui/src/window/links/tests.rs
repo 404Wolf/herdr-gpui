@@ -8,6 +8,8 @@ use herdr_client::protocol::{
 use serde_json::json;
 
 mod content_updates;
+mod explicit_paths;
+mod external;
 mod file_handlers;
 
 const URL: &str = "https://example.com/wrapped/path";

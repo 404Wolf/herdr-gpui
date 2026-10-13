@@ -11,8 +11,11 @@ fn path(text: &str, column: u16) -> Option<(String, Range<u16>)> {
 
 fn located(text: &str, column: u16) -> Option<(String, Option<u32>, Range<u16>)> {
     read(text, column).and_then(|link| match link.target {
-        RowTarget::Path { path, line } => Some((path, line, link.columns)),
-        RowTarget::Web(_) => None,
+        RowTarget::Path { path, line, .. } => Some((path, line, link.columns)),
+        RowTarget::Web(_)
+        | RowTarget::External(_)
+        | RowTarget::OtherHost(_)
+        | RowTarget::Malformed => None,
     })
 }
 
@@ -20,6 +23,7 @@ fn bare(path: &str) -> RowTarget {
     RowTarget::Path {
         path: path.into(),
         line: None,
+        explicit: false,
     }
 }
 
@@ -58,15 +62,32 @@ fn printed_paths_read_whole_with_their_location_underlined() {
 }
 
 #[test]
-fn words_that_only_resemble_paths_are_not_links() {
+fn any_word_may_name_a_file_in_the_pane_directory() {
+    for (text, column, expected, columns) in [
+        ("README.md is here", 2, "README.md", 0..9),
+        ("see Makefile now", 5, "Makefile", 4..12),
+        ("ls src now", 4, "src", 3..6),
+        ("version v1.2 out", 9, "v1.2", 8..12),
+        // Punctuation closing a sentence is not part of the name.
+        ("a src/a.rs. b", 3, "src/a.rs", 2..10),
+    ] {
+        assert_eq!(
+            path(text, column),
+            Some((expected.into(), columns)),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn text_that_cannot_name_a_local_file_is_not_read_as_one() {
     for (text, column) in [
-        ("README.md is here", 2),
-        ("version v1.2 out", 9),
         ("cd ~user/x", 5),
         ("cd ../ now", 4),
         ("scp host:/path now", 6),
         ("a src/a.rs. b", 10),
         ("a src/a.rs b", 1),
+        ("ssh://example.com", 3),
     ] {
         assert!(read(text, column).is_none(), "{text}");
     }
@@ -87,7 +108,8 @@ fn paths_are_pane_links_only_and_never_web_links() {
         link.link.target,
         RowTarget::Path {
             path: "src/lib.rs".into(),
-            line: Some(4)
+            line: Some(4),
+            explicit: false,
         }
     );
     assert_eq!((link.link.row, link.link.columns), (0, 5..17));
@@ -131,20 +153,48 @@ fn wide_characters_before_a_path_keep_its_columns() {
 // Windows file URLs name drive paths, which these Unix fixtures do not.
 #[cfg(unix)]
 #[test]
-fn file_hyperlinks_name_local_paths_only() {
+fn a_hyperlink_names_a_path_by_a_file_address_or_without_a_scheme() {
+    let named = |path: &str| RowTarget::Path {
+        path: path.into(),
+        line: None,
+        explicit: true,
+    };
     let mut s = surface("report");
     s.frame.cells[0].hyperlink = Some(0);
     for (destination, expected) in [
-        ("file:///tmp/a%20b", Some("/tmp/a b")),
-        ("file://localhost/tmp/a", Some("/tmp/a")),
-        ("file://elsewhere/tmp/a", None),
+        ("file:///tmp/a%20b", Some(named("/tmp/a b"))),
+        ("file://localhost/tmp/a", Some(named("/tmp/a"))),
+        // Whether the file is there is the click's to find out.
+        ("file:///no/such/file", Some(named("/no/such/file"))),
+        // A file on another host is a link that never opens here.
+        (
+            "file://elsewhere/tmp/a",
+            Some(RowTarget::OtherHost("elsewhere".into())),
+        ),
+        // Without a scheme the target is a path as a program prints one,
+        // left for the click to resolve. A location is not read from it.
+        ("/tmp/a", Some(named("/tmp/a"))),
+        ("~/notes.md", Some(named("~/notes.md"))),
+        ("./src/a.rs", Some(named("./src/a.rs"))),
+        ("../src/a.rs", Some(named("../src/a.rs"))),
+        ("src/a.rs:12", Some(named("src/a.rs:12"))),
+        // A target that is no address or path is still an explicit link.
+        ("", Some(RowTarget::Malformed)),
+        ("src/\u{7}a.rs", Some(RowTarget::Malformed)),
+        ("https://", Some(RowTarget::Malformed)),
     ] {
         s.frame.hyperlinks = vec![destination.into()];
         assert_eq!(
             pane_link_at(&s, 1., 1., 10., 20.).map(|link| link.link.target),
-            expected.map(bare),
+            expected,
             "{destination}"
         );
         assert!(link_at(&s, 1., 1., 10., 20.).is_none());
     }
+    // A target longer than a path can be is not one.
+    s.frame.hyperlinks = vec![format!("/{}", "a".repeat(4096))];
+    assert_eq!(
+        pane_link_at(&s, 1., 1., 10., 20.).map(|link| link.link.target),
+        Some(RowTarget::Malformed)
+    );
 }
