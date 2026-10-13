@@ -169,7 +169,7 @@ impl SettingsWindow {
             if let Some(card) = &mut self.boat_card {
                 card.job = None;
                 card.account = Account::Known(Overview {
-                    key: Key::Missing,
+                    key: Ok(Key::Missing),
                     sandboxes: None,
                     devices: Vec::new(),
                 });
@@ -192,7 +192,7 @@ impl SettingsWindow {
             Ok(overview) => card.account = Account::Known(overview),
             Err(error) => {
                 card.account = Account::Known(Overview {
-                    key: Key::Missing,
+                    key: Ok(Key::Missing),
                     sandboxes: None,
                     devices: Vec::new(),
                 });
@@ -305,12 +305,13 @@ impl SettingsWindow {
         let (status, key) = match &card.account {
             _ if !configured => (
                 "Not configured. Check the API URL, add an API key, then save.".to_owned(),
-                Key::Missing,
+                Some(Key::Missing),
             ),
-            Account::Checking => ("Checking…".to_owned(), Key::Missing),
+            Account::Checking => ("Checking…".to_owned(), Some(Key::Missing)),
             Account::Known(overview) => (
                 match (&overview.key, &overview.sandboxes) {
-                    (Key::Missing, _) => "No API key saved.".to_owned(),
+                    (Err(error), _) => format!("The API key could not be read: {error}"),
+                    (Ok(Key::Missing), _) => "No API key saved.".to_owned(),
                     (_, Some(Ok(count))) => format!(
                         "Connected. The key sees {count} sandbox{}.",
                         if *count == 1 { "" } else { "es" }
@@ -318,15 +319,16 @@ impl SettingsWindow {
                     (_, Some(Err(error))) => format!("The API key could not be used: {error}"),
                     (_, None) => "Checking…".to_owned(),
                 },
-                overview.key,
+                overview.key.as_ref().ok().copied(),
             ),
         };
         let usable = matches!(&card.account, Account::Known(overview)
             if matches!(overview.sandboxes, Some(Ok(_))));
         let key_note = match key {
-            Key::Environment => "Set by HERDR_BOAT_API_KEY, which takes precedence.",
-            Key::Saved => "Saved. Type a new key to replace it.",
-            Key::Missing => "Not saved yet. Create one in the Boat dashboard under API Keys.",
+            Some(Key::Environment) => "Set by HERDR_BOAT_API_KEY, which takes precedence.",
+            Some(Key::Saved) => "Saved. Type a new key to replace it.",
+            Some(Key::Missing) => "Not saved yet. Create one in the Boat dashboard under API Keys.",
+            None => "Credential storage is unavailable. Saved devices can still be removed.",
         };
         let mut account = self
             .control_card("Boat")
@@ -348,7 +350,7 @@ impl SettingsWindow {
                             .justify_between()
                             .gap(px(12.))
                             .child(self.control_note(key_note))
-                            .when(key == Key::Saved, |row| {
+                            .when(key == Some(Key::Saved), |row| {
                                 row.child(
                                     self.cloud_button("cloud-boat-forget-key", "Forget key", ready)
                                         .when(ready, |button| {
@@ -372,7 +374,7 @@ impl SettingsWindow {
         );
         let setup = ready
             && configured
-            && key != Key::Missing
+            && matches!(key, Some(Key::Saved | Key::Environment))
             && crate::cloud::unavailable().is_none()
             && !running;
         let create = setup && usable;

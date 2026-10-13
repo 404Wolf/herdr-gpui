@@ -173,7 +173,7 @@ pub(crate) enum Key {
 
 #[derive(Debug)]
 pub(crate) struct Overview {
-    pub(crate) key: Key,
+    pub(crate) key: Result<Key>,
     pub(crate) sandboxes: Option<Result<usize>>,
     pub(crate) devices: Vec<SavedDevice>,
 }
@@ -185,13 +185,17 @@ pub(crate) fn overview(settings: &Settings) -> Result<Overview> {
         .filter(|saved| saved.provider == CloudProvider::Boat && saved.account == account)
         .collect();
     let key = if std::env::var_os(store::VARIABLE).is_some() {
-        Key::Environment
-    } else if store::saved(settings.store)?.is_some() {
-        Key::Saved
+        Ok(Key::Environment)
     } else {
-        Key::Missing
+        store::saved(settings.store).map(|saved| {
+            if saved.is_some() {
+                Key::Saved
+            } else {
+                Key::Missing
+            }
+        })
     };
-    let sandboxes = (key != Key::Missing).then(|| {
+    Ok(account_overview(devices, key, || {
         let key = store::key(settings)?;
         Request {
             settings,
@@ -199,12 +203,20 @@ pub(crate) fn overview(settings: &Settings) -> Result<Overview> {
         }
         .sandboxes()
         .map(|sandboxes| sandboxes.len())
-    });
-    Ok(Overview {
+    }))
+}
+
+fn account_overview(
+    devices: Vec<SavedDevice>,
+    key: Result<Key>,
+    list: impl FnOnce() -> Result<usize>,
+) -> Overview {
+    let sandboxes = matches!(key, Ok(Key::Saved | Key::Environment)).then(list);
+    Overview {
         key,
         sandboxes,
         devices,
-    })
+    }
 }
 
 pub(crate) fn save_key(store: Store, key: Option<&SecretString>) -> Result<()> {

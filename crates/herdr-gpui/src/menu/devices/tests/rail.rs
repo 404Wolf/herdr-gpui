@@ -8,7 +8,10 @@ fn open(cx: &mut gpui::TestAppContext) -> (Entity<HerdrWindow>, &mut VisualTestC
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
             // Not configured from the environment either.
-            view.config.coder.url = None;
+            #[cfg(feature = "coder")]
+            {
+                view.config.coder.url = None;
+            }
             #[cfg(feature = "daytona")]
             {
                 view.config.daytona.api_url = None;
@@ -48,9 +51,12 @@ fn every_provider_sits_beside_ssh_and_says_whether_it_is_set_up(cx: &mut gpui::T
         assert!(cx.debug_bounds("add-device-rail").is_none());
         return;
     }
+    assert_eq!(page(&view, cx), Some(Page::AddDevice));
     assert!(cx.debug_bounds("add-device-source-host").is_some());
     for provider in CloudProvider::ALL {
         let id = match provider {
+            #[cfg(feature = "boat")]
+            CloudProvider::Boat => "add-device-source-boat",
             #[cfg(feature = "coder")]
             CloudProvider::Coder => "add-device-source-coder",
             #[cfg(feature = "daytona")]
@@ -113,6 +119,8 @@ fn settings_only() -> Vec<(CloudProvider, &'static str)> {
     CloudProvider::ALL
         .iter()
         .filter_map(|&provider| match provider {
+            #[cfg(feature = "boat")]
+            CloudProvider::Boat => Some((provider, "add-device-source-boat")),
             #[cfg(feature = "coder")]
             CloudProvider::Coder => None,
             #[cfg(feature = "daytona")]
@@ -289,6 +297,8 @@ fn switching_sources_never_resizes_the_dialog(cx: &mut gpui::TestAppContext) {
     let ssh = cx.debug_bounds("menu-panel").unwrap();
     for provider in CloudProvider::ALL {
         let id = match provider {
+            #[cfg(feature = "boat")]
+            CloudProvider::Boat => "add-device-source-boat",
             #[cfg(feature = "coder")]
             CloudProvider::Coder => "add-device-source-coder",
             #[cfg(feature = "daytona")]

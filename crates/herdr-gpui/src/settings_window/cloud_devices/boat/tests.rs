@@ -7,6 +7,7 @@ use crate::config::BoatConfig;
 use gpui::{Entity, TestAppContext, VisualTestContext, px, size};
 
 mod credential_ordering;
+mod keychain;
 mod recovery;
 
 fn open(cx: &mut TestAppContext) -> (Entity<SettingsWindow>, &mut VisualTestContext) {

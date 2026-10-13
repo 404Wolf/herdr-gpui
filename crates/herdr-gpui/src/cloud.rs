@@ -108,6 +108,8 @@ pub(crate) fn name(provider: CloudProvider) -> &'static str {
 /// The provider's logo, an embedded asset path.
 pub(crate) fn icon(provider: CloudProvider) -> &'static str {
     match provider {
+        #[cfg(feature = "boat")]
+        CloudProvider::Boat => "icons/terminal.svg",
         #[cfg(feature = "coder")]
         CloudProvider::Coder => "icons/cloud/coder.svg",
         #[cfg(feature = "daytona")]
