@@ -61,3 +61,11 @@ fn results_read_as_data_in_the_prompt() {
     #[cfg(any(target_os = "macos", windows))]
     assert_eq!(noted.anchor.summary(), "Page result: Picked variant B");
 }
+
+#[test]
+fn the_bridge_refuses_what_the_app_would() {
+    // The page's herdr.send checks the same limit first, so it can report a
+    // refusal rather than a result the app silently drops.
+    let bridge = include_str!("../../bridge.js");
+    assert!(bridge.contains(&format!("var MAX_DATA_BYTES = {MAX_DATA_BYTES};")));
+}

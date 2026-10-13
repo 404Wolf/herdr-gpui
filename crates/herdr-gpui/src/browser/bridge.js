@@ -18,15 +18,32 @@
     return;
   }
   var post = window.ipc.postMessage.bind(window.ipc);
+  // The app refuses a result whose data, as compact JSON, is larger than
+  // this, or one with neither a summary nor data. Checking here lets send
+  // say so instead of reporting a result that was never kept.
+  var MAX_DATA_BYTES = 8192;
+  function bytes(text) {
+    return new TextEncoder().encode(text).length;
+  }
   Object.defineProperty(window, "herdr", {
     value: Object.freeze({
       available: true,
+      maxDataBytes: MAX_DATA_BYTES,
+      // True when the app was handed the result; false when it would be
+      // refused: no summary and no data, data over the limit, or data JSON
+      // cannot represent.
       send: function (summary, data) {
         var message = { kind: "send", summary: String(summary == null ? "" : summary) };
-        if (data !== undefined) {
-          message.data = data;
-        }
         try {
+          if (data !== undefined && data !== null) {
+            var json = JSON.stringify(data);
+            if (json === undefined || bytes(json) > MAX_DATA_BYTES) {
+              return false;
+            }
+            message.data = data;
+          } else if (!message.summary.trim()) {
+            return false;
+          }
           post(JSON.stringify(message));
           return true;
         } catch (_) {

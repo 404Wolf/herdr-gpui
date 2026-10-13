@@ -67,9 +67,14 @@
   // Hands the agent a result through Herdr UI, which queues it in the
   // page's notes for the user to send. Elsewhere it is copied instead.
   function send(summary, data) {
-    if (window.herdr && window.herdr.send(summary, data)) {
-      toast("Added to your notes — press Send to agent");
-      return true;
+    if (window.herdr) {
+      if (window.herdr.send(summary, data)) {
+        toast("Added to your notes — press Send to agent");
+        return true;
+      }
+      toast("Not sent: a result needs a summary or data, at most " +
+        Math.floor(window.herdr.maxDataBytes / 1024) + " KB of JSON");
+      return false;
     }
     var text = summary + (data === undefined ? "" : "\n" + JSON.stringify(data, null, 2));
     if (navigator.clipboard) {
@@ -178,6 +183,9 @@
       if (selected == null || selected >= list.length) {
         selected = run.select != null ? run.select : lastRan(list);
       }
+      // The steps are rebuilt, so keyboard focus on one moves to the
+      // selected step's new button instead of being lost.
+      var focused = steps.contains(document.activeElement);
       steps.textContent = "";
       list.forEach(function (step, index) {
         steps.appendChild(
@@ -199,6 +207,7 @@
           )
         );
       });
+      if (focused && steps.children[selected]) steps.children[selected].focus();
       detail.textContent = "";
       if (list[selected]) detail.appendChild(rich(list[selected].detail || ""));
       result.textContent = "";
