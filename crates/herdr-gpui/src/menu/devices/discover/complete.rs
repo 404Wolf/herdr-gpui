@@ -167,13 +167,17 @@ impl HerdrWindow {
         let rows = matching(unsaved.iter().copied(), &query);
         let fills: Vec<String> = rows.iter().map(|row| query.fill(row)).collect();
         let typed = Query::new(text);
-        // An arrow choice names its row by what it fills in, since discovery
-        // keeps adding and sorting rows while the form is open.
+        // An arrow choice names its machine by its discovery keys, since
+        // discovery keeps adding and sorting rows while the form is open, and
+        // a later source can change the machine's target as it merges in.
         let picked = setup
             .highlight
             .as_ref()
             .filter(|(typed, _)| typed == text)
-            .and_then(|(_, fill)| fills.iter().position(|row| row == fill));
+            .and_then(|(_, keys)| {
+                rows.iter()
+                    .position(|row| row.keys.iter().any(|key| keys.contains(key)))
+            });
         let (highlight, chosen) = match picked {
             Some(index) => (Some(index), true),
             None => (
@@ -224,12 +228,12 @@ impl HerdrWindow {
                     (Some(index), "up") => index.saturating_sub(1),
                     (Some(index), _) => (index + 1).min(last),
                 };
-                let Some(fill) = completion.fills.get(index).cloned() else {
+                let Some(keys) = completion.rows.get(index).map(|row| row.keys.clone()) else {
                     return false;
                 };
                 if let Some(setup) = &mut self.menu.device_setup {
                     setup.suggestion_scroll.scroll_to_item(index);
-                    setup.highlight = Some((text, fill));
+                    setup.highlight = Some((text, keys));
                 }
                 cx.notify();
                 true
