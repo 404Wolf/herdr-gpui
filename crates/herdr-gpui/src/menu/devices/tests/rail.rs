@@ -233,6 +233,43 @@ fn each_source_keeps_its_own_error(cx: &mut gpui::TestAppContext) {
     });
 }
 
+#[gpui::test]
+fn the_keyboard_reaches_every_source(cx: &mut gpui::TestAppContext) {
+    // The app's own key bindings, so a global shortcut cannot take the keys.
+    let (view, cx) = cx.add_window_view(|window, cx| {
+        crate::bind_keys(cx);
+        fixture_window(window, cx)
+    });
+    cx.simulate_resize(size(px(900.), px(700.)));
+    cx.update(|window, cx| view.update(cx, |view, cx| view.open_add_device(window, cx)));
+    draw(cx);
+    if crate::cloud::unavailable().is_some() {
+        return;
+    }
+    let count = 1 + CloudProvider::ALL.len();
+    let host = Some(Page::AddDevice);
+    // Ctrl-Tab steps through every source from the SSH field and wraps.
+    let mut seen = vec![page(&view, cx)];
+    for _ in 1..count {
+        cx.simulate_keystrokes("ctrl-tab");
+        seen.push(page(&view, cx));
+    }
+    assert_eq!(seen.len(), count);
+    for (index, shown) in seen.iter().enumerate() {
+        assert!(!seen[..index].contains(shown), "{seen:?} visits each once");
+    }
+    cx.simulate_keystrokes("ctrl-tab");
+    assert_eq!(page(&view, cx), host, "wraps back to SSH");
+    cx.simulate_keystrokes("ctrl-shift-tab");
+    assert_eq!(page(&view, cx), seen[count - 1], "and backwards");
+
+    // Plain Tab still moves between the SSH form's fields.
+    cx.simulate_keystrokes("ctrl-tab");
+    assert_eq!(page(&view, cx), host);
+    cx.simulate_keystrokes("tab");
+    assert_eq!(page(&view, cx), host);
+}
+
 #[test]
 fn the_picker_names_cloud_machines_only_when_offered() {
     assert_ne!(

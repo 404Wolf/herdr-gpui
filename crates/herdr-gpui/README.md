@@ -215,8 +215,9 @@ noninteractive SSH authentication. The GUI does not install or update it.
 lists SSH hosts (WSL distributions on Windows) and, under **Cloud**, each cloud
 provider the build includes, shown by its logo: a green dot marks a provider
 whose account is configured, and **Set up** one that is not. Each entry keeps
-its own form, so switching between them keeps what was typed. In a narrow
-window the rail shows only the logos.
+its own form, so switching between them keeps what was typed. **Ctrl-Tab** and
+**Ctrl-Shift-Tab** move through the rail from any field. In a narrow window the
+rail shows only the logos.
 
 The SSH form accepts an SSH target, label, and optional remote session (default:
 `default`). Herdr's `machine add` saves a new profile every time and takes no

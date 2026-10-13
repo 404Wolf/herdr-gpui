@@ -170,6 +170,43 @@ impl HerdrWindow {
         cx.notify();
     }
 
+    /// Keyboard access to the rail: Ctrl-Tab and Ctrl-Shift-Tab step through
+    /// it from any field, wrapping at the ends. Returns whether the key was
+    /// used. Cmd or Ctrl with a digit stay with the app-wide shortcuts.
+    pub(in crate::menu) fn add_device_rail_key(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let sources = self.rail_sources();
+        let count = sources.len();
+        if count < 2 {
+            return false;
+        }
+        let key = event.keystroke.key.as_str();
+        let modifiers = event.keystroke.modifiers;
+        let current = self
+            .menu
+            .page
+            .and_then(Source::of)
+            .and_then(|shown| sources.iter().position(|source| *source == shown))
+            .unwrap_or(0);
+        if key != "tab" || !modifiers.control || modifiers.alt || modifiers.platform {
+            return false;
+        }
+        let index = if modifiers.shift {
+            (current + count - 1) % count
+        } else {
+            (current + 1) % count
+        };
+        let Some(&source) = sources.get(index) else {
+            return false;
+        };
+        self.open_source(source, window, cx);
+        true
+    }
+
     #[cfg(feature = "cloud")]
     fn open_cloud_source(
         &mut self,

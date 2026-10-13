@@ -151,6 +151,17 @@ impl HerdrWindow {
             window.prevent_default();
             return;
         }
+        if self
+            .menu
+            .page
+            .and_then(crate::menu::devices::rail::Source::of)
+            .is_some()
+            && self.add_device_rail_key(event, window, cx)
+        {
+            cx.stop_propagation();
+            window.prevent_default();
+            return;
+        }
         if self.menu.page == Some(Page::AddWsl) {
             self.add_wsl_key(event, window, cx);
             return;
