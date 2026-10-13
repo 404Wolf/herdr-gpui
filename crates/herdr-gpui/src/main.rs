@@ -105,6 +105,8 @@ mod search_input;
 mod sessions;
 mod settings_panel;
 mod settings_window;
+#[cfg(unix)]
+mod setup_relay;
 mod sidebar;
 mod smooth_scroll;
 mod sound;

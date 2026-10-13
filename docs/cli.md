@@ -155,6 +155,12 @@ worktree has no command at all), already pointed
 at your checkout, and the user confirms there. Nothing here installs,
 starts, stops, or upgrades Herdr, and `update` never installs the app.
 
+Adding a device has no command either: the Add Device dialog runs it. Its
+setup workspace runs `herdr-gpui __device-setup-attach SOCKET`, an internal
+helper that shows the setup the app runs (see the Native Shell README's
+"Local Network access"); it is not a command to call yourself, and the socket
+it names is single use.
+
 Scrollback search is not repeated here: `herdr pane read` covers it. Moving a
 window, capturing a whole window, and destroying a cloud machine have no
 command because the app cannot do them.

@@ -220,12 +220,15 @@ name, and port as `ssh -G` resolves them, so an SSH alias, `user@address`, and
 before anything else, so a second add from any window is refused while the
 first runs. The catalog file is read again right before `machine add` runs and
 right after: if another client saved the same host in between, the profile added
-second is removed, so exactly one remains. A terminal setup keeps its claim for
-15 minutes, because the GUI cannot see when its `machine add` finishes; another
-client adding the host during that window can still create a duplicate.
+second is removed, so exactly one remains. A terminal setup keeps the claim
+while it runs and releases it when it ends, saved or not, so a failed setup
+never locks the host out; if the setup workspace never runs, the claim is
+released after two minutes. Another client adding the host while a terminal
+setup runs can still create a duplicate. A host refused as already being added
+is still in another Add Device dialog or in a running "Set up" workspace.
 
 Under the SSH target, **Nearby devices** suggests hosts to add. Opening the
-dialog starts one search, shown by a sliding bar, which lasts about five seconds;
+dialog starts one search, shown by a sliding bar, which lasts about ten seconds;
 **Search again** repeats it. Suggestions come from three places, and a machine
 two of them name is listed once:
 
@@ -242,7 +245,8 @@ Choosing a suggestion fills in the target with the user's own alias when there
 is one, then the Tailscale name, then the Bonjour host. Devices already saved
 are not suggested. Nothing is scanned: a host that runs SSH without announcing
 it, or that is on another subnet, appears only through SSH config or Tailscale.
-On macOS 15 and later the first search may ask for Local Network access.
+On macOS 15 and later the first search asks for Local Network access; see
+[Local Network access](#local-network-access).
 
 Right-click a saved SSH device's header in the Spaces list to **Rename** it or
 choose **Remove device…** to forget it. Renaming runs `herdr machine rename`;
@@ -289,13 +293,48 @@ never installs or starts anything while checking:
   or saving without a terminal failed: the dialog offers to continue in a
   terminal.
 
-Accepting creates a new workspace on this device's Herdr and types
-`herdr machine add` into its shell. Herdr handles SSH prompts, approval to
-install/update remote software, server startup, and saving the machine only after
-successful setup; complete any prompts in that workspace. The saved device
-appears automatically on the next catalog refresh. No credentials are collected
-by the GUI. Explicit-socket and development-catalog windows do not offer setup,
-and saved SSH devices remain unsupported on Windows.
+Accepting creates a new workspace on this device's Herdr and shows the setup
+there. The setup itself, `herdr machine add` (after `ssh-copy-id` when the host
+refused every key), runs as a child of this app on a terminal the app owns; the
+workspace's shell only runs `herdr-gpui __device-setup-attach SOCKET`, which
+relays the pane's keys and size to it over a private, single-use socket in the
+app's state directory. It runs with your login `PATH` and agent, so it uses
+your own `ssh` (Homebrew's or any other), SSH config, and security key, exactly
+as a terminal would. Herdr handles SSH prompts, approval to install/update
+remote software, server startup, and saving the machine only after successful
+setup; complete any prompts in that workspace. The saved device appears
+automatically on the next catalog refresh. No credentials are collected by the
+GUI. Closing the workspace hangs the setup up, and so does quitting the app,
+since the setup belongs to it. Explicit-socket and development-catalog windows
+do not offer setup, and saved SSH devices remain unsupported on Windows.
+
+#### Local Network access
+
+macOS 15 and later ask before an app reaches devices on the local network, and
+judge every process by the app responsible for it. Everything the app runs for
+devices (the Bonjour search, host checks, saving, connecting, and the setup
+above) runs as Herdr's own child, so it shares the one **Herdr** entry in
+System Settings › Privacy & Security › Local Network, with whichever `ssh` you
+use. The first time, macOS shows its alert and refuses the attempt until you
+answer; the search and the host check wait up to a minute for it and continue
+on their own once you allow it. If you denied it, **Open Local Network
+Settings** in the dialog goes to the setting; turn on Herdr and search or add
+again, without restarting the app.
+
+A refused connection reads as "no route to host", which an offline device or a
+wrong route also produces, so the dialog only blames the permission when the
+app's own multicast check is refused too. Otherwise it reports no route to the
+host.
+
+Commands you type into a terminal are a different matter. Their processes
+belong to the Herdr daemon, not to this app, and a daemon started outside the
+app, as from another terminal, leaves each of them responsible for itself: macOS
+then lets Apple's own tools such as `/usr/bin/ssh` and `nc` reach the LAN but
+refuses third-party ones such as Homebrew's `ssh` with "no route to host",
+without an alert and without an entry you could turn on. This app cannot change
+how the daemon's processes are judged; that needs a change to how Herdr
+launches its daemon on macOS. Device setup is not affected, since it runs in
+the app.
 
 ### Coder workspaces
 
