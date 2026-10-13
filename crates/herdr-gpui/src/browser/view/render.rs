@@ -13,6 +13,9 @@ use crate::{
 };
 use gpui::{prelude::*, *};
 
+/// What a page's tab shows until the page reports an icon of its own.
+const GLOBE: &str = "icons/globe.svg";
+
 impl HerdrWindow {
     /// A page, filling the space it is given. It also records where the
     /// page draws, so a menu hides only the pages it covers; and, while one
@@ -72,7 +75,7 @@ impl HerdrWindow {
                     Some(Location::Code { .. }) => "icons/code.svg",
                     Some(Location::Orchestrator { .. }) => "icons/pulse.svg",
                     Some(Location::Devices) => "icons/devices.svg",
-                    _ => "icons/globe.svg",
+                    _ => GLOBE,
                 };
                 let tab = div()
                     .id(SharedString::from(format!("browser-tab-{id}")))
@@ -91,13 +94,20 @@ impl HerdrWindow {
                     .cursor_pointer()
                     .bg(rgb(background))
                     .text_color(rgb(text))
-                    .child(
-                        svg()
+                    // A page's own icon stands in for the globe.
+                    .child(match self.tab_favicon(id).filter(|_| icon == GLOBE) {
+                        Some(favicon) => img(favicon)
+                            .debug_selector(move || slot.selector(&format!("favicon-{id}")))
+                            .size(px(12.))
+                            .flex_none()
+                            .into_any_element(),
+                        None => svg()
                             .path(icon)
                             .size(px(12.))
                             .flex_none()
-                            .text_color(rgb(text)),
-                    )
+                            .text_color(rgb(text))
+                            .into_any_element(),
+                    })
                     .child(tab_label(&tab.title))
                     .child(
                         div()
