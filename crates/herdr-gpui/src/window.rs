@@ -37,6 +37,7 @@ mod status_bar;
 pub(crate) mod system_notifications;
 mod tab_drag;
 mod tab_strip;
+mod tab_tear;
 mod toasts;
 mod transfers;
 #[cfg(test)]
@@ -120,6 +121,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) sessions_anchor: std::rc::Rc<std::cell::Cell<Point<Pixels>>>,
     pub(crate) activation_deadline: Option<std::time::Instant>,
     pub(crate) pending_navigation: Option<OwnedNavigationTarget>,
+    /// A tab torn off another window, waiting for its host to be listed.
+    pub(crate) arrival: Option<tab_tear::TornTab>,
     /// Whether the leftmost strip gave Back and Forward their full width
     /// when it was last laid out; see `HerdrWindow::strip_leading`.
     pub(crate) strip_navigation_fits: bool,
@@ -802,6 +805,7 @@ impl HerdrWindow {
             selection_epoch: 0,
             activation_deadline: None,
             pending_navigation: None,
+            arrival: None,
             strip_navigation_fits: true,
             pending_toast: None,
             toasts_hidden: false,

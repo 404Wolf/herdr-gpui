@@ -600,11 +600,12 @@ impl HerdrWindow {
             |_, _, _| (),
             move |_, _, window, _| {
                 let moving = view.clone();
-                window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
+                window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
                     if phase == DispatchPhase::Capture {
+                        let viewport = window.viewport_size();
                         moving.update(cx, |this, cx| {
                             let held = event.pressed_button == Some(MouseButton::Left);
-                            if this.move_tab_drag(event.position, held, cx) {
+                            if this.move_tab_drag(event.position, held, viewport, cx) {
                                 cx.stop_propagation();
                             }
                         });
