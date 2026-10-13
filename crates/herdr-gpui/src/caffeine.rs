@@ -72,6 +72,10 @@ struct Request {
 #[derive(Default)]
 struct Caffeine {
     cup: Cup,
+    /// Counts settled holds and releases, so a timer set after one can tell
+    /// whether anyone changed the state since.
+    #[cfg(unix)]
+    changes: u64,
     /// Dropping it ends the worker, which releases any hold on its own thread.
     worker: Option<SyncSender<Request>>,
     /// Windows whose agents were last seen working.
@@ -83,6 +87,13 @@ impl Global for Caffeine {}
 pub(crate) fn cup(cx: &App) -> Cup {
     cx.try_global::<Caffeine>()
         .map_or(Cup::Off, |caffeine| caffeine.cup)
+}
+
+/// How many holds and releases have settled so far.
+#[cfg(unix)]
+pub(crate) fn changes(cx: &App) -> u64 {
+    cx.try_global::<Caffeine>()
+        .map_or(0, |caffeine| caffeine.changes)
 }
 
 /// Forgets closed windows, so their last working agents keep nothing awake.
@@ -114,6 +125,19 @@ pub(crate) fn toggle_until_agents_finish(
     report: impl FnOnce(Error, &mut App) + 'static,
 ) {
     toggle_until_agents_finish_with(cx, hold, report);
+}
+
+/// Turns a hold until agents finish into one until turned off, as asking
+/// for caffeine "on" means; whether it did. The hold itself stays.
+#[cfg(unix)]
+pub(crate) fn hold_indefinitely(cx: &mut App) -> bool {
+    let caffeine = cx.default_global::<Caffeine>();
+    if caffeine.cup != Cup::On(Mode::UntilAgentsFinish) {
+        return false;
+    }
+    caffeine.cup = Cup::On(Mode::Indefinite);
+    cx.refresh_windows();
+    true
 }
 
 /// Records whether `window` has a working agent, and ends an
@@ -258,6 +282,10 @@ fn finish(
         // took its guard with it.
         (Change::Hold(_), Err(_)) | (Change::Release, _) => Cup::Off,
     };
+    #[cfg(unix)]
+    {
+        caffeine.changes = caffeine.changes.wrapping_add(1);
+    }
     if matches!(result, Err(Error::CaffeineWorkerStopped)) {
         caffeine.worker = None;
     }

@@ -18,7 +18,12 @@ use crate::{
 pub(crate) use render::{
     CPU_WARN, DISK_WARN, MEMORY_WARN, gauges, line, severity, storage, tooltip, uptime,
 };
-use sample::{Disk, Memory, Os, Sample, Ticks};
+// The control socket, Unix only, reads samples too.
+#[cfg(unix)]
+pub(crate) use sample::Sample;
+#[cfg(not(unix))]
+use sample::Sample;
+use sample::{Disk, Memory, Os, Ticks};
 use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, Condvar, Mutex, PoisonError, mpsc},

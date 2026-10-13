@@ -10,6 +10,38 @@ use std::{collections::VecDeque, sync::Arc};
 
 /// Batches kept at once; the oldest goes first.
 const MAX_KEPT: usize = 16;
+/// Text one `take` hands out, measured as JSON, so the answer that carries
+/// it fits the control socket's message bound. Batches past it stay kept for
+/// the next take.
+#[cfg(any(unix, test))]
+pub(crate) const TAKE_BUDGET: usize = 240 * 1024;
+
+/// `text` cut, at a character, to fit `budget` as JSON, saying so: a batch
+/// over the budget could never be handed out in one answer.
+#[cfg(any(unix, test))]
+pub(crate) fn fit(text: String, budget: usize) -> String {
+    const CUT: &str = "\n[Notes cut: too long for one answer]";
+    if json_size(&text) <= budget {
+        return text;
+    }
+    let room = budget.saturating_sub(json_size(CUT));
+    // Quotes, then each character as JSON escapes it.
+    let mut used = 2;
+    let end = text
+        .char_indices()
+        .find(|(_, c)| {
+            used += json_size(c.encode_utf8(&mut [0; 4])) - 2;
+            used > room
+        })
+        .map_or(text.len(), |(at, _)| at);
+    format!("{}{CUT}", &text[..end])
+}
+
+/// `text`'s size inside a JSON string.
+#[cfg(any(unix, test))]
+pub(crate) fn json_size(text: &str) -> usize {
+    serde_json::to_string(text).map_or(text.len() * 6, |json| json.len())
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct FeedbackKey {
@@ -26,7 +58,10 @@ pub(crate) struct Batch {
 
 #[derive(Default)]
 pub(crate) struct Feedback {
-    kept: VecDeque<(Batch, Option<Arc<()>>)>,
+    /// Each batch with its pending marker and its number in `added` order.
+    kept: VecDeque<(Batch, Option<Arc<()>>, u64)>,
+    /// Batches kept so far, which numbers the next one.
+    added: u64,
     /// Panes whose agents are waiting in `browser feedback --wait`.
     waiting: Vec<FeedbackKey>,
 }
@@ -50,32 +85,80 @@ impl Feedback {
     }
 
     pub(crate) fn keep(&mut self, batch: Batch, pending: Option<Arc<()>>) {
+        #[cfg(any(unix, test))]
+        let batch = Batch {
+            text: fit(batch.text, TAKE_BUDGET),
+            ..batch
+        };
         if self.kept.len() >= MAX_KEPT {
             self.kept.pop_front();
         }
-        self.kept.push_back((batch, pending));
+        self.added += 1;
+        self.kept.push_back((batch, pending, self.added));
     }
 
-    /// Everything kept for this daemon and pane, oldest first, joined into one text.
+    /// Keeps again, first in line, a batch that was taken but never reached
+    /// its agent, so it still goes before every newer one. It is no new
+    /// batch, so it raises no new event.
+    #[cfg(unix)]
+    pub(crate) fn keep_again(&mut self, batch: Batch) {
+        let batch = Batch {
+            text: fit(batch.text, TAKE_BUDGET),
+            ..batch
+        };
+        if self.kept.len() >= MAX_KEPT {
+            self.kept.pop_back();
+        }
+        self.kept.push_front((batch, None, 0));
+    }
+
+    /// What is kept for this daemon and pane, oldest first, joined into one
+    /// text of at most [`TAKE_BUDGET`] (always at least one batch); the rest
+    /// stays for the next take.
     #[cfg(any(unix, test))]
     pub(crate) fn take(&mut self, target: &FeedbackKey) -> Option<String> {
-        let (taken, kept): (Vec<_>, Vec<_>) = self
-            .kept
-            .drain(..)
-            .partition(|(batch, _)| &batch.target == target);
-        self.kept = kept.into();
+        let mut used = 0;
+        let mut taken = Vec::new();
+        let mut rest = VecDeque::with_capacity(self.kept.len());
+        // Oldest first and in order: once one batch does not fit, every
+        // later one for this pane waits too, so a newer note never arrives
+        // before an older one.
+        let mut full = false;
+        for entry in self.kept.drain(..) {
+            if !full && &entry.0.target == target {
+                let size = json_size(&entry.0.text) + 1;
+                if taken.is_empty() || used + size <= TAKE_BUDGET {
+                    used += size;
+                    taken.push(entry);
+                    continue;
+                }
+                full = true;
+            }
+            rest.push_back(entry);
+        }
+        self.kept = rest;
         (!taken.is_empty()).then(|| {
             taken
                 .into_iter()
-                .map(|(batch, _)| batch.text)
+                .map(|(batch, ..)| batch.text)
                 .collect::<Vec<_>>()
                 .join("\n")
         })
     }
 
+    /// Whom the kept batches are for, oldest first, each with its number:
+    /// numbers only grow, so a reader tells new batches from old ones even
+    /// once the oldest are dropped.
+    #[cfg(unix)]
+    pub(crate) fn kept(&self) -> impl Iterator<Item = (u64, &FeedbackKey)> {
+        self.kept
+            .iter()
+            .map(|(batch, _, added)| (*added, &batch.target))
+    }
+
     #[cfg(any(unix, test))]
     pub(crate) fn has(&self, target: &FeedbackKey) -> bool {
-        self.kept.iter().any(|(batch, _)| &batch.target == target)
+        self.kept.iter().any(|(batch, ..)| &batch.target == target)
     }
 }
 

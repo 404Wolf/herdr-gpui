@@ -21,6 +21,8 @@ pub(crate) use {
 };
 
 pub(crate) use fetch::{by_number, local_repository, repository_key};
+#[cfg(unix)]
+pub(crate) use model::MergeState;
 #[cfg(any(test, all(feature = "integration-test", target_os = "macos")))]
 pub(crate) use model::fixture;
 

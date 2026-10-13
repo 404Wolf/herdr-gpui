@@ -7,18 +7,20 @@ use herdr_client::protocol::{
 
 /// A quarter row's trackpad delta follows the OS at once while the pane can
 /// slide, but accumulates into whole lines while an image is on screen,
-/// since images never slide: each delta must not become a line of its own.
+/// since images never slide, or with smooth scrolling off: each delta must
+/// not become a line of its own.
 #[gpui::test]
-fn wheel_deltas_accumulate_into_lines_while_images_hold_the_grid(cx: &mut gpui::TestAppContext) {
+fn wheel_deltas_accumulate_into_lines_while_panes_cannot_slide(cx: &mut gpui::TestAppContext) {
     let (fixture, cx) = cx.add_window_view(|window, cx| {
         Fixture(cx.new(|cx| crate::sidebar::layout_tests::fixture_window(window, cx)))
     });
     let view = fixture.update(cx, |fixture, _| fixture.0.clone());
-    for images in [false, true] {
+    for (images, smooth) in [(false, true), (true, true), (false, false)] {
         let (endpoint, mut server) = connected_endpoint("ssh:wheel");
         cx.update(|window, cx| {
             view.update(cx, |view, cx| {
                 prepare_mouse(view, endpoint, cx);
+                view.config.smooth_scroll = smooth;
                 let surface = Arc::make_mut(view.live.surface.as_mut().unwrap());
                 let pane = &mut surface.panes[0];
                 pane.mouse_reporting = false;
@@ -49,7 +51,11 @@ fn wheel_deltas_accumulate_into_lines_while_images_hold_the_grid(cx: &mut gpui::
             panic!("missing input");
         };
         let sentinel = events == [ClientPaneInputEvent::TextCommit("sentinel".into())];
-        assert_eq!(sentinel, images, "images={images}: {events:?}");
+        assert_eq!(
+            sentinel,
+            images || !smooth,
+            "images={images} smooth={smooth}: {events:?}"
+        );
     }
 }
 

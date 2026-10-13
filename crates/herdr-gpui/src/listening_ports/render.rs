@@ -64,13 +64,15 @@ impl HerdrWindow {
         link: &Link,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> Option<crate::browser::PageOpened> {
         match link {
             Link::Page(url) => {
-                self.open_workspace_page(endpoint, workspace, url.clone(), window, cx);
+                Some(self.open_workspace_page(endpoint, workspace, url.clone(), window, cx))
             }
+            // Opened once the tunnel is up, later.
             Link::Tunnel(key) => {
                 self.open_tunneled_page(endpoint, workspace, key.clone(), window, cx);
+                None
             }
         }
     }
@@ -273,7 +275,9 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) {
         match WebUrl::try_from(format!("http://localhost:{local}/").as_str()) {
-            Ok(url) => self.open_workspace_page(endpoint, workspace, url, window, cx),
+            Ok(url) => {
+                self.open_workspace_page(endpoint, workspace, url, window, cx);
+            }
             Err(error) => self.show_flash(Flash::warning(error.to_string()), cx),
         }
     }

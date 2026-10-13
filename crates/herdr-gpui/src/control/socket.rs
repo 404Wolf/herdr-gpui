@@ -1,11 +1,9 @@
-//! The Unix socket behind `herdr-gpui browser`. A worker accepts
+//! The Unix socket behind `herdr-gpui <command>`. A worker accepts
 //! connections and serves each on a thread of its own, up to a bound: it
 //! reads one bounded request, hands it to the UI through a bounded queue,
 //! and writes back the answer the UI gives it. A feedback request may wait
 //! minutes for the user, so connections cannot share one thread.
-use super::protocol::{
-    ErrorCode, FeedbackRequest, MAX_MESSAGE, MAX_WAIT_SECONDS, Request, Response,
-};
+use super::protocol::{ErrorCode, FeedbackRequest, MAX_MESSAGE, Request, Response};
 use std::{
     io::{self, BufRead, BufReader, Read, Write},
     os::unix::{
@@ -31,15 +29,10 @@ const QUEUE: usize = 4;
 /// Connections served at once, waiting ones included.
 const CONNECTIONS: usize = 8;
 
-/// How long the UI may take to answer `request`: a feedback request waits
-/// for the user as long as it asked to.
+/// How long the UI may take to answer `request`: one that waits for the
+/// user, a page, or an event on purpose gets as long as it asked for.
 fn answer_timeout(request: &Request) -> Duration {
-    match request {
-        Request::Feedback(feedback) => {
-            ANSWER_TIMEOUT + Duration::from_secs(feedback.wait_seconds.min(MAX_WAIT_SECONDS))
-        }
-        _ => ANSWER_TIMEOUT,
-    }
+    ANSWER_TIMEOUT + Duration::from_secs(request.wait_seconds())
 }
 
 /// A request waiting for the UI's answer.
@@ -122,7 +115,7 @@ impl Server {
         // The worker blocks in accept for the life of the process. Nothing
         // joins it: the UI must never wait on it, and exit reclaims it.
         thread::Builder::new()
-            .name("browser-control".into())
+            .name("control-socket".into())
             .spawn(move || {
                 let open = Arc::new(AtomicUsize::new(0));
                 for stream in listener.incoming() {
@@ -140,7 +133,7 @@ impl Server {
                     }
                     let (queue, done) = (sender.clone(), open.clone());
                     let spawned = thread::Builder::new()
-                        .name("browser-control-connection".into())
+                        .name("control-connection".into())
                         .spawn(move || {
                             serve(stream, &queue);
                             done.fetch_sub(1, Ordering::AcqRel);
@@ -277,6 +270,27 @@ fn finish_response(
     request: Option<Request>,
     response: Response,
 ) {
+    // Every answer must fit the bound the caller reads with. A feature that
+    // would send more is refused here rather than cut off mid-line; notes
+    // that cannot go out are kept again, as on any failed write.
+    let fits = serde_json::to_vec(&response).is_ok_and(|bytes| bytes.len() < MAX_MESSAGE);
+    let response = if fits {
+        response
+    } else {
+        if let (Some(Request::Feedback(request)), Response::Feedback { text: Some(text) }) =
+            (&request, &response)
+        {
+            let _ = queue.send(Event::Undelivered {
+                request: request.clone(),
+                text: text.clone(),
+            });
+        }
+        tracing::warn!("Control answer over {MAX_MESSAGE} bytes refused");
+        Response::error(
+            ErrorCode::Failed,
+            format!("Herdr UI's answer is larger than {MAX_MESSAGE} bytes"),
+        )
+    };
     let written = stream
         .set_nonblocking(false)
         .map_err(crate::Error::from)
@@ -313,7 +327,9 @@ pub(crate) fn call(path: &Path, request: &Request) -> crate::Result<Response> {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
-    use super::super::protocol::{BrowserOpen, Caller, FeedbackRequest, OpenedIn, Page};
+    use super::super::protocol::{
+        BrowserOpen, Caller, FeedbackRequest, MAX_WAIT_SECONDS, OpenedIn, Page,
+    };
     use super::*;
 
     mod cancellation;
@@ -393,7 +409,13 @@ mod tests {
         // A socket file nobody listens on, as a crashed app leaves behind.
         let stale = dir.path().join("stale.sock");
         drop(UnixListener::bind(&stale).unwrap());
-        assert!(Server::bind(&stale).is_ok());
+        // A process a parallel test forks meanwhile holds a copy of the
+        // listener until it execs; wait until nothing answers on it.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while UnixStream::connect(&stale).is_ok() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        Server::bind(&stale).unwrap();
     }
 
     #[test]
@@ -451,6 +473,43 @@ mod tests {
             ANSWER_TIMEOUT + Duration::from_secs(MAX_WAIT_SECONDS)
         );
         assert_eq!(answer_timeout(&open("https://a.test/")), ANSWER_TIMEOUT);
+    }
+
+    #[test]
+    fn an_answer_over_the_bound_is_refused_and_its_notes_kept() {
+        let dir = socket_dir();
+        let path = dir.path().join("control.sock");
+        let server = Server::bind(&path).unwrap();
+        let request = FeedbackRequest {
+            pane_id: "w_1:p1".into(),
+            daemon_socket: Some("/tmp/daemon.sock".into()),
+            wait_seconds: 0,
+        };
+        let caller = thread::spawn({
+            let path = path.clone();
+            let request = request.clone();
+            move || call(&path, &Request::Feedback(request))
+        });
+        let notes = "n".repeat(MAX_MESSAGE);
+        server.next().unwrap().respond(Response::Feedback {
+            text: Some(notes.clone()),
+        });
+        assert!(matches!(
+            caller.join().unwrap().unwrap(),
+            Response::Error {
+                code: ErrorCode::Failed,
+                ..
+            }
+        ));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(Event::Undelivered { text, .. }) = server.drain().next() {
+                assert_eq!(text, notes, "the notes are kept again");
+                break;
+            }
+            assert!(Instant::now() < deadline, "the notes were lost");
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 
     #[test]

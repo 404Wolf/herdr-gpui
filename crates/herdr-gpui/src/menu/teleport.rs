@@ -16,7 +16,7 @@ impl HerdrWindow {
     /// Whether the menu's workspace can be teleported: a linked worktree on
     /// a host Teleport can script. It is offered even with no other host
     /// connected, so the dialog can say why there is nowhere to go.
-    pub(super) fn can_teleport(&self) -> bool {
+    pub(crate) fn can_teleport(&self) -> bool {
         let Some(target) = &self.menu.target else {
             return false;
         };
@@ -105,7 +105,7 @@ impl HerdrWindow {
         self.dismiss_menu(window, cx);
     }
 
-    pub(super) fn open_teleport(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn open_teleport(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(target) = &self.menu.target else {
             return;
         };

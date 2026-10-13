@@ -22,7 +22,9 @@ impl HerdrWindow {
         let theme = &self.theme;
         let text = setup.fields[0].read(cx).text().to_owned();
         let completion = self.device_completion(setup, &text);
-        let status = if discovery.searching() {
+        let status = if discovery.awaiting_local_network {
+            "Waiting for macOS to allow Herdr on your local network…".into()
+        } else if discovery.searching() {
             format!("Searching {}…", sources(&discovery.pending))
         } else {
             match completion.unsaved {
@@ -143,6 +145,16 @@ impl HerdrWindow {
                     .text_color(rgb(theme.muted))
                     .child(format!("{}: {error}", source.name())),
             );
+        }
+        // While waiting the system alert may be up already; after a refusal
+        // the setting is the only way. "Search again" then checks anew.
+        let refused = discovery
+            .failures
+            .iter()
+            .any(|(_, error)| matches!(error, crate::Error::LocalNetworkDenied));
+        if discovery.awaiting_local_network || refused {
+            view =
+                view.children(self.local_network_settings_button("device-discovery-settings", cx));
         }
         view
     }

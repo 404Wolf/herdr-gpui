@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum Error {
+pub enum Error {
     #[error("No data directory is available for orchestrator state")]
     NoDataDirectory,
     #[error("Could not prepare {}: {source}", path.display())]
