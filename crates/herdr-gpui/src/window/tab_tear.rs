@@ -20,7 +20,10 @@ pub(crate) struct TornTab {
     /// The daemon the new window connects to, as New Window's does.
     pub(crate) target: ConnectTarget,
     /// The host the tab belongs to, which the new window shows.
-    endpoint: String,
+    pub(super) endpoint: String,
+    /// What that host's endpoint was connected to, naming the session it
+    /// showed, which the new window's may not.
+    pub(super) session: ConnectTarget,
     pub(crate) pick: Pick,
     pub(crate) placement: Placement,
 }
@@ -47,6 +50,10 @@ impl HerdrWindow {
         let torn = TornTab {
             target: self.endpoints[0].connection.target.clone(),
             endpoint: self.endpoints[self.selected_endpoint].id.clone(),
+            session: self.endpoints[self.selected_endpoint]
+                .connection
+                .target
+                .clone(),
             pick: drag.pick.clone(),
             placement: WindowState::beside(bounds, window, cx),
         };
@@ -57,31 +64,62 @@ impl HerdrWindow {
         crate::app::open_additional_window_then(
             torn.target.clone(),
             Some(torn.placement),
-            move |view, window, cx| view.arrive(&torn, window, cx),
+            move |view, window, cx| view.arrive(torn, window, cx),
             cx,
         );
     }
 
-    /// Goes to the tab `torn` names, in a window just opened for it. The
-    /// window is not connected yet, so the navigation waits for its
-    /// surface, and a page is chosen against its workspace to show once
-    /// the navigation lands.
-    pub(crate) fn arrive(&mut self, torn: &TornTab, window: &mut Window, cx: &mut Context<Self>) {
-        match &torn.pick {
-            Pick::Herdr(tab) => {
-                self.navigate_endpoint(&torn.endpoint, NavigationTarget::Tab(tab), cx);
+    /// Goes to the tab `torn` names, in a window just opened for it. A page
+    /// is chosen against its workspace at once, to show once the window
+    /// gets there. The window lists only this machine's daemon until its
+    /// saved hosts are read, so the way there waits for the tab's host.
+    pub(crate) fn arrive(&mut self, torn: TornTab, window: &mut Window, cx: &mut Context<Self>) {
+        if let Pick::Page(id) = torn.pick {
+            self.show_browser_tab(id, window, cx);
+        }
+        self.arrival = Some(torn);
+        self.land_arrival(false, cx);
+    }
+
+    /// Goes where the waiting torn-off tab is, once its host is listed:
+    /// the session it showed there, then the tab, or a page's workspace.
+    /// The navigation itself waits for the surface. After the saved hosts
+    /// are `listed`, a host still missing is gone, and the tab with it.
+    pub(crate) fn land_arrival(&mut self, listed: bool, cx: &mut Context<Self>) {
+        let Some(torn) = self.arrival.take() else {
+            return;
+        };
+        if !self
+            .endpoints
+            .iter()
+            .any(|endpoint| endpoint.id == torn.endpoint && endpoint.enabled)
+        {
+            if !listed {
+                self.arrival = Some(torn);
             }
+            return;
+        }
+        if let Some(session) = remote_session(&torn.session) {
+            self.select_device_session(&torn.endpoint, session, cx);
+        }
+        let target = match &torn.pick {
+            Pick::Herdr(tab) => NavigationTarget::Tab(tab.clone()),
             Pick::Page(id) => {
-                let Some(workspace) = cx
-                    .try_global::<Store>()
-                    .and_then(|store| store.get(*id))
-                    .map(|tab| tab.workspace_id.clone())
-                else {
+                let Some(tab) = cx.try_global::<Store>().and_then(|store| store.get(*id)) else {
                     return;
                 };
-                self.show_browser_tab(*id, window, cx);
-                self.navigate_endpoint(&torn.endpoint, NavigationTarget::Workspace(&workspace), cx);
+                NavigationTarget::Workspace(tab.workspace_id.clone())
             }
-        }
+        };
+        self.navigate_endpoint(&torn.endpoint, target.as_deref(), cx);
+    }
+}
+
+/// The session a remote host's endpoint is attached to, which another
+/// window of the same host may not be.
+pub(super) fn remote_session(target: &ConnectTarget) -> Option<&str> {
+    match target {
+        ConnectTarget::Ssh { session, .. } | ConnectTarget::Wsl { session, .. } => Some(session),
+        _ => None,
     }
 }

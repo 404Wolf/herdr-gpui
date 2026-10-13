@@ -4,7 +4,7 @@ use {
     super::*,
     crate::{
         browser::{Pick, Store, TabId},
-        window::tab_tear::{TornOff, TornTab},
+        window::tab_tear::{TornOff, TornTab, remote_session},
     },
 };
 
@@ -146,18 +146,101 @@ fn a_new_window_goes_to_the_tab_torn_off_once_connected(cx: &mut TestAppContext)
 
     let fresh = cx
         .update(|window, cx| cx.new(|cx| crate::sidebar::layout_tests::fixture_window(window, cx)));
-    cx.update(|window, cx| fresh.update(cx, |view, cx| view.arrive(&herdr, window, cx)));
+    cx.update(|window, cx| fresh.update(cx, |view, cx| view.arrive(herdr.clone(), window, cx)));
     fresh.read_with(cx, |view, _| {
         assert_eq!(
             view.pending_navigation,
             Some(crate::NavigationTarget::Tab("c".into()))
         );
     });
-    cx.update(|window, cx| fresh.update(cx, |view, cx| view.arrive(&page_torn, window, cx)));
+    cx.update(|window, cx| fresh.update(cx, |view, cx| view.arrive(page_torn, window, cx)));
     fresh.read_with(cx, |view, _| {
         assert_eq!(
             view.pending_navigation,
             Some(crate::NavigationTarget::Workspace("w1".into()))
         );
     });
+}
+
+fn saved(id: &str) -> herdr_client::SavedHost {
+    herdr_client::SavedHost {
+        id: id.into(),
+        label: id.into(),
+        target: format!("user@{id}"),
+        session: "default".into(),
+        enabled: true,
+    }
+}
+
+/// A new window lists only this machine's daemon until it reads the saved
+/// hosts, so a tab torn off a remote host waits for that host.
+#[gpui::test]
+fn a_tab_from_a_saved_host_waits_for_the_host_to_be_listed(cx: &mut TestAppContext) {
+    let (_source, cx) = four_tabs(cx, true);
+    carry_to(cx, "tab-c", OUTSIDE);
+    drop_at(cx, OUTSIDE);
+    let mut torn = torn(cx).remove(0);
+    torn.endpoint = "ssh:remote".into();
+    torn.session = herdr_client::ConnectTarget::Ssh {
+        target: "user@remote".into(),
+        session: "default".into(),
+    };
+
+    let fresh = cx
+        .update(|window, cx| cx.new(|cx| crate::sidebar::layout_tests::fixture_window(window, cx)));
+    cx.update(|window, cx| fresh.update(cx, |view, cx| view.arrive(torn.clone(), window, cx)));
+    fresh.read_with(cx, |view, _| {
+        assert!(view.arrival.is_some());
+        assert_eq!(view.pending_navigation, None);
+        assert_eq!(view.selected_endpoint, 0);
+    });
+
+    // Listed, the host is chosen and the tab is gone to once connected.
+    fresh.update(cx, |view, cx| {
+        view.reconcile_catalog(vec![saved("remote")], Vec::new(), cx)
+    });
+    fresh.read_with(cx, |view, _| {
+        assert!(view.arrival.is_none());
+        assert_eq!(view.endpoints[view.selected_endpoint].id, "ssh:remote");
+        assert_eq!(
+            view.pending_navigation,
+            Some(crate::NavigationTarget::Tab("c".into()))
+        );
+    });
+}
+
+#[gpui::test]
+fn a_tab_from_a_host_no_longer_saved_is_given_up(cx: &mut TestAppContext) {
+    let (_source, cx) = four_tabs(cx, true);
+    carry_to(cx, "tab-c", OUTSIDE);
+    drop_at(cx, OUTSIDE);
+    let mut torn = torn(cx).remove(0);
+    torn.endpoint = "ssh:gone".into();
+    let fresh = cx
+        .update(|window, cx| cx.new(|cx| crate::sidebar::layout_tests::fixture_window(window, cx)));
+    cx.update(|window, cx| fresh.update(cx, |view, cx| view.arrive(torn, window, cx)));
+    fresh.update(cx, |view, cx| {
+        view.reconcile_catalog(vec![saved("remote")], Vec::new(), cx)
+    });
+    fresh.read_with(cx, |view, _| {
+        assert!(view.arrival.is_none());
+        assert_eq!(view.selected_endpoint, 0);
+        assert_eq!(view.pending_navigation, None);
+    });
+}
+
+#[test]
+fn only_a_remote_host_names_a_session_to_restore() {
+    use herdr_client::ConnectTarget;
+    let ssh = ConnectTarget::Ssh {
+        target: "user@host".into(),
+        session: "work".into(),
+    };
+    let wsl = ConnectTarget::Wsl {
+        distro: "Ubuntu".into(),
+        session: "dev".into(),
+    };
+    assert_eq!(remote_session(&ssh), Some("work"));
+    assert_eq!(remote_session(&wsl), Some("dev"));
+    assert_eq!(remote_session(&ConnectTarget::Local), None);
 }
