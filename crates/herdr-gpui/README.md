@@ -169,6 +169,12 @@ seconds while the popup is open; until it answers, and if it never does, the
 device still offers the session it was saved with. Choosing a session attaches
 this window to it on that device.
 
+Set `device_footer = "auto"` under `[sidebar]` to draw this footer only while
+there are two or more devices (or one is being added), or `"never"` to leave it
+out; the default is `"always"`. Without the footer, the Agents list takes its
+height, Settings and Sessions keep their shortcuts and palette entries, and
+**Devices Overview** in the palette still offers **Add Device**.
+
 The current session has an accent highlight; status dots and delete icons stay
 aligned across rows. The **Add session…** row has no status dot.
 Session and worktree context-menu actions share right-aligned 14-pixel icons
