@@ -308,3 +308,48 @@ fn an_arrow_choice_follows_its_device_as_rows_arrive(cx: &mut gpui::TestAppConte
     assert!(key(&view, cx, "enter"));
     assert_eq!(fields(&view, cx).0, "ssh://nas.local:2222");
 }
+
+#[gpui::test]
+fn an_arrow_choice_survives_another_source_changing_its_target(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = open(cx, report);
+    settle(cx);
+    type_target(&view, cx, "n");
+    cx.simulate_keystrokes("down");
+    let (fills, highlight) = rows(&view, cx);
+    assert_eq!(
+        highlight
+            .and_then(|index| fills.get(index))
+            .map(String::as_str),
+        Some("ssh://nas.local:2222")
+    );
+    // Tailscale reports the same machine; its name now wins the target.
+    cx.update(|_, cx| {
+        view.update(cx, |view, _| {
+            let discovery = view
+                .menu
+                .device_setup
+                .as_mut()
+                .and_then(|setup| setup.discovery.as_mut())
+                .unwrap();
+            merge(
+                &mut discovery.suggestions,
+                candidate(
+                    Source::Tailscale,
+                    "nas",
+                    "nas.tail1.ts.net",
+                    &["nas.tail1.ts.net"],
+                ),
+            );
+        })
+    });
+    let (fills, highlight) = rows(&view, cx);
+    assert_eq!(
+        highlight
+            .and_then(|index| fills.get(index))
+            .map(String::as_str),
+        Some("nas.tail1.ts.net"),
+        "still the picked machine"
+    );
+    assert!(key(&view, cx, "enter"));
+    assert_eq!(fields(&view, cx).0, "nas.tail1.ts.net");
+}

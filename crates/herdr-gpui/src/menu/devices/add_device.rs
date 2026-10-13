@@ -27,9 +27,10 @@ pub(in crate::menu) struct Setup {
     /// Clears `suggested_label` once the label field holds anything else, and
     /// refilters the suggestions as the target changes.
     pub(super) _edits: Vec<Subscription>,
-    /// The suggestion Up and Down moved to, by what it fills in, with the
-    /// target text it was chosen for: typing anything else drops it.
-    pub(super) highlight: Option<(String, String)>,
+    /// The suggestion Up and Down moved to, by the names and addresses that
+    /// identify its machine, with the target text it was chosen for: typing
+    /// anything else drops it.
+    pub(super) highlight: Option<(String, Vec<String>)>,
     pub(super) suggestion_scroll: ScrollHandle,
 }
 
