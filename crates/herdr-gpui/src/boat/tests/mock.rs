@@ -66,7 +66,10 @@ fn creating_sends_key_org_options_and_idempotency_then_renames() {
         .create("herdr-calm-otter", || false, |_| Ok(()))
         .unwrap();
     assert_eq!(created.name, "herdr-calm-otter");
-    assert_eq!(request.sandboxes().unwrap().len(), 1);
+    assert_eq!(
+        request.sandbox_count().unwrap(),
+        super::super::api::SandboxCount::Exact(1)
+    );
     let log = log.lock().unwrap();
     let create = &log[0];
     assert_eq!(create.authorization.as_deref(), Some("Bearer boat_fixture"));
@@ -152,7 +155,10 @@ fn missing_sandboxes_and_rejected_keys_keep_their_meaning() {
         request.sandbox("bx_23456789"),
         Err(Error::Deleted)
     ));
-    assert!(matches!(request.sandboxes(), Err(Error::Authentication)));
+    assert!(matches!(
+        request.sandbox_count(),
+        Err(Error::Authentication)
+    ));
     assert!(matches!(
         wait_ready(&request, "bx_23456789", || true, |_| {}),
         Err(Error::Cancelled)

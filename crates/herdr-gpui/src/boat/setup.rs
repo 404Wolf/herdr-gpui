@@ -177,7 +177,7 @@ pub(crate) enum Key {
 #[derive(Debug)]
 pub(crate) struct Overview {
     pub(crate) key: Result<Key>,
-    pub(crate) sandboxes: Option<Result<usize>>,
+    pub(crate) sandboxes: Option<Result<api::SandboxCount>>,
     pub(crate) devices: Vec<SavedDevice>,
 }
 
@@ -204,15 +204,14 @@ pub(crate) fn overview(settings: &Settings) -> Result<Overview> {
             settings,
             key: &key,
         }
-        .sandboxes()
-        .map(|sandboxes| sandboxes.len())
+        .sandbox_count()
     }))
 }
 
 fn account_overview(
     devices: Vec<SavedDevice>,
     key: Result<Key>,
-    list: impl FnOnce() -> Result<usize>,
+    list: impl FnOnce() -> Result<api::SandboxCount>,
 ) -> Overview {
     let sandboxes = matches!(key, Ok(Key::Saved | Key::Environment)).then(list);
     Overview {

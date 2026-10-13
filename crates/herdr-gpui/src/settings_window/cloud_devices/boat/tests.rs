@@ -6,6 +6,7 @@ use super::{
 use crate::config::BoatConfig;
 use gpui::{Entity, TestAppContext, VisualTestContext, px, size};
 
+mod counts;
 mod credential_ordering;
 mod keychain;
 mod recovery;

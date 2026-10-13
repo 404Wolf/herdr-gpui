@@ -54,6 +54,12 @@ impl Sandbox {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SandboxCount {
+    Exact(usize),
+    AtLeast(usize),
+}
+
 #[derive(Deserialize)]
 struct List {
     sandboxes: Vec<Sandbox>,
@@ -104,9 +110,14 @@ fn segment(id: &str) -> Result<&str> {
 }
 
 impl Request<'_> {
-    pub(crate) fn sandboxes(&self) -> Result<Vec<Sandbox>> {
+    pub(crate) fn sandbox_count(&self) -> Result<SandboxCount> {
         let reply: List = self.get("sandboxes", &format!("/sandboxes?limit={LIST_LIMIT}"))?;
-        Ok(reply.sandboxes)
+        let count = reply.sandboxes.len();
+        Ok(if count < LIST_LIMIT {
+            SandboxCount::Exact(count)
+        } else {
+            SandboxCount::AtLeast(count)
+        })
     }
 
     pub(crate) fn sandbox(&self, id: &str) -> Result<Sandbox> {

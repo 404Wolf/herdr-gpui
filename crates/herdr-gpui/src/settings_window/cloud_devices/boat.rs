@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{
     boat::{
-        Settings,
+        SandboxCount, Settings,
         setup::{self, AddRequest, Key, Overview, Target},
     },
     cloud::{
@@ -34,6 +34,16 @@ const FIELDS: [(&str, &str); 4] = [
         "Optional; the account's default environment if empty",
     ),
 ];
+
+fn sandbox_status(count: SandboxCount) -> String {
+    match count {
+        SandboxCount::Exact(1) => "Connected. The key sees 1 sandbox.".into(),
+        SandboxCount::Exact(count) => format!("Connected. The key sees {count} sandboxes."),
+        SandboxCount::AtLeast(count) => {
+            format!("Connected. The key sees {count} or more sandboxes.")
+        }
+    }
+}
 
 enum Account {
     Checking,
@@ -312,10 +322,7 @@ impl SettingsWindow {
                 match (&overview.key, &overview.sandboxes) {
                     (Err(error), _) => format!("The API key could not be read: {error}"),
                     (Ok(Key::Missing), _) => "No API key saved.".to_owned(),
-                    (_, Some(Ok(count))) => format!(
-                        "Connected. The key sees {count} sandbox{}.",
-                        if *count == 1 { "" } else { "es" }
-                    ),
+                    (_, Some(Ok(count))) => sandbox_status(*count),
                     (_, Some(Err(error))) => format!("The API key could not be used: {error}"),
                     (_, None) => "Checking…".to_owned(),
                 },

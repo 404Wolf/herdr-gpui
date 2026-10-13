@@ -14,6 +14,7 @@ mod store;
 
 pub use error::{Error, Status};
 pub(crate) use {
+    api::SandboxCount,
     connect::{command, connect},
     settings::{DEFAULT_API_URL, Settings},
 };

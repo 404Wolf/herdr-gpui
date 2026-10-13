@@ -2,6 +2,7 @@
 use super::*;
 
 mod cancellation;
+mod counts;
 mod creation_recovery;
 mod diagnostics;
 mod identity;
