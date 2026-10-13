@@ -51,6 +51,7 @@ fn open_form(view: &mut HerdrWindow, step: Step, cx: &mut Context<HerdrWindow>) 
         _edits: Vec::new(),
         highlight: None,
         suggestion_scroll: gpui::ScrollHandle::new(),
+        error: None,
     });
     view.menu.page = Some(Page::AddDevice);
 }
@@ -88,6 +89,9 @@ fn install_needs_a_connected_local_daemon(cx: &mut gpui::TestAppContext) {
             assert!(view.menu.device_setup.as_ref().unwrap().claim.is_some());
             assert!(
                 view.menu
+                    .device_setup
+                    .as_ref()
+                    .unwrap()
                     .error
                     .as_deref()
                     .unwrap()
@@ -170,7 +174,10 @@ fn a_host_already_saved_or_being_added_returns_to_the_form(cx: &mut gpui::TestAp
                 open_form(view, Step::Checking(again.clone()), cx);
                 view.device_probed(Err(error), cx);
                 assert!(matches!(step(view), Step::Form));
-                assert_eq!(view.menu.error.as_deref(), Some(message));
+                assert_eq!(
+                    view.menu.device_setup.as_ref().unwrap().error.as_deref(),
+                    Some(message)
+                );
             }
             open_form(view, Step::Verifying(again.clone(), Offer::Install), cx);
             view.setup_space_verified(Err(crate::Error::DeviceExists("m5max-ms".into())), None, cx);
@@ -214,7 +221,9 @@ fn created_space_runs_setup_in_its_root_pane(cx: &mut gpui::TestAppContext) {
             ));
             view.poll_device_setup(window, cx);
             assert!(matches!(step(view), Step::Confirm(_, Offer::Terminal)));
-            assert!(view.menu.error.as_deref().unwrap().ends_with("denied: no"));
+            assert!(
+                view.menu.device_setup.as_ref().unwrap().error.as_deref().unwrap().ends_with("denied: no")
+            );
 
             // Another dialog's response is not this workspace.
             let created = serde_json::json!({"result":{"type":"workspace_created","workspace":{"workspace_id":"w9"},"tab":{"tab_id":"t9"},"root_pane":{"pane_id":"w9:p1"}}});

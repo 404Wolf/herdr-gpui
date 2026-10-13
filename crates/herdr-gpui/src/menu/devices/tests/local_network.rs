@@ -19,6 +19,9 @@ fn a_local_network_denial_returns_to_the_form_to_try_again(cx: &mut gpui::TestAp
             assert!(matches!(step(view), Step::Form));
             assert!(
                 view.menu
+                    .device_setup
+                    .as_ref()
+                    .unwrap()
                     .error
                     .as_deref()
                     .unwrap()

@@ -2,6 +2,8 @@
 #[cfg(feature = "cloud")]
 mod cloud_devices;
 #[cfg(feature = "cloud")]
+// Add Device records the request instead in unit tests.
+#[cfg_attr(test, allow(dead_code, unused_imports))]
 pub(crate) use cloud_devices::open as open_cloud;
 mod controls;
 mod layouts;

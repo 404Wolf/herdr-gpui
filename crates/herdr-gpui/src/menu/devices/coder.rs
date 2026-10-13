@@ -56,9 +56,21 @@ pub(in crate::menu) struct Wizard {
     status: Option<String>,
     /// Dropping the job cancels it, so closing the dialog stops its work.
     job: Option<worker::Worker>,
+    /// Why the last step failed, kept with this form while another source
+    /// of Add Device shows.
+    error: Option<String>,
 }
 
 impl HerdrWindow {
+    /// Set the Coder form's error. Before the form exists, the Settings
+    /// pane that stands in for it shows the shared one.
+    fn set_coder_error(&mut self, error: Option<String>) {
+        match &mut self.menu.coder {
+            Some(wizard) => wizard.error = error,
+            None => self.menu.error = error,
+        }
+    }
+
     fn coder_input(
         &self,
         placeholder: &str,
@@ -89,6 +101,7 @@ impl HerdrWindow {
             install: true,
             status: None,
             job: None,
+            error: None,
             settings,
         }
     }
@@ -101,13 +114,16 @@ impl HerdrWindow {
             Ok(Some(settings)) => settings,
             Ok(None) => return,
             Err(error) => {
-                self.menu.error = Some(error.to_string());
+                // No form yet: Coder's Settings pane shows why.
+                self.menu.coder = None;
+                self.menu.page = Some(Page::AddCloud(CloudProvider::Coder));
+                self.set_coder_error(Some(error.to_string()));
                 cx.notify();
                 return;
             }
         };
         window.focus(&self.menu.focus.clone(), cx);
-        self.menu.error = None;
+        self.set_coder_error(None);
         self.menu.coder = Some(self.new_wizard(settings, Phase::Checking, cx));
         self.menu.page = Some(Page::AddCoder);
         self.coder_job(cx, |settings, _, send| {
@@ -172,7 +188,7 @@ impl HerdrWindow {
             }
             Err(error) => {
                 tracing::error!(category = "coder_worker", error_kind = ?error.kind(), "Could not start Coder setup worker");
-                self.menu.error = Some(crate::coder::Error::Worker("setup").to_string());
+                self.set_coder_error(Some(crate::coder::Error::Worker("setup").to_string()));
             }
         }
     }
@@ -234,7 +250,7 @@ impl HerdrWindow {
             }
         }
         if let Some(e) = error {
-            self.menu.error = Some(e.to_string());
+            self.set_coder_error(Some(e.to_string()));
         }
     }
 
@@ -247,7 +263,7 @@ impl HerdrWindow {
         }
         wizard.phase = Phase::SigningIn;
         wizard.status = Some("Opening the Coder sign-in page…".into());
-        self.menu.error = None;
+        self.set_coder_error(None);
         self.coder_job(cx, |settings, cancelled, send| {
             let result = setup::begin_sign_in(settings).and_then(|pending| {
                 send(Update::Opened(pending.url.clone()));
@@ -262,7 +278,7 @@ impl HerdrWindow {
             return;
         };
         wizard.phase = Phase::Loading;
-        self.menu.error = None;
+        self.set_coder_error(None);
         self.coder_job(cx, |settings, _, send| {
             send(Update::SignedOut(setup::sign_out(settings)));
         });
@@ -275,7 +291,7 @@ impl HerdrWindow {
         wizard.choice = Some(Choice::Template(template.id.clone()));
         wizard.presets = None;
         wizard.preset = None;
-        self.menu.error = None;
+        self.set_coder_error(None);
         self.coder_job(cx, move |settings, _, send| {
             let id = template.id.clone();
             send(Update::Presets(id, setup::presets(settings, &template)));
@@ -290,7 +306,7 @@ impl HerdrWindow {
         wizard.choice = Some(Choice::Existing(workspace.id.clone()));
         wizard.presets = None;
         wizard.preset = None;
-        self.menu.error = None;
+        self.set_coder_error(None);
         cx.notify();
     }
 
@@ -304,7 +320,7 @@ impl HerdrWindow {
             _ => return,
         }
         let (Some(account), Some(choice)) = (&wizard.account, &wizard.choice) else {
-            self.menu.error = Some("Choose a template or an existing workspace.".into());
+            self.set_coder_error(Some("Choose a template or an existing workspace.".into()));
             cx.notify();
             return;
         };
@@ -314,7 +330,7 @@ impl HerdrWindow {
             let id = id.clone();
             wizard.phase = Phase::Loading;
             wizard.choice = None;
-            self.menu.error = None;
+            self.set_coder_error(None);
             self.coder_job(cx, move |settings, _, send| {
                 send(Update::Account(setup::forget(settings, &id)));
             });
@@ -352,7 +368,7 @@ impl HerdrWindow {
                     None
                 };
                 if let Some(problem) = problem {
-                    self.menu.error = Some(problem.into());
+                    self.set_coder_error(Some(problem.into()));
                     cx.notify();
                     return;
                 }
@@ -371,7 +387,7 @@ impl HerdrWindow {
             }
         };
         if self.cloud_jobs.contains(CloudProvider::Coder, &name) {
-            self.menu.error = Some(format!("{name} is already being added."));
+            self.set_coder_error(Some(format!("{name} is already being added.")));
             cx.notify();
             return;
         }
@@ -388,7 +404,7 @@ impl HerdrWindow {
             // The footer's count and the picker's Adding list show progress.
             Ok(()) => self.dismiss_menu(window, cx),
             Err(error) => {
-                self.menu.error = Some(error.to_string());
+                self.set_coder_error(Some(error.to_string()));
                 cx.notify();
             }
         }
@@ -650,7 +666,7 @@ impl HerdrWindow {
         if let Some(status) = &wizard.status {
             body = body.child(div().flex_none().child(status.clone()));
         }
-        if let Some(error) = &self.menu.error {
+        if let Some(error) = &wizard.error {
             body = body.child(
                 div()
                     .flex_none()

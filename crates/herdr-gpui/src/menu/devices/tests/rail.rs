@@ -108,23 +108,129 @@ fn switching_sources_keeps_what_the_ssh_form_holds(cx: &mut gpui::TestAppContext
     });
 }
 
+/// Providers whose pane is the Settings hand-off, with their rail entries.
+fn settings_only() -> Vec<(CloudProvider, &'static str)> {
+    CloudProvider::ALL
+        .iter()
+        .filter_map(|&provider| match provider {
+            #[cfg(feature = "coder")]
+            CloudProvider::Coder => None,
+            #[cfg(feature = "daytona")]
+            CloudProvider::Daytona => Some((provider, "add-device-source-daytona")),
+            #[cfg(feature = "railway")]
+            CloudProvider::Railway => Some((provider, "add-device-source-railway")),
+        })
+        .collect()
+}
+
+fn settings_opened(
+    view: &Entity<HerdrWindow>,
+    cx: &mut VisualTestContext,
+) -> Option<CloudProvider> {
+    cx.update(|_, cx| view.read(cx).menu.settings_opened)
+}
+
 #[gpui::test]
-fn a_settings_only_provider_opens_its_settings(cx: &mut gpui::TestAppContext) {
+fn the_settings_button_opens_that_providers_settings(cx: &mut gpui::TestAppContext) {
+    for (provider, entry) in settings_only() {
+        let (view, cx) = open(cx);
+        if crate::cloud::unavailable().is_some() {
+            return;
+        }
+        click(cx, entry);
+        assert_eq!(page(&view, cx), Some(Page::AddCloud(provider)));
+        click(cx, "cloud-setup-settings");
+        assert_eq!(settings_opened(&view, cx), Some(provider));
+        assert_eq!(page(&view, cx), None, "the dialog closes for Settings");
+    }
+}
+
+#[gpui::test]
+fn enter_opens_that_providers_settings(cx: &mut gpui::TestAppContext) {
+    for (provider, entry) in settings_only() {
+        let (view, cx) = open(cx);
+        if crate::cloud::unavailable().is_some() {
+            return;
+        }
+        click(cx, entry);
+        cx.simulate_keystrokes("enter");
+        assert_eq!(settings_opened(&view, cx), Some(provider));
+        assert_eq!(page(&view, cx), None);
+    }
+}
+
+#[gpui::test]
+fn escape_closes_a_settings_pane_without_opening_settings(cx: &mut gpui::TestAppContext) {
+    for (_, entry) in settings_only() {
+        let (view, cx) = open(cx);
+        if crate::cloud::unavailable().is_some() {
+            return;
+        }
+        click(cx, entry);
+        cx.simulate_keystrokes("escape");
+        assert_eq!(page(&view, cx), None);
+        assert_eq!(settings_opened(&view, cx), None);
+    }
+}
+
+#[gpui::test]
+fn an_ssh_save_finishing_elsewhere_keeps_the_shown_source(cx: &mut gpui::TestAppContext) {
     let (view, cx) = open(cx);
     if crate::cloud::unavailable().is_some() {
         return;
     }
-    #[cfg(feature = "railway")]
-    {
-        click(cx, "add-device-source-railway");
-        assert_eq!(
-            page(&view, cx),
-            Some(Page::AddCloud(CloudProvider::Railway))
-        );
-        cx.simulate_keystrokes("escape");
-        assert_eq!(page(&view, cx), None, "Escape closes the dialog");
+    let provider = CloudProvider::ALL[CloudProvider::ALL.len() - 1];
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.open_source(frame::Source::Cloud(provider), window, cx);
+            let shown = view.menu.page;
+            view.menu.device_setup.as_mut().unwrap().step = Step::Saved;
+            view.poll_device_setup(window, cx);
+            assert_eq!(view.menu.page, shown, "the cloud form stays open");
+            assert!(view.menu.device_setup.is_none(), "only the SSH form went");
+            // SSH starts afresh on the next visit.
+            view.open_source(frame::Source::Host, window, cx);
+            assert_eq!(view.menu.page, Some(Page::AddDevice));
+            assert!(matches!(
+                view.menu.device_setup.as_ref().unwrap().step,
+                Step::Form
+            ));
+        })
+    });
+}
+
+#[gpui::test]
+fn each_source_keeps_its_own_error(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = open(cx);
+    if crate::cloud::unavailable().is_some() {
+        return;
     }
-    let _ = view;
+    let provider = CloudProvider::ALL[CloudProvider::ALL.len() - 1];
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.open_source(frame::Source::Cloud(provider), window, cx)
+        })
+    });
+    // An SSH check fails while the cloud pane shows.
+    cx.update(|_, cx| {
+        view.update(cx, |view, _| {
+            view.set_device_error(Some("SSH to box: refused".into()))
+        })
+    });
+    draw(cx);
+    assert!(
+        cx.debug_bounds("cloud-setup-error").is_none(),
+        "not in the cloud pane"
+    );
+    click(cx, "add-device-source-host");
+    cx.update(|_, cx| {
+        let setup = view.read(cx).menu.device_setup.as_ref().unwrap();
+        assert_eq!(
+            setup.error.as_deref(),
+            Some("SSH to box: refused"),
+            "kept for SSH"
+        );
+    });
 }
 
 #[test]

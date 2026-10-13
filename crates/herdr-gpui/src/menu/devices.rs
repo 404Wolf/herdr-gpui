@@ -622,7 +622,12 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) {
         self.dismiss_menu(window, cx);
+        #[cfg(not(test))]
         crate::settings_window::open_cloud(cx.weak_entity(), Some(provider), cx);
+        #[cfg(test)]
+        {
+            self.menu.settings_opened = Some(provider);
+        }
     }
 
     fn choose_device(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {

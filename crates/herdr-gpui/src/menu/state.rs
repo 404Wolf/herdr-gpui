@@ -53,6 +53,10 @@ pub(crate) struct MenuState {
     /// Written by the menu's layout, read when presenting pages.
     pub(crate) cover: std::rc::Rc<std::cell::Cell<Cover>>,
     pub(super) device_setup: Option<super::devices::Setup>,
+    /// The provider whose Settings tab Add Device last asked for. Unit tests
+    /// record it rather than open a Settings window, which reads the disk.
+    #[cfg(all(test, feature = "cloud"))]
+    pub(super) settings_opened: Option<crate::cloud::CloudProvider>,
     pub(super) wsl_setup: Option<super::devices::WslSetup>,
     /// The saved distribution the removal confirmation names.
     pub(super) wsl_remove: Option<String>,
@@ -286,6 +290,8 @@ impl MenuState {
             application_bar: Default::default(),
             cover: Default::default(),
             device_setup: None,
+            #[cfg(all(test, feature = "cloud"))]
+            settings_opened: None,
             wsl_setup: None,
             wsl_remove: None,
             session_edit: None,

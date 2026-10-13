@@ -408,7 +408,13 @@ impl HerdrWindow {
                             )
                             .child(div().font_weight(FontWeight::SEMIBOLD).child(name)),
                     )
-                    .child(div().text_color(rgb(theme.subtext())).child(text)),
+                    .child(div().text_color(rgb(theme.subtext())).child(text))
+                    .children(self.menu.error.clone().map(|error| {
+                        div()
+                            .debug_selector(|| "cloud-setup-error".into())
+                            .text_color(super::super::danger(theme))
+                            .child(error)
+                    })),
             )
             .child(
                 div()
