@@ -2237,9 +2237,9 @@ Agents running in the app's panes can open a page for you:
 
 ```sh
 herdr-gpui browser open http://localhost:3000   # macOS: /Applications/Herdr.app/Contents/MacOS/Herdr
-herdr-gpui browser open design/mockup.html
+herdr-gpui browser open design/mockup.html      # in a split beside the agent's terminal
 herdr-gpui browser open --no-focus https://example.com/docs
-herdr-gpui browser open --beside explainer.html # in a split beside the agent's terminal
+herdr-gpui browser open --tab design/mockup.html # a tab, like a web address
 herdr-gpui browser reload                       # reload the pages this pane opened
 herdr-gpui browser feedback --wait 600          # wait for the notes you send it
 herdr-gpui browser --help
@@ -2252,7 +2252,10 @@ the page go back to it. The command talks to the running app over a socket at
 3 when the app is not running. Only processes on this machine can reach it:
 agents on saved SSH hosts cannot open browser tabs.
 
-`--beside` puts the page in an editor group next to the group showing the
+A local file opened from a pane goes beside that pane's terminal, since it is
+usually a mockup or explainer the agent wrote for you to read while you talk
+to it; a web address takes a tab of the group in use. `--beside` and `--tab`
+choose instead. Beside means an editor group next to the group showing the
 caller's terminal: the group the page already belongs to, the group beside
 the terminal when the window is split, or a new group split off to its
 right. The terminal's group stays in use and keeps the keyboard, so you can

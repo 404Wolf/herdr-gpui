@@ -24,24 +24,25 @@ URL, for example:
 ## Open a page
 
 ```sh
-herdr-gpui browser open ./mockup.html
+herdr-gpui browser open ./mockup/index.html
 herdr-gpui browser open http://localhost:3000
-herdr-gpui browser open --beside ./explainer/index.html
 ```
 
-- The tab opens in your own workspace (`HERDR_WORKSPACE_ID`, which Herdr sets
-  in every pane) and the window switches to it. The terminal keeps running
-  underneath; the user returns to it by clicking its tab.
+- A local file opens in a split next to your terminal: the user sees both,
+  and the keyboard stays with your pane, so they can keep talking to you
+  while the page updates. Later files you open join the same split.
+- A web address opens as a tab in your own workspace (`HERDR_WORKSPACE_ID`,
+  which Herdr sets in every pane) and the window switches to it. The
+  terminal keeps running underneath; the user returns to it by clicking its
+  tab.
+- Add `--tab` to open a file as a tab instead, or `--beside` to put a web
+  address in the split.
 - A local file is served with the other files in its folder, so relative
   links to CSS, scripts, and images work. Keep the page and its assets in a
   dedicated folder: never your home directory, and nothing in a hidden
   folder. Files whose names start with a dot are never served.
 - Opening the same page again from the same pane reuses and reloads its tab.
   After editing a file, run `herdr-gpui browser reload` instead.
-- Add `--beside` to open the page in a split next to your terminal instead:
-  the user sees both, and the keyboard stays with your pane, so they can keep
-  talking to you while the page updates. Prefer it for explainers and
-  mockups. Later pages you open with `--beside` join the same split.
 - Add `--no-focus` to add the tab without switching to it, for example when
   the user is typing in your pane.
 - Bare hosts work: `localhost:3000` becomes `http://localhost:3000/`, and

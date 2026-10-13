@@ -28,7 +28,8 @@ pub enum BrowserCommand {
         target: String,
         workspace: Option<String>,
         focus: bool,
-        placement: Placement,
+        /// `--beside` or `--tab`; otherwise chosen by what the page is.
+        placement: Option<Placement>,
     },
     Reload,
     /// Waits up to `wait` seconds for notes; zero only checks.
@@ -182,12 +183,13 @@ fn parse_browser(mut args: impl Iterator<Item = OsString>) -> Result<BrowserComm
         _ => return Err(CliError::UnknownBrowserCommand(command)),
     }
     let (mut target, mut workspace, mut focus) = (None, None, true);
-    let mut placement = Placement::Tab;
+    let mut placement = None;
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--help" | "-h") => return Ok(BrowserCommand::Help),
             Some("--no-focus") => focus = false,
-            Some("--beside") => placement = Placement::Beside,
+            Some("--beside") => placement = Some(Placement::Beside),
+            Some("--tab") => placement = Some(Placement::Tab),
             Some("--workspace") => {
                 let value = args
                     .next()

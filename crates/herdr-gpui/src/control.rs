@@ -563,16 +563,29 @@ fn page(target: &str) -> crate::Result<(Page, String)> {
     Ok((Page::Url(url.as_str().to_owned()), url.as_str().to_owned()))
 }
 
+/// Where a page goes unless the caller said: a local file, usually a mockup
+/// or an explainer the agent wrote, sits beside the terminal that opened it,
+/// so the user reads it and the agent's replies together. Web addresses, and
+/// files opened from outside a Herdr pane, take a tab.
+fn default_placement(page: &Page, caller: &Caller) -> Placement {
+    match (page, &caller.pane_id) {
+        (Page::File(_), Some(_)) => Placement::Beside,
+        _ => Placement::Tab,
+    }
+}
+
 fn browser_open(
     target: &str,
     workspace: Option<String>,
     focus: bool,
-    placement: Placement,
+    placement: Option<Placement>,
 ) -> crate::Result<String> {
     let (page, shown) = page(target)?;
+    let caller = caller(workspace)?;
+    let placement = placement.unwrap_or_else(|| default_placement(&page, &caller));
     let request = Request::Open(BrowserOpen {
         page,
-        caller: caller(workspace)?,
+        caller,
         focus,
         placement,
     });
@@ -635,14 +648,15 @@ fn browser_feedback(wait: u64) -> crate::Result<Option<String>> {
 }
 
 const BROWSER_USAGE: &str = "\
-herdr-gpui browser open URL|FILE [--workspace ID] [--no-focus] [--beside]
+herdr-gpui browser open URL|FILE [--workspace ID] [--no-focus] [--beside|--tab]
     Show a web address, or a local HTML file, in a browser tab of the running
     Herdr UI. The tab joins the caller's own workspace (HERDR_WORKSPACE_ID),
     or the frontmost one outside Herdr. Showing the same page again from the
     same pane reuses and reloads its tab. Bare hosts such as localhost:3000
     are accepted. A file is served with the other files in its folder.
-    With --beside, the page opens in a split next to the caller's terminal,
-    which stays in view and keeps the keyboard.
+    A file opened from a Herdr pane goes in a split next to that terminal,
+    which stays in view and keeps the keyboard; a web address takes a tab of
+    the group in use. --beside and --tab choose instead.
 herdr-gpui browser reload
     Reload the pages this pane opened, for example after editing the file.
 herdr-gpui browser feedback [--wait SECONDS]
@@ -723,6 +737,7 @@ mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
 
+    mod placement;
     #[cfg(unix)]
     mod scoped_notes;
 

@@ -29,7 +29,7 @@ fn browser_commands_never_start_the_gui() {
             target: "localhost:3000".into(),
             workspace: None,
             focus: true,
-            placement: Placement::Tab,
+            placement: None,
         })
     );
     assert_eq!(
@@ -38,7 +38,16 @@ fn browser_commands_never_start_the_gui() {
             target: "demo.html".into(),
             workspace: None,
             focus: true,
-            placement: Placement::Beside,
+            placement: Some(Placement::Beside),
+        })
+    );
+    assert_eq!(
+        mode(&["browser", "open", "--tab", "demo.html"]).unwrap(),
+        LaunchMode::Browser(BrowserCommand::Open {
+            target: "demo.html".into(),
+            workspace: None,
+            focus: true,
+            placement: Some(Placement::Tab),
         })
     );
     assert_eq!(
@@ -55,7 +64,7 @@ fn browser_commands_never_start_the_gui() {
             target: "https://a.test".into(),
             workspace: Some("w_2".into()),
             focus: false,
-            placement: Placement::Tab,
+            placement: None,
         })
     );
     assert_eq!(

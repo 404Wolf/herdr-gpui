@@ -265,7 +265,8 @@ mod tests {
     #[test]
     fn the_skill_teaches_the_split_the_kit_and_page_results() {
         for taught in [
-            "browser open --beside",
+            "A local file opens in a split next to your terminal",
+            "--tab",
             "/.herdr/kit.css",
             "HerdrKit.scenario(",
             "HerdrKit.variants(",
