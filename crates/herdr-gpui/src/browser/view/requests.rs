@@ -157,8 +157,9 @@ impl HerdrWindow {
     /// the page already belongs to, another existing group, or a new one
     /// split off to the terminal's right. The terminal's group stays in use
     /// and keeps the keyboard, so the user can go on typing to the agent.
-    /// Without `focus`, the group the user had in use keeps the keyboard
-    /// instead, so a background open never redirects their typing.
+    /// Without `focus`, the user's view stays as it was: the group they had
+    /// in use keeps the keyboard, and a group already showing another tab
+    /// only lists the page in its strip.
     /// Returns whether the page is beside the terminal.
     fn show_beside(
         &mut self,
@@ -190,7 +191,18 @@ impl HerdrWindow {
                 }
             }
         };
-        self.move_tab_to_group(pick, group, window, cx);
+        let shown_anywhere = slots
+            .iter()
+            .any(|slot| self.group_pick(slot.id).as_ref() == Some(&pick));
+        let busy = self.group_pick(group).is_some_and(|shown| shown != pick);
+        if !focus && busy && !shown_anywhere {
+            if let Some(layout) = self.ensure_layout() {
+                layout.give(group, &pick);
+            }
+            cx.notify();
+        } else {
+            self.move_tab_to_group(pick, group, window, cx);
+        }
         let keyboard = if focus { Some(home) } else { in_use };
         self.activate_group(keyboard.unwrap_or(home), window, cx);
         true

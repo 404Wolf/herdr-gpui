@@ -260,8 +260,10 @@ fn a_background_page_beside_leaves_the_keyboard_where_it_was(cx: &mut gpui::Test
     let groups: Vec<_> = view.read_with(cx, |view, _| {
         view.group_slots().into_iter().map(|slot| slot.id).collect()
     });
+    let first = cx.update(|_, cx| view.read(cx).browser_tab_ids(cx))[0];
     // The user moves to the page's group; a page opened with --no-focus
-    // joins it without handing the keyboard to the agent's terminal.
+    // joins its strip without replacing the page the user is reading or
+    // handing the keyboard to the agent's terminal.
     cx.update(|window, cx| view.update(cx, |view, cx| view.activate_group(groups[1], window, cx)));
     let placed = beside_with(&view, cx, "w0", "http://localhost:4000/", false);
     assert!(matches!(
@@ -271,12 +273,23 @@ fn a_background_page_beside_leaves_the_keyboard_where_it_was(cx: &mut gpui::Test
             ..
         })
     ));
+    let second = cx.update(|_, cx| view.read(cx).browser_tab_ids(cx))[1];
+    assert_eq!(shown(&view, cx), [Shown::Terminal, Shown::Page(first)]);
+    cx.update(|_, cx| {
+        assert_eq!(
+            view.read(cx).group_tabs(groups[1], cx),
+            [Pick::Page(first), Pick::Page(second)]
+        );
+    });
     assert_eq!(
         view.read_with(cx, |view, _| view.active_group()),
         Some(groups[1])
     );
-    // With focus, the terminal's group takes the keyboard back.
+    // With focus, the page is shown and the terminal's group takes the
+    // keyboard back.
     beside(&view, cx, "w0", "http://localhost:5000/");
+    let third = cx.update(|_, cx| view.read(cx).browser_tab_ids(cx))[2];
+    assert_eq!(shown(&view, cx), [Shown::Terminal, Shown::Page(third)]);
     assert_eq!(
         view.read_with(cx, |view, _| view.active_group()),
         Some(groups[0])
