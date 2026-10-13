@@ -10,12 +10,14 @@ mod clipboard;
 mod commands;
 mod config_diagnostic;
 mod copy_mode;
+mod device_themes;
 mod double_shift;
 mod file_drop;
 mod file_links;
 mod find;
 mod flash;
 pub(crate) use commands::run_window_command;
+pub(crate) use device_themes::Pinned as PinnedDeviceTheme;
 pub(crate) use flash::Flash;
 mod function_keys;
 mod image_source;
@@ -172,6 +174,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) painter: std::rc::Rc<std::cell::RefCell<terminal_painter::TerminalPainter>>,
     /// The picture and platform appearance `[backdrop]` asks for.
     pub(crate) backdrop: backdrop::State,
+    /// Each saved device's terminal theme, read off the UI thread.
+    pub(crate) device_themes: device_themes::DeviceThemes,
     /// The terminal grid's cached regions; see `regions`.
     pub(crate) regions: Vec<regions::RegionLayers>,
     pub(crate) marked: String,
@@ -839,6 +843,7 @@ impl HerdrWindow {
             wake: endpoint::WakeClock::new(std::time::Instant::now(), std::time::SystemTime::now()),
             painter: Default::default(),
             backdrop: Default::default(),
+            device_themes: Default::default(),
             regions: Vec::new(),
             marked: String::new(),
             marked_selection: None,

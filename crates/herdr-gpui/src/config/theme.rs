@@ -169,18 +169,37 @@ impl Config {
         light: bool,
         directories: impl FnOnce() -> Result<Vec<PathBuf>>,
     ) -> Result<Theme> {
-        let name = ThemeName::parse(&self.theme)?.get(light);
-        if name == FOLLOW_HERDR {
-            return crate::herdr_settings::Settings::load()?.theme(light);
-        }
-        if let Some(theme) = Theme::builtin(name) {
-            return Ok(theme);
-        }
-        let path = theme_file(name, directories)?;
-        let text = fs::read_to_string(&path).map_err(|error| Error::from(error).at_path(&path))?;
-        Theme::parse_ghostty(&text).map_err(|error| error.at_path(&path))
+        resolve(&self.theme, light, directories)
     }
 
+    /// `value`, any `theme` value such as a device's, for the system
+    /// appearance and with this config's contrast. Reads theme files, so it
+    /// runs off the UI thread.
+    pub(crate) fn theme_named(&self, value: &str, light: bool) -> Result<Theme> {
+        resolve(value, light, theme_directories).map(|theme| theme.with_contrast(self.contrast))
+    }
+}
+
+/// The side of `value` for `light`, from a built-in, Herdr's settings, or a
+/// Ghostty theme file.
+pub(super) fn resolve(
+    value: &str,
+    light: bool,
+    directories: impl FnOnce() -> Result<Vec<PathBuf>>,
+) -> Result<Theme> {
+    let name = ThemeName::parse(value)?.get(light);
+    if name == FOLLOW_HERDR {
+        return crate::herdr_settings::Settings::load()?.theme(light);
+    }
+    if let Some(theme) = Theme::builtin(name) {
+        return Ok(theme);
+    }
+    let path = theme_file(name, directories)?;
+    let text = fs::read_to_string(&path).map_err(|error| Error::from(error).at_path(&path))?;
+    Theme::parse_ghostty(&text).map_err(|error| error.at_path(&path))
+}
+
+impl Config {
     /// The files `theme` loads on either side of a light/dark pair, so a
     /// watcher can reload a theme file that changes in place. Built-ins and
     /// `Follow Herdr` read no file; a name found in no directory has none.
