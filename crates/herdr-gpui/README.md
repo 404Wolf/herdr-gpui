@@ -813,7 +813,16 @@ shared `system` delivery posting OS notifications:
 enabled = false
 delay_seconds = 1
 position = "bottom-right"
+finished = true
 ```
+
+`finished` has no shared Herdr counterpart and defaults to `true`. Set it to
+`false` to stop "finished" toasts and OS notifications while keeping "needs
+attention" and custom notifications, for example when an agent hook posts its
+own summary with `herdr notification show`. It does not change sounds, which
+follow the sound settings, and QA previews still appear. Settings > Notifications
+has the same switch, and `herdr-gpui config set notifications.finished false`
+writes it.
 
 Delivery defaults off, matching upstream. The delay accepts integer seconds from
 0 through 3600; Custom notifications always bypass the delay. Corners are

@@ -139,6 +139,7 @@ impl SettingsWindow {
         self.control_card("Native notification overrides")
             .child(self.preference_switch("settings-notification-enabled", "In-app notifications", config.enabled, Preference::NotificationEnabled(Some(!config.enabled)), cx))
             .child(self.preference_choice("notification-follow-enabled", "Follow shared delivery", false, Preference::NotificationEnabled(None), cx))
+            .child(self.preference_switch("settings-notification-finished", "Finished notifications", config.finished, Preference::NotificationFinished(!config.finished), cx))
             .child(self.control_row("Delay", format!("{} seconds (0-3600)", config.delay_seconds)))
             .child(div().flex().flex_wrap().gap(px(8.))
                 .child(self.preference_choice("notification-delay-minus", "-1 second", false, Preference::NotificationDelay(Some(config.delay_seconds.saturating_sub(1))), cx))
@@ -279,6 +280,11 @@ mod tests {
                 Section::Notifications,
                 "settings-notification-enabled",
                 Preference::NotificationEnabled(Some(true)),
+            ),
+            (
+                Section::Notifications,
+                "settings-notification-finished",
+                Preference::NotificationFinished(false),
             ),
         ] {
             view.update(cx, |view, cx| {

@@ -17,6 +17,8 @@ pub(crate) enum Preference {
     NotificationEnabled(Option<bool>),
     NotificationDelay(Option<u64>),
     NotificationPosition(Option<ToastHerdrPosition>),
+    /// `[notifications] finished`: GUI-only, so there is no shared value to follow.
+    NotificationFinished(bool),
     ClipboardEnabled(Option<bool>),
     ClipboardPosition(Option<ClipboardToastPosition>),
     SidebarGap(f32),
@@ -93,6 +95,9 @@ impl Config {
                         })
                     }),
                 ),
+                Preference::NotificationFinished(value) => {
+                    (Some("notifications"), "finished", Some(value.into()))
+                }
                 Preference::ClipboardEnabled(value) => {
                     (Some("clipboard_toast"), "enabled", value.map(Into::into))
                 }

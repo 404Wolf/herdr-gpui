@@ -316,6 +316,7 @@ pub(crate) fn tick(
             let keep = (|| {
                 if !n.client_local
                     && (delivery == Delivery::Off
+                        || (n.kind == Kind::Finished && !config.finished)
                         || endpoint
                             .toasts
                             .enabled_since
