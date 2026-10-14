@@ -171,7 +171,7 @@ pub(super) fn incremental(
     Some((since, cached?))
 }
 
-fn full(
+pub(super) fn full(
     source: &SourceKey,
     (owner, repo): (&str, &str),
     previous: Checkpoint,
@@ -229,12 +229,12 @@ fn full(
         connection(fetch(PULL_REQUESTS, variables)?, "pullRequests")?;
     items.extend(closed.nodes.into_iter().map(|node| node.into_item(source)));
 
-    let resume = Resume {
-        issues: advance(started, &items[..issues]),
-        pulls: advance(started, &items[issues..]),
-    };
+    // Not from the newest change seen: the open and closed pull requests are
+    // separate reads, so one opened after the first may predate one closed
+    // before the second, and would be skipped until the next full listing.
+    let resume = Resume::both(started);
     let checkpoint = Checkpoint {
-        updated_at: Some(resume.oldest()),
+        updated_at: Some(started),
         etag: None,
         last_full_at: Some(Utc::now()),
         pr_details: previous.pr_details,
