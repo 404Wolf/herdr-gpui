@@ -71,6 +71,51 @@ agent_icons! {
     Muse => "muse",
 }
 
+/// Embeds each `status_icons` set, one asset per status, in the order
+/// `status_icon` indexes: sets as `StatusIcons` declares them, then statuses.
+macro_rules! status_icons {
+    ($($set:literal),+) => {
+        const STATUS_ICONS: [(&str, &[u8]); 15] = [$(
+            status_icons!(@one $set, "idle"),
+            status_icons!(@one $set, "working"),
+            status_icons!(@one $set, "done"),
+            status_icons!(@one $set, "blocked"),
+            status_icons!(@one $set, "unknown"),
+        )+];
+    };
+    (@one $set:literal, $status:literal) => {
+        (
+            concat!("icons/status-", $set, "-", $status, ".svg"),
+            include_bytes!(concat!("../../../assets/icons/status-", $set, "-", $status, ".svg")),
+        )
+    };
+}
+
+// Solid, then tiles' inner mark, then the rail's outline.
+status_icons!("solid", "mark", "outline");
+
+/// The asset that draws `status` in a `status_icons` set.
+pub(crate) fn status_icon(
+    icons: crate::config::StatusIcons,
+    status: herdr_client::protocol::AgentStatus,
+) -> &'static str {
+    use crate::config::StatusIcons;
+    use herdr_client::protocol::AgentStatus;
+    let set = match icons {
+        StatusIcons::Solid => 0,
+        StatusIcons::Tiles => 1,
+        StatusIcons::Rail => 2,
+    };
+    let status = match status {
+        AgentStatus::Idle => 0,
+        AgentStatus::Working => 1,
+        AgentStatus::Done => 2,
+        AgentStatus::Blocked => 3,
+        AgentStatus::Unknown => 4,
+    };
+    STATUS_ICONS[set * 5 + status].0
+}
+
 /// Shared working-tree marker, distinct from the daemon's activity dots.
 pub(super) fn uncommitted(theme: &crate::config::Theme, size: f32) -> gpui::Div {
     use gpui::{div, prelude::*, px, rgb, rgba, svg};
@@ -141,6 +186,9 @@ impl AssetSource for Icons {
     fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
         if let Some(icon) = AgentIcon::ALL.iter().find(|icon| icon.path() == path) {
             return Ok(Some(Cow::Borrowed(icon.bytes())));
+        }
+        if let Some((_, bytes)) = STATUS_ICONS.iter().find(|(name, _)| *name == path) {
+            return Ok(Some(Cow::Borrowed(bytes)));
         }
         let bytes: &'static [u8] = match path {
             "icons/devices.svg" => include_bytes!("../../../assets/icons/devices.svg"),
@@ -275,6 +323,7 @@ impl AssetSource for Icons {
         ]
         .into_iter()
         .chain(AgentIcon::ALL.iter().map(|icon| icon.path()))
+        .chain(STATUS_ICONS.iter().map(|(name, _)| *name))
         .chain(crate::usage::icon_paths())
         .filter(|name| name.starts_with(path))
         .map(Into::into)
@@ -309,7 +358,7 @@ mod tests {
         assert!(Icons.load("unknown.svg").unwrap().is_none());
         assert_eq!(
             Icons.list("icons/").unwrap().len(),
-            53 + AgentIcon::ALL.len() + crate::usage::icon_paths().count()
+            53 + AgentIcon::ALL.len() + STATUS_ICONS.len() + crate::usage::icon_paths().count()
         );
     }
 

@@ -13,6 +13,8 @@ pub(crate) enum Preference {
     ShowListeningPorts(bool),
     ShowSidebarSearch(bool),
     ShowRepositoryIcons(bool),
+    /// `status_icons`; `None` removes it, following Herdr's indicator style.
+    StatusIcons(Option<StatusIcons>),
     SmoothScroll(bool),
     NotificationEnabled(Option<bool>),
     NotificationDelay(Option<u64>),
@@ -68,6 +70,11 @@ impl Config {
                     (None, "show_repository_icons", Some(value.into()))
                 }
                 Preference::SmoothScroll(value) => (None, "smooth_scroll", Some(value.into())),
+                Preference::StatusIcons(value) => (
+                    None,
+                    "status_icons",
+                    value.map(|icons| icons.as_str().into()),
+                ),
                 Preference::NotificationEnabled(value) => {
                     (Some("notifications"), "enabled", value.map(Into::into))
                 }

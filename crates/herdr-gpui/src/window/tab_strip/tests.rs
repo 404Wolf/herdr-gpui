@@ -62,7 +62,7 @@ fn zoomed_tab_shows_its_mark_within_its_width(cx: &mut TestAppContext) {
     assert!((mark.center().y - tab.center().y).abs() <= px(0.5));
     let (zoomed, unzoomed) = cx.update(|window, cx| {
         let view = view.read(cx);
-        let indicators = Indicators::new(None, false, &view.theme);
+        let indicators = Indicators::new(None, None, false, &view.theme);
         let label = view.live.snapshot.as_ref().unwrap().tabs[0].label.clone();
         let lead = Lead::of(view.live.snapshot.as_ref().unwrap().tabs[0].agent_status);
         (
@@ -108,6 +108,7 @@ fn status_layout(cx: &mut TestAppContext, settings: Option<&str>, font_size: f32
         let view = view.read(cx);
         let indicators = Indicators::new(
             view.settings.shared.as_ref(),
+            view.config.status_icons,
             matches!(
                 cx.window_appearance(),
                 WindowAppearance::Light | WindowAppearance::VibrantLight

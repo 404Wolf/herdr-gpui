@@ -64,6 +64,8 @@ mod split_pane;
 #[cfg(test)]
 mod status_bar;
 #[cfg(test)]
+mod status_icons;
+#[cfg(test)]
 mod sticky_hosts;
 #[cfg(test)]
 mod superset_badges;
@@ -613,7 +615,12 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
             cx.new(|_| {
                 crate::sidebar::SidebarView::new(
                     weak,
-                    super::agents::Indicators::new(None, false, &crate::config::Theme::default()),
+                    super::agents::Indicators::new(
+                        None,
+                        None,
+                        false,
+                        &crate::config::Theme::default(),
+                    ),
                 )
             })
         },

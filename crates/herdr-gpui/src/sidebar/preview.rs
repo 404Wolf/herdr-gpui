@@ -273,7 +273,7 @@ mod tests {
                 self.mode,
                 &self.font,
                 &self.theme,
-                Indicators::new(None, false, &self.theme),
+                Indicators::new(None, None, false, &self.theme),
                 cx.listener(|this, _, _, cx| {
                     this.preview.toggle_fold();
                     cx.notify();

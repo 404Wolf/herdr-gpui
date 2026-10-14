@@ -655,9 +655,18 @@ by the next error too. The app does not change permissions automatically.
 Existing native theme selections remain overrides. Choose **Follow Herdr** to
 use the shared theme, all 18 upstream palettes, custom colors, and automatic
 light/dark selection. Selecting a shared theme disables upstream auto-switching,
-as in the TUI. Status indicators always use the shared indicator style and shared
-status colors, independent of a native terminal theme override. Terminal/default
-reset colors are projected to opaque native colors.
+as in the TUI. Status indicators always use the shared status colors,
+independent of a native terminal theme override, and the shared indicator style
+unless **Settings > Indicators** picks one of this app's own icon sets: Solid,
+Tiles, or Edge rail, saved as `status_icons` in `config-gpui.local.toml`. Herdr
+accepts only `dots` or `symbols` in `ui.status_indicators`, so these never reach
+the shared file, and the TUI keeps its own choice. The icons are about a line
+tall and replace the dot wherever one shows, tabs and the collapsed sidebar
+included. Herdr's own rows and Orca's cards center them across all of a row's
+lines, and Superset badges its icon slot with them. Edge rail also draws a bar
+on the leading edge of each working, done, or blocked row, in every layout. Choosing Dots or Symbols again removes
+`status_icons`. Terminal/default reset colors are projected to opaque native
+colors.
 
 New tab and New Workspace follow the shared `ui.prompt_new_tab_name` (default
 on) and `ui.prompt_new_workspace_name` (default off). When set, every button,
@@ -921,8 +930,8 @@ spacing:
 
 - `superset`: one line per row. An icon slot carries the pull request's state
   or the repository owner, with the activity status as a compact corner badge
-  (dot or symbol, following the indicator setting) that leaves the main icon
-  visible. The PR's change counts sit on the right, and the focused row is filled
+  (dot, symbol, or drawn icon, following the indicator setting) that leaves the
+  main icon visible; Tiles tint the whole slot instead. The PR's change counts sit on the right, and the focused row is filled
   with a stripe down its leading edge. Agents show where they run after their name.
 - `orca`: inset cards with a status column, the name and a `primary` mark on a
   repository's own checkout, then a meta line with the host, the branch when it

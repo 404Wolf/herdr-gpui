@@ -28,6 +28,7 @@ mod sidebar_search;
 mod sidebar_settings;
 mod sidebar_style;
 mod status_bar;
+mod status_icons;
 mod system_themes;
 mod theme_files;
 mod themes;

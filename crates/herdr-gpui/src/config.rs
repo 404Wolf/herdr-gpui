@@ -22,6 +22,7 @@ pub(crate) mod preferences;
 pub(crate) mod sidebar;
 mod sidebar_style;
 pub(crate) mod status_bar;
+mod status_icons;
 #[cfg(any(feature = "coder", feature = "daytona"))]
 mod table;
 mod theme;
@@ -55,6 +56,7 @@ pub(crate) use sidebar::{
 };
 pub use sidebar_style::{SelectMode, SidebarOverrides, SidebarStyle};
 pub use status_bar::StatusBar;
+pub use status_icons::StatusIcons;
 use std::{
     collections::BTreeMap,
     env, fs,
@@ -98,6 +100,8 @@ pub struct Config {
     pub show_sidebar_search: bool,
     /// The repository owner's avatar, or the GitHub mark, before a space's name.
     pub show_repository_icons: bool,
+    /// Drawn status icons in place of Herdr's dots or symbols; `None` follows Herdr.
+    pub status_icons: Option<StatusIcons>,
     /// CPU and memory of the selected host in the status bar.
     pub show_system_load: bool,
     /// Snapshot a checkout's files each time one of its agents starts or
@@ -442,6 +446,7 @@ impl Default for Config {
             show_agents: true,
             show_sidebar_search: true,
             show_repository_icons: true,
+            status_icons: None,
             show_system_load: true,
             agent_checkpoints: true,
             show_listening_ports: true,
@@ -495,6 +500,7 @@ struct Settings {
     show_agents: Option<bool>,
     show_sidebar_search: Option<bool>,
     show_repository_icons: Option<bool>,
+    status_icons: Option<StatusIcons>,
     show_system_load: Option<bool>,
     agent_checkpoints: Option<bool>,
     show_listening_ports: Option<bool>,
@@ -872,6 +878,7 @@ impl Config {
         config.show_agents = settings.show_agents.unwrap_or(true);
         config.show_sidebar_search = settings.show_sidebar_search.unwrap_or(true);
         config.show_repository_icons = settings.show_repository_icons.unwrap_or(true);
+        config.status_icons = settings.status_icons;
         config.show_system_load = settings.show_system_load.unwrap_or(true);
         config.agent_checkpoints = settings.agent_checkpoints.unwrap_or(true);
         config.show_listening_ports = settings.show_listening_ports.unwrap_or(true);
