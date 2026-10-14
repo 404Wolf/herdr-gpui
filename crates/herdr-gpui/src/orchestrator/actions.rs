@@ -16,6 +16,8 @@ use chrono::Utc;
 use herdr_client::{ConnectTarget, shell_quote};
 use std::{path::PathBuf, sync::atomic::AtomicBool};
 
+mod start;
+
 /// How long `herdr agent start` may wait for the agent to be ready.
 const AGENT_START_TIMEOUT_MS: &str = "90000";
 
@@ -501,7 +503,13 @@ fn launch(
     if let Some(model) = model {
         start.extend(["--", "--model", model]);
     }
-    herdr(host, &start, "Starting the agent", cancelled)?;
+    start::agent(
+        host,
+        &start,
+        &herdr_session.pane_id,
+        created.root_pane.terminal_id.as_deref(),
+        cancelled,
+    )?;
     // The pane is the target: a name could match an agent started elsewhere.
     herdr(
         host,

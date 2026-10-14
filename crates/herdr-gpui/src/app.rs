@@ -190,7 +190,7 @@ pub(crate) fn open_additional_window_then(
         match opened {
             Ok(handle) => {
                 let _ = handle.update(cx, |view, window, cx| {
-                    view.sound = sound;
+                    view.use_sound(sound);
                     then(view, window, cx);
                     window.activate_window();
                 });
@@ -404,7 +404,7 @@ pub(crate) fn run() -> std::process::ExitCode {
                     if mode == LaunchMode::Normal {
                         let sound = shared_sound(cx);
                         let _ = _window.update(cx, |view, _, _| {
-                            view.sound = sound;
+                            view.use_sound(sound);
                         });
                         for _ in 1..window_count {
                             open_additional_window(target.clone(), cx);

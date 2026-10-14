@@ -9,8 +9,12 @@ settings.
 
 Commands reach the app over a socket of its own,
 `$XDG_STATE_HOME/herdr/gpui/control.sock` (default `~/.local/state/`), which
-only your user can open. An agent on an SSH host has no path to it. A few
-commands work from files alone and need no running app; they say so below.
+only your user can open. An agent on an SSH host has no path to it; there,
+the app's shim at `~/.local/state/herdr/gpui/bin/herdr-gpui` offers
+`browser open` and `browser reload` through Herdr workspace metadata (see
+[remote agents](../crates/herdr-gpui/README.md#letting-agents-open-pages)),
+and every other command exits 8. A few commands work from files alone and
+need no running app; they say so below.
 Windows builds have no control socket yet: commands that need the app exit 8.
 
 ```sh
@@ -124,7 +128,7 @@ Every command accepts:
 | `font [list]`, `font set NAME`, `font reset` | |
 | `keybinds [list]`, `keybinds check` | Shortcuts; custom Herdr commands this client cannot reach |
 | `caffeine [status]`, `caffeine on\|off\|toggle [--for 30m]` | Keep the machine awake |
-| `sound [list]`, `sound play [done\|request]`, `bell` | |
+| `sound [list]`, `sound play [done\|request]`, `bell` | Sounds play at `sound.volume` percent (`config set sound.volume 30`) |
 | `update [status]`, `update check` | Never downloads or installs |
 | `integrations [list]` | What Herdr offers the selected host |
 | `integrations install-skill` | Install the agent skill (no app needed) |

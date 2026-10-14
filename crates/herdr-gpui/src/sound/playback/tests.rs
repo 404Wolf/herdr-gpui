@@ -160,3 +160,5 @@ fn normal_completion_and_source_duration_are_bounded() {
         Err(Error::SoundCancelled)
     ));
 }
+
+mod gain;

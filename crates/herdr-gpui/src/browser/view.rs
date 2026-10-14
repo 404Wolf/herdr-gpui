@@ -13,6 +13,7 @@ use gpui::{prelude::*, *};
 use present::Freeze;
 use std::collections::{HashMap, HashSet};
 
+mod agent_tab;
 pub(in crate::browser) mod present;
 mod render;
 #[cfg(unix)]
@@ -333,6 +334,7 @@ impl HerdrWindow {
         self.advance_close_run(window, cx);
         self.ensure_code_page(window, cx);
         self.poll_deliveries(cx);
+        self.poll_reveal(window, cx);
         self.poll_reviews(cx);
         self.poll_code_views(cx);
         self.poll_orchestrators(window, cx);

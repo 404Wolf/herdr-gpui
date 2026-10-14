@@ -683,8 +683,8 @@ or unchanged name lets the daemon choose it, as in the TUI. Teleport, worktree
 creation, and browser tabs never prompt.
 
 Sound uses the dedicated Rodio backend, shared global/per-agent settings and
-custom local paths, with Herdr's bundled sounds as fallbacks. The Sound tab offers
-an explicit QA preview. Shared Herdr toast delivery enables in-app notifications
+custom local paths, with Herdr's bundled sounds as fallbacks. The Sound tab sets
+this app's volume and offers an explicit QA preview. Shared Herdr toast delivery enables in-app notifications
 and System delivery posts OS notifications; Terminal delivery is not executed by
 this native client, which has no outer terminal. Per-field
 `[notifications]` settings in the native local override file take precedence.
@@ -1153,11 +1153,23 @@ Sound is enabled by default; Droid alone defaults to off. Agent values are
 override `path`, and relative paths resolve beside the local TUI config.
 `HERDR_DISABLE_SOUND` or `NEXTEST`, when present, disables playback entirely.
 
+Volume is this app's own, since Herdr's `[ui.sound]` has none: `[sound] volume`
+in `config-gpui.local.toml`, a percentage of each sound's own level from 0 to 100
+(default 50), also under **Settings > Sound**. It follows loudness rather than
+raw amplitude, so 50 plays at a quarter of the amplitude, about 12 dB quieter;
+0 plays nothing. It applies to every sound, previews and `sound play` included,
+and not to the system alert `[bell]` plays, which follows the OS alert volume.
+
+```toml
+[sound]
+volume = 30
+```
+
 **QA > Play Sound** explicitly tests Rodio playback with the built-in Done sound
 on the same background worker. No daemon or active pane is needed. This manual
 test bypasses notification mute (including `enabled = false`), agent filters,
-custom sound paths, delay, and focus suppression. Environment/test suppression
-still applies, as do the bounded queue, one-second queue expiry, and playback
+custom sound paths, delay, and focus suppression. Volume and environment/test
+suppression still apply, as do the bounded queue, one-second queue expiry, and playback
 budget below. Closing the window cancels the test; endpoint disconnects do not.
 
 Semantic notifications from all connected endpoints use the TUI's timing:
@@ -2200,6 +2212,12 @@ them to the agent that opened it, so it can change the page.
   screenshot, and your note.
   Page text is cleaned of control characters and marked as quoted data.
   **Copy** puts the same prompt on the clipboard instead.
+- When the agent takes the notes, its tab replaces the page and its pane
+  takes the focus, so you see it pick them up. Notes held for a busy agent
+  do this once they are pasted; an agent in another workspace is brought up
+  once the window arrives there. Notes from a mockup window bring the Herdr
+  UI window forward the same way. Notes that are kept for `browser
+  feedback` or copied leave the page where it is.
 - Sent notes stay listed, dimmed and marked sent, so a note can be changed
   and sent again. Click a note's text to edit it in the composer; saving it
   marks it unsent. Send then delivers only the notes not sent yet (**Send 2
@@ -2370,8 +2388,41 @@ The tab joins the caller's own workspace, which Herdr names in the pane's
 `HERDR_WORKSPACE_ID`, and remembers the caller's `HERDR_PANE_ID` so notes on
 the page go back to it. The command talks to the running app over a socket at
 `$XDG_STATE_HOME/herdr/gpui/control.sock`, readable only by you, and exits with
-3 when the app is not running. Only processes on this machine can reach it:
-agents on saved SSH hosts cannot open browser tabs.
+3 when the app is not running. Only processes on this machine can reach it.
+
+Agents on a saved SSH host open pages another way, since that host cannot
+reach this machine. The app writes a small `herdr-gpui` shim there, at
+`~/.local/state/herdr/gpui/bin/herdr-gpui`; it needs only `sh`, `cut`, and
+`sed`. The shim leaves the request on the caller's Herdr workspace as metadata
+tokens (`herdr workspace report-metadata`, named `herdr-gpui-*`), which expire
+after 30 seconds. A window connected to that host sees them in its snapshot
+and opens the page in that workspace, once per request:
+
+```sh
+~/.local/state/herdr/gpui/bin/herdr-gpui browser open localhost:3000
+~/.local/state/herdr/gpui/bin/herdr-gpui browser open --no-focus https://example.com/docs
+~/.local/state/herdr/gpui/bin/herdr-gpui browser reload
+```
+
+- An address on the host's own loopback (`localhost`, `127.0.0.1`, `[::1]`,
+  `0.0.0.0`) is forwarded first, as `herdr-gpui ports open` does, and the tab
+  shows the forwarded `127.0.0.1` port with the same path and query.
+- Only `browser open` and `browser reload` work from a host; every other
+  command exits 8. Files on the host are not shown: serve their folder (for
+  example `python3 -m http.server 8000`) and open its port. Addresses are
+  limited to 960 characters.
+- Notes you send on such a page are typed into the agent's pane once it is
+  idle, as for a local agent; `browser feedback` cannot reach the app from
+  the host.
+- Anything on the host that can run `herdr` can set the same tokens, so a
+  request can do no more than open an http or https page in the workspace
+  that carries it, or reload the tabs its pane opened. A bad address is
+  refused with a notice in the window.
+- Every Herdr UI connected to the host acts on the request, and a request
+  made while no window is connected is dropped when its tokens expire. Each
+  request names its own tokens, so requests made together from several panes
+  all open; a workspace holds at most 32 tokens, so a burst of long addresses
+  can be refused until earlier ones expire.
 
 Agents only use what they know about, so the app offers, once, to install a
 `herdr-gpui-browser` skill that teaches them these commands. It goes into
@@ -2388,6 +2439,14 @@ removed; a skill of the same name you wrote yourself is left alone.
   palette's **Install Browser Skill for Agents**.
 - Only release builds offer or refresh the skill. A development build never
   points your agents at itself unless you install from it explicitly.
+- Once you agree, the app also puts the shim and a copy of the skill naming
+  it on each saved SSH host it connects to, once per run, over the same
+  noninteractive SSH. The copy goes only into the host's existing `~/.claude`
+  or `~/.agents`. As here, a shim or skill file without the app's marker is
+  left alone. A host without a POSIX shell is skipped. Removing the skill
+  takes the shim and those copies off each host again, the next time a
+  window connects to it. Windows has no saved SSH hosts, so it installs
+  nothing.
 
 `herdr-gpui browser skill` prints the same text, for example to install it
 elsewhere:
