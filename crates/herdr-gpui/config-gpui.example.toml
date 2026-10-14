@@ -134,6 +134,9 @@ project_roots = []
 # delay_seconds = 1
 # top-left, top-right, bottom-left, bottom-right. Explicit wire corners win.
 # position = "bottom-right"
+# GUI-only: false posts no "finished" toasts or OS notifications. "Needs
+# attention" and custom notifications (herdr notification show) still appear.
+# finished = true
 
 # The "copied to clipboard" flash shown after a terminal selection is copied.
 # Left commented out, this follows the daemon config's [ui.toast.clipboard], so
