@@ -69,8 +69,10 @@ impl HerdrWindow {
             .as_ref()
             .and_then(std::sync::Weak::upgrade)
             .is_some_and(|old| Arc::ptr_eq(&old, &endpoint.connection.inbox));
+        // Another connection's lookups stop, but what they found stays shown
+        // until this one refreshes it.
         if !same_connection {
-            self.menu.pr_cache.clear();
+            self.menu.pr_cache.suspend();
             self.menu.pr_cache_connection = Some(Arc::downgrade(&endpoint.connection.inbox));
         }
         if let (Some(snapshot), Some(profile), Some(origin)) =
@@ -81,8 +83,8 @@ impl HerdrWindow {
                 self.endpoints[self.selected_endpoint].generation,
                 snapshot.boot_id.clone(),
             );
-            let token = profile.token.clone();
-            self.menu.pr_cache.scope(scope, token, origin);
+            let (token, login) = (profile.token.clone(), profile.login.clone());
+            self.menu.pr_cache.scope(scope, token, &login, origin);
         }
     }
 
@@ -172,7 +174,8 @@ impl HerdrWindow {
             }
             changed |= self.menu.pr_cache.poll(now);
         } else {
-            self.menu.pr_cache.clear();
+            // A dropped connection keeps the last answers for its return.
+            self.menu.pr_cache.suspend();
         }
         if self.menu.page == Some(Page::Workspace) && !self.workspace_pr_target_current() {
             if self.menu.pr.message.as_deref()

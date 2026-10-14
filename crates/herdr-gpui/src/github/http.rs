@@ -110,6 +110,96 @@ pub(crate) fn graphql(
     Ok(result)
 }
 
+/// A query of aliased fields, each answered as its own `repository`: an error
+/// whose path starts at one alias fails only that one, as GitHub reports a
+/// repository it would not show beside ones it did. An exhausted quota, or an
+/// error no alias claims, fails the whole request. Pull request lookups are
+/// its only caller, so failures are logged under their context.
+pub(crate) fn graphql_aliases(
+    token: &SecretString,
+    query: &str,
+    variables: Value,
+    aliases: &[(String, String)],
+    timeout: Duration,
+    cancelled: impl Fn() -> bool,
+    cooldown: &mut Option<Duration>,
+) -> Result<Vec<Result<Value>>> {
+    let deadline = Instant::now() + timeout;
+    if cancelled() {
+        return Err(Error::PrCancelled);
+    }
+    let (result, exchange) = post(token, query, variables, deadline, cooldown)?;
+    if cancelled() {
+        return Err(Error::PrCancelled);
+    }
+    let kind = log::token_kind(token);
+    if let Some(errors) = result.get("errors") {
+        log::graphql("pull_request", kind, &exchange, errors);
+    }
+    split_aliases(result, aliases, kind, exchange.reset, Utc::now(), cooldown)
+}
+
+/// Each alias's answer, or the error that fails the whole request. Pure, so
+/// the attribution of errors to aliases is testable without GitHub.
+pub(super) fn split_aliases(
+    mut result: Value,
+    aliases: &[(String, String)],
+    token_kind: &str,
+    reset: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+    cooldown: &mut Option<Duration>,
+) -> Result<Vec<Result<Value>>> {
+    let errors = result
+        .get_mut("errors")
+        .map(Value::take)
+        .unwrap_or_default();
+    let listed = errors.as_array().map(Vec::as_slice).unwrap_or_default();
+    let typed = |types: &[&str]| {
+        listed.iter().any(|error| {
+            error["type"]
+                .as_str()
+                .is_some_and(|kind| types.contains(&kind))
+        })
+    };
+    if typed(&["RATE_LIMITED", "FORBIDDEN", "UNAUTHORIZED"]) {
+        *cooldown = Some(pause_until(reset, now));
+    }
+    let claimed = |error: &Value| {
+        error["path"][0]
+            .as_str()
+            .is_some_and(|alias| aliases.iter().any(|(known, _)| known == alias))
+    };
+    if typed(&["RATE_LIMITED"]) || !listed.iter().all(claimed) {
+        return Err(query_error(&errors, None, token_kind, reset));
+    }
+    Ok(aliases
+        .iter()
+        .map(|(alias, repository)| {
+            let own: Vec<Value> = listed
+                .iter()
+                .filter(|error| error["path"][0].as_str() == Some(alias))
+                .map(|error| {
+                    // Re-rooted so the alias reads as the single query's field.
+                    let mut error = error.clone();
+                    error["path"][0] = Value::from("repository");
+                    error
+                })
+                .collect();
+            if own.is_empty() {
+                let answer = result["data"][alias.as_str()].take();
+                Ok(serde_json::json!({"data": {"repository": answer}}))
+            } else {
+                Err(query_error(
+                    &Value::Array(own),
+                    Some(repository.clone()),
+                    token_kind,
+                    reset,
+                ))
+            }
+        })
+        .collect())
+}
+
 /// A GraphQL mutation the user asked for. It is sent once and never retried
 /// or cancelled midway; a refusal carries GitHub's own reason (cleaned and
 /// bounded) because "the branch moved" or "not mergeable" is the answer the

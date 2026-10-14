@@ -17,6 +17,7 @@ use std::{
 };
 
 mod actions;
+mod batch;
 mod by_number;
 mod cache;
 mod fetch;

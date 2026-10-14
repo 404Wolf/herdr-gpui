@@ -1,6 +1,10 @@
 use super::*;
-use crate::pull_request::cache::{CACHE_LIMIT, ERROR_BACKOFF, HIDDEN_BACKOFF, REFRESH};
+use crate::pull_request::{
+    batch::{BATCH_LIMIT, Batch},
+    cache::{BatchSize, CACHE_LIMIT, ERROR_BACKOFF, HIDDEN_BACKOFF, REFRESH},
+};
 
+mod batched;
 mod hidden;
 mod missing;
 mod pause;
@@ -15,19 +19,33 @@ fn input(branch: &str) -> Input {
 
 struct Peer {
     cache: Cache,
-    incoming: mpsc::Receiver<(u64, Input, Origin, Arc<secrecy::SecretString>)>,
-    outgoing: mpsc::SyncSender<(u64, Result, Option<Duration>)>,
+    incoming: mpsc::Receiver<(u64, Vec<Input>, Origin, Arc<secrecy::SecretString>)>,
+    outgoing: mpsc::SyncSender<(u64, Batch, Option<Duration>)>,
+}
+
+fn answered(input: Input, result: Result) -> Batch {
+    Batch {
+        found: vec![(input, result)],
+        failed: None,
+    }
 }
 
 impl Peer {
+    /// One checkout per request, as most tests follow lookups.
     fn new() -> Self {
+        Self::batched(1)
+    }
+
+    fn batched(size: usize) -> Self {
         let (requests, incoming) = mpsc::sync_channel(1);
         let (outgoing, results) = mpsc::sync_channel(1);
         let mut cache = Cache::default();
-        cache.lookup.worker = Some(Worker { requests, results });
+        cache.prefetch.worker = Some(Worker { requests, results });
+        cache.batch = BatchSize(size);
         cache.scope(
             (0, 1, "boot".into()),
             Arc::new("fixture".into()),
+            "fixture",
             Origin::Local,
         );
         Self {
@@ -38,8 +56,12 @@ impl Peer {
     }
 
     fn complete(&mut self, now: Instant, result: Result, cooldown: Option<Duration>) -> Input {
-        let (generation, input, _, _) = self.incoming.try_recv().unwrap();
-        self.outgoing.send((generation, result, cooldown)).unwrap();
+        let (generation, mut inputs, _, _) = self.incoming.try_recv().unwrap();
+        assert_eq!(inputs.len(), 1);
+        let input = inputs.pop().unwrap();
+        self.outgoing
+            .send((generation, answered(input.clone(), result), cooldown))
+            .unwrap();
         self.cache.poll(now);
         input
     }
@@ -175,9 +197,10 @@ fn cache_prefetches_without_menu_and_refreshes_at_ttl_with_stale_data() {
 }
 
 #[test]
-fn cache_fences_auth_scope_removed_branch_and_late_results() {
+fn scope_changes_fence_late_results_and_only_another_account_forgets_answers() {
     let now = Instant::now();
-    for change in 0..7 {
+    let scope = |epoch, generation, boot: &str| (epoch, generation, boot.to_owned());
+    for change in 0..8 {
         let mut peer = Peer::new();
         peer.cache.seed(input("cached"), fixture().unwrap(), now);
         peer.cache.schedule([input("old")], now);
@@ -185,38 +208,107 @@ fn cache_fences_auth_scope_removed_branch_and_late_results() {
         let (generation, _, _, _) = peer.incoming.try_recv().unwrap();
         let token = peer.cache.token.as_ref().unwrap().clone();
         match change {
-            0 => peer.cache.clear(), // sign-out/disconnect
+            0 => peer.cache.clear(), // sign-out
             1 => peer.cache.scope(
-                (0, 1, "boot".into()),
-                Arc::new("other-account".into()),
+                scope(0, 1, "boot"),
+                Arc::new("other".into()),
+                "other-account",
                 Origin::Local,
             ),
-            2 => peer
-                .cache
-                .scope((1, 1, "boot".into()), token, Origin::Local),
+            2 => peer.cache.scope(
+                scope(0, 1, "boot"),
+                Arc::new("renewed".into()),
+                "fixture",
+                Origin::Local,
+            ),
             3 => peer
                 .cache
-                .scope((0, 2, "boot".into()), token, Origin::Local),
+                .scope(scope(1, 1, "boot"), token, "fixture", Origin::Local),
             4 => peer
                 .cache
-                .scope((0, 1, "new-boot".into()), token, Origin::Local),
+                .scope(scope(0, 2, "boot"), token, "fixture", Origin::Local),
             5 => peer
                 .cache
-                .scope((0, 1, "boot".into()), token, Origin::Ssh("host".into())),
+                .scope(scope(0, 1, "new-boot"), token, "fixture", Origin::Local),
+            6 => peer.cache.scope(
+                scope(0, 1, "boot"),
+                token,
+                "fixture",
+                Origin::Ssh("host".into()),
+            ),
             _ => peer.cache.retain(|input| input.branch == "new"),
         }
-        assert!(peer.cache.entries.is_empty());
+        assert_eq!(
+            peer.cache.peek("/repo/.git", "cached").is_some(),
+            (2..=5).contains(&change),
+            "cached answer after change {change}"
+        );
         assert!(peer.cache.queue.is_empty());
         peer.outgoing
-            .send((generation, Ok(Some(fixture().unwrap())), None))
+            .send((
+                generation,
+                answered(input("old"), Ok(Some(fixture().unwrap()))),
+                None,
+            ))
             .unwrap();
         peer.cache.poll(now);
         assert!(
-            peer.cache.entries.is_empty(),
-            "late result restored sensitive data: {change}"
+            peer.cache.entries.iter().all(|e| e.input != input("old")),
+            "late result was recorded: {change}"
         );
         assert!(peer.incoming.try_recv().is_err());
     }
+}
+
+#[test]
+fn another_device_keeps_this_ones_answers_for_when_it_is_selected_again() {
+    let mut peer = Peer::new();
+    let now = Instant::now();
+    peer.cache.seed(input("feature"), fixture().unwrap(), now);
+    let token = peer.cache.token.clone().unwrap();
+    let remote = Origin::Ssh("host".into());
+    peer.cache
+        .scope((1, 1, "boot".into()), token.clone(), "fixture", remote);
+    assert!(peer.cache.peek("/repo/.git", "feature").is_none());
+    // The same path on that device is another checkout: it is asked for.
+    peer.cache.schedule([input("feature")], now);
+    assert_eq!(peer.cache.queue.len(), 1);
+    // Its checkouts going away does not drop this device's entries.
+    peer.cache.retain(|_| false);
+    peer.cache
+        .scope((2, 1, "boot".into()), token, "fixture", Origin::Local);
+    assert_eq!(peer.cache.peek("/repo/.git", "feature").unwrap().number, 8);
+}
+
+#[test]
+fn a_dropped_connection_keeps_answers_and_the_account_pause() {
+    let mut peer = Peer::new();
+    let now = Instant::now();
+    let feature = input("feature");
+    peer.cache.seed(feature.clone(), fixture().unwrap(), now);
+    peer.cache.refresh(feature.clone(), now);
+    peer.cache.poll(now);
+    peer.complete(
+        now,
+        Err(Error::GitHubRateLimit { reset: None }),
+        Some(Duration::from_secs(600)),
+    );
+    peer.cache.suspend();
+    let token = peer.cache.token.clone().unwrap();
+    peer.cache
+        .scope((0, 2, "boot".into()), token, "fixture", Origin::Local);
+    let mut view = Lookup::default();
+    peer.cache.present(&feature, &mut view, now);
+    assert_eq!(view.value.as_ref().unwrap().number, 8);
+    assert!(
+        view.message
+            .unwrap()
+            .starts_with("Refresh unavailable, showing the last result. GitHub rate limit")
+    );
+    // The reconnect does not ask a rate-limited account again.
+    peer.cache.schedule([input("other")], now);
+    peer.cache.poll(now);
+    assert!(peer.incoming.try_recv().is_err());
 }
 
 #[test]
@@ -227,13 +319,17 @@ fn signout_drains_private_results_without_starting_queued_work() {
     peer.cache.poll(now);
     let (generation, _, _, _) = peer.incoming.try_recv().unwrap();
     peer.outgoing
-        .send((generation, Ok(Some(fixture().unwrap())), None))
+        .send((
+            generation,
+            answered(input("active"), Ok(Some(fixture().unwrap()))),
+            None,
+        ))
         .unwrap();
     peer.cache.clear();
-    assert!(!peer.cache.lookup.busy);
+    assert!(!peer.cache.prefetch.busy);
     assert!(
         peer.cache
-            .lookup
+            .prefetch
             .worker
             .as_ref()
             .unwrap()

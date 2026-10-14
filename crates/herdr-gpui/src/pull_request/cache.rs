@@ -1,7 +1,16 @@
 //! Bounded, per-checkout PR cache with refresh and error backoff. Entries are
 //! capped in number so a long session cannot grow it without limit.
+//!
+//! What was found outlives the connection it was found over: a reconnect,
+//! another device, or a renewed token stops the work in flight but keeps the
+//! last answers on screen, so a failing or rate-limited refresh never blanks
+//! them. Only another account, or signing out, forgets them.
 
-use super::{Input, Lookup, Origin, PullRequest};
+use super::{
+    Input, Lookup, Origin, PullRequest,
+    batch::{BATCH_LIMIT, Batch},
+    lookup::{Finished, Prefetch},
+};
 use chrono::{DateTime, DurationRound as _, Local, TimeDelta};
 use std::{
     sync::Arc,
@@ -25,7 +34,26 @@ pub(super) struct HiddenRepository {
     pub(super) message: String,
 }
 
+/// Whose lookups the cache serves: the device the checkouts are on and the
+/// GitHub account reading them. An entry of another view is kept, so going
+/// back shows it at once, but is never shown or refreshed under this one.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct View {
+    pub(super) origin: Origin,
+    pub(super) login: String,
+}
+
+/// How many checkouts one request asks for.
+pub(super) struct BatchSize(pub(super) usize);
+
+impl Default for BatchSize {
+    fn default() -> Self {
+        Self(BATCH_LIMIT)
+    }
+}
+
 pub(super) struct Entry {
+    pub(super) view: View,
     pub(super) input: Input,
     pub(super) value: Option<PullRequest>,
     pub(super) message: Option<String>,
@@ -38,13 +66,15 @@ pub(super) struct Entry {
 /// Token allocation identity is an additional auth generation, never token text.
 #[derive(Default)]
 pub(crate) struct Cache {
-    pub(super) lookup: Lookup,
+    pub(super) prefetch: Prefetch,
     pub(super) entries: Vec<Entry>,
     pub(super) queue: std::collections::VecDeque<Input>,
-    pub(super) active: Option<Input>,
+    /// The checkouts of the batch in flight.
+    pub(super) active: Vec<Input>,
     pub(super) scope: Option<(u64, u64, String)>,
     pub(super) token: Option<Arc<secrecy::SecretString>>,
-    pub(super) origin: Origin,
+    pub(super) view: View,
+    pub(super) batch: BatchSize,
     pub(super) next_scan: Option<Instant>,
     pub(super) paused_until: Option<Instant>,
     /// The failure that paused the account, shown with when it resumes.
@@ -57,11 +87,13 @@ pub(crate) struct Cache {
 impl Cache {
     #[cfg(any(test, all(feature = "integration-test", target_os = "macos")))]
     pub fn seed(&mut self, input: Input, value: PullRequest, now: Instant) {
-        self.entries.retain(|entry| entry.input != input);
+        self.entries
+            .retain(|entry| entry.view != self.view || entry.input != input);
         if self.entries.len() == CACHE_LIMIT {
             self.entries.remove(0);
         }
         self.entries.push(Entry {
+            view: self.view.clone(),
             input,
             value: Some(value),
             message: None,
@@ -71,49 +103,87 @@ impl Cache {
         });
     }
 
+    /// Forgets everything, for signing out or another account.
     pub fn clear(&mut self) {
-        self.lookup.clear();
+        self.suspend();
         self.entries.clear();
-        self.queue.clear();
-        self.active = None;
         self.scope = None;
         self.token = None;
-        self.origin = Origin::Local;
-        self.next_scan = None;
+        self.view = View::default();
         self.paused_until = None;
         self.pause_reason = None;
         self.hidden.clear();
         self.cursor = 0;
     }
 
-    /// A different device, daemon boot, account, or origin starts over.
+    /// Stops the batch in flight and the queued lookups but keeps what was
+    /// found and any pause, for a connection that dropped or changed. A late
+    /// answer to the stopped batch is discarded by its generation.
+    pub fn suspend(&mut self) {
+        self.prefetch.clear();
+        self.queue.clear();
+        self.active.clear();
+        self.next_scan = None;
+    }
+
+    /// Another account starts over. A different device, connection, daemon
+    /// boot, or renewed token of the same account stops the work in flight
+    /// and keeps what was found, each entry under the device it is on.
     pub fn scope(
         &mut self,
         scope: (u64, u64, String),
         token: Arc<secrecy::SecretString>,
+        login: &str,
         origin: Origin,
     ) {
+        if self.view.login != login {
+            self.clear();
+        }
+        let view = View {
+            origin,
+            login: login.to_owned(),
+        };
         if self.scope.as_ref() != Some(&scope)
-            || self.origin != origin
+            || self.view != view
             || self
                 .token
                 .as_ref()
                 .is_none_or(|old| !Arc::ptr_eq(old, &token))
         {
-            self.clear();
+            self.suspend();
+            // Hidden repositories are keyed by a device's paths.
+            if self.view.origin != view.origin {
+                self.hidden.clear();
+            }
             self.scope = Some(scope);
             self.token = Some(token);
-            self.origin = origin;
+            self.view = view;
         }
     }
 
+    /// Drops this device's checkouts that are gone. Other devices' entries
+    /// wait to be seen again, bounded by [`CACHE_LIMIT`] with the rest.
     pub fn retain(&mut self, current: impl Fn(&Input) -> bool) {
-        self.entries.retain(|entry| current(&entry.input));
+        let view = &self.view;
+        self.entries
+            .retain(|entry| &entry.view != view || current(&entry.input));
         self.queue.retain(&current);
-        if self.active.as_ref().is_some_and(|input| !current(input)) {
-            self.lookup.clear();
-            self.active = None;
-        }
+        // The rest of the batch is still answered; a gone checkout's answer
+        // is ignored when it arrives.
+        self.active.retain(&current);
+    }
+
+    fn entry(&self, input: &Input) -> Option<&Entry> {
+        self.entries
+            .iter()
+            .find(|entry| entry.view == self.view && &entry.input == input)
+    }
+
+    fn entry_mut(&mut self, input: &Input) -> Option<&mut Entry> {
+        let view = &self.view;
+        self.entries
+            .iter_mut()
+            .find(|entry| &entry.view == view && &entry.input == input)
     }
 
     pub fn scan_due(&self, now: Instant) -> bool {
@@ -124,7 +194,7 @@ impl Cache {
     /// the workspace being viewed sooner, without bypassing errors or changing
     /// queue fairness. Only the background poll calls this, never rendering.
     pub fn expire_missing(&mut self, input: &Input, now: Instant) {
-        if let Some(entry) = self.entries.iter_mut().find(|entry| &entry.input == input)
+        if let Some(entry) = self.entry_mut(input)
             && entry.value.is_none()
             && entry.message.is_none()
             && now >= entry.checked + MISSING_REFRESH
@@ -136,10 +206,10 @@ impl Cache {
     /// Request fresh details without discarding the visible value or interrupting
     /// an in-flight lookup. The poll task still owns dispatch and account backoff.
     pub fn refresh(&mut self, input: Input, now: Instant) {
-        if self.active.as_ref() == Some(&input) {
+        if self.active.contains(&input) {
             return;
         }
-        if let Some(entry) = self.entries.iter_mut().find(|entry| entry.input == input) {
+        if let Some(entry) = self.entry_mut(&input) {
             entry.due = now;
         }
         // Asking explicitly is how a newly installed App is noticed.
@@ -162,13 +232,9 @@ impl Cache {
             if self.queue.len() == CACHE_LIMIT {
                 break;
             }
-            if self.active.as_ref() != Some(&input)
+            if !self.active.contains(&input)
                 && !self.queue.contains(&input)
-                && self
-                    .entries
-                    .iter()
-                    .find(|entry| entry.input == input)
-                    .is_none_or(|entry| now >= entry.due)
+                && self.entry(&input).is_none_or(|entry| now >= entry.due)
             {
                 self.queue.push_back(input);
             }
@@ -176,64 +242,122 @@ impl Cache {
     }
 
     pub fn poll(&mut self, now: Instant) -> bool {
-        let mut changed = self.lookup.poll();
-        if !self.lookup.loading
-            && let Some(input) = self.active.take()
-        {
-            let failed = self.lookup.message.is_some();
-            // Rate/auth failures pause the account; a bad local repo must not
-            // prevent the remaining workspaces from being prefetched.
-            if let Some(cooldown) = self.lookup.cooldown.take() {
-                self.paused_until = Some(now + cooldown);
-                self.pause_reason = self.lookup.message.clone();
-            }
-            let hidden = self.lookup.hidden.take();
-            let due = now
-                + match (failed, &hidden) {
-                    (_, Some(_)) => HIDDEN_BACKOFF,
-                    (true, None) => ERROR_BACKOFF,
-                    (false, None) => REFRESH,
-                };
-            let value = self.lookup.value.take();
-            let message = self.lookup.message.take();
-            if let (Some(repository), Some(repo_key), Some(message)) =
-                (hidden, input.repo_key.clone(), message.clone())
-            {
-                self.hide(repository, repo_key, message, due);
-            }
-            self.record(input, (!failed).then_some(value), message, now, due);
-            changed = true;
-        }
-        if self.active.is_none()
+        let mut changed = self.collect(now);
+        if self.active.is_empty()
             && self.paused_until.is_none_or(|until| now >= until)
             && let Some(token) = self.token.clone()
         {
-            while let Some(input) = self.queue.pop_front() {
+            let mut batch = Vec::new();
+            while batch.len() < self.batch.0.max(1)
+                && let Some(input) = self.queue.pop_front()
+            {
                 // A hidden repository's branches wait with it, without asking.
                 if let Some((until, message)) = self.hidden_for(&input, now) {
                     self.record(input, None, Some(message), now, until);
                     changed = true;
                     continue;
                 }
-                let existing = self.entries.iter().find(|entry| entry.input == input);
+                let existing = self.entry(&input);
                 if existing.is_some_and(|entry| now < entry.due)
                     || (existing.is_none()
                         && self.entries.len() == CACHE_LIMIT
                         && self.entries.iter().all(|entry| now < entry.due))
+                    || batch.contains(&input)
                 {
                     continue;
                 }
-                self.lookup.clear();
-                self.lookup
-                    .request(input.clone(), self.origin.clone(), token.clone());
-                self.active = Some(input);
-                self.cursor = self.cursor.wrapping_add(1);
-                self.lookup.poll();
+                batch.push(input);
+            }
+            if !batch.is_empty() {
+                self.cursor = self.cursor.wrapping_add(batch.len());
+                self.prefetch
+                    .request(batch.clone(), self.view.origin.clone(), token);
+                self.active = batch;
+                // Send it now; only a worker that cannot start answers here.
+                self.collect(now);
                 changed = true;
-                break;
             }
         }
         changed
+    }
+
+    /// Records the batch in flight once it is answered.
+    fn collect(&mut self, now: Instant) -> bool {
+        let Some(finished) = self.prefetch.poll() else {
+            return false;
+        };
+        let active = std::mem::take(&mut self.active);
+        let (found, failed) = match finished {
+            Finished::Answered(batch, cooldown) => {
+                // Rate/auth failures pause the account; a bad local repo must
+                // not prevent the remaining workspaces from being prefetched.
+                if let Some(cooldown) = cooldown {
+                    self.paused_until = Some(now + cooldown);
+                    self.pause_reason = batch
+                        .failed
+                        .as_ref()
+                        .map(|(_, error)| error.to_string())
+                        .or_else(|| {
+                            batch.found.iter().find_map(|(_, result)| {
+                                result.as_ref().err().map(ToString::to_string)
+                            })
+                        });
+                }
+                let Batch { found, failed } = batch;
+                (
+                    found,
+                    failed.map(|(inputs, error)| (inputs, error.to_string())),
+                )
+            }
+            Finished::Failed(message) => (Vec::new(), Some((active.clone(), message.to_owned()))),
+        };
+        for (input, result) in found {
+            if !active.contains(&input) {
+                continue;
+            }
+            match result {
+                Ok(value) => self.finish(input, Some(value), None, None, now),
+                Err(error) => {
+                    let hidden = match &error {
+                        crate::Error::GitHubRepositoryHidden { repository, .. } => {
+                            Some(repository.clone())
+                        }
+                        _ => None,
+                    };
+                    self.finish(input, None, Some(error.to_string()), hidden, now);
+                }
+            }
+        }
+        if let Some((inputs, message)) = failed {
+            for input in inputs.into_iter().filter(|input| active.contains(input)) {
+                self.finish(input, None, Some(message.clone()), None, now);
+            }
+        }
+        true
+    }
+
+    /// Stores one checkout's answer and when to ask again: a failure keeps
+    /// the visible value, and a hidden repository pauses all its branches.
+    fn finish(
+        &mut self,
+        input: Input,
+        value: Option<Option<PullRequest>>,
+        message: Option<String>,
+        hidden: Option<String>,
+        now: Instant,
+    ) {
+        let due = now
+            + match (message.is_some(), &hidden) {
+                (_, Some(_)) => HIDDEN_BACKOFF,
+                (true, None) => ERROR_BACKOFF,
+                (false, None) => REFRESH,
+            };
+        if let (Some(repository), Some(repo_key), Some(message)) =
+            (hidden, input.repo_key.clone(), message.clone())
+        {
+            self.hide(repository, repo_key, message, due);
+        }
+        self.record(input, value, message, now, due);
     }
 
     /// Stores a finished (or skipped) lookup. `value` is `None` to keep the
@@ -248,7 +372,7 @@ impl Cache {
         now: Instant,
         due: Instant,
     ) {
-        if let Some(entry) = self.entries.iter_mut().find(|entry| entry.input == input) {
+        if let Some(entry) = self.entry_mut(&input) {
             if let Some(value) = value {
                 entry.value = value;
             }
@@ -271,6 +395,7 @@ impl Cache {
             }
         }
         self.entries.push(Entry {
+            view: self.view.clone(),
             input,
             value: value.flatten(),
             message,
@@ -290,7 +415,8 @@ impl Cache {
             "Pausing pull request lookups for a repository GitHub would not show"
         );
         for entry in &mut self.entries {
-            if entry.input.repo_key.as_deref() == Some(repo_key.as_str()) {
+            if entry.view == self.view && entry.input.repo_key.as_deref() == Some(repo_key.as_str())
+            {
                 entry.message = Some(message.clone());
                 entry.due = entry.due.max(until);
             }
@@ -319,7 +445,7 @@ impl Cache {
     /// Whether a lookup for `input` is in flight or queued to dispatch, so the
     /// chrome can say it is waiting on GitHub. A paused account is not loading.
     pub fn loading(&self, input: &Input, now: Instant) -> bool {
-        self.active.as_ref() == Some(input)
+        self.active.contains(input)
             || (self.token.is_some()
                 && self.paused_until.is_none_or(|until| now >= until)
                 && self.queue.contains(input))
@@ -331,7 +457,8 @@ impl Cache {
         self.entries
             .iter()
             .find(|entry| {
-                entry.input.checkout.is_none()
+                entry.view == self.view
+                    && entry.input.checkout.is_none()
                     && entry.input.repo_key.as_deref() == Some(repo_key)
                     && entry.input.branch == branch
             })
@@ -343,24 +470,19 @@ impl Cache {
     /// and why its latest refresh failed (if it did).
     #[cfg(unix)]
     pub fn lookup(&self, input: &Input) -> Option<(Option<&PullRequest>, Option<&str>)> {
-        self.entries
-            .iter()
-            .find(|entry| &entry.input == input)
+        self.entry(input)
             .map(|entry| (entry.value.as_ref(), entry.message.as_deref()))
     }
 
     /// Pure cache read by lookup key, for the merged worktree cleanup.
     pub fn get(&self, input: &Input) -> Option<&PullRequest> {
-        self.entries
-            .iter()
-            .find(|entry| &entry.input == input)
-            .and_then(|entry| entry.value.as_ref())
+        self.entry(input).and_then(|entry| entry.value.as_ref())
     }
 
     /// Pure cache read: opening a menu cannot launch Git, HTTPS or daemon requests.
     pub fn present(&mut self, input: &Input, view: &mut Lookup, now: Instant) {
         view.clear();
-        if let Some(entry) = self.entries.iter_mut().find(|entry| &entry.input == input) {
+        if let Some(entry) = self.entry_mut(input) {
             entry.used = now;
             view.value = entry.value.clone();
             view.message = entry.message.clone();
