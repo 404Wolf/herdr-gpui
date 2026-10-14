@@ -11,7 +11,7 @@ use gpui::{Context, ExternalPaths, Pixels, Point, Window};
 use herdr_client::protocol::ClientPaneInputEvent;
 use std::path::PathBuf;
 
-const MAX_PATHS: usize = 256;
+pub(super) const MAX_PATHS: usize = 256;
 const MAX_PASTE_BYTES: usize = 64 * 1024;
 
 impl HerdrWindow {
@@ -27,8 +27,23 @@ impl HerdrWindow {
             return;
         };
         cx.stop_propagation();
-        if paths.paths().is_empty() {
-            return;
+        if self.paste_files(target, paths.paths(), cx) {
+            window.focus(&self.focus, cx);
+        }
+    }
+
+    /// Paste external files into `target` the way a drop does: quoted local
+    /// paths on a local pane, the image bridge for one image on a remote pane,
+    /// and a file copy for anything else there. Files copied in Finder and
+    /// pasted with Cmd-V take this path too. False when nothing was sent.
+    pub(super) fn paste_files(
+        &mut self,
+        target: InputTarget,
+        paths: &[PathBuf],
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if paths.is_empty() {
+            return false;
         }
         // Local paths mean nothing on a cloud machine, and file copies
         // there would need the provider's own transfer; refuse rather than paste dead paths.
@@ -40,18 +55,18 @@ impl HerdrWindow {
             self.local_error =
                 Some("Files not pasted: file drops are not supported on cloud devices yet.".into());
             cx.notify();
-            return;
+            return false;
         }
-        let result = quote_paths(paths.paths()).and_then(|text| {
+        let result = quote_paths(paths).and_then(|text| {
             if self.accepts_remote_images()
-                && let [path] = paths.paths()
+                && let [path] = paths
                 && let Some(source) = super::image_source::from_path(path)
             {
                 self.start_remote_image(target.clone(), source, Some(text), cx);
                 return Ok(());
             }
             if self.accepts_remote_images() {
-                self.start_file_transfer(target.clone(), paths.paths().to_vec(), cx);
+                self.start_file_transfer(target.clone(), paths.to_vec(), cx);
                 return Ok(());
             }
             let endpoint = &self.endpoints[self.selected_endpoint];
@@ -70,10 +85,11 @@ impl HerdrWindow {
             Ok(())
         });
         match result {
-            Ok(()) => window.focus(&self.focus, cx),
+            Ok(()) => true,
             Err(error) => {
                 self.local_error = Some(format!("Files not pasted: {error}"));
                 cx.notify();
+                false
             }
         }
     }

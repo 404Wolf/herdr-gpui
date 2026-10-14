@@ -11,45 +11,18 @@ const TEXT_LIMIT: usize = 2 * 1024 * 1024;
 const IMAGE_LIMIT: usize = super::image_source::MAX_IMAGE_INPUT_BYTES;
 
 /// Blocking: invoke only on a background executor, never through an App context.
-/// Normal paste reads text first and never fetches an image when text is present.
-/// Image-only paste ignores text. No files, URLs, or clipboard metadata are followed.
+/// Normal paste reads copied files first, then text, and never fetches an image
+/// when either is present. A Finder file copy also publishes the file name as
+/// text and a preview image; its file URLs are returned as paths, never opened.
+/// Image-only paste ignores files and text. No other URLs or metadata are read.
 pub(super) fn read(image_only: bool) -> Result<Option<ClipboardItem>> {
     #[cfg(target_os = "macos")]
     {
-        use objc2::rc::autoreleasepool;
-        use objc2_app_kit::NSPasteboard;
-        use objc2_foundation::NSString;
-
-        autoreleasepool(|_| {
-            let pasteboard = NSPasteboard::generalPasteboard();
-            let revision = pasteboard.changeCount();
-            let result = read_with(image_only, |format, limit| {
-                let kind = NSString::from_str(match format {
-                    None => "public.utf8-plain-text",
-                    Some(ImageFormat::Png) => "public.png",
-                    Some(ImageFormat::Jpeg) => "public.jpeg",
-                    Some(ImageFormat::Gif) => "com.compuserve.gif",
-                    Some(ImageFormat::Webp) => "org.webmproject.webp",
-                    Some(ImageFormat::Bmp) => "com.microsoft.bmp",
-                    Some(ImageFormat::Tiff) => "public.tiff",
-                    Some(ImageFormat::Svg | ImageFormat::Ico | ImageFormat::Pnm) => {
-                        return Err(Error::ImageFormat);
-                    }
-                });
-                let Some(data) = pasteboard.dataForType(&kind) else {
-                    return Ok(None);
-                };
-                // AppKit materializes NSData before exposing its length. Bound the
-                // additional Rust allocation before copying, decoding, or hashing.
-                if data.len() > limit {
-                    return Err(Error::ClipboardSize { limit });
-                }
-                Ok(Some(data.to_vec()))
-            });
-            if pasteboard.changeCount() != revision {
-                return Err(Error::ClipboardChanged);
-            }
-            result
+        objc2::rc::autoreleasepool(|_| {
+            read_pasteboard(
+                &objc2_app_kit::NSPasteboard::generalPasteboard(),
+                image_only,
+            )
         })
     }
     #[cfg(target_os = "linux")]
@@ -61,6 +34,79 @@ pub(super) fn read(image_only: bool) -> Result<Option<ClipboardItem>> {
         let _ = image_only;
         Err(Error::ClipboardUnsupported)
     }
+}
+
+/// `read` against one pasteboard; call inside an autorelease pool.
+#[cfg(target_os = "macos")]
+fn read_pasteboard(
+    pasteboard: &objc2_app_kit::NSPasteboard,
+    image_only: bool,
+) -> Result<Option<ClipboardItem>> {
+    use gpui::{ClipboardEntry, ExternalPaths};
+    use objc2_foundation::NSString;
+
+    let revision = pasteboard.changeCount();
+    let files = if image_only {
+        Vec::new()
+    } else {
+        file_paths(pasteboard)
+    };
+    let result = if !files.is_empty() {
+        Ok(Some(ClipboardItem {
+            entries: vec![ClipboardEntry::ExternalPaths(ExternalPaths(files.into()))],
+        }))
+    } else {
+        read_with(image_only, |format, limit| {
+            let kind = NSString::from_str(match format {
+                None => "public.utf8-plain-text",
+                Some(ImageFormat::Png) => "public.png",
+                Some(ImageFormat::Jpeg) => "public.jpeg",
+                Some(ImageFormat::Gif) => "com.compuserve.gif",
+                Some(ImageFormat::Webp) => "org.webmproject.webp",
+                Some(ImageFormat::Bmp) => "com.microsoft.bmp",
+                Some(ImageFormat::Tiff) => "public.tiff",
+                Some(ImageFormat::Svg | ImageFormat::Ico | ImageFormat::Pnm) => {
+                    return Err(Error::ImageFormat);
+                }
+            });
+            let Some(data) = pasteboard.dataForType(&kind) else {
+                return Ok(None);
+            };
+            // AppKit materializes NSData before exposing its length. Bound the
+            // additional Rust allocation before copying, decoding, or hashing.
+            if data.len() > limit {
+                return Err(Error::ClipboardSize { limit });
+            }
+            Ok(Some(data.to_vec()))
+        })
+    };
+    if pasteboard.changeCount() != revision {
+        return Err(Error::ClipboardChanged);
+    }
+    result
+}
+
+/// The local paths of the pasteboard's file URLs, one per pasteboard item.
+/// Finder may publish file reference URLs (`file:///.file/id=...`); they are
+/// resolved to their current path, and those that no longer resolve are skipped.
+/// One more item than a drop accepts is read, so an oversized copy still fails
+/// the drop's own limit instead of pasting a truncated list.
+#[cfg(target_os = "macos")]
+fn file_paths(pasteboard: &objc2_app_kit::NSPasteboard) -> Vec<std::path::PathBuf> {
+    use objc2_foundation::{NSString, NSURL};
+
+    let Some(items) = pasteboard.pasteboardItems() else {
+        return Vec::new();
+    };
+    let kind = NSString::from_str("public.file-url");
+    items
+        .iter()
+        .take(super::file_drop::MAX_PATHS + 1)
+        .filter_map(|item| {
+            let url = NSURL::URLWithString(&*item.stringForType(&kind)?)?;
+            url.filePathURL()?.to_file_path()
+        })
+        .collect()
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux", test))]
@@ -332,6 +378,9 @@ mod linux {
         }
     }
 }
+
+#[cfg(all(test, target_os = "macos"))]
+mod pasteboard_tests;
 
 #[cfg(test)]
 mod tests {
