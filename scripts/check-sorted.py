@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Keep marked lists sorted, so parallel additions land on different lines.
 
-A region runs from a line containing `keep-sorted start` to one containing
-`keep-sorted end`. Its entries start at the region's own indentation; comment
+A region runs from a comment line (`//` or `#`) containing `keep-sorted start`
+to one containing `keep-sorted end`. Its entries start at the region's own indentation; comment
 and attribute lines (`//`, `#[`, `#!`) before an entry belong to it, and deeper
 indented or closing lines after it continue it. Blank lines split a region
 into blocks that are each sorted on their own. Entries compare by their first
@@ -28,6 +28,10 @@ VISIBILITY = re.compile(r"^pub(\([^)]*\))?\s+")
 
 class RegionError(Exception):
     pass
+
+
+def is_marker(line: str, marker: str) -> bool:
+    return line.lstrip().startswith(("//", "#")) and marker in line
 
 
 def indent(line: str) -> int:
@@ -103,11 +107,11 @@ def process(text: str) -> tuple[str, list[int]]:
     i = 0
     while i < len(lines):
         out.append(lines[i])
-        if START not in lines[i]:
+        if not is_marker(lines[i], START):
             i += 1
             continue
         start = i + 1
-        end = next((j for j in range(start, len(lines)) if END in lines[j]), None)
+        end = next((j for j in range(start, len(lines)) if is_marker(lines[j], END)), None)
         if end is None:
             raise RegionError(f"line {start}: `{START}` without `{END}`")
         region = lines[start:end]
@@ -135,7 +139,7 @@ def main(argv: list[str]) -> int:
     fix = "--fix" in argv[1:]
     failures = 0
     for path in tracked_files():
-        if not path.is_file() or path.name == "check-sorted.py":
+        if not path.is_file():
             continue
         text = path.read_text(encoding="utf-8")
         if START not in text:

@@ -61,6 +61,10 @@ class CheckSortedTests(unittest.TestCase):
         text = region("    pub(crate) alpha: u8,", "    beta: u8,", "    pub(super) gamma: u8,", "    pub zeta: u8,")
         self.assertEqual(check_sorted.process(text), (text, []))
 
+    def test_markers_outside_comments_are_ignored(self) -> None:
+        text = 'MARKER = "// keep-sorted start"\nb\na\n'
+        self.assertEqual(check_sorted.process(text), (text, []))
+
     def test_missing_end_is_an_error(self) -> None:
         with self.assertRaises(check_sorted.RegionError):
             check_sorted.process("// keep-sorted start\n    a,\n")
