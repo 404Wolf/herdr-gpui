@@ -5,7 +5,7 @@ use super::HerdrWindow;
 use crate::{
     Error, Result,
     connection::ConnectionBridge,
-    terminal::{InputTarget, shell_special, wheel_target},
+    terminal::{InputTarget, escape_into, shell_special, wheel_target},
 };
 use gpui::{Context, ExternalPaths, Pixels, Point, Window};
 use herdr_client::protocol::ClientPaneInputEvent;
@@ -128,12 +128,7 @@ pub(super) fn quote_paths(paths: &[PathBuf]) -> Result<String> {
         if !quoted.is_empty() {
             quoted.push(' ');
         }
-        for ch in path.to_str().ok_or(Error::FileDropEncoding)?.chars() {
-            if shell_special(ch) {
-                quoted.push('\\');
-            }
-            quoted.push(ch);
-        }
+        escape_into(path.to_str().ok_or(Error::FileDropEncoding)?, &mut quoted);
     }
     Ok(quoted)
 }

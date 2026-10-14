@@ -1469,22 +1469,24 @@ keyboard selection is not exposed.
 ## File Drops
 
 Drop files from your file manager onto a terminal pane or popup to paste their
-paths there, even if another pane is focused. Paths are quoted as POSIX shell
-words, separated by spaces; the drop never presses Enter. Local drops only paste
-paths; SSH drops read and transfer the selected files.
-Drops are limited to 256 paths and 64 KiB of quoted text. Non-UTF-8 paths and
+paths there, even if another pane is focused. Paths are pasted bare, as native
+macOS terminals do, with a backslash before each space, quote, bracket, comma,
+or other character a shell would interpret (`/tmp/Shot\ 1.png`), separated by
+spaces; the drop never presses Enter. Local drops only paste paths; SSH drops
+read and transfer the selected files.
+Drops are limited to 256 paths and 64 KiB of escaped text. Non-UTF-8 paths and
 paths containing control characters are rejected rather than altered.
 
 On an SSH endpoint, a single supported image is transferred as described below.
 Other regular files and multiple-file drops are streamed using the SSH file-copy
-path below. POSIX quoting is not intended for Windows command shells.
+path below. POSIX shell escaping is not intended for Windows command shells.
 
 ## SSH File Copies
 
 Drop regular files onto an SSH pane or popup to copy them to that host. A
 `Copying...` card shows the filename (or file count), transferred bytes, percentage,
 progress bar, and Cancel button. Once all files are received and the SSH processes
-exit successfully, their quoted remote paths are pasted into the original target.
+exit successfully, their escaped remote paths are pasted into the original target.
 No partial list is pasted on failure. Directories and special files are rejected;
 symlinks to regular files are followed. A single recognized image uses the image
 bridge below instead; multiple-file drops copy their originals unchanged.
@@ -1970,7 +1972,8 @@ Cmd-click (Ctrl-click elsewhere) a file path a pane prints, such as
 `src/main.rs:12:5`, `./build/out`, `~/notes.md`, or a `file://` hyperlink, to
 open it. Holding the modifier underlines the path under the pointer. Relative
 paths resolve against the pane's working directory, and a path opens only if it
-exists. A bare name needs a location (`main.rs:3`) to count as a path, and
+exists. A backslash-escaped path, as a file drop pastes, opens the unescaped
+name. A bare name needs a location (`main.rs:3`) to count as a path, and
 paths are not detected in panes on SSH hosts, whose files live on that host.
 
 A file opens in your terminal editor at the printed line, in a new pane split

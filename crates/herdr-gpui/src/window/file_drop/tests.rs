@@ -22,7 +22,7 @@ fn escapes_shell_metacharacters_and_keeps_plain_paths_bare() {
         quote_paths(&paths).unwrap(),
         "/Users/me/Screenshot.png /tmp/a\\ b /tmp/it\\'s \
          /tmp/\\$\\(touch\\ bad\\)\\;\\`echo\\ bad\\`\\&\\|\\<\\>\\*\\?\\[\\]\\{\\}\\!\\~\\#\\^\\=\\$HOME\\\\\\\" \
-         /tmp/\u{65e5}\u{672c}\u{8a9e}-v1.2_x+y@z%,:"
+         /tmp/\u{65e5}\u{672c}\u{8a9e}-v1.2_x+y@z%\\,:"
     );
 }
 

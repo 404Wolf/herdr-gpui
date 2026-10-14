@@ -6,7 +6,7 @@ use herdr_client::protocol::{CellData, FrameData, PaneSurfaceFrame};
 use std::ops::Range;
 
 mod path;
-pub(crate) use path::shell_special;
+pub(crate) use path::{escape_into, shell_special};
 
 pub(super) const MAX_ROW_BYTES: usize = 32768;
 

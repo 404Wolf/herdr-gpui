@@ -68,7 +68,7 @@ pub(super) fn plain_path(text: &str, hit: usize) -> Option<PlainPath<'_>> {
     })
 }
 
-/// `text` with the backslash before each shell-special character removed;
+/// `text` with the backslash before each `shell_special` character removed;
 /// any other backslash is part of the name.
 fn unescape(text: &str) -> Cow<'_, str> {
     if !text.contains('\\') {
@@ -90,35 +90,26 @@ fn unescape(text: &str) -> Cow<'_, str> {
     Cow::Owned(path)
 }
 
-/// Characters a POSIX shell, bash, or zsh expands, splits, or quotes on, which
-/// a pasted path escapes with a backslash.
+/// `path` as one shell word, each `shell_special` character after a
+/// backslash: what a file drop pastes, and what `plain_path` reads back.
+pub(crate) fn escape_into(path: &str, out: &mut String) {
+    for c in path.chars() {
+        if shell_special(c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+}
+
+/// Characters a pasted path escapes: every character that ends a path here,
+/// such as a comma or the narrow no-break space in macOS screenshot names,
+/// and every one a POSIX shell, bash, or zsh would expand or quote on.
 pub(crate) fn shell_special(c: char) -> bool {
-    matches!(
-        c,
-        ' ' | '\\'
-            | '\''
-            | '"'
-            | '`'
-            | '$'
-            | '&'
-            | '|'
-            | ';'
-            | '<'
-            | '>'
-            | '('
-            | ')'
-            | '['
-            | ']'
-            | '{'
-            | '}'
-            | '*'
-            | '?'
-            | '!'
-            | '#'
-            | '~'
-            | '^'
-            | '='
-    )
+    separates(c)
+        || matches!(
+            c,
+            '\\' | '$' | '&' | '*' | '?' | '!' | '#' | '~' | '^' | '='
+        )
 }
 
 /// `token` without a trailing `:line` or `:line:column`, and that line.
