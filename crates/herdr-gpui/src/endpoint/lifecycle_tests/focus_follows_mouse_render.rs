@@ -28,18 +28,18 @@ fn past_resizes(server: &mut Server) -> ClientMessage {
 #[gpui::test]
 fn rendered_hover_resumes_typing_in_the_hovered_pane(cx: &mut gpui::TestAppContext) {
     let (endpoint, mut server) = connected_endpoint("ssh:hover-render");
-    let (view, cx) = cx.add_window_view(|window, cx| {
-        let mut view = fixture_window(window, cx);
-        prepare_mouse(&mut view, endpoint, cx);
-        // Let the actual canvas measure its geometry without sending a resize
-        // while this fixture prepares the matching daemon frame.
-        view.last_queued_options = Some(view.options);
-        view
-    });
+    let (view, cx) = cx.add_window_view(fixture_window);
     cx.update(|window, _| window.activate_window());
     cx.run_until_parked();
+    // Let the actual canvas measure its geometry before the connected
+    // endpoint is selected. Measured while connected, a first draw slower
+    // than the resize settle time (fonts loading on a cold run) sends that
+    // resize to the server ahead of the input this test reads.
     cx.update(|window, cx| full_draw(window, cx).clear(cx));
     let (mut next, mut frame) = view.update(cx, |view, cx| {
+        let measured = view.options;
+        prepare_mouse(view, endpoint, cx);
+        view.options = measured;
         let mut frame = (**view.live.surface.as_ref().unwrap()).clone();
         let size = view.options.surface_size;
         assert!(size.cols > 4 && size.rows > 2);
