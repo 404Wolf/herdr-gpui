@@ -69,8 +69,8 @@ objc                 = "0.2"
 # The Secret Service client GPUI's Linux platform links, with its async-io backend.
 oo7                  = { default-features = false, features = ["async-std", "native_crypto"], version = "0.6" }
 objc2                = "0.6.4"
-objc2-app-kit        = { default-features = false, features = ["NSApplication", "NSDockTile", "NSEvent", "NSImage", "NSImageRep", "NSPasteboard", "NSResponder", "NSTextInputContext", "NSView", "NSWindow", "block2", "std"], version = "0.3.2" }
-objc2-foundation     = { default-features = false, features = ["NSBundle", "NSData", "NSError", "NSProcessInfo", "NSString", "std"], version = "0.3.2" }
+objc2-app-kit        = { default-features = false, features = ["NSApplication", "NSDockTile", "NSEvent", "NSImage", "NSImageRep", "NSPasteboard", "NSPasteboardItem", "NSResponder", "NSTextInputContext", "NSView", "NSWindow", "block2", "std"], version = "0.3.2" }
+objc2-foundation     = { default-features = false, features = ["NSArray", "NSBundle", "NSData", "NSError", "NSProcessInfo", "NSString", "NSURL", "std"], version = "0.3.2" }
 # The WebKit snapshot behind page annotation screenshots and the popups pages
 # open, at the versions wry uses.
 block2               = "0.6.2"

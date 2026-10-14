@@ -1495,6 +1495,10 @@ On an SSH endpoint, a single supported image is transferred as described below.
 Other regular files and multiple-file drops are streamed using the SSH file-copy
 path below. POSIX quoting is not intended for Windows command shells.
 
+Files copied in the file manager (Cmd-C in Finder) and pasted into the focused
+pane or popup with Cmd-V are handled the same way as a drop. Finder also puts
+each file's name on the clipboard as text; the paste uses the full paths instead.
+
 ## SSH File Copies
 
 Drop regular files onto an SSH pane or popup to copy them to that host. A

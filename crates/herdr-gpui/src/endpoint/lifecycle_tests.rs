@@ -20,6 +20,7 @@ mod close_pane;
 mod close_sequence;
 mod dead_keys;
 mod endpoint_switch;
+mod file_paste;
 mod focus_fences;
 mod focus_follows_mouse;
 mod focus_follows_mouse_render;
