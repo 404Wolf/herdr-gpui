@@ -47,6 +47,7 @@ pub(super) fn defaults(command: Command) -> &'static [&'static str] {
         Sessions => &["cmd-shift-s"],
         WorkspacePicker => &["cmd-p"],
         Palette => &["cmd-shift-p"],
+        ResumePalette => &["cmd-shift-r"],
         GoToSymbol => &["cmd-shift-o"],
         GoToFile => &["cmd-o"],
         Quit => &["cmd-q"],

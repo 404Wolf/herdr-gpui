@@ -114,15 +114,7 @@ impl Suggestion {
     /// host name, or address. A saved name that only shares a short name is
     /// left to `ssh -G`, which the dialog checks before saving.
     pub(super) fn saved_as(&self, target: &str) -> bool {
-        let target = target.trim();
-        let target = target.strip_prefix("ssh://").unwrap_or(target);
-        let host = target.rsplit_once('@').map_or(target, |(_, host)| host);
-        let host = match host.strip_prefix('[') {
-            Some(bracketed) => bracketed.split(']').next().unwrap_or(bracketed),
-            None if host.matches(':').count() == 1 => host.split(':').next().unwrap_or(host),
-            None => host,
-        };
-        let host = host.trim().trim_end_matches('.').to_lowercase();
+        let host = crate::endpoint::origin::host_name(target);
         !host.is_empty() && self.keys.contains(&host)
     }
 }

@@ -110,7 +110,10 @@ fn an_open_reaches_the_window_as_typed() {
 fn a_long_address_travels_in_parts_and_options_are_kept() {
     let host = Host::new();
     let long = format!("https://example.com/{}?q=\"a\\b\"", "x".repeat(700));
-    let output = host.run(&["--json", "browser", "open", &long, "--no-focus"], &[]);
+    let output = host.run(
+        &["--json", "browser", "open", &long, "--no-focus", "--tab"],
+        &[],
+    );
     assert!(output.status.success(), "{output:?}");
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert!(json["message"].as_str().unwrap().contains(&long));
@@ -161,8 +164,9 @@ fn what_cannot_travel_is_refused_before_herdr_runs() {
     std::fs::write(&file, "<p>hi</p>").unwrap();
     let path = file.to_str().unwrap();
     let too_long = format!("https://a.test/{}", "x".repeat(960));
-    let cases: [Case; 11] = [
+    let cases: [Case; 12] = [
         (&["browser", "open", path], &[], 8),
+        (&["browser", "open", "--beside", "a.test"], &[], 8),
         (&["browser", "open", "file:///etc/passwd"], &[], 2),
         (&["browser", "open", "https://a.test/a b"], &[], 2),
         (&["browser", "open", &too_long], &[], 2),

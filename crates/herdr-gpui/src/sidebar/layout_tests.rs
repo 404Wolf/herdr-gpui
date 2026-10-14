@@ -39,6 +39,8 @@ mod host_groups;
 #[cfg(test)]
 mod host_nesting;
 #[cfg(test)]
+mod host_origin;
+#[cfg(test)]
 mod host_wash;
 #[cfg(test)]
 mod layouts;
@@ -46,6 +48,8 @@ mod layouts;
 mod listening_ports;
 #[cfg(test)]
 mod palette;
+#[cfg(test)]
+mod palette_header;
 #[cfg(test)]
 mod picker_scroll;
 #[cfg(test)]
@@ -579,6 +583,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         ),
         painter: Default::default(),
         backdrop: Default::default(),
+        device_themes: Default::default(),
         regions: Vec::new(),
         marked: String::new(),
         marked_selection: None,

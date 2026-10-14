@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Instagram fetch</title>
+<!-- Herdr UI serves the kit to local pages; it is not a file in this folder. -->
+<link rel="stylesheet" href="/.herdr/kit.css">
+<script src="/.herdr/kit.js"></script>
+</head>
+<body class="hk">
+<main class="hk-page">
+  <div id="flow"></div>
+  <p style="margin-top:20px">
+    <button class="hk-button" id="send" type="button">Ask the agent about this case</button>
+  </p>
+</main>
+<script>
+"use strict";
+// How a shared Instagram link becomes a Keep item, for each kind of post
+// and each way Instagram can answer. Every case is made up from the spec;
+// nothing here talks to Instagram.
+const posts = {
+  photo: { label: "Photo", shortcode: "DeK9VDdF33T", images: 1 },
+  carousel: { label: "Carousel", shortcode: "DeK9VDdF33T", images: 4 },
+  collab: { label: "Collab", shortcode: "DfA2mQ0sZ1x", images: 2, coauthor: "@studio.north" },
+  reel: { label: "Reel", shortcode: "DgR7cLp9W2e", images: 1, video: true },
+};
+
+const answers = {
+  works: "Works",
+  gone: "Image gone",
+  login: "Login wall",
+  private: "Private",
+  changed: "Query changed",
+};
+
+const query = "POST `/graphql/query` with `doc_id=27128499623469141`";
+
+function run({ post, instagram }) {
+  const p = posts[post];
+  const variables = `\`{"shortcode":"${p.shortcode}"}\``;
+  const steps = [
+    {
+      label: "Share to Keep",
+      status: "ok",
+      detail: `The share sheet hands Keep \`https://www.instagram.com/p/${p.shortcode}/?igsh=MWQ1ZGUxMzBkMA==\`.`,
+    },
+    {
+      label: "Clean the link",
+      status: "ok",
+      detail: `Keep drops the tracking \`igsh\` parameter and keeps \`instagram.com/p/${p.shortcode}\`, the URL every later step and the saved item use.`,
+    },
+    {
+      label: "Get a session",
+      status: "ok",
+      detail: "GET the post page logged out. Keep reads the `csrftoken` cookie and the `X-IG-App-ID` the page embeds, as Instagram's own logged-out page does.",
+    },
+    {
+      label: "Ask for the post",
+      status: "ok",
+      detail: `${query} and ${variables}, the same query Instagram's own logged-out page uses. **Instagram answers 200** with the media and its owner.`,
+    },
+    {
+      label: p.video ? "Copy the cover" : "Copy the images",
+      status: "ok",
+      detail: p.video
+        ? "GET the reel's cover frame from `scontent.cdninstagram.com` and store it. The video stays a link: Keep never downloads it."
+        : `GET ${p.images === 1 ? "the image" : `all ${p.images} images`} from \`scontent.cdninstagram.com\` before the signed URLs expire, and store them with the item.`,
+    },
+    {
+      label: "Save the item",
+      status: "ok",
+      detail: p.coauthor
+        ? `The item credits the owner and the collaborator ${p.coauthor}, with the caption and the clean URL.`
+        : "The item credits the owner, with the caption and the clean URL.",
+    },
+  ];
+  const skipRest = (from) => steps.slice(from).forEach((step) => {
+    step.status = "skip";
+    step.detail = "Skipped: an earlier step failed.";
+  });
+
+  let outcome;
+  let asides = [];
+  let select = 5;
+  let images = p.images;
+  switch (instagram) {
+    case "works":
+      outcome = {
+        tone: "ok",
+        title: p.video ? "Saved with its cover and caption" : `Saved with ${p.images === 1 ? "its image" : `all ${p.images} images`}`,
+        body: p.coauthor ? `Both accounts are credited: the owner and ${p.coauthor}.` : "Credited to the account that posted it, with no third party involved.",
+      };
+      break;
+    case "gone":
+      steps[4].status = "warn";
+      steps[4].detail = "The signed image URLs answer **404**: Instagram removed or re-encoded the media after the post was read. Keep stores none of them.";
+      select = 4;
+      images = 0;
+      outcome = {
+        tone: "warn",
+        title: "Saved without images",
+        body: "The item keeps the caption and credit and records `image_fetch_failed`. Re-extracting later fills in the images once Instagram serves them again.",
+      };
+      break;
+    case "login":
+      steps[3].status = "fail";
+      steps[3].detail = `${query} and ${variables}, the same query Instagram's own logged-out page uses. **Instagram answered 401 and asked for a login.** Error: \`instagram_rate_limited\`.`;
+      skipRest(4);
+      select = 3;
+      images = 0;
+      outcome = {
+        tone: "bad",
+        title: "Saved as a link with no content",
+        body: "The item keeps the clean URL and records `instagram_rate_limited` as `extract_failed`. Keep never falls back to the Instagram login page, so re-extracting later fills it in.",
+      };
+      asides = ["The six-hourly health check hits the same failure and the Telegram digest reports `instagram` failing with `instagram_rate_limited`."];
+      break;
+    case "private":
+      steps[3].status = "fail";
+      steps[3].detail = `${query} and ${variables}. **Instagram answers 200 with \`xdt_shortcode_media: null\`**: the account is private, so a logged-out session sees nothing.`;
+      skipRest(4);
+      select = 3;
+      images = 0;
+      outcome = {
+        tone: "bad",
+        title: "Saved as a link, marked private",
+        body: "The item keeps the clean URL and records `instagram_private`. Re-extracting will not help, so Keep does not retry it.",
+      };
+      asides = [{ icon: "info", text: "Private posts are expected, so they never count against the health check." }];
+      break;
+    case "changed":
+      steps[3].status = "fail";
+      steps[3].detail = `${query}. **Instagram answers 400 \`PersistedQueryNotFound\`**: the \`doc_id\` Keep sends is no longer the one Instagram's page uses.`;
+      skipRest(4);
+      select = 3;
+      images = 0;
+      outcome = {
+        tone: "bad",
+        title: "Saved as a link with no content",
+        body: "The item records `instagram_query_changed`. Every Instagram save fails the same way until the `doc_id` is updated.",
+      };
+      asides = ["The health check flags `instagram_query_changed` within six hours, and the digest names the new `doc_id` from Instagram's page bundle."];
+      break;
+  }
+
+  const extra = HerdrKit.h("div", { style: "display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin:14px 0" });
+  for (let i = 0; i < Math.max(images, 0); i++) {
+    extra.appendChild(HerdrKit.h("div", { class: "hk-placeholder", text: p.video ? "Cover frame" : `Image ${i + 1}` }));
+  }
+
+  return {
+    steps,
+    select,
+    outcome,
+    asides,
+    extra: images > 0 ? extra : null,
+    callout: "**The image boxes are placeholders.** They stand in for the files Keep would store; nothing on this page was fetched from Instagram.",
+  };
+}
+
+const flow = HerdrKit.scenario(document.getElementById("flow"), {
+  title: "A shared Instagram link becomes a credited Keep item without a third party",
+  lede: "Pick a post and how Instagram responds. Click a step for what Keep sends and gets back.",
+  controls: {
+    post: { label: "Post", options: Object.entries(posts).map(([value, p]) => ({ value, label: p.label })), value: "carousel" },
+    instagram: { label: "Instagram", options: Object.entries(answers).map(([value, label]) => ({ value, label })), value: "login" },
+  },
+  run,
+});
+
+document.getElementById("send").addEventListener("click", () => {
+  const { post, instagram } = flow.state;
+  HerdrKit.send(`Explain the ${posts[post].label.toLowerCase()} / ${answers[instagram].toLowerCase()} case`, { post, instagram });
+});
+</script>
+</body>
+</html>

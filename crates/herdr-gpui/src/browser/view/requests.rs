@@ -1,11 +1,13 @@
 //! Browser tabs a control request asks for, through the Unix control socket.
 
-#[cfg(any(target_os = "macos", windows))]
-use crate::browser::TabId;
+use super::scope;
 use crate::{
     HerdrWindow,
-    browser::{Location, Scope},
-    control::{Placed, Target},
+    browser::{
+        Scope, TabId,
+        groups::{GroupId, Pick, Shown},
+    },
+    control::{Opening, Placed, Placement, Target},
 };
 use gpui::*;
 
@@ -71,20 +73,119 @@ impl HerdrWindow {
         &mut self,
         target: &Target<'_>,
         strict: bool,
-        location: &Location,
-        focus: bool,
+        opening: &Opening<'_>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<Placed> {
         let (index, workspace) = self.control_target(target, strict)?;
-        let opened =
-            self.open_agent_tab(index, &workspace, target.pane, location, focus, window, cx);
-        Some(match opened {
-            Some(_) => Placed::Opened {
-                workspace_id: workspace,
+        let Opening {
+            location,
+            focus,
+            placement,
+        } = *opening;
+        // Splitting needs the workspace's groups on screen: a workspace the
+        // window does not show yet gets an ordinary tab.
+        let besides = placement == Placement::Beside
+            && self.browser_key() == Some((scope(&self.endpoints[index]), workspace.clone()));
+        let opened = self.open_agent_tab(
+            index,
+            &workspace,
+            target.pane,
+            location,
+            focus && !besides,
+            window,
+            cx,
+        );
+        let Some(id) = opened else {
+            return Some(Placed::Full);
+        };
+        let beside = besides && self.show_beside(id, target.pane, focus, window, cx);
+        if besides && !beside && focus {
+            self.show_agent_tab(index, &workspace, id, window, cx);
+        }
+        Some(Placed::Opened {
+            workspace_id: workspace,
+            placement: if beside {
+                Placement::Beside
+            } else {
+                Placement::Tab
             },
-            None => Placed::Full,
         })
+    }
+
+    /// The group showing `pane`'s terminal right now. With no pane, the
+    /// caller is outside Herdr and any terminal group will do. A caller whose
+    /// terminal no group shows, because the user switched away from it, has
+    /// none: a page beside some other terminal would leave the caller hidden
+    /// and the keyboard with another agent.
+    fn terminal_group(&self, pane: Option<&str>, cx: &App) -> Option<GroupId> {
+        let Some(pane) = pane else {
+            return self.primary_group();
+        };
+        let snapshot = self.live.snapshot.as_ref()?;
+        let tab = &snapshot.panes.iter().find(|p| p.pane_id == pane)?.tab_id;
+        self.group_slots()
+            .into_iter()
+            .map(|slot| slot.id)
+            .find(|group| {
+                self.group_shown(*group, cx) == Shown::Terminal
+                    && self.group_focused_tab(*group).as_ref() == Some(tab)
+            })
+    }
+
+    /// Shows page `id` in a group beside the caller's terminal: the group
+    /// the page already belongs to, another existing group, or a new one
+    /// split off to the terminal's right. The terminal's group stays in use
+    /// and keeps the keyboard, so the user can go on typing to the agent.
+    /// Without `focus`, the user's view stays as it was: the group they had
+    /// in use keeps the keyboard, and a group already showing another tab
+    /// only lists the page in its strip.
+    /// Returns whether the page is beside the terminal.
+    fn show_beside(
+        &mut self,
+        id: TabId,
+        pane: Option<&str>,
+        focus: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(home) = self.terminal_group(pane, cx) else {
+            return false;
+        };
+        let in_use = self.active_group();
+        let pick = Pick::Page(id);
+        let owner = self.ensure_layout().map(|layout| layout.owner(&pick));
+        let slots = self.group_slots();
+        let index = slots.iter().position(|slot| slot.id == home).unwrap_or(0);
+        let neighbour = slots
+            .get(index + 1)
+            .or_else(|| index.checked_sub(1).and_then(|before| slots.get(before)))
+            .map(|slot| slot.id);
+        let group = match owner.filter(|owner| *owner != home).or(neighbour) {
+            Some(group) => group,
+            None => {
+                self.split_group(home, window, cx);
+                match self.active_group().filter(|group| *group != home) {
+                    Some(group) => group,
+                    None => return false,
+                }
+            }
+        };
+        let shown_anywhere = slots
+            .iter()
+            .any(|slot| self.group_pick(slot.id).as_ref() == Some(&pick));
+        let busy = self.group_pick(group).is_some_and(|shown| shown != pick);
+        if !focus && busy && !shown_anywhere {
+            if let Some(layout) = self.ensure_layout() {
+                layout.give(group, &pick);
+            }
+            cx.notify();
+        } else {
+            self.move_tab_to_group(pick, group, window, cx);
+        }
+        let keyboard = if focus { Some(home) } else { in_use };
+        self.activate_group(keyboard.unwrap_or(home), window, cx);
+        true
     }
 
     /// The endpoint of this window whose live snapshot lists `workspace` of
@@ -131,7 +232,12 @@ impl HerdrWindow {
     }
 
     /// Loads `location` in tab `id`'s page, if this window has made it.
-    pub(crate) fn load_requested_page(&self, id: TabId, location: &Location, cx: &mut App) {
+    pub(crate) fn load_requested_page(
+        &self,
+        id: TabId,
+        location: &crate::browser::Location,
+        cx: &mut App,
+    ) {
         self.browser.pages.load(id, location, cx);
     }
 

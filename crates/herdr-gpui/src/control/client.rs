@@ -345,6 +345,10 @@ pub(crate) fn run(invocation: Invocation) -> ExitCode {
             );
             return ExitCode::SUCCESS;
         }
+        ControlCommand::Browser(BrowserCommand::Example) => {
+            print!("{}", browser::EXAMPLE);
+            return ExitCode::SUCCESS;
+        }
         ControlCommand::Browser(command) => browser::run(command, &context),
         ControlCommand::Status => app::status(&context),
         ControlCommand::App(command) => app::app(command, &context),

@@ -334,6 +334,7 @@ impl HerdrWindow {
         self.advance_close_run(window, cx);
         self.ensure_code_page(window, cx);
         self.poll_deliveries(cx);
+        self.poll_reveal(window, cx);
         self.poll_reviews(cx);
         self.poll_code_views(cx);
         self.poll_orchestrators(window, cx);
@@ -412,9 +413,9 @@ impl HerdrWindow {
                     self.page_loaded(id, cx);
                     self.browser.pages.script(id, &super::favicon::script(), cx);
                 }
-                Event::Posted(id, body) => match super::favicon::Favicon::parse(&body) {
+                Event::Posted(id, body, from) => match super::favicon::Favicon::parse(&body) {
                     Some(favicon) => self.page_favicon(id, favicon, window, cx),
-                    None => self.page_posted(id, &body, window, cx),
+                    None => self.page_posted(id, &body, from, window, cx),
                 },
                 #[cfg(target_os = "macos")]
                 Event::Captured(id, capture, tiff) => self.page_captured(id, capture, tiff, cx),

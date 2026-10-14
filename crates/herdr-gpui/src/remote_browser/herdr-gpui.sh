@@ -19,7 +19,7 @@ json=0
 
 usage() {
     cat <<'EOF'
-Usage: herdr-gpui browser open [--no-focus] URL
+Usage: herdr-gpui browser open [--no-focus] [--tab] URL
        herdr-gpui browser reload
 
 Run on an SSH host, this asks the Herdr UI window connected to this host to
@@ -29,6 +29,7 @@ open URL in a browser tab of your workspace (HERDR_WORKSPACE_ID).
                 localhost:3000. An address on this host's localhost is
                 forwarded to the user's machine first.
   --no-focus    Add the tab without switching to it.
+  --tab         Accepted: a page from this host always opens as a tab.
   reload        Reload the tabs this pane opened.
   --json        Print one JSON document.
 
@@ -102,6 +103,9 @@ open_page() {
     for arg in "$@"; do
         case $arg in
             --no-focus) focus=0 ;;
+            # A page from a host always opens as a tab.
+            --tab) ;;
+            --beside) fail 8 unsupported "A page opened from an SSH host opens as a tab; --beside is not available here." ;;
             -*) fail 2 usage "Unknown option: $arg" ;;
             *)
                 [ -z "$target" ] || fail 2 usage "Give one address."

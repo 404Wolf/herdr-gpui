@@ -11,6 +11,7 @@ pub(crate) mod backdrop;
 mod bitmap_fonts;
 mod coder;
 mod daytona;
+mod devices;
 mod edit;
 mod files;
 mod font_weight;
@@ -36,6 +37,8 @@ pub(crate) use coder::CoderFields;
 pub use daytona::DaytonaConfig;
 #[cfg(feature = "daytona")]
 pub(crate) use daytona::DaytonaFields;
+use devices::MAX_DEVICES;
+pub(crate) use devices::{DeviceSettings, KeybindingSource};
 pub(crate) use edit::{Layer, parse_value};
 use files::write_config;
 pub use font_weight::bold as bold_font_weight;
@@ -46,7 +49,9 @@ pub use fonts::symbol_fallbacks;
 pub use fonts::{FONT_SIZE_RANGE, FONT_SIZE_STEP, FontConfig};
 pub use layout::{Density, Layout, LayoutMode, Style};
 pub(crate) use notifications::NotificationDelivery;
-pub use notifications::{BellConfig, ClipboardToast, ClipboardToastPosition, NotificationConfig};
+pub use notifications::{
+    BellConfig, ClipboardToast, ClipboardToastPosition, NotificationConfig, SoundConfig,
+};
 use notifications::{ClipboardToastSettings, NotificationSettings};
 pub use padding::Padding;
 pub(crate) use padding::{Axis, MAX_PADDING, Side, Sides};
@@ -102,6 +107,9 @@ pub struct Config {
     pub show_sidebar_search: bool,
     /// The repository owner's avatar, or the GitHub mark, before a space's name.
     pub show_repository_icons: bool,
+    /// The mark before a device's name in the sidebar, in the layouts that
+    /// draw one: where the device runs and how it is reached.
+    pub show_device_icons: bool,
     /// CPU and memory of the selected host in the status bar.
     pub show_system_load: bool,
     /// Snapshot a checkout's files each time one of its agents starts or
@@ -111,6 +119,8 @@ pub struct Config {
     pub show_listening_ports: bool,
     /// Wheel scrollback draws panes between rows, following the OS deltas.
     pub smooth_scroll: bool,
+    /// Focus the split terminal pane under the pointer without clicking.
+    pub focus_follows_mouse: bool,
     /// Which status bar items show, and how compactly.
     pub status_bar: StatusBar,
     /// What shows behind the main window's terminals and chrome.
@@ -142,6 +152,8 @@ pub struct Config {
     pub(crate) notification_overrides: NotificationSettings,
     pub clipboard_toast: ClipboardToast,
     pub bell: BellConfig,
+    /// How loud agent notification sounds play.
+    pub sound: SoundConfig,
     /// Which releases the in-app updater offers.
     pub updates: UpdatesConfig,
     pub layout: Layout,
@@ -172,40 +184,6 @@ pub struct Config {
     pub(crate) missing_fonts: Vec<String>,
     /// The terminal's configured weight, when its family has no face at it.
     pub(crate) missing_weight: Option<font_weight::MissingWeight>,
-}
-
-/// A device list larger than any real catalog is a config mistake.
-const MAX_DEVICES: usize = 256;
-
-/// Whose `[keys]` a saved device answers to, as `herdr --remote-keybindings`
-/// chooses for the TUI. Local is upstream's default: muscle memory stays the
-/// same on every host. Only keybindings follow the server; themes, sidebar,
-/// and toasts stay local either way.
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum KeybindingSource {
-    #[default]
-    Local,
-    /// The host's published `server_keybindings_toml`.
-    Server,
-}
-
-/// One `[devices.<profile-id>]` table.
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(default)]
-pub(crate) struct DeviceSettings {
-    pub(crate) keybindings: KeybindingSource,
-}
-
-impl Config {
-    /// Whose keybindings the endpoint uses. Local and explicit sockets are not
-    /// saved devices, so they always use the local ones.
-    pub(crate) fn keybinding_source(&self, endpoint_id: &str) -> KeybindingSource {
-        crate::endpoint::saved_profile_id(endpoint_id)
-            .and_then(|profile| self.devices.get(profile))
-            .map(|device| device.keybindings)
-            .unwrap_or_default()
-    }
 }
 
 /// Where a clicked terminal link opens. Alt-click (Option on macOS) opens it
@@ -448,10 +426,12 @@ impl Default for Config {
             show_agents: true,
             show_sidebar_search: true,
             show_repository_icons: true,
+            show_device_icons: true,
             show_system_load: true,
             agent_checkpoints: true,
             show_listening_ports: true,
             smooth_scroll: true,
+            focus_follows_mouse: true,
             status_bar: StatusBar::default(),
             backdrop: Backdrop::default(),
             contrast: Contrast::default(),
@@ -467,6 +447,7 @@ impl Default for Config {
             notification_overrides: NotificationSettings::default(),
             clipboard_toast: ClipboardToast::default(),
             bell: BellConfig::default(),
+            sound: SoundConfig::default(),
             updates: UpdatesConfig::default(),
             layout: Layout::default(),
             sidebar_style: SidebarStyle::default(),
@@ -502,10 +483,12 @@ struct Settings {
     show_agents: Option<bool>,
     show_sidebar_search: Option<bool>,
     show_repository_icons: Option<bool>,
+    show_device_icons: Option<bool>,
     show_system_load: Option<bool>,
     agent_checkpoints: Option<bool>,
     show_listening_ports: Option<bool>,
     smooth_scroll: Option<bool>,
+    focus_follows_mouse: Option<bool>,
     status_bar: StatusBar,
     backdrop: Backdrop,
     contrast: Contrast,
@@ -527,6 +510,7 @@ struct Settings {
     notifications: NotificationSettings,
     clipboard_toast: ClipboardToastSettings,
     bell: BellConfig,
+    sound: SoundConfig,
     updates: UpdatesConfig,
     layout: Layout,
     keybindings: BTreeMap<String, Binding>,
@@ -852,6 +836,7 @@ impl Config {
             .resolve(NotificationConfig::default());
         config.clipboard_toast = settings.clipboard_toast.resolve(base.clipboard_toast);
         config.bell = settings.bell;
+        config.sound = settings.sound;
         config.updates = settings.updates;
         config.sidebar_layout = base.sidebar_layout.clone();
         let (padding_x, padding_y) = settings.terminal.take_padding();
@@ -868,6 +853,9 @@ impl Config {
         config.pane_keys = settings.pane_keys;
         if settings.devices.len() > MAX_DEVICES {
             return Err(Error::TooManyDevices(MAX_DEVICES));
+        }
+        for (id, device) in &settings.devices {
+            device.validate(id)?;
         }
         config.devices = settings.devices;
         settings.palette.validate()?;
@@ -886,10 +874,12 @@ impl Config {
         config.show_agents = settings.show_agents.unwrap_or(true);
         config.show_sidebar_search = settings.show_sidebar_search.unwrap_or(true);
         config.show_repository_icons = settings.show_repository_icons.unwrap_or(true);
+        config.show_device_icons = settings.show_device_icons.unwrap_or(true);
         config.show_system_load = settings.show_system_load.unwrap_or(true);
         config.agent_checkpoints = settings.agent_checkpoints.unwrap_or(true);
         config.show_listening_ports = settings.show_listening_ports.unwrap_or(true);
         config.smooth_scroll = settings.smooth_scroll.unwrap_or(true);
+        config.focus_follows_mouse = settings.focus_follows_mouse.unwrap_or(true);
         config.status_bar = settings.status_bar;
         settings.backdrop.validate()?;
         config.backdrop = settings.backdrop;

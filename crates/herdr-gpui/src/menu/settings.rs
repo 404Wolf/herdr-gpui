@@ -216,6 +216,7 @@ impl HerdrWindow {
                             error: None,
                         });
                         this.config = config;
+                        this.sound.set_volume(this.config.sound.volume);
                         this.gui_config_diagnostic.sync(this.config.diagnostic().as_deref());
                         crate::settings_window::apply_loaded_theme(&mut this.config, &mut this.theme, theme_revision, cx);
                         this.tick_toasts(
@@ -369,6 +370,7 @@ impl HerdrWindow {
                 | Command::Sessions
                 | Command::Themes
                 | Command::Palette
+                | Command::ResumePalette
                 | Command::Detach
                 | Command::Reconnect
                 | Command::Quit

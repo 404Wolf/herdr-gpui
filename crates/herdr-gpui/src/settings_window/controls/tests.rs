@@ -2,9 +2,12 @@ use super::*;
 use core::prelude::v1::test;
 
 mod backdrop;
+mod device_icons;
+mod focus_follows_mouse;
 mod repository_icons;
 mod session_restore;
 mod sidebar_search;
+mod sound_volume;
 mod terminal_padding;
 mod update_channel;
 
