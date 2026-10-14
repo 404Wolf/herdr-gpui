@@ -24,6 +24,7 @@ use std::{
 
 mod aliases;
 mod device_auth;
+mod github_cli;
 mod limits;
 mod rejection;
 mod responses;

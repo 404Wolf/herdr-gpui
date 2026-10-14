@@ -365,6 +365,18 @@ pub enum Error {
     GitHubTokenType,
     #[error("GitHub {0} worker stopped.")]
     GitHubWorker(&'static str),
+    #[error("GitHub CLI (gh) was not found. Install it and run `gh auth login`, or sign in here.")]
+    GitHubCliMissing,
+    #[error("GitHub CLI is not signed in to github.com. Run `gh auth login`, then try again.")]
+    GitHubCliSignedOut,
+    #[error(
+        "GitHub rejected the GitHub CLI's token. Run `gh auth login` to renew it, then try again."
+    )]
+    GitHubCliRejected,
+    #[error("GitHub CLI did not answer within 10 seconds. Check `gh auth status`, then try again.")]
+    GitHubCliTimeout,
+    #[error("Could not run the GitHub CLI (gh).")]
+    GitHubCliProcess(#[source] Box<Error>),
     #[error(transparent)]
     Backdrop(#[from] crate::backdrop::Error),
     #[cfg(feature = "coder")]

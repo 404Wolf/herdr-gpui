@@ -9,10 +9,11 @@ use herdr_client::ConnectTarget;
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Action {
     Copy,
     Open,
+    GitHubCli,
     Start,
     SignOut,
     Close,
@@ -23,6 +24,7 @@ impl Action {
         match self {
             Self::Copy => "github-copy",
             Self::Open => "github-open",
+            Self::GitHubCli => "github-cli",
             Self::Start => "github-start",
             Self::SignOut => "github-sign-out",
             Self::Close => "github-header-close",
@@ -107,9 +109,22 @@ impl HerdrWindow {
         }
     }
 
+    /// Start the GitHub CLI's sign-in for the main account.
+    fn use_github_cli(&mut self) {
+        self.menu.github.use_github_cli(&self.config);
+    }
+
     pub(crate) fn poll_github(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.sync_github_hosts();
         self.prune_device_removals();
+        // Only the main account's page offers the local GitHub CLI, and only
+        // a window that may touch credentials asks it.
+        if self.avatars.is_some()
+            && self.menu.page == Some(super::Page::GitHub)
+            && self.github_host().is_none()
+        {
+            self.menu.github.probe_github_cli(std::time::Instant::now());
+        }
         let connected = self.github_auth().connected();
         let mut changed = self.menu.github.poll();
         for auth in self.menu.github_hosts.values_mut() {
@@ -132,6 +147,9 @@ impl HerdrWindow {
         if auth.code().is_some() {
             actions.extend([Action::Copy, Action::Open]);
         } else if !auth.busy() && !auth.loading_profile() && !auth.connected() {
+            if self.github_host().is_none() && auth.github_cli_available() {
+                actions.push(Action::GitHubCli);
+            }
             actions.push(Action::Start);
         }
         if auth.can_sign_out() && !auth.busy() && !auth.loading_profile() {
@@ -152,6 +170,7 @@ impl HerdrWindow {
                 }
             }
             Action::Open => cx.open_url(crate::github::VERIFY_URL),
+            Action::GitHubCli => self.use_github_cli(),
             Action::Start => self.start_github(),
             Action::SignOut => {
                 self.menu.pr_cache.clear();
@@ -210,6 +229,7 @@ impl HerdrWindow {
                 }
                 "o" => Some(Action::Open),
                 "s" => Some(Action::Start),
+                "g" => Some(Action::GitHubCli),
                 "d" => Some(Action::SignOut),
                 "enter" | "space" => self.menu.github_selected,
                 "up" | "down" | "pageup" | "pagedown" => {
@@ -244,7 +264,12 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let theme = &self.theme;
-        let primary = matches!(action, Action::Open | Action::Start);
+        // The GitHub CLI's sign-in, when offered, is the one-click choice.
+        let primary = match action {
+            Action::Open | Action::GitHubCli => true,
+            Action::Start => !self.github_actions().contains(&Action::GitHubCli),
+            Action::Copy | Action::SignOut | Action::Close => false,
+        };
         let danger = action == Action::SignOut;
         let accent = if danger {
             super::danger(theme)
@@ -357,8 +382,13 @@ impl HerdrWindow {
                             .min_w_0()
                             .child(
                                 div()
+                                    .debug_selector(|| "github-connected".into())
                                     .text_color(rgb(theme.ink(theme.palette[2])))
-                                    .child("Connected"),
+                                    .child(if profile.source.github_cli() {
+                                        "Connected with GitHub CLI"
+                                    } else {
+                                        "Connected"
+                                    }),
                             )
                             .child(
                                 div()
@@ -410,6 +440,8 @@ impl HerdrWindow {
                 "Checking GitHub account..."
             } else if auth.connected() {
                 "Your account is ready for pull request lookups."
+            } else if host.is_none() && auth.github_cli_available() {
+                "GitHub CLI is signed in on this computer. Use its session, or sign in securely in your browser."
             } else {
                 "Sign in securely in your browser to view pull requests. No GitHub CLI required."
             }
@@ -429,6 +461,19 @@ impl HerdrWindow {
                         theme.muted
                     }))
                     .child(message),
+            );
+        }
+        if let Some(note) = auth
+            .profile
+            .as_ref()
+            .and_then(|profile| github_cli_note(profile, auth.store()))
+        {
+            body = body.child(
+                div()
+                    .debug_selector(|| "github-cli-note".into())
+                    .mt(px(12.))
+                    .text_color(rgb(theme.muted))
+                    .child(note),
             );
         }
         if let Some(note) = auth.store().note(auth.connected()) {
@@ -457,11 +502,20 @@ impl HerdrWindow {
             has_footer = true;
             let label = match action {
                 Action::Open => "Open GitHub (O)",
+                Action::GitHubCli => "Use GitHub CLI authentication (G)",
                 Action::Start if auth.failed => "Try again (S)",
                 Action::Start if host.is_some() && self.menu.github.connected() => {
                     "Use another account (S)"
                 }
                 Action::Start => "Sign in (S)",
+                Action::SignOut
+                    if auth
+                        .profile
+                        .as_ref()
+                        .is_some_and(|profile| profile.source.github_cli()) =>
+                {
+                    "Stop using GitHub CLI (D)"
+                }
                 Action::SignOut => "Sign out (D)",
                 Action::Copy | Action::Close => continue,
             };
@@ -514,5 +568,24 @@ impl HerdrWindow {
             )
             .child(body)
             .when(has_footer, |panel| panel.child(footer))
+    }
+}
+
+/// What a GitHub CLI session should say: that `gh` owns the token, and how to
+/// reach private repositories when its scopes leave them out.
+fn github_cli_note(profile: &Profile, store: crate::github::Store) -> Option<&'static str> {
+    match profile.source {
+        crate::github::Source::GitHubCli { repo_scope: false } => Some(
+            "GitHub CLI's token lacks the repo scope, so private repositories are unavailable. Run `gh auth refresh --scopes repo`.",
+        ),
+        crate::github::Source::GitHubCli { .. } if store == crate::github::Store::Environment => {
+            Some(
+                "Using GitHub CLI's sign-in for this app session. This platform has no credential store to remember the choice.",
+            )
+        }
+        crate::github::Source::GitHubCli { .. } => Some(
+            "GitHub CLI keeps this token; Herdr UI saves none. After `gh auth logout`, this app signs out at its next check.",
+        ),
+        crate::github::Source::Token => None,
     }
 }
