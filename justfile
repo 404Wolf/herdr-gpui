@@ -159,10 +159,19 @@ test-build: build-release
 check-file-size:
     bash scripts/check-file-size.sh
 
+# Fail when a `keep-sorted start`/`end` region is out of order.
+check-sorted:
+    python3 scripts/test_check_sorted.py
+    python3 scripts/check-sorted.py
+
+# Sort every `keep-sorted start`/`end` region in place.
+sort:
+    python3 scripts/check-sorted.py --fix
+
 test-mockup-wait:
     python3 .claude/skills/gpui-mockup/scripts/test_wait.py
 
-ci: format-check check-file-size lint test test-mockup-wait
+ci: format-check check-file-size check-sorted lint test test-mockup-wait
 
 # Tools are listed in scripts/setup-ci.sh; Docker for lint-linux is only checked.
 # Install the tools local CI-equivalent runs need, on macOS or Ubuntu.
@@ -211,10 +220,15 @@ verify-release *args:
 check-commits base="origin/main":
     python3 scripts/release/check-commit-messages.py range "{{base}}..HEAD"
 
-# Install the commit-msg hook for this checkout and every worktree of it.
+# Install the hooks, and the merge settings that cut repeated conflict work,
+# for this checkout and every worktree of it.
 hooks:
     git config core.hooksPath .githooks
-    @echo "core.hooksPath = .githooks"
+    git config rerere.enabled true
+    git config rerere.autoupdate true
+    git config merge.cargo-lock.name "Cargo.lock: keep one side, then rebuild with Cargo"
+    git config merge.cargo-lock.driver "bash scripts/git/merge-cargo-lock.sh %O %A %B"
+    @echo "Hooks, rerere, and the Cargo.lock merge driver are configured."
 
 # What changed since the last release tag, straight from git history.
 changelog-unreleased:
