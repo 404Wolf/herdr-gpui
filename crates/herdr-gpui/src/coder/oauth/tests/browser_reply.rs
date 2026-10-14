@@ -3,8 +3,13 @@
 use super::*;
 
 /// Sign in against a deployment whose token endpoint answers `status`/`body`,
-/// returning the outcome and the page the browser was shown.
-fn sign_in(status: u16, body: &'static str) -> (Result<token::Credential>, String) {
+/// keeping the credential with `keep`, and return the outcome and the page the
+/// browser was shown.
+fn sign_in_keeping<T>(
+    status: u16,
+    body: &'static str,
+    keep: impl FnOnce(token::Credential) -> Result<T>,
+) -> (Result<T>, String) {
     let (base, _) = crate::cloud::tests::server::serve(move |_| (status, body.into()));
     let mut settings = settings();
     settings.base = base;
@@ -23,8 +28,12 @@ fn sign_in(status: u16, body: &'static str) -> (Result<token::Credential>, Strin
         stream.read_to_string(&mut reply).unwrap();
         reply
     });
-    let result = pending.finish(&settings, || false);
+    let result = pending.finish(&settings, || false, keep);
     (result, browser.join().unwrap())
+}
+
+fn sign_in(status: u16, body: &'static str) -> (Result<token::Credential>, String) {
+    sign_in_keeping(status, body, Ok)
 }
 
 #[test]
@@ -73,4 +82,17 @@ fn a_refresh_with_a_rejected_client_secret_does_not_read_as_a_lost_sign_in() {
     settings.base = base;
     let saved = token::Credential::new(&settings, "a".into(), Some("r".into()), None).unwrap();
     assert!(matches!(refresh(&settings, &saved), Err(Error::Client)));
+}
+
+#[test]
+fn a_credential_that_cannot_be_saved_is_not_reported_as_signed_in() {
+    let (result, page) = sign_in_keeping(
+        200,
+        r#"{"access_token":"access-1","token_type":"Bearer","expires_in":3600}"#,
+        |_| Err::<(), _>(Error::Token),
+    );
+    assert!(matches!(result, Err(Error::Token)));
+    assert!(page.starts_with("HTTP/1.1 500"));
+    assert!(!page.contains("Signed in"));
+    assert!(page.contains("Return to Herdr to see why"));
 }

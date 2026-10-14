@@ -90,21 +90,25 @@ pub(crate) fn begin(settings: &Settings) -> Result<Pending> {
 }
 
 impl Pending {
-    /// Wait for the redirect, exchange its code for a credential, and only
-    /// then tell the browser how the sign-in ended.
-    pub(crate) fn finish(
+    /// Wait for the redirect, exchange its code for a credential, hand it to
+    /// `keep` (which saves it), and only then tell the browser how the sign-in
+    /// ended, so the tab never says signed in when the credential was not kept.
+    pub(crate) fn finish<T>(
         self,
         settings: &Settings,
         cancelled: impl Fn() -> bool,
-    ) -> Result<token::Credential> {
+        keep: impl FnOnce(token::Credential) -> Result<T>,
+    ) -> Result<T> {
         let deadline = Instant::now() + SIGN_IN_TIMEOUT;
         let (mut browser, code) = self.wait(&settings.redirect.path, &cancelled, deadline)?;
-        let result = code.and_then(|code| {
-            if cancelled() {
-                return Err(Error::Cancelled);
-            }
-            exchange(settings, &code, &self.pkce.verifier)
-        });
+        let result = code
+            .and_then(|code| {
+                if cancelled() {
+                    return Err(Error::Cancelled);
+                }
+                exchange(settings, &code, &self.pkce.verifier)
+            })
+            .and_then(keep);
         let (status, text) = match &result {
             Ok(_) => (
                 "200 OK",
