@@ -2,6 +2,9 @@ use super::*;
 use crate::control::{NotesTo, Target};
 
 mod outcomes;
+/// Needs a build that shows pages: elsewhere a new tab opens nothing.
+#[cfg(any(target_os = "macos", windows))]
+mod reveal;
 mod session_isolation;
 
 fn recipient(view: &Entity<HerdrWindow>, cx: &VisualTestContext) -> crate::browser::FeedbackKey {
