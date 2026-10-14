@@ -236,7 +236,10 @@ project_roots = []
 # shift-enter), or "text:" and the text to type, at most 1024 bytes; an empty
 # string removes a default. A keystroke here leaves its default or daemon
 # command, but naming it in [keybindings] too is an error.
-# On macOS these are the defaults:
+# Shift-Enter sends Alt-Enter (Esc CR) by default everywhere, so a prompt that
+# never enabled the kitty keyboard protocol reads a newline instead of the bare
+# CR Herdr would send it; "shift-enter" = "" sends Shift-Enter unchanged.
+# On macOS these are also defaults:
 # [pane_keys]
 # "cmd-left" = "ctrl-a"
 # "cmd-right" = "ctrl-e"
@@ -281,6 +284,12 @@ size = 12
 # and the other hosts' rows dimmed). Hosts without a colour below use the
 # theme's active colour for the wash.
 # select = "row"
+# When to draw the device footer at the sidebar's foot (the device picker,
+# Sessions, and Settings): "always", "auto" (only with two or more devices,
+# or while one is being added), or "never". Without it, Settings and Sessions
+# keep their shortcuts and command palette entries, and Devices Overview in
+# the palette still offers Add Device.
+# device_footer = "always"
 
 # A colour per host, keyed by the host's name in the sidebar, as #rgb or
 # #rrggbb. It washes the host's header, its workspace rows, and its agents'

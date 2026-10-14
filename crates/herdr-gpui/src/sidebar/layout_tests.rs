@@ -29,6 +29,8 @@ mod configured_rows;
 #[cfg(test)]
 mod device_footer;
 #[cfg(test)]
+mod device_footer_setting;
+#[cfg(test)]
 mod devices_layout;
 #[cfg(test)]
 mod host_agents;
