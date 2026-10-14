@@ -33,16 +33,16 @@ pub(crate) fn path() -> Option<OsString> {
 /// Adopts the login shell's `XDG_CONFIG_HOME` for a launch without one, such
 /// as from Finder or a desktop launcher, so the daemon a shell started, and
 /// the settings beside it, are found where the shell keeps them. Probing the
-/// shell blocks, so this runs once before the app starts, and only when the
-/// default endpoint is missing: a daemon there needs nothing adopted, and
-/// without one the probe would run anyway to start it.
+/// shell blocks, so this runs once before the app starts, and only when no
+/// daemon answers at the default endpoint: a daemon there needs nothing
+/// adopted, and without one the probe would run anyway to start it.
 pub(crate) fn adopt_config_home() {
     #[cfg(unix)]
     {
         if std::env::var_os("XDG_CONFIG_HOME").is_some()
             || herdr_client::ConnectTarget::Local
                 .socket_path()
-                .is_ok_and(|path| path.exists())
+                .is_ok_and(|path| unix::answers(&path))
         {
             return;
         }
@@ -101,6 +101,15 @@ mod unix {
                 )
             })
             .as_ref()
+    }
+
+    /// Whether a daemon accepts connections at `socket`. A socket file an
+    /// exited daemon left behind refuses them, so it does not count. A local
+    /// connect is answered or refused at once, and dropping it unanswered is
+    /// the same check upstream's session list makes; the daemon only logs a
+    /// client that handshakes.
+    pub(super) fn answers(socket: &std::path::Path) -> bool {
+        herdr_client::Stream::connect(socket).is_ok()
     }
 
     pub(super) fn config_home(environment: &Environment) -> Option<OsString> {
@@ -289,6 +298,24 @@ mod unix {
             );
             assert_eq!(config_home(&environment("")), None);
             assert_eq!(config_home(&vec![("HOME".into(), "/home/me".into())]), None);
+        }
+
+        /// A socket an exited daemon left behind is not a daemon, so a launch
+        /// still adopts the login shell's root; a listening one, or a file
+        /// that is not a socket at all, is told apart the same way.
+        #[test]
+        fn only_a_listening_socket_answers() {
+            let dir = tempfile::tempdir().unwrap();
+            let socket = dir.path().join("herdr-client.sock");
+            assert!(!answers(&socket));
+            let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+            assert!(answers(&socket));
+            drop(listener);
+            assert!(socket.exists(), "a closed listener leaves its file");
+            assert!(!answers(&socket));
+            let plain = dir.path().join("plain.sock");
+            std::fs::write(&plain, b"").unwrap();
+            assert!(!answers(&plain));
         }
 
         #[test]

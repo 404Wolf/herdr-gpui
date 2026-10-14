@@ -502,9 +502,11 @@ are refused, and a file the GUI creates is private (`0600`).
 GUI settings live in `$XDG_CONFIG_HOME/herdr/`, falling back to
 `~/.config/herdr/` and, on Windows, to `%APPDATA%\herdr\`. An app opened from
 Finder or a desktop launcher does not inherit a shell's `XDG_CONFIG_HOME`, so
-when it has none and `~/.config/herdr/` holds no daemon socket, it asks the
-login shell for its value once at startup and uses it for these settings, the
-daemon's `config.toml`, and the daemon's sockets:
+when it has none and no daemon answers at `~/.config/herdr/` (a socket file
+an exited daemon left behind does not count), it asks the login shell for its
+value once at startup and uses it for these settings, the daemon's
+`config.toml`, and the daemon's sockets. A daemon the app starts is given the
+same root, so it listens where the app connects:
 
 - `config-gpui.toml` contains managed defaults and documentation. Its first line
   warns **DO NOT EDIT -- WILL BE OVERWRITTEN**. Startup and GUI config reload
