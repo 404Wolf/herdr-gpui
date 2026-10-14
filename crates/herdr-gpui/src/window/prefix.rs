@@ -269,8 +269,9 @@ mod tests {
         assert!(search_focused(cx));
     }
 
-    /// A prefix that types text, such as Herdr's `@`, arms however the
-    /// keyboard reports it, and typing it twice sends it on.
+    /// A prefix that types text, such as `prefix = "@"` in the daemon's
+    /// `[keys]`, arms however the keyboard reports it, and typing it twice
+    /// sends it on.
     #[gpui::test]
     fn a_typing_prefix_arms_everywhere_and_twice_types_it(cx: &mut TestAppContext) {
         let (view, cx) = cx.add_window_view(crate::sidebar::layout_tests::fixture_window);
