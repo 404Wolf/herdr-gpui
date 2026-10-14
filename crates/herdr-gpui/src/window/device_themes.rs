@@ -70,10 +70,20 @@ struct Pinned {
     /// Its colors, `None` for the app theme.
     theme: Option<Theme>,
     save: u64,
-    /// `None` while the write runs. Then the last `config_load_revision`
-    /// that may predate it: a load already running when the write finished
-    /// may have read the file before it.
-    written: Option<u64>,
+    /// `None` while the write runs, then what was loading when it ended.
+    written: Option<Written>,
+}
+
+/// The config loads around a finished write.
+#[derive(Clone, Copy)]
+struct Written {
+    /// `config_load_revision` when the write finished. Only loads after it
+    /// can hold the saved value.
+    revision: u64,
+    /// Whether a load was running then. It may have read the file before
+    /// or after the write, so only its saved value is trusted, and an old
+    /// one waits for the reload after it.
+    busy: bool,
 }
 
 impl DeviceThemes {
@@ -216,8 +226,10 @@ impl HerdrWindow {
                 match result {
                     Ok(()) => {
                         if let Some(pinned) = pinned {
-                            let busy = u64::from(this.config_load.is_some());
-                            pinned.written = Some(this.config_load_revision + busy);
+                            pinned.written = Some(Written {
+                                revision: this.config_load_revision,
+                                busy: this.config_load.is_some(),
+                            });
                         }
                         // Refused while a load runs; the config watcher then
                         // reloads once it ends, as for other saves.
@@ -237,24 +249,32 @@ impl HerdrWindow {
         .detach();
     }
 
-    /// Drops the pin once a reload after the write has landed: either the
-    /// config now says what was saved and its read is done, or it says
-    /// something else, as after a later edit, and the pin would only hide it.
+    /// Drops the pin once a load after the write has landed and either the
+    /// config says what was saved and its read is done, or a load that
+    /// certainly read the file after the write says something else, as
+    /// after a later edit, and the pin would only hide it.
     fn release_device_theme_pin(&mut self, light: bool) {
         let Some(pinned) = &self.device_themes.pinned else {
             return;
         };
+        let Some(written) = pinned.written else {
+            return;
+        };
         let revision = self.config_load_revision;
-        if pinned.written.is_none_or(|written| revision <= written) {
+        let loads = revision.wrapping_sub(written.revision);
+        if loads == 0 {
             return;
         }
         let saved = self.config.device_theme(&pinned.endpoint) == pinned.value.as_deref();
-        let read = self
-            .device_themes
-            .resolved
-            .as_ref()
-            .is_some_and(|key| key.matches(&self.config, light, revision));
-        if !saved || read {
+        let release = if saved {
+            self.device_themes
+                .resolved
+                .as_ref()
+                .is_some_and(|key| key.matches(&self.config, light, revision))
+        } else {
+            loads > u64::from(written.busy)
+        };
+        if release {
             self.device_themes.pinned = None;
         }
     }

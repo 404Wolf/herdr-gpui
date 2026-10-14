@@ -215,3 +215,18 @@ fn every_reload_reads_the_theme_files_again(cx: &mut TestAppContext) {
     assert_ne!(after, before);
     assert_ne!(after, builtin("Nord").background);
 }
+
+#[gpui::test]
+fn a_running_load_that_already_holds_the_choice_releases_it(cx: &mut TestAppContext) {
+    let (view, cx) = open(cx);
+    settle(cx);
+    // The watcher started this load after the write, so it holds the
+    // saved value and no further reload follows.
+    busy_load(&view, cx);
+    save(&view, "Dracula", Ok(()), cx);
+    settle(cx);
+    reload(&view, Some("Dracula"), cx);
+    settle(cx);
+    assert!(!pinned(&view, cx));
+    assert_eq!(terminal_theme(&view, cx), builtin("Dracula"));
+}
