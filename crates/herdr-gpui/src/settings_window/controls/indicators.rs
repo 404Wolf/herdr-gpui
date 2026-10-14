@@ -21,26 +21,27 @@ impl SettingsWindow {
             WindowAppearance::Light | WindowAppearance::VibrantLight
         );
         let icons = self.config.status_icons;
+        // Herdr's style as it applies now; Dots when its file is unreadable.
+        let herdr = self
+            .shared
+            .as_ref()
+            .map_or(IndicatorStyle::Dots, |shared| shared.indicators);
         for (label, style) in [
             ("Dots", IndicatorStyle::Dots),
             ("Symbols", IndicatorStyle::Symbols),
         ] {
-            let selected = icons.is_none()
-                && self
-                    .shared
-                    .as_ref()
-                    .is_some_and(|shared| shared.indicators == style);
+            let selected = icons.is_none() && self.shared.is_some() && herdr == style;
+            // Going back to the style Herdr already uses only drops this
+            // client's key, so it works where the shared file is read-only.
+            let enabled = ready || (icons.is_some() && herdr == style);
+            let id = format!("settings-indicators-{label}");
             let mut choice = self
-                .control_choice(
-                    format!("settings-indicators-{label}"),
-                    label,
-                    selected,
-                    ready,
-                )
+                .control_choice(id.clone(), label, selected, enabled)
+                .debug_selector(move || id)
                 .flex()
                 .flex_col()
                 .gap(px(18.))
-                .when(ready, |choice| {
+                .when(enabled, |choice| {
                     choice.on_click(
                         cx.listener(move |this, _, _, cx| this.choose_herdr_indicators(style, cx)),
                     )
@@ -130,18 +131,20 @@ impl SettingsWindow {
 
     /// Picks Herdr's shared style, dropping this client's icons first so the
     /// choice shows. Both writes run as one save, the local one first: a
-    /// failed shared write then still leaves Herdr's style in charge.
+    /// failed shared write then still leaves Herdr's style in charge. The
+    /// shared file is written only when it is editable and says otherwise.
     fn choose_herdr_indicators(&mut self, style: IndicatorStyle, cx: &mut Context<Self>) {
         if self.config.status_icons.is_none() {
             self.save_shared(Edit::Indicators(style), cx);
             return;
         }
-        let Some(shared) = self.shared.clone() else {
-            return;
-        };
-        let changed = shared.indicators != style;
+        let shared = self
+            .shared
+            .clone()
+            .filter(|shared| self.controls_shared_ready() && shared.indicators != style);
+        let changed = shared.is_some();
         let shared_save = move || -> crate::Result<()> {
-            if changed {
+            if let Some(shared) = shared {
                 shared.save(Edit::Indicators(style))?;
             }
             Ok(())

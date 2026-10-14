@@ -267,8 +267,8 @@ impl Indicators {
                 .debug_selector(|| format!("rail-{key}"))
                 .absolute()
                 .left_0()
-                .top(px(RAIL_INSET))
-                .bottom(px(RAIL_INSET))
+                .top(relative(RAIL_INSET))
+                .bottom(relative(RAIL_INSET))
                 .w(px(RAIL_WIDTH))
                 .rounded_r(px(RAIL_WIDTH))
                 .bg(rgb(self.color(status))),
@@ -277,7 +277,9 @@ impl Indicators {
 }
 
 const RAIL_WIDTH: f32 = 3.;
-const RAIL_INSET: f32 = 6.;
+/// The bar's inset from the row's top and bottom, as a share of its height,
+/// so even a one-line Compact row at the smallest font keeps a visible bar.
+const RAIL_INSET: f32 = 0.2;
 
 /// A drawn icon's side: as tall as a line fits, since compact rows are one
 /// line with no padding to spill into, and even so its 16-unit grid lands on

@@ -15,7 +15,7 @@ fn status_icons_fit_every_layout(cx: &mut gpui::TestAppContext) {
     for (mode, icons, font) in modes.flat_map(|mode| {
         StatusIcons::ALL
             .into_iter()
-            .flat_map(move |icons| [13., 20.].map(|font| (mode, icons, font)))
+            .flat_map(move |icons| [8., 13., 20.].map(|font| (mode, icons, font)))
     }) {
         view.update(cx, |view, cx| {
             view.config.layout.mode = mode;
@@ -36,7 +36,8 @@ fn status_icons_fit_every_layout(cx: &mut gpui::TestAppContext) {
             match (icons, rail) {
                 (StatusIcons::Rail, Some(rail)) => assert!(
                     // Orca's cards are bordered, and the rail sits inside it.
-                    rail.left() >= row.left()
+                    rail.size.height >= px(4.)
+                        && rail.left() >= row.left()
                         && rail.left() - row.left() <= px(1.)
                         && rail.top() >= row.top()
                         && rail.bottom() <= row.bottom(),

@@ -664,9 +664,10 @@ the shared file, and the TUI keeps its own choice. The icons are about a line
 tall and replace the dot wherever one shows, tabs and the collapsed sidebar
 included. Herdr's own rows and Orca's cards center them across all of a row's
 lines, and Superset badges its icon slot with them. Edge rail also draws a bar
-on the leading edge of each working, done, or blocked row, in every layout. Choosing Dots or Symbols again removes
-`status_icons`. Terminal/default reset colors are projected to opaque native
-colors.
+on the leading edge of each working, done, or blocked row, in every layout.
+Choosing Dots or Symbols again removes `status_icons`; where the shared file is
+read-only, as on Windows, the style Herdr already uses stays available for that.
+Terminal/default reset colors are projected to opaque native colors.
 
 New tab and New Workspace follow the shared `ui.prompt_new_tab_name` (default
 on) and `ui.prompt_new_workspace_name` (default off). When set, every button,
