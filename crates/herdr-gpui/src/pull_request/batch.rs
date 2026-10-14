@@ -73,7 +73,7 @@ pub(super) fn fetch_batch(
                 token, query, variables, aliases, TIMEOUT, &cancelled, cooldown,
             )
         },
-        |response, target, cooldown| answer_for(response, target, token, &cancelled, cooldown),
+        |response, target, pause| answer_for(response, target, token, &cancelled, pause),
         (&mut batch, cooldown),
     );
     batch
@@ -102,10 +102,21 @@ pub(super) fn prepare(
     targets
 }
 
+/// Keeps the longest pause any request of a batch was given: a later
+/// request that succeeds must not lift one an earlier request set.
+fn hold(cooldown: &mut Option<Duration>, pause: Option<Duration>) {
+    *cooldown = (*cooldown).max(pause);
+}
+
 /// Asks about every target. Each response is bounded as one lookup's was;
 /// many busy checkouts together may not fit, so a group too large is halved
-/// and asked again. After any other refusal the rest wait for a later batch,
-/// which a pause that refusal set holds back.
+/// and asked again. Once GitHub asks for a pause nothing more is requested:
+/// the remaining groups, and answers that would need another request, wait
+/// for a later batch, which the pause holds back.
+///
+/// `answer` is given a cooldown to set when it may ask GitHub again, and
+/// `None` once the batch is paused, when it returns `None` if it would need
+/// to.
 pub(super) fn ask(
     targets: Vec<(Input, Target)>,
     mut request: impl FnMut(
@@ -114,7 +125,7 @@ pub(super) fn ask(
         &[(String, String)],
         &mut Option<Duration>,
     ) -> crate::Result<Vec<crate::Result<Value>>>,
-    mut answer: impl FnMut(Value, &Target, &mut Option<Duration>) -> Result,
+    mut answer: impl FnMut(Value, &Target, Option<&mut Option<Duration>>) -> Option<Result>,
     (batch, cooldown): (&mut Batch, &mut Option<Duration>),
 ) {
     let mut groups = vec![targets];
@@ -122,12 +133,34 @@ pub(super) fn ask(
         if group.is_empty() {
             continue;
         }
+        if cooldown.is_some() {
+            batch
+                .deferred
+                .extend(group.into_iter().map(|(input, _)| input));
+            continue;
+        }
         let (query, variables, aliases) = query(&group);
-        match request(&query, variables, &aliases, cooldown) {
+        let mut pause = None;
+        let answers = request(&query, variables, &aliases, &mut pause);
+        hold(cooldown, pause);
+        match answers {
             Ok(answers) => {
                 for ((input, target), response) in group.into_iter().zip(answers) {
-                    let result = response.and_then(|response| answer(response, &target, cooldown));
-                    batch.found.push((input, result));
+                    let response = match response {
+                        Ok(response) => response,
+                        Err(error) => {
+                            batch.found.push((input, Err(error)));
+                            continue;
+                        }
+                    };
+                    let mut pause = None;
+                    let network = cooldown.is_none().then_some(&mut pause);
+                    let result = answer(response, &target, network);
+                    hold(cooldown, pause);
+                    match result {
+                        Some(result) => batch.found.push((input, result)),
+                        None => batch.deferred.push(input),
+                    }
                 }
             }
             Err(Error::GitHubSize) if group.len() > 1 => {
@@ -147,23 +180,24 @@ pub(super) fn ask(
     }
 }
 
-/// One alias's pull request, looked up again when its branch name is crowded.
+/// One alias's pull request, looked up again when its branch name is
+/// crowded, which `network` (`None` while paused) must allow.
 fn answer_for(
     response: Value,
     target: &Target,
     token: &secrecy::SecretString,
     cancelled: &impl Fn() -> bool,
-    cooldown: &mut Option<Duration>,
-) -> Result {
+    network: Option<&mut Option<Duration>>,
+) -> Option<Result> {
     if let Ask::Branch {
         branch,
         head: Some(head),
     } = &target.ask
         && response["data"]["repository"]["pullRequests"]["pageInfo"]["hasNextPage"] == true
     {
-        return crowded(target, branch, head, token, cancelled, cooldown);
+        return network.map(|cooldown| crowded(target, branch, head, token, cancelled, cooldown));
     }
-    parse(response, target)
+    Some(parse(response, target))
 }
 
 /// A branch name more than [`HEAD_LIMIT`] pull requests share across forks:
@@ -178,6 +212,7 @@ fn crowded(
     cooldown: &mut Option<Duration>,
 ) -> Result {
     let (owner, repo) = (target.owner.as_str(), target.repo.as_str());
+    let mut pause = None;
     let heads = crate::github::graphql(
         "pull_request",
         token,
@@ -185,21 +220,26 @@ fn crowded(
         json!({"owner": owner, "repo": repo, "branch": branch}),
         TIMEOUT,
         cancelled,
-        cooldown,
-    )?;
+        &mut pause,
+    );
+    hold(cooldown, pause);
+    let heads = heads?;
     let number = matching_number(&heads, head)?;
     let Some(number) = number else {
         return Ok(None);
     };
-    let mut response = crate::github::graphql(
+    let mut pause = None;
+    let response = crate::github::graphql(
         "pull_request",
         token,
         NUMBER_QUERY,
         json!({"owner": owner, "repo": repo, "number": number}),
         TIMEOUT,
         cancelled,
-        cooldown,
-    )?;
+        &mut pause,
+    );
+    hold(cooldown, pause);
+    let mut response = response?;
     let pr = response["data"]["repository"]["pullRequest"].take();
     if pr.is_null() {
         return Ok(None);

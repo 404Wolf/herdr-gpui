@@ -154,7 +154,7 @@ fn a_response_too_large_is_halved_until_each_part_fits() {
             }
             Ok(vec![Ok(serde_json::Value::Null)])
         },
-        |_, _, _| Ok(None),
+        |_, _, _| Some(Ok(None)),
         (&mut batch, &mut None),
     );
     assert_eq!(sizes, [4, 2, 1, 1, 2, 1, 1]);
@@ -182,7 +182,7 @@ fn a_refusal_fails_its_group_and_defers_the_others() {
             *cooldown = Some(Duration::from_secs(600));
             Err(Error::GitHubRateLimit { reset: None })
         },
-        |_, _, _| Ok(None),
+        |_, _, _| Some(Ok(None)),
         (&mut batch, &mut None),
     );
     assert_eq!(asked, 2, "nothing more is asked after a rate limit");
@@ -229,4 +229,46 @@ fn a_crowded_branch_keeps_only_its_own_heads_pull_request() {
         matching_number(&heads(serde_json::json!([]), true), &head),
         Err(Error::PrAmbiguous)
     ));
+}
+
+#[test]
+fn a_pause_set_mid_batch_holds_and_stops_further_lookups() {
+    let targets: Vec<_> = (0..3).map(|i| branch(&i.to_string())).collect();
+    let mut batch = Batch::default();
+    let mut cooldown = None;
+    let mut lookups = Vec::new();
+    ask(
+        targets,
+        |_, _, aliases, pause| {
+            // A successful reply reports no pause of its own.
+            *pause = None;
+            Ok(aliases
+                .iter()
+                .map(|_| Ok(serde_json::Value::Null))
+                .collect())
+        },
+        |_, target, network| {
+            let Ask::Branch { branch, .. } = &target.ask else {
+                unreachable!()
+            };
+            // Each answer here would need GitHub again.
+            let pause = network?;
+            lookups.push(branch.clone());
+            if branch == "0" {
+                *pause = Some(Duration::from_secs(600));
+                return Some(Err(Error::GitHubRateLimit { reset: None }));
+            }
+            // A later success must not lift the pause.
+            *pause = None;
+            Some(Ok(None))
+        },
+        (&mut batch, &mut cooldown),
+    );
+    assert_eq!(lookups, ["0"], "nothing more is asked once paused");
+    assert_eq!(cooldown, Some(Duration::from_secs(600)));
+    assert!(matches!(
+        batch.found[..],
+        [(_, Err(Error::GitHubRateLimit { .. }))]
+    ));
+    assert_eq!(batch.deferred.len(), 2);
 }

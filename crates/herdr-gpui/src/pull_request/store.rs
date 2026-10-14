@@ -24,8 +24,7 @@ pub(super) struct Entry {
     pub(super) checked: Instant,
     pub(super) due: Instant,
     pub(super) used: Instant,
-    /// Asked for (explicitly, or as the workspace being viewed), so an idle
-    /// window does not stretch its wait.
+    /// Asked for explicitly, so an idle window does not stretch its wait.
     pub(super) urgent: bool,
 }
 

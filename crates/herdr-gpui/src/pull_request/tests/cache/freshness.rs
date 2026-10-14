@@ -97,3 +97,19 @@ fn an_idle_window_waits_longer_but_an_explicit_refresh_does_not() {
     peer.cache.schedule([quiet.clone()], later);
     assert_eq!(peer.cache.queue, [quiet], "back in front, the normal wait");
 }
+
+#[test]
+fn an_idle_window_stretches_the_viewed_workspace_too() {
+    let mut peer = Peer::new();
+    let now = Instant::now();
+    let open = input("open");
+    next_ask(&mut peer, &open, now, Ok(Some(with(State::Open, false))));
+    peer.cache.idle = true;
+    let viewed = now + REFRESH;
+    peer.cache.expire_viewed(&open, viewed);
+    peer.cache.schedule([open.clone()], viewed);
+    assert!(peer.cache.queue.is_empty(), "nobody is looking");
+    let stretched = now + REFRESH * IDLE_STRETCH;
+    peer.cache.schedule([open.clone()], stretched);
+    assert_eq!(peer.cache.queue, std::slice::from_ref(&open));
+}

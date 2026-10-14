@@ -220,9 +220,9 @@ impl Cache {
             Some(pr) if pr.state == State::Open => REFRESH,
             Some(_) => return,
         };
+        // Not urgent: an inactive window stretches this wait like any other.
         if now >= entry.checked + wait {
             entry.due = entry.due.min(now);
-            entry.urgent = true;
         }
     }
 
