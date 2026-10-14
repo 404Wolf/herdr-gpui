@@ -48,15 +48,10 @@ impl HerdrWindow {
         let spaces_custom = self.config.usage.inline
             && self.config.sidebar_layout.spaces != crate::config::SpaceLayout::default();
         let theme = &self.theme;
+        // The field is the heading, so it takes the heading's face.
         self.sidebar_search.input.update(cx, |input, cx| {
-            input.set_appearance(self.config.ui.clone(), theme.clone(), cx);
+            input.set_appearance(font.clone(), theme.clone(), cx);
         });
-        let field = self
-            .fill()
-            .over(theme.sidebar_background(), theme.background);
-        self.sidebar_search
-            .input
-            .update(cx, |input, cx| input.set_fill(field, cx));
         // The Devices layout heads every device, even a lone one, and lists
         // its agents under it in place of its workspaces. Its own field
         // narrows that tree in place, so the sidebar's search, whose results
@@ -65,8 +60,9 @@ impl HerdrWindow {
         // A hidden field keeps whatever it held, but never filters the list.
         let searchable = self.config.show_sidebar_search && !devices;
         let tree_search = self.config.show_sidebar_search && devices;
-        let search = (searchable && self.sidebar_search.query().is_some())
-            .then(|| self.sidebar_search_results(self.sidebar_search_hits(), indicators, look, cx));
+        let search = (searchable && self.sidebar_search.query().is_some()).then(|| {
+            self.sidebar_search_results(self.sidebar_search_hits(cx), indicators, look, cx)
+        });
         let mut spaces = div()
             .id("spaces-scroll")
             .debug_selector(|| "spaces-scroll".into())
@@ -638,16 +634,21 @@ impl HerdrWindow {
                     })
                     .min_h_0()
                     .overflow_hidden()
-                    .child(header(
-                        if devices { "devices" } else { "spaces" },
-                        font,
-                        theme,
-                        look,
-                    ))
-                    .when(searchable, |section| {
-                        section.child(self.sidebar_search_field(look, cx))
-                    })
-                    .children(tree_search.then(|| self.device_tree_search(look)).flatten())
+                    // With search on, the heading is its field.
+                    .child(
+                        searchable
+                            .then_some(super::search::Heading::Spaces)
+                            .or(tree_search.then_some(super::search::Heading::DeviceTree))
+                            .and_then(|heading| self.search_heading(heading, look, window, cx))
+                            .unwrap_or_else(|| {
+                                header(
+                                    if devices { "devices" } else { "spaces" },
+                                    font,
+                                    theme,
+                                    look,
+                                )
+                            }),
+                    )
                     // The wrapper clips the pinned header as the next host's
                     // pushes it up, so it never paints over the title above.
                     .child(

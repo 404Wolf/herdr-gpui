@@ -603,6 +603,8 @@ pub enum Error {
     LocalWorktreeNote,
     #[error("Invalid saved worktree notes")]
     InvalidWorktreeNotes,
+    #[error("Invalid saved palette history")]
+    InvalidPaletteFrecency,
     #[error("Invalid saved dispatch history")]
     InvalidDispatchHistory,
     #[error("Invalid saved editor groups")]
@@ -867,6 +869,13 @@ pub enum Error {
     InvalidDevicesTable,
     #[error("[devices] must list at most {0} devices")]
     TooManyDevices(usize),
+    /// A `[devices.<id>]` theme that does not parse, named by its device.
+    #[error("devices.{device}.theme: {source}")]
+    DeviceTheme {
+        device: String,
+        #[source]
+        source: Box<Error>,
+    },
     #[error("theme {name:?} not found in {directories:?}")]
     ThemeNotFound {
         name: String,

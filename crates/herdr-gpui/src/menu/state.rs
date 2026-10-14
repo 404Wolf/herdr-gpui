@@ -98,6 +98,10 @@ pub(crate) struct MenuState {
     pub(super) _keybinds_subscription: Option<Subscription>,
     pub(crate) themes: Option<crate::theme_picker::ThemePicker>,
     pub(crate) palette: Option<crate::palette::Palette>,
+    /// Whether Go To shows its preview; Alt-P toggles it for the session.
+    pub(crate) palette_preview: bool,
+    /// What the last closed palette leaves for Resume Palette.
+    pub(crate) palette_resume: Option<crate::palette::Resume>,
     pub(crate) code_search: Option<crate::code_search::CodeSearch>,
     pub(crate) close: Option<crate::close_modal::CloseConfirmation>,
     pub(crate) tab: Option<crate::tab_menu::TabMenu>,
@@ -320,6 +324,8 @@ impl MenuState {
             _keybinds_subscription: None,
             themes: None,
             palette: None,
+            palette_resume: None,
+            palette_preview: true,
             code_search: None,
             close: None,
             pr: Default::default(),
@@ -372,7 +378,9 @@ impl MenuState {
             self.github.cancel();
         }
         self.page = None;
-        self.palette = None;
+        if let Some(palette) = self.palette.take() {
+            self.palette_resume = Some(palette.resume());
+        }
         self.code_search = None;
         self.shortcut_editor = None;
         self.selected = None;

@@ -199,6 +199,8 @@ impl HerdrWindow {
             }
             None => {
                 let (input, changed) = self.device_search(font, "Search devices and agents", cx);
+                // The sidebar's heading frames it.
+                input.update(cx, |input, cx| input.set_frameless(cx));
                 self.devices_overview.tree_search = Some(TreeSearch {
                     input,
                     _changed: changed,

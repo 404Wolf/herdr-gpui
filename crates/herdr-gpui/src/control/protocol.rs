@@ -9,11 +9,17 @@ pub(crate) mod settings;
 pub(crate) mod tabs;
 pub(crate) mod work;
 
+use crate::cli::control::Placement;
 use serde::{Deserialize, Serialize};
 
 /// Raised whenever a request or reply changes shape, so `status` can tell
-/// an outdated app from a refused request.
-pub(crate) const PROTOCOL_VERSION: u32 = 2;
+/// an outdated app from a refused request. 3: `browser.open` placement.
+pub(crate) const PROTOCOL_VERSION: u32 = 3;
+
+/// Older apps and clients know only tabs, so a tab is left off the wire.
+fn is_tab(placement: &Placement) -> bool {
+    *placement == Placement::Tab
+}
 
 /// Bounds a request and a response alike. A response can carry a batch of
 /// notes, each with a bounded snippet of the page.
@@ -117,6 +123,8 @@ pub(crate) struct BrowserOpen {
     pub caller: Caller,
     /// Whether the window switches to the tab.
     pub focus: bool,
+    #[serde(default, skip_serializing_if = "is_tab")]
+    pub placement: Placement,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -185,6 +193,10 @@ pub(crate) enum Response {
     Opened {
         opened_in: OpenedIn,
         workspace_id: Option<String>,
+        /// Where the page went: beside the terminal only when asked and
+        /// the window could split.
+        #[serde(default, skip_serializing_if = "is_tab")]
+        placement: Placement,
     },
     Reloaded {
         tabs: usize,
@@ -258,6 +270,7 @@ mod tests {
                 window: None,
             },
             focus: true,
+            placement: Placement::Tab,
         });
         let text = serde_json::to_string(&request).unwrap();
         assert_eq!(
@@ -265,6 +278,17 @@ mod tests {
             r#"{"method":"browser.open","page":{"url":"http://localhost:3000/"},"caller":{"pane_id":"w_1:p1","workspace_id":"w_1","daemon_socket":null},"focus":true}"#
         );
         assert_eq!(serde_json::from_str::<Request>(&text).unwrap(), request);
+        let beside: Request = serde_json::from_str(
+            r#"{"method":"browser.open","page":{"file":"/srv/a.html"},"caller":{},"focus":true,"placement":"beside"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            beside,
+            Request::Open(BrowserOpen {
+                placement: Placement::Beside,
+                ..
+            })
+        ));
         let minimal: Request = serde_json::from_str(
             r#"{"method":"browser.open","page":{"file":"/srv/a.html"},"caller":{},"focus":false}"#,
         )
@@ -320,6 +344,7 @@ mod tests {
             r#"{"method":"browser.eval","page":{"url":"https://a.test"},"caller":{},"focus":true}"#,
             r#"{"method":"browser.open","page":{"url":"https://a.test"},"caller":{},"focus":true,"extra":1}"#,
             r#"{"method":"browser.open","page":{"script":"x"},"caller":{},"focus":true}"#,
+            r#"{"method":"browser.open","page":{"url":"https://a.test"},"caller":{},"focus":true,"placement":"popup"}"#,
             r#"{"method":"browser.open","page":{"url":"https://a.test"},"caller":{"shell":"x"},"focus":true}"#,
             r#"{"method":"browser.open","focus":true}"#,
             r#"{"method":"browser.feedback","wait_seconds":1}"#,
@@ -340,6 +365,12 @@ mod tests {
             Response::Opened {
                 opened_in: OpenedIn::Tab,
                 workspace_id: Some("w_1".into()),
+                placement: Placement::Tab,
+            },
+            Response::Opened {
+                opened_in: OpenedIn::Tab,
+                workspace_id: Some("w_1".into()),
+                placement: Placement::Beside,
             },
             Response::error(ErrorCode::WorkspaceNotFound, "No window shows w_9"),
             Response::Reloaded { tabs: 2 },

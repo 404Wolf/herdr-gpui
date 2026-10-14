@@ -1,5 +1,5 @@
-//! Drawing the search field and the grouped results that replace the spaces
-//! list while it holds a query.
+//! Drawing the grouped results that replace the spaces list while the search
+//! holds a query.
 
 use super::{Hit, Kind};
 use crate::{
@@ -15,55 +15,6 @@ use crate::{
 use gpui::{prelude::*, *};
 
 impl HerdrWindow {
-    /// The field, with a clear button once it holds text.
-    pub(in crate::sidebar) fn sidebar_search_field(
-        &self,
-        look: SidebarLook,
-        cx: &mut Context<Self>,
-    ) -> Div {
-        let theme = &self.theme;
-        let typed = self.sidebar_search.query().is_some();
-        div()
-            .debug_selector(|| "sidebar-search".into())
-            .flex_none()
-            .flex()
-            .items_center()
-            .gap(px(4.))
-            .px(px(look.content_x()))
-            .pb(px(6.))
-            .on_key_down(cx.listener(Self::sidebar_search_key))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .child(self.sidebar_search.input.clone()),
-            )
-            .when(typed, |field| {
-                field.child(
-                    div()
-                        .id("sidebar-search-clear")
-                        .debug_selector(|| "sidebar-search-clear".into())
-                        .flex_none()
-                        .size(px(20.))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded(px(corners::SMALL))
-                        .cursor_pointer()
-                        .hover(|style| style.bg(rgb(theme.active)))
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.clear_sidebar_search(window, cx);
-                        }))
-                        .child(
-                            svg()
-                                .path("icons/x.svg")
-                                .size(px(12.))
-                                .text_color(rgb(theme.muted)),
-                        ),
-                )
-            })
-    }
-
     /// The results for `hits`, grouped under a heading per kind.
     pub(in crate::sidebar) fn sidebar_search_results(
         &self,
@@ -109,6 +60,7 @@ impl HerdrWindow {
                             Kind::Device => "devices",
                             Kind::Worktree => "worktrees",
                             Kind::Branch => "branches",
+                            Kind::Note => "notes",
                         })),
                 );
             }
@@ -117,10 +69,10 @@ impl HerdrWindow {
                     status_indicator(status, font, indicators).into_any_element()
                 }
                 (kind, _) => svg()
-                    .path(if kind == Kind::Device {
-                        "icons/devices.svg"
-                    } else {
-                        "icons/git-branch.svg"
+                    .path(match kind {
+                        Kind::Device => "icons/devices.svg",
+                        Kind::Note => "icons/note.svg",
+                        Kind::Worktree | Kind::Branch => "icons/git-branch.svg",
                     })
                     .size(px(indicators.width(font).max(12.)))
                     .flex_none()

@@ -120,14 +120,14 @@ fn alt_letters_filter_go_to_by_daemon_agent_status_without_typing(cx: &mut TestA
     });
 
     // Other filters ignore the status, and Go To keeps it.
-    cx.simulate_keystrokes("tab");
+    cx.simulate_keystrokes("ctrl-tab");
     let (filter, agent_filter, _, rows) = state(cx);
     assert_eq!(
         (filter, agent_filter),
         (Filter::Commands, AgentFilter::Blocked)
     );
     assert!(rows.iter().all(|row| row == "other") && !rows.is_empty());
-    cx.simulate_keystrokes("shift-tab");
+    cx.simulate_keystrokes("ctrl-shift-tab");
     assert_eq!(state(cx).3, ["w1", "w1:p1"]);
 
     // Plain letters are search text, not status shortcuts.

@@ -15,6 +15,10 @@ mod socket;
 
 #[cfg(unix)]
 use crate::HerdrWindow;
+#[cfg(unix)]
+use crate::browser::Location;
+#[cfg(unix)]
+pub(crate) use crate::cli::control::Placement;
 pub(crate) use client::run;
 #[cfg(feature = "mockup")]
 pub(crate) use client::send_notes;
@@ -76,10 +80,22 @@ impl Target<'_> {
     }
 }
 
+/// The page a request asks a window to open, and how to show it.
+#[cfg(unix)]
+pub(crate) struct Opening<'a> {
+    pub location: &'a Location,
+    /// Whether the window switches to the tab.
+    pub focus: bool,
+    pub placement: Placement,
+}
+
 /// Where a window opened a requested tab.
 #[cfg(unix)]
 pub(crate) enum Placed {
-    Opened { workspace_id: String },
+    Opened {
+        workspace_id: String,
+        placement: Placement,
+    },
     Full,
 }
 
