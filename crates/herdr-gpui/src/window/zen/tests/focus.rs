@@ -80,3 +80,55 @@ fn zen_takes_the_keyboard_from_the_hidden_sidebar(cx: &mut TestAppContext) {
     let terminal = cx.update(|window, cx| view.read(cx).focus.is_focused(window));
     assert!(terminal);
 }
+
+/// The sidebar can still be used while it slides off, so its search may
+/// take the keyboard after the toggle; once the slide ends and hides it,
+/// the keyboard goes back to the terminal.
+#[gpui::test]
+fn the_search_focused_mid_slide_gives_the_keyboard_back(cx: &mut TestAppContext) {
+    let (view, cx) = window(cx);
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.zen.hold_slides();
+            view.command(Command::ToggleZenMode, window, cx);
+            let search = view.sidebar_search.focus(cx);
+            window.focus(&search, cx);
+        })
+    });
+    draw(cx);
+    let terminal =
+        |cx: &mut VisualTestContext| cx.update(|window, cx| view.read(cx).focus.is_focused(window));
+    assert!(!terminal(cx));
+
+    view.update(cx, |view, _| view.zen.finish_slide());
+    draw(cx);
+    assert!(view.read_with(cx, |view, _| view.zen_layout()));
+    assert!(terminal(cx));
+}
+
+/// A menu opened while the chrome slides off keeps the keyboard when the
+/// slide ends.
+#[gpui::test]
+fn a_menu_opened_mid_slide_keeps_the_keyboard(cx: &mut TestAppContext) {
+    let (view, cx) = window(cx);
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.zen.hold_slides();
+            view.command(Command::ToggleZenMode, window, cx);
+            view.command(Command::Palette, window, cx);
+        })
+    });
+    draw(cx);
+    let in_menu = |cx: &mut VisualTestContext| {
+        cx.update(|window, cx| {
+            let view = view.read(cx);
+            !view.focus.is_focused(window) && view.menu.page.is_some()
+        })
+    };
+    assert!(in_menu(cx));
+
+    view.update(cx, |view, _| view.zen.finish_slide());
+    draw(cx);
+    assert!(view.read_with(cx, |view, _| view.zen_layout()));
+    assert!(in_menu(cx));
+}

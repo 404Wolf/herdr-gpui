@@ -194,6 +194,12 @@ impl HerdrWindow {
             entered_fullscreen,
             restore_font,
         };
+        // The sidebar stays usable while it slides, so its search may have
+        // taken the keyboard since the toggle; it is hidden now. Anything
+        // else, such as a menu opened meanwhile, keeps it.
+        if self.sidebar_search.focus(cx).contains_focused(window, cx) {
+            self.zen_focus(window, cx);
+        }
         cx.notify();
     }
 

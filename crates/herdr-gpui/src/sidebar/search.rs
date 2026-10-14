@@ -59,8 +59,7 @@ impl SidebarSearch {
         }
     }
 
-    /// The field's handle, for tests to type into it.
-    #[cfg(test)]
+    /// The field's handle, which holds the keyboard while it is typed in.
     pub(crate) fn focus(&self, cx: &App) -> gpui::FocusHandle {
         self.input.read(cx).focus.clone()
     }
