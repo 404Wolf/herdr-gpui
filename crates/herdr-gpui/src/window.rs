@@ -29,7 +29,7 @@ pub(crate) use links::PressedLink;
 mod mouse;
 mod pending_input;
 mod plugin_selection;
-mod prefix;
+pub(crate) mod prefix;
 mod reconnecting;
 mod regions;
 mod render;
@@ -156,9 +156,10 @@ pub(crate) struct HerdrWindow {
     pub(crate) pending_images: Vec<images::PendingImage>,
     pub(crate) pending_input: pending_input::PendingInput,
     pub(crate) held_keys: crate::terminal::HeldKeys,
-    /// The key code, and Shift, of the key being handled: AppKit's current
-    /// event, which names a function key macOS delivered without its name.
+    /// The key code and Shift of the key being handled, from AppKit's event.
     pub(crate) key_press: fn() -> Option<(u16, bool)>,
+    /// What a key code types in the active layout, to restore a dropped Shift.
+    pub(crate) key_layout: fn(u16) -> Option<prefix::KeyChars>,
     pub(crate) file_transfer: Option<transfers::FileTransfer>,
     /// The terminal cells the pointer is choosing. A release copies them and
     /// clears this, so a highlight only ever belongs to a drag in progress.
@@ -695,6 +696,7 @@ impl HerdrWindow {
             pending_input: Default::default(),
             held_keys: Default::default(),
             key_press: function_keys::current_press,
+            key_layout: prefix::current_layout,
             file_transfer: None,
             selection: None,
             selection_follow: Default::default(),
