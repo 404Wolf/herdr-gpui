@@ -356,6 +356,12 @@ pub(crate) fn menus(layout: Layout) -> Vec<Menu> {
                         command: Command::CycleWindows,
                     },
                 ),
+                MenuItem::action(
+                    "Close Window",
+                    RunCommand {
+                        command: Command::CloseWindow,
+                    },
+                ),
                 MenuItem::separator(),
                 MenuItem::action("Logs", ShowLogs),
             ],

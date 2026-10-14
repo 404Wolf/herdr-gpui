@@ -34,8 +34,10 @@ pub enum SshFailure {
     #[error("there is no route to the host")]
     NoRoute,
     /// macOS refused a local network address because Herdr lacks Local
-    /// Network permission. The system reports it as no route to the host,
-    /// even when a terminal that has the permission reaches the same host.
+    /// Network permission, or is still waiting for the user to answer its
+    /// alert. `ssh` only sees no route to the host; this class is kept for
+    /// when the app's own check confirms the refusal, so an offline device
+    /// or a bad route stays `NoRoute`.
     #[error(
         "macOS denied Herdr access to your local network. If it just asked, allow it and try again; otherwise turn on Herdr in System Settings › Privacy & Security › Local Network"
     )]
@@ -60,15 +62,18 @@ impl SshFailure {
     /// it found no candidate binary at all. Any other status is the remote's.
     #[cfg(unix)]
     pub(super) fn classify(code: Option<i32>, stderr: &[u8]) -> Self {
-        Self::classify_with(code, stderr, resolve)
+        Self::classify_with(code, stderr, resolve, crate::local_network_access)
     }
 
-    /// [`Self::classify`] with the name lookup a hostname in the error needs.
+    /// [`Self::classify`] with the name lookup a hostname in the error needs
+    /// and the check of this app's Local Network permission, which `ssh`, as
+    /// this app's child, shares.
     #[cfg(unix)]
     fn classify_with(
         code: Option<i32>,
         stderr: &[u8],
         resolve: impl FnOnce(&str) -> Vec<IpAddr>,
+        access: impl FnOnce() -> crate::LocalNetworkAccess,
     ) -> Self {
         match code {
             Some(127) => Self::HerdrMissing,
@@ -83,11 +88,15 @@ impl SshFailure {
                 } else if has(&["Permission denied", "Too many authentication failures"]) {
                     Self::Auth
                 } else if has(&["No route to host"]) {
+                    // No route to a LAN address is also how an offline
+                    // device fails, so only a confirmed refusal names the
+                    // permission.
                     if cfg!(target_os = "macos")
                         && refused_host(&text).is_some_and(|host| match host.parse::<IpAddr>() {
                             Ok(address) => is_local(address),
                             Err(_) => resolve(host).into_iter().any(is_local),
                         })
+                        && access() == crate::LocalNetworkAccess::Denied
                     {
                         Self::LocalNetworkDenied
                     } else {

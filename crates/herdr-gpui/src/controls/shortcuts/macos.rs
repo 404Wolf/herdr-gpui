@@ -55,6 +55,7 @@ pub(super) fn defaults(command: Command) -> &'static [&'static str] {
         SplitEditor => &["cmd-\\"],
         ToggleFullScreen => &["ctrl-cmd-f"],
         CycleWindows => &["cmd-`"],
+        CloseWindow => &["cmd-alt-shift-w"],
         _ => &[],
     }
 }

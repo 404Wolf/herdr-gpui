@@ -2,6 +2,9 @@
 use super::*;
 use crate::coder::tests::settings;
 
+#[cfg(unix)]
+mod teleport;
+
 #[test]
 fn coder_ssh_carries_the_token_only_in_the_child_environment() {
     let command = ssh_command(

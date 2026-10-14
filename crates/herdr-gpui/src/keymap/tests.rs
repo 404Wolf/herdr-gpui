@@ -4,7 +4,9 @@ use herdr_client::protocol::ClientShellCommand;
 
 mod custom_reference;
 mod literal_plus;
+mod pane_keys;
 mod platform_defaults;
+mod shift_enter;
 
 fn overrides(entries: &[(&str, Binding)]) -> BTreeMap<String, Binding> {
     entries
@@ -462,24 +464,29 @@ fn pane_keys(entries: &[(&str, &str)]) -> PaneKeys {
         .collect()
 }
 
-fn sent<'a>(keymap: &'a Keymap, typed: &str) -> Option<&'a Keystroke> {
+fn sent<'a>(keymap: &'a Keymap, typed: &str) -> Option<&'a PaneKey> {
     keymap.pane_key(&keystroke(typed))
+}
+
+fn key(text: &str) -> PaneKey {
+    PaneKey::Key(keystroke(text))
 }
 
 #[test]
 fn default_pane_keys_follow_ghostty_on_macos() {
     let defaults = DEFAULT_PANE_KEYS
         .iter()
-        .map(|(typed, sent)| (keystroke(typed), keystroke(sent)));
+        .map(|(typed, sent)| (keystroke(typed), key(sent)));
     assert!(
-        defaults
-            .clone()
-            .all(|(_, sent)| crate::terminal::reaches_pane(&sent))
+        DEFAULT_PANE_KEYS
+            .iter()
+            .chain(PORTABLE_PANE_KEYS)
+            .all(|(_, sent)| crate::terminal::reaches_pane(&keystroke(sent)))
     );
     let keymap = Keymap::default();
     assert_eq!(
         keymap.pane_keys.len(),
-        if cfg!(target_os = "macos") { 5 } else { 0 }
+        if cfg!(target_os = "macos") { 6 } else { 1 }
     );
     // Defaults are replaced by keystroke, not spelling, or removed.
     let resolved = resolve_pane_keys(
@@ -494,11 +501,11 @@ fn default_pane_keys_follow_ghostty_on_macos() {
     assert_eq!(
         resolved,
         [
-            (keystroke("cmd-right"), keystroke("ctrl-e")),
-            (keystroke("alt-left"), keystroke("alt-b")),
-            (keystroke("alt-right"), keystroke("alt-f")),
-            (keystroke("cmd-left"), keystroke("home")),
-            (keystroke("ctrl-shift-enter"), keystroke("alt-enter")),
+            (keystroke("cmd-right"), key("ctrl-e")),
+            (keystroke("alt-left"), key("alt-b")),
+            (keystroke("alt-right"), key("alt-f")),
+            (keystroke("cmd-left"), key("home")),
+            (keystroke("ctrl-shift-enter"), key("alt-enter")),
         ]
     );
 }
@@ -516,7 +523,7 @@ fn pane_keys_take_keystrokes_from_default_and_daemon_commands() {
         ("ctrl-b", "ctrl-a"),
     ]);
     let keymap = Keymap::with_overrides(&BTreeMap::new(), &table, &keys).unwrap();
-    assert_eq!(sent(&keymap, default("cmd-k")), Some(&keystroke("ctrl-l")));
+    assert_eq!(sent(&keymap, default("cmd-k")), Some(&key("ctrl-l")));
     assert_eq!(keymap.primary(Command::ClearPane), "");
     assert_eq!(keymap.primary(Command::Themes), "");
     assert!(!keymap.is_prefix(&keystroke("ctrl-b")));

@@ -17,6 +17,7 @@ mod find;
 mod flash;
 pub(crate) use commands::run_window_command;
 pub(crate) use flash::Flash;
+mod function_keys;
 mod image_source;
 mod images;
 mod input;
@@ -36,6 +37,7 @@ mod status_bar;
 pub(crate) mod system_notifications;
 mod tab_drag;
 mod tab_strip;
+mod tab_tear;
 mod toasts;
 mod transfers;
 mod zen;
@@ -107,7 +109,6 @@ pub(crate) struct HerdrWindow {
     pub(crate) config_load: Option<Task<()>>,
     pub(crate) settings: crate::settings_panel::SettingsPanel,
     pub(crate) integrations: crate::integrations::Integrations,
-    pub(crate) font_size_saves: crate::font_sizes::FontSizeSaves,
     pub(crate) config_watch: Option<Task<()>>,
     pub(crate) config_load_revision: u64,
     pub(crate) endpoints: Vec<endpoint::Endpoint>,
@@ -121,6 +122,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) sessions_anchor: std::rc::Rc<std::cell::Cell<Point<Pixels>>>,
     pub(crate) activation_deadline: Option<std::time::Instant>,
     pub(crate) pending_navigation: Option<OwnedNavigationTarget>,
+    /// A tab torn off another window, waiting for its host to be listed.
+    pub(crate) arrival: Option<tab_tear::TornTab>,
     /// Whether the leftmost strip gave Back and Forward their full width
     /// when it was last laid out; see `HerdrWindow::strip_leading`.
     pub(crate) strip_navigation_fits: bool,
@@ -150,6 +153,9 @@ pub(crate) struct HerdrWindow {
     pub(crate) pending_images: Vec<images::PendingImage>,
     pub(crate) pending_input: pending_input::PendingInput,
     pub(crate) held_keys: crate::terminal::HeldKeys,
+    /// The key code, and Shift, of the key being handled: AppKit's current
+    /// event, which names a function key macOS delivered without its name.
+    pub(crate) key_press: fn() -> Option<(u16, bool)>,
     pub(crate) file_transfer: Option<transfers::FileTransfer>,
     /// The terminal cells the pointer is choosing. A release copies them and
     /// clears this, so a highlight only ever belongs to a drag in progress.
@@ -184,6 +190,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) menu: menu::MenuState,
     /// A `worktree.remove` queued after its dialog closed.
     pub(crate) removal: Option<menu::Removal>,
+    /// Removing worktrees whose pull request is merged, when enabled.
+    pub(crate) merged_cleanup: crate::merged_cleanup::Cleanup,
     /// The worktree script being located, read, trusted, or opened.
     pub(crate) worktree_script: Option<crate::worktree_scripts::Job>,
     /// The editor pane being opened, if any.
@@ -196,6 +204,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) teleport_marks: crate::teleport::Marks,
     /// The workspace a finished teleport keeps steering to until focused.
     pub(crate) teleport_follow: Option<crate::teleport::Follow>,
+    /// A pane moving to another device; a move outlives its menu.
+    pub(crate) pane_carry: Option<crate::pane_menu::carry::Carry>,
     /// A worktree or workspace being created on another host.
     pub(crate) dispatch_job: Option<crate::dispatch::Job>,
     /// Dispatched worktrees' setup scripts, waiting for their hosts in order.
@@ -242,6 +252,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) checkpoints: crate::checkpoint::Checkpoints,
     /// Remote ports forwarded to this machine; they end with the window.
     pub(crate) port_forwards: crate::port_forward::PortForwards,
+    /// Pages remote agents asked for, waiting for their port's forward.
+    pub(crate) remote_browser: Vec<crate::remote_browser::Forwarding>,
     /// Cloud machines being added; see `cloud::Jobs`.
     #[cfg(feature = "cloud")]
     pub(crate) cloud_jobs: crate::cloud::Jobs,
@@ -490,6 +502,7 @@ impl HerdrWindow {
         self.sync_host_theme();
         self.save_group_layouts(cx);
         self.poll_browser(window, cx);
+        self.poll_remote_browser(window, cx);
         self.offer_browser_skill(window, cx);
         self.poll_sessions(cx);
         self.flush_scrollbar(cx);
@@ -505,6 +518,7 @@ impl HerdrWindow {
         self.poll_file_transfer(cx);
         self.update_workspace_dialog(window, cx);
         self.poll_teleport(window, cx);
+        self.poll_carry(window, cx);
         self.poll_fan_out(window, cx);
         self.poll_dispatch(window, cx);
         self.poll_device_setup(window, cx);
@@ -531,6 +545,7 @@ impl HerdrWindow {
         if self.update_workspace_pr() {
             cx.notify();
         }
+        self.update_merged_cleanup(window, cx);
         if self.update_git() {
             cx.notify();
         }
@@ -785,7 +800,6 @@ impl HerdrWindow {
             config_load: None,
             settings: Default::default(),
             integrations: Default::default(),
-            font_size_saves: Default::default(),
             config_watch: None,
             config_load_revision: 0,
             catalog: endpoint::Catalog::new(&target),
@@ -801,6 +815,7 @@ impl HerdrWindow {
             selection_epoch: 0,
             activation_deadline: None,
             pending_navigation: None,
+            arrival: None,
             strip_navigation_fits: true,
             pending_toast: None,
             toasts_hidden: false,
@@ -826,6 +841,7 @@ impl HerdrWindow {
             pending_images: Vec::new(),
             pending_input: Default::default(),
             held_keys: Default::default(),
+            key_press: function_keys::current_press,
             file_transfer: None,
             selection: None,
             selection_follow: Default::default(),
@@ -845,12 +861,14 @@ impl HerdrWindow {
             local_error: error,
             menu: menu::MenuState::new(cx),
             removal: None,
+            merged_cleanup: Default::default(),
             worktree_script: None,
             editor_open: None,
             editor_panes: Vec::new(),
             teleport: None,
             teleport_marks: crate::teleport::Marks::start(),
             teleport_follow: None,
+            pane_carry: None,
             dispatch_job: None,
             dispatch_setups: Default::default(),
             fan_out: None,
@@ -874,6 +892,7 @@ impl HerdrWindow {
             devices_overview: Default::default(),
             checkpoints: Default::default(),
             port_forwards: Default::default(),
+            remote_browser: Vec::new(),
             #[cfg(feature = "cloud")]
             cloud_jobs: Default::default(),
             listening_ports: Default::default(),

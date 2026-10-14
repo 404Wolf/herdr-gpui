@@ -53,6 +53,10 @@ pub(crate) struct MenuState {
     /// Written by the menu's layout, read when presenting pages.
     pub(crate) cover: std::rc::Rc<std::cell::Cell<Cover>>,
     pub(super) device_setup: Option<super::devices::Setup>,
+    /// The provider whose Settings tab Add Device last asked for. Unit tests
+    /// record it rather than open a Settings window, which reads the disk.
+    #[cfg(all(test, feature = "cloud"))]
+    pub(super) settings_opened: Option<crate::cloud::CloudProvider>,
     pub(super) wsl_setup: Option<super::devices::WslSetup>,
     /// The saved distribution the removal confirmation names.
     pub(super) wsl_remove: Option<String>,
@@ -92,10 +96,7 @@ pub(crate) struct MenuState {
     pub(crate) keybinds_search: Option<Entity<crate::search_input::SearchInput>>,
     pub(super) shortcut_editor: Option<super::shortcut_editor::Editor>,
     pub(super) _keybinds_subscription: Option<Subscription>,
-    pub(crate) preferences_scroll: ScrollHandle,
-    pub(crate) font_size_editor: Option<crate::preferences::FontSizeEditor>,
     pub(crate) themes: Option<crate::theme_picker::ThemePicker>,
-    pub(crate) fonts: Option<crate::font_picker::FontPicker>,
     pub(crate) palette: Option<crate::palette::Palette>,
     pub(crate) code_search: Option<crate::code_search::CodeSearch>,
     pub(crate) close: Option<crate::close_modal::CloseConfirmation>,
@@ -135,6 +136,8 @@ pub(super) struct Deletion {
     pub(super) force: bool,
     /// Whether the checkout has an archive script to run first.
     pub(super) archive: crate::worktree_scripts::ArchiveCheck,
+    /// The merged pull request that opened this dialog without being asked.
+    pub(super) merged: Option<u64>,
 }
 
 impl Deletion {
@@ -145,6 +148,7 @@ impl Deletion {
             root: None,
             force,
             archive: crate::worktree_scripts::ArchiveCheck::Unread,
+            merged: None,
         }
     }
 
@@ -172,6 +176,12 @@ pub(crate) struct Removal {
 }
 
 impl Removal {
+    /// Whether the daemon has yet to answer, rather than a refusal kept for
+    /// its force confirmation.
+    pub(crate) fn waiting(&self) -> bool {
+        self.pending.is_some()
+    }
+
     pub(crate) fn pending_for(&self, endpoint: (u64, u64), boot_id: &str, workspace: &str) -> bool {
         self.pending.is_some()
             && self.endpoint == endpoint
@@ -197,6 +207,15 @@ impl Submission {
 }
 
 impl MenuState {
+    /// Whether a menu or dialog is open on `workspace`.
+    pub(crate) fn open_on(&self, workspace: &str) -> bool {
+        self.page.is_some()
+            && self
+                .target
+                .as_ref()
+                .is_some_and(|target| target.id == workspace)
+    }
+
     /// The repository the open dialog's host picker ranks hosts for.
     pub(crate) fn dispatch_repo(&self) -> Option<String> {
         self.target
@@ -268,6 +287,8 @@ impl MenuState {
             application_bar: Default::default(),
             cover: Default::default(),
             device_setup: None,
+            #[cfg(all(test, feature = "cloud"))]
+            settings_opened: None,
             wsl_setup: None,
             wsl_remove: None,
             session_edit: None,
@@ -297,10 +318,7 @@ impl MenuState {
             keybinds_search: None,
             shortcut_editor: None,
             _keybinds_subscription: None,
-            preferences_scroll: ScrollHandle::new(),
-            font_size_editor: None,
             themes: None,
-            fonts: None,
             palette: None,
             code_search: None,
             close: None,
@@ -351,8 +369,6 @@ impl MenuState {
         self.page = None;
         self.palette = None;
         self.code_search = None;
-        self.fonts = None;
-        self.font_size_editor = None;
         self.shortcut_editor = None;
         self.selected = None;
         self.workspace_selected = None;

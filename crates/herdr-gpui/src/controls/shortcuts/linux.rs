@@ -59,6 +59,8 @@ pub(super) fn defaults(command: Command) -> &'static [&'static str] {
         SplitEditor => &["ctrl-shift-\\"],
         ToggleFullScreen => &["f11"],
         CycleWindows => &["ctrl-shift-`"],
+        // Tiling compositors such as Hyprland draw no close button.
+        CloseWindow => &["ctrl-alt-w"],
         _ => &[],
     }
 }

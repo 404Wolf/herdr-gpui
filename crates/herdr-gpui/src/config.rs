@@ -11,12 +11,14 @@ pub(crate) mod backdrop;
 mod bitmap_fonts;
 mod coder;
 mod daytona;
+mod edit;
 mod files;
 mod font_weight;
 mod fonts;
 mod keybindings;
 mod layout;
 mod notifications;
+mod padding;
 pub(crate) mod preferences;
 pub(crate) mod sidebar;
 mod sidebar_style;
@@ -35,6 +37,7 @@ pub(crate) use coder::CoderFields;
 pub use daytona::DaytonaConfig;
 #[cfg(feature = "daytona")]
 pub(crate) use daytona::DaytonaFields;
+pub(crate) use edit::{Layer, parse_value};
 use files::write_config;
 pub use font_weight::bold as bold_font_weight;
 pub(crate) use fonts::FontFace;
@@ -42,16 +45,19 @@ use fonts::FontSettings;
 #[cfg(any(test, feature = "integration-test"))]
 pub use fonts::symbol_fallbacks;
 pub use fonts::{FONT_SIZE_RANGE, FONT_SIZE_STEP, FontConfig};
-use layout::MAX_SIDEBAR_GAP;
 pub use layout::{Density, Layout, LayoutMode, Style};
 pub(crate) use notifications::NotificationDelivery;
 pub use notifications::{BellConfig, ClipboardToast, ClipboardToastPosition, NotificationConfig};
 use notifications::{ClipboardToastSettings, NotificationSettings};
+pub use padding::Padding;
+pub(crate) use padding::{Axis, MAX_PADDING, Side, Sides};
 use serde::Deserialize;
 pub(crate) use sidebar::{
     AgentLayout, AgentToken, MAX_ROWS as MAX_SIDEBAR_ROWS, Rows, SidebarConfigError, SidebarLayout,
     SidebarScope, SpaceLayout, SpaceToken, TokenStyle,
 };
+#[cfg(test)]
+pub(crate) use sidebar_style::DeviceFooter;
 pub use sidebar_style::{SelectMode, SidebarOverrides, SidebarStyle};
 pub use status_bar::StatusBar;
 use std::{
@@ -90,9 +96,14 @@ pub struct Config {
     /// Whether a workspace close shows its dialog when the check finds no
     /// unpublished work. Uncommitted or unpushed work always asks.
     pub confirm_close_workspace: bool,
+    /// Whether a linked worktree whose pull request is merged is removed, and
+    /// its workspace closed, without asking. The focused workspace still asks.
+    pub remove_merged_worktrees: bool,
     pub show_agents: bool,
     /// The search field at the top of the sidebar's spaces list.
     pub show_sidebar_search: bool,
+    /// The repository owner's avatar, or the GitHub mark, before a space's name.
+    pub show_repository_icons: bool,
     /// CPU and memory of the selected host in the status bar.
     pub show_system_load: bool,
     /// Snapshot a checkout's files each time one of its agents starts or
@@ -100,6 +111,8 @@ pub struct Config {
     pub agent_checkpoints: bool,
     /// Ports each workspace listens on, in the sidebar and the status bar.
     pub show_listening_ports: bool,
+    /// Wheel scrollback draws panes between rows, following the OS deltas.
+    pub smooth_scroll: bool,
     /// Which status bar items show, and how compactly.
     pub status_bar: StatusBar,
     /// What Toggle Zen Mode does beyond hiding the chrome.
@@ -122,6 +135,8 @@ pub struct Config {
     pub sidebar: FontConfig,
     pub tabs: FontConfig,
     pub terminal: FontConfig,
+    /// Blank space around every terminal's cells.
+    pub terminal_padding: Padding,
     pub ui: FontConfig,
     pub github: GitHubConfig,
     pub coder: CoderConfig,
@@ -433,11 +448,14 @@ impl Default for Config {
             confirm_close_tab: true,
             confirm_close_pane: true,
             confirm_close_workspace: true,
+            remove_merged_worktrees: false,
             show_agents: true,
             show_sidebar_search: true,
+            show_repository_icons: true,
             show_system_load: true,
             agent_checkpoints: true,
             show_listening_ports: true,
+            smooth_scroll: true,
             status_bar: StatusBar::default(),
             zen: Zen::default(),
             backdrop: Backdrop::default(),
@@ -472,6 +490,7 @@ impl Default for Config {
             // sidebar and terminal use, as they do in the reference UI.
             tabs: font(monospace, 12.0),
             terminal: font(monospace, 14.0),
+            terminal_padding: Padding::default(),
             ui: font(ui, 12.0),
         }
     }
@@ -484,11 +503,14 @@ struct Settings {
     confirm_close_tab: Option<bool>,
     confirm_close_pane: Option<bool>,
     confirm_close_workspace: Option<bool>,
+    remove_merged_worktrees: Option<bool>,
     show_agents: Option<bool>,
     show_sidebar_search: Option<bool>,
+    show_repository_icons: Option<bool>,
     show_system_load: Option<bool>,
     agent_checkpoints: Option<bool>,
     show_listening_ports: Option<bool>,
+    smooth_scroll: Option<bool>,
     status_bar: StatusBar,
     zen: zen::ZenSettings,
     backdrop: Backdrop,
@@ -665,6 +687,12 @@ impl Config {
                 list(&self.unknown_keys)
             ));
         }
+        if self.layout.legacy_sidebar_gap.is_some() {
+            lines.push(
+                "config-gpui.local.toml: layout.sidebar_gap is deprecated; use terminal.padding_x"
+                    .to_owned(),
+            );
+        }
         if !self.missing_fonts.is_empty() {
             let fonts: Vec<String> = self
                 .missing_fonts
@@ -694,8 +722,16 @@ impl Config {
     }
 
     fn load_startup_path(path: &Path, daemon: &Path) -> Result<Self> {
+        let (text, source) = Self::overrides_text(path)?;
+        Self::parse_layers([DEFAULT_CONFIG, &text], &daemon_settings(daemon))
+            .map_err(|error| error.at_path(&source))
+    }
+
+    /// The user's overrides as the app reads them now, and the file they
+    /// come from, without writing anything.
+    pub(super) fn overrides_text(path: &Path) -> Result<(String, PathBuf)> {
         let local = path.with_extension("local.toml");
-        let (text, source) = match fs::read_to_string(&local) {
+        Ok(match fs::read_to_string(&local) {
             Ok(text) => (text, local),
             // Without overrides or a personal config to migrate, maintenance
             // will seed the first-launch overrides; show them from frame one.
@@ -706,9 +742,7 @@ impl Config {
                 Err(error) => return Err(Error::from(error).at_path(path)),
             },
             Err(error) => return Err(Error::from(error).at_path(&local)),
-        };
-        Self::parse_layers([DEFAULT_CONFIG, &text], &daemon_settings(daemon))
-            .map_err(|error| error.at_path(&source))
+        })
     }
 
     /// `daemon` is the herdr config whose settings this GUI also honors. It is
@@ -737,7 +771,8 @@ impl Config {
         Self::parse_layers([text], base)
     }
 
-    fn parse_layers<'a>(texts: impl IntoIterator<Item = &'a str>, base: &Daemon) -> Result<Self> {
+    /// The files layered as loading layers them, later ones over earlier.
+    fn merged<'a>(texts: impl IntoIterator<Item = &'a str>) -> Result<toml::Value> {
         let mut builder = config_loader::Config::builder();
         for text in texts {
             builder = builder.add_source(config_loader::File::from_str(
@@ -748,7 +783,11 @@ impl Config {
         let loaded = builder.build()?;
         // Config's typed deserializer coerces strings/numbers. Preserve TOML
         // types so existing strict font and theme validation remains intact.
-        let value: toml::Value = loaded.try_deserialize()?;
+        Ok(loaded.try_deserialize()?)
+    }
+
+    fn parse_layers<'a>(texts: impl IntoIterator<Item = &'a str>, base: &Daemon) -> Result<Self> {
+        let value = Self::merged(texts)?;
         let mut unknown_keys = Vec::new();
         let mut settings: Settings = serde_ignored::deserialize(value, |path| {
             unknown_keys.push(path.to_string());
@@ -821,11 +860,12 @@ impl Config {
         config.bell = settings.bell;
         config.updates = settings.updates;
         config.sidebar_layout = base.sidebar_layout.clone();
-        if !settings.layout.sidebar_gap.is_finite()
-            || !(0.0..=MAX_SIDEBAR_GAP).contains(&settings.layout.sidebar_gap)
-        {
-            return Err(Error::InvalidSidebarGap);
-        }
+        let (padding_x, padding_y) = settings.terminal.take_padding();
+        config.terminal_padding = Padding::resolve(
+            padding_x.as_ref(),
+            padding_y.as_ref(),
+            settings.layout.legacy_sidebar_gap,
+        )?;
         config.layout = settings.layout;
         config.sidebar_style = settings.sidebar.style()?;
         config.keybindings =
@@ -848,11 +888,14 @@ impl Config {
         config.confirm_close_tab = settings.confirm_close_tab.unwrap_or(true);
         config.confirm_close_pane = settings.confirm_close_pane.unwrap_or(true);
         config.confirm_close_workspace = settings.confirm_close_workspace.unwrap_or(true);
+        config.remove_merged_worktrees = settings.remove_merged_worktrees.unwrap_or(false);
         config.show_agents = settings.show_agents.unwrap_or(true);
         config.show_sidebar_search = settings.show_sidebar_search.unwrap_or(true);
+        config.show_repository_icons = settings.show_repository_icons.unwrap_or(true);
         config.show_system_load = settings.show_system_load.unwrap_or(true);
         config.agent_checkpoints = settings.agent_checkpoints.unwrap_or(true);
         config.show_listening_ports = settings.show_listening_ports.unwrap_or(true);
+        config.smooth_scroll = settings.smooth_scroll.unwrap_or(true);
         config.status_bar = settings.status_bar;
         config.zen = settings.zen.try_into()?;
         settings.backdrop.validate()?;

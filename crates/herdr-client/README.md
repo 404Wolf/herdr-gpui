@@ -451,6 +451,18 @@ Shell-initialized PATH entries unavailable to `/bin/sh` are not discovered unles
 covered by the known roots. The remote bridge itself can start the named daemon,
 as upstream does; disconnect only detaches and never stops the remote daemon.
 
+## Background Host Scripts
+
+`run_script(ScriptHost, script, input, output, ScriptLimits, cancelled)` runs a
+POSIX script locally or over a saved SSH target. `run_script_command(Command,
+input, output, ScriptLimits, cancelled)` accepts an already-prepared command for
+provider-specific transports. The caller supplies authentication, quotes the
+remote command, and keeps temporary credential files alive through the call.
+Both are blocking background-worker APIs for Linux and macOS, with bounded
+streaming output, an idle deadline, cancellation, and owned-child cleanup.
+Provider preparation failures can retain their typed I/O cause in
+`Error::ScriptConnect`; script execution retains the existing script error types.
+
 ## WSL Distributions
 
 On Windows, `ConnectTarget::Wsl { distro, session }` attaches to Herdr inside a

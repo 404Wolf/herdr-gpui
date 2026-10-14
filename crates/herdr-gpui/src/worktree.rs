@@ -1,10 +1,14 @@
 //! Client-side previews of the daemon's worktree naming, so the new worktree
 //! dialog can propose the branch and show the checkout it is about to ask for,
 //! as the terminal client does. The daemon still derives the authoritative
-//! branch and path; nothing here decides them.
+//! branch and path; nothing here decides them. A branch proposed from the
+//! workspace's name is sent like any typed branch.
 
 /// Namespace the daemon gives every branch it generates for a new checkout.
 const PREFIX: &str = "worktree";
+/// Longest slug this client proposes for a branch, so a long name or issue
+/// title cannot produce an unusable checkout directory.
+const SLUG_LIMIT: usize = 60;
 
 /// Validate a literal branch name, without resolving checkout shorthand or
 /// consulting a repository (which may live on a remote endpoint).
@@ -53,25 +57,56 @@ pub(super) fn proposed_branch() -> String {
     )
 }
 
-/// The directory component the daemon derives from a branch name.
-pub(super) fn branch_to_path_slug(branch: &str) -> String {
+/// The daemon's slug of `text`, cut to `limit` bytes: lowercase ASCII letters
+/// and digits, with every other run of characters collapsed to one dash and
+/// none at either end. Empty when nothing survives. Reading stops at the
+/// limit, so a long text costs no more than a short one; a leading run is
+/// never written, so it does not count towards the limit.
+fn slug(text: &str, limit: usize) -> String {
     let mut slug = String::new();
     let mut last_was_dash = false;
-    for ch in branch.chars() {
+    for ch in text.chars() {
+        if slug.len() >= limit {
+            break;
+        }
         if ch.is_ascii_alphanumeric() {
             slug.push(ch.to_ascii_lowercase());
             last_was_dash = false;
-        } else if !last_was_dash {
+        } else if !last_was_dash && !slug.is_empty() {
             slug.push('-');
             last_was_dash = true;
         }
     }
-    let trimmed = slug.trim_matches('-');
-    if trimmed.is_empty() {
+    let kept = slug.trim_end_matches('-').len();
+    slug.truncate(kept);
+    slug
+}
+
+/// The directory component the daemon derives from a branch name.
+pub(super) fn branch_to_path_slug(branch: &str) -> String {
+    let slug = slug(branch, usize::MAX);
+    if slug.is_empty() {
         PREFIX.to_owned()
     } else {
-        trimmed.to_owned()
+        slug
     }
+}
+
+/// `text` slugged for a proposed branch: the daemon's slug, cut to
+/// [`SLUG_LIMIT`] without leaving a trailing dash. Empty when nothing survives.
+pub(super) fn bounded_slug(text: &str) -> String {
+    slug(text, SLUG_LIMIT)
+}
+
+/// The branch proposed for a workspace named `name`, in the daemon's
+/// namespace. Only ASCII letters and digits survive, because the daemon names
+/// the checkout folder from the branch the same way: a branch kept in another
+/// script would get the folder `worktree` whatever its name, and two of them
+/// would collide. `None` when nothing survives, so the caller keeps its own
+/// proposal.
+pub(super) fn branch_for_name(name: &str) -> Option<String> {
+    let slug = bounded_slug(name);
+    (!slug.is_empty()).then(|| format!("{PREFIX}/{slug}"))
 }
 
 /// The checkout the daemon would create under its worktree directory. This is an
@@ -173,5 +208,51 @@ mod tests {
         // A branch with nothing to slug still lands in the namespaced directory.
         assert_eq!(branch_to_path_slug("///"), "worktree");
         assert_eq!(branch_to_path_slug("--Fix_42--"), "fix-42");
+    }
+
+    #[test]
+    fn a_name_proposes_a_namespaced_branch_that_matches_its_folder() {
+        assert_eq!(
+            branch_for_name("  Fix login! "),
+            Some("worktree/fix-login".into())
+        );
+        // A name that is already a branch stays inside the namespace.
+        assert_eq!(branch_for_name("main"), Some("worktree/main".into()));
+        assert_eq!(
+            branch_for_name("feat/Login v2"),
+            Some("worktree/feat-login-v2".into())
+        );
+        // Nothing to slug leaves the proposal to the caller.
+        for name in ["", "   ", "---", "\u{65e5}\u{672c}\u{8a9e}", "\u{1f600}"] {
+            assert_eq!(branch_for_name(name), None, "{name:?}");
+        }
+        // The cut never leaves a trailing dash, and the result is always a
+        // branch the dialog would accept.
+        assert_eq!(
+            branch_for_name(&"word ".repeat(40)),
+            Some(format!("worktree/{}word", "word-".repeat(11)))
+        );
+        // Separators before the first letter are not written, so they leave
+        // the whole limit to the name.
+        assert_eq!(
+            branch_for_name(&format!("{}{}", "- ".repeat(100), "a".repeat(100))),
+            Some(format!("worktree/{}", "a".repeat(60)))
+        );
+        for name in [
+            "Fix login",
+            "a.lock",
+            "a..b",
+            "@{x}",
+            "HEAD",
+            &"x".repeat(200),
+        ] {
+            let branch = branch_for_name(name).unwrap_or_default();
+            assert!(validate_branch(&branch).is_ok(), "{branch}");
+            assert_eq!(
+                branch_to_path_slug(&branch),
+                branch.replace('/', "-"),
+                "{branch}"
+            );
+        }
     }
 }

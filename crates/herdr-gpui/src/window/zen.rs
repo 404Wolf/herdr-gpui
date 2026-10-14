@@ -138,7 +138,7 @@ impl HerdrWindow {
         if !self.zen.held {
             self.zen.chrome.tick(Instant::now());
         }
-        self.arrive(window, cx);
+        self.settle_zen(window, cx);
     }
 
     /// Whether the window draws another frame for the sliding chrome.
@@ -172,7 +172,7 @@ impl HerdrWindow {
     /// Lays the window out for zen mode once the chrome has slid off, with
     /// `[zen]`'s full screen and font size: each resizes the terminal, which
     /// would jolt the text under a slide still running.
-    fn arrive(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn settle_zen(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.zen.arriving || self.chrome_slide().is_some() {
             return;
         }
@@ -216,7 +216,7 @@ impl HerdrWindow {
                 };
                 self.zen.arriving = true;
                 self.zen.chrome.hide(animate);
-                self.arrive(window, cx);
+                self.settle_zen(window, cx);
             }
             Zen::On {
                 entered_fullscreen,

@@ -376,7 +376,7 @@ impl HerdrWindow {
                 }
                 return;
             }
-            Command::ToggleFullScreen | Command::CycleWindows => {
+            Command::ToggleFullScreen | Command::CycleWindows | Command::CloseWindow => {
                 run_window_command(command, window, cx);
                 return;
             }
@@ -574,7 +574,7 @@ impl HerdrWindow {
 
     /// Installs the agent skill for browser tabs where Claude Code and other
     /// agents look for skills, and keeps it current from now on. Only on
-    /// request: the one-time offer, the palette, or Preferences.
+    /// request: the one-time offer, the palette, or Settings.
     pub(crate) fn install_browser_skill(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         use crate::agent_skill::{AgentSkill, Choice};
         let home = match crate::config::home() {
@@ -603,32 +603,6 @@ impl HerdrWindow {
                     Err(error) => Flash::warning(error.to_string()),
                 };
                 this.show_flash(flash, cx);
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    /// Removes the skill files the app wrote and stops keeping them current.
-    pub(crate) fn remove_browser_skill(&mut self, cx: &mut Context<Self>) {
-        use crate::agent_skill::{AgentSkill, Choice};
-        let Ok(home) = crate::config::home() else {
-            return;
-        };
-        AgentSkill::choose(Choice::Declined, cx);
-        let remove = cx
-            .background_executor()
-            .spawn(async move { crate::agent_skill::remove(&home) });
-        cx.spawn(async move |this, cx| {
-            let result = remove.await;
-            this.update(cx, |this, cx| {
-                let flash = match result {
-                    Ok(paths) if paths.is_empty() => Flash::success("No browser skill to remove"),
-                    Ok(_) => Flash::success("Removed the browser skill"),
-                    Err(error) => Flash::warning(error.to_string()),
-                };
-                this.show_flash(flash, cx);
-                cx.notify();
             })
             .ok();
         })
@@ -669,7 +643,7 @@ impl HerdrWindow {
                 "Agents in your panes can open pages and HTML drafts in browser tabs here, and read the notes you pin on them. A skill teaches them how.",
             ))
             .child(div().p(px(8.)).text_color(rgb(theme.muted)).child(
-                "Install writes herdr-gpui-browser/SKILL.md into ~/.claude/skills and ~/.agents/skills, whichever exist, and keeps it up to date. A skill of that name you wrote yourself is left alone. Remove it any time in Preferences.",
+                "Install writes herdr-gpui-browser/SKILL.md into ~/.claude/skills and ~/.agents/skills, whichever exist, and keeps it up to date. A skill of that name you wrote yourself is left alone. Remove it any time in Settings.",
             ))
             .child(
                 div()
@@ -704,6 +678,7 @@ pub(crate) fn run_window_command(
     match command {
         Command::ToggleFullScreen => window.toggle_fullscreen(),
         Command::CycleWindows => cycle_windows(window, cx),
+        Command::CloseWindow => window.remove_window(),
         _ => return false,
     }
     true

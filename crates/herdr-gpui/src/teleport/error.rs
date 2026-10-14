@@ -2,7 +2,7 @@
 
 /// The part of a teleport that failed, for context in diagnostics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Step {
+pub enum Step {
     Discover,
     Review,
     Clone,
@@ -67,7 +67,7 @@ impl Step {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum Error {
+pub enum Error {
     #[error("{} failed: {source}", step.label())]
     Script {
         step: Step,
@@ -81,7 +81,7 @@ pub(crate) enum Error {
         source: serde_json::Error,
     },
     #[error(
-        "Teleport needs a local session or SSH host; custom socket, WSL, and cloud endpoints are unsupported"
+        "Teleport needs a local session, SSH host, or cloud device; custom socket and WSL endpoints are unsupported"
     )]
     UnsupportedHost,
     /// The `herdr` CLI addresses only the release installation's sessions,
@@ -91,6 +91,33 @@ pub(crate) enum Error {
     DevelopmentSession,
     #[error("The workspace is no longer open on its host")]
     WorkspaceGone,
+    #[error("The pane is no longer open on its host")]
+    PaneGone,
+    /// Carrying a pane needs the same repository, matched by a shared
+    /// remote, already open on the destination.
+    #[error("The repository is not open on {host}")]
+    RepositoryNotOpen { host: String },
+    #[error("The checkout here has new commits since the review; review the move again")]
+    SourceMoved,
+    /// The pane works in `path`, outside its space's checkout, so carrying
+    /// that checkout would not carry what the pane uses.
+    #[error("The pane is in {path}, outside its space's checkout; change back into it first")]
+    OutsideCheckout { path: String },
+    #[error("The worker running this move stopped before it finished")]
+    WorkerStopped,
+    #[error("The space is no longer open on {host}")]
+    SpaceGone { host: String },
+    #[error("The space at {path} has uncommitted changes; commit or stash them there first")]
+    SpaceChanged { path: String },
+    #[error("The space is on {branch}, which this pane's commits do not continue")]
+    SpaceDiverged { branch: String },
+    /// A failed move could not remove the worktree it had created.
+    #[error("{cause}; the new worktree at {path} could not be removed")]
+    LeftBehind {
+        path: String,
+        #[source]
+        cause: Box<Error>,
+    },
     #[error("{reference} does not name a commit on the source")]
     NoCommit { reference: String },
     #[error("The checkout is not on a branch (detached HEAD)")]

@@ -14,6 +14,18 @@ use std::{
 const QUERY_OUTPUT: u64 = 32 * 1024 * 1024;
 const QUERY_IDLE: Duration = Duration::from_secs(60);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Route {
+    Local,
+    Ssh(String),
+    #[cfg(feature = "cloud")]
+    Cloud {
+        provider: herdr_client::CloudProvider,
+        account: String,
+        id: String,
+    },
+}
+
 /// Largest bundle, session, or archive Teleport will carry.
 pub(crate) const TRANSFER_OUTPUT: u64 = 4 * 1024 * 1024 * 1024;
 /// Bulk Git work (bundling, fetching) can be quiet for a while.
@@ -21,7 +33,7 @@ pub(crate) const TRANSFER_IDLE: Duration = Duration::from_secs(300);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Host {
-    ssh: Option<String>,
+    route: Route,
     session: Option<String>,
     /// The session belongs to the development installation, which
     /// `herdr --session NAME` cannot address: NAME would resolve to the
@@ -40,31 +52,45 @@ impl Host {
     pub(crate) fn new(target: &ConnectTarget) -> Result<Self> {
         match target {
             ConnectTarget::Local => Ok(Self {
-                ssh: None,
+                route: Route::Local,
                 session: None,
                 development: false,
                 #[cfg(test)]
                 env: Vec::new(),
             }),
             ConnectTarget::Session { name, development } => Ok(Self {
-                ssh: None,
+                route: Route::Local,
                 session: Some(name.clone()),
                 development: *development,
                 #[cfg(test)]
                 env: Vec::new(),
             }),
             ConnectTarget::Ssh { target, session } => Ok(Self {
-                ssh: Some(target.clone()),
+                route: Route::Ssh(target.clone()),
                 session: Some(session.clone()),
                 development: false,
                 #[cfg(test)]
                 env: Vec::new(),
             }),
-            // WSL distributions and cloud machines are reached through their
-            // own bridge commands, which Teleport's scripts do not run over.
             ConnectTarget::Socket(_) | ConnectTarget::Wsl { .. } => Err(Error::UnsupportedHost),
             #[cfg(feature = "cloud")]
-            ConnectTarget::Cloud { .. } => Err(Error::UnsupportedHost),
+            ConnectTarget::Cloud {
+                provider,
+                account,
+                id,
+                session,
+                ..
+            } => Ok(Self {
+                route: Route::Cloud {
+                    provider: *provider,
+                    account: account.clone(),
+                    id: id.clone(),
+                },
+                session: Some(session.clone()),
+                development: false,
+                #[cfg(test)]
+                env: Vec::new(),
+            }),
         }
     }
 
@@ -128,11 +154,38 @@ export PATH
         limits: ScriptLimits,
         cancelled: &AtomicBool,
     ) -> herdr_client::Result<u64> {
-        let host = self
-            .ssh
-            .as_deref()
-            .map_or(ScriptHost::Local, ScriptHost::Ssh);
         let script_text = format!("{}{body}", self.prelude());
+        let host = match &self.route {
+            Route::Local => ScriptHost::Local,
+            Route::Ssh(target) => ScriptHost::Ssh(target),
+            #[cfg(feature = "cloud")]
+            Route::Cloud {
+                provider,
+                account,
+                id,
+            } => {
+                if !cfg!(any(target_os = "linux", target_os = "macos")) {
+                    return Err(herdr_client::Error::ScriptUnsupported);
+                }
+                return crate::cloud::with_command(
+                    *provider,
+                    account,
+                    id,
+                    cancelled,
+                    |mut command| {
+                        command.arg(format!("/bin/sh -c {}", shell_quote(&script_text)));
+                        herdr_client::run_script_command(command, input, output, limits, cancelled)
+                    },
+                )
+                .map_err(|error| {
+                    if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+                        herdr_client::Error::ScriptCancelled
+                    } else {
+                        herdr_client::Error::ScriptConnect(error)
+                    }
+                })?;
+            }
+        };
         run_script(host, &script_text, input, output, limits, cancelled)
     }
 
@@ -261,12 +314,15 @@ done
 mod tests {
     use super::*;
 
+    #[cfg(feature = "cloud")]
+    mod cloud;
+
     #[test]
     fn hosts_follow_their_endpoint_target() {
         assert_eq!(
             Host::new(&ConnectTarget::Local).unwrap(),
             Host {
-                ssh: None,
+                route: Route::Local,
                 session: None,
                 development: false,
                 env: Vec::new(),
@@ -277,7 +333,7 @@ mod tests {
             session: "work".into(),
         })
         .unwrap();
-        assert_eq!(ssh.ssh.as_deref(), Some("me@box"));
+        assert_eq!(ssh.route, Route::Ssh("me@box".into()));
         assert!(ssh.prelude().contains("herdr --session 'work' \"$@\""));
         assert!(matches!(
             Host::new(&ConnectTarget::Socket("/tmp/s".into())),

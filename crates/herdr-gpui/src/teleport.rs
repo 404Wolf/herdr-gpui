@@ -4,8 +4,10 @@
 //!
 //! The GUI connection's method allowlist lacks layouts, process details, and
 //! agent sessions, so every step runs as a background script that calls Git
-//! and the `herdr` CLI on the host concerned (locally or over SSH).
+//! and the `herdr` CLI on the host concerned (locally, over SSH, or through a
+//! cloud provider's authenticated command).
 
+pub(crate) mod carry;
 mod credentials;
 mod error;
 mod fresh;

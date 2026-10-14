@@ -21,6 +21,8 @@ use crate::{
 };
 use herdr_client::ConnectTarget;
 pub(crate) use render::{chips, close_button};
+#[cfg(all(test, unix))]
+pub(crate) use scan::{Bind, Owner};
 pub(crate) use scan::{Link, Origin, Port, Ports, parse};
 use std::{
     collections::HashMap,

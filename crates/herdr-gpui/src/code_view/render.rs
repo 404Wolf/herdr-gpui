@@ -284,7 +284,6 @@ impl HerdrWindow {
         &self,
         slot: Slot,
         tab: &Tab,
-        gap: f32,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let id = tab.id;
@@ -292,7 +291,6 @@ impl HerdrWindow {
             return div()
                 .id(SharedString::from(slot.selector("code-loading")))
                 .size_full()
-                .pl(px(gap))
                 .into_any_element();
         };
         let focus = view.focus.clone();
@@ -300,7 +298,6 @@ impl HerdrWindow {
             .id(SharedString::from(slot.selector("code-tab")))
             .size_full()
             .min_w_0()
-            .pl(px(gap))
             .bg(rgb(self.theme.background))
             .track_focus(&focus)
             // The tab holds the keyboard while used, so typing never

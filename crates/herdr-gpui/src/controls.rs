@@ -72,6 +72,8 @@ pub enum Command {
     OpenCode,
     ToggleFullScreen,
     CycleWindows,
+    /// Closes the window it runs in, leaving the daemon and its terminals.
+    CloseWindow,
     MoveTabPrevious,
     MoveTabNext,
     RenameTab,
@@ -644,6 +646,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         name: "cycle_windows",
         label: "Cycle Through Windows",
     },
+    CommandInfo {
+        command: Command::CloseWindow,
+        name: "close_window",
+        label: "Close Window",
+    },
 ];
 
 pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Method, Value)> {
@@ -819,6 +826,7 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         | Command::OpenCode
         | Command::ToggleFullScreen
         | Command::CycleWindows
+        | Command::CloseWindow
         // These need state beyond the snapshot, such as the sidebar's order
         // or a dialog, so the window runs them.
         | Command::RenameTab

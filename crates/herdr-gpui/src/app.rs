@@ -88,16 +88,39 @@ pub(crate) fn open_window(
     cx: &mut App,
     #[cfg(feature = "integration-test")] fixture: bool,
 ) -> Result<WindowHandle<HerdrWindow>> {
-    // Cascade rather than stack windows exactly, so a new one is visible at once.
-    let existing = cx
-        .windows()
-        .iter()
-        .filter(|handle| handle.downcast::<HerdrWindow>().is_some())
-        .count();
-    let step = px(28. * existing.min(6) as f32);
-    let mut bounds = Bounds::centered(None, size(px(1200.), px(780.)), cx);
-    bounds.origin += point(step, step);
-    let (bounds, display_id) = crate::window_state::WindowState::placement(bounds, cx);
+    open_window_placed(
+        target,
+        updater,
+        None,
+        cx,
+        #[cfg(feature = "integration-test")]
+        fixture,
+    )
+}
+
+/// Where a window opens and the display its bounds refer to.
+pub(crate) type Placement = (Bounds<Pixels>, Option<DisplayId>);
+
+/// Opens a main window at `placement`, or where the next one goes.
+fn open_window_placed(
+    target: ConnectTarget,
+    updater: updater::Updater,
+    placement: Option<Placement>,
+    cx: &mut App,
+    #[cfg(feature = "integration-test")] fixture: bool,
+) -> Result<WindowHandle<HerdrWindow>> {
+    let (bounds, display_id) = placement.unwrap_or_else(|| {
+        // Cascade rather than stack windows exactly, so a new one is visible at once.
+        let existing = cx
+            .windows()
+            .iter()
+            .filter(|handle| handle.downcast::<HerdrWindow>().is_some())
+            .count();
+        let step = px(28. * existing.min(6) as f32);
+        let mut bounds = Bounds::centered(None, size(px(1200.), px(780.)), cx);
+        bounds.origin += point(step, step);
+        crate::window_state::WindowState::placement(bounds, cx)
+    });
     cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -143,10 +166,22 @@ fn shared_sound(cx: &mut App) -> std::rc::Rc<crate::sound::Service> {
 
 /// Opens another window from inside the focused window's own update.
 pub(crate) fn open_additional_window(target: ConnectTarget, cx: &mut App) {
+    open_additional_window_then(target, None, |_, _, _| {}, cx);
+}
+
+/// Opens another window at `placement` from inside a window's own update,
+/// then runs `then` on it before it is shown in front.
+pub(crate) fn open_additional_window_then(
+    target: ConnectTarget,
+    placement: Option<Placement>,
+    then: impl FnOnce(&mut HerdrWindow, &mut Window, &mut Context<HerdrWindow>) + 'static,
+    cx: &mut App,
+) {
     cx.defer(move |cx| {
-        let opened = open_window(
+        let opened = open_window_placed(
             target,
             updater::Updater::secondary(),
+            placement,
             cx,
             #[cfg(feature = "integration-test")]
             false,
@@ -154,8 +189,9 @@ pub(crate) fn open_additional_window(target: ConnectTarget, cx: &mut App) {
         let sound = shared_sound(cx);
         match opened {
             Ok(handle) => {
-                let _ = handle.update(cx, |view, window, _| {
+                let _ = handle.update(cx, |view, window, cx| {
                     view.sound = sound;
+                    then(view, window, cx);
                     window.activate_window();
                 });
             }
@@ -170,17 +206,30 @@ pub(crate) fn run() -> std::process::ExitCode {
     if let Some(exit) = updater::run_helper(&args) {
         return exit;
     }
+    #[cfg(unix)]
+    if let Some(exit) = crate::setup_relay::run_helper(&args) {
+        return exit;
+    }
+    // A control command asked for JSON gets its usage errors as JSON too.
+    let json_errors = cli::control::wants_json(&args);
     let LaunchOptions { target, mode } = match LaunchOptions::parse(args) {
         Ok(options) => options,
+        Err(error) if json_errors => {
+            println!(
+                "{}",
+                serde_json::json!({ "error": { "code": "usage", "message": error.to_string() } })
+            );
+            return std::process::ExitCode::from(2);
+        }
         Err(error) => {
             eprintln!(
-                "{error}\nUsage: herdr-gpui [--socket CLIENT_SOCKET | --session NAME [--dev]]\n       herdr-gpui browser open URL [--workspace ID] [--no-focus]"
+                "{error}\nUsage: herdr-gpui [--socket CLIENT_SOCKET | --session NAME [--dev]]\n       herdr-gpui browser open URL [--workspace ID] [--no-focus]\n       herdr-gpui COMMAND ... (see herdr-gpui --help)"
             );
             return std::process::ExitCode::from(2);
         }
     };
-    if let LaunchMode::Browser(command) = mode {
-        return crate::control::run(command);
+    if let LaunchMode::Control(invocation) = mode {
+        return crate::control::run(invocation);
     }
     // A separate app of its own: no daemon, control socket, stores, or updater.
     #[cfg(feature = "mockup")]
@@ -201,6 +250,10 @@ pub(crate) fn run() -> std::process::ExitCode {
         println!(
             "  browser open URL    Show URL in a browser tab of the running app (see browser --help)"
         );
+        println!("\nCommands for the running app (each with --help):");
+        for (name, summary) in cli::control::FAMILIES {
+            println!("  {name:<18}{summary}");
+        }
         #[cfg(feature = "integration-test")]
         println!(
             "  --integration-test  Run native GUI checks (requires explicit --socket)\n  --sidebar-test      Run native sidebar fixtures without connecting to a daemon\n  --performance-test  Measure native dense-terminal hover/scroll without a daemon (macOS)"

@@ -359,12 +359,9 @@ impl HerdrWindow {
     }
 
     /// The bar, laid over the top right of its pane in the frame on screen.
-    /// `gap` is the terminal's left padding, which absolute children sit
-    /// inside of.
     pub(crate) fn render_find_bar(
         &self,
         surface: Option<&PaneSurfaceFrame>,
-        gap: f32,
         cx: &mut Context<Self>,
     ) -> Option<Div> {
         let bar = self.find.as_ref()?;
@@ -414,7 +411,7 @@ impl HerdrWindow {
         Some(
             div()
                 .absolute()
-                .left(px(gap + f32::from(pane.rect.x) * self.cell_width))
+                .left(px(f32::from(pane.rect.x) * self.cell_width))
                 .top(px(f32::from(pane.rect.y) * cell_height))
                 .w(px(f32::from(pane.rect.width) * self.cell_width))
                 .flex()

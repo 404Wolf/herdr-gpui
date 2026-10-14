@@ -19,6 +19,8 @@ use herdr_client::{ConnectOptions, ConnectTarget};
 use std::sync::Arc;
 
 #[cfg(test)]
+mod agent_menu;
+#[cfg(test)]
 mod agent_rows;
 #[cfg(all(test, feature = "coder"))]
 mod coder_dialog;
@@ -26,6 +28,8 @@ mod coder_dialog;
 mod configured_rows;
 #[cfg(test)]
 mod device_footer;
+#[cfg(test)]
+mod device_footer_setting;
 #[cfg(test)]
 mod devices_layout;
 #[cfg(test)]
@@ -45,9 +49,10 @@ mod palette;
 #[cfg(test)]
 mod picker_scroll;
 #[cfg(test)]
-mod preferences_panel;
 #[cfg(test)]
 mod probes;
+#[cfg(test)]
+mod repository_icons;
 #[cfg(test)]
 mod row_drag;
 #[cfg(test)]
@@ -290,7 +295,7 @@ impl ProbeText {
             && bounds.bottom() <= mask.bottom()
             // The expected column assumes the window leaves the default
             // sidebar width alone. A frame painted mid-resize, such as the
-            // return from the 320px Preferences check, can narrow it.
+            // return from a 320px check, can narrow it.
             && super::sidebar_width(None, f32::from(window.viewport_size().width))
                 == super::SIDEBAR_WIDTH
         {
@@ -456,12 +461,14 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         app_update_notes: Default::default(),
         app_update_notes_scroll: gpui::ScrollHandle::new(),
         removal: None,
+        merged_cleanup: Default::default(),
         worktree_script: None,
         editor_open: None,
         editor_panes: Vec::new(),
         teleport: None,
         teleport_marks: crate::teleport::Marks::detached(),
         teleport_follow: None,
+        pane_carry: None,
         dispatch_job: None,
         dispatch_setups: Default::default(),
         fan_out: None,
@@ -486,7 +493,6 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         theme: Default::default(),
         theme_light: crate::app::light_appearance(cx),
         config_load: None,
-        font_size_saves: Default::default(),
         config_watch: None,
         config_load_revision: 0,
         git: Default::default(),
@@ -509,6 +515,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         devices_overview: Default::default(),
         checkpoints: Default::default(),
         port_forwards: Default::default(),
+        remote_browser: Vec::new(),
         #[cfg(feature = "cloud")]
         cloud_jobs: Default::default(),
         listening_ports: Default::default(),
@@ -533,6 +540,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         sessions_anchor: Default::default(),
         activation_deadline: None,
         pending_navigation: None,
+        arrival: None,
         strip_navigation_fits: true,
         pending_toast: None,
         toasts_hidden: false,
@@ -562,6 +570,8 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         pending_images: Vec::new(),
         pending_input: Default::default(),
         held_keys: Default::default(),
+        // No AppKit event to read; a test that needs one supplies its own.
+        key_press: || None,
         file_transfer: None,
         presentation: Default::default(),
         wake: crate::endpoint::WakeClock::new(

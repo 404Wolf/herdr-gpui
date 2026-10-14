@@ -704,7 +704,15 @@ impl SettingsWindow {
                 ),
                 cx,
             ))
-            .children(self.confirm_close_switches(cx));
+            .child(self.preference_switch(
+                "settings-smooth-scroll",
+                "Smooth scrolling",
+                self.config.smooth_scroll,
+                crate::config::preferences::Preference::SmoothScroll(!self.config.smooth_scroll),
+                cx,
+            ))
+            .children(self.confirm_close_switches(cx))
+            .children(self.merged_worktree_controls(cx));
         div().flex().flex_col().gap(px(24.)).child(general)
             .child(self.render_tab_bar_controls(cx))
             .child(self.render_session_controls(cx))
@@ -968,7 +976,15 @@ impl SettingsWindow {
                 ),
                 cx,
             ))
-            .child(self.sidebar_gap_control(cx))
+            .child(self.preference_switch(
+                "settings-repository-icons",
+                "Show repository icons",
+                self.config.show_repository_icons,
+                crate::config::preferences::Preference::ShowRepositoryIcons(
+                    !self.config.show_repository_icons,
+                ),
+                cx,
+            ))
     }
 }
 

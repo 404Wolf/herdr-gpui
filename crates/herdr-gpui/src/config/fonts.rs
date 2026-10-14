@@ -28,15 +28,6 @@ pub(crate) enum FontFace {
 }
 
 impl FontFace {
-    pub(crate) fn set_size(self, config: &mut Config, size: f32) {
-        match self {
-            Self::Sidebar => config.sidebar.size = size,
-            Self::Tabs => config.tabs.size = size,
-            Self::Terminal => config.terminal.size = size,
-            Self::Ui => config.ui.size = size,
-        }
-    }
-
     pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Sidebar => "sidebar",
@@ -72,6 +63,10 @@ pub(super) struct FontSettings {
     line_height: Option<toml::Value>,
     /// Untyped for the same reason as `line_height`.
     weight: Option<toml::Value>,
+    /// The terminal's padding rather than part of its font, read through
+    /// [`Self::take_padding`]. Untyped for the same reason as `line_height`.
+    padding_x: Option<toml::Value>,
+    padding_y: Option<toml::Value>,
 }
 
 impl FontSettings {
@@ -81,10 +76,17 @@ impl FontSettings {
         [
             ("line_height", self.line_height.take()),
             ("weight", self.weight.take()),
+            ("padding_x", self.padding_x.take()),
+            ("padding_y", self.padding_y.take()),
         ]
         .into_iter()
         .filter_map(|(key, value)| value.map(|_| format!("{name}.{key}")))
         .collect()
+    }
+
+    /// Takes the horizontal and vertical padding keys of the terminal's table.
+    pub(super) fn take_padding(&mut self) -> (Option<toml::Value>, Option<toml::Value>) {
+        (self.padding_x.take(), self.padding_y.take())
     }
 
     /// Merges this face's configured keys over `font`, then validates the result.

@@ -230,9 +230,9 @@ fn edit_menu_items_follow_focus(cx: &mut gpui::TestAppContext) {
         cx.run_until_parked();
     };
 
-    // Without a highlighted selection, the terminal only pastes.
+    // Without a highlighted selection, the terminal pastes and selects all.
     cx.update(|window, cx| view.read(cx).focus.clone().focus(window, cx));
-    assert_eq!(available(cx), ["Paste"]);
+    assert_eq!(available(cx), ["Paste", "Select All"]);
 
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
@@ -413,6 +413,11 @@ fn hide_and_minimize_are_macos_only() {
         .unwrap();
     assert_eq!(
         action_names(window),
-        ["New Window", "Cycle Through Windows", "Logs"]
+        [
+            "New Window",
+            "Cycle Through Windows",
+            "Close Window",
+            "Logs"
+        ]
     );
 }

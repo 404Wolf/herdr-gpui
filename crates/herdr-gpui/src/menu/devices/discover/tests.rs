@@ -1,6 +1,8 @@
 use super::*;
 
+mod complete;
 mod form;
+mod local_network;
 mod sources;
 
 fn candidate(source: Source, name: &str, target: &str, hosts: &[&str]) -> Candidate {

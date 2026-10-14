@@ -226,6 +226,38 @@ impl HerdrWindow {
         true
     }
 
+    /// Cmd-A and Edit > Select All: selects the focused pane's history and
+    /// screen, or the open popup, as a released selection that Cmd-C copies.
+    /// Nothing reaches the clipboard yet, and nothing reaches the daemon until
+    /// that copy reads the rows the pane does not show. `false` when the
+    /// terminal shows nothing to select.
+    pub(crate) fn select_all(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.copy_mode_active() || self.menu.page.is_some() || !self.live.surface_ready() {
+            return false;
+        }
+        let Some((target, surface)) = self
+            .focused_input_target()
+            .zip(self.live.surface.as_deref())
+        else {
+            return false;
+        };
+        let Some(selection) = Selection::all(
+            surface,
+            target,
+            self.cell_width,
+            self.config.terminal.line_height(),
+        ) else {
+            return false;
+        };
+        self.clear_terminal_annotation_offer(cx);
+        self.selection_follow.offer_annotation = false;
+        self.selection_follow.pointer = None;
+        self.selection_follow.sent = None;
+        self.selection = Some(selection);
+        cx.notify();
+        true
+    }
+
     /// Drops a selection kept on release, as any other key does in Herdr.
     pub(crate) fn clear_retained_selection(&mut self, cx: &mut Context<Self>) {
         self.clear_terminal_annotation_offer(cx);

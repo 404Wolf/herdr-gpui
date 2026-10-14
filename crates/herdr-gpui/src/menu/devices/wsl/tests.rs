@@ -18,6 +18,7 @@ fn open_form(view: &mut HerdrWindow, distros: &[&str], cx: &mut Context<HerdrWin
         session: cx.new(SearchInput::new),
         step: Step::Form,
         task: None,
+        error: None,
     });
     view.menu.page = Some(Page::AddWsl);
 }
@@ -98,7 +99,7 @@ fn the_form_skips_saved_distributions_and_cycles_with_arrows(cx: &mut TestAppCon
         view.menu.wsl_setup.as_mut().unwrap().selected = Some("Ubuntu".into());
         view.submit_add_wsl(window, cx);
         assert_eq!(
-            view.menu.error.as_deref(),
+            view.menu.wsl_setup.as_ref().unwrap().error.as_deref(),
             Some("Ubuntu is already a device.")
         );
         let setup = view.menu.wsl_setup.as_ref().unwrap();
@@ -116,7 +117,10 @@ fn nothing_is_submitted_without_a_distribution(cx: &mut TestAppContext) {
     view.update_in(cx, |view, window, cx| {
         open_form(view, &[], cx);
         view.submit_add_wsl(window, cx);
-        assert_eq!(view.menu.error.as_deref(), Some("Pick a distribution."));
+        assert_eq!(
+            view.menu.wsl_setup.as_ref().unwrap().error.as_deref(),
+            Some("Pick a distribution.")
+        );
         assert!(view.menu.wsl_setup.as_ref().unwrap().task.is_none());
     });
 }

@@ -32,7 +32,6 @@ impl HerdrWindow {
     pub(crate) fn render_terminal_note(
         &self,
         surface: Option<&herdr_client::protocol::PaneSurfaceFrame>,
-        gap: f32,
         cx: &mut Context<Self>,
     ) -> Option<Div> {
         if self.menu.page.is_some() {
@@ -131,7 +130,7 @@ impl HerdrWindow {
         Some(
             div()
                 .absolute()
-                .left(px(gap) + bounds.left())
+                .left(bounds.left())
                 .top(bounds.top())
                 .w(bounds.size.width)
                 .h(bounds.size.height)

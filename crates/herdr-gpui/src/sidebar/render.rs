@@ -374,7 +374,7 @@ impl HerdrWindow {
                         workspace,
                         label,
                         tree,
-                        icon: if indented {
+                        icon: if indented || !self.config.show_repository_icons {
                             RowIcon::None
                         } else {
                             self.avatars
@@ -748,7 +748,13 @@ impl HerdrWindow {
                             .child(agents),
                     )
             })
-            .child(self.render_device_footer(cx))
+            .map(|sidebar| {
+                if self.device_footer_shown() {
+                    sidebar.child(self.render_device_footer(cx))
+                } else {
+                    sidebar.child(self.render_sessions_anchor())
+                }
+            })
             .child(
                 div()
                     .id("sidebar-resize")
@@ -816,10 +822,14 @@ impl HerdrWindow {
                                                 ));
                                             }
                                             SidebarDrag::Split => {
-                                                let height = (f32::from(bounds.size.height)
-                                                    - 6.
-                                                    - DEVICE_FOOTER_HEIGHT)
-                                                    .max(1.);
+                                                let footer = if this.device_footer_shown() {
+                                                    DEVICE_FOOTER_HEIGHT
+                                                } else {
+                                                    0.
+                                                };
+                                                let height =
+                                                    (f32::from(bounds.size.height) - 6. - footer)
+                                                        .max(1.);
                                                 this.sidebar_split = Some(
                                                     ((f32::from(
                                                         event.position.y - bounds.origin.y,

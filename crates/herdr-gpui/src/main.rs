@@ -54,7 +54,6 @@ mod error;
 mod fan_out;
 mod find;
 mod font_picker;
-mod font_sizes;
 mod fonts;
 mod git;
 mod github;
@@ -74,6 +73,7 @@ mod log_window;
 mod login_env;
 mod menu;
 mod menus;
+mod merged_cleanup;
 #[cfg(feature = "mockup")]
 mod mockup;
 mod motion;
@@ -96,6 +96,7 @@ mod pull_request;
 #[cfg(feature = "railway")]
 mod railway;
 mod release_notes;
+mod remote_browser;
 mod reorder;
 mod repo_items;
 mod review;
@@ -104,6 +105,8 @@ mod search_input;
 mod sessions;
 mod settings_panel;
 mod settings_window;
+#[cfg(unix)]
+mod setup_relay;
 mod sidebar;
 mod smooth_scroll;
 mod sound;

@@ -191,6 +191,21 @@ impl WindowState {
         (bounds, display.map(|display| display.id()))
     }
 
+    /// `bounds` on the display `window` is on, kept within it, for a window
+    /// opened from that one at a place of its choosing.
+    pub(crate) fn beside(
+        bounds: Bounds<Pixels>,
+        window: &Window,
+        cx: &App,
+    ) -> (Bounds<Pixels>, Option<DisplayId>) {
+        let display = window.display(cx);
+        let geometry = fit(
+            Geometry::from_bounds(bounds),
+            display.as_ref().map(|display| display.bounds()),
+        );
+        (geometry.bounds(), display.map(|display| display.id()))
+    }
+
     fn save(&self) {
         if let Some(writer) = &self.writer {
             writer.save(

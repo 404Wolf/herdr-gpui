@@ -1,7 +1,8 @@
 //! The Nearby devices list under the SSH target field: a sliding bar while
-//! sources search, then what they found, minus devices already saved.
+//! sources search, then what they found, minus devices already saved, and
+//! filtered by what the field holds.
 
-use super::{Discovery, Source, Suggestion};
+use super::{Discovery, Source};
 use crate::{
     HerdrWindow,
     progress::{self, Progress},
@@ -14,25 +15,19 @@ pub(super) const MAX_VISIBLE_ROWS: f32 = 4.5;
 impl HerdrWindow {
     pub(in crate::menu::devices) fn render_device_suggestions(
         &self,
+        setup: &super::super::add_device::Setup,
         discovery: &Discovery,
         cx: &mut Context<Self>,
     ) -> Div {
         let theme = &self.theme;
-        let visible: Vec<&Suggestion> = discovery
-            .suggestions
-            .iter()
-            .filter(|suggestion| {
-                !self.endpoints.iter().any(|endpoint| {
-                    endpoint
-                        .saved_ssh()
-                        .is_some_and(|(target, _)| suggestion.saved_as(target))
-                })
-            })
-            .collect();
-        let status = if discovery.searching() {
+        let text = setup.fields[0].read(cx).text().to_owned();
+        let completion = self.device_completion(setup, &text);
+        let status = if discovery.awaiting_local_network {
+            "Waiting for macOS to allow Herdr on your local network…".into()
+        } else if discovery.searching() {
             format!("Searching {}…", sources(&discovery.pending))
         } else {
-            match visible.len() {
+            match completion.unsaved {
                 0 => "Search finished. No devices found.".into(),
                 1 => "Search finished. Found 1 device.".into(),
                 count => format!("Search finished. Found {count} devices."),
@@ -92,9 +87,14 @@ impl HerdrWindow {
             .flex()
             .flex_col()
             .max_h(px(row * MAX_VISIBLE_ROWS))
-            .overflow_y_scroll();
-        for (index, suggestion) in visible.into_iter().enumerate() {
-            let target = suggestion.target.clone();
+            .overflow_y_scroll()
+            .track_scroll(&setup.suggestion_scroll);
+        for (index, (suggestion, target)) in completion
+            .rows
+            .iter()
+            .zip(completion.fills.iter().cloned())
+            .enumerate()
+        {
             let name = suggestion.name.clone();
             list = list.child(
                 div()
@@ -108,6 +108,9 @@ impl HerdrWindow {
                     .px(px(8.))
                     .rounded(px(crate::config::corners::CONTROL))
                     .cursor_pointer()
+                    .when(completion.highlight == Some(index), |row| {
+                        row.bg(rgb(theme.active))
+                    })
                     .hover(|s| s.bg(rgb(theme.active)))
                     .child(
                         div()
@@ -122,7 +125,7 @@ impl HerdrWindow {
                             .min_w_0()
                             .truncate()
                             .text_color(rgb(theme.subtext()))
-                            .child(suggestion.target.clone()),
+                            .child(target.clone()),
                     )
                     .child(
                         div()
@@ -142,6 +145,16 @@ impl HerdrWindow {
                     .text_color(rgb(theme.muted))
                     .child(format!("{}: {error}", source.name())),
             );
+        }
+        // While waiting the system alert may be up already; after a refusal
+        // the setting is the only way. "Search again" then checks anew.
+        let refused = discovery
+            .failures
+            .iter()
+            .any(|(_, error)| matches!(error, crate::Error::LocalNetworkDenied));
+        if discovery.awaiting_local_network || refused {
+            view =
+                view.children(self.local_network_settings_button("device-discovery-settings", cx));
         }
         view
     }
@@ -170,7 +183,7 @@ impl HerdrWindow {
             label_field.update(cx, |field, cx| field.set_text_selected(name, cx));
         }
         window.focus(&target_field.read(cx).focus.clone(), cx);
-        self.menu.error = None;
+        self.set_device_error(None);
         cx.notify();
     }
 }

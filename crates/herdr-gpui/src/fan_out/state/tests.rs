@@ -3,6 +3,7 @@ use crate::fan_out::error::Step;
 
 mod compare;
 mod spread;
+mod wanted;
 
 fn origin() -> Origin {
     Origin {
@@ -36,6 +37,7 @@ fn idle() -> FanOut {
         probe: Arc::new(AtomicBool::new(false)),
         probing: false,
         next_refresh: None,
+        wanted: Vec::new(),
     }
 }
 

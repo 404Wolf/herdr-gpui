@@ -180,13 +180,20 @@ impl LinkCell {
         })
     }
 
-    /// Whether both cells read the same pane content, wherever in it they are.
-    pub(crate) fn same_content(&self, other: &Self) -> bool {
+    /// Whether both cells name the same pane viewport: boot, pane, inner
+    /// rectangle, and scroll offset. A content revision is not part of the
+    /// viewport. [`Self::same_content`] keeps that revision, which hover and
+    /// clicks without a locally read web address still require.
+    pub(crate) fn same_viewport(&self, other: &Self) -> bool {
         self.boot == other.boot
             && self.pane_id == other.pane_id
             && self.inner_rect == other.inner_rect
-            && self.content_revision == other.content_revision
             && self.offset_from_bottom == other.offset_from_bottom
+    }
+
+    /// Whether both cells read the same pane content, wherever in it they are.
+    pub(crate) fn same_content(&self, other: &Self) -> bool {
+        self.same_viewport(other) && self.content_revision == other.content_revision
     }
 
     /// Whether `surface` still shows the content this cell was read from.

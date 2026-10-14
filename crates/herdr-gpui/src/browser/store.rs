@@ -22,6 +22,22 @@ impl TabId {
     }
 }
 
+/// An ID a control request names, as `tab list` printed it. Only ever
+/// compared with the store's own IDs.
+#[cfg(unix)]
+impl From<u64> for TabId {
+    fn from(id: u64) -> Self {
+        Self(id)
+    }
+}
+
+#[cfg(unix)]
+impl From<TabId> for u64 {
+    fn from(id: TabId) -> Self {
+        id.0
+    }
+}
+
 impl std::fmt::Display for TabId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
@@ -43,6 +59,12 @@ impl Scope {
     /// A saved SSH host, named by its catalog ID.
     pub(crate) fn endpoint(id: &str) -> Self {
         Self(id.to_owned())
+    }
+
+    /// The scope as `tab list` reports a tab's host.
+    #[cfg(unix)]
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -215,6 +237,12 @@ impl Store {
         }
     }
 
+    /// Every tab of every workspace, in the order they were opened.
+    #[cfg(any(unix, test))]
+    pub(crate) fn tabs(&self) -> impl Iterator<Item = &Tab> {
+        self.tabs.iter()
+    }
+
     pub(crate) fn get(&self, id: TabId) -> Option<&Tab> {
         self.tabs.iter().find(|tab| tab.id == id)
     }
@@ -317,7 +345,6 @@ impl Store {
     }
 
     /// The tabs a pane's agent opened.
-    #[cfg(any(unix, test))]
     pub(crate) fn opened_by<'a>(&'a self, pane_id: &'a str) -> impl Iterator<Item = &'a Tab> + 'a {
         self.tabs
             .iter()

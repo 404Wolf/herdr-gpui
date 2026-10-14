@@ -102,11 +102,24 @@ pub(crate) struct PressedLink {
 
 impl PressedLink {
     /// Whether a release reads the same link as this press did.
+    ///
+    /// A locally read web address stays that link when the pane viewport is
+    /// unchanged, so a redraw of other cells can move the content revision
+    /// between press and release. Activation still sends the release cell and
+    /// the revision it was read at. A file path or a link only the daemon
+    /// knows keeps the revision it was pressed on. A press and a release that
+    /// disagree about whether a daemon cell is there are different clicks.
     fn same_link(&self, release: &Self) -> bool {
         self.url == release.url
             && self.file == release.file
             && match (&self.cell, &release.cell) {
-                (Some(pressed), Some(released)) => pressed.same_content(released),
+                (Some(pressed), Some(released)) => {
+                    if self.url.as_deref().is_some_and(|url| !url.is_empty()) {
+                        pressed.same_viewport(released)
+                    } else {
+                        pressed.same_content(released)
+                    }
+                }
                 (pressed, released) => pressed.is_none() && released.is_none(),
             }
     }

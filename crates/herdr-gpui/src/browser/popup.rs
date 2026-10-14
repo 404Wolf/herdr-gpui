@@ -17,6 +17,7 @@
 //!   call to wry's.
 #![allow(unsafe_code)]
 
+use super::parking::{self, Parked};
 use dispatch2::MainThreadBound;
 use objc2::{
     DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send,
@@ -33,7 +34,7 @@ use wry::{
 
 /// A popup's page before the window adopts it. It may only be touched on the
 /// main thread, where WebKit asks for it and where the window adopts it.
-pub(crate) struct Popup(MainThreadBound<Built>);
+pub(crate) struct Popup(MainThreadBound<Box<Built>>);
 
 impl std::fmt::Debug for Popup {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -44,6 +45,8 @@ impl std::fmt::Debug for Popup {
 struct Built {
     view: wry::WebView,
     delegate: Retained<Closer>,
+    /// Where the hidden view was built, for when it shows as a tab.
+    place: Parked,
 }
 
 impl Popup {
@@ -52,10 +55,14 @@ impl Popup {
         Retained::into_super(self.0.get(mtm).view.webview())
     }
 
-    /// The wry view, and the delegate it needs kept alive as long as it is.
-    pub(super) fn into_parts(self, mtm: MainThreadMarker) -> (wry::WebView, Retained<Closer>) {
-        let built = self.0.into_inner(mtm);
-        (built.view, built.delegate)
+    /// The wry view, the delegate it needs kept alive as long as it is, and
+    /// the place it goes back to as it shows.
+    pub(super) fn into_parts(
+        self,
+        mtm: MainThreadMarker,
+    ) -> (wry::WebView, Retained<Closer>, Parked) {
+        let built = *self.0.into_inner(mtm);
+        (built.view, built.delegate, built.place)
     }
 }
 
@@ -82,7 +89,15 @@ pub(super) fn build(
     // SAFETY: the delegate property is weak; `Built` keeps `delegate` alive
     // as long as the view, and wry keeps the delegate it forwards to.
     unsafe { webview.setUIDelegate(Some(ProtocolObject::from_ref(&*delegate))) };
-    Ok(Popup(MainThreadBound::new(Built { view, delegate }, mtm)))
+    // Built hidden, above its opener, whose drags it would otherwise take.
+    let place = parking::park(&view);
+    // Boxed so that a popup stays small in the event that carries it.
+    let built = Box::new(Built {
+        view,
+        delegate,
+        place,
+    });
+    Ok(Popup(MainThreadBound::new(built, mtm)))
 }
 
 /// The opener's parent view, as the window handle wry builds a child of.

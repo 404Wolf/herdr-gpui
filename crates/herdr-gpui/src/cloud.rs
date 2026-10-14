@@ -6,12 +6,14 @@
 //! machine; supporting another one adds a `CloudProvider` variant and a module.
 
 mod catalog;
+mod command;
 pub(crate) mod install;
 mod jobs;
 pub(crate) mod names;
 pub(crate) mod worker;
 
 pub(crate) use catalog::{SavedDevice, load, remove, save};
+pub(crate) use command::with_command;
 pub(crate) use herdr_client::CloudProvider;
 pub(crate) use jobs::Jobs;
 
@@ -98,16 +100,27 @@ pub(crate) fn name(provider: CloudProvider) -> &'static str {
     }
 }
 
-/// What the device picker's row for the provider offers.
+/// The provider's logo, an embedded asset path.
+pub(crate) fn icon(provider: CloudProvider) -> &'static str {
+    match provider {
+        #[cfg(feature = "coder")]
+        CloudProvider::Coder => "icons/cloud/coder.svg",
+        #[cfg(feature = "daytona")]
+        CloudProvider::Daytona => "icons/cloud/daytona.svg",
+        #[cfg(feature = "railway")]
+        CloudProvider::Railway => "icons/cloud/railway.svg",
+    }
+}
+
+/// What adding a device from the provider does, as Add Device says it.
 pub(crate) fn offer(provider: CloudProvider) -> &'static str {
     match provider {
         #[cfg(feature = "coder")]
         CloudProvider::Coder => "Create or attach a Coder workspace",
-        // Its row opens Settings, where sandboxes are created; existing ones
-        // cannot be attached yet.
+        // Sandboxes are created in Settings; existing ones cannot be
+        // attached yet.
         #[cfg(feature = "daytona")]
         CloudProvider::Daytona => "Create a Daytona sandbox in Settings",
-        // Offered through "Add Cloud Device…" rather than a row of its own.
         #[cfg(feature = "railway")]
         CloudProvider::Railway => "Set up a Railway VM in Settings",
     }

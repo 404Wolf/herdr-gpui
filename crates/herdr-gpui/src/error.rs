@@ -163,6 +163,10 @@ pub enum Error {
     StaleWorkspace,
     #[error(transparent)]
     PaneMove(#[from] crate::pane_move::Error),
+    #[error(transparent)]
+    PaneCarry(#[from] crate::pane_menu::carry::Refusal),
+    #[error(transparent)]
+    Teleport(#[from] crate::teleport::Error),
     #[error("Workspace label must not be empty.")]
     EmptyWorkspaceLabel,
     #[error("{0} cannot be reached by script. Choose another host.")]
@@ -461,6 +465,12 @@ pub enum Error {
     CheckpointThread(#[source] io::Error),
     #[error("The checkpoint worker stopped.")]
     CheckpointWorker,
+    #[error("Git could not run")]
+    LocalGit(#[source] io::Error),
+    #[error("The current directory is not in a Git checkout.")]
+    NotInCheckout,
+    #[error("HEAD is detached. Check a branch out first.")]
+    DetachedHead,
     #[error("Enter a port number from 1 to 65535.")]
     ForwardPort,
     #[error("Port {0} is already forwarded from this host.")]
@@ -612,6 +622,24 @@ pub enum Error {
         "Controlling a running Herdr UI needs a Unix socket, which this platform build does not provide"
     )]
     ControlUnsupported,
+    #[error("Could not run git in {}: {source}", path.display())]
+    GitCommonDir {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("{} is not in a Git repository", path.display())]
+    NotAGitRepository { path: PathBuf },
+    #[error("Could not read the orchestrator's database: {0}")]
+    OrchestratorItems(#[source] crate::orchestrator::Error),
+    #[error("The page's picture could not be turned into a PNG")]
+    ScreenshotImage,
+    #[error("Could not write the screenshot to {}: {source}", path.display())]
+    ScreenshotWrite {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[cfg(any(target_os = "macos", windows))]
     #[error("Could not create the page: {0}")]
     WebView(#[from] wry::Error),
@@ -627,6 +655,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("Could not install the agent tools on the SSH host: {0}")]
+    RemoteAgentTools(#[source] herdr_client::Error),
     #[error("{0}")]
     DeviceSetupInput(&'static str),
     #[error("Saving the device failed ({status}){}", if detail.is_empty() { String::new() } else { format!(": {detail}") })]
@@ -644,15 +674,33 @@ pub enum Error {
     DeviceSetupTimeout,
     #[error("This host and session are already saved as \u{201c}{0}\u{201d}.")]
     DeviceExists(String),
-    #[error("This host is already being added.")]
+    #[error(
+        "This host is already being added, in another Add Device dialog or a \u{201c}Set up\u{201d} workspace that is still running. Finish or close it, then try again."
+    )]
     DeviceAdding,
     #[error("Searching the local network failed: {0}")]
     Bonjour(#[from] mdns_sd::Error),
-    /// Permission granted while the app runs may only apply after a restart.
+    /// The search waited for the permission and macOS still refused it.
+    /// Turning it on applies to the next search; the app need not restart.
     #[error(
-        "macOS has not allowed Herdr on your local network. Allow it when asked, or turn on Herdr in System Settings › Privacy & Security › Local Network, then quit and reopen Herdr"
+        "macOS has not allowed Herdr on your local network. Turn on Herdr in System Settings › Privacy & Security › Local Network, then search again"
     )]
     LocalNetworkDenied,
+    #[cfg(unix)]
+    #[error("The setup terminal sent something unreadable.")]
+    SetupRelayFrame,
+    #[cfg(unix)]
+    #[error("Herdr closed the setup before it finished. Start it again from Add Device.")]
+    SetupRelayClosed,
+    #[cfg(unix)]
+    #[error("This setup is no longer waiting. Start it again from Add Device.")]
+    SetupRelayConnect(#[source] io::Error),
+    #[cfg(unix)]
+    #[error("The device setup needs a terminal.")]
+    SetupRelayTerminal,
+    #[cfg(unix)]
+    #[error("{} is not a private folder of this user, so the setup cannot listen there.", .0.display())]
+    SetupRelayDir(PathBuf),
     #[error("Could not list this machine's network addresses: {0}")]
     LocalAddresses(#[source] io::Error),
     #[error("Tailscale did not answer in time")]
@@ -702,6 +750,24 @@ pub enum Error {
     RelativeConfigRoot,
     #[error("Cannot migrate {}: {} already contains different settings. Merge your old settings into the local file, then remove the old config; it will be regenerated.", original.display(), local.display())]
     ConfigMigrationConflict { original: PathBuf, local: PathBuf },
+    #[error("{key}: a part of this key holds a value, not a table; unset that part first")]
+    ConfigKeyNotTable { key: String },
+    #[error("Herdr UI has no setting {}; config-gpui.toml lists every setting", .0.join(", "))]
+    UnknownConfigKeys(Vec<String>),
+    #[error("Could not read the log {}: {source}", path.display())]
+    LogRead {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("{} already exists; choose a new file name", path.display())]
+    BundleExists { path: PathBuf },
+    #[error("Could not write {}: {source}", path.display())]
+    BundleWrite {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[error("theme must not be empty")]
     EmptyTheme,
     #[error("{0}.family must not be empty")]
@@ -722,6 +788,10 @@ pub enum Error {
     InvalidZenWidth,
     #[error("zen.font_size must be finite and between 8 and 48 logical pixels")]
     InvalidZenFontSize,
+    #[error(
+        "terminal.{0} must be one number or a pair of numbers, each finite and between 0 and 64 logical pixels"
+    )]
+    InvalidTerminalPadding(&'static str),
     #[error("sidebar.{key} must be finite and between 0 and {max} logical pixels")]
     InvalidSidebarMetric { key: &'static str, max: f32 },
     #[error("sidebar.hosts.{host:?} must be a #rgb or #rrggbb colour, not {value:?}")]
@@ -766,6 +836,10 @@ pub enum Error {
     PaneKeyWithoutModifier(String),
     #[error("pane_keys.{from:?}: a pane cannot receive {to:?}")]
     UnsendablePaneKey { from: String, to: String },
+    #[error("pane_keys.{0:?}: text: needs something to send")]
+    EmptyPaneKeyText(String),
+    #[error("pane_keys.{keystroke:?}: text may be at most {limit} bytes")]
+    PaneKeyTextTooLong { keystroke: String, limit: usize },
     #[error("pane_keys: {0:?} is listed twice")]
     DuplicatePaneKey(String),
     #[error("pane_keys must list at most {0} keystrokes")]

@@ -15,16 +15,22 @@ mod code;
 mod code_group;
 mod code_start;
 mod code_view;
+#[cfg(any(target_os = "macos", windows))]
+mod favicon;
 mod feedback;
 mod group_motion;
 mod groups;
 mod groups_view;
 mod layouts;
 mod location;
+#[cfg(any(target_os = "macos", windows, test))]
+mod markdown;
 #[cfg(any(target_os = "macos", windows))]
 mod native;
 #[cfg(target_os = "macos")]
 mod page_keys;
+#[cfg(target_os = "macos")]
+mod parking;
 #[cfg(target_os = "macos")]
 mod popup;
 #[cfg(any(target_os = "macos", windows))]
@@ -41,6 +47,8 @@ mod view_tests;
 #[cfg(any(target_os = "macos", windows))]
 pub(crate) use annotate_view::Annotations;
 pub(crate) use feedback::{Batch, Feedback, FeedbackKey};
+#[cfg(unix)]
+pub(crate) use feedback::{TAKE_BUDGET, json_size};
 pub(crate) use group_motion::Fold;
 #[cfg(test)]
 pub(crate) use groups::GroupIds;
@@ -49,10 +57,13 @@ pub(crate) use layouts::Layouts;
 pub(crate) use location::{LocalFile, Location, OrchestratorRepo, ReviewCheckout};
 #[cfg(any(target_os = "macos", windows))]
 pub(crate) use native::Pages;
+/// A page screenshot as PNG, for `browser screenshot`.
+#[cfg(target_os = "macos")]
+pub(crate) use snapshot::png as page_png;
 pub(crate) use store::{Scope, Store, Tab, TabId};
 pub(crate) use tab_appear::{Leaving, Listed};
 pub(crate) use tab_scroll::{Thumb, ThumbDrag};
-pub(crate) use view::{Browser, scope};
+pub(crate) use view::{Browser, PageOpened, scope};
 
 /// Whether this build can show a page inside the window. Elsewhere a browser
 /// tab request opens the system browser instead.
@@ -89,6 +100,29 @@ impl WebUrl {
             Some(port) => format!("{}:{port}", self.host()),
             None => self.host().to_owned(),
         }
+    }
+
+    /// The port of an address on the loopback of whichever machine opens
+    /// it, such as `localhost:3000`, which on another host names that host.
+    pub(crate) fn loopback_port(&self) -> Option<std::num::NonZeroU16> {
+        let loopback = match self.0.host()? {
+            url::Host::Domain(name) => name == "localhost" || name.ends_with(".localhost"),
+            url::Host::Ipv4(address) => address.is_loopback() || address.is_unspecified(),
+            url::Host::Ipv6(address) => address.is_loopback() || address.is_unspecified(),
+        };
+        if !loopback {
+            return None;
+        }
+        std::num::NonZeroU16::new(self.0.port_or_known_default()?)
+    }
+
+    /// This address at `127.0.0.1:port`, keeping its scheme, path, query,
+    /// and fragment: a forwarded port listens on IPv4 loopback only.
+    pub(crate) fn at_local_port(&self, port: u16) -> Option<Self> {
+        let mut url = self.0.clone();
+        url.set_host(Some("127.0.0.1")).ok()?;
+        url.set_port(Some(port)).ok()?;
+        Some(Self(url))
     }
 
     /// What someone typed into the address field: a bare host such as
@@ -194,6 +228,31 @@ mod tests {
         assert!(typed("file:///etc/passwd").is_err());
         assert!(typed("ftp://a.test").is_err());
         assert!(typed("").is_err());
+    }
+
+    #[test]
+    fn loopback_addresses_move_to_a_forwarded_port() {
+        let url = |text| WebUrl::from_typed(text).unwrap();
+        for (text, port) in [
+            ("localhost:3000/app?x=1", 3000),
+            ("http://127.0.0.1:8080/", 8080),
+            ("http://[::1]/", 80),
+            ("https://app.localhost/", 443),
+            ("http://0.0.0.0:5173/", 5173),
+        ] {
+            assert_eq!(
+                url(text).loopback_port().map(|p| p.get()),
+                Some(port),
+                "{text}"
+            );
+        }
+        for text in ["https://example.com:3000/", "http://10.0.0.2:3000/"] {
+            assert_eq!(url(text).loopback_port(), None, "{text}");
+        }
+        let moved = url("localhost:3000/app?x=1#top")
+            .at_local_port(13000)
+            .unwrap();
+        assert_eq!(moved.as_str(), "http://127.0.0.1:13000/app?x=1#top");
     }
 
     #[test]
