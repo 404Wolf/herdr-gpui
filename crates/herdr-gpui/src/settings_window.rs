@@ -758,6 +758,8 @@ impl Render for SettingsWindow {
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, action: &crate::RunCommand, window, cx| {
                 match action.command {
+                    // Its own close path, which saves pending edits first.
+                    crate::controls::Command::CloseWindow => this.close(window, cx),
                     command if crate::window::run_window_command(command, window, cx) => {}
                     crate::controls::Command::Settings => window.activate_window(),
                     crate::controls::Command::NewWindow => {

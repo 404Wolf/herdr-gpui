@@ -11,6 +11,7 @@ mod code_start;
 mod default_fonts;
 mod discovery;
 mod edit;
+mod finished_notifications;
 mod font_aliases;
 mod font_weight;
 mod fonts;

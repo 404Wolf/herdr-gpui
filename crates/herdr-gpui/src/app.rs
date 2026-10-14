@@ -88,16 +88,39 @@ pub(crate) fn open_window(
     cx: &mut App,
     #[cfg(feature = "integration-test")] fixture: bool,
 ) -> Result<WindowHandle<HerdrWindow>> {
-    // Cascade rather than stack windows exactly, so a new one is visible at once.
-    let existing = cx
-        .windows()
-        .iter()
-        .filter(|handle| handle.downcast::<HerdrWindow>().is_some())
-        .count();
-    let step = px(28. * existing.min(6) as f32);
-    let mut bounds = Bounds::centered(None, size(px(1200.), px(780.)), cx);
-    bounds.origin += point(step, step);
-    let (bounds, display_id) = crate::window_state::WindowState::placement(bounds, cx);
+    open_window_placed(
+        target,
+        updater,
+        None,
+        cx,
+        #[cfg(feature = "integration-test")]
+        fixture,
+    )
+}
+
+/// Where a window opens and the display its bounds refer to.
+pub(crate) type Placement = (Bounds<Pixels>, Option<DisplayId>);
+
+/// Opens a main window at `placement`, or where the next one goes.
+fn open_window_placed(
+    target: ConnectTarget,
+    updater: updater::Updater,
+    placement: Option<Placement>,
+    cx: &mut App,
+    #[cfg(feature = "integration-test")] fixture: bool,
+) -> Result<WindowHandle<HerdrWindow>> {
+    let (bounds, display_id) = placement.unwrap_or_else(|| {
+        // Cascade rather than stack windows exactly, so a new one is visible at once.
+        let existing = cx
+            .windows()
+            .iter()
+            .filter(|handle| handle.downcast::<HerdrWindow>().is_some())
+            .count();
+        let step = px(28. * existing.min(6) as f32);
+        let mut bounds = Bounds::centered(None, size(px(1200.), px(780.)), cx);
+        bounds.origin += point(step, step);
+        crate::window_state::WindowState::placement(bounds, cx)
+    });
     cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -143,10 +166,22 @@ fn shared_sound(cx: &mut App) -> std::rc::Rc<crate::sound::Service> {
 
 /// Opens another window from inside the focused window's own update.
 pub(crate) fn open_additional_window(target: ConnectTarget, cx: &mut App) {
+    open_additional_window_then(target, None, |_, _, _| {}, cx);
+}
+
+/// Opens another window at `placement` from inside a window's own update,
+/// then runs `then` on it before it is shown in front.
+pub(crate) fn open_additional_window_then(
+    target: ConnectTarget,
+    placement: Option<Placement>,
+    then: impl FnOnce(&mut HerdrWindow, &mut Window, &mut Context<HerdrWindow>) + 'static,
+    cx: &mut App,
+) {
     cx.defer(move |cx| {
-        let opened = open_window(
+        let opened = open_window_placed(
             target,
             updater::Updater::secondary(),
+            placement,
             cx,
             #[cfg(feature = "integration-test")]
             false,
@@ -154,8 +189,9 @@ pub(crate) fn open_additional_window(target: ConnectTarget, cx: &mut App) {
         let sound = shared_sound(cx);
         match opened {
             Ok(handle) => {
-                let _ = handle.update(cx, |view, window, _| {
+                let _ = handle.update(cx, |view, window, cx| {
                     view.use_sound(sound);
+                    then(view, window, cx);
                     window.activate_window();
                 });
             }

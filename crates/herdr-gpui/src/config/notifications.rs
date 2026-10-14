@@ -98,6 +98,10 @@ pub struct NotificationConfig {
     #[serde(deserialize_with = "notification_delay")]
     pub delay_seconds: u64,
     pub position: herdr_client::protocol::ToastHerdrPosition,
+    /// Present "finished" notices. A GUI-only key with no shared Herdr
+    /// counterpart: turning it off keeps "needs attention" and custom
+    /// notifications, so a hook can post its own summary in their place.
+    pub finished: bool,
 }
 
 impl Default for NotificationConfig {
@@ -107,6 +111,7 @@ impl Default for NotificationConfig {
             system: false,
             delay_seconds: 1,
             position: herdr_client::protocol::ToastHerdrPosition::BottomRight,
+            finished: true,
         }
     }
 }
@@ -137,6 +142,7 @@ pub(crate) struct NotificationSettings {
     #[serde(deserialize_with = "optional_notification_delay")]
     delay_seconds: Option<u64>,
     position: Option<herdr_client::protocol::ToastHerdrPosition>,
+    finished: Option<bool>,
 }
 
 /// Where a daemon notification that passes the shared policy is presented.
@@ -166,6 +172,7 @@ impl NotificationSettings {
             system: base.system,
             delay_seconds: self.delay_seconds.unwrap_or(base.delay_seconds),
             position: self.position.unwrap_or(base.position),
+            finished: self.finished.unwrap_or(base.finished),
         }
     }
 }
@@ -196,6 +203,7 @@ impl Config {
             system: shared.toast_delivery == crate::herdr_settings::ToastDelivery::System,
             delay_seconds: shared.toast_delay_seconds,
             position: shared.toast_position,
+            ..NotificationConfig::default()
         });
     }
 }

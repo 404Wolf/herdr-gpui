@@ -376,7 +376,7 @@ impl HerdrWindow {
                 }
                 return;
             }
-            Command::ToggleFullScreen | Command::CycleWindows => {
+            Command::ToggleFullScreen | Command::CycleWindows | Command::CloseWindow => {
                 run_window_command(command, window, cx);
                 return;
             }
@@ -674,6 +674,7 @@ pub(crate) fn run_window_command(
     match command {
         Command::ToggleFullScreen => window.toggle_fullscreen(),
         Command::CycleWindows => cycle_windows(window, cx),
+        Command::CloseWindow => window.remove_window(),
         _ => return false,
     }
     true

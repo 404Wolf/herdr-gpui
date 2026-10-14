@@ -44,7 +44,7 @@ fn repository(snapshot: Option<&ClientShellSnapshot>, repo: &str) -> Repository 
 impl HerdrWindow {
     /// The connected snapshot of endpoint `index`, reading the selected one
     /// from the window's own copy.
-    fn endpoint_snapshot(&self, index: usize) -> Option<&ClientShellSnapshot> {
+    pub(crate) fn endpoint_snapshot(&self, index: usize) -> Option<&ClientShellSnapshot> {
         let live = if index == self.selected_endpoint {
             &self.live
         } else {

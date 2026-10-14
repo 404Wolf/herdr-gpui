@@ -17,6 +17,8 @@ use herdr_client::{
 };
 use std::sync::Arc;
 
+mod finished;
+
 fn endpoints() -> [Endpoint; 2] {
     ["local", "remote"].map(|id| {
         let mut endpoint = Endpoint::new(id.into(), id.into(), ConnectTarget::Local, true);

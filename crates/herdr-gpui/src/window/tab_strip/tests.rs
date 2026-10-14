@@ -429,8 +429,8 @@ fn holding_a_tab_lifts_it_bigger_and_a_release_picks_the_gap(cx: &mut TestAppCon
     assert!((passed.left() - a.left()).abs() <= px(0.5), "{passed:?}");
     assert_eq!(cx.debug_bounds("tab-c").unwrap(), c);
 
-    // Carried past the last tab, it lands after it.
-    let end = point(a.center().x + px(2000.), a.center().y);
+    // Carried past the last tab, still in the window, it lands after it.
+    let end = point(px(1590.), a.center().y);
     for _ in 0..2 {
         cx.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
         draw(cx);
@@ -464,16 +464,21 @@ fn holding_a_tab_lifts_it_bigger_and_a_release_picks_the_gap(cx: &mut TestAppCon
 fn tabs_stay_put_when_the_daemon_cannot_move_them(cx: &mut TestAppContext) {
     let (view, cx) = four_tabs(cx, false);
     let a = cx.debug_bounds("tab-a").unwrap();
+    let b = cx.debug_bounds("tab-b").unwrap();
+    // It lifts, as it can still be carried out of the window, but takes no
+    // place in its strip, so the tabs it passes stay put.
     cx.simulate_mouse_down(a.center(), MouseButton::Left, Modifiers::default());
-    cx.simulate_mouse_move(
-        a.center() + point(px(200.), px(0.)),
-        MouseButton::Left,
-        Modifiers::default(),
-    );
+    let along = a.center() + point(px(200.), px(0.));
+    for _ in 0..2 {
+        cx.simulate_mouse_move(along, MouseButton::Left, Modifiers::default());
+        draw(cx);
+    }
+    assert_eq!(target(&view, cx), None);
+    assert_eq!(cx.debug_bounds("tab-b").unwrap(), b);
+    cx.simulate_mouse_up(along, MouseButton::Left, Modifiers::default());
     draw(cx);
     view.read_with(cx, |view, _| assert!(view.tab_drag.is_none()));
     assert_eq!(cx.debug_bounds("tab-a").unwrap(), a);
-    cx.simulate_mouse_up(a.center(), MouseButton::Left, Modifiers::default());
 }
 
 #[gpui::test]
@@ -621,6 +626,7 @@ fn a_bottom_strip_still_reorders_by_dragging(cx: &mut TestAppContext) {
 /// A chosen page's tab stays in view as its title comes in.
 mod group_drop;
 mod page_title;
+mod tear_off;
 
 /// The dividers between groups, and the grips that drag them.
 mod divider;

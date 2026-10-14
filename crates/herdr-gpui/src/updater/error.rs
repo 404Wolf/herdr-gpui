@@ -1,7 +1,27 @@
 //! Typed updater failures. Remote diagnostics are sources, never display text.
+use chrono::{DateTime, DurationRound as _, Local, TimeDelta, Utc};
 use std::{io, path::PathBuf, process::ExitStatus};
 
 pub(super) type Result<T> = std::result::Result<T, UpdateError>;
+
+/// The first whole minute at or after `reset`, so retrying at the shown minute
+/// is never still early, even by a fraction of a second.
+pub(super) fn retry_minute(reset: DateTime<Utc>) -> DateTime<Utc> {
+    // Rounding fails only for times chrono cannot represent a minute later.
+    reset
+        .duration_round_up(TimeDelta::minutes(1))
+        .unwrap_or(reset)
+}
+
+fn retry_hint(reset: Option<DateTime<Utc>>) -> String {
+    match reset {
+        Some(reset) => format!(
+            "Retry after {}",
+            retry_minute(reset).with_timezone(&Local).format("%H:%M")
+        ),
+        None => "Retry later".to_owned(),
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum UpdateError {
@@ -23,6 +43,9 @@ pub enum UpdateError {
     Http(#[source] Box<ureq::Error>),
     #[error("Update request returned HTTP {0}")]
     HttpStatus(u16),
+    /// GitHub refused the request because this address used up its API quota.
+    #[error("GitHub rate limit reached. {}", retry_hint(*reset))]
+    RateLimited { reset: Option<DateTime<Utc>> },
     #[error("Reading update failed")]
     ReadUpdate(#[source] io::Error),
     #[error("Reading archive failed")]

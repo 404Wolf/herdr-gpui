@@ -7,6 +7,7 @@
 //! and the `herdr` CLI on the host concerned (locally, over SSH, or through a
 //! cloud provider's authenticated command).
 
+pub(crate) mod carry;
 mod credentials;
 mod error;
 mod fresh;

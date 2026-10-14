@@ -813,7 +813,16 @@ shared `system` delivery posting OS notifications:
 enabled = false
 delay_seconds = 1
 position = "bottom-right"
+finished = true
 ```
+
+`finished` has no shared Herdr counterpart and defaults to `true`. Set it to
+`false` to stop "finished" toasts and OS notifications while keeping "needs
+attention" and custom notifications, for example when an agent hook posts its
+own summary with `herdr notification show`. It does not change sounds, which
+follow the sound settings, and QA previews still appear. Settings > Notifications
+has the same switch, and `herdr-gpui config set notifications.finished false`
+writes it.
 
 Delivery defaults off, matching upstream. The delay accepts integer seconds from
 0 through 3600; Custom notifications always bypass the delay. Corners are
@@ -1490,25 +1499,62 @@ and follows its branch, and it does not travel with a teleported worktree.
 
 ## Moving Panes
 
-Right-click a pane for **Move to New Tab** (in the pane's own workspace),
-**Move to New Workspace**, or **Move to Tab…**, which lists the other tabs of
-every workspace and a new tab in each other workspace. The command palette's
-**Move Pane…** (`move_pane`, unbound by default) opens the same list for the
-focused pane, with the new tab and new workspace first. Moving into an existing
-tab splits that tab's focused pane and puts the moved pane on its right. The
-terminal keeps running, and the move asks Herdr to focus the pane where it lands.
+Right-click a pane, or an agent's row in the sidebar, for **Move to New Tab**
+(in the pane's own workspace), **Move to New Workspace**, or **Move to…**, which
+lists the other tabs of every workspace, a new tab in each other workspace, and
+then, for each other device that has the pane's repository open, a new worktree
+and that device's spaces of the repository. The command palette's **Move Pane…**
+(`move_pane`, unbound by default) opens the same list for the focused pane, with
+the new tab and new workspace first. Moving into an existing tab splits that
+tab's focused pane and puts the moved pane on its right. The terminal keeps
+running, and the move asks Herdr to focus the pane where it lands.
 
-Herdr does not offer `pane.move` to GUI clients, so the move runs
-`herdr [--session NAME] pane move` on the endpoint's host, locally or over SSH,
-the way Teleport does, on a background thread. The menu says **Moving pane…**
-until Herdr answers and closes when the move succeeds. Herdr's refusals appear
-in the menu: it will not move a pane out of or into a zoomed tab, and a missing
-`herdr` CLI is named as such. A failure that arrives after the menu was closed
-appears in the window's status instead. Moves are offered only on Linux and
-macOS clients and only for the local daemon, a named session, or an SSH
-device, not a custom socket endpoint or a development (`--dev`) session, whose
-panes the `herdr` CLI cannot address by session name. A tab or workspace that
-closed after the menu opened is refused before anything runs.
+Herdr does not offer `pane.move` to GUI clients, so the move runs `herdr
+[--session NAME] pane move` on the endpoint's host, locally or over SSH, the way
+Teleport does, on a background thread. The menu says **Moving pane…** until
+Herdr answers and closes when the move succeeds. Herdr's refusals appear in the
+menu: it will not move a pane out of or into a zoomed tab, and a missing `herdr`
+CLI is named as such. A failure that arrives after the menu was closed appears
+in the window's status instead. Moves are offered only on Linux and macOS
+clients and only for the local daemon, a named session, or an SSH device, not a
+custom socket endpoint or a development (`--dev`) session, whose panes the
+`herdr` CLI cannot address by session name. A tab or workspace that closed after
+the menu opened is refused before anything runs.
+
+### To Another Device
+
+**DEVICE › New Worktree** and **DEVICE › SPACE** copy the pane's work to that
+device and move the pane there. The device must be connected and have a
+workspace of the same repository open; the review then checks that the two share
+a remote, and refuses a repository matching only by name. The review lists the
+branch, the unpushed commits and changed files, and what the pane will run
+there; Enter starts the move.
+
+The move works like Teleport, for one pane: the checkout's commits and its
+staged, unstaged and untracked changes go to a new worktree there, on the same
+branch when that device can take it, otherwise on a new branch from the same
+commit. A space takes them only if nothing there would be overwritten: its
+checkout must have no uncommitted changes and be at the pane's commit, or behind
+it on the same branch, in which case it fast-forwards first; an ignored file
+there that a commit would replace also stops it. The pane then runs in a new
+tab of that space. A supported agent's session moves with them and resumes;
+another program starts again with the same arguments, and the pane, shell or
+program, starts in the same subdirectory. The work is
+copied, so the checkout here keeps its changes, and the other panes in its
+workspace keep running. The pane here closes only once it runs on the other
+device, and the window then follows it there.
+
+A working agent is still writing its session, so it moves only once it is idle
+or waiting; this is checked again on Enter. A commit made here after the review
+stops the move before anything lands, so it can be reviewed again. A pane
+outside a Git repository can move only within this device, and one whose
+directory has left its space's checkout must change back into it first. If the move fails
+before the pane runs there, a new worktree is removed again, and if it cannot
+be, the error says where it was left; in a space, the tab made for the pane
+closes and the copied changes stay in its checkout. Closing the menu abandons a
+review but not a move under way, whose result then appears as a flash. The same
+hosts as Teleport can be reached, so neither device may be a custom socket, WSL
+or development (`--dev`) endpoint.
 
 ## Teleport
 
