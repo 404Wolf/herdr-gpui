@@ -1,4 +1,4 @@
-//! GitHub's JSON failures, kept apart from their redacted presentation.
+//! The GitHub JSON parse failure, kept apart so its cause stays redacted.
 
 /// Parser diagnostics can quote credential-bearing fields; expose the cause only
 /// to explicit source inspection, never ordinary Display or Debug formatting.

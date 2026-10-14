@@ -276,12 +276,31 @@ label. **Up** and **Down** pick any row, and **Tab** or **Enter** then fills it.
 A typed `user@` is kept. **Enter** otherwise adds exactly what the field shows:
 a row that matches only by the name a host announces is never chosen for you.
 
+Each device's header in the Spaces list starts with a mark for where it runs:
+a monitor for this machine, the provider's logo for a cloud device, and a
+terminal for an SSH host or WSL distribution. An SSH host shows the Coder logo
+when its name ends in `.coder`, as `coder config-ssh` names workspaces, and the
+Tailscale logo when it is a `*.ts.net` name or a Tailscale address
+(`100.64.0.0/10` or `fd7a:115c:a1e0::/48`). Hover the mark to see what it means.
+Orca and Minimal draw no icons on their rows and draw no mark either. Set
+top-level `show_device_icons = false`, or turn off **Show device icons** under
+Settings > Appearance > Sidebar layout, to leave it out everywhere; the name
+then starts where the mark was.
+
 Right-click a saved SSH device's header in the Spaces list to **Rename** it or
 choose **Remove device…** to forget it. Renaming runs `herdr machine rename`;
 an empty name falls back to the SSH target, as when adding. Removal runs the installed `herdr machine remove`, which
 edits only the local catalog: the host's own Herdr keeps running. When the
 device has its own GitHub sign-in, the confirmation also offers to delete it,
 since its account panel goes away with the device. Local has no such menu.
+
+A cloud device's header (Coder, Daytona, or Railway) has a menu too:
+**Rename…** changes the name the sidebar shows, falling back to the machine's
+name when left empty; **Cloud device settings…** opens its provider under
+Settings > Cloud Devices; and **Remove device…** forgets it on this computer,
+leaving the workspace, sandbox, or VM as it is at the provider. Port forwards
+and server keybindings need a saved SSH host, so a cloud device does not offer
+them.
 
 **Forward port…** in the same menu forwards one of the host's ports, such as a
 dev server an agent started there, to this computer. Each forward has its own

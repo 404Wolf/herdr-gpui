@@ -15,6 +15,10 @@ pub enum Error {
     Missing(&'static str),
     #[error("Coder sign-in required.")]
     Authentication,
+    #[error(
+        "Coder rejected the OAuth client secret. Copy the OAuth2 app's secret from Coder into Settings > Cloud Devices and sign in again."
+    )]
+    Client,
     #[error("Coder denied access. Check your account's permissions for this template.")]
     Forbidden,
     #[error("{0}")]

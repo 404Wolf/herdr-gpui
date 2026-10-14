@@ -1,13 +1,11 @@
 //! Internal failures retain their categories and sources until presentation.
-mod github;
-mod theme;
-
 pub use crate::updater::UpdateError;
+pub use github::GitHubJsonError;
 use std::{
     io,
     path::{Path, PathBuf},
 };
-pub use {github::GitHubJsonError, theme::ThemeParseError};
+pub use theme::ThemeParseError;
 
 #[cfg(any(target_os = "macos", windows))]
 use wry::raw_window_handle::HandleError as WindowHandleError;
@@ -983,6 +981,9 @@ impl From<config_loader::ConfigError> for Error {
         }
     }
 }
+
+mod github;
+mod theme;
 
 #[cfg(test)]
 mod tests;

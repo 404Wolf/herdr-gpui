@@ -286,8 +286,11 @@ impl HerdrWindow {
                 None => name.clone(),
             }),
         };
+        let Some(profile) = host.profile() else {
+            return;
+        };
         if value.as_deref() != self.device_theme_value(&host.id) {
-            let (endpoint, profile) = (host.id.clone(), host.profile.clone());
+            let (endpoint, profile) = (host.id.clone(), profile.to_owned());
             self.save_device_theme(endpoint, profile, value, theme, cx);
         }
         self.dismiss_menu(window, cx);

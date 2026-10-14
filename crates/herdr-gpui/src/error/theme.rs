@@ -1,4 +1,4 @@
-//! Why a theme color or palette entry in the configuration did not parse.
+//! Failures parsing a terminal theme's colors.
 
 #[derive(Debug, thiserror::Error)]
 pub enum ThemeParseError {
