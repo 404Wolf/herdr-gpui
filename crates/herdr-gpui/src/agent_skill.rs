@@ -43,8 +43,13 @@ pub(crate) fn text(executable: Option<&Path>) -> String {
     if executable.and_then(Path::to_str).is_none() {
         return SKILL.to_owned();
     }
+    text_naming(&command(executable))
+}
+
+/// The skill, naming `command` in its commands, as one shell word.
+pub(crate) fn text_naming(command: &str) -> String {
     // Every command line in the skill starts with the executable's name.
-    SKILL.replace("herdr-gpui ", &format!("{} ", command(executable)))
+    SKILL.replace("herdr-gpui ", &format!("{command} "))
 }
 
 fn managed(contents: &str) -> bool {

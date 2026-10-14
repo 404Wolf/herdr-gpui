@@ -9,8 +9,12 @@ settings.
 
 Commands reach the app over a socket of its own,
 `$XDG_STATE_HOME/herdr/gpui/control.sock` (default `~/.local/state/`), which
-only your user can open. An agent on an SSH host has no path to it. A few
-commands work from files alone and need no running app; they say so below.
+only your user can open. An agent on an SSH host has no path to it; there,
+the app's shim at `~/.local/state/herdr/gpui/bin/herdr-gpui` offers
+`browser open` and `browser reload` through Herdr workspace metadata (see
+[remote agents](../crates/herdr-gpui/README.md#letting-agents-open-pages)),
+and every other command exits 8. A few commands work from files alone and
+need no running app; they say so below.
 Windows builds have no control socket yet: commands that need the app exit 8.
 
 ```sh
