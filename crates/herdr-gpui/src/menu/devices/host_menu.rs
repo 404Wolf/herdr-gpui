@@ -464,7 +464,7 @@ impl HerdrWindow {
                     ),
             );
             let server_keys = self.config.keybinding_source(&host.id) == KeybindingSource::Server;
-            let device_theme = self.config.device_theme(&host.id).map(str::to_owned);
+            let device_theme = self.device_theme_value(&host.id).map(str::to_owned);
             for (index, (action, label)) in ACTIONS.into_iter().enumerate() {
                 let toggle = action == Action::ServerKeybindings;
                 body = body.child(

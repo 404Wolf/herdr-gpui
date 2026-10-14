@@ -4,10 +4,9 @@
 use super::HostMenu;
 use crate::{
     HerdrWindow,
-    config::{Config, Theme, ThemeName},
+    config::{Theme, ThemeName},
     menu::Page,
     search_input::SearchInput,
-    window::PinnedDeviceTheme,
 };
 use gpui::{prelude::*, *};
 
@@ -27,11 +26,16 @@ pub(crate) struct DeviceThemePicker {
     pub(super) filtered: Vec<Row>,
     pub(super) selected: usize,
     scroll: UniformListScrollHandle,
-    error: Option<String>,
+    pub(super) error: Option<String>,
     /// The previewed theme and its colors, once read.
     preview: Option<(String, Theme)>,
     /// The read of a theme file to preview; replacing it drops the old one.
     preview_load: Option<Task<()>>,
+    /// The read of a chosen theme that saves it once it loads.
+    save_load: Option<Task<()>>,
+    /// Listing the theme files, cancelled with the picker so it never
+    /// fills a picker opened later for another device.
+    pub(super) discovery: Option<Task<()>>,
     _subscription: Subscription,
 }
 
@@ -59,8 +63,8 @@ impl DeviceThemePicker {
 }
 
 /// The row the device's saved value shows for `light`.
-fn current_row(config: &Config, endpoint: &str, light: bool) -> Row {
-    match config.device_theme(endpoint) {
+fn current_row(value: Option<&str>, light: bool) -> Row {
+    match value {
         Some(value) => Row::Named(ThemeName::side(value, light).to_owned()),
         None => Row::App,
     }
@@ -72,7 +76,7 @@ impl HerdrWindow {
             return;
         };
         let light = crate::app::light_appearance(cx);
-        let current = current_row(&self.config, &host.id, light);
+        let current = current_row(self.device_theme_value(&host.id), light);
         let search = cx.new(SearchInput::new);
         search.update(cx, |input, cx| {
             input.set_placeholder("Search themes...", cx);
@@ -108,6 +112,8 @@ impl HerdrWindow {
             error: None,
             preview: None,
             preview_load: None,
+            save_load: None,
+            discovery: None,
             _subscription: subscription,
         };
         picker.filter("");
@@ -119,11 +125,11 @@ impl HerdrWindow {
         picker
             .scroll
             .scroll_to_item(picker.selected, ScrollStrategy::Center);
+        picker.discovery = Some(self.discover_device_themes(current, cx));
         if let Some(host) = &mut self.menu.host {
             host.theme = Some(picker);
         }
         self.menu.page = Some(Page::DeviceTheme);
-        self.discover_device_themes(current, cx);
         self.preview_device_theme(cx);
         cx.notify();
     }
@@ -133,7 +139,7 @@ impl HerdrWindow {
     }
 
     /// Lists the theme files as the app picker does, off the UI thread.
-    fn discover_device_themes(&mut self, current: Row, cx: &mut Context<Self>) {
+    fn discover_device_themes(&self, current: Row, cx: &mut Context<Self>) -> Task<()> {
         let config = self.config.clone();
         let discovery = cx
             .background_executor()
@@ -144,6 +150,7 @@ impl HerdrWindow {
                 let Some(picker) = this.device_theme_picker_mut() else {
                     return;
                 };
+                picker.discovery = None;
                 match result {
                     Ok(mut names) => {
                         if let Row::Named(name) = &current
@@ -170,7 +177,6 @@ impl HerdrWindow {
                 cx.notify();
             });
         })
-        .detach();
     }
 
     /// Previews the selected row: a built-in at once, a file once read.
@@ -247,42 +253,77 @@ impl HerdrWindow {
 
     /// Saves the row and closes the menu. A pair keeps its other side: the
     /// row replaces the side the current appearance shows, as in the app
-    /// picker.
-    fn save_device_theme(&mut self, row: Row, window: &mut Window, cx: &mut Context<Self>) {
+    /// picker. A theme file is read first; one that cannot load is not
+    /// saved, and the picker stays open showing why.
+    fn choose_device_theme(&mut self, row: Row, window: &mut Window, cx: &mut Context<Self>) {
         let light = crate::app::light_appearance(cx);
         let Some(host) = &self.menu.host else {
             return;
         };
+        let theme = match &row {
+            Row::App => None,
+            Row::Named(name) => {
+                let loaded = host
+                    .theme
+                    .as_ref()
+                    .and_then(|picker| picker.preview.as_ref())
+                    .filter(|(previewed, _)| previewed == name)
+                    .map(|(_, theme)| theme.clone())
+                    .or_else(|| {
+                        Theme::builtin(name).map(|theme| theme.with_contrast(self.config.contrast))
+                    });
+                let Some(theme) = loaded else {
+                    self.read_then_choose(name.clone(), window, cx);
+                    return;
+                };
+                Some(theme)
+            }
+        };
         let value = match &row {
             Row::App => None,
-            Row::Named(name) => Some(match self.config.device_theme(&host.id) {
+            Row::Named(name) => Some(match self.device_theme_value(&host.id) {
                 Some(existing) => ThemeName::with_side(existing, light, name),
                 None => name.clone(),
             }),
         };
-        let theme = match &row {
-            Row::App => None,
-            Row::Named(_) => Some(
-                self.device_theme_preview(&host.id)
-                    .unwrap_or_else(|| self.terminal_theme())
-                    .clone(),
-            ),
-        };
-        let (endpoint, profile) = (host.id.clone(), host.profile.clone());
-        if value.as_deref() != self.config.device_theme(&endpoint) {
-            let saved = value.clone();
-            self.save_preference(
-                move || Config::save_device_theme(&profile, saved.as_deref()),
-                cx,
-            );
-            self.pin_device_theme(PinnedDeviceTheme {
-                endpoint,
-                value,
-                theme,
-                revision: self.config_load_revision,
-            });
+        if value.as_deref() != self.device_theme_value(&host.id) {
+            let (endpoint, profile) = (host.id.clone(), host.profile.clone());
+            self.save_device_theme(endpoint, profile, value, theme, cx);
         }
         self.dismiss_menu(window, cx);
+    }
+
+    /// Reads the chosen theme file, then saves it.
+    fn read_then_choose(&mut self, name: String, window: &mut Window, cx: &mut Context<Self>) {
+        let config = self.config.clone();
+        let light = crate::app::light_appearance(cx);
+        let read = cx.background_executor().spawn({
+            let name = name.clone();
+            async move { config.theme_named(&name, light) }
+        });
+        let task = cx.spawn_in(window, async move |this, cx| {
+            let result = read.await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                let Some(picker) = this.device_theme_picker_mut() else {
+                    return;
+                };
+                picker.save_load = None;
+                match result {
+                    Ok(theme) => {
+                        picker.preview = Some((name.clone(), theme));
+                        picker.error = None;
+                        this.choose_device_theme(Row::Named(name), window, cx);
+                    }
+                    Err(error) => {
+                        picker.error = Some(error.to_string());
+                        cx.notify();
+                    }
+                }
+            });
+        });
+        if let Some(picker) = self.device_theme_picker_mut() {
+            picker.save_load = Some(task);
+        }
     }
 
     pub(in crate::menu) fn device_theme_key(
@@ -319,7 +360,7 @@ impl HerdrWindow {
                 cx.stop_propagation();
                 window.prevent_default();
                 if let Some(row) = picker.selected_row().cloned() {
-                    self.save_device_theme(row, window, cx);
+                    self.choose_device_theme(row, window, cx);
                 }
             }
             _ => {}
@@ -371,7 +412,10 @@ impl HerdrWindow {
                     ),
             )
             .child(div().pt(px(12.)).child(picker.search.clone()));
-        let current = current_row(&self.config, &host.id, crate::app::light_appearance(cx));
+        let current = current_row(
+            self.device_theme_value(&host.id),
+            crate::app::light_appearance(cx),
+        );
         let list = uniform_list(
             "device-theme-results",
             picker.filtered.len(),
@@ -412,7 +456,7 @@ impl HerdrWindow {
                                 }
                             }))
                             .on_click(cx.listener(move |this, _, window, cx| {
-                                this.save_device_theme(row.clone(), window, cx)
+                                this.choose_device_theme(row.clone(), window, cx)
                             }))
                     })
                     .collect()

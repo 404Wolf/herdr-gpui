@@ -153,3 +153,47 @@ fn another_device_previews_nothing_on_the_shown_terminal(cx: &mut TestAppContext
         assert_eq!(view.device_theme_preview(HOST), Some(&builtin("Dracula")));
     });
 }
+
+#[gpui::test]
+fn a_theme_file_that_cannot_load_is_not_saved(cx: &mut TestAppContext) {
+    if cfg!(windows) {
+        return;
+    }
+    let (view, cx) = open_menu(Some("/herdr-gpui-test/missing-theme"), cx);
+    view.update_in(cx, |view, window, cx| {
+        view.activate_host_menu(Action::Theme, window, cx)
+    });
+    cx.run_until_parked();
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    view.read_with(cx, |view, _| {
+        // The picker stays open, says why, and nothing is being saved.
+        assert_eq!(view.menu.page, Some(Page::DeviceTheme));
+        assert!(host(view).theme.as_ref().unwrap().error.is_some());
+        assert_eq!(
+            view.device_theme_value(HOST),
+            Some("/herdr-gpui-test/missing-theme")
+        );
+    });
+    assert_eq!(terminal_theme(&view, cx), builtin("Nord"));
+}
+
+#[gpui::test]
+fn the_theme_list_belongs_to_the_picker_that_asked(cx: &mut TestAppContext) {
+    if cfg!(windows) {
+        return;
+    }
+    let (view, cx) = open_menu(None, cx);
+    view.update_in(cx, |view, window, cx| {
+        view.activate_host_menu(Action::Theme, window, cx)
+    });
+    // Listing runs with the picker and is dropped with it, so a later
+    // picker never takes an earlier one's list.
+    view.read_with(cx, |view, _| {
+        assert!(host(view).theme.as_ref().unwrap().discovery.is_some());
+    });
+    cx.run_until_parked();
+    view.read_with(cx, |view, _| {
+        assert!(host(view).theme.as_ref().unwrap().discovery.is_none());
+    });
+}

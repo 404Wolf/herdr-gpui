@@ -95,41 +95,123 @@ fn a_device_theme_that_cannot_load_keeps_the_app_theme(cx: &mut TestAppContext) 
     assert_eq!(terminal_theme(&view, cx), builtin("Catppuccin Mocha"));
 }
 
-#[gpui::test]
-fn a_saved_choice_shows_until_the_reload_catches_up(cx: &mut TestAppContext) {
-    let (view, cx) = open(cx);
-    settle(cx);
-    view.update(cx, |view, _| {
-        view.pin_device_theme(Pinned {
-            endpoint: HOST.into(),
-            value: Some("Dracula".into()),
-            theme: Some(builtin("Dracula")),
-            revision: view.config_load_revision,
-        });
+/// A config load that never finishes on its own, as one already running
+/// when a save lands. It also keeps the save's reload from reading the
+/// user's real config.
+fn busy_load(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) {
+    view.update(cx, |view, cx| {
+        view.config_load = Some(cx.spawn(async |_, _| std::future::pending::<()>().await));
     });
-    // Before the reload, the config still says nothing.
-    settle(cx);
-    assert_eq!(terminal_theme(&view, cx), builtin("Dracula"));
+}
 
-    // The reload lands with the saved value; the pin goes once it is read.
-    view.update(cx, |view, _| view.config_load_revision += 1);
-    set_device_theme(&view, Some("Dracula"), cx);
-    settle(cx);
-    assert_eq!(terminal_theme(&view, cx), builtin("Dracula"));
-    view.read_with(cx, |view, _| assert!(view.device_themes.pinned.is_none()));
-
-    // A reload that does not hold the saved value, as after a failed save,
-    // drops the pin rather than hiding what the file says.
+/// A config load landing, its config holding `theme` for the device.
+fn reload(view: &Entity<HerdrWindow>, theme: Option<&str>, cx: &mut VisualTestContext) {
     view.update(cx, |view, _| {
-        view.pin_device_theme(Pinned {
-            endpoint: HOST.into(),
-            value: Some("Catppuccin Latte".into()),
-            theme: Some(builtin("Catppuccin Latte")),
-            revision: view.config_load_revision,
-        });
+        view.config_load = None;
         view.config_load_revision += 1;
     });
+    set_device_theme(view, theme, cx);
+}
+
+fn save(
+    view: &Entity<HerdrWindow>,
+    name: &str,
+    write: crate::Result<()>,
+    cx: &mut VisualTestContext,
+) {
+    view.update(cx, |view, cx| {
+        view.save_device_theme_with(
+            HOST.into(),
+            Some(name.into()),
+            Some(builtin(name)),
+            move || write,
+            cx,
+        );
+    });
+}
+
+fn pinned(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) -> bool {
+    view.read_with(cx, |view, _| view.device_themes.pinned.is_some())
+}
+
+#[gpui::test]
+fn a_saved_choice_shows_until_a_reload_after_its_write_lands(cx: &mut TestAppContext) {
+    let (view, cx) = open(cx);
+    settle(cx);
+    busy_load(&view, cx);
+    save(&view, "Dracula", Ok(()), cx);
+    // Shown at once, while the write runs.
+    assert_eq!(terminal_theme(&view, cx), builtin("Dracula"));
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.device_theme_value(HOST), Some("Dracula"));
+    });
+    settle(cx);
+
+    // The load that was already running read the file before the write:
+    // its old value does not take the choice back.
+    reload(&view, None, cx);
     settle(cx);
     assert_eq!(terminal_theme(&view, cx), builtin("Dracula"));
-    view.read_with(cx, |view, _| assert!(view.device_themes.pinned.is_none()));
+    assert!(pinned(&view, cx));
+
+    // The next reload holds the saved value; the pin goes once it is read.
+    reload(&view, Some("Dracula"), cx);
+    settle(cx);
+    assert_eq!(terminal_theme(&view, cx), builtin("Dracula"));
+    assert!(!pinned(&view, cx));
+}
+
+#[gpui::test]
+fn a_failed_save_drops_its_choice_and_says_why(cx: &mut TestAppContext) {
+    let (view, cx) = open(cx);
+    set_device_theme(&view, Some("Dracula"), cx);
+    settle(cx);
+    save(&view, "Nord", Err(crate::Error::InvalidSidebarGap), cx);
+    settle(cx);
+    assert_eq!(terminal_theme(&view, cx), builtin("Dracula"));
+    assert!(!pinned(&view, cx));
+    view.read_with(cx, |view, _| {
+        let error = view.local_error.as_deref().unwrap_or_default();
+        assert!(error.starts_with("Save GUI config:"), "{error}");
+    });
+}
+
+#[gpui::test]
+fn a_later_reload_with_another_value_drops_the_choice(cx: &mut TestAppContext) {
+    let (view, cx) = open(cx);
+    set_device_theme(&view, Some("Dracula"), cx);
+    settle(cx);
+    busy_load(&view, cx);
+    save(&view, "Catppuccin Latte", Ok(()), cx);
+    settle(cx);
+    reload(&view, Some("Dracula"), cx);
+    settle(cx);
+    assert!(pinned(&view, cx));
+    // Edited again since: the file wins rather than the pin hiding it.
+    reload(&view, Some("Dracula"), cx);
+    settle(cx);
+    assert!(!pinned(&view, cx));
+    assert_eq!(terminal_theme(&view, cx), builtin("Dracula"));
+}
+
+#[gpui::test]
+#[allow(clippy::unwrap_used)]
+fn every_reload_reads_the_theme_files_again(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("device-theme");
+    std::fs::write(&path, "background = #102030\n").unwrap();
+    let value = path.to_string_lossy().into_owned();
+    let (view, cx) = open(cx);
+    set_device_theme(&view, Some(&value), cx);
+    settle(cx);
+    let before = terminal_theme(&view, cx).background;
+    assert_ne!(before, builtin("Nord").background);
+
+    // Edited in place: an unrelated reload picks the new colors up.
+    std::fs::write(&path, "background = #405060\n").unwrap();
+    reload(&view, Some(&value), cx);
+    settle(cx);
+    let after = terminal_theme(&view, cx).background;
+    assert_ne!(after, before);
+    assert_ne!(after, builtin("Nord").background);
 }

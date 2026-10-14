@@ -15,13 +15,17 @@ use std::collections::BTreeMap;
 struct Key {
     light: bool,
     contrast: Contrast,
+    /// The config load it was read for, so every reload reads the files
+    /// again: one edited in place, or missing before, is picked up then.
+    revision: u64,
     /// Each device's `theme` value, by profile ID, in profile order.
     themes: Vec<(String, String)>,
 }
 
 impl Key {
-    fn matches(&self, config: &Config, light: bool) -> bool {
+    fn matches(&self, config: &Config, light: bool, revision: u64) -> bool {
         self.light == light
+            && self.revision == revision
             && self.contrast == config.contrast
             && self
                 .themes
@@ -30,10 +34,11 @@ impl Key {
                 .eq(config.device_themes())
     }
 
-    fn new(config: &Config, light: bool) -> Self {
+    fn new(config: &Config, light: bool, revision: u64) -> Self {
         Self {
             light,
             contrast: config.contrast,
+            revision,
             themes: config
                 .device_themes()
                 .map(|(profile, theme)| (profile.to_owned(), theme.to_owned()))
@@ -49,21 +54,26 @@ pub(crate) struct DeviceThemes {
     themes: BTreeMap<String, Theme>,
     /// The key being read, and its task.
     load: Option<(Key, Task<()>)>,
-    /// A choice just saved, shown until the config and its read catch up.
+    /// A choice being saved, shown until the config and its read catch up.
     pinned: Option<Pinned>,
+    /// Numbers each save, so a finished write only updates its own pin.
+    saves: u64,
 }
 
-/// A device theme saved from the menu. The save reloads the config and the
-/// reload starts a read; without the pin the terminal would show the old
-/// colors in between.
-pub(crate) struct Pinned {
-    pub(crate) endpoint: String,
+/// A device theme saved from the menu. The write, the reload after it, and
+/// the read of its colors each take a moment; without the pin the terminal
+/// would show the old colors in between.
+struct Pinned {
+    endpoint: String,
     /// The saved value, `None` for the app theme.
-    pub(crate) value: Option<String>,
+    value: Option<String>,
     /// Its colors, `None` for the app theme.
-    pub(crate) theme: Option<Theme>,
-    /// `config_load_revision` when it was saved.
-    pub(crate) revision: u64,
+    theme: Option<Theme>,
+    save: u64,
+    /// `None` while the write runs. Then the last `config_load_revision`
+    /// that may predate it: a load already running when the write finished
+    /// may have read the file before it.
+    written: Option<u64>,
 }
 
 impl DeviceThemes {
@@ -96,17 +106,18 @@ impl HerdrWindow {
     pub(super) fn sync_device_themes(&mut self, cx: &mut Context<Self>) {
         let light = crate::app::light_appearance(cx);
         self.release_device_theme_pin(light);
+        let revision = self.config_load_revision;
         let state = &self.device_themes;
         if state
             .load
             .as_ref()
             .map(|(key, _)| key)
             .or(state.resolved.as_ref())
-            .is_some_and(|key| key.matches(&self.config, light))
+            .is_some_and(|key| key.matches(&self.config, light, revision))
         {
             return;
         }
-        let key = Key::new(&self.config, light);
+        let key = Key::new(&self.config, light, revision);
         if key.themes.is_empty() {
             let state = &mut self.device_themes;
             state.resolved = Some(key);
@@ -143,19 +154,98 @@ impl HerdrWindow {
         self.device_themes.load = Some((key, task));
     }
 
-    /// Shows `pinned` until the config holds it and its colors are read.
-    pub(crate) fn pin_device_theme(&mut self, pinned: Pinned) {
-        self.device_themes.pinned = Some(pinned);
+    /// The value the device shows: the one being saved, else the config's.
+    pub(crate) fn device_theme_value(&self, endpoint: &str) -> Option<&str> {
+        match &self.device_themes.pinned {
+            Some(pinned) if pinned.endpoint == endpoint => pinned.value.as_deref(),
+            _ => self.config.device_theme(endpoint),
+        }
     }
 
-    /// Drops the pin once a reload has landed: either the config now says
-    /// what was saved and its read is done, or it says something else, as
-    /// after a failed save, and the pin would only hide that.
+    /// Writes the device's terminal theme off the UI thread and reloads,
+    /// showing `theme` on its terminal until the reload and its read land.
+    /// `theme` is the loaded colors of `value`, `None` for the app theme.
+    pub(crate) fn save_device_theme(
+        &mut self,
+        endpoint: String,
+        profile: String,
+        value: Option<String>,
+        theme: Option<Theme>,
+        cx: &mut Context<Self>,
+    ) {
+        let saved = value.clone();
+        self.save_device_theme_with(
+            endpoint,
+            value,
+            theme,
+            move || Config::save_device_theme(&profile, saved.as_deref()),
+            cx,
+        );
+    }
+
+    fn save_device_theme_with(
+        &mut self,
+        endpoint: String,
+        value: Option<String>,
+        theme: Option<Theme>,
+        write: impl FnOnce() -> crate::Result<()> + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        if self.theme_save_in_flight() {
+            return;
+        }
+        let state = &mut self.device_themes;
+        state.saves += 1;
+        let save = state.saves;
+        state.pinned = Some(Pinned {
+            endpoint,
+            value,
+            theme,
+            save,
+            written: None,
+        });
+        let written = cx.background_executor().spawn(async move { write() });
+        cx.spawn(async move |this, cx| {
+            let result = written.await;
+            let _ = this.update(cx, |this, cx| {
+                let pinned = this
+                    .device_themes
+                    .pinned
+                    .as_mut()
+                    .filter(|pinned| pinned.save == save);
+                match result {
+                    Ok(()) => {
+                        if let Some(pinned) = pinned {
+                            let busy = u64::from(this.config_load.is_some());
+                            pinned.written = Some(this.config_load_revision + busy);
+                        }
+                        // Refused while a load runs; the config watcher then
+                        // reloads once it ends, as for other saves.
+                        this.load_gui_config(cx);
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "Could not save the device theme");
+                        if pinned.is_some() {
+                            this.device_themes.pinned = None;
+                        }
+                        this.local_error = Some(format!("Save GUI config: {error}"));
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Drops the pin once a reload after the write has landed: either the
+    /// config now says what was saved and its read is done, or it says
+    /// something else, as after a later edit, and the pin would only hide it.
     fn release_device_theme_pin(&mut self, light: bool) {
         let Some(pinned) = &self.device_themes.pinned else {
             return;
         };
-        if pinned.revision == self.config_load_revision {
+        let revision = self.config_load_revision;
+        if pinned.written.is_none_or(|written| revision <= written) {
             return;
         }
         let saved = self.config.device_theme(&pinned.endpoint) == pinned.value.as_deref();
@@ -163,7 +253,7 @@ impl HerdrWindow {
             .device_themes
             .resolved
             .as_ref()
-            .is_some_and(|key| key.matches(&self.config, light));
+            .is_some_and(|key| key.matches(&self.config, light, revision));
         if !saved || read {
             self.device_themes.pinned = None;
         }

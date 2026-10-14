@@ -17,7 +17,6 @@ mod file_links;
 mod find;
 mod flash;
 pub(crate) use commands::run_window_command;
-pub(crate) use device_themes::Pinned as PinnedDeviceTheme;
 pub(crate) use flash::Flash;
 mod function_keys;
 mod image_source;
