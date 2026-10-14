@@ -466,7 +466,6 @@ impl HerdrWindow {
     pub(crate) fn render_copy_mode_badge(
         &self,
         surface: Option<&PaneSurfaceFrame>,
-        gap: f32,
         cx: &mut Context<Self>,
     ) -> Option<Div> {
         let state = self.copy_mode.as_ref()?;
@@ -478,7 +477,7 @@ impl HerdrWindow {
         let bottom = f32::from(rect.y.saturating_add(rect.height)) * cell_height;
         let corner = div()
             .absolute()
-            .left(px(gap + f32::from(rect.x) * self.cell_width))
+            .left(px(f32::from(rect.x) * self.cell_width))
             .w(px(f32::from(rect.width) * self.cell_width))
             .flex()
             .justify_end()

@@ -665,7 +665,6 @@ impl HerdrWindow {
         &self,
         slot: Slot,
         shown: &Shown,
-        gap: f32,
         keyboard: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -692,7 +691,9 @@ impl HerdrWindow {
             Shown::Page(_) | Shown::Empty => ("".into(), "Nothing to show."),
         };
         let elsewhere = matches!(shown, Shown::Elsewhere(_));
-        div()
+        self.config
+            .terminal_padding
+            .pad(div())
             .id(SharedString::from(slot.selector("stand-in")))
             .debug_selector(move || slot.selector("stand-in"))
             .flex()
@@ -700,7 +701,6 @@ impl HerdrWindow {
             .flex_1()
             .min_h_0()
             .min_w_0()
-            .pl(px(gap))
             .items_center()
             .justify_center()
             .gap(px(10.))
