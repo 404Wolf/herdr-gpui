@@ -10,6 +10,8 @@ pub enum BrowserCommand {
         target: String,
         workspace: Option<String>,
         focus: bool,
+        /// `--beside` or `--tab`; otherwise chosen by what the page is.
+        placement: Option<Placement>,
     },
     Reload,
     /// Waits up to `wait` seconds for notes; zero only checks.
@@ -17,6 +19,8 @@ pub enum BrowserCommand {
         wait: u64,
     },
     Skill,
+    /// Prints the explainer kit's example page.
+    Example,
     Help,
     List,
     Close {
@@ -39,6 +43,17 @@ pub enum BrowserCommand {
         id: u64,
         path: std::path::PathBuf,
     },
+}
+
+/// Where `browser open` puts a new page.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Placement {
+    /// A tab of the group in use, which takes the window's view.
+    #[default]
+    Tab,
+    /// A group beside the caller's terminal, so both stay in view.
+    Beside,
 }
 
 fn utf8(value: OsString) -> Result<String, CliError> {
@@ -72,6 +87,7 @@ pub(super) fn parse(args: &mut Args) -> Result<BrowserCommand, CliError> {
     match command.to_str() {
         Some("--help" | "-h") => return Ok(BrowserCommand::Help),
         Some("skill") => return none_left(BrowserCommand::Skill, args),
+        Some("example") => return none_left(BrowserCommand::Example, args),
         Some("reload") => return none_left(BrowserCommand::Reload, args),
         Some("list") => return none_left(BrowserCommand::List, args),
         Some(verb @ ("close" | "back" | "forward" | "text")) => {
@@ -124,10 +140,13 @@ pub(super) fn parse(args: &mut Args) -> Result<BrowserCommand, CliError> {
         _ => return Err(CliError::UnknownBrowserCommand(command)),
     }
     let (mut target, mut workspace, mut focus) = (None, None, true);
+    let mut placement = None;
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--help" | "-h") => return Ok(BrowserCommand::Help),
             Some("--no-focus") => focus = false,
+            Some("--beside") => placement = Some(Placement::Beside),
+            Some("--tab") => placement = Some(Placement::Tab),
             Some("--workspace") => {
                 let value = args
                     .next()
@@ -147,5 +166,6 @@ pub(super) fn parse(args: &mut Args) -> Result<BrowserCommand, CliError> {
         target: target.ok_or(CliError::MissingUrl)?,
         workspace,
         focus,
+        placement,
     })
 }

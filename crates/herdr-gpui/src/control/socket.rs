@@ -339,6 +339,7 @@ mod tests {
             page: Page::Url(url.into()),
             caller: Caller::default(),
             focus: true,
+            placement: crate::cli::control::Placement::Tab,
         })
     }
 
@@ -366,6 +367,7 @@ mod tests {
         let expected = Response::Opened {
             opened_in: OpenedIn::Tab,
             workspace_id: Some("w_1".into()),
+            placement: crate::cli::control::Placement::Beside,
         };
         incoming.respond(expected.clone());
         assert_eq!(caller.join().unwrap().unwrap(), expected);

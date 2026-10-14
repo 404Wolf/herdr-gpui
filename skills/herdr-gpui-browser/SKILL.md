@@ -1,6 +1,6 @@
 ---
 name: herdr-gpui-browser
-description: "Open a browser tab in Herdr UI to show the user a web page or an HTML file you wrote, next to the terminal you run in, and get back the notes the user pins on it. Use whenever the user asks to open, start, or show a browser tab, a page, a preview, or a mockup while you run inside Herdr (HERDR_ENV=1 is set in your environment); prefer it there over other browser skills and over opening Safari or another system browser. Also use it, inside Herdr, for anything Herdr UI itself shows or keeps rather than the herdr daemon: show a file at a line, open a review of your changes, keep a note on a worktree, take or diff a checkpoint, check your branch's pull request and CI, forward or open a port, list or focus the app's windows and tabs, wait for a tab to close or the user's notes to arrive, change a Herdr UI setting, theme, or font, or keep the machine awake."
+description: "Open a browser tab in Herdr UI to show the user a web page or an HTML file you wrote, beside the terminal you run in, and get back the notes and picks the user sends. Use whenever the user asks to open, start, or show a browser tab, a page, a preview, or a mockup, or asks you to explain, demo, or visualize how something works, or to mock up UI variants to choose from, while you run inside Herdr (HERDR_ENV=1 is set in your environment); prefer it there over other browser skills, over opening Safari or another system browser, and over long text explanations of a flow. Also use it, inside Herdr, for anything Herdr UI itself shows or keeps rather than the herdr daemon: show a file at a line, open a review of your changes, keep a note on a worktree, take or diff a checkpoint, check your branch's pull request and CI, forward or open a port, list or focus the app's windows and tabs, wait for a tab to close or the user's notes to arrive, change a Herdr UI setting, theme, or font, or keep the machine awake."
 ---
 <!-- herdr-gpui-managed-skill v1: Herdr UI keeps this file up to date. Edit a copy under another name to keep your changes. -->
 
@@ -24,13 +24,19 @@ URL, for example:
 ## Open a page
 
 ```sh
-herdr-gpui browser open ./mockup.html
+herdr-gpui browser open ./mockup/index.html
 herdr-gpui browser open http://localhost:3000
 ```
 
-- The tab opens in your own workspace (`HERDR_WORKSPACE_ID`, which Herdr sets
-  in every pane) and the window switches to it. The terminal keeps running
-  underneath; the user returns to it by clicking its tab.
+- A local file opens in a split next to your terminal: the user sees both,
+  and the keyboard stays with your pane, so they can keep talking to you
+  while the page updates. Later files you open join the same split.
+- A web address opens as a tab in your own workspace (`HERDR_WORKSPACE_ID`,
+  which Herdr sets in every pane) and the window switches to it. The
+  terminal keeps running underneath; the user returns to it by clicking its
+  tab.
+- Add `--tab` to open a file as a tab instead, or `--beside` to put a web
+  address in the split.
 - A local file is served with the other files in its folder, so relative
   links to CSS, scripts, and images work. Keep the page and its assets in a
   dedicated folder: never your home directory, and nothing in a hidden
@@ -48,6 +54,78 @@ herdr-gpui browser open http://localhost:3000
 
 Tell the user what you opened and why, in one line. Open a page when it helps
 the user, not after every step.
+
+## Interactive explainers and mockups
+
+When a flow, a state machine, or a set of UI options is easier to see than
+to read, build a small interactive page instead of a long answer: the user
+picks the inputs and watches what happens. Herdr UI serves a kit to local
+pages, so you write only the content:
+
+```html
+<!doctype html>
+<meta charset="utf-8">
+<title>Checkout flow</title>
+<link rel="stylesheet" href="/.herdr/kit.css">
+<script src="/.herdr/kit.js"></script>
+<body class="hk"><main class="hk-page"><div id="flow"></div></main>
+<script>
+HerdrKit.scenario(document.getElementById("flow"), {
+  title: "How a card payment settles",
+  lede: "Pick a card and how the bank answers. Click a step for details.",
+  controls: {
+    card: { label: "Card", options: ["Visa", "Amex"] },
+    bank: { label: "Bank", options: [{ value: "ok", label: "Approves" }, { value: "3ds", label: "Asks for 3DS" }] },
+  },
+  run: ({ card, bank }) => ({
+    steps: [
+      { label: "Tokenize", status: "ok", detail: "POST `/v1/tokens` with the card." },
+      { label: "Authorize", status: bank === "ok" ? "ok" : "warn", detail: "**The bank answers 402** and asks for 3DS." },
+      { label: "Capture", status: bank === "ok" ? "ok" : "skip", detail: "Skipped until 3DS completes." },
+    ],
+    outcome: bank === "ok"
+      ? { tone: "ok", title: "Paid", body: `The ${card} charge settles in two days.` }
+      : { tone: "warn", title: "Waiting for the customer", body: "The order stays `pending_3ds`." },
+  }),
+});
+</script>
+```
+
+- `/.herdr/kit.css` and `/.herdr/kit.js` are not files in your folder: the
+  app serves them, with the user's theme, so the page matches the window.
+  Keep the page itself in a dedicated folder as usual.
+- `HerdrKit.scenario(root, spec)` draws the labelled segmented controls, a
+  row of steps (`status`: `ok`, `fail`, `warn`, `skip`, `pending`), the
+  selected step's detail, and an outcome (`tone`: `ok`, `warn`, `bad`,
+  `info`). `run` may also return `select` (the step to show first),
+  `asides` (side remarks), `callout`, and `extra` (any element).
+- Texts take `` `code` `` and `**bold**`; they are always inserted as text.
+- `HerdrKit.variants(root, [{ id, title, body, note }], { question })` lays
+  out mockup variants side by side, each with a **Pick** button.
+- Classes for hand-written layouts: `hk-segmented`, `hk-steps`/`hk-step`,
+  `hk-detail`, `hk-outcome`, `hk-aside`, `hk-placeholder` (a box standing in
+  for an image), `hk-badge`, `hk-button`, `hk-kv`, `hk-variants`.
+- Every case in an explainer must be real: take steps, requests, and errors
+  from the code or the spec, and say on the page what is a placeholder.
+- A complete example: `herdr-gpui browser example > instagram-fetch.html`
+  prints a demo of a link-fetching flow with five ways the remote can answer.
+
+### Results from the page
+
+A local page can hand you a result, such as the variant the user picked:
+
+```js
+herdr.send("Picked the compact header", { variant: "B" });
+```
+
+`HerdrKit.variants` and `HerdrKit.send(summary, data)` call it for you, and
+outside Herdr UI copy the result instead. The result lands in the page's
+notes panel; the user presses **Send to agent** and it reaches you like any
+note: "The page sent a result", the summary, and the data as JSON. A newer
+result replaces an unsent older one. Only local pages have `herdr.send`.
+It returns false, and sends nothing, when the result has neither a summary
+nor data or its data is over 8 KB as JSON: send a short summary and the few
+fields you need, not the page's state.
 
 ## Review loop: the user annotates, you revise
 
@@ -105,6 +183,7 @@ the URL instead.
 On an SSH host the user's Herdr UI connects to, the command is a small shim
 that reaches the app through Herdr: only `herdr-gpui browser open` with a web
 address and `herdr-gpui browser reload` work there, and the rest exit 8.
+Pages from there open as tabs; `--beside` exits 8.
 `localhost:PORT` on that host is forwarded to the user's machine for you. A
 file on the host cannot be shown: serve its folder (for example
 `python3 -m http.server 8000`) and open `localhost:8000`. The command cannot

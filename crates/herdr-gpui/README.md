@@ -2247,6 +2247,20 @@ them to the agent that opened it, so it can change the page.
   older running app rejects scoped feedback.
 - Tabs you open yourself have no agent to send to; **Copy** is offered
   instead.
+- A local page can also queue a result for its agent with
+  `herdr.send(summary, data)`, for example the mockup variant you picked.
+  It appears in the notes panel as **Page result**, with a hint to add a note,
+  and goes to the agent only when you press Send, as "The page sent a result"
+  followed by the summary and the data as JSON. A newer result replaces an
+  unsent one and keeps the note you added to it. The bridge is injected only into local pages, only while they
+  show the preview scheme. Any frame can still post to the app, so it checks
+  the frame that sent each result and drops it unless that frame shows a
+  local file: a web page embedded in the local page, or one it is navigating
+  to, cannot send.
+  The summary is one cleaned line of at most 300 characters; data over 8 KB
+  is refused rather than cut. `herdr.send` returns false for a result the
+  app would refuse, so the page can say so; whether the app kept one it was
+  handed shows in the window, as the note or a warning.
 
 ### Reviewing An Agent's Changes
 
@@ -2381,8 +2395,9 @@ Agents running in the app's panes can open a page for you:
 
 ```sh
 herdr-gpui browser open http://localhost:3000   # macOS: /Applications/Herdr.app/Contents/MacOS/Herdr
-herdr-gpui browser open design/mockup.html
+herdr-gpui browser open design/mockup.html      # in a split beside the agent's terminal
 herdr-gpui browser open --no-focus https://example.com/docs
+herdr-gpui browser open --tab design/mockup.html # a tab, like a web address
 herdr-gpui browser reload                       # reload the pages this pane opened
 herdr-gpui browser feedback --wait 600          # wait for the notes you send it
 herdr-gpui browser --help
@@ -2428,10 +2443,37 @@ and opens the page in that workspace, once per request:
   all open; a workspace holds at most 32 tokens, so a burst of long addresses
   can be refused until earlier ones expire.
 
+A local file opened from a pane goes beside that pane's terminal, since it is
+usually a mockup or explainer the agent wrote for you to read while you talk
+to it; a web address takes a tab of the group in use. `--beside` and `--tab`
+choose instead. Beside means an editor group next to the group showing the
+caller's terminal: the group the page already belongs to, the group beside
+the terminal when the window is split, or a new group split off to its
+right. The terminal's group stays in use and keeps the keyboard, so you can
+keep typing to the agent. A workspace the window is not showing, or a
+terminal the user has switched away from, gets an ordinary tab instead, and
+the command says so: splitting beside another terminal would leave the
+agent hidden and the keyboard with someone else.
+
+#### Explainer Kit
+
+Local pages can load a small kit the app serves at `/.herdr/kit.css` and
+`/.herdr/kit.js`, for interactive explainers and UI mockups: segmented
+controls, a row of steps with their status, the selected step's detail, an
+outcome, placeholders, and mockup variants with **Pick** buttons that call
+`herdr.send`. `/.herdr/theme.css` carries the window's theme colors, so the
+page matches the app and follows a theme change on its next load. Dotted
+paths are never read from the page's folder, so these cannot hide a file of
+the page's own. Opened elsewhere, the kit falls back to its own light and
+dark colors. `herdr-gpui browser example` prints a complete page built on it.
+The kit inserts every text as text, never as HTML.
+
 Agents only use what they know about, so the app offers, once, to install a
 `herdr-gpui-browser` skill that teaches them these commands. It goes into
 `~/.claude/skills/` and `~/.agents/skills/`, for whichever of `~/.claude` and
-`~/.agents` exists, and names this app's executable. After you agree, each
+`~/.agents` exists, and names this app's executable. Claude Code reads
+`~/.claude/skills/`; Codex reads `~/.agents/skills/`; opencode reads both, as
+well as its own `~/.config/opencode/skills/`. After you agree, each
 start refreshes it off the UI thread, so it follows the app when it moves or
 updates. Only files carrying the app's managed-skill marker are rewritten or
 removed; a skill of the same name you wrote yourself is left alone.

@@ -26,7 +26,13 @@ fn page_notes_are_kept_when_sent_and_edited_ones_go_again(cx: &mut gpui::TestApp
     // A second note goes alone.
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
-            view.page_posted(tab.id, PICK, window, cx);
+            view.page_posted(
+                tab.id,
+                PICK,
+                crate::browser::PostedFrom::Preview,
+                window,
+                cx,
+            );
             let input = view.browser.annotations.input(tab.id, cx);
             input.update(cx, |input, cx| input.set_text_selected("Bigger", cx));
             view.add_note(tab.id, window, cx);

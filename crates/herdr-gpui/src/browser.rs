@@ -21,6 +21,8 @@ mod feedback;
 mod group_motion;
 mod groups;
 mod groups_view;
+#[cfg(any(target_os = "macos", windows, test))]
+mod kit;
 mod layouts;
 mod location;
 #[cfg(any(target_os = "macos", windows, test))]
@@ -54,6 +56,8 @@ pub(crate) use group_motion::Fold;
 pub(crate) use groups::GroupIds;
 pub(crate) use groups::{GroupId, Pick, Shown, Slot};
 pub(crate) use layouts::Layouts;
+#[cfg(any(target_os = "macos", windows))]
+pub(crate) use location::PostedFrom;
 pub(crate) use location::{LocalFile, Location, OrchestratorRepo, ReviewCheckout};
 #[cfg(any(target_os = "macos", windows))]
 pub(crate) use native::Pages;
