@@ -52,6 +52,7 @@ pub fn connect(
             }
             command.arg("server");
             crate::login_env::apply(&mut command);
+            pin_config_home(&mut command, herdr_client::local_var("XDG_CONFIG_HOME"));
             command
         },
         matches!(
@@ -65,6 +66,17 @@ pub fn connect(
     )?;
     let local = local_peer(&stream, target, &socket);
     Ok((stream, local))
+}
+
+/// Start the daemon under the configuration root `socket` was resolved
+/// from, so the wait for it polls where it listens. The login environment can
+/// carry an `XDG_CONFIG_HOME` this app did not adopt, such as when a daemon
+/// answered at the default root at startup and has exited since.
+fn pin_config_home(command: &mut Command, root: Option<std::ffi::OsString>) {
+    match root {
+        Some(root) => command.env("XDG_CONFIG_HOME", root),
+        None => command.env_remove("XDG_CONFIG_HOME"),
+    };
 }
 
 /// Windows resolves a bare command name to `herdr.exe`; an explicit probe has to

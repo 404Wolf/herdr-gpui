@@ -2,6 +2,7 @@ use super::*;
 use std::os::unix::net::UnixListener;
 use std::sync::atomic::AtomicUsize;
 
+mod config_home;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 mod endpoint_classification;
 

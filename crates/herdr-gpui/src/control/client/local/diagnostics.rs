@@ -53,7 +53,7 @@ fn gather() -> String {
     let files: [(&str, crate::Result<PathBuf>); 3] = [
         ("local", Config::local_path()),
         ("managed", Config::path()),
-        ("herdr", Ok(daemon_config_path(|key| std::env::var_os(key)))),
+        ("herdr", Ok(daemon_config_path(herdr_client::local_var))),
     ];
     for (name, path) in &files {
         match path {

@@ -45,7 +45,7 @@ pub(in crate::control::client) fn config(
 fn paths() -> crate::Result<Output> {
     let managed = Config::path()?;
     let local = Config::local_path()?;
-    let herdr = daemon_config_path(|key| std::env::var_os(key));
+    let herdr = daemon_config_path(herdr_client::local_var);
     Output::data(
         format!(
             "{}\n    your settings, which Herdr UI also saves its choices to\n{}\n    the defaults, rewritten by each version\n{}\n    Herdr's own config, of which Herdr UI honors a few keys",

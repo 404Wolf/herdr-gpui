@@ -555,9 +555,10 @@ pub(crate) fn home() -> Result<PathBuf> {
 
 /// The directory holding this app's `herdr` configuration directory. Upstream
 /// Herdr puts it under `%APPDATA%` on Windows, and the GUI config lives beside
-/// the daemon's, so the same root has to be used on both sides.
+/// the daemon's, so the same root has to be used on both sides, including the
+/// login shell's `XDG_CONFIG_HOME` for a launch that did not inherit it.
 fn config_root() -> Result<PathBuf> {
-    match env::var_os("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
+    match herdr_client::local_var("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
         Some(value) => {
             let path = PathBuf::from(value);
             if !path.is_absolute() {
@@ -709,13 +710,13 @@ impl Config {
     }
 
     pub fn load() -> Result<Self> {
-        Self::load_path(&Self::path()?, &daemon_config_path(|key| env::var_os(key)))
+        Self::load_path(&Self::path()?, &daemon_config_path(herdr_client::local_var))
     }
 
     /// First-frame settings only: no lock, migration, writes, or fsync. The
     /// background load performs maintenance after the window has appeared.
     pub(crate) fn load_startup() -> Result<Self> {
-        Self::load_startup_path(&Self::path()?, &daemon_config_path(|key| env::var_os(key)))
+        Self::load_startup_path(&Self::path()?, &daemon_config_path(herdr_client::local_var))
     }
 
     fn load_startup_path(path: &Path, daemon: &Path) -> Result<Self> {
