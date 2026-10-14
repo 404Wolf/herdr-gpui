@@ -57,18 +57,23 @@ fn body(response: &mut ureq::http::Response<ureq::Body>) -> Result<Zeroizing<Vec
     Ok(bytes)
 }
 
-/// Coder's error body is `{"message": ..., "detail": ...}`; keep one short line.
+/// Coder's error body is `{"message": ..., "detail": ...}`, or on its OAuth2
+/// endpoints RFC 6749's `{"error": ..., "error_description": ...}`; keep one
+/// short line.
 fn message(bytes: &[u8]) -> Option<String> {
     #[derive(serde::Deserialize)]
     struct Reply {
         message: Option<String>,
         detail: Option<String>,
+        error: Option<String>,
+        error_description: Option<String>,
     }
     let reply: Reply = serde_json::from_slice(bytes).ok()?;
     let text = match (reply.message, reply.detail) {
         (Some(message), Some(detail)) if !detail.is_empty() => format!("{message} {detail}"),
         (Some(message), _) => message,
-        (None, detail) => detail?,
+        (None, Some(detail)) => detail,
+        (None, None) => reply.error_description.or(reply.error)?,
     };
     let text: String = text
         .chars()

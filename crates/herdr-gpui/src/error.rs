@@ -1,9 +1,11 @@
 //! Internal failures retain their categories and sources until presentation.
 pub use crate::updater::UpdateError;
+pub use github::GitHubJsonError;
 use std::{
     io,
     path::{Path, PathBuf},
 };
+pub use theme::ThemeParseError;
 
 #[cfg(any(target_os = "macos", windows))]
 use wry::raw_window_handle::HandleError as WindowHandleError;
@@ -968,18 +970,6 @@ impl Error {
     }
 }
 
-/// Parser diagnostics can quote credential-bearing fields; expose the cause only
-/// to explicit source inspection, never ordinary Display or Debug formatting.
-#[derive(thiserror::Error)]
-#[error("Invalid GitHub JSON response.")]
-pub struct GitHubJsonError(#[source] serde_json::Error);
-
-impl std::fmt::Debug for GitHubJsonError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("GitHubJsonError([REDACTED])")
-    }
-}
-
 impl From<config_loader::ConfigError> for Error {
     fn from(error: config_loader::ConfigError) -> Self {
         // config preserves this cause but does not expose it through Error::source.
@@ -992,19 +982,8 @@ impl From<config_loader::ConfigError> for Error {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum ThemeParseError {
-    #[error("expected a six-digit RGB hex color (optionally prefixed by #)")]
-    InvalidColor,
-    #[error("invalid hex color")]
-    InvalidHex(#[source] std::num::ParseIntError),
-    #[error("expected index=color")]
-    MissingPaletteColor,
-    #[error("palette index must be between 0 and 255")]
-    InvalidPaletteIndex(#[source] std::num::ParseIntError),
-    #[error("palette index must be between 0 and 255")]
-    PaletteIndexOutOfRange,
-}
+mod github;
+mod theme;
 
 #[cfg(test)]
 mod tests;

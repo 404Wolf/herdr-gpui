@@ -21,7 +21,7 @@ fn forwarding_a_port_asks_for_one_and_refuses_bad_or_repeated_ports(cx: &mut Tes
         assert!(view.read_with(cx, |view, _| view.menu.page.is_none()));
         return;
     }
-    assert_eq!(ACTIONS[2].0, Action::ForwardPort);
+    assert_eq!(SSH_ACTIONS[2].0, Action::ForwardPort);
     cx.simulate_keystrokes("down down down enter");
     let input = view.read_with(cx, |view, _| {
         assert_eq!(view.menu.page, Some(Page::ForwardPort));
