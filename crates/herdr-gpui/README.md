@@ -67,6 +67,13 @@ The status dot pulses amber during local daemon startup and is red when disconne
 Healthy connections leave the status bar quiet; connection indicators live in the
 device picker. Startup, disconnection, and operation errors remain in the status bar.
 
+For split terminal panes within a tab, **Focus follows mouse** is on by default.
+Disable it in **Settings > General > Interface**, or run
+`herdr-gpui config set focus_follows_mouse false`.
+Hovering a pane focuses it when the window is active and
+terminal input has keyboard focus. Held mouse buttons, modifiers, dragging,
+IME composition, menus, and terminal popups suppress hover focus.
+
 Normal launches restore the main windows left open at quit, including each
 window's size and screen position, using the current launch's connection options.
 Closing an individual window removes it from the saved set; closing the final
@@ -2266,6 +2273,20 @@ them to the agent that opened it, so it can change the page.
   older running app rejects scoped feedback.
 - Tabs you open yourself have no agent to send to; **Copy** is offered
   instead.
+- A local page can also queue a result for its agent with
+  `herdr.send(summary, data)`, for example the mockup variant you picked.
+  It appears in the notes panel as **Page result**, with a hint to add a note,
+  and goes to the agent only when you press Send, as "The page sent a result"
+  followed by the summary and the data as JSON. A newer result replaces an
+  unsent one and keeps the note you added to it. The bridge is injected only into local pages, only while they
+  show the preview scheme. Any frame can still post to the app, so it checks
+  the frame that sent each result and drops it unless that frame shows a
+  local file: a web page embedded in the local page, or one it is navigating
+  to, cannot send.
+  The summary is one cleaned line of at most 300 characters; data over 8 KB
+  is refused rather than cut. `herdr.send` returns false for a result the
+  app would refuse, so the page can say so; whether the app kept one it was
+  handed shows in the window, as the note or a warning.
 
 ### Reviewing An Agent's Changes
 
@@ -2400,8 +2421,9 @@ Agents running in the app's panes can open a page for you:
 
 ```sh
 herdr-gpui browser open http://localhost:3000   # macOS: /Applications/Herdr.app/Contents/MacOS/Herdr
-herdr-gpui browser open design/mockup.html
+herdr-gpui browser open design/mockup.html      # in a split beside the agent's terminal
 herdr-gpui browser open --no-focus https://example.com/docs
+herdr-gpui browser open --tab design/mockup.html # a tab, like a web address
 herdr-gpui browser reload                       # reload the pages this pane opened
 herdr-gpui browser feedback --wait 600          # wait for the notes you send it
 herdr-gpui browser --help
@@ -2447,10 +2469,37 @@ and opens the page in that workspace, once per request:
   all open; a workspace holds at most 32 tokens, so a burst of long addresses
   can be refused until earlier ones expire.
 
+A local file opened from a pane goes beside that pane's terminal, since it is
+usually a mockup or explainer the agent wrote for you to read while you talk
+to it; a web address takes a tab of the group in use. `--beside` and `--tab`
+choose instead. Beside means an editor group next to the group showing the
+caller's terminal: the group the page already belongs to, the group beside
+the terminal when the window is split, or a new group split off to its
+right. The terminal's group stays in use and keeps the keyboard, so you can
+keep typing to the agent. A workspace the window is not showing, or a
+terminal the user has switched away from, gets an ordinary tab instead, and
+the command says so: splitting beside another terminal would leave the
+agent hidden and the keyboard with someone else.
+
+#### Explainer Kit
+
+Local pages can load a small kit the app serves at `/.herdr/kit.css` and
+`/.herdr/kit.js`, for interactive explainers and UI mockups: segmented
+controls, a row of steps with their status, the selected step's detail, an
+outcome, placeholders, and mockup variants with **Pick** buttons that call
+`herdr.send`. `/.herdr/theme.css` carries the window's theme colors, so the
+page matches the app and follows a theme change on its next load. Dotted
+paths are never read from the page's folder, so these cannot hide a file of
+the page's own. Opened elsewhere, the kit falls back to its own light and
+dark colors. `herdr-gpui browser example` prints a complete page built on it.
+The kit inserts every text as text, never as HTML.
+
 Agents only use what they know about, so the app offers, once, to install a
 `herdr-gpui-browser` skill that teaches them these commands. It goes into
 `~/.claude/skills/` and `~/.agents/skills/`, for whichever of `~/.claude` and
-`~/.agents` exists, and names this app's executable. After you agree, each
+`~/.agents` exists, and names this app's executable. Claude Code reads
+`~/.claude/skills/`; Codex reads `~/.agents/skills/`; opencode reads both, as
+well as its own `~/.config/opencode/skills/`. After you agree, each
 start refreshes it off the UI thread, so it follows the app when it moves or
 updates. Only files carrying the app's managed-skill marker are rewritten or
 removed; a skill of the same name you wrote yourself is left alone.
@@ -2744,6 +2793,7 @@ whose plain Ctrl editing shortcuts also work in the app's text fields.
 | New workspace / New worktree | Ctrl+Alt+Shift+N / Ctrl+Shift+N |
 | Copy / Paste | Ctrl+Shift+C / Ctrl+Shift+V |
 | Find / Command palette | Ctrl+Shift+F / Ctrl+Shift+P |
+| Resume palette | Ctrl+Alt+Shift+R |
 | Split right / Split down | Ctrl+Shift+D / Ctrl+Alt+Shift+D |
 | Close pane / Close tab | Ctrl+Shift+W / Ctrl+Alt+Shift+W |
 | Next / Previous tab | Ctrl+PageDown / Ctrl+PageUp |
@@ -3136,9 +3186,15 @@ Ctrl+Shift+U is left unbound for
   workspaces on connected hosts, agents and terminal panes, native GUI actions,
   configured daemon commands, and local project folders. Cmd-P opens the same
   palette on **Navigation**. Choose **All**, **Navigation**, **Commands**, or
-  **Projects**, or cycle filters with Tab / Shift-Tab without clearing the search.
-  Search ranks exact names, word prefixes, substrings, then fuzzy matches; host,
-  workspace, path, status, and command ID are searchable context. Navigation
+  **Projects**, or cycle filters with Ctrl-Tab / Ctrl-Shift-Tab (or Alt-] /
+  Alt-[) without clearing the search. Search is fzf's: every space-separated
+  term must match, and `'exact`, `^prefix`, `suffix$`, and `!negate` apply per
+  term; host, workspace, path, status, and command ID are searchable context.
+  Rows chosen often and recently rise among the matches for a typed query, and
+  the Projects filter lists the most frecent projects first before anything is
+  typed; that history stays on this machine in `palette-frecency.json`.
+  **Resume Palette** (Cmd-Shift-R, Ctrl+Alt+Shift+R on Linux) reopens the
+  palette with its last query, filters, and selected row. Navigation
   (Go To) also filters agents by the status the daemon reports, like Herdr's
   navigator: click **All agents**, **Blocked**, **Working**, **Idle**, or
   **Done**, or press Alt with Herdr's letters (`alt-b`, `alt-w`, `alt-i`,
@@ -3149,9 +3205,17 @@ Ctrl+Shift+U is left unbound for
   palette starts on **All agents**. Terminals without an agent appear only
   under **All agents**, and the other filters ignore the status. A keystroke
   already bound by `[keybindings]`, the daemon's `[keys]`, or
-  `navigate_workspace_up`/`_down` stays with that binding. Up / Down selects,
-  Enter or a click activates, and Escape or an outside click dismisses without
-  sending terminal input. Choosing a destination on another host switches to it.
+  `navigate_workspace_up`/`_down` stays with that binding. Up / Down, Tab /
+  Shift-Tab, Ctrl-N / Ctrl-P, and Ctrl-J / Ctrl-K select, Enter or a click
+  activates, and Escape or an outside click dismisses without sending terminal
+  input. Choosing a destination on another host switches to it. When the window
+  has room, Navigation shows a preview beside its list (Alt-P toggles it): the
+  selected pane's screen when its tab is the one its host is streaming, painted
+  from cells this client already holds; else, for a tab shown earlier, its last
+  frame from before you moved on, labelled "Last seen … ago"; or else its
+  directory, status, and place. Remembered frames are bounded by memory, 4 MiB
+  per host and 8 MiB in all (roughly 15–30 tabs at common window sizes), and
+  forgotten when their daemon restarts. The preview never asks the daemon for anything.
   Double-Shift requires two short completed taps within 400 ms; shifted typing,
   mouse interaction, held Shift, other modifiers, composition, and modal dialogs
   do not trigger it. It is window-local, not a system-wide hotkey. Native browser

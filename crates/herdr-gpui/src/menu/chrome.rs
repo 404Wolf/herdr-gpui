@@ -431,6 +431,12 @@ impl HerdrWindow {
                             .max(px(0.))
                             .min(px(if add_device {
                                 rail::WIDTH * (font.size / 12.)
+                            } else if page == Page::Palette && self.palette_previews(viewport) {
+                                // Room for Go To's list beside its preview.
+                                1120. * (font.size / 12.)
+                            } else if page == Page::Palette {
+                                // Wide like Raycast, so the query leads the panel.
+                                720. * (font.size / 12.)
                             } else {
                                 480.
                             })))
@@ -642,7 +648,7 @@ impl HerdrWindow {
         } else if page == Page::Themes {
             panel = panel.child(self.render_theme_picker(cx));
         } else if page == Page::Palette {
-            panel = panel.child(self.render_palette(cx));
+            panel = panel.child(self.render_palette(viewport, cx));
         } else if page == Page::CodeSearch {
             panel = panel.child(self.render_code_search(cx));
         } else if page == Page::ConfirmClose {

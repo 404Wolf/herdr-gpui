@@ -49,6 +49,8 @@ mod listening_ports;
 #[cfg(test)]
 mod palette;
 #[cfg(test)]
+mod palette_header;
+#[cfg(test)]
 mod picker_scroll;
 #[cfg(test)]
 #[cfg(test)]

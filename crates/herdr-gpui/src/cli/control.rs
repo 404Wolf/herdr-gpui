@@ -13,7 +13,7 @@ use super::CliError;
 pub(crate) use super::args::Args;
 pub use crate::control::{Cursor, EventKind, FontSize, Script, Size, Sound, Switch};
 pub use app::{AppCommand, UiCommand, WindowCommand};
-pub use browser::BrowserCommand;
+pub use browser::{BrowserCommand, Placement};
 pub use hosts::{CloudCommand, HostCommand, PortsCommand, PrCommand};
 pub use settings::{
     CaffeineCommand, ConfigCommand, IntegrationsCommand, KeybindsCommand, SoundCommand,

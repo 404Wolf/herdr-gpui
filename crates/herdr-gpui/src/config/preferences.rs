@@ -15,6 +15,7 @@ pub(crate) enum Preference {
     ShowRepositoryIcons(bool),
     ShowDeviceIcons(bool),
     SmoothScroll(bool),
+    FocusFollowsMouse(bool),
     NotificationEnabled(Option<bool>),
     NotificationDelay(Option<u64>),
     NotificationPosition(Option<ToastHerdrPosition>),
@@ -77,6 +78,9 @@ impl Config {
                     (None, "show_device_icons", Some(value.into()))
                 }
                 Preference::SmoothScroll(value) => (None, "smooth_scroll", Some(value.into())),
+                Preference::FocusFollowsMouse(value) => {
+                    (None, "focus_follows_mouse", Some(value.into()))
+                }
                 Preference::NotificationEnabled(value) => {
                     (Some("notifications"), "enabled", value.map(Into::into))
                 }

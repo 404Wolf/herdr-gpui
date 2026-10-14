@@ -706,13 +706,7 @@ impl SettingsWindow {
                 ),
                 cx,
             ))
-            .child(self.preference_switch(
-                "settings-smooth-scroll",
-                "Smooth scrolling",
-                self.config.smooth_scroll,
-                crate::config::preferences::Preference::SmoothScroll(!self.config.smooth_scroll),
-                cx,
-            ))
+            .children(self.mouse_switches(cx))
             .children(self.confirm_close_switches(cx))
             .children(self.merged_worktree_controls(cx));
         div().flex().flex_col().gap(px(24.)).child(general)

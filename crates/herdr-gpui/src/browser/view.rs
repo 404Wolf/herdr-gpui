@@ -413,9 +413,9 @@ impl HerdrWindow {
                     self.page_loaded(id, cx);
                     self.browser.pages.script(id, &super::favicon::script(), cx);
                 }
-                Event::Posted(id, body) => match super::favicon::Favicon::parse(&body) {
+                Event::Posted(id, body, from) => match super::favicon::Favicon::parse(&body) {
                     Some(favicon) => self.page_favicon(id, favicon, window, cx),
-                    None => self.page_posted(id, &body, window, cx),
+                    None => self.page_posted(id, &body, from, window, cx),
                 },
                 #[cfg(target_os = "macos")]
                 Event::Captured(id, capture, tiff) => self.page_captured(id, capture, tiff, cx),

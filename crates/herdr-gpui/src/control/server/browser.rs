@@ -1,6 +1,6 @@
 //! Browser tabs, page notes, and the agents waiting for them.
 use super::super::{
-    Placed, Target, main_windows, plain,
+    Opening, Placed, Placement, Target, main_windows, plain,
     protocol::{
         BrowserOpen, Caller, ErrorCode, FeedbackRequest, MAX_WAIT_SECONDS, NotesRequest, NotesTo,
         OpenedIn, Page, Response,
@@ -47,6 +47,7 @@ pub(super) fn open_browser(request: &BrowserOpen, cx: &mut App) -> Response {
         return Response::Opened {
             opened_in: OpenedIn::SystemBrowser,
             workspace_id: None,
+            placement: Placement::Tab,
         };
     }
     let mut windows = main_windows(cx);
@@ -69,21 +70,23 @@ pub(super) fn open_browser(request: &BrowserOpen, cx: &mut App) -> Response {
     // socket paths are spelled differently, any window showing its workspace.
     for strict in [true, false] {
         for handle in &windows {
+            let opening = Opening {
+                location: &location,
+                focus: request.focus,
+                placement: request.placement,
+            };
             let placed = handle.update(cx, |view, window, cx| {
-                view.open_requested_browser_tab(
-                    &target,
-                    strict,
-                    &location,
-                    request.focus,
-                    window,
-                    cx,
-                )
+                view.open_requested_browser_tab(&target, strict, &opening, window, cx)
             });
             match placed {
-                Ok(Some(Placed::Opened { workspace_id })) => {
+                Ok(Some(Placed::Opened {
+                    workspace_id,
+                    placement,
+                })) => {
                     return Response::Opened {
                         opened_in: OpenedIn::Tab,
                         workspace_id: Some(workspace_id),
+                        placement,
                     };
                 }
                 Ok(Some(Placed::Full)) => {
