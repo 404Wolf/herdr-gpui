@@ -796,10 +796,12 @@ impl HerdrWindow {
         let strip = (!self.strip_hidden(slot.id, cx))
             .then(|| self.render_tab_strip(slot, ends, window, cx));
         let bottom = self.tab_bar_position() == TabBarPosition::Bottom;
-        // Zen mode draws the one group in use across the whole row.
-        let share = (!self.zen_layout() && (self.is_split() || !self.folding_groups().is_empty()))
+        // Zen mode draws the one group in use across the whole row, at once
+        // even while it is still opening.
+        let zen = self.zen_layout();
+        let share = (!zen && (self.is_split() || !self.folding_groups().is_empty()))
             .then(|| self.group_share(slot.id));
-        let opened = self.group_opened(slot.id);
+        let opened = self.group_opened(slot.id).filter(|_| !zen);
         // The body's ground, beside the strip rather than under it, so the
         // strip's own color is no more solid than the rest of the window.
         let body = div()
