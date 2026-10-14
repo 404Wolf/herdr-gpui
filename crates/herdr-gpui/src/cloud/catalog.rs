@@ -219,6 +219,23 @@ pub(crate) fn remove(provider: CloudProvider, id: &str) -> Result<()> {
     transaction(|path| remove_in(path, provider, id))
 }
 
+/// Give a saved device a new label; its connection is untouched.
+pub(crate) fn rename(provider: CloudProvider, id: &str, label: &str) -> Result<()> {
+    transaction(|path| rename_in(path, provider, id, label))
+}
+
+fn rename_in(path: &Path, provider: CloudProvider, id: &str, label: &str) -> Result<()> {
+    let mut devices = read_entries(path)?;
+    let Some(saved) = devices.iter_mut().find_map(|entry| match entry {
+        Entry::Known(saved) if saved.provider == provider && saved.id == id => Some(saved),
+        _ => None,
+    }) else {
+        return Err(Error::Missing);
+    };
+    saved.label = label.to_owned();
+    write(path, devices)
+}
+
 fn remove_in(path: &Path, provider: CloudProvider, id: &str) -> Result<()> {
     let mut devices = read_entries(path)?;
     devices.retain(|entry| {

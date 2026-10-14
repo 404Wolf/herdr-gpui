@@ -2,6 +2,7 @@
 use super::*;
 
 mod machine_names;
+mod rename;
 
 #[cfg(feature = "boat")]
 mod boat_names;

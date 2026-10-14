@@ -1,7 +1,9 @@
-use super::{ACTIONS, Action, HostMenu};
+use super::{Action, HostMenu, SSH_ACTIONS, Saved};
 use crate::{config::KeybindingSource, menu::Page, sidebar::layout_tests::fixture_window};
 use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, point, px, size};
 
+#[cfg(feature = "cloud")]
+mod cloud;
 mod device_theme;
 mod forwards;
 mod menu_width;
@@ -57,7 +59,12 @@ fn right_clicking_a_saved_host_offers_removal_but_local_has_no_menu(cx: &mut Tes
         assert_eq!(view.menu.page, Some(Page::Host));
         assert_eq!(host(view).target, "penso@box");
         // `herdr machine remove` takes the bare catalog ID.
-        assert_eq!(host(view).profile, "0123456789abcdef0123456789abcdef");
+        assert_eq!(
+            host(view).saved,
+            Saved::Ssh {
+                profile: "0123456789abcdef0123456789abcdef".into()
+            }
+        );
     });
     cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
     let header = cx.debug_bounds("host-menu-header").unwrap();
@@ -98,7 +105,7 @@ fn the_menu_shows_the_server_keybindings_choice(cx: &mut TestAppContext) {
         )
     };
     assert_eq!(row(cx), (true, false));
-    assert_eq!(ACTIONS[1].0, Action::ServerKeybindings);
+    assert_eq!(SSH_ACTIONS[1].0, Action::ServerKeybindings);
     view.update(cx, |view, cx| {
         view.config.devices.insert(
             "0123456789abcdef0123456789abcdef".into(),

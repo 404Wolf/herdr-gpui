@@ -10,6 +10,27 @@ use zeroize::Zeroizing;
 
 pub(super) const LIMIT: usize = 64 * 1024;
 
+/// Saved in place of a token when the user chooses the GitHub CLI's own
+/// sign-in, so the store never holds a copy of that token.
+pub(super) const GITHUB_CLI: &str = r#"{"version":1,"source":"github-cli"}"#;
+
+/// What a store entry holds: a sign-in of this app's own, or the choice to
+/// read the GitHub CLI's.
+#[derive(Debug)]
+pub(super) enum Saved {
+    Token(Credential),
+    GitHubCli,
+}
+
+impl Saved {
+    pub(super) fn decode(value: &SecretString) -> Result<Self> {
+        if value.expose_secret().trim() == GITHUB_CLI {
+            return Ok(Self::GitHubCli);
+        }
+        Credential::decode(value).map(Self::Token)
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Credential {

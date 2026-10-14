@@ -276,12 +276,31 @@ label. **Up** and **Down** pick any row, and **Tab** or **Enter** then fills it.
 A typed `user@` is kept. **Enter** otherwise adds exactly what the field shows:
 a row that matches only by the name a host announces is never chosen for you.
 
+Each device's header in the Spaces list starts with a mark for where it runs:
+a monitor for this machine, the provider's logo for a cloud device, and a
+terminal for an SSH host or WSL distribution. An SSH host shows the Coder logo
+when its name ends in `.coder`, as `coder config-ssh` names workspaces, and the
+Tailscale logo when it is a `*.ts.net` name or a Tailscale address
+(`100.64.0.0/10` or `fd7a:115c:a1e0::/48`). Hover the mark to see what it means.
+Orca and Minimal draw no icons on their rows and draw no mark either. Set
+top-level `show_device_icons = false`, or turn off **Show device icons** under
+Settings > Appearance > Sidebar layout, to leave it out everywhere; the name
+then starts where the mark was.
+
 Right-click a saved SSH device's header in the Spaces list to **Rename** it or
 choose **Remove device…** to forget it. Renaming runs `herdr machine rename`;
 an empty name falls back to the SSH target, as when adding. Removal runs the installed `herdr machine remove`, which
 edits only the local catalog: the host's own Herdr keeps running. When the
 device has its own GitHub sign-in, the confirmation also offers to delete it,
 since its account panel goes away with the device. Local has no such menu.
+
+A cloud device's header (Coder, Daytona, or Railway) has a menu too:
+**Rename…** changes the name the sidebar shows, falling back to the machine's
+name when left empty; **Cloud device settings…** opens its provider under
+Settings > Cloud Devices; and **Remove device…** forgets it on this computer,
+leaving the workspace, sandbox, or VM as it is at the provider. Port forwards
+and server keybindings need a saved SSH host, so a cloud device does not offer
+them.
 
 **Forward port…** in the same menu forwards one of the host's ports, such as a
 dev server an agent started there, to this computer. Each forward has its own
@@ -857,12 +876,15 @@ and its `HERDR_SOCKET_PATH` names the same daemon, so two sessions on one
 machine never claim each other's servers.
 Every five seconds each host runs `ss -ltnp` (Linux) or `lsof -iTCP
 -sTCP:LISTEN` (macOS) in its own shell, this machine's locally and a connected
-remote host's over SSH, listing only your own processes. A remote server opens
-at the SSH host's name when it listens on every address, the `HostName` your
-SSH configuration gives an alias (`ssh -G`) when it has one. One listening only
-on the remote loopback opens through an SSH tunnel started on the first click:
-`ssh -N -L` from a free port on this machine's loopback, with the same
-noninteractive options as the remote connection. The page opens only once SSH
+remote host's over SSH, listing only your own processes. A remote server
+always opens at `http://127.0.0.1:<port>` through an SSH tunnel started on the
+first click, never at the address SSH reaches the host by (a Tailscale
+`HostName`, say): `ssh -N -L` from this machine's loopback, with the same
+noninteractive options as the remote connection. The tunnel dials the remote's
+`localhost` for a server listening on every address or on loopback, and the
+server's own address for one bound to a single address. Its local port is the
+server's own number when that is free (a privileged port moves up by 10000, as
+**Forward port…** moves it), otherwise any free one. The page opens only once SSH
 itself reports the forward bound, never because something answers on the
 port. Tunnels do not share a `ControlMaster` connection, so they need
 noninteractive authentication (keys or an agent). The tunnel stays up while
@@ -3066,8 +3088,25 @@ Ctrl+Shift+U is left unbound for
    focus to the terminal. Reopen the account panel to use the red Sign out action.
    Older versions saved only access tokens, so an expired legacy token needs
    one more sign-in to obtain a refresh token. Revoked or expired refresh tokens
-   also require sign-in. No CLI authentication is used. See
+   also require sign-in. See
   [setup, cancellation, scopes, and sign-out](../../README.md#native-github-sign-in).
+- When the GitHub CLI is signed in to github.com, the main account's GitHub
+  panel offers **Use GitHub CLI authentication** beside the device sign-in. The
+  panel asks `gh auth token --hostname github.com` on a background thread, at
+  most every 30 seconds while it is open and signed out, and drops the answer.
+  Choosing it reads the token again, verifies it with GitHub, and saves only a
+  marker in the credential store, never the token; Windows, which has no store,
+  keeps the choice for the app session. Every load and five-minute session check
+  asks `gh` again, so `gh auth logout`, a revoked token, or an uninstalled `gh`
+  signs the app out at the next check with an error naming the fix, and a token
+  `gh` refreshed is picked up. The panel reads "Connected with GitHub CLI", warns
+  when the token's scopes leave out `repo` (`gh auth refresh --scopes repo`),
+  and **Stop using GitHub CLI** removes the marker without signing `gh` out.
+  `gh` runs under the PR lookup process policy: login-shell `PATH`, a 10-second
+  deadline, capped output, no prompt, and `GH_TOKEN` / `GITHUB_TOKEN` removed,
+  which still take precedence over it in the app. Saved SSH devices do not offer
+  it: this computer's CLI is the main account's, and a device without its own
+  sign-in already uses that.
 - Workspace actions retain the clicked ID and boot, revalidate before queueing,
   and reject changed close-group membership. Reconnect clears dialogs. Queue
   errors remain in the dialog; daemon errors appear in the connection status bar.

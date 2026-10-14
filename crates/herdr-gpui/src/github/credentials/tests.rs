@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
+use crate::github::token::Credential;
 use std::os::unix::fs::{PermissionsExt, symlink};
 
 const NAME: &CStr = c"github-credentials";
