@@ -9,6 +9,7 @@ mod code;
 mod code_navigation;
 mod code_start;
 mod default_fonts;
+mod device_footer;
 mod discovery;
 mod edit;
 mod finished_notifications;
