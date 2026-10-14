@@ -362,14 +362,9 @@ fn rounded_rows_drop_tree_lines_and_title_headers(cx: &mut gpui::TestAppContext)
         let label = cx.debug_bounds("header-label-spaces").unwrap();
         assert_eq!(label.left(), column.left() - px(8. + 6.));
         assert!(heading.left() <= row.left());
-        cx.update(|window, cx| {
-            cx.default_global::<TextProbes>().0.clear();
-            full_draw(window, cx).clear(cx);
-            assert!(
-                cx.global::<TextProbes>().0.contains_key(header),
-                "{header}: {:?}",
-                cx.global::<TextProbes>().0.keys()
-            );
+        // The heading is the resting search field, its label the placeholder.
+        view.read_with(cx, |view, cx| {
+            assert_eq!(view.sidebar_search.input.read(cx).placeholder(), header);
         });
         // The row, not its highlight, is the click target: the inset beside a
         // rounded highlight still selects the row, so there are no dead zones.

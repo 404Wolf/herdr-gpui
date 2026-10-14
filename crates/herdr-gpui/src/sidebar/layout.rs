@@ -10,8 +10,8 @@ use crate::{
     config::{Density, LayoutMode, SidebarOverrides, Style, Theme},
 };
 use gpui::{
-    Div, Hsla, InteractiveElement, ParentElement, Styled, div, prelude::FluentBuilder, px, rgb,
-    rgba,
+    Div, Hsla, InteractiveElement, ParentElement, Rgba, Styled, div, prelude::FluentBuilder, px,
+    rgb, rgba,
 };
 
 /// The spacing, indents, and highlight shape one layout name selects. A
@@ -346,8 +346,7 @@ impl SidebarLook {
                     .group_hover(ROW_GROUP, move |s| s.bg(active))
             }
             Highlight::Outline => {
-                let wash = |alpha: u32| rgba((theme.foreground << 8) | alpha);
-                let (hover, selected, border) = (wash(0x0d), wash(0x14), wash(0x40));
+                let (hover, selected, border) = outline_washes(theme);
                 layer
                     .border_1()
                     .border_color(rgba(0))
@@ -362,6 +361,41 @@ impl SidebarLook {
 }
 
 impl SidebarLook {
+    /// Frames a field the way rows are marked, so it reads as one of them:
+    /// bare at rest, the hover look under the pointer, and the focused
+    /// row's look while `active`. The border is always there, transparent
+    /// when unmarked, so marking never moves the field's contents.
+    pub(super) fn field_frame<E: Styled + InteractiveElement>(
+        &self,
+        field: E,
+        active: bool,
+        theme: &Theme,
+    ) -> E {
+        let field = field
+            .rounded(px(self.density.radius))
+            .border_1()
+            .border_color(rgba(0));
+        match self.density.highlight {
+            Highlight::Fill => {
+                // As on rows, hover and focus share the active color.
+                let fill = Hsla::from(rgb(theme.active)).opacity(self.mark);
+                if active {
+                    field.bg(fill)
+                } else {
+                    field.hover(move |s| s.bg(fill))
+                }
+            }
+            Highlight::Outline => {
+                let (hover, selected, border) = outline_washes(theme);
+                if active {
+                    field.bg(selected).border_color(border)
+                } else {
+                    field.hover(move |s| s.bg(hover))
+                }
+            }
+        }
+    }
+
     /// A row's state layer and hover wiring together: the lifted card while
     /// it is carried, and no hover while a carried row passes over it.
     pub(super) fn mark(&self, row: Div, key: &str, state: RowState, theme: &Theme) -> Div {
@@ -400,6 +434,13 @@ impl SidebarLook {
             })
             .shadow_lg()
     }
+}
+
+/// The Outline highlight's hover fill, focused fill, and focused border:
+/// faint washes of the theme's foreground.
+fn outline_washes(theme: &Theme) -> (Rgba, Rgba, Rgba) {
+    let wash = |alpha: u32| rgba((theme.foreground << 8) | alpha);
+    (wash(0x0d), wash(0x14), wash(0x40))
 }
 
 /// How far a lifted card pulls in from rows that run edge to edge.
