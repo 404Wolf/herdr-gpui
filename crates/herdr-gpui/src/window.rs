@@ -610,12 +610,11 @@ impl HerdrWindow {
         }
         let hosts = self.watched_hosts();
         let changed = self.listening_ports.poll(hosts);
-        // A tunnel lives as long as its remote port is listed and its SSH
-        // child runs; either ending removes its close button.
+        // A tunnel lives as long as its remote port is listed at the address
+        // it dials and its SSH child runs; either ending removes its close
+        // button.
         let ports = &self.listening_ports;
-        let closed = self
-            .tunnels
-            .retain(|key| ports.listening(&crate::usage::Host::Ssh(key.target.clone()), key.port));
+        let closed = self.tunnels.retain(|key| ports.tunnels_to(key));
         changed || closed
     }
 

@@ -31,9 +31,9 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-pub(crate) use tunnel::Tunnels;
 #[cfg(all(test, unix))]
-pub(crate) use tunnel::{Key, Tunnel};
+pub(crate) use tunnel::Tunnel;
+pub(crate) use tunnel::{Key, Tunnels};
 
 /// Ports open and close at human pace; `lsof` is not free on a busy machine.
 const INTERVAL: Duration = Duration::from_secs(5);
@@ -278,16 +278,20 @@ impl ListeningPorts {
         })
     }
 
-    /// Whether any workspace on `host` still listens on `port`.
-    pub fn listening(&self, host: &Host, port: u16) -> bool {
-        self.monitors.get(host).is_some_and(|monitor| {
-            monitor
-                .reading
-                .ports
-                .values()
-                .flatten()
-                .any(|listed| listed.number == port)
-        })
+    /// Whether a port listed on `key`'s host still tunnels to exactly `key`.
+    /// A server that moved to another address on the same number no longer
+    /// does, so its old tunnel goes rather than lingering without a close
+    /// button beside the new one.
+    pub fn tunnels_to(&self, key: &Key) -> bool {
+        let Some(monitor) = self.monitors.get(&Host::Ssh(key.target.clone())) else {
+            return false;
+        };
+        let reading = &monitor.reading;
+        reading
+            .ports
+            .values()
+            .flatten()
+            .any(|port| matches!(port.link(&reading.origin), Some(Link::Tunnel(listed)) if listed == *key))
     }
 
     /// Shows `ports` for `host` as if a scan had found them, with no worker.

@@ -62,3 +62,24 @@ fn a_port_another_remote_port_last_used_is_not_preferred() {
     assert_eq!(tunnels.begin(&first), Some(Some(41000)));
     tunnels.close_all();
 }
+
+#[test]
+fn a_tunnel_lasts_only_while_its_port_listens_at_the_address_it_dials() {
+    let mut ports = ListeningPorts::default();
+    let host = Host::Ssh("me@devbox".into());
+    ports.seed(host.clone(), parse("L 1 *:5173 vite\nE 1 w1\n").unwrap());
+    assert!(ports.tunnels_to(&key(5173, None)));
+    assert!(!ports.tunnels_to(&key(5174, None)));
+    let lan = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2));
+    assert!(!ports.tunnels_to(&key(5173, Some(lan))));
+    // The server restarts bound to one address: the old tunnel's key is gone.
+    ports.seed(host, parse("L 1 10.0.0.2:5173 vite\nE 1 w1\n").unwrap());
+    assert!(!ports.tunnels_to(&key(5173, None)));
+    assert!(ports.tunnels_to(&key(5173, Some(lan))));
+    // Another host's ports never keep this one's tunnel.
+    let other = Key {
+        target: "devbox2".into(),
+        ..key(5173, Some(lan))
+    };
+    assert!(!ports.tunnels_to(&other));
+}

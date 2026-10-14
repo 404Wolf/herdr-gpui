@@ -16,7 +16,8 @@ use gpui::{App, Context, Window};
 use std::{num::NonZeroU16, time::Duration};
 
 /// `port` as `ports` lists it. A remote port has a local address once this
-/// window tunnels to it, as clicking it does, or forwards it by hand.
+/// window tunnels to it, as clicking it does, or, when it answers on the
+/// remote's localhost, forwards it by hand.
 pub(super) fn port_info(
     port: &Port,
     origin: &Origin,
@@ -28,7 +29,14 @@ pub(super) fn port_info(
         Some(Link::Tunnel(key)) => tunnels
             .live(&key)
             .map(|local| format!("http://127.0.0.1:{local}/"))
-            .or_else(|| forwarded(port, forwards)),
+            // A manual forward dials the remote's localhost, which a server
+            // bound to one other address never answers on.
+            .or_else(|| {
+                key.address
+                    .is_none()
+                    .then(|| forwarded(port, forwards))
+                    .flatten()
+            }),
         None => forwarded(port, forwards),
     };
     PortInfo {

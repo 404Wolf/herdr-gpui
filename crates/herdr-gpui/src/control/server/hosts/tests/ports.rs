@@ -48,6 +48,15 @@ fn a_port_says_where_this_machine_reaches_it() {
         forwarded.local_url.as_deref(),
         Some("http://127.0.0.1:40001/")
     );
+    // A manual forward dials the remote's localhost, which a server bound to
+    // one other address never answers on.
+    let bound = port_info(
+        &port(5173, Bind::Address(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)))),
+        &remote(),
+        &tunnels,
+        &listed,
+    );
+    assert_eq!(bound.local_url, None);
 }
 
 #[cfg(unix)]
