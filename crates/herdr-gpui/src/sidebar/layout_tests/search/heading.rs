@@ -76,3 +76,41 @@ fn a_query_finds_a_note_and_enter_opens_its_workspace(cx: &mut gpui::TestAppCont
         );
     });
 }
+
+/// The sidebar is a cached view, so focus moving into or out of the empty
+/// field has to invalidate it: an ordinary draw, without the forced refresh
+/// `full_draw` does, must still swap the heading for the hint and back.
+#[gpui::test]
+fn focus_and_blur_redraw_the_cached_heading(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = cx.add_window_view(connected);
+    cx.simulate_resize(size(px(800.), px(700.)));
+    cx.run_until_parked();
+    cx.update(|window, cx| full_draw(window, cx).clear(cx));
+    let label = placeholder(&view, cx);
+    let renders = |cx: &mut gpui::VisualTestContext| {
+        cx.update(|_, cx| view.read(cx).sidebar_view.read(cx).renders)
+    };
+    let before = renders(cx);
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert_eq!(renders(cx), before, "an idle draw reuses the cache");
+
+    let field = cx.debug_bounds("sidebar-search").unwrap();
+    cx.simulate_click(field.center(), Modifiers::none());
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(renders(cx) > before, "focusing re-renders the sidebar");
+    assert_eq!(
+        placeholder(&view, cx),
+        "Devices, worktrees, branches, notes"
+    );
+
+    let before = renders(cx);
+    cx.update(|window, cx| {
+        let focus = view.read(cx).focus.clone();
+        window.focus(&focus, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(renders(cx) > before, "blurring re-renders the sidebar");
+    assert_eq!(placeholder(&view, cx), label);
+}
