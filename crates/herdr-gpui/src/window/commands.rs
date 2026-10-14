@@ -292,6 +292,10 @@ impl HerdrWindow {
                 );
                 return;
             }
+            Command::ResumePalette => {
+                self.resume_palette(window, cx);
+                return;
+            }
             Command::GoToSymbol | Command::GoToFile => {
                 let mode = if command == Command::GoToFile {
                     crate::code_search::Mode::Files

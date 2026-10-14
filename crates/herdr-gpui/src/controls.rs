@@ -52,6 +52,8 @@ pub enum Command {
     Themes,
     WorkspacePicker,
     Palette,
+    /// Reopen the palette as it was last left: query, filters, and selection.
+    ResumePalette,
     /// Go to a definition in the focused pane's checkout.
     GoToSymbol,
     /// Go to a file in the focused pane's checkout.
@@ -575,6 +577,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         label: "Command Palette",
     },
     CommandInfo {
+        command: Command::ResumePalette,
+        name: "resume_palette",
+        label: "Resume Palette",
+    },
+    CommandInfo {
         command: Command::GoToSymbol,
         name: "go_to_symbol",
         label: "Go to Symbol",
@@ -803,6 +810,7 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         | Command::Themes
         | Command::WorkspacePicker
         | Command::Palette
+        | Command::ResumePalette
         | Command::GoToSymbol
         | Command::GoToFile
         | Command::Detach
