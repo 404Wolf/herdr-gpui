@@ -109,6 +109,9 @@ pub struct Config {
     pub show_sidebar_search: bool,
     /// The repository owner's avatar, or the GitHub mark, before a space's name.
     pub show_repository_icons: bool,
+    /// The mark before a device's name in the sidebar, in the layouts that
+    /// draw one: where the device runs and how it is reached.
+    pub show_device_icons: bool,
     /// CPU and memory of the selected host in the status bar.
     pub show_system_load: bool,
     /// Snapshot a checkout's files each time one of its agents starts or
@@ -118,6 +121,8 @@ pub struct Config {
     pub show_listening_ports: bool,
     /// Wheel scrollback draws panes between rows, following the OS deltas.
     pub smooth_scroll: bool,
+    /// Focus the split terminal pane under the pointer without clicking.
+    pub focus_follows_mouse: bool,
     /// Which status bar items show, and how compactly.
     pub status_bar: StatusBar,
     /// What Toggle Zen Mode does beyond hiding the chrome.
@@ -425,10 +430,12 @@ impl Default for Config {
             show_agents: true,
             show_sidebar_search: true,
             show_repository_icons: true,
+            show_device_icons: true,
             show_system_load: true,
             agent_checkpoints: true,
             show_listening_ports: true,
             smooth_scroll: true,
+            focus_follows_mouse: true,
             status_bar: StatusBar::default(),
             zen: Zen::default(),
             backdrop: Backdrop::default(),
@@ -481,10 +488,12 @@ struct Settings {
     show_agents: Option<bool>,
     show_sidebar_search: Option<bool>,
     show_repository_icons: Option<bool>,
+    show_device_icons: Option<bool>,
     show_system_load: Option<bool>,
     agent_checkpoints: Option<bool>,
     show_listening_ports: Option<bool>,
     smooth_scroll: Option<bool>,
+    focus_follows_mouse: Option<bool>,
     status_bar: StatusBar,
     zen: zen::ZenSettings,
     backdrop: Backdrop,
@@ -871,10 +880,12 @@ impl Config {
         config.show_agents = settings.show_agents.unwrap_or(true);
         config.show_sidebar_search = settings.show_sidebar_search.unwrap_or(true);
         config.show_repository_icons = settings.show_repository_icons.unwrap_or(true);
+        config.show_device_icons = settings.show_device_icons.unwrap_or(true);
         config.show_system_load = settings.show_system_load.unwrap_or(true);
         config.agent_checkpoints = settings.agent_checkpoints.unwrap_or(true);
         config.show_listening_ports = settings.show_listening_ports.unwrap_or(true);
         config.smooth_scroll = settings.smooth_scroll.unwrap_or(true);
+        config.focus_follows_mouse = settings.focus_follows_mouse.unwrap_or(true);
         config.status_bar = settings.status_bar;
         config.zen = settings.zen.try_into()?;
         settings.backdrop.validate()?;

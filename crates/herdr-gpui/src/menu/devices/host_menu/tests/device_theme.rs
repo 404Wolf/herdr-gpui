@@ -79,7 +79,7 @@ fn the_picker_previews_on_the_terminal_and_escape_restores_it(cx: &mut TestAppCo
     let (view, cx) = open_menu(None, cx);
     // Nothing set: the row shows no value and the picker starts on the app.
     assert!(cx.debug_bounds("host-menu-theme").is_none());
-    assert_eq!(ACTIONS[3].0, Action::Theme);
+    assert_eq!(SSH_ACTIONS[3].0, Action::Theme);
     cx.simulate_keystrokes("down down down down enter");
     assert!(view.read_with(cx, |view, _| view.menu.page == Some(Page::DeviceTheme)));
     cx.run_until_parked();

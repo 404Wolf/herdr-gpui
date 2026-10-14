@@ -5,6 +5,7 @@ use std::{
     io,
     path::{Path, PathBuf},
 };
+pub use theme::ThemeParseError;
 
 #[cfg(any(target_os = "macos", windows))]
 use wry::raw_window_handle::HandleError as WindowHandleError;
@@ -366,6 +367,18 @@ pub enum Error {
     GitHubTokenType,
     #[error("GitHub {0} worker stopped.")]
     GitHubWorker(&'static str),
+    #[error("GitHub CLI (gh) was not found. Install it and run `gh auth login`, or sign in here.")]
+    GitHubCliMissing,
+    #[error("GitHub CLI is not signed in to github.com. Run `gh auth login`, then try again.")]
+    GitHubCliSignedOut,
+    #[error(
+        "GitHub rejected the GitHub CLI's token. Run `gh auth login` to renew it, then try again."
+    )]
+    GitHubCliRejected,
+    #[error("GitHub CLI did not answer within 10 seconds. Check `gh auth status`, then try again.")]
+    GitHubCliTimeout,
+    #[error("Could not run the GitHub CLI (gh).")]
+    GitHubCliProcess(#[source] Box<Error>),
     #[error(transparent)]
     Backdrop(#[from] crate::backdrop::Error),
     #[cfg(feature = "coder")]
@@ -973,21 +986,8 @@ impl From<config_loader::ConfigError> for Error {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum ThemeParseError {
-    #[error("expected a six-digit RGB hex color (optionally prefixed by #)")]
-    InvalidColor,
-    #[error("invalid hex color")]
-    InvalidHex(#[source] std::num::ParseIntError),
-    #[error("expected index=color")]
-    MissingPaletteColor,
-    #[error("palette index must be between 0 and 255")]
-    InvalidPaletteIndex(#[source] std::num::ParseIntError),
-    #[error("palette index must be between 0 and 255")]
-    PaletteIndexOutOfRange,
-}
-
 mod github;
+mod theme;
 
 #[cfg(test)]
 mod tests;

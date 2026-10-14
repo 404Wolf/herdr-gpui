@@ -1,6 +1,8 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
 
+mod rename;
+
 fn device(id: &str) -> SavedDevice {
     SavedDevice {
         provider: CloudProvider::ALL[0],

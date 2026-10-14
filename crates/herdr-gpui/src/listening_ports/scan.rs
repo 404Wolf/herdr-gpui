@@ -8,10 +8,7 @@
 
 use super::tunnel::Key;
 use crate::{Error, Result, browser::WebUrl, usage::Host};
-use std::{
-    collections::HashMap,
-    net::{IpAddr, Ipv6Addr},
-};
+use std::{collections::HashMap, net::IpAddr};
 
 /// Listener lines read from one answer; the rest are ignored.
 const MAX_LISTENERS: usize = 1024;
@@ -114,29 +111,31 @@ pub(crate) struct Port {
 }
 
 impl Port {
-    /// Where a browser on this machine reaches the port. A remote port bound
-    /// to its own loopback is unreachable from here without a tunnel, and
-    /// `localhost` would open whatever this machine runs on the same number.
-    pub(crate) fn url(&self, origin: &Origin) -> Option<WebUrl> {
-        let name = match (self.bind, origin) {
-            (Bind::Address(IpAddr::V6(address)), _) => format!("[{address}]"),
-            (Bind::Address(IpAddr::V4(address)), _) => address.to_string(),
-            (Bind::Any | Bind::Loopback, Origin::Local) => "localhost".into(),
-            (Bind::Loopback, Origin::Remote { .. }) => return None,
-            (Bind::Any, Origin::Remote { name, .. }) => name.clone()?,
+    /// Where a browser on this machine reaches a port of this machine.
+    fn url(&self) -> Option<WebUrl> {
+        let name = match self.bind {
+            Bind::Address(IpAddr::V6(address)) => format!("[{address}]"),
+            Bind::Address(IpAddr::V4(address)) => address.to_string(),
+            Bind::Any | Bind::Loopback => "localhost".into(),
         };
         WebUrl::try_from(format!("http://{name}:{}/", self.number)).ok()
     }
 
     /// What clicking the port does: open its page, or first tunnel to a
-    /// remote one that listens only on its host's loopback.
+    /// remote one. A remote server always opens through SSH on this
+    /// machine's loopback: the address SSH dials, perhaps a VPN's, says
+    /// nothing about whether a browser here may reach the server directly.
     pub(crate) fn link(&self, origin: &Origin) -> Option<Link> {
-        match (self.bind, origin) {
-            (Bind::Loopback, Origin::Remote { target, .. }) => Some(Link::Tunnel(Key {
+        match origin {
+            Origin::Local => self.url().map(Link::Page),
+            Origin::Remote { target } => Some(Link::Tunnel(Key {
                 target: target.clone(),
+                address: match self.bind {
+                    Bind::Address(address) => Some(address),
+                    Bind::Any | Bind::Loopback => None,
+                },
                 port: self.number,
             })),
-            _ => self.url(origin).map(Link::Page),
         }
     }
 
@@ -160,7 +159,7 @@ pub(crate) enum Link {
 
 impl Link {
     /// Where it leads, as a menu names it: `localhost:5173`, or `:5173`
-    /// for a port reached through a tunnel opened on demand.
+    /// for a remote port reached through a tunnel opened on demand.
     pub(crate) fn label(&self) -> String {
         match self {
             Self::Page(url) => {
@@ -178,39 +177,20 @@ impl Link {
 pub(crate) enum Origin {
     #[default]
     Local,
-    Remote {
-        /// The SSH target, which a tunnel to the host dials.
-        target: String,
-        /// The host's name as a URL spells it, if one could be found.
-        name: Option<String>,
-    },
+    /// The SSH target, which a tunnel to the host dials.
+    Remote { target: String },
 }
 
 impl Origin {
-    /// `resolved` is the host name SSH configuration gives the target
-    /// (`ssh -G`), so an alias such as `devbox` opens at its real `HostName`.
-    /// Without one, the target's own host part is the best guess.
-    pub(crate) fn new(host: &Host, resolved: Option<&str>) -> Self {
+    pub(crate) fn new(host: &Host) -> Self {
         match host {
             // WSL forwards a distribution's localhost ports to this machine.
             Host::Local | Host::Wsl(_) => Self::Local,
             Host::Ssh(target) => Self::Remote {
                 target: target.clone(),
-                name: resolved
-                    .and_then(url_host)
-                    .or_else(|| url_host(target.rsplit('@').next()?)),
             },
         }
     }
-}
-
-/// `host` as a URL's host: an IPv6 address in brackets, a name or IPv4
-/// address as is, anything else refused.
-fn url_host(host: &str) -> Option<String> {
-    if let Ok(address) = host.parse::<Ipv6Addr>() {
-        return Some(format!("[{address}]"));
-    }
-    (!host.is_empty() && !host.contains(['/', ':', '[', ']', '@'])).then(|| host.to_owned())
 }
 
 /// The pane a listener was started in: its workspace, and the JSON API

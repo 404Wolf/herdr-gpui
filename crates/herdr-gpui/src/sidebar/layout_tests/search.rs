@@ -1,5 +1,6 @@
 use super::*;
 
+mod heading;
 mod hidden;
 mod scrolling;
 

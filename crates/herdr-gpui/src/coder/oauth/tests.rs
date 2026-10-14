@@ -2,6 +2,8 @@
 use super::*;
 use crate::coder::tests::settings;
 
+mod browser_reply;
+
 #[test]
 fn pkce_matches_rfc_7636_and_uses_unreserved_characters() {
     // RFC 7636 appendix B.
@@ -84,7 +86,7 @@ fn listener_ignores_strays_answers_the_browser_and_honours_cancellation() {
     let pending = begin(&settings).unwrap();
     let address = pending.listener.local_addr().unwrap();
     let state = pending.state.clone();
-    let browser = std::thread::spawn(move || {
+    let browser_thread = std::thread::spawn(move || {
         let send = |target: String| {
             let mut stream = TcpStream::connect(address).unwrap();
             write!(stream, "GET {target} HTTP/1.1\r\nHost: localhost\r\n\r\n").unwrap();
@@ -96,15 +98,18 @@ fn listener_ignores_strays_answers_the_browser_and_honours_cancellation() {
         let real = send(format!("/callback?code=real-code&state={state}"));
         (stray, real)
     });
-    let code = pending
+    let (mut browser, code) = pending
         .wait(
             "/callback",
             &|| false,
             Instant::now() + Duration::from_secs(10),
         )
         .unwrap();
-    assert_eq!(code.expose_secret(), "real-code");
-    let (stray, real) = browser.join().unwrap();
+    assert_eq!(code.unwrap().expose_secret(), "real-code");
+    // The real redirect waits for the outcome; only the stray was answered.
+    respond(&mut browser, "200 OK", "done").unwrap();
+    drop(browser);
+    let (stray, real) = browser_thread.join().unwrap();
     assert!(stray.starts_with("HTTP/1.1 404"));
     assert!(real.starts_with("HTTP/1.1 200"));
     assert!(real.contains("Cache-Control: no-store"));

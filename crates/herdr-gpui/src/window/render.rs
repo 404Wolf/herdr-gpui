@@ -244,7 +244,7 @@ impl Render for HerdrWindow {
             .when_some(self.split_cursor, |terminal, cursor| {
                 terminal.cursor(cursor)
             })
-            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
+            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
                 let split_cursor = this.split_cursor_at(event.position);
                 if split_cursor != this.split_cursor {
                     this.split_cursor = split_cursor;
@@ -253,6 +253,7 @@ impl Render for HerdrWindow {
                 // A border is not the application's to hover.
                 if split_cursor.is_none() {
                     this.terminal_mouse_hover(event, cx);
+                    this.focus_hovered_pane(event, window, cx);
                 }
                 let hovered = this.terminal_link_hovered(event.position, event.modifiers);
                 if hovered != this.hovered_terminal_link {

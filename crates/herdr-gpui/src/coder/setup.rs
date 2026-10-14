@@ -67,8 +67,9 @@ pub(crate) fn finish_sign_in(
     pending: Pending,
     cancelled: impl Fn() -> bool,
 ) -> Result<Account> {
-    let credential = pending.finish(settings, &cancelled)?;
-    store::save(settings, &credential)?;
+    pending.finish(settings, &cancelled, |credential| {
+        store::save(settings, &credential)
+    })?;
     account(settings)
 }
 

@@ -54,6 +54,10 @@ show_sidebar_search = true
 # name in the sidebar, in the layouts that draw one (not orca or minimal).
 # Also under Settings > Appearance > Sidebar layout.
 show_repository_icons = true
+# Show a mark before each device's name in the sidebar for where it runs: this
+# machine, a cloud provider, Tailscale, or SSH. In the layouts that draw one
+# (not orca or minimal). Also under Settings > Appearance > Sidebar layout.
+show_device_icons = true
 # Show CPU and memory: the selected host's in the status bar, and each host's
 # on its sidebar row. Connected remote hosts are read over SSH every couple of
 # seconds; false stops all sampling. Also under Settings > Status bar.
@@ -74,6 +78,9 @@ show_listening_ports = true
 # and momentum; false scrolls by whole rows. Applications reading the mouse
 # always get whole rows. Also under Settings > General.
 smooth_scroll = true
+
+# Focus split terminal panes on hover in the active window, without clicking.
+focus_follows_mouse = true
 # macOS only: whether Option-letter reaches a pane as an Alt shortcut (Alt-P
 # for Option-P) or types the character the keyboard layout puts there. "auto"
 # sends Alt from the left Option on the U.S. and ABC layouts, while the right

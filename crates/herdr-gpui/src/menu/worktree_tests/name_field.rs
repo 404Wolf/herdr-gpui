@@ -1,10 +1,10 @@
 use super::*;
 
-/// The name field is what the dialog opens on, and its keys never reach the
-/// branch draft, which only takes the branch proposed for the name; the
-/// branch field is still one click away.
+/// The name field is one click away from the branch the dialog opens on, and
+/// its keys never reach the branch draft, which only takes the branch proposed
+/// for the name.
 #[gpui::test]
-fn the_name_field_opens_focused_and_keeps_its_keys(cx: &mut gpui::TestAppContext) {
+fn the_name_field_keeps_its_keys(cx: &mut gpui::TestAppContext) {
     let (view, cx) = cx.add_window_view(sidebar::layout_tests::fixture_window);
     cx.simulate_resize(gpui::size(gpui::px(900.), gpui::px(700.)));
     open_dialog(&view, cx, false, Tab::New);
@@ -14,10 +14,11 @@ fn the_name_field_opens_focused_and_keeps_its_keys(cx: &mut gpui::TestAppContext
             source.name.read(cx).text().to_owned()
         })
     };
-    assert!(cx.update(|window, cx| view.read(cx).worktree_name_focused(window, cx)));
-    assert!(cx.debug_bounds("worktree-name").is_some());
+    assert!(!cx.update(|window, cx| view.read(cx).worktree_name_focused(window, cx)));
     // Empty means the daemon's default label.
     assert_eq!(cx.update(|_, cx| view.read(cx).worktree_name(cx)), None);
+    click_name(cx);
+    assert!(cx.update(|window, cx| view.read(cx).worktree_name_focused(window, cx)));
 
     cx.simulate_input("Login work");
     cx.simulate_keystrokes("backspace left right");
@@ -45,12 +46,8 @@ fn the_name_field_opens_focused_and_keeps_its_keys(cx: &mut gpui::TestAppContext
     );
     assert_eq!(name(cx), "Login wor");
 
-    // Returning to the form tab puts typing back on the name.
-    cx.update(|window, cx| {
-        view.update(cx, |view, cx| {
-            view.select_worktree_tab(Tab::New, window, cx)
-        });
-    });
+    // A second click puts typing back on the name.
+    click_name(cx);
     assert!(cx.update(|window, cx| view.read(cx).worktree_name_focused(window, cx)));
 
     // Enter from the name field submits the form; the fixture has no daemon.

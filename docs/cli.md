@@ -135,6 +135,10 @@ Every command accepts:
 | `logs [--lines N] [--path]` | The app's log (no app needed) |
 | `diagnostics bundle PATH` | A redacted report for a bug (no app needed) |
 
+Focus-on-hover between split terminal panes is on by default. Disable it with
+`herdr-gpui config set focus_follows_mouse false`.
+The change applies live; `config get focus_follows_mouse` reads it back.
+
 ### Events
 
 `events` prints what happened in the app: windows opening, closing, and
