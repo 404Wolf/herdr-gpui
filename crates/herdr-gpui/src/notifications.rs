@@ -13,6 +13,7 @@ const GRACE: Duration = Duration::from_secs(1);
 const RECHECK: Duration = Duration::from_millis(50);
 static ARRIVAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+mod context;
 #[cfg(test)]
 mod policy_tests;
 
@@ -199,6 +200,16 @@ impl Notice {
             }
         }
         self.initialized = self.resolve_target(snapshot).is_some();
+        // Name the agent's task and place from the same validated snapshot.
+        if self.initialized
+            && !self.client_local
+            && let Some(body) = self
+                .pane_id
+                .as_deref()
+                .and_then(|pane| context::describe(snapshot, pane))
+        {
+            self.body = Some(body);
+        }
     }
 
     pub fn target<'a>(
@@ -518,6 +529,7 @@ pub(crate) fn take_system(
 pub(crate) mod tests {
     use super::*;
 
+    mod context;
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     mod local_feedback;
 

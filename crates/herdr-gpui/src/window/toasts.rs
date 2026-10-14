@@ -172,8 +172,9 @@ impl HerdrWindow {
             },
             Instant::now(),
         )
-        .with_snapshot(snapshot.as_deref())
-        .preview();
+        // Previews keep their own text rather than the pane's context.
+        .preview()
+        .with_snapshot(snapshot.as_deref());
         // Each QA action immediately presents its own card, even offline.
         for endpoint in &mut self.endpoints {
             endpoint.toasts.entries.retain(|(_, n)| !n.visible);
