@@ -120,3 +120,19 @@ fn only_the_newest_settled_pull_requests_are_kept() {
     assert!(!items.iter().any(|item| item.key.native_id == "pr/10"));
     assert!(items.iter().any(|item| item.key.native_id == "pr/11"));
 }
+
+#[test]
+fn the_next_sync_resumes_from_the_listing_that_saw_least() {
+    use crate::orchestrator::github::resume_from;
+    let since = at("2026-10-13T11:00:00Z");
+    let issues = [item("1", "open", "2026-10-13T11:10:00Z")];
+    let pulls = [item("pr/2", "open", "2026-10-13T11:20:00Z")];
+    // An issue closing at 11:15, after its listing was read, is asked again.
+    assert_eq!(
+        resume_from(since, &issues, &pulls),
+        at("2026-10-13T11:10:00Z")
+    );
+    assert_eq!(resume_from(since, &[], &pulls), since, "no issue seen yet");
+    assert_eq!(resume_from(since, &issues, &[]), since);
+    assert_eq!(resume_from(since, &[], &[]), since);
+}

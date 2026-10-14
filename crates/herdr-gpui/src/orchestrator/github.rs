@@ -255,7 +255,7 @@ fn changes(
             Next::Capped => return Ok(None),
         }
     }
-    let newest = changed.iter().filter_map(|item| item.updated_at).max();
+    let resume = resume_from(since, &changed[..issues], &changed[issues..]);
     let items = merge(cached, changed);
     let open = |pull_request: bool| {
         items
@@ -265,7 +265,7 @@ fn changes(
     };
     let complete = open(false) <= MAX_OPEN && open(true) <= MAX_OPEN;
     let checkpoint = Checkpoint {
-        updated_at: previous.updated_at.max(newest),
+        updated_at: Some(resume),
         etag: None,
         last_full_at: previous.last_full_at,
         pr_details: previous.pr_details.clone(),
@@ -276,6 +276,23 @@ fn changes(
         checkpoint,
         complete,
     }))
+}
+
+/// Where the next sync continues: the older of what each listing last saw.
+/// The two are read one after the other, so an issue that changes once its
+/// listing was read may predate a pull request the later listing saw; taking
+/// the newer would skip that issue until the next full listing. Repeating a
+/// few items is cheap, and `since` is inclusive.
+pub(super) fn resume_from(since: DateTime<Utc>, issues: &[Item], pulls: &[Item]) -> DateTime<Utc> {
+    let newest = |items: &[Item]| {
+        items
+            .iter()
+            .filter_map(|item| item.updated_at)
+            .max()
+            .unwrap_or(since)
+            .max(since)
+    };
+    newest(issues).min(newest(pulls))
 }
 
 /// A closed or merged pull request.
