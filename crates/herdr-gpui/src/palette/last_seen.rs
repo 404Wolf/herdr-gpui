@@ -70,13 +70,14 @@ fn grid(frame: &FrameData) -> usize {
         + frame.graphics.capacity()
 }
 
+/// The strings an image key holds. Matched without a catch-all, so a new
+/// source or target cannot go uncounted.
 fn key(key: &SurfaceGraphicsAssetKey) -> usize {
     match &key.source {
-        SurfaceGraphicsSource::Terminal {
-            target: SurfaceGraphicsTarget::Popup { terminal_id },
-            ..
-        } => text(terminal_id.capacity()),
-        SurfaceGraphicsSource::Terminal { .. } => 0,
+        SurfaceGraphicsSource::Terminal { target, .. } => match target {
+            SurfaceGraphicsTarget::Pane { pane_id } => text(pane_id.capacity()),
+            SurfaceGraphicsTarget::Popup { terminal_id } => text(terminal_id.capacity()),
+        },
         SurfaceGraphicsSource::PaneLayer { pane_id, layer_id } => {
             text(pane_id.capacity()) + text(layer_id.capacity())
         }
