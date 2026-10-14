@@ -49,6 +49,9 @@ impl Default for Timing {
 }
 /// After a failure, a source waits this long before trying again.
 const BACKOFF: Duration = Duration::from_secs(300);
+/// A repository GitHub would not show this sign-in waits for the user to
+/// install the App or change token; Refresh asks sooner.
+const HIDDEN_BACKOFF: Duration = Duration::from_secs(1800);
 const COMMANDS: usize = 8;
 /// Actions running at once; more wait for the user to try again.
 const MAX_ACTIONS: usize = 4;
@@ -498,7 +501,27 @@ impl Worker {
                 Ok(state) => state,
                 Err(Error::Cancelled) => return,
                 Err(error) => {
-                    self.retry.push((key.clone(), Instant::now() + BACKOFF));
+                    // A rate limit or refused token pauses as long as GitHub asked;
+                    // a repository the sign-in cannot see waits for a user action.
+                    let floor = match &error {
+                        Error::Github(source)
+                            if matches!(**source, crate::Error::GitHubRepositoryHidden { .. }) =>
+                        {
+                            HIDDEN_BACKOFF
+                        }
+                        _ => BACKOFF,
+                    };
+                    let wait = self.cooldown.take().map_or(floor, |wait| wait.max(floor));
+                    tracing::warn!(
+                        category = "orchestrator_sync",
+                        provider = ?key.provider,
+                        host = key.host.as_str(),
+                        repository = key.repository.as_str(),
+                        retry_in_secs = wait.as_secs(),
+                        error = %error,
+                        "Orchestrator source sync failed"
+                    );
+                    self.retry.push((key.clone(), Instant::now() + wait));
                     SyncState::Failed(Arc::new(error))
                 }
             };

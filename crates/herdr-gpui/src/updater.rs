@@ -3,6 +3,7 @@ mod channel;
 mod error;
 pub use channel::UpdateChannel;
 pub use error::UpdateError;
+pub(crate) use error::retry_hint;
 use error::{Result, UpdateError as Error};
 #[cfg(unix)]
 mod brew;

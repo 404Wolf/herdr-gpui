@@ -4,6 +4,7 @@
 //! token, a device code, a request field, or a response body.
 
 use crate::Error;
+use chrono::{DateTime, Utc};
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
 
@@ -33,6 +34,9 @@ pub(super) fn http(context: &'static str, status: u16, headers: &ureq::http::Hea
         scopes = header(headers, "x-oauth-scopes"),
         accepted_scopes = header(headers, "x-accepted-oauth-scopes"),
         sso = public_sso(header(headers, "x-github-sso")),
+        rate_limit_remaining = header(headers, "x-ratelimit-remaining"),
+        rate_limit_reset = header(headers, "x-ratelimit-reset"),
+        retry_after = header(headers, "retry-after"),
         "GitHub request failed"
     );
 }
@@ -42,6 +46,10 @@ pub(super) struct Exchange {
     request_id: String,
     scopes: String,
     sso: String,
+    /// GitHub's quota left after this request, for the log.
+    remaining: String,
+    /// When the quota refills, so a rate-limit error can say when to retry.
+    pub(super) reset: Option<DateTime<Utc>>,
 }
 
 impl Exchange {
@@ -50,6 +58,8 @@ impl Exchange {
             request_id: header(headers, "x-github-request-id").to_owned(),
             scopes: header(headers, "x-oauth-scopes").to_owned(),
             sso: public_sso(header(headers, "x-github-sso")).to_owned(),
+            remaining: header(headers, "x-ratelimit-remaining").to_owned(),
+            reset: super::http::rate_limit_reset(headers, Utc::now()),
         }
     }
 }
@@ -117,6 +127,11 @@ pub(super) fn graphql(
             request_id = exchange.request_id.as_str(),
             scopes = exchange.scopes.as_str(),
             sso = exchange.sso.as_str(),
+            rate_limit_remaining = exchange.remaining.as_str(),
+            rate_limit_reset = exchange
+                .reset
+                .map(|reset| reset.to_rfc3339())
+                .unwrap_or_default(),
             "GitHub GraphQL query returned errors"
         );
     }
@@ -142,7 +157,8 @@ pub(super) fn kind(error: &Error) -> &'static str {
     match error {
         Error::GitHubAuthentication => "authentication",
         Error::GitHubForbidden => "forbidden",
-        Error::GitHubRateLimit => "rate_limit",
+        Error::GitHubRateLimit { .. } => "rate_limit",
+        Error::GitHubRepositoryHidden { .. } => "repository_hidden",
         Error::GitHubStatus(_) => "status",
         Error::GitHubRead(_) => "read",
         Error::GitHubSize => "size",

@@ -13,7 +13,8 @@ pub(super) fn retry_minute(reset: DateTime<Utc>) -> DateTime<Utc> {
         .unwrap_or(reset)
 }
 
-fn retry_hint(reset: Option<DateTime<Utc>>) -> String {
+/// When to try again, in local time, or `Retry later` without a reset time.
+pub(crate) fn retry_hint(reset: Option<DateTime<Utc>>) -> String {
     match reset {
         Some(reset) => format!(
             "Retry after {}",

@@ -2,6 +2,7 @@
 //! capped in number so a long session cannot grow it without limit.
 
 use super::{Input, Lookup, Origin, PullRequest};
+use chrono::{DateTime, DurationRound as _, Local, TimeDelta};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -11,6 +12,18 @@ pub(super) const CACHE_LIMIT: usize = 128;
 pub(super) const REFRESH: Duration = Duration::from_secs(90);
 const MISSING_REFRESH: Duration = Duration::from_secs(15);
 pub(super) const ERROR_BACKOFF: Duration = Duration::from_secs(300);
+/// How long a repository the credential cannot see waits before one branch
+/// asks again. Becoming visible takes a user action (installing the GitHub
+/// App, a new token), and opening the Git menu asks sooner.
+pub(super) const HIDDEN_BACKOFF: Duration = Duration::from_secs(1800);
+
+/// A repository GitHub would not show this credential, paused as a whole so
+/// its branches do not each ask on their own backoff.
+pub(super) struct HiddenRepository {
+    pub(super) repo_key: String,
+    pub(super) until: Instant,
+    pub(super) message: String,
+}
 
 pub(super) struct Entry {
     pub(super) input: Input,
@@ -34,6 +47,10 @@ pub(crate) struct Cache {
     pub(super) origin: Origin,
     pub(super) next_scan: Option<Instant>,
     pub(super) paused_until: Option<Instant>,
+    /// The failure that paused the account, shown with when it resumes.
+    pub(super) pause_reason: Option<String>,
+    /// Repositories paused after GitHub would not show them, by `repo_key`.
+    pub(super) hidden: Vec<HiddenRepository>,
     pub cursor: usize,
 }
 
@@ -64,6 +81,8 @@ impl Cache {
         self.origin = Origin::Local;
         self.next_scan = None;
         self.paused_until = None;
+        self.pause_reason = None;
+        self.hidden.clear();
         self.cursor = 0;
     }
 
@@ -123,6 +142,10 @@ impl Cache {
         if let Some(entry) = self.entries.iter_mut().find(|entry| entry.input == input) {
             entry.due = now;
         }
+        // Asking explicitly is how a newly installed App is noticed.
+        if let Some(key) = &input.repo_key {
+            self.hidden.retain(|hidden| &hidden.repo_key != key);
+        }
         self.queue.retain(|queued| queued != &input);
         self.queue.truncate(CACHE_LIMIT - 1);
         self.queue.push_front(input);
@@ -162,41 +185,36 @@ impl Cache {
             // prevent the remaining workspaces from being prefetched.
             if let Some(cooldown) = self.lookup.cooldown.take() {
                 self.paused_until = Some(now + cooldown);
+                self.pause_reason = self.lookup.message.clone();
             }
-            if let Some(entry) = self.entries.iter_mut().find(|entry| entry.input == input) {
-                if !failed {
-                    entry.value = self.lookup.value.take();
-                }
-                entry.message = self.lookup.message.take();
-                entry.checked = now;
-                entry.due = now + if failed { ERROR_BACKOFF } else { REFRESH };
-            } else {
-                if self.entries.len() == CACHE_LIMIT
-                    && let Some((index, _)) = self
-                        .entries
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, e)| now >= e.due)
-                        .min_by_key(|(_, e)| e.used)
-                {
-                    self.entries.remove(index);
-                }
-                self.entries.push(Entry {
-                    input,
-                    value: self.lookup.value.take(),
-                    message: self.lookup.message.take(),
-                    checked: now,
-                    due: now + if failed { ERROR_BACKOFF } else { REFRESH },
-                    used: now,
-                });
+            let hidden = self.lookup.hidden.take();
+            let due = now
+                + match (failed, &hidden) {
+                    (_, Some(_)) => HIDDEN_BACKOFF,
+                    (true, None) => ERROR_BACKOFF,
+                    (false, None) => REFRESH,
+                };
+            let value = self.lookup.value.take();
+            let message = self.lookup.message.take();
+            if let (Some(repository), Some(repo_key), Some(message)) =
+                (hidden, input.repo_key.clone(), message.clone())
+            {
+                self.hide(repository, repo_key, message, due);
             }
+            self.record(input, (!failed).then_some(value), message, now, due);
             changed = true;
         }
         if self.active.is_none()
             && self.paused_until.is_none_or(|until| now >= until)
-            && let Some(token) = &self.token
+            && let Some(token) = self.token.clone()
         {
             while let Some(input) = self.queue.pop_front() {
+                // A hidden repository's branches wait with it, without asking.
+                if let Some((until, message)) = self.hidden_for(&input, now) {
+                    self.record(input, None, Some(message), now, until);
+                    changed = true;
+                    continue;
+                }
                 let existing = self.entries.iter().find(|entry| entry.input == input);
                 if existing.is_some_and(|entry| now < entry.due)
                     || (existing.is_none()
@@ -216,6 +234,82 @@ impl Cache {
             }
         }
         changed
+    }
+
+    /// Stores a finished (or skipped) lookup. `value` is `None` to keep the
+    /// visible one, as a failure does; a new entry may evict the least recently
+    /// used one that is due.
+    fn record(
+        &mut self,
+        input: Input,
+        value: Option<Option<PullRequest>>,
+        message: Option<String>,
+        now: Instant,
+        due: Instant,
+    ) {
+        if let Some(entry) = self.entries.iter_mut().find(|entry| entry.input == input) {
+            if let Some(value) = value {
+                entry.value = value;
+            }
+            entry.message = message;
+            entry.checked = now;
+            entry.due = due;
+            return;
+        }
+        if self.entries.len() == CACHE_LIMIT
+            && let Some((index, _)) = self
+                .entries
+                .iter()
+                .enumerate()
+                .filter(|(_, e)| now >= e.due)
+                .min_by_key(|(_, e)| e.used)
+        {
+            self.entries.remove(index);
+        }
+        self.entries.push(Entry {
+            input,
+            value: value.flatten(),
+            message,
+            checked: now,
+            due,
+            used: now,
+        });
+    }
+
+    /// Pauses every branch of `repo_key` until `until`, and shows why on those
+    /// already looked up, so none asks GitHub again on its own backoff.
+    fn hide(&mut self, repository: String, repo_key: String, message: String, until: Instant) {
+        tracing::info!(
+            category = "github_pause",
+            repository = repository.as_str(),
+            seconds = until.saturating_duration_since(Instant::now()).as_secs(),
+            "Pausing pull request lookups for a repository GitHub would not show"
+        );
+        for entry in &mut self.entries {
+            if entry.input.repo_key.as_deref() == Some(repo_key.as_str()) {
+                entry.message = Some(message.clone());
+                entry.due = entry.due.max(until);
+            }
+        }
+        self.hidden.retain(|hidden| hidden.repo_key != repo_key);
+        if self.hidden.len() == CACHE_LIMIT {
+            self.hidden.remove(0);
+        }
+        self.hidden.push(HiddenRepository {
+            repo_key,
+            until,
+            message,
+        });
+    }
+
+    /// When `input`'s repository resumes and why it is paused, while it is.
+    fn hidden_for(&mut self, input: &Input, now: Instant) -> Option<(Instant, String)> {
+        self.hidden.retain(|hidden| now < hidden.until);
+        let key = input.repo_key.as_deref()?;
+        self.hidden
+            .iter()
+            .find(|hidden| hidden.repo_key == key)
+            .map(|hidden| (hidden.until, hidden.message.clone()))
     }
 
     /// Whether a lookup for `input` is in flight or queued to dispatch, so the
@@ -267,15 +361,40 @@ impl Cache {
             view.value = entry.value.clone();
             view.message = entry.message.clone();
             view.checked = Some(entry.checked);
+        } else if let Some(until) = self.paused_until.filter(|until| now < *until) {
+            view.message = Some(paused(
+                until - now,
+                self.pause_reason.as_deref(),
+                Local::now(),
+            ));
         } else {
-            if self.paused_until.is_some_and(|until| now < until) {
-                view.message = Some("GitHub requests paused after an authentication or rate-limit error; retrying automatically.".into());
-            } else {
-                view.loading = true;
-            }
+            view.loading = true;
         }
-        if view.value.is_some() && view.message.is_some() {
-            view.message = Some("Refresh unavailable; retrying automatically.".into());
+        // A stale value stays visible, but the reason it is stale must too.
+        if view.value.is_some()
+            && let Some(message) = view.message.take()
+        {
+            view.message = Some(format!(
+                "Refresh unavailable, showing the last result. {message}"
+            ));
         }
+    }
+}
+
+/// Why GitHub requests are paused and the local minute they resume, rounded
+/// up so the shown time is never early.
+pub(super) fn paused(wait: Duration, reason: Option<&str>, now: DateTime<Local>) -> String {
+    let resume = TimeDelta::from_std(wait)
+        .ok()
+        .and_then(|wait| now.checked_add_signed(wait))
+        .map(|at| at.duration_round_up(TimeDelta::minutes(1)).unwrap_or(at));
+    let when = resume.map_or("later".to_owned(), |at| {
+        format!("at {}", at.format("%H:%M"))
+    });
+    match reason {
+        Some(reason) => format!("{reason} GitHub requests paused; retrying {when}."),
+        None => format!(
+            "GitHub requests paused after an authentication or rate-limit error; retrying {when}."
+        ),
     }
 }

@@ -4,6 +4,7 @@
 
 use super::{Result, log};
 use crate::Error;
+use chrono::{DateTime, TimeDelta, Utc};
 use secrecy::{ExposeSecret, ExposeSecretMut, SecretBox as Secret, SecretString};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -31,10 +32,13 @@ pub(super) fn response<T: DeserializeOwned>(
     let status = response.status().as_u16();
     if !(200..=299).contains(&status) {
         log::http(context, status, response.headers());
+        let headers = response.headers();
         return Err(match status {
             401 => Error::GitHubAuthentication,
-            403 => Error::GitHubForbidden,
-            429 => Error::GitHubRateLimit,
+            403 if !quota_exhausted(headers) => Error::GitHubForbidden,
+            403 | 429 => Error::GitHubRateLimit {
+                reset: rate_limit_reset(headers, Utc::now()),
+            },
             status => Error::GitHubStatus(status),
         });
     }
@@ -82,16 +86,15 @@ pub(crate) fn graphql(
     if cancelled() {
         return Err(Error::PrCancelled);
     }
-    if cancelled() {
-        return Err(Error::PrCancelled);
-    }
+    let repository = requested_repository(&variables);
     let (result, exchange) = post(token, query, variables, deadline, cooldown)?;
     if cancelled() {
         return Err(Error::PrCancelled);
     }
     if let Some(errors) = result.get("errors") {
-        log::graphql(context, log::token_kind(token), &exchange, errors);
-        if result["errors"].as_array().is_some_and(|errors| {
+        let kind = log::token_kind(token);
+        log::graphql(context, kind, &exchange, errors);
+        if errors.as_array().is_some_and(|errors| {
             errors.iter().any(|error| {
                 matches!(
                     error["type"].as_str(),
@@ -99,9 +102,9 @@ pub(crate) fn graphql(
                 )
             })
         }) {
-            *cooldown = Some(Duration::from_secs(3600));
+            *cooldown = Some(pause_until(exchange.reset, Utc::now()));
         }
-        return Err(Error::GitHubQuery);
+        return Err(query_error(errors, repository, kind, exchange.reset));
     }
     Ok(result)
 }
@@ -118,12 +121,62 @@ pub(crate) fn mutation(
     timeout: Duration,
 ) -> Result<Value> {
     // No account-wide cooldown: nothing retries a mutation to honour one.
+    let repository = requested_repository(&variables);
     let (result, exchange) = post(token, query, variables, Instant::now() + timeout, &mut None)?;
     if let Some(errors) = result.get("errors") {
-        log::graphql(context, log::token_kind(token), &exchange, errors);
-        return Err(rejection(errors).map_or(Error::GitHubQuery, Error::GitHubRejected));
+        let kind = log::token_kind(token);
+        log::graphql(context, kind, &exchange, errors);
+        return Err(query_error(errors, repository, kind, exchange.reset));
     }
     Ok(result)
+}
+
+/// The `owner/repo` a request names, so a refusal can say which repository
+/// GitHub would not show. Every repository query here uses these variables.
+fn requested_repository(variables: &Value) -> Option<String> {
+    let owner = variables.get("owner")?.as_str()?;
+    let repo = variables.get("repo")?.as_str()?;
+    Some(format!("{owner}/{repo}"))
+}
+
+/// What to do when GitHub reports an existing repository as missing. A GitHub
+/// App user token only reaches repositories the App is installed on.
+pub(crate) fn hidden_hint(app_token: bool) -> &'static str {
+    if app_token {
+        "This GitHub App sign-in only reaches repositories the App is installed on: install it for the repository's owner, or set GH_TOKEN."
+    } else {
+        "Check the remote, the token's repository access, and SSO authorization."
+    }
+}
+
+/// Why GitHub answered a GraphQL request with errors, so the user reads the
+/// cause and when to retry instead of a generic failure. An exhausted quota
+/// wins; then a repository the credential cannot see; then GitHub's own
+/// words.
+pub(super) fn query_error(
+    errors: &Value,
+    repository: Option<String>,
+    token_kind: &str,
+    reset: Option<DateTime<Utc>>,
+) -> Error {
+    let listed = errors.as_array().map(Vec::as_slice).unwrap_or_default();
+    if listed
+        .iter()
+        .any(|error| error["type"].as_str() == Some("RATE_LIMITED"))
+    {
+        return Error::GitHubRateLimit { reset };
+    }
+    let hidden = listed.iter().any(|error| {
+        error["type"].as_str() == Some("NOT_FOUND")
+            && error["path"] == serde_json::json!(["repository"])
+    });
+    if let Some(repository) = repository.filter(|_| hidden) {
+        return Error::GitHubRepositoryHidden {
+            repository,
+            app_token: token_kind == "github_app_user",
+        };
+    }
+    rejection(errors).map_or(Error::GitHubQuery, Error::GitHubRejected)
 }
 
 /// One GraphQL POST, its bounded JSON body, and the headers that explain a
@@ -183,6 +236,40 @@ pub(super) fn authorization(token: &SecretString) -> Result<ureq::http::HeaderVa
         ureq::http::HeaderValue::from_str(text.expose_secret()).map_err(Error::GitHubHeader)?;
     header.set_sensitive(true);
     Ok(header)
+}
+
+/// Whether a 403 is an exhausted quota (primary or secondary) rather than a
+/// permission refusal: GitHub then sends `x-ratelimit-remaining: 0` or a
+/// `retry-after` delay.
+pub(crate) fn quota_exhausted(headers: &ureq::http::HeaderMap) -> bool {
+    log::header(headers, "x-ratelimit-remaining").trim() == "0"
+        || headers.contains_key("retry-after")
+}
+
+/// When GitHub's quota refills: a `retry-after` delay in seconds, else the
+/// `x-ratelimit-reset` epoch. `None` without either, or once it has passed.
+pub(crate) fn rate_limit_reset(
+    headers: &ureq::http::HeaderMap,
+    now: DateTime<Utc>,
+) -> Option<DateTime<Utc>> {
+    let number = |name| log::header(headers, name).trim().parse::<i64>().ok();
+    number("retry-after")
+        .and_then(|seconds| now.checked_add_signed(TimeDelta::try_seconds(seconds)?))
+        .or_else(|| {
+            number("x-ratelimit-reset").and_then(|epoch| DateTime::from_timestamp(epoch, 0))
+        })
+        .filter(|reset| *reset > now)
+}
+
+/// How long an account waits after GraphQL refused it: until the quota
+/// refills when GitHub said, else an hour, within the same bounds as
+/// [`pr_cooldown`].
+pub(super) fn pause_until(reset: Option<DateTime<Utc>>, now: DateTime<Utc>) -> Duration {
+    reset
+        .and_then(|reset| (reset - now).to_std().ok())
+        .map_or(Duration::from_secs(3600), |wait| {
+            wait.clamp(Duration::from_secs(300), Duration::from_secs(86400))
+        })
 }
 
 pub(super) fn pr_cooldown(
