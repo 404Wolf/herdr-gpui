@@ -54,6 +54,10 @@ show_sidebar_search = true
 # name in the sidebar, in the layouts that draw one (not orca or minimal).
 # Also under Settings > Appearance > Sidebar layout.
 show_repository_icons = true
+# Show a mark before each device's name in the sidebar for where it runs: this
+# machine, a cloud provider, Tailscale, or SSH. In the layouts that draw one
+# (not orca or minimal). Also under Settings > Appearance > Sidebar layout.
+show_device_icons = true
 # Show CPU and memory: the selected host's in the status bar, and each host's
 # on its sidebar row. Connected remote hosts are read over SSH every couple of
 # seconds; false stops all sampling. Also under Settings > Status bar.
