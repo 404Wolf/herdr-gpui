@@ -18,6 +18,7 @@ mod fonts;
 mod keybindings;
 mod layout;
 mod notifications;
+mod padding;
 pub(crate) mod preferences;
 pub(crate) mod sidebar;
 mod sidebar_style;
@@ -43,11 +44,12 @@ use fonts::FontSettings;
 #[cfg(any(test, feature = "integration-test"))]
 pub use fonts::symbol_fallbacks;
 pub use fonts::{FONT_SIZE_RANGE, FONT_SIZE_STEP, FontConfig};
-use layout::MAX_SIDEBAR_GAP;
 pub use layout::{Density, Layout, LayoutMode, Style};
 pub(crate) use notifications::NotificationDelivery;
 pub use notifications::{BellConfig, ClipboardToast, ClipboardToastPosition, NotificationConfig};
 use notifications::{ClipboardToastSettings, NotificationSettings};
+pub use padding::Padding;
+pub(crate) use padding::{Axis, MAX_PADDING, Side, Sides};
 use serde::Deserialize;
 pub(crate) use sidebar::{
     AgentLayout, AgentToken, MAX_ROWS as MAX_SIDEBAR_ROWS, Rows, SidebarConfigError, SidebarLayout,
@@ -132,6 +134,8 @@ pub struct Config {
     pub sidebar: FontConfig,
     pub tabs: FontConfig,
     pub terminal: FontConfig,
+    /// Blank space around every terminal's cells.
+    pub terminal_padding: Padding,
     pub ui: FontConfig,
     pub github: GitHubConfig,
     pub coder: CoderConfig,
@@ -485,6 +489,7 @@ impl Default for Config {
             // sidebar and terminal use, as they do in the reference UI.
             tabs: font(monospace, 12.0),
             terminal: font(monospace, 14.0),
+            terminal_padding: Padding::default(),
             ui: font(ui, 12.0),
         }
     }
@@ -681,6 +686,12 @@ impl Config {
                 list(&self.unknown_keys)
             ));
         }
+        if self.layout.legacy_sidebar_gap.is_some() {
+            lines.push(
+                "config-gpui.local.toml: layout.sidebar_gap is deprecated; use terminal.padding_x"
+                    .to_owned(),
+            );
+        }
         if !self.missing_fonts.is_empty() {
             let fonts: Vec<String> = self
                 .missing_fonts
@@ -848,11 +859,12 @@ impl Config {
         config.bell = settings.bell;
         config.updates = settings.updates;
         config.sidebar_layout = base.sidebar_layout.clone();
-        if !settings.layout.sidebar_gap.is_finite()
-            || !(0.0..=MAX_SIDEBAR_GAP).contains(&settings.layout.sidebar_gap)
-        {
-            return Err(Error::InvalidSidebarGap);
-        }
+        let (padding_x, padding_y) = settings.terminal.take_padding();
+        config.terminal_padding = Padding::resolve(
+            padding_x.as_ref(),
+            padding_y.as_ref(),
+            settings.layout.legacy_sidebar_gap,
+        )?;
         config.layout = settings.layout;
         config.sidebar_style = settings.sidebar.style()?;
         config.keybindings =

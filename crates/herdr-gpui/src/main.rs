@@ -96,6 +96,7 @@ mod pull_request;
 #[cfg(feature = "railway")]
 mod railway;
 mod release_notes;
+mod remote_browser;
 mod reorder;
 mod repo_items;
 mod review;

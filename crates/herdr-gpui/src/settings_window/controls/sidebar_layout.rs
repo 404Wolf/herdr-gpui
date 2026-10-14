@@ -140,6 +140,5 @@ impl SettingsWindow {
                 Preference::ShowDeviceIcons(!self.config.show_device_icons),
                 cx,
             ))
-            .child(self.sidebar_gap_control(cx))
     }
 }

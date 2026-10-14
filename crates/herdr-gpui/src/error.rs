@@ -264,10 +264,16 @@ pub enum Error {
         "GitHub authentication required. Use menu > GitHub sign-in or set GH_TOKEN / GITHUB_TOKEN."
     )]
     GitHubAuthentication,
-    #[error("GitHub denied access: check token permissions, SSO authorization, or rate limits.")]
+    #[error("GitHub denied access: check token permissions or SSO authorization.")]
     GitHubForbidden,
-    #[error("GitHub rate limit reached. Retry later.")]
-    GitHubRateLimit,
+    /// The account's (or, signed out, this address's) API quota is used up.
+    #[error("GitHub rate limit reached. {}.", crate::updater::retry_hint(*reset))]
+    GitHubRateLimit {
+        reset: Option<chrono::DateTime<chrono::Utc>>,
+    },
+    /// GraphQL answers a repository the credential cannot reach as missing.
+    #[error("GitHub cannot see {repository} with this sign-in. {}", crate::github::hidden_hint(*app_token))]
+    GitHubRepositoryHidden { repository: String, app_token: bool },
     #[error("GitHub request failed (HTTP {0}). Check network and repository access.")]
     GitHubStatus(u16),
     #[error("GitHub response could not be read within the size/time limit.")]
@@ -655,6 +661,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("Could not install the agent tools on the SSH host: {0}")]
+    RemoteAgentTools(#[source] herdr_client::Error),
     #[error("{0}")]
     DeviceSetupInput(&'static str),
     #[error("Saving the device failed ({status}){}", if detail.is_empty() { String::new() } else { format!(": {detail}") })]
@@ -782,6 +790,10 @@ pub enum Error {
     TooManyFontFallbacks(&'static str),
     #[error("layout.sidebar_gap must be finite and between 0 and 64 logical pixels")]
     InvalidSidebarGap,
+    #[error(
+        "terminal.{0} must be one number or a pair of numbers, each finite and between 0 and 64 logical pixels"
+    )]
+    InvalidTerminalPadding(&'static str),
     #[error("sidebar.{key} must be finite and between 0 and {max} logical pixels")]
     InvalidSidebarMetric { key: &'static str, max: f32 },
     #[error("sidebar.hosts.{host:?} must be a #rgb or #rrggbb colour, not {value:?}")]

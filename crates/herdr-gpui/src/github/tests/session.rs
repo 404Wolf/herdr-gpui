@@ -120,7 +120,7 @@ fn live_session_renews_off_thread_without_restart_and_preserves_token_identity()
 fn live_session_transient_failures_preserve_account_and_retry_but_rejection_disconnects() {
     for error in [
         Error::GitHubStatus(503),
-        Error::GitHubRateLimit,
+        Error::GitHubRateLimit { reset: None },
         Error::GitHubForbidden,
         Error::CredentialPolicy,
     ] {

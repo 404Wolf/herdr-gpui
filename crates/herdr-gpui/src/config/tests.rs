@@ -32,6 +32,7 @@ mod sidebar_settings;
 mod sidebar_style;
 mod status_bar;
 mod system_themes;
+mod terminal_padding;
 mod theme_files;
 mod themes;
 mod update_channel;

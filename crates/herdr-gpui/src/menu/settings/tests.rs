@@ -146,7 +146,7 @@ fn notification_reload_retimes_pending_clears_disabled_and_keeps_failed_settings
                 config.notifications.position =
                     herdr_client::protocol::ToastHerdrPosition::TopRight;
                 config.terminal.size = 18.;
-                config.layout.sidebar_gap = 16.;
+                config.terminal_padding.x = crate::config::Sides::new(16., 16.).unwrap();
                 config.layout.mode =
                     crate::config::LayoutMode::from(crate::config::Density::Compact);
                 let theme = config.theme(false)?;
@@ -161,7 +161,7 @@ fn notification_reload_retimes_pending_clears_disabled_and_keeps_failed_settings
         assert_eq!(view.config.notifications.delay_seconds, 0);
         assert_eq!(view.config.terminal.size, 18.);
         assert_eq!(view.configured_terminal_size, 18.);
-        assert_eq!(view.config.layout.sidebar_gap, 16.);
+        assert_eq!(view.config.terminal_padding.x.start(), 16.);
         assert_eq!(
             view.config.layout.mode,
             crate::config::LayoutMode::from(crate::config::Density::Compact)
@@ -175,7 +175,7 @@ fn notification_reload_retimes_pending_clears_disabled_and_keeps_failed_settings
         assert!(view.endpoints[0].toasts.entries[0].1.visible);
         assert_eq!(view.config.terminal.size, 20.);
         assert_eq!(view.configured_terminal_size, 18.);
-        assert_eq!(view.config.layout.sidebar_gap, 16.);
+        assert_eq!(view.config.terminal_padding.x.start(), 16.);
         assert_eq!(
             view.config.layout.mode,
             crate::config::LayoutMode::from(crate::config::Density::Compact)
