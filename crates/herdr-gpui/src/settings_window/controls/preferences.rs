@@ -65,6 +65,25 @@ impl SettingsWindow {
             .on_click(cx.listener(move |this, _, _, cx| this.save_preference(edit, cx)))
     }
 
+    pub(super) fn mouse_switches(&self, cx: &mut Context<Self>) -> [Stateful<Div>; 2] {
+        [
+            self.preference_switch(
+                "settings-smooth-scroll",
+                "Smooth scrolling",
+                self.config.smooth_scroll,
+                Preference::SmoothScroll(!self.config.smooth_scroll),
+                cx,
+            ),
+            self.preference_switch(
+                "settings-focus-follows-mouse",
+                "Focus follows mouse",
+                self.config.focus_follows_mouse,
+                Preference::FocusFollowsMouse(!self.config.focus_follows_mouse),
+                cx,
+            ),
+        ]
+    }
+
     /// One switch per close kind, each saving its own `confirm_close_*` key.
     pub(super) fn confirm_close_switches(&self, cx: &mut Context<Self>) -> [Stateful<Div>; 3] {
         let config = &self.config;

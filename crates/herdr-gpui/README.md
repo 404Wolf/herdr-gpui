@@ -67,6 +67,13 @@ The status dot pulses amber during local daemon startup and is red when disconne
 Healthy connections leave the status bar quiet; connection indicators live in the
 device picker. Startup, disconnection, and operation errors remain in the status bar.
 
+For split terminal panes within a tab, **Focus follows mouse** is on by default.
+Disable it in **Settings > General > Interface**, or run
+`herdr-gpui config set focus_follows_mouse false`.
+Hovering a pane focuses it when the window is active and
+terminal input has keyboard focus. Held mouse buttons, modifiers, dragging,
+IME composition, menus, and terminal popups suppress hover focus.
+
 Normal launches restore the main windows left open at quit, including each
 window's size and screen position, using the current launch's connection options.
 Closing an individual window removes it from the saved set; closing the final
