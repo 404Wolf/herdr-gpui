@@ -302,9 +302,13 @@ impl HerdrWindow {
             .max_w_full()
             .child(groups);
         let column = match width {
-            // Half a cell spare, so rounding never costs the last column.
+            // Half a cell spare, so rounding never costs the last column,
+            // and room for `[terminal]`'s padding beside the cells.
             ZenWidth::Columns(columns) => {
-                column.w(px((f32::from(columns) + 0.5) * self.cell_width))
+                let padding = self.config.terminal_padding.x;
+                column.w(px((f32::from(columns) + 0.5) * self.cell_width
+                    + padding.start()
+                    + padding.end()))
             }
             ZenWidth::Percent(share) => column.w(relative(f32::from(share) / 100.)),
         };

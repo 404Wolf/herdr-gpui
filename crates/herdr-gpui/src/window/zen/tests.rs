@@ -267,5 +267,6 @@ fn zen_font_size_applies_until_zen_mode_ends(cx: &mut TestAppContext) {
 
 mod focus;
 mod opening;
+mod padding;
 /// The sidebar and status bar sliding away and back.
 mod slide;
