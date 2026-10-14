@@ -1,5 +1,5 @@
 use super::*;
-use crate::orchestrator::github::{FULL_EVERY, incremental, merge};
+use crate::orchestrator::github::{FULL_EVERY, Resume, advance, incremental, merge};
 use chrono::TimeDelta;
 
 fn item(native_id: &str, state: &str, updated: &str) -> Item {
@@ -52,16 +52,27 @@ fn only_a_recent_full_listing_with_its_items_is_continued() {
         last_full_at: Some(now - FULL_EVERY + TimeDelta::seconds(1)),
         ..Checkpoint::default()
     };
-    let (since, items) = incremental(
-        &checkpoint,
-        Some(vec![item("1", "open", "2026-10-13T11:00:00Z")]),
-        now,
-    )
-    .unwrap();
-    assert_eq!(since, at("2026-10-13T11:59:00Z"));
+    let cached = || Some(vec![item("1", "open", "2026-10-13T11:00:00Z")]);
+    let (since, items) = incremental(&checkpoint, cached(), None, now).unwrap();
+    assert_eq!(
+        since.issues,
+        at("2026-10-13T11:59:00Z"),
+        "from the checkpoint"
+    );
+    assert_eq!(since.pulls, since.issues);
     assert_eq!(items.len(), 1);
+    let kept = Resume {
+        issues: at("2026-10-13T11:30:00Z"),
+        pulls: at("2026-10-13T11:58:00Z"),
+    };
+    assert_eq!(
+        incremental(&checkpoint, cached(), Some(kept), now)
+            .unwrap()
+            .0,
+        kept
+    );
     assert!(
-        incremental(&checkpoint, None, now).is_none(),
+        incremental(&checkpoint, None, None, now).is_none(),
         "nothing cached"
     );
     let stale = Checkpoint {
@@ -69,10 +80,10 @@ fn only_a_recent_full_listing_with_its_items_is_continued() {
         ..checkpoint.clone()
     };
     assert!(
-        incremental(&stale, Some(Vec::new()), now).is_none(),
+        incremental(&stale, Some(Vec::new()), Some(kept), now).is_none(),
         "time for a full listing"
     );
-    assert!(incremental(&Checkpoint::default(), Some(Vec::new()), now).is_none());
+    assert!(incremental(&Checkpoint::default(), Some(Vec::new()), None, now).is_none());
 }
 
 #[test]
@@ -122,17 +133,16 @@ fn only_the_newest_settled_pull_requests_are_kept() {
 }
 
 #[test]
-fn the_next_sync_resumes_from_the_listing_that_saw_least() {
-    use crate::orchestrator::github::resume_from;
+fn each_listing_resumes_from_the_newest_change_it_saw() {
     let since = at("2026-10-13T11:00:00Z");
-    let issues = [item("1", "open", "2026-10-13T11:10:00Z")];
-    let pulls = [item("pr/2", "open", "2026-10-13T11:20:00Z")];
-    // An issue closing at 11:15, after its listing was read, is asked again.
-    assert_eq!(
-        resume_from(since, &issues, &pulls),
-        at("2026-10-13T11:10:00Z")
-    );
-    assert_eq!(resume_from(since, &[], &pulls), since, "no issue seen yet");
-    assert_eq!(resume_from(since, &issues, &[]), since);
-    assert_eq!(resume_from(since, &[], &[]), since);
+    let issues = [
+        item("1", "open", "2026-10-13T11:10:00Z"),
+        item("2", "closed", "2026-10-13T11:05:00Z"),
+    ];
+    assert_eq!(advance(since, &issues), at("2026-10-13T11:10:00Z"));
+    // A quiet listing keeps its place; it neither moves nor holds back the
+    // other, which advances on its own.
+    assert_eq!(advance(since, &[]), since);
+    let older = [item("3", "open", "2026-10-13T10:00:00Z")];
+    assert_eq!(advance(since, &older), since, "never before `since`");
 }

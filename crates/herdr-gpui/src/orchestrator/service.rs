@@ -197,6 +197,7 @@ impl Service {
             data_version: None,
             retry: Vec::new(),
             uncached: HashMap::new(),
+            resume: HashMap::new(),
             cooldown: None,
         };
         std::thread::Builder::new()
@@ -269,6 +270,8 @@ struct Worker {
     retry: Vec<(SourceKey, Instant)>,
     /// Listings shown but not written: capped, or the database is newer.
     uncached: HashMap<SourceKey, Vec<Item>>,
+    /// Where each GitHub source's next incremental sync continues.
+    resume: HashMap<SourceKey, github::Resume>,
     cooldown: Option<Duration>,
 }
 
@@ -578,16 +581,26 @@ impl Worker {
                     ),
                     _ => None,
                 };
+                // Only while the stored checkpoint is still the one this
+                // worker wrote: agent-launcher shares the database and may
+                // have stored an older listing since.
+                let resume = self.resume.get(key).copied().filter(|resume| {
+                    previous
+                        .as_ref()
+                        .and_then(|checkpoint| checkpoint.updated_at)
+                        == Some(resume.oldest())
+                });
                 let cancelled = &self.cancelled;
                 let listing = github::sync(
                     key,
                     token,
                     previous.as_ref(),
-                    cached,
+                    (cached, resume),
                     &|| cancelled.load(Ordering::Relaxed),
                     &mut self.cooldown,
                 )?;
                 let count = listing.items.len();
+                self.resume.insert(key.clone(), listing.resume);
                 if !listing.complete || !writable {
                     self.uncached.insert(key.clone(), listing.items);
                     return Ok(if listing.complete {

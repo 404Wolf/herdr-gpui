@@ -78,22 +78,54 @@ const PULL_REQUESTS: &str = r#"query($owner: String!, $repo: String!, $after: St
   }
 }"#;
 
+/// How far a full listing's start may be from GitHub's clock. A full listing
+/// resumes from just before it began, so what changes while it reads is
+/// read again; a local clock this far ahead could skip a change until the
+/// next full listing.
+const CLOCK_MARGIN: TimeDelta = TimeDelta::minutes(5);
+
+/// Where each listing of the next incremental sync continues from. Issues
+/// and pull requests are read one after the other, so each keeps its own:
+/// an issue that changes after its listing was read may predate a pull
+/// request the later listing saw, and a quiet listing must not hold back an
+/// active one. The sync worker keeps it between syncs; the checkpoint
+/// stores the older of the two, so a restart resumes safely.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Resume {
+    pub(crate) issues: DateTime<Utc>,
+    pub(crate) pulls: DateTime<Utc>,
+}
+
+impl Resume {
+    fn both(at: DateTime<Utc>) -> Self {
+        Self {
+            issues: at,
+            pulls: at,
+        }
+    }
+
+    pub(crate) fn oldest(self) -> DateTime<Utc> {
+        self.issues.min(self.pulls)
+    }
+}
+
 /// One sync's result. Only a `complete` listing may replace the cache.
 pub(crate) struct Listing {
     pub(crate) items: Vec<Item>,
     pub(crate) checkpoint: Checkpoint,
     pub(crate) complete: bool,
+    pub(crate) resume: Resume,
 }
 
 /// Lists `source`. `previous` keeps agent-launcher's PR detail markers, which
 /// stay valid because each embeds the pull request's revision. With `cached`,
 /// the items the last complete sync stored, only what changed since is read
-/// while the last full listing is recent.
+/// while the last full listing is recent, from `resume` (else the checkpoint).
 pub(crate) fn sync(
     source: &SourceKey,
     token: &SecretString,
     previous: Option<&Checkpoint>,
-    cached: Option<Vec<Item>>,
+    (cached, resume): (Option<Vec<Item>>, Option<Resume>),
     cancelled: &impl Fn() -> bool,
     cooldown: &mut Option<Duration>,
 ) -> Result<Listing> {
@@ -117,7 +149,7 @@ pub(crate) fn sync(
         })
     };
     let previous = previous.cloned().unwrap_or_default();
-    if let Some((since, cached)) = incremental(&previous, cached, Utc::now())
+    if let Some((since, cached)) = incremental(&previous, cached, resume, Utc::now())
         && let Some(listing) = changes(source, (owner, repo), since, cached, &previous, &mut fetch)?
     {
         return Ok(listing);
@@ -130,9 +162,10 @@ pub(crate) fn sync(
 pub(super) fn incremental(
     previous: &Checkpoint,
     cached: Option<Vec<Item>>,
+    resume: Option<Resume>,
     now: DateTime<Utc>,
-) -> Option<(DateTime<Utc>, Vec<Item>)> {
-    let since = previous.updated_at?;
+) -> Option<(Resume, Vec<Item>)> {
+    let since = resume.or_else(|| previous.updated_at.map(Resume::both))?;
     let full = previous.last_full_at?;
     (now - full < FULL_EVERY).then_some(())?;
     Some((since, cached?))
@@ -144,6 +177,7 @@ fn full(
     previous: Checkpoint,
     fetch: &mut impl FnMut(&str, Value) -> Result<Value>,
 ) -> Result<Listing> {
+    let started = Utc::now() - CLOCK_MARGIN;
     let mut complete = true;
     let mut items = Vec::new();
 
@@ -195,8 +229,12 @@ fn full(
         connection(fetch(PULL_REQUESTS, variables)?, "pullRequests")?;
     items.extend(closed.nodes.into_iter().map(|node| node.into_item(source)));
 
+    let resume = Resume {
+        issues: advance(started, &items[..issues]),
+        pulls: advance(started, &items[issues..]),
+    };
     let checkpoint = Checkpoint {
-        updated_at: items.iter().filter_map(|item| item.updated_at).max(),
+        updated_at: Some(resume.oldest()),
         etag: None,
         last_full_at: Some(Utc::now()),
         pr_details: previous.pr_details,
@@ -206,6 +244,7 @@ fn full(
         items,
         checkpoint,
         complete,
+        resume,
     })
 }
 
@@ -214,7 +253,7 @@ fn full(
 fn changes(
     source: &SourceKey,
     (owner, repo): (&str, &str),
-    since: DateTime<Utc>,
+    since: Resume,
     cached: Vec<Item>,
     previous: &Checkpoint,
     fetch: &mut impl FnMut(&str, Value) -> Result<Value>,
@@ -223,7 +262,7 @@ fn changes(
     let mut after = Value::Null;
     loop {
         let variables = json!({
-            "owner": owner, "repo": repo, "after": after, "since": since.to_rfc3339(),
+            "owner": owner, "repo": repo, "after": after, "since": since.issues.to_rfc3339(),
         });
         let page: Page<IssueNode> = connection(fetch(CHANGED_ISSUES, variables)?, "issues")?;
         changed.extend(page.nodes.into_iter().map(|node| node.into_item(source)));
@@ -244,7 +283,7 @@ fn changes(
             connection(fetch(PULL_REQUESTS, variables)?, "pullRequests")?;
         for node in page.nodes {
             let item = node.into_item(source);
-            if item.updated_at.is_some_and(|at| at < since) {
+            if item.updated_at.is_some_and(|at| at < since.pulls) {
                 break 'pages;
             }
             changed.push(item);
@@ -255,7 +294,10 @@ fn changes(
             Next::Capped => return Ok(None),
         }
     }
-    let resume = resume_from(since, &changed[..issues], &changed[issues..]);
+    let resume = Resume {
+        issues: advance(since.issues, &changed[..issues]),
+        pulls: advance(since.pulls, &changed[issues..]),
+    };
     let items = merge(cached, changed);
     let open = |pull_request: bool| {
         items
@@ -265,7 +307,7 @@ fn changes(
     };
     let complete = open(false) <= MAX_OPEN && open(true) <= MAX_OPEN;
     let checkpoint = Checkpoint {
-        updated_at: Some(resume),
+        updated_at: Some(resume.oldest()),
         etag: None,
         last_full_at: previous.last_full_at,
         pr_details: previous.pr_details.clone(),
@@ -275,24 +317,18 @@ fn changes(
         items,
         checkpoint,
         complete,
+        resume,
     }))
 }
 
-/// Where the next sync continues: the older of what each listing last saw.
-/// The two are read one after the other, so an issue that changes once its
-/// listing was read may predate a pull request the later listing saw; taking
-/// the newer would skip that issue until the next full listing. Repeating a
-/// few items is cheap, and `since` is inclusive.
-pub(super) fn resume_from(since: DateTime<Utc>, issues: &[Item], pulls: &[Item]) -> DateTime<Utc> {
-    let newest = |items: &[Item]| {
-        items
-            .iter()
-            .filter_map(|item| item.updated_at)
-            .max()
-            .unwrap_or(since)
-            .max(since)
-    };
-    newest(issues).min(newest(pulls))
+/// Where one listing continues: the newest change it saw, never before
+/// `since`. Anything that changes after the listing was read is newer still,
+/// and `since` is inclusive, so nothing is skipped.
+pub(super) fn advance(since: DateTime<Utc>, listed: &[Item]) -> DateTime<Utc> {
+    listed
+        .iter()
+        .filter_map(|item| item.updated_at)
+        .fold(since, DateTime::max)
 }
 
 /// A closed or merged pull request.
