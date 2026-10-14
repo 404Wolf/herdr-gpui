@@ -112,3 +112,45 @@ fn text_copies_without_file_urls_still_paste_their_text() {
         pasteboard.clearContents();
     });
 }
+
+/// A URL that no longer resolves must not use up the bound and hide a later
+/// file: a copy one path over the drop's limit still fails that limit.
+#[test]
+fn unresolved_urls_never_hide_files_past_the_bound() {
+    use super::super::file_drop::{MAX_PATHS, quote_paths};
+
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().canonicalize().unwrap();
+    let files: Vec<_> = (0..=MAX_PATHS)
+        .map(|n| root.join(format!("{n}.txt")))
+        .collect();
+    for path in &files {
+        std::fs::write(path, [0]).unwrap();
+    }
+    objc2::rc::autoreleasepool(|_| {
+        let gone = root.join("deleted.txt");
+        std::fs::write(&gone, [0]).unwrap();
+        let reference = NSURL::from_file_path(&gone)
+            .unwrap()
+            .fileReferenceURL()
+            .unwrap()
+            .absoluteString()
+            .unwrap()
+            .to_string();
+        std::fs::remove_file(&gone).unwrap();
+        let types: Vec<Vec<(&str, Vec<u8>)>> =
+            std::iter::once(vec![("public.file-url", reference.into_bytes())])
+                .chain(
+                    files
+                        .iter()
+                        .map(|path| vec![("public.file-url", file_url(path))]),
+                )
+                .collect();
+        let items: Vec<&[(&str, Vec<u8>)]> = types.iter().map(Vec::as_slice).collect();
+        let pasteboard = pasteboard(&items);
+        let read = paths(read_pasteboard(&pasteboard, false).unwrap());
+        assert_eq!(read, files);
+        assert!(matches!(quote_paths(&read), Err(Error::FileDropSize)));
+        pasteboard.clearContents();
+    });
+}

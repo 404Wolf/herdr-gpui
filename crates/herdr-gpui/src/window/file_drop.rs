@@ -57,16 +57,23 @@ impl HerdrWindow {
             cx.notify();
             return false;
         }
+        // Where the pane runs decides local paths versus bridging, never its
+        // readiness: a local path names nothing on another host. Readiness can
+        // lapse while Cmd-V reads the clipboard (a resize, say), so a remote
+        // pane that is not ready refuses the files instead.
+        let remote = self.selected_is_remote();
         let result = quote_paths(paths).and_then(|text| {
-            if self.accepts_remote_images()
-                && let [path] = paths
-                && let Some(source) = super::image_source::from_path(path)
-            {
-                self.start_remote_image(target.clone(), source, Some(text), cx);
-                return Ok(());
-            }
-            if self.accepts_remote_images() {
-                self.start_file_transfer(target.clone(), paths.to_vec(), cx);
+            if remote {
+                if !self.accepts_remote_images() {
+                    return Err(Error::ConnectionNotReady);
+                }
+                if let [path] = paths
+                    && let Some(source) = super::image_source::from_path(path)
+                {
+                    self.start_remote_image(target.clone(), source, Some(text), cx);
+                } else {
+                    self.start_file_transfer(target.clone(), paths.to_vec(), cx);
+                }
                 return Ok(());
             }
             let endpoint = &self.endpoints[self.selected_endpoint];

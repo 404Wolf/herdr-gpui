@@ -156,3 +156,65 @@ fn unpastable_file_paths_report_like_a_drop_and_paste_nothing(cx: &mut gpui::Tes
         );
     }
 }
+
+/// Cmd-V reads the clipboard in the background. If the SSH pane stops taking
+/// input meanwhile (a resize), its files are refused, never pasted as local
+/// paths that name nothing on the remote host.
+#[gpui::test]
+fn a_remote_pane_that_turns_unready_never_gets_local_paths(cx: &mut gpui::TestAppContext) {
+    // Elsewhere GPUI's clipboard is read synchronously, with readiness checked first.
+    if cfg!(target_os = "linux") {
+        return;
+    }
+    let (fixture, cx) = cx.add_window_view(|window, cx| {
+        Fixture(cx.new(|cx| crate::sidebar::layout_tests::fixture_window(window, cx)))
+    });
+    let view = fixture.update(cx, |fixture, _| fixture.0.clone());
+    let directory = tempfile::tempdir().unwrap();
+    let files = [
+        directory.path().join("a.png"),
+        directory.path().join("b.txt"),
+    ];
+    for path in &files {
+        std::fs::write(path, [1, 2, 3]).unwrap();
+    }
+    // One image would take the bridge; two files would take the SSH copy.
+    for copied in [&files[..1], &files[..]] {
+        let (endpoint, mut server) = connected_endpoint("ssh:image");
+        cx.update(|window, cx| {
+            view.update(cx, |view, cx| {
+                prepare_remote_image(view, endpoint, cx);
+                view.local_error = None;
+                cx.write_to_clipboard(file_copy(copied, "a.png"));
+                view.key_down(&cmd_v(), window, cx);
+                assert_eq!(view.pending_images.len(), 1);
+                // A resize is pending: the pane is no longer ready for input.
+                view.options.surface_size.cols += 1;
+                assert!(!view.input_ready() && view.selected_is_remote());
+            });
+        });
+        cx.run_until_parked();
+        wait_image_finished(&view, cx);
+        view.update(cx, |view, cx| {
+            assert_eq!(
+                view.local_error.as_deref(),
+                Some(format!("Files not pasted: {}", crate::Error::ConnectionNotReady).as_str()),
+                "{} files",
+                copied.len()
+            );
+            assert!(view.file_transfer.is_none());
+            view.options.surface_size.cols -= 1;
+            assert!(view.input_ready());
+            view.send(ClientPaneInputEvent::TextCommit("sentinel".into()), cx);
+        });
+        assert_eq!(
+            server.receive(),
+            ClientMessage::ClientShellPaneInput {
+                pane_id: "w1:p1".into(),
+                events: vec![ClientPaneInputEvent::TextCommit("sentinel".into())],
+            },
+            "{} files",
+            copied.len()
+        );
+    }
+}

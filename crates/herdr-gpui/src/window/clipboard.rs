@@ -89,8 +89,9 @@ fn read_pasteboard(
 /// The local paths of the pasteboard's file URLs, one per pasteboard item.
 /// Finder may publish file reference URLs (`file:///.file/id=...`); they are
 /// resolved to their current path, and those that no longer resolve are skipped.
-/// One more item than a drop accepts is read, so an oversized copy still fails
-/// the drop's own limit instead of pasting a truncated list.
+/// Collection stops at one more path than a drop accepts, counted after
+/// unresolved URLs are skipped, so an oversized copy still fails the drop's
+/// own limit instead of pasting a list with files silently missing.
 #[cfg(target_os = "macos")]
 fn file_paths(pasteboard: &objc2_app_kit::NSPasteboard) -> Vec<std::path::PathBuf> {
     use objc2_foundation::{NSString, NSURL};
@@ -101,11 +102,11 @@ fn file_paths(pasteboard: &objc2_app_kit::NSPasteboard) -> Vec<std::path::PathBu
     let kind = NSString::from_str("public.file-url");
     items
         .iter()
-        .take(super::file_drop::MAX_PATHS + 1)
         .filter_map(|item| {
             let url = NSURL::URLWithString(&*item.stringForType(&kind)?)?;
             url.filePathURL()?.to_file_path()
         })
+        .take(super::file_drop::MAX_PATHS + 1)
         .collect()
 }
 
