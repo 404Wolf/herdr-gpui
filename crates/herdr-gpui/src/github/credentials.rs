@@ -7,7 +7,7 @@ use secrecy::SecretString;
 use std::{ffi::CStr, path::Path};
 
 #[cfg(unix)]
-use super::token::{Credential, LIMIT};
+use super::token::{LIMIT, Saved};
 #[cfg(unix)]
 use rustix::fs::{AtFlags, Mode, OFlags, open, openat, renameat, unlinkat};
 #[cfg(unix)]
@@ -117,7 +117,7 @@ pub(super) fn read(path: &Path, name: &CStr) -> Result<Option<SecretString>> {
 
 #[cfg(unix)]
 fn github_record(value: &SecretString) -> Result<()> {
-    Credential::decode(value).map(drop)
+    Saved::decode(value).map(drop)
 }
 
 /// `read` for a record another feature owns; `validate` must bound its size.

@@ -3023,8 +3023,25 @@ Ctrl+Shift+U is left unbound for
    focus to the terminal. Reopen the account panel to use the red Sign out action.
    Older versions saved only access tokens, so an expired legacy token needs
    one more sign-in to obtain a refresh token. Revoked or expired refresh tokens
-   also require sign-in. No CLI authentication is used. See
+   also require sign-in. See
   [setup, cancellation, scopes, and sign-out](../../README.md#native-github-sign-in).
+- When the GitHub CLI is signed in to github.com, the main account's GitHub
+  panel offers **Use GitHub CLI authentication** beside the device sign-in. The
+  panel asks `gh auth token --hostname github.com` on a background thread, at
+  most every 30 seconds while it is open and signed out, and drops the answer.
+  Choosing it reads the token again, verifies it with GitHub, and saves only a
+  marker in the credential store, never the token; Windows, which has no store,
+  keeps the choice for the app session. Every load and five-minute session check
+  asks `gh` again, so `gh auth logout`, a revoked token, or an uninstalled `gh`
+  signs the app out at the next check with an error naming the fix, and a token
+  `gh` refreshed is picked up. The panel reads "Connected with GitHub CLI", warns
+  when the token's scopes leave out `repo` (`gh auth refresh --scopes repo`),
+  and **Stop using GitHub CLI** removes the marker without signing `gh` out.
+  `gh` runs under the PR lookup process policy: login-shell `PATH`, a 10-second
+  deadline, capped output, no prompt, and `GH_TOKEN` / `GITHUB_TOKEN` removed,
+  which still take precedence over it in the app. Saved SSH devices do not offer
+  it: this computer's CLI is the main account's, and a device without its own
+  sign-in already uses that.
 - Workspace actions retain the clicked ID and boot, revalidate before queueing,
   and reject changed close-group membership. Reconnect clears dialogs. Queue
   errors remain in the dialog; daemon errors appear in the connection status bar.

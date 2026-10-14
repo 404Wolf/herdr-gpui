@@ -2,6 +2,8 @@
 use super::Action;
 use gpui::TestAppContext;
 
+mod github_cli;
+
 #[gpui::test]
 fn successful_signin_dismisses_only_the_signin_panel_and_restores_focus(cx: &mut TestAppContext) {
     let (view, cx) = cx.add_window_view(crate::sidebar::layout_tests::fixture_window);
