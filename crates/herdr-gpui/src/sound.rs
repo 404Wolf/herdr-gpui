@@ -370,6 +370,20 @@ impl Service {
         )
     }
 
+    /// A worker that reports the volume each sound would play at.
+    #[cfg(test)]
+    pub(crate) fn recording_volume() -> (Self, mpsc::Receiver<u8>) {
+        let (sender, receiver) = mpsc::sync_channel(8);
+        let service = Self::start(
+            || Ok(Settings::default()),
+            move |_, _, volume, _, _| {
+                let _ = sender.try_send(volume);
+                Ok(())
+            },
+        );
+        (service, receiver)
+    }
+
     pub(crate) fn poll(
         &self,
         policy: &mut Policy,

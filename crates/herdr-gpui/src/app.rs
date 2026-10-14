@@ -155,7 +155,7 @@ pub(crate) fn open_additional_window(target: ConnectTarget, cx: &mut App) {
         match opened {
             Ok(handle) => {
                 let _ = handle.update(cx, |view, window, _| {
-                    view.sound = sound;
+                    view.use_sound(sound);
                     window.activate_window();
                 });
             }
@@ -368,7 +368,7 @@ pub(crate) fn run() -> std::process::ExitCode {
                     if mode == LaunchMode::Normal {
                         let sound = shared_sound(cx);
                         let _ = _window.update(cx, |view, _, _| {
-                            view.sound = sound;
+                            view.use_sound(sound);
                         });
                         for _ in 1..window_count {
                             open_additional_window(target.clone(), cx);

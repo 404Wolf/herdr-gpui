@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 mod backdrop;
 mod detach;
+mod sound_volume;
 
 fn main_windows(cx: &mut gpui::App) -> Vec<gpui::WindowHandle<HerdrWindow>> {
     cx.windows()

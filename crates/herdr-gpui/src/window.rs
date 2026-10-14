@@ -419,11 +419,17 @@ impl HerdrWindow {
         }
     }
 
+    /// Takes the app's shared sound worker and plays it at this window's
+    /// volume. The volume is otherwise only set when a config load lands, never
+    /// on a timer: a window whose reloads are held back, as while its theme
+    /// picker is open, would keep restoring a stale volume over a newer one.
+    pub(crate) fn use_sound(&mut self, sound: std::rc::Rc<crate::sound::Service>) {
+        sound.set_volume(self.config.sound.volume);
+        self.sound = sound;
+    }
+
     fn tick(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.updater.set_channel(self.config.updates.channel);
-        // The one sound worker is shared, and every window loads the same
-        // file, so whichever ticks last after a reload agrees with the rest.
-        self.sound.set_volume(self.config.sound.volume);
         if self.updater.poll() {
             match self.updater.commit_restart() {
                 Ok(true) => {
