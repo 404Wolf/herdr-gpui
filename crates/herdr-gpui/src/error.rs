@@ -1,5 +1,6 @@
 //! Internal failures retain their categories and sources until presentation.
 pub use crate::updater::UpdateError;
+pub use github::GitHubJsonError;
 use std::{
     io,
     path::{Path, PathBuf},
@@ -960,18 +961,6 @@ impl Error {
     }
 }
 
-/// Parser diagnostics can quote credential-bearing fields; expose the cause only
-/// to explicit source inspection, never ordinary Display or Debug formatting.
-#[derive(thiserror::Error)]
-#[error("Invalid GitHub JSON response.")]
-pub struct GitHubJsonError(#[source] serde_json::Error);
-
-impl std::fmt::Debug for GitHubJsonError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("GitHubJsonError([REDACTED])")
-    }
-}
-
 impl From<config_loader::ConfigError> for Error {
     fn from(error: config_loader::ConfigError) -> Self {
         // config preserves this cause but does not expose it through Error::source.
@@ -997,6 +986,8 @@ pub enum ThemeParseError {
     #[error("palette index must be between 0 and 255")]
     PaletteIndexOutOfRange,
 }
+
+mod github;
 
 #[cfg(test)]
 mod tests;
