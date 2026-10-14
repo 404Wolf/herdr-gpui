@@ -212,3 +212,57 @@ fn hosts_together_keep_their_newest_frames_within_the_total_budget() {
         (vec![2], vec![10, 1], vec![2, 1])
     );
 }
+
+#[test]
+fn popups_and_images_count_against_the_budget() {
+    use herdr_client::protocol::{
+        ClientShellPopupSurface, SurfaceGraphicsAsset, SurfaceGraphicsAssetKey,
+        SurfaceGraphicsFormat, SurfaceGraphicsSource, SurfaceGraphicsTarget,
+    };
+    let snapshot = many_tabs(4);
+    let mut seen = LastSeen::default();
+    let leave = |seen: &mut LastSeen, surface: PaneSurfaceFrame, at| {
+        seen.observe(
+            (Some(&snapshot), Some(&Arc::new(surface))),
+            (Some(&snapshot), None),
+            at,
+        );
+    };
+    // Each frame's grid is empty; a popup or an image holds 3 MiB.
+    let mut popup = Arc::unwrap_or_clone(streaming("boot-v1", "w1:p3"));
+    let mut grid = Arc::unwrap_or_clone(heavy("w1:p3")).frame;
+    grid.cells.extend(grid.cells.clone());
+    popup.popup = Some(Box::new(ClientShellPopupSurface {
+        terminal_id: "popup".into(),
+        title: "Popup".into(),
+        width: None,
+        height: None,
+        frame: grid,
+        mouse_reporting: false,
+        sgr_pixel_mouse: false,
+        pixel_width: 0,
+        pixel_height: 0,
+    }));
+    let mut image = Arc::unwrap_or_clone(streaming("boot-v1", "w1:p4"));
+    image.graphics.assets.push(SurfaceGraphicsAsset {
+        key: SurfaceGraphicsAssetKey {
+            source: SurfaceGraphicsSource::Terminal {
+                target: SurfaceGraphicsTarget::Pane {
+                    pane_id: "w1:p4".into(),
+                },
+                image_id: 1,
+            },
+            image_width: 1024,
+            image_height: 768,
+            format: SurfaceGraphicsFormat::Rgba,
+            data_len: 3 << 20,
+            data_fingerprint: 0,
+        },
+        data: vec![0; 3 << 20],
+    });
+    leave(&mut seen, popup, 1);
+    assert_eq!(ages(&seen), [1]);
+    // Two 3 MiB frames exceed 4 MiB, so only the newest stays.
+    leave(&mut seen, image, 2);
+    assert_eq!(ages(&seen), [2]);
+}
