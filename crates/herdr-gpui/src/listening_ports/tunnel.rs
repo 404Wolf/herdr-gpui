@@ -1,13 +1,14 @@
-//! SSH tunnels that make a remote server listening only on its host's own
-//! loopback reachable from a browser tab here. One `ssh -N -L` child per
-//! remote port, started when its port is clicked and kept while the port is
-//! still listed, so reopening the page reuses it.
+//! SSH tunnels that make a remote server reachable from a browser tab here
+//! at `127.0.0.1`. One `ssh -N -L` child per remote port, started when its
+//! port is clicked and kept while the port is still listed, so reopening the
+//! page reuses it.
 
 use crate::{Error, Result};
 use std::{
     collections::HashMap,
     io::{BufRead, BufReader, Read},
-    net::{Ipv4Addr, TcpListener},
+    net::{IpAddr, Ipv4Addr, TcpListener},
+    num::NonZeroU16,
     process::{Child, ExitStatus, Stdio},
     sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc},
     thread,
@@ -27,6 +28,9 @@ const TUNNEL_LIMIT: usize = 32;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Key {
     pub target: String,
+    /// The one address the server listens on, or None for one listening on
+    /// every address or on loopback, which the remote's `localhost` reaches.
+    pub address: Option<IpAddr>,
     pub port: u16,
 }
 
@@ -129,13 +133,13 @@ impl Drop for Tunnel {
 
 /// Starts a tunnel to `key` and waits until SSH says its forward is bound,
 /// which blocks for up to [`OPEN_TIMEOUT`]: call it off the UI thread.
-/// `preferred` is the local port this remote port was last forwarded to,
-/// kept when it is still free so a page reopened after a dropped connection
-/// keeps its address.
+/// `preferred` is the local port [`Tunnels::begin`] chose, kept when it is
+/// still free, so the server keeps its own number or a page reopened after
+/// a dropped connection keeps its address.
 /// `attempt` lets the caller kill the SSH child while this still waits.
 pub(crate) fn open(key: &Key, preferred: Option<u16>, attempt: &Attempt) -> Result<Tunnel> {
     match start(key, preferred, attempt) {
-        // Someone took the remembered port meanwhile; any free one will do,
+        // Someone took the preferred port meanwhile; any free one will do,
         // unless the attempt was cancelled, which also looks like an exit.
         Err(Error::TunnelExited(_)) if preferred.is_some() && !attempt.slot().cancelled => {
             start(key, None, attempt)
@@ -146,7 +150,7 @@ pub(crate) fn open(key: &Key, preferred: Option<u16>, attempt: &Attempt) -> Resu
 
 fn start(key: &Key, preferred: Option<u16>, attempt: &Attempt) -> Result<Tunnel> {
     let local = free_port(preferred).map_err(Error::TunnelPort)?;
-    let mut command = herdr_client::forward_command(&key.target, local, key.port)?;
+    let mut command = herdr_client::forward_command(&key.target, local, key.address, key.port)?;
     // Only the readiness line is read; diagnostics may carry secrets.
     command
         .stdin(Stdio::null())
@@ -249,14 +253,33 @@ impl Tunnels {
         None
     }
 
+    /// The local port of a live tunnel to `key`, leaving a dead one for
+    /// [`Tunnels::local`] or [`Tunnels::retain`] to drop. Only the control
+    /// server, which is Unix-only, reads it.
+    #[cfg(unix)]
+    pub(crate) fn live(&self, key: &Key) -> Option<u16> {
+        self.open
+            .get(key)
+            .filter(|tunnel| tunnel.alive())
+            .map(|tunnel| tunnel.local)
+    }
+
     /// Marks `key` as opening and returns the local port to prefer, or None
-    /// when it is opening already or too many tunnels are.
+    /// when it is opening already or too many tunnels are. That is the local
+    /// port `key` was last forwarded to, else the server's own number as the
+    /// host menu's Forward port picks it, unless another remote port last
+    /// used that one, whose page may still be open on it.
     pub(crate) fn begin(&mut self, key: &Key) -> Option<Option<u16>> {
         if self.open.len() + self.opening.len() >= TUNNEL_LIMIT || self.opening.contains_key(key) {
             return None;
         }
         self.opening.insert(key.clone(), Attempt::default());
-        Some(self.used.get(key).copied())
+        let preferred = self.used.get(key).copied().or_else(|| {
+            NonZeroU16::new(key.port)
+                .map(herdr_client::preferred_local_port)
+                .filter(|port| !self.used.values().any(|used| used == port))
+        });
+        Some(preferred)
     }
 
     /// The handle on the attempt [`Tunnels::begin`] started for `key`.
