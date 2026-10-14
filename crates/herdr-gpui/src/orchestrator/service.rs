@@ -566,11 +566,24 @@ impl Worker {
                     return Ok(SyncState::SignIn);
                 };
                 let previous = store.checkpoint(key)?;
+                // What the last complete sync stored, for reading only the
+                // changes since; a read-only store keeps none.
+                let cached = match (&previous, writable) {
+                    (Some(_), true) => Some(
+                        store
+                            .items()?
+                            .into_iter()
+                            .filter(|item| item.key.source == *key)
+                            .collect(),
+                    ),
+                    _ => None,
+                };
                 let cancelled = &self.cancelled;
                 let listing = github::sync(
                     key,
                     token,
                     previous.as_ref(),
+                    cached,
                     &|| cancelled.load(Ordering::Relaxed),
                     &mut self.cooldown,
                 )?;

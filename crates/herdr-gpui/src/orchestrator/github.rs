@@ -3,12 +3,18 @@
 //! recently closed or merged ones. One query per page returns each pull
 //! request's refs, SHAs, diff size and counts, which agent-launcher fetches
 //! one pull request at a time.
+//!
+//! Between full listings a sync reads only what changed since the last one:
+//! issues GitHub filters by update time, and pull requests newest first until
+//! one is older. A quiet repository then costs two small requests a minute
+//! however many items it has, instead of a page per hundred.
 
 use super::{Activity, Checkpoint, Error, Item, ItemKey, PullRequest, Result, SourceKey};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::collections::HashSet;
 use std::time::Duration;
 
 const PAGE: usize = 100;
@@ -18,10 +24,32 @@ pub(super) const MAX_OPEN: usize = 2_000;
 /// Closed and merged pull requests kept, newest first.
 const RECENTLY_CLOSED: usize = 50;
 const TIMEOUT: Duration = Duration::from_secs(30);
+/// How long incremental syncs follow one another before a full listing again
+/// catches what they cannot see, such as a deleted or transferred issue.
+pub(super) const FULL_EVERY: TimeDelta = TimeDelta::minutes(30);
+/// Pull requests read per page when only changes are wanted: usually the
+/// first page already reaches one older than the last sync.
+const CHANGED_PAGE: usize = 20;
 
 const ISSUES: &str = r#"query($owner: String!, $repo: String!, $after: String) {
   repository(owner: $owner, name: $repo) {
     issues(first: 100, after: $after, states: OPEN, orderBy: {field: UPDATED_AT, direction: DESC}) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number title body state url createdAt updatedAt
+        author { login }
+        labels(first: 20) { nodes { name } }
+        comments { totalCount }
+      }
+    }
+  }
+}"#;
+
+/// Open and closed issues updated since the last sync: a closed one leaves
+/// the listing, as a full sync of open issues leaves it out.
+const CHANGED_ISSUES: &str = r#"query($owner: String!, $repo: String!, $after: String, $since: DateTime!) {
+  repository(owner: $owner, name: $repo) {
+    issues(first: 100, after: $after, filterBy: {since: $since, states: [OPEN, CLOSED]}, orderBy: {field: UPDATED_AT, direction: DESC}) {
       pageInfo { hasNextPage endCursor }
       nodes {
         number title body state url createdAt updatedAt
@@ -58,11 +86,14 @@ pub(crate) struct Listing {
 }
 
 /// Lists `source`. `previous` keeps agent-launcher's PR detail markers, which
-/// stay valid because each embeds the pull request's revision.
+/// stay valid because each embeds the pull request's revision. With `cached`,
+/// the items the last complete sync stored, only what changed since is read
+/// while the last full listing is recent.
 pub(crate) fn sync(
     source: &SourceKey,
     token: &SecretString,
     previous: Option<&Checkpoint>,
+    cached: Option<Vec<Item>>,
     cancelled: &impl Fn() -> bool,
     cooldown: &mut Option<Duration>,
 ) -> Result<Listing> {
@@ -85,6 +116,34 @@ pub(crate) fn sync(
             error => Error::Github(Box::new(error)),
         })
     };
+    let previous = previous.cloned().unwrap_or_default();
+    if let Some((since, cached)) = incremental(&previous, cached, Utc::now())
+        && let Some(listing) = changes(source, (owner, repo), since, cached, &previous, &mut fetch)?
+    {
+        return Ok(listing);
+    }
+    full(source, (owner, repo), previous, &mut fetch)
+}
+
+/// Where an incremental sync continues from, while the last full listing is
+/// recent enough and its items are at hand.
+pub(super) fn incremental(
+    previous: &Checkpoint,
+    cached: Option<Vec<Item>>,
+    now: DateTime<Utc>,
+) -> Option<(DateTime<Utc>, Vec<Item>)> {
+    let since = previous.updated_at?;
+    let full = previous.last_full_at?;
+    (now - full < FULL_EVERY).then_some(())?;
+    Some((since, cached?))
+}
+
+fn full(
+    source: &SourceKey,
+    (owner, repo): (&str, &str),
+    previous: Checkpoint,
+    fetch: &mut impl FnMut(&str, Value) -> Result<Value>,
+) -> Result<Listing> {
     let mut complete = true;
     let mut items = Vec::new();
 
@@ -136,7 +195,6 @@ pub(crate) fn sync(
         connection(fetch(PULL_REQUESTS, variables)?, "pullRequests")?;
     items.extend(closed.nodes.into_iter().map(|node| node.into_item(source)));
 
-    let previous = previous.cloned().unwrap_or_default();
     let checkpoint = Checkpoint {
         updated_at: items.iter().filter_map(|item| item.updated_at).max(),
         etag: None,
@@ -149,6 +207,111 @@ pub(crate) fn sync(
         checkpoint,
         complete,
     })
+}
+
+/// The cached listing with what changed since `since` applied, or `None`
+/// when so much changed that a full listing is the cheaper read.
+fn changes(
+    source: &SourceKey,
+    (owner, repo): (&str, &str),
+    since: DateTime<Utc>,
+    cached: Vec<Item>,
+    previous: &Checkpoint,
+    fetch: &mut impl FnMut(&str, Value) -> Result<Value>,
+) -> Result<Option<Listing>> {
+    let mut changed = Vec::new();
+    let mut after = Value::Null;
+    loop {
+        let variables = json!({
+            "owner": owner, "repo": repo, "after": after, "since": since.to_rfc3339(),
+        });
+        let page: Page<IssueNode> = connection(fetch(CHANGED_ISSUES, variables)?, "issues")?;
+        changed.extend(page.nodes.into_iter().map(|node| node.into_item(source)));
+        match next(&page.page_info, changed.len()) {
+            Next::Page(cursor) => after = cursor,
+            Next::Done => break,
+            Next::Capped => return Ok(None),
+        }
+    }
+    let issues = changed.len();
+    let mut after = Value::Null;
+    'pages: loop {
+        let variables = json!({
+            "owner": owner, "repo": repo, "after": after,
+            "states": ["OPEN", "CLOSED", "MERGED"], "count": CHANGED_PAGE,
+        });
+        let page: Page<PullRequestNode> =
+            connection(fetch(PULL_REQUESTS, variables)?, "pullRequests")?;
+        for node in page.nodes {
+            let item = node.into_item(source);
+            if item.updated_at.is_some_and(|at| at < since) {
+                break 'pages;
+            }
+            changed.push(item);
+        }
+        match next(&page.page_info, changed.len() - issues) {
+            Next::Page(cursor) => after = cursor,
+            Next::Done => break,
+            Next::Capped => return Ok(None),
+        }
+    }
+    let newest = changed.iter().filter_map(|item| item.updated_at).max();
+    let items = merge(cached, changed);
+    let open = |pull_request: bool| {
+        items
+            .iter()
+            .filter(|item| item.pull_request.is_some() == pull_request && !settled(item))
+            .count()
+    };
+    let complete = open(false) <= MAX_OPEN && open(true) <= MAX_OPEN;
+    let checkpoint = Checkpoint {
+        updated_at: previous.updated_at.max(newest),
+        etag: None,
+        last_full_at: previous.last_full_at,
+        pr_details: previous.pr_details.clone(),
+        pr_cursor: previous.pr_cursor,
+    };
+    Ok(Some(Listing {
+        items,
+        checkpoint,
+        complete,
+    }))
+}
+
+/// A closed or merged pull request.
+fn settled(item: &Item) -> bool {
+    item.pull_request.is_some() && matches!(item.state.as_str(), "closed" | "merged")
+}
+
+/// Applies `changed`, read newest first, to the cached items: each replaces
+/// its older copy, a closed issue is dropped, and only the newest
+/// [`RECENTLY_CLOSED`] closed or merged pull requests are kept, as a full
+/// listing would hold them.
+pub(super) fn merge(mut items: Vec<Item>, changed: Vec<Item>) -> Vec<Item> {
+    let mut seen = HashSet::new();
+    let changed: Vec<Item> = changed
+        .into_iter()
+        .filter(|item| seen.insert(item.key.clone()))
+        .collect();
+    items.retain(|item| !seen.contains(&item.key));
+    items.extend(
+        changed
+            .into_iter()
+            .filter(|item| item.pull_request.is_some() || item.state != "closed"),
+    );
+    let mut closed: Vec<_> = items
+        .iter()
+        .filter(|item| settled(item))
+        .map(|item| (item.updated_at, item.key.clone()))
+        .collect();
+    closed.sort_by_key(|(updated, _)| std::cmp::Reverse(*updated));
+    let dropped: HashSet<ItemKey> = closed
+        .into_iter()
+        .skip(RECENTLY_CLOSED)
+        .map(|(_, key)| key)
+        .collect();
+    items.retain(|item| !dropped.contains(&item.key));
+    items
 }
 
 enum Next {
