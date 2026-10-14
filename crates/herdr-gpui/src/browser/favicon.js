@@ -3,12 +3,13 @@
 // pixels square, as RGBA bytes, or null when the page has none the app can
 // read, such as one from another origin that does not allow it. It watches
 // the document's head so an icon the page swaps later is reported too, at
-// most once per `pause` milliseconds. The app treats every report as
-// untrusted.
+// most once per `pause` milliseconds. Each run, and each return of the page
+// from the back-forward cache, reports again: the app's tab may show another
+// page's icon by then. The app treats every report as untrusted.
 (function (size, pause) {
   "use strict";
   if (window.__herdrFavicon) {
-    window.__herdrFavicon();
+    window.__herdrFavicon(true);
     return;
   }
   var post = function (pixels) {
@@ -19,7 +20,8 @@
   // that, a web page's conventional `/favicon.ico`.
   var address = function () {
     var best = null;
-    var bestScore = -1;
+    // Below every score, so a lone touch icon is still taken.
+    var bestScore = -Infinity;
     var links = document.querySelectorAll("link[rel][href]");
     for (var i = 0; i < links.length; i++) {
       var link = links[i];
@@ -76,9 +78,9 @@
     image.src = url;
   };
 
-  var check = function () {
+  var check = function (again) {
     var url = address();
-    if (url === shown) return;
+    if (url === shown && again !== true) return;
     shown = url;
     if (url === null) post(null);
     else draw(url);
@@ -95,6 +97,9 @@
   };
   window.__herdrFavicon = check;
   check();
+  window.addEventListener("pageshow", function (event) {
+    if (event.persisted) check(true);
+  });
   if (document.head && window.MutationObserver) {
     new MutationObserver(later).observe(document.head, {
       childList: true,
