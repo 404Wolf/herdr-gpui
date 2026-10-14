@@ -323,7 +323,12 @@ impl MenuState {
             code_search: None,
             close: None,
             pr: Default::default(),
-            pr_cache: Default::default(),
+            // Every window reads and refreshes the same answers.
+            pr_cache: cx
+                .try_global::<crate::pull_request::Shared>()
+                .map_or_else(Default::default, |shared| {
+                    crate::pull_request::Cache::shared(shared.0.clone())
+                }),
             pr_cache_connection: None,
             pr_snapshot: None,
             github: Default::default(),

@@ -99,13 +99,20 @@ fn hidden_branches_never_grow_a_full_cache() {
     for _ in 1..CACHE_LIMIT {
         peer.complete(now, Ok(None), None);
     }
-    assert_eq!(peer.cache.entries.len(), CACHE_LIMIT);
-    assert!(peer.cache.entries.iter().all(|entry| now < entry.due));
+    assert_eq!(peer.cache.store.borrow().entries.len(), CACHE_LIMIT);
+    assert!(
+        peer.cache
+            .store
+            .borrow()
+            .entries
+            .iter()
+            .all(|entry| now < entry.due)
+    );
 
     // Every sibling is answered from the pause while nothing in the cache is due.
     peer.cache
         .schedule((0..8).map(|i| input(&format!("sibling-{i}"))), now);
     peer.cache.poll(now);
     assert!(peer.incoming.try_recv().is_err());
-    assert_eq!(peer.cache.entries.len(), CACHE_LIMIT);
+    assert_eq!(peer.cache.store.borrow().entries.len(), CACHE_LIMIT);
 }

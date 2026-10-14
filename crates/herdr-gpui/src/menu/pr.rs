@@ -134,6 +134,7 @@ impl HerdrWindow {
             .filter(|_| self.live.status.is_connected() && self.live.snapshot.is_some());
         if let Some(origin) = origin {
             self.sync_pr_scope();
+            self.menu.pr_cache.idle = !self.active;
             let now = std::time::Instant::now();
             if let Some(snapshot) = &self.live.snapshot {
                 if self
@@ -165,7 +166,7 @@ impl HerdrWindow {
                         .find(|workspace| Some(workspace.workspace_id.as_str()) == priority)
                         && let Ok(input) = workspace_input(workspace, &origin)
                     {
-                        self.menu.pr_cache.expire_missing(&input, now);
+                        self.menu.pr_cache.expire_viewed(&input, now);
                     }
                     let inputs =
                         workspace_pr_inputs(snapshot, &origin, priority, self.menu.pr_cache.cursor);

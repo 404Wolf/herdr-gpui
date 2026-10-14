@@ -17,7 +17,7 @@ fn worker_discards_stale_batches_and_runs_only_requested_jobs() {
     };
     let answer = |input: &Input| Batch {
         found: vec![(input.clone(), Ok(Some(fixture().unwrap())))],
-        failed: None,
+        ..Batch::default()
     };
     prefetch.request(
         vec![input.clone()],

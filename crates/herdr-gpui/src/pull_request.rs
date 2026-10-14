@@ -7,6 +7,7 @@ mod fetch;
 mod lookup;
 mod model;
 mod parse;
+mod store;
 
 #[cfg(test)]
 mod tests;
@@ -19,6 +20,7 @@ pub(crate) use {
         Input, MergeMethod, Origin, Outcome, PullRequest, ReviewDecision, State, clean,
         repository_input, workspace_input,
     },
+    store::Shared,
 };
 
 pub(crate) use fetch::{by_number, local_repository, repository_key};

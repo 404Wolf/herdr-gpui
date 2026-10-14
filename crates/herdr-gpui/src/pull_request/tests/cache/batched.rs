@@ -26,7 +26,7 @@ fn due_checkouts_share_one_request_and_each_keeps_its_own_answer() {
             generation,
             Batch {
                 found,
-                failed: None,
+                ..Batch::default()
             },
             None,
         ))
@@ -60,7 +60,8 @@ fn a_failed_request_keeps_every_checkouts_last_answer_and_pauses_once() {
             generation,
             Batch {
                 found: Vec::new(),
-                failed: Some((inputs, Error::GitHubRateLimit { reset: None })),
+                failed: vec![(inputs, Error::GitHubRateLimit { reset: None })],
+                ..Batch::default()
             },
             Some(Duration::from_secs(600)),
         ))
@@ -77,17 +78,10 @@ fn a_failed_request_keeps_every_checkouts_last_answer_and_pauses_once() {
                 .starts_with("Refresh unavailable, showing the last result. GitHub rate limit")
         );
     }
-    assert_eq!(
-        peer.cache.paused_until,
-        Some(now + Duration::from_secs(600))
-    );
-    assert!(
-        peer.cache
-            .pause_reason
-            .as_deref()
-            .unwrap()
-            .starts_with("GitHub rate limit")
-    );
+    let store = peer.cache.store.borrow();
+    let (until, reason) = store.pause("fixture", now).unwrap();
+    assert_eq!(until, now + Duration::from_secs(600));
+    assert!(reason.unwrap().starts_with("GitHub rate limit"));
 }
 
 #[test]
@@ -107,7 +101,7 @@ fn a_checkout_gone_mid_request_is_dropped_but_the_rest_are_answered() {
             generation,
             Batch {
                 found,
-                failed: None,
+                ..Batch::default()
             },
             None,
         ))
@@ -131,5 +125,8 @@ fn a_worker_that_stops_fails_its_whole_batch_and_keeps_answers() {
     assert!(peer.cache.active.is_empty());
     assert_eq!(peer.cache.peek("/repo/.git", "first").unwrap().number, 8);
     let (_, message) = peer.cache.lookup(&input("second")).unwrap();
-    assert_eq!(message, Some("PR worker stopped; retrying automatically."));
+    assert_eq!(
+        message.as_deref(),
+        Some("PR worker stopped; retrying automatically.")
+    );
 }

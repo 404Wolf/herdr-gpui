@@ -1,13 +1,18 @@
 use super::*;
 use crate::pull_request::{
     batch::{BATCH_LIMIT, Batch},
-    cache::{BatchSize, CACHE_LIMIT, ERROR_BACKOFF, HIDDEN_BACKOFF, REFRESH},
+    cache::{
+        BatchSize, CACHE_LIMIT, ERROR_BACKOFF, HIDDEN_BACKOFF, IDLE_STRETCH, QUIET_REFRESH,
+        REFRESH, SETTLED_REFRESH,
+    },
 };
 
 mod batched;
+mod freshness;
 mod hidden;
 mod missing;
 mod pause;
+mod shared;
 
 fn input(branch: &str) -> Input {
     Input {
@@ -26,7 +31,7 @@ struct Peer {
 fn answered(input: Input, result: Result) -> Batch {
     Batch {
         found: vec![(input, result)],
-        failed: None,
+        ..Batch::default()
     }
 }
 
@@ -53,6 +58,13 @@ impl Peer {
             incoming,
             outgoing,
         }
+    }
+
+    fn pause(&self, until: Instant) {
+        self.cache
+            .store
+            .borrow_mut()
+            .set_pause("fixture", until, None);
     }
 
     fn complete(&mut self, now: Instant, result: Result, cooldown: Option<Duration>) -> Input {
@@ -107,7 +119,7 @@ fn explicit_refresh_respects_account_backoff_and_bounds_the_queue() {
     let now = Instant::now();
     let input = input("feature");
     peer.cache.seed(input.clone(), fixture().unwrap(), now);
-    peer.cache.paused_until = Some(now + ERROR_BACKOFF);
+    peer.pause(now + ERROR_BACKOFF);
     peer.cache
         .schedule((0..CACHE_LIMIT).map(|i| self::input(&i.to_string())), now);
     peer.cache.refresh(input.clone(), now);
@@ -132,9 +144,9 @@ fn loading_covers_queued_and_in_flight_lookups_but_not_a_paused_account() {
     assert!(!peer.cache.loading(&input, now));
     peer.cache.refresh(input.clone(), now);
     assert!(peer.cache.loading(&input, now), "queued for dispatch");
-    peer.cache.paused_until = Some(now + ERROR_BACKOFF);
+    peer.pause(now + ERROR_BACKOFF);
     assert!(!peer.cache.loading(&input, now), "a paused account waits");
-    peer.cache.paused_until = None;
+    peer.cache.store.borrow_mut().pauses.clear();
     peer.cache.poll(now);
     assert!(peer.cache.loading(&input, now), "in flight");
     assert!(!peer.cache.loading(&self::input("other"), now));
@@ -159,6 +171,7 @@ fn cache_prefetches_without_menu_and_refreshes_at_ttl_with_stale_data() {
     assert_eq!(view.value.as_ref().unwrap().number, 8);
     assert!(!view.loading);
     assert!(peer.incoming.try_recv().is_err(), "menu read is I/O free");
+    // A check is still running, so it is asked about again soon.
     peer.cache
         .schedule([input.clone()], now + REFRESH - Duration::from_secs(1));
     peer.cache.poll(now + REFRESH - Duration::from_secs(1));
@@ -253,7 +266,12 @@ fn scope_changes_fence_late_results_and_only_another_account_forgets_answers() {
             .unwrap();
         peer.cache.poll(now);
         assert!(
-            peer.cache.entries.iter().all(|e| e.input != input("old")),
+            peer.cache
+                .store
+                .borrow()
+                .entries
+                .iter()
+                .all(|e| e.input != input("old")),
             "late result was recorded: {change}"
         );
         assert!(peer.incoming.try_recv().is_err());
@@ -352,7 +370,7 @@ fn cache_is_bounded_lru_and_does_not_refetch_fresh_entries_under_pressure() {
     for _ in 0..CACHE_LIMIT {
         peer.complete(now, Ok(None), None);
     }
-    assert_eq!(peer.cache.entries.len(), CACHE_LIMIT);
+    assert_eq!(peer.cache.store.borrow().entries.len(), CACHE_LIMIT);
     assert!(peer.incoming.try_recv().is_err());
     peer.cache.schedule([input("overflow")], now);
     peer.cache.poll(now);
@@ -363,14 +381,32 @@ fn cache_is_bounded_lru_and_does_not_refetch_fresh_entries_under_pressure() {
     let mut view = Lookup::default();
     peer.cache
         .present(&input("0"), &mut view, now + Duration::from_secs(1));
-    peer.cache.schedule([input("overflow")], now + REFRESH);
-    peer.cache.poll(now + REFRESH);
-    peer.complete(now + REFRESH, Ok(None), None);
-    assert_eq!(peer.cache.entries.len(), CACHE_LIMIT);
-    assert!(peer.cache.entries.iter().any(|e| e.input.branch == "0"));
-    assert!(!peer.cache.entries.iter().any(|e| e.input.branch == "1"));
+    peer.cache
+        .schedule([input("overflow")], now + QUIET_REFRESH);
+    peer.cache.poll(now + QUIET_REFRESH);
+    peer.complete(now + QUIET_REFRESH, Ok(None), None);
+    assert_eq!(peer.cache.store.borrow().entries.len(), CACHE_LIMIT);
     assert!(
         peer.cache
+            .store
+            .borrow()
+            .entries
+            .iter()
+            .any(|e| e.input.branch == "0")
+    );
+    assert!(
+        !peer
+            .cache
+            .store
+            .borrow()
+            .entries
+            .iter()
+            .any(|e| e.input.branch == "1")
+    );
+    assert!(
+        peer.cache
+            .store
+            .borrow()
             .entries
             .iter()
             .any(|e| e.input.branch == "overflow")

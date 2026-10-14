@@ -36,7 +36,7 @@ fragment PullRequestFields on PullRequest {
 /// The fields a lookup reads of each pull request, for batched queries.
 pub(super) const FIELDS: &str = fields!();
 /// A fork's pull request, by the number its local `pr/<number>` branch names.
-const NUMBER_QUERY: &str = concat!(
+pub(super) const NUMBER_QUERY: &str = concat!(
     r#"query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
     mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed
@@ -106,7 +106,7 @@ pub(super) fn fetch(
         cancelled,
         &mut None,
     );
-    match (batch.found.pop(), batch.failed) {
+    match (batch.found.pop(), batch.failed.pop()) {
         (Some((_, result)), _) => result,
         (None, Some((_, error))) => Err(error),
         (None, None) => Err(Error::PrCancelled),
@@ -128,14 +128,14 @@ pub(super) struct Target {
 }
 
 /// Identifies a checkout's repository and branch with local Git or over SSH,
-/// under its own deadline, before any GitHub request is made for it.
+/// by `deadline`, before any GitHub request is made for it.
 pub(super) fn target(
     input: &Input,
     origin: &Origin,
     origins: &mut Origins,
+    deadline: Instant,
     cancelled: &impl Fn() -> bool,
 ) -> crate::Result<Target> {
-    let deadline = Instant::now() + TIMEOUT;
     let ((owner, repo), head) = match origin {
         Origin::Local => {
             let checkout = local_checkout(input, deadline, cancelled)?;
