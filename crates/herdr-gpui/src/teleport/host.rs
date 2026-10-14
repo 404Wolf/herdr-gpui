@@ -197,6 +197,17 @@ export PATH
         body: &str,
         cancelled: &AtomicBool,
     ) -> herdr_client::Result<Vec<u8>> {
+        self.capture_within(body, QUERY_IDLE, cancelled)
+    }
+
+    /// [`Host::capture`] for callers on a deadline shorter than the default
+    /// query idle timeout.
+    pub(crate) fn capture_within(
+        &self,
+        body: &str,
+        idle: Duration,
+        cancelled: &AtomicBool,
+    ) -> herdr_client::Result<Vec<u8>> {
         let mut output = Vec::new();
         self.stream(
             body,
@@ -204,7 +215,7 @@ export PATH
             &mut output,
             ScriptLimits {
                 output: QUERY_OUTPUT,
-                idle: QUERY_IDLE,
+                idle: idle.min(QUERY_IDLE),
             },
             cancelled,
         )?;

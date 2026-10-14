@@ -34,8 +34,8 @@ pub(crate) use {
     launch::AgentKind,
     marks::{Mark, Marks},
     snapshot::{
-        Envelope, HostSnapshot, ProcessInfo, ProcessInfoResult, SnapshotResult, WorkspaceCreated,
-        WorktreeCreated,
+        Envelope, HostSnapshot, PaneInfoResult, ProcessInfo, ProcessInfoResult, SnapshotResult,
+        WorkspaceCreated, WorktreeCreated,
     },
     ui::{Follow, Teleport},
 };
