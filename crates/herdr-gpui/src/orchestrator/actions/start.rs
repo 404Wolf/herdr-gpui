@@ -2,7 +2,7 @@
 //! `agent start` arrives. Only a definite busy rejection may be retried: a
 //! transport failure or readiness timeout may follow an accepted launch.
 
-use super::{Error, Host, Result, herdr};
+use super::{Error, Host, Result, herdr, script};
 use crate::teleport::{Envelope, PaneInfoResult};
 use serde::Deserialize;
 use std::{
@@ -26,12 +26,15 @@ pub(super) fn agent(
     retry_busy(
         cancelled,
         || herdr(host, args, STARTING, cancelled).map(drop),
-        || {
+        |budget| {
             let Some(terminal) = terminal.filter(|id| !id.is_empty()) else {
                 // Older output without an identity cannot authorize a retry.
                 return Ok(false);
             };
-            let output = herdr(host, &["pane", "get", pane], STARTING, cancelled)?;
+            // A stalled host must not hold the dispatch past the retry window.
+            let output = host
+                .capture_within(&Host::herdr_line(&["pane", "get", pane]), budget, cancelled)
+                .map_err(script(STARTING))?;
             let current: Envelope<PaneInfoResult> =
                 serde_json::from_slice(&output).map_err(|source| Error::OutputJson {
                     operation: STARTING,
@@ -48,7 +51,8 @@ pub(super) fn agent(
 fn retry_busy(
     cancelled: &AtomicBool,
     mut attempt: impl FnMut() -> Result<()>,
-    mut same_terminal: impl FnMut() -> Result<bool>,
+    // Receives the time left in the retry window, which bounds the query.
+    mut same_terminal: impl FnMut(Duration) -> Result<bool>,
     mut elapsed: impl FnMut() -> Duration,
     mut pause: impl FnMut(Duration),
 ) -> Result<()> {
@@ -70,7 +74,8 @@ fn retry_busy(
         check_cancelled(cancelled)?;
         // Public pane IDs may be reused. Never carry a rejected launch onto
         // a different terminal, and never retry after the bounded wait.
-        if elapsed() >= SHELL_START_TIMEOUT || !same_terminal()? {
+        let remaining = SHELL_START_TIMEOUT.saturating_sub(elapsed());
+        if remaining.is_zero() || !same_terminal(remaining)? {
             return Err(error);
         }
         check_cancelled(cancelled)?;

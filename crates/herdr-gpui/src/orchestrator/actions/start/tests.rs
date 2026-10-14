@@ -32,7 +32,7 @@ fn busy_shell_initialization_retries_until_one_launch_succeeds() {
                 Ok(())
             }
         },
-        || {
+        |_| {
             checks.set(checks.get() + 1);
             Ok(true)
         },
@@ -55,7 +55,7 @@ fn a_permanently_busy_pane_stops_at_the_deadline_with_its_original_cause() {
             attempts.set(attempts.get() + 1);
             Err(busy())
         },
-        || Ok(true),
+        |_| Ok(true),
         || time.get(),
         |delay| time.set(time.get() + delay),
     )
@@ -72,7 +72,7 @@ fn cancellation_during_the_wait_prevents_probes_and_launches() {
     let error = retry_busy(
         &cancelled,
         || Err(busy()),
-        || panic!("cancelled dispatch must not query the pane"),
+        |_| panic!("cancelled dispatch must not query the pane"),
         || Duration::ZERO,
         |_| cancelled.store(true, Ordering::Release),
     )
@@ -82,7 +82,7 @@ fn cancellation_during_the_wait_prevents_probes_and_launches() {
         retry_busy(
             &cancelled,
             || panic!("cancelled dispatch must not launch"),
-            || panic!("cancelled dispatch must not query"),
+            |_| panic!("cancelled dispatch must not query"),
             || Duration::ZERO,
             |_| panic!("cancelled dispatch must not wait"),
         ),
@@ -101,7 +101,7 @@ fn a_replaced_terminal_or_expired_identity_check_prevents_retry() {
                 attempts.set(attempts.get() + 1);
                 Err(busy())
             },
-            || {
+            |_| {
                 if !replaced {
                     time.set(SHELL_START_TIMEOUT);
                 }
@@ -134,11 +134,32 @@ fn ambiguous_failures_and_other_rejections_are_never_replayed() {
             retry_busy(
                 &AtomicBool::new(false),
                 || Err(error.take().unwrap()),
-                || panic!("must not query after an ambiguous failure"),
+                |_| panic!("must not query after an ambiguous failure"),
                 || Duration::ZERO,
                 |_| panic!("must not retry"),
             )
             .is_err()
         );
     }
+}
+
+#[test]
+fn the_identity_check_is_bounded_by_the_remaining_retry_window() {
+    let time = Cell::new(Duration::ZERO);
+    let budgets = std::cell::RefCell::new(Vec::new());
+    retry_busy(
+        &AtomicBool::new(false),
+        || Err(busy()),
+        |budget| {
+            budgets.borrow_mut().push(budget);
+            // A stalled query consumes its whole budget.
+            time.set(time.get() + budget);
+            Ok(true)
+        },
+        || time.get(),
+        |delay| time.set(time.get() + delay),
+    )
+    .unwrap_err();
+    assert_eq!(*budgets.borrow(), [SHELL_START_TIMEOUT - POLL_INTERVAL]);
+    assert_eq!(time.get(), SHELL_START_TIMEOUT);
 }
