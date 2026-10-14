@@ -51,6 +51,12 @@ impl SidebarSearch {
         }
     }
 
+    /// The field's handle, for tests to type into it.
+    #[cfg(test)]
+    pub(crate) fn focus(&self, cx: &gpui::App) -> gpui::FocusHandle {
+        self.input.read(cx).focus.clone()
+    }
+
     /// The query results are shown for: none while the field is blank.
     pub(super) fn query(&self) -> Option<&str> {
         Some(self.query.trim()).filter(|query| !query.is_empty())

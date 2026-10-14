@@ -8,7 +8,11 @@
 //! before, including toggles made while the chrome was hidden.
 
 use super::{Flash, HerdrWindow};
-use crate::{browser::Slot, config::ZenWidth, controls::Command};
+use crate::{
+    browser::{Pick, Slot},
+    config::ZenWidth,
+    controls::Command,
+};
 use chrome::{Chrome, Shown};
 use gpui::{AnyElement, Context, Window, prelude::*, *};
 use std::time::Instant;
@@ -236,8 +240,33 @@ impl HerdrWindow {
                 self.zen.chrome.show(animate);
             }
         }
-        window.focus(&self.focus, cx);
+        self.zen_focus(window, cx);
         cx.notify();
+    }
+
+    /// Hands the keyboard to what the group in use draws. A code, review,
+    /// or devices tab tracks its own handle and keeps the keyboard where it
+    /// is within it; anything else, such as the sidebar's search, may be
+    /// hidden by zen mode, so the window's handle takes the keyboard to the
+    /// terminal, or to the page or stand-in drawn in its place.
+    fn zen_focus(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let own = self
+            .active_group()
+            .and_then(|group| match self.group_pick(group) {
+                Some(Pick::Page(id)) => Some(id),
+                _ => None,
+            })
+            .and_then(|id| {
+                let code = self.code_views.get(&id).map(|view| &view.focus);
+                let review = || self.reviews.get(&id).map(|review| review.focus());
+                let devices = || self.devices_overview.pages.get(&id).map(|page| &page.focus);
+                code.or_else(review).or_else(devices)
+            });
+        match own {
+            Some(focus) if focus.contains_focused(window, cx) => {}
+            Some(focus) => window.focus(focus, cx),
+            None => window.focus(&self.focus, cx),
+        }
     }
 
     /// The groups the window draws, left to right: all of them, or in zen
