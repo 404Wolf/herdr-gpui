@@ -211,6 +211,15 @@ just test-perf
   guidance from the agent harness; add such lines only when the user asks for
   them in the current request.
 - Before creating a PR, review every included commit and the full diff from its base. Include a summary, exact validation commands/results, and remaining manual/native QA.
+- Run `just ci` on the exact commit before creating a PR or pushing to one, so
+  failures surface locally instead of minutes later in CI. `just setup-ci`
+  installs the tools it and the other CI-equivalent recipes need. Fix every
+  failure first; do not open or update a PR on a red or skipped run.
+- After a green run, create or update a single PR comment saying `just ci`
+  ran locally and passed: the commit SHA, the platform (for example macOS
+  arm64), and any extra recipes run (`just release-check`, `just lint-linux`,
+  `just lint-windows`). Edit that comment on later pushes rather than adding
+  a new one, and never post it for a run that failed or did not happen.
 - Include screenshots in any PR that changes something visible: before and
   after images of the real native window, showing the changed area. Add light
   and dark variants when colors or theming change, and a narrow window when
