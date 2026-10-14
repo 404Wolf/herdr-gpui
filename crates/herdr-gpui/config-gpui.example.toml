@@ -181,7 +181,8 @@ project_roots = []
 # close_window = "ctrl-alt-w", new_workspace = "ctrl-alt-shift-n",
 # new_worktree = "ctrl-shift-n",
 # split_right = "ctrl-shift-d", split_down = "ctrl-alt-shift-d",
-# command_palette = "ctrl-shift-p", toggle_full_screen = "f11".
+# command_palette = "ctrl-shift-p", resume_palette = "ctrl-alt-shift-r",
+# toggle_full_screen = "f11".
 # See Keyboard Shortcuts for the full platform-specific list. Explicit values
 # are used literally on every platform; cmd is not translated to Ctrl+Shift.
 # Ctrl+Shift+U is left to GNOME/IBus Unicode character entry.
@@ -214,6 +215,7 @@ project_roots = []
 # keybindings = "cmd-/"
 # workspace_picker = "cmd-p"
 # command_palette = "cmd-shift-p"
+# resume_palette = "cmd-shift-r"   # last query, filters, and selection
 # go_to_symbol = "cmd-shift-o"
 # go_to_file = "cmd-o"
 # open_notification_target = "cmd-alt-n"

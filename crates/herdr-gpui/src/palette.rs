@@ -1,5 +1,5 @@
 use crate::{
-    Error, HerdrWindow, NavigationTarget, OwnedNavigationTarget, Result,
+    Error, HerdrWindow, OwnedNavigationTarget, Result,
     controls::{COMMANDS, Command},
     keymap::Reach,
     menu::Page,
@@ -7,22 +7,30 @@ use crate::{
 };
 use gpui::{prelude::*, *};
 use herdr_client::{
-    Method,
     protocol::{ClientShellCommandAction, ClientShellSnapshot},
     scrollback::SelectionReadParams,
 };
 use serde_json::{Value, json};
 use std::sync::Arc;
 
+mod activate;
 mod agent_filter;
+mod frecency;
+pub(crate) use frecency::{Frecency, now as unix_now};
 mod go_to;
 #[cfg(test)]
 mod interaction_tests;
+mod keys;
+mod last_seen;
+pub(crate) use last_seen::LastSeen;
+mod preview;
 mod project_create;
 mod project_open;
 mod projects;
 pub(crate) use projects::launch_root;
 mod render;
+mod resume;
+pub(crate) use resume::Resume;
 mod search;
 
 use agent_filter::AgentFilter;
@@ -131,6 +139,10 @@ struct Entry {
     parent: Option<usize>,
     /// The daemon-reported status of a Go To row's agent, if it has one.
     status: Option<herdr_client::protocol::AgentStatus>,
+    /// How choosing this row is remembered, for rows ranked by frecency.
+    frecency: Option<frecency::Key>,
+    /// Ranking points from how often and recently the row was chosen.
+    boost: u32,
     fields: search::Fields,
 }
 
@@ -168,6 +180,8 @@ impl Entry {
             action,
             parent,
             status: None,
+            frecency: None,
+            boost: 0,
             fields,
         }
     }
@@ -339,6 +353,14 @@ pub(super) struct Palette {
     supports_edit_scrollback: bool,
     /// The notes revision the entries were prepared from.
     notes_revision: Option<u64>,
+    /// Paints Go To's preview at its own size, apart from the terminal's
+    /// painter so neither reshapes the other's glyphs.
+    preview_painter: std::rc::Rc<std::cell::RefCell<crate::terminal_painter::TerminalPainter>>,
+    /// Frecency points taken when the palette opened.
+    boosts: frecency::Boosts,
+    /// The row a resumed palette selects again once a ranking lists it,
+    /// until the user picks another row, filter, or query.
+    restore: Option<Identity>,
     _subscription: Subscription,
 }
 
@@ -379,21 +401,27 @@ impl Palette {
             .map(|hit| &self.entries[hit.index])
     }
 
-    /// Shows `filtered` rows of `entries`, keeping the selected destination
-    /// when asked and it is still listed.
+    /// Shows `filtered` rows of `entries`, selecting a resumed row once it is
+    /// listed, else keeping the selected destination when asked and it is
+    /// still listed.
     fn apply(&mut self, entries: Arc<[Entry]>, filtered: Vec<search::Hit>, selection: Selection) {
-        let selected = match selection {
+        let kept = match selection {
             Selection::Keep => self.selected_identity(),
             Selection::First => None,
         };
         self.entries = entries;
         self.filtered = filtered;
-        self.selected = selected
-            .and_then(|selected| {
-                self.filtered
-                    .iter()
-                    .position(|hit| self.entries[hit.index].action.identity() == selected)
-            })
+        let position = |identity: &Identity| {
+            self.filtered
+                .iter()
+                .position(|hit| self.entries[hit.index].action.identity() == *identity)
+        };
+        let restored = self.restore.as_ref().and_then(position);
+        if restored.is_some() {
+            self.restore = None;
+        }
+        self.selected = restored
+            .or_else(|| kept.as_ref().and_then(position))
             .unwrap_or(0);
         self.scroll
             .scroll_to_item(self.selected, ScrollStrategy::Nearest);
@@ -404,19 +432,44 @@ impl Palette {
     }
 }
 
+/// Ranks the `filter`'s rows. The flat project list has no order of its own
+/// to keep, so with no query its most frecent projects come first.
+fn rank_rows(
+    filter: Filter,
+    status: AgentFilter,
+    entries: &[Entry],
+    candidates: Vec<usize>,
+    query: &search::Query,
+    matcher: &mut nucleo_matcher::Matcher,
+) -> Vec<search::Hit> {
+    let mut hits = status.rank(entries, candidates, query, matcher);
+    if filter == Filter::Projects && query.is_empty() {
+        hits.sort_by_key(|hit| std::cmp::Reverse(entries[hit.index].boost));
+    }
+    hits
+}
+
 impl HerdrWindow {
+    /// Ranks for `query`. A new query starts from the best row; the same
+    /// query again, such as a resumed one echoed by its field, keeps the row.
     pub(super) fn filter_palette(&mut self, query: &str, cx: &mut Context<Self>) {
         let roots = self.config.palette.project_roots.clone();
+        let mut selection = Selection::Keep;
         if let Some(palette) = &mut self.menu.palette {
+            if palette.query != query {
+                palette.restore = None;
+                selection = Selection::First;
+            }
             palette.query = query.to_owned();
             palette.rebuild_pending(&roots);
         }
-        self.rank_palette(Selection::First, cx);
+        self.rank_palette(selection, cx);
     }
 
     pub(super) fn set_palette_filter(&mut self, filter: Filter, cx: &mut Context<Self>) {
         if let Some(palette) = &mut self.menu.palette {
             palette.filter = filter;
+            palette.restore = None;
         }
         self.rank_palette(Selection::First, cx);
     }
@@ -443,14 +496,30 @@ impl HerdrWindow {
         let query = search::Query::parse(&palette.query);
         if candidates.len() <= search::INLINE_CANDIDATES {
             palette.match_task = None;
-            let filtered = status.rank(&entries, candidates, &query, &mut palette.matcher);
+            let filtered = rank_rows(
+                filter,
+                status,
+                &entries,
+                candidates,
+                &query,
+                &mut palette.matcher,
+            );
             palette.apply(entries, filtered, selection);
             cx.notify();
             return;
         }
         let ranking = cx.background_spawn({
             let entries = entries.clone();
-            async move { status.rank(&entries, candidates, &query, &mut search::matcher()) }
+            async move {
+                rank_rows(
+                    filter,
+                    status,
+                    &entries,
+                    candidates,
+                    &query,
+                    &mut search::matcher(),
+                )
+            }
         });
         let token = palette.search.clone();
         palette.match_task = Some(cx.spawn(async move |this, cx| {
@@ -509,7 +578,8 @@ impl HerdrWindow {
             });
         search.update(cx, |input, cx| {
             input.set_placeholder("Search workspaces, commands, agents, and projects...", cx);
-            input.set_appearance(self.config.ui.clone(), self.theme.clone(), cx);
+            input.set_frameless(cx);
+            input.set_appearance(render::search_font(&self.config.ui), self.theme.clone(), cx);
             window.focus(&input.focus, cx);
         });
         let mut palette = Palette {
@@ -539,6 +609,10 @@ impl HerdrWindow {
             supports_clear: self.live.supports_pane_clear,
             supports_edit_scrollback: self.live.supports_edit_scrollback,
             notes_revision: None,
+            restore: None,
+            preview_painter: Default::default(),
+            boosts: Frecency::of(cx)
+                .map_or_else(Default::default, |history| history.boosts(frecency::now())),
             _subscription: subscription,
         };
         self.prepare_palette_entries(&mut palette, crate::worktree_notes::Notes::of(cx));
@@ -594,7 +668,7 @@ impl HerdrWindow {
         entries.extend(
             COMMANDS
                 .iter()
-                .filter(|info| info.command != Command::Palette)
+                .filter(|info| !matches!(info.command, Command::Palette | Command::ResumePalette))
                 .filter(|info| match info.command {
                     Command::ClearPane => self.live.supports_pane_clear,
                     Command::EditScrollback => self.live.supports_edit_scrollback,
@@ -666,14 +740,21 @@ impl HerdrWindow {
             );
         }
         entries.extend(palette.projects.projects.iter().map(|project| {
-            Entry::new(
+            let mut entry = Entry::new(
                 project.label.clone(),
                 format!("Local  {}", project.path.display()),
                 "Project",
                 Action::Project(project.clone()),
                 None,
-            )
+            );
+            entry.frecency = Some(frecency::Key::Project {
+                path: project.path.clone(),
+            });
+            entry
         }));
+        for entry in &mut entries {
+            entry.boost = palette.boosts.of(entry.frecency.as_ref());
+        }
         palette.base = entries.clone().into();
         palette.rebuild_pending(&self.config.palette.project_roots);
         palette.sources = sources;
@@ -730,249 +811,6 @@ impl HerdrWindow {
             self.prepare_palette_entries(&mut palette, notes);
             self.menu.palette = Some(palette);
             self.rank_palette(Selection::Keep, cx);
-        }
-    }
-
-    fn activate_palette(&mut self, action: Action, window: &mut Window, cx: &mut Context<Self>) {
-        let action = match action {
-            Action::Note {
-                endpoint,
-                boot,
-                workspace,
-            } => Action::Go {
-                endpoint,
-                boot,
-                target: NavigationTarget::Workspace(workspace),
-            },
-            action => action,
-        };
-        if self.menu.palette.as_ref().is_none_or(Palette::busy) {
-            return;
-        }
-        if !self.menu_target_current() {
-            if let Some(palette) = &mut self.menu.palette {
-                palette.error = Some("The selected connection changed. Reopen the palette.".into());
-            }
-            cx.notify();
-            return;
-        }
-        if let Action::Native(command) = action {
-            self.dismiss_menu(window, cx);
-            self.command(command, window, cx);
-            return;
-        }
-        if let Action::Project(project) = action {
-            self.activate_project(project, window, cx);
-            return;
-        }
-        if let Action::NewProject(project) = action {
-            self.create_project(project, window, cx);
-            return;
-        }
-        if let Action::Go {
-            endpoint,
-            boot,
-            target,
-        } = &action
-        {
-            match self.go_to_ready(endpoint, boot, target.as_deref()) {
-                Ok(selected) => {
-                    self.dismiss_menu(window, cx);
-                    if selected {
-                        self.navigate(target.as_deref(), cx);
-                    } else {
-                        self.navigate_endpoint(endpoint, target.as_deref(), cx);
-                    }
-                }
-                Err(error) => {
-                    if let Some(palette) = &mut self.menu.palette {
-                        palette.error = Some(error.to_string());
-                    }
-                    cx.notify();
-                }
-            }
-            return;
-        }
-        let result = (|| {
-            if !self.input_ready() {
-                return Err(Error::PaletteConnectionNotReady);
-            }
-            let snapshot = self.live.snapshot.as_ref().ok_or(Error::NoSnapshot)?;
-            let target = self
-                .menu
-                .palette
-                .as_ref()
-                .and_then(|p| p.target.as_ref())
-                .ok_or(Error::NoPaletteSession)?;
-            match &action {
-                Action::Configured(id, action) => {
-                    let mut target = target.clone();
-                    if let Some(selection) = &mut target.selection {
-                        self.fence_plugin_selection(selection);
-                    }
-                    target.invocation(snapshot, id, *action)
-                }
-                Action::Native(_)
-                | Action::Go { .. }
-                | Action::Project(_)
-                | Action::NewProject(_)
-                | Action::Note { .. } => unreachable!(),
-            }
-        })();
-        match result {
-            Ok(params) => {
-                self.request_focus_change(Method::CommandInvoke.as_str(), None, |handle, boot| {
-                    handle.request(boot, Method::CommandInvoke, params)
-                });
-                self.dismiss_menu(window, cx);
-            }
-            Err(error) => {
-                if let Some(palette) = &mut self.menu.palette {
-                    palette.error = Some(error.to_string());
-                }
-                cx.notify();
-            }
-        }
-    }
-
-    /// Runs a daemon custom command on the focused workspace, tab, and pane,
-    /// as choosing it in the palette does; a shortcut has no palette to
-    /// report a refusal in, so it reads as a local error instead.
-    pub(crate) fn invoke_custom_command(
-        &mut self,
-        id: &str,
-        action: ClientShellCommandAction,
-        cx: &mut Context<Self>,
-    ) {
-        if self.activation_deadline.is_some()
-            || !self.endpoints[self.selected_endpoint].surface_requested()
-        {
-            return;
-        }
-        let result = (|| {
-            if !self.input_ready() {
-                return Err(Error::PaletteConnectionNotReady);
-            }
-            let snapshot = self.live.snapshot.as_ref().ok_or(Error::NoSnapshot)?;
-            Target::capture(snapshot, self.plugin_selection()).invocation(snapshot, id, action)
-        })();
-        match result {
-            Ok(params) => {
-                self.request_focus_change(Method::CommandInvoke.as_str(), None, |handle, boot| {
-                    handle.request(boot, Method::CommandInvoke, params)
-                });
-                self.discard_composition(cx);
-            }
-            Err(error) => self.local_error = Some(error.to_string()),
-        }
-        cx.notify();
-    }
-
-    /// Checks a Go To destination against its host's current snapshot, and
-    /// reports whether that host is the selected one. Another host is selected
-    /// by the navigation itself, which waits for its surface when needed.
-    fn go_to_ready(
-        &self,
-        endpoint: &str,
-        boot: &str,
-        target: NavigationTarget<&str>,
-    ) -> Result<bool> {
-        let index = self
-            .endpoints
-            .iter()
-            .position(|e| e.id == endpoint && e.enabled)
-            .ok_or(Error::PaletteHostUnavailable)?;
-        let selected = index == self.selected_endpoint;
-        let live = if selected {
-            &self.live
-        } else {
-            &self.endpoints[index].live
-        };
-        let snapshot = live
-            .snapshot
-            .as_ref()
-            .ok_or(Error::PaletteHostUnavailable)?;
-        destination_exists(snapshot, boot, target)?;
-        if selected && !self.input_ready() {
-            return Err(Error::PaletteConnectionNotReady);
-        }
-        Ok(selected)
-    }
-
-    pub(super) fn palette_key(
-        &mut self,
-        event: &KeyDownEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        // Herdr's navigate-mode keys move a Go To list as its arrows do.
-        let step = match event.keystroke.key.as_str() {
-            "up" => Some(true),
-            "down" => Some(false),
-            _ => self
-                .menu
-                .palette
-                .as_ref()
-                .filter(|palette| palette.filter == Filter::Navigation)
-                .and_then(|_| self.keymap().navigates_workspace(&event.keystroke)),
-        };
-        let Some(palette) = &mut self.menu.palette else {
-            return;
-        };
-        if palette.search.read(cx).is_composing() {
-            return;
-        }
-        // A Go To navigation binding keeps its key; otherwise Alt and a
-        // navigator letter filter by agent status without typing the letter.
-        if step.is_none()
-            && let Some(agent_filter) = AgentFilter::from_keystroke(&event.keystroke)
-        {
-            cx.stop_propagation();
-            window.prevent_default();
-            self.set_palette_agent_filter(agent_filter, cx);
-            return;
-        }
-        match event.keystroke.key.as_str() {
-            "escape" => {
-                cx.stop_propagation();
-                window.prevent_default();
-                self.dismiss_menu(window, cx);
-            }
-            _ if !palette.filtered.is_empty() && step.is_some() => {
-                let up = step == Some(true);
-                cx.stop_propagation();
-                window.prevent_default();
-                let count = palette.filtered.len();
-                palette.selected = (palette.selected + if up { count - 1 } else { 1 }) % count;
-                palette
-                    .scroll
-                    .scroll_to_item(palette.selected, ScrollStrategy::Center);
-                cx.notify();
-            }
-            "tab" => {
-                cx.stop_propagation();
-                window.prevent_default();
-                let index = Filter::ALL
-                    .iter()
-                    .position(|filter| *filter == palette.filter)
-                    .unwrap_or(0);
-                let step = if event.keystroke.modifiers.shift {
-                    Filter::ALL.len() - 1
-                } else {
-                    1
-                };
-                let filter = Filter::ALL[(index + step) % Filter::ALL.len()];
-                self.set_palette_filter(filter, cx);
-            }
-            "enter" => {
-                cx.stop_propagation();
-                window.prevent_default();
-                if let Some(entry) = palette.selected_entry() {
-                    let action = entry.action.clone();
-                    self.activate_palette(action, window, cx);
-                }
-            }
-            _ => {}
         }
     }
 }

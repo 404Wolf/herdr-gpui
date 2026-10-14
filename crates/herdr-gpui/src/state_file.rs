@@ -32,8 +32,13 @@ pub(crate) fn write<T: Serialize + ?Sized>(path: &Path, value: &T) -> crate::Res
     let parent = path.parent().ok_or(crate::Error::MissingStateRoot)?;
     fs::create_dir_all(parent)?;
     let mut file = tempfile::NamedTempFile::new_in(parent)?;
-    serde_json::to_writer(&mut file, value)?;
-    file.write_all(b"\n")?;
+    // Buffered: the serializer writes each escape and punctuation mark on its
+    // own, which unbuffered is a system call apiece.
+    let mut buffer = io::BufWriter::new(&mut file);
+    serde_json::to_writer(&mut buffer, value)?;
+    buffer.write_all(b"\n")?;
+    buffer.flush()?;
+    drop(buffer);
     // No fsync: on macOS it is F_FULLFSYNC, which can outlast GPUI's 100 ms
     // quit budget. The rename still replaces the file atomically, and a file
     // torn by power loss is rejected on load in favor of the defaults.

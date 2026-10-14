@@ -65,6 +65,10 @@ impl Query {
         pattern.atoms.truncate(MAX_TERMS);
         Self(pattern)
     }
+
+    pub(super) fn is_empty(&self) -> bool {
+        self.0.atoms.is_empty()
+    }
 }
 
 /// Byte ranges of matched characters in an entry's label and detail.
@@ -87,7 +91,8 @@ pub(super) fn matcher() -> Matcher {
     Matcher::new(Config::DEFAULT)
 }
 
-/// Ranks `candidates` (indices into `entries`) best first. Ties keep the
+/// Ranks `candidates` (indices into `entries`) best first, each match's score
+/// raised by the entry's frecency boost. Ties keep the
 /// shorter name first and then entry order, as fzf's length tiebreak does;
 /// an empty query keeps entry order so nested rows stay under their parents.
 pub(super) fn rank(
@@ -101,7 +106,8 @@ pub(super) fn rank(
         .into_iter()
         .filter_map(|index| {
             let entry = &entries[index];
-            let score = score(&entry.fields, &query.0.atoms, matcher, &mut indices)?;
+            // Familiar rows rise among matches; the boost never makes a match.
+            let score = score(&entry.fields, &query.0.atoms, matcher, &mut indices)? + entry.boost;
             let highlights = Highlights {
                 label: byte_ranges(&entry.label, &mut indices.name),
                 detail: byte_ranges(&entry.detail, &mut indices.context),
