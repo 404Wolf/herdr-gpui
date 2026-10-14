@@ -4,6 +4,8 @@ use crate::cloud::CloudProvider;
 /// The setting that makes `provider` suggested, or none for an account-free one.
 fn setting(view: &mut HerdrWindow, provider: CloudProvider) -> Option<&mut Option<String>> {
     match provider {
+        #[cfg(feature = "boat")]
+        CloudProvider::Boat => Some(&mut view.config.boat.api_url),
         #[cfg(feature = "coder")]
         CloudProvider::Coder => Some(&mut view.config.coder.url),
         #[cfg(feature = "daytona")]
@@ -19,6 +21,8 @@ fn setting(view: &mut HerdrWindow, provider: CloudProvider) -> Option<&mut Optio
 /// An example account URL for `provider`, as `(environment variable, value)`.
 fn account(provider: CloudProvider) -> Option<(&'static str, &'static str)> {
     match provider {
+        #[cfg(feature = "boat")]
+        CloudProvider::Boat => Some(("HERDR_BOAT_API_URL", "https://boat.dev/api/v1")),
         #[cfg(feature = "coder")]
         CloudProvider::Coder => Some(("HERDR_CODER_URL", "https://coder.example.com")),
         #[cfg(feature = "daytona")]

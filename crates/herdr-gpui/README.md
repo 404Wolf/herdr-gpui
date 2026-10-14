@@ -435,6 +435,49 @@ before expiry and on rejection. File drops are refused on Coder panes, and
 restoring the last selected device at startup covers SSH devices only. Coder
 devices are unavailable on Windows.
 
+### Boat sandboxes (experimental)
+
+Settings > **Cloud Devices** > **Boat** holds a Boat account: the API URL
+(`https://boat.dev/api/v1` for Boat's cloud), an optional organization wallet,
+machine type, and environment, saved to `[boat]`, and an API key saved to the
+credential store (`HERDR_BOAT_API_KEY` takes precedence). The key needs
+`sandbox.create`, `sandbox.read`, `sandbox.update`, `sandbox.resume`, and `ssh`
+actions. **Create sandbox** creates one with a generated name and, when the
+**Install Herdr** switch is on (the default), installs Herdr if it is missing.
+The device picker shows progress and a toast says when it is ready. The device
+is saved as soon as Boat returns its ID, before waiting for readiness or
+installing Herdr. If setup fails or is cancelled, **Finish setup** beside the
+saved device retries that same sandbox, using the **Install Herdr** switch
+above. It does not create a replacement. If saving the device itself fails,
+the error includes its sandbox ID so it can still be found in Boat. Removing
+a device leaves its sandbox in Boat.
+
+**Auto-stop after** defaults to `never`: the sandbox keeps running and billing
+until you stop it in Boat. To set a deadline, enter 1–2592000 seconds (30 days);
+trial accounts require a deadline of at most 7200 seconds. This is a fixed
+deadline, not an idle timeout: SSH activity does not extend it. The setting is
+sent explicitly on creation and resume. To extend a running sandbox from now,
+or disable its deadline, save the setting and click **Finish setup**. The config
+key is `[boat] auto_stop = "never"` (or, for example, `"7200"`).
+
+If creation's reply is lost, **Recover creation** retries the persisted
+idempotency key and original request, including its original machine options,
+even after restarting the app. It cannot create a replacement with a new key.
+Recovery is available for 23 hours; afterwards the app refuses to replay the
+request because Boat expires idempotency keys after 24 hours. Check the Boat
+dashboard before using **Forget pending request…** and its confirmation: the
+original sandbox may already exist and still be billed. Forgetting removes
+only the local recovery record. Credential or API errors retain that record.
+
+Each connection resumes an archived sandbox, authorizes a GUI-owned Ed25519
+public key through Boat's API, and runs Herdr's remote bridge with OpenSSH. The
+private key stays in the GUI state directory. Boat returns the current machine's
+host key over the authenticated API connection; the app pins that exact key, so
+a resume onto a different machine remains strict without trusting a first SSH
+connection. Boat devices need `ssh` and `ssh-keygen` on PATH and are unavailable
+on Windows. The API path is covered by tests against a scripted server, but has
+not yet been exercised against a live Boat account.
+
 ### Daytona sandboxes (experimental)
 
 Settings > **Cloud Devices** > **Daytona** holds a Daytona account: the API URL
@@ -475,11 +518,11 @@ host key on first use (`railway_known_hosts`). The VM is temporary: Railway
 limits its lifetime and how many a network can create. Needs
 `ssh` and `ssh-keygen` on the PATH; unavailable on Windows.
 
-Each provider is a Cargo feature of `herdr-gpui`, on by default: `coder` for
-Coder, `daytona` for Daytona, and `railway` for Railway. A build with
-`--no-default-features` has no Cloud Devices section and no provider rows in the
-device picker; it still accepts the `[coder]` and `[daytona]` tables, so one config
-file serves every build, but never reads them.
+Each provider is a Cargo feature of `herdr-gpui`, on by default: `boat`, `coder`,
+`daytona`, and `railway`. A build with `--no-default-features` has no Cloud
+Devices section and no provider rows in the device picker; it still accepts
+the `[boat]`, `[coder]`, and `[daytona]` tables, so one config file serves every
+build, but never reads them.
 
 Switching revokes the old host's focus before releasing its surface, then resizes
 and activates the selected host. Input waits for the activation acknowledgement

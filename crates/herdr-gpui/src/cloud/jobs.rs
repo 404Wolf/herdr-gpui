@@ -1,7 +1,7 @@
 //! Machines being added, owned by the window rather than a dialog: a build can
 //! take minutes, so the dialog closes at once and each job runs on its own
 //! worker. The device picker lists them with their latest status; a toast
-//! reports each one ready (or not added). Closing the window drops the jobs,
+//! reports each one ready (or setup failed). Closing the window drops the jobs,
 //! which cancels them. Nothing here knows a provider's API: a job is the
 //! provider's own work, reporting the shared [`Step`]s.
 
@@ -131,7 +131,7 @@ impl HerdrWindow {
                         cx,
                     ),
                     Err(error) => self.local_transfer_notice(
-                        &format!("{name} {noun} not added"),
+                        &format!("{name} {noun} setup failed"),
                         format!("{}: {error}", job.name),
                         cx,
                     ),

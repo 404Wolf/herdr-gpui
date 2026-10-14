@@ -384,6 +384,9 @@ pub enum Error {
     #[cfg(feature = "coder")]
     #[error(transparent)]
     Coder(#[from] crate::coder::Error),
+    #[cfg(feature = "boat")]
+    #[error(transparent)]
+    Boat(#[from] crate::boat::Error),
     #[cfg(feature = "daytona")]
     #[error(transparent)]
     Daytona(#[from] crate::daytona::Error),
@@ -958,10 +961,6 @@ pub enum Error {
 }
 
 impl Error {
-    pub(crate) fn github_json(source: serde_json::Error) -> Self {
-        Self::GitHubJson(GitHubJsonError(source))
-    }
-
     pub(crate) fn at_path(self, path: &Path) -> Self {
         Self::Path {
             path: path.to_owned(),
