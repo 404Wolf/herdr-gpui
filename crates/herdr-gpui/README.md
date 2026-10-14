@@ -3118,7 +3118,9 @@ Ctrl+Shift+U is left unbound for
   window, shown by a keycap in the status bar; the next keystroke runs its
   chord or, when nothing is bound to it, is dropped, as in the TUI. Typing the
   prefix twice sends it to the terminal, and Escape cancels. Chords work from
-  a menu's or dialog's text field too: the chord closes it and runs. Every
+  a menu's or dialog's text field too: the chord closes it and runs. A prefix
+  that types text, such as `@` or `-`, works the same way everywhere, so a
+  text field gets it by typing it twice. Every
   daemon action has a GUI command except the `navigate_pane_*` keys (Go To
   has no pane cursor). `open_worktree` and `remove_worktree` act on the
   focused workspace, as in the TUI: the first opens its Open worktree...

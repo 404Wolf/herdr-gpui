@@ -269,6 +269,53 @@ mod tests {
         assert!(search_focused(cx));
     }
 
+    /// A prefix that types text, such as Herdr's `@`, arms however the
+    /// keyboard reports it, and typing it twice sends it on.
+    #[gpui::test]
+    fn a_typing_prefix_arms_everywhere_and_twice_types_it(cx: &mut TestAppContext) {
+        let (view, cx) = cx.add_window_view(crate::sidebar::layout_tests::fixture_window);
+        let table: toml::Table = "prefix = '@'\ntoggle_sidebar = 'prefix+b'".parse().unwrap();
+        view.update(cx, |view, _| {
+            view.config.keybindings = Keymap::with_overrides(
+                &Default::default(),
+                &Default::default(),
+                &DaemonKeys::from_table(Some(&table)),
+            )
+            .unwrap();
+        });
+        let state = |cx: &mut VisualTestContext| {
+            view.read_with(cx, |view, _| (view.prefix_armed, view.sidebar_visible))
+        };
+        cx.update(|window, cx| {
+            window.focus(&view.read(cx).focus.clone(), cx);
+            window.draw(cx).clear(cx);
+        });
+        for typed in ["@", "shift-2->@"] {
+            let visible = state(cx).1;
+            assert!(press(typed, cx), "{typed}");
+            assert_eq!(state(cx), (true, visible), "{typed}");
+            assert!(press("b", cx), "{typed}");
+            assert_eq!(state(cx), (false, !visible), "{typed} ran the chord");
+        }
+
+        // In a text field too, as in the TUI: twice types it once, and a
+        // chord closes the menu and runs.
+        view.update_in(cx, |view, window, cx| view.open_keybinds(window, cx));
+        cx.run_until_parked();
+        let menu_open =
+            |cx: &mut VisualTestContext| view.read_with(cx, |view, _| view.menu.page.is_some());
+        let visible = state(cx).1;
+        assert!(press("@", cx));
+        assert_eq!(state(cx), (true, visible));
+        press("@", cx);
+        assert_eq!(state(cx), (false, visible), "the second one is typed");
+        assert!(menu_open(cx));
+        assert!(press("@", cx));
+        assert!(press("b", cx));
+        assert_eq!(state(cx), (false, !visible));
+        assert!(!menu_open(cx));
+    }
+
     /// The shortcut reference and palette hide custom commands while the
     /// snapshot may be stale, so dispatch must not run them then either.
     #[gpui::test]
