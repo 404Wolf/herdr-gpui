@@ -2,18 +2,26 @@ use super::*;
 use crate::sidebar::layout_tests::{fixture_window, full_draw};
 
 /// The next message past any resize and the `tab.focus` that claims the tab
-/// back after each. This test renders the real canvas, so the window measures
-/// and settles its surface on its own: when, and to what size, depends on the
-/// platform's font and on scheduling, not on the hover focus tested here.
+/// back after each, which is answered: one request is in flight at a time,
+/// so an unanswered one would hold back every request after it. This test
+/// renders the real canvas, so the window measures and settles its surface
+/// on its own: when, and to what size, depends on the platform's font and on
+/// scheduling, not on the hover focus tested here.
 fn past_resizes(server: &mut Server) -> ClientMessage {
     loop {
-        match server.receive() {
-            ClientMessage::ClientShellResize { .. } => {}
-            ClientMessage::ClientShellEndpointRequest { request, .. }
-                if serde_json::from_str::<serde_json::Value>(&request)
-                    .is_ok_and(|request| request["method"] == Method::TabFocus.as_str()) => {}
-            message => return message,
+        let message = server.receive();
+        match &message {
+            ClientMessage::ClientShellResize { .. } => continue,
+            ClientMessage::ClientShellEndpointRequest { request, .. } => {
+                let request: serde_json::Value = serde_json::from_str(request).unwrap();
+                if request["method"] == Method::TabFocus.as_str() {
+                    server.respond(&request);
+                    continue;
+                }
+            }
+            _ => {}
         }
+        return message;
     }
 }
 
