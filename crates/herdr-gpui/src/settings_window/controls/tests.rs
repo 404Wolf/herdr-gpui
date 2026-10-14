@@ -8,6 +8,7 @@ mod repository_icons;
 mod session_restore;
 mod sidebar_search;
 mod sound_volume;
+mod status_icons;
 mod terminal_padding;
 mod update_channel;
 

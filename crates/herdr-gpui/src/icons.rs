@@ -71,6 +71,51 @@ agent_icons! {
     Muse => "muse",
 }
 
+/// Embeds each `status_icons` set, one asset per status, in the order
+/// `status_icon` indexes: sets as `StatusIcons` declares them, then statuses.
+macro_rules! status_icons {
+    ($($set:literal),+) => {
+        const STATUS_ICONS: [(&str, &[u8]); 15] = [$(
+            status_icons!(@one $set, "idle"),
+            status_icons!(@one $set, "working"),
+            status_icons!(@one $set, "done"),
+            status_icons!(@one $set, "blocked"),
+            status_icons!(@one $set, "unknown"),
+        )+];
+    };
+    (@one $set:literal, $status:literal) => {
+        (
+            concat!("icons/status-", $set, "-", $status, ".svg"),
+            include_bytes!(concat!("../../../assets/icons/status-", $set, "-", $status, ".svg")),
+        )
+    };
+}
+
+// Solid, then tiles' inner mark, then the rail's outline.
+status_icons!("solid", "mark", "outline");
+
+/// The asset that draws `status` in a `status_icons` set.
+pub(crate) fn status_icon(
+    icons: crate::config::StatusIcons,
+    status: herdr_client::protocol::AgentStatus,
+) -> &'static str {
+    use crate::config::StatusIcons;
+    use herdr_client::protocol::AgentStatus;
+    let set = match icons {
+        StatusIcons::Solid => 0,
+        StatusIcons::Tiles => 1,
+        StatusIcons::Rail => 2,
+    };
+    let status = match status {
+        AgentStatus::Idle => 0,
+        AgentStatus::Working => 1,
+        AgentStatus::Done => 2,
+        AgentStatus::Blocked => 3,
+        AgentStatus::Unknown => 4,
+    };
+    STATUS_ICONS[set * 5 + status].0
+}
+
 /// Shared working-tree marker, distinct from the daemon's activity dots.
 pub(super) fn uncommitted(theme: &crate::config::Theme, size: f32) -> gpui::Div {
     use gpui::{div, prelude::*, px, rgb, rgba, svg};
@@ -220,6 +265,7 @@ impl AssetSource for Icons {
         }
         let bytes = EMBEDDED
             .iter()
+            .chain(&STATUS_ICONS)
             .find(|(name, _)| *name == path)
             .map(|(_, bytes)| *bytes)
             .or_else(|| crate::usage::icon(path));
@@ -231,6 +277,7 @@ impl AssetSource for Icons {
             .iter()
             .map(|(name, _)| *name)
             .chain(AgentIcon::ALL.iter().map(|icon| icon.path()))
+            .chain(STATUS_ICONS.iter().map(|(name, _)| *name))
             .chain(crate::usage::icon_paths())
             .filter(|name| name.starts_with(path))
             .map(Into::into)
@@ -267,6 +314,9 @@ mod tests {
         let listed = Icons.list("icons/").unwrap();
         let unique: std::collections::HashSet<_> = listed.iter().collect();
         assert_eq!(unique.len(), listed.len());
+        for (name, _) in STATUS_ICONS {
+            assert!(listed.iter().any(|path| path.as_ref() == name), "{name}");
+        }
     }
 
     /// Herdr's `agent_label` values, copied from `src/detect/mod.rs` at

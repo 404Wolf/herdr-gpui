@@ -57,7 +57,12 @@ impl SettingsWindow {
             mode,
             &font,
             &self.theme,
-            crate::sidebar::Indicators::new(self.shared.as_ref(), light, &self.theme),
+            crate::sidebar::Indicators::new(
+                self.shared.as_ref(),
+                self.config.status_icons,
+                light,
+                &self.theme,
+            ),
             cx.listener(|this, _, _, cx| {
                 this.controls.sidebar_preview.toggle_fold();
                 cx.notify();

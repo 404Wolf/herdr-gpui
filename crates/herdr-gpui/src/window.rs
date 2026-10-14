@@ -353,6 +353,7 @@ impl HerdrWindow {
         cx.observe_self(|this, cx| {
             let indicators = sidebar::Indicators::new(
                 this.settings.shared.as_ref(),
+                this.config.status_icons,
                 matches!(
                     cx.window_appearance(),
                     WindowAppearance::Light | WindowAppearance::VibrantLight
@@ -594,12 +595,13 @@ impl HerdrWindow {
         // Created by the first window; each later one shares its PR answers.
         cx.default_global::<crate::pull_request::Shared>();
         let weak = cx.weak_entity();
-        let initial_theme = cx
+        let (initial_theme, initial_icons) = cx
             .try_global::<crate::app::InitialAppearance>()
-            .map(|appearance| appearance.theme.clone())
+            .map(|appearance| (appearance.theme.clone(), appearance.config.status_icons))
             .unwrap_or_default();
         let indicators = sidebar::Indicators::new(
             None,
+            initial_icons,
             matches!(
                 cx.window_appearance(),
                 WindowAppearance::Light | WindowAppearance::VibrantLight

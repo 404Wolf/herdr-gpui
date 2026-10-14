@@ -10,10 +10,21 @@ fn superset_status_dots_stay_inside_their_icon_slot(cx: &mut gpui::TestAppContex
     cx.simulate_resize(size(px(800.), px(900.)));
     for (size, style) in [12., 20., 36.]
         .into_iter()
-        .flat_map(|size| ["dots", "symbols"].map(|style| (size, style)))
+        .flat_map(|size| ["dots", "symbols", "solid", "rail"].map(|style| (size, style)))
     {
         view.update(cx, |view, cx| {
             view.config.layout.mode = LayoutMode::Superset;
+            // Drawn icons are this client's own setting; Herdr's style stays dots.
+            view.config.status_icons = match style {
+                "solid" => Some(crate::config::StatusIcons::Solid),
+                "rail" => Some(crate::config::StatusIcons::Rail),
+                _ => None,
+            };
+            let style = if view.config.status_icons.is_some() {
+                "dots"
+            } else {
+                style
+            };
             view.config.sidebar.size = size;
             view.settings.shared = Some(
                 crate::herdr_settings::Settings::parse_text(&format!(
@@ -24,6 +35,7 @@ fn superset_status_dots_stay_inside_their_icon_slot(cx: &mut gpui::TestAppContex
             cx.notify();
         });
         cx.run_until_parked();
+        cx.update(|window, cx| full_draw(window, cx).clear(cx));
         for (key, icon, mark) in [
             ("herdr", "icon-herdr", "dot-herdr"),
             ("agent-p0", "icon-agent-p0", "dot-agent-p0"),
@@ -39,5 +51,26 @@ fn superset_status_dots_stay_inside_their_icon_slot(cx: &mut gpui::TestAppContex
                 "{style} at {size}: {key} dot {dot:?} leaves slot {slot:?}"
             );
         }
+    }
+}
+
+/// Tiles tint Superset's icon slot itself, so no corner badge covers the icon.
+#[gpui::test]
+fn superset_tiles_tint_the_slot_instead_of_a_badge(cx: &mut gpui::TestAppContext) {
+    use crate::config::LayoutMode;
+    let (view, cx) = cx.add_window_view(fixture_window);
+    cx.simulate_resize(size(px(800.), px(900.)));
+    view.update(cx, |view, cx| {
+        view.config.layout.mode = LayoutMode::Superset;
+        view.config.status_icons = Some(crate::config::StatusIcons::Tiles);
+        cx.notify();
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| full_draw(window, cx).clear(cx));
+    for key in ["herdr", "agent-p0"] {
+        let icon = Box::leak(format!("icon-{key}").into_boxed_str());
+        let dot = Box::leak(format!("dot-{key}").into_boxed_str());
+        assert!(cx.debug_bounds(icon).is_some(), "{key}");
+        assert!(cx.debug_bounds(dot).is_none(), "{key}");
     }
 }

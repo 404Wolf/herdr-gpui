@@ -154,6 +154,7 @@ impl HerdrWindow {
         let pick = self.group_pick(slot.id);
         let indicators = Indicators::new(
             self.settings.shared.as_ref(),
+            self.config.status_icons,
             matches!(
                 cx.window_appearance(),
                 WindowAppearance::Light | WindowAppearance::VibrantLight
