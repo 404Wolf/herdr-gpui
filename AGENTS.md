@@ -39,6 +39,32 @@ Closing or detaching the GUI must leave the daemon and its terminals running.
 - Define shared types once in the lowest appropriate layer and re-export them. Do not create mirror enums or convert between them through strings.
 - Do not add a crate, runtime, service container, or speculative transport abstraction without a concrete need. Sibling checkouts are references, not build dependencies.
 
+## Parallel Pull Requests
+
+Many pull requests are open at once, so code that every feature appends to is
+a merge-conflict hotspot. Most past conflicts were two branches adding lines
+at the same spot, or both bumping one hard-coded count.
+
+- Do not assert hard-coded totals such as `assert_eq!(list.len(), 55)` or
+  fixed array lengths like `[T; 98]` for lists features grow. Compare against
+  the source list, assert uniqueness or membership, or use a slice.
+- Declare each item of a growing list once. Prefer one table, or a
+  `macro_rules!` table, that generates the matching `match` arms and `ALL`
+  lists over parallel lists edited in several places.
+- Keep lists whose order carries no meaning (enum variants without derived
+  ordering, asset tables, registries) sorted between `// keep-sorted start`
+  and `// keep-sorted end` markers. Additions then land on different lines.
+  `just check-sorted` (part of `just ci`) enforces the markers and `just sort`
+  fixes them. Never mark a list whose order is shown to users or is a wire
+  contract, such as menu rows or the vendored bincode types.
+- `just hooks` also enables `rerere`, so a resolution is reused when the same
+  conflict returns on another branch, and a `Cargo.lock` merge driver that
+  keeps one side and has Cargo rebuild it before the commit. After a clean
+  merge whose only conflict was the lockfile, the merge stops with the rebuilt
+  lockfile staged: run `git commit --no-edit` to finish it. GitHub's Update
+  branch button and rebases do not run these hooks; there, run
+  `cargo metadata` and commit `Cargo.lock` by hand.
+
 ## Command Line
 
 `herdr-gpui COMMAND` drives the running app over its control socket, so

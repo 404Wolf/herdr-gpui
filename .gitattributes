@@ -1,3 +1,7 @@
 # The agent skill is compiled in with include_str! and written out verbatim,
 # so it keeps LF line endings on every platform, Windows checkouts included.
 skills/** text eol=lf
+
+# Conflicts are rebuilt by Cargo rather than resolved by hand; `just hooks`
+# configures the driver. Without it Git falls back to its ordinary merge.
+Cargo.lock merge=cargo-lock
