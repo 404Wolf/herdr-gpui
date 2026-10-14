@@ -8,16 +8,24 @@ set -euo pipefail
 marker=$(git rev-parse --git-path herdr-cargo-lock-stale)
 [[ -e "$marker" ]] || exit 0
 
-# Only the merge that left the marker may rebuild the lockfile. An aborted
-# merge, or a rebase or cherry-pick that hit the driver, leaves nothing to do
-# here: its marker is discarded rather than applied to an unrelated commit.
+# Only the operation that left the marker may rebuild the lockfile: a merge
+# (MERGE_HEAD, or SQUASH_MSG for --squash, which has no MERGE_HEAD), a
+# cherry-pick, or a revert, still at the commit it started from. Git removes
+# these files when the operation is committed or aborted, so a marker without
+# one is discarded rather than applied to an unrelated commit.
 stop=${1-}
-merging=false
-if [[ "$stop" == --stop ]] || git rev-parse --verify --quiet MERGE_HEAD >/dev/null; then
-  merging=true
-fi
-if [[ "$merging" != true || "$(cat "$marker")" != "$(git rev-parse --verify --quiet HEAD || true)" ]]; then
+in_progress() {
+  local name
+  for name in MERGE_HEAD SQUASH_MSG CHERRY_PICK_HEAD REVERT_HEAD; do
+    [[ -e "$(git rev-parse --git-path "$name")" ]] && return 0
+  done
+  return 1
+}
+if [[ "$stop" != --stop ]] && ! in_progress ||
+  [[ "$(cat "$marker")" != "$(git rev-parse --verify --quiet HEAD || true)" ]]; then
   rm -f "$marker"
+  # A rebase commits without this hook, so its lockfile may still be one side.
+  echo "Cargo.lock: dropped a rebuild left by an earlier merge, rebase, or cherry-pick. If that was not aborted, run \`cargo metadata\` and commit Cargo.lock." >&2
   exit 0
 fi
 

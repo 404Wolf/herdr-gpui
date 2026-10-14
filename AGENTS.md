@@ -63,7 +63,8 @@ at the same spot, or both bumping one hard-coded count.
   merge whose only conflict was the lockfile, the merge stops with the rebuilt
   lockfile staged: run `git commit --no-edit` to finish it. The rebuild
   refuses while a `Cargo.toml` or `Cargo.lock` change is unstaged, and an
-  aborted merge's pending rebuild is dropped. GitHub's Update
+  aborted merge's pending rebuild is dropped with a warning. Squash merges,
+  cherry-picks, and reverts rebuild like merges. GitHub's Update
   branch button and rebases do not run these hooks; there, run
   `cargo metadata` and commit `Cargo.lock` by hand.
 
