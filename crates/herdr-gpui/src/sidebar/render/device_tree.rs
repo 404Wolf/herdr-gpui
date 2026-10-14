@@ -36,19 +36,6 @@ impl HerdrWindow {
         crate::devices_overview::Device::new(index, endpoint, live).matches(query)
     }
 
-    /// The search field over the tree, when the tick has made it.
-    pub(super) fn device_tree_search(&self, look: SidebarLook) -> Option<Div> {
-        let search = self.devices_overview.tree_search.as_ref()?;
-        Some(
-            div()
-                .debug_selector(|| "device-tree-search".into())
-                .flex_none()
-                .px(px(look.content_x()))
-                .pb(px(4.))
-                .child(search.input.clone()),
-        )
-    }
-
     /// Appends endpoint `index`'s agents, nested under its header, and
     /// returns the list with how many rows it added and which of them is
     /// the focused agent, for the reveal.
