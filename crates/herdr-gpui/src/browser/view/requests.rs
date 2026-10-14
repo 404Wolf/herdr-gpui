@@ -1,10 +1,10 @@
 //! Browser tabs a control request asks for, through the Unix control socket.
 
-use super::{scope, store};
+use super::scope;
 use crate::{
-    HerdrWindow, NavigationTarget,
+    HerdrWindow,
     browser::{
-        Scope, Store, TabId,
+        Scope, TabId,
         groups::{GroupId, Pick, Shown},
     },
     control::{Opening, Placed, Placement, Target},
@@ -78,51 +78,31 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) -> Option<Placed> {
         let (index, workspace) = self.control_target(target, strict)?;
-        let scope = scope(&self.endpoints[index]);
-        // Splitting needs the workspace's groups on screen: a workspace the
-        // window does not show yet gets an ordinary tab.
         let Opening {
             location,
             focus,
             placement,
         } = *opening;
-        let shown = self.browser_key() == Some((scope.clone(), workspace.clone()));
-        // An agent showing the same page again gets its tab back, reloaded,
-        // rather than another tab for every revision.
-        let origin = target.pane;
-        let before =
-            store(cx).and_then(|store| store.opened_before(&scope, &workspace, origin, location));
-        let id = match before {
-            Some(id) => {
-                #[cfg(any(target_os = "macos", windows))]
-                self.browser.pages.reload(id, cx);
-                id
-            }
-            None => {
-                let opened = Store::update(cx, |store| {
-                    store.open(
-                        scope,
-                        &workspace,
-                        Some(location.clone()),
-                        origin.map(str::to_owned),
-                    )
-                });
-                let Some(id) = opened else {
-                    return Some(Placed::Full);
-                };
-                id
-            }
+        // Splitting needs the workspace's groups on screen: a workspace the
+        // window does not show yet gets an ordinary tab.
+        let besides = placement == Placement::Beside
+            && self.browser_key() == Some((scope(&self.endpoints[index]), workspace.clone()));
+        let opened = self.open_agent_tab(
+            index,
+            &workspace,
+            target.pane,
+            location,
+            focus && !besides,
+            window,
+            cx,
+        );
+        let Some(id) = opened else {
+            return Some(Placed::Full);
         };
-        let beside = placement == Placement::Beside
-            && shown
-            && self.show_beside(id, target.pane, focus, window, cx);
-        if !beside && focus {
-            self.go_to_workspace(index, &workspace, cx);
-            // Recorded against the workspace, so the tab shows once the
-            // navigation lands even if it is still in flight.
-            self.show_browser_tab(id, window, cx);
+        let beside = besides && self.show_beside(id, target.pane, focus, window, cx);
+        if besides && !beside && focus {
+            self.show_agent_tab(index, &workspace, id, window, cx);
         }
-        cx.notify();
         Some(Placed::Opened {
             workspace_id: workspace,
             placement: if beside {
@@ -208,17 +188,6 @@ impl HerdrWindow {
         true
     }
 
-    /// Reloads this window's pages for `tabs`, as an agent asks after
-    /// editing a page it showed.
-    pub(crate) fn reload_browser_tabs(&mut self, tabs: &[TabId], cx: &mut Context<Self>) {
-        #[cfg(any(target_os = "macos", windows))]
-        for id in tabs {
-            self.browser.pages.reload(*id, cx);
-        }
-        #[cfg(not(any(target_os = "macos", windows)))]
-        let _ = (tabs, cx);
-    }
-
     /// The endpoint of this window whose live snapshot lists `workspace` of
     /// `scope`, whether or not the window shows it now.
     pub(crate) fn endpoint_showing(&self, scope: &Scope, workspace: &str) -> Option<usize> {
@@ -241,36 +210,6 @@ impl HerdrWindow {
                     .any(|candidate| candidate.workspace_id == workspace)
                     .then_some(index)
             })
-    }
-
-    /// Whether the window shows `workspace` of endpoint `index` now.
-    pub(crate) fn shows_workspace(&self, index: usize, workspace: &str) -> bool {
-        index == self.selected_endpoint
-            && self
-                .live
-                .snapshot
-                .as_ref()
-                .and_then(|snapshot| snapshot.focused_workspace_id.as_deref())
-                == Some(workspace)
-    }
-
-    /// Switches to `workspace` of endpoint `index`, unless the window shows
-    /// it already. The switch lands with a later snapshot.
-    pub(crate) fn go_to_workspace(
-        &mut self,
-        index: usize,
-        workspace: &str,
-        cx: &mut Context<Self>,
-    ) {
-        if self.shows_workspace(index, workspace) {
-            return;
-        }
-        if index != self.selected_endpoint {
-            let endpoint = self.endpoints[index].id.clone();
-            self.navigate_endpoint(&endpoint, NavigationTarget::Workspace(workspace), cx);
-        } else {
-            self.navigate(NavigationTarget::Workspace(workspace), cx);
-        }
     }
 }
 

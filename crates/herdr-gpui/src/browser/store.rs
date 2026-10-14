@@ -238,7 +238,7 @@ impl Store {
     }
 
     /// Every tab of every workspace, in the order they were opened.
-    #[cfg(unix)]
+    #[cfg(any(unix, test))]
     pub(crate) fn tabs(&self) -> impl Iterator<Item = &Tab> {
         self.tabs.iter()
     }
@@ -345,7 +345,6 @@ impl Store {
     }
 
     /// The tabs a pane's agent opened.
-    #[cfg(any(unix, test))]
     pub(crate) fn opened_by<'a>(&'a self, pane_id: &'a str) -> impl Iterator<Item = &'a Tab> + 'a {
         self.tabs
             .iter()

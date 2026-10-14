@@ -13,6 +13,7 @@ use gpui::{prelude::*, *};
 use present::Freeze;
 use std::collections::{HashMap, HashSet};
 
+mod agent_tab;
 pub(in crate::browser) mod present;
 mod render;
 #[cfg(unix)]
@@ -43,6 +44,9 @@ pub(crate) struct Browser {
     /// Pages a menu covers, stood in for by a picture of themselves.
     #[cfg(any(target_os = "macos", windows))]
     frozen: HashMap<TabId, Freeze>,
+    /// Each page's icon, as this window's page last reported it.
+    #[cfg(any(target_os = "macos", windows))]
+    pub(super) favicons: HashMap<TabId, std::sync::Arc<RenderImage>>,
     /// Groups whose shown tab closed where their strips were not at hand:
     /// in another window, or in a workspace not on screen. Each is given
     /// another of its tabs, or closed, when its workspace next settles.
@@ -109,6 +113,8 @@ impl Browser {
             page_bounds: Default::default(),
             #[cfg(any(target_os = "macos", windows))]
             frozen: HashMap::new(),
+            #[cfg(any(target_os = "macos", windows))]
+            favicons: HashMap::new(),
             emptied: Vec::new(),
             closing: None,
             group_bounds: Default::default(),
@@ -294,6 +300,8 @@ impl HerdrWindow {
     pub(crate) fn poll_browser(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         #[cfg(any(target_os = "macos", windows))]
         self.apply_page_events(window, cx);
+        #[cfg(any(target_os = "macos", windows))]
+        self.forget_favicons(window, cx);
         if let Some(store) = store(cx) {
             let gone: HashSet<TabId> = self
                 .browser
@@ -402,8 +410,12 @@ impl HerdrWindow {
                         Store::update(cx, |store| store.visited(id, Some(location), None));
                     }
                     self.page_loaded(id, cx);
+                    self.browser.pages.script(id, &super::favicon::script(), cx);
                 }
-                Event::Posted(id, body, from) => self.page_posted(id, &body, from, window, cx),
+                Event::Posted(id, body, from) => match super::favicon::Favicon::parse(&body) {
+                    Some(favicon) => self.page_favicon(id, favicon, window, cx),
+                    None => self.page_posted(id, &body, from, window, cx),
+                },
                 #[cfg(target_os = "macos")]
                 Event::Captured(id, capture, tiff) => self.page_captured(id, capture, tiff, cx),
                 #[cfg(target_os = "macos")]
@@ -427,6 +439,56 @@ impl HerdrWindow {
                 #[cfg(target_os = "macos")]
                 Event::Closed(id) => self.close_browser_tab(id, window, cx),
             }
+        }
+    }
+
+    /// Shows the icon tab `id`'s page reported, or the globe again when it
+    /// has none.
+    #[cfg(any(target_os = "macos", windows))]
+    fn page_favicon(
+        &mut self,
+        id: TabId,
+        favicon: super::favicon::Favicon,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let replaced = match favicon {
+            super::favicon::Favicon::Icon(icon) => {
+                self.browser.favicons.insert(id, std::sync::Arc::new(icon))
+            }
+            super::favicon::Favicon::Missing => self.browser.favicons.remove(&id),
+        };
+        // The old icon's texture is freed rather than kept for the window's life.
+        if let Some(old) = replaced {
+            let _ = window.drop_image(old);
+        }
+        cx.notify();
+    }
+
+    /// Frees the icons of tabs the app no longer has.
+    #[cfg(any(target_os = "macos", windows))]
+    fn forget_favicons(&mut self, window: &mut Window, cx: &App) {
+        let Some(store) = store(cx) else {
+            return;
+        };
+        self.browser.favicons.retain(|id, icon| {
+            let live = store.get(*id).is_some();
+            if !live {
+                let _ = window.drop_image(icon.clone());
+            }
+            live
+        });
+    }
+
+    /// The icon to show on tab `id` in place of the globe, if its page
+    /// reported one.
+    pub(super) fn tab_favicon(&self, id: TabId) -> Option<std::sync::Arc<RenderImage>> {
+        #[cfg(any(target_os = "macos", windows))]
+        return self.browser.favicons.get(&id).cloned();
+        #[cfg(not(any(target_os = "macos", windows)))]
+        {
+            let _ = id;
+            None
         }
     }
 

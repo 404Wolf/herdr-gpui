@@ -1,7 +1,8 @@
-//! Serves a local page's folder through the private preview scheme. The
-//! platform asks on the UI thread, so each request is queued for a worker
-//! that reads the file; nothing here touches the disk on the UI thread.
-use super::location::requested_file;
+//! Serves a local page's folder through the private preview scheme, with
+//! markdown files rendered as pages. The platform asks on the UI thread, so
+//! each request is queued for a worker that reads the file; nothing here
+//! touches the disk on the UI thread.
+use super::{location::requested_file, markdown};
 use std::{
     borrow::Cow,
     cell::RefCell,
@@ -70,7 +71,7 @@ fn content_type(path: &Path) -> &'static str {
         Some("wasm") => "application/wasm",
         Some("mp4") => "video/mp4",
         Some("webm") => "video/webm",
-        Some("txt" | "md") => "text/plain; charset=utf-8",
+        Some("txt") => "text/plain; charset=utf-8",
         _ => "application/octet-stream",
     }
 }
@@ -92,6 +93,14 @@ fn read(root: &Path, request_path: &str) -> Result<(Vec<u8>, &'static str), u16>
         return Err(413);
     }
     let bytes = std::fs::read(&resolved).map_err(|_| 404_u16)?;
+    if markdown::is_markdown(&resolved) {
+        let name = resolved
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        let page = markdown::page(&String::from_utf8_lossy(&bytes), name);
+        return Ok((page.into_bytes(), "text/html; charset=utf-8"));
+    }
     Ok((bytes, content_type(&resolved)))
 }
 
@@ -170,6 +179,8 @@ impl Preview {
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
+
+    mod markdown_files;
 
     #[test]
     fn files_are_read_only_from_inside_the_folder() {

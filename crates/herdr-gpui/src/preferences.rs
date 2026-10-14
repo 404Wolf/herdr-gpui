@@ -386,7 +386,10 @@ mod busy_load_tests {
         assert_eq!(written.load(std::sync::atomic::Ordering::SeqCst), 1);
 
         view.update(cx, |view, cx| {
-            view.save_preference(|| Err(crate::Error::InvalidSidebarGap), cx);
+            view.save_preference(
+                || Err(crate::Error::InvalidTerminalPadding("padding_x")),
+                cx,
+            );
         });
         cx.run_until_parked();
         view.read_with(cx, |view, _| {
