@@ -1,6 +1,22 @@
 use super::*;
 use crate::sidebar::layout_tests::{fixture_window, full_draw};
 
+/// The next message past any resize and the `tab.focus` that claims the tab
+/// back after each. This test renders the real canvas, so the window measures
+/// and settles its surface on its own: when, and to what size, depends on the
+/// platform's font and on scheduling, not on the hover focus tested here.
+fn past_resizes(server: &mut Server) -> ClientMessage {
+    loop {
+        match server.receive() {
+            ClientMessage::ClientShellResize { .. } => {}
+            ClientMessage::ClientShellEndpointRequest { request, .. }
+                if serde_json::from_str::<serde_json::Value>(&request)
+                    .is_ok_and(|request| request["method"] == Method::TabFocus.as_str()) => {}
+            message => return message,
+        }
+    }
+}
+
 #[gpui::test]
 fn rendered_hover_resumes_typing_in_the_hovered_pane(cx: &mut gpui::TestAppContext) {
     let (endpoint, mut server) = connected_endpoint("ssh:hover-render");
@@ -76,15 +92,8 @@ fn rendered_hover_resumes_typing_in_the_hovered_pane(cx: &mut gpui::TestAppConte
     });
     cx.simulate_mouse_move(positions[0], None, gpui::Modifiers::default());
     cx.simulate_input("b");
-    // The first draw may have measured a different surface than the fixture's
-    // options, depending on the platform's font, and sent that resize before
-    // the fixture reset them. It is not what this test is about.
-    let mut first = server.receive();
-    if matches!(first, ClientMessage::ClientShellResize { .. }) {
-        first = server.receive();
-    }
     assert_eq!(
-        first,
+        past_resizes(&mut server),
         ClientMessage::ClientShellPaneInput {
             pane_id: "w1:p1".into(),
             events: vec![ClientPaneInputEvent::TextCommit("b".into())],
@@ -95,14 +104,16 @@ fn rendered_hover_resumes_typing_in_the_hovered_pane(cx: &mut gpui::TestAppConte
     cx.simulate_mouse_move(positions[1], None, gpui::Modifiers::default());
     view.read_with(cx, |view, _| assert!(!view.input_ready()));
     cx.simulate_input("d");
-    let ClientMessage::ClientShellEndpointRequest { request, .. } = server.receive() else {
+    let ClientMessage::ClientShellEndpointRequest { request, .. } = past_resizes(&mut server)
+    else {
         panic!("missing hover focus request");
     };
     let request: serde_json::Value = serde_json::from_str(&request).unwrap();
     assert_eq!(request["method"], Method::PaneFocus.as_str());
     assert_eq!(request["params"], serde_json::json!({"pane_id": "w1:p2"}));
     server.respond(&request);
-    let ClientMessage::ClientShellEndpointRequest { request, .. } = server.receive() else {
+    let ClientMessage::ClientShellEndpointRequest { request, .. } = past_resizes(&mut server)
+    else {
         panic!("missing ordered surface barrier");
     };
     let barrier: serde_json::Value = serde_json::from_str(&request).unwrap();
@@ -156,7 +167,7 @@ fn rendered_hover_resumes_typing_in_the_hovered_pane(cx: &mut gpui::TestAppConte
     cx.update(|window, cx| full_draw(window, cx).clear(cx));
     cx.simulate_input("a");
     assert_eq!(
-        server.receive(),
+        past_resizes(&mut server),
         ClientMessage::ClientShellPaneInput {
             pane_id: "w1:p2".into(),
             events: vec![ClientPaneInputEvent::TextCommit("a".into())],
