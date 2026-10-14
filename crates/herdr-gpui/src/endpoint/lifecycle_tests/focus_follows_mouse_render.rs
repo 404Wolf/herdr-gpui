@@ -76,8 +76,15 @@ fn rendered_hover_resumes_typing_in_the_hovered_pane(cx: &mut gpui::TestAppConte
     });
     cx.simulate_mouse_move(positions[0], None, gpui::Modifiers::default());
     cx.simulate_input("b");
+    // The first draw may have measured a different surface than the fixture's
+    // options, depending on the platform's font, and sent that resize before
+    // the fixture reset them. It is not what this test is about.
+    let mut first = server.receive();
+    if matches!(first, ClientMessage::ClientShellResize { .. }) {
+        first = server.receive();
+    }
     assert_eq!(
-        server.receive(),
+        first,
         ClientMessage::ClientShellPaneInput {
             pane_id: "w1:p1".into(),
             events: vec![ClientPaneInputEvent::TextCommit("b".into())],
