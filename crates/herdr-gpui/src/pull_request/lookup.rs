@@ -31,6 +31,9 @@ pub(crate) struct Lookup {
     pub message: Option<String>,
     pub checked: Option<Instant>,
     pub(super) cooldown: Option<Duration>,
+    /// The GitHub repository the last lookup's credential could not see, so
+    /// the cache pauses every branch of it rather than this one alone.
+    pub(super) hidden: Option<String>,
 }
 
 impl Drop for Lookup {
@@ -55,6 +58,7 @@ impl Lookup {
         self.message = None;
         self.checked = None;
         self.cooldown = None;
+        self.hidden = None;
     }
 
     pub fn request(&mut self, input: Input, origin: Origin, token: Arc<secrecy::SecretString>) {
@@ -62,6 +66,7 @@ impl Lookup {
         self.waiting = Some((input, origin, token));
         self.loading = true;
         self.message = None;
+        self.hidden = None;
     }
 
     pub fn poll(&mut self) -> bool {
@@ -78,8 +83,17 @@ impl Lookup {
                             Ok(value) => {
                                 self.value = value;
                                 self.message = None;
+                                self.hidden = None;
                             }
-                            Err(error) => self.message = Some(error.to_string()),
+                            Err(error) => {
+                                self.hidden = match &error {
+                                    crate::Error::GitHubRepositoryHidden { repository, .. } => {
+                                        Some(repository.clone())
+                                    }
+                                    _ => None,
+                                };
+                                self.message = Some(error.to_string());
+                            }
                         }
                         changed = true;
                     }

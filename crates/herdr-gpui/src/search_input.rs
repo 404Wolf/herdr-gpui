@@ -3,9 +3,9 @@ use std::ops::Range;
 
 use gpui::{
     App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, EntityInputHandler,
-    EventEmitter, FocusHandle, Focusable, Hsla, KeyDownEvent, MouseButton, Pixels, Point,
-    ShapedLine, TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window, canvas, div, fill,
-    point, prelude::*, px, rgb, size,
+    EventEmitter, FocusHandle, Focusable, KeyDownEvent, MouseButton, Pixels, Point, ShapedLine,
+    TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window, canvas, div, fill, point,
+    prelude::*, px, rgb, size,
 };
 
 use crate::config::{Config, FontConfig, Theme};
@@ -30,9 +30,6 @@ pub struct SearchInput {
     /// Whether it draws its own border, background, and padding. A field
     /// set inside a frame its owner draws turns this off.
     framed: bool,
-    /// The framed field's fill, when its owner paints it translucent; the
-    /// theme's background otherwise.
-    fill: Option<Hsla>,
     /// Text drawn dimmed after the caret, which the owner offers to complete
     /// what is typed; shown only while the caret ends the text.
     completion: Option<String>,
@@ -156,7 +153,6 @@ impl SearchInput {
             selecting: false,
             framed: true,
             masked: false,
-            fill: None,
             completion: None,
         }
     }
@@ -204,10 +200,19 @@ impl SearchInput {
         self.did_edit(changed, cx);
     }
 
+    /// Unchanged is a no-op, so the owner may set it from its own render.
     pub fn set_placeholder(&mut self, value: &str, cx: &mut Context<Self>) {
+        if self.placeholder == value {
+            return;
+        }
         self.placeholder = value.into();
         self.layout = None;
         cx.notify();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn placeholder(&self) -> &str {
+        &self.placeholder
     }
 
     pub fn is_composing(&self) -> bool {
@@ -220,15 +225,6 @@ impl SearchInput {
         self.scroll = px(0.);
         self.selecting = false;
         self.did_edit(changed, cx);
-    }
-
-    /// Restyles the field. An unchanged look is a no-op, so a parent may
-    /// call this from its own render without redrawing the field each frame.
-    pub(crate) fn set_fill(&mut self, fill: Hsla, cx: &mut Context<Self>) {
-        if self.fill != Some(fill) {
-            self.fill = Some(fill);
-            cx.notify();
-        }
     }
 
     /// Offers `completion` after the typed text. Unchanged is a no-op, so the
@@ -503,9 +499,7 @@ impl Render for SearchInput {
                     .rounded(px(crate::config::corners::CONTROL))
                     .border_1()
                     .border_color(rgb(self.theme.active))
-                    .bg(self
-                        .fill
-                        .unwrap_or_else(|| rgb(self.theme.background).into()))
+                    .bg(rgb(self.theme.background))
             })
             .text_color(rgb(self.theme.foreground))
             .text_font(&self.font)

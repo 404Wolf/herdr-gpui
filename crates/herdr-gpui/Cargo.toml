@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 url.workspace = true
 aes.workspace                  = true
+ammonia.workspace              = true
 anyhow.workspace               = true
 cbc.workspace                  = true
 base64                         = { optional = true, workspace = true }
@@ -32,6 +33,7 @@ mdns-sd.workspace              = true
 nucleo-matcher.workspace       = true
 pbkdf2.workspace               = true
 percent-encoding.workspace     = true
+pulldown-cmark.workspace       = true
 rodio.workspace                = true
 rusqlite.workspace             = true
 secrecy.workspace              = true

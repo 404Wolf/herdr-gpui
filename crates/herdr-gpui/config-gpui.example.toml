@@ -74,6 +74,9 @@ show_listening_ports = true
 # and momentum; false scrolls by whole rows. Applications reading the mouse
 # always get whole rows. Also under Settings > General.
 smooth_scroll = true
+
+# Focus split terminal panes on hover in the active window, without clicking.
+focus_follows_mouse = true
 # macOS only: whether Option-letter reaches a pane as an Alt shortcut (Alt-P
 # for Option-P) or types the character the keyboard layout puts there. "auto"
 # sends Alt from the left Option on the U.S. and ABC layouts, while the right
@@ -134,6 +137,9 @@ project_roots = []
 # delay_seconds = 1
 # top-left, top-right, bottom-left, bottom-right. Explicit wire corners win.
 # position = "bottom-right"
+# GUI-only: false posts no "finished" toasts or OS notifications. "Needs
+# attention" and custom notifications (herdr notification show) still appear.
+# finished = true
 
 # The "copied to clipboard" flash shown after a terminal selection is copied.
 # Left commented out, this follows the daemon config's [ui.toast.clipboard], so
@@ -145,6 +151,13 @@ project_roots = []
 # top-left, top-center, top-right, bottom-left, bottom-center, bottom-right.
 # The position also places the note saying why New Worktree opened no dialog.
 # position = "bottom-center"
+
+# How loud this app plays agent sounds (done and request), as a percentage of
+# the sound file's own level, inclusive 0..100. Herdr's [ui.sound] chooses
+# whether and which sounds play; it has no volume, so this is this app's own.
+# Also under Settings > Sound.
+# [sound]
+# volume = 50
 
 # What a pane's terminal bell (BEL) does. Herdr has no bell setting of its own:
 # it forwards each bell to the focused client, as an outer terminal would see it.
@@ -159,14 +172,6 @@ project_roots = []
 # [updates]
 # channel = "stable"
 
-# To customize spacing too, REPLACE the top-level layout above with this table:
-# [layout]
-# mode = "normal"
-# Blank space between the sidebar and the terminal beside it, 0 to 64.
-# The terminal keeps the remaining width, so a wide gap costs columns.
-# Ignored while the sidebar is hidden. Set 0 to sit against the divider.
-# sidebar_gap = 8
-
 # Native shortcuts. Each key is a command; the value is one keystroke or a list,
 # primary first. "" or [] unbinds it. Assigning a keystroke here takes it away
 # from its default command. Modifiers: cmd (super on Linux), ctrl, alt, shift,
@@ -176,9 +181,11 @@ project_roots = []
 # defaults; a command named here keeps only the keystrokes listed here.
 # The examples below use the macOS defaults. Linux has its own Ctrl+Shift
 # defaults (not Super): new_tab = "ctrl-shift-t", new_window = "ctrl-alt-n",
-# new_workspace = "ctrl-alt-shift-n", new_worktree = "ctrl-shift-n",
+# close_window = "ctrl-alt-w", new_workspace = "ctrl-alt-shift-n",
+# new_worktree = "ctrl-shift-n",
 # split_right = "ctrl-shift-d", split_down = "ctrl-alt-shift-d",
-# command_palette = "ctrl-shift-p", toggle_full_screen = "f11".
+# command_palette = "ctrl-shift-p", resume_palette = "ctrl-alt-shift-r",
+# toggle_full_screen = "f11".
 # See Keyboard Shortcuts for the full platform-specific list. Explicit values
 # are used literally on every platform; cmd is not translated to Ctrl+Shift.
 # Ctrl+Shift+U is left to GNOME/IBus Unicode character entry.
@@ -210,6 +217,7 @@ project_roots = []
 # keybindings = "cmd-/"
 # workspace_picker = "cmd-p"
 # command_palette = "cmd-shift-p"
+# resume_palette = "cmd-shift-r"   # last query, filters, and selection
 # go_to_symbol = "cmd-shift-o"
 # go_to_file = "cmd-o"
 # open_notification_target = "cmd-alt-n"
@@ -219,6 +227,7 @@ project_roots = []
 # annotate_selection = "cmd-shift-a"
 # toggle_full_screen = "ctrl-cmd-f"
 # cycle_windows = "cmd-`"
+# close_window = "cmd-alt-shift-w"
 # Unbound by default: themes, reconnect, logs, about, worktree_notes,
 # edit_worktree_note.
 
@@ -227,7 +236,10 @@ project_roots = []
 # shift-enter), or "text:" and the text to type, at most 1024 bytes; an empty
 # string removes a default. A keystroke here leaves its default or daemon
 # command, but naming it in [keybindings] too is an error.
-# On macOS these are the defaults:
+# Shift-Enter sends Alt-Enter (Esc CR) by default everywhere, so a prompt that
+# never enabled the kitty keyboard protocol reads a newline instead of the bare
+# CR Herdr would send it; "shift-enter" = "" sends Shift-Enter unchanged.
+# On macOS these are also defaults:
 # [pane_keys]
 # "cmd-left" = "ctrl-a"
 # "cmd-right" = "ctrl-e"
@@ -244,8 +256,12 @@ project_roots = []
 # "server" uses the [keys] profile that device's Herdr publishes instead, like
 # `herdr --remote-keybindings server`; [keybindings] still apply on top. Keyed
 # by catalog ID; a device's right-click menu toggles it.
+# A device's theme paints only its terminal, so each host is told apart
+# where you work; the chrome keeps `theme`. Any `theme` value works, and the
+# device's right-click menu picks it.
 # [devices.0123456789abcdef0123456789abcdef]
 # keybindings = "server"
+# theme = "Dracula"
 
 # Preferences offers a searchable picker for all four families together or each row.
 # Platform default removes the local family override; fallback cascades remain active.
@@ -272,6 +288,12 @@ size = 12
 # and the other hosts' rows dimmed). Hosts without a colour below use the
 # theme's active colour for the wash.
 # select = "row"
+# When to draw the device footer at the sidebar's foot (the device picker,
+# Sessions, and Settings): "always", "auto" (only with two or more devices,
+# or while one is being added), or "never". Without it, Settings and Sessions
+# keep their shortcuts and command palette entries, and Devices Overview in
+# the palette still offers Add Device.
+# device_footer = "always"
 
 # A colour per host, keyed by the host's name in the sidebar, as #rgb or
 # #rrggbb. It washes the host's header, its workspace rows, and its agents'
@@ -305,6 +327,14 @@ size = 14
 # no face for draws at its nearest one, and on macOS is reported. Only
 # [terminal] takes this key.
 # weight = "medium"
+# Blank space between the cells and the edges of the terminal's tab group, in
+# logical pixels from 0 to 64. One number pads both sides; a pair pads each:
+# [left, right] for padding_x, [top, bottom] for padding_y. Default 0. The
+# terminal keeps the remaining size, so wide padding costs columns and rows.
+# Only [terminal] takes these keys. They replace the deprecated
+# [layout] sidebar_gap, which still loads as the left padding.
+# padding_x = 8
+# padding_y = [4, 8]
 
 [ui]
 # Default: ".SystemUIFont" on macOS and Windows, "DejaVu Sans" on Linux (or an installed

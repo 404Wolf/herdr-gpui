@@ -8,6 +8,8 @@ pub(crate) mod close_option;
 mod menu_width;
 // Moves run POSIX host scripts and are never offered on other clients.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
+mod carry;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 mod moves;
 
 fn snapshot() -> ClientShellSnapshot {

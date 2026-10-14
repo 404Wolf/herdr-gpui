@@ -178,6 +178,30 @@ impl HerdrWindow {
             .or_else(|| cfg!(windows).then_some("Saved SSH devices are unavailable on Windows."))
     }
 
+    /// Whether the sidebar draws the device footer, per `[sidebar]
+    /// device_footer`.
+    pub(crate) fn device_footer_shown(&self) -> bool {
+        self.config
+            .sidebar_style
+            .device_footer
+            .shown(self.endpoints.len(), self.cloud_jobs_pending())
+    }
+
+    /// Where the Sessions list opens while the footer is hidden: the sidebar's
+    /// bottom-left corner, where the footer's button would sit.
+    pub(crate) fn render_sessions_anchor(&self) -> impl IntoElement {
+        let anchor = self.sessions_anchor.clone();
+        canvas(
+            |_, _, _| (),
+            move |bounds, _, _, _| {
+                anchor.set(point(bounds.left() + px(8.), bounds.bottom()));
+            },
+        )
+        .absolute()
+        .inset_0()
+        .size_full()
+    }
+
     pub(crate) fn render_device_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let button_bounds = std::rc::Rc::new(std::cell::Cell::new(Bounds::<Pixels>::default()));
         let painted_bounds = button_bounds.clone();

@@ -1,6 +1,7 @@
 use super::{
     caffeine::{Timer, remaining, set_timed, state_name, supersede, timed},
     keys::reach_name,
+    saves::font_names,
     services::describe,
 };
 use crate::{
@@ -116,4 +117,12 @@ fn an_untimed_request_cancels_an_earlier_timer(cx: &mut gpui::TestAppContext) {
         supersede(None, cx);
         assert!(!timed(cx));
     });
+}
+
+#[test]
+fn installed_fonts_are_sorted_deduplicated_and_not_filtered_by_face() {
+    assert_eq!(
+        font_names(["Zed", "Alpha", "Zed", "Mono", " "].map(str::to_owned)),
+        vec!["Alpha", "Mono", "Zed"]
+    );
 }

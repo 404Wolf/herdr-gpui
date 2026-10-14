@@ -1,5 +1,8 @@
 //! Internal failures retain their categories and sources until presentation.
+mod github;
+
 pub use crate::updater::UpdateError;
+pub use github::GitHubJsonError;
 use std::{
     io,
     path::{Path, PathBuf},
@@ -163,6 +166,10 @@ pub enum Error {
     StaleWorkspace,
     #[error(transparent)]
     PaneMove(#[from] crate::pane_move::Error),
+    #[error(transparent)]
+    PaneCarry(#[from] crate::pane_menu::carry::Refusal),
+    #[error(transparent)]
+    Teleport(#[from] crate::teleport::Error),
     #[error("Workspace label must not be empty.")]
     EmptyWorkspaceLabel,
     #[error("{0} cannot be reached by script. Choose another host.")]
@@ -260,10 +267,16 @@ pub enum Error {
         "GitHub authentication required. Use menu > GitHub sign-in or set GH_TOKEN / GITHUB_TOKEN."
     )]
     GitHubAuthentication,
-    #[error("GitHub denied access: check token permissions, SSO authorization, or rate limits.")]
+    #[error("GitHub denied access: check token permissions or SSO authorization.")]
     GitHubForbidden,
-    #[error("GitHub rate limit reached. Retry later.")]
-    GitHubRateLimit,
+    /// The account's (or, signed out, this address's) API quota is used up.
+    #[error("GitHub rate limit reached. {}.", crate::updater::retry_hint(*reset))]
+    GitHubRateLimit {
+        reset: Option<chrono::DateTime<chrono::Utc>>,
+    },
+    /// GraphQL answers a repository the credential cannot reach as missing.
+    #[error("GitHub cannot see {repository} with this sign-in. {}", crate::github::hidden_hint(*app_token))]
+    GitHubRepositoryHidden { repository: String, app_token: bool },
     #[error("GitHub request failed (HTTP {0}). Check network and repository access.")]
     GitHubStatus(u16),
     #[error("GitHub response could not be read within the size/time limit.")]
@@ -596,6 +609,8 @@ pub enum Error {
     LocalWorktreeNote,
     #[error("Invalid saved worktree notes")]
     InvalidWorktreeNotes,
+    #[error("Invalid saved palette history")]
+    InvalidPaletteFrecency,
     #[error("Invalid saved dispatch history")]
     InvalidDispatchHistory,
     #[error("Invalid saved editor groups")]
@@ -654,6 +669,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("Could not install the agent tools on the SSH host: {0}")]
+    RemoteAgentTools(#[source] herdr_client::Error),
     #[error("{0}")]
     DeviceSetupInput(&'static str),
     #[error("Saving the device failed ({status}){}", if detail.is_empty() { String::new() } else { format!(": {detail}") })]
@@ -781,6 +798,12 @@ pub enum Error {
     TooManyFontFallbacks(&'static str),
     #[error("layout.sidebar_gap must be finite and between 0 and 64 logical pixels")]
     InvalidSidebarGap,
+    #[error("sound.volume must be between 0 and 100")]
+    InvalidSoundVolume,
+    #[error(
+        "terminal.{0} must be one number or a pair of numbers, each finite and between 0 and 64 logical pixels"
+    )]
+    InvalidTerminalPadding(&'static str),
     #[error("sidebar.{key} must be finite and between 0 and {max} logical pixels")]
     InvalidSidebarMetric { key: &'static str, max: f32 },
     #[error("sidebar.hosts.{host:?} must be a #rgb or #rrggbb colour, not {value:?}")]
@@ -852,6 +875,13 @@ pub enum Error {
     InvalidDevicesTable,
     #[error("[devices] must list at most {0} devices")]
     TooManyDevices(usize),
+    /// A `[devices.<id>]` theme that does not parse, named by its device.
+    #[error("devices.{device}.theme: {source}")]
+    DeviceTheme {
+        device: String,
+        #[source]
+        source: Box<Error>,
+    },
     #[error("theme {name:?} not found in {directories:?}")]
     ThemeNotFound {
         name: String,
@@ -920,27 +950,11 @@ pub enum Error {
 }
 
 impl Error {
-    pub(crate) fn github_json(source: serde_json::Error) -> Self {
-        Self::GitHubJson(GitHubJsonError(source))
-    }
-
     pub(crate) fn at_path(self, path: &Path) -> Self {
         Self::Path {
             path: path.to_owned(),
             source: Box::new(self),
         }
-    }
-}
-
-/// Parser diagnostics can quote credential-bearing fields; expose the cause only
-/// to explicit source inspection, never ordinary Display or Debug formatting.
-#[derive(thiserror::Error)]
-#[error("Invalid GitHub JSON response.")]
-pub struct GitHubJsonError(#[source] serde_json::Error);
-
-impl std::fmt::Debug for GitHubJsonError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("GitHubJsonError([REDACTED])")
     }
 }
 

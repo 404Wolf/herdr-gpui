@@ -45,9 +45,10 @@ pub(crate) enum Event<P = TabId> {
     /// a menu covers it. Only macOS takes them.
     #[cfg(target_os = "macos")]
     Frozen(P, Option<Vec<u8>>),
-    /// A message the annotation picker posted. Any script in the page can
-    /// post one, so it is parsed as untrusted input.
-    Posted(P, String),
+    /// A message the annotation picker or the page bridge posted, and the
+    /// frame that posted it. Any script in any frame can post one, so it is
+    /// parsed as untrusted input.
+    Posted(P, String, super::PostedFrom),
 }
 
 /// The page a report came from. A popup's page exists before its tab does,
@@ -79,7 +80,7 @@ impl Event<Source> {
             Self::Captured(source, capture, tiff) => Event::Captured(tab(source)?, capture, tiff),
             #[cfg(target_os = "macos")]
             Self::Frozen(source, tiff) => Event::Frozen(tab(source)?, tiff),
-            Self::Posted(source, body) => Event::Posted(tab(source)?, body),
+            Self::Posted(source, body, from) => Event::Posted(tab(source)?, body, from),
         })
     }
 }
@@ -98,8 +99,13 @@ pub(crate) struct Pages {
     /// Each adopted popup's UI delegate, which its view holds only weakly.
     #[cfg(target_os = "macos")]
     delegates: HashMap<TabId, objc2::rc::Retained<super::popup::Closer>>,
+    /// Where each hidden page was before it was moved out of the window.
+    #[cfg(target_os = "macos")]
+    parked: HashMap<TabId, super::parking::Parked>,
     /// Reads local pages' files; started with the first page.
     preview: Option<Rc<Preview>>,
+    /// The theme the kit serves local pages, and the colors it came from.
+    theme: (super::kit::ThemeKey, String),
 }
 
 impl Default for Pages {
@@ -118,7 +124,10 @@ impl Default for Pages {
             adopted: HashMap::new(),
             #[cfg(target_os = "macos")]
             delegates: HashMap::new(),
+            #[cfg(target_os = "macos")]
+            parked: HashMap::new(),
             preview: None,
+            theme: Default::default(),
         }
     }
 }
@@ -263,6 +272,7 @@ impl Pages {
             Some(preview) => preview.clone(),
             None => {
                 let preview = Rc::new(Preview::start()?);
+                preview.set_theme(self.theme.1.clone());
                 self.preview = Some(preview.clone());
                 preview
             }
@@ -277,7 +287,14 @@ impl Pages {
             | Location::Orchestrator { .. }
             | Location::Devices => None,
         };
+        // Only a local page, which the agent wrote, gets `herdr.send`.
+        let bridge = if root.is_some() {
+            super::annotate::BRIDGE
+        } else {
+            ""
+        };
         let builder = with_handlers(wry::WebViewBuilder::new(), Source::Tab(id), &self.outbox)
+            .with_initialization_script(bridge)
             .with_url(location.page_url())
             .with_asynchronous_custom_protocol(
                 PREVIEW_SCHEME.into(),
@@ -286,9 +303,11 @@ impl Pages {
                 },
             )
             .with_ipc_handler(move |request| {
+                // wry names the frame that posted, not the page's main frame.
+                let from = super::PostedFrom::of(&request.uri().to_string());
                 let body = request.into_body();
                 if body.len() <= MAX_POST_BYTES {
-                    report(&posted, Event::Posted(Source::Tab(id), body));
+                    report(&posted, Event::Posted(Source::Tab(id), body, from));
                 }
             });
         // Window has an inherent `window_handle` of its own.
@@ -296,14 +315,50 @@ impl Pages {
         let view = builder.build_as_child(&handle)?;
         #[cfg(target_os = "macos")]
         super::page_keys::install();
-        let page = cx.new(|cx| {
-            let mut page = WebView::new(view, window, cx);
-            // A new page appears only when the window presents it.
-            page.hide();
-            page
-        });
+        let page = cx.new(|cx| WebView::new(view, window, cx));
         self.pages.insert(id, page);
+        // A new page appears only when the window presents it.
+        self.hide(id, cx);
         Ok(())
+    }
+
+    /// Serves `theme` to local pages from now on: a page picks it up when it
+    /// next loads. Cheap when the colors did not change.
+    pub(crate) fn set_theme(&mut self, theme: &crate::config::Theme) {
+        let key = super::kit::theme_key(theme);
+        if self.theme.0 == key && !self.theme.1.is_empty() {
+            return;
+        }
+        self.theme = (key, super::kit::theme_css(theme));
+        if let Some(preview) = &self.preview {
+            preview.set_theme(self.theme.1.clone());
+        }
+    }
+
+    /// Hides tab `id`'s page. On macOS it also leaves the window's area,
+    /// where a hidden view still takes drags; see [`super::parking`].
+    fn hide(&mut self, id: TabId, cx: &mut App) {
+        let Some(page) = self.pages.get(&id) else {
+            return;
+        };
+        page.update(cx, |page, _| page.hide());
+        // A page already hidden keeps the place it left the first time.
+        #[cfg(target_os = "macos")]
+        self.parked
+            .entry(id)
+            .or_insert_with(|| super::parking::park(page.read(cx).raw()));
+    }
+
+    /// Shows tab `id`'s page, back where it was.
+    fn show(&mut self, id: TabId, cx: &mut App) {
+        let Some(page) = self.pages.get(&id) else {
+            return;
+        };
+        #[cfg(target_os = "macos")]
+        if let Some(place) = self.parked.remove(&id) {
+            super::parking::unpark(page.read(cx).raw(), place);
+        }
+        page.update(cx, |page, _| page.show());
     }
 
     /// Shows the pages in `ids` and hides every other one; an empty list
@@ -317,15 +372,12 @@ impl Pages {
         if self.shown == ids {
             return;
         }
-        for id in self.shown.iter().filter(|id| !ids.contains(id)) {
-            if let Some(page) = self.pages.get(id) {
-                page.update(cx, |page, _| page.hide());
-            }
+        let shown = std::mem::take(&mut self.shown);
+        for id in shown.iter().filter(|id| !ids.contains(id)) {
+            self.hide(*id, cx);
         }
-        for id in ids.iter().filter(|id| !self.shown.contains(id)) {
-            if let Some(page) = self.pages.get(id) {
-                page.update(cx, |page, _| page.show());
-            }
+        for id in ids.iter().filter(|id| !shown.contains(id)) {
+            self.show(*id, cx);
         }
         self.shown = ids;
     }
@@ -343,11 +395,12 @@ impl Pages {
         let Some(mtm) = objc2::MainThreadMarker::new() else {
             return;
         };
-        let (view, delegate) = popup.into_parts(mtm);
+        let (view, delegate, place) = popup.into_parts(mtm);
         // It was built hidden, and appears when the window presents it.
         let page = cx.new(|cx| WebView::new(view, window, cx));
         self.pages.insert(id, page);
         self.delegates.insert(id, delegate);
+        self.parked.insert(id, place);
         if let Source::Popup(key) = source {
             self.adopted.insert(key, id);
         }
@@ -358,6 +411,7 @@ impl Pages {
         {
             self.adopted.retain(|_, tab| *tab != id);
             self.delegates.remove(&id);
+            self.parked.remove(&id);
         }
         self.shown.retain(|shown| *shown != id);
         // Dropping the entity hides the view; the platform releases it with

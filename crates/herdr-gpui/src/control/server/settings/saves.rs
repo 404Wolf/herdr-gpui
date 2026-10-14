@@ -73,7 +73,7 @@ pub(super) fn fonts(
     let task = cx.background_executor().spawn(async move {
         Response::Settings {
             reply: Reply::Fonts {
-                fonts: crate::font_picker::font_names(text_system.all_font_names()),
+                fonts: font_names(text_system.all_font_names()),
             },
         }
     });
@@ -116,4 +116,16 @@ pub(super) fn font(
         }
     });
     answer_when_done(task, wait, incoming, watches, cx);
+}
+
+/// Installed families as `settings fonts` lists them: sorted without regard
+/// to case, without duplicates or blank names.
+pub(super) fn font_names(names: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut names: Vec<_> = names
+        .into_iter()
+        .filter(|name| !name.trim().is_empty())
+        .collect();
+    names.sort_by_cached_key(|name| (name.to_lowercase(), name.clone()));
+    names.dedup();
+    names
 }

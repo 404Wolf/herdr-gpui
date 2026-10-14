@@ -9,7 +9,7 @@ use super::{
 use crate::{
     CheckForUpdates, Minimize, PlaySound, RunCommand, ShowHerdrNotDetected, ShowUpdatePreview,
     actions::{RingBellPreview, ShowToastPreview},
-    browser::{Shown, Slot},
+    browser::Shown,
     config::ClipboardToastPosition,
     fonts::StyledFont,
     terminal::*,
@@ -59,6 +59,7 @@ impl Render for HerdrWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.restore_menu_focus(window, cx);
         self.sync_backdrop(window, cx);
+        self.sync_device_themes(cx);
         let fill = self.fill();
         let ground = self.ground();
         self.viewport_width = f32::from(window.viewport_size().width);
@@ -69,7 +70,7 @@ impl Render for HerdrWindow {
         self.painter.borrow_mut().set_appearance(
             self.config.terminal.size,
             cell_height,
-            self.theme.clone(),
+            self.terminal_theme().clone(),
         );
         self.cell_width = self.painter.borrow_mut().cell_width(&font, window, cx);
         // Registers the window for surface-only redraws; see `redraw_terminal`.
@@ -156,7 +157,7 @@ impl Render for HerdrWindow {
             font_size: self.config.terminal.size,
             cell_width,
             cell_height,
-            theme: self.theme.clone(),
+            theme: self.terminal_theme().clone(),
             ground,
         };
         if !self.slides_allowed() {
@@ -195,15 +196,10 @@ impl Render for HerdrWindow {
             self.terminal_link_hovered(window.mouse_position(), window.modifiers());
         self.split_cursor = self.split_cursor_at(window.mouse_position());
         // Pad the terminal itself: the canvas bounds that painting, hit testing,
-        // and IME placement all read then already exclude the gap.
-        let sidebar_gap = if sidebar.is_some() {
-            self.config.layout.sidebar_gap
-        } else {
-            0.
-        };
-        // Only the first group meets the sidebar, so only it takes the gap,
-        // and only where it draws a terminal or stands in for one: every
+        // and IME placement all read then already exclude the padding. Only a
+        // group that draws a terminal or stands in for one takes it: every
         // other kind of tab pads its own content.
+        let padding = self.config.terminal_padding;
         self.ensure_layout();
         self.forget_gone_strips();
         let slots = self.group_slots();
@@ -211,7 +207,6 @@ impl Render for HerdrWindow {
             .iter()
             .map(|slot| self.group_shown(slot.id, cx))
             .collect();
-        let slot_gap = |slot: Slot| if slot.index == 0 { sidebar_gap } else { 0. };
         // A divider's grip keeps off a native page, which would cover it. A
         // folding group stands between two groups without a divider.
         let pages: Vec<bool> = if self.folding_groups().is_empty() {
@@ -229,21 +224,20 @@ impl Render for HerdrWindow {
                 **shown == Shown::Terminal && primary.is_none_or(|group| group == slot.id)
             })
             .map(|(slot, _)| *slot);
-        let terminal_gap = terminal_slot.map_or(sidebar_gap, slot_gap);
-        let find_bar = self.render_find_bar(surface.as_deref(), terminal_gap, cx);
-        let terminal_note = self.render_terminal_note(surface.as_deref(), terminal_gap, cx);
-        let copy_badge = self.render_copy_mode_badge(surface.as_deref(), terminal_gap, cx);
-        let terminal = div()
+        let find_bar = self.render_find_bar(surface.as_deref(), cx);
+        let terminal_note = self.render_terminal_note(surface.as_deref(), cx);
+        let copy_badge = self.render_copy_mode_badge(surface.as_deref(), cx);
+        let terminal = padding
+            .pad(div())
             .id("terminal")
             .debug_selector(|| "terminal".into())
-            .pl(px(terminal_gap))
             .when(self.hovered_terminal_link, |terminal| {
                 terminal.cursor_pointer()
             })
             .when_some(self.split_cursor, |terminal, cursor| {
                 terminal.cursor(cursor)
             })
-            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
+            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
                 let split_cursor = this.split_cursor_at(event.position);
                 if split_cursor != this.split_cursor {
                     this.split_cursor = split_cursor;
@@ -252,6 +246,7 @@ impl Render for HerdrWindow {
                 // A border is not the application's to hover.
                 if split_cursor.is_none() {
                     this.terminal_mouse_hover(event, cx);
+                    this.focus_hovered_pane(event, window, cx);
                 }
                 let hovered = this.terminal_link_hovered(event.position, event.modifiers);
                 if hovered != this.hovered_terminal_link {
@@ -278,7 +273,7 @@ impl Render for HerdrWindow {
             .min_h_0()
             .min_w_0()
             .overflow_hidden()
-            .bg(fill.base(self.theme.background))
+            .bg(fill.base(self.terminal_theme().background))
             .track_focus(&self.focus)
             // Screen readers and selection tools read the rows on screen and
             // the selection among them. The rows are built while GPUI
@@ -307,9 +302,12 @@ impl Render for HerdrWindow {
             )
             .on_key_down(cx.listener(Self::key_down))
             .on_key_up(cx.listener(Self::key_up))
-            // The terminal has nothing for Cut or Select All to act on, and
-            // Copy only while a released selection is still highlighted.
+            // The terminal has nothing for Cut to act on, and Copy only while
+            // a released selection is still highlighted.
             .on_action(cx.listener(|this, _: &crate::actions::Paste, _, cx| this.paste(cx)))
+            .on_action(cx.listener(|this, _: &crate::actions::SelectAll, _, cx| {
+                this.select_all(cx);
+            }))
             .when(self.selection_retained(), |terminal| {
                 terminal.on_action(cx.listener(|this, _: &crate::actions::Copy, _, cx| {
                     this.copy_retained_selection(cx);
@@ -381,242 +379,257 @@ impl Render for HerdrWindow {
             )
             // The cached regions paint the cells; the canvas above them takes
             // input and paints what changes without them. Both fill this box,
-            // so every region shares the canvas's bounds.
-            .child(
-                div().relative().size_full().children(regions).child(
-                    canvas(
-                        move |bounds, _, cx| {
-                            entity.update(cx, |this, _| {
-                                this.bounds = bounds;
-                                this.options = ConnectOptions {
-                                    surface_size: viewport(
-                                        bounds.size.width.to_f64() as f32,
-                                        bounds.size.height.to_f64() as f32,
-                                        cell_width,
-                                        cell_height,
-                                    ),
-                                    cell_width_px: cell_width.round().max(1.) as u32,
-                                    cell_height_px: cell_height.round().max(1.) as u32,
-                                };
-                                this.resize();
-                            });
-                        },
-                        move |bounds, _, window, cx| {
-                            // Capture movement outside the terminal too, before any
-                            // element can stop propagation of a drag-away event.
-                            let entity = paint_entity.clone();
-                            window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
-                                if phase == DispatchPhase::Capture {
-                                    entity.update(cx, |this, cx| {
-                                        // Window-wide, so leaving the terminal
-                                        // drops the underline too.
-                                        this.hover_link(event.position, event.modifiers, cx);
-                                        if this.scrollbar_mouse_move(event, cx)
-                                            || this.split_mouse_move(event, cx)
-                                            || this.terminal_mouse_move(event, cx)
-                                        {
-                                            cx.stop_propagation();
-                                            return;
+            // so every region shares the canvas's bounds. What is laid over
+            // the cells sits in the same box, inside the terminal's padding.
+            // A frame the daemon has not resized yet may be larger than the
+            // box, so the box clips it and the padding stays clear.
+            .child({
+                let cells = div()
+                    .relative()
+                    .size_full()
+                    .overflow_hidden()
+                    .children(regions)
+                    .child(
+                        canvas(
+                            move |bounds, _, cx| {
+                                entity.update(cx, |this, _| {
+                                    this.bounds = bounds;
+                                    this.options = ConnectOptions {
+                                        surface_size: viewport(
+                                            bounds.size.width.to_f64() as f32,
+                                            bounds.size.height.to_f64() as f32,
+                                            cell_width,
+                                            cell_height,
+                                        ),
+                                        cell_width_px: cell_width.round().max(1.) as u32,
+                                        cell_height_px: cell_height.round().max(1.) as u32,
+                                    };
+                                    this.resize();
+                                });
+                            },
+                            move |bounds, _, window, cx| {
+                                // Capture movement outside the terminal too, before any
+                                // element can stop propagation of a drag-away event.
+                                let entity = paint_entity.clone();
+                                window.on_mouse_event(
+                                    move |event: &MouseMoveEvent, phase, _, cx| {
+                                        if phase == DispatchPhase::Capture {
+                                            entity.update(cx, |this, cx| {
+                                                // Window-wide, so leaving the terminal
+                                                // drops the underline too.
+                                                this.hover_link(
+                                                    event.position,
+                                                    event.modifiers,
+                                                    cx,
+                                                );
+                                                if this.scrollbar_mouse_move(event, cx)
+                                                    || this.split_mouse_move(event, cx)
+                                                    || this.terminal_mouse_move(event, cx)
+                                                {
+                                                    cx.stop_propagation();
+                                                    return;
+                                                }
+                                                if this.pressed_terminal_link.as_ref().is_some_and(
+                                                    |PressedLink { position, .. }| {
+                                                        (event.position.x - position.x).abs()
+                                                            > px(4.)
+                                                            || (event.position.y - position.y).abs()
+                                                                > px(4.)
+                                                    },
+                                                ) {
+                                                    this.pressed_terminal_link = None;
+                                                }
+                                                // A drag that leaves the terminal keeps
+                                                // selecting, and hover work elsewhere stays
+                                                // out of the gesture.
+                                                if this.extend_selection(event.position, cx) {
+                                                    cx.stop_propagation();
+                                                }
+                                            });
                                         }
-                                        if this.pressed_terminal_link.as_ref().is_some_and(
-                                            |PressedLink { position, .. }| {
-                                                (event.position.x - position.x).abs() > px(4.)
-                                                    || (event.position.y - position.y).abs()
-                                                        > px(4.)
-                                            },
-                                        ) {
-                                            this.pressed_terminal_link = None;
-                                        }
-                                        // A drag that leaves the terminal keeps
-                                        // selecting, and hover work elsewhere stays
-                                        // out of the gesture.
-                                        if this.extend_selection(event.position, cx) {
-                                            cx.stop_propagation();
-                                        }
-                                    });
-                                }
-                            });
-                            let released = paint_entity.clone();
-                            window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
-                                if phase == DispatchPhase::Capture {
-                                    released.update(cx, |this, cx| {
-                                        // Global: the overlay occludes the opener, and release
-                                        // may also precede the overlay's first frame.
-                                        if matches!(
-                                            event.button,
-                                            MouseButton::Left | MouseButton::Right
-                                        ) {
-                                            this.menu.opening_right_click = false;
-                                        }
-                                        if this.scrollbar_mouse_up(event, cx)
-                                            || this.split_mouse_up(event, cx)
-                                            || this.terminal_mouse_up(event, cx)
-                                            || (event.button == MouseButton::Left
-                                                && !cx.has_active_drag()
-                                                && this.release_selection(cx))
-                                        {
-                                            cx.stop_propagation();
-                                        }
-                                    });
-                                }
-                            });
-                            window.handle_input(
-                                &focus,
-                                crate::input::TerminalInputHandler::new(
-                                    bounds,
-                                    paint_entity.clone(),
-                                    menu_open,
-                                ),
-                                cx,
-                            );
-                            if let Some(surface) = &surface {
-                                if whole {
-                                    painter.borrow_mut().paint_frame(
-                                        &surface.frame,
-                                        bounds.origin,
-                                        Some(bounds.size),
-                                        ground,
-                                        cell_width,
-                                        &font,
-                                        &highlights,
-                                        &surface.panes,
-                                        None,
-                                        images.as_deref().map(|images| PlacedImages {
-                                            placements: &surface.graphics.placements,
-                                            images,
-                                            target: ImageTarget::Main,
-                                        }),
-                                        window,
-                                        cx,
-                                    );
-                                } else {
-                                    // Regions place no images, so nothing
-                                    // else releases the ones that went away.
-                                    painter.borrow_mut().release_idle_images(window);
-                                }
-                                let paint_link = |window: &mut Window, shift| {
-                                    painter.borrow().paint_link(
-                                        &surface.frame,
-                                        bounds.origin + point(px(0.), shift),
-                                        cell_width,
-                                        &link_rows,
-                                        window,
-                                    )
-                                };
-                                match link_shift {
-                                    Some((pane, shift)) => window.with_content_mask(
-                                        Some(ContentMask {
-                                            bounds: Bounds::new(
-                                                bounds.origin + pane.origin,
-                                                pane.size,
-                                            ),
-                                        }),
-                                        |window| paint_link(window, shift),
-                                    ),
-                                    None => paint_link(window, px(0.)),
-                                }
-                                if let Some(popup) = &surface.popup {
-                                    let offset = popup_origin(
-                                        &surface.frame,
-                                        &popup.frame,
-                                        cell_width,
-                                        cell_height,
-                                    );
-                                    painter.borrow_mut().paint_frame(
-                                        &popup.frame,
-                                        bounds.origin + offset,
-                                        None,
-                                        Ground::Opaque,
-                                        cell_width,
-                                        &font,
-                                        &popup_highlights,
-                                        &[],
-                                        None,
-                                        images.as_deref().map(|images| PlacedImages {
-                                            placements: &surface.graphics.placements,
-                                            images,
-                                            target: ImageTarget::Popup(&popup.terminal_id),
-                                        }),
-                                        window,
-                                        cx,
-                                    );
-                                }
-                            }
-                            if let Some((marked, live, shift)) = &marked {
-                                let live = live.as_deref();
-                                painter.borrow().paint_composition(
-                                    marked,
-                                    input_cursor_bounds(
-                                        live,
-                                        bounds.origin,
-                                        cell_width,
-                                        cell_height,
-                                    )
-                                    .origin
-                                        + point(px(0.), *shift),
-                                    input_area(live, bounds, cell_width, cell_height),
-                                    &font,
-                                    window,
+                                    },
                                 );
-                            }
-                        },
-                    )
-                    .size_full(),
-                ),
-            )
-            .children(self.render_reconnecting(cx))
-            .when_some(find_bar, |terminal, bar| terminal.child(bar))
-            .when_some(terminal_note, |terminal, note| terminal.child(note))
-            .when_some(copy_badge, |terminal, badge| terminal.child(badge))
-            // Direct feedback for the user's own gesture, not a daemon notice:
-            // it sits over the cells it copied and needs no dismissing.
-            .when_some(self.flash.as_ref(), |terminal, (flash, _)| {
-                use ClipboardToastPosition::*;
-                let position = self.config.clipboard_toast.position;
-                terminal.child(
-                    div()
-                        .absolute()
-                        .map(|row| match position {
-                            TopLeft | TopCenter | TopRight => row.top(px(12.)),
-                            BottomLeft | BottomCenter | BottomRight => row.bottom(px(12.)),
-                        })
-                        .map(|row| match position {
-                            TopLeft | BottomLeft => row.justify_start(),
-                            TopCenter | BottomCenter => row.justify_center(),
-                            TopRight | BottomRight => row.justify_end(),
-                        })
-                        // The pane's own padding is not part of the terminal:
-                        // the flash spans the cells, so centering centers on
-                        // them and a corner is the corner of the grid.
-                        .left(px(terminal_gap))
-                        .right_0()
-                        .px(px(12.))
-                        .flex()
-                        .overflow_hidden()
-                        .child(
+                                let released = paint_entity.clone();
+                                window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
+                                    if phase == DispatchPhase::Capture {
+                                        released.update(cx, |this, cx| {
+                                            // Global: the overlay occludes the opener, and release
+                                            // may also precede the overlay's first frame.
+                                            if matches!(
+                                                event.button,
+                                                MouseButton::Left | MouseButton::Right
+                                            ) {
+                                                this.menu.opening_right_click = false;
+                                            }
+                                            if this.scrollbar_mouse_up(event, cx)
+                                                || this.split_mouse_up(event, cx)
+                                                || this.terminal_mouse_up(event, cx)
+                                                || (event.button == MouseButton::Left
+                                                    && !cx.has_active_drag()
+                                                    && this.release_selection(cx))
+                                            {
+                                                cx.stop_propagation();
+                                            }
+                                        });
+                                    }
+                                });
+                                window.handle_input(
+                                    &focus,
+                                    crate::input::TerminalInputHandler::new(
+                                        bounds,
+                                        paint_entity.clone(),
+                                        menu_open,
+                                    ),
+                                    cx,
+                                );
+                                if let Some(surface) = &surface {
+                                    if whole {
+                                        painter.borrow_mut().paint_frame(
+                                            &surface.frame,
+                                            bounds.origin,
+                                            Some(bounds.size),
+                                            ground,
+                                            cell_width,
+                                            &font,
+                                            &highlights,
+                                            &surface.panes,
+                                            None,
+                                            images.as_deref().map(|images| PlacedImages {
+                                                placements: &surface.graphics.placements,
+                                                images,
+                                                target: ImageTarget::Main,
+                                            }),
+                                            window,
+                                            cx,
+                                        );
+                                    } else {
+                                        // Regions place no images, so nothing
+                                        // else releases the ones that went away.
+                                        painter.borrow_mut().release_idle_images(window);
+                                    }
+                                    let paint_link = |window: &mut Window, shift| {
+                                        painter.borrow().paint_link(
+                                            &surface.frame,
+                                            bounds.origin + point(px(0.), shift),
+                                            cell_width,
+                                            &link_rows,
+                                            window,
+                                        )
+                                    };
+                                    match link_shift {
+                                        Some((pane, shift)) => window.with_content_mask(
+                                            Some(ContentMask {
+                                                bounds: Bounds::new(
+                                                    bounds.origin + pane.origin,
+                                                    pane.size,
+                                                ),
+                                            }),
+                                            |window| paint_link(window, shift),
+                                        ),
+                                        None => paint_link(window, px(0.)),
+                                    }
+                                    if let Some(popup) = &surface.popup {
+                                        let offset = popup_origin(
+                                            &surface.frame,
+                                            &popup.frame,
+                                            cell_width,
+                                            cell_height,
+                                        );
+                                        painter.borrow_mut().paint_frame(
+                                            &popup.frame,
+                                            bounds.origin + offset,
+                                            None,
+                                            Ground::Opaque,
+                                            cell_width,
+                                            &font,
+                                            &popup_highlights,
+                                            &[],
+                                            None,
+                                            images.as_deref().map(|images| PlacedImages {
+                                                placements: &surface.graphics.placements,
+                                                images,
+                                                target: ImageTarget::Popup(&popup.terminal_id),
+                                            }),
+                                            window,
+                                            cx,
+                                        );
+                                    }
+                                }
+                                if let Some((marked, live, shift)) = &marked {
+                                    let live = live.as_deref();
+                                    painter.borrow().paint_composition(
+                                        marked,
+                                        input_cursor_bounds(
+                                            live,
+                                            bounds.origin,
+                                            cell_width,
+                                            cell_height,
+                                        )
+                                        .origin
+                                            + point(px(0.), *shift),
+                                        input_area(live, bounds, cell_width, cell_height),
+                                        &font,
+                                        window,
+                                    );
+                                }
+                            },
+                        )
+                        .size_full(),
+                    );
+                cells
+                    .children(self.render_reconnecting(cx))
+                    .when_some(find_bar, |terminal, bar| terminal.child(bar))
+                    .when_some(terminal_note, |terminal, note| terminal.child(note))
+                    .when_some(copy_badge, |terminal, badge| terminal.child(badge))
+                    // Direct feedback for the user's own gesture, not a daemon notice:
+                    // it sits over the cells it copied and needs no dismissing.
+                    .when_some(self.flash.as_ref(), |terminal, (flash, _)| {
+                        use ClipboardToastPosition::*;
+                        let position = self.config.clipboard_toast.position;
+                        terminal.child(
                             div()
-                                .debug_selector(|| "flash".into())
-                                .min_w_0()
-                                .flex()
-                                .items_center()
-                                .gap(px(8.))
+                                .absolute()
+                                .map(|row| match position {
+                                    TopLeft | TopCenter | TopRight => row.top(px(12.)),
+                                    BottomLeft | BottomCenter | BottomRight => row.bottom(px(12.)),
+                                })
+                                .map(|row| match position {
+                                    TopLeft | BottomLeft => row.justify_start(),
+                                    TopCenter | BottomCenter => row.justify_center(),
+                                    TopRight | BottomRight => row.justify_end(),
+                                })
+                                // The flash spans the cells, so centering centers on
+                                // them and a corner is the corner of the grid.
+                                .left_0()
+                                .right_0()
                                 .px(px(12.))
-                                .py(px(6.))
-                                .rounded(px(crate::config::corners::CONTROL))
-                                .border_1()
-                                .border_color(rgb(flash.accent(&self.theme)))
-                                .bg(rgb(self.theme.surface))
-                                .text_color(rgb(self.theme.foreground))
+                                .flex()
+                                .overflow_hidden()
                                 .child(
                                     div()
-                                        .size(px(6.))
-                                        .flex_none()
-                                        .rounded_full()
-                                        .bg(rgb(flash.accent(&self.theme))),
-                                )
-                                .child(div().truncate().child(flash.text.clone())),
-                        ),
-                )
+                                        .debug_selector(|| "flash".into())
+                                        .min_w_0()
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(8.))
+                                        .px(px(12.))
+                                        .py(px(6.))
+                                        .rounded(px(crate::config::corners::CONTROL))
+                                        .border_1()
+                                        .border_color(rgb(flash.accent(&self.theme)))
+                                        .bg(rgb(self.theme.surface))
+                                        .text_color(rgb(self.theme.foreground))
+                                        .child(
+                                            div()
+                                                .size(px(6.))
+                                                .flex_none()
+                                                .rounded_full()
+                                                .bg(rgb(flash.accent(&self.theme))),
+                                        )
+                                        .child(div().truncate().child(flash.text.clone())),
+                                ),
+                        )
+                    })
             });
         // A focus handle belongs to one element: the terminal when drawn,
         // otherwise the group in use.
@@ -631,7 +644,6 @@ impl Render for HerdrWindow {
         let count = slots.len();
         let mut groups = Vec::with_capacity(count);
         for (slot, shown) in slots.into_iter().zip(shown) {
-            let gap = slot_gap(slot);
             let owns_keyboard = keyboard == Some(slot.id);
             let tab = match &shown {
                 Shown::Page(id) => cx
@@ -646,7 +658,7 @@ impl Render for HerdrWindow {
                     .map(IntoElement::into_any_element)
                     .unwrap_or_else(|| div().into_any_element()),
                 (Shown::Terminal, _) if self.shows_parked_terminal(slot.id, cx) => {
-                    self.render_parked_terminal(slot, gap, parked_font.clone(), cell_height, cx)
+                    self.render_parked_terminal(slot, parked_font.clone(), cell_height, cx)
                 }
                 // Review and orchestrator tabs are drawn by the app, never pages.
                 (Shown::Page(_), Some(tab))
@@ -677,15 +689,14 @@ impl Render for HerdrWindow {
                 (Shown::Elsewhere(tab), _) => match self.live_frame_of(tab, window_frame.clone()) {
                     Some(frame) => self.render_terminal_mirror(
                         slot,
-                        gap,
                         Some(frame),
                         parked_font.clone(),
                         cell_height,
                         cx,
                     ),
-                    None => self.render_stand_in(slot, &shown, gap, owns_keyboard, cx),
+                    None => self.render_stand_in(slot, &shown, owns_keyboard, cx),
                 },
-                _ => self.render_stand_in(slot, &shown, gap, owns_keyboard, cx),
+                _ => self.render_stand_in(slot, &shown, owns_keyboard, cx),
             };
             let ends = merged.then(|| crate::titlebar::Ends::of(slot.index, count));
             let reach = Reach::of(&pages, slot.index);

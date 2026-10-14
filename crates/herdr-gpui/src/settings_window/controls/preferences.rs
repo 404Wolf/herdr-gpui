@@ -1,5 +1,7 @@
 use super::*;
-use crate::config::{ClipboardToastPosition as ClipboardPosition, preferences::Preference};
+use crate::config::{
+    Axis, ClipboardToastPosition as ClipboardPosition, MAX_PADDING, Side, preferences::Preference,
+};
 use herdr_client::protocol::ToastHerdrPosition as Position;
 
 #[cfg(test)]
@@ -61,6 +63,25 @@ impl SettingsWindow {
     ) -> Stateful<Div> {
         self.control_switch(id, label, checked, true)
             .on_click(cx.listener(move |this, _, _, cx| this.save_preference(edit, cx)))
+    }
+
+    pub(super) fn mouse_switches(&self, cx: &mut Context<Self>) -> [Stateful<Div>; 2] {
+        [
+            self.preference_switch(
+                "settings-smooth-scroll",
+                "Smooth scrolling",
+                self.config.smooth_scroll,
+                Preference::SmoothScroll(!self.config.smooth_scroll),
+                cx,
+            ),
+            self.preference_switch(
+                "settings-focus-follows-mouse",
+                "Focus follows mouse",
+                self.config.focus_follows_mouse,
+                Preference::FocusFollowsMouse(!self.config.focus_follows_mouse),
+                cx,
+            ),
+        ]
     }
 
     /// One switch per close kind, each saving its own `confirm_close_*` key.
@@ -139,6 +160,7 @@ impl SettingsWindow {
         self.control_card("Native notification overrides")
             .child(self.preference_switch("settings-notification-enabled", "In-app notifications", config.enabled, Preference::NotificationEnabled(Some(!config.enabled)), cx))
             .child(self.preference_choice("notification-follow-enabled", "Follow shared delivery", false, Preference::NotificationEnabled(None), cx))
+            .child(self.preference_switch("settings-notification-finished", "Finished notifications", config.finished, Preference::NotificationFinished(!config.finished), cx))
             .child(self.control_row("Delay", format!("{} seconds (0-3600)", config.delay_seconds)))
             .child(div().flex().flex_wrap().gap(px(8.))
                 .child(self.preference_choice("notification-delay-minus", "-1 second", false, Preference::NotificationDelay(Some(config.delay_seconds.saturating_sub(1))), cx))
@@ -148,6 +170,31 @@ impl SettingsWindow {
             .child(positions)
             .child(self.preference_choice("notification-follow-position", "Follow shared position", false, Preference::NotificationPosition(None), cx))
             .child(self.control_note("Controls show effective values. Follow shared removes that local override; any managed-file override still takes precedence."))
+    }
+
+    /// The local `[sound] volume`, editable even where Herdr's shared sound
+    /// settings are read-only, since it lives in this app's own file.
+    pub(super) fn sound_volume_controls(&self, cx: &mut Context<Self>) -> Div {
+        let volume = self.config.sound.volume;
+        let mut levels = div().flex().flex_wrap().gap(px(8.));
+        for percent in [10, 25, 50, 75, 100] {
+            levels = levels.child(
+                self.preference_choice(
+                    format!("settings-sound-volume-{percent}"),
+                    format!("{percent}%"),
+                    volume == percent,
+                    Preference::SoundVolume(percent),
+                    cx,
+                )
+                .debug_selector(move || format!("settings-sound-volume-{percent}")),
+            );
+        }
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .child(self.control_row("Volume", format!("{volume}%")))
+            .child(levels)
     }
 
     pub(super) fn clipboard_controls(&self, cx: &mut Context<Self>) -> Div {
@@ -195,29 +242,40 @@ impl SettingsWindow {
             ))
     }
 
-    pub(super) fn sidebar_gap_control(&self, cx: &mut Context<Self>) -> Div {
-        let gap = self.config.layout.sidebar_gap;
-        div()
-            .child(self.control_row("Sidebar gap", format!("{gap} px (0-64)")))
-            .child(
-                div()
-                    .flex()
-                    .gap(px(8.))
-                    .child(self.preference_choice(
-                        "sidebar-gap-minus",
-                        "-1 px",
+    /// One stepper per side. A step moves only its own side; the other side
+    /// of the axis is saved along with it, since the file keeps them together.
+    pub(in crate::settings_window) fn terminal_padding_controls(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let mut card = self
+            .control_card("Terminal padding")
+            .mt(px(24.))
+            .debug_selector(|| "settings-terminal-padding".into());
+        for (axis, side, label, id) in [
+            (Axis::X, Side::Start, "Left", "terminal-padding-left"),
+            (Axis::X, Side::End, "Right", "terminal-padding-right"),
+            (Axis::Y, Side::Start, "Top", "terminal-padding-top"),
+            (Axis::Y, Side::End, "Bottom", "terminal-padding-bottom"),
+        ] {
+            let sides = self.config.terminal_padding.axis(axis);
+            let value = format!("{} px (0-{MAX_PADDING})", sides.side(side));
+            let mut steps = div().flex().gap(px(8.));
+            for (step, label, suffix) in [(-1., "-1 px", "minus"), (1., "+1 px", "plus")] {
+                steps = steps.child(
+                    self.preference_choice(
+                        format!("{id}-{suffix}"),
+                        label,
                         false,
-                        Preference::SidebarGap((gap - 1.).max(0.)),
+                        Preference::TerminalPadding(axis, sides.stepped(side, step)),
                         cx,
-                    ))
-                    .child(self.preference_choice(
-                        "sidebar-gap-plus",
-                        "+1 px",
-                        false,
-                        Preference::SidebarGap((gap + 1.).min(64.)),
-                        cx,
-                    )),
-            )
+                    )
+                    .debug_selector(move || format!("{id}-{suffix}")),
+                );
+            }
+            card = card.child(self.control_row(label, value)).child(steps);
+        }
+        card
     }
 }
 
@@ -279,6 +337,11 @@ mod tests {
                 Section::Notifications,
                 "settings-notification-enabled",
                 Preference::NotificationEnabled(Some(true)),
+            ),
+            (
+                Section::Notifications,
+                "settings-notification-finished",
+                Preference::NotificationFinished(false),
             ),
         ] {
             view.update(cx, |view, cx| {

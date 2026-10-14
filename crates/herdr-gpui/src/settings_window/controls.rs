@@ -547,13 +547,14 @@ impl SettingsWindow {
         let source_alive = self.source.upgrade().is_some();
         self.control_card("Agent sounds").child(choices)
             .child(self.control_note("Uses shared sound paths and per-agent overrides. Missing custom sounds fall back to bundled sounds."))
+            .child(self.sound_volume_controls(cx))
             .child(self.control_choice("settings-sound-preview", "Play test sound", false, source_alive)
                 .when(source_alive, |button| button.on_click(cx.listener(|this, _, _, cx| {
                     if let Some(source) = this.source.upgrade() {
                         source.read(cx).sound.preview();
                     }
                 }))))
-            .child(self.control_note(if source_alive { "Preview plays only when requested, even when sounds are off." } else { "Open a main Herdr window to preview audio." }))
+            .child(self.control_note(if source_alive { "Preview plays at the chosen volume, even when sounds are off." } else { "Open a main Herdr window to preview audio." }))
     }
 
     fn render_notification_controls(&self, cx: &mut Context<Self>) -> Div {
@@ -704,13 +705,7 @@ impl SettingsWindow {
                 ),
                 cx,
             ))
-            .child(self.preference_switch(
-                "settings-smooth-scroll",
-                "Smooth scrolling",
-                self.config.smooth_scroll,
-                crate::config::preferences::Preference::SmoothScroll(!self.config.smooth_scroll),
-                cx,
-            ))
+            .children(self.mouse_switches(cx))
             .children(self.confirm_close_switches(cx))
             .children(self.merged_worktree_controls(cx));
         div().flex().flex_col().gap(px(24.)).child(general)
@@ -985,7 +980,6 @@ impl SettingsWindow {
                 ),
                 cx,
             ))
-            .child(self.sidebar_gap_control(cx))
     }
 }
 

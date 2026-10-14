@@ -7,7 +7,6 @@ pub(crate) enum Page {
     /// The Linux window's application menu, from the native menu definitions.
     Application,
     About,
-    Preferences,
     Devices,
     /// Local sessions and remote devices, with the state of each.
     Sessions,
@@ -19,6 +18,8 @@ pub(crate) enum Page {
     RenameDevice,
     /// Names a saved SSH device's port to forward to this computer.
     ForwardPort,
+    /// Picks a saved SSH device's terminal theme.
+    DeviceTheme,
     RemoveDevice,
     /// Sign in to Coder and add one of its workspaces as a device.
     #[cfg(feature = "coder")]
@@ -33,7 +34,6 @@ pub(crate) enum Page {
     RemoveWsl,
     Keybinds,
     Themes,
-    Fonts,
     Palette,
     /// Go to Symbol and Go to File over the focused pane's checkout.
     CodeSearch,
@@ -54,6 +54,9 @@ pub(crate) enum Page {
     RenamePane,
     /// Where the pane menu's pane can move: new places, then other tabs.
     MovePane,
+    /// Reviewing, then following, a move of the pane menu's pane to another
+    /// device.
+    CarryPane,
     /// The processes under the pane menu's pane.
     PaneProcesses,
     /// Confirming the processes chosen there should end.
@@ -132,6 +135,7 @@ impl Page {
                 | Self::Pane
                 | Self::RenamePane
                 | Self::MovePane
+                | Self::CarryPane
                 | Self::PaneProcesses
                 | Self::KillProcesses
                 | Self::Host
@@ -142,6 +146,19 @@ impl Page {
                 | Self::PrReview
                 | Self::PrComment
                 | Self::PrMerge
+        )
+    }
+
+    /// The pane menu and the pages it opens, all about its one pane.
+    pub(crate) fn pane_menu(self) -> bool {
+        matches!(
+            self,
+            Self::Pane
+                | Self::RenamePane
+                | Self::MovePane
+                | Self::CarryPane
+                | Self::PaneProcesses
+                | Self::KillProcesses
         )
     }
 }

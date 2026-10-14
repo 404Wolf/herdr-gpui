@@ -7,6 +7,7 @@
 //! and the `herdr` CLI on the host concerned (locally, over SSH, or through a
 //! cloud provider's authenticated command).
 
+pub(crate) mod carry;
 mod credentials;
 mod error;
 mod fresh;
@@ -33,8 +34,8 @@ pub(crate) use {
     launch::AgentKind,
     marks::{Mark, Marks},
     snapshot::{
-        Envelope, HostSnapshot, ProcessInfo, ProcessInfoResult, SnapshotResult, WorkspaceCreated,
-        WorktreeCreated,
+        Envelope, HostSnapshot, PaneInfoResult, ProcessInfo, ProcessInfoResult, SnapshotResult,
+        WorkspaceCreated, WorktreeCreated,
     },
     ui::{Follow, Teleport},
 };

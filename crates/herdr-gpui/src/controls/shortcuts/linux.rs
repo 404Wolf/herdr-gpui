@@ -51,6 +51,7 @@ pub(super) fn defaults(command: Command) -> &'static [&'static str] {
         Sessions => &["ctrl-shift-s"],
         WorkspacePicker => &["ctrl-alt-shift-p"],
         Palette => &["ctrl-shift-p"],
+        ResumePalette => &["ctrl-alt-shift-r"],
         GoToSymbol => &["ctrl-alt-shift-o"],
         GoToFile => &["ctrl-shift-o"],
         Quit => &["ctrl-shift-q"],
@@ -58,6 +59,8 @@ pub(super) fn defaults(command: Command) -> &'static [&'static str] {
         SplitEditor => &["ctrl-shift-\\"],
         ToggleFullScreen => &["f11"],
         CycleWindows => &["ctrl-shift-`"],
+        // Tiling compositors such as Hyprland draw no close button.
+        CloseWindow => &["ctrl-alt-w"],
         _ => &[],
     }
 }

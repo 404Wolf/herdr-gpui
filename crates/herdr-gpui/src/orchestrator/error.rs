@@ -70,7 +70,8 @@ pub enum Error {
     BeadsMissing,
     #[error("Bead id {0:?} is not one bd accepts")]
     BeadId(String),
-    #[error("GitHub request failed: {0}")]
+    /// Shown as GitHub's own failure, which already names GitHub and why.
+    #[error("{0}")]
     Github(#[source] Box<crate::Error>),
     #[error("Cancelled")]
     Cancelled,

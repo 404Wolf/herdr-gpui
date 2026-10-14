@@ -131,7 +131,7 @@ fn rail_follows_shared_collapsed_mode(cx: &mut TestAppContext) {
     set_shared(&view, "[ui]\nsidebar_collapsed_mode = 'hidden'\n", cx);
     assert!(cx.debug_bounds("sidebar-rail").is_none());
     assert!(cx.debug_bounds("sidebar").is_none());
-    // Hidden gives the rail's room and the sidebar gap back to the terminal.
+    // Hidden gives the rail's room back to the terminal.
     let terminal = cx.debug_bounds("terminal").unwrap();
     assert!(terminal.left() < rail_right);
     set_shared(&view, "[ui]\nsidebar_collapsed_mode = 'compact'\n", cx);

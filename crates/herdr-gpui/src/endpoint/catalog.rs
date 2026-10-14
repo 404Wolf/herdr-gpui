@@ -358,6 +358,8 @@ impl HerdrWindow {
             .iter()
             .position(|e| e.id == selected_id)
             .unwrap_or(0);
+        // A tab torn off another window may belong to a host just listed.
+        self.land_arrival(true, cx);
         cx.notify();
     }
 }

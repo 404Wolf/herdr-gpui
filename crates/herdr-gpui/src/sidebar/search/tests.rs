@@ -4,6 +4,7 @@ use super::*;
 use crate::sidebar::layout_tests::snapshot;
 
 mod labels;
+mod notes;
 
 #[test]
 fn find_ignores_case_and_measures_the_original_bytes() {
@@ -28,11 +29,13 @@ fn devices(snapshot: &ClientShellSnapshot) -> [Device<'_>; 2] {
             id: "local",
             label: "MacBook Pro",
             workspaces: &snapshot.workspaces,
+            notes: None,
         },
         Device {
             id: "studio",
             label: "studio.lan",
             workspaces: &[],
+            notes: None,
         },
     ]
 }

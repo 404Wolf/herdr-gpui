@@ -19,7 +19,7 @@ mod tests;
 pub(crate) use {
     auth::Auth,
     device::{Profile, VERIFY_URL},
-    http::{graphql, mutation},
+    http::{graphql, hidden_hint, mutation},
     store::{Account, Note, Store},
 };
 // Cloud providers keep their own secrets in the same store.

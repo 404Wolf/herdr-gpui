@@ -60,6 +60,13 @@ const DEFAULT_PANE_KEYS: &[(&str, &str)] = &[
     ("alt-right", "alt-f"),
 ];
 
+/// Shift-Enter as Alt-Enter, Esc CR, on every platform, as Herdr's web UI
+/// sends it. Herdr encodes Shift-Enter as a bare CR for a program that has
+/// enabled neither the kitty keyboard protocol nor modifyOtherKeys, so it
+/// would submit the line; Esc CR is the newline chord prompt_toolkit and zsh
+/// read instead.
+const PORTABLE_PANE_KEYS: &[(&str, &str)] = &[("shift-enter", "alt-enter")];
+
 /// Keystrokes the GUI config binds, with the command holding each. Spelling
 /// differences still name the same keystroke.
 type Claimed = HashMap<(Modifiers, String), &'static str>;
@@ -114,7 +121,7 @@ impl Shortcut {
 pub struct Keymap {
     /// Parallel to `COMMANDS`, primary shortcut first.
     shortcuts: Vec<Vec<Shortcut>>,
-    /// The keystrokes that start a chord, less any nothing can use. The
+    /// The keystrokes that start a chord, less any a GUI binding holds. The
     /// first one is the prefix shown to the user.
     prefixes: Vec<Keystroke>,
     /// Keys that move the workspace picker's selection up and down.
@@ -211,7 +218,7 @@ impl Keymap {
         let prefixes: Vec<Keystroke> = keys
             .prefixes
             .iter()
-            .filter(|prefix| usable_prefix(prefix) && taken.insert(identity(prefix)))
+            .filter(|prefix| taken.insert(identity(prefix)))
             .cloned()
             .collect();
         let mut chords = HashSet::new();
@@ -328,7 +335,6 @@ impl Keymap {
             .iter()
             .any(|prefix| typed_matches(typed, prefix))
     }
-
     /// The command a chord runs when `typed` follows the prefix.
     pub(crate) fn chord(&self, typed: &Keystroke) -> Option<Command> {
         COMMANDS
@@ -400,23 +406,14 @@ fn has_modifier(keystroke: &Keystroke) -> bool {
     modifiers.platform || modifiers.control || modifiers.alt || modifiers.function
 }
 
-/// Herdr documents `esc` and function keys as prefixes; any other bare key
-/// would swallow ordinary typing.
-fn usable_prefix(prefix: &Keystroke) -> bool {
-    has_modifier(prefix)
-        || prefix.key == "escape"
-        || prefix
-            .key
-            .strip_prefix('f')
-            .is_some_and(|number| number.parse::<u8>().is_ok())
-}
-
-/// The built-in pane keys, macOS only: Ghostty binds them there alone, and
-/// elsewhere the platform key belongs to the desktop.
+/// The built-in pane keys. The line-editing chords are macOS only: Ghostty
+/// binds them there alone, and elsewhere the platform key belongs to the
+/// desktop.
 fn default_pane_keys() -> impl Iterator<Item = (Keystroke, PaneKey)> {
     DEFAULT_PANE_KEYS
         .iter()
         .filter(|_| cfg!(target_os = "macos"))
+        .chain(PORTABLE_PANE_KEYS)
         .filter_map(|(typed, sent)| {
             Some((
                 Keystroke::parse(typed).ok()?,

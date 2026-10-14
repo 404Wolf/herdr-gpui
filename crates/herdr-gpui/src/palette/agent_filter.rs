@@ -139,6 +139,7 @@ impl HerdrWindow {
         if let Some(palette) = &mut self.menu.palette {
             palette.filter = Filter::Navigation;
             palette.agent_filter = agent_filter;
+            palette.restore = None;
         }
         self.rank_palette(Selection::First, cx);
     }

@@ -308,10 +308,28 @@ fn request(
                     .ok_or(Error::InvalidRedirect)?
                     .to_owned();
             }
-            status => return Err(Error::HttpStatus(status)),
+            status => {
+                return Err(status_error(status, response.headers(), chrono::Utc::now()));
+            }
         }
     }
     Err(Error::RedirectLimit)
+}
+
+/// GitHub answers an exhausted API quota with 403 or 429 and either
+/// `x-ratelimit-remaining: 0` plus the reset epoch, or a `retry-after` delay in
+/// seconds. Any other refusal keeps its status.
+fn status_error(
+    status: u16,
+    headers: &ureq::http::HeaderMap,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Error {
+    if !matches!(status, 403 | 429) || !super::quota_exhausted(headers) {
+        return Error::HttpStatus(status);
+    }
+    Error::RateLimited {
+        reset: super::rate_limit_reset(headers, now),
+    }
 }
 
 fn read_bounded(mut reader: impl Read, limit: usize, cancel: &AtomicBool) -> Result<Vec<u8>> {

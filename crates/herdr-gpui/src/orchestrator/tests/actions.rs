@@ -6,6 +6,7 @@ use std::{os::unix::fs::PermissionsExt, path::Path, process::Command, sync::atom
 
 mod agent_name;
 mod parent;
+mod startup;
 
 /// A home whose `herdr` logs each call and answers as Herdr would. A call
 /// whose arguments contain `$FAIL` exits 1. Its snapshot is `$HOME/snapshot`
@@ -22,7 +23,18 @@ case "$1 $2" in
   "api snapshot")
     if [ -f "$HOME/snapshot" ]; then cat "$HOME/snapshot"; else printf '%s' '{snapshot}'; fi ;;
   "workspace create") printf '%s' '{{"result":{{"workspace":{{"workspace_id":"w0"}}}}}}' ;;
-  "worktree create") printf '%s' '{{"result":{{"workspace":{{"workspace_id":"w9"}},"tab":{{"tab_id":"t9"}},"root_pane":{{"pane_id":"p9"}},"worktree":{{"path":"/tmp/wt/377-icons"}}}}}}' ;;
+  "worktree create") printf '%s' '{{"result":{{"workspace":{{"workspace_id":"w9"}},"tab":{{"tab_id":"t9"}},"root_pane":{{"pane_id":"p9","terminal_id":"term9"}},"worktree":{{"path":"/tmp/wt/377-icons"}}}}}}' ;;
+  "pane get")
+    if [ -f "$HOME/pane" ]; then cat "$HOME/pane"; else printf '%s' '{{"result":{{"pane":{{"pane_id":"p9","terminal_id":"term9"}}}}}}'; fi ;;
+  "agent start")
+    if [ -f "$HOME/busy" ]; then
+      read -r busy < "$HOME/busy"
+      if [ "$busy" -gt 0 ]; then
+        printf '%s\n' "$((busy - 1))" > "$HOME/busy"
+        printf '%s' '{{"id":"cli:agent:start","error":{{"code":"agent_pane_busy","message":"not an available shell"}}}}' >&2
+        exit 1
+      fi
+    fi ;;
 esac
 "#
     );

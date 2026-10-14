@@ -51,7 +51,7 @@ fn every_region_of_a_translucent_window_is_as_clear_as_the_opacity(cx: &mut gpui
     let terminal = cx.debug_bounds("terminal").unwrap();
     assert_eq!(layers(cx, strip.union(&terminal)), Vec::<f32>::new());
     assert_eq!(layers(cx, strip).first(), Some(&0.5));
-    // A field on a panel is a mark: seen, but not solid over the desktop.
-    let field = cx.debug_bounds("theme-search").unwrap();
-    assert_eq!(layers(cx, field), [0.5, 0.25]);
+    // The sidebar's search, resting as its heading, adds nothing over the panel.
+    let field = cx.debug_bounds("sidebar-search").unwrap();
+    assert_eq!(layers(cx, field), [0.5]);
 }

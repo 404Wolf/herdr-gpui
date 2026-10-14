@@ -6,6 +6,7 @@ mod custom_reference;
 mod literal_plus;
 mod pane_keys;
 mod platform_defaults;
+mod shift_enter;
 
 fn overrides(entries: &[(&str, Binding)]) -> BTreeMap<String, Binding> {
     entries
@@ -290,16 +291,12 @@ fn the_prefix_yields_to_gui_config_and_typing() {
     assert!(!keymap.is_prefix(&keystroke("ctrl-b")));
     assert_eq!(keymap.chord(&keystroke("c")), None);
     assert_eq!(list(&keymap, Command::Tab), [default("cmd-t")]);
-    for (prefix, usable) in [
-        ("f12", true),
-        ("escape", true),
-        ("a", false),
-        ("shift-a", false),
-    ] {
+    // Any key Herdr accepts is a prefix, bare ones that type text included.
+    for prefix in ["f12", "escape", "a", "shift-a", "@"] {
         let keymap =
             Keymap::with_overrides(&BTreeMap::new(), &Default::default(), &keys(prefix)).unwrap();
-        assert_eq!(keymap.is_prefix(&keystroke(prefix)), usable, "{prefix}");
-        assert_eq!(keymap.chord(&keystroke("c")).is_some(), usable, "{prefix}");
+        assert!(keymap.is_prefix(&keystroke(prefix)), "{prefix}");
+        assert!(keymap.chord(&keystroke("c")).is_some(), "{prefix}");
     }
 }
 
@@ -360,11 +357,12 @@ fn custom_commands_bind_after_the_keymap() {
     assert!(running(&keymap, &old, 0).is_empty());
     assert!(keymap.custom_command(&old, &keystroke("g"), true).is_none());
     // Without a usable prefix no chord can reach one.
-    let keys = DaemonKeys {
-        prefixes: vec![keystroke("a")],
-        ..no_keys()
-    };
-    let keymap = Keymap::with_overrides(&BTreeMap::new(), &Default::default(), &keys).unwrap();
+    let keymap = Keymap::with_overrides(
+        &overrides(&[("themes", one("ctrl-b"))]),
+        &Default::default(),
+        &no_keys(),
+    )
+    .unwrap();
     assert!(
         keymap
             .custom_command(&commands, &keystroke("y"), true)
@@ -437,10 +435,10 @@ fn every_prefix_arms_and_the_first_labels_chords() {
     assert_eq!(keymap.chord(&keystroke("ctrl-s")), None);
     assert_eq!(list(&keymap, Command::NextTab), [default("cmd-shift-]")]);
 
-    // A prefix the GUI config claims, or that would swallow typing, is
-    // dropped, and the next one labels chords.
+    // A prefix the GUI config claims is dropped, and the next one labels
+    // chords.
     let keys = DaemonKeys {
-        prefixes: vec![keystroke("ctrl-b"), keystroke("a"), keystroke("ctrl-s")],
+        prefixes: vec![keystroke("ctrl-b"), keystroke("ctrl-s")],
         bindings: vec![(Command::Tab, Trigger::Prefixed(keystroke("c")))],
         ..no_keys()
     };
@@ -451,7 +449,6 @@ fn every_prefix_arms_and_the_first_labels_chords() {
     )
     .unwrap();
     assert!(!keymap.is_prefix(&keystroke("ctrl-b")));
-    assert!(!keymap.is_prefix(&keystroke("a")));
     assert!(keymap.is_prefix(&keystroke("ctrl-s")));
     assert_eq!(list(&keymap, Command::Tab), [default("cmd-t"), "ctrl-s c"]);
 }
@@ -479,12 +476,13 @@ fn default_pane_keys_follow_ghostty_on_macos() {
     assert!(
         DEFAULT_PANE_KEYS
             .iter()
+            .chain(PORTABLE_PANE_KEYS)
             .all(|(_, sent)| crate::terminal::reaches_pane(&keystroke(sent)))
     );
     let keymap = Keymap::default();
     assert_eq!(
         keymap.pane_keys.len(),
-        if cfg!(target_os = "macos") { 5 } else { 0 }
+        if cfg!(target_os = "macos") { 6 } else { 1 }
     );
     // Defaults are replaced by keystroke, not spelling, or removed.
     let resolved = resolve_pane_keys(

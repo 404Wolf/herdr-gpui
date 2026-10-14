@@ -23,7 +23,6 @@ impl HerdrWindow {
 
     pub(crate) fn open_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         self.shift_taps.cancel();
-        self.finish_font_size_edit(true, cx);
         if !self.cancel_theme_preview(cx) {
             return false;
         }
@@ -41,7 +40,6 @@ impl HerdrWindow {
     }
 
     pub(crate) fn dismiss_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.finish_font_size_edit(true, cx);
         if !self.cancel_theme_preview(cx) {
             return;
         }
@@ -389,6 +387,7 @@ impl HerdrWindow {
                         | Page::Pane
                         | Page::RenamePane
                         | Page::MovePane
+                        | Page::CarryPane
                         | Page::PaneProcesses
                         | Page::KillProcesses
                         | Page::Host
@@ -428,15 +427,19 @@ impl HerdrWindow {
                     && !matches!(page, Page::Dialog(_)),
                 |panel| {
                     panel
-                        .w((viewport.width - px(32.)).max(px(0.)).min(px(
-                            if page == Page::Preferences {
-                                620. * (font.size / 12.)
-                            } else if add_device {
+                        .w((viewport.width - px(32.))
+                            .max(px(0.))
+                            .min(px(if add_device {
                                 rail::WIDTH * (font.size / 12.)
+                            } else if page == Page::Palette && self.palette_previews(viewport) {
+                                // Room for Go To's list beside its preview.
+                                1120. * (font.size / 12.)
+                            } else if page == Page::Palette {
+                                // Wide like Raycast, so the query leads the panel.
+                                720. * (font.size / 12.)
                             } else {
                                 480.
-                            },
-                        )))
+                            })))
                         .max_h((viewport.height - px(32.)).max(px(0.)))
                 },
             )
@@ -445,10 +448,9 @@ impl HerdrWindow {
                     page,
                     Page::Keybinds
                         | Page::Themes
-                        | Page::Fonts
+                        | Page::DeviceTheme
                         | Page::Palette
                         | Page::CodeSearch
-                        | Page::Preferences
                         | Page::AppUpdate
                         | Page::GitHub
                         | Page::AddDevice
@@ -476,10 +478,9 @@ impl HerdrWindow {
                     page,
                     Page::Keybinds
                         | Page::Themes
-                        | Page::Fonts
+                        | Page::DeviceTheme
                         | Page::Palette
                         | Page::CodeSearch
-                        | Page::Preferences
                 ),
                 |panel| {
                     panel
@@ -604,6 +605,8 @@ impl HerdrWindow {
             ));
         } else if let Page::Dialog(action) = page {
             panel = panel.child(self.render_workspace_dialog(action, cx));
+        } else if page == Page::CarryPane {
+            panel = panel.child(self.render_carry(cx));
         } else if page == Page::Teleport {
             panel = panel.child(self.render_teleport(cx));
         } else if page == Page::Checkpoints {
@@ -622,7 +625,11 @@ impl HerdrWindow {
             panel = panel.child(self.render_pr_merge(cx));
         } else if matches!(
             page,
-            Page::Host | Page::RenameDevice | Page::ForwardPort | Page::RemoveDevice
+            Page::Host
+                | Page::RenameDevice
+                | Page::ForwardPort
+                | Page::DeviceTheme
+                | Page::RemoveDevice
         ) {
             panel = panel.child(self.render_host_menu(cx));
         } else if matches!(page, Page::Tab | Page::RenameTab) {
@@ -640,16 +647,12 @@ impl HerdrWindow {
             panel = panel.child(self.render_keybinds(cx));
         } else if page == Page::Themes {
             panel = panel.child(self.render_theme_picker(cx));
-        } else if page == Page::Fonts {
-            panel = panel.child(self.render_font_picker(cx));
         } else if page == Page::Palette {
-            panel = panel.child(self.render_palette(cx));
+            panel = panel.child(self.render_palette(viewport, cx));
         } else if page == Page::CodeSearch {
             panel = panel.child(self.render_code_search(cx));
         } else if page == Page::ConfirmClose {
             panel = panel.child(self.render_close_confirmation(cx));
-        } else if page == Page::Preferences {
-            panel = panel.child(self.render_preferences(cx));
         } else if page == Page::AppUpdate {
             panel = panel.child(self.render_app_update(window, cx));
         } else if page == Page::About {
