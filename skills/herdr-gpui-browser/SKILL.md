@@ -183,6 +183,7 @@ the URL instead.
 On an SSH host the user's Herdr UI connects to, the command is a small shim
 that reaches the app through Herdr: only `herdr-gpui browser open` with a web
 address and `herdr-gpui browser reload` work there, and the rest exit 8.
+Pages from there open as tabs; `--beside` exits 8.
 `localhost:PORT` on that host is forwarded to the user's machine for you. A
 file on the host cannot be shown: serve its folder (for example
 `python3 -m http.server 8000`) and open `localhost:8000`. The command cannot
