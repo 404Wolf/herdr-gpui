@@ -20,6 +20,7 @@ use std::{
 };
 
 mod device_auth;
+mod github_cli;
 mod rejection;
 mod responses;
 mod session;

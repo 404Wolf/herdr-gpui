@@ -62,6 +62,7 @@ fn competing_restores_load_the_rotated_credential_inside_the_transaction() {
                             avatar: None,
                             token,
                             avatar_updates: None,
+                            source: Default::default(),
                         })
                     },
                     |_| {
@@ -95,6 +96,7 @@ fn competing_restores_load_the_rotated_credential_inside_the_transaction() {
                             avatar: None,
                             token,
                             avatar_updates: None,
+                            source: Default::default(),
                         })
                     },
                     |_| panic!("the competing restore must not reuse the old refresh token"),

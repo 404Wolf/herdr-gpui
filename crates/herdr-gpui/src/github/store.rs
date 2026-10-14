@@ -3,7 +3,10 @@
 //! and Linux uses the Secret Service; every build that keeps the token
 //! unencrypted on disk says so plainly.
 
-use super::{Profile, Result, credentials, profile, token::Credential};
+use super::{
+    Profile, Result, cli, credentials, profile,
+    token::{Credential, GITHUB_CLI, Saved},
+};
 use crate::Error;
 use secrecy::{ExposeSecret, SecretString};
 use zeroize::Zeroizing;
@@ -314,11 +317,19 @@ pub(super) fn saved_token(store: Store, account: &Account) -> Result<Option<Secr
     }
 }
 
-pub(super) fn load_profile(store: Store, account: &Account) -> Result<Option<Profile>> {
+/// The account's profile: the environment's token first for the main
+/// account, then what the store saved. `github_cli` is the user's choice of
+/// the GitHub CLI in this app session; it stands in for the saved marker only
+/// where there is no store to keep one.
+pub(super) fn load_profile(
+    store: Store,
+    account: &Account,
+    github_cli: bool,
+) -> Result<Option<Profile>> {
     // The environment names one account for this device. A host's own sign-in
     // exists precisely to differ from it, so only the main account reads it.
     if *account != Account::Main {
-        return transaction(|| load_saved(store, account));
+        return transaction(|| load_saved(store, account, false));
     }
     let gh = environment_token("GH_TOKEN")?;
     let github = if gh
@@ -336,7 +347,7 @@ pub(super) fn load_profile(store: Store, account: &Account) -> Result<Option<Pro
             .as_ref()
             .is_none_or(|s| s.expose_secret().trim().is_empty())
     {
-        return transaction(|| load_saved(store, account));
+        return transaction(|| load_saved(store, account, github_cli));
     }
     tracing::info!(
         category = "github_restore",
@@ -347,22 +358,43 @@ pub(super) fn load_profile(store: Store, account: &Account) -> Result<Option<Pro
 }
 
 /// Call only inside `transaction`: a renewal rotates the single-use refresh token.
-fn load_saved(store: Store, account: &Account) -> Result<Option<Profile>> {
-    let saved = saved_token(store, account)?;
+fn load_saved(store: Store, account: &Account, github_cli: bool) -> Result<Option<Profile>> {
+    let saved = match store {
+        Store::Environment if github_cli => Some(Saved::GitHubCli),
+        store => saved_token(store, account)?
+            .map(|token| Saved::decode(&token))
+            .transpose()?,
+    };
     tracing::info!(
         category = "github_restore",
         ?store,
         host = matches!(account, Account::Host(_)),
         present = saved.is_some(),
+        github_cli = matches!(saved, Some(Saved::GitHubCli)),
         "Checking saved GitHub sign-in"
     );
     saved
-        .map(|token| {
-            Credential::decode(&token)?.profile_with(profile, Credential::refresh, |value| {
-                save_unlocked(Some(value), store, account)
-            })
+        .map(|saved| match saved {
+            // The local GitHub CLI is this computer's account. A host's own
+            // sign-in exists to differ from it, so only the main one uses it.
+            Saved::GitHubCli if *account == Account::Main => cli::profile(),
+            Saved::GitHubCli => Err(Error::GitHubToken),
+            Saved::Token(credential) => {
+                credential.profile_with(profile, Credential::refresh, |value| {
+                    save_unlocked(Some(value), store, account)
+                })
+            }
         })
         .transpose()
+}
+
+/// Remember that the main account uses the GitHub CLI. Without a store the
+/// choice lasts for this app session only, so there is nothing to save.
+pub(super) fn save_github_cli(store: Store) -> Result<()> {
+    if store == Store::Environment {
+        return Ok(());
+    }
+    save(Some(&GITHUB_CLI.into()), store, &Account::Main)
 }
 
 pub(super) fn credential_directory() -> Result<std::path::PathBuf> {
