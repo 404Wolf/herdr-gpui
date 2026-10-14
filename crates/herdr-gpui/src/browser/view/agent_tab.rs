@@ -47,13 +47,25 @@ impl HerdrWindow {
             }
         };
         if focus {
-            self.go_to_workspace(index, workspace, cx);
-            // Recorded against the workspace, so the tab shows once the
-            // navigation lands even if it is still in flight.
-            self.show_browser_tab(id, window, cx);
+            self.show_agent_tab(index, workspace, id, window, cx);
         }
         cx.notify();
         Some(id)
+    }
+
+    /// Goes to `workspace` of endpoint `index` and shows tab `id` there.
+    pub(crate) fn show_agent_tab(
+        &mut self,
+        index: usize,
+        workspace: &str,
+        id: TabId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.go_to_workspace(index, workspace, cx);
+        // Recorded against the workspace, so the tab shows once the
+        // navigation lands even if it is still in flight.
+        self.show_browser_tab(id, window, cx);
     }
 
     /// Reloads this window's pages for `tabs`, as an agent asks after

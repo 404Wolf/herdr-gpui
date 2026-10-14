@@ -2,14 +2,18 @@
 use super::{Context, Output, caller, notes_daemon, rejected, send, tabs, unexpected};
 use crate::{
     browser::{LocalFile, WebUrl},
-    cli::control::BrowserCommand,
+    cli::control::{BrowserCommand, Placement},
     control::protocol::{
-        BrowserOpen, ErrorCode, FeedbackRequest, MAX_WAIT_SECONDS, OpenedIn, Page, Request,
+        BrowserOpen, Caller, ErrorCode, FeedbackRequest, MAX_WAIT_SECONDS, OpenedIn, Page, Request,
         Response,
         tabs::{Reply, TabOp},
     },
 };
 use std::path::Path;
+
+/// The explainer kit's example, which the agent skill points to.
+pub(super) const EXAMPLE: &str =
+    include_str!("../../../../../skills/herdr-gpui-browser/examples/instagram-fetch.html");
 
 /// A file that exists is shown as a local page; anything else is an address.
 fn page(target: &str) -> crate::Result<(Page, String)> {
@@ -28,31 +32,57 @@ fn page(target: &str) -> crate::Result<(Page, String)> {
     Ok((Page::Url(url.as_str().to_owned()), url.as_str().to_owned()))
 }
 
+/// Where a page goes unless the caller said: a local file, usually a mockup
+/// or an explainer the agent wrote, sits beside the terminal that opened it,
+/// so the user reads it and the agent's replies together. Web addresses, and
+/// files opened from outside a Herdr pane, take a tab.
+pub(super) fn default_placement(page: &Page, caller: &Caller) -> Placement {
+    match (page, &caller.pane_id) {
+        (Page::File(_), Some(_)) => Placement::Beside,
+        _ => Placement::Tab,
+    }
+}
+
 fn open(
     target: &str,
     workspace: Option<String>,
     focus: bool,
+    placement: Option<Placement>,
     context: &Context,
 ) -> crate::Result<Output> {
     let (page, shown) = page(target)?;
+    let caller = Caller {
+        window: context.window,
+        ..caller(workspace)?
+    };
+    let placement = placement.unwrap_or_else(|| default_placement(&page, &caller));
     let request = Request::Open(BrowserOpen {
         page,
-        caller: crate::control::protocol::Caller {
-            window: context.window,
-            ..caller(workspace)?
-        },
+        caller,
         focus,
+        placement,
     });
     let response = send(&request)?;
     let text = match &response {
         Response::Opened {
             opened_in: OpenedIn::Tab,
-            workspace_id: Some(id),
-        } => format!("Opened {shown} in a browser tab of workspace {id}"),
-        Response::Opened {
-            opened_in: OpenedIn::Tab,
-            workspace_id: None,
-        } => format!("Opened {shown} in a browser tab"),
+            workspace_id,
+            placement: opened,
+        } => {
+            let place = match opened {
+                Placement::Beside => "beside the terminal",
+                Placement::Tab => "in a browser tab",
+            };
+            let fallback = if placement == Placement::Beside && *opened == Placement::Tab {
+                " (your terminal is not on screen, so the page could not go beside it)"
+            } else {
+                ""
+            };
+            match workspace_id {
+                Some(id) => format!("Opened {shown} {place} of workspace {id}{fallback}"),
+                None => format!("Opened {shown} {place}{fallback}"),
+            }
+        }
         Response::Opened {
             opened_in: OpenedIn::SystemBrowser,
             ..
@@ -128,12 +158,15 @@ fn screenshot(id: u64, path: &Path, context: &Context) -> crate::Result<Output> 
 pub(super) fn run(command: BrowserCommand, context: &Context) -> crate::Result<Output> {
     match command {
         // Answered before any request; see `client::run`.
-        BrowserCommand::Help | BrowserCommand::Skill => Ok(Output::message("")),
+        BrowserCommand::Help | BrowserCommand::Skill | BrowserCommand::Example => {
+            Ok(Output::message(""))
+        }
         BrowserCommand::Open {
             target,
             workspace,
             focus,
-        } => open(&target, workspace, focus, context),
+            placement,
+        } => open(&target, workspace, focus, placement, context),
         BrowserCommand::Reload => reload(),
         BrowserCommand::Feedback { wait } => feedback(wait, context),
         BrowserCommand::List => tabs::list(true, context),
@@ -154,3 +187,6 @@ pub(super) fn run(command: BrowserCommand, context: &Context) -> crate::Result<O
         BrowserCommand::Screenshot { id, path } => screenshot(id, &path, context),
     }
 }
+
+#[cfg(test)]
+mod tests;
