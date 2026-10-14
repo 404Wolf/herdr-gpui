@@ -169,6 +169,12 @@ seconds while the popup is open; until it answers, and if it never does, the
 device still offers the session it was saved with. Choosing a session attaches
 this window to it on that device.
 
+Set `device_footer = "auto"` under `[sidebar]` to draw this footer only while
+there are two or more devices (or one is being added), or `"never"` to leave it
+out; the default is `"always"`. Without the footer, the Agents list takes its
+height, Settings and Sessions keep their shortcuts and palette entries, and
+**Devices Overview** in the palette still offers **Add Device**.
+
 The current session has an accent highlight; status dots and delete icons stay
 aligned across rows. The **Add session…** row has no status dot.
 Session and worktree context-menu actions share right-aligned 14-pixel icons
@@ -813,7 +819,16 @@ shared `system` delivery posting OS notifications:
 enabled = false
 delay_seconds = 1
 position = "bottom-right"
+finished = true
 ```
+
+`finished` has no shared Herdr counterpart and defaults to `true`. Set it to
+`false` to stop "finished" toasts and OS notifications while keeping "needs
+attention" and custom notifications, for example when an agent hook posts its
+own summary with `herdr notification show`. It does not change sounds, which
+follow the sound settings, and QA previews still appear. Settings > Notifications
+has the same switch, and `herdr-gpui config set notifications.finished false`
+writes it.
 
 Delivery defaults off, matching upstream. The delay accepts integer seconds from
 0 through 3600; Custom notifications always bypass the delay. Corners are
@@ -888,7 +903,7 @@ choices beside a live preview using the current theme and sidebar font. Preview 
 the repository arrow to fold affect only the sample. Choosing a layout applies it
 live to the sample and app windows, like themes, without writing on each click.
 Only the final choice is saved when Settings closes or the app quits. The list and
-preview stack in narrow Settings windows; the Sidebar gap row remains below them.
+preview stack in narrow Settings windows.
 
 Three densities of Herdr's own rows are available:
 
@@ -963,21 +978,23 @@ names.
 Icons sit immediately before the name, including orphan agents whose name is
 on the first line, and reserve space before long names are truncated.
 
-To customize spacing too, use a `[layout]` table **instead of** the top-level
-string, replacing it (including the one a new install writes): TOML rejects a
-file with both. Existing spacing-only tables remain supported and use normal mode:
+`[terminal]` `padding_x` and `padding_y` keep blank space between a terminal's cells and the edges of its tab group:
 
 ```toml
-[layout]
-mode = "compact"
-sidebar_gap = 8
+[terminal]
+padding_x = 8        # left and right
+padding_y = [4, 8]   # top, then bottom
 ```
 
-`sidebar_gap` (finite 0..64 logical pixels, default `0`) is optional blank space between the sidebar and the terminal beside it.
-The default keeps the first column flush with the divider; an explicit value such as `8` adds a gutter.
-Only a terminal takes the gap: a browser, VS Code, review, or orchestrator tab pads its own content and sits against the sidebar.
-The terminal keeps the remaining width, so the daemon is resized to the columns
-it actually has, and the gap is ignored while the sidebar is hidden.
+- One number pads both sides of the axis. A pair of numbers pads each side: left then right for `padding_x`, top then bottom for `padding_y`.
+- Each side is a finite number of logical pixels from 0 to 64. The default is `0`, which keeps the cells against the edges.
+- Every terminal takes the padding, in every tab group, whether the sidebar shows or not. A browser, VS Code, review, or orchestrator tab pads its own content and takes none.
+- The terminal keeps the remaining size, so the daemon is resized to the columns and rows it actually has.
+- The padding shows the theme background.
+- **Settings > Appearance > Terminal padding** steps each of the four sides by one pixel. It writes one number when the two sides of an axis agree, and a pair when they differ.
+
+`[layout] sidebar_gap` is deprecated. It padded only the left side of the terminal beside the sidebar. A file that still sets it keeps loading: while `padding_x` is unset, the gap becomes the left padding of every terminal, and the app reports the key as deprecated. Setting the horizontal padding in Settings writes `padding_x` and removes `sidebar_gap`.
+
 Any space smaller than one character cell at the right or bottom edge takes the adjacent terminal cells' background colors, without stretching text or changing input coordinates.
 
 The `[clipboard_toast]` table controls the `copied to clipboard` flash shown
@@ -1478,25 +1495,62 @@ and follows its branch, and it does not travel with a teleported worktree.
 
 ## Moving Panes
 
-Right-click a pane for **Move to New Tab** (in the pane's own workspace),
-**Move to New Workspace**, or **Move to Tab…**, which lists the other tabs of
-every workspace and a new tab in each other workspace. The command palette's
-**Move Pane…** (`move_pane`, unbound by default) opens the same list for the
-focused pane, with the new tab and new workspace first. Moving into an existing
-tab splits that tab's focused pane and puts the moved pane on its right. The
-terminal keeps running, and the move asks Herdr to focus the pane where it lands.
+Right-click a pane, or an agent's row in the sidebar, for **Move to New Tab**
+(in the pane's own workspace), **Move to New Workspace**, or **Move to…**, which
+lists the other tabs of every workspace, a new tab in each other workspace, and
+then, for each other device that has the pane's repository open, a new worktree
+and that device's spaces of the repository. The command palette's **Move Pane…**
+(`move_pane`, unbound by default) opens the same list for the focused pane, with
+the new tab and new workspace first. Moving into an existing tab splits that
+tab's focused pane and puts the moved pane on its right. The terminal keeps
+running, and the move asks Herdr to focus the pane where it lands.
 
-Herdr does not offer `pane.move` to GUI clients, so the move runs
-`herdr [--session NAME] pane move` on the endpoint's host, locally or over SSH,
-the way Teleport does, on a background thread. The menu says **Moving pane…**
-until Herdr answers and closes when the move succeeds. Herdr's refusals appear
-in the menu: it will not move a pane out of or into a zoomed tab, and a missing
-`herdr` CLI is named as such. A failure that arrives after the menu was closed
-appears in the window's status instead. Moves are offered only on Linux and
-macOS clients and only for the local daemon, a named session, or an SSH
-device, not a custom socket endpoint or a development (`--dev`) session, whose
-panes the `herdr` CLI cannot address by session name. A tab or workspace that
-closed after the menu opened is refused before anything runs.
+Herdr does not offer `pane.move` to GUI clients, so the move runs `herdr
+[--session NAME] pane move` on the endpoint's host, locally or over SSH, the way
+Teleport does, on a background thread. The menu says **Moving pane…** until
+Herdr answers and closes when the move succeeds. Herdr's refusals appear in the
+menu: it will not move a pane out of or into a zoomed tab, and a missing `herdr`
+CLI is named as such. A failure that arrives after the menu was closed appears
+in the window's status instead. Moves are offered only on Linux and macOS
+clients and only for the local daemon, a named session, or an SSH device, not a
+custom socket endpoint or a development (`--dev`) session, whose panes the
+`herdr` CLI cannot address by session name. A tab or workspace that closed after
+the menu opened is refused before anything runs.
+
+### To Another Device
+
+**DEVICE › New Worktree** and **DEVICE › SPACE** copy the pane's work to that
+device and move the pane there. The device must be connected and have a
+workspace of the same repository open; the review then checks that the two share
+a remote, and refuses a repository matching only by name. The review lists the
+branch, the unpushed commits and changed files, and what the pane will run
+there; Enter starts the move.
+
+The move works like Teleport, for one pane: the checkout's commits and its
+staged, unstaged and untracked changes go to a new worktree there, on the same
+branch when that device can take it, otherwise on a new branch from the same
+commit. A space takes them only if nothing there would be overwritten: its
+checkout must have no uncommitted changes and be at the pane's commit, or behind
+it on the same branch, in which case it fast-forwards first; an ignored file
+there that a commit would replace also stops it. The pane then runs in a new
+tab of that space. A supported agent's session moves with them and resumes;
+another program starts again with the same arguments, and the pane, shell or
+program, starts in the same subdirectory. The work is
+copied, so the checkout here keeps its changes, and the other panes in its
+workspace keep running. The pane here closes only once it runs on the other
+device, and the window then follows it there.
+
+A working agent is still writing its session, so it moves only once it is idle
+or waiting; this is checked again on Enter. A commit made here after the review
+stops the move before anything lands, so it can be reviewed again. A pane
+outside a Git repository can move only within this device, and one whose
+directory has left its space's checkout must change back into it first. If the move fails
+before the pane runs there, a new worktree is removed again, and if it cannot
+be, the error says where it was left; in a space, the tab made for the pane
+closes and the copied changes stay in its checkout. Closing the menu abandons a
+review but not a move under way, whose result then appears as a flash. The same
+hosts as Teleport can be reached, so neither device may be a custom socket, WSL
+or development (`--dev`) endpoint.
 
 ## Teleport
 
@@ -2079,6 +2133,10 @@ come back after a restart; closing a workspace in Herdr removes its tabs.
   (see [Terminal Links](#terminal-links)), or from an agent (below). A new
   tab starts blank with its address field focused, and lists the
   workspace's listening ports: clicking one loads its page in that tab.
+- A tab shows its page's favicon, drawn from the page's `<link rel="icon">`
+  or a site's `/favicon.ico`, and a globe until the page has one. An icon
+  from another origin shows only when that origin allows the page to read
+  it (CORS); otherwise the tab keeps its globe.
 - The toolbar has back, forward, reload, the address field, and a button that
   opens the page in the system browser. The address field accepts bare hosts:
   `localhost:3000` becomes `http://localhost:3000/`.
@@ -2090,7 +2148,8 @@ come back after a restart; closing a workspace in Herdr removes its tabs.
   (so `file:` and applications' custom URL schemes stay closed), downloads are
   refused, and a page's new windows open as new browser tabs. The only
   messages a page can send the app are annotation picks, which fill a draft
-  note and nothing else, and the app runs only its own scripts in pages. On
+  note and nothing else, and its icon, which shows on its tab; the app runs
+  only its own scripts in pages. On
   Windows, a frame inside a page that links to an application's URL scheme
   gets WebView2's own confirmation prompt rather than being refused outright.
 - Pages are native web views (WebKit on macOS, WebView2 on Windows) layered
@@ -2301,8 +2360,41 @@ The tab joins the caller's own workspace, which Herdr names in the pane's
 `HERDR_WORKSPACE_ID`, and remembers the caller's `HERDR_PANE_ID` so notes on
 the page go back to it. The command talks to the running app over a socket at
 `$XDG_STATE_HOME/herdr/gpui/control.sock`, readable only by you, and exits with
-3 when the app is not running. Only processes on this machine can reach it:
-agents on saved SSH hosts cannot open browser tabs.
+3 when the app is not running. Only processes on this machine can reach it.
+
+Agents on a saved SSH host open pages another way, since that host cannot
+reach this machine. The app writes a small `herdr-gpui` shim there, at
+`~/.local/state/herdr/gpui/bin/herdr-gpui`; it needs only `sh`, `cut`, and
+`sed`. The shim leaves the request on the caller's Herdr workspace as metadata
+tokens (`herdr workspace report-metadata`, named `herdr-gpui-*`), which expire
+after 30 seconds. A window connected to that host sees them in its snapshot
+and opens the page in that workspace, once per request:
+
+```sh
+~/.local/state/herdr/gpui/bin/herdr-gpui browser open localhost:3000
+~/.local/state/herdr/gpui/bin/herdr-gpui browser open --no-focus https://example.com/docs
+~/.local/state/herdr/gpui/bin/herdr-gpui browser reload
+```
+
+- An address on the host's own loopback (`localhost`, `127.0.0.1`, `[::1]`,
+  `0.0.0.0`) is forwarded first, as `herdr-gpui ports open` does, and the tab
+  shows the forwarded `127.0.0.1` port with the same path and query.
+- Only `browser open` and `browser reload` work from a host; every other
+  command exits 8. Files on the host are not shown: serve their folder (for
+  example `python3 -m http.server 8000`) and open its port. Addresses are
+  limited to 960 characters.
+- Notes you send on such a page are typed into the agent's pane once it is
+  idle, as for a local agent; `browser feedback` cannot reach the app from
+  the host.
+- Anything on the host that can run `herdr` can set the same tokens, so a
+  request can do no more than open an http or https page in the workspace
+  that carries it, or reload the tabs its pane opened. A bad address is
+  refused with a notice in the window.
+- Every Herdr UI connected to the host acts on the request, and a request
+  made while no window is connected is dropped when its tokens expire. Each
+  request names its own tokens, so requests made together from several panes
+  all open; a workspace holds at most 32 tokens, so a burst of long addresses
+  can be refused until earlier ones expire.
 
 Agents only use what they know about, so the app offers, once, to install a
 `herdr-gpui-browser` skill that teaches them these commands. It goes into
@@ -2319,6 +2411,14 @@ removed; a skill of the same name you wrote yourself is left alone.
   palette's **Install Browser Skill for Agents**.
 - Only release builds offer or refresh the skill. A development build never
   points your agents at itself unless you install from it explicitly.
+- Once you agree, the app also puts the shim and a copy of the skill naming
+  it on each saved SSH host it connects to, once per run, over the same
+  noninteractive SSH. The copy goes only into the host's existing `~/.claude`
+  or `~/.agents`. As here, a shim or skill file without the app's marker is
+  left alone. A host without a POSIX shell is skipped. Removing the skill
+  takes the shim and those copies off each host again, the next time a
+  window connects to it. Windows has no saved SSH hosts, so it installs
+  nothing.
 
 `herdr-gpui browser skill` prints the same text, for example to install it
 elsewhere:
@@ -3064,8 +3164,12 @@ Ctrl+Shift+U is left unbound for
   Cmd-Backspace send Ctrl-A, Ctrl-E, and Ctrl-U by default, so zsh and agent
   prompts jump to the line's ends or delete back to its start as in every
   other Mac terminal, and Option-Left and Option-Right send Esc-b and Esc-f
-  to move by word. A value is a key a terminal can receive (`ctrl-a`,
-  `home`, `alt-b`, `shift-enter`), or `text:` followed by up to 1024 bytes of
+  to move by word. On every platform Shift-Enter sends Alt-Enter (Esc CR)
+  by default: Herdr sends a program that never enabled the kitty keyboard
+  protocol or modifyOtherKeys a bare CR for Shift-Enter, which submits the
+  line, while prompt_toolkit apps and zsh read Esc CR as a newline.
+  `"shift-enter" = ""` sends Shift-Enter unchanged again. A value is a key
+  a terminal can receive (`ctrl-a`, `home`, `alt-b`, `shift-enter`), or `text:` followed by up to 1024 bytes of
   text, and an empty string removes a default. Text reaches the pane byte for
   byte, so a newline in it is a line feed, not the Enter key. On a layout
   that keeps symbols on Option, `option_as_alt = "left"` or `"right"` leaves

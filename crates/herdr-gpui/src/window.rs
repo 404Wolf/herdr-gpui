@@ -37,6 +37,7 @@ mod status_bar;
 pub(crate) mod system_notifications;
 mod tab_drag;
 mod tab_strip;
+mod tab_tear;
 mod toasts;
 mod transfers;
 #[cfg(test)]
@@ -107,7 +108,6 @@ pub(crate) struct HerdrWindow {
     pub(crate) config_load: Option<Task<()>>,
     pub(crate) settings: crate::settings_panel::SettingsPanel,
     pub(crate) integrations: crate::integrations::Integrations,
-    pub(crate) font_size_saves: crate::font_sizes::FontSizeSaves,
     pub(crate) config_watch: Option<Task<()>>,
     pub(crate) config_load_revision: u64,
     pub(crate) endpoints: Vec<endpoint::Endpoint>,
@@ -121,6 +121,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) sessions_anchor: std::rc::Rc<std::cell::Cell<Point<Pixels>>>,
     pub(crate) activation_deadline: Option<std::time::Instant>,
     pub(crate) pending_navigation: Option<OwnedNavigationTarget>,
+    /// A tab torn off another window, waiting for its host to be listed.
+    pub(crate) arrival: Option<tab_tear::TornTab>,
     /// Whether the leftmost strip gave Back and Forward their full width
     /// when it was last laid out; see `HerdrWindow::strip_leading`.
     pub(crate) strip_navigation_fits: bool,
@@ -201,6 +203,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) teleport_marks: crate::teleport::Marks,
     /// The workspace a finished teleport keeps steering to until focused.
     pub(crate) teleport_follow: Option<crate::teleport::Follow>,
+    /// A pane moving to another device; a move outlives its menu.
+    pub(crate) pane_carry: Option<crate::pane_menu::carry::Carry>,
     /// A worktree or workspace being created on another host.
     pub(crate) dispatch_job: Option<crate::dispatch::Job>,
     /// Dispatched worktrees' setup scripts, waiting for their hosts in order.
@@ -247,6 +251,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) checkpoints: crate::checkpoint::Checkpoints,
     /// Remote ports forwarded to this machine; they end with the window.
     pub(crate) port_forwards: crate::port_forward::PortForwards,
+    /// Pages remote agents asked for, waiting for their port's forward.
+    pub(crate) remote_browser: Vec<crate::remote_browser::Forwarding>,
     /// Cloud machines being added; see `cloud::Jobs`.
     #[cfg(feature = "cloud")]
     pub(crate) cloud_jobs: crate::cloud::Jobs,
@@ -493,6 +499,7 @@ impl HerdrWindow {
         self.sync_host_theme();
         self.save_group_layouts(cx);
         self.poll_browser(window, cx);
+        self.poll_remote_browser(window, cx);
         self.offer_browser_skill(window, cx);
         self.poll_sessions(cx);
         self.flush_scrollbar(cx);
@@ -508,6 +515,7 @@ impl HerdrWindow {
         self.poll_file_transfer(cx);
         self.update_workspace_dialog(window, cx);
         self.poll_teleport(window, cx);
+        self.poll_carry(window, cx);
         self.poll_fan_out(window, cx);
         self.poll_dispatch(window, cx);
         self.poll_device_setup(window, cx);
@@ -788,7 +796,6 @@ impl HerdrWindow {
             config_load: None,
             settings: Default::default(),
             integrations: Default::default(),
-            font_size_saves: Default::default(),
             config_watch: None,
             config_load_revision: 0,
             catalog: endpoint::Catalog::new(&target),
@@ -804,6 +811,7 @@ impl HerdrWindow {
             selection_epoch: 0,
             activation_deadline: None,
             pending_navigation: None,
+            arrival: None,
             strip_navigation_fits: true,
             pending_toast: None,
             toasts_hidden: false,
@@ -856,6 +864,7 @@ impl HerdrWindow {
             teleport: None,
             teleport_marks: crate::teleport::Marks::start(),
             teleport_follow: None,
+            pane_carry: None,
             dispatch_job: None,
             dispatch_setups: Default::default(),
             fan_out: None,
@@ -879,6 +888,7 @@ impl HerdrWindow {
             devices_overview: Default::default(),
             checkpoints: Default::default(),
             port_forwards: Default::default(),
+            remote_browser: Vec::new(),
             #[cfg(feature = "cloud")]
             cloud_jobs: Default::default(),
             listening_ports: Default::default(),

@@ -39,7 +39,6 @@ fn saving_blocks_cancel_replacement_and_reload_until_reconciled(cx: &mut TestApp
         cx.update(|window, cx| {
             view.update(cx, |view, cx| {
                 assert!(!view.open_menu(window, cx));
-                view.open_preferences_fixture(window, cx);
                 view.open_keybinds(window, cx);
                 view.open_theme_picker(window, cx);
                 view.open_palette(crate::palette::Filter::All, window, cx);
@@ -273,7 +272,7 @@ fn hover_keys_search_preview_and_dismiss_restore_original(cx: &mut TestAppContex
                 view.preview_picker_selection(cx);
                 assert_eq!(view.theme, Theme::builtin("Nord").unwrap());
                 if dismiss == 0 {
-                    view.open_preferences_fixture(window, cx);
+                    view.open_keybinds(window, cx);
                 }
                 if dismiss == 1 {
                     view.dismiss_menu(window, cx);

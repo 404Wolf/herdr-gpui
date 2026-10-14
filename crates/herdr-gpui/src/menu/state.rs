@@ -96,10 +96,7 @@ pub(crate) struct MenuState {
     pub(crate) keybinds_search: Option<Entity<crate::search_input::SearchInput>>,
     pub(super) shortcut_editor: Option<super::shortcut_editor::Editor>,
     pub(super) _keybinds_subscription: Option<Subscription>,
-    pub(crate) preferences_scroll: ScrollHandle,
-    pub(crate) font_size_editor: Option<crate::preferences::FontSizeEditor>,
     pub(crate) themes: Option<crate::theme_picker::ThemePicker>,
-    pub(crate) fonts: Option<crate::font_picker::FontPicker>,
     pub(crate) palette: Option<crate::palette::Palette>,
     pub(crate) code_search: Option<crate::code_search::CodeSearch>,
     pub(crate) close: Option<crate::close_modal::CloseConfirmation>,
@@ -321,10 +318,7 @@ impl MenuState {
             keybinds_search: None,
             shortcut_editor: None,
             _keybinds_subscription: None,
-            preferences_scroll: ScrollHandle::new(),
-            font_size_editor: None,
             themes: None,
-            fonts: None,
             palette: None,
             code_search: None,
             close: None,
@@ -375,8 +369,6 @@ impl MenuState {
         self.page = None;
         self.palette = None;
         self.code_search = None;
-        self.fonts = None;
-        self.font_size_editor = None;
         self.shortcut_editor = None;
         self.selected = None;
         self.workspace_selected = None;

@@ -326,10 +326,6 @@ impl HerdrWindow {
         cx.notify();
     }
 
-    pub(crate) fn render_integrations(&self, cx: &mut Context<Self>) -> Div {
-        self.render_filtered_integrations("", cx)
-    }
-
     pub(crate) fn render_filtered_integrations(&self, query: &str, cx: &mut Context<Self>) -> Div {
         let query = query.trim().to_lowercase();
         let state = &self.integrations;

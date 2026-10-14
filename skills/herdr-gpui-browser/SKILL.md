@@ -1,6 +1,6 @@
 ---
 name: herdr-gpui-browser
-description: Open a browser tab in Herdr UI to show the user a web page or an HTML file you wrote, next to the terminal you run in, and get back the notes the user pins on it. Use whenever the user asks to open, start, or show a browser tab, a page, a preview, or a mockup while you run inside Herdr (HERDR_ENV=1 is set in your environment); prefer it there over other browser skills and over opening Safari or another system browser. Also use it, inside Herdr, for anything Herdr UI itself shows or keeps rather than the herdr daemon: show a file at a line, open a review of your changes, keep a note on a worktree, take or diff a checkpoint, check your branch's pull request and CI, forward or open a port, list or focus the app's windows and tabs, wait for a tab to close or the user's notes to arrive, change a Herdr UI setting, theme, or font, or keep the machine awake.
+description: "Open a browser tab in Herdr UI to show the user a web page or an HTML file you wrote, next to the terminal you run in, and get back the notes the user pins on it. Use whenever the user asks to open, start, or show a browser tab, a page, a preview, or a mockup while you run inside Herdr (HERDR_ENV=1 is set in your environment); prefer it there over other browser skills and over opening Safari or another system browser. Also use it, inside Herdr, for anything Herdr UI itself shows or keeps rather than the herdr daemon: show a file at a line, open a review of your changes, keep a note on a worktree, take or diff a checkpoint, check your branch's pull request and CI, forward or open a port, list or focus the app's windows and tabs, wait for a tab to close or the user's notes to arrive, change a Herdr UI setting, theme, or font, or keep the machine awake."
 ---
 <!-- herdr-gpui-managed-skill v1: Herdr UI keeps this file up to date. Edit a copy under another name to keep your changes. -->
 
@@ -35,6 +35,9 @@ herdr-gpui browser open http://localhost:3000
   links to CSS, scripts, and images work. Keep the page and its assets in a
   dedicated folder: never your home directory, and nothing in a hidden
   folder. Files whose names start with a dot are never served.
+- A Markdown file (`.md`, `.markdown`) opens rendered, like a note in
+  Obsidian: safe HTML in it renders, its scripts never run, and `https`
+  images load. Links to other Markdown files in the folder open rendered too.
 - Opening the same page again from the same pane reuses and reloads its tab.
   After editing a file, run `herdr-gpui browser reload` instead.
 - Add `--no-focus` to add the tab without switching to it, for example when
@@ -96,9 +99,18 @@ The commands exit with:
 | 7 | Herdr UI did not answer in time | Try again once |
 | 8 | Not available on this platform or this version | Print the URL or path for the user instead |
 
-If the command is not found, or you run on a remote host over SSH, browser
-tabs are not available to you: print the URL instead. The app listens only on
-the user's own machine.
+If the command is not found, browser tabs are not available to you: print
+the URL instead.
+
+On an SSH host the user's Herdr UI connects to, the command is a small shim
+that reaches the app through Herdr: only `herdr-gpui browser open` with a web
+address and `herdr-gpui browser reload` work there, and the rest exit 8.
+`localhost:PORT` on that host is forwarded to the user's machine for you. A
+file on the host cannot be shown: serve its folder (for example
+`python3 -m http.server 8000`) and open `localhost:8000`. The command cannot
+tell whether a window opened the page, so say what you asked for. Notes the
+user sends on the page arrive as your next prompt; `browser feedback` does
+not work there.
 
 On Linux the app has no embedded browser yet: web pages open in the system
 browser, and local files and annotations are not available.

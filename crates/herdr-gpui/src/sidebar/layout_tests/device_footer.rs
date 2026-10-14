@@ -101,18 +101,6 @@ fn device_footer_filters_both_lists_and_keeps_settings_visible(cx: &mut gpui::Te
     });
     assert!(cx.debug_bounds("host-ssh:fixture").is_some());
     assert!(cx.debug_bounds("device-settings").is_some());
-    // Command routing belongs to settings_window tests; this fixture keeps
-    // testing the legacy modal without starting the personal config loader.
-    cx.update(|window, cx| {
-        view.update(cx, |view, cx| view.open_preferences_fixture(window, cx));
-    });
-    cx.update(|_, cx| {
-        assert_eq!(
-            view.read(cx).menu.page,
-            Some(crate::menu::Page::Preferences)
-        )
-    });
-    cx.simulate_keystrokes("escape");
     // A narrow sidebar retains both controls without spilling into the terminal.
     cx.update(|window, cx| {
         view.update(cx, |view, _| view.sidebar_width = Some(140.));

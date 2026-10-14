@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 
 mod application_menu;
 mod close_button;
+mod padding;
 mod tab_switch;
 
 /// The next find or scroll request on the wire. Resizes and focus reports

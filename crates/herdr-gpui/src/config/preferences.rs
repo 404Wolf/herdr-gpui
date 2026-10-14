@@ -17,9 +17,12 @@ pub(crate) enum Preference {
     NotificationEnabled(Option<bool>),
     NotificationDelay(Option<u64>),
     NotificationPosition(Option<ToastHerdrPosition>),
+    /// `[notifications] finished`: GUI-only, so there is no shared value to follow.
+    NotificationFinished(bool),
     ClipboardEnabled(Option<bool>),
     ClipboardPosition(Option<ClipboardToastPosition>),
-    SidebarGap(f32),
+    /// `[terminal] padding_x` or `padding_y`: both sides of one axis.
+    TerminalPadding(Axis, Sides),
     StatusBar(status_bar::Edit),
     /// `[usage] inline`: whether the sidebar draws the daemon's configured rows.
     UsageInline(bool),
@@ -93,6 +96,9 @@ impl Config {
                         })
                     }),
                 ),
+                Preference::NotificationFinished(value) => {
+                    (Some("notifications"), "finished", Some(value.into()))
+                }
                 Preference::ClipboardEnabled(value) => {
                     (Some("clipboard_toast"), "enabled", value.map(Into::into))
                 }
@@ -118,24 +124,37 @@ impl Config {
                 Preference::UpdateChannel(channel) => {
                     (Some("updates"), "channel", Some(channel.as_str().into()))
                 }
-                Preference::SidebarGap(value) => {
-                    if !value.is_finite() || !(0.0..=MAX_SIDEBAR_GAP).contains(&value) {
-                        return Err(Error::InvalidSidebarGap);
-                    }
-                    // A shorthand layout must retain its selected mode.
-                    if let Some(mode) = document
-                        .get("layout")
-                        .filter(|item| item.as_str().is_some())
+                Preference::TerminalPadding(axis, sides) => {
+                    // The deprecated gap only stands in for an unset
+                    // horizontal padding, so the key replacing it removes it
+                    // and the file names the value once.
+                    if axis == Axis::X
+                        && let Some(layout) = document
+                            .get_mut("layout")
+                            .and_then(toml_edit::Item::as_table_like_mut)
                     {
-                        let mut table = toml_edit::Table::new();
-                        table.insert("mode", mode.clone());
-                        document["layout"] = toml_edit::Item::Table(table);
+                        layout.remove("sidebar_gap");
                     }
-                    (
-                        Some("layout"),
-                        "sidebar_gap",
-                        Some(toml_edit::Value::from(f64::from(value))),
-                    )
+                    // Whole pixels stay integers, as a person would write them.
+                    let pixels = |side: f32| {
+                        if side.fract() == 0. {
+                            toml_edit::Value::from(side as i64)
+                        } else {
+                            toml_edit::Value::from(f64::from(side))
+                        }
+                    };
+                    // Sides that agree are one number; a pair names each.
+                    let value = if sides.start() == sides.end() {
+                        pixels(sides.start())
+                    } else {
+                        toml_edit::Value::Array(
+                            [sides.start(), sides.end()]
+                                .map(pixels)
+                                .into_iter()
+                                .collect(),
+                        )
+                    };
+                    (Some("terminal"), axis.key(), Some(value))
                 }
             };
             let target: &mut dyn toml_edit::TableLike = if let Some(table) = table {
@@ -191,7 +210,8 @@ mod tests {
             Preference::NotificationPosition(Some(ToastHerdrPosition::TopLeft)),
             Preference::ClipboardEnabled(Some(false)),
             Preference::ClipboardPosition(Some(ClipboardToastPosition::TopCenter)),
-            Preference::SidebarGap(7.5),
+            Preference::TerminalPadding(Axis::X, Sides::new(7.5, 7.5).expect("in band")),
+            Preference::TerminalPadding(Axis::Y, Sides::new(4., 6.).expect("in band")),
             Preference::UpdateChannel(UpdateChannel::Beta),
         ] {
             Config::save_preference_path(edit, &path)?;
@@ -213,9 +233,13 @@ mod tests {
         assert_eq!(table["show_sidebar_search"].as_bool(), Some(false));
         assert_eq!(table["show_repository_icons"].as_bool(), Some(false));
         assert_eq!(table["smooth_scroll"].as_bool(), Some(false));
-        assert_eq!(table["layout"]["mode"].as_str(), Some("orca"));
+        assert_eq!(table["layout"].as_str(), Some("orca"));
         assert_eq!(table["updates"]["channel"].as_str(), Some("beta"));
-        assert_eq!(table["layout"]["sidebar_gap"].as_float(), Some(7.5));
+        assert_eq!(table["terminal"]["padding_x"].as_float(), Some(7.5));
+        assert_eq!(
+            table["terminal"]["padding_y"],
+            toml::Value::Array(vec![4.into(), 6.into()])
+        );
         assert_eq!(
             table["notifications"]["delay_seconds"].as_integer(),
             Some(3600)
@@ -256,24 +280,18 @@ mod tests {
         let path = directory.path().join("local.toml");
         let original = "layout = { mode = 'compact', sidebar_gap = 3 }\n";
         fs::write(&path, original)?;
-        for edit in [
-            Preference::SidebarGap(-1.),
-            Preference::SidebarGap(65.),
-            Preference::SidebarGap(f32::NAN),
-            Preference::SidebarGap(f32::INFINITY),
-            Preference::NotificationDelay(Some(u64::MAX)),
-        ] {
-            let error = Config::save_preference_path(edit, &path).expect_err("invalid preference");
-            assert!(matches!(error, Error::Path { .. }));
-            assert!(std::error::Error::source(&error).is_some());
-            assert_eq!(fs::read_to_string(&path)?, original);
-        }
-        Config::save_preference_path(Preference::SidebarGap(64.), &path)?;
+        let edit = Preference::NotificationDelay(Some(u64::MAX));
+        let error = Config::save_preference_path(edit, &path).expect_err("invalid preference");
+        assert!(matches!(error, Error::Path { .. }));
+        assert!(std::error::Error::source(&error).is_some());
+        assert_eq!(fs::read_to_string(&path)?, original);
+        let sides = Sides::new(64., 0.).expect("padding in band");
+        Config::save_preference_path(Preference::TerminalPadding(Axis::Y, sides), &path)?;
         assert_eq!(
             Config::parse(&fs::read_to_string(&path)?)?
-                .layout
-                .sidebar_gap,
-            64.
+                .terminal_padding
+                .y,
+            sides
         );
         for original in ["notifications = false\n", "[invalid"] {
             fs::write(&path, original)?;

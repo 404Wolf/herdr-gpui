@@ -25,7 +25,7 @@ fn terminal_line_height_is_a_multiple_of_the_font_size() -> anyhow::Result<()> {
     assert!(config.unknown_keys.is_empty(), "{:?}", config.unknown_keys);
 
     // A runtime size change, as Cmd-= makes, keeps the proportion.
-    FontFace::Terminal.set_size(&mut config, 20.0);
+    config.terminal.size = 20.0;
     assert_eq!(config.terminal.line_height(), 25.0);
 
     // Both bounds are usable, and an integer is a whole multiple.

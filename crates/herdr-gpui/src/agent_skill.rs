@@ -43,8 +43,13 @@ pub(crate) fn text(executable: Option<&Path>) -> String {
     if executable.and_then(Path::to_str).is_none() {
         return SKILL.to_owned();
     }
+    text_naming(&command(executable))
+}
+
+/// The skill, naming `command` in its commands, as one shell word.
+pub(crate) fn text_naming(command: &str) -> String {
     // Every command line in the skill starts with the executable's name.
-    SKILL.replace("herdr-gpui ", &format!("{} ", command(executable)))
+    SKILL.replace("herdr-gpui ", &format!("{command} "))
 }
 
 fn managed(contents: &str) -> bool {
@@ -123,7 +128,7 @@ fn agents_present(home: &Path) -> bool {
 }
 
 /// What the user chose when asked.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Choice {
     Installed,
@@ -268,6 +273,27 @@ mod tests {
         assert!(bundled.contains("/Applications/Herdr.app/Contents/MacOS/Herdr code open"));
         let spaced = text(Some(Path::new("/Users/a b/it's/Herdr")));
         assert!(spaced.contains(r"'/Users/a b/it'\''s/Herdr' browser open"));
+    }
+
+    /// The description lists commands after a colon (`daemon: show a file`),
+    /// so as a plain YAML scalar it would parse as a nested mapping and fail
+    /// every agent's frontmatter parser, hiding the skill from agents.
+    #[test]
+    fn the_skill_description_is_a_quoted_scalar() {
+        let frontmatter = SKILL
+            .strip_prefix("---\n")
+            .and_then(|rest| rest.split_once("\n---\n"))
+            .map(|(frontmatter, _)| frontmatter)
+            .unwrap();
+        let description = frontmatter
+            .lines()
+            .find_map(|line| line.strip_prefix("description: "))
+            .unwrap();
+        let value = description
+            .strip_prefix('"')
+            .and_then(|value| value.strip_suffix('"'))
+            .unwrap();
+        assert!(!value.contains('"'));
     }
 
     #[test]

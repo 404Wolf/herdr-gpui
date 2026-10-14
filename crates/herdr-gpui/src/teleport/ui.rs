@@ -50,10 +50,12 @@ enum Stage {
 const FOLLOW_FOR: Duration = Duration::from_secs(20);
 const FOLLOW_RETRY: Duration = Duration::from_millis(750);
 
-/// The workspace a finished teleport should end up focused on.
+/// The workspace a finished teleport should end up focused on, or the pane
+/// a moved pane landed in.
 pub(crate) struct Follow {
     endpoint_id: String,
     workspace_id: String,
+    pane_id: Option<String>,
     until: Instant,
     next: Option<Instant>,
 }
@@ -63,8 +65,17 @@ impl Follow {
         Self {
             endpoint_id,
             workspace_id,
+            pane_id: None,
             until: Instant::now() + FOLLOW_FOR,
             next: None,
+        }
+    }
+
+    /// Follow to `pane_id` in `workspace_id`, which need not be its active tab.
+    pub(crate) fn pane(endpoint_id: String, workspace_id: String, pane_id: String) -> Self {
+        Self {
+            pane_id: Some(pane_id),
+            ..Self::new(endpoint_id, workspace_id)
         }
     }
 }
@@ -291,7 +302,7 @@ fn destination_text(candidate: &Candidate) -> (String, String) {
     }
 }
 
-fn describe(work: &Work, action: &Action) -> String {
+pub(super) fn describe(work: &Work, action: &Action) -> String {
     let program = work.program().unwrap_or("shell");
     match action {
         Action::Shell => "Shell".to_owned(),
@@ -393,23 +404,37 @@ impl HerdrWindow {
         }
         follow.next = Some(now + FOLLOW_RETRY);
         let (endpoint, workspace) = (follow.endpoint_id.clone(), follow.workspace_id.clone());
+        let pane = follow.pane_id.clone();
+        let target = match &pane {
+            Some(pane) => NavigationTarget::Pane(pane.as_str()),
+            None => NavigationTarget::Workspace(workspace.as_str()),
+        };
         if self.endpoints[self.selected_endpoint].id != endpoint {
-            self.navigate_endpoint(&endpoint, NavigationTarget::Workspace(&workspace), cx);
+            self.navigate_endpoint(&endpoint, target, cx);
             return;
         }
         let Some(snapshot) = &self.live.snapshot else {
             return;
         };
-        if snapshot.focused_workspace_id.as_deref() == Some(workspace.as_str()) {
+        let (focused, listed) = match &pane {
+            Some(pane) => (
+                snapshot.focused_pane_id.as_deref() == Some(pane.as_str()),
+                snapshot.panes.iter().any(|p| p.pane_id == *pane),
+            ),
+            None => (
+                snapshot.focused_workspace_id.as_deref() == Some(workspace.as_str()),
+                snapshot
+                    .workspaces
+                    .iter()
+                    .any(|w| w.workspace_id == workspace),
+            ),
+        };
+        if focused {
             self.teleport_follow = None;
             return;
         }
-        let listed = snapshot
-            .workspaces
-            .iter()
-            .any(|w| w.workspace_id == workspace);
         if listed && self.pending_navigation.is_none() {
-            self.navigate(NavigationTarget::Workspace(&workspace), cx);
+            self.navigate(target, cx);
         }
     }
 
