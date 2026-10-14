@@ -73,6 +73,8 @@ impl HerdrWindow {
         gui_config_diagnostic.sync(config.diagnostic().as_deref());
         let catalog = endpoint::Catalog::new(&target);
         let menu = menu::MenuState::new(cx);
+        // Starts the thread that reads and saves the marks file.
+        let teleport_marks = crate::teleport::Marks::start();
         let sidebar_search = sidebar::SidebarSearch::new(cx);
         let surface_signal = cx.new(|_| SurfaceSignal);
         let sidebar_invalidation = Self::invalidate_sidebar(cx);
@@ -244,7 +246,7 @@ impl HerdrWindow {
             tab_drag: None,
             teleport: None,
             teleport_follow: None,
-            teleport_marks: crate::teleport::Marks::start(),
+            teleport_marks,
             terminal_mouse: None,
             terminal_notes: Default::default(),
             theme,
