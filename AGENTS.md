@@ -61,7 +61,9 @@ at the same spot, or both bumping one hard-coded count.
   conflict returns on another branch, and a `Cargo.lock` merge driver that
   keeps one side and has Cargo rebuild it before the commit. After a clean
   merge whose only conflict was the lockfile, the merge stops with the rebuilt
-  lockfile staged: run `git commit --no-edit` to finish it. GitHub's Update
+  lockfile staged: run `git commit --no-edit` to finish it. The rebuild
+  refuses while a `Cargo.toml` or `Cargo.lock` change is unstaged, and an
+  aborted merge's pending rebuild is dropped. GitHub's Update
   branch button and rebases do not run these hooks; there, run
   `cargo metadata` and commit `Cargo.lock` by hand.
 

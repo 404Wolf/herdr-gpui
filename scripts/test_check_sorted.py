@@ -72,6 +72,12 @@ class CheckSortedTests(unittest.TestCase):
         )
         self.assertEqual(check_sorted.process(text), (text, []))
 
+    def test_hash_comments_move_with_their_entry(self) -> None:
+        text = "# keep-sorted start\n# Zed.\nzed = 1\nalpha = 2\n# keep-sorted end\n"
+        fixed, unsorted = check_sorted.process(text)
+        self.assertEqual(unsorted, [1])
+        self.assertEqual(fixed, "# keep-sorted start\nalpha = 2\n# Zed.\nzed = 1\n# keep-sorted end\n")
+
     def test_markers_outside_comments_are_ignored(self) -> None:
         text = 'MARKER = "// keep-sorted start"\nb\na\n'
         self.assertEqual(check_sorted.process(text), (text, []))

@@ -3,7 +3,7 @@
 
 A region runs from a comment line (`//` or `#`) containing `keep-sorted start`
 to one containing `keep-sorted end`. Its entries start at the region's own indentation; comment
-and attribute lines (`//`, `#[`, `#!`) before an entry belong to it, and deeper
+and attribute lines (`//`, `#`) before an entry belong to it, and deeper
 indented or closing lines after it continue it. Blank lines split a region
 into blocks that are each sorted on their own. Entries compare by their first
 line that is not a comment or an attribute, ignoring case and a leading
@@ -39,7 +39,8 @@ def indent(line: str) -> int:
 
 
 def is_preamble(stripped: str) -> bool:
-    return stripped.startswith(("//", "#[", "#!"))
+    # `#` covers Rust attributes and the comments of Python, shell, and TOML.
+    return stripped.startswith(("//", "#"))
 
 
 def is_continuation(stripped: str) -> bool:

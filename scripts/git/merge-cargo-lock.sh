@@ -3,9 +3,9 @@
 #
 # A lockfile conflict is never resolved by hand: Cargo rebuilds it from the
 # merged manifests. When the three-way merge is clean it is kept. Otherwise
-# this keeps our side, records that the lockfile is stale, and the
-# pre-commit or pre-merge-commit hook runs Cargo before the merge is
-# committed, once every Cargo.toml has its merged contents.
+# this keeps our side and records, for the merge under way, that the lockfile
+# is stale; the pre-commit or pre-merge-commit hook runs Cargo before that
+# merge is committed, once every Cargo.toml has its merged contents.
 set -euo pipefail
 
 base=$1 ours=$2 theirs=$3
@@ -18,5 +18,7 @@ if git merge-file --quiet "$merged" "$base" "$theirs"; then
   exit 0
 fi
 
-touch "$(git rev-parse --git-path herdr-cargo-lock-stale)"
-echo "Cargo.lock: kept our side; it is rebuilt with Cargo before the commit." >&2
+# The marker names the commit being merged into, so a hook can tell this
+# merge from a later one after an abort.
+git rev-parse --verify --quiet HEAD >"$(git rev-parse --git-path herdr-cargo-lock-stale)" || true
+echo "Cargo.lock: kept our side; it is rebuilt with Cargo before the merge commit." >&2
