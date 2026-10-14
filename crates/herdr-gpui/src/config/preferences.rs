@@ -16,6 +16,7 @@ pub(crate) enum Preference {
     /// `status_icons`; `None` removes it, following Herdr's indicator style.
     StatusIcons(Option<StatusIcons>),
     SmoothScroll(bool),
+    FocusFollowsMouse(bool),
     NotificationEnabled(Option<bool>),
     NotificationDelay(Option<u64>),
     NotificationPosition(Option<ToastHerdrPosition>),
@@ -80,6 +81,9 @@ impl Config {
                     "status_icons",
                     value.map(|icons| icons.as_str().into()),
                 ),
+                Preference::FocusFollowsMouse(value) => {
+                    (None, "focus_follows_mouse", Some(value.into()))
+                }
                 Preference::NotificationEnabled(value) => {
                     (Some("notifications"), "enabled", value.map(Into::into))
                 }

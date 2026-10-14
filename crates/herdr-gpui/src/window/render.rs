@@ -59,6 +59,7 @@ impl Render for HerdrWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.restore_menu_focus(window, cx);
         self.sync_backdrop(window, cx);
+        self.sync_device_themes(cx);
         let fill = self.fill();
         let ground = self.ground();
         self.viewport_width = f32::from(window.viewport_size().width);
@@ -69,7 +70,7 @@ impl Render for HerdrWindow {
         self.painter.borrow_mut().set_appearance(
             self.config.terminal.size,
             cell_height,
-            self.theme.clone(),
+            self.terminal_theme().clone(),
         );
         self.cell_width = self.painter.borrow_mut().cell_width(&font, window, cx);
         // Registers the window for surface-only redraws; see `redraw_terminal`.
@@ -156,7 +157,7 @@ impl Render for HerdrWindow {
             font_size: self.config.terminal.size,
             cell_width,
             cell_height,
-            theme: self.theme.clone(),
+            theme: self.terminal_theme().clone(),
             ground,
         };
         if !self.slides_allowed() {
@@ -236,7 +237,7 @@ impl Render for HerdrWindow {
             .when_some(self.split_cursor, |terminal, cursor| {
                 terminal.cursor(cursor)
             })
-            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
+            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
                 let split_cursor = this.split_cursor_at(event.position);
                 if split_cursor != this.split_cursor {
                     this.split_cursor = split_cursor;
@@ -245,6 +246,7 @@ impl Render for HerdrWindow {
                 // A border is not the application's to hover.
                 if split_cursor.is_none() {
                     this.terminal_mouse_hover(event, cx);
+                    this.focus_hovered_pane(event, window, cx);
                 }
                 let hovered = this.terminal_link_hovered(event.position, event.modifiers);
                 if hovered != this.hovered_terminal_link {
@@ -271,7 +273,7 @@ impl Render for HerdrWindow {
             .min_h_0()
             .min_w_0()
             .overflow_hidden()
-            .bg(fill.base(self.theme.background))
+            .bg(fill.base(self.terminal_theme().background))
             .track_focus(&self.focus)
             // Screen readers and selection tools read the rows on screen and
             // the selection among them. The rows are built while GPUI

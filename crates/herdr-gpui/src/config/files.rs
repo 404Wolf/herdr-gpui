@@ -1,8 +1,8 @@
 //! The config files on disk: locking, migration, managed defaults refresh,
 //! and targeted edits to the local overrides file.
 use super::{
-    Config, DEFAULT_CONFIG, Daemon, FONT_SIZE_RANGE, FontFace, KeybindingSource, LOCAL_CONFIG,
-    LayoutMode, MANAGED_HEADER,
+    Config, DEFAULT_CONFIG, Daemon, FONT_SIZE_RANGE, FontFace, LOCAL_CONFIG, LayoutMode,
+    MANAGED_HEADER,
 };
 use crate::{Error, Result, contrast::Contrast};
 use std::{
@@ -275,69 +275,6 @@ impl Config {
                 *value.decor_mut() = previous.decor().clone();
             }
             document["contrast"] = toml_edit::Item::Value(value);
-            write_config(path, &document.to_string())
-        })();
-        result.map_err(|error| error.at_path(path))
-    }
-
-    /// Persist one device's keybinding source, keeping the rest of the local
-    /// file. Local is the default, so choosing it removes the entry.
-    pub(crate) fn save_device_keybindings(profile: &str, source: KeybindingSource) -> Result<()> {
-        let (_lock, local) = Self::prepare_files(&Self::path()?)?;
-        Self::save_device_keybindings_path(profile, source, &local)
-    }
-
-    pub(super) fn save_device_keybindings_path(
-        profile: &str,
-        source: KeybindingSource,
-        path: &Path,
-    ) -> Result<()> {
-        if !herdr_client::valid_profile_id(profile) {
-            return Err(Error::InvalidDeviceId(profile.to_owned()));
-        }
-        let result = (|| -> Result<()> {
-            let text = match fs::read_to_string(path) {
-                Ok(text) => text,
-                Err(error) if error.kind() == ErrorKind::NotFound => LOCAL_CONFIG.into(),
-                Err(error) => return Err(error.into()),
-            };
-            let mut document = text.parse::<toml_edit::DocumentMut>()?;
-            match source {
-                KeybindingSource::Server => {
-                    let mut devices = toml_edit::Table::new();
-                    devices.set_implicit(true);
-                    let device = document
-                        .entry("devices")
-                        .or_insert(toml_edit::Item::Table(devices))
-                        .as_table_like_mut()
-                        .ok_or(Error::InvalidDevicesTable)?
-                        .entry(profile)
-                        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
-                        .as_table_like_mut()
-                        .ok_or(Error::InvalidDevicesTable)?;
-                    device.insert("keybindings", toml_edit::value("server"));
-                }
-                KeybindingSource::Local => {
-                    let Some(devices) = document
-                        .get_mut("devices")
-                        .and_then(toml_edit::Item::as_table_like_mut)
-                    else {
-                        return Ok(());
-                    };
-                    if let Some(device) = devices
-                        .get_mut(profile)
-                        .and_then(toml_edit::Item::as_table_like_mut)
-                    {
-                        device.remove("keybindings");
-                        if device.is_empty() {
-                            devices.remove(profile);
-                        }
-                    }
-                    if devices.is_empty() {
-                        document.remove("devices");
-                    }
-                }
-            }
             write_config(path, &document.to_string())
         })();
         result.map_err(|error| error.at_path(path))

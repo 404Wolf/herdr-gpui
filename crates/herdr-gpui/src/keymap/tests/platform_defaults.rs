@@ -55,6 +55,7 @@ fn linux_shortcuts_preserve_terminal_keys_and_shifted_actions() {
         (Command::NewWorktree, "ctrl-shift-n"),
         (Command::Workspace, "ctrl-alt-shift-n"),
         (Command::Palette, "ctrl-shift-p"),
+        (Command::ResumePalette, "ctrl-alt-shift-r"),
         (Command::SplitRight, "ctrl-shift-d"),
         (Command::SplitDown, "ctrl-alt-shift-d"),
         (Command::CopyMode, "ctrl-alt-shift-c"),

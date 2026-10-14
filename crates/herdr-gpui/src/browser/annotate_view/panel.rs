@@ -167,6 +167,11 @@ impl HerdrWindow {
                                 .id(("annotation-edit", index))
                                 .debug_selector(move || format!("annotation-edit-{index}"))
                                 .cursor_text()
+                                // A page's result arrives without a note.
+                                .when(note.comment.is_empty(), |hint| {
+                                    hint.text_color(rgb(theme.muted))
+                                        .child("Add a note\u{2026}")
+                                })
                                 .child(note.comment)
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.edit_note(id, index, window, cx);

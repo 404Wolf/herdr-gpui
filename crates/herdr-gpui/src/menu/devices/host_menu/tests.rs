@@ -2,6 +2,7 @@ use super::{ACTIONS, Action, HostMenu};
 use crate::{config::KeybindingSource, menu::Page, sidebar::layout_tests::fixture_window};
 use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, point, px, size};
 
+mod device_theme;
 mod forwards;
 mod menu_width;
 
@@ -103,6 +104,7 @@ fn the_menu_shows_the_server_keybindings_choice(cx: &mut TestAppContext) {
             "0123456789abcdef0123456789abcdef".into(),
             crate::config::DeviceSettings {
                 keybindings: KeybindingSource::Server,
+                ..Default::default()
             },
         );
         view.selected_endpoint = 1;
