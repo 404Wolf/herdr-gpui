@@ -529,6 +529,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         sidebar_visible: true,
         sidebar_start_pending: true,
         status_bar_visible: true,
+        zen: Default::default(),
         device_filter: None,
         endpoints: vec![crate::endpoint::Endpoint::new(
             crate::endpoint::LOCAL.into(),

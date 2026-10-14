@@ -197,6 +197,7 @@ impl Service {
             data_version: None,
             retry: Vec::new(),
             uncached: HashMap::new(),
+            resume: HashMap::new(),
             cooldown: None,
         };
         std::thread::Builder::new()
@@ -269,6 +270,8 @@ struct Worker {
     retry: Vec<(SourceKey, Instant)>,
     /// Listings shown but not written: capped, or the database is newer.
     uncached: HashMap<SourceKey, Vec<Item>>,
+    /// Where each GitHub source's next incremental sync continues.
+    resume: HashMap<SourceKey, github::Resume>,
     cooldown: Option<Duration>,
 }
 
@@ -566,15 +569,39 @@ impl Worker {
                     return Ok(SyncState::SignIn);
                 };
                 let previous = store.checkpoint(key)?;
+                // What the last complete sync stored, for reading only the
+                // changes since; a read-only store keeps none.
+                let cached = match (&previous, writable) {
+                    (Some(_), true) => Some(
+                        store
+                            .items()?
+                            .into_iter()
+                            .filter(|item| item.key.source == *key)
+                            .collect(),
+                    ),
+                    _ => None,
+                };
+                // Only while the stored checkpoint is still the one this
+                // worker wrote: agent-launcher shares the database and may
+                // have stored an older listing since.
+                let resume = self.resume.get(key).copied().filter(|resume| {
+                    previous
+                        .as_ref()
+                        .and_then(|checkpoint| checkpoint.updated_at)
+                        == Some(resume.oldest())
+                });
                 let cancelled = &self.cancelled;
                 let listing = github::sync(
                     key,
                     token,
                     previous.as_ref(),
+                    (cached, resume),
                     &|| cancelled.load(Ordering::Relaxed),
                     &mut self.cooldown,
                 )?;
                 let count = listing.items.len();
+                // A listing that is not stored is no place to resume from.
+                self.resume.remove(key);
                 if !listing.complete || !writable {
                     self.uncached.insert(key.clone(), listing.items);
                     return Ok(if listing.complete {
@@ -587,6 +614,7 @@ impl Worker {
                     });
                 }
                 store.replace_items(key, &listing.items, &listing.checkpoint)?;
+                self.resume.insert(key.clone(), listing.resume);
                 self.uncached.remove(key);
                 Ok(SyncState::Synced {
                     at: Utc::now(),

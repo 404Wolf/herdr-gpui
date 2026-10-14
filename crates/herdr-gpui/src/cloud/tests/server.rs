@@ -25,6 +25,19 @@ pub(crate) struct Request {
 pub(crate) fn serve(
     handler: impl Fn(&Request) -> (u16, String) + Send + 'static,
 ) -> (String, Arc<Mutex<Vec<Request>>>) {
+    serve_raw(move |request| {
+        let (status, body) = handler(request);
+        format!(
+            "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+    })
+}
+
+/// Serve raw HTTP replies, including interrupted bodies, through the same fixture.
+pub(crate) fn serve_raw(
+    handler: impl Fn(&Request) -> String + Send + 'static,
+) -> (String, Arc<Mutex<Vec<Request>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let log = Arc::new(Mutex::new(Vec::new()));
@@ -72,14 +85,9 @@ pub(crate) fn serve(
                 headers: head.clone(),
                 body: String::from_utf8_lossy(&bytes[header_end..]).to_string(),
             };
-            let (status, body) = handler(&request);
+            let reply = handler(&request);
             seen.lock().unwrap().push(request);
-            write!(
-                stream,
-                "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            )
-            .unwrap();
+            stream.write_all(reply.as_bytes()).unwrap();
         }
     });
     (base, log)

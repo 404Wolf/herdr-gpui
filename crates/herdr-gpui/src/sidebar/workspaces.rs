@@ -115,7 +115,7 @@ pub(super) fn workspace_badge(
     RowBadge::new(
         cache
             .and_then(|cache| cache.peek(key, branch))
-            .map(|pr| PrBadge::new(pr, theme)),
+            .map(|pr| PrBadge::new(&pr, theme)),
         git.dirty(key, branch).unwrap_or(false),
         marks.find(endpoint, key, branch).is_some(),
         note.is_some(),

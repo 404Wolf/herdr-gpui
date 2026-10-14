@@ -35,8 +35,11 @@ pub(super) fn read(_path: &Path, _name: &CStr) -> Result<Option<SecretString>> {
     Ok(None)
 }
 
-#[cfg(all(not(unix), any(feature = "coder", feature = "daytona")))]
-pub(super) fn read_checked(
+#[cfg(all(
+    not(unix),
+    any(feature = "boat", feature = "coder", feature = "daytona")
+))]
+pub(crate) fn read_checked(
     _path: &Path,
     _name: &CStr,
     _validate: fn(&SecretString) -> Result<()>,
@@ -44,7 +47,10 @@ pub(super) fn read_checked(
     Ok(None)
 }
 
-#[cfg(all(not(unix), any(feature = "coder", feature = "daytona")))]
+#[cfg(all(
+    not(unix),
+    any(feature = "boat", feature = "coder", feature = "daytona")
+))]
 pub(super) fn store_checked(
     path: &Path,
     name: &CStr,
@@ -122,7 +128,7 @@ fn github_record(value: &SecretString) -> Result<()> {
 
 /// `read` for a record another feature owns; `validate` must bound its size.
 #[cfg(unix)]
-pub(super) fn read_checked(
+pub(crate) fn read_checked(
     path: &Path,
     name: &CStr,
     validate: fn(&SecretString) -> Result<()>,
@@ -156,7 +162,10 @@ pub(super) fn store(
 }
 
 /// `store` for a record another feature owns; `validate` must bound its size.
-#[cfg(all(unix, any(test, feature = "coder", feature = "daytona")))]
+#[cfg(all(
+    unix,
+    any(test, feature = "boat", feature = "coder", feature = "daytona")
+))]
 pub(super) fn store_checked(
     path: &Path,
     name: &CStr,

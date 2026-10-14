@@ -22,6 +22,11 @@ pub(crate) fn with_command<T>(
         ));
     }
     match provider {
+        #[cfg(feature = "boat")]
+        CloudProvider::Boat => {
+            let gateway = crate::boat::command(account, id, cancelled).map_err(io::Error::other)?;
+            Ok(gateway.with_command(run))
+        }
         #[cfg(feature = "coder")]
         CloudProvider::Coder => {
             let command =
@@ -42,3 +47,6 @@ pub(crate) fn with_command<T>(
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

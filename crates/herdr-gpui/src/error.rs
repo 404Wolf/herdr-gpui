@@ -384,6 +384,9 @@ pub enum Error {
     #[cfg(feature = "coder")]
     #[error(transparent)]
     Coder(#[from] crate::coder::Error),
+    #[cfg(feature = "boat")]
+    #[error(transparent)]
+    Boat(#[from] crate::boat::Error),
     #[cfg(feature = "daytona")]
     #[error(transparent)]
     Daytona(#[from] crate::daytona::Error),
@@ -806,6 +809,10 @@ pub enum Error {
     TooManyFontFallbacks(&'static str),
     #[error("layout.sidebar_gap must be finite and between 0 and 64 logical pixels")]
     InvalidSidebarGap,
+    #[error("zen.width must be 20 to 1000 columns, or a percentage from \"10%\" to \"100%\"")]
+    InvalidZenWidth,
+    #[error("zen.font_size must be finite and between 8 and 48 logical pixels")]
+    InvalidZenFontSize,
     #[error("sound.volume must be between 0 and 100")]
     InvalidSoundVolume,
     #[error(
@@ -958,10 +965,6 @@ pub enum Error {
 }
 
 impl Error {
-    pub(crate) fn github_json(source: serde_json::Error) -> Self {
-        Self::GitHubJson(GitHubJsonError(source))
-    }
-
     pub(crate) fn at_path(self, path: &Path) -> Self {
         Self::Path {
             path: path.to_owned(),
