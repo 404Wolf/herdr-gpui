@@ -5,12 +5,13 @@
 //! `browser feedback` when its pane is gone or must not be typed into.
 use crate::{
     HerdrWindow,
-    browser::{Feedback, FeedbackKey},
+    browser::{Feedback, FeedbackKey, Pick},
     connection::ConnectionBridge,
+    navigation::NavigationTarget,
     terminal::InputTarget,
     window::Flash,
 };
-use gpui::{App, ClipboardItem, Context};
+use gpui::{App, ClipboardItem, Context, Window};
 use herdr_client::protocol::{
     AgentStatus, ClientKeyCode, ClientKeyKind, ClientPaneInputEvent, ClientShellAgent,
     ClientShellSnapshot,
@@ -341,6 +342,42 @@ impl HerdrWindow {
         )
     }
 
+    /// Brings the agent in `pane_id` into view after notes went to it, so the
+    /// user sees it take them: its tab replaces a page in its group, and its
+    /// pane takes the focus. The window comes forward too, for notes sent
+    /// from a mockup window of their own.
+    pub(crate) fn reveal_agent(
+        &mut self,
+        pane_id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(snapshot) = self.live.snapshot.clone() else {
+            return;
+        };
+        let Some(pane) = snapshot.panes.iter().find(|pane| pane.pane_id == pane_id) else {
+            return;
+        };
+        window.activate_window();
+        // Another workspace's groups are not loaded; focusing the pane takes
+        // the daemon there, and its tab with it.
+        if snapshot.focused_workspace_id.as_ref() == Some(&pane.workspace_id)
+            && let Some(group) = self
+                .ensure_layout()
+                .map(|layout| layout.owner(&Pick::Herdr(pane.tab_id.clone())))
+        {
+            self.choose_herdr_tab(group, &pane.tab_id, window, cx);
+        }
+        let target = NavigationTarget::Pane(pane_id);
+        if self.input_ready() {
+            self.navigate(target, cx);
+        } else {
+            self.pending_navigation = Some((&target).into());
+        }
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
     /// Delivers notes a control request sent, if this window shows the
     /// caller's pane on its selected endpoint, the only one it types into.
     /// `None` leaves them to another window, or to the request to keep.
@@ -349,6 +386,7 @@ impl HerdrWindow {
         &mut self,
         target: &crate::control::Target<'_>,
         text: &str,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<crate::control::NotesTo> {
         use crate::control::NotesTo;
@@ -376,7 +414,10 @@ impl HerdrWindow {
             pane_id: pane.to_owned(),
         };
         match self.deliver_notes(Some(target), text.to_owned(), None, None, cx) {
-            Delivered::Agent => Some(NotesTo::Agent),
+            Delivered::Agent => {
+                self.reveal_agent(pane, window, cx);
+                Some(NotesTo::Agent)
+            }
             Delivered::Kept => Some(NotesTo::Kept),
             Delivered::Copy(_) => None,
         }

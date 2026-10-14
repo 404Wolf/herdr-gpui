@@ -2,6 +2,7 @@ use super::*;
 use crate::control::{NotesTo, Target};
 
 mod outcomes;
+mod reveal;
 mod session_isolation;
 
 fn recipient(view: &Entity<HerdrWindow>, cx: &VisualTestContext) -> crate::browser::FeedbackKey {
@@ -40,14 +41,14 @@ fn deliver(
     daemon: Option<&str>,
     pane: &str,
 ) -> Option<NotesTo> {
-    cx.update(|_, cx| {
+    cx.update(|window, cx| {
         view.update(cx, |view, cx| {
             let target = Target {
                 daemon: daemon.map(std::path::Path::new),
                 workspace: None,
                 pane: Some(pane),
             };
-            view.deliver_requested_notes(&target, "Picked: B\n", cx)
+            view.deliver_requested_notes(&target, "Picked: B\n", window, cx)
         })
     })
 }

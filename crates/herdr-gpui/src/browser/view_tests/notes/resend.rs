@@ -5,7 +5,7 @@ fn send(
     tab: &crate::browser::Tab,
     cx: &mut VisualTestContext,
 ) -> String {
-    cx.update(|_, cx| view.update(cx, |view, cx| view.send_notes(tab, cx)));
+    cx.update(|window, cx| view.update(cx, |view, cx| view.send_notes(tab, window, cx)));
     kept(view, cx).unwrap()
 }
 

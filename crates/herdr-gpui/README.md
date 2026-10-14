@@ -2131,6 +2131,10 @@ them to the agent that opened it, so it can change the page.
   screenshot, and your note.
   Page text is cleaned of control characters and marked as quoted data.
   **Copy** puts the same prompt on the clipboard instead.
+- When the notes reach the agent, its tab replaces the page and its pane
+  takes the focus, so you see it pick them up. Notes from a mockup window
+  bring the Herdr UI window forward the same way. Notes that are kept for
+  `browser feedback` or copied leave the page where it is.
 - Sent notes stay listed, dimmed and marked sent, so a note can be changed
   and sent again. Click a note's text to edit it in the composer; saving it
   marks it unsent. Send then delivers only the notes not sent yet (**Send 2

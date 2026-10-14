@@ -167,8 +167,8 @@ pub(super) fn notes(request: &NotesRequest, cx: &mut App) -> Response {
         pane: Some(pane),
     };
     for handle in main_windows(cx) {
-        let taken = handle.update(cx, |view, _, cx| {
-            view.deliver_requested_notes(&target, &text, cx)
+        let taken = handle.update(cx, |view, window, cx| {
+            view.deliver_requested_notes(&target, &text, window, cx)
         });
         if let Ok(Some(to)) = taken {
             return Response::NotesSent { to };
