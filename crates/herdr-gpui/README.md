@@ -500,7 +500,11 @@ are refused, and a file the GUI creates is private (`0600`).
 ## Configuration
 
 GUI settings live in `$XDG_CONFIG_HOME/herdr/`, falling back to
-`~/.config/herdr/` and, on Windows, to `%APPDATA%\herdr\`:
+`~/.config/herdr/` and, on Windows, to `%APPDATA%\herdr\`. An app opened from
+Finder or a desktop launcher does not inherit a shell's `XDG_CONFIG_HOME`, so
+when it has none and `~/.config/herdr/` holds no daemon socket, it asks the
+login shell for its value once at startup and uses it for these settings, the
+daemon's `config.toml`, and the daemon's sockets:
 
 - `config-gpui.toml` contains managed defaults and documentation. Its first line
   warns **DO NOT EDIT -- WILL BE OVERWRITTEN**. Startup and GUI config reload

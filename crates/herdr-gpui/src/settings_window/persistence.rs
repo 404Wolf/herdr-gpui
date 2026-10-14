@@ -24,7 +24,7 @@ fn watched_paths() -> Option<[std::path::PathBuf; 2]> {
     let local = Config::local_path().ok()?;
     Some([
         local,
-        crate::config::daemon_config_path(|key| std::env::var_os(key)),
+        crate::config::daemon_config_path(herdr_client::local_var),
     ])
 }
 
