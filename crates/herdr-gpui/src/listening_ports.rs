@@ -137,28 +137,6 @@ fn local_shell() -> Result<Shell> {
     Err(Error::ListeningPortsUnsupported)
 }
 
-/// Where a browser finds `host`. Resolving an SSH alias reads configuration
-/// only, but runs `ssh -G`, so it happens on the worker, once per worker.
-fn origin(host: &Host) -> Origin {
-    let resolved = match host {
-        Host::Local | Host::Wsl(_) => None,
-        Host::Ssh(target) => herdr_client::resolve_destination(target)
-            .inspect_err(|error| {
-                tracing::debug!(category = "listening-ports", %error, "could not resolve an SSH host name");
-            })
-            .ok()
-            .map(|destination| destination.host),
-    };
-    Origin::new(host, resolved.as_deref())
-}
-
-/// One scan of a host, with where its ports open.
-#[derive(Debug, PartialEq)]
-struct Scan {
-    ports: Ports,
-    origin: Origin,
-}
-
 fn scan(shell: &mut Shell) -> Result<Ports> {
     let output = shell.run(scan::COMMAND, STEP_TIMEOUT).map_err(failed)?;
     parse(&output.stdout)
@@ -170,7 +148,7 @@ fn failed(error: Error) -> Error {
 
 struct Worker {
     stop: Arc<Stop>,
-    results: mpsc::Receiver<Result<Scan>>,
+    results: mpsc::Receiver<Result<Ports>>,
 }
 
 impl Drop for Worker {
@@ -196,8 +174,7 @@ fn spawn(host: Host) -> Option<Worker> {
     }
 }
 
-fn run(host: &Host, stop: &Stop, results: &mpsc::SyncSender<Result<Scan>>) {
-    let origin = origin(host);
+fn run(host: &Host, stop: &Stop, results: &mpsc::SyncSender<Result<Ports>>) {
     let mut shell: Option<Shell> = None;
     loop {
         let opened = match shell.take() {
@@ -210,10 +187,7 @@ fn run(host: &Host, stop: &Stop, results: &mpsc::SyncSender<Result<Scan>>) {
             if !matches!(ports, Err(Error::ListeningPorts(_))) {
                 shell = Some(opened);
             }
-            ports.map(|ports| Scan {
-                ports,
-                origin: origin.clone(),
-            })
+            ports
         });
         let due = Instant::now() + if result.is_ok() { INTERVAL } else { RETRY };
         match results.try_send(result) {
@@ -231,6 +205,7 @@ fn run(host: &Host, stop: &Stop, results: &mpsc::SyncSender<Result<Scan>>) {
 #[derive(Default)]
 struct Reading {
     ports: Ports,
+    /// Where the host's ports open, which follows from the host alone.
     origin: Origin,
     /// Why the latest scan failed, as last logged; the last good ports stay
     /// shown.
@@ -239,15 +214,14 @@ struct Reading {
 
 impl Reading {
     /// Whether anything shown changed.
-    fn apply(&mut self, result: Result<Scan>) -> bool {
+    fn apply(&mut self, result: Result<Ports>) -> bool {
         match result {
-            Ok(Scan { ports, origin }) => {
+            Ok(ports) => {
                 self.error = None;
-                if ports == self.ports && origin == self.origin {
+                if ports == self.ports {
                     return false;
                 }
                 self.ports = ports;
-                self.origin = origin;
                 true
             }
             Err(error) => {
@@ -320,7 +294,7 @@ impl ListeningPorts {
     #[cfg(test)]
     pub(crate) fn seed(&mut self, host: Host, ports: Ports) {
         let reading = Reading {
-            origin: Origin::new(&host, None),
+            origin: Origin::new(&host),
             ports,
             error: None,
         };
@@ -358,7 +332,10 @@ impl ListeningPorts {
                 .entry(host)
                 .or_insert_with_key(|host| Monitor {
                     worker: spawn(host.clone()),
-                    reading: Reading::default(),
+                    reading: Reading {
+                        origin: Origin::new(host),
+                        ..Reading::default()
+                    },
                 });
         }
         for monitor in self.monitors.values_mut() {

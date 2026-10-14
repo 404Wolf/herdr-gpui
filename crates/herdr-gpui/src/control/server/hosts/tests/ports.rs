@@ -2,7 +2,7 @@ use super::super::ports::{forward_info, list, port_info, unforward};
 use super::*;
 use crate::{
     control::protocol::hosts::Ports,
-    listening_ports::{Bind, Origin, Owner, Port},
+    listening_ports::{Bind, Origin, Owner, Port, Tunnels},
     port_forward::{PortForwards, State},
 };
 use std::net::{IpAddr, Ipv4Addr};
@@ -18,34 +18,56 @@ fn port(number: u16, bind: Bind) -> Port {
 fn remote() -> Origin {
     Origin::Remote {
         target: "me@devbox".into(),
-        name: Some("devbox".into()),
     }
 }
 
 #[test]
 fn a_port_says_where_this_machine_reaches_it() {
-    let local = port_info(&port(3000, Bind::Any), &Origin::Local, &[]);
+    let tunnels = Tunnels::default();
+    let local = port_info(&port(3000, Bind::Any), &Origin::Local, &tunnels, &[]);
     assert_eq!(local.port, 3000);
     assert_eq!(local.bind, "*:3000");
     assert_eq!(local.process.as_deref(), Some("node"));
     assert_eq!(local.local_url.as_deref(), Some("http://localhost:3000/"));
+    // A remote port is reachable only through a tunnel or a forward, even
+    // one bound to an address this machine might route to.
     let lan = port_info(
         &port(8080, Bind::Address(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)))),
         &remote(),
+        &tunnels,
         &[],
     );
-    assert_eq!(lan.local_url.as_deref(), Some("http://10.0.0.2:8080/"));
-    // A remote loopback port is reachable only through a forward.
-    let hidden = port_info(&port(5173, Bind::Loopback), &remote(), &[]);
+    assert_eq!(lan.local_url, None);
+    let hidden = port_info(&port(5173, Bind::Loopback), &remote(), &tunnels, &[]);
     assert_eq!(hidden.local_url, None);
     let mut forwards = PortForwards::default();
     forwards.fixture("me@devbox", 5173, State::Listening { local_port: 40_001 });
     let listed: Vec<_> = forwards.for_host("me@devbox").collect();
-    let forwarded = port_info(&port(5173, Bind::Loopback), &remote(), &listed);
+    let forwarded = port_info(&port(5173, Bind::Loopback), &remote(), &tunnels, &listed);
     assert_eq!(
         forwarded.local_url.as_deref(),
         Some("http://127.0.0.1:40001/")
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_tunnelled_port_reports_its_local_address() {
+    use crate::listening_ports::{Key, Tunnel};
+    let mut tunnels = Tunnels::default();
+    let child = std::process::Command::new("/bin/sh")
+        .args(["-c", "sleep 30"])
+        .spawn()
+        .unwrap();
+    let key = Key {
+        target: "me@devbox".into(),
+        address: None,
+        port: 5173,
+    };
+    tunnels.insert(key, Tunnel::around(child, 5173));
+    let listed = port_info(&port(5173, Bind::Any), &remote(), &tunnels, &[]);
+    assert_eq!(listed.local_url.as_deref(), Some("http://127.0.0.1:5173/"));
+    // Dropping the tunnels kills and reaps the child.
 }
 
 #[test]
