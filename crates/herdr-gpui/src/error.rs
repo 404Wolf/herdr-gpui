@@ -163,6 +163,10 @@ pub enum Error {
     StaleWorkspace,
     #[error(transparent)]
     PaneMove(#[from] crate::pane_move::Error),
+    #[error(transparent)]
+    PaneCarry(#[from] crate::pane_menu::carry::Refusal),
+    #[error(transparent)]
+    Teleport(#[from] crate::teleport::Error),
     #[error("Workspace label must not be empty.")]
     EmptyWorkspaceLabel,
     #[error("{0} cannot be reached by script. Choose another host.")]
@@ -778,6 +782,10 @@ pub enum Error {
     TooManyFontFallbacks(&'static str),
     #[error("layout.sidebar_gap must be finite and between 0 and 64 logical pixels")]
     InvalidSidebarGap,
+    #[error(
+        "terminal.{0} must be one number or a pair of numbers, each finite and between 0 and 64 logical pixels"
+    )]
+    InvalidTerminalPadding(&'static str),
     #[error("sidebar.{key} must be finite and between 0 and {max} logical pixels")]
     InvalidSidebarMetric { key: &'static str, max: f32 },
     #[error("sidebar.hosts.{host:?} must be a #rgb or #rrggbb colour, not {value:?}")]

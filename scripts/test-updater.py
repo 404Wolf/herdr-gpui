@@ -35,7 +35,8 @@ import tomllib
 DEPENDENCIES = (
     "anyhow",
     "rustix",
-    "serde", "serde_json", "ureq", "ed25519-dalek", "sha2", "tempfile", "tar", "flate2", "thiserror",
+    "chrono", "serde", "serde_json", "ureq", "ed25519-dalek", "sha2", "tempfile", "tar", "flate2",
+    "thiserror", "tracing",
 )
 # Public half of the deliberately public [42; 32] unit-test signing seed.
 PUBLIC_KEY = "197f6b23e16c8532c6abc838facd5ea789be0c76b2920334039bfa8b3d368d61"

@@ -911,7 +911,6 @@ impl SettingsWindow {
                 ),
                 cx,
             ))
-            .child(self.sidebar_gap_control(cx))
     }
 }
 

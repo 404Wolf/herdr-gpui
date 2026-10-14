@@ -324,6 +324,22 @@ impl HerdrWindow {
             window.prevent_default();
             return;
         }
+        // Cmd-A, or Ctrl-Shift-A on Linux, where plain Ctrl-A stays the
+        // pane's, selects the focused pane's history and screen.
+        let select_all = if modifiers.platform {
+            !modifiers.control && !modifiers.shift
+        } else {
+            cfg!(target_os = "linux") && modifiers.control && modifiers.shift
+        };
+        if event.keystroke.key.eq_ignore_ascii_case("a")
+            && select_all
+            && !modifiers.alt
+            && self.select_all(cx)
+        {
+            cx.stop_propagation();
+            window.prevent_default();
+            return;
+        }
         self.clear_retained_selection(cx);
         if event.keystroke.key == "escape"
             && (self.cancel_workspace_drag(cx) | self.cancel_tab_drag(cx))

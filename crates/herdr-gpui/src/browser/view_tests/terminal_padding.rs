@@ -1,22 +1,22 @@
 use super::*;
 use gpui::px;
 
-/// The sidebar gap pads a terminal, whose first column would otherwise
+/// Terminal padding pads a terminal, whose first column would otherwise
 /// touch the sidebar. A page's toolbar pads its own content, so it sits
 /// against the sidebar as its group's tab strip does.
 #[gpui::test]
-fn the_sidebar_gap_does_not_move_a_page(cx: &mut gpui::TestAppContext) {
+fn terminal_padding_does_not_move_a_page(cx: &mut gpui::TestAppContext) {
     let (view, cx) = window(cx);
     cx.update(|_, cx| {
         view.update(cx, |view, cx| {
-            view.config.layout.sidebar_gap = 16.;
+            view.config.terminal_padding.x = crate::config::Sides::new(16., 16.).unwrap();
             view.sidebar_visible = true;
             cx.notify();
         });
     });
     draw(cx);
     let sidebar = cx.debug_bounds("sidebar").unwrap();
-    // The gap is in effect: the terminal starts past it.
+    // The padding is in effect: the terminal starts past it.
     assert_eq!(
         view.read_with(cx, |view, _| view.bounds.origin.x),
         sidebar.right() + px(16.),

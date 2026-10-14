@@ -157,7 +157,7 @@ fn pane_moves_offer_destinations_and_settle_once(cx: &mut TestAppContext) {
     });
 }
 
-/// Double-clicking "Move to Tab…" opens the picker and nothing more: the
+/// Double-clicking "Move to…" opens the picker and nothing more: the
 /// second click lands on whichever picker row is now under the pointer, and
 /// must not move the pane there.
 #[gpui::test]
@@ -271,6 +271,47 @@ fn long_workspace_names_leave_the_tab_readable(cx: &mut TestAppContext) {
     // "logs" is drawn whole, inside its row, rather than squeezed out.
     assert!(place.size.width > px(20.), "{place:?}");
     assert!(place.right() <= row.right(), "{place:?} {row:?}");
+}
+
+/// A short workspace name leaves the tab its whole width: the tab's cap is a
+/// share of the row, not of the label it sits in.
+#[gpui::test]
+fn short_workspace_names_leave_the_tab_whole(cx: &mut TestAppContext) {
+    let (view, cx) = cx.add_window_view(|window, cx| {
+        crate::bind_keys(cx);
+        let mut view = crate::sidebar::layout_tests::fixture_window(window, cx);
+        let mut snapshot = snapshot();
+        let mut src = snapshot.workspaces[0].clone();
+        src.workspace_id = "w2".into();
+        src.label = "x".into();
+        snapshot.workspaces.push(src);
+        view.live.snapshot = Some(Arc::new(snapshot));
+        view.endpoints[0].connection.target = herdr_client::ConnectTarget::Local;
+        view
+    });
+    cx.simulate_resize(size(px(800.), px(600.)));
+    cx.update(|window, cx| {
+        view.update(cx, |v, cx| {
+            v.open_pane_menu("inactive", point(px(100.), px(100.)), window, cx);
+            v.activate_pane_menu(Action::MoveTo, window, cx);
+            let places: Vec<_> = v
+                .menu
+                .pane
+                .as_ref()
+                .unwrap()
+                .target
+                .destinations()
+                .into_iter()
+                .map(|choice| (choice.workspace, choice.place))
+                .collect();
+            assert_eq!(places[2], (Some("x".into()), "New Tab".into()));
+        });
+        window.draw(cx).clear(cx);
+    });
+    // "New Tab" after "x ›" is as wide as "New Tab" on its own.
+    let alone = cx.debug_bounds("pane-move-place-0").unwrap();
+    let after = cx.debug_bounds("pane-move-place-2").unwrap();
+    assert_eq!(after.size.width, alone.size.width, "{after:?} {alone:?}");
 }
 
 /// More destinations than the window can show: the keyboard's selection

@@ -676,7 +676,11 @@ fn worker(
             prepared = None;
             State::Idle
         } else {
-            result.unwrap_or_else(|error| State::Error(error.to_string()))
+            // Display text never carries remote diagnostics, so it is safe to log.
+            result.unwrap_or_else(|error| {
+                tracing::warn!(category = "updater", %error, "update operation failed");
+                State::Error(error.to_string())
+            })
         };
         publish(&mailbox, generation, state, None);
     }

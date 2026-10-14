@@ -18,7 +18,7 @@ use herdr_client::{protocol::ClientShellSnapshot, shell_quote};
 use std::{collections::HashMap, io::Seek, sync::atomic::AtomicBool, time::Duration};
 
 mod discover;
-mod plan;
+pub(super) mod plan;
 
 // Only the live tests read a host's repositories outside discovery.
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
@@ -27,7 +27,7 @@ pub(crate) use discover::resolve;
 pub(crate) use plan::{Action, GitHubAccess, PanePlan, Review, review};
 
 /// How long an agent may take to write its handoff note.
-const HANDOFF_TIMEOUT: Duration = Duration::from_secs(300);
+pub(super) const HANDOFF_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// An endpoint as Teleport addresses it.
 #[derive(Debug, Clone)]

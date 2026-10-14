@@ -35,7 +35,8 @@ fn shared_notifications_inherit_without_resetting_session() -> anyhow::Result<()
                     enabled,
                     system,
                     delay_seconds: 7,
-                    position: ToastHerdrPosition::TopLeft
+                    position: ToastHerdrPosition::TopLeft,
+                    finished: true,
                 }
             );
             for (font, original) in [
@@ -93,7 +94,8 @@ fn shared_notifications_respect_each_explicit_native_override() -> anyhow::Resul
                     enabled,
                     system: false,
                     delay_seconds,
-                    position
+                    position,
+                    finished: true,
                 },
                 "{text}"
             );
@@ -349,7 +351,7 @@ fn notification_settings_defaults_bounds_corners_and_strict_types() -> anyhow::R
             let config = Config::parse(&format!(
                 "[notifications]\nenabled=true\ndelay_seconds={delay}\nposition=\"{name}\"\n[layout]\nsidebar_gap=16\n[terminal]\nsize=18"
             ))?;
-            assert_eq!(config.layout.sidebar_gap, 16.);
+            assert_eq!(config.terminal_padding.x.start(), 16.);
             assert_eq!(config.terminal.size, 18.);
             assert_eq!(
                 config.notifications,
@@ -357,7 +359,8 @@ fn notification_settings_defaults_bounds_corners_and_strict_types() -> anyhow::R
                     enabled: true,
                     system: false,
                     delay_seconds: delay,
-                    position
+                    position,
+                    finished: true,
                 }
             );
         }

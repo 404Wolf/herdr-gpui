@@ -6,6 +6,7 @@ mod repository_icons;
 mod session_restore;
 mod sidebar_search;
 mod status_icons;
+mod terminal_padding;
 mod update_channel;
 
 pub(super) fn skill_fixture(

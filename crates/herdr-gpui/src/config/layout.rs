@@ -1,24 +1,16 @@
-//! Named sidebar layouts and the spacing around them.
+//! Named sidebar layouts.
 use crate::{Error, Result};
 use serde::Deserialize;
 
 /// Sidebar layout and spacing the config file can adjust.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Layout {
     pub mode: LayoutMode,
-    /// Blank space between the sidebar and the terminal it borders. Applies
-    /// only while the sidebar is on screen, and narrows the terminal, so the
-    /// daemon is told about the columns it actually has.
-    pub sidebar_gap: f32,
-}
-
-impl Default for Layout {
-    fn default() -> Self {
-        Self {
-            mode: LayoutMode::default(),
-            sidebar_gap: DEFAULT_SIDEBAR_GAP,
-        }
-    }
+    /// The deprecated `sidebar_gap` key, when the file still sets it. Config
+    /// files written before `[terminal] padding_x` keep loading: the gap
+    /// stands in for the terminal's left padding while that key is unset.
+    // TODO: remove once config files have had a few releases to move over.
+    pub(crate) legacy_sidebar_gap: Option<f32>,
 }
 
 /// How much the sidebar fits: spacing, indents, and which details show.
@@ -231,7 +223,7 @@ impl<'de> Deserialize<'de> for Layout {
                     Options::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
                 Ok(Layout {
                     mode,
-                    sidebar_gap: sidebar_gap.unwrap_or(DEFAULT_SIDEBAR_GAP),
+                    legacy_sidebar_gap: sidebar_gap,
                 })
             }
         }
@@ -239,10 +231,3 @@ impl<'de> Deserialize<'de> for Layout {
         deserializer.deserialize_any(Visitor)
     }
 }
-
-/// Keep the terminal flush with the divider unless spacing is requested.
-const DEFAULT_SIDEBAR_GAP: f32 = 0.;
-
-/// A gap wider than this stops reading as spacing and starts eating columns the
-/// terminal needs, so the config file is held to a band a window can afford.
-pub(super) const MAX_SIDEBAR_GAP: f32 = 64.;

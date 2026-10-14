@@ -6,6 +6,7 @@ use gpui::{prelude::*, *};
 use herdr_client::{Method, protocol::ClientShellSnapshot};
 use serde_json::{Value, json};
 
+pub(crate) mod carry;
 mod moves;
 mod processes;
 
@@ -30,6 +31,10 @@ struct Target {
     right_click_passthrough: bool,
     /// Existing tabs, and new tabs in other workspaces, the pane can move to.
     choices: Vec<crate::pane_move::Choice>,
+    /// The repository holding the pane, which another device must have open.
+    repository: Option<carry::PaneRepository>,
+    /// Other devices the pane can move to, listed after `choices`.
+    devices: Vec<carry::Device>,
 }
 
 impl Target {
@@ -57,6 +62,8 @@ impl Target {
             focused: focused.cloned(),
             right_click_passthrough: pane.right_click_passthrough,
             choices: crate::pane_move::choices(snapshot, &pane.tab_id),
+            repository: carry::PaneRepository::of(snapshot, &pane.workspace_id),
+            devices: Vec::new(),
         };
         target.validate(snapshot).ok()?;
         Some(target)
@@ -153,7 +160,7 @@ impl Action {
             Self::Zoom => "Zoom",
             Self::MoveToNewTab => "Move to New Tab",
             Self::MoveToNewWorkspace => "Move to New Workspace",
-            Self::MoveTo => "Move to Tab\u{2026}",
+            Self::MoveTo => "Move to\u{2026}",
             Self::EditScrollback => "Open Scrollback in Editor",
             Self::RightClick if target.right_click_passthrough => "Open This Menu on Right-Click",
             Self::RightClick => "Send Right-Clicks to Pane",
@@ -189,7 +196,10 @@ impl PaneMenu {
             .filter(|action| match action {
                 Action::Swap => self.target.focused.is_some(),
                 Action::MoveToNewTab | Action::MoveToNewWorkspace => self.movable,
-                Action::MoveTo => self.movable && !self.target.choices.is_empty(),
+                Action::MoveTo => {
+                    self.movable
+                        && !(self.target.choices.is_empty() && self.target.devices.is_empty())
+                }
                 Action::Processes => self.daemon.is_some(),
                 _ => true,
             })
@@ -249,7 +259,7 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(target) = self
+        let Some(mut target) = self
             .live
             .snapshot
             .as_ref()
@@ -257,6 +267,7 @@ impl HerdrWindow {
         else {
             return;
         };
+        target.devices = self.carry_devices(target.repository.as_ref());
         if !self.open_menu(window, cx) {
             return;
         }
@@ -311,6 +322,36 @@ impl HerdrWindow {
                 )
             });
         self.open_pane_menu(&id, anchor, window, cx);
+    }
+
+    /// Opens the menu of an agent's pane from its sidebar row: shows the
+    /// pane, switching to its host first, as a workspace row's menu does.
+    pub(crate) fn open_agent_menu(
+        &mut self,
+        endpoint: &str,
+        pane: &str,
+        anchor: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.navigate_endpoint(endpoint, crate::NavigationTarget::Pane(pane), cx) {
+            return;
+        }
+        self.open_pane_menu(pane, anchor, window, cx);
+        if let Some(menu) = &mut self.menu.pane {
+            // Showing the pane focuses it, so there is no other pane to swap with.
+            menu.target.focused = None;
+        }
+        self.menu.opening_right_click = self.menu.page == Some(Page::Pane);
+    }
+
+    /// The pane whose menu, or one of its pages, is open.
+    pub(crate) fn pane_menu_target(&self) -> Option<&str> {
+        self.menu.page.filter(|page| page.pane_menu())?;
+        self.menu
+            .pane
+            .as_ref()
+            .map(|menu| menu.target.pane.as_str())
     }
 
     fn validate_pane_target(&self) -> crate::Result<&Target> {
