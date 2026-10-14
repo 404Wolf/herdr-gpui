@@ -306,17 +306,46 @@ impl HerdrWindow {
         if !shown {
             return;
         }
-        match neighbour(&before, &pick, |_| true) {
-            Some(next) => {
-                if let Some(layout) = self.ensure_layout() {
-                    layout.show(source, next);
-                }
-                self.reconcile_group_terminals(cx);
-                self.steer_primary_group(source, cx);
-            }
-            None => self.close_group(source, window, cx),
+        if !self.show_neighbour(source, &before, &pick, cx) {
+            self.close_group(source, window, cx);
         }
         cx.notify();
+    }
+
+    /// Moves the group showing `pick` on to the tab after it in its strip,
+    /// or before it, as when the tab is carried off to another window. A
+    /// group with no other tab keeps showing it.
+    pub(crate) fn leave_tab(&mut self, pick: &Pick, cx: &mut Context<Self>) {
+        let Some(source) = self.ensure_layout().map(|layout| layout.owner(pick)) else {
+            return;
+        };
+        if self.group_pick(source).as_ref() != Some(pick) {
+            return;
+        }
+        let before = self.group_tabs(source, cx);
+        if self.show_neighbour(source, &before, pick, cx) {
+            cx.notify();
+        }
+    }
+
+    /// Shows in `source` the neighbour of `pick` among `before`, its strip
+    /// as it was; whether it had one.
+    fn show_neighbour(
+        &mut self,
+        source: GroupId,
+        before: &[Pick],
+        pick: &Pick,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(next) = neighbour(before, pick, |_| true) else {
+            return false;
+        };
+        if let Some(layout) = self.ensure_layout() {
+            layout.show(source, next);
+        }
+        self.reconcile_group_terminals(cx);
+        self.steer_primary_group(source, cx);
+        true
     }
 
     /// Shows `pick` in `group`, which owns it.

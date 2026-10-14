@@ -308,9 +308,12 @@ impl Render for HerdrWindow {
             )
             .on_key_down(cx.listener(Self::key_down))
             .on_key_up(cx.listener(Self::key_up))
-            // The terminal has nothing for Cut or Select All to act on, and
-            // Copy only while a released selection is still highlighted.
+            // The terminal has nothing for Cut to act on, and Copy only while
+            // a released selection is still highlighted.
             .on_action(cx.listener(|this, _: &crate::actions::Paste, _, cx| this.paste(cx)))
+            .on_action(cx.listener(|this, _: &crate::actions::SelectAll, _, cx| {
+                this.select_all(cx);
+            }))
             .when(self.selection_retained(), |terminal| {
                 terminal.on_action(cx.listener(|this, _: &crate::actions::Copy, _, cx| {
                     this.copy_retained_selection(cx);

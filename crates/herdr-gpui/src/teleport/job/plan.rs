@@ -82,7 +82,7 @@ impl Review {
     }
 }
 
-fn process_infos(
+pub(in crate::teleport) fn process_infos(
     host: &Host,
     panes: &[String],
     cancelled: &AtomicBool,
@@ -115,7 +115,11 @@ fn process_infos(
 }
 
 /// Choose what each pane becomes on a destination with `installed` programs.
-fn plan_action(work: &Work, installed: &[String], note: impl FnOnce() -> String) -> Action {
+pub(in crate::teleport) fn plan_action(
+    work: &Work,
+    installed: &[String],
+    note: impl FnOnce() -> String,
+) -> Action {
     let has = |program: &str| installed.iter().any(|p| p == program);
     let fallback = || {
         AgentKind::FALLBACKS

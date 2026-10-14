@@ -56,6 +56,8 @@ pub(crate) use sidebar::{
     AgentLayout, AgentToken, MAX_ROWS as MAX_SIDEBAR_ROWS, Rows, SidebarConfigError, SidebarLayout,
     SidebarScope, SpaceLayout, SpaceToken, TokenStyle,
 };
+#[cfg(test)]
+pub(crate) use sidebar_style::DeviceFooter;
 pub use sidebar_style::{SelectMode, SidebarOverrides, SidebarStyle};
 pub use status_bar::StatusBar;
 use std::{

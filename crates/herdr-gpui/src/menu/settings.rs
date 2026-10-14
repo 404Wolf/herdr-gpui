@@ -377,6 +377,7 @@ impl HerdrWindow {
                 | Command::InstallBrowserSkill
                 | Command::ToggleFullScreen
                 | Command::CycleWindows
+                | Command::CloseWindow
                 | Command::ReloadConfig => 2,
                 Command::OpenNotificationTarget => 1,
             };

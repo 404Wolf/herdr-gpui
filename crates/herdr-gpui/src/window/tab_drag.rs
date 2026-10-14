@@ -8,6 +8,8 @@
 //! preview holds until the next snapshot reorders the strip, the same for
 //! every attached client. A browser tab is this client's own and moves at
 //! once. Each kind moves among its own, since Herdr tabs always lead a strip.
+//!
+//! Dropped outside the window, a tab opens in a new window (`tab_tear`).
 
 use super::HerdrWindow;
 use crate::{
@@ -15,7 +17,7 @@ use crate::{
     motion,
     reorder::{Beside, LIFT_DELAY, LIFT_DISTANCE, SETTLE_TIMEOUT, SLIDE, Slide, preview, slot_for},
 };
-use gpui::{Context, Pixels, Point, ScrollHandle, Task, Window, px};
+use gpui::{Bounds, Context, Pixels, Point, ScrollHandle, Size, Task, Window, px};
 use herdr_client::{Method, protocol::ClientShellSnapshot};
 use std::{
     cell::{Cell, RefCell},
@@ -45,8 +47,11 @@ pub(crate) struct TabDrag {
     pub(super) pick: Pick,
     /// The boot a Herdr tab's move is sent to.
     boot: Option<String>,
-    origin: Point<Pixels>,
-    pointer: Point<Pixels>,
+    pub(super) origin: Point<Pixels>,
+    pub(super) pointer: Point<Pixels>,
+    /// Whether the pointer is past the window's edges, where a drop opens
+    /// the tab in a new window.
+    pub(super) outside: bool,
     /// The strip's scroll when pressed, so the carried tab stays under the
     /// pointer while the strip scrolls beneath it.
     scrolled: Pixels,
@@ -226,32 +231,18 @@ impl HerdrWindow {
         }
         // A tab that cannot be reordered, for want of a daemon that moves
         // tabs or of another tab of its kind, can still be carried to
-        // another group.
-        let split = self.is_split();
+        // another group or out of the window.
         let boot = match pick {
             Pick::Herdr(_) => {
                 let movable = self.live.status.is_connected() && self.live.supports_tab_move;
-                let boot = self
-                    .live
+                self.live
                     .snapshot
                     .as_ref()
                     .filter(|_| movable)
-                    .map(|snapshot| snapshot.boot_id.clone());
-                if boot.is_none() && !split {
-                    return;
-                }
-                boot
+                    .map(|snapshot| snapshot.boot_id.clone())
             }
             Pick::Page(_) => None,
         };
-        let kin = self
-            .group_tabs(group, cx)
-            .into_iter()
-            .filter(|candidate| same_kind(candidate, pick))
-            .count();
-        if kin < 2 && !split {
-            return;
-        }
         let lift = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(LIFT_DELAY).await;
             let _ = this.update(cx, |this, cx| this.lift_tab(cx));
@@ -262,6 +253,7 @@ impl HerdrWindow {
             boot,
             origin: position,
             pointer: position,
+            outside: false,
             scrolled: self.strip_scroll(group).offset().x,
             lifted: None,
             target: None,
@@ -282,12 +274,14 @@ impl HerdrWindow {
         }
     }
 
-    /// Follows the pointer; the strip resolves the gap as it draws. Returns
-    /// whether the move belongs to the drag, so nothing under it sees it.
+    /// Follows the pointer, which may leave the window's `viewport`; the
+    /// strip resolves the gap as it draws. Returns whether the move belongs
+    /// to the drag, so nothing under it sees it.
     pub(super) fn move_tab_drag(
         &mut self,
         position: Point<Pixels>,
         held: bool,
+        viewport: Size<Pixels>,
         cx: &mut Context<Self>,
     ) -> bool {
         let Some(drag) = self.tab_drag.as_mut().filter(|d| d.dropped.is_none()) else {
@@ -301,6 +295,7 @@ impl HerdrWindow {
             return lifted;
         }
         drag.pointer = position;
+        drag.outside = !Bounds::new(Point::default(), viewport).contains(&position);
         let moved = position - drag.origin;
         if drag.lifted.is_none() && f32::from(moved.x.abs().max(moved.y.abs())) > LIFT_DISTANCE {
             self.lift_tab(cx);
@@ -315,7 +310,10 @@ impl HerdrWindow {
     /// The group a lifted tab is carried over, when it is not its own:
     /// dropped there, the tab moves to it.
     pub(super) fn drop_group(&self) -> Option<GroupId> {
-        let drag = self.tab_drag.as_ref().filter(|drag| drag.floating())?;
+        let drag = self
+            .tab_drag
+            .as_ref()
+            .filter(|drag| drag.floating() && !drag.outside)?;
         let bounds = self.browser.group_bounds.borrow();
         self.group_slots()
             .into_iter()
@@ -329,7 +327,8 @@ impl HerdrWindow {
     }
 
     /// Ends the drag on release, moving the tab if it was lifted over a gap
-    /// or another group. Returns whether it had lifted, in which case the
+    /// or another group, or opening it in a new window if it was carried
+    /// out of this one. Returns whether it had lifted, in which case the
     /// release is not a click.
     pub(super) fn release_tab_drag(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         let over = self.drop_group();
@@ -340,6 +339,10 @@ impl HerdrWindow {
             return false;
         }
         cx.notify();
+        if drag.outside {
+            self.tear_off_tab(&drag, window, cx);
+            return true;
+        }
         if let Some(group) = over {
             self.move_tab_to_group(drag.pick.clone(), group, window, cx);
             return true;
@@ -440,7 +443,8 @@ impl HerdrWindow {
         now: Instant,
     ) -> Option<StripDrag> {
         let snapshot = self.live.snapshot.clone();
-        let away = self.drop_group().is_some();
+        let away =
+            self.drop_group().is_some() || self.tab_drag.as_ref().is_some_and(|drag| drag.outside);
         let drag = self.tab_drag.as_mut().filter(|drag| drag.group == group)?;
         if !drag.previewing(snapshot.as_deref()) {
             // The daemon's new order has arrived; the strip now shows it.
@@ -494,7 +498,8 @@ impl HerdrWindow {
             let high = f32::from(view.right()) - (on_screen + right - left);
             lift.clamp(low.min(high), high.max(low))
         });
-        // Over another group the drop moves the tab there, and a Herdr tab
+        // Over another group or past the window the drop takes the tab
+        // there, and a Herdr tab
         // the daemon cannot move has no place to take in its own strip.
         let reorders = !away && (drag.boot.is_some() || matches!(drag.pick, Pick::Page(_)));
         if floating && !reorders {
