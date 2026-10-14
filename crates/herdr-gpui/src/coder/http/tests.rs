@@ -13,6 +13,17 @@ fn coder_error_messages_are_bounded_single_lines() {
     );
     let long = format!(r#"{{"message":"{}"}}"#, "x".repeat(5000));
     assert_eq!(message(long.as_bytes()).unwrap().len(), MESSAGE_LIMIT);
+    assert_eq!(
+        message(
+            br#"{"error":"invalid_grant","error_description":"The PKCE code verifier is invalid"}"#
+        )
+        .as_deref(),
+        Some("The PKCE code verifier is invalid")
+    );
+    assert_eq!(
+        message(br#"{"error":"invalid_request"}"#).as_deref(),
+        Some("invalid_request")
+    );
     assert!(message(b"<html>").is_none());
     assert!(message(br#"{"message":"  "}"#).is_none());
 }

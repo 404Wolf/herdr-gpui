@@ -107,6 +107,13 @@ impl LayoutMode {
         }
     }
 
+    /// Whether device headers have a slot for the mark of where the device
+    /// runs. Orca and Minimal draw no icons on their rows, so their headers
+    /// draw none either.
+    pub const fn device_icons(self) -> bool {
+        !matches!(self, Self::Orca | Self::Minimal)
+    }
+
     /// Whether the spaces list shows workspaces. The Devices layout lists
     /// each device's agents there instead.
     pub const fn lists_workspaces(self) -> bool {

@@ -15,6 +15,7 @@ pub(crate) enum Preference {
     ShowRepositoryIcons(bool),
     /// `status_icons`; `None` removes it, following Herdr's indicator style.
     StatusIcons(Option<StatusIcons>),
+    ShowDeviceIcons(bool),
     SmoothScroll(bool),
     FocusFollowsMouse(bool),
     NotificationEnabled(Option<bool>),
@@ -74,6 +75,9 @@ impl Config {
                 }
                 Preference::ShowRepositoryIcons(value) => {
                     (None, "show_repository_icons", Some(value.into()))
+                }
+                Preference::ShowDeviceIcons(value) => {
+                    (None, "show_device_icons", Some(value.into()))
                 }
                 Preference::SmoothScroll(value) => (None, "smooth_scroll", Some(value.into())),
                 Preference::StatusIcons(value) => (
@@ -223,6 +227,7 @@ mod tests {
             Preference::ShowListeningPorts(false),
             Preference::ShowSidebarSearch(false),
             Preference::ShowRepositoryIcons(false),
+            Preference::ShowDeviceIcons(false),
             Preference::SmoothScroll(false),
             Preference::NotificationEnabled(Some(true)),
             Preference::NotificationDelay(Some(3600)),
@@ -251,6 +256,7 @@ mod tests {
         assert_eq!(table["show_listening_ports"].as_bool(), Some(false));
         assert_eq!(table["show_sidebar_search"].as_bool(), Some(false));
         assert_eq!(table["show_repository_icons"].as_bool(), Some(false));
+        assert_eq!(table["show_device_icons"].as_bool(), Some(false));
         assert_eq!(table["smooth_scroll"].as_bool(), Some(false));
         assert_eq!(table["layout"].as_str(), Some("orca"));
         assert_eq!(table["updates"]["channel"].as_str(), Some("beta"));

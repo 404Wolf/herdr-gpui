@@ -10,6 +10,7 @@ mod code_navigation;
 mod code_start;
 mod default_fonts;
 mod device_footer;
+mod device_icons;
 mod device_theme;
 mod discovery;
 mod edit;

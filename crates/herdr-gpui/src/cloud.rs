@@ -12,7 +12,7 @@ mod jobs;
 pub(crate) mod names;
 pub(crate) mod worker;
 
-pub(crate) use catalog::{SavedDevice, load, remove, save};
+pub(crate) use catalog::{SavedDevice, load, remove, rename, save};
 pub(crate) use command::with_command;
 pub(crate) use herdr_client::CloudProvider;
 pub(crate) use jobs::Jobs;
@@ -34,6 +34,8 @@ pub enum Error {
     Json(#[source] serde_json::Error),
     #[error("{0} is not valid.")]
     Invalid(&'static str),
+    #[error("The cloud device is no longer saved.")]
+    Missing,
     #[error("No state directory for saved cloud devices.")]
     StateDirectory,
     #[error("The cloud {0} worker stopped.")]

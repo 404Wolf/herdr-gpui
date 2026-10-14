@@ -1,6 +1,9 @@
-//! Native GitHub transport and device authorization. No credential subprocesses.
+//! Native GitHub transport and device authorization. The one credential
+//! subprocess is `gh auth token`, run only to offer the GitHub CLI's sign-in
+//! and, once the user chooses it, to read that sign-in again.
 
 mod auth;
+mod cli;
 mod credentials;
 mod device;
 mod http;
@@ -15,7 +18,7 @@ mod tests;
 
 pub(crate) use {
     auth::Auth,
-    device::{Profile, VERIFY_URL},
+    device::{Profile, Source, VERIFY_URL},
     http::{graphql, hidden_hint, mutation},
     store::{Account, Note, Store},
 };
@@ -24,7 +27,7 @@ pub(crate) use {
 pub(crate) use store::{Entry, read_entry, save_entry};
 
 use crate::Result;
-use device::{Device, Reply, SETUP_MESSAGE, profile, token_reply};
+use device::{Device, Reply, SETUP_MESSAGE, profile, profile_from, token_reply};
 use store::{save, valid_token};
 
 /// Delete one account's saved credential, as signing it out does, for an
