@@ -600,7 +600,8 @@ impl Worker {
                     &mut self.cooldown,
                 )?;
                 let count = listing.items.len();
-                self.resume.insert(key.clone(), listing.resume);
+                // A listing that is not stored is no place to resume from.
+                self.resume.remove(key);
                 if !listing.complete || !writable {
                     self.uncached.insert(key.clone(), listing.items);
                     return Ok(if listing.complete {
@@ -613,6 +614,7 @@ impl Worker {
                     });
                 }
                 store.replace_items(key, &listing.items, &listing.checkpoint)?;
+                self.resume.insert(key.clone(), listing.resume);
                 self.uncached.remove(key);
                 Ok(SyncState::Synced {
                     at: Utc::now(),
