@@ -43,6 +43,8 @@ pub(crate) struct Notice {
     /// Handed to the OS notification center. Retained only so a click can
     /// resolve its target through the same boot-fenced validation as a toast.
     pub(crate) posted: bool,
+    /// The body is the client's task and place lines, each shown on one row.
+    pub(crate) described: bool,
 }
 
 pub(crate) fn safe_text(text: &str, limit: usize) -> String {
@@ -162,6 +164,7 @@ impl Notice {
             displayed: None,
             suppression_target,
             posted: false,
+            described: false,
         }
     }
 
@@ -201,14 +204,20 @@ impl Notice {
         }
         self.initialized = self.resolve_target(snapshot).is_some();
         // Name the agent's task and place from the same validated snapshot.
+        // Custom notices carry the sender's own text, which stays.
         if self.initialized
             && !self.client_local
+            && matches!(
+                self.kind,
+                SemanticNotificationKind::NeedsAttention | SemanticNotificationKind::Finished
+            )
             && let Some(body) = self
                 .pane_id
                 .as_deref()
                 .and_then(|pane| context::describe(snapshot, pane))
         {
             self.body = Some(body);
+            self.described = true;
         }
     }
 

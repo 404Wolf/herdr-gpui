@@ -68,3 +68,18 @@ fn agent_name_alone_is_not_a_task_and_unknown_panes_keep_the_daemon_body() {
         .with_snapshot(Some(&snapshot));
     assert_eq!(preview.body.as_deref(), Some("Review needed"));
 }
+
+#[test]
+fn custom_notices_keep_the_senders_text() {
+    let snapshot = snapshot();
+    let mut wire = notification("deploy");
+    wire.kind = SemanticNotificationKind::Custom;
+    wire.body = Some("Staging is green".into());
+    wire.workspace_id = None;
+    wire.pane_id = Some("w1:p1".into());
+    let notice = Notice::new(wire, Instant::now()).with_snapshot(Some(&snapshot));
+    assert!(notice.target(&snapshot).is_some());
+    assert_eq!(notice.body.as_deref(), Some("Staging is green"));
+    assert!(!notice.described);
+    assert!(pane_notice(&snapshot).described);
+}
