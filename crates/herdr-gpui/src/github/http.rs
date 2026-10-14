@@ -4,7 +4,8 @@
 
 use super::{Result, log};
 use crate::Error;
-use chrono::{DateTime, TimeDelta, Utc};
+use crate::updater::{quota_exhausted, rate_limit_reset};
+use chrono::{DateTime, Utc};
 use secrecy::{ExposeSecret, ExposeSecretMut, SecretBox as Secret, SecretString};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -236,29 +237,6 @@ pub(super) fn authorization(token: &SecretString) -> Result<ureq::http::HeaderVa
         ureq::http::HeaderValue::from_str(text.expose_secret()).map_err(Error::GitHubHeader)?;
     header.set_sensitive(true);
     Ok(header)
-}
-
-/// Whether a 403 is an exhausted quota (primary or secondary) rather than a
-/// permission refusal: GitHub then sends `x-ratelimit-remaining: 0` or a
-/// `retry-after` delay.
-pub(crate) fn quota_exhausted(headers: &ureq::http::HeaderMap) -> bool {
-    log::header(headers, "x-ratelimit-remaining").trim() == "0"
-        || headers.contains_key("retry-after")
-}
-
-/// When GitHub's quota refills: a `retry-after` delay in seconds, else the
-/// `x-ratelimit-reset` epoch. `None` without either, or once it has passed.
-pub(crate) fn rate_limit_reset(
-    headers: &ureq::http::HeaderMap,
-    now: DateTime<Utc>,
-) -> Option<DateTime<Utc>> {
-    let number = |name| log::header(headers, name).trim().parse::<i64>().ok();
-    number("retry-after")
-        .and_then(|seconds| now.checked_add_signed(TimeDelta::try_seconds(seconds)?))
-        .or_else(|| {
-            number("x-ratelimit-reset").and_then(|epoch| DateTime::from_timestamp(epoch, 0))
-        })
-        .filter(|reset| *reset > now)
 }
 
 /// How long an account waits after GraphQL refused it: until the quota

@@ -324,11 +324,11 @@ fn status_error(
     headers: &ureq::http::HeaderMap,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Error {
-    if !matches!(status, 403 | 429) || !crate::github::quota_exhausted(headers) {
+    if !matches!(status, 403 | 429) || !super::quota_exhausted(headers) {
         return Error::HttpStatus(status);
     }
     Error::RateLimited {
-        reset: crate::github::rate_limit_reset(headers, now),
+        reset: super::rate_limit_reset(headers, now),
     }
 }
 

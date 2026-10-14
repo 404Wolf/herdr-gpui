@@ -237,8 +237,9 @@ impl Cache {
     }
 
     /// Stores a finished (or skipped) lookup. `value` is `None` to keep the
-    /// visible one, as a failure does; a new entry may evict the least recently
-    /// used one that is due.
+    /// visible one, as a failure does. A new entry in a full cache evicts the
+    /// least recently used one that is due, else the least recently used, so
+    /// the cache never outgrows [`CACHE_LIMIT`].
     fn record(
         &mut self,
         input: Input,
@@ -256,15 +257,18 @@ impl Cache {
             entry.due = due;
             return;
         }
-        if self.entries.len() == CACHE_LIMIT
-            && let Some((index, _)) = self
-                .entries
-                .iter()
-                .enumerate()
-                .filter(|(_, e)| now >= e.due)
-                .min_by_key(|(_, e)| e.used)
-        {
-            self.entries.remove(index);
+        if self.entries.len() >= CACHE_LIMIT {
+            let least_used = |due_only: bool| {
+                self.entries
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, e)| !due_only || now >= e.due)
+                    .min_by_key(|(_, e)| e.used)
+                    .map(|(index, _)| index)
+            };
+            if let Some(index) = least_used(true).or_else(|| least_used(false)) {
+                self.entries.remove(index);
+            }
         }
         self.entries.push(Entry {
             input,

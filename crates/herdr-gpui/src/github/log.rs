@@ -59,7 +59,7 @@ impl Exchange {
             scopes: header(headers, "x-oauth-scopes").to_owned(),
             sso: public_sso(header(headers, "x-github-sso")).to_owned(),
             remaining: header(headers, "x-ratelimit-remaining").to_owned(),
-            reset: super::http::rate_limit_reset(headers, Utc::now()),
+            reset: crate::updater::rate_limit_reset(headers, Utc::now()),
         }
     }
 }

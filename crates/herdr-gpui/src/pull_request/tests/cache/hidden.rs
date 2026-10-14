@@ -85,3 +85,27 @@ fn an_ordinary_failure_does_not_pause_the_repository() {
     let (_, next, _, _) = peer.incoming.try_recv().unwrap();
     assert_eq!(next, input("second"));
 }
+
+#[test]
+fn hidden_branches_never_grow_a_full_cache() {
+    let mut peer = Peer::new();
+    let now = Instant::now();
+    peer.cache.schedule([input("first")], now);
+    peer.cache.poll(now);
+    peer.complete(now, Err(hidden()), None);
+    peer.cache
+        .schedule((1..CACHE_LIMIT).map(|i| elsewhere(&i.to_string())), now);
+    peer.cache.poll(now);
+    for _ in 1..CACHE_LIMIT {
+        peer.complete(now, Ok(None), None);
+    }
+    assert_eq!(peer.cache.entries.len(), CACHE_LIMIT);
+    assert!(peer.cache.entries.iter().all(|entry| now < entry.due));
+
+    // Every sibling is answered from the pause while nothing in the cache is due.
+    peer.cache
+        .schedule((0..8).map(|i| input(&format!("sibling-{i}"))), now);
+    peer.cache.poll(now);
+    assert!(peer.incoming.try_recv().is_err());
+    assert_eq!(peer.cache.entries.len(), CACHE_LIMIT);
+}

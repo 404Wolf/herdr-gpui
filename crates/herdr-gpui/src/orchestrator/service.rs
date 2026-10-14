@@ -53,6 +53,21 @@ const BACKOFF: Duration = Duration::from_secs(300);
 /// install the App or change token; Refresh asks sooner.
 const HIDDEN_BACKOFF: Duration = Duration::from_secs(1800);
 const COMMANDS: usize = 8;
+
+/// How long a failed source waits. A rate limit or refused token pauses as
+/// long as GitHub asked; a repository the sign-in cannot see waits for a user
+/// action. GitHub's `cooldown` applies only to GitHub's own failures, so a
+/// Beads failure never inherits a pause a GitHub request left behind.
+pub(super) fn retry_wait(error: &Error, cooldown: Option<Duration>) -> Duration {
+    let Error::Github(source) = error else {
+        return BACKOFF;
+    };
+    let floor = match **source {
+        crate::Error::GitHubRepositoryHidden { .. } => HIDDEN_BACKOFF,
+        _ => BACKOFF,
+    };
+    cooldown.map_or(floor, |wait| wait.max(floor))
+}
 /// Actions running at once; more wait for the user to try again.
 const MAX_ACTIONS: usize = 4;
 /// Outcomes kept for the view between its polls.
@@ -497,21 +512,14 @@ impl Worker {
             }
             self.set_state(&key, SyncState::Syncing);
             self.publish();
+            // Only this source's own GitHub reply may set its pause: a delay
+            // left by a pull request lookup or another source must not apply.
+            self.cooldown = None;
             let state = match self.sync_source(&key, token) {
                 Ok(state) => state,
                 Err(Error::Cancelled) => return,
                 Err(error) => {
-                    // A rate limit or refused token pauses as long as GitHub asked;
-                    // a repository the sign-in cannot see waits for a user action.
-                    let floor = match &error {
-                        Error::Github(source)
-                            if matches!(**source, crate::Error::GitHubRepositoryHidden { .. }) =>
-                        {
-                            HIDDEN_BACKOFF
-                        }
-                        _ => BACKOFF,
-                    };
-                    let wait = self.cooldown.take().map_or(floor, |wait| wait.max(floor));
+                    let wait = retry_wait(&error, self.cooldown.take());
                     tracing::warn!(
                         category = "orchestrator_sync",
                         provider = ?key.provider,
