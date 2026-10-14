@@ -11,6 +11,7 @@ pub(crate) mod backdrop;
 mod bitmap_fonts;
 mod coder;
 mod daytona;
+mod devices;
 mod edit;
 mod files;
 mod font_weight;
@@ -37,6 +38,8 @@ pub(crate) use coder::CoderFields;
 pub use daytona::DaytonaConfig;
 #[cfg(feature = "daytona")]
 pub(crate) use daytona::DaytonaFields;
+use devices::MAX_DEVICES;
+pub(crate) use devices::{DeviceSettings, KeybindingSource};
 pub(crate) use edit::{Layer, parse_value};
 use files::write_config;
 pub use font_weight::bold as bold_font_weight;
@@ -47,7 +50,9 @@ pub use fonts::symbol_fallbacks;
 pub use fonts::{FONT_SIZE_RANGE, FONT_SIZE_STEP, FontConfig};
 pub use layout::{Density, Layout, LayoutMode, Style};
 pub(crate) use notifications::NotificationDelivery;
-pub use notifications::{BellConfig, ClipboardToast, ClipboardToastPosition, NotificationConfig};
+pub use notifications::{
+    BellConfig, ClipboardToast, ClipboardToastPosition, NotificationConfig, SoundConfig,
+};
 use notifications::{ClipboardToastSettings, NotificationSettings};
 pub use padding::Padding;
 pub(crate) use padding::{Axis, MAX_PADDING, Side, Sides};
@@ -146,6 +151,8 @@ pub struct Config {
     pub(crate) notification_overrides: NotificationSettings,
     pub clipboard_toast: ClipboardToast,
     pub bell: BellConfig,
+    /// How loud agent notification sounds play.
+    pub sound: SoundConfig,
     /// Which releases the in-app updater offers.
     pub updates: UpdatesConfig,
     pub layout: Layout,
@@ -176,40 +183,6 @@ pub struct Config {
     pub(crate) missing_fonts: Vec<String>,
     /// The terminal's configured weight, when its family has no face at it.
     pub(crate) missing_weight: Option<font_weight::MissingWeight>,
-}
-
-/// A device list larger than any real catalog is a config mistake.
-const MAX_DEVICES: usize = 256;
-
-/// Whose `[keys]` a saved device answers to, as `herdr --remote-keybindings`
-/// chooses for the TUI. Local is upstream's default: muscle memory stays the
-/// same on every host. Only keybindings follow the server; themes, sidebar,
-/// and toasts stay local either way.
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum KeybindingSource {
-    #[default]
-    Local,
-    /// The host's published `server_keybindings_toml`.
-    Server,
-}
-
-/// One `[devices.<profile-id>]` table.
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(default)]
-pub(crate) struct DeviceSettings {
-    pub(crate) keybindings: KeybindingSource,
-}
-
-impl Config {
-    /// Whose keybindings the endpoint uses. Local and explicit sockets are not
-    /// saved devices, so they always use the local ones.
-    pub(crate) fn keybinding_source(&self, endpoint_id: &str) -> KeybindingSource {
-        crate::endpoint::saved_profile_id(endpoint_id)
-            .and_then(|profile| self.devices.get(profile))
-            .map(|device| device.keybindings)
-            .unwrap_or_default()
-    }
 }
 
 /// Where a clicked terminal link opens. Alt-click (Option on macOS) opens it
@@ -472,6 +445,7 @@ impl Default for Config {
             notification_overrides: NotificationSettings::default(),
             clipboard_toast: ClipboardToast::default(),
             bell: BellConfig::default(),
+            sound: SoundConfig::default(),
             updates: UpdatesConfig::default(),
             layout: Layout::default(),
             sidebar_style: SidebarStyle::default(),
@@ -533,6 +507,7 @@ struct Settings {
     notifications: NotificationSettings,
     clipboard_toast: ClipboardToastSettings,
     bell: BellConfig,
+    sound: SoundConfig,
     updates: UpdatesConfig,
     layout: Layout,
     keybindings: BTreeMap<String, Binding>,
@@ -858,6 +833,7 @@ impl Config {
             .resolve(NotificationConfig::default());
         config.clipboard_toast = settings.clipboard_toast.resolve(base.clipboard_toast);
         config.bell = settings.bell;
+        config.sound = settings.sound;
         config.updates = settings.updates;
         config.sidebar_layout = base.sidebar_layout.clone();
         let (padding_x, padding_y) = settings.terminal.take_padding();
@@ -874,6 +850,9 @@ impl Config {
         config.pane_keys = settings.pane_keys;
         if settings.devices.len() > MAX_DEVICES {
             return Err(Error::TooManyDevices(MAX_DEVICES));
+        }
+        for (id, device) in &settings.devices {
+            device.validate(id)?;
         }
         config.devices = settings.devices;
         settings.palette.validate()?;

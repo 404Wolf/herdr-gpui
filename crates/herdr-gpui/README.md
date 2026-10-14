@@ -665,6 +665,20 @@ as in the TUI. Status indicators always use the shared indicator style and share
 status colors, independent of a native terminal theme override. Terminal/default
 reset colors are projected to opaque native colors.
 
+A saved SSH device can paint its terminal with a theme of its own, so the host
+an agent runs on shows where you are looking rather than only in the sidebar.
+**Terminal theme…** in the device's right-click menu lists the same themes as
+the picker, previews the hovered one on the terminal while that device is
+selected, and saves it in `config-gpui.local.toml` as
+`[devices.<id>] theme = "NAME"`; **Same as app** removes it. Any `theme` value
+works, `light:NAME,dark:NAME` included, and
+`herdr-gpui config set devices.<id>.theme NAME` sets it from a script (`host
+list` shows the IDs). Only the terminal area changes: the sidebar, titlebar,
+and menus keep the app theme. Local and explicit sockets always use the app
+theme. A device theme file that cannot be read leaves that device on the app
+theme and is logged; one edited in place is read again when the config next
+changes.
+
 New tab and New Workspace follow the shared `ui.prompt_new_tab_name` (default
 on) and `ui.prompt_new_workspace_name` (default off). When set, every button,
 menu item, shortcut, and palette entry first asks for a name, proposing the next
@@ -673,8 +687,8 @@ or unchanged name lets the daemon choose it, as in the TUI. Teleport, worktree
 creation, and browser tabs never prompt.
 
 Sound uses the dedicated Rodio backend, shared global/per-agent settings and
-custom local paths, with Herdr's bundled sounds as fallbacks. The Sound tab offers
-an explicit QA preview. Shared Herdr toast delivery enables in-app notifications
+custom local paths, with Herdr's bundled sounds as fallbacks. The Sound tab sets
+this app's volume and offers an explicit QA preview. Shared Herdr toast delivery enables in-app notifications
 and System delivery posts OS notifications; Terminal delivery is not executed by
 this native client, which has no outer terminal. Per-field
 `[notifications]` settings in the native local override file take precedence.
@@ -1143,11 +1157,23 @@ Sound is enabled by default; Droid alone defaults to off. Agent values are
 override `path`, and relative paths resolve beside the local TUI config.
 `HERDR_DISABLE_SOUND` or `NEXTEST`, when present, disables playback entirely.
 
+Volume is this app's own, since Herdr's `[ui.sound]` has none: `[sound] volume`
+in `config-gpui.local.toml`, a percentage of each sound's own level from 0 to 100
+(default 50), also under **Settings > Sound**. It follows loudness rather than
+raw amplitude, so 50 plays at a quarter of the amplitude, about 12 dB quieter;
+0 plays nothing. It applies to every sound, previews and `sound play` included,
+and not to the system alert `[bell]` plays, which follows the OS alert volume.
+
+```toml
+[sound]
+volume = 30
+```
+
 **QA > Play Sound** explicitly tests Rodio playback with the built-in Done sound
 on the same background worker. No daemon or active pane is needed. This manual
 test bypasses notification mute (including `enabled = false`), agent filters,
-custom sound paths, delay, and focus suppression. Environment/test suppression
-still applies, as do the bounded queue, one-second queue expiry, and playback
+custom sound paths, delay, and focus suppression. Volume and environment/test
+suppression still apply, as do the bounded queue, one-second queue expiry, and playback
 budget below. Closing the window cancels the test; endpoint disconnects do not.
 
 Semantic notifications from all connected endpoints use the TUI's timing:
@@ -2190,6 +2216,12 @@ them to the agent that opened it, so it can change the page.
   screenshot, and your note.
   Page text is cleaned of control characters and marked as quoted data.
   **Copy** puts the same prompt on the clipboard instead.
+- When the agent takes the notes, its tab replaces the page and its pane
+  takes the focus, so you see it pick them up. Notes held for a busy agent
+  do this once they are pasted; an agent in another workspace is brought up
+  once the window arrives there. Notes from a mockup window bring the Herdr
+  UI window forward the same way. Notes that are kept for `browser
+  feedback` or copied leave the page where it is.
 - Sent notes stay listed, dimmed and marked sent, so a note can be changed
   and sent again. Click a note's text to edit it in the composer; saving it
   marks it unsent. Send then delivers only the notes not sent yet (**Send 2
@@ -3172,7 +3204,9 @@ Ctrl+Shift+U is left unbound for
   window, shown by a keycap in the status bar; the next keystroke runs its
   chord or, when nothing is bound to it, is dropped, as in the TUI. Typing the
   prefix twice sends it to the terminal, and Escape cancels. Chords work from
-  a menu's or dialog's text field too: the chord closes it and runs. Every
+  a menu's or dialog's text field too: the chord closes it and runs. A prefix
+  that types text, such as `@` or `-`, works the same way everywhere, so a
+  text field gets it by typing it twice. Every
   daemon action has a GUI command except the `navigate_pane_*` keys (Go To
   has no pane cursor). `open_worktree` and `remove_worktree` act on the
   focused workspace, as in the TUI: the first opens its Open worktree...

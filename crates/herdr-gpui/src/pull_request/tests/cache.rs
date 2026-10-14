@@ -1,7 +1,9 @@
 use super::*;
-use crate::pull_request::cache::{CACHE_LIMIT, ERROR_BACKOFF, REFRESH};
+use crate::pull_request::cache::{CACHE_LIMIT, ERROR_BACKOFF, HIDDEN_BACKOFF, REFRESH};
 
+mod hidden;
 mod missing;
+mod pause;
 
 fn input(branch: &str) -> Input {
     Input {
@@ -295,7 +297,7 @@ fn local_failures_do_not_starve_other_repos_but_rate_limits_pause_account() {
     assert_eq!(
         peer.complete(
             now,
-            Err(Error::GitHubRateLimit),
+            Err(Error::GitHubRateLimit { reset: None }),
             Some(Duration::from_secs(3600))
         )
         .branch,

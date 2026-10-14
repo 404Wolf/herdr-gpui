@@ -264,10 +264,16 @@ pub enum Error {
         "GitHub authentication required. Use menu > GitHub sign-in or set GH_TOKEN / GITHUB_TOKEN."
     )]
     GitHubAuthentication,
-    #[error("GitHub denied access: check token permissions, SSO authorization, or rate limits.")]
+    #[error("GitHub denied access: check token permissions or SSO authorization.")]
     GitHubForbidden,
-    #[error("GitHub rate limit reached. Retry later.")]
-    GitHubRateLimit,
+    /// The account's (or, signed out, this address's) API quota is used up.
+    #[error("GitHub rate limit reached. {}.", crate::updater::retry_hint(*reset))]
+    GitHubRateLimit {
+        reset: Option<chrono::DateTime<chrono::Utc>>,
+    },
+    /// GraphQL answers a repository the credential cannot reach as missing.
+    #[error("GitHub cannot see {repository} with this sign-in. {}", crate::github::hidden_hint(*app_token))]
+    GitHubRepositoryHidden { repository: String, app_token: bool },
     #[error("GitHub request failed (HTTP {0}). Check network and repository access.")]
     GitHubStatus(u16),
     #[error("GitHub response could not be read within the size/time limit.")]
@@ -788,6 +794,8 @@ pub enum Error {
     InvalidZenWidth,
     #[error("zen.font_size must be finite and between 8 and 48 logical pixels")]
     InvalidZenFontSize,
+    #[error("sound.volume must be between 0 and 100")]
+    InvalidSoundVolume,
     #[error(
         "terminal.{0} must be one number or a pair of numbers, each finite and between 0 and 64 logical pixels"
     )]
@@ -863,6 +871,13 @@ pub enum Error {
     InvalidDevicesTable,
     #[error("[devices] must list at most {0} devices")]
     TooManyDevices(usize),
+    /// A `[devices.<id>]` theme that does not parse, named by its device.
+    #[error("devices.{device}.theme: {source}")]
+    DeviceTheme {
+        device: String,
+        #[source]
+        source: Box<Error>,
+    },
     #[error("theme {name:?} not found in {directories:?}")]
     ThemeNotFound {
         name: String,

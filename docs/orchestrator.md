@@ -51,6 +51,13 @@ script call, and the UI reads the newest `Snapshot` from a coalescing mailbox.
 Live agent status comes from each connected host's Herdr snapshot, matched to
 runs by host, workspace, and pane; it is never written back to the database.
 
+Dispatch can receive `agent_pane_busy` while the new worktree's shell runs its
+startup hooks. It retries only that structured rejection for up to ten seconds,
+checking the terminal identity returned by worktree creation before each retry.
+An accepted launch, transport failure, or agent-readiness timeout is never
+replayed. Waiting happens on the action worker and observes cancellation;
+permanent failures retain the normal failed-run recording and worktree cleanup.
+
 ## Branches name their item
 
 Dispatch names a branch as agent-launcher does: `agent/<identifier>-<title>-<hash>`,
