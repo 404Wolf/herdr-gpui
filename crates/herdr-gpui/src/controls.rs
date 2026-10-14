@@ -42,6 +42,8 @@ pub enum Command {
     TabNumber(u8),
     ToggleSidebar,
     ToggleStatusBar,
+    /// Hides the window's chrome and every group but the one in use.
+    ToggleZenMode,
     DevicesOverview,
     IncreaseFontSize,
     DecreaseFontSize,
@@ -518,6 +520,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         label: "Toggle Status Bar",
     },
     CommandInfo {
+        command: Command::ToggleZenMode,
+        name: "toggle_zen_mode",
+        label: "Toggle Zen Mode",
+    },
+    CommandInfo {
         command: Command::DevicesOverview,
         name: "devices_overview",
         label: "Devices Overview",
@@ -786,6 +793,7 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         | Command::AnnotateSelection
         | Command::ToggleSidebar
         | Command::ToggleStatusBar
+        | Command::ToggleZenMode
         | Command::DevicesOverview
         | Command::IncreaseFontSize
         | Command::DecreaseFontSize

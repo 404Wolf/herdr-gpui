@@ -31,6 +31,7 @@ mod theme_files;
 mod themes;
 mod update_channel;
 mod usage_inline;
+mod zen;
 
 struct TempDirectory(PathBuf);
 

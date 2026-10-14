@@ -43,6 +43,7 @@ pub(super) fn defaults(command: Command) -> &'static [&'static str] {
         TabNumber(8) => &["ctrl-shift-8"],
         TabNumber(9) => &["ctrl-shift-9"],
         ToggleSidebar => &["ctrl-shift-b"],
+        ToggleZenMode => &["ctrl-alt-z"],
         IncreaseFontSize => &["ctrl-shift-=", "ctrl-shift-+"],
         DecreaseFontSize => &["ctrl-shift--"],
         ResetFontSize => &["ctrl-shift-0"],

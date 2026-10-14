@@ -286,9 +286,10 @@ fn edit_menu_items_follow_focus(cx: &mut gpui::TestAppContext) {
 
 /// The font size items are the only way to reach these commands from the
 /// macOS menu bar, and each must dispatch the catalog command rather than
-/// an action of its own; full screen follows them, as in other Mac apps.
+/// an action of its own; full screen follows them, as in other Mac apps,
+/// with zen mode, which also takes over the whole window, beside it.
 #[test]
-fn view_menu_carries_the_font_size_and_full_screen_commands() {
+fn view_menu_carries_the_font_size_full_screen_and_zen_commands() {
     let menus = menus(Layout::default());
     let view = menus
         .iter()
@@ -308,6 +309,7 @@ fn view_menu_carries_the_font_size_and_full_screen_commands() {
         ("Reset Font Size", Command::ResetFontSize),
         ("Devices Overview", Command::DevicesOverview),
         ("Toggle Full Screen", Command::ToggleFullScreen),
+        ("Toggle Zen Mode", Command::ToggleZenMode),
     ];
     assert_eq!(actions.len(), expected.len());
     for ((name, action), (label, command)) in actions.iter().zip(expected) {

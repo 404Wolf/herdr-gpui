@@ -38,6 +38,7 @@ mod tab_drag;
 mod tab_strip;
 mod toasts;
 mod transfers;
+mod zen;
 #[cfg(test)]
 pub(crate) use transfers::tests::Peer as MockPeer;
 
@@ -261,6 +262,8 @@ pub(crate) struct HerdrWindow {
     /// Starts as `config.status_bar.show`; Toggle Status Bar flips it for the
     /// session, and a reload that changes the setting applies it again.
     pub(crate) status_bar_visible: bool,
+    /// Hides the chrome over the status bar and sidebar flags; see `zen`.
+    pub(crate) zen: zen::ZenState,
     pub(crate) device_filter: Option<String>,
     pub(crate) wheel: WheelAccumulator,
     pub(crate) sidebar_width: Option<f32>,
@@ -769,6 +772,7 @@ impl HerdrWindow {
             app_update_notes_scroll: ScrollHandle::new(),
             configured_terminal_size: config.terminal.size,
             status_bar_visible: config.status_bar.show,
+            zen: Default::default(),
             gui_config_diagnostic: {
                 let mut diagnostic = crate::config_diagnostic::ConfigDiagnostic::default();
                 diagnostic.sync(config.diagnostic().as_deref());

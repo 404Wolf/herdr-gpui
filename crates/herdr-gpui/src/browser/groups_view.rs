@@ -390,7 +390,7 @@ impl HerdrWindow {
     /// The pages live in some group, which the window presents.
     #[cfg(any(target_os = "macos", windows))]
     pub(crate) fn live_pages(&self, cx: &App) -> Vec<TabId> {
-        self.group_slots()
+        self.drawn_group_slots()
             .into_iter()
             .filter_map(|slot| match self.group_shown(slot.id, cx) {
                 Shown::Page(id) => Some(id),

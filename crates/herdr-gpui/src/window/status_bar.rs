@@ -15,13 +15,18 @@ const STATUS_GLYPH: f32 = 16.;
 const MODEL_WIDTH: f32 = 160.;
 
 impl HerdrWindow {
+    /// The bar's height, which grows with the UI font.
+    pub(super) fn status_bar_height(&self) -> f32 {
+        (self.config.ui.size * 1.5 + 4.).max(22.)
+    }
+
     pub(super) fn render_status_bar(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let status = (!matches!(self.live.status, ConnectionStatus::Connected)
             || self.local_error.is_some()
             || self.live.error.is_some())
         .then(|| self.live.status_text(self.local_error.as_deref()));
         let items = self.config.status_bar;
-        let height = px((self.config.ui.size * 1.5 + 4.).max(22.));
+        let height = px(self.status_bar_height());
         div()
             .id("connection-status")
             .debug_selector(|| "connection-status".into())

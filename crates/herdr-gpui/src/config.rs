@@ -26,6 +26,7 @@ mod table;
 mod theme;
 mod updates;
 pub(crate) mod watch;
+mod zen;
 
 pub use backdrop::Backdrop;
 pub use coder::CoderConfig;
@@ -63,6 +64,7 @@ pub use theme::Theme;
 pub(crate) use theme::ThemeName;
 pub(crate) use theme::mix;
 pub use updates::{UpdateChannel, UpdatesConfig};
+pub use zen::{Zen, ZenWidth};
 
 const DEFAULT_CONFIG: &str = include_str!("../config-gpui.example.toml");
 // Compare the first line so Windows checkouts and editors can use CRLF.
@@ -100,6 +102,8 @@ pub struct Config {
     pub show_listening_ports: bool,
     /// Which status bar items show, and how compactly.
     pub status_bar: StatusBar,
+    /// What Toggle Zen Mode does beyond hiding the chrome.
+    pub zen: Zen,
     /// What shows behind the main window's terminals and chrome.
     pub backdrop: Backdrop,
     /// How far the app's own marks and labels stand off its chrome.
@@ -435,6 +439,7 @@ impl Default for Config {
             agent_checkpoints: true,
             show_listening_ports: true,
             status_bar: StatusBar::default(),
+            zen: Zen::default(),
             backdrop: Backdrop::default(),
             contrast: Contrast::default(),
             usage: crate::usage::UsageConfig::default(),
@@ -485,6 +490,7 @@ struct Settings {
     agent_checkpoints: Option<bool>,
     show_listening_ports: Option<bool>,
     status_bar: StatusBar,
+    zen: zen::ZenSettings,
     backdrop: Backdrop,
     contrast: Contrast,
     usage: crate::usage::UsageConfig,
@@ -848,6 +854,7 @@ impl Config {
         config.agent_checkpoints = settings.agent_checkpoints.unwrap_or(true);
         config.show_listening_ports = settings.show_listening_ports.unwrap_or(true);
         config.status_bar = settings.status_bar;
+        config.zen = settings.zen.try_into()?;
         settings.backdrop.validate()?;
         config.backdrop = settings.backdrop;
         config.contrast = settings.contrast;

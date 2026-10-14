@@ -763,19 +763,21 @@ impl HerdrWindow {
             .unwrap_or_default()
     }
 
-    /// Whether `group`'s strip steps aside under Herdr's
+    /// Whether `group`'s strip steps aside: always in zen mode, else under Herdr's
     /// `hide_tab_bar_when_single_tab`: only when the window is not split, so
     /// every group keeps the strip that names it and takes dropped tabs, and
     /// only while the strip would list one tab at most, browser tabs counted.
     pub(crate) fn strip_hidden(&self, group: GroupId, cx: &App) -> bool {
-        self.settings
-            .shared
-            .as_ref()
-            .is_some_and(|shared| shared.hide_tab_bar_when_single_tab)
-            && !self.is_split()
-            && self.folding_groups().is_empty()
-            && !self.tab_drag_in(group)
-            && self.group_tabs(group, cx).len() <= 1
+        self.zen_layout()
+            || self
+                .settings
+                .shared
+                .as_ref()
+                .is_some_and(|shared| shared.hide_tab_bar_when_single_tab)
+                && !self.is_split()
+                && self.folding_groups().is_empty()
+                && !self.tab_drag_in(group)
+                && self.group_tabs(group, cx).len() <= 1
     }
 
     /// One group: its strip above or below what it shows, as Herdr's
@@ -792,7 +794,8 @@ impl HerdrWindow {
         let strip = (!self.strip_hidden(slot.id, cx))
             .then(|| self.render_tab_strip(slot, ends, window, cx));
         let bottom = self.tab_bar_position() == TabBarPosition::Bottom;
-        let share = (self.is_split() || !self.folding_groups().is_empty())
+        // Zen mode draws the one group in use across the whole row.
+        let share = (!self.zen_layout() && (self.is_split() || !self.folding_groups().is_empty()))
             .then(|| self.group_share(slot.id));
         let opened = self.group_opened(slot.id);
         // The body's ground, beside the strip rather than under it, so the
@@ -909,7 +912,12 @@ impl HerdrWindow {
             .enumerate()
             .map(|(index, group)| (Some(index), group))
             .collect();
-        let mut folding = self.folding_groups();
+        // Zen mode draws no group beside the one in use, folding or not.
+        let mut folding = if self.zen_layout() {
+            Vec::new()
+        } else {
+            self.folding_groups()
+        };
         folding.sort_by_key(|folding| folding.index);
         for folding in folding {
             let at = folding.index.min(children.len());

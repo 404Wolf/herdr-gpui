@@ -403,6 +403,10 @@ impl HerdrWindow {
                 cx.notify();
                 return;
             }
+            Command::ToggleZenMode => {
+                self.toggle_zen(window, cx);
+                return;
+            }
             Command::DevicesOverview => {
                 self.open_devices_overview(window, cx);
                 return;
