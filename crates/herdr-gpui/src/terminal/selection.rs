@@ -44,15 +44,33 @@ struct Edge {
 
 /// The cells one target owns, in its own frame's grid, and where that grid is
 /// painted relative to the canvas origin. `top` is the content row painted on
-/// the grid's first row.
+/// the grid's first row, and `bottom` the last content row the target holds,
+/// below the grid when a pane is scrolled up into its history.
 pub(super) struct Region {
     pub(super) columns: Range<u16>,
     pub(super) rows: Range<u16>,
     pub(super) origin: (f32, f32),
     top: u32,
+    bottom: u32,
 }
 
 impl Region {
+    /// The first and last edge of everything the target holds now.
+    fn whole(&self) -> (Edge, Edge) {
+        (
+            Edge {
+                row: 0,
+                column: self.columns.start,
+                side: Side::Left,
+            },
+            Edge {
+                row: self.bottom,
+                column: self.columns.end.saturating_sub(1),
+                side: Side::Right,
+            },
+        )
+    }
+
     fn content_row(&self, row: u16) -> u32 {
         self.top.saturating_add(u32::from(row - self.rows.start))
     }
@@ -145,6 +163,7 @@ pub(super) fn region(
                 rows: 0..popup.frame.height,
                 origin: (f32::from(origin.x), f32::from(origin.y)),
                 top: 0,
+                bottom: u32::from(popup.frame.height.saturating_sub(1)),
             })
         }
         // A popup covers the panes: what was selected under it is off screen.
@@ -152,11 +171,18 @@ pub(super) fn region(
         InputTarget::Pane(pane_id) => {
             let pane = surface.panes.iter().find(|pane| pane.pane_id == *pane_id)?;
             let rect = pane.inner_rect;
+            let top = crate::scrollback::viewport_top(pane);
+            let below = pane.scroll.map_or(0, |scroll| {
+                u32::try_from(scroll.offset_from_bottom).unwrap_or(u32::MAX)
+            });
             Some(Region {
                 columns: rect.x..rect.x.saturating_add(rect.width),
                 rows: rect.y..rect.y.saturating_add(rect.height),
                 origin: (0., 0.),
-                top: crate::scrollback::viewport_top(pane),
+                top,
+                bottom: top
+                    .saturating_add(u32::from(rect.height.saturating_sub(1)))
+                    .saturating_add(below),
             })
         }
     }
@@ -175,12 +201,14 @@ pub(super) fn frame<'a>(
 
 /// How much one press takes: the half-cell under it for a single click, the
 /// link or word for a double click, and the whole row for a triple click. A
-/// drag that follows grows the selection by the same unit.
+/// drag that follows grows the selection by the same unit. `All` is Select
+/// All's: everything the target holds, read again at every use.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Unit {
     Cell,
     Word,
     Line,
+    All,
 }
 
 impl From<usize> for Unit {
@@ -212,6 +240,7 @@ impl Unit {
         };
         match self {
             Self::Cell => (edge, edge),
+            Self::All => region.whole(),
             Self::Line => row(region.columns.clone()),
             Self::Word => row(region
                 .grid_row(edge.row)
@@ -385,9 +414,11 @@ impl Selection {
     }
 
     /// Every cell `target` holds, as Select All takes it: a pane's history and
-    /// screen, wherever it is scrolled, or a popup's whole grid. The rows are
-    /// fixed when chosen, so output that arrives later is not part of it.
-    /// `None` where the surface paints no such pane or popup.
+    /// screen, wherever it is scrolled, or a popup's whole grid. Its rows are
+    /// resolved against each surface rather than fixed when chosen, so the
+    /// highlight and the copy always cover the same text: history the pane
+    /// trims drops out of both, and output since joins both. `None` where the
+    /// surface paints no such pane or popup.
     pub(crate) fn all(
         surface: &PaneSurfaceFrame,
         target: InputTarget,
@@ -398,42 +429,17 @@ impl Selection {
         if region.columns.is_empty() || region.rows.is_empty() {
             return None;
         }
-        let (last_row, last_column) = (region.rows.end - 1, region.columns.end - 1);
-        // Rows below the viewport, when the pane is scrolled up into history.
-        let below = match &target {
-            InputTarget::Pane(pane_id) => surface
-                .panes
-                .iter()
-                .find(|pane| pane.pane_id == *pane_id)
-                .and_then(|pane| pane.scroll)
-                .map_or(0, |scroll| scroll.offset_from_bottom),
-            InputTarget::Popup(_) => 0,
-        };
-        let bottom = region
-            .content_row(last_row)
-            .saturating_add(u32::try_from(below).unwrap_or(u32::MAX));
-        let origin = (
-            Edge {
-                row: 0,
-                column: region.columns.start,
-                side: Side::Left,
-            },
-            Edge {
-                row: bottom,
-                column: last_column,
-                side: Side::Right,
-            },
-        );
+        let origin = region.whole();
         Some(Self {
             target,
-            unit: Unit::Line,
+            unit: Unit::All,
             origin,
             anchor: origin.0,
             head: origin.1,
             dragging: false,
-            // Nothing remembered: a pane that keeps printing, such as an agent
-            // redrawing its spinner, must not retire the highlight before the
-            // copy that follows it.
+            // Nothing remembered: the highlight is everything the pane holds,
+            // so output, such as an agent redrawing its spinner, never leaves
+            // it over cells the user did not choose.
             seen: Vec::new(),
         })
     }
@@ -588,8 +594,11 @@ impl Selection {
             .flat_map(|region| self.spans(region))
     }
 
-    fn ends(&self) -> (Edge, Edge) {
-        if self.anchor <= self.head {
+    /// The first and last edge, in reading order, as `region` shows the target.
+    fn ends(&self, region: &Region) -> (Edge, Edge) {
+        if self.unit == Unit::All {
+            region.whole()
+        } else if self.anchor <= self.head {
             (self.anchor, self.head)
         } else {
             (self.head, self.anchor)
@@ -598,7 +607,7 @@ impl Selection {
 
     /// The selected cells of each content row the region shows, in its grid.
     fn spans(&self, region: Region) -> impl Iterator<Item = (u16, Range<u16>)> {
-        let (start, end) = self.ends();
+        let (start, end) = self.ends(&region);
         let columns = region.columns.clone();
         let bottom = region.content_row(region.rows.end.saturating_sub(1));
         let last = end.row.min(bottom);
@@ -642,7 +651,7 @@ impl Selection {
         cell_height: f32,
     ) -> Option<(&str, TextRange)> {
         let region = region(surface, &self.target, cell_width, cell_height)?;
-        let (start, end) = self.ends();
+        let (start, end) = self.ends(&region);
         if region.shows(start.row) && region.shows(end.row) {
             return None;
         }
@@ -666,7 +675,7 @@ impl Selection {
         let InputTarget::Pane(pane_id) = &self.target else {
             return None;
         };
-        let (start, end) = self.ends();
+        let (start, end) = self.ends(&region);
         let Region { columns, .. } = region;
         let last = columns.end.checked_sub(1)?;
         // Edges sit between cells: a right edge takes its cell's successor at
@@ -728,7 +737,7 @@ impl Selection {
         let region =
             region(surface, &self.target, cell_width, cell_height).ok_or(Error::SelectionStale)?;
         let frame = frame(surface, &self.target).ok_or(Error::SelectionStale)?;
-        let (start, end) = self.ends();
+        let (start, end) = self.ends(&region);
         if !region.shows(start.row) || !region.shows(end.row) {
             return Err(Error::SelectionOffscreen);
         }

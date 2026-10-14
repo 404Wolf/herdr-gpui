@@ -107,3 +107,47 @@ fn select_all_survives_output_written_over_its_rows() {
     let redrawn = surface("zzzzzzzzzz");
     assert!(selection.text_unchanged(&redrawn, CELL_WIDTH, CELL_HEIGHT));
 }
+
+/// Select All is resolved against each surface rather than fixed rows: once
+/// a pane at its history limit trims old rows and shifts the rest up, or its
+/// history grows, the copy still reads the whole buffer, the same rows the
+/// highlight paints, never a row range chosen against an older buffer.
+#[test]
+fn select_all_follows_the_buffer_as_history_grows_or_is_trimmed() {
+    let range = |s: &PaneSurfaceFrame, selection: &Selection| {
+        selection
+            .content_range(s, CELL_WIDTH, CELL_HEIGHT)
+            .map(|(pane, range)| (pane.to_owned(), range))
+    };
+    let selection = all(&scrolled("abcdefghij", 10), pane()).unwrap();
+
+    // Output at the history limit: same row count, the content shifted up.
+    // Scrolled into the middle, the rows below the viewport still count.
+    let trimmed = scrolled("klmnopqrst", 4);
+    assert_eq!(range(&trimmed, &selection), Some(whole(13)));
+
+    // More history: the selection reaches the new last row.
+    let mut grown = scrolled("abcdefghij", 10);
+    let scroll = grown.panes[0].scroll.as_mut().unwrap();
+    scroll.max_offset_from_bottom = 20;
+    scroll.offset_from_bottom = 0;
+    assert_eq!(range(&grown, &selection), Some(whole(23)));
+
+    // The painted rows are the whole screen wherever the pane now sits.
+    assert_eq!(
+        selection
+            .rows(&trimmed, CELL_WIDTH, CELL_HEIGHT)
+            .collect::<Vec<_>>(),
+        vec![(0, 0..10), (1, 0..10), (2, 0..10)]
+    );
+}
+
+/// A pane resized after Select All is still selected edge to edge.
+#[test]
+fn select_all_follows_the_pane_s_width() {
+    let s = surface("abcdefghijklmnopqrst");
+    let selection = all(&s, pane()).unwrap();
+    let mut narrow = s.clone();
+    narrow.panes[0].inner_rect.width = 4;
+    assert_eq!(text(&narrow, &selection), "abcd\nklmn\n");
+}
