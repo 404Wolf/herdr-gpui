@@ -84,7 +84,8 @@ fn key(key: &SurfaceGraphicsAssetKey) -> usize {
 }
 
 /// The heap a whole frame keeps alive, which is what remembering it costs:
-/// the grid, any popup over it, its panes and splits, and image data.
+/// the frame itself, its grid, any popup over it, its panes and splits, and
+/// image data.
 /// Counted once, when its tab is left.
 fn bytes(surface: &PaneSurfaceFrame) -> usize {
     let panes: usize = surface
@@ -111,7 +112,11 @@ fn bytes(surface: &PaneSurfaceFrame) -> usize {
         .sum();
     let placements: usize = scene.placements.iter().map(|p| key(&p.asset)).sum();
     let retained: usize = scene.retained_assets.iter().map(key).sum();
-    grid(&surface.frame)
+    // The shared allocation itself: two reference counts and the frame.
+    2 * size_of::<usize>()
+        + size_of::<PaneSurfaceFrame>()
+        + text(surface.boot_id.capacity())
+        + grid(&surface.frame)
         + surface.panes.capacity() * size_of::<PaneSurfacePane>()
         + panes
         + surface.splits.capacity() * size_of::<PaneSurfaceSplit>()
