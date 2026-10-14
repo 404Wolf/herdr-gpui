@@ -4,7 +4,7 @@
 //! is clicked.
 
 use super::super::selection::separates;
-use std::ops::Range;
+use std::{borrow::Cow, ops::Range};
 
 /// The longest path read from a row, Linux's `PATH_MAX`.
 const MAX_PATH_BYTES: usize = 4096;
@@ -15,8 +15,8 @@ pub(super) struct PlainPath<'a> {
     /// The bytes of the row it covers, a `:line` or `:line:column` suffix
     /// included.
     pub(super) range: Range<usize>,
-    /// The path without that suffix.
-    pub(super) path: &'a str,
+    /// The path without that suffix, with shell escapes such as `\ ` removed.
+    pub(super) path: Cow<'a, str>,
     /// The line the suffix names.
     pub(super) line: Option<u32>,
     /// Whether the path runs to the end of the row, where it may continue on
@@ -24,35 +24,101 @@ pub(super) struct PlainPath<'a> {
     pub(super) open: bool,
 }
 
-/// The file path in one row's `text` covering the byte at `hit`.
+/// The file path in one row's `text` covering the byte at `hit`. A separator
+/// after a backslash belongs to the path, as in the `/tmp/a\ b` a file drop
+/// or a shell's completion prints.
 pub(super) fn plain_path(text: &str, hit: usize) -> Option<PlainPath<'_>> {
-    if text.get(hit..)?.chars().next().is_none_or(separates) {
-        return None;
+    let mut start = 0;
+    let mut end = text.len();
+    let mut chars = text.char_indices();
+    while let Some((index, c)) = chars.next() {
+        if c == '\\' {
+            chars.next();
+        } else if separates(c) {
+            if index >= hit {
+                end = index;
+                break;
+            }
+            start = index + c.len_utf8();
+        }
     }
-    let start = text[..hit]
-        .char_indices()
-        .rev()
-        .find(|(_, c)| separates(*c))
-        .map_or(0, |(index, c)| index + c.len_utf8());
-    let end = text[hit..].find(separates).map_or(text.len(), |i| hit + i);
     // Punctuation closing a sentence, or the colon after a location, is not
-    // part of the path before it.
-    let token = text[start..end].trim_end_matches(['.', ':', '!', '?']);
-    if hit >= start + token.len() {
+    // part of the path before it, unless it is escaped.
+    let mut token = &text[start..end];
+    while let Some(rest) = token.strip_suffix(['.', ':', '!', '?'])
+        && !rest.ends_with('\\')
+    {
+        token = rest;
+    }
+    if hit < start || hit >= start + token.len() {
         return None;
     }
-    let (path, line) = without_location(token);
+    let (escaped, line) = without_location(token);
+    let path = unescape(escaped);
     // A bare name such as `README.md` or `v1.2` reads as a path only when
     // a location says so, as in `main.rs:12`.
-    if !path.contains('/') && path.len() == token.len() {
+    if !path.contains('/') && escaped.len() == token.len() {
         return None;
     }
-    looks_like_path(path).then_some(PlainPath {
+    looks_like_path(&path).then_some(PlainPath {
         range: start..start + token.len(),
         path,
         line,
         open: end == text.len(),
     })
+}
+
+/// `text` with the backslash before each shell-special character removed;
+/// any other backslash is part of the name.
+fn unescape(text: &str) -> Cow<'_, str> {
+    if !text.contains('\\') {
+        return Cow::Borrowed(text);
+    }
+    let mut path = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\'
+            && let Some(&next) = chars.peek()
+            && shell_special(next)
+        {
+            path.push(next);
+            chars.next();
+        } else {
+            path.push(c);
+        }
+    }
+    Cow::Owned(path)
+}
+
+/// Characters a POSIX shell, bash, or zsh expands, splits, or quotes on, which
+/// a pasted path escapes with a backslash.
+pub(crate) fn shell_special(c: char) -> bool {
+    matches!(
+        c,
+        ' ' | '\\'
+            | '\''
+            | '"'
+            | '`'
+            | '$'
+            | '&'
+            | '|'
+            | ';'
+            | '<'
+            | '>'
+            | '('
+            | ')'
+            | '['
+            | ']'
+            | '{'
+            | '}'
+            | '*'
+            | '?'
+            | '!'
+            | '#'
+            | '~'
+            | '^'
+            | '='
+    )
 }
 
 /// `token` without a trailing `:line` or `:line:column`, and that line.

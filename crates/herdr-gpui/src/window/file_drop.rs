@@ -5,7 +5,7 @@ use super::HerdrWindow;
 use crate::{
     Error, Result,
     connection::ConnectionBridge,
-    terminal::{InputTarget, wheel_target},
+    terminal::{InputTarget, shell_special, wheel_target},
 };
 use gpui::{Context, ExternalPaths, Pixels, Point, Window};
 use herdr_client::protocol::ClientPaneInputEvent;
@@ -97,15 +97,17 @@ impl HerdrWindow {
     }
 }
 
-/// POSIX shell words, separated by spaces without a trailing newline. Validate
-/// the whole drop before allocating its output so failures never paste a prefix.
+/// POSIX shell words, separated by spaces without a trailing newline. Like
+/// native macOS terminals, a path stays bare and readable, with a backslash
+/// before each character the shell would otherwise interpret. Validate the
+/// whole drop before allocating its output so failures never paste a prefix.
 pub(super) fn quote_paths(paths: &[PathBuf]) -> Result<String> {
     if paths.len() > MAX_PATHS {
         return Err(Error::FileDropSize);
     }
     let mut bytes = paths.len().saturating_sub(1);
     for path in paths {
-        // Bound UTF-8 validation and quote counting as well as output allocation.
+        // Bound UTF-8 validation and escape counting as well as output allocation.
         if path.as_os_str().len() > MAX_PASTE_BYTES {
             return Err(Error::FileDropSize);
         }
@@ -116,7 +118,7 @@ pub(super) fn quote_paths(paths: &[PathBuf]) -> Result<String> {
         if text.chars().any(char::is_control) {
             return Err(Error::FileDropControl);
         }
-        bytes += text.len() + 2 + text.bytes().filter(|byte| *byte == b'\'').count() * 3;
+        bytes += text.len() + text.chars().filter(|ch| shell_special(*ch)).count();
         if bytes > MAX_PASTE_BYTES {
             return Err(Error::FileDropSize);
         }
@@ -126,15 +128,12 @@ pub(super) fn quote_paths(paths: &[PathBuf]) -> Result<String> {
         if !quoted.is_empty() {
             quoted.push(' ');
         }
-        quoted.push('\'');
         for ch in path.to_str().ok_or(Error::FileDropEncoding)?.chars() {
-            if ch == '\'' {
-                quoted.push_str("'\\''");
-            } else {
-                quoted.push(ch);
+            if shell_special(ch) {
+                quoted.push('\\');
             }
+            quoted.push(ch);
         }
-        quoted.push('\'');
     }
     Ok(quoted)
 }

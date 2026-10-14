@@ -6,6 +6,7 @@ use herdr_client::protocol::{CellData, FrameData, PaneSurfaceFrame};
 use std::ops::Range;
 
 mod path;
+pub(crate) use path::shell_special;
 
 pub(super) const MAX_ROW_BYTES: usize = 32768;
 
@@ -251,7 +252,7 @@ fn frame_link(frame: &FrameData, column: u16, row: u16, start: u16, end: u16) ->
                 return None;
             }
             let target = RowTarget::Path {
-                path: found.path.to_owned(),
+                path: found.path.into_owned(),
                 line: found.line,
             };
             (found.range, target)
