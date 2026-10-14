@@ -1,6 +1,8 @@
 #![allow(clippy::expect_used)]
 use super::*;
 
+mod remote_userinfo;
+
 // Exercises the POSIX disk cache; other platforms have no cache root.
 #[cfg(unix)]
 #[test]
