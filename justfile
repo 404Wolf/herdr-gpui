@@ -164,6 +164,11 @@ test-mockup-wait:
 
 ci: format-check check-file-size lint test test-mockup-wait
 
+# Tools are listed in scripts/setup-ci.sh; Docker for lint-linux is only checked.
+# Install the tools local CI-equivalent runs need, on macOS or Ubuntu.
+setup-ci:
+    bash scripts/setup-ci.sh
+
 # Cross type-check the Windows target without a Windows machine. CI lints the
 # MSVC target on a Windows runner; this uses the GNU target because a Mac or
 # Linux host cannot supply the MSVC C toolchain some dependencies build against.
