@@ -13,6 +13,18 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A click chooses a row without moving the selection there, so
+        // select it now: Resume Palette reopens on the row actually chosen.
+        if let Some(palette) = &mut self.menu.palette {
+            let chosen = action.identity();
+            if let Some(row) = palette
+                .filtered
+                .iter()
+                .position(|hit| palette.entries[hit.index].action.identity() == chosen)
+            {
+                palette.selected = row;
+            }
+        }
         let action = match action {
             Action::Note {
                 endpoint,
