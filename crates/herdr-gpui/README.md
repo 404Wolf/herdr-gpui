@@ -665,6 +665,20 @@ as in the TUI. Status indicators always use the shared indicator style and share
 status colors, independent of a native terminal theme override. Terminal/default
 reset colors are projected to opaque native colors.
 
+A saved SSH device can paint its terminal with a theme of its own, so the host
+an agent runs on shows where you are looking rather than only in the sidebar.
+**Terminal theme…** in the device's right-click menu lists the same themes as
+the picker, previews the hovered one on the terminal while that device is
+selected, and saves it in `config-gpui.local.toml` as
+`[devices.<id>] theme = "NAME"`; **Same as app** removes it. Any `theme` value
+works, `light:NAME,dark:NAME` included, and
+`herdr-gpui config set devices.<id>.theme NAME` sets it from a script (`host
+list` shows the IDs). Only the terminal area changes: the sidebar, titlebar,
+and menus keep the app theme. Local and explicit sockets always use the app
+theme. A device theme file that cannot be read leaves that device on the app
+theme and is logged; one edited in place is read again when the config next
+changes.
+
 New tab and New Workspace follow the shared `ui.prompt_new_tab_name` (default
 on) and `ui.prompt_new_workspace_name` (default off). When set, every button,
 menu item, shortcut, and palette entry first asks for a name, proposing the next

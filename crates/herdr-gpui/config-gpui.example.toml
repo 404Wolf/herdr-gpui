@@ -251,8 +251,12 @@ project_roots = []
 # "server" uses the [keys] profile that device's Herdr publishes instead, like
 # `herdr --remote-keybindings server`; [keybindings] still apply on top. Keyed
 # by catalog ID; a device's right-click menu toggles it.
+# A device's theme paints only its terminal, so each host is told apart
+# where you work; the chrome keeps `theme`. Any `theme` value works, and the
+# device's right-click menu picks it.
 # [devices.0123456789abcdef0123456789abcdef]
 # keybindings = "server"
+# theme = "Dracula"
 
 # Preferences offers a searchable picker for all four families together or each row.
 # Platform default removes the local family override; fallback cascades remain active.

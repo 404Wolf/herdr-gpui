@@ -579,6 +579,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         ),
         painter: Default::default(),
         backdrop: Default::default(),
+        device_themes: Default::default(),
         regions: Vec::new(),
         marked: String::new(),
         marked_selection: None,
