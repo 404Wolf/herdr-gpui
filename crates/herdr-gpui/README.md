@@ -2990,7 +2990,9 @@ Ctrl+Shift+U is left unbound for
   a workspace. Cmd-N opens the New worktree dialog for the focused workspace
   (for a linked worktree, through its repository's main checkout, starting from
   the linked worktree's branch). The dialog opens on
-  its Name field: left empty, the daemon picks the workspace name; anything
+  its Branch field with the proposal selected, so typing replaces it; Tab
+  back to the form returns there. The Name field is optional: left empty,
+  the daemon picks the workspace name; anything
   typed is sent as the new workspace's label. The proposed branch follows the
   name, so "Fix login" proposes `worktree/fix-login`, until the Branch field
   is edited; a name with no ASCII letters or digits keeps the random proposal.

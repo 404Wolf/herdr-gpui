@@ -353,8 +353,10 @@ impl HerdrWindow {
             window,
             |this, _, _: &crate::search_input::Changed, _, cx| this.follow_worktree_name(cx),
         );
-        // The name is what most people change, so the form opens on it.
-        window.focus(&name.read(cx).focus.clone(), cx);
+        // The branch is what most people type; the name is optional, since an
+        // empty one lets the daemon name the workspace. The proposal starts
+        // selected, so typing replaces it.
+        window.focus(&self.menu.focus, cx);
         let proposal = self
             .menu
             .input
@@ -462,11 +464,10 @@ impl HerdrWindow {
         source.tab = tab;
         source.refresh();
         let search = source.search.clone();
-        let name = source.name.clone();
         let retry_branches = !source.branches.listed && !source.branches.loading;
         let list_checkouts = !source.checkouts.listed && source.checkouts.request.is_none();
         match tab {
-            Tab::New => window.focus(&name.read(cx).focus.clone(), cx),
+            Tab::New => window.focus(&self.menu.focus, cx),
             Tab::Existing => {
                 if list_checkouts {
                     self.list_checkouts();

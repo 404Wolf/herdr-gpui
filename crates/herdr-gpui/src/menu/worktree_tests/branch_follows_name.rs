@@ -12,11 +12,7 @@ fn click_branch(cx: &mut VisualTestContext) {
 
 /// Back on the name, more typing and clearing it leave `edited` alone.
 fn name_no_longer_reaches(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, edited: &str) {
-    cx.update(|window, cx| {
-        view.update(cx, |view, cx| {
-            view.select_worktree_tab(Tab::New, window, cx)
-        });
-    });
+    click_name(cx);
     assert!(cx.update(|window, cx| view.read(cx).worktree_name_focused(window, cx)));
     cx.simulate_input(" signup");
     assert_eq!(branch(view, cx), edited);
@@ -34,6 +30,7 @@ fn the_proposed_branch_follows_the_typed_name(cx: &mut gpui::TestAppContext) {
     let proposal = branch(&view, cx);
     assert!(proposal.starts_with("worktree/"), "{proposal}");
 
+    click_name(cx);
     cx.simulate_input("Fix login");
     assert_eq!(branch(&view, cx), "worktree/fix-login");
     // Selected like the first proposal, so typing in the field replaces it.
@@ -62,6 +59,7 @@ fn a_shorter_proposal_is_not_scrolled_out_of_view(cx: &mut gpui::TestAppContext)
     cx.simulate_resize(gpui::size(gpui::px(640.), gpui::px(400.)));
     open_dialog(&view, cx, false, Tab::New);
     // The longest proposal there is, wider than the field at this size.
+    click_name(cx);
     cx.simulate_input(&"word ".repeat(20));
     draw(cx);
     cx.simulate_keystrokes("cmd-a");
@@ -96,6 +94,7 @@ fn an_edited_derived_branch_stops_following_the_name(cx: &mut gpui::TestAppConte
     let (view, cx) = cx.add_window_view(sidebar::layout_tests::fixture_window);
     cx.simulate_resize(gpui::size(gpui::px(900.), gpui::px(700.)));
     open_dialog(&view, cx, false, Tab::New);
+    click_name(cx);
     cx.simulate_input("Fix");
     click_branch(cx);
     cx.simulate_keystrokes("end");
