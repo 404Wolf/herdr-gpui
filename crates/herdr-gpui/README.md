@@ -281,6 +281,14 @@ edits only the local catalog: the host's own Herdr keeps running. When the
 device has its own GitHub sign-in, the confirmation also offers to delete it,
 since its account panel goes away with the device. Local has no such menu.
 
+A cloud device's header (Coder, Daytona, or Railway) has a menu too:
+**Rename…** changes the name the sidebar shows, falling back to the machine's
+name when left empty; **Cloud device settings…** opens its provider under
+Settings > Cloud Devices; and **Remove device…** forgets it on this computer,
+leaving the workspace, sandbox, or VM as it is at the provider. Port forwards
+and server keybindings need a saved SSH host, so a cloud device does not offer
+them.
+
 **Forward port…** in the same menu forwards one of the host's ports, such as a
 dev server an agent started there, to this computer. Each forward has its own
 `ssh -N` master on a private control socket, which is then asked to listen with
