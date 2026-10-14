@@ -4,8 +4,10 @@
 //! metadata tokens on the caller's workspace: the managed `herdr-gpui` shim
 //! this app writes on the host ([`install`]) sets them with `herdr workspace
 //! report-metadata` and a short time to live, and every window connected to
-//! that daemon sees them in its snapshot. Each request carries an ID, and the
-//! app acts on an ID once, in whichever window sees it first.
+//! that daemon sees them in its snapshot. Each request carries an ID that names
+//! its own tokens, so requests made close together, from any pane, stand side
+//! by side rather than replacing each other; the app acts on an ID once, in
+//! whichever window sees it first.
 //!
 //! Tokens are daemon data that any process on the host may set, so a request
 //! can do no more than open an http or https page in the workspace that
@@ -23,17 +25,16 @@ use gpui::Global;
 use std::collections::VecDeque;
 
 /// Every token of a request starts with this, so other plugins' tokens and
-/// lists of reported values can tell them apart.
+/// lists of reported values can tell them apart. A request is one token,
+/// `herdr-gpui-ID`, whose value is its action and then, after a space, the
+/// asking pane; an address follows in tokens `herdr-gpui-ID_0` onward, each
+/// at most 80 characters, the most Herdr keeps in one value.
 const PREFIX: &str = "herdr-gpui-";
-const ID: &str = "herdr-gpui-id";
-const PANE: &str = "herdr-gpui-pane";
-const ACTION: &str = "herdr-gpui-do";
-/// The address, cut into numbered tokens of at most 80 characters, the most
-/// Herdr keeps in one value.
-const URL: &str = "herdr-gpui-url-";
+const PART: char = '_';
 const URL_CHUNKS: usize = 12;
-/// Identifiers are echoed in no answer, but kept to Herdr's own token bound.
-const MAX_ID: usize = 80;
+/// Herdr's bound on a token's name, which holds the prefix, the ID, and a
+/// part number.
+const MAX_KEY: usize = 32;
 
 /// Whether `name` is one of a request's tokens.
 pub(crate) fn is_request_token(name: &str) -> bool {
@@ -58,40 +59,60 @@ pub(crate) struct Request {
 }
 
 fn plain(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= MAX_ID
-        && value.chars().all(|c| !c.is_control() && !c.is_whitespace())
+    !value.is_empty() && value.chars().all(|c| !c.is_control() && !c.is_whitespace())
+}
+
+/// An ID names tokens, so it holds only what a token name may, never the
+/// part separator, and leaves room for a part number.
+fn valid_id(id: &str) -> bool {
+    !id.is_empty()
+        && PREFIX.len() + id.len() + 3 <= MAX_KEY
+        && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
 
 impl Request {
-    /// The request a workspace's tokens carry, if a whole one is there.
-    pub(crate) fn from_tokens(tokens: &[(String, String)]) -> Option<Self> {
+    /// Every whole request among a workspace's tokens, in token order.
+    pub(crate) fn all(tokens: &[(String, String)]) -> Vec<Self> {
         let value = |key: &str| {
             tokens
                 .iter()
                 .find(|(name, _)| name == key)
                 .map(|(_, value)| value.as_str())
         };
-        let id = value(ID).filter(|id| plain(id))?.to_owned();
-        let pane = value(PANE).filter(|pane| plain(pane)).map(str::to_owned);
-        let action = match value(ACTION)? {
-            action @ ("open" | "open-background") => {
-                // Numbered from 0; the first missing number ends the address.
-                let address: String = (0..URL_CHUNKS)
-                    .map_while(|index| value(&format!("{URL}{index}")))
-                    .collect();
-                if address.is_empty() {
-                    return None;
-                }
-                Action::Open {
-                    address,
-                    focus: action == "open",
-                }
-            }
-            "reload" => Action::Reload,
-            _ => return None,
-        };
-        Some(Self { id, pane, action })
+        tokens
+            .iter()
+            .filter_map(|(name, header)| {
+                let id = name.strip_prefix(PREFIX).filter(|id| valid_id(id))?;
+                let (action, pane) = match header.split_once(' ') {
+                    Some((action, pane)) => (action, Some(pane)),
+                    None => (header.as_str(), None),
+                };
+                // A pane that is not a plain identifier is dropped, not trusted.
+                let pane = pane.filter(|pane| plain(pane)).map(str::to_owned);
+                let action = match action {
+                    "open" | "open-background" => {
+                        // Numbered from 0; the first missing number ends it.
+                        let address: String = (0..URL_CHUNKS)
+                            .map_while(|index| value(&format!("{PREFIX}{id}{PART}{index}")))
+                            .collect();
+                        if address.is_empty() {
+                            return None;
+                        }
+                        Action::Open {
+                            address,
+                            focus: action == "open",
+                        }
+                    }
+                    "reload" => Action::Reload,
+                    _ => return None,
+                };
+                Some(Self {
+                    id: id.to_owned(),
+                    pane,
+                    action,
+                })
+            })
+            .collect()
     }
 }
 

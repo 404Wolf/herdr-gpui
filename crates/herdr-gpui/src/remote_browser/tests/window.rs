@@ -57,10 +57,8 @@ fn a_request_opens_its_page_in_its_workspace_once(cx: &mut gpui::TestAppContext)
     let (view, cx) = window(
         cx,
         &[
-            ("herdr-gpui-do", "open-background"),
-            ("herdr-gpui-id", "9-1"),
-            ("herdr-gpui-pane", "w1:p3"),
-            ("herdr-gpui-url-0", "localhost:3000/app"),
+            ("herdr-gpui-9-1", "open-background w1:p3"),
+            ("herdr-gpui-9-1_0", "localhost:3000/app"),
         ],
     );
     poll(&view, cx);
@@ -86,9 +84,8 @@ fn an_address_that_cannot_open_is_flashed(cx: &mut gpui::TestAppContext) {
     let (view, cx) = window(
         cx,
         &[
-            ("herdr-gpui-do", "open"),
-            ("herdr-gpui-id", "9-2"),
-            ("herdr-gpui-url-0", "javascript:alert(1)"),
+            ("herdr-gpui-9-2", "open"),
+            ("herdr-gpui-9-2_0", "javascript:alert(1)"),
         ],
     );
     poll(&view, cx);

@@ -22,16 +22,20 @@ pub(super) fn tokens(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
         .collect()
 }
 
+fn one(pairs: &[(&str, &str)]) -> Option<Request> {
+    let mut all = Request::all(&tokens(pairs));
+    assert!(all.len() <= 1, "{all:?}");
+    all.pop()
+}
+
 #[test]
 fn a_request_is_read_from_its_tokens() {
-    let request = Request::from_tokens(&tokens(&[
+    let request = one(&[
         ("ci", "green"),
-        ("herdr-gpui-do", "open"),
-        ("herdr-gpui-id", "17-42"),
-        ("herdr-gpui-pane", "w1:p2"),
-        ("herdr-gpui-url-0", "http://localhost:3000/a"),
-        ("herdr-gpui-url-1", "?b=c"),
-    ]))
+        ("herdr-gpui-17-42", "open w1:p2"),
+        ("herdr-gpui-17-42_0", "http://localhost:3000/a"),
+        ("herdr-gpui-17-42_1", "?b=c"),
+    ])
     .unwrap();
     assert_eq!(
         request,
@@ -44,11 +48,10 @@ fn a_request_is_read_from_its_tokens() {
             },
         }
     );
-    let quiet = Request::from_tokens(&tokens(&[
-        ("herdr-gpui-do", "open-background"),
-        ("herdr-gpui-id", "1"),
-        ("herdr-gpui-url-0", "example.com"),
-    ]))
+    let quiet = one(&[
+        ("herdr-gpui-1", "open-background"),
+        ("herdr-gpui-1_0", "example.com"),
+    ])
     .unwrap();
     assert_eq!(
         quiet.action,
@@ -58,28 +61,50 @@ fn a_request_is_read_from_its_tokens() {
         }
     );
     assert_eq!(quiet.pane, None);
-    let reload = Request::from_tokens(&tokens(&[
-        ("herdr-gpui-do", "reload"),
-        ("herdr-gpui-id", "2"),
-        ("herdr-gpui-pane", "p"),
-    ]))
-    .unwrap();
+    let reload = one(&[("herdr-gpui-2", "reload p")]).unwrap();
     assert_eq!(reload.action, Action::Reload);
+    assert_eq!(reload.pane.as_deref(), Some("p"));
+}
+
+#[test]
+fn requests_made_together_are_all_read() {
+    let all = Request::all(&tokens(&[
+        ("herdr-gpui-5-1", "open w1:p1"),
+        ("herdr-gpui-5-1_0", "a.test"),
+        ("herdr-gpui-5-2", "open w1:p2"),
+        ("herdr-gpui-5-2_0", "b.test"),
+        ("herdr-gpui-5-3", "reload w1:p3"),
+    ]));
+    let found: Vec<_> = all
+        .iter()
+        .map(|request| (request.id.as_str(), request.pane.as_deref()))
+        .collect();
+    assert_eq!(
+        found,
+        [
+            ("5-1", Some("w1:p1")),
+            ("5-2", Some("w1:p2")),
+            ("5-3", Some("w1:p3"))
+        ]
+    );
+    assert!(matches!(&all[1].action, Action::Open { address, .. } if address == "b.test"));
 }
 
 #[test]
 fn incomplete_or_unknown_requests_are_ignored() {
     let open = |extra: &[(&str, &str)]| {
-        let mut pairs = vec![("herdr-gpui-do", "open"), ("herdr-gpui-id", "1")];
+        let mut pairs = vec![("herdr-gpui-1", "open")];
         pairs.extend_from_slice(extra);
-        Request::from_tokens(&tokens(&pairs))
+        one(&pairs)
     };
     // No address, or one that skips its first part.
     assert_eq!(open(&[]), None);
-    assert_eq!(open(&[("herdr-gpui-url-1", "x")]), None);
+    assert_eq!(open(&[("herdr-gpui-1_1", "x")]), None);
+    // Another request's parts are not this one's.
+    assert_eq!(open(&[("herdr-gpui-2_0", "a.test")]), None);
     // A gap ends the address at the last part before it.
     assert_eq!(
-        open(&[("herdr-gpui-url-0", "a.test"), ("herdr-gpui-url-2", "/x")])
+        open(&[("herdr-gpui-1_0", "a.test"), ("herdr-gpui-1_2", "/x")])
             .unwrap()
             .action,
         Action::Open {
@@ -88,48 +113,38 @@ fn incomplete_or_unknown_requests_are_ignored() {
         }
     );
     // Parts past the last number are never read.
-    let url_parts: Vec<(String, String)> = (0..=URL_CHUNKS)
-        .map(|index| (format!("{URL}{index}"), "a".to_owned()))
+    let parts: Vec<(String, String)> = (0..=URL_CHUNKS)
+        .map(|index| (format!("herdr-gpui-1_{index}"), "a".to_owned()))
         .collect();
-    let mut many = tokens(&[("herdr-gpui-do", "open"), ("herdr-gpui-id", "1")]);
-    many.extend(url_parts);
-    let Some(Request {
-        action: Action::Open { address, .. },
-        ..
-    }) = Request::from_tokens(&many)
+    let mut many = tokens(&[("herdr-gpui-1", "open")]);
+    many.extend(parts);
+    let all = Request::all(&many);
+    let [
+        Request {
+            action: Action::Open { address, .. },
+            ..
+        },
+    ] = all.as_slice()
     else {
-        panic!("expected an open request");
+        panic!("expected one open request");
     };
     assert_eq!(address.len(), URL_CHUNKS);
 
-    let without = |name: &str| {
-        let pairs: Vec<_> = [
-            ("herdr-gpui-do", "open"),
-            ("herdr-gpui-id", "1"),
-            ("herdr-gpui-url-0", "a.test"),
-        ]
-        .into_iter()
-        .filter(|(key, _)| *key != name)
-        .collect();
-        Request::from_tokens(&tokens(&pairs))
-    };
-    assert_eq!(without("herdr-gpui-id"), None);
-    assert_eq!(without("herdr-gpui-do"), None);
     for (key, value) in [
-        ("herdr-gpui-do", "run"),
-        ("herdr-gpui-id", "a b"),
-        ("herdr-gpui-id", ""),
+        ("herdr-gpui-1", "run"),
+        ("herdr-gpui-1", ""),
+        ("herdr-gpui-", "open"),
+        ("herdr-gpui-a.b", "open"),
+        ("herdr-gpui-123456789012345678x", "open"),
     ] {
-        let pairs = [
-            ("herdr-gpui-do", "open"),
-            ("herdr-gpui-id", "1"),
-            ("herdr-gpui-url-0", "a.test"),
-        ]
-        .map(|(name, old)| (name, if name == key { value } else { old }));
-        assert_eq!(Request::from_tokens(&tokens(&pairs)), None, "{key}={value}");
+        let part = format!("{key}_0");
+        let pairs = [(key, value), (part.as_str(), "a.test")];
+        assert_eq!(one(&pairs), None, "{key}={value}");
     }
     // A pane that is not a plain identifier is dropped, not trusted.
-    let odd = open(&[("herdr-gpui-url-0", "a.test"), ("herdr-gpui-pane", "p 1")]).unwrap();
+    let odd = open(&[("herdr-gpui-1_0", "a.test")]);
+    assert_eq!(odd.unwrap().pane, None);
+    let odd = one(&[("herdr-gpui-1", "open p 1"), ("herdr-gpui-1_0", "a.test")]).unwrap();
     assert_eq!(odd.pane, None);
 }
 

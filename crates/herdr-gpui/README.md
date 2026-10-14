@@ -2332,7 +2332,10 @@ and opens the page in that workspace, once per request:
   that carries it, or reload the tabs its pane opened. A bad address is
   refused with a notice in the window.
 - Every Herdr UI connected to the host acts on the request, and a request
-  made while no window is connected is dropped when its tokens expire.
+  made while no window is connected is dropped when its tokens expire. Each
+  request names its own tokens, so requests made together from several panes
+  all open; a workspace holds at most 32 tokens, so a burst of long addresses
+  can be refused until earlier ones expire.
 
 Agents only use what they know about, so the app offers, once, to install a
 `herdr-gpui-browser` skill that teaches them these commands. It goes into
@@ -2353,7 +2356,10 @@ removed; a skill of the same name you wrote yourself is left alone.
   it on each saved SSH host it connects to, once per run, over the same
   noninteractive SSH. The copy goes only into the host's existing `~/.claude`
   or `~/.agents`. As here, a shim or skill file without the app's marker is
-  left alone. A host without a POSIX shell is skipped.
+  left alone. A host without a POSIX shell is skipped. Removing the skill
+  takes the shim and those copies off each host again, the next time a
+  window connects to it. Windows has no saved SSH hosts, so it installs
+  nothing.
 
 `herdr-gpui browser skill` prints the same text, for example to install it
 elsewhere:

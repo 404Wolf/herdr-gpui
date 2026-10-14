@@ -64,26 +64,24 @@ impl Host {
 fn reported(args: &[String]) -> Vec<(String, String)> {
     assert_eq!(&args[..3], ["workspace", "report-metadata", "w_7"]);
     let mut tokens = Vec::new();
-    let mut cleared = 0;
     for pair in args[3..].windows(2) {
-        match pair[0].as_str() {
-            "--token" => {
-                let (name, value) = pair[1].split_once('=').unwrap();
-                assert!(name.len() <= 32 && value.chars().count() <= 80, "{name}");
-                tokens.push((name.to_owned(), value.trim().to_owned()));
-            }
-            "--clear-token" => cleared += 1,
-            _ => {}
+        if pair[0] == "--token" {
+            let (name, value) = pair[1].split_once('=').unwrap();
+            assert!(name.len() <= 32 && value.chars().count() <= 80, "{name}");
+            tokens.push((name.to_owned(), value.trim().to_owned()));
         }
     }
     // Herdr takes at most 16 tokens in one report.
-    assert!(tokens.len() + cleared <= 16);
+    assert!(tokens.len() <= 16);
     tokens.sort();
     tokens
 }
 
 fn request(host: &Host) -> Request {
-    Request::from_tokens(&reported(&host.args().unwrap())).unwrap()
+    let [request] = Request::all(&reported(&host.args().unwrap()))
+        .try_into()
+        .unwrap();
+    request
 }
 
 #[test]
@@ -124,17 +122,24 @@ fn a_long_address_travels_in_parts_and_options_are_kept() {
         }
     );
 
-    // A shorter address next clears the parts the longer one left.
-    host.run(&["browser", "open", "a.test"], &[]);
-    let args = host.args().unwrap();
-    assert!(
-        args.windows(2)
-            .any(|pair| pair == ["--clear-token", "herdr-gpui-url-11"])
+    // Requests made together keep apart: each names its own tokens.
+    let first = reported(&host.args().unwrap());
+    host.run(
+        &["browser", "open", "a.test"],
+        &[("HERDR_PANE_ID", "w_7:p_3")],
     );
-    assert!(matches!(
-        request(&host).action,
-        Action::Open { address, .. } if address == "a.test"
-    ));
+    let second = reported(&host.args().unwrap());
+    assert!(
+        first
+            .iter()
+            .all(|(name, _)| !second.iter().any(|(other, _)| other == name))
+    );
+    let both: Vec<_> = Request::all(&[first, second].concat())
+        .into_iter()
+        .map(|request| request.pane)
+        .collect();
+    assert_eq!(both.len(), 2);
+    assert!(both.contains(&Some("w_7:p_3".into())));
 }
 
 #[test]

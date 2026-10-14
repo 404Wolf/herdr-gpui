@@ -9,7 +9,8 @@ set -u
 LC_ALL=C
 export LC_ALL
 
-# Herdr keeps at most 80 characters per token, and 16 tokens per report.
+# Herdr keeps at most 80 characters per token, 16 tokens per report, and 32
+# per workspace, so a request is a header and at most 12 parts of its address.
 CHUNK=80
 CHUNKS=12
 TTL_MS=30000
@@ -69,34 +70,30 @@ unavailable() {
 }
 
 # send ACTION [URL]: one report, so a window sees the whole request at once.
+# The request's ID names its tokens, so requests from this or another pane
+# made before a window reads them stand side by side.
 send() {
     action=$1
     url=${2:-}
     workspace=${HERDR_WORKSPACE_ID:-}
     [ -n "$workspace" ] || fail 5 not_found "Not running in a Herdr pane: HERDR_WORKSPACE_ID is not set."
     herdr=${HERDR_BIN_PATH:-herdr}
-    id="$(date +%s)-$$"
-    set -- --source herdr-gpui --ttl-ms "$TTL_MS" \
-        --token "herdr-gpui-id=$id" --token "herdr-gpui-do=$action"
+    key="herdr-gpui-$(date +%s)-$$"
+    header=$action
     if [ -n "${HERDR_PANE_ID:-}" ]; then
-        set -- "$@" --token "herdr-gpui-pane=$HERDR_PANE_ID"
-    else
-        set -- "$@" --clear-token herdr-gpui-pane
+        header="$header $HERDR_PANE_ID"
     fi
+    set -- --source herdr-gpui --ttl-ms "$TTL_MS" --token "$key=$header"
     rest=$url
     i=0
-    while [ "$i" -lt "$CHUNKS" ]; do
-        if [ -n "$rest" ]; then
-            chunk=$(printf '%s\n' "$rest" | cut -c "1-$CHUNK")
-            rest=$(printf '%s\n' "$rest" | cut -c "$((CHUNK + 1))-")
-            set -- "$@" --token "herdr-gpui-url-$i=$chunk"
-        else
-            set -- "$@" --clear-token "herdr-gpui-url-$i"
-        fi
+    while [ -n "$rest" ] && [ "$i" -lt "$CHUNKS" ]; do
+        chunk=$(printf '%s\n' "$rest" | cut -c "1-$CHUNK")
+        rest=$(printf '%s\n' "$rest" | cut -c "$((CHUNK + 1))-")
+        set -- "$@" --token "${key}_$i=$chunk"
         i=$((i + 1))
     done
     "$herdr" workspace report-metadata "$workspace" "$@" >/dev/null ||
-        fail 1 refused "Herdr refused the request; is this a Herdr pane?"
+        fail 1 refused "Herdr refused the request; is this a Herdr pane, or are many requests from it still waiting?"
 }
 
 open_page() {

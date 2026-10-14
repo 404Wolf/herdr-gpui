@@ -55,7 +55,7 @@ impl HerdrWindow {
                 {
                     continue;
                 }
-                if let Some(request) = Request::from_tokens(&workspace.tokens) {
+                for request in Request::all(&workspace.tokens) {
                     requests.push((index, workspace.workspace_id.clone(), request));
                 }
             }

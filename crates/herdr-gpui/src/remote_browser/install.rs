@@ -1,8 +1,10 @@
 //! Puts the `herdr-gpui` shim, and the agent skill naming it, on each saved
 //! SSH host a window connects to, once per run and only when the user chose
-//! to install the skill. Like the local skill, a file is written only where
-//! it is missing or carries this app's marker: a file of the same name the
-//! user wrote is left alone, and nothing else on the host changes.
+//! to install the skill; once they remove it, takes both off again. Like the
+//! local skill, a file is written or removed only where it is missing or
+//! carries this app's marker: a file of the same name the user wrote is left
+//! alone, and nothing else on the host changes. A host offline when the
+//! choice changed is updated when a window next connects to it.
 use crate::{
     HerdrWindow,
     agent_skill::{AgentSkill, Choice},
@@ -42,50 +44,61 @@ for root in "$HOME/.claude" "$HOME/.agents"; do
     mv -f "$file.new.$$" "$file"
 done"#;
 
+/// Removes the shim and the skill copies this app wrote, keeping files the
+/// user wrote under the same names.
+pub(super) const REMOVE_SCRIPT: &str = r#"set -u
+remove() {
+    if [ -f "$1" ] && grep -q "$2" "$1"; then rm -f "$1"; fi
+}
+remove "$HOME/.local/state/herdr/gpui/bin/herdr-gpui" herdr-gpui-managed-shim
+for root in "$HOME/.claude" "$HOME/.agents"; do
+    dir="$root/skills/herdr-gpui-browser"
+    remove "$dir/SKILL.md" herdr-gpui-managed-skill
+    rmdir "$dir" 2>/dev/null || :
+done"#;
+
 const LIMITS: ScriptLimits = ScriptLimits {
     output: 4096,
     idle: Duration::from_secs(30),
 };
 
-/// The hosts tried this run, by SSH target, whether or not it worked: a
-/// host without a POSIX shell is not asked again on every tick.
+/// The hosts tried this run, by SSH target and the choice applied, whether or
+/// not it worked: a host without a POSIX shell is not asked again on every
+/// tick, while a changed choice is applied again.
 #[derive(Default)]
-struct Tried(HashSet<String>);
+struct Tried(HashSet<(String, Choice)>);
 
 impl Global for Tried {}
 
-/// Blocking: two short SSH sessions. Run off the UI thread.
-fn install(target: &str) -> crate::Result<()> {
+/// Blocking: short SSH sessions. Run off the UI thread.
+fn apply(target: &str, choice: Choice) -> crate::Result<()> {
     let host = ScriptHost::Ssh(target);
     let never = AtomicBool::new(false);
-    run_script(
-        host,
-        SHIM_SCRIPT,
-        SHIM.as_bytes(),
-        std::io::sink(),
-        LIMITS,
-        &never,
-    )
-    .map_err(crate::Error::RemoteAgentTools)?;
-    let skill = crate::agent_skill::text_naming(SHIM_COMMAND);
-    run_script(
-        host,
-        SKILL_SCRIPT,
-        skill.as_bytes(),
-        std::io::sink(),
-        LIMITS,
-        &never,
-    )
-    .map_err(crate::Error::RemoteAgentTools)?;
-    Ok(())
+    let run = |script: &str, input: &[u8]| {
+        run_script(host, script, input, std::io::sink(), LIMITS, &never)
+            .map(drop)
+            .map_err(crate::Error::RemoteAgentTools)
+    };
+    match choice {
+        Choice::Installed => {
+            run(SHIM_SCRIPT, SHIM.as_bytes())?;
+            let skill = crate::agent_skill::text_naming(SHIM_COMMAND);
+            run(SKILL_SCRIPT, skill.as_bytes())
+        }
+        Choice::Declined => run(REMOVE_SCRIPT, &[]),
+    }
 }
 
 impl HerdrWindow {
-    /// Starts installing on each connected saved SSH host not tried yet.
+    /// Applies the user's skill choice to each connected saved SSH host not
+    /// tried with it yet. Windows has no saved SSH hosts to connect to.
     pub(super) fn install_remote_agent_tools(&mut self, cx: &mut Context<Self>) {
-        if AgentSkill::choice(cx) != Some(Choice::Installed) {
+        if !cfg!(any(target_os = "linux", target_os = "macos")) {
             return;
         }
+        let Some(choice) = AgentSkill::choice(cx) else {
+            return;
+        };
         for (index, endpoint) in self.endpoints.iter().enumerate() {
             let live = if index == self.selected_endpoint {
                 &self.live
@@ -98,16 +111,17 @@ impl HerdrWindow {
             if !endpoint.enabled || live.snapshot.is_none() {
                 continue;
             }
-            if !cx.default_global::<Tried>().0.insert(target.to_owned()) {
+            let key = (target.to_owned(), choice);
+            if !cx.default_global::<Tried>().0.insert(key) {
                 continue;
             }
             let target = target.to_owned();
             cx.background_executor()
                 .spawn(async move {
-                    match install(&target) {
-                        Ok(()) => tracing::info!("Installed the agent tools on an SSH host"),
+                    match apply(&target, choice) {
+                        Ok(()) => tracing::info!(?choice, "Updated the agent tools on an SSH host"),
                         Err(error) => {
-                            tracing::warn!(%error, "Cannot install the agent tools on an SSH host");
+                            tracing::warn!(%error, ?choice, "Cannot update the agent tools on an SSH host");
                         }
                     }
                 })

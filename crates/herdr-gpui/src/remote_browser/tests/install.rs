@@ -1,4 +1,6 @@
-use crate::remote_browser::install::{SHIM, SHIM_COMMAND, SHIM_SCRIPT, SKILL_SCRIPT};
+use crate::remote_browser::install::{
+    REMOVE_SCRIPT, SHIM, SHIM_COMMAND, SHIM_SCRIPT, SKILL_SCRIPT,
+};
 use std::{
     io::Write as _,
     os::unix::fs::PermissionsExt,
@@ -75,4 +77,35 @@ fn the_skill_goes_only_into_agent_directories_the_host_has() {
         std::fs::read_to_string(file(".agents")).unwrap(),
         "my own skill"
     );
+}
+
+#[test]
+fn removing_takes_off_only_what_the_app_wrote() {
+    let home = tempfile::tempdir().unwrap();
+    std::fs::create_dir(home.path().join(".claude")).unwrap();
+    std::fs::create_dir(home.path().join(".agents")).unwrap();
+    let skill = crate::agent_skill::text_naming(SHIM_COMMAND);
+    run(SHIM_SCRIPT, home.path(), SHIM);
+    run(SKILL_SCRIPT, home.path(), &skill);
+    let own = home
+        .path()
+        .join(".agents/skills/herdr-gpui-browser/SKILL.md");
+    std::fs::write(&own, "my own skill").unwrap();
+
+    run(REMOVE_SCRIPT, home.path(), "");
+    assert!(
+        !home
+            .path()
+            .join(".local/state/herdr/gpui/bin/herdr-gpui")
+            .exists()
+    );
+    assert!(
+        !home
+            .path()
+            .join(".claude/skills/herdr-gpui-browser")
+            .exists()
+    );
+    assert_eq!(std::fs::read_to_string(&own).unwrap(), "my own skill");
+    // Nothing to remove is not a failure.
+    run(REMOVE_SCRIPT, home.path(), "");
 }
