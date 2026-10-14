@@ -157,13 +157,16 @@ impl SettingsWindow {
         let volume = self.config.sound.volume;
         let mut levels = div().flex().flex_wrap().gap(px(8.));
         for percent in [10, 25, 50, 75, 100] {
-            levels = levels.child(self.preference_choice(
-                format!("settings-sound-volume-{percent}"),
-                format!("{percent}%"),
-                volume == percent,
-                Preference::SoundVolume(percent),
-                cx,
-            ));
+            levels = levels.child(
+                self.preference_choice(
+                    format!("settings-sound-volume-{percent}"),
+                    format!("{percent}%"),
+                    volume == percent,
+                    Preference::SoundVolume(percent),
+                    cx,
+                )
+                .debug_selector(move || format!("settings-sound-volume-{percent}")),
+            );
         }
         div()
             .flex()
