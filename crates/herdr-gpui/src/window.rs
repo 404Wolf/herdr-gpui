@@ -33,6 +33,7 @@ mod regions;
 mod render;
 mod selection;
 mod server_keys;
+mod sound;
 mod status_bar;
 pub(crate) mod system_notifications;
 mod tab_drag;

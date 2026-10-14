@@ -29,10 +29,11 @@ pub(super) fn muted() -> bool {
 pub(super) fn play(
     sound: Sound,
     custom: Option<&Path>,
+    volume: u8,
     cancel: &[&AtomicBool],
     stop: &AtomicBool,
 ) -> Result<()> {
-    if muted() {
+    if muted() || volume == 0 {
         return Ok(());
     }
     let deadline = Instant::now() + MAX_DURATION;
@@ -51,6 +52,7 @@ pub(super) fn play(
     output.log_on_drop(false);
     check(deadline, cancel, stop, Instant::now())?;
     let player = Player::connect_new(output.mixer());
+    player.set_volume(gain(volume));
     player.append(source.take_duration(MAX_DURATION));
     wait(
         &player,
@@ -63,6 +65,14 @@ pub(super) fn play(
             std::thread::sleep(Duration::from_millis(25));
         },
     )
+}
+
+/// The amplitude factor for a volume percent. Loudness follows amplitude
+/// roughly as its square, so a linear factor would leave the lower half of
+/// the range barely quieter than full: 50% plays at a quarter, about -12 dB.
+fn gain(percent: u8) -> f32 {
+    let level = f32::from(percent.min(crate::config::SoundConfig::MAX_VOLUME)) / 100.;
+    level * level
 }
 
 fn decode(sound: Sound, custom: Option<&Path>) -> Result<SoundDecoder> {

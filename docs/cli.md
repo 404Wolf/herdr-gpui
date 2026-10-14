@@ -128,7 +128,7 @@ Every command accepts:
 | `font [list]`, `font set NAME`, `font reset` | |
 | `keybinds [list]`, `keybinds check` | Shortcuts; custom Herdr commands this client cannot reach |
 | `caffeine [status]`, `caffeine on\|off\|toggle [--for 30m]` | Keep the machine awake |
-| `sound [list]`, `sound play [done\|request]`, `bell` | |
+| `sound [list]`, `sound play [done\|request]`, `bell` | Sounds play at `sound.volume` percent (`config set sound.volume 30`) |
 | `update [status]`, `update check` | Never downloads or installs |
 | `integrations [list]` | What Herdr offers the selected host |
 | `integrations install-skill` | Install the agent skill (no app needed) |

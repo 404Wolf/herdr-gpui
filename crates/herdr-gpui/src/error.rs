@@ -790,6 +790,8 @@ pub enum Error {
     TooManyFontFallbacks(&'static str),
     #[error("layout.sidebar_gap must be finite and between 0 and 64 logical pixels")]
     InvalidSidebarGap,
+    #[error("sound.volume must be between 0 and 100")]
+    InvalidSoundVolume,
     #[error(
         "terminal.{0} must be one number or a pair of numbers, each finite and between 0 and 64 logical pixels"
     )]

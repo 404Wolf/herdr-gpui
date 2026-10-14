@@ -673,8 +673,8 @@ or unchanged name lets the daemon choose it, as in the TUI. Teleport, worktree
 creation, and browser tabs never prompt.
 
 Sound uses the dedicated Rodio backend, shared global/per-agent settings and
-custom local paths, with Herdr's bundled sounds as fallbacks. The Sound tab offers
-an explicit QA preview. Shared Herdr toast delivery enables in-app notifications
+custom local paths, with Herdr's bundled sounds as fallbacks. The Sound tab sets
+this app's volume and offers an explicit QA preview. Shared Herdr toast delivery enables in-app notifications
 and System delivery posts OS notifications; Terminal delivery is not executed by
 this native client, which has no outer terminal. Per-field
 `[notifications]` settings in the native local override file take precedence.
@@ -1143,11 +1143,23 @@ Sound is enabled by default; Droid alone defaults to off. Agent values are
 override `path`, and relative paths resolve beside the local TUI config.
 `HERDR_DISABLE_SOUND` or `NEXTEST`, when present, disables playback entirely.
 
+Volume is this app's own, since Herdr's `[ui.sound]` has none: `[sound] volume`
+in `config-gpui.local.toml`, a percentage of each sound's own level from 0 to 100
+(default 50), also under **Settings > Sound**. It follows loudness rather than
+raw amplitude, so 50 plays at a quarter of the amplitude, about 12 dB quieter;
+0 plays nothing. It applies to every sound, previews and `sound play` included,
+and not to the system alert `[bell]` plays, which follows the OS alert volume.
+
+```toml
+[sound]
+volume = 30
+```
+
 **QA > Play Sound** explicitly tests Rodio playback with the built-in Done sound
 on the same background worker. No daemon or active pane is needed. This manual
 test bypasses notification mute (including `enabled = false`), agent filters,
-custom sound paths, delay, and focus suppression. Environment/test suppression
-still applies, as do the bounded queue, one-second queue expiry, and playback
+custom sound paths, delay, and focus suppression. Volume and environment/test
+suppression still apply, as do the bounded queue, one-second queue expiry, and playback
 budget below. Closing the window cancels the test; endpoint disconnects do not.
 
 Semantic notifications from all connected endpoints use the TUI's timing:

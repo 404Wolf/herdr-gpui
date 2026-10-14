@@ -149,6 +149,13 @@ project_roots = []
 # The position also places the note saying why New Worktree opened no dialog.
 # position = "bottom-center"
 
+# How loud this app plays agent sounds (done and request), as a percentage of
+# the sound file's own level, inclusive 0..100. Herdr's [ui.sound] chooses
+# whether and which sounds play; it has no volume, so this is this app's own.
+# Also under Settings > Sound.
+# [sound]
+# volume = 50
+
 # What a pane's terminal bell (BEL) does. Herdr has no bell setting of its own:
 # it forwards each bell to the focused client, as an outer terminal would see it.
 # [bell]
