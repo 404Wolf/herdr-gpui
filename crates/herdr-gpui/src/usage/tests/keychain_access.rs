@@ -57,7 +57,7 @@ fn a_denied_prompt_is_reported_for_its_grant_to_be_dropped() {
     let entry = usage.current().unwrap();
     assert_eq!(entry.readings[0].access, Some(Access::Needed));
     assert_eq!(
-        entry.headline(crate::usage::HEADLINE, None).len(),
+        entry.headline(None).len(),
         1,
         "a sign-in waiting on Keychain access gets a status bar segment to open"
     );

@@ -95,15 +95,12 @@ pub(crate) struct Entry {
     rate_limited: bool,
 }
 
-/// How many providers the status bar has room for; the panel lists all.
-pub(crate) const HEADLINE: usize = 2;
-
 impl Entry {
     /// The providers the status bar shows: those with numbers to show, the
-    /// one chosen in the panel first, then the ones closest to a limit, at
-    /// most `limit` of them. A provider that has no report yet, or no windows
-    /// or balances, waits in the panel.
-    pub fn headline(&self, limit: usize, chosen: Option<Provider>) -> Vec<&Reading> {
+    /// one chosen in the panel first, then the ones closest to a limit.
+    /// The layout decides how many fit. A provider that has no report yet,
+    /// or no windows or balances, waits in the panel.
+    pub fn headline(&self, chosen: Option<Provider>) -> Vec<&Reading> {
         let mut shown: Vec<&Reading> = self
             .readings
             .iter()
@@ -118,7 +115,6 @@ impl Entry {
             let reading = shown.remove(index);
             shown.insert(0, reading);
         }
-        shown.truncate(limit);
         shown
     }
 }

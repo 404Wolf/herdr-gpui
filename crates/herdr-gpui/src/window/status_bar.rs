@@ -27,6 +27,8 @@ impl HerdrWindow {
         .then(|| self.live.status_text(self.local_error.as_deref()));
         let items = self.config.status_bar;
         let height = px(self.status_bar_height());
+        let usage = self.render_usage(cx);
+        let has_usage = usage.is_some();
         div()
             .id("connection-status")
             .debug_selector(|| "connection-status".into())
@@ -47,7 +49,7 @@ impl HerdrWindow {
             .bg(self.fill().panel(self.theme.surface))
             .text_color(rgb(self.theme.foreground))
             .children(self.render_agent_model(cx))
-            .children(self.render_usage(cx))
+            .children(usage)
             .when_some(
                 self.prefix_armed
                     .then(|| self.keymap().prefix_label())
@@ -87,7 +89,7 @@ impl HerdrWindow {
             })
             .child(
                 div()
-                    .flex_1()
+                    .when(!has_usage || status.is_some(), |row| row.flex_1())
                     .min_w_0()
                     .overflow_hidden()
                     .whitespace_nowrap()
