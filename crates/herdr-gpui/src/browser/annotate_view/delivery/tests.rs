@@ -25,7 +25,7 @@ fn pending_send_covers_screenshot_saving_and_failure(cx: &mut TestAppContext) {
     // The second send happens before the asynchronous UI callback can run.
     // Both successful saving and failure must release the guard via feedback.
     for fail in [false, true] {
-        cx.update(|window, cx| {
+        cx.update(|_, cx| {
             view.update(cx, |view, cx| {
                 view.send_notes_with(
                     &tab,
@@ -37,10 +37,9 @@ fn pending_send_covers_screenshot_saving_and_failure(cx: &mut TestAppContext) {
                             Ok(vec![None])
                         }
                     },
-                    window,
                     cx,
                 );
-                view.send_notes_with(&tab, |_| panic!("duplicate screenshot save"), window, cx);
+                view.send_notes_with(&tab, |_| panic!("duplicate screenshot save"), cx);
             });
         });
         cx.run_until_parked();

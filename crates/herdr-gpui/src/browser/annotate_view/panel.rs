@@ -261,11 +261,11 @@ impl HerdrWindow {
                         .border_color(rgb(theme.active))
                         .when(origin, |row| {
                             row.child(button("annotation-send", send_label.into(), true).on_click(
-                                cx.listener(move |this, _, window, cx| this.send_notes(&tab_for_send, window, cx)),
+                                cx.listener(move |this, _, _, cx| this.send_notes(&tab_for_send, cx)),
                             ))
                         })
                         .child(button("annotation-copy", "Copy".into(), !origin).on_click(
-                            cx.listener(move |this, _, window, cx| this.copy_notes(&tab_for_copy, window, cx)),
+                            cx.listener(move |this, _, _, cx| this.copy_notes(&tab_for_copy, cx)),
                         ))
                         .when(any_sent, |row| {
                             row.child(

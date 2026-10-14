@@ -5,13 +5,12 @@
 //! `browser feedback` when its pane is gone or must not be typed into.
 use crate::{
     HerdrWindow,
-    browser::{Feedback, FeedbackKey, Pick},
+    browser::{Feedback, FeedbackKey},
     connection::ConnectionBridge,
-    navigation::NavigationTarget,
     terminal::InputTarget,
     window::Flash,
 };
-use gpui::{App, ClipboardItem, Context, Window};
+use gpui::{App, ClipboardItem, Context};
 use herdr_client::protocol::{
     AgentStatus, ClientKeyCode, ClientKeyKind, ClientPaneInputEvent, ClientShellAgent,
     ClientShellSnapshot,
@@ -133,14 +132,18 @@ struct Delivery {
     copies: Option<Copies>,
 }
 
-/// The window's notes still waiting for their agents.
+/// The window's notes still waiting for their agents, and the agent that
+/// last took some, until it is brought into view.
 #[derive(Default)]
-pub(crate) struct Deliveries(Vec<Delivery>);
+pub(crate) struct Deliveries {
+    queue: Vec<Delivery>,
+    reveal: Option<reveal::Reveal>,
+}
 
 impl Deliveries {
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
-        self.0.len()
+        self.queue.len()
     }
 }
 
@@ -259,6 +262,9 @@ impl HerdrWindow {
                 .any(|candidate| candidate.pane_id == target.pane_id)
         });
         let (flash, delivered) = if waiting {
+            if let Some(origin) = shown.and_then(|_| Origin::of(self)) {
+                self.request_reveal(origin, &target.pane_id);
+            }
             cx.default_global::<Feedback>()
                 .keep(crate::browser::Batch { target, text }, pending);
             (
@@ -272,7 +278,7 @@ impl HerdrWindow {
                 found.agent_status,
                 AgentStatus::Working | AgentStatus::Blocked
             );
-            self.deliveries.0.push(Delivery {
+            self.deliveries.queue.push(Delivery {
                 target,
                 origin: Origin {
                     endpoint: self.endpoints[self.selected_endpoint].id.clone(),
@@ -342,42 +348,6 @@ impl HerdrWindow {
         )
     }
 
-    /// Brings the agent in `pane_id` into view after notes went to it, so the
-    /// user sees it take them: its tab replaces a page in its group, and its
-    /// pane takes the focus. The window comes forward too, for notes sent
-    /// from a mockup window of their own.
-    pub(crate) fn reveal_agent(
-        &mut self,
-        pane_id: &str,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(snapshot) = self.live.snapshot.clone() else {
-            return;
-        };
-        let Some(pane) = snapshot.panes.iter().find(|pane| pane.pane_id == pane_id) else {
-            return;
-        };
-        window.activate_window();
-        // Another workspace's groups are not loaded; focusing the pane takes
-        // the daemon there, and its tab with it.
-        if snapshot.focused_workspace_id.as_ref() == Some(&pane.workspace_id)
-            && let Some(group) = self
-                .ensure_layout()
-                .map(|layout| layout.owner(&Pick::Herdr(pane.tab_id.clone())))
-        {
-            self.choose_herdr_tab(group, &pane.tab_id, window, cx);
-        }
-        let target = NavigationTarget::Pane(pane_id);
-        if self.input_ready() {
-            self.navigate(target, cx);
-        } else {
-            self.pending_navigation = Some((&target).into());
-        }
-        window.focus(&self.focus, cx);
-        cx.notify();
-    }
-
     /// Delivers notes a control request sent, if this window shows the
     /// caller's pane on its selected endpoint, the only one it types into.
     /// `None` leaves them to another window, or to the request to keep.
@@ -386,7 +356,6 @@ impl HerdrWindow {
         &mut self,
         target: &crate::control::Target<'_>,
         text: &str,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<crate::control::NotesTo> {
         use crate::control::NotesTo;
@@ -414,10 +383,7 @@ impl HerdrWindow {
             pane_id: pane.to_owned(),
         };
         match self.deliver_notes(Some(target), text.to_owned(), None, None, cx) {
-            Delivered::Agent => {
-                self.reveal_agent(pane, window, cx);
-                Some(NotesTo::Agent)
-            }
+            Delivered::Agent => Some(NotesTo::Agent),
             Delivered::Kept => Some(NotesTo::Kept),
             Delivered::Copy(_) => None,
         }
@@ -425,11 +391,11 @@ impl HerdrWindow {
 
     /// Pastes held notes into agents that became idle. Runs every tick.
     pub(crate) fn poll_deliveries(&mut self, cx: &mut Context<Self>) {
-        if self.deliveries.0.is_empty() {
+        if self.deliveries.queue.is_empty() {
             return;
         }
         let now = Instant::now();
-        let deliveries = std::mem::take(&mut self.deliveries.0);
+        let deliveries = std::mem::take(&mut self.deliveries.queue);
         let mut copied = Vec::new();
         let mut stale = false;
         for delivery in deliveries {
@@ -458,7 +424,7 @@ impl HerdrWindow {
                 .map(|agent| agent.agent_status);
             let busy = matches!(status, Some(AgentStatus::Working | AgentStatus::Blocked));
             if present.is_some() && !waiting && busy && now < delivery.until {
-                self.deliveries.0.push(delivery);
+                self.deliveries.queue.push(delivery);
                 continue;
             }
             // Only a running agent's prompt is typed into. A pane whose agent
@@ -534,6 +500,7 @@ impl HerdrWindow {
             self.show_flash(flash, cx);
             return delivered.copy();
         }
+        self.request_reveal(delivery.origin.clone(), &delivery.target.pane_id);
         let timer = cx.background_executor().clone();
         let origin = delivery.origin;
         let pending = delivery.pending;
@@ -562,5 +529,6 @@ impl HerdrWindow {
     }
 }
 
+mod reveal;
 #[cfg(test)]
 mod tests;

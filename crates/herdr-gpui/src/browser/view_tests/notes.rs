@@ -92,7 +92,7 @@ fn notes_reach_the_agent_that_opened_the_page(cx: &mut gpui::TestAppContext) {
 
     // The agent's pane is not in this window: the notes wait for it.
     let tab = noted_tab(&view, cx);
-    cx.update(|window, cx| view.update(cx, |view, cx| view.send_notes(&tab, window, cx)));
+    cx.update(|_, cx| view.update(cx, |view, cx| view.send_notes(&tab, cx)));
     let text = kept(&view, cx).unwrap();
     assert!(text.contains("On <button> at `#save`"), "{text}");
     assert!(text.contains("Note: Make it blue"), "{text}");
@@ -101,10 +101,10 @@ fn notes_reach_the_agent_that_opened_the_page(cx: &mut gpui::TestAppContext) {
     // An agent waiting in `browser feedback --wait` gets them directly.
     let tab = noted_tab(&view, cx);
     let target = recipient(&view, cx);
-    cx.update(|window, cx| {
+    cx.update(|_, cx| {
         cx.default_global::<crate::browser::Feedback>()
             .set_waiting(vec![target]);
-        view.update(cx, |view, cx| view.send_notes(&tab, window, cx));
+        view.update(cx, |view, cx| view.send_notes(&tab, cx));
         cx.default_global::<crate::browser::Feedback>()
             .set_waiting(Vec::new());
     });
@@ -114,9 +114,9 @@ fn notes_reach_the_agent_that_opened_the_page(cx: &mut gpui::TestAppContext) {
     // no connection, so the paste fails and the notes are kept instead.
     with_agent(&view, cx, "working");
     let tab = noted_tab(&view, cx);
-    cx.update(|window, cx| {
+    cx.update(|_, cx| {
         view.update(cx, |view, cx| {
-            view.send_notes(&tab, window, cx);
+            view.send_notes(&tab, cx);
             assert_eq!(view.deliveries.len(), 1);
             view.poll_deliveries(cx);
             assert_eq!(view.deliveries.len(), 1, "held while busy");
@@ -146,9 +146,9 @@ fn a_pane_without_an_agent_is_never_typed_into(cx: &mut gpui::TestAppContext) {
         });
     });
     let tab = noted_tab(&view, cx);
-    cx.update(|window, cx| {
+    cx.update(|_, cx| {
         view.update(cx, |view, cx| {
-            view.send_notes(&tab, window, cx);
+            view.send_notes(&tab, cx);
             view.poll_deliveries(cx);
             assert_eq!(view.deliveries.len(), 0);
         });
@@ -161,9 +161,9 @@ fn an_agent_asking_a_question_is_not_typed_into(cx: &mut gpui::TestAppContext) {
     let (view, cx) = window(cx);
     with_agent(&view, cx, "blocked");
     let tab = noted_tab(&view, cx);
-    cx.update(|window, cx| {
+    cx.update(|_, cx| {
         view.update(cx, |view, cx| {
-            view.send_notes(&tab, window, cx);
+            view.send_notes(&tab, cx);
             // Deadline not reached: still held.
             view.poll_deliveries(cx);
             assert_eq!(view.deliveries.len(), 1);

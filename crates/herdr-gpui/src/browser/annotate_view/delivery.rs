@@ -27,9 +27,8 @@ impl HerdrWindow {
         tab: &Tab,
         notes: Vec<annotate::Note>,
         save: impl FnOnce(&[Option<Arc<Image>>]) -> crate::Result<Vec<Option<PathBuf>>> + Send + 'static,
-        window: &mut Window,
         cx: &mut Context<Self>,
-        then: impl FnOnce(&mut Self, String, &mut Window, &mut Context<Self>) + 'static,
+        then: impl FnOnce(&mut Self, String, &mut Context<Self>) + 'static,
     ) {
         if notes.is_empty() {
             return;
@@ -37,62 +36,48 @@ impl HerdrWindow {
         let reload = crate::control::reload_command();
         if notes.iter().all(|note| note.image.is_none()) {
             let text = annotate::prompt(tab, &notes, &[], &reload);
-            then(self, text, window, cx);
+            then(self, text, cx);
             return;
         }
         let images: Vec<Option<Arc<Image>>> = notes.iter().map(|note| note.image.clone()).collect();
         let saving = cx.background_executor().spawn(async move { save(&images) });
         let tab = tab.clone();
-        cx.spawn_in(window, async move |this, cx| {
+        cx.spawn(async move |this, cx| {
             let paths = saving.await;
-            this.update_in(cx, |this, window, cx| {
+            this.update(cx, |this, cx| {
                 let paths = paths.unwrap_or_else(|error| {
                     tracing::warn!(%error, "Could not save note screenshots");
                     this.show_flash(Flash::warning("Screenshots could not be saved"), cx);
                     Vec::new()
                 });
                 let text = annotate::prompt(&tab, &notes, &paths, &reload);
-                then(this, text, window, cx);
+                then(this, text, cx);
             })
             .ok();
         })
         .detach();
     }
 
-    pub(super) fn copy_notes(&mut self, tab: &Tab, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn copy_notes(&mut self, tab: &Tab, cx: &mut Context<Self>) {
         let (_, notes) = self.notes_round(tab);
-        self.with_notes_prompt(
-            tab,
-            notes,
-            save_screenshots,
-            window,
-            cx,
-            |this, text, _, cx| {
-                cx.write_to_clipboard(ClipboardItem::new_string(text));
-                this.show_flash(Flash::success("Notes copied"), cx);
-            },
-        );
+        self.with_notes_prompt(tab, notes, save_screenshots, cx, |this, text, cx| {
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
+            this.show_flash(Flash::success("Notes copied"), cx);
+        });
     }
 
     /// Sends the notes not sent yet, or all again, to the agent that opened
     /// the page: to it directly when it waits in `browser feedback`,
     /// otherwise into its pane once it is idle, and kept for `browser
-    /// feedback` when its pane is gone. An agent that gets them comes into
-    /// view, so the user sees it at work.
-    pub(in crate::browser) fn send_notes(
-        &mut self,
-        tab: &Tab,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.send_notes_with(tab, save_screenshots, window, cx);
+    /// feedback` when its pane is gone.
+    pub(in crate::browser) fn send_notes(&mut self, tab: &Tab, cx: &mut Context<Self>) {
+        self.send_notes_with(tab, save_screenshots, cx);
     }
 
     fn send_notes_with(
         &mut self,
         tab: &Tab,
         save: impl FnOnce(&[Option<Arc<Image>>]) -> crate::Result<Vec<Option<PathBuf>>> + Send + 'static,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let Some(pending) = self.tab_notes(tab.id).sending.start() else {
@@ -109,30 +94,14 @@ impl HerdrWindow {
         let origin = crate::agent_notes::Origin::of(self).filter(|_| {
             crate::browser::scope(&self.endpoints[self.selected_endpoint]) == tab.scope
         });
-        self.with_notes_prompt(
-            tab,
-            notes,
-            save,
-            window,
-            cx,
-            move |this, text, window, cx| match this.deliver_from(
-                origin.as_ref(),
-                pane_id.clone(),
-                text,
-                Some(pending),
-                cx,
-            ) {
-                crate::agent_notes::Delivered::Agent => {
-                    if let Some(pane) = pane_id {
-                        this.reveal_agent(&pane, window, cx);
-                    }
-                }
-                crate::agent_notes::Delivered::Kept => {}
-                crate::agent_notes::Delivered::Copy(text) => {
-                    cx.write_to_clipboard(ClipboardItem::new_string(text));
-                }
-            },
-        );
+        self.with_notes_prompt(tab, notes, save, cx, move |this, text, cx| {
+            if let Some(text) = this
+                .deliver_from(origin.as_ref(), pane_id, text, Some(pending), cx)
+                .copy()
+            {
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
+            }
+        });
         self.mark_notes_sent(tab.id, &indexes, cx);
     }
 }

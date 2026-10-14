@@ -2,6 +2,8 @@ use super::*;
 use crate::control::{NotesTo, Target};
 
 mod outcomes;
+/// Needs a build that shows pages: elsewhere a new tab opens nothing.
+#[cfg(any(target_os = "macos", windows))]
 mod reveal;
 mod session_isolation;
 
@@ -41,14 +43,14 @@ fn deliver(
     daemon: Option<&str>,
     pane: &str,
 ) -> Option<NotesTo> {
-    cx.update(|window, cx| {
+    cx.update(|_, cx| {
         view.update(cx, |view, cx| {
             let target = Target {
                 daemon: daemon.map(std::path::Path::new),
                 workspace: None,
                 pane: Some(pane),
             };
-            view.deliver_requested_notes(&target, "Picked: B\n", window, cx)
+            view.deliver_requested_notes(&target, "Picked: B\n", cx)
         })
     })
 }
