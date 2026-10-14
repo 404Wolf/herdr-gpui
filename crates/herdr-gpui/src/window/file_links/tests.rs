@@ -280,21 +280,6 @@ fn a_link_modifier_click_opens_a_printed_file_that_exists(cx: &mut gpui::TestApp
 }
 
 #[gpui::test]
-fn files_open_in_the_system_app_when_configured(cx: &mut gpui::TestAppContext) {
-    let root = tempfile::tempdir().unwrap();
-    std::fs::write(root.path().join("a.rs"), "fn a() {}").unwrap();
-    let (view, cx) = window("at ./a.rs:1", root.path(), cx);
-    let position = at(&view, cx, 5);
-    view.update(cx, |view, _| {
-        view.config.open_files_in = crate::config::FileTarget::System;
-    });
-    modifier_click(cx, position, Modifiers::secondary_key());
-    let real = real_path(&root.path().join("a.rs")).unwrap();
-    let expected = url::Url::from_file_path(real).unwrap();
-    assert_eq!(cx.opened_url().as_deref(), Some(expected.as_str()));
-}
-
-#[gpui::test]
 fn a_pane_on_an_ssh_host_has_no_file_links(cx: &mut gpui::TestAppContext) {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("a.txt"), "a").unwrap();

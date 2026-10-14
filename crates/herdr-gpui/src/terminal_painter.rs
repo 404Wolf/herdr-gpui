@@ -9,7 +9,8 @@ use self::area::whole;
 pub(crate) use self::area::{Layer, Part, Span, cell_ranges, clip, covers};
 #[cfg(test)]
 use self::decorations::decoration_offsets;
-use self::decorations::{decoration_spans, underline_offset};
+pub(crate) use self::decorations::decoration_spans;
+use self::decorations::underline_offset;
 use self::glyphs::GlyphCache;
 pub(crate) use self::graphics::CellSeparator;
 use self::graphics::Graphic;

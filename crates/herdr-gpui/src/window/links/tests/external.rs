@@ -23,41 +23,6 @@ pub(super) fn linked<'a>(
 }
 
 #[gpui::test]
-fn a_mail_hyperlink_is_underlined_and_opened_only_with_the_link_modifier(
-    cx: &mut gpui::TestAppContext,
-) {
-    let (view, cx, link) = linked("mailto:name@example.com", cx);
-    // A pointer that only passes over shows nothing.
-    cx.simulate_mouse_move(link, None, Modifiers::default());
-    view.read_with(cx, |view, _| {
-        assert!(view.hovered_local_link().is_none());
-        assert!(!view.terminal_link_hovered(link, Modifiers::default()));
-    });
-    // A well-formed address is verified as soon as the modifier is held.
-    cx.simulate_mouse_move(link, None, Modifiers::secondary_key());
-    view.read_with(cx, |view, _| {
-        let hovered = view.hovered_local_link().unwrap();
-        assert_eq!((hovered.row, hovered.columns.clone()), (0, 0..8));
-        assert!(view.terminal_link_hovered(link, Modifiers::secondary_key()));
-    });
-    cx.simulate_click(link, Modifiers::default());
-    assert!(cx.opened_url().is_none());
-    cx.simulate_click(link, Modifiers::secondary_key());
-    assert_eq!(cx.opened_url().as_deref(), Some("mailto:name@example.com"));
-    view.read_with(cx, |view, _| assert!(view.menu.page.is_none()));
-}
-
-#[gpui::test]
-fn an_editor_hyperlink_opens_without_asking(cx: &mut gpui::TestAppContext) {
-    let (_, cx, link) = linked("vscode://file/tmp/notes.md", cx);
-    cx.simulate_click(link, Modifiers::secondary_key());
-    assert_eq!(
-        cx.opened_url().as_deref(),
-        Some("vscode://file/tmp/notes.md")
-    );
-}
-
-#[gpui::test]
 fn any_other_scheme_opens_only_after_the_user_confirms_it(cx: &mut gpui::TestAppContext) {
     let (view, cx, link) = linked("ssh://example.com", cx);
     cx.simulate_click(link, Modifiers::secondary_key());

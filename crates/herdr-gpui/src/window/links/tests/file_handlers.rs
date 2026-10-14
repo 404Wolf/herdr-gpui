@@ -242,18 +242,3 @@ fn a_remote_file_hyperlink_still_reaches_plugin_handlers(cx: &mut gpui::TestAppC
         );
     });
 }
-
-/// Without `pane.link.activate` a link-modifier click opens the file here,
-/// as it always has.
-#[gpui::test]
-fn file_hyperlinks_open_here_without_daemon_activation(cx: &mut gpui::TestAppContext) {
-    let document = Document::new();
-    let peer = MockPeer::new();
-    let (view, cx) = window(&peer, false, cx);
-    view.update(cx, |view, _| show(view, &document));
-    let link = at(&view, cx, 3, 0);
-    cx.simulate_click(link, Modifiers::secondary_key());
-    cx.run_until_parked();
-    let opened = cx.opened_url().unwrap();
-    assert!(opened.ends_with("/notes.md"), "{opened}");
-}

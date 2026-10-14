@@ -7,8 +7,8 @@ use herdr_client::protocol::{
 };
 use serde_json::json;
 
+mod cases;
 mod content_updates;
-mod explicit_paths;
 mod external;
 mod file_handlers;
 

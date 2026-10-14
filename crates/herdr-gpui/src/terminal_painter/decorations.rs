@@ -53,7 +53,7 @@ fn dashes(left: f32, right: f32) -> impl Iterator<Item = (f32, f32)> {
 /// Every line the cell at `index` draws, as its offset below the row's top
 /// and its horizontal extent in pixels from the grid's left edge. A linked
 /// cell's underline is dashed whether or not the program underlined it too.
-pub(super) fn decoration_spans(
+pub(crate) fn decoration_spans(
     frame: &FrameData,
     index: usize,
     cell_width: f32,
