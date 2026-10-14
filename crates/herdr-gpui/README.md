@@ -2131,6 +2131,10 @@ come back after a restart; closing a workspace in Herdr removes its tabs.
   (see [Terminal Links](#terminal-links)), or from an agent (below). A new
   tab starts blank with its address field focused, and lists the
   workspace's listening ports: clicking one loads its page in that tab.
+- A tab shows its page's favicon, drawn from the page's `<link rel="icon">`
+  or a site's `/favicon.ico`, and a globe until the page has one. An icon
+  from another origin shows only when that origin allows the page to read
+  it (CORS); otherwise the tab keeps its globe.
 - The toolbar has back, forward, reload, the address field, and a button that
   opens the page in the system browser. The address field accepts bare hosts:
   `localhost:3000` becomes `http://localhost:3000/`.
@@ -2142,7 +2146,8 @@ come back after a restart; closing a workspace in Herdr removes its tabs.
   (so `file:` and applications' custom URL schemes stay closed), downloads are
   refused, and a page's new windows open as new browser tabs. The only
   messages a page can send the app are annotation picks, which fill a draft
-  note and nothing else, and the app runs only its own scripts in pages. On
+  note and nothing else, and its icon, which shows on its tab; the app runs
+  only its own scripts in pages. On
   Windows, a frame inside a page that links to an application's URL scheme
   gets WebView2's own confirmation prompt rather than being refused outright.
 - Pages are native web views (WebKit on macOS, WebView2 on Windows) layered
