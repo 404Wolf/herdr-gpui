@@ -36,7 +36,9 @@ fn interrupted_creation_replies_and_pending_retries_recover_the_same_sandbox() {
         settings: &settings,
         key: &key,
     };
-    let created = request.create("herdr-box", || false, |_| Ok(())).unwrap();
+    let created = request
+        .create_for_test("herdr-box", || false, |_| Ok(()))
+        .unwrap();
     assert_eq!(created.id, "bx_23456789");
     let log = log.lock().unwrap();
     assert_eq!(log.len(), 5);
@@ -60,7 +62,7 @@ fn interrupted_creation_retries_are_bounded_and_preserve_the_read_error() {
         key: &key,
     };
     let error = request
-        .create(
+        .create_for_test(
             "herdr-box",
             || false,
             |_| panic!("unconfirmed creation must not persist"),
@@ -87,7 +89,7 @@ fn rejected_credentials_and_malformed_json_are_not_retried() {
             key: &key,
         };
         let error = request
-            .create(
+            .create_for_test(
                 "herdr-box",
                 || false,
                 |_| panic!("failed creation must not persist"),

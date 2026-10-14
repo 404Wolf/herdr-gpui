@@ -8,6 +8,7 @@ mod connect;
 mod error;
 mod gateway;
 mod http;
+mod pending;
 mod settings;
 pub(crate) mod setup;
 mod store;

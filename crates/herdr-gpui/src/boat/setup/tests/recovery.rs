@@ -60,6 +60,7 @@ fn polling_failures_keep_a_durable_device_before_the_first_poll() {
         };
         let result = finish_setup(
             &request,
+            dir.path(),
             Target::Create("herdr-box".into()),
             &|| false,
             &|_| {},
@@ -92,6 +93,7 @@ fn cancellation_after_creation_saves_the_id_and_does_not_poll() {
     let cancelled = AtomicBool::new(false);
     let result = finish_setup(
         &request,
+        dir.path(),
         Target::Create("herdr-box".into()),
         &|| cancelled.load(Ordering::Acquire),
         &|_| {},
@@ -134,6 +136,7 @@ fn ssh_and_installation_failures_preserve_the_device_and_original_error() {
         let kind = std::mem::discriminant(&failure);
         let error = finish_setup(
             &request,
+            dir.path(),
             Target::Create("herdr-box".into()),
             &|| false,
             &|_| {},
@@ -180,6 +183,7 @@ fn finishing_a_saved_device_reuses_its_id_and_preserves_its_label() {
     record(&path, saved.clone()).unwrap();
     let result = finish_setup(
         &request,
+        dir.path(),
         Target::Saved(reload(&path)),
         &|| false,
         &|_| {},
@@ -213,6 +217,7 @@ fn catalog_save_failures_retain_the_created_id_and_typed_storage_cause() {
         let mut writes = 0;
         let error = finish_setup(
             &request,
+            dir.path(),
             Target::Create("herdr-box".into()),
             &|| false,
             &|_| {},
@@ -274,6 +279,7 @@ fn the_confirmed_id_is_recorded_before_renaming_or_polling() {
     };
     let result = finish_setup(
         &request,
+        dir.path(),
         Target::Create("herdr-box".into()),
         &|| false,
         &|_| {},

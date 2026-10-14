@@ -13,7 +13,8 @@ fn saved_boat_devices_offer_finish_setup_after_a_failed_account_poll(cx: &mut Te
         view.update(cx, |view, cx| {
             view.config.boat.api_url = Some(crate::boat::DEFAULT_API_URL.into());
             let card = view.boat_card.as_mut().unwrap();
-            card.account = Account::Known(Overview {
+            card.account = Account::Known(Box::new(Overview {
+                pending: Ok(None),
                 key: Ok(Key::Saved),
                 sandboxes: Some(Err(crate::boat::Error::StartTimeout)),
                 devices: vec![SavedDevice {
@@ -25,7 +26,7 @@ fn saved_boat_devices_offer_finish_setup_after_a_failed_account_poll(cx: &mut Te
                     session: "default".into(),
                     enabled: true,
                 }],
-            });
+            }));
             cx.notify();
         });
     });

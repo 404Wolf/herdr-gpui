@@ -22,7 +22,7 @@ use crate::{
 use gpui::{prelude::*, *};
 use secrecy::SecretString;
 
-const FIELDS: [(&str, &str); 4] = [
+const FIELDS: [(&str, &str); 5] = [
     ("API URL", crate::boat::DEFAULT_API_URL),
     (
         "Organization",
@@ -33,6 +33,7 @@ const FIELDS: [(&str, &str); 4] = [
         "Environment",
         "Optional; the account's default environment if empty",
     ),
+    ("Auto-stop after", "never, or 1–2592000 seconds"),
 ];
 
 fn sandbox_status(count: SandboxCount) -> String {
@@ -47,17 +48,18 @@ fn sandbox_status(count: SandboxCount) -> String {
 
 enum Account {
     Checking,
-    Known(Overview),
+    Known(Box<Overview>),
 }
 
 pub(in crate::settings_window) struct BoatCard {
-    fields: [Entity<SearchInput>; 4],
+    fields: [Entity<SearchInput>; 5],
     loaded: BoatFields,
     key: Entity<SearchInput>,
     account: Account,
     install: bool,
     message: Option<String>,
     job: Option<Worker>,
+    confirm_forget: bool,
 }
 
 impl BoatCard {
@@ -80,6 +82,7 @@ impl BoatCard {
             install: true,
             message: None,
             job: None,
+            confirm_forget: false,
         }
     }
 
@@ -90,6 +93,7 @@ impl BoatCard {
             organization: text(1),
             machine_type: text(2),
             environment: text(3),
+            auto_stop: text(4),
         }
     }
 
@@ -109,12 +113,13 @@ fn loaded(config: &Config) -> BoatFields {
     values
 }
 
-fn texts(values: &BoatFields) -> [&str; 4] {
+fn texts(values: &BoatFields) -> [&str; 5] {
     [
         &values.api_url,
         &values.organization,
         &values.machine_type,
         &values.environment,
+        &values.auto_stop,
     ]
 }
 
@@ -178,11 +183,12 @@ impl SettingsWindow {
         let Some(settings) = self.boat_settings() else {
             if let Some(card) = &mut self.boat_card {
                 card.job = None;
-                card.account = Account::Known(Overview {
+                card.account = Account::Known(Box::new(Overview {
                     key: Ok(Key::Missing),
                     sandboxes: None,
                     devices: Vec::new(),
-                });
+                    pending: Ok(None),
+                }));
             }
             return;
         };
@@ -199,13 +205,14 @@ impl SettingsWindow {
             return;
         };
         match update {
-            Ok(overview) => card.account = Account::Known(overview),
+            Ok(overview) => card.account = Account::Known(Box::new(overview)),
             Err(error) => {
-                card.account = Account::Known(Overview {
+                card.account = Account::Known(Box::new(Overview {
                     key: Ok(Key::Missing),
                     sandboxes: None,
                     devices: Vec::new(),
-                });
+                    pending: Ok(None),
+                }));
                 card.message = Some(error.to_string());
             }
         }
@@ -252,7 +259,34 @@ impl SettingsWindow {
     }
 
     fn create_boat_sandbox(&mut self, cx: &mut Context<Self>) {
-        self.start_boat_setup(Target::Create(setup::random_name()), cx);
+        let name = self
+            .boat_card
+            .as_ref()
+            .and_then(|card| match &card.account {
+                Account::Known(overview) => overview.pending.as_ref().ok().and_then(Clone::clone),
+                Account::Checking => None,
+            })
+            .unwrap_or_else(setup::random_name);
+        self.start_boat_setup(Target::Create(name), cx);
+    }
+
+    fn forget_boat_pending(&mut self, cx: &mut Context<Self>) {
+        if self.busy() || setup_running(cx) {
+            return;
+        }
+        let Some(settings) = self.boat_settings() else {
+            return;
+        };
+        let Some(card) = &mut self.boat_card else {
+            return;
+        };
+        if !card.confirm_forget {
+            card.confirm_forget = true;
+            cx.notify();
+            return;
+        }
+        card.confirm_forget = false;
+        self.save_native(move || Ok(setup::forget_pending(&settings)?), cx);
     }
 
     fn start_boat_setup(&mut self, target: Target, cx: &mut Context<Self>) {
@@ -299,6 +333,7 @@ impl SettingsWindow {
             let loaded = loaded(&self.config);
             follow_config(&card.fields, texts(&card.loaded), texts(&loaded), cx);
             card.loaded = loaded;
+            card.confirm_forget = false;
         }
         if self.boat_card.is_some() && self.section == Section::CloudDevices {
             self.refresh_boat(cx);
@@ -370,6 +405,9 @@ impl SettingsWindow {
                     );
             }
         }
+        account = account.child(self.control_note(
+            "Use never to disable auto-stop: billing continues until you stop the sandbox in Boat. A number sets a fixed deadline, even during SSH work (trials require 1–7200 seconds). Applies on create and resume. For a running device, save then use Finish setup to extend from now or disable auto-stop.",
+        ));
         account = account.child(
             div().flex().justify_end().child(
                 self.cloud_button("cloud-boat-save", "Save", ready)
@@ -384,7 +422,20 @@ impl SettingsWindow {
             && matches!(key, Some(Key::Saved | Key::Environment))
             && crate::cloud::unavailable().is_none()
             && !running;
-        let create = setup && usable;
+        let pending = match &card.account {
+            Account::Known(overview) => overview
+                .pending
+                .as_ref()
+                .ok()
+                .and_then(|name| name.as_deref()),
+            Account::Checking => None,
+        };
+        let create = setup && (usable || pending.is_some());
+        let create_label = if pending.is_some() {
+            "Recover creation"
+        } else {
+            "Create sandbox"
+        };
         let mut sandboxes = self
             .control_card("New sandbox")
             .debug_selector(|| "cloud-boat-new".into())
@@ -409,7 +460,7 @@ impl SettingsWindow {
             )
             .child(
                 div().flex().justify_end().child(
-                    self.cloud_button("cloud-boat-create", "Create sandbox", create)
+                    self.cloud_button("cloud-boat-create", create_label, create)
                         .debug_selector(|| "cloud-boat-create".into())
                         .when(create, |button| {
                             button.on_click(
@@ -421,11 +472,36 @@ impl SettingsWindow {
         if let Some(message) = &card.message {
             sandboxes = sandboxes.child(div().min_w_0().child(message.clone()));
         }
+        if let Account::Known(overview) = &card.account {
+            match &overview.pending {
+                Ok(Some(name)) => {
+                    sandboxes = sandboxes.child(self.control_note(format!(
+                        "Pending creation: {name}. Recover creation reuses the original request and options, even after restarting. Recovery expires after 23 hours; it never silently creates a replacement.",
+                    )));
+                }
+                Err(error) => sandboxes = sandboxes.child(self.control_note(error.to_string())),
+                Ok(None) => {}
+            }
+            if !matches!(&overview.pending, Ok(None)) {
+                let enabled = ready && !running;
+                let forget_label = if card.confirm_forget {
+                    "I checked Boat; forget request"
+                } else {
+                    "Forget pending request…"
+                };
+                sandboxes = sandboxes
+                    .when(card.confirm_forget, |card| card.child(self.control_note(
+                        "Check the Boat dashboard first: the original sandbox may exist and still be billed. Forgetting only removes this local request. Creating again can create a second sandbox.",
+                    )))
+                    .child(self.cloud_button("cloud-boat-forget-pending", forget_label, enabled)
+                        .when(enabled, |button| button.on_click(cx.listener(|this, _, _, cx| this.forget_boat_pending(cx)))));
+            }
+        }
         let mut devices = self
             .control_card("Boat devices")
             .debug_selector(|| "cloud-boat-devices".into())
             .child(self.control_note(
-                "If setup was interrupted, use Finish setup to reuse that sandbox. The installation switch above also applies here.",
+                "Finish setup reuses the sandbox and applies Auto-stop after from now, extending a timed deadline or disabling it. The installation switch above also applies here.",
             ));
         if card.devices().is_empty() {
             devices = devices.child(self.control_note("None yet."));

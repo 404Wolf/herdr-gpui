@@ -37,6 +37,24 @@ pub enum Error {
     StartTimeout,
     #[error("Cancelled.")]
     Cancelled,
+    #[error("Could not save or read the pending Boat creation at {path}: {source}")]
+    PendingIo {
+        path: std::path::PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("Another Herdr UI process is creating or recovering a Boat sandbox for this account.")]
+    PendingBusy,
+    #[error(
+        "The pending Boat creation is too old to retry safely. Check the Boat dashboard for its sandbox before forgetting the pending request in Settings > Cloud Devices > Boat."
+    )]
+    PendingExpired,
+    #[error(
+        "Boat creation may have succeeded. Use Recover creation in Settings > Cloud Devices > Boat to retry the saved request: {0}"
+    )]
+    PendingCreation(#[source] Box<Error>),
+    #[error("Could not read the clock for Boat creation recovery: {0}")]
+    Clock(#[source] std::time::SystemTimeError),
     #[error("Boat returned SSH connection data this app does not understand.")]
     Gateway,
     #[error("Boat devices need ssh and ssh-keygen on the PATH; one could not be run.")]

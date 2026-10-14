@@ -9,6 +9,7 @@ use gpui::{Entity, TestAppContext, VisualTestContext, px, size};
 mod counts;
 mod credential_ordering;
 mod keychain;
+mod lifecycle;
 mod recovery;
 
 fn open(cx: &mut TestAppContext) -> (Entity<SettingsWindow>, &mut VisualTestContext) {
@@ -53,6 +54,7 @@ fn boat_offers_its_cloud_and_installation_by_default(cx: &mut TestAppContext) {
             card.values(cx),
             BoatFields {
                 api_url: crate::boat::DEFAULT_API_URL.into(),
+                auto_stop: "never".into(),
                 ..BoatFields::default()
             }
         );

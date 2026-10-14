@@ -27,7 +27,7 @@ fn renaming_cannot_replace_the_created_sandbox_identity() {
     };
     assert_eq!(
         request
-            .create("herdr-box", || false, |_| Ok(()))
+            .create_for_test("herdr-box", || false, |_| Ok(()))
             .unwrap()
             .id,
         "bx_23456789"

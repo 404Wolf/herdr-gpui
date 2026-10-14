@@ -23,7 +23,9 @@ fn a_failed_rename_keeps_a_default_named_sandbox_savable_and_reachable_by_id() {
         settings: &settings,
         key: &key,
     };
-    let created = request.create("herdr-box", || false, |_| Ok(())).unwrap();
+    let created = request
+        .create_for_test("herdr-box", || false, |_| Ok(()))
+        .unwrap();
     let sandbox = boat::tests::wait_ready(&request, &created.id, || false, |_| {}).unwrap();
     let saved = SavedDevice {
         provider: CloudProvider::Boat,

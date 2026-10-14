@@ -131,6 +131,22 @@ Every command accepts:
 | `logs [--lines N] [--path]` | The app's log (no app needed) |
 | `diagnostics bundle PATH` | A redacted report for a bug (no app needed) |
 
+Boat's sandbox lifetime uses the existing config commands:
+
+```sh
+herdr-gpui config set boat.auto_stop never
+herdr-gpui config set boat.auto_stop '"7200"'  # seconds, stored as a string
+herdr-gpui config get boat.auto_stop --json
+herdr-gpui cloud add                         # open Cloud Devices, then choose Boat
+```
+
+`never` is the default: billing continues until the sandbox is stopped in Boat.
+Numeric deadlines are fixed, even during active SSH work; trials require at
+most 7200 seconds. The setting applies on create and resume. In Boat settings,
+**Finish setup** extends a running sandbox from now or disables its deadline.
+**Recover creation** retries a persisted creation request with its original
+options and key; forgetting an unresolved request requires confirmation there.
+
 ### Events
 
 `events` prints what happened in the app: windows opening, closing, and

@@ -70,12 +70,15 @@ struct One {
     sandbox: Sandbox,
 }
 
-#[derive(Serialize)]
-struct Create<'a> {
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Create {
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    machine_type: Option<&'a str>,
+    pub(super) machine_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    environment: Option<&'a str>,
+    pub(super) environment: Option<String>,
+    #[serde(rename = "ttlSeconds")]
+    pub(super) ttl_seconds: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -134,18 +137,20 @@ impl Request<'_> {
             })
     }
 
-    pub(crate) fn create(
+    pub(super) fn create(
         &self,
-        name: &str,
+        creation: &super::pending::Creation,
         cancelled: impl Fn() -> bool,
         remember: impl FnOnce(&Sandbox) -> Result<()>,
     ) -> Result<Sandbox> {
-        let idempotency = uuid::Uuid::new_v4().hyphenated().to_string();
-        let payload = Create {
-            machine_type: self.settings.machine_type.as_deref(),
-            environment: self.settings.environment.as_deref(),
+        let send = || {
+            self.post_idempotent(
+                "create_sandbox",
+                "/sandboxes",
+                &creation.key,
+                &creation.payload,
+            )
         };
-        let send = || self.post_idempotent("create_sandbox", "/sandboxes", &idempotency, &payload);
         if cancelled() {
             return Err(Error::Cancelled);
         }
@@ -176,7 +181,9 @@ impl Request<'_> {
         match self.patch::<One>(
             "rename_sandbox",
             &format!("/sandboxes/{}", segment(&created.sandbox.id)?),
-            &Rename { name },
+            &Rename {
+                name: &creation.name,
+            },
         ) {
             Ok(reply) if reply.sandbox.id == created.sandbox.id => Ok(reply.sandbox),
             Ok(_) => {
@@ -197,7 +204,16 @@ impl Request<'_> {
         self.post::<One>(
             "resume_sandbox",
             &format!("/sandboxes/{}/resume", segment(id)?),
-            &serde_json::json!({}),
+            &serde_json::json!({"ttlSeconds": self.settings.ttl_seconds}),
+        )
+        .map(drop)
+    }
+
+    pub(crate) fn extend(&self, id: &str) -> Result<()> {
+        self.patch::<One>(
+            "extend_sandbox",
+            &format!("/sandboxes/{}", segment(id)?),
+            &serde_json::json!({"ttlSeconds": self.settings.ttl_seconds}),
         )
         .map(drop)
     }
@@ -224,6 +240,9 @@ pub(crate) fn wait_ready(
             return Err(Error::Cancelled);
         }
         let sandbox = request.sandbox(id)?;
+        if cancelled() {
+            return Err(Error::Cancelled);
+        }
         let readiness = sandbox.readiness();
         match &readiness {
             Readiness::Ready => return Ok(sandbox),

@@ -420,6 +420,23 @@ above. It does not create a replacement. If saving the device itself fails,
 the error includes its sandbox ID so it can still be found in Boat. Removing
 a device leaves its sandbox in Boat.
 
+**Auto-stop after** defaults to `never`: the sandbox keeps running and billing
+until you stop it in Boat. To set a deadline, enter 1–2592000 seconds (30 days);
+trial accounts require a deadline of at most 7200 seconds. This is a fixed
+deadline, not an idle timeout: SSH activity does not extend it. The setting is
+sent explicitly on creation and resume. To extend a running sandbox from now,
+or disable its deadline, save the setting and click **Finish setup**. The config
+key is `[boat] auto_stop = "never"` (or, for example, `"7200"`).
+
+If creation's reply is lost, **Recover creation** retries the persisted
+idempotency key and original request, including its original machine options,
+even after restarting the app. It cannot create a replacement with a new key.
+Recovery is available for 23 hours; afterwards the app refuses to replay the
+request because Boat expires idempotency keys after 24 hours. Check the Boat
+dashboard before using **Forget pending request…** and its confirmation: the
+original sandbox may already exist and still be billed. Forgetting removes
+only the local recovery record. Credential or API errors retain that record.
+
 Each connection resumes an archived sandbox, authorizes a GUI-owned Ed25519
 public key through Boat's API, and runs Herdr's remote bridge with OpenSSH. The
 private key stays in the GUI state directory. Boat returns the current machine's

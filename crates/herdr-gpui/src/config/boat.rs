@@ -20,6 +20,8 @@ pub struct BoatConfig {
     pub machine_type: Option<String>,
     /// A named Boat environment; the account's default if unset or empty.
     pub environment: Option<String>,
+    /// `never` (default), or a number of seconds from create, resume or extension.
+    pub auto_stop: Option<String>,
     pub allow_plaintext_credentials: bool,
 }
 
@@ -47,6 +49,7 @@ pub(crate) struct BoatFields {
     pub(crate) organization: String,
     pub(crate) machine_type: String,
     pub(crate) environment: String,
+    pub(crate) auto_stop: String,
 }
 
 #[cfg(feature = "boat")]
@@ -58,15 +61,17 @@ impl BoatFields {
             organization: text(&config.organization),
             machine_type: text(&config.machine_type),
             environment: text(&config.environment),
+            auto_stop: config.auto_stop.clone().unwrap_or_else(|| "never".into()),
         }
     }
 
-    fn entries(&self) -> [(&'static str, &str); 4] {
+    fn entries(&self) -> [(&'static str, &str); 5] {
         [
             ("api_url", &self.api_url),
             ("organization", &self.organization),
             ("machine_type", &self.machine_type),
             ("environment", &self.environment),
+            ("auto_stop", &self.auto_stop),
         ]
     }
 
@@ -80,6 +85,7 @@ impl BoatFields {
             organization: value(&self.organization),
             machine_type: value(&self.machine_type),
             environment: value(&self.environment),
+            auto_stop: value(&self.auto_stop),
             ..existing.clone()
         };
         config.settings_with(|_| None).map(drop)

@@ -380,6 +380,7 @@ size = 12
 # organization = "" # Optional organization ID or name; active wallet if empty.
 # machine_type = "" # Optional: small, default, large, or xlarge.
 # environment = ""  # Optional named environment; account default if empty.
+# auto_stop = "never" # Or seconds as a string, e.g. "7200". Trials require 1–7200.
 # # Linux without Secret Service may opt into a private credential file. The key
 # # is saved in its own 0600 boat-api-key file. Default is false.
 # allow_plaintext_credentials = false

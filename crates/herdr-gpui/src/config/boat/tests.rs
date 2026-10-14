@@ -3,6 +3,7 @@ use super::*;
 use std::fs;
 
 mod empty_defaults;
+mod lifetime;
 
 #[test]
 fn saving_writes_only_edited_keys_and_validates_first() {

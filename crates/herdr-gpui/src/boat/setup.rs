@@ -6,6 +6,7 @@ use super::{
     api::{self, Readiness},
     gateway,
     http::Request,
+    pending::{self, Journal},
     store,
 };
 use crate::cloud::{self, CloudProvider, SavedDevice, install};
@@ -66,6 +67,7 @@ pub(crate) fn add_device(
     };
     finish_setup(
         &request,
+        &pending::directory()?,
         target,
         cancelled,
         report,
@@ -98,6 +100,7 @@ fn new_device(settings: &Settings, sandbox: &api::Sandbox, label: String) -> Sav
 
 fn finish_setup(
     request: &Request,
+    directory: &std::path::Path,
     target: Target,
     cancelled: &dyn Fn() -> bool,
     report: &dyn Fn(cloud::Step),
@@ -109,13 +112,21 @@ fn finish_setup(
             report(cloud::Step::Creating);
             // Cancellation must not lose a billable resource whose ID we know.
             // Save it even if cancellation arrived while create was in flight.
-            let created = request.create(&name, cancelled, |created| {
-                save_device(
-                    &new_device(request.settings, created, name.clone()),
-                    &mut save,
-                )
-            })?;
-            new_device(request.settings, &created, name)
+            let journal = Journal::open(directory, request.settings)?;
+            let creation = journal.begin(request.settings, &name)?;
+            let created = request
+                .create(&creation, cancelled, |created| {
+                    save_device(
+                        &new_device(request.settings, created, creation.name.clone()),
+                        &mut save,
+                    )
+                })
+                .map_err(|error| match error {
+                    error @ super::Error::SaveDevice { .. } => error,
+                    error => super::Error::PendingCreation(Box::new(error)),
+                })?;
+            journal.clear()?;
+            new_device(request.settings, &created, creation.name)
         }
         Target::Saved(device) => device,
     };
@@ -142,6 +153,13 @@ fn ensure_herdr(
     report: &dyn Fn(cloud::Step),
 ) -> crate::Result<()> {
     report(cloud::Step::CheckingHerdr);
+    if cancelled() {
+        return Err(super::Error::Cancelled.into());
+    }
+    request.extend(&sandbox.id)?;
+    if cancelled() {
+        return Err(super::Error::Cancelled.into());
+    }
     let installed = gateway::prepare(request, &sandbox.id)?
         .with_command(|command| install::installed(command, &cancelled))?;
     if !installed {
@@ -179,6 +197,7 @@ pub(crate) struct Overview {
     pub(crate) key: Result<Key>,
     pub(crate) sandboxes: Option<Result<api::SandboxCount>>,
     pub(crate) devices: Vec<SavedDevice>,
+    pub(crate) pending: Result<Option<String>>,
 }
 
 pub(crate) fn overview(settings: &Settings) -> Result<Overview> {
@@ -198,14 +217,16 @@ pub(crate) fn overview(settings: &Settings) -> Result<Overview> {
             }
         })
     };
-    Ok(account_overview(devices, key, || {
+    let mut overview = account_overview(devices, key, || {
         let key = store::key(settings)?;
         Request {
             settings,
             key: &key,
         }
         .sandbox_count()
-    }))
+    });
+    overview.pending = pending::overview(settings);
+    Ok(overview)
 }
 
 fn account_overview(
@@ -218,6 +239,7 @@ fn account_overview(
         key,
         sandboxes,
         devices,
+        pending: Ok(None),
     }
 }
 
@@ -227,6 +249,10 @@ pub(crate) fn save_key(store: Store, key: Option<&SecretString>) -> Result<()> {
 
 pub(crate) fn forget_device(id: &str) -> Result<()> {
     Ok(cloud::remove(CloudProvider::Boat, id)?)
+}
+
+pub(crate) fn forget_pending(settings: &Settings) -> Result<()> {
+    pending::forget(settings)
 }
 
 #[cfg(test)]

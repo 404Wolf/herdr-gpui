@@ -15,6 +15,7 @@ pub(crate) struct Settings {
     pub(crate) organization: Option<String>,
     pub(crate) machine_type: Option<String>,
     pub(crate) environment: Option<String>,
+    pub(crate) ttl_seconds: Option<u32>,
     pub(crate) store: Store,
 }
 
@@ -53,6 +54,7 @@ impl Settings {
             organization: plain(&config.organization, "boat.organization")?,
             machine_type: machine_type.map(str::to_owned),
             environment: plain(&config.environment, "boat.environment")?,
+            ttl_seconds: lifetime(config.auto_stop.as_deref().unwrap_or("never"))?,
             store: Store::for_policy(config.allow_plaintext_credentials),
         }))
     }
@@ -65,6 +67,17 @@ impl Settings {
             None => self.base.clone(),
         }
     }
+}
+
+fn lifetime(text: &str) -> Result<Option<u32>> {
+    if text == "never" {
+        return Ok(None);
+    }
+    text.parse::<u32>()
+        .ok()
+        .filter(|seconds| (1..=2_592_000).contains(seconds))
+        .map(Some)
+        .ok_or(Error::Field("boat.auto_stop (never or 1–2592000 seconds)"))
 }
 
 fn plain_value(value: &str) -> bool {
