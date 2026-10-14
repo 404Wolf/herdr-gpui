@@ -436,6 +436,10 @@ impl HerdrWindow {
                 Some(AgentStatus::Idle | AgentStatus::Done | AgentStatus::Working)
             );
             if waiting || present.is_none() || !typable {
+                // An agent that started waiting for the notes takes them now.
+                if waiting && present.is_some() {
+                    self.request_reveal(delivery.origin.clone(), &delivery.target.pane_id);
+                }
                 let (flash, delivered) = keep_or_copy(
                     crate::browser::Batch {
                         target: delivery.target,

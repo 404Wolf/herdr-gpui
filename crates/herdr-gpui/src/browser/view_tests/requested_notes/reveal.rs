@@ -88,6 +88,33 @@ fn queued_notes_reveal_nothing_until_handed_over(cx: &mut gpui::TestAppContext) 
     assert_eq!(shown(&view, cx), [Shown::Page(page)]);
 }
 
+/// Notes queued for a busy agent that then waits in `browser feedback
+/// --wait` reach it there, and bring it into view.
+#[gpui::test]
+fn queued_notes_taken_by_a_waiting_agent_reveal_it(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = window(cx);
+    with_idle_agent(&view, cx);
+    set_status(&view, cx, AgentStatus::Working);
+    let page = open_page(&view, cx);
+    let target = recipient(&view, cx);
+
+    assert_eq!(deliver(&view, cx, None, "w0:p1"), Some(NotesTo::Agent));
+    tick(&view, cx);
+    assert_eq!(shown(&view, cx), [Shown::Page(page)], "held while busy");
+
+    cx.update(|_, cx| {
+        cx.default_global::<Feedback>()
+            .set_waiting(vec![target.clone()]);
+    });
+    tick(&view, cx);
+    assert_eq!(shown(&view, cx), [Shown::Terminal]);
+    cx.update(|_, cx| {
+        let feedback = cx.default_global::<Feedback>();
+        feedback.set_waiting(Vec::new());
+        assert!(feedback.take(&target).is_some());
+    });
+}
+
 /// Notes the agent does not get leave the page where it is.
 #[gpui::test]
 fn kept_notes_leave_the_page_shown(cx: &mut gpui::TestAppContext) {
