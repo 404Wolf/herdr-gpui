@@ -34,6 +34,10 @@ fn window(cx: &mut gpui::TestAppContext) -> (Entity<HerdrWindow>, &mut VisualTes
 #[cfg(any(target_os = "macos", windows))]
 mod embedded;
 
+/// A page's own icon on its tab; only builds that show pages get one.
+#[cfg(any(target_os = "macos", windows))]
+mod favicon;
+
 /// Editor groups. Blank browser tabs need no native page, so none is
 /// created, and a split alone needs no page at all.
 mod groups;
@@ -92,6 +96,6 @@ mod overlays;
 /// What closing a workspace does to its browser tabs.
 mod workspace_close;
 
-/// The sidebar gap beside a page; only builds that show pages open one.
+/// Terminal padding beside a page; only builds that show pages open one.
 #[cfg(any(target_os = "macos", windows))]
-mod sidebar_gap;
+mod terminal_padding;

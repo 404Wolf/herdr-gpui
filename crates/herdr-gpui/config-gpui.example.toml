@@ -135,6 +135,9 @@ project_roots = []
 # delay_seconds = 1
 # top-left, top-right, bottom-left, bottom-right. Explicit wire corners win.
 # position = "bottom-right"
+# GUI-only: false posts no "finished" toasts or OS notifications. "Needs
+# attention" and custom notifications (herdr notification show) still appear.
+# finished = true
 
 # The "copied to clipboard" flash shown after a terminal selection is copied.
 # Left commented out, this follows the daemon config's [ui.toast.clipboard], so
@@ -160,14 +163,6 @@ project_roots = []
 # [updates]
 # channel = "stable"
 
-# To customize spacing too, REPLACE the top-level layout above with this table:
-# [layout]
-# mode = "normal"
-# Blank space between the sidebar and the terminal beside it, 0 to 64.
-# The terminal keeps the remaining width, so a wide gap costs columns.
-# Ignored while the sidebar is hidden. Set 0 to sit against the divider.
-# sidebar_gap = 8
-
 # Native shortcuts. Each key is a command; the value is one keystroke or a list,
 # primary first. "" or [] unbinds it. Assigning a keystroke here takes it away
 # from its default command. Modifiers: cmd (super on Linux), ctrl, alt, shift,
@@ -177,7 +172,8 @@ project_roots = []
 # defaults; a command named here keeps only the keystrokes listed here.
 # The examples below use the macOS defaults. Linux has its own Ctrl+Shift
 # defaults (not Super): new_tab = "ctrl-shift-t", new_window = "ctrl-alt-n",
-# new_workspace = "ctrl-alt-shift-n", new_worktree = "ctrl-shift-n",
+# close_window = "ctrl-alt-w", new_workspace = "ctrl-alt-shift-n",
+# new_worktree = "ctrl-shift-n",
 # split_right = "ctrl-shift-d", split_down = "ctrl-alt-shift-d",
 # command_palette = "ctrl-shift-p", toggle_full_screen = "f11".
 # See Keyboard Shortcuts for the full platform-specific list. Explicit values
@@ -220,6 +216,7 @@ project_roots = []
 # annotate_selection = "cmd-shift-a"
 # toggle_full_screen = "ctrl-cmd-f"
 # cycle_windows = "cmd-`"
+# close_window = "cmd-alt-shift-w"
 # Unbound by default: themes, reconnect, logs, about, worktree_notes,
 # edit_worktree_note.
 
@@ -228,7 +225,10 @@ project_roots = []
 # shift-enter), or "text:" and the text to type, at most 1024 bytes; an empty
 # string removes a default. A keystroke here leaves its default or daemon
 # command, but naming it in [keybindings] too is an error.
-# On macOS these are the defaults:
+# Shift-Enter sends Alt-Enter (Esc CR) by default everywhere, so a prompt that
+# never enabled the kitty keyboard protocol reads a newline instead of the bare
+# CR Herdr would send it; "shift-enter" = "" sends Shift-Enter unchanged.
+# On macOS these are also defaults:
 # [pane_keys]
 # "cmd-left" = "ctrl-a"
 # "cmd-right" = "ctrl-e"
@@ -273,6 +273,12 @@ size = 12
 # and the other hosts' rows dimmed). Hosts without a colour below use the
 # theme's active colour for the wash.
 # select = "row"
+# When to draw the device footer at the sidebar's foot (the device picker,
+# Sessions, and Settings): "always", "auto" (only with two or more devices,
+# or while one is being added), or "never". Without it, Settings and Sessions
+# keep their shortcuts and command palette entries, and Devices Overview in
+# the palette still offers Add Device.
+# device_footer = "always"
 
 # A colour per host, keyed by the host's name in the sidebar, as #rgb or
 # #rrggbb. It washes the host's header, its workspace rows, and its agents'
@@ -306,6 +312,14 @@ size = 14
 # no face for draws at its nearest one, and on macOS is reported. Only
 # [terminal] takes this key.
 # weight = "medium"
+# Blank space between the cells and the edges of the terminal's tab group, in
+# logical pixels from 0 to 64. One number pads both sides; a pair pads each:
+# [left, right] for padding_x, [top, bottom] for padding_y. Default 0. The
+# terminal keeps the remaining size, so wide padding costs columns and rows.
+# Only [terminal] takes these keys. They replace the deprecated
+# [layout] sidebar_gap, which still loads as the left padding.
+# padding_x = 8
+# padding_y = [4, 8]
 
 [ui]
 # Default: ".SystemUIFont" on macOS and Windows, "DejaVu Sans" on Linux (or an installed

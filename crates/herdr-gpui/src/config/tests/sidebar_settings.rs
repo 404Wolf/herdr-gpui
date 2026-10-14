@@ -129,7 +129,10 @@ fn every_layout_has_its_own_name_and_label() -> anyhow::Result<()> {
             mode
         );
         let table = Config::parse(&format!("[layout]\nmode = '{name}'\nsidebar_gap = 4"))?;
-        assert_eq!((table.layout.mode, table.layout.sidebar_gap), (mode, 4.));
+        assert_eq!(
+            (table.layout.mode, table.layout.legacy_sidebar_gap),
+            (mode, Some(4.))
+        );
     }
     // Layouts with a design of their own fix their spacing.
     assert_eq!(
@@ -167,7 +170,7 @@ fn saving_a_layout_keeps_every_other_setting() -> anyhow::Result<()> {
     for chosen in LayoutMode::ALL {
         Config::save_layout_path(chosen, &path)?;
         let layout = mode(&path)?;
-        assert_eq!((layout.mode, layout.sidebar_gap), (chosen, 4.));
+        assert_eq!((layout.mode, layout.legacy_sidebar_gap), (chosen, Some(4.)));
     }
     let text = fs::read_to_string(&path)?;
     assert!(
@@ -198,11 +201,11 @@ fn compact_layout_is_opt_in() -> anyhow::Result<()> {
     }
     let config = Config::parse("layout = 'compact'")?;
     assert_eq!(config.layout.mode, LayoutMode::from(Density::Compact));
-    assert_eq!(config.layout.sidebar_gap, Layout::default().sidebar_gap);
+    assert_eq!(config.terminal_padding, Padding::default());
     assert_eq!(config.sidebar.size, Config::default().sidebar.size);
     let custom = Config::parse("[layout]\nmode = 'compact'\nsidebar_gap = 4")?;
     assert_eq!(custom.layout.mode, LayoutMode::from(Density::Compact));
-    assert_eq!(custom.layout.sidebar_gap, 4.);
+    assert_eq!(custom.terminal_padding.x.start(), 4.);
     for density in [Density::Compact, Density::Normal, Density::Comfortable] {
         for style in [Style::Flat, Style::Rounded] {
             let mode = LayoutMode::new(density, style);
@@ -214,7 +217,7 @@ fn compact_layout_is_opt_in() -> anyhow::Result<()> {
             );
             let config = Config::parse(&format!("[layout]\nmode = '{name}'\nsidebar_gap = 4"))?;
             assert_eq!(config.layout.mode, mode);
-            assert_eq!(config.layout.sidebar_gap, 4.);
+            assert_eq!(config.terminal_padding.x.start(), 4.);
         }
     }
     assert_eq!(
@@ -243,17 +246,17 @@ fn compact_layout_is_opt_in() -> anyhow::Result<()> {
 }
 
 #[test]
-fn sidebar_gap_defaults_to_flush_and_accepts_its_band() -> anyhow::Result<()> {
+fn the_deprecated_sidebar_gap_defaults_to_flush_and_accepts_its_band() -> anyhow::Result<()> {
     for config in [
         Config::default(),
         Config::parse("")?,
         Config::parse(DEFAULT_CONFIG)?,
     ] {
         assert_eq!(config.layout, Layout::default());
-        assert_eq!(config.layout.sidebar_gap, 0.);
+        assert_eq!(config.terminal_padding.x.start(), 0.);
     }
     // An empty table keeps the default; only a written value replaces it.
-    assert_eq!(Config::parse("[layout]")?.layout.sidebar_gap, 0.);
+    assert_eq!(Config::parse("[layout]")?.terminal_padding.x.start(), 0.);
     for (text, gap) in [
         ("[layout]\nsidebar_gap = 0", 0.),
         ("[layout]\nsidebar_gap = 12", 12.),
@@ -261,7 +264,7 @@ fn sidebar_gap_defaults_to_flush_and_accepts_its_band() -> anyhow::Result<()> {
         ("[layout]\nsidebar_gap = 64", 64.),
     ] {
         let config = Config::parse(text)?;
-        assert_eq!(config.layout.sidebar_gap, gap);
+        assert_eq!(config.terminal_padding.x.start(), gap);
         // Spacing alone leaves every other setting at its default.
         assert_eq!(config.theme, Config::default().theme);
         assert_eq!(config.terminal.size, Config::default().terminal.size);

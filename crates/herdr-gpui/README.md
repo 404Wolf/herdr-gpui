@@ -169,6 +169,12 @@ seconds while the popup is open; until it answers, and if it never does, the
 device still offers the session it was saved with. Choosing a session attaches
 this window to it on that device.
 
+Set `device_footer = "auto"` under `[sidebar]` to draw this footer only while
+there are two or more devices (or one is being added), or `"never"` to leave it
+out; the default is `"always"`. Without the footer, the Agents list takes its
+height, Settings and Sessions keep their shortcuts and palette entries, and
+**Devices Overview** in the palette still offers **Add Device**.
+
 The current session has an accent highlight; status dots and delete icons stay
 aligned across rows. The **Add session…** row has no status dot.
 Session and worktree context-menu actions share right-aligned 14-pixel icons
@@ -813,7 +819,16 @@ shared `system` delivery posting OS notifications:
 enabled = false
 delay_seconds = 1
 position = "bottom-right"
+finished = true
 ```
+
+`finished` has no shared Herdr counterpart and defaults to `true`. Set it to
+`false` to stop "finished" toasts and OS notifications while keeping "needs
+attention" and custom notifications, for example when an agent hook posts its
+own summary with `herdr notification show`. It does not change sounds, which
+follow the sound settings, and QA previews still appear. Settings > Notifications
+has the same switch, and `herdr-gpui config set notifications.finished false`
+writes it.
 
 Delivery defaults off, matching upstream. The delay accepts integer seconds from
 0 through 3600; Custom notifications always bypass the delay. Corners are
@@ -888,7 +903,7 @@ choices beside a live preview using the current theme and sidebar font. Preview 
 the repository arrow to fold affect only the sample. Choosing a layout applies it
 live to the sample and app windows, like themes, without writing on each click.
 Only the final choice is saved when Settings closes or the app quits. The list and
-preview stack in narrow Settings windows; the Sidebar gap row remains below them.
+preview stack in narrow Settings windows.
 
 Three densities of Herdr's own rows are available:
 
@@ -963,21 +978,23 @@ names.
 Icons sit immediately before the name, including orphan agents whose name is
 on the first line, and reserve space before long names are truncated.
 
-To customize spacing too, use a `[layout]` table **instead of** the top-level
-string, replacing it (including the one a new install writes): TOML rejects a
-file with both. Existing spacing-only tables remain supported and use normal mode:
+`[terminal]` `padding_x` and `padding_y` keep blank space between a terminal's cells and the edges of its tab group:
 
 ```toml
-[layout]
-mode = "compact"
-sidebar_gap = 8
+[terminal]
+padding_x = 8        # left and right
+padding_y = [4, 8]   # top, then bottom
 ```
 
-`sidebar_gap` (finite 0..64 logical pixels, default `0`) is optional blank space between the sidebar and the terminal beside it.
-The default keeps the first column flush with the divider; an explicit value such as `8` adds a gutter.
-Only a terminal takes the gap: a browser, VS Code, review, or orchestrator tab pads its own content and sits against the sidebar.
-The terminal keeps the remaining width, so the daemon is resized to the columns
-it actually has, and the gap is ignored while the sidebar is hidden.
+- One number pads both sides of the axis. A pair of numbers pads each side: left then right for `padding_x`, top then bottom for `padding_y`.
+- Each side is a finite number of logical pixels from 0 to 64. The default is `0`, which keeps the cells against the edges.
+- Every terminal takes the padding, in every tab group, whether the sidebar shows or not. A browser, VS Code, review, or orchestrator tab pads its own content and takes none.
+- The terminal keeps the remaining size, so the daemon is resized to the columns and rows it actually has.
+- The padding shows the theme background.
+- **Settings > Appearance > Terminal padding** steps each of the four sides by one pixel. It writes one number when the two sides of an axis agree, and a pair when they differ.
+
+`[layout] sidebar_gap` is deprecated. It padded only the left side of the terminal beside the sidebar. A file that still sets it keeps loading: while `padding_x` is unset, the gap becomes the left padding of every terminal, and the app reports the key as deprecated. Setting the horizontal padding in Settings writes `padding_x` and removes `sidebar_gap`.
+
 Any space smaller than one character cell at the right or bottom edge takes the adjacent terminal cells' background colors, without stretching text or changing input coordinates.
 
 The `[clipboard_toast]` table controls the `copied to clipboard` flash shown
@@ -2147,6 +2164,10 @@ come back after a restart; closing a workspace in Herdr removes its tabs.
   (see [Terminal Links](#terminal-links)), or from an agent (below). A new
   tab starts blank with its address field focused, and lists the
   workspace's listening ports: clicking one loads its page in that tab.
+- A tab shows its page's favicon, drawn from the page's `<link rel="icon">`
+  or a site's `/favicon.ico`, and a globe until the page has one. An icon
+  from another origin shows only when that origin allows the page to read
+  it (CORS); otherwise the tab keeps its globe.
 - The toolbar has back, forward, reload, the address field, and a button that
   opens the page in the system browser. The address field accepts bare hosts:
   `localhost:3000` becomes `http://localhost:3000/`.
@@ -2158,7 +2179,8 @@ come back after a restart; closing a workspace in Herdr removes its tabs.
   (so `file:` and applications' custom URL schemes stay closed), downloads are
   refused, and a page's new windows open as new browser tabs. The only
   messages a page can send the app are annotation picks, which fill a draft
-  note and nothing else, and the app runs only its own scripts in pages. On
+  note and nothing else, and its icon, which shows on its tab; the app runs
+  only its own scripts in pages. On
   Windows, a frame inside a page that links to an application's URL scheme
   gets WebView2's own confirmation prompt rather than being refused outright.
 - Pages are native web views (WebKit on macOS, WebView2 on Windows) layered
@@ -3115,8 +3137,12 @@ Ctrl+Shift+U is left unbound for
   Cmd-Backspace send Ctrl-A, Ctrl-E, and Ctrl-U by default, so zsh and agent
   prompts jump to the line's ends or delete back to its start as in every
   other Mac terminal, and Option-Left and Option-Right send Esc-b and Esc-f
-  to move by word. A value is a key a terminal can receive (`ctrl-a`,
-  `home`, `alt-b`, `shift-enter`), or `text:` followed by up to 1024 bytes of
+  to move by word. On every platform Shift-Enter sends Alt-Enter (Esc CR)
+  by default: Herdr sends a program that never enabled the kitty keyboard
+  protocol or modifyOtherKeys a bare CR for Shift-Enter, which submits the
+  line, while prompt_toolkit apps and zsh read Esc CR as a newline.
+  `"shift-enter" = ""` sends Shift-Enter unchanged again. A value is a key
+  a terminal can receive (`ctrl-a`, `home`, `alt-b`, `shift-enter`), or `text:` followed by up to 1024 bytes of
   text, and an empty string removes a default. Text reaches the pane byte for
   byte, so a newline in it is a line feed, not the Enter key. On a layout
   that keeps symbols on Option, `option_as_alt = "left"` or `"right"` leaves
