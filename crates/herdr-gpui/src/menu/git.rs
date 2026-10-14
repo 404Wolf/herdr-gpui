@@ -152,7 +152,9 @@ impl HerdrWindow {
 
     /// The pull request already prefetched for the focused branch, in whatever
     /// lifecycle it is in. Reading the cache never schedules work.
-    pub(crate) fn git_pull_request(&self) -> Option<&crate::pull_request::PullRequest> {
+    pub(crate) fn git_pull_request(
+        &self,
+    ) -> Option<std::cell::Ref<'_, crate::pull_request::PullRequest>> {
         let input = self.git.tracked()?;
         self.menu
             .github
@@ -176,7 +178,9 @@ impl HerdrWindow {
 
     /// Only an open pull request can be opened; a merged or closed one leaves
     /// creating the next one as the action.
-    pub(super) fn git_open_pull_request(&self) -> Option<&crate::pull_request::PullRequest> {
+    pub(super) fn git_open_pull_request(
+        &self,
+    ) -> Option<std::cell::Ref<'_, crate::pull_request::PullRequest>> {
         self.git_pull_request()
             .filter(|pr| pr.state == PrState::Open)
     }

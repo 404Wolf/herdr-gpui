@@ -25,7 +25,7 @@ fn a_hidden_repository_pauses_all_its_branches_but_not_other_repositories() {
 
     // The sibling branch is answered from the pause; the other repository asks.
     let (_, next, _, _) = peer.incoming.try_recv().unwrap();
-    assert_eq!(next, elsewhere("third"));
+    assert_eq!(next, [elsewhere("third")]);
     let mut view = Lookup::default();
     peer.cache.present(&input("second"), &mut view, now);
     assert!(
@@ -59,7 +59,7 @@ fn a_hidden_repository_asks_again_only_after_its_backoff() {
     peer.cache.schedule([input("first"), input("second")], due);
     peer.cache.poll(due);
     let (_, next, _, _) = peer.incoming.try_recv().unwrap();
-    assert_eq!(next, input("first"));
+    assert_eq!(next, [input("first")]);
 }
 
 #[test]
@@ -72,7 +72,7 @@ fn asking_explicitly_lifts_the_repository_pause() {
     peer.cache.refresh(input("second"), now);
     peer.cache.poll(now);
     let (_, next, _, _) = peer.incoming.try_recv().unwrap();
-    assert_eq!(next, input("second"));
+    assert_eq!(next, [input("second")]);
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn an_ordinary_failure_does_not_pause_the_repository() {
     peer.cache.poll(now);
     peer.complete(now, Err(Error::GitHubQuery), None);
     let (_, next, _, _) = peer.incoming.try_recv().unwrap();
-    assert_eq!(next, input("second"));
+    assert_eq!(next, [input("second")]);
 }
 
 #[test]
@@ -99,13 +99,20 @@ fn hidden_branches_never_grow_a_full_cache() {
     for _ in 1..CACHE_LIMIT {
         peer.complete(now, Ok(None), None);
     }
-    assert_eq!(peer.cache.entries.len(), CACHE_LIMIT);
-    assert!(peer.cache.entries.iter().all(|entry| now < entry.due));
+    assert_eq!(peer.cache.store.borrow().entries.len(), CACHE_LIMIT);
+    assert!(
+        peer.cache
+            .store
+            .borrow()
+            .entries
+            .iter()
+            .all(|entry| now < entry.due)
+    );
 
     // Every sibling is answered from the pause while nothing in the cache is due.
     peer.cache
         .schedule((0..8).map(|i| input(&format!("sibling-{i}"))), now);
     peer.cache.poll(now);
     assert!(peer.incoming.try_recv().is_err());
-    assert_eq!(peer.cache.entries.len(), CACHE_LIMIT);
+    assert_eq!(peer.cache.store.borrow().entries.len(), CACHE_LIMIT);
 }
