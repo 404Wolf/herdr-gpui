@@ -61,6 +61,17 @@ class CheckSortedTests(unittest.TestCase):
         text = region("    pub(crate) alpha: u8,", "    beta: u8,", "    pub(super) gamma: u8,", "    pub zeta: u8,")
         self.assertEqual(check_sorted.process(text), (text, []))
 
+    def test_multi_line_attributes_do_not_set_the_key(self) -> None:
+        text = region(
+            "    alpha: u8,",
+            "    #[cfg_attr(",
+            "        not(test),",
+            "        expect(dead_code)",
+            "    )]",
+            "    beta: u8,",
+        )
+        self.assertEqual(check_sorted.process(text), (text, []))
+
     def test_markers_outside_comments_are_ignored(self) -> None:
         text = 'MARKER = "// keep-sorted start"\nb\na\n'
         self.assertEqual(check_sorted.process(text), (text, []))

@@ -47,9 +47,12 @@ def is_continuation(stripped: str) -> bool:
 
 
 def key(entry: list[str]) -> str:
+    """The entry's own line: at its indentation, after any comments and
+    attributes, whose continuation lines are skipped with them."""
+    base = indent(entry[0])
     for line in entry:
         stripped = line.strip()
-        if not is_preamble(stripped):
+        if indent(line) == base and not is_preamble(stripped) and not is_continuation(stripped):
             return VISIBILITY.sub("", stripped).casefold()
     return entry[0].strip().casefold()
 
