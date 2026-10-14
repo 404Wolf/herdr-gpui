@@ -104,7 +104,12 @@ impl HerdrWindow {
             .enumerate()
             .map(|(index, group)| (Some(index), group))
             .collect();
-        let mut folding = self.folding_groups();
+        // Zen mode draws no group beside the one in use, folding or not.
+        let mut folding = if self.zen_layout() {
+            Vec::new()
+        } else {
+            self.folding_groups()
+        };
         folding.sort_by_key(|folding| folding.index);
         for folding in folding {
             let at = folding.index.min(children.len());

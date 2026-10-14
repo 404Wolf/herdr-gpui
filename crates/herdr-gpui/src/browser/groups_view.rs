@@ -223,6 +223,13 @@ impl HerdrWindow {
         self.browser.appear.animating()
     }
 
+    /// Makes groups open and fold, held where their motion starts.
+    #[cfg(test)]
+    pub(crate) fn hold_group_motion(&mut self) {
+        self.browser.group_motion.enable();
+        self.browser.group_motion.freeze(std::time::Duration::ZERO);
+    }
+
     /// Ends every tab's growing and shrinking at once, as a moment later.
     #[cfg(test)]
     pub(crate) fn settle_tabs(&mut self) {
@@ -419,7 +426,7 @@ impl HerdrWindow {
     /// The pages live in some group, which the window presents.
     #[cfg(any(target_os = "macos", windows))]
     pub(crate) fn live_pages(&self, cx: &App) -> Vec<TabId> {
-        self.group_slots()
+        self.drawn_group_slots()
             .into_iter()
             .filter_map(|slot| match self.group_shown(slot.id, cx) {
                 Shown::Page(id) => Some(id),

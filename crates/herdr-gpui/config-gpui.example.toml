@@ -214,6 +214,7 @@ project_roots = []
 # focus_tab_1 = "cmd-1"   # through focus_tab_9 = "cmd-9"
 # toggle_sidebar = "cmd-b"
 # toggle_status_bar = "cmd-ctrl-b"   # unbound by default
+# toggle_zen_mode = "ctrl-cmd-z"   # Linux: "ctrl-alt-z"
 # increase_font_size = ["cmd-=", "cmd-+"]
 # decrease_font_size = "cmd--"
 # reset_font_size = "cmd-0"
@@ -465,6 +466,20 @@ size = 12
 # theme = "label"
 # shortcuts = "label"
 # report_issue = "label"
+
+# Zen mode (View > Toggle Zen Mode, or `toggle_zen_mode`) hides the
+# header, sidebar, tab strips, status bar, and notices, and every group but
+# the one in use, for this window and session. Toasts and menus still show.
+# [zen]
+# Also enter native full screen, leaving it again when zen mode ends.
+# fullscreen = false
+# Centre a column this many terminal columns wide (20 to 1000), or this share
+# of the window ("10%" to "100%"), with blank room either side. Unset uses the
+# whole width.
+# width = 120
+# The terminal font size while in zen mode (8 to 48); the previous size comes
+# back when it ends. Unset keeps the current size.
+# font_size = 24
 
 # Optional behaviors, all off unless turned on here.
 # [features]

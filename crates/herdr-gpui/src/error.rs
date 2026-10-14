@@ -809,6 +809,10 @@ pub enum Error {
     TooManyFontFallbacks(&'static str),
     #[error("layout.sidebar_gap must be finite and between 0 and 64 logical pixels")]
     InvalidSidebarGap,
+    #[error("zen.width must be 20 to 1000 columns, or a percentage from \"10%\" to \"100%\"")]
+    InvalidZenWidth,
+    #[error("zen.font_size must be finite and between 8 and 48 logical pixels")]
+    InvalidZenFontSize,
     #[error("sound.volume must be between 0 and 100")]
     InvalidSoundVolume,
     #[error(
