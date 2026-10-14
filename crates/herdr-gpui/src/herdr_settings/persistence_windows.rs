@@ -6,9 +6,19 @@ use std::{fs, io::Read as _, path::Path};
 
 pub(super) const LIMIT: u64 = 1024 * 1024;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub(super) struct Snapshot {
     pub text: Option<String>,
+}
+
+/// The document can hold private settings unrelated to this adapter, so
+/// diagnostics show only its size.
+impl std::fmt::Debug for Snapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Snapshot")
+            .field("text_len", &self.text.as_ref().map(String::len))
+            .finish()
+    }
 }
 
 pub(super) fn read(path: &Path) -> Result<Snapshot, Error> {
