@@ -64,6 +64,8 @@ pub(crate) struct Cache {
     pub(super) next_scan: Option<Instant>,
     /// No window of this cache is in front, so routine refreshes wait longer.
     pub idle: bool,
+    /// The store's revision this window last showed.
+    pub(super) seen: u64,
     pub cursor: usize,
 }
 
@@ -273,7 +275,18 @@ impl Cache {
         }
     }
 
+    /// Collects and dispatches lookups. Whether anything this window shows
+    /// changed, including answers another window recorded.
     pub fn poll(&mut self, now: Instant) -> bool {
+        let changed = self.dispatch(now);
+        let Ok(store) = self.store.try_borrow() else {
+            return changed;
+        };
+        let shown = std::mem::replace(&mut self.seen, store.revision);
+        changed || shown != store.revision
+    }
+
+    fn dispatch(&mut self, now: Instant) -> bool {
         let mut changed = self.collect(now);
         let Some(token) = self.token.clone().filter(|_| self.active.is_empty()) else {
             return changed;
@@ -312,6 +325,7 @@ impl Cache {
         store
             .asking
             .extend(batch.iter().map(|input| (self.view.clone(), input.clone())));
+        store.changed();
         drop(store);
         self.cursor = self.cursor.wrapping_add(batch.len());
         self.prefetch

@@ -51,6 +51,9 @@ pub(crate) struct Store {
     pub(super) pauses: Vec<Pause>,
     /// Checkouts some window is asking about, so another does not ask too.
     pub(super) asking: Vec<(View, Input)>,
+    /// Counts every change a window could show, so each window redraws
+    /// when another one records an answer, a pause, or a lookup.
+    pub(super) revision: u64,
 }
 
 /// The store the app's windows share, as a GPUI global. It is only touched on
@@ -61,6 +64,10 @@ pub(crate) struct Shared(pub(crate) Rc<RefCell<Store>>);
 impl gpui::Global for Shared {}
 
 impl Store {
+    pub(super) fn changed(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
+    }
+
     pub(super) fn entry(&self, view: &View, input: &Input) -> Option<&Entry> {
         self.entries
             .iter()
@@ -80,8 +87,14 @@ impl Store {
     }
 
     pub(super) fn release(&mut self, view: &View, inputs: &[Input]) {
+        let before = self.asking.len();
         self.asking
             .retain(|(asked, input)| asked != view || !inputs.contains(input));
+        // Suspending runs every tick while disconnected: only a real change
+        // redraws the windows.
+        if self.asking.len() != before {
+            self.changed();
+        }
     }
 
     /// When `login`'s requests resume and why they stopped, while paused.
@@ -93,6 +106,7 @@ impl Store {
     }
 
     pub(super) fn set_pause(&mut self, login: &str, until: Instant, reason: Option<String>) {
+        self.changed();
         self.pauses.retain(|pause| pause.login != login);
         if self.pauses.len() == CACHE_LIMIT {
             self.pauses.remove(0);
@@ -106,10 +120,26 @@ impl Store {
 
     /// Forgets an account's answers and pauses, for signing it out.
     pub(super) fn forget(&mut self, login: &str) {
+        let before = (
+            self.entries.len(),
+            self.hidden.len(),
+            self.pauses.len(),
+            self.asking.len(),
+        );
         self.entries.retain(|entry| entry.view.login != login);
         self.hidden.retain(|hidden| hidden.view.login != login);
         self.pauses.retain(|pause| pause.login != login);
         self.asking.retain(|(view, _)| view.login != login);
+        // Clearing runs every tick while signed out, like `release`.
+        let after = (
+            self.entries.len(),
+            self.hidden.len(),
+            self.pauses.len(),
+            self.asking.len(),
+        );
+        if after != before {
+            self.changed();
+        }
     }
 
     /// Stores a finished (or skipped) lookup. `value` is `None` to keep the
@@ -124,6 +154,7 @@ impl Store {
         message: Option<String>,
         (now, due): (Instant, Instant),
     ) {
+        self.changed();
         if let Some(entry) = self.entry_mut(view, &input) {
             if let Some(value) = value {
                 entry.value = value;
@@ -168,6 +199,7 @@ impl Store {
         message: String,
         until: Instant,
     ) {
+        self.changed();
         tracing::info!(
             category = "github_pause",
             repository = repository.as_str(),

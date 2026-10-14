@@ -83,3 +83,34 @@ fn signing_out_forgets_only_that_accounts_answers() {
             .all(|entry| entry.view.login == "someone-else")
     );
 }
+
+#[test]
+fn a_window_redraws_when_another_records_an_answer() {
+    let mut first = Peer::new();
+    let mut second = sibling(&first);
+    let now = Instant::now();
+    second.cache.poll(now);
+    assert!(!second.cache.poll(now), "nothing new");
+    first.cache.schedule([input("feature")], now);
+    first.cache.poll(now);
+    assert!(second.cache.poll(now), "the other window is now asking");
+    first.complete(now, Ok(Some(fixture().unwrap())), None);
+    assert!(second.cache.poll(now), "and has an answer to show");
+    assert!(!second.cache.poll(now));
+}
+
+#[test]
+fn a_disconnected_or_signed_out_window_does_not_redraw_the_others() {
+    let mut first = Peer::new();
+    let mut second = sibling(&first);
+    let now = Instant::now();
+    second.cache.poll(now);
+    for _ in 0..3 {
+        first.cache.suspend();
+        first.cache.clear();
+    }
+    assert!(
+        !second.cache.poll(now),
+        "nothing the other window shows changed"
+    );
+}
