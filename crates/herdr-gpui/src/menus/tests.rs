@@ -411,6 +411,11 @@ fn hide_and_minimize_are_macos_only() {
         .unwrap();
     assert_eq!(
         action_names(window),
-        ["New Window", "Cycle Through Windows", "Logs"]
+        [
+            "New Window",
+            "Cycle Through Windows",
+            "Close Window",
+            "Logs"
+        ]
     );
 }

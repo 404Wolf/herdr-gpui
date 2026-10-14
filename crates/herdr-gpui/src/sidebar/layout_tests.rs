@@ -19,6 +19,8 @@ use herdr_client::{ConnectOptions, ConnectTarget};
 use std::sync::Arc;
 
 #[cfg(test)]
+mod agent_menu;
+#[cfg(test)]
 mod agent_rows;
 #[cfg(all(test, feature = "coder"))]
 mod coder_dialog;
@@ -26,6 +28,8 @@ mod coder_dialog;
 mod configured_rows;
 #[cfg(test)]
 mod device_footer;
+#[cfg(test)]
+mod device_footer_setting;
 #[cfg(test)]
 mod devices_layout;
 #[cfg(test)]
@@ -464,6 +468,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         teleport: None,
         teleport_marks: crate::teleport::Marks::detached(),
         teleport_follow: None,
+        pane_carry: None,
         dispatch_job: None,
         dispatch_setups: Default::default(),
         fan_out: None,
@@ -533,6 +538,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         sessions_anchor: Default::default(),
         activation_deadline: None,
         pending_navigation: None,
+        arrival: None,
         strip_navigation_fits: true,
         pending_toast: None,
         toasts_hidden: false,

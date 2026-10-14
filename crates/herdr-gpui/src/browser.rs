@@ -15,12 +15,16 @@ mod code;
 mod code_group;
 mod code_start;
 mod code_view;
+#[cfg(any(target_os = "macos", windows))]
+mod favicon;
 mod feedback;
 mod group_motion;
 mod groups;
 mod groups_view;
 mod layouts;
 mod location;
+#[cfg(any(target_os = "macos", windows, test))]
+mod markdown;
 #[cfg(any(target_os = "macos", windows))]
 mod native;
 #[cfg(target_os = "macos")]

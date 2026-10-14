@@ -60,6 +60,13 @@ const DEFAULT_PANE_KEYS: &[(&str, &str)] = &[
     ("alt-right", "alt-f"),
 ];
 
+/// Shift-Enter as Alt-Enter, Esc CR, on every platform, as Herdr's web UI
+/// sends it. Herdr encodes Shift-Enter as a bare CR for a program that has
+/// enabled neither the kitty keyboard protocol nor modifyOtherKeys, so it
+/// would submit the line; Esc CR is the newline chord prompt_toolkit and zsh
+/// read instead.
+const PORTABLE_PANE_KEYS: &[(&str, &str)] = &[("shift-enter", "alt-enter")];
+
 /// Keystrokes the GUI config binds, with the command holding each. Spelling
 /// differences still name the same keystroke.
 type Claimed = HashMap<(Modifiers, String), &'static str>;
@@ -411,12 +418,14 @@ fn usable_prefix(prefix: &Keystroke) -> bool {
             .is_some_and(|number| number.parse::<u8>().is_ok())
 }
 
-/// The built-in pane keys, macOS only: Ghostty binds them there alone, and
-/// elsewhere the platform key belongs to the desktop.
+/// The built-in pane keys. The line-editing chords are macOS only: Ghostty
+/// binds them there alone, and elsewhere the platform key belongs to the
+/// desktop.
 fn default_pane_keys() -> impl Iterator<Item = (Keystroke, PaneKey)> {
     DEFAULT_PANE_KEYS
         .iter()
         .filter(|_| cfg!(target_os = "macos"))
+        .chain(PORTABLE_PANE_KEYS)
         .filter_map(|(typed, sent)| {
             Some((
                 Keystroke::parse(typed).ok()?,
