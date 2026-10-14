@@ -655,6 +655,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("Could not install the agent tools on the SSH host: {0}")]
+    RemoteAgentTools(#[source] herdr_client::Error),
     #[error("{0}")]
     DeviceSetupInput(&'static str),
     #[error("Saving the device failed ({status}){}", if detail.is_empty() { String::new() } else { format!(": {detail}") })]

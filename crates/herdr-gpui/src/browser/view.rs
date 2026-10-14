@@ -13,6 +13,7 @@ use gpui::{prelude::*, *};
 use present::Freeze;
 use std::collections::{HashMap, HashSet};
 
+mod agent_tab;
 pub(in crate::browser) mod present;
 mod render;
 #[cfg(unix)]

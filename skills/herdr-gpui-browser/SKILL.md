@@ -99,9 +99,18 @@ The commands exit with:
 | 7 | Herdr UI did not answer in time | Try again once |
 | 8 | Not available on this platform or this version | Print the URL or path for the user instead |
 
-If the command is not found, or you run on a remote host over SSH, browser
-tabs are not available to you: print the URL instead. The app listens only on
-the user's own machine.
+If the command is not found, browser tabs are not available to you: print
+the URL instead.
+
+On an SSH host the user's Herdr UI connects to, the command is a small shim
+that reaches the app through Herdr: only `herdr-gpui browser open` with a web
+address and `herdr-gpui browser reload` work there, and the rest exit 8.
+`localhost:PORT` on that host is forwarded to the user's machine for you. A
+file on the host cannot be shown: serve its folder (for example
+`python3 -m http.server 8000`) and open `localhost:8000`. The command cannot
+tell whether a window opened the page, so say what you asked for. Notes the
+user sends on the page arrive as your next prompt; `browser feedback` does
+not work there.
 
 On Linux the app has no embedded browser yet: web pages open in the system
 browser, and local files and annotations are not available.
