@@ -121,7 +121,7 @@ impl Shortcut {
 pub struct Keymap {
     /// Parallel to `COMMANDS`, primary shortcut first.
     shortcuts: Vec<Vec<Shortcut>>,
-    /// The keystrokes that start a chord, less any nothing can use. The
+    /// The keystrokes that start a chord, less any a GUI binding holds. The
     /// first one is the prefix shown to the user.
     prefixes: Vec<Keystroke>,
     /// Keys that move the workspace picker's selection up and down.
@@ -218,7 +218,7 @@ impl Keymap {
         let prefixes: Vec<Keystroke> = keys
             .prefixes
             .iter()
-            .filter(|prefix| usable_prefix(prefix) && taken.insert(identity(prefix)))
+            .filter(|prefix| taken.insert(identity(prefix)))
             .cloned()
             .collect();
         let mut chords = HashSet::new();
@@ -335,7 +335,6 @@ impl Keymap {
             .iter()
             .any(|prefix| typed_matches(typed, prefix))
     }
-
     /// The command a chord runs when `typed` follows the prefix.
     pub(crate) fn chord(&self, typed: &Keystroke) -> Option<Command> {
         COMMANDS
@@ -405,17 +404,6 @@ fn typed_matches(typed: &Keystroke, bound: &Keystroke) -> bool {
 fn has_modifier(keystroke: &Keystroke) -> bool {
     let modifiers = keystroke.modifiers;
     modifiers.platform || modifiers.control || modifiers.alt || modifiers.function
-}
-
-/// Herdr documents `esc` and function keys as prefixes; any other bare key
-/// would swallow ordinary typing.
-fn usable_prefix(prefix: &Keystroke) -> bool {
-    has_modifier(prefix)
-        || prefix.key == "escape"
-        || prefix
-            .key
-            .strip_prefix('f')
-            .is_some_and(|number| number.parse::<u8>().is_ok())
 }
 
 /// The built-in pane keys. The line-editing chords are macOS only: Ghostty

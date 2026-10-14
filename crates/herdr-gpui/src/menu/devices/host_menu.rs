@@ -20,6 +20,8 @@ enum Action {
     ServerKeybindings,
     /// Forwards one of the host's listening ports to this computer.
     ForwardPort,
+    /// Picks `[devices.<id>] theme`, the terminal's colors on this device.
+    Theme,
     /// Opens Settings > Cloud Devices on the device's provider.
     #[cfg(feature = "cloud")]
     ProviderSettings,
@@ -30,11 +32,12 @@ const SSH_ACTIONS: &[(Action, &str)] = &[
     (Action::Rename, "Rename…"),
     (Action::ServerKeybindings, "Use server keybindings"),
     (Action::ForwardPort, "Forward port…"),
+    (Action::Theme, "Terminal theme…"),
     (Action::Remove, "Remove device…"),
 ];
 
-/// Port forwards and server keybindings go through the SSH profile, which a
-/// cloud device does not have.
+/// Port forwards, server keybindings, and the terminal theme go through the
+/// SSH profile, which a cloud device does not have.
 #[cfg(feature = "cloud")]
 const CLOUD_ACTIONS: &[(Action, &str)] = &[
     (Action::Rename, "Rename…"),
@@ -72,6 +75,8 @@ pub(crate) struct HostMenu {
     input: Option<Entity<SearchInput>>,
     renaming: bool,
     error: Option<String>,
+    /// The terminal theme picker, while it is the page shown.
+    theme: Option<theme::DeviceThemePicker>,
 }
 
 impl HostMenu {
@@ -80,6 +85,16 @@ impl HostMenu {
             Saved::Ssh { .. } => SSH_ACTIONS,
             #[cfg(feature = "cloud")]
             Saved::Cloud { .. } => CLOUD_ACTIONS,
+        }
+    }
+
+    /// The catalog profile `[devices.<profile>]` settings are keyed by; a
+    /// cloud device has none.
+    fn profile(&self) -> Option<&str> {
+        match &self.saved {
+            Saved::Ssh { profile } => Some(profile),
+            #[cfg(feature = "cloud")]
+            Saved::Cloud { .. } => None,
         }
     }
 
@@ -186,6 +201,7 @@ impl HerdrWindow {
             input: None,
             renaming: false,
             error: None,
+            theme: None,
         };
         if !self.open_menu(window, cx) {
             tracing::info!(
@@ -236,6 +252,7 @@ impl HerdrWindow {
                 self.menu.page = Some(Page::RenameDevice);
             }
             Action::ServerKeybindings => self.toggle_server_keybindings(cx),
+            Action::Theme => self.open_device_theme(window, cx),
             #[cfg(feature = "cloud")]
             Action::ProviderSettings => {
                 if let Some(HostMenu {
@@ -555,6 +572,7 @@ impl HerdrWindow {
                     ),
             );
             let server_keys = self.config.keybinding_source(&host.id) == KeybindingSource::Server;
+            let device_theme = self.device_theme_value(&host.id).map(str::to_owned);
             for (index, &(action, label)) in host.actions().iter().enumerate() {
                 let toggle = action == Action::ServerKeybindings;
                 body = body.child(
@@ -587,6 +605,20 @@ impl HerdrWindow {
                                 .min_w_0()
                                 .truncate()
                                 .child(label),
+                        )
+                        .when_some(
+                            device_theme.clone().filter(|_| action == Action::Theme),
+                            |row, name| {
+                                row.child(
+                                    div()
+                                        .debug_selector(|| "host-menu-theme".into())
+                                        .ml_auto()
+                                        .min_w_0()
+                                        .truncate()
+                                        .text_color(rgb(theme.muted))
+                                        .child(name),
+                                )
+                            },
                         )
                         .on_hover(cx.listener(move |this, hovered, _, cx| {
                             if *hovered && let Some(host) = &mut this.menu.host {
@@ -626,6 +658,9 @@ impl HerdrWindow {
         }
         if self.menu.page == Some(Page::ForwardPort) {
             return self.render_forward_port(host, cx);
+        }
+        if self.menu.page == Some(Page::DeviceTheme) {
+            return self.render_device_theme(host, cx);
         }
         let github = self.host_has_github(&host.id);
         body = body
@@ -824,6 +859,7 @@ fn removal_note(host: &HostMenu) -> String {
 }
 
 mod forwards;
+mod theme;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

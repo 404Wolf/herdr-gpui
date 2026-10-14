@@ -41,11 +41,11 @@ fn devices_opt_into_server_keybindings_one_by_one() -> anyhow::Result<()> {
     // A non-catalog ID, or a key this build does not know, is ignored
     // and reported, as other unknown keys are.
     let ignored = Config::parse(&format!(
-        "[devices.box]\nkeybindings = 'server'\n[devices.{ID}]\nkeybindings = 'server'\ntheme = 'Nord'"
+        "[devices.box]\nkeybindings = 'server'\n[devices.{ID}]\nkeybindings = 'server'\nfont = 'Nord'"
     ))?;
     assert_eq!(
         ignored.unknown_keys,
-        [format!("devices.{ID}.theme"), "devices.box".to_owned()]
+        [format!("devices.{ID}.font"), "devices.box".to_owned()]
     );
     assert_eq!(ignored.devices.len(), 1);
     assert_eq!(

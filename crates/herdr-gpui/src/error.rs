@@ -790,6 +790,8 @@ pub enum Error {
     TooManyFontFallbacks(&'static str),
     #[error("layout.sidebar_gap must be finite and between 0 and 64 logical pixels")]
     InvalidSidebarGap,
+    #[error("sound.volume must be between 0 and 100")]
+    InvalidSoundVolume,
     #[error(
         "terminal.{0} must be one number or a pair of numbers, each finite and between 0 and 64 logical pixels"
     )]
@@ -865,6 +867,13 @@ pub enum Error {
     InvalidDevicesTable,
     #[error("[devices] must list at most {0} devices")]
     TooManyDevices(usize),
+    /// A `[devices.<id>]` theme that does not parse, named by its device.
+    #[error("devices.{device}.theme: {source}")]
+    DeviceTheme {
+        device: String,
+        #[source]
+        source: Box<Error>,
+    },
     #[error("theme {name:?} not found in {directories:?}")]
     ThemeNotFound {
         name: String,

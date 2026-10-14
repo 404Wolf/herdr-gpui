@@ -4,6 +4,7 @@ use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, point, px,
 
 #[cfg(feature = "cloud")]
 mod cloud;
+mod device_theme;
 mod forwards;
 mod menu_width;
 
@@ -110,6 +111,7 @@ fn the_menu_shows_the_server_keybindings_choice(cx: &mut TestAppContext) {
             "0123456789abcdef0123456789abcdef".into(),
             crate::config::DeviceSettings {
                 keybindings: KeybindingSource::Server,
+                ..Default::default()
             },
         );
         view.selected_endpoint = 1;

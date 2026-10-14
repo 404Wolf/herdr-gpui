@@ -442,6 +442,7 @@ impl HerdrWindow {
                     page,
                     Page::Keybinds
                         | Page::Themes
+                        | Page::DeviceTheme
                         | Page::Palette
                         | Page::CodeSearch
                         | Page::AppUpdate
@@ -469,7 +470,11 @@ impl HerdrWindow {
             .when(
                 matches!(
                     page,
-                    Page::Keybinds | Page::Themes | Page::Palette | Page::CodeSearch
+                    Page::Keybinds
+                        | Page::Themes
+                        | Page::DeviceTheme
+                        | Page::Palette
+                        | Page::CodeSearch
                 ),
                 |panel| {
                     panel
@@ -614,7 +619,11 @@ impl HerdrWindow {
             panel = panel.child(self.render_pr_merge(cx));
         } else if matches!(
             page,
-            Page::Host | Page::RenameDevice | Page::ForwardPort | Page::RemoveDevice
+            Page::Host
+                | Page::RenameDevice
+                | Page::ForwardPort
+                | Page::DeviceTheme
+                | Page::RemoveDevice
         ) {
             panel = panel.child(self.render_host_menu(cx));
         } else if matches!(page, Page::Tab | Page::RenameTab) {
