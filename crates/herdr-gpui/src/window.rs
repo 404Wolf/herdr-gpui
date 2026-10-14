@@ -33,6 +33,7 @@ mod regions;
 mod render;
 mod selection;
 mod server_keys;
+mod sound;
 mod status_bar;
 pub(crate) mod system_notifications;
 mod tab_drag;
@@ -251,6 +252,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) checkpoints: crate::checkpoint::Checkpoints,
     /// Remote ports forwarded to this machine; they end with the window.
     pub(crate) port_forwards: crate::port_forward::PortForwards,
+    /// Pages remote agents asked for, waiting for their port's forward.
+    pub(crate) remote_browser: Vec<crate::remote_browser::Forwarding>,
     /// Cloud machines being added; see `cloud::Jobs`.
     #[cfg(feature = "cloud")]
     pub(crate) cloud_jobs: crate::cloud::Jobs,
@@ -424,15 +427,6 @@ impl HerdrWindow {
         }
     }
 
-    /// Takes the app's shared sound worker and plays it at this window's
-    /// volume. The volume is otherwise only set when a config load lands, never
-    /// on a timer: a window whose reloads are held back, as while its theme
-    /// picker is open, would keep restoring a stale volume over a newer one.
-    pub(crate) fn use_sound(&mut self, sound: std::rc::Rc<crate::sound::Service>) {
-        sound.set_volume(self.config.sound.volume);
-        self.sound = sound;
-    }
-
     fn tick(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.updater.set_channel(self.config.updates.channel);
         if self.updater.poll() {
@@ -506,6 +500,7 @@ impl HerdrWindow {
         self.sync_host_theme();
         self.save_group_layouts(cx);
         self.poll_browser(window, cx);
+        self.poll_remote_browser(window, cx);
         self.offer_browser_skill(window, cx);
         self.poll_sessions(cx);
         self.flush_scrollbar(cx);
@@ -894,6 +889,7 @@ impl HerdrWindow {
             devices_overview: Default::default(),
             checkpoints: Default::default(),
             port_forwards: Default::default(),
+            remote_browser: Vec::new(),
             #[cfg(feature = "cloud")]
             cloud_jobs: Default::default(),
             listening_ports: Default::default(),

@@ -655,6 +655,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("Could not install the agent tools on the SSH host: {0}")]
+    RemoteAgentTools(#[source] herdr_client::Error),
     #[error("{0}")]
     DeviceSetupInput(&'static str),
     #[error("Saving the device failed ({status}){}", if detail.is_empty() { String::new() } else { format!(": {detail}") })]
@@ -784,6 +786,10 @@ pub enum Error {
     InvalidSidebarGap,
     #[error("sound.volume must be between 0 and 100")]
     InvalidSoundVolume,
+    #[error(
+        "terminal.{0} must be one number or a pair of numbers, each finite and between 0 and 64 logical pixels"
+    )]
+    InvalidTerminalPadding(&'static str),
     #[error("sidebar.{key} must be finite and between 0 and {max} logical pixels")]
     InvalidSidebarMetric { key: &'static str, max: f32 },
     #[error("sidebar.hosts.{host:?} must be a #rgb or #rrggbb colour, not {value:?}")]

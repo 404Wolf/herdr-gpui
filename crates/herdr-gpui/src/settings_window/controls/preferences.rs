@@ -1,5 +1,7 @@
 use super::*;
-use crate::config::{ClipboardToastPosition as ClipboardPosition, preferences::Preference};
+use crate::config::{
+    Axis, ClipboardToastPosition as ClipboardPosition, MAX_PADDING, Side, preferences::Preference,
+};
 use herdr_client::protocol::ToastHerdrPosition as Position;
 
 #[cfg(test)]
@@ -221,29 +223,40 @@ impl SettingsWindow {
             ))
     }
 
-    pub(super) fn sidebar_gap_control(&self, cx: &mut Context<Self>) -> Div {
-        let gap = self.config.layout.sidebar_gap;
-        div()
-            .child(self.control_row("Sidebar gap", format!("{gap} px (0-64)")))
-            .child(
-                div()
-                    .flex()
-                    .gap(px(8.))
-                    .child(self.preference_choice(
-                        "sidebar-gap-minus",
-                        "-1 px",
+    /// One stepper per side. A step moves only its own side; the other side
+    /// of the axis is saved along with it, since the file keeps them together.
+    pub(in crate::settings_window) fn terminal_padding_controls(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let mut card = self
+            .control_card("Terminal padding")
+            .mt(px(24.))
+            .debug_selector(|| "settings-terminal-padding".into());
+        for (axis, side, label, id) in [
+            (Axis::X, Side::Start, "Left", "terminal-padding-left"),
+            (Axis::X, Side::End, "Right", "terminal-padding-right"),
+            (Axis::Y, Side::Start, "Top", "terminal-padding-top"),
+            (Axis::Y, Side::End, "Bottom", "terminal-padding-bottom"),
+        ] {
+            let sides = self.config.terminal_padding.axis(axis);
+            let value = format!("{} px (0-{MAX_PADDING})", sides.side(side));
+            let mut steps = div().flex().gap(px(8.));
+            for (step, label, suffix) in [(-1., "-1 px", "minus"), (1., "+1 px", "plus")] {
+                steps = steps.child(
+                    self.preference_choice(
+                        format!("{id}-{suffix}"),
+                        label,
                         false,
-                        Preference::SidebarGap((gap - 1.).max(0.)),
+                        Preference::TerminalPadding(axis, sides.stepped(side, step)),
                         cx,
-                    ))
-                    .child(self.preference_choice(
-                        "sidebar-gap-plus",
-                        "+1 px",
-                        false,
-                        Preference::SidebarGap((gap + 1.).min(64.)),
-                        cx,
-                    )),
-            )
+                    )
+                    .debug_selector(move || format!("{id}-{suffix}")),
+                );
+            }
+            card = card.child(self.control_row(label, value)).child(steps);
+        }
+        card
     }
 }
 

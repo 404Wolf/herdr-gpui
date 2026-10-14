@@ -501,7 +501,6 @@ impl HerdrWindow {
     pub(crate) fn render_parked_terminal(
         &mut self,
         slot: Slot,
-        gap: f32,
         font: Font,
         cell_height: f32,
         cx: &mut Context<Self>,
@@ -510,7 +509,6 @@ impl HerdrWindow {
         self.render_terminal_picture(
             slot,
             "parked-terminal",
-            gap,
             surface,
             true,
             font,
@@ -545,7 +543,6 @@ impl HerdrWindow {
     pub(crate) fn render_terminal_mirror(
         &mut self,
         slot: Slot,
-        gap: f32,
         surface: Option<Picture>,
         font: Font,
         cell_height: f32,
@@ -554,7 +551,6 @@ impl HerdrWindow {
         self.render_terminal_picture(
             slot,
             "mirror-terminal",
-            gap,
             surface,
             false,
             font,
@@ -570,7 +566,6 @@ impl HerdrWindow {
         &mut self,
         slot: Slot,
         name: &'static str,
-        gap: f32,
         surface: Option<Picture>,
         place: bool,
         font: Font,
@@ -582,13 +577,14 @@ impl HerdrWindow {
         let painter = self.painter.clone();
         let cell_width = self.cell_width;
         let ground = self.ground();
-        div()
+        self.config
+            .terminal_padding
+            .pad(div())
             .id(SharedString::from(slot.selector(name)))
             .debug_selector(move || slot.selector(name))
             .flex_1()
             .min_h_0()
             .min_w_0()
-            .pl(px(gap))
             .overflow_hidden()
             .bg(self.fill().base(self.theme.background))
             .child(

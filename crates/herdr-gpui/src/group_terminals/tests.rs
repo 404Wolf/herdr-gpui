@@ -11,6 +11,7 @@ use herdr_client::protocol::{
 };
 use std::sync::Arc;
 
+mod padding;
 mod titlebar_navigation;
 
 /// A coherent surface for `snapshot`, as the daemon projects one.

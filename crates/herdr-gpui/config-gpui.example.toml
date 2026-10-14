@@ -169,14 +169,6 @@ project_roots = []
 # [updates]
 # channel = "stable"
 
-# To customize spacing too, REPLACE the top-level layout above with this table:
-# [layout]
-# mode = "normal"
-# Blank space between the sidebar and the terminal beside it, 0 to 64.
-# The terminal keeps the remaining width, so a wide gap costs columns.
-# Ignored while the sidebar is hidden. Set 0 to sit against the divider.
-# sidebar_gap = 8
-
 # Native shortcuts. Each key is a command; the value is one keystroke or a list,
 # primary first. "" or [] unbinds it. Assigning a keystroke here takes it away
 # from its default command. Modifiers: cmd (super on Linux), ctrl, alt, shift,
@@ -239,7 +231,10 @@ project_roots = []
 # shift-enter), or "text:" and the text to type, at most 1024 bytes; an empty
 # string removes a default. A keystroke here leaves its default or daemon
 # command, but naming it in [keybindings] too is an error.
-# On macOS these are the defaults:
+# Shift-Enter sends Alt-Enter (Esc CR) by default everywhere, so a prompt that
+# never enabled the kitty keyboard protocol reads a newline instead of the bare
+# CR Herdr would send it; "shift-enter" = "" sends Shift-Enter unchanged.
+# On macOS these are also defaults:
 # [pane_keys]
 # "cmd-left" = "ctrl-a"
 # "cmd-right" = "ctrl-e"
@@ -284,6 +279,12 @@ size = 12
 # and the other hosts' rows dimmed). Hosts without a colour below use the
 # theme's active colour for the wash.
 # select = "row"
+# When to draw the device footer at the sidebar's foot (the device picker,
+# Sessions, and Settings): "always", "auto" (only with two or more devices,
+# or while one is being added), or "never". Without it, Settings and Sessions
+# keep their shortcuts and command palette entries, and Devices Overview in
+# the palette still offers Add Device.
+# device_footer = "always"
 
 # A colour per host, keyed by the host's name in the sidebar, as #rgb or
 # #rrggbb. It washes the host's header, its workspace rows, and its agents'
@@ -317,6 +318,14 @@ size = 14
 # no face for draws at its nearest one, and on macOS is reported. Only
 # [terminal] takes this key.
 # weight = "medium"
+# Blank space between the cells and the edges of the terminal's tab group, in
+# logical pixels from 0 to 64. One number pads both sides; a pair pads each:
+# [left, right] for padding_x, [top, bottom] for padding_y. Default 0. The
+# terminal keeps the remaining size, so wide padding costs columns and rows.
+# Only [terminal] takes these keys. They replace the deprecated
+# [layout] sidebar_gap, which still loads as the left padding.
+# padding_x = 8
+# padding_y = [4, 8]
 
 [ui]
 # Default: ".SystemUIFont" on macOS and Windows, "DejaVu Sans" on Linux (or an installed
