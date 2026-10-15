@@ -392,6 +392,12 @@ impl HerdrWindow {
         let Some(active) = self.ensure_layout().map(|layout| layout.active()) else {
             return false;
         };
+        // A focus change in flight lands after this step and would move the
+        // group off a page the step showed, so the step is dropped, as one
+        // asked of the daemon always was.
+        if self.activation_deadline.is_some() {
+            return true;
+        }
         let tabs = self.workspace_tabs(cx);
         let current = self.group_pick(active).or_else(|| {
             self.focused_herdr_tab()

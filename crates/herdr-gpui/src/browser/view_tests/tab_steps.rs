@@ -83,3 +83,34 @@ fn tab_commands_step_through_pages_in_strip_order(cx: &mut gpui::TestAppContext)
     run(&view, cx, Command::TabNumber(3));
     assert_eq!(showing(&view, cx), page());
 }
+
+#[gpui::test]
+fn tab_commands_wait_for_a_focus_change_in_flight(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = window(cx);
+    draw(cx);
+    open_page(&view, cx);
+    run(&view, cx, Command::TabNumber(1));
+    assert_eq!(showing(&view, cx), terminal("t0"));
+    // Next Tab asked the daemon for t1, which has not answered yet.
+    cx.update(|_, cx| {
+        view.update(cx, |view, _| {
+            view.activation_deadline =
+                Some(std::time::Instant::now() + std::time::Duration::from_secs(5));
+        })
+    });
+    run(&view, cx, Command::TabNumber(3));
+    assert_eq!(showing(&view, cx), terminal("t0"));
+    // Its answer lands on t1 rather than taking a page shown since.
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            view.activation_deadline = None;
+            let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
+            snapshot.focused_tab_id = Some("t1".into());
+            view.terminal_focus_moved("t1", false, cx);
+        })
+    });
+    draw(cx);
+    assert_eq!(showing(&view, cx), terminal("t1"));
+    run(&view, cx, Command::TabNumber(3));
+    assert_eq!(showing(&view, cx), page());
+}
