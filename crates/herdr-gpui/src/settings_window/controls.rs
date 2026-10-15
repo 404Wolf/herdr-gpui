@@ -1,6 +1,7 @@
 //! Prepared controls for the standalone window; persistence belongs to its serial save path.
 mod backdrop;
 pub(super) mod code;
+mod features;
 mod fonts;
 mod indicators;
 pub(super) mod plugins;
@@ -411,6 +412,7 @@ impl SettingsWindow {
 
     pub(super) fn render_controls(&self, _window: &mut Window, cx: &mut Context<Self>) -> Div {
         let content = match self.section {
+            Section::Features => self.render_feature_controls(cx),
             Section::Fonts => self.render_font_controls(cx),
             Section::Indicators => self.render_indicator_controls(cx),
             Section::Sound => self.render_sound_controls(cx),
