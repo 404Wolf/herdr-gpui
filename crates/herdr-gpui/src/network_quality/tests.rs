@@ -33,8 +33,17 @@ fn a_closed_port_is_lost() {
         .expect("bind")
         .local_addr()
         .expect("address");
-    let outcome = probe::run(target, Duration::from_secs(2));
-    assert_eq!(outcome, Outcome::Lost(ErrorKind::ConnectionRefused));
+    // Windows retries a refused connect for about two seconds before
+    // reporting it, so the kind may be a refusal or a timeout; either way
+    // the probe is lost.
+    let outcome = probe::run(target, Duration::from_secs(5));
+    assert!(
+        matches!(
+            outcome,
+            Outcome::Lost(ErrorKind::ConnectionRefused | ErrorKind::TimedOut)
+        ),
+        "{outcome:?}"
+    );
 }
 
 #[test]
