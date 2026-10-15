@@ -239,6 +239,7 @@ impl SettingsWindow {
 
     pub(super) fn apply_loaded(&mut self, loaded: crate::Result<Loaded>, cx: &mut Context<Self>) {
         self.load_revision = self.load_revision.wrapping_add(1);
+        self.settle_number_preview();
         let valid = loaded.is_ok();
         match loaded {
             Ok(loaded) => {

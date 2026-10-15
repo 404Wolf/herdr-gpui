@@ -47,6 +47,15 @@ impl NumberField {
     }
 }
 
+/// A slider that writes only on release: the value it shows while dragged,
+/// and after release until the save's reload.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(in crate::settings_window) struct NumberPreview {
+    pub field: NumberField,
+    pub value: f32,
+    pub released: bool,
+}
+
 /// Every dropdown the pages show; the selector is the button's id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::settings_window) enum DropdownField {
@@ -218,49 +227,68 @@ impl SettingsWindow {
         let value = match change {
             ui::NumberChange::Preview(value) => {
                 // Shown at once; written only on release.
+                let preview = NumberPreview {
+                    field,
+                    value,
+                    released: false,
+                };
                 if matches!(
                     field,
                     NumberField::SoundVolume | NumberField::TerminalPadding(..)
                 ) && field.range().contains(&value)
-                    && self.number_preview != Some((field, value))
+                    && self.number_preview != Some(preview)
                 {
-                    self.number_preview = Some((field, value));
+                    self.number_preview = Some(preview);
                     cx.notify();
                 }
                 return;
             }
             ui::NumberChange::Commit(value) => value,
         };
-        if self
-            .number_preview
-            .is_some_and(|(previewed, _)| previewed == field)
+        let valid = !self.quitting && field.range().contains(&value);
+        // A busy window refuses the write, so only an idle one starts it.
+        let started = valid && !self.busy();
+        if valid {
+            match field {
+                NumberField::ToastDelay => {
+                    self.save_preference(Preference::NotificationDelay(Some(value as u64)), cx);
+                }
+                NumberField::SoundVolume => {
+                    self.save_preference(Preference::SoundVolume(value as u8), cx);
+                }
+                NumberField::TerminalPadding(axis, side) => {
+                    self.set_terminal_padding(axis, side, value, cx);
+                }
+                NumberField::FontSize(face) => self.accept_control_size(face, value, cx),
+                NumberField::Spacing(_) => {}
+            }
+        }
+        if let Some(preview) = &mut self.number_preview
+            && preview.field == field
         {
-            self.number_preview = None;
+            // The released value stays until the save's reload shows it.
+            if started && self.saving {
+                preview.value = value;
+                preview.released = true;
+            } else {
+                self.number_preview = None;
+            }
             cx.notify();
-        }
-        if self.quitting || !field.range().contains(&value) {
-            return;
-        }
-        match field {
-            NumberField::ToastDelay => {
-                self.save_preference(Preference::NotificationDelay(Some(value as u64)), cx);
-            }
-            NumberField::SoundVolume => {
-                self.save_preference(Preference::SoundVolume(value as u8), cx);
-            }
-            NumberField::TerminalPadding(axis, side) => {
-                self.set_terminal_padding(axis, side, value, cx);
-            }
-            NumberField::FontSize(face) => self.accept_control_size(face, value, cx),
-            NumberField::Spacing(_) => {}
         }
     }
 
     /// What `field` shows: a live drag's value, else `saved`.
     pub(super) fn number_value(&self, field: NumberField, saved: f32) -> f32 {
         self.number_preview
-            .filter(|(previewed, _)| *previewed == field)
-            .map_or(saved, |(_, value)| value)
+            .filter(|preview| preview.field == field)
+            .map_or(saved, |preview| preview.value)
+    }
+
+    /// A load shows what a released slider wrote, so its preview ends.
+    pub(super) fn settle_number_preview(&mut self) {
+        if self.number_preview.is_some_and(|preview| preview.released) {
+            self.number_preview = None;
+        }
     }
 
     pub(super) fn number_edit_for(&self, field: NumberField) -> Option<&ui::NumberEdit> {

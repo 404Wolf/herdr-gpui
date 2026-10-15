@@ -90,8 +90,8 @@ impl SettingsWindow {
     }
 
     /// Light or Dark: while following, stops following and keeps that side as
-    /// the single theme. A single theme is kept as it is; only the side the
-    /// grid chooses for moves.
+    /// the single theme. A single theme of the other brightness gives way to
+    /// the default theme of the chosen one; a matching one is kept.
     pub(in crate::settings_window) fn use_single_theme(
         &mut self,
         light: bool,
@@ -101,15 +101,20 @@ impl SettingsWindow {
             return;
         }
         let current = self.drafted_theme().to_owned();
-        if !ThemeName::follows_system(&current) {
-            self.edit_theme_side(light, cx);
+        let name = if ThemeName::follows_system(&current) {
+            ThemeName::side(&current, light).to_owned()
+        } else if self.drafted_is_light(cx) == light {
             return;
-        }
+        } else if light {
+            LIGHT_PAIR.to_owned()
+        } else {
+            DARK_PAIR.to_owned()
+        };
         self.themes.editing_light = light;
         self.accept_theme_choice(
             Choice {
                 scope: Scope::App,
-                name: ThemeName::side(&current, light).to_owned(),
+                name,
             },
             cx,
         );

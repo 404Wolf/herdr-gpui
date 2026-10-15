@@ -159,9 +159,9 @@ struct SettingsWindow {
     dropdown: Option<ui::Dropdown>,
     /// The number field being typed into, if any.
     number_edit: Option<ui::NumberEdit>,
-    /// A slider being dragged that writes only on release: its field and
-    /// the value it shows meanwhile.
-    number_preview: Option<(inputs::NumberField, f32)>,
+    /// A slider being dragged, or released and saving, that writes only on
+    /// release.
+    number_preview: Option<inputs::NumberPreview>,
     /// The host colour being typed as hex, if any.
     hex_edit: Option<sidebar::HexEdit>,
     error: Option<String>,

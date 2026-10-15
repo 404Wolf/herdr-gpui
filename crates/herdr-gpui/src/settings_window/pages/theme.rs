@@ -79,7 +79,7 @@ impl SettingsWindow {
 
     /// Whether the theme in effect is light, read from the drafted choice
     /// when its colors are at hand.
-    fn drafted_is_light(&self, cx: &App) -> bool {
+    pub(in crate::settings_window) fn drafted_is_light(&self, cx: &App) -> bool {
         let light = crate::app::light_appearance(cx);
         let background = self
             .prepared_app_theme(self.drafted_theme(), light)
@@ -97,19 +97,8 @@ impl SettingsWindow {
         } else {
             Mode::Dark
         };
-        let mut description = "Pick a theme for light and dark, or follow the system.".to_owned();
-        if !following && self.themes.editing_light != is_light {
-            description = format!(
-                "Pick a {} theme below.",
-                if self.themes.editing_light {
-                    "light"
-                } else {
-                    "dark"
-                }
-            );
-        }
         ui::row(&self.theme, "theme-mode", "Appearance")
-            .description(description)
+            .description("Light, dark, or follow the system. Pick a theme below to change it.")
             .control(ui::segmented(
                 &self.theme,
                 "theme-mode-control",

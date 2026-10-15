@@ -28,6 +28,21 @@ fn each_mode_segment_is_a_state_the_user_can_choose(cx: &mut TestAppContext) {
     };
     assert!(!ThemeName::follows_system(&drafted(cx).0));
     assert!(cx.debug_bounds("theme-side").is_none());
+    let lit = |cx: &mut VisualTestContext| view.read_with(cx, |view, cx| view.drafted_is_light(cx));
+    assert!(!lit(cx), "the fixture starts on a single dark theme");
+
+    // single dark -> Light: the default light theme, shown at once
+    click(cx, "theme-mode-control-0");
+    assert_eq!(drafted(cx), ("Catppuccin Latte".to_owned(), true));
+    assert!(lit(cx), "Mode shows Light");
+    // Light again matches the theme's brightness: nothing changes
+    click(cx, "theme-mode-control-0");
+    assert_eq!(drafted(cx), ("Catppuccin Latte".to_owned(), true));
+
+    // single light -> Dark: the default dark theme
+    click(cx, "theme-mode-control-1");
+    assert_eq!(drafted(cx), ("Catppuccin Mocha".to_owned(), false));
+    assert!(!lit(cx), "Mode shows Dark");
 
     // single dark -> System: a pair is created and the side row appears
     click(cx, "theme-mode-control-2");
@@ -42,12 +57,5 @@ fn each_mode_segment_is_a_state_the_user_can_choose(cx: &mut TestAppContext) {
     let (single, _) = drafted(cx);
     assert_eq!(single, ThemeName::side(&pair, true));
     assert!(!ThemeName::follows_system(&single));
-    assert!(cx.debug_bounds("theme-side").is_none());
-
-    // Dark on a light single theme keeps it and moves only the edited side
-    click(cx, "theme-mode-control-1");
-    let (kept, editing_light) = drafted(cx);
-    assert_eq!(kept, single);
-    assert!(!editing_light);
     assert!(cx.debug_bounds("theme-side").is_none());
 }

@@ -75,13 +75,25 @@ fn a_volume_drag_shows_its_value_before_release_and_writes_once(cx: &mut TestApp
     let (view, cx) = cx.add_window_view(move |_, cx| SettingsWindow::new(weak.clone(), cx));
     let edits = Arc::new(Mutex::new(Vec::new()));
     let captured = edits.clone();
+    // The reload reflects the written volume, as the file would.
+    let disk = Arc::new(Mutex::new(None));
+    let written = disk.clone();
     view.update(cx, |view, cx| {
         view.controls.preference_io = Some(PreferenceIo {
             write: Arc::new(move |edit| {
+                if let crate::config::preferences::Preference::SoundVolume(volume) = edit {
+                    *written.lock().unwrap() = Some(volume);
+                }
                 captured.lock().unwrap().push(edit);
                 Ok(())
             }),
-            load: Arc::new(quiet_load),
+            load: Arc::new(move || {
+                let mut loaded = quiet_load()?;
+                if let Some(volume) = *disk.lock().unwrap() {
+                    loaded.config.sound.volume = volume;
+                }
+                Ok(loaded)
+            }),
         });
         view.section = Section::Notifications;
         cx.notify();
@@ -119,6 +131,7 @@ fn a_volume_drag_shows_its_value_before_release_and_writes_once(cx: &mut TestApp
     );
     assert!(edits.lock().unwrap().is_empty(), "no write while dragging");
     cx.simulate_mouse_up(end, MouseButton::Left, Default::default());
+    assert_eq!(shown(cx), dragged, "the released value shows while saving");
     cx.run_until_parked();
     assert_eq!(
         edits.lock().unwrap().as_slice(),
@@ -126,5 +139,9 @@ fn a_volume_drag_shows_its_value_before_release_and_writes_once(cx: &mut TestApp
             dragged as u8
         )]
     );
-    assert!(view.read_with(cx, |view, _| view.number_preview.is_none()));
+    // The released value stays on screen while the save runs, and the
+    // reload that ends it shows the same value.
+    let released = view.read_with(cx, |view, _| view.number_preview.is_none());
+    assert!(released, "the reload ends the preview");
+    assert_eq!(shown(cx), dragged, "the released value stays");
 }
