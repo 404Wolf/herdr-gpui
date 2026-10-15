@@ -53,7 +53,8 @@ impl HerdrWindow {
     /// Whether the modifiers keep a press here from a mouse-reporting
     /// application. Shift keeps any gesture local, for selecting; the platform
     /// link modifier (cmd on macOS, ctrl elsewhere) claims only a press on a
-    /// link, so the application still receives it everywhere else.
+    /// verified link, so the application still receives it everywhere else,
+    /// a printed path still being looked for on disk included.
     pub(crate) fn link_modifier_held(
         &self,
         position: Point<Pixels>,
@@ -63,7 +64,9 @@ impl HerdrWindow {
             || (modifiers.secondary()
                 && (self.terminal_link_at(position).is_some()
                     || self.daemon_link_at(position).is_some()
-                    || self.terminal_link_press(position, modifiers).is_some()))
+                    || self
+                        .terminal_link_press(position, modifiers)
+                        .is_some_and(|press| self.verified_press(&press))))
     }
 
     /// Whether the pointer shows a link here: only while the link modifier is

@@ -253,6 +253,15 @@ impl HerdrWindow {
         (file.explicit || !missing).then_some(file)
     }
 
+    /// Whether a press is on a link known to be one: anything but a printed
+    /// path whose check has not found it yet, which may name nothing.
+    pub(crate) fn verified_press(&self, press: &PressedLink) -> bool {
+        press.file.as_ref().is_none_or(|file| {
+            file.explicit
+                || matches!(&self.links.checked, Some((checked, Some(true))) if checked == file)
+        })
+    }
+
     /// Follows the pointer and the link modifier. Without the modifier
     /// nothing is read, asked, or shown; with it, the text under the pointer
     /// is verified, and the daemon is asked about a cell no earlier answer
