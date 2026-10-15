@@ -98,6 +98,8 @@ pub(crate) fn bind_keys(cx: &mut App) {
                 .map(|appearance| appearance.config.keybindings.clone())
         })
         .unwrap_or_default();
+    #[cfg(target_os = "macos")]
+    crate::browser::bind_page_keys(&keymap);
     cx.bind_keys(keymap.bindings().map(|(command, keystroke)| {
         if command == Command::Quit {
             KeyBinding::new(keystroke, Quit, None)

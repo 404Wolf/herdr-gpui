@@ -61,6 +61,8 @@ pub(crate) use location::PostedFrom;
 pub(crate) use location::{LocalFile, Location, OrchestratorRepo, ReviewCheckout};
 #[cfg(any(target_os = "macos", windows))]
 pub(crate) use native::Pages;
+#[cfg(target_os = "macos")]
+pub(crate) use page_keys::bind as bind_page_keys;
 /// A page screenshot as PNG, for `browser screenshot`.
 #[cfg(target_os = "macos")]
 pub(crate) use snapshot::png as page_png;

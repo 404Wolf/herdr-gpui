@@ -2710,7 +2710,10 @@ the page's storage, which belongs to one address.
   browser tab's, the page's own shortcuts win, as a terminal program's do
   while its pane has focus. On macOS, Cut, Copy, and Paste act on the page,
   and the keys macOS keeps for the app (quit, hide, minimize, and cycling
-  windows) still reach the app. Click a terminal to take the keyboard back.
+  windows) still reach the app. So do the keys bound to Next Tab, Previous
+  Tab, the tab numbers, and moving to another workspace or agent, as a web
+  browser keeps its tab keys from its pages. Click a terminal to take the
+  keyboard back.
 
 ## System Notifications
 
