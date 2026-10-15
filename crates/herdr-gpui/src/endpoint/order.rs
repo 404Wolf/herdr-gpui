@@ -2,10 +2,13 @@
 //! saved: SSH hosts as upstream keeps them, then WSL distributions, then
 //! cloud devices. Dragging a device's header reorders them for this client
 //! only, by endpoint ID, so upstream's catalog is never rewritten and a
-//! device saved later simply lists after the ones the user arranged. Local
-//! stays first: much of the window knows it as endpoint 0.
+//! device saved later simply lists after the ones the user arranged.
+//!
+//! Much of the window knows Local as endpoint 0, so the endpoints keep it
+//! first and the rest in the user's order; the sidebar places Local among
+//! them where the user put it, and lists it first until then.
 
-use super::LOCAL;
+use super::{Endpoint, LOCAL};
 use crate::{HerdrWindow, reorder::Beside};
 
 /// Where `id` sorts under the user's `order`: its place there, or after
@@ -35,6 +38,22 @@ fn moved(ids: &[&str], moved: &str, to: Beside<&str>) -> Option<Vec<String>> {
 }
 
 impl HerdrWindow {
+    /// Every device with its endpoint index, in the order the sidebar lists
+    /// them.
+    pub(crate) fn displayed_devices(&self) -> Vec<(usize, &Endpoint)> {
+        let mut devices: Vec<_> = self.endpoints.iter().enumerate().collect();
+        // The rest are already arranged, so Local goes before the first one
+        // the user put after it.
+        if let Some(local) = self.device_order.iter().position(|id| id == LOCAL) {
+            let at = devices[1..]
+                .iter()
+                .position(|(_, endpoint)| rank(&self.device_order, &endpoint.id) > local)
+                .map_or(devices.len(), |at| at + 1);
+            devices[..at].rotate_left(1);
+        }
+        devices
+    }
+
     /// Lists the devices in the user's order, keeping the selection on the
     /// device it was on.
     pub(crate) fn arrange_devices(&mut self) {
@@ -51,12 +70,10 @@ impl HerdrWindow {
     /// Moves device `id` beside another and remembers the new order. Returns
     /// whether anything moved.
     pub(crate) fn move_device(&mut self, id: &str, to: Beside<&str>) -> bool {
-        if id == LOCAL {
-            return false;
-        }
-        let ids: Vec<_> = self.endpoints[1..]
-            .iter()
-            .map(|endpoint| endpoint.id.as_str())
+        let ids: Vec<_> = self
+            .displayed_devices()
+            .into_iter()
+            .map(|(_, endpoint)| endpoint.id.as_str())
             .collect();
         let Some(order) = moved(&ids, id, to) else {
             return false;

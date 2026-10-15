@@ -2,8 +2,8 @@
 //! lifts a workspace row; while it is lifted the list folds to its headers,
 //! so a device with many rows moves as one line among the others, and the
 //! headers it passes slide aside to open the gap it lands in. Releasing
-//! there moves the device for this client (`endpoint::order`). Local stays
-//! first: it never lifts, and nothing lands above it.
+//! there moves the device for this client (`endpoint::order`), Local
+//! included.
 
 use crate::{
     HerdrWindow,
@@ -110,9 +110,8 @@ impl HerdrWindow {
         position: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
-        // Local never moves, and a lone device has nowhere to go.
-        if index == 0
-            || self.endpoints.len() < 3
+        // A lone device has nowhere to go.
+        if self.endpoints.len() < 2
             || self.device_filter.is_some()
             || self.menu.page.is_some()
             || self.workspace_drag.is_some()
@@ -157,19 +156,16 @@ impl HerdrWindow {
     /// list the headers as render does.
     pub(super) fn device_plan(&self, devices: bool, query: &str) -> Option<DevicePlan> {
         let drag = self.device_drag.as_ref().filter(|drag| drag.lifted)?;
-        let listed: Vec<usize> = (0..self.endpoints.len())
-            .filter(|&index| {
-                self.device_visible(&self.endpoints[index].id)
-                    && (!devices || self.device_listed(index, query))
+        // Each listed header's place in the folded list, where every one is
+        // a row.
+        let units: Vec<(usize, usize)> = self
+            .displayed_devices()
+            .into_iter()
+            .filter(|&(index, endpoint)| {
+                self.device_visible(&endpoint.id) && (!devices || self.device_listed(index, query))
             })
-            .collect();
-        // Each movable header's place in the folded list, where every listed
-        // header is one row.
-        let units: Vec<(usize, usize)> = listed
-            .iter()
             .enumerate()
-            .filter(|&(_, &index)| index != 0)
-            .map(|(row, &index)| (index, row))
+            .map(|(row, (index, _))| (index, row))
             .collect();
         let dragged = units
             .iter()
@@ -251,16 +247,14 @@ impl HerdrWindow {
     ) -> Stateful<Div> {
         let (shift, carried) = plan.map_or_else(Default::default, |plan| plan.shift(index));
         let header = header
-            .when(index != 0, |header| {
-                header.on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                        if event.click_count == 1 {
-                            this.press_device(index, row, event.position, cx);
-                        }
-                    }),
-                )
-            })
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                    if event.click_count == 1 {
+                        this.press_device(index, row, event.position, cx);
+                    }
+                }),
+            )
             .when(shift != px(0.), |header| header.top(shift))
             .when(carried, |header| header.cursor_grabbing());
         if carried {
