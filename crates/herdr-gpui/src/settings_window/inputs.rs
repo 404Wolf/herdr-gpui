@@ -53,7 +53,6 @@ impl NumberField {
 pub(in crate::settings_window) struct NumberPreview {
     pub field: NumberField,
     pub value: f32,
-    pub released: bool,
 }
 
 /// Every dropdown the pages show; the selector is the button's id.
@@ -217,7 +216,10 @@ impl SettingsWindow {
         cx: &mut Context<Self>,
     ) {
         if let NumberField::Spacing(spacing) = field {
-            let (ui::NumberChange::Preview(value) | ui::NumberChange::Commit(value)) = change;
+            let (ui::NumberChange::Preview(value) | ui::NumberChange::Commit(value)) = change
+            else {
+                return;
+            };
             if field.range().contains(&value) {
                 let commit = matches!(change, ui::NumberChange::Commit(_));
                 self.set_spacing(spacing, Some(value), commit, cx);
@@ -227,11 +229,7 @@ impl SettingsWindow {
         let value = match change {
             ui::NumberChange::Preview(value) => {
                 // Shown at once; written only on release.
-                let preview = NumberPreview {
-                    field,
-                    value,
-                    released: false,
-                };
+                let preview = NumberPreview { field, value };
                 if matches!(
                     field,
                     NumberField::SoundVolume | NumberField::TerminalPadding(..)
@@ -244,6 +242,10 @@ impl SettingsWindow {
                 return;
             }
             ui::NumberChange::Commit(value) => value,
+            ui::NumberChange::Abandon => {
+                self.drop_number_preview(cx);
+                return;
+            }
         };
         let valid = !self.quitting && field.range().contains(&value);
         // A busy window refuses the write, so only an idle one starts it.
@@ -269,7 +271,6 @@ impl SettingsWindow {
             // The released value stays until the save's reload shows it.
             if started && self.saving {
                 preview.value = value;
-                preview.released = true;
             } else {
                 self.number_preview = None;
             }
@@ -284,10 +285,11 @@ impl SettingsWindow {
             .map_or(saved, |preview| preview.value)
     }
 
-    /// A load shows what a released slider wrote, so its preview ends.
-    pub(super) fn settle_number_preview(&mut self) {
-        if self.number_preview.is_some_and(|preview| preview.released) {
-            self.number_preview = None;
+    /// Ends a slider preview unwritten: its drag was abandoned, its page
+    /// went away, or a load now shows what the file holds.
+    pub(super) fn drop_number_preview(&mut self, cx: &mut Context<Self>) {
+        if self.number_preview.take().is_some() {
+            cx.notify();
         }
     }
 

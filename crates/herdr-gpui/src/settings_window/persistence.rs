@@ -239,7 +239,9 @@ impl SettingsWindow {
 
     pub(super) fn apply_loaded(&mut self, loaded: crate::Result<Loaded>, cx: &mut Context<Self>) {
         self.load_revision = self.load_revision.wrapping_add(1);
-        self.settle_number_preview();
+        // A released slider's save has reloaded, or a reload with no save
+        // replaced a drag that never ended: either way show the file.
+        self.drop_number_preview(cx);
         let valid = loaded.is_ok();
         match loaded {
             Ok(loaded) => {

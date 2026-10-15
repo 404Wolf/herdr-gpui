@@ -287,10 +287,16 @@ fn an_abandoned_drag_leaves_no_commit_behind(cx: &mut TestAppContext) {
         cx.simulate_click(at, Default::default());
     }
     cx.run_until_parked();
+    // The first release after it tells the owner to drop its preview,
+    // never to write the stale value.
     assert!(
         matches!(
             seen.borrow()[..],
-            [NumberChange::Commit(15.), NumberChange::Commit(13.)]
+            [
+                NumberChange::Abandon,
+                NumberChange::Commit(15.),
+                NumberChange::Commit(13.)
+            ]
         ),
         "{seen:?}"
     );

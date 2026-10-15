@@ -31,6 +31,10 @@ impl SettingsWindow {
     pub(super) fn set_search_query(&mut self, query: &str, cx: &mut Context<Self>) {
         let results = (!query.trim().is_empty()).then(|| catalog::search(query));
         if results != self.search_results {
+            if results.is_some() {
+                // The results replace the page and any slider being dragged.
+                self.drop_number_preview(cx);
+            }
             self.search_results = results;
             self.body_scroll.set_offset(Point::default());
             cx.notify();

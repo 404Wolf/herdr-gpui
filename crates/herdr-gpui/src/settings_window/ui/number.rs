@@ -40,6 +40,8 @@ pub(in crate::settings_window) struct Number {
 pub(in crate::settings_window) enum NumberChange {
     Preview(f32),
     Commit(f32),
+    /// A release that ends no drag of ours: the preview is dropped unwritten.
+    Abandon,
 }
 
 /// The typed-entry state the view keeps while one field is being edited.
@@ -111,9 +113,10 @@ pub(in crate::settings_window) fn number(
                 // A release with no drag running cannot be ours: a drag that
                 // ended without reaching us (unmounted slider) left a stale
                 // value behind.
-                let value = take_preview(id).filter(|_| cx.has_active_drag());
-                if let Some(value) = value {
-                    on_change(NumberChange::Commit(value), window, cx);
+                match (take_preview(id), cx.has_active_drag()) {
+                    (Some(value), true) => on_change(NumberChange::Commit(value), window, cx),
+                    (Some(_), false) => on_change(NumberChange::Abandon, window, cx),
+                    (None, _) => {}
                 }
             }
         };

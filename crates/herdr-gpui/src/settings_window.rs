@@ -617,6 +617,7 @@ impl SettingsWindow {
         cx: &mut Context<Self>,
     ) {
         self.hover_theme(None, cx);
+        self.drop_number_preview(cx);
         if !self.finish_number_edit(true, cx) {
             self.finish_number_edit(false, cx);
         }
