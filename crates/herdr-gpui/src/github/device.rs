@@ -84,6 +84,8 @@ pub(super) enum Reply {
     Authenticated(Arc<SecretString>),
     /// The GitHub CLI's account, after the user chose it and it was verified.
     GitHubCli(Profile),
+    /// The account of a token the user pasted, verified and saved.
+    Pasted(Profile),
 }
 
 pub(crate) struct Profile {
@@ -92,6 +94,27 @@ pub(crate) struct Profile {
     pub token: Arc<SecretString>,
     pub(super) avatar_updates: Option<crate::avatars::AvatarUpdates>,
     pub source: Source,
+    /// The organizations the account belongs to, read only for an additional
+    /// account: the owners it covers besides its own login.
+    pub organizations: Vec<String>,
+}
+
+#[cfg(test)]
+impl Profile {
+    /// A signed-in account without an avatar, for tests outside this module.
+    pub(crate) fn fixture(login: &str, token: Arc<SecretString>, organizations: &[&str]) -> Self {
+        Self {
+            login: login.into(),
+            avatar: None,
+            token,
+            avatar_updates: None,
+            source: Source::Token,
+            organizations: organizations
+                .iter()
+                .map(|name| (*name).to_owned())
+                .collect(),
+        }
+    }
 }
 
 /// Where a signed-in account's token comes from.
@@ -162,7 +185,44 @@ pub(super) fn profile_from(token: Arc<SecretString>, github_cli: bool) -> Result
         token,
         avatar_updates,
         source,
+        organizations: Vec::new(),
     })
+}
+
+const ORGANIZATIONS: &str = "query { viewer { organizations(first: 100) { nodes { login } } } }";
+
+/// `profile` with the organizations its account belongs to, as far as its
+/// token may list them. A token that may not (a classic one without
+/// `read:org`, say) still covers its own login, so the failure is only logged.
+pub(super) fn with_organizations(mut profile: Profile) -> Profile {
+    let mut cooldown = None;
+    match super::graphql(
+        "organizations",
+        &profile.token,
+        ORGANIZATIONS,
+        serde_json::json!({}),
+        Duration::from_secs(15),
+        || false,
+        &mut cooldown,
+    ) {
+        Ok(value) => profile.organizations = organizations(&value),
+        Err(error) => log::failure("organizations", &error),
+    }
+    profile
+}
+
+/// The organization logins of a viewer query, bounded and checked like the
+/// owners a config lists.
+pub(super) fn organizations(value: &serde_json::Value) -> Vec<String> {
+    value["data"]["viewer"]["organizations"]["nodes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|node| node["login"].as_str())
+        .filter(|login| crate::config::valid_owner(login))
+        .take(100)
+        .map(str::to_owned)
+        .collect()
 }
 
 /// Whether a classic token's `X-OAuth-Scopes` reach private repositories.

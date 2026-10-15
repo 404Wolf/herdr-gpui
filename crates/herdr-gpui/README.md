@@ -3046,6 +3046,21 @@ Ctrl+Shift+U is left unbound for
   `GITHUB_TOKEN` apply only to the main account. Removing a device keeps its
   saved credential until you sign out of it, so re-adding the device finds it. See
   [PR lookup scope and limits](../../README.md) for authentication and remote limits.
+- Additional GitHub accounts read the repositories another account owns, such as
+  an Enterprise Managed User's beside a personal account. Once signed in, the
+  GitHub panel offers **Add account (A)**; a strip then switches between the
+  device's account and each additional one (Left/Right). Each signs in with the
+  browser, or with **Use a token (T)** for a personal access token, which GitHub
+  checks before it is saved: an Enterprise Managed User cannot install Herdr's
+  GitHub App on its own repositories, so a token is how one reads them. A
+  repository is read with the first additional account whose login, organizations
+  (read when it signs in, if its token may list them), or configured owners
+  include the repository's owner, and with the device's account otherwise. This
+  applies to sidebar PR badges, the New worktree pull request and issue lists, PR
+  checks, comments and merges, creating a pull request, and the orchestrator.
+  Accounts are listed in `[github] accounts` with an `id` naming their credential
+  entry (`github.com/account/<id>`, or `github-credentials-account-<id>`) and
+  optional `owners`; **Remove account (D)** deletes the credential, then the entry.
    Herdr does not give endpoint clients a workspace's checkout path, so every
     daemon version uses this worktree-registry path. No Git or HTTP requests run from menu-open or render paths.
   Opening the top-right Git/PR dropdown also queues a fresh lookup for the focused

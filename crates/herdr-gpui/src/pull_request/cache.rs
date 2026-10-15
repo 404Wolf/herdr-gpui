@@ -23,7 +23,6 @@ use chrono::{DateTime, DurationRound as _, Local, TimeDelta};
 use std::{
     cell::{Ref, RefCell},
     rc::Rc,
-    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -58,7 +57,7 @@ pub(crate) struct Cache {
     /// The checkouts of the batch in flight.
     pub(super) active: Vec<Input>,
     pub(super) scope: Option<(u64, u64, String)>,
-    pub(super) token: Option<Arc<secrecy::SecretString>>,
+    pub(super) token: Option<crate::github::Tokens>,
     pub(super) view: View,
     pub(super) batch: BatchSize,
     pub(super) next_scan: Option<Instant>,
@@ -158,17 +157,15 @@ impl Cache {
     pub fn scope(
         &mut self,
         scope: (u64, u64, String),
-        token: Arc<secrecy::SecretString>,
+        token: impl Into<crate::github::Tokens>,
         login: &str,
         origin: Origin,
     ) {
+        let token = token.into();
         let changed = self.scope.as_ref() != Some(&scope)
             || self.view.origin != origin
             || self.view.login != login
-            || self
-                .token
-                .as_ref()
-                .is_none_or(|old| !Arc::ptr_eq(old, &token));
+            || self.token.as_ref().is_none_or(|old| !old.same(&token));
         if changed {
             self.suspend();
             self.scope = Some(scope);

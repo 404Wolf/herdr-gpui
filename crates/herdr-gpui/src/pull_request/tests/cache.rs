@@ -24,7 +24,7 @@ fn input(branch: &str) -> Input {
 
 struct Peer {
     cache: Cache,
-    incoming: mpsc::Receiver<(u64, Vec<Input>, Origin, Arc<secrecy::SecretString>)>,
+    incoming: mpsc::Receiver<(u64, Vec<Input>, Origin, crate::github::Tokens)>,
     outgoing: mpsc::SyncSender<(u64, Batch, Option<Duration>)>,
 }
 

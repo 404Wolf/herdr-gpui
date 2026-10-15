@@ -1,6 +1,6 @@
 //! Internal failures retain their categories and sources until presentation.
 pub use crate::updater::UpdateError;
-pub use github::GitHubJsonError;
+pub use github::{GitHubAccountsError, GitHubJsonError};
 use std::{
     io,
     path::{Path, PathBuf},
@@ -414,6 +414,8 @@ pub enum Error {
         "[github] {0} must not be in the config. Sign in from the app, or use GH_TOKEN / GITHUB_TOKEN."
     )]
     GitHubSecretInConfig(&'static str),
+    #[error(transparent)]
+    GitHubAccounts(#[from] GitHubAccountsError),
     #[error("Could not {operation}.")]
     UsageProcess {
         operation: &'static str,

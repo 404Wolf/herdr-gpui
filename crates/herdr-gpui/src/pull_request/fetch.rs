@@ -98,11 +98,12 @@ pub(super) fn fetch(
     token: &secrecy::SecretString,
     cancelled: impl Fn() -> bool,
 ) -> Result {
+    let tokens = crate::github::Tokens::from(std::sync::Arc::new(token.clone()));
     let mut batch = super::batch::fetch_batch(
         vec![input.clone()],
         &Origin::Local,
         &mut Origins::default(),
-        token,
+        &tokens,
         cancelled,
         &mut None,
     );

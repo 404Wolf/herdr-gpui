@@ -17,6 +17,7 @@ mod edit;
 mod files;
 mod font_weight;
 mod fonts;
+mod github;
 mod keybindings;
 mod layout;
 mod notifications;
@@ -53,6 +54,8 @@ use fonts::FontSettings;
 #[cfg(any(test, feature = "integration-test"))]
 pub use fonts::symbol_fallbacks;
 pub use fonts::{FONT_SIZE_RANGE, FONT_SIZE_STEP, FontConfig};
+pub use github::{GitHubAccount, GitHubConfig};
+pub(crate) use github::{MAX_ACCOUNTS, valid_account_id, valid_owner};
 pub use layout::{Density, Layout, LayoutMode, Style};
 pub(crate) use notifications::NotificationDelivery;
 pub use notifications::{
@@ -367,46 +370,6 @@ impl<'de> Deserialize<'de> for OptionAsAlt {
 pub struct Features {
     /// Open a space's menu when the pointer rests on its sidebar row.
     pub sidebar_hover_menu: bool,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(default)]
-pub struct GitHubConfig {
-    pub oauth_client_id: Option<String>,
-    pub allow_plaintext_credentials: bool,
-}
-
-impl GitHubConfig {
-    pub fn client_id(&self) -> Result<Option<String>> {
-        self.client_id_with_override(env::var_os("HERDR_GITHUB_OAUTH_CLIENT_ID").as_deref())
-    }
-
-    fn client_id_with_override(&self, value: Option<&std::ffi::OsStr>) -> Result<Option<String>> {
-        let (id, source) = match value {
-            Some(value) => (
-                Some(value.to_str().ok_or(Error::ClientIdEncoding)?),
-                "HERDR_GITHUB_OAUTH_CLIENT_ID",
-            ),
-            None => (
-                Some(
-                    self.oauth_client_id
-                        .as_deref()
-                        .unwrap_or("Iv23liurUcwxPjrdIFYT"),
-                ),
-                "github.oauth_client_id",
-            ),
-        };
-        if let Some(id) = id
-            && (id.is_empty()
-                || id.len() > 256
-                || !id
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.')))
-        {
-            return Err(Error::InvalidClientId(source));
-        }
-        Ok(id.map(str::to_owned))
-    }
 }
 
 /// The daemon's config is read for a handful of keys, so a file far larger
@@ -821,18 +784,22 @@ impl Config {
             .into_iter()
             .flat_map(|(name, face)| face.reject_terminal_keys(name)),
         );
-        // Unknown keys are ignored, but a credential pasted into the file is
-        // refused so it is noticed and removed rather than left on disk.
+        // Unknown keys are ignored, but a credential pasted into the file,
+        // `[github]` or one of its accounts, is refused so it is noticed and
+        // removed rather than left on disk.
         if let Some(name) = ["client_secret", "private_key", "token"]
             .into_iter()
             .find(|name| {
-                unknown_keys
-                    .iter()
-                    .any(|key| key == &format!("github.{name}"))
+                unknown_keys.iter().any(|key| {
+                    key.strip_prefix("github.")
+                        .is_some_and(|rest| rest.rsplit('.').next() == Some(*name))
+                })
             })
         {
             return Err(Error::GitHubSecretInConfig(name));
         }
+        // A newer build may keep more accounts or owners than this one.
+        unknown_keys.extend(settings.github.limit_accounts());
         unknown_keys.sort();
         unknown_keys.dedup();
         let mut config = Self {
@@ -840,6 +807,7 @@ impl Config {
             ..Self::default()
         };
         settings.github.client_id_with_override(None)?;
+        settings.github.check_accounts()?;
         config.github = settings.github;
         #[cfg(feature = "boat")]
         settings.boat.settings_with(|_| None)?;

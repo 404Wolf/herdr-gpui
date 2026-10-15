@@ -20,6 +20,7 @@ mod font_aliases;
 mod font_weight;
 mod fonts;
 mod github;
+mod github_accounts;
 mod icon_font;
 mod keybindings;
 mod line_height;

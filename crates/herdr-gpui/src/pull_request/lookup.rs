@@ -3,6 +3,7 @@
 //! than cancelled mid-flight, and dropping the handle retires the generation.
 
 use super::{Input, Origin, Origins, PullRequest, batch::Batch, batch::fetch_batch};
+use crate::github::Tokens;
 use std::{
     sync::{
         Arc,
@@ -13,7 +14,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-type Request = (u64, Vec<Input>, Origin, Arc<secrecy::SecretString>);
+type Request = (u64, Vec<Input>, Origin, Tokens);
 
 pub(super) struct Worker {
     pub(super) requests: mpsc::SyncSender<Request>,
@@ -47,7 +48,7 @@ pub(super) struct Prefetch {
     pub(super) worker: Option<Worker>,
     pub(super) generation: Arc<AtomicU64>,
     pub(super) busy: bool,
-    waiting: Option<(Vec<Input>, Origin, Arc<secrecy::SecretString>)>,
+    waiting: Option<(Vec<Input>, Origin, Tokens)>,
 }
 
 impl Drop for Prefetch {
@@ -69,14 +70,9 @@ impl Prefetch {
         self.waiting = None;
     }
 
-    pub fn request(
-        &mut self,
-        inputs: Vec<Input>,
-        origin: Origin,
-        token: Arc<secrecy::SecretString>,
-    ) {
+    pub fn request(&mut self, inputs: Vec<Input>, origin: Origin, tokens: impl Into<Tokens>) {
         self.generation.fetch_add(1, Ordering::Relaxed);
-        self.waiting = Some((inputs, origin, token));
+        self.waiting = Some((inputs, origin, tokens.into()));
     }
 
     /// The current batch's answer, once, after sending a waiting batch to the

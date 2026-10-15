@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 
+mod additional;
 mod github_cli;
 
 #[test]
@@ -65,6 +66,7 @@ fn competing_restores_load_the_rotated_credential_inside_the_transaction() {
                             token,
                             avatar_updates: None,
                             source: Default::default(),
+                            organizations: Vec::new(),
                         })
                     },
                     |_| {
@@ -99,6 +101,7 @@ fn competing_restores_load_the_rotated_credential_inside_the_transaction() {
                             token,
                             avatar_updates: None,
                             source: Default::default(),
+                            organizations: Vec::new(),
                         })
                     },
                     |_| panic!("the competing restore must not reuse the old refresh token"),

@@ -8,10 +8,12 @@ use super::{
     fetch::{Ask, FIELDS, Head, NUMBER_QUERY, TIMEOUT, Target, target},
     parse_graphql, parse_numbered,
 };
-use crate::Error;
+use crate::{Error, github::Tokens};
+use secrecy::SecretString;
 use serde_json::{Value, json};
 use std::{
     fmt::Write as _,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -54,7 +56,7 @@ pub(super) fn fetch_batch(
     inputs: Vec<Input>,
     origin: &Origin,
     origins: &mut Origins,
-    token: &secrecy::SecretString,
+    tokens: &Tokens,
     cancelled: impl Fn() -> bool,
     cooldown: &mut Option<Duration>,
 ) -> Batch {
@@ -66,17 +68,40 @@ pub(super) fn fetch_batch(
         |input, deadline| target(input, origin, origins, deadline, &cancelled),
         &mut batch,
     );
-    ask(
-        targets,
-        |query, variables, aliases, cooldown| {
-            crate::github::graphql_aliases(
-                token, query, variables, aliases, TIMEOUT, &cancelled, cooldown,
-            )
-        },
-        |response, target, pause| answer_for(response, target, token, &cancelled, pause),
-        (&mut batch, cooldown),
-    );
+    for (token, targets) in by_token(targets, tokens) {
+        ask(
+            targets,
+            |query, variables, aliases, cooldown| {
+                crate::github::graphql_aliases(
+                    &token, query, variables, aliases, TIMEOUT, &cancelled, cooldown,
+                )
+            },
+            |response, target, pause| answer_for(response, target, &token, &cancelled, pause),
+            (&mut batch, cooldown),
+        );
+    }
     batch
+}
+
+/// One account's token and the targets it reads.
+pub(super) type Group = (Arc<SecretString>, Vec<(Input, Target)>);
+
+/// The targets each account reads, in the order their first one came: a
+/// request carries one token, so each account's repositories are asked in
+/// requests of their own.
+pub(super) fn by_token(targets: Vec<(Input, Target)>, tokens: &Tokens) -> Vec<Group> {
+    let mut groups: Vec<Group> = Vec::new();
+    for (input, target) in targets {
+        let token = tokens.for_owner(&target.owner);
+        match groups
+            .iter_mut()
+            .find(|(known, _)| Arc::ptr_eq(known, token))
+        {
+            Some((_, group)) => group.push((input, target)),
+            None => groups.push((token.clone(), vec![(input, target)])),
+        }
+    }
+    groups
 }
 
 /// Identifies each checkout until `deadline`. A checkout Git cannot identify
@@ -185,7 +210,7 @@ pub(super) fn ask(
 fn answer_for(
     response: Value,
     target: &Target,
-    token: &secrecy::SecretString,
+    token: &SecretString,
     cancelled: &impl Fn() -> bool,
     network: Option<&mut Option<Duration>>,
 ) -> Option<Result> {
@@ -207,7 +232,7 @@ fn crowded(
     target: &Target,
     branch: &str,
     head: &Head,
-    token: &secrecy::SecretString,
+    token: &SecretString,
     cancelled: &impl Fn() -> bool,
     cooldown: &mut Option<Duration>,
 ) -> Result {
