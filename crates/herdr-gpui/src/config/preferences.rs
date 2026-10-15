@@ -9,6 +9,7 @@ pub(crate) enum Preference {
     ConfirmCloseWorkspace(bool),
     RemoveMergedWorktrees(bool),
     ShowSystemLoad(bool),
+    ShowNetworkQuality(bool),
     AgentCheckpoints(bool),
     ShowListeningPorts(bool),
     ShowSidebarSearch(bool),
@@ -64,6 +65,9 @@ impl Config {
                     (None, "remove_merged_worktrees", Some(value.into()))
                 }
                 Preference::ShowSystemLoad(value) => (None, "show_system_load", Some(value.into())),
+                Preference::ShowNetworkQuality(value) => {
+                    (None, "show_network_quality", Some(value.into()))
+                }
                 Preference::AgentCheckpoints(value) => {
                     (None, "agent_checkpoints", Some(value.into()))
                 }
@@ -223,6 +227,7 @@ mod tests {
             Preference::ConfirmCloseWorkspace(false),
             Preference::RemoveMergedWorktrees(true),
             Preference::ShowSystemLoad(false),
+            Preference::ShowNetworkQuality(true),
             Preference::AgentCheckpoints(false),
             Preference::ShowListeningPorts(false),
             Preference::ShowSidebarSearch(false),
@@ -252,6 +257,7 @@ mod tests {
         assert_eq!(table["confirm_close_workspace"].as_bool(), Some(false));
         assert_eq!(table["remove_merged_worktrees"].as_bool(), Some(true));
         assert_eq!(table["show_system_load"].as_bool(), Some(false));
+        assert_eq!(table["show_network_quality"].as_bool(), Some(true));
         assert_eq!(table["agent_checkpoints"].as_bool(), Some(false));
         assert_eq!(table["show_listening_ports"].as_bool(), Some(false));
         assert_eq!(table["show_sidebar_search"].as_bool(), Some(false));

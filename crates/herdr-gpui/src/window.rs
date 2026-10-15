@@ -251,6 +251,7 @@ pub(crate) struct HerdrWindow {
     pub(crate) pr_actions: crate::pr_actions::Actions,
     pub(crate) usage: crate::usage::Usage,
     pub(crate) system_load: crate::system_load::SystemLoad,
+    pub(crate) network_quality: crate::network_quality::NetworkQuality,
     /// The Devices overview's activity history and open tabs.
     pub(crate) devices_overview: crate::devices_overview::Overview,
     /// Snapshots of checkouts taken at agent turns, and the dialog listing them.
@@ -562,6 +563,9 @@ impl HerdrWindow {
         if self.update_system_load() {
             cx.notify();
         }
+        if self.network_quality.poll(self.config.show_network_quality) {
+            cx.notify();
+        }
         self.update_checkpoints(cx);
         self.update_port_forwards(cx);
         if self.update_listening_ports() {
@@ -743,6 +747,7 @@ impl HerdrWindow {
             pr_actions: Default::default(),
             usage: Default::default(),
             system_load: Default::default(),
+            network_quality: Default::default(),
             devices_overview: Default::default(),
             checkpoints: Default::default(),
             port_forwards: Default::default(),

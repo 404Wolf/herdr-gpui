@@ -85,6 +85,7 @@ mod merged_cleanup;
 mod mockup;
 mod motion;
 mod navigation;
+mod network_quality;
 mod notifications;
 mod orchestrator;
 mod osc52;

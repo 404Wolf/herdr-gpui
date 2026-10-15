@@ -80,6 +80,11 @@ agent_checkpoints = true
 # scanned every five seconds with ss or lsof, a remote one over SSH; false
 # stops all scanning. Also under Settings > General.
 show_listening_ports = true
+# Show latency and loss from this machine in the status bar, beside CPU and
+# memory. One timed TCP connect to 1.1.1.1:443 every 15 seconds, about a
+# megabyte a day, so it suits a metered link such as a phone hotspot. Also
+# under Settings > Status bar.
+show_network_quality = false
 # Draw wheel and trackpad scrollback between rows, following the OS deltas
 # and momentum; false scrolls by whole rows. Applications reading the mouse
 # always get whole rows. Also under Settings > General.

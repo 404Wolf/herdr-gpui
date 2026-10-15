@@ -911,6 +911,16 @@ local port is free. Windows clients
 do not scan this machine. Set top-level `show_listening_ports = false`, or
 turn off **Show listening ports** in Settings, to hide them and stop scanning.
 
+Set top-level `show_network_quality = true` to show latency and packet loss
+from this machine in the status bar, after CPU and memory: `NET 31ms 0%`.
+A worker thread times one TCP connect to `1.1.1.1:443` every 15 seconds, in
+process and without ICMP, about a megabyte a day, so it suits a metered link
+such as a phone hotspot; no throughput test runs. Latency is the median of
+the last minute's handshakes; loss counts connects that failed or timed out
+over the last five minutes. The tooltip shows the last probe and the range.
+It is off by default; turn it on here or with **Network latency and loss** under
+Settings > Status bar. Turning it off stops the probes.
+
 `[notifications]` in `config-gpui.local.toml` overrides shared toast preferences
 for GUI-local in-app delivery, independently per key. `enabled = true` shows
 in-app toasts even when shared delivery is `system`; `enabled = false` leaves

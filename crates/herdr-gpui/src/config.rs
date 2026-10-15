@@ -122,6 +122,8 @@ pub struct Config {
     pub show_device_icons: bool,
     /// CPU and memory of the selected host in the status bar.
     pub show_system_load: bool,
+    /// Latency and loss from this machine, by timed TCP connects, in the status bar.
+    pub show_network_quality: bool,
     /// Snapshot a checkout's files each time one of its agents starts or
     /// finishes a turn, so they can be rolled back.
     pub agent_checkpoints: bool,
@@ -443,6 +445,7 @@ impl Default for Config {
             status_icons: None,
             show_device_icons: true,
             show_system_load: true,
+            show_network_quality: false,
             agent_checkpoints: true,
             show_listening_ports: true,
             smooth_scroll: true,
@@ -502,6 +505,7 @@ struct Settings {
     status_icons: Option<StatusIcons>,
     show_device_icons: Option<bool>,
     show_system_load: Option<bool>,
+    show_network_quality: Option<bool>,
     agent_checkpoints: Option<bool>,
     show_listening_ports: Option<bool>,
     smooth_scroll: Option<bool>,
@@ -900,6 +904,7 @@ impl Config {
         config.status_icons = settings.status_icons;
         config.show_device_icons = settings.show_device_icons.unwrap_or(true);
         config.show_system_load = settings.show_system_load.unwrap_or(true);
+        config.show_network_quality = settings.show_network_quality.unwrap_or(false);
         config.agent_checkpoints = settings.agent_checkpoints.unwrap_or(true);
         config.show_listening_ports = settings.show_listening_ports.unwrap_or(true);
         config.smooth_scroll = settings.smooth_scroll.unwrap_or(true);
