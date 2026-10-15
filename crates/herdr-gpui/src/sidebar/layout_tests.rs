@@ -603,6 +603,8 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         sidebar_width: None,
         sidebar_drag: None,
         workspace_drag: None,
+        device_drag: None,
+        device_order: Vec::new(),
         tab_drag: None,
         sidebar_split: None,
         sidebar_split_modified: false,

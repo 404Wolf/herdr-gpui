@@ -287,6 +287,11 @@ pub(crate) struct HerdrWindow {
     pub(crate) sidebar_drag: Option<sidebar::SidebarDrag>,
     /// A press on a workspace row that may lift it for reordering.
     pub(crate) workspace_drag: Option<sidebar::WorkspaceDrag>,
+    /// A press on a device's header that may lift it for reordering.
+    pub(crate) device_drag: Option<sidebar::DeviceDrag>,
+    /// The device IDs in the order the user dragged them into; see
+    /// `endpoint::order`.
+    pub(crate) device_order: Vec<String>,
     /// A press on a tab that may lift it for reordering.
     pub(crate) tab_drag: Option<tab_drag::TabDrag>,
     pub(crate) sidebar_split: Option<f32>,
@@ -426,6 +431,11 @@ impl HerdrWindow {
         }
         if self.review_files_width.chosen().is_none() {
             self.review_files_width.restore(chrome.review_files_width);
+        }
+        // A device dragged before the stored order loaded keeps its place.
+        if self.device_order.is_empty() {
+            self.device_order = chrome.device_order;
+            self.arrange_devices();
         }
         if !self.agent_sort_modified
             && let Some(sort) = chrome.agent_sort
@@ -761,6 +771,8 @@ impl HerdrWindow {
             sidebar_width: None,
             sidebar_drag: None,
             workspace_drag: None,
+            device_drag: None,
+            device_order: Vec::new(),
             tab_drag: None,
             sidebar_split: None,
             sidebar_split_modified: false,
