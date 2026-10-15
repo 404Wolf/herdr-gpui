@@ -68,7 +68,7 @@ Healthy connections leave the status bar quiet; connection indicators live in th
 device picker. Startup, disconnection, and operation errors remain in the status bar.
 
 For split terminal panes within a tab, **Focus follows mouse** is on by default.
-Disable it in **Settings > General > Interface**, or run
+Disable it in **Settings > Tabs & panes > Panes**, or run
 `herdr-gpui config set focus_follows_mouse false`.
 Hovering a pane focuses it when the window is active and
 terminal input has keyboard focus. Held mouse buttons, modifiers, dragging,
@@ -284,7 +284,7 @@ Tailscale logo when it is a `*.ts.net` name or a Tailscale address
 (`100.64.0.0/10` or `fd7a:115c:a1e0::/48`). Hover the mark to see what it means.
 Orca and Minimal draw no icons on their rows and draw no mark either. Set
 top-level `show_device_icons = false`, or turn off **Show device icons** under
-Settings > Appearance > Sidebar layout, to leave it out everywhere; the name
+Settings > Sidebar, to leave it out everywhere; the name
 then starts where the mark was.
 
 Right-click a saved SSH device's header in the Spaces list to **Rename** it or
@@ -651,16 +651,24 @@ Accepted saves survive closing Settings. Family and size edits preserve configur
 fallbacks and unrelated settings in `config-gpui.local.toml`. General retains
 browser-skill installation/removal and configuration paths.
 
-General provides switches for **Show usage**, **Confirm tab close**, **Confirm pane close**, **Confirm workspace close**, and the
-clipboard copied notification, plus all six clipboard positions. Notifications
-provides a native in-app switch, a bounded delay stepper (0-3600 seconds), and
-four corner choices. Each notification and clipboard field has a **Follow shared**
-action that removes only its local override; effective values are shown after
-reload. Appearance provides switches for **Show agents**, **Show search**,
-**Show repository icons**, and **High contrast**, and a sidebar-gap stepper (0-64 logical pixels). Sound enablement uses a switch;
-custom sound paths and per-agent sound policies remain shared-file settings, not
-read-only preference rows in this window. Configuration paths and installation
-status are diagnostic facts rather than editable preference values.
+Settings groups its pages: Appearance (Theme, Sidebar, Fonts, Status bar),
+Behaviour (General, Tabs & panes, Code, Notifications), Connect (Integrations,
+Plugins, Cloud devices) and Advanced (Configuration), with a search box above
+them that finds any row. Every row shows whether it is shared with Herdr or
+local to this app. General has **Show listening ports**, **Checkpoint agent
+turns**, **Smooth scrolling**, the clipboard notification overrides, **Remove
+worktrees of merged PRs**, the browser skill and **Install beta releases**.
+Tabs & panes has the tab bar, **Confirm before closing** a tab, pane or
+workspace, **Focus follows mouse** and session restore. Notifications has
+delivery, **Finished notifications**, the in-app toast overrides (a 0-3600
+second delay field), agent sounds with a 0-100% **Volume**, and the status
+indicator style and icon set. An override dropdown's first entry follows
+Herdr's value and removes only the local override. Sidebar has the layout
+preset, selection marks, **Device footer**, **Show agents**, **Show search**,
+**Show repository icons**, **Show device icons**, spacing sliders and host
+colours. Theme ends with the window backdrop and terminal padding. Custom sound
+paths and per-agent sound policies remain shared-file settings. Configuration
+paths are diagnostic facts rather than editable preference values.
 
 These native edits save automatically through the serial background save path,
 preserving unrelated TOML keys/comments and pending theme/layout selections.
@@ -739,7 +747,7 @@ use the shared theme, all 18 upstream palettes, custom colors, and automatic
 light/dark selection. Selecting a shared theme disables upstream auto-switching,
 as in the TUI. Status indicators always use the shared status colors,
 independent of a native terminal theme override, and the shared indicator style
-unless **Settings > Indicators** picks one of this app's own icon sets: Solid,
+unless **Settings > Notifications > Icons** picks one of this app's own icon sets: Solid,
 Tiles, or Edge rail, saved as `status_icons` in `config-gpui.local.toml`. Herdr
 accepts only `dots` or `symbols` in `ui.status_indicators`, so these never reach
 the shared file, and the TUI keeps its own choice. The icons are about a line
@@ -828,20 +836,20 @@ dialog instead of being removed. The branch is not deleted, and a checkout
 the daemon finds dirty is never force removed.
 The pane dialog's **Do not ask again** checkbox (click it or press Space) saves
 `confirm_close_pane = false` to `config-gpui.local.toml` once the close is sent. Saved edits apply automatically. The
-**Show agents** control in **Settings > Appearance > Sidebar layout** saves
+**Show agents** control in **Settings > Sidebar** saves
 `show_agents` immediately, independently of the layout draft saved on close.
 
 A search field at the top of the sidebar finds devices, worktrees, and
 branches by name; while it holds text, results grouped by kind replace the
 spaces list. Up and Down move through them, Enter opens one, and Escape
 clears the search. Set top-level `show_sidebar_search = false`, or turn off
-**Show search** in **Settings > Appearance > Sidebar layout**, to hide it.
+**Show search** in **Settings > Sidebar**, to hide it.
 
 In the Normal, Compact, and Comfortable layouts and in Superset, each space's
 sidebar row starts with its repository owner's avatar, or the GitHub mark;
 Orca and Minimal draw neither. Set top-level `show_repository_icons = false`,
-or turn off **Show repository icons** in **Settings > Appearance > Sidebar
-layout**, to leave both out and give the name their room. The Superset layout
+or turn off **Show repository icons** in **Settings > Sidebar**, to leave
+both out and give the name their room. The Superset layout
 keeps its icon slot and draws its branch glyph there instead.
 
 `[usage]` provides independent switches in `config-gpui.local.toml`:
@@ -962,7 +970,7 @@ On Linux and Windows it stays in the same position when the sidebar collapses
 to a rail. The leftmost tab strip takes the button when the sidebar is hidden
 or the rail cannot fit it beside macOS's traffic lights.
 It stays available when the sidebar is hidden; the existing View menu command and shortcut still work.
-In **Settings > General**, toggle **Show usage** to turn the bottom quota display on or off.
+In **Settings > Status bar**, toggle **Usage** to turn the bottom quota display on or off.
 The choice is saved to `config-gpui.local.toml` and follows the existing `[usage] show` setting.
 
 The app's own colored marks and labels (status dots and words, pull request
@@ -971,13 +979,13 @@ contrast against the sidebar, menus, and selected rows. Each color keeps its
 hue and moves only its lightness, and only as far as it has to, so a theme
 that already reads well is drawn as authored: on dark themes the status dots
 keep upstream's colors, while light themes such as Catppuccin Latte get darker
-versions of the same hues. **Settings > Appearance > High contrast**, or
+versions of the same hues. **Settings > Theme > High contrast**, or
 top-level `contrast = "high"`, raises that minimum from 3:1 (the WCAG level for
 graphics) to 4.5:1 (the level for text), lifts dim labels to it too, and makes
 selected rows stand further off the surface. Terminal output is never
 adjusted; programs keep the colors they asked for.
 
-**Settings > Appearance > Window backdrop** offers three tiles: **Solid** (the
+**Settings > Theme > Window** offers three backdrop tiles: **Solid** (the
 default), **Translucent**, and **Picture**, each showing only its own controls.
 Translucent starts at 85%, and its **Background opacity** stepper moves in 5%
 steps between 10% and 100%; `[backdrop] opacity` in `config-gpui.local.toml`
@@ -1012,13 +1020,10 @@ top-level line there (before any table headers):
 layout = "compact"
 ```
 
-**Settings > Appearance > Sidebar layout**, below the theme grid, lists all nine
-choices beside a live preview using the current theme and sidebar font. Preview widths of 240,
-280, and 320 pixels, clicking workspace or agent rows to select them, and clicking
-the repository arrow to fold affect only the sample. Choosing a layout applies it
-live to the sample and app windows, like themes, without writing on each click.
-Only the final choice is saved when Settings closes or the app quits. The list and
-preview stack in narrow Settings windows.
+**Settings > Sidebar > Layout preset** lists all nine choices. Choosing a layout
+applies it live to the app windows, like themes, without writing on each click.
+Only the final choice is saved when Settings closes, **Save now** is pressed, or
+the app quits.
 
 Three densities of Herdr's own rows are available:
 
@@ -1106,7 +1111,7 @@ padding_y = [4, 8]   # top, then bottom
 - Every terminal takes the padding, in every tab group, whether the sidebar shows or not. A browser, VS Code, review, or orchestrator tab pads its own content and takes none.
 - The terminal keeps the remaining size, so the daemon is resized to the columns and rows it actually has.
 - The padding shows the theme background.
-- **Settings > Appearance > Terminal padding** steps each of the four sides by one pixel. It writes one number when the two sides of an axis agree, and a pair when they differ.
+- **Settings > Theme > Terminal padding** sets each of the four sides with a slider, a typed value, or one-pixel steps. It writes one number when the two sides of an axis agree, and a pair when they differ.
 
 `[layout] sidebar_gap` is deprecated. It padded only the left side of the terminal beside the sidebar. A file that still sets it keeps loading: while `padding_x` is unset, the gap becomes the left padding of every terminal, and the app reports the key as deprecated. Setting the horizontal padding in Settings writes `padding_x` and removes `sidebar_gap`.
 
@@ -1260,7 +1265,7 @@ override `path`, and relative paths resolve beside the local TUI config.
 
 Volume is this app's own, since Herdr's `[ui.sound]` has none: `[sound] volume`
 in `config-gpui.local.toml`, a percentage of each sound's own level from 0 to 100
-(default 50), also under **Settings > Sound**. It follows loudness rather than
+(default 50), also under **Settings > Notifications > Volume**. It follows loudness rather than
 raw amplitude, so 50 plays at a quarter of the amplitude, about 12 dB quieter;
 0 plays nothing. It applies to every sound, previews and `sound play` included,
 and not to the system alert `[bell]` plays, which follows the OS alert volume.

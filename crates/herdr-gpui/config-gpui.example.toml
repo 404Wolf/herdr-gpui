@@ -48,21 +48,21 @@ remove_merged_worktrees = false
 # Show the Agents section below Spaces in the sidebar.
 show_agents = true
 # Show the search field at the top of the sidebar, which finds devices,
-# worktrees, and branches. Also under Settings > Appearance > Sidebar layout.
+# worktrees, and branches. Also under Settings > Sidebar.
 show_sidebar_search = true
 # Show the repository owner's avatar, or the GitHub mark, before each space's
 # name in the sidebar, in the layouts that draw one (not orca or minimal).
-# Also under Settings > Appearance > Sidebar layout.
+# Also under Settings > Sidebar.
 show_repository_icons = true
 # Draw agent status as icons instead of Herdr's dots or symbols: "solid"
 # (filled discs), "tiles" (each mark on a tinted tile), or "rail" (outline
 # marks plus a bar on the edge of each working, done, or blocked row). Only
 # this app draws them; unset follows Herdr's `ui.status_indicators`.
-# Also under Settings > Indicators.
+# Also under Settings > Notifications > Icons.
 # status_icons = "solid"
 # Show a mark before each device's name in the sidebar for where it runs: this
 # machine, a cloud provider, Tailscale, or SSH. In the layouts that draw one
-# (not orca or minimal). Also under Settings > Appearance > Sidebar layout.
+# (not orca or minimal). Also under Settings > Sidebar.
 show_device_icons = true
 # Show CPU and memory: the selected host's in the status bar, and each host's
 # on its sidebar row. Connected remote hosts are read over SSH every couple of
@@ -171,7 +171,7 @@ project_roots = []
 # How loud this app plays agent sounds (done and request), as a percentage of
 # the sound file's own level, inclusive 0..100. Herdr's [ui.sound] chooses
 # whether and which sounds play; it has no volume, so this is this app's own.
-# Also under Settings > Sound.
+# Also under Settings > Notifications > Volume.
 # [sound]
 # volume = 50
 
@@ -454,7 +454,7 @@ size = 12
 # is saved in its own 0600 daytona-api-key file. Default is false.
 # allow_plaintext_credentials = false
 
-# What shows behind the main window, also under Settings > Appearance. At the
+# What shows behind the main window, also under Settings > Theme > Window. At the
 # default opacity the window paints as it always has.
 # [backdrop]
 # How solid the theme's background is, from 0 (clear) to 1 (opaque). Terminal
