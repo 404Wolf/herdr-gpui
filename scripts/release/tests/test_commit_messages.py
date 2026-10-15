@@ -103,6 +103,8 @@ class HookTests(unittest.TestCase):
                            ("commit.gpgsign", "false"), ("core.hooksPath", ".githooks")):
             subprocess.run(["git", "-C", str(self.work), "config", key, value], check=True)
         shutil.copytree(ROOT / ".githooks", self.work / ".githooks")
+        # The pre-commit hook runs the Cargo.lock rebuild script.
+        shutil.copytree(ROOT / "scripts/git", self.work / "scripts/git")
         (self.work / "scripts/release").mkdir(parents=True)
         shutil.copyfile(CHECKER, self.work / "scripts/release/check-commit-messages.py")
 

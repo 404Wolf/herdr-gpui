@@ -498,9 +498,9 @@ const POLICY: [&str; 20] = [
 pub const FORWARD_READY: &str = "herdr-forward-ready";
 
 /// A noninteractive `ssh` child that runs no remote command and forwards
-/// `127.0.0.1:<local>` on this machine to `localhost:<remote>` on `target`,
-/// so a server listening only on the remote host's loopback can be opened
-/// here. Forwarding is this child's whole purpose, so unlike the bridge it
+/// `127.0.0.1:<local>` on this machine to `<address>:<remote>` as `target`
+/// dials it, `address` being the remote's `localhost` when None, so a remote
+/// server opens here through SSH whatever address it listens on. Forwarding is this child's whole purpose, so unlike the bridge it
 /// keeps forwardings.
 ///
 /// Readiness comes from SSH itself, never from connecting to the port, which
@@ -512,8 +512,18 @@ pub const FORWARD_READY: &str = "herdr-forward-ready";
 /// an interactively authenticated master cannot be tunnelled. The caller owns
 /// the child: its streams, readiness, and reaping.
 #[cfg(unix)]
-pub fn forward_command(target: &str, local: u16, remote: u16) -> Result<Command> {
+pub fn forward_command(
+    target: &str,
+    local: u16,
+    address: Option<std::net::IpAddr>,
+    remote: u16,
+) -> Result<Command> {
     validate_target(target)?;
+    let address = match address {
+        None => "localhost".to_owned(),
+        Some(std::net::IpAddr::V4(address)) => address.to_string(),
+        Some(std::net::IpAddr::V6(address)) => format!("[{address}]"),
+    };
     let mut command = noninteractive();
     command.args([
         "-N",
@@ -526,7 +536,7 @@ pub fn forward_command(target: &str, local: u16, remote: u16) -> Result<Command>
         "-o",
         "ExitOnForwardFailure=yes",
         "-L",
-        &format!("127.0.0.1:{local}:localhost:{remote}"),
+        &format!("127.0.0.1:{local}:{address}:{remote}"),
         "--",
         target,
     ]);
@@ -535,7 +545,12 @@ pub fn forward_command(target: &str, local: u16, remote: u16) -> Result<Command>
 
 /// Windows rejects SSH endpoints, so it has no host to forward from.
 #[cfg(windows)]
-pub fn forward_command(target: &str, _local: u16, _remote: u16) -> Result<Command> {
+pub fn forward_command(
+    target: &str,
+    _local: u16,
+    _address: Option<std::net::IpAddr>,
+    _remote: u16,
+) -> Result<Command> {
     validate_target(target)?;
     Err(Error::SshUnsupported)
 }

@@ -190,7 +190,7 @@ pub(crate) fn open_additional_window_then(
         match opened {
             Ok(handle) => {
                 let _ = handle.update(cx, |view, window, cx| {
-                    view.sound = sound;
+                    view.use_sound(sound);
                     then(view, window, cx);
                     window.activate_window();
                 });
@@ -291,6 +291,8 @@ pub(crate) fn run() -> std::process::ExitCode {
     // Only read first-frame settings here. Migration, defaults refresh, and font
     // discovery run after opening; CLI and fixtures skip personal settings.
     let appearance = if mode == LaunchMode::Normal {
+        // Before anything resolves a config path or the daemon's socket.
+        crate::login_env::adopt_config_home();
         let started = std::time::Instant::now();
         let appearance = StartupAppearance::load(Config::load_startup);
         tracing::debug!(
@@ -336,6 +338,12 @@ pub(crate) fn run() -> std::process::ExitCode {
     } else {
         crate::worktree_notes::Notes::default()
     };
+    // Nor with which palette rows the user chooses.
+    let palette_frecency = if mode == LaunchMode::Normal {
+        crate::palette::Frecency::load()
+    } else {
+        crate::palette::Frecency::default()
+    };
     // Nor with where the user's worktrees went.
     let dispatch_history = if mode == LaunchMode::Normal {
         crate::dispatch::History::load()
@@ -352,6 +360,7 @@ pub(crate) fn run() -> std::process::ExitCode {
             browser_tabs.install(cx);
             group_layouts.install(cx);
             worktree_notes.install(cx);
+            palette_frecency.install(cx);
             dispatch_history.install(cx);
             agent_skill.install_global(cx);
             keychain_grants.install(cx);
@@ -404,7 +413,7 @@ pub(crate) fn run() -> std::process::ExitCode {
                     if mode == LaunchMode::Normal {
                         let sound = shared_sound(cx);
                         let _ = _window.update(cx, |view, _, _| {
-                            view.sound = sound;
+                            view.use_sound(sound);
                         });
                         for _ in 1..window_count {
                             open_additional_window(target.clone(), cx);

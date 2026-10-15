@@ -5,7 +5,7 @@ use super::{
     fetch::{OUTPUT_LIMIT, TIMEOUT, fetch, local_repository, remote_host, worktree_checkout},
     fixture,
     lookup::Worker,
-    model::{MergeState, State},
+    model::{MergeState, Outcome, State},
     parse::{parse, parse_graphql},
     run,
 };
@@ -17,6 +17,7 @@ use std::{
 };
 
 mod actions;
+mod batch;
 mod by_number;
 mod cache;
 mod fetch;

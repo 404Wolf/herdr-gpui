@@ -82,7 +82,13 @@ fn configured_status(
     cx: &RowContext<'_>,
 ) -> (Option<Div>, f32) {
     match parts::configured_status(lines, status, removing, cx) {
-        Some(mark) => (Some(status_column(mark, cx)), 0.),
+        Some(mark) => (
+            Some(
+                status_column(mark, cx)
+                    .when(cx.indicators.centered(), |column| column.self_center()),
+            ),
+            0.,
+        ),
         None => (None, status_width(cx) + GAP),
     }
 }
@@ -234,11 +240,14 @@ impl RowLayout for Orca {
             .items_start()
             .py(px(if meta { 5. } else { 7. }))
             .when(removing, |card| card.opacity(0.5))
-            .child(
-                status_column(parts::status(status, removing, cx), cx)
-                    .h(px(line))
-                    .items_center(),
-            )
+            .child({
+                let column = status_column(parts::status(status, removing, cx), cx);
+                if cx.indicators.centered() {
+                    column.self_center()
+                } else {
+                    column.h(px(line)).items_center()
+                }
+            })
             .child(
                 div()
                     .flex()

@@ -210,6 +210,12 @@ pub(crate) fn menus(layout: Layout) -> Vec<Menu> {
                         command: Command::ToggleFullScreen,
                     },
                 ),
+                MenuItem::action(
+                    "Toggle Zen Mode",
+                    RunCommand {
+                        command: Command::ToggleZenMode,
+                    },
+                ),
             ],
         },
         Menu {

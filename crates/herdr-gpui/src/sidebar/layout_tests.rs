@@ -39,6 +39,8 @@ mod host_groups;
 #[cfg(test)]
 mod host_nesting;
 #[cfg(test)]
+mod host_origin;
+#[cfg(test)]
 mod host_wash;
 #[cfg(test)]
 mod layouts;
@@ -46,6 +48,8 @@ mod layouts;
 mod listening_ports;
 #[cfg(test)]
 mod palette;
+#[cfg(test)]
+mod palette_header;
 #[cfg(test)]
 mod picker_scroll;
 #[cfg(test)]
@@ -67,6 +71,8 @@ mod spacing_overrides;
 mod split_pane;
 #[cfg(test)]
 mod status_bar;
+#[cfg(test)]
+mod status_icons;
 #[cfg(test)]
 mod sticky_hosts;
 #[cfg(test)]
@@ -515,6 +521,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         devices_overview: Default::default(),
         checkpoints: Default::default(),
         port_forwards: Default::default(),
+        remote_browser: Vec::new(),
         #[cfg(feature = "cloud")]
         cloud_jobs: Default::default(),
         listening_ports: Default::default(),
@@ -522,6 +529,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         sidebar_visible: true,
         sidebar_start_pending: true,
         status_bar_visible: true,
+        zen: Default::default(),
         device_filter: None,
         endpoints: vec![crate::endpoint::Endpoint::new(
             crate::endpoint::LOCAL.into(),
@@ -578,6 +586,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         ),
         painter: Default::default(),
         backdrop: Default::default(),
+        device_themes: Default::default(),
         regions: Vec::new(),
         marked: String::new(),
         marked_selection: None,
@@ -619,7 +628,12 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
             cx.new(|_| {
                 crate::sidebar::SidebarView::new(
                     weak,
-                    super::agents::Indicators::new(None, false, &crate::config::Theme::default()),
+                    super::agents::Indicators::new(
+                        None,
+                        None,
+                        false,
+                        &crate::config::Theme::default(),
+                    ),
                 )
             })
         },

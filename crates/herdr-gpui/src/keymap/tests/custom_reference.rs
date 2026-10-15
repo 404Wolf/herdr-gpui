@@ -84,11 +84,13 @@ fn unsupported_labels_read_as_separate_keys() {
 
 #[test]
 fn chords_without_a_usable_prefix_keep_separate_keys() {
-    let keys = DaemonKeys {
-        prefixes: vec![keystroke("a")],
-        ..no_keys()
-    };
-    let keymap = Keymap::with_overrides(&BTreeMap::new(), &Default::default(), &keys).unwrap();
+    // The GUI config holds the only prefix.
+    let keymap = Keymap::with_overrides(
+        &overrides(&[("themes", one("ctrl-b"))]),
+        &Default::default(),
+        &no_keys(),
+    )
+    .unwrap();
     assert_eq!(
         reference(&keymap, &[custom("chord", &["prefix+y"])]),
         [vec![entry("prefix y", Reach::NoPrefix)]]

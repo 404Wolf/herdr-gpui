@@ -297,11 +297,22 @@ fn live_local_pr_lookup() {
         .profile
         .as_ref()
         .expect("existing GitHub sign-in unavailable");
+    let mut cache = crate::pull_request::Cache::default();
+    cache.scope(
+        (0, 0, "live".into()),
+        profile.token.clone(),
+        &profile.login,
+        Origin::Local,
+    );
+    cache.refresh(input.clone(), Instant::now());
     let mut lookup = crate::pull_request::Lookup::default();
-    lookup.request(input, Origin::Local, profile.token.clone());
     let deadline = Instant::now() + Duration::from_secs(20);
-    while lookup.loading && Instant::now() < deadline {
-        lookup.poll();
+    loop {
+        cache.poll(Instant::now());
+        cache.present(&input, &mut lookup, Instant::now());
+        if !lookup.loading || Instant::now() >= deadline {
+            break;
+        }
         std::thread::sleep(Duration::from_millis(10));
     }
     assert!(!lookup.loading, "PR worker deadline");

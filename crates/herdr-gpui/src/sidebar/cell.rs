@@ -19,7 +19,7 @@ use crate::{
     config::{FontConfig, LayoutMode, Theme},
     icons::AgentIcon,
 };
-use gpui::{App, ClickEvent, Div, ElementId, Window};
+use gpui::{App, ClickEvent, Div, ElementId, ParentElement, Styled, Window};
 use herdr_client::protocol::{AgentStatus, ClientShellWorkspace};
 use std::borrow::Cow;
 
@@ -179,11 +179,25 @@ impl<'a> Cell<'a> {
         self
     }
 
-    /// The row element, laid out for the state the cell was given.
+    /// The row element, laid out for the state the cell was given. The rail
+    /// style's bar is added here, on the row's leading edge, so every layout
+    /// shows it in the same place without drawing it itself.
     pub(super) fn row(self) -> Div {
-        match self.data {
-            RowData::Workspace(row) => self.layout.workspace(row, self.state, self.cx),
-            RowData::Agent(row) => self.layout.agent(row, self.state, self.cx),
+        let (row, rail) = match self.data {
+            RowData::Workspace(row) => {
+                let rail = (!row.removing)
+                    .then(|| self.cx.indicators.rail(row.status, row.label))
+                    .flatten();
+                (self.layout.workspace(row, self.state, self.cx), rail)
+            }
+            RowData::Agent(row) => {
+                let rail = self.cx.indicators.rail(row.status, &row.key);
+                (self.layout.agent(row, self.state, self.cx), rail)
+            }
+        };
+        match rail {
+            Some(rail) => row.relative().child(rail),
+            None => row,
         }
     }
 }

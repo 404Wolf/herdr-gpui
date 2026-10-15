@@ -113,6 +113,7 @@ impl HerdrWindow {
             mono: &self.config.terminal,
             indicators: Indicators::new(
                 self.settings.shared.as_ref(),
+                self.config.status_icons,
                 matches!(
                     cx.window_appearance(),
                     WindowAppearance::Light | WindowAppearance::VibrantLight

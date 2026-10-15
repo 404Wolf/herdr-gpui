@@ -8,21 +8,36 @@ use crate::{
         Caller, ErrorCode, Response,
         hosts::{FORWARD_WAIT_SECONDS, ForwardInfo, PortInfo, Ports, Reply},
     },
-    listening_ports::{Daemon, Link, Origin, Port},
+    listening_ports::{Daemon, Link, Origin, Port, Tunnels},
     port_forward::{Forward, State},
     usage::Host,
 };
 use gpui::{App, Context, Window};
 use std::{num::NonZeroU16, time::Duration};
 
-pub(super) fn port_info(port: &Port, origin: &Origin, forwards: &[&Forward]) -> PortInfo {
+/// `port` as `ports` lists it. A remote port has a local address once this
+/// window tunnels to it, as clicking it does, or, when it answers on the
+/// remote's localhost, forwards it by hand.
+pub(super) fn port_info(
+    port: &Port,
+    origin: &Origin,
+    tunnels: &Tunnels,
+    forwards: &[&Forward],
+) -> PortInfo {
     let local_url = match port.link(origin) {
         Some(Link::Page(url)) => Some(url.as_str().to_owned()),
-        Some(Link::Tunnel(_)) | None => forwards
-            .iter()
-            .find(|forward| forward.remote_port().get() == port.number)
-            .and_then(|forward| forward.url())
-            .map(|url| url.as_str().to_owned()),
+        Some(Link::Tunnel(key)) => tunnels
+            .live(&key)
+            .map(|local| format!("http://127.0.0.1:{local}/"))
+            // A manual forward dials the remote's localhost, which a server
+            // bound to one other address never answers on.
+            .or_else(|| {
+                key.address
+                    .is_none()
+                    .then(|| forwarded(port, forwards))
+                    .flatten()
+            }),
+        None => forwarded(port, forwards),
     };
     PortInfo {
         port: port.number,
@@ -30,6 +45,14 @@ pub(super) fn port_info(port: &Port, origin: &Origin, forwards: &[&Forward]) -> 
         process: Some(port.process.clone()).filter(|process| !process.is_empty()),
         local_url,
     }
+}
+
+fn forwarded(port: &Port, forwards: &[&Forward]) -> Option<String> {
+    forwards
+        .iter()
+        .find(|forward| forward.remote_port().get() == port.number)
+        .and_then(|forward| forward.url())
+        .map(|url| url.as_str().to_owned())
 }
 
 pub(super) fn forward_info(host: &str, forward: &Forward) -> ForwardInfo {
@@ -87,7 +110,7 @@ pub(super) fn list(view: &HerdrWindow, caller: &Caller) -> Response {
             listed
                 .ports
                 .iter()
-                .map(|port| port_info(port, listed.origin, &forwards))
+                .map(|port| port_info(port, listed.origin, &view.tunnels, &forwards))
                 .collect()
         })
         .unwrap_or_default();
@@ -219,7 +242,7 @@ fn start_open(
     let place = Place::of(view, caller)?;
     let number = port_number(port)?;
     // A listed port opens as clicking it in the status bar does, through a
-    // tunnel when it listens only on its remote host's loopback.
+    // tunnel when it is on a remote host.
     let link = view
         .endpoints
         .get(place.index)

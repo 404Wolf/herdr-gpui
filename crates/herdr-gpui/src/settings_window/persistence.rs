@@ -24,7 +24,7 @@ fn watched_paths() -> Option<[std::path::PathBuf; 2]> {
     let local = Config::local_path().ok()?;
     Some([
         local,
-        crate::config::daemon_config_path(|key| std::env::var_os(key)),
+        crate::config::daemon_config_path(herdr_client::local_var),
     ])
 }
 
@@ -250,6 +250,12 @@ impl SettingsWindow {
                 self.shared = loaded.shared;
                 self.error = loaded.error;
                 self.sync_code_field(cx);
+                // The saved volume reaches the shared sound worker now, not when
+                // a main window's watcher next reloads, which waits for its
+                // samples and holds off while that window's theme picker is open.
+                if let Some(source) = self.source.upgrade() {
+                    source.read(cx).sound.set_volume(self.config.sound.volume);
+                }
             }
             Err(error) => {
                 self.error = Some(format!(

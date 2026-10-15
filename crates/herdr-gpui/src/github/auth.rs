@@ -5,8 +5,8 @@
 #[cfg(any(test, feature = "integration-test"))]
 use super::VERIFY_URL;
 use super::{
-    Account, Device, Profile, Reply, Result, SETUP_MESSAGE, Store, http::oauth, log, profile, save,
-    token_reply,
+    Account, Device, Profile, Reply, Result, SETUP_MESSAGE, Store, cli, http::oauth, log, profile,
+    save, store::save_github_cli, token_reply,
 };
 use crate::Error;
 use secrecy::{ExposeSecret, SecretString};
@@ -26,6 +26,8 @@ pub(super) struct Flow {
 }
 
 const SESSION_CHECK_INTERVAL: Duration = Duration::from_secs(5 * 60);
+/// How long the GitHub CLI's answer stands before the page asks it again.
+const CLI_PROBE_INTERVAL: Duration = Duration::from_secs(30);
 
 #[derive(Default)]
 pub(crate) struct Auth {
@@ -45,6 +47,13 @@ pub(crate) struct Auth {
     pub message: Option<String>,
     pub failed: bool,
     pub(super) credential_cleanup: bool,
+    /// When the GitHub CLI last answered, and whether it held a sign-in.
+    pub(super) cli_available: Option<(Instant, bool)>,
+    pub(super) cli_probe: Option<mpsc::Receiver<bool>>,
+    /// The user chose the GitHub CLI in this app session. Only a build
+    /// without a credential store reads it; the others keep a marker.
+    pub(super) github_cli: bool,
+    pub(super) stopping_github_cli: bool,
 }
 
 impl Auth {
@@ -72,6 +81,7 @@ impl Auth {
                 avatar: None,
                 token: Arc::new("fixture-token".into()),
                 avatar_updates: None,
+                source: super::Source::Token,
             }),
             ..Self::default()
         }
@@ -125,6 +135,21 @@ impl Auth {
                 self.message = Some("Could not start GitHub profile worker.".into());
             }
         }
+    }
+    /// A main account whose GitHub CLI answered with a sign-in: offered
+    /// while signed out, or already in use when `connected`.
+    #[cfg(test)]
+    pub(crate) fn github_cli_fixture(connected: bool) -> Self {
+        let mut auth = if connected {
+            Self::connected_fixture()
+        } else {
+            Self::fixture(false)
+        };
+        auth.cli_available = Some((Instant::now(), true));
+        if let Some(profile) = &mut auth.profile {
+            profile.source = super::Source::GitHubCli { repo_scope: false };
+        }
+        auth
     }
     #[cfg(any(test, feature = "integration-test"))]
     pub(crate) fn fixture(waiting: bool) -> Self {
@@ -248,6 +273,7 @@ impl Auth {
         };
         self.cancelled = false;
         self.signed_out = false;
+        self.github_cli = false;
         self.profile_incoming = None;
         self.message = Some("Requesting GitHub sign-in code...".into());
         tracing::info!(
@@ -268,6 +294,83 @@ impl Auth {
             Ok(Reply::Device(device, client, started))
         });
     }
+    /// Whether to offer the GitHub CLI's sign-in: the main account only, as
+    /// the local CLI is this computer's account, and only once it answered.
+    pub fn github_cli_available(&self) -> bool {
+        self.account == Account::Main && self.cli_available.is_some_and(|(_, ready)| ready)
+    }
+    /// Ask the GitHub CLI whether it is signed in to github.com, at most every
+    /// 30 seconds while signed out. The token it prints is dropped unread.
+    pub(crate) fn probe_github_cli(&mut self, now: Instant) {
+        self.probe_github_cli_with(now, || cli::token().is_ok());
+    }
+    pub(super) fn probe_github_cli_with(
+        &mut self,
+        now: Instant,
+        probe: impl FnOnce() -> bool + Send + 'static,
+    ) {
+        if self.account != Account::Main
+            || self.connected()
+            || self.busy()
+            || self.loading_profile()
+            || self.cli_probe.is_some()
+            || self
+                .cli_available
+                .is_some_and(|(at, _)| now.duration_since(at) < CLI_PROBE_INTERVAL)
+        {
+            return;
+        }
+        let (tx, rx) = mpsc::sync_channel(1);
+        match thread::Builder::new()
+            .name("herdr-github-cli".into())
+            .spawn(move || {
+                let _ = tx.send(probe());
+            }) {
+            Ok(_) => self.cli_probe = Some(rx),
+            Err(error) => {
+                tracing::warn!(category = "github_worker", error_kind = ?error.kind(), "Could not start GitHub CLI check");
+                self.cli_available = Some((now, false));
+            }
+        }
+    }
+    /// Use the GitHub CLI's sign-in for the main account. The worker reads
+    /// and verifies its token, then saves only a marker, never the token.
+    pub fn use_github_cli(&mut self, config: &crate::config::Config) {
+        let store = Store::select(config);
+        self.use_github_cli_with(store, move || {
+            let profile = cli::verify(cli::token()?)?;
+            save_github_cli(store)?;
+            Ok(Reply::GitHubCli(profile))
+        });
+    }
+    pub(super) fn use_github_cli_with(
+        &mut self,
+        store: Store,
+        work: impl FnOnce() -> Result<Reply> + Send + 'static,
+    ) {
+        if self.account != Account::Main
+            || self.busy()
+            || self.connected()
+            || self.loading_profile()
+        {
+            return;
+        }
+        self.store = store;
+        self.initialized = true;
+        self.failed = false;
+        self.cancelled = false;
+        self.signed_out = false;
+        self.profile_incoming = None;
+        // The worker may save the marker, so it is not cancelled midway.
+        self.committing = true;
+        self.message = Some("Checking GitHub CLI sign-in...".into());
+        tracing::info!(
+            category = "github_signin",
+            store = ?self.store,
+            "Using the GitHub CLI's sign-in"
+        );
+        self.launch(work);
+    }
     pub fn cancel(&mut self) {
         // A token is persisted only after the UI accepts the completed flow. Once
         // accepted, Keychain writes finish off-thread even if the menu closes.
@@ -281,6 +384,12 @@ impl Auth {
     }
     pub fn sign_out(&mut self) {
         self.credential_cleanup = true;
+        self.stopping_github_cli = self.github_cli
+            || self
+                .profile
+                .as_ref()
+                .is_some_and(|profile| profile.source.github_cli());
+        self.github_cli = false;
         self.failed = false;
         self.initialized = true;
         self.signed_out = true;
@@ -311,9 +420,10 @@ impl Auth {
         persist: impl FnOnce(Option<&SecretString>) -> Result<()> + Send + 'static,
     ) -> bool {
         let account = self.account.clone();
+        let github_cli = self.github_cli;
         self.poll_with(persist, move |token, store| match token {
             Some(token) => profile(token).map(Some),
-            None => super::store::load_profile(store, &account),
+            None => super::store::load_profile(store, &account, github_cli),
         })
     }
     pub(super) fn poll_with(
@@ -358,6 +468,18 @@ impl Auth {
             return true;
         }
         let mut changed = false;
+        if let Some(rx) = &self.cli_probe {
+            let available = match rx.try_recv() {
+                Ok(available) => Some(available),
+                Err(mpsc::TryRecvError::Empty) => None,
+                Err(mpsc::TryRecvError::Disconnected) => Some(false),
+            };
+            if let Some(available) = available {
+                self.cli_probe = None;
+                self.cli_available = Some((now, available));
+                changed = true;
+            }
+        }
         if let Some(profile) = &mut self.profile
             && let Some(updates) = &profile.avatar_updates
         {
@@ -402,6 +524,9 @@ impl Auth {
                                     | Error::GitHubExpired
                                     | Error::GitHubDenied
                                     | Error::GitHubAuthorization
+                                    | Error::GitHubCliMissing
+                                    | Error::GitHubCliSignedOut
+                                    | Error::GitHubCliRejected
                             ) {
                                 self.profile = None;
                             }
@@ -490,10 +615,21 @@ impl Auth {
                         Ok(Reply::SignedOut) => {
                             self.credential_cleanup = false;
                             self.committing = false;
+                            let github_cli = std::mem::take(&mut self.stopping_github_cli);
                             self.message = Some(match self.account {
+                                Account::Main if github_cli => "Stopped using GitHub CLI authentication. GitHub CLI stays signed in; run `gh auth logout` to sign it out. Environment tokens are suppressed until app restart.",
                                 Account::Main => "Signed out for this app session. Saved credential removed. Environment tokens are suppressed until app restart; GitHub grants are not revoked.",
                                 Account::Host(_) => "Signed out of this device's account. Saved credential removed; GitHub grants are not revoked. Pull requests here use your main account.",
                             }.into());
+                        }
+                        Ok(Reply::GitHubCli(profile)) => {
+                            self.committing = false;
+                            self.credential_cleanup = true;
+                            self.github_cli = true;
+                            self.next_session_check = Some(now + SESSION_CHECK_INTERVAL);
+                            self.profile = Some(profile);
+                            self.failed = false;
+                            self.message = None;
                         }
                         Ok(Reply::Authenticated(token)) => {
                             self.committing = false;

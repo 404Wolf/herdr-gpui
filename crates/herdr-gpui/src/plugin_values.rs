@@ -63,7 +63,12 @@ pub(crate) fn host_report(host: &str, snapshot: &ClientShellSnapshot) -> HostRep
         .iter()
         .map(|workspace| (SidebarScope::Spaces, &workspace.tokens));
     for (scope, tokens) in agents.chain(spaces) {
-        for (name, value) in tokens {
+        // Remote browser requests are this app's own traffic, not values a
+        // plugin reported for display.
+        let reported_tokens = tokens
+            .iter()
+            .filter(|(name, _)| !crate::remote_browser::is_request_token(name));
+        for (name, value) in reported_tokens {
             let full = reported.len() >= MAX_REPORTED;
             if let (Entry::Vacant(new), Some(value)) =
                 (reported.entry((scope, name.as_str())), sample(value))

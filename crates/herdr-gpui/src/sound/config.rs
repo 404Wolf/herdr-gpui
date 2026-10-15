@@ -147,7 +147,7 @@ impl Default for Settings {
 
 impl Settings {
     pub fn load() -> Result<Self> {
-        Self::load_path(&config_path(|key| std::env::var_os(key)))
+        Self::load_path(&config_path(herdr_client::local_var))
     }
 
     fn load_path(path: &Path) -> Result<Self> {

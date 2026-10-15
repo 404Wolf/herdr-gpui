@@ -65,6 +65,25 @@ impl SettingsWindow {
             .on_click(cx.listener(move |this, _, _, cx| this.save_preference(edit, cx)))
     }
 
+    pub(super) fn mouse_switches(&self, cx: &mut Context<Self>) -> [Stateful<Div>; 2] {
+        [
+            self.preference_switch(
+                "settings-smooth-scroll",
+                "Smooth scrolling",
+                self.config.smooth_scroll,
+                Preference::SmoothScroll(!self.config.smooth_scroll),
+                cx,
+            ),
+            self.preference_switch(
+                "settings-focus-follows-mouse",
+                "Focus follows mouse",
+                self.config.focus_follows_mouse,
+                Preference::FocusFollowsMouse(!self.config.focus_follows_mouse),
+                cx,
+            ),
+        ]
+    }
+
     /// One switch per close kind, each saving its own `confirm_close_*` key.
     pub(super) fn confirm_close_switches(&self, cx: &mut Context<Self>) -> [Stateful<Div>; 3] {
         let config = &self.config;
@@ -151,6 +170,31 @@ impl SettingsWindow {
             .child(positions)
             .child(self.preference_choice("notification-follow-position", "Follow shared position", false, Preference::NotificationPosition(None), cx))
             .child(self.control_note("Controls show effective values. Follow shared removes that local override; any managed-file override still takes precedence."))
+    }
+
+    /// The local `[sound] volume`, editable even where Herdr's shared sound
+    /// settings are read-only, since it lives in this app's own file.
+    pub(super) fn sound_volume_controls(&self, cx: &mut Context<Self>) -> Div {
+        let volume = self.config.sound.volume;
+        let mut levels = div().flex().flex_wrap().gap(px(8.));
+        for percent in [10, 25, 50, 75, 100] {
+            levels = levels.child(
+                self.preference_choice(
+                    format!("settings-sound-volume-{percent}"),
+                    format!("{percent}%"),
+                    volume == percent,
+                    Preference::SoundVolume(percent),
+                    cx,
+                )
+                .debug_selector(move || format!("settings-sound-volume-{percent}")),
+            );
+        }
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .child(self.control_row("Volume", format!("{volume}%")))
+            .child(levels)
     }
 
     pub(super) fn clipboard_controls(&self, cx: &mut Context<Self>) -> Div {

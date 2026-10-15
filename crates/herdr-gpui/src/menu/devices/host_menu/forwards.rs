@@ -19,8 +19,11 @@ impl HerdrWindow {
         if input.read(cx).is_composing() {
             return;
         }
+        let Some(target) = host.ssh_target().map(str::to_owned) else {
+            return;
+        };
         let started = crate::port_forward::parse_port(input.read(cx).text())
-            .and_then(|port| self.port_forwards.start(&host.target, port));
+            .and_then(|port| self.port_forwards.start(&target, port));
         match started {
             Ok(()) => {
                 host.input = None;
@@ -39,7 +42,8 @@ impl HerdrWindow {
         self.menu
             .host
             .as_ref()
-            .is_some_and(|host| self.port_forwards.for_host(&host.target).next().is_some())
+            .and_then(HostMenu::ssh_target)
+            .is_some_and(|target| self.port_forwards.for_host(target).next().is_some())
     }
 
     /// Opens a listening forward's page in a browser tab.
@@ -49,12 +53,12 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(host) = &self.menu.host else {
+        let Some(target) = self.menu.host.as_ref().and_then(HostMenu::ssh_target) else {
             return;
         };
         let url = self
             .port_forwards
-            .for_host(&host.target)
+            .for_host(target)
             .find(|forward| forward.remote_port() == remote_port)
             .and_then(crate::port_forward::Forward::url);
         if let Some(url) = url {
@@ -65,8 +69,8 @@ impl HerdrWindow {
 
     /// Stops a forward, or dismisses one that ended.
     fn stop_forward(&mut self, remote_port: NonZeroU16, cx: &mut Context<Self>) {
-        if let Some(host) = &self.menu.host
-            && self.port_forwards.stop(&host.target, remote_port)
+        if let Some(target) = self.menu.host.as_ref().and_then(HostMenu::ssh_target)
+            && self.port_forwards.stop(target, remote_port)
         {
             cx.notify();
         }
@@ -80,7 +84,10 @@ impl HerdrWindow {
         let small = px(self.config.ui.size * 0.85);
         let mut section = div().debug_selector(|| "host-forwards".into());
         let mut any = false;
-        for forward in self.port_forwards.for_host(&host.target) {
+        let Some(target) = host.ssh_target() else {
+            return section;
+        };
+        for forward in self.port_forwards.for_host(target) {
             if !any {
                 section = section
                     .mt(px(4.))

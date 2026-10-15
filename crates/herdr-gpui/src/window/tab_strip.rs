@@ -154,6 +154,7 @@ impl HerdrWindow {
         let pick = self.group_pick(slot.id);
         let indicators = Indicators::new(
             self.settings.shared.as_ref(),
+            self.config.status_icons,
             matches!(
                 cx.window_appearance(),
                 WindowAppearance::Light | WindowAppearance::VibrantLight
@@ -763,19 +764,21 @@ impl HerdrWindow {
             .unwrap_or_default()
     }
 
-    /// Whether `group`'s strip steps aside under Herdr's
+    /// Whether `group`'s strip steps aside: always in zen mode, else under Herdr's
     /// `hide_tab_bar_when_single_tab`: only when the window is not split, so
     /// every group keeps the strip that names it and takes dropped tabs, and
     /// only while the strip would list one tab at most, browser tabs counted.
     pub(crate) fn strip_hidden(&self, group: GroupId, cx: &App) -> bool {
-        self.settings
-            .shared
-            .as_ref()
-            .is_some_and(|shared| shared.hide_tab_bar_when_single_tab)
-            && !self.is_split()
-            && self.folding_groups().is_empty()
-            && !self.tab_drag_in(group)
-            && self.group_tabs(group, cx).len() <= 1
+        self.zen_layout()
+            || self
+                .settings
+                .shared
+                .as_ref()
+                .is_some_and(|shared| shared.hide_tab_bar_when_single_tab)
+                && !self.is_split()
+                && self.folding_groups().is_empty()
+                && !self.tab_drag_in(group)
+                && self.group_tabs(group, cx).len() <= 1
     }
 
     /// One group: its strip above or below what it shows, as Herdr's
@@ -794,9 +797,12 @@ impl HerdrWindow {
         let strip = (!self.strip_hidden(slot.id, cx))
             .then(|| self.render_tab_strip(slot, ends, window, cx));
         let bottom = self.tab_bar_position() == TabBarPosition::Bottom;
-        let share = (self.is_split() || !self.folding_groups().is_empty())
+        // Zen mode draws the one group in use across the whole row, at once
+        // even while it is still opening.
+        let zen = self.zen_layout();
+        let share = (!zen && (self.is_split() || !self.folding_groups().is_empty()))
             .then(|| self.group_share(slot.id));
-        let opened = self.group_opened(slot.id);
+        let opened = self.group_opened(slot.id).filter(|_| !zen);
         // The body's ground, beside the strip rather than under it, so the
         // strip's own color is no more solid than the rest of the window.
         let body = div()

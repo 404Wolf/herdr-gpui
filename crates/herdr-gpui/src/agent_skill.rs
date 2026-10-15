@@ -43,8 +43,13 @@ pub(crate) fn text(executable: Option<&Path>) -> String {
     if executable.and_then(Path::to_str).is_none() {
         return SKILL.to_owned();
     }
+    text_naming(&command(executable))
+}
+
+/// The skill, naming `command` in its commands, as one shell word.
+pub(crate) fn text_naming(command: &str) -> String {
     // Every command line in the skill starts with the executable's name.
-    SKILL.replace("herdr-gpui ", &format!("{} ", command(executable)))
+    SKILL.replace("herdr-gpui ", &format!("{command} "))
 }
 
 fn managed(contents: &str) -> bool {
@@ -123,7 +128,7 @@ fn agents_present(home: &Path) -> bool {
 }
 
 /// What the user chose when asked.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Choice {
     Installed,
@@ -289,6 +294,25 @@ mod tests {
             .and_then(|value| value.strip_suffix('"'))
             .unwrap();
         assert!(!value.contains('"'));
+    }
+
+    #[test]
+    fn the_skill_teaches_the_split_the_kit_and_page_results() {
+        for taught in [
+            "A local file opens in a split next to your terminal",
+            "--tab",
+            "/.herdr/kit.css",
+            "HerdrKit.scenario(",
+            "HerdrKit.variants(",
+            "herdr.send(",
+            "herdr-gpui browser example",
+        ] {
+            assert!(SKILL.contains(taught), "{taught}");
+        }
+        let bundled = text(Some(Path::new(
+            "/Applications/Herdr.app/Contents/MacOS/Herdr",
+        )));
+        assert!(bundled.contains("/Applications/Herdr.app/Contents/MacOS/Herdr browser example"));
     }
 
     #[test]

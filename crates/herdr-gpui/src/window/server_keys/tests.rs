@@ -49,6 +49,7 @@ fn opt_in(view: &mut HerdrWindow, source: KeybindingSource) {
         ID.into(),
         DeviceSettings {
             keybindings: source,
+            ..Default::default()
         },
     );
 }

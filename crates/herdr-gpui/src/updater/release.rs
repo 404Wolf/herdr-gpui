@@ -324,23 +324,12 @@ fn status_error(
     headers: &ureq::http::HeaderMap,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Error {
-    let number = |name: &str| {
-        headers
-            .get(name)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.trim().parse::<i64>().ok())
-    };
-    let exhausted = number("x-ratelimit-remaining") == Some(0);
-    if !matches!(status, 403 | 429) || !(exhausted || headers.contains_key("retry-after")) {
+    if !matches!(status, 403 | 429) || !super::quota_exhausted(headers) {
         return Error::HttpStatus(status);
     }
-    let reset = number("retry-after")
-        .and_then(|seconds| now.checked_add_signed(chrono::TimeDelta::try_seconds(seconds)?))
-        .or_else(|| {
-            number("x-ratelimit-reset").and_then(|epoch| chrono::DateTime::from_timestamp(epoch, 0))
-        })
-        .filter(|reset| *reset > now);
-    Error::RateLimited { reset }
+    Error::RateLimited {
+        reset: super::rate_limit_reset(headers, now),
+    }
 }
 
 fn read_bounded(mut reader: impl Read, limit: usize, cancel: &AtomicBool) -> Result<Vec<u8>> {

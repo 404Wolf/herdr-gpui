@@ -4,7 +4,7 @@
 //! would refuse never reaches the disk.
 use super::{Config, DEFAULT_CONFIG, daemon_config_path, daemon_settings, files::write_config};
 use crate::{Error, Result};
-use std::{env, path::Path};
+use std::path::Path;
 use toml_edit::{Item, TableLike};
 
 /// Where a setting's effective value comes from.
@@ -61,7 +61,7 @@ impl Config {
     /// them (the overrides alone, then layered), without writing anything.
     /// Fonts are not resolved: only the app's text system knows them.
     pub(crate) fn check_files() -> Result<Self> {
-        Self::check_files_at(&Self::path()?, &daemon_config_path(|key| env::var_os(key)))
+        Self::check_files_at(&Self::path()?, &daemon_config_path(herdr_client::local_var))
     }
 
     pub(super) fn check_files_at(path: &Path, daemon: &Path) -> Result<Self> {
@@ -73,14 +73,14 @@ impl Config {
 
     /// Sets `key` in the local overrides file, keeping everything else in it.
     pub(crate) fn set_key(key: &str, value: toml_edit::Value) -> Result<()> {
-        let daemon = daemon_config_path(|key| env::var_os(key));
+        let daemon = daemon_config_path(herdr_client::local_var);
         let (_lock, local) = Self::prepare_files(&Self::path()?)?;
         Self::edit_key_at(&local, &daemon, key, Some(value)).map(drop)
     }
 
     /// Removes `key` from the local overrides file; false when it was not set.
     pub(crate) fn unset_key(key: &str) -> Result<bool> {
-        let daemon = daemon_config_path(|key| env::var_os(key));
+        let daemon = daemon_config_path(herdr_client::local_var);
         let (_lock, local) = Self::prepare_files(&Self::path()?)?;
         Self::edit_key_at(&local, &daemon, key, None)
     }

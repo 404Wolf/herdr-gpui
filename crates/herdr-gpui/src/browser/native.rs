@@ -45,9 +45,10 @@ pub(crate) enum Event<P = TabId> {
     /// a menu covers it. Only macOS takes them.
     #[cfg(target_os = "macos")]
     Frozen(P, Option<Vec<u8>>),
-    /// A message the annotation picker posted. Any script in the page can
-    /// post one, so it is parsed as untrusted input.
-    Posted(P, String),
+    /// A message the annotation picker or the page bridge posted, and the
+    /// frame that posted it. Any script in any frame can post one, so it is
+    /// parsed as untrusted input.
+    Posted(P, String, super::PostedFrom),
 }
 
 /// The page a report came from. A popup's page exists before its tab does,
@@ -79,7 +80,7 @@ impl Event<Source> {
             Self::Captured(source, capture, tiff) => Event::Captured(tab(source)?, capture, tiff),
             #[cfg(target_os = "macos")]
             Self::Frozen(source, tiff) => Event::Frozen(tab(source)?, tiff),
-            Self::Posted(source, body) => Event::Posted(tab(source)?, body),
+            Self::Posted(source, body, from) => Event::Posted(tab(source)?, body, from),
         })
     }
 }
@@ -103,6 +104,8 @@ pub(crate) struct Pages {
     parked: HashMap<TabId, super::parking::Parked>,
     /// Reads local pages' files; started with the first page.
     preview: Option<Rc<Preview>>,
+    /// The theme the kit serves local pages, and the colors it came from.
+    theme: (super::kit::ThemeKey, String),
 }
 
 impl Default for Pages {
@@ -124,6 +127,7 @@ impl Default for Pages {
             #[cfg(target_os = "macos")]
             parked: HashMap::new(),
             preview: None,
+            theme: Default::default(),
         }
     }
 }
@@ -268,6 +272,7 @@ impl Pages {
             Some(preview) => preview.clone(),
             None => {
                 let preview = Rc::new(Preview::start()?);
+                preview.set_theme(self.theme.1.clone());
                 self.preview = Some(preview.clone());
                 preview
             }
@@ -282,7 +287,14 @@ impl Pages {
             | Location::Orchestrator { .. }
             | Location::Devices => None,
         };
+        // Only a local page, which the agent wrote, gets `herdr.send`.
+        let bridge = if root.is_some() {
+            super::annotate::BRIDGE
+        } else {
+            ""
+        };
         let builder = with_handlers(wry::WebViewBuilder::new(), Source::Tab(id), &self.outbox)
+            .with_initialization_script(bridge)
             .with_url(location.page_url())
             .with_asynchronous_custom_protocol(
                 PREVIEW_SCHEME.into(),
@@ -291,9 +303,11 @@ impl Pages {
                 },
             )
             .with_ipc_handler(move |request| {
+                // wry names the frame that posted, not the page's main frame.
+                let from = super::PostedFrom::of(&request.uri().to_string());
                 let body = request.into_body();
                 if body.len() <= MAX_POST_BYTES {
-                    report(&posted, Event::Posted(Source::Tab(id), body));
+                    report(&posted, Event::Posted(Source::Tab(id), body, from));
                 }
             });
         // Window has an inherent `window_handle` of its own.
@@ -306,6 +320,19 @@ impl Pages {
         // A new page appears only when the window presents it.
         self.hide(id, cx);
         Ok(())
+    }
+
+    /// Serves `theme` to local pages from now on: a page picks it up when it
+    /// next loads. Cheap when the colors did not change.
+    pub(crate) fn set_theme(&mut self, theme: &crate::config::Theme) {
+        let key = super::kit::theme_key(theme);
+        if self.theme.0 == key && !self.theme.1.is_empty() {
+            return;
+        }
+        self.theme = (key, super::kit::theme_css(theme));
+        if let Some(preview) = &self.preview {
+            preview.set_theme(self.theme.1.clone());
+        }
     }
 
     /// Hides tab `id`'s page. On macOS it also leaves the window's area,

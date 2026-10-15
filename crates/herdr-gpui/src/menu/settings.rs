@@ -37,7 +37,7 @@ impl HerdrWindow {
         let Ok(path) = Config::local_path() else {
             return;
         };
-        let daemon = crate::config::daemon_config_path(|key| std::env::var_os(key));
+        let daemon = crate::config::daemon_config_path(herdr_client::local_var);
         let executor = cx.background_executor().clone();
         let mut theme = self.config.theme.clone();
         self.config_watch = Some(cx.spawn(async move |this, cx| {
@@ -216,6 +216,7 @@ impl HerdrWindow {
                             error: None,
                         });
                         this.config = config;
+                        this.sound.set_volume(this.config.sound.volume);
                         this.gui_config_diagnostic.sync(this.config.diagnostic().as_deref());
                         crate::settings_window::apply_loaded_theme(&mut this.config, &mut this.theme, theme_revision, cx);
                         this.tick_toasts(
@@ -360,6 +361,7 @@ impl HerdrWindow {
                 | Command::ToggleSidebar
                 | Command::OpenCode
                 | Command::ToggleStatusBar
+                | Command::ToggleZenMode
                 | Command::DevicesOverview
                 | Command::IncreaseFontSize
                 | Command::DecreaseFontSize
@@ -369,6 +371,7 @@ impl HerdrWindow {
                 | Command::Sessions
                 | Command::Themes
                 | Command::Palette
+                | Command::ResumePalette
                 | Command::Detach
                 | Command::Reconnect
                 | Command::Quit

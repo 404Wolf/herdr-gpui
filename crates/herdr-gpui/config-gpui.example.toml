@@ -54,6 +54,16 @@ show_sidebar_search = true
 # name in the sidebar, in the layouts that draw one (not orca or minimal).
 # Also under Settings > Appearance > Sidebar layout.
 show_repository_icons = true
+# Draw agent status as icons instead of Herdr's dots or symbols: "solid"
+# (filled discs), "tiles" (each mark on a tinted tile), or "rail" (outline
+# marks plus a bar on the edge of each working, done, or blocked row). Only
+# this app draws them; unset follows Herdr's `ui.status_indicators`.
+# Also under Settings > Indicators.
+# status_icons = "solid"
+# Show a mark before each device's name in the sidebar for where it runs: this
+# machine, a cloud provider, Tailscale, or SSH. In the layouts that draw one
+# (not orca or minimal). Also under Settings > Appearance > Sidebar layout.
+show_device_icons = true
 # Show CPU and memory: the selected host's in the status bar, and each host's
 # on its sidebar row. Connected remote hosts are read over SSH every couple of
 # seconds; false stops all sampling. Also under Settings > Status bar.
@@ -74,6 +84,9 @@ show_listening_ports = true
 # and momentum; false scrolls by whole rows. Applications reading the mouse
 # always get whole rows. Also under Settings > General.
 smooth_scroll = true
+
+# Focus split terminal panes on hover in the active window, without clicking.
+focus_follows_mouse = true
 # macOS only: whether Option-letter reaches a pane as an Alt shortcut (Alt-P
 # for Option-P) or types the character the keyboard layout puts there. "auto"
 # sends Alt from the left Option on the U.S. and ABC layouts, while the right
@@ -150,6 +163,13 @@ project_roots = []
 # The position also places the note saying why New Worktree opened no dialog.
 # position = "bottom-center"
 
+# How loud this app plays agent sounds (done and request), as a percentage of
+# the sound file's own level, inclusive 0..100. Herdr's [ui.sound] chooses
+# whether and which sounds play; it has no volume, so this is this app's own.
+# Also under Settings > Sound.
+# [sound]
+# volume = 50
+
 # What a pane's terminal bell (BEL) does. Herdr has no bell setting of its own:
 # it forwards each bell to the focused client, as an outer terminal would see it.
 # [bell]
@@ -175,7 +195,8 @@ project_roots = []
 # close_window = "ctrl-alt-w", new_workspace = "ctrl-alt-shift-n",
 # new_worktree = "ctrl-shift-n",
 # split_right = "ctrl-shift-d", split_down = "ctrl-alt-shift-d",
-# command_palette = "ctrl-shift-p", toggle_full_screen = "f11".
+# command_palette = "ctrl-shift-p", resume_palette = "ctrl-alt-shift-r",
+# toggle_full_screen = "f11".
 # See Keyboard Shortcuts for the full platform-specific list. Explicit values
 # are used literally on every platform; cmd is not translated to Ctrl+Shift.
 # Ctrl+Shift+U is left to GNOME/IBus Unicode character entry.
@@ -200,6 +221,7 @@ project_roots = []
 # focus_tab_1 = "cmd-1"   # through focus_tab_9 = "cmd-9"
 # toggle_sidebar = "cmd-b"
 # toggle_status_bar = "cmd-ctrl-b"   # unbound by default
+# toggle_zen_mode = "ctrl-cmd-z"   # Linux: "ctrl-alt-z"
 # increase_font_size = ["cmd-=", "cmd-+"]
 # decrease_font_size = "cmd--"
 # reset_font_size = "cmd-0"
@@ -207,6 +229,7 @@ project_roots = []
 # keybindings = "cmd-/"
 # workspace_picker = "cmd-p"
 # command_palette = "cmd-shift-p"
+# resume_palette = "cmd-shift-r"   # last query, filters, and selection
 # go_to_symbol = "cmd-shift-o"
 # go_to_file = "cmd-o"
 # open_notification_target = "cmd-alt-n"
@@ -245,8 +268,12 @@ project_roots = []
 # "server" uses the [keys] profile that device's Herdr publishes instead, like
 # `herdr --remote-keybindings server`; [keybindings] still apply on top. Keyed
 # by catalog ID; a device's right-click menu toggles it.
+# A device's theme paints only its terminal, so each host is told apart
+# where you work; the chrome keeps `theme`. Any `theme` value works, and the
+# device's right-click menu picks it.
 # [devices.0123456789abcdef0123456789abcdef]
 # keybindings = "server"
+# theme = "Dracula"
 
 # Preferences offers a searchable picker for all four families together or each row.
 # Platform default removes the local family override; fallback cascades remain active.
@@ -386,6 +413,20 @@ size = 12
 # which is saved in its own 0600 coder-credentials file. Default is false.
 # allow_plaintext_credentials = false
 
+# Boat sandboxes as devices (experimental). Settings > Cloud Devices > Boat
+# edits this table and saves the API key to the credential store; the
+# environment variable HERDR_BOAT_API_KEY takes precedence.
+#
+# [boat]
+# api_url = "https://boat.dev/api/v1"
+# organization = "" # Optional organization ID or name; active wallet if empty.
+# machine_type = "" # Optional: small, default, large, or xlarge.
+# environment = ""  # Optional named environment; account default if empty.
+# auto_stop = "never" # Or seconds as a string, e.g. "7200". Trials require 1–7200.
+# # Linux without Secret Service may opt into a private credential file. The key
+# # is saved in its own 0600 boat-api-key file. Default is false.
+# allow_plaintext_credentials = false
+
 # Daytona sandboxes as devices (experimental). Settings > Cloud Devices >
 # Daytona edits this table and saves the API key to the credential store; the
 # key is never read from this file. HERDR_DAYTONA_API_KEY overrides the saved
@@ -432,6 +473,20 @@ size = 12
 # theme = "label"
 # shortcuts = "label"
 # report_issue = "label"
+
+# Zen mode (View > Toggle Zen Mode, or `toggle_zen_mode`) hides the
+# header, sidebar, tab strips, status bar, and notices, and every group but
+# the one in use, for this window and session. Toasts and menus still show.
+# [zen]
+# Also enter native full screen, leaving it again when zen mode ends.
+# fullscreen = false
+# Centre a column this many terminal columns wide (20 to 1000), or this share
+# of the window ("10%" to "100%"), with blank room either side. Unset uses the
+# whole width.
+# width = 120
+# The terminal font size while in zen mode (8 to 48); the previous size comes
+# back when it ends. Unset keeps the current size.
+# font_size = 24
 
 # Optional behaviors, all off unless turned on here.
 # [features]

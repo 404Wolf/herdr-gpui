@@ -114,6 +114,7 @@ mod tests {
                 let parent = view.read(cx);
                 let expected = Indicators::new(
                     parent.settings.shared.as_ref(),
+                    parent.config.status_icons,
                     matches!(
                         cx.window_appearance(),
                         gpui::WindowAppearance::Light | gpui::WindowAppearance::VibrantLight

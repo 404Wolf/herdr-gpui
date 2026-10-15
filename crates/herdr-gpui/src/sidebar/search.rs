@@ -1,18 +1,26 @@
 //! The search field at the top of the spaces list. While it holds a query,
 //! the list gives way to flat results grouped by what matched: device names,
-//! worktrees, then branches. Matching is a case-insensitive substring over
+//! worktrees, branches, then the notes kept on checkouts. Matching is a case-insensitive substring over
 //! the snapshots the sidebar already holds, so typing never asks a daemon.
 
-use super::{workspace_label, workspaces::workspace_entries};
+use super::{
+    workspace_label,
+    workspaces::{workspace_entries, workspace_note},
+};
 use crate::{
     HerdrWindow, NavigationTarget,
     search_input::{Changed, SearchInput},
 };
-use gpui::{AppContext as _, Context, Entity, KeyDownEvent, ScrollHandle, Subscription, Window};
+use gpui::{
+    App, AppContext as _, Context, Entity, KeyDownEvent, ScrollHandle, Subscription, Window,
+};
 use herdr_client::protocol::{AgentStatus, ClientShellWorkspace};
 use std::ops::Range;
 
+mod heading;
 mod results;
+
+pub(super) use heading::Heading;
 
 /// Results kept per query, and per section while scanning: enough for any
 /// real sidebar, bounded for a huge one.
@@ -31,7 +39,7 @@ impl SidebarSearch {
     pub(crate) fn new(cx: &mut Context<HerdrWindow>) -> Self {
         let input = cx.new(|cx| {
             let mut input = SearchInput::new(cx);
-            input.set_placeholder("Devices, worktrees, branches", cx);
+            input.set_frameless(cx);
             input
         });
         let changed = cx.subscribe(&input, |this, input, _: &Changed, cx| {
@@ -49,6 +57,11 @@ impl SidebarSearch {
             scroll: ScrollHandle::new(),
             _changed: changed,
         }
+    }
+
+    /// The field's handle, which holds the keyboard while it is typed in.
+    pub(crate) fn focus(&self, cx: &App) -> gpui::FocusHandle {
+        self.input.read(cx).focus.clone()
     }
 
     /// The query results are shown for: none while the field is blank.
@@ -70,6 +83,7 @@ pub(super) enum Kind {
     Device,
     Worktree,
     Branch,
+    Note,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -80,6 +94,8 @@ pub(super) struct Hit {
     pub text: String,
     pub range: Range<usize>,
     /// A quieter line placing the result: its host, branch, or workspace.
+    /// A note's text is cut to start shortly before the match, so a match
+    /// deep in a long note still shows in a truncated row.
     pub context: String,
     /// A workspace's agent status; devices have none.
     pub status: Option<AgentStatus>,
@@ -90,10 +106,11 @@ pub(super) struct Device<'a> {
     pub id: &'a str,
     pub label: &'a str,
     pub workspaces: &'a [ClientShellWorkspace],
+    pub notes: Option<&'a crate::worktree_notes::Notes>,
 }
 
 /// Every result for `query` over `devices`, devices first, then worktrees,
-/// then branches. Hosts are named in context only when there is more than one.
+/// branches, and notes. Hosts are named in context only when there is more than one.
 pub(super) fn search(query: &str, devices: &[Device<'_>]) -> Vec<Hit> {
     let multi = devices.len() > 1;
     let place = |device: &Device<'_>, detail: &str| match (multi, detail.is_empty()) {
@@ -103,7 +120,8 @@ pub(super) fn search(query: &str, devices: &[Device<'_>]) -> Vec<Hit> {
     };
     // A section stops matching once full, so a broad query over a huge
     // snapshot builds no more than it can show.
-    let (mut found, mut worktrees, mut branches) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut found, mut worktrees, mut branches, mut notes) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     let room = |section: &Vec<Hit>| section.len() < RESULT_LIMIT;
     for device in devices {
         if room(&found)
@@ -154,12 +172,50 @@ pub(super) fn search(query: &str, devices: &[Device<'_>]) -> Vec<Hit> {
                     status: Some(workspace.agent_status),
                 });
             }
+            if room(&notes)
+                && let Some(note) = workspace_note(workspace, device.notes, device.id)
+                && let Some(range) = find(note, query)
+            {
+                let (text, range) = excerpt(note, range);
+                notes.push(Hit {
+                    kind: Kind::Note,
+                    target: target(),
+                    text,
+                    range,
+                    context: place(device, label),
+                    status: None,
+                });
+            }
         }
     }
     found.extend(worktrees);
     found.extend(branches);
+    found.extend(notes);
     found.truncate(RESULT_LIMIT);
     found
+}
+
+/// Characters before a note's match that a row still shows; more are cut.
+const EXCERPT_REACH: usize = 24;
+/// Characters of a cut note kept before its match.
+const EXCERPT_LEAD: usize = 12;
+
+/// `text`, or when its match starts too far in to show, the text from
+/// shortly before it behind an ellipsis, with the range moved to match.
+fn excerpt(text: &str, range: Range<usize>) -> (String, Range<usize>) {
+    if text[..range.start].chars().count() <= EXCERPT_REACH {
+        return (text.to_owned(), range);
+    }
+    // The character before the kept lead.
+    let Some((before, ch)) = text[..range.start].char_indices().rev().nth(EXCERPT_LEAD) else {
+        return (text.to_owned(), range);
+    };
+    let start = before + ch.len_utf8();
+    let moved = |offset: usize| offset - start + '…'.len_utf8();
+    (
+        format!("…{}", &text[start..]),
+        moved(range.start)..moved(range.end),
+    )
 }
 
 /// The bytes of `text` matching `query`, ignoring case: the first place where
@@ -197,10 +253,11 @@ fn prefix_len(text: &str, needle: &[char]) -> Option<usize> {
 
 impl HerdrWindow {
     /// The results for the current query over every device the sidebar shows.
-    pub(super) fn sidebar_search_hits(&self) -> Vec<Hit> {
+    pub(super) fn sidebar_search_hits(&self, cx: &App) -> Vec<Hit> {
         let Some(query) = self.sidebar_search.query() else {
             return Vec::new();
         };
+        let notes = crate::worktree_notes::Notes::of(cx);
         let devices: Vec<_> = self
             .endpoints
             .iter()
@@ -219,6 +276,7 @@ impl HerdrWindow {
                         .snapshot
                         .as_deref()
                         .map_or(&[], |snapshot| &snapshot.workspaces),
+                    notes,
                 }
             })
             .collect();
@@ -244,15 +302,7 @@ impl HerdrWindow {
                 self.navigate_endpoint(endpoint, NavigationTarget::Workspace(workspace), cx);
             }
         }
-        self.clear_sidebar_search(window, cx);
-    }
-
-    fn clear_sidebar_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.sidebar_search
-            .input
-            .update(cx, |input, cx| input.clear(cx));
-        window.focus(&self.focus, cx);
-        cx.notify();
+        self.clear_heading_search(Heading::Spaces, window, cx);
     }
 
     /// The keys the field leaves alone: arrows move through the results,
@@ -268,11 +318,11 @@ impl HerdrWindow {
         }
         let key = event.keystroke.key.as_str();
         if key == "escape" {
-            self.clear_sidebar_search(window, cx);
+            self.clear_heading_search(Heading::Spaces, window, cx);
             cx.stop_propagation();
             return;
         }
-        let hits = self.sidebar_search_hits();
+        let hits = self.sidebar_search_hits(cx);
         let selected = self
             .sidebar_search
             .selected

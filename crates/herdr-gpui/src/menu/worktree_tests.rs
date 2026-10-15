@@ -11,6 +11,7 @@ use crate::{
 };
 use gpui::{Entity, VisualTestContext};
 
+mod branch_first;
 mod branch_follows_name;
 mod branch_only;
 mod dialog_entry;
@@ -98,6 +99,12 @@ fn draw(cx: &mut VisualTestContext) {
             window.draw(cx).clear(cx);
         });
     }
+}
+
+/// Move typing to the optional name field, as a click on it does.
+fn click_name(cx: &mut VisualTestContext) {
+    let field = cx.debug_bounds("worktree-name").unwrap();
+    cx.simulate_click(field.center(), gpui::Modifiers::none());
 }
 
 fn tab(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) -> Tab {

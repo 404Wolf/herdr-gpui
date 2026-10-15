@@ -215,6 +215,8 @@ pub(crate) struct CreatedTab {
 #[derive(Debug, Deserialize)]
 pub(crate) struct CreatedPane {
     pub(crate) pane_id: String,
+    /// Stable identity for callers that must not retry against a replaced pane.
+    pub(crate) terminal_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

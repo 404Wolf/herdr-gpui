@@ -410,6 +410,47 @@ impl HerdrWindow {
         }
     }
 
+    pub(crate) fn focus_hovered_pane(
+        &mut self,
+        event: &MouseMoveEvent,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.config.focus_follows_mouse
+            || !window.is_window_active()
+            || !self.focus.is_focused(window)
+            || !self.input_ready()
+            || event.pressed_button.is_some()
+            || event.modifiers.modified()
+            || cx.has_active_drag()
+            || self.terminal_mouse.is_some()
+            || self.scrollbar_drag.is_some()
+            || self.split_drag.is_some()
+            || !self.marked.is_empty()
+            || self
+                .selection
+                .as_ref()
+                .is_some_and(|selection| selection.dragging())
+            || self.split_at(event.position).is_some()
+        {
+            return;
+        }
+        let Some(surface) = self.live.surface.as_deref() else {
+            return;
+        };
+        // A popup owns input even when the pointer is over an uncovered pane.
+        if surface.popup.is_some() || surface.panes.len() < 2 {
+            return;
+        }
+        if let Some(hit) = self.terminal_mouse_at(event.position)
+            && let InputTarget::Pane(id) = hit.target
+        {
+            // Reuse the click navigation fence: repeated motion cannot queue
+            // more focus requests or send typing to the old pane while waiting.
+            self.focus_clicked_pane(&id, cx);
+        }
+    }
+
     fn scrollbar(&self, pane: &str) -> Option<Scrollbar> {
         let pane = self
             .live

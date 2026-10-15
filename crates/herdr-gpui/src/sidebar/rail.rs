@@ -50,10 +50,20 @@ impl SidebarMode {
 }
 
 impl HerdrWindow {
-    /// Collapsing follows the local daemon's `ui.sidebar_collapsed_mode`,
-    /// also while an SSH host is shown, as Herdr keeps presentation local.
-    /// Before shared settings load, Herdr's default rail applies.
+    /// Zen mode hides the column whatever the toggle says; otherwise it is
+    /// [`Self::chrome_sidebar_mode`].
     pub(crate) fn sidebar_mode(&self) -> SidebarMode {
+        if self.zen_layout() {
+            return SidebarMode::Hidden;
+        }
+        self.chrome_sidebar_mode()
+    }
+
+    /// The column outside zen mode, which zen mode slides away. Collapsing
+    /// follows the local daemon's `ui.sidebar_collapsed_mode`, also while an
+    /// SSH host is shown, as Herdr keeps presentation local. Before shared
+    /// settings load, Herdr's default rail applies.
+    pub(crate) fn chrome_sidebar_mode(&self) -> SidebarMode {
         if self.sidebar_visible {
             return SidebarMode::Expanded;
         }
@@ -463,11 +473,14 @@ fn rail_button(
         .cursor_pointer()
 }
 
-/// The indicator centered on its line, whichever style draws it.
+/// The indicator centered on its line, whichever style draws it. A drawn
+/// icon a little taller than the line spills evenly into the row's padding.
 fn indicator(status: AgentStatus, font: &FontConfig, indicators: Indicators) -> Div {
     div()
         .flex_none()
         .h(px(line_height(font)))
+        .flex()
+        .items_center()
         .child(status_indicator(status, font, indicators))
 }
 

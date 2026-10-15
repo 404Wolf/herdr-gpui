@@ -4,7 +4,10 @@ use super::{Auth, Device, Note, Profile, Reply, SETUP_MESSAGE, Store, VERIFY_URL
 use super::{
     credentials,
     device::TokenResponse,
-    http::{LIMIT, authorization, graphql, pr_cooldown, rejection, response},
+    http::{
+        LIMIT, authorization, graphql, pause_until, pr_cooldown, query_error, rejection, response,
+        split_aliases,
+    },
     log::{header, kind, public_sso, token_kind},
     store,
     store::{KEYRING, credential_bytes},
@@ -19,7 +22,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod aliases;
 mod device_auth;
+mod github_cli;
+mod limits;
 mod rejection;
 mod responses;
 mod session;

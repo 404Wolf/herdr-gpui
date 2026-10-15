@@ -5,6 +5,7 @@
 use super::{location::requested_file, markdown};
 use std::{
     borrow::Cow,
+    cell::RefCell,
     path::{Path, PathBuf},
     sync::mpsc::{self, SyncSender, TrySendError},
     thread,
@@ -29,6 +30,8 @@ struct Job {
 
 pub(crate) struct Preview {
     jobs: SyncSender<Job>,
+    /// The kit's `theme.css`, following the window's theme.
+    theme: RefCell<String>,
 }
 
 fn respond(responder: RequestAsyncResponder, status: u16, content_type: &str, body: Vec<u8>) {
@@ -132,7 +135,14 @@ impl Preview {
                     }
                 }
             })?;
-        Ok(Self { jobs })
+        Ok(Self {
+            jobs,
+            theme: RefCell::default(),
+        })
+    }
+
+    pub(crate) fn set_theme(&self, css: String) {
+        *self.theme.borrow_mut() = css;
     }
 
     /// Answers one request for a page. `root` is the page's folder, or
@@ -147,6 +157,11 @@ impl Preview {
             respond(responder, 403, "text/plain", Vec::new());
             return;
         };
+        // The kit is in memory, so it is answered here without the worker.
+        if let Some((body, kind)) = super::kit::asset(request.uri().path(), &self.theme.borrow()) {
+            respond(responder, 200, kind, body);
+            return;
+        }
         let job = Job {
             root: root.to_owned(),
             path: request.uri().path().to_owned(),

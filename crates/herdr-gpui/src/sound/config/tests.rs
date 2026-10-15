@@ -166,7 +166,7 @@ fn worker_reloads_asynchronously_and_keeps_last_valid_config() {
             worker_count.fetch_add(1, Ordering::Release);
             result
         },
-        move |_, path, _, _| {
+        move |_, path, _, _, _| {
             played.send(path.map(Path::to_owned)).unwrap();
             Ok(())
         },

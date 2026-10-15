@@ -461,19 +461,24 @@ pub(super) fn row(
             )
         })
         .when(show_status, |row| {
-            row.child(if removing {
-                div()
-                    .w(px(indicators.width(font)))
-                    .mt(px((line_height(font) - STATUS_WIDTH) / 2.))
-                    .flex_none()
-                    .flex()
-                    .justify_center()
-                    .child(removing_dot("worktree-removing", theme))
-            } else if let Some(token) = leading_icon {
-                configured_status(token, status, cx)
-            } else {
-                status_indicator(status, font, indicators)
-            })
+            let centered = indicators.centered();
+            row.child(
+                if removing {
+                    div()
+                        .w(px(indicators.width(font)))
+                        .mt(px((line_height(font) - STATUS_WIDTH) / 2.))
+                        .flex_none()
+                        .flex()
+                        .justify_center()
+                        .child(removing_dot("worktree-removing", theme))
+                } else if let Some(token) = leading_icon {
+                    configured_status(token, status, cx)
+                } else {
+                    status_indicator(status, font, indicators)
+                }
+                .debug_selector(|| format!("mark-{key}"))
+                .when(centered, |slot| slot.mt_0().self_center()),
+            )
         })
         .child(
             div()

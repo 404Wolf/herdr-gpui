@@ -19,6 +19,7 @@ fn profile(token: Arc<SecretString>) -> Result<Profile> {
         avatar: None,
         token,
         avatar_updates: None,
+        source: Default::default(),
     })
 }
 
@@ -188,7 +189,7 @@ fn refresh_can_replace_an_expiring_pair_with_a_nonexpiring_access_only_token() {
 #[test]
 fn transient_failure_never_refreshes_or_deletes_saved_credentials() {
     for error in [
-        Error::GitHubRateLimit,
+        Error::GitHubRateLimit { reset: None },
         Error::GitHubStatus(500),
         Error::GitHubForbidden,
     ] {

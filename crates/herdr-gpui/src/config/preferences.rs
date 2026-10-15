@@ -13,7 +13,11 @@ pub(crate) enum Preference {
     ShowListeningPorts(bool),
     ShowSidebarSearch(bool),
     ShowRepositoryIcons(bool),
+    /// `status_icons`; `None` removes it, following Herdr's indicator style.
+    StatusIcons(Option<StatusIcons>),
+    ShowDeviceIcons(bool),
     SmoothScroll(bool),
+    FocusFollowsMouse(bool),
     NotificationEnabled(Option<bool>),
     NotificationDelay(Option<u64>),
     NotificationPosition(Option<ToastHerdrPosition>),
@@ -23,6 +27,8 @@ pub(crate) enum Preference {
     ClipboardPosition(Option<ClipboardToastPosition>),
     /// `[terminal] padding_x` or `padding_y`: both sides of one axis.
     TerminalPadding(Axis, Sides),
+    /// `[sound] volume`, in percent.
+    SoundVolume(u8),
     StatusBar(status_bar::Edit),
     /// `[usage] inline`: whether the sidebar draws the daemon's configured rows.
     UsageInline(bool),
@@ -70,7 +76,18 @@ impl Config {
                 Preference::ShowRepositoryIcons(value) => {
                     (None, "show_repository_icons", Some(value.into()))
                 }
+                Preference::ShowDeviceIcons(value) => {
+                    (None, "show_device_icons", Some(value.into()))
+                }
                 Preference::SmoothScroll(value) => (None, "smooth_scroll", Some(value.into())),
+                Preference::StatusIcons(value) => (
+                    None,
+                    "status_icons",
+                    value.map(|icons| icons.as_str().into()),
+                ),
+                Preference::FocusFollowsMouse(value) => {
+                    (None, "focus_follows_mouse", Some(value.into()))
+                }
                 Preference::NotificationEnabled(value) => {
                     (Some("notifications"), "enabled", value.map(Into::into))
                 }
@@ -119,6 +136,12 @@ impl Config {
                 Preference::StatusBar(edit) => {
                     let (key, value) = edit.entry();
                     (Some("status_bar"), key, Some(value))
+                }
+                Preference::SoundVolume(value) => {
+                    if value > SoundConfig::MAX_VOLUME {
+                        return Err(Error::InvalidSoundVolume);
+                    }
+                    (Some("sound"), "volume", Some(i64::from(value).into()))
                 }
                 Preference::UsageInline(value) => (Some("usage"), "inline", Some(value.into())),
                 Preference::UpdateChannel(channel) => {
@@ -204,6 +227,7 @@ mod tests {
             Preference::ShowListeningPorts(false),
             Preference::ShowSidebarSearch(false),
             Preference::ShowRepositoryIcons(false),
+            Preference::ShowDeviceIcons(false),
             Preference::SmoothScroll(false),
             Preference::NotificationEnabled(Some(true)),
             Preference::NotificationDelay(Some(3600)),
@@ -232,6 +256,7 @@ mod tests {
         assert_eq!(table["show_listening_ports"].as_bool(), Some(false));
         assert_eq!(table["show_sidebar_search"].as_bool(), Some(false));
         assert_eq!(table["show_repository_icons"].as_bool(), Some(false));
+        assert_eq!(table["show_device_icons"].as_bool(), Some(false));
         assert_eq!(table["smooth_scroll"].as_bool(), Some(false));
         assert_eq!(table["layout"].as_str(), Some("orca"));
         assert_eq!(table["updates"]["channel"].as_str(), Some("beta"));

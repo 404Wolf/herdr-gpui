@@ -82,6 +82,8 @@ pub(super) enum Reply {
     Token(Credential),
     SignedOut,
     Authenticated(Arc<SecretString>),
+    /// The GitHub CLI's account, after the user chose it and it was verified.
+    GitHubCli(Profile),
 }
 
 pub(crate) struct Profile {
@@ -89,24 +91,60 @@ pub(crate) struct Profile {
     pub avatar: Option<Arc<gpui::Image>>,
     pub token: Arc<SecretString>,
     pub(super) avatar_updates: Option<crate::avatars::AvatarUpdates>,
+    pub source: Source,
+}
+
+/// Where a signed-in account's token comes from.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Source {
+    /// The environment, or a sign-in saved by this app.
+    #[default]
+    Token,
+    /// The GitHub CLI's own sign-in, read again on every load. `repo_scope`
+    /// is false when its classic scopes leave out private repositories.
+    GitHubCli { repo_scope: bool },
+}
+
+impl Source {
+    pub(crate) fn github_cli(self) -> bool {
+        matches!(self, Self::GitHubCli { .. })
+    }
 }
 
 pub(super) fn profile(token: Arc<SecretString>) -> Result<Profile> {
+    profile_from(token, false)
+}
+
+/// The account `token` belongs to. `github_cli` records the GitHub CLI as
+/// its source, with whether its scopes reach private repositories.
+pub(super) fn profile_from(token: Arc<SecretString>, github_cli: bool) -> Result<Profile> {
     #[derive(Deserialize)]
     struct User {
         login: String,
         avatar_url: String,
     }
-    let user: User = response(
-        "profile",
-        agent(Duration::from_secs(15))
-            .get("https://api.github.com/user")
-            .header("User-Agent", "Herdr-GPUI")
-            .header("Accept", "application/vnd.github+json")
-            .header("Authorization", authorization(&token)?)
-            .call()
-            .map_err(log::network("profile"))?,
-    )?;
+    let reply = agent(Duration::from_secs(15))
+        .get("https://api.github.com/user")
+        .header("User-Agent", "Herdr-GPUI")
+        .header("Accept", "application/vnd.github+json")
+        .header("Authorization", authorization(&token)?)
+        .call()
+        .map_err(log::network("profile"))?;
+    // Only classic OAuth tokens, which `gh auth login` issues, list scopes;
+    // a token without the header is not judged by it.
+    let source = if github_cli {
+        Source::GitHubCli {
+            repo_scope: repo_scope(
+                reply
+                    .headers()
+                    .get("x-oauth-scopes")
+                    .and_then(|value| value.to_str().ok()),
+            ),
+        }
+    } else {
+        Source::Token
+    };
+    let user: User = response("profile", reply)?;
     // The login is shown in the menu and logged, never persisted or placed in a
     // URL, so GitHub stays the authority on the shape of its own account names.
     // Enterprise managed users (`handle_shortcode`) are why guessing that shape
@@ -123,7 +161,13 @@ pub(super) fn profile(token: Arc<SecretString>) -> Result<Profile> {
         avatar,
         token,
         avatar_updates,
+        source,
     })
+}
+
+/// Whether a classic token's `X-OAuth-Scopes` reach private repositories.
+pub(super) fn repo_scope(scopes: Option<&str>) -> bool {
+    scopes.is_none_or(|scopes| scopes.split(',').any(|scope| scope.trim() == "repo"))
 }
 
 #[derive(Debug, Deserialize)]

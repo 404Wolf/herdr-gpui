@@ -1,9 +1,11 @@
 //! Internal failures retain their categories and sources until presentation.
 pub use crate::updater::UpdateError;
+pub use github::GitHubJsonError;
 use std::{
     io,
     path::{Path, PathBuf},
 };
+pub use theme::ThemeParseError;
 
 #[cfg(any(target_os = "macos", windows))]
 use wry::raw_window_handle::HandleError as WindowHandleError;
@@ -264,10 +266,16 @@ pub enum Error {
         "GitHub authentication required. Use menu > GitHub sign-in or set GH_TOKEN / GITHUB_TOKEN."
     )]
     GitHubAuthentication,
-    #[error("GitHub denied access: check token permissions, SSO authorization, or rate limits.")]
+    #[error("GitHub denied access: check token permissions or SSO authorization.")]
     GitHubForbidden,
-    #[error("GitHub rate limit reached. Retry later.")]
-    GitHubRateLimit,
+    /// The account's (or, signed out, this address's) API quota is used up.
+    #[error("GitHub rate limit reached. {}.", crate::updater::retry_hint(*reset))]
+    GitHubRateLimit {
+        reset: Option<chrono::DateTime<chrono::Utc>>,
+    },
+    /// GraphQL answers a repository the credential cannot reach as missing.
+    #[error("GitHub cannot see {repository} with this sign-in. {}", crate::github::hidden_hint(*app_token))]
+    GitHubRepositoryHidden { repository: String, app_token: bool },
     #[error("GitHub request failed (HTTP {0}). Check network and repository access.")]
     GitHubStatus(u16),
     #[error("GitHub response could not be read within the size/time limit.")]
@@ -359,11 +367,26 @@ pub enum Error {
     GitHubTokenType,
     #[error("GitHub {0} worker stopped.")]
     GitHubWorker(&'static str),
+    #[error("GitHub CLI (gh) was not found. Install it and run `gh auth login`, or sign in here.")]
+    GitHubCliMissing,
+    #[error("GitHub CLI is not signed in to github.com. Run `gh auth login`, then try again.")]
+    GitHubCliSignedOut,
+    #[error(
+        "GitHub rejected the GitHub CLI's token. Run `gh auth login` to renew it, then try again."
+    )]
+    GitHubCliRejected,
+    #[error("GitHub CLI did not answer within 10 seconds. Check `gh auth status`, then try again.")]
+    GitHubCliTimeout,
+    #[error("Could not run the GitHub CLI (gh).")]
+    GitHubCliProcess(#[source] Box<Error>),
     #[error(transparent)]
     Backdrop(#[from] crate::backdrop::Error),
     #[cfg(feature = "coder")]
     #[error(transparent)]
     Coder(#[from] crate::coder::Error),
+    #[cfg(feature = "boat")]
+    #[error(transparent)]
+    Boat(#[from] crate::boat::Error),
     #[cfg(feature = "daytona")]
     #[error(transparent)]
     Daytona(#[from] crate::daytona::Error),
@@ -605,6 +628,8 @@ pub enum Error {
     LocalWorktreeNote,
     #[error("Invalid saved worktree notes")]
     InvalidWorktreeNotes,
+    #[error("Invalid saved palette history")]
+    InvalidPaletteFrecency,
     #[error("Invalid saved dispatch history")]
     InvalidDispatchHistory,
     #[error("Invalid saved editor groups")]
@@ -663,6 +688,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("Could not install the agent tools on the SSH host: {0}")]
+    RemoteAgentTools(#[source] herdr_client::Error),
     #[error("{0}")]
     DeviceSetupInput(&'static str),
     #[error("Saving the device failed ({status}){}", if detail.is_empty() { String::new() } else { format!(": {detail}") })]
@@ -790,6 +817,12 @@ pub enum Error {
     TooManyFontFallbacks(&'static str),
     #[error("layout.sidebar_gap must be finite and between 0 and 64 logical pixels")]
     InvalidSidebarGap,
+    #[error("zen.width must be 20 to 1000 columns, or a percentage from \"10%\" to \"100%\"")]
+    InvalidZenWidth,
+    #[error("zen.font_size must be finite and between 8 and 48 logical pixels")]
+    InvalidZenFontSize,
+    #[error("sound.volume must be between 0 and 100")]
+    InvalidSoundVolume,
     #[error(
         "terminal.{0} must be one number or a pair of numbers, each finite and between 0 and 64 logical pixels"
     )]
@@ -865,6 +898,13 @@ pub enum Error {
     InvalidDevicesTable,
     #[error("[devices] must list at most {0} devices")]
     TooManyDevices(usize),
+    /// A `[devices.<id>]` theme that does not parse, named by its device.
+    #[error("devices.{device}.theme: {source}")]
+    DeviceTheme {
+        device: String,
+        #[source]
+        source: Box<Error>,
+    },
     #[error("theme {name:?} not found in {directories:?}")]
     ThemeNotFound {
         name: String,
@@ -933,27 +973,11 @@ pub enum Error {
 }
 
 impl Error {
-    pub(crate) fn github_json(source: serde_json::Error) -> Self {
-        Self::GitHubJson(GitHubJsonError(source))
-    }
-
     pub(crate) fn at_path(self, path: &Path) -> Self {
         Self::Path {
             path: path.to_owned(),
             source: Box::new(self),
         }
-    }
-}
-
-/// Parser diagnostics can quote credential-bearing fields; expose the cause only
-/// to explicit source inspection, never ordinary Display or Debug formatting.
-#[derive(thiserror::Error)]
-#[error("Invalid GitHub JSON response.")]
-pub struct GitHubJsonError(#[source] serde_json::Error);
-
-impl std::fmt::Debug for GitHubJsonError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("GitHubJsonError([REDACTED])")
     }
 }
 
@@ -969,19 +993,8 @@ impl From<config_loader::ConfigError> for Error {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum ThemeParseError {
-    #[error("expected a six-digit RGB hex color (optionally prefixed by #)")]
-    InvalidColor,
-    #[error("invalid hex color")]
-    InvalidHex(#[source] std::num::ParseIntError),
-    #[error("expected index=color")]
-    MissingPaletteColor,
-    #[error("palette index must be between 0 and 255")]
-    InvalidPaletteIndex(#[source] std::num::ParseIntError),
-    #[error("palette index must be between 0 and 255")]
-    PaletteIndexOutOfRange,
-}
+mod github;
+mod theme;
 
 #[cfg(test)]
 mod tests;

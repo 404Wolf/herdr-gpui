@@ -34,7 +34,7 @@ agent-launcher wrote it and check that migration keeps its rows.
 | --- | --- |
 | `model.rs`, `location.rs`, `store.rs` | Records in the database's shapes, its path, and SQLite access. |
 | `repo.rs` | Finding a checkout's repository, main checkout, Beads, and remote on its host. |
-| `github.rs`, `beads.rs` | The sources: one full listing each. |
+| `github.rs`, `beads.rs` | The sources: a full listing each. GitHub reads only what changed since the last sync, with a full listing again every 30 minutes. |
 | `service.rs` | The worker thread per open view: sync, reload, and the action queue. |
 | `actions.rs` | Dispatch, stop, send, remove, delete: each on its own thread. |
 | `prompt.rs` | Prompt profiles, agent-launcher's built-in and review prompts. |
@@ -50,6 +50,13 @@ script call, and the UI reads the newest `Snapshot` from a coalescing mailbox.
 
 Live agent status comes from each connected host's Herdr snapshot, matched to
 runs by host, workspace, and pane; it is never written back to the database.
+
+Dispatch can receive `agent_pane_busy` while the new worktree's shell runs its
+startup hooks. It retries only that structured rejection for up to ten seconds,
+checking the terminal identity returned by worktree creation before each retry.
+An accepted launch, transport failure, or agent-readiness timeout is never
+replayed. Waiting happens on the action worker and observes cancellation;
+permanent failures retain the normal failed-run recording and worktree cleanup.
 
 ## Branches name their item
 
