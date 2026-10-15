@@ -253,7 +253,7 @@ fn a_lone_torn_off_tab_stays_listed_while_its_window_shows_it(cx: &mut TestAppCo
 /// window's edges the copy waits inside them and says where a drop goes.
 #[gpui::test]
 fn a_tab_carried_off_its_strip_is_drawn_under_the_pointer(cx: &mut TestAppContext) {
-    let (_view, cx) = four_tabs(cx, true);
+    let (view, cx) = four_tabs(cx, true);
     let from = cx.debug_bounds("tab-c").unwrap().center();
     carry_to(cx, "tab-c", from + point(px(60.), px(0.)));
     assert!(cx.debug_bounds("tab-ghost").is_none());
@@ -266,16 +266,30 @@ fn a_tab_carried_off_its_strip_is_drawn_under_the_pointer(cx: &mut TestAppContex
     assert!(cx.debug_bounds("tab-ghost-new-window").is_none());
 
     carry_to_more(cx, OUTSIDE);
-    if cfg!(target_os = "macos") {
-        // A window of its own carries the card out, following the pointer.
+    // Off macOS, and on it when no window of its own could carry the card
+    // out, as a test window has no AppKit window to carry it from, the card
+    // waits at the window's edge.
+    let ghost = cx.debug_bounds("tab-ghost").unwrap();
+    let window = Bounds::new(Point::default(), size(px(1600.), px(600.)));
+    assert!(window.contains(&ghost.origin) && window.contains(&ghost.bottom_right()));
+    assert!(cx.debug_bounds("tab-ghost-new-window").is_some());
+    #[cfg(target_os = "macos")]
+    {
+        use crate::window::tab_float::Float;
+        assert_eq!(
+            view.read_with(cx, |view, _| view.tab_drag.as_ref().unwrap().float),
+            Float::Failed
+        );
+        // Once a window of its own carries the card, this one draws none.
+        view.update(cx, |view, cx| {
+            view.tab_drag.as_mut().unwrap().float = Float::Open;
+            cx.notify();
+        });
+        draw(cx);
         assert!(cx.debug_bounds("tab-ghost").is_none());
-    } else {
-        // Elsewhere the card waits at the window's edge.
-        let ghost = cx.debug_bounds("tab-ghost").unwrap();
-        let window = Bounds::new(Point::default(), size(px(1600.), px(600.)));
-        assert!(window.contains(&ghost.origin) && window.contains(&ghost.bottom_right()));
-        assert!(cx.debug_bounds("tab-ghost-new-window").is_some());
     }
+    #[cfg(not(target_os = "macos"))]
+    let _ = view;
     drop_at(cx, OUTSIDE);
     assert!(cx.debug_bounds("tab-ghost").is_none());
 }
@@ -369,4 +383,49 @@ fn only_a_remote_host_names_a_session_to_restore() {
     assert_eq!(remote_session(&ssh), Some("work"));
     assert_eq!(remote_session(&wsl), Some("dev"));
     assert_eq!(remote_session(&ConnectTarget::Local), None);
+}
+
+/// The window a page is carried to does not restore its workspace's saved
+/// split, whose other groups would show the tabs it hides.
+#[gpui::test]
+fn a_page_carried_off_does_not_restore_its_workspaces_split(cx: &mut TestAppContext) {
+    let (source, cx) = four_tabs(cx, true);
+    carry_to(cx, "tab-c", OUTSIDE);
+    drop_at(cx, OUTSIDE);
+    let mut torn = torn(cx).remove(0);
+    torn.pick = Pick::Page(open_page(&source, cx));
+    let split = serde_json::from_value(serde_json::json!({
+        "groups": [
+            { "pick": { "kind": "herdr", "id": "a" }, "share": 0.5 },
+            { "pick": { "kind": "herdr", "id": "b" }, "share": 0.5,
+              "tabs": [{ "kind": "herdr", "id": "b" }] },
+        ],
+        "active": 0,
+    }))
+    .unwrap();
+    let key = torn.workspace.clone();
+    let fresh = cx.update(|window, cx| {
+        cx.new(|cx| {
+            let mut view = crate::sidebar::layout_tests::fixture_window(window, cx);
+            view.browser.saved.insert(key.clone(), split);
+            view
+        })
+    });
+    cx.update(|window, cx| fresh.update(cx, |view, cx| view.arrive(torn, window, cx)));
+    fresh.read_with(cx, |view, _| {
+        assert!(!view.browser.saved.contains_key(&key));
+        assert_eq!(view.browser.layouts[&key].len(), 1);
+    });
+}
+
+/// A tab whose new window could not open is listed again where it was.
+#[gpui::test]
+fn a_tab_whose_window_cannot_open_is_listed_again(cx: &mut TestAppContext) {
+    let (source, cx) = four_tabs(cx, true);
+    carry_to(cx, "tab-c", OUTSIDE);
+    drop_at(cx, OUTSIDE);
+    let torn = torn(cx).remove(0);
+    assert_eq!(listed(&source, cx), herdr(&["a", "b", "d"]));
+    source.update(cx, |view, cx| view.untear(&torn.workspace, &torn.pick, cx));
+    assert_eq!(listed(&source, cx), herdr(&["a", "b", "c", "d"]));
 }

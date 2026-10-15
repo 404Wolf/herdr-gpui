@@ -52,10 +52,9 @@ pub(crate) struct TabDrag {
     /// Whether the pointer is past the window's edges, where a drop opens
     /// the tab in a new window.
     pub(super) outside: bool,
-    /// Whether a window was opened to carry the tab's card out of this one;
-    /// see `tab_float`.
+    /// The window carrying the tab's card out of this one; see `tab_float`.
     #[cfg(target_os = "macos")]
-    pub(super) floated: bool,
+    pub(super) float: super::tab_float::Float,
     /// The strip's scroll when pressed, so the carried tab stays under the
     /// pointer while the strip scrolls beneath it.
     scrolled: Pixels,
@@ -259,7 +258,7 @@ impl HerdrWindow {
             pointer: position,
             outside: false,
             #[cfg(target_os = "macos")]
-            floated: false,
+            float: Default::default(),
             scrolled: self.strip_scroll(group).offset().x,
             lifted: None,
             target: None,

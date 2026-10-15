@@ -129,11 +129,24 @@ impl HerdrWindow {
         })
     }
 
+    /// Whether a window of its own draws the card out of this one, as on
+    /// macOS unless that window could not open. While it opens, this
+    /// window draws none, so the card does not flash at its edge first.
+    fn card_floats(&self) -> bool {
+        #[cfg(target_os = "macos")]
+        return self
+            .tab_drag
+            .as_ref()
+            .is_some_and(|drag| drag.float != super::tab_float::Float::Failed);
+        #[cfg(not(target_os = "macos"))]
+        false
+    }
+
     /// The card drawn in this window. Out of it, macOS draws the card in a
-    /// window of its own instead.
+    /// window of its own instead, unless that window could not open.
     pub(super) fn render_tab_ghost(&self, cx: &App) -> Option<AnyElement> {
         let ghost = self.tab_ghost()?;
-        if ghost.outside && cfg!(target_os = "macos") {
+        if ghost.outside && self.card_floats() {
             return Some(copy_cursor().into_any_element());
         }
         let card = self.ghost_card(&ghost, cx)?;

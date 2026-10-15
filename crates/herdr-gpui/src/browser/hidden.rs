@@ -53,6 +53,18 @@ impl Hidden {
         }
     }
 
+    /// Lists `pick` of `key` again, as when the window it was to be carried
+    /// to could not open.
+    pub(crate) fn show(&mut self, key: &Key, pick: &Pick) {
+        let Some(hidden) = self.0.get_mut(key) else {
+            return;
+        };
+        hidden.retain(|entry| entry.pick != *pick);
+        if hidden.is_empty() {
+            self.0.remove(key);
+        }
+    }
+
     /// Lists again the tabs `closed` held. Returns whether there were any.
     pub(crate) fn release(&mut self, closed: WindowId) -> bool {
         let before: usize = self.0.values().map(Vec::len).sum();
@@ -105,5 +117,17 @@ mod tests {
 
         hidden.forget_workspaces(&scope, &["w2".to_owned()]);
         assert!(!hidden.hides(&other, &a));
+    }
+
+    #[test]
+    fn a_tab_shown_again_is_no_longer_hidden() {
+        let key = (Scope::endpoint("local"), "w1".to_owned());
+        let (a, b) = (Pick::Herdr("a".into()), Pick::Herdr("b".into()));
+        let mut hidden = Hidden::default();
+        hidden.hide(key.clone(), [a.clone(), b.clone()]);
+        hidden.show(&key, &a);
+        assert!(!hidden.hides(&key, &a) && hidden.hides(&key, &b));
+        hidden.show(&key, &b);
+        assert!(hidden.is_empty());
     }
 }

@@ -79,16 +79,37 @@ impl HerdrWindow {
         };
         self.leave_tab(&drag.pick, cx);
         // A tab the group could not move on from stays listed while shown.
-        self.browser.hidden.hide(workspace, [drag.pick.clone()]);
+        self.browser
+            .hidden
+            .hide(workspace.clone(), [drag.pick.clone()]);
         #[cfg(test)]
         cx.default_global::<TornOff>().0.push(torn);
         #[cfg(not(test))]
-        crate::app::open_additional_window_then(
-            torn.target.clone(),
-            Some(torn.placement),
-            move |view, window, cx| view.arrive(torn, window, cx),
-            cx,
-        );
+        {
+            let (from, pick) = (torn.from.clone(), torn.pick.clone());
+            crate::app::open_additional_window_then(
+                torn.target.clone(),
+                Some(torn.placement),
+                move |view, window, cx| view.arrive(torn, window, cx),
+                move |cx| {
+                    // A window already closed has nothing to list it in.
+                    let _ = from.update(cx, |this, cx| this.untear(&workspace, &pick, cx));
+                },
+                cx,
+            );
+        }
+    }
+
+    /// Lists `pick` of `workspace` again when the window it was carried to
+    /// could not open, since no window closing would give it back.
+    pub(super) fn untear(
+        &mut self,
+        workspace: &(Scope, String),
+        pick: &Pick,
+        cx: &mut Context<Self>,
+    ) {
+        self.browser.hidden.show(workspace, pick);
+        cx.notify();
     }
 
     /// Lists again, once a window closes, the tabs this one hid when they
@@ -109,6 +130,9 @@ impl HerdrWindow {
     /// gets there. The window lists only this machine's daemon until its
     /// saved hosts are read, so the way there waits for the tab's host.
     pub(crate) fn arrive(&mut self, torn: TornTab, window: &mut Window, cx: &mut Context<Self>) {
+        // The workspace's saved split would show the tabs this window
+        // hides, so it is dropped before the page is shown in it.
+        self.browser.saved.remove(&torn.workspace);
         if let Pick::Page(id) = torn.pick {
             self.show_browser_tab(id, window, cx);
         }
@@ -124,8 +148,7 @@ impl HerdrWindow {
 
     /// Goes where the waiting torn-off tab is, once its host is listed:
     /// the session it showed there, then the tab, or a page's workspace,
-    /// with the workspace's other tabs hidden and unsplit. The workspace's
-    /// saved split is not restored, since it would show those tabs.
+    /// with the workspace's other tabs hidden and unsplit.
     /// The navigation itself waits for the surface. After the saved hosts
     /// are `listed`, a host still missing is gone, and the tab with it.
     pub(crate) fn land_arrival(&mut self, listed: bool, cx: &mut Context<Self>) {
@@ -142,7 +165,6 @@ impl HerdrWindow {
             }
             return;
         }
-        self.browser.saved.remove(&torn.workspace);
         self.browser
             .hidden
             .hide(torn.workspace.clone(), torn.others.iter().cloned());

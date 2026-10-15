@@ -20,6 +20,18 @@ const PAD: f32 = 12.;
 /// Tall enough for a label and the line under it.
 const HEIGHT: f32 = 72.;
 
+/// How far the window carrying a tab's card has got, for one drag.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum Float {
+    #[default]
+    Unopened,
+    Opening,
+    Open,
+    /// It could not open, so the drag's window draws the card at its edge
+    /// instead, rather than trying again on every pointer move.
+    Failed,
+}
+
 /// The window drawing a carried tab's card.
 pub(crate) struct TabFloat {
     card: Card,
@@ -35,16 +47,20 @@ impl HerdrWindow {
         let Some(ghost) = self.tab_ghost().filter(|ghost| ghost.outside) else {
             return;
         };
-        if self.tab_drag.as_ref().is_none_or(|drag| drag.floated) {
+        if self
+            .tab_drag
+            .as_ref()
+            .is_none_or(|drag| drag.float != Float::Unopened)
+        {
             return;
         }
         let (Some(card), Some(source)) = (self.ghost_card(&ghost, cx), ns_window(window)) else {
+            self.settle_float(Float::Failed, cx);
             return;
         };
-        if let Some(drag) = self.tab_drag.as_mut() {
-            drag.floated = true;
-        }
+        self.settle_float(Float::Opening, cx);
         let from = cx.entity();
+        let back = from.downgrade();
         cx.defer(move |cx| {
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::new(
@@ -64,10 +80,31 @@ impl HerdrWindow {
             let opened = cx.open_window(options, |window, cx| {
                 cx.new(|cx| TabFloat::new(card, source, from, window, cx))
             });
-            if let Err(error) = opened {
-                tracing::warn!(%error, "Cannot open the window for a carried tab");
-            }
+            let float = match opened {
+                Ok(_) => Float::Open,
+                Err(error) => {
+                    tracing::warn!(%error, "Cannot open the window for a carried tab");
+                    Float::Failed
+                }
+            };
+            // A drag already over has no card to draw.
+            let _ = back.update(cx, |this, cx| {
+                if this
+                    .tab_drag
+                    .as_ref()
+                    .is_some_and(|drag| drag.float == Float::Opening)
+                {
+                    this.settle_float(float, cx);
+                }
+            });
         });
+    }
+
+    fn settle_float(&mut self, float: Float, cx: &mut Context<Self>) {
+        if let Some(drag) = self.tab_drag.as_mut() {
+            drag.float = float;
+            cx.notify();
+        }
     }
 }
 
