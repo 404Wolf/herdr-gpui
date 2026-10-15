@@ -43,7 +43,7 @@ const GROW: Duration = if cfg!(test) {
 
 /// A press on a tab that may become a reorder.
 pub(crate) struct TabDrag {
-    group: GroupId,
+    pub(super) group: GroupId,
     pub(super) pick: Pick,
     /// The boot a Herdr tab's move is sent to.
     boot: Option<String>,
@@ -52,6 +52,10 @@ pub(crate) struct TabDrag {
     /// Whether the pointer is past the window's edges, where a drop opens
     /// the tab in a new window.
     pub(super) outside: bool,
+    /// Whether a window was opened to carry the tab's card out of this one;
+    /// see `tab_float`.
+    #[cfg(target_os = "macos")]
+    pub(super) floated: bool,
     /// The strip's scroll when pressed, so the carried tab stays under the
     /// pointer while the strip scrolls beneath it.
     scrolled: Pixels,
@@ -153,7 +157,7 @@ impl TabDrag {
         self.target.is_some()
     }
 
-    fn floating(&self) -> bool {
+    pub(super) fn floating(&self) -> bool {
         self.lifted.is_some() && self.dropped.is_none()
     }
 
@@ -254,6 +258,8 @@ impl HerdrWindow {
             origin: position,
             pointer: position,
             outside: false,
+            #[cfg(target_os = "macos")]
+            floated: false,
             scrolled: self.strip_scroll(group).offset().x,
             lifted: None,
             target: None,

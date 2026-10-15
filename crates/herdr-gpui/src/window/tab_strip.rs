@@ -609,6 +609,8 @@ impl HerdrWindow {
                             if this.move_tab_drag(event.position, held, viewport, cx) {
                                 cx.stop_propagation();
                             }
+                            #[cfg(target_os = "macos")]
+                            this.float_tab(window, cx);
                         });
                     }
                 });

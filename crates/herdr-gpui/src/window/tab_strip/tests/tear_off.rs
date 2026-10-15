@@ -56,7 +56,7 @@ fn a_tab_dropped_outside_the_window_opens_in_a_new_one(cx: &mut TestAppContext) 
     assert!(bounds.size.width >= px(640.) && bounds.size.height >= px(400.));
     view.read_with(cx, |view, _| {
         assert!(view.tab_drag.is_none());
-        // Every window lists the workspace's tabs; nothing was moved.
+        // The daemon keeps every tab; nothing was moved or closed.
         assert!(view.live.snapshot.as_ref().unwrap().tabs.len() == 4);
     });
     // The group showed another tab, which it keeps showing.
@@ -160,6 +160,132 @@ fn a_new_window_goes_to_the_tab_torn_off_once_connected(cx: &mut TestAppContext)
             Some(crate::NavigationTarget::Workspace("w1".into()))
         );
     });
+}
+
+fn listed(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) -> Vec<Pick> {
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        view.group_tabs(view.group_slots()[0].id, cx)
+    })
+}
+
+fn herdr(ids: &[&str]) -> Vec<Pick> {
+    ids.iter().map(|id| Pick::Herdr((*id).into())).collect()
+}
+
+/// Gives `view` the daemon's snapshot `snapshot`, focused on `tab`, with a
+/// tab `extra` opened after the tear-off when given.
+fn show_snapshot(
+    view: &Entity<HerdrWindow>,
+    snapshot: &herdr_client::protocol::ClientShellSnapshot,
+    tab: &str,
+    extra: Option<&str>,
+    cx: &mut VisualTestContext,
+) {
+    let mut snapshot = snapshot.clone();
+    snapshot.focused_tab_id = Some(tab.into());
+    if let Some(extra) = extra {
+        let mut opened = snapshot.tabs[0].clone();
+        opened.tab_id = extra.into();
+        snapshot.tabs.push(opened);
+    }
+    view.update(cx, |view, _| view.live.snapshot = Some(Arc::new(snapshot)));
+}
+
+/// Herdr cannot move a tab to another workspace, so the window a tab is
+/// carried to lists only that tab of its workspace, and the window it left
+/// stops listing it. Tabs opened afterwards show in both.
+#[gpui::test]
+fn a_torn_off_tab_is_listed_only_in_the_window_it_was_carried_to(cx: &mut TestAppContext) {
+    let (source, cx) = four_tabs(cx, true);
+    carry_to(cx, "tab-c", OUTSIDE);
+    drop_at(cx, OUTSIDE);
+    let torn = torn(cx).remove(0);
+    assert_eq!(torn.others, herdr(&["a", "b", "d"]));
+    assert_eq!(listed(&source, cx), herdr(&["a", "b", "d"]));
+    assert!(cx.debug_bounds("tab-c").is_none());
+
+    let snapshot = source.read_with(cx, |view, _| {
+        (**view.live.snapshot.as_ref().unwrap()).clone()
+    });
+    let fresh_window = cx.add_window(crate::sidebar::layout_tests::fixture_window);
+    let fresh = fresh_window.root(cx).unwrap();
+    fresh_window
+        .update(cx, |view, window, cx| view.arrive(torn, window, cx))
+        .unwrap();
+    // Before the window gets to the tab, the one it shows stays listed.
+    show_snapshot(&fresh, &snapshot, "a", None, cx);
+    assert_eq!(listed(&fresh, cx), herdr(&["a", "c"]));
+    show_snapshot(&fresh, &snapshot, "c", None, cx);
+    assert_eq!(listed(&fresh, cx), herdr(&["c"]));
+
+    show_snapshot(&fresh, &snapshot, "c", Some("e"), cx);
+    assert_eq!(listed(&fresh, cx), herdr(&["c", "e"]));
+    show_snapshot(&source, &snapshot, "a", Some("e"), cx);
+    assert_eq!(listed(&source, cx), herdr(&["a", "b", "d", "e"]));
+
+    // Closing the new window gives the tab back to the one it left.
+    fresh_window
+        .update(cx, |_, window, _| window.remove_window())
+        .unwrap();
+    cx.run_until_parked();
+    assert_eq!(listed(&source, cx), herdr(&["a", "b", "c", "d", "e"]));
+}
+
+/// A window whose only tab was carried off keeps showing it, and so lists it.
+#[gpui::test]
+fn a_lone_torn_off_tab_stays_listed_while_its_window_shows_it(cx: &mut TestAppContext) {
+    let (source, cx) = four_tabs(cx, true);
+    let snapshot = source.read_with(cx, |view, _| {
+        (**view.live.snapshot.as_ref().unwrap()).clone()
+    });
+    let mut lone = snapshot.clone();
+    lone.tabs.truncate(1);
+    source.update(cx, |view, _| view.live.snapshot = Some(Arc::new(lone)));
+    draw(cx);
+    carry_to(cx, "tab-a", OUTSIDE);
+    drop_at(cx, OUTSIDE);
+    assert!(torn(cx)[0].others.is_empty());
+    assert_eq!(listed(&source, cx), herdr(&["a"]));
+}
+
+/// A tab carried off its strip leaves a copy under the pointer; past the
+/// window's edges the copy waits inside them and says where a drop goes.
+#[gpui::test]
+fn a_tab_carried_off_its_strip_is_drawn_under_the_pointer(cx: &mut TestAppContext) {
+    let (_view, cx) = four_tabs(cx, true);
+    let from = cx.debug_bounds("tab-c").unwrap().center();
+    carry_to(cx, "tab-c", from + point(px(60.), px(0.)));
+    assert!(cx.debug_bounds("tab-ghost").is_none());
+    drop_at(cx, from + point(px(60.), px(0.)));
+
+    let below = point(px(800.), px(400.));
+    carry_to(cx, "tab-c", below);
+    let ghost = cx.debug_bounds("tab-ghost").unwrap();
+    assert!(ghost.origin.x > below.x && ghost.origin.y > below.y);
+    assert!(cx.debug_bounds("tab-ghost-new-window").is_none());
+
+    carry_to_more(cx, OUTSIDE);
+    if cfg!(target_os = "macos") {
+        // A window of its own carries the card out, following the pointer.
+        assert!(cx.debug_bounds("tab-ghost").is_none());
+    } else {
+        // Elsewhere the card waits at the window's edge.
+        let ghost = cx.debug_bounds("tab-ghost").unwrap();
+        let window = Bounds::new(Point::default(), size(px(1600.), px(600.)));
+        assert!(window.contains(&ghost.origin) && window.contains(&ghost.bottom_right()));
+        assert!(cx.debug_bounds("tab-ghost-new-window").is_some());
+    }
+    drop_at(cx, OUTSIDE);
+    assert!(cx.debug_bounds("tab-ghost").is_none());
+}
+
+/// Moves the pointer of a drag already under way to `to`.
+fn carry_to_more(cx: &mut VisualTestContext, to: Point<Pixels>) {
+    for _ in 0..2 {
+        cx.simulate_mouse_move(to, MouseButton::Left, Modifiers::default());
+        draw(cx);
+    }
 }
 
 fn saved(id: &str) -> herdr_client::SavedHost {
