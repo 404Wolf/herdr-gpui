@@ -114,9 +114,15 @@ impl HerdrWindow {
         position: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
-        // A lone device has nowhere to go.
-        if self.endpoints.len() < 2
-            || self.device_filter.is_some()
+        // A device listed alone, by the filter or a search, has nowhere to
+        // go, so its header stays a plain click.
+        let devices = !self.config.layout.mode.lists_workspaces();
+        let query = if devices && self.config.show_sidebar_search {
+            self.device_tree_query(cx)
+        } else {
+            String::new()
+        };
+        if self.listed_headers(devices, &query).len() < 2
             || self.menu.page.is_some()
             || self.workspace_drag.is_some()
         {
@@ -153,22 +159,26 @@ impl HerdrWindow {
         }
     }
 
-    /// The folded list's headers for a lifted device, or `None` when no
-    /// device is lifted or fewer than two can move. `devices` and `query`
+    /// Each header the spaces list shows, by endpoint index, with its row in
+    /// the folded list, where every header is one row. `devices` and `query`
     /// list the headers as render does.
-    pub(super) fn device_plan(&self, devices: bool, query: &str) -> Option<DevicePlan> {
-        let drag = self.device_drag.as_ref().filter(|drag| drag.lifted)?;
-        // Each listed header's place in the folded list, where every one is
-        // a row.
-        let units: Vec<(usize, usize)> = self
-            .displayed_devices()
+    fn listed_headers(&self, devices: bool, query: &str) -> Vec<(usize, usize)> {
+        self.displayed_devices()
             .into_iter()
             .filter(|&(index, endpoint)| {
                 self.device_visible(&endpoint.id) && (!devices || self.device_listed(index, query))
             })
             .enumerate()
             .map(|(row, (index, _))| (index, row))
-            .collect();
+            .collect()
+    }
+
+    /// The folded list's headers for a lifted device, or `None` when no
+    /// device is lifted or fewer than two can move. `devices` and `query`
+    /// list the headers as render does.
+    pub(super) fn device_plan(&self, devices: bool, query: &str) -> Option<DevicePlan> {
+        let drag = self.device_drag.as_ref().filter(|drag| drag.lifted)?;
+        let units = self.listed_headers(devices, query);
         let dragged = units
             .iter()
             .position(|&(index, _)| self.endpoints[index].id == drag.endpoint)?;
@@ -323,15 +333,17 @@ impl HerdrWindow {
         true
     }
 
-    /// Drops a lifted header where it came from. Returns whether one was
-    /// lifted.
+    /// Drops a lifted header where it came from, and forgets a press that
+    /// has not lifted yet, so its timer cannot lift it later. Returns whether
+    /// one was lifted: only then is the key the drag's.
     pub(crate) fn cancel_device_drag(&mut self, cx: &mut Context<Self>) -> bool {
-        if !self.device_drag.as_ref().is_some_and(|drag| drag.lifted) {
+        let Some(drag) = self.device_drag.take() else {
             return false;
+        };
+        if drag.lifted {
+            cx.notify();
         }
-        self.device_drag = None;
-        cx.notify();
-        true
+        drag.lifted
     }
 }
 

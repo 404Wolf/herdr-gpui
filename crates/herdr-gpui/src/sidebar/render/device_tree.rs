@@ -11,7 +11,7 @@ use gpui::{prelude::*, *};
 
 impl HerdrWindow {
     /// What the Devices layout's search field holds.
-    pub(super) fn device_tree_query(&self, cx: &App) -> String {
+    pub(in crate::sidebar) fn device_tree_query(&self, cx: &App) -> String {
         self.devices_overview
             .tree_search
             .as_ref()

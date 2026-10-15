@@ -216,3 +216,68 @@ fn a_header_pressed_in_a_scrolled_list_stays_under_the_pointer(cx: &mut gpui::Te
         assert_eq!(view.device_order, ["ssh:c", "local", "ssh:a", "ssh:b"])
     });
 }
+
+/// Escape forgets a press that has not lifted yet, so the lift never comes,
+/// and leaves the key to the window, since nothing was carried.
+#[gpui::test]
+fn escape_before_the_lift_forgets_the_press(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = cx.add_window_view(|window, cx| {
+        let mut view = fixture_window(window, cx);
+        view.live.snapshot = Some(Arc::new(snapshot(3)));
+        view.endpoints.extend(["a", "b"].into_iter().map(remote));
+        view
+    });
+    cx.simulate_resize(size(px(800.), px(900.)));
+    draw(cx);
+    let header = cx.debug_bounds("host-ssh:a").unwrap();
+    cx.simulate_mouse_down(header.center(), MouseButton::Left, Modifiers::default());
+    let carried = view.update(cx, |view, cx| {
+        assert!(view.device_drag.is_some());
+        view.cancel_device_drag(cx)
+    });
+    assert!(!carried);
+    cx.executor().advance_clock(LIFT_DELAY * 2);
+    cx.run_until_parked();
+    draw(cx);
+    view.read_with(cx, |view, _| assert!(view.device_drag.is_none()));
+    assert!(cx.debug_bounds("workspace-ssh:a-w0").is_some());
+}
+
+/// A Devices layout search that leaves one device listed leaves its header a
+/// plain click: there is nowhere to drag it.
+#[gpui::test]
+fn a_header_listed_alone_by_search_stays_a_click(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = cx.add_window_view(|window, cx| {
+        let mut view = fixture_window(window, cx);
+        view.config.layout.mode = crate::config::LayoutMode::Devices;
+        view.live.snapshot = Some(Arc::new(snapshot(1)));
+        view.endpoints
+            .extend(["alpha", "beta"].into_iter().map(remote));
+        view
+    });
+    cx.simulate_resize(size(px(800.), px(700.)));
+    // The tick gives the layout its search field.
+    view.update(cx, |view, cx| view.poll_devices_overview(cx));
+    cx.run_until_parked();
+    draw(cx);
+    let input = view.read_with(cx, |view, _| {
+        view.devices_overview
+            .tree_search
+            .as_ref()
+            .unwrap()
+            .input
+            .clone()
+    });
+    cx.update(|window, cx| window.focus(&input.read(cx).focus.clone(), cx));
+    cx.simulate_input("beta");
+    cx.run_until_parked();
+    draw(cx);
+    assert!(cx.debug_bounds("host-ssh:alpha").is_none());
+    let header = cx.debug_bounds("host-ssh:beta").unwrap();
+    cx.simulate_mouse_down(header.center(), MouseButton::Left, Modifiers::default());
+    view.read_with(cx, |view, _| assert!(view.device_drag.is_none()));
+    cx.executor().advance_clock(LIFT_DELAY * 2);
+    cx.run_until_parked();
+    view.read_with(cx, |view, _| assert!(view.device_drag.is_none()));
+    cx.simulate_mouse_up(header.center(), MouseButton::Left, Modifiers::default());
+}
