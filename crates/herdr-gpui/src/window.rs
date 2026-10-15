@@ -314,6 +314,9 @@ pub(crate) struct HerdrWindow {
     /// A spaces row revealed last frame, which the next render moves out from
     /// under the pinned host header if it landed there.
     pub(crate) sidebar_pin_reveal: std::cell::Cell<Option<usize>>,
+    /// Whether the last spaces list render was folded to its headers for a
+    /// lifted device, whose geometry the next frame must not pin from.
+    pub(crate) sidebar_folded: std::cell::Cell<bool>,
     pub(crate) sidebar_search: sidebar::SidebarSearch,
     pub(crate) _poll: Task<()>,
     pub(crate) _activation: Subscription,
@@ -786,6 +789,7 @@ impl HerdrWindow {
             sidebar_scroll: Default::default(),
             sidebar_revealed: Default::default(),
             sidebar_pin_reveal: Default::default(),
+            sidebar_folded: Default::default(),
             sidebar_search: sidebar::SidebarSearch::new(cx),
             _poll: poll,
             sidebar_view,

@@ -568,9 +568,15 @@ impl HerdrWindow {
         }
         // Rows under the pinned header are hidden, so a reveal must clear it.
         let cover = px(sticky::cover(&headers));
-        // Folded headers slide under a pinned one, so none is pinned then.
+        // Folded headers slide under a pinned one, so none is pinned then,
+        // nor in the frame that unfolds, whose header places are the folded
+        // list's; the frame after pins from the unfolded one.
+        let unfolding = self.sidebar_folded.replace(device_plan.is_some()) && device_plan.is_none();
+        if unfolding {
+            window.request_animation_frame();
+        }
         let pinned_host = sticky::pinned(&headers)
-            .filter(|_| device_plan.is_none())
+            .filter(|_| device_plan.is_none() && !unfolding)
             .and_then(|pinned| self.pinned_host_row(pinned, look, width, cx));
         // Follow the selection, but only once a frame has measured the viewport:
         // the handle resolves the request against the previous frame's bounds, so
