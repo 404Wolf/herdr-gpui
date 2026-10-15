@@ -11,7 +11,6 @@ mod layouts;
 mod metrics;
 mod note_line;
 mod order;
-pub(crate) mod preview;
 mod rail;
 mod render;
 mod reorder;
@@ -45,6 +44,7 @@ pub(crate) use {
     workspaces::workspace_label,
 };
 
+pub(crate) use layout::SidebarMetrics;
 pub(crate) use order::step as sidebar_step;
 
 #[cfg(any(test, feature = "integration-test"))]

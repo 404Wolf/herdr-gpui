@@ -9,12 +9,12 @@ mod themes;
 use fonts::verify_fonts;
 use themes::verify_themes;
 
-/// Where the Sidebar layout card painted, after the section rows.
-pub(super) const SIDEBAR_LAYOUT: usize = Section::ALL.len();
+/// Where the Sidebar page painted, after the section rows.
+pub(super) const SIDEBAR_PAGE: usize = Section::ALL.len();
 
-/// The section rows, by index, then the Sidebar layout card.
+/// The section rows, by index in `Section::ALL`, then the Sidebar page.
 #[derive(Default)]
-struct Layout([Option<Bounds<Pixels>>; SIDEBAR_LAYOUT + 1]);
+struct Layout([Option<Bounds<Pixels>>; SIDEBAR_PAGE + 1]);
 impl Global for Layout {}
 
 pub(super) fn probe(index: usize) -> impl IntoElement {
@@ -153,7 +153,7 @@ pub(crate) async fn verify_native(
             AnyWindowHandle::from(settings)
                 .update(cx, |_, window, cx| window.draw(cx).clear(cx))?;
             settings.update(cx, |view, _, cx| {
-                view.navigation_scroll.scroll_to_item(index);
+                view.navigation_scroll.scroll_to_item(section.nav_item());
                 cx.notify();
             })?;
             let (target, bounds) =
@@ -223,7 +223,7 @@ pub(crate) async fn verify_native(
                         bounds.left() >= px(0.)
                             && bounds.right() <= body.left()
                             && bottom.is_none_or(|bottom| bounds.top() >= bottom)
-                            && bounds.size.height >= px(35.),
+                            && bounds.size.height >= px(28.),
                         "Settings category {index} clipped/overlapped: {bounds:?}"
                     );
                     bottom = Some(bounds.bottom());
@@ -244,36 +244,37 @@ pub(crate) async fn verify_native(
                 capture_settings(settings, extension, cx).await?;
             }
             #[cfg(feature = "mockup")]
-            if section == Section::Appearance
-                && std::env::var_os("HERDR_TEST_SETTINGS_CAPTURE").is_some()
+            if std::env::var_os("HERDR_TEST_SETTINGS_CAPTURE").is_some()
+                && matches!(section, Section::Sidebar | Section::General)
             {
-                let offset = settings.update(cx, |view, _, cx| -> Result<_> {
-                    let card = cx.global::<Layout>().0[SIDEBAR_LAYOUT]
-                        .context("missing Sidebar layout paint")?;
-                    Ok(f32::from(card.top() - view.body_scroll.bounds().top()) - 28.)
-                })??;
-                let captures: &[(f32, &str)] = if expected.width == px(960.) {
-                    &[(0., "sidebar-normal.png")]
-                } else {
-                    &[
-                        (0., "sidebar-narrow-list.png"),
-                        (480., "sidebar-narrow-preview.png"),
-                    ]
+                let extension = match (section, expected.width == px(960.)) {
+                    (Section::Sidebar, true) => Some("sidebar.png"),
+                    (Section::Sidebar, false) => Some("sidebar-narrow.png"),
+                    (_, true) => Some("general.png"),
+                    _ => None,
                 };
-                for &(extra, extension) in captures {
+                if let Some(extension) = extension {
+                    // Example hosts so the shot shows swatch rows: a draft
+                    // only, discarded below, so the sandbox file is untouched.
+                    let seeded = section == Section::Sidebar;
                     settings.update(cx, |view, _, cx| {
-                        view.body_scroll
-                            .set_offset(point(px(0.), px(-offset - extra)));
+                        if seeded {
+                            let mut intent = SidebarIntent::of(&view.config);
+                            intent.style.hosts.insert("Personal".into(), 0x3a4a6b);
+                            intent.style.hosts.insert("Work".into(), 0x5a3a3a);
+                            view.preview_sidebar(intent, cx);
+                        }
+                        view.body_scroll.set_offset(Point::default());
                         cx.notify();
                     })?;
-                    capture_settings(settings, extension, cx).await?;
+                    let captured = capture_settings(settings, extension, cx).await;
+                    if seeded {
+                        settings.update(cx, |view, _, cx| view.discard_sidebar_draft(cx))?;
+                    }
+                    captured?;
                 }
-                settings.update(cx, |view, _, cx| {
-                    view.body_scroll.set_offset(Point::default());
-                    cx.notify();
-                })?;
             }
-            if section == Section::Appearance {
+            if section == Section::Theme {
                 let columns = if expected.width == px(960.) { 4 } else { 2 };
                 if columns == 2 {
                     settings.update(cx, |view, _, cx| {
@@ -336,6 +337,24 @@ pub(crate) async fn verify_native(
                         .timer(Duration::from_millis(10))
                         .await;
                 }
+                #[cfg(feature = "mockup")]
+                if columns == 4 && std::env::var_os("HERDR_TEST_SETTINGS_CAPTURE").is_some() {
+                    let deadline = Instant::now() + Duration::from_secs(5);
+                    while !settings.update(cx, |view, _, _| view.grid_ready())? {
+                        ensure!(
+                            Instant::now() < deadline,
+                            "Settings theme palettes did not load before capture"
+                        );
+                        cx.background_executor()
+                            .timer(Duration::from_millis(10))
+                            .await;
+                    }
+                    settings.update(cx, |view, _, cx| {
+                        view.body_scroll.set_offset(Point::default());
+                        cx.notify();
+                    })?;
+                    capture_settings(settings, "theme.png", cx).await?;
+                }
             }
         }
     }
@@ -360,7 +379,7 @@ pub(crate) async fn verify_native(
         Ok(())
     })??;
     eprintln!(
-        "SIDEBAR native standalone settings PASS: all 7 category clicks and bounds at 680x560/960x780, 2/4-column theme grid, native Nord search {filtered}/{unfiltered} and clear, native Nord card click, singleton Cmd-comma, isolated Cmd-W; theme draft live across windows without config writes; final theme persisted on close in sandbox"
+        "SIDEBAR native standalone settings PASS: all 8 category clicks and bounds at 680x560/960x780, 2/4-column theme grid, native Nord search {filtered}/{unfiltered} and clear, native Nord card click, singleton Cmd-comma, isolated Cmd-W; theme draft live across windows without config writes; final theme persisted on close in sandbox"
     );
     Ok(())
 }

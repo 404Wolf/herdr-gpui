@@ -1,5 +1,5 @@
 use super::*;
-use crate::settings_window::controls::preferences::PreferenceIo;
+use crate::settings_window::{controls::preferences::PreferenceIo, inputs::NumberField};
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -34,15 +34,23 @@ fn a_saved_volume_reaches_the_shared_sound_worker_at_once(cx: &mut TestAppContex
                 captured.lock().unwrap().push(edit);
                 Ok(())
             }),
-            load: quiet_load,
+            load: Arc::new(quiet_load),
         });
-        view.section = Section::Sound;
+        view.section = Section::Notifications;
         cx.notify();
     });
     cx.simulate_resize(size(px(960.), px(3200.)));
     cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
-    let choice = cx.debug_bounds("settings-sound-volume-25").unwrap();
-    cx.simulate_click(choice.center(), Default::default());
+    // Type 25 into the volume field and press Enter.
+    let field = cx.debug_bounds("notif-volume-control-field").unwrap();
+    assert!(field.size.width > px(0.));
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.begin_number_edit(NumberField::SoundVolume, 50., window, cx)
+        })
+    });
+    cx.simulate_input("25");
+    cx.simulate_keystrokes("enter");
     cx.run_until_parked();
 
     assert_eq!(

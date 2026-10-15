@@ -269,12 +269,6 @@ pub(crate) struct Settings {
     // keep-sorted start
     /// The agents panel's starting order until the user toggles it.
     pub agent_sort: crate::preferences::AgentSort,
-    // Only tests read it; the hand-written Debug this struct used to have hid
-    // that from the dead-code lint.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "parsed but not yet read outside tests")
-    )]
     pub clipboard: ClipboardToast,
     /// Whether releasing a mouse selection copies it. When off, the
     /// selection stays highlighted until Cmd-C or Ctrl-C copies it.

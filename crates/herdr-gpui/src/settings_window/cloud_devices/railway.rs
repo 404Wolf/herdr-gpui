@@ -448,7 +448,7 @@ impl SettingsWindow {
         div()
             .flex()
             .flex_col()
-            .gap(px(24.))
+            .gap(px(4.))
             .min_w_0()
             .child(about)
             .child(key)

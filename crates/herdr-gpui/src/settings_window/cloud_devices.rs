@@ -183,10 +183,13 @@ impl SettingsWindow {
             CloudProvider::Railway => self.render_railway_card(cx),
         };
         div()
+            .relative()
+            .debug_selector(|| "cloud-accounts".into())
             .flex()
             .flex_col()
-            .gap(px(24.))
+            .gap(px(16.))
             .min_w_0()
+            .child(super::search::track_bounds("cloud-accounts".into()))
             .when_some(crate::cloud::unavailable(), |section, reason| {
                 section.child(self.control_note(format!(
                     "{reason} Accounts can still be edited here for other systems."

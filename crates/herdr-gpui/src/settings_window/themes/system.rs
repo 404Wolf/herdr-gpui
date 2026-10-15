@@ -16,7 +16,7 @@ const DARK_PAIR: &str = "Catppuccin Mocha";
 impl SettingsWindow {
     /// The theme value the next choice builds on: an unsaved draft, else the
     /// saved one, so editing both sides quickly keeps the first edit.
-    pub(super) fn drafted_theme(&self) -> &str {
+    pub(in crate::settings_window) fn drafted_theme(&self) -> &str {
         self.theme_intent
             .as_ref()
             .filter(|intent| intent.choice.scope == Scope::App)
@@ -24,7 +24,7 @@ impl SettingsWindow {
     }
 
     /// The app theme the grid marks as chosen: the edited side of a pair.
-    pub(super) fn edited_theme(&self) -> &str {
+    pub(in crate::settings_window) fn edited_theme(&self) -> &str {
         ThemeName::side(&self.config.theme, self.themes.editing_light)
     }
 
@@ -41,7 +41,11 @@ impl SettingsWindow {
 
     /// The unadjusted colors for one side of `value`, when they need no disk
     /// read: built-ins, Herdr's prepared palettes, and loaded themes.
-    pub(super) fn prepared_app_theme(&self, value: &str, light: bool) -> Option<Theme> {
+    pub(in crate::settings_window) fn prepared_app_theme(
+        &self,
+        value: &str,
+        light: bool,
+    ) -> Option<Theme> {
         let name = ThemeName::side(value, light);
         if name == FOLLOW {
             return self.shared.as_ref()?.theme(light).ok();
@@ -54,7 +58,7 @@ impl SettingsWindow {
         })
     }
 
-    pub(super) fn toggle_system_theme(&mut self, cx: &mut Context<Self>) {
+    pub(in crate::settings_window) fn toggle_system_theme(&mut self, cx: &mut Context<Self>) {
         if self.busy() {
             return;
         }
@@ -78,7 +82,45 @@ impl SettingsWindow {
         self.select_edited_theme(cx);
     }
 
-    pub(super) fn edit_theme_side(&mut self, light: bool, cx: &mut Context<Self>) {
+    /// System: starts a light/dark pair around the current theme.
+    pub(in crate::settings_window) fn start_system_theme(&mut self, cx: &mut Context<Self>) {
+        if !ThemeName::follows_system(self.drafted_theme()) {
+            self.toggle_system_theme(cx);
+        }
+    }
+
+    /// Light or Dark: while following, stops following and keeps that side as
+    /// the single theme. A single theme is kept as it is; only the side the
+    /// grid chooses for moves.
+    pub(in crate::settings_window) fn use_single_theme(
+        &mut self,
+        light: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if self.busy() {
+            return;
+        }
+        let current = self.drafted_theme().to_owned();
+        if !ThemeName::follows_system(&current) {
+            self.edit_theme_side(light, cx);
+            return;
+        }
+        self.themes.editing_light = light;
+        self.accept_theme_choice(
+            Choice {
+                scope: Scope::App,
+                name: ThemeName::side(&current, light).to_owned(),
+            },
+            cx,
+        );
+        self.select_edited_theme(cx);
+    }
+
+    pub(in crate::settings_window) fn edit_theme_side(
+        &mut self,
+        light: bool,
+        cx: &mut Context<Self>,
+    ) {
         self.themes.editing_light = light;
         self.select_edited_theme(cx);
     }

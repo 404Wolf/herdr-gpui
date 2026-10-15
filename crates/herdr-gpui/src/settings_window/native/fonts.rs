@@ -108,21 +108,20 @@ pub(super) async fn verify_fonts(
         let mut bottom = body.top();
         for name in ["terminal", "sidebar", "tabs", "ui"] {
             let row = view
-                .native_font_bounds(&format!("settings-font-row-{name}"), cx)
+                .native_font_bounds(&format!("fonts-{name}"), cx)
                 .context("font role row missing")?;
             let family = view
-                .native_font_bounds(&format!("settings-font-family-{name}"), cx)
+                .native_font_bounds(&format!("fonts-{name}-family"), cx)
                 .context("font family missing")?;
             let size = view
-                .native_font_bounds(&format!("settings-size-{name}"), cx)
+                .native_font_bounds(&format!("fonts-{name}-size-control"), cx)
                 .context("font stepper missing")?;
             inside(row, body)?;
             inside(family, row)?;
             inside(size, row)?;
             ensure!(
                 row.top() >= bottom
-                    // The canvas measures inside the row's two 1px borders.
-                    && row.size.height == px(50.)
+                    && row.size.height >= px(ui::ROW_HEIGHT)
                     && family.right() <= size.left()
                     && (family.center().y - size.center().y).abs() < px(1.),
                 "compact font rows overlap or are not inline: {row:?}, {family:?}, {size:?}"
@@ -137,7 +136,13 @@ pub(super) async fn verify_fonts(
         ("ui", FontFace::Ui),
         ("terminal", FontFace::Terminal),
     ] {
-        font_click(settings, &format!("settings-font-row-{name}"), true, cx).await?;
+        font_click(
+            settings,
+            &format!("fonts-{name}-size-control-field"),
+            true,
+            cx,
+        )
+        .await?;
         let deadline = Instant::now() + Duration::from_secs(2);
         while !settings.update(cx, |view, _, _| view.native_font_selection().1 == face)? {
             ensure!(
@@ -156,6 +161,18 @@ pub(super) async fn verify_fonts(
             );
             Ok(())
         })??;
+        // Close the editor so the next face's click starts clean.
+        AnyWindowHandle::from(settings).update(cx, |_, window, cx| -> Result<()> {
+            window.dispatch_keystroke(Keystroke::parse("escape")?, cx);
+            Ok(())
+        })??;
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !settings.update(cx, |view, _, cx| view.native_font_editor(cx).is_none())? {
+            ensure!(Instant::now() < deadline, "size editor did not close");
+            cx.background_executor()
+                .timer(Duration::from_millis(10))
+                .await;
+        }
     }
     #[cfg(feature = "mockup")]
     if expected.width == px(960.) {
@@ -165,9 +182,9 @@ pub(super) async fn verify_fonts(
         font_click(
             settings,
             if target == FontTarget::All {
-                "settings-font-all"
+                "fonts-all"
             } else {
-                "settings-font-family-terminal"
+                "fonts-terminal-family"
             },
             false,
             cx,
@@ -271,7 +288,7 @@ pub(super) async fn verify_fonts(
                 .await;
         }
     }
-    font_click(settings, "settings-size-value-terminal", false, cx).await?;
+    font_click(settings, "fonts-terminal-size-control", true, cx).await?;
     let deadline = Instant::now() + Duration::from_secs(2);
     while !settings.update(cx, |view, window, cx| {
         view.native_font_editor(cx)
