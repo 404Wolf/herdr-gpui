@@ -328,6 +328,7 @@ impl Render for HerdrWindow {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                    this.note_input();
                     if this.scrollbar_mouse_down(event, cx)
                         || this.split_mouse_down(event, cx)
                         || this.terminal_mouse_down(event, window, cx)

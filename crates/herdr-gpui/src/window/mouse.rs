@@ -210,6 +210,9 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
+        // A press over the panes is use even when the frame is not ready or
+        // the pane ignores the mouse.
+        self.note_input();
         self.cancel_terminal_mouse(cx);
         let Some((hit, strip)) = self
             .terminal_mouse_at(event.position)

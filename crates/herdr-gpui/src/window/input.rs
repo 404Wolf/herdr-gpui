@@ -188,7 +188,13 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) {
         self.shift_taps.cancel();
-        if self.menu.page.is_some() || !self.input_ready() {
+        if self.menu.page.is_some() {
+            return;
+        }
+        // A wheel over the panes is use even before the frame is ready, so the
+        // window takes back a frame another client sized.
+        self.note_input();
+        if !self.input_ready() {
             return;
         }
         let (Some(handle), Some(snapshot), Some(surface)) = (
@@ -223,8 +229,6 @@ impl HerdrWindow {
             self.wheel.drop_lines();
         }
         cx.stop_propagation();
-        // `handle` borrows the window, so the field is set directly.
-        self.last_input = Some(std::time::Instant::now());
         for input in target.wheel_events(steps, event.modifiers) {
             let result =
                 ConnectionBridge::send_input(handle, &snapshot.boot_id, &target.target, input);

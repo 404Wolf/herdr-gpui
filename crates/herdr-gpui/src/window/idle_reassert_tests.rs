@@ -136,6 +136,53 @@ fn a_pointer_that_did_not_move_is_not_use(cx: &mut gpui::TestAppContext) {
     });
 }
 
+/// Whether a window that just had input re-claims the frame another client
+/// sized: its disconnected handle turns the resize into a local error.
+fn reclaims(view: &mut HerdrWindow) -> bool {
+    let now = Instant::now();
+    view.resize_at(now);
+    view.resize_at(now + RESIZE_REASSERT + RESIZE_SETTLE);
+    view.local_error.is_some()
+}
+
+#[gpui::test]
+fn a_wheel_on_a_frame_another_client_sized_is_use(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = overridden_window(cx);
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            assert!(!view.input_ready(), "the fixture holds input");
+            let wheel = gpui::ScrollWheelEvent {
+                position: gpui::point(gpui::px(15.), gpui::px(10.)),
+                ..Default::default()
+            };
+            view.scroll_wheel(&wheel, window, cx);
+            assert!(view.last_input.is_some(), "a wheel over the panes is use");
+            assert!(reclaims(view), "the wheel re-claims the frame");
+        })
+    });
+}
+
+#[gpui::test]
+fn a_stationary_click_on_a_frame_another_client_sized_is_use(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = overridden_window(cx);
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            let resting = gpui::point(gpui::px(15.), gpui::px(10.));
+            view.last_pointer = Some(resting);
+            let press = gpui::MouseDownEvent {
+                button: gpui::MouseButton::Left,
+                position: resting,
+                modifiers: gpui::Modifiers::default(),
+                click_count: 1,
+                first_mouse: false,
+            };
+            view.terminal_mouse_down(&press, window, cx);
+            assert!(view.last_input.is_some(), "a press over the panes is use");
+            assert!(reclaims(view), "the press re-claims the frame");
+        })
+    });
+}
+
 #[gpui::test]
 fn input_held_across_a_projection_gap_counts_as_use(cx: &mut gpui::TestAppContext) {
     let (view, cx) = overridden_window(cx);
