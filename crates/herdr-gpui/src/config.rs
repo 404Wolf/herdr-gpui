@@ -30,6 +30,7 @@ pub(crate) mod status_bar;
 mod status_icons;
 #[cfg(any(feature = "boat", feature = "coder", feature = "daytona"))]
 mod table;
+pub(crate) use sidebar_style::parse_hex;
 mod theme;
 mod updates;
 pub(crate) mod watch;
@@ -71,7 +72,6 @@ pub(crate) use sidebar::{
     AgentLayout, AgentToken, MAX_ROWS as MAX_SIDEBAR_ROWS, Rows, SidebarConfigError, SidebarLayout,
     SidebarScope, SpaceLayout, SpaceToken, TokenStyle,
 };
-#[cfg(test)]
 pub(crate) use sidebar_style::DeviceFooter;
 pub use sidebar_style::{SelectMode, SidebarOverrides, SidebarStyle};
 pub use status_bar::StatusBar;
@@ -114,6 +114,9 @@ pub struct Config {
     pub backdrop: Backdrop,
     pub bell: BellConfig,
     pub boat: BoatConfig,
+    /// Only the keys this GUI's own file sets, so Settings can tell an
+    /// override from the Herdr value it shadows.
+    pub(crate) clipboard_overrides: ClipboardToastSettings,
     pub clipboard_toast: ClipboardToast,
     pub code: CodeConfig,
     pub coder: CoderConfig,
@@ -393,6 +396,7 @@ impl Default for Config {
             backdrop: Backdrop::default(),
             bell: BellConfig::default(),
             boat: BoatConfig::default(),
+            clipboard_overrides: ClipboardToastSettings::default(),
             clipboard_toast: ClipboardToast::default(),
             code: CodeConfig::default(),
             coder: CoderConfig::default(),
@@ -828,6 +832,7 @@ impl Config {
         config.notifications = settings
             .notifications
             .resolve(NotificationConfig::default());
+        config.clipboard_overrides = settings.clipboard_toast;
         config.clipboard_toast = settings.clipboard_toast.resolve(base.clipboard_toast);
         config.bell = settings.bell;
         config.sound = settings.sound;

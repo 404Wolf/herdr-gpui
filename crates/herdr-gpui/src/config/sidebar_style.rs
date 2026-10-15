@@ -99,13 +99,16 @@ pub struct SidebarStyle {
 }
 
 /// `#rgb` or `#rrggbb`, in either case.
-fn parse_hex(value: &str) -> Option<u32> {
+pub(crate) fn parse_hex(value: &str) -> Option<u32> {
     let digits = value.strip_prefix('#')?;
     let expanded: String = match digits.len() {
         3 => digits.chars().flat_map(|c| [c, c]).collect(),
         6 => digits.to_owned(),
         _ => return None,
     };
+    if !expanded.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
     u32::from_str_radix(&expanded, 16).ok()
 }
 

@@ -62,7 +62,7 @@ impl SettingsWindow {
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         self.control_switch(id, label, checked, true)
-            .on_click(cx.listener(move |this, _, _, cx| this.save_preference(edit, cx)))
+            .on_click(cx.listener(move |this, _, _, cx| this.save_preference(edit.clone(), cx)))
     }
 
     pub(super) fn mouse_switches(&self, cx: &mut Context<Self>) -> [Stateful<Div>; 2] {
@@ -137,7 +137,7 @@ impl SettingsWindow {
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         self.control_choice(id, label.into(), selected, true)
-            .on_click(cx.listener(move |this, _, _, cx| this.save_preference(edit, cx)))
+            .on_click(cx.listener(move |this, _, _, cx| this.save_preference(edit.clone(), cx)))
     }
 
     pub(super) fn native_notification_controls(&self, cx: &mut Context<Self>) -> Div {
