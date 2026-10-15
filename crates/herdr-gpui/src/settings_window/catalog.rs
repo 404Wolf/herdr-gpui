@@ -9,6 +9,25 @@ pub(super) struct Entry {
     pub id: &'static str,
     pub title: &'static str,
     pub description: &'static str,
+    /// When the page renders this row; search offers it only then.
+    pub availability: Availability,
+}
+
+/// The state a row needs to be rendered at all.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Availability {
+    Always,
+    /// Only while the drafted theme follows the system as a light/dark pair.
+    FollowingSystemTheme,
+}
+
+impl Entry {
+    const fn only(self, availability: Availability) -> Self {
+        Self {
+            availability,
+            ..self
+        }
+    }
 }
 
 const fn entry(
@@ -22,6 +41,7 @@ const fn entry(
         id,
         title,
         description,
+        availability: Availability::Always,
     }
 }
 
@@ -47,7 +67,8 @@ pub(super) const CATALOG: &[Entry] = &[
         "theme-side",
         "Editing",
         "Which side of the pair the themes below change.",
-    ),
+    )
+    .only(Availability::FollowingSystemTheme),
     entry(
         Section::Theme,
         "theme-follow",

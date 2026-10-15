@@ -1,6 +1,7 @@
 //! Searching the Settings: the query in the section list's box swaps the body
 //! for a list of matching rows, and picking one opens its page at that row.
 use super::{SettingsWindow, catalog, ui};
+use crate::config::ThemeName;
 use gpui::{prelude::*, *};
 use std::collections::HashMap;
 
@@ -36,6 +37,30 @@ impl SettingsWindow {
         }
     }
 
+    /// Whether the page renders a row needing `availability` right now.
+    pub(super) fn available(&self, availability: catalog::Availability) -> bool {
+        match availability {
+            catalog::Availability::Always => true,
+            catalog::Availability::FollowingSystemTheme => {
+                ThemeName::follows_system(self.drafted_theme())
+            }
+        }
+    }
+
+    /// The current results without rows the pages do not render now.
+    pub(super) fn visible_results(&self) -> Vec<usize> {
+        self.search_results
+            .iter()
+            .flatten()
+            .copied()
+            .filter(|index| {
+                catalog::CATALOG
+                    .get(*index)
+                    .is_some_and(|entry| self.available(entry.availability))
+            })
+            .collect()
+    }
+
     /// Drops the query and its results, leaving the selected page showing.
     pub(super) fn clear_search(&mut self, cx: &mut Context<Self>) {
         self.search_results = None;
@@ -57,11 +82,7 @@ impl SettingsWindow {
         }
         match key {
             "enter" => {
-                let first = self
-                    .search_results
-                    .as_ref()
-                    .and_then(|r| r.first().copied());
-                if let Some(index) = first {
+                if let Some(index) = self.visible_results().first().copied() {
                     self.open_result(index, window, cx);
                 }
             }
@@ -106,8 +127,9 @@ impl SettingsWindow {
     }
 
     /// The body while a query is typed: one row per match, in catalog order.
-    pub(super) fn render_search_results(&self, results: &[usize], cx: &mut Context<Self>) -> Div {
+    pub(super) fn render_search_results(&self, cx: &mut Context<Self>) -> Div {
         let theme = &self.theme;
+        let results = self.visible_results();
         if results.is_empty() {
             return div()
                 .debug_selector(|| "settings-search-empty".into())

@@ -210,12 +210,14 @@ impl Config {
                         .ok_or(crate::herdr_settings::Error::Table("sidebar.hosts"))?;
                     match color {
                         Some(color) => {
-                            hosts.insert(
-                                &host,
-                                toml_edit::Item::Value(toml_edit::Value::from(format!(
-                                    "#{color:06x}"
-                                ))),
-                            );
+                            let mut value = toml_edit::Value::from(format!("#{color:06x}"));
+                            // A comment on the old colour stays with the new one.
+                            if let Some(previous) =
+                                hosts.get(&host).and_then(toml_edit::Item::as_value)
+                            {
+                                *value.decor_mut() = previous.decor().clone();
+                            }
+                            hosts.insert(&host, toml_edit::Item::Value(value));
                         }
                         None => {
                             hosts.remove(&host);

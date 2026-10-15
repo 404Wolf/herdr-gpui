@@ -258,7 +258,10 @@ impl SettingsWindow {
         let on_change = on_value(cx, |this, change, _, cx| {
             this.commit_number(NumberField::SoundVolume, change, cx)
         });
-        let value = f32::from(self.config.sound.volume);
+        let value = self.number_value(
+            NumberField::SoundVolume,
+            f32::from(self.config.sound.volume),
+        );
         let view = cx.entity().downgrade();
         ui::row(&self.theme, "notif-volume", "Volume")
             .tag(ui::Source::Local)

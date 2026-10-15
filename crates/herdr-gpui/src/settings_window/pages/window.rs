@@ -49,7 +49,7 @@ impl SettingsWindow {
     fn padding_row(&self, axis: Axis, side: Side, cx: &mut Context<Self>) -> ui::Row {
         let field = NumberField::TerminalPadding(axis, side);
         let (row, _, title) = padding_ids(axis, side);
-        let value = self.config.terminal_padding.axis(axis).side(side);
+        let value = self.number_value(field, self.config.terminal_padding.axis(axis).side(side));
         let view = cx.entity().downgrade();
         ui::row(&self.theme, row, title)
             .when(axis == Axis::X && side == Side::Start, |row| {

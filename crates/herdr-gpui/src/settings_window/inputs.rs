@@ -215,9 +215,29 @@ impl SettingsWindow {
             }
             return;
         }
-        let ui::NumberChange::Commit(value) = change else {
-            return;
+        let value = match change {
+            ui::NumberChange::Preview(value) => {
+                // Shown at once; written only on release.
+                if matches!(
+                    field,
+                    NumberField::SoundVolume | NumberField::TerminalPadding(..)
+                ) && field.range().contains(&value)
+                    && self.number_preview != Some((field, value))
+                {
+                    self.number_preview = Some((field, value));
+                    cx.notify();
+                }
+                return;
+            }
+            ui::NumberChange::Commit(value) => value,
         };
+        if self
+            .number_preview
+            .is_some_and(|(previewed, _)| previewed == field)
+        {
+            self.number_preview = None;
+            cx.notify();
+        }
         if self.quitting || !field.range().contains(&value) {
             return;
         }
@@ -234,6 +254,13 @@ impl SettingsWindow {
             NumberField::FontSize(face) => self.accept_control_size(face, value, cx),
             NumberField::Spacing(_) => {}
         }
+    }
+
+    /// What `field` shows: a live drag's value, else `saved`.
+    pub(super) fn number_value(&self, field: NumberField, saved: f32) -> f32 {
+        self.number_preview
+            .filter(|(previewed, _)| *previewed == field)
+            .map_or(saved, |(_, value)| value)
     }
 
     pub(super) fn number_edit_for(&self, field: NumberField) -> Option<&ui::NumberEdit> {

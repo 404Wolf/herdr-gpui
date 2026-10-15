@@ -354,7 +354,7 @@ fn quit_writes_a_live_sidebar_draft_even_behind_its_own_running_save(cx: &mut Te
         let edits = Arc::new(Mutex::new(Vec::new()));
         let captured = edits.clone();
         let (view, cx) = cx.add_window_view(skill_fixture);
-        let (task, base) = view.update(cx, |view, cx| {
+        let task = view.update(cx, |view, cx| {
             view.controls.preference_io = Some(controls::preferences::PreferenceIo::recording(
                 move |edit| captured.lock().unwrap().push(edit),
             ));
@@ -377,7 +377,7 @@ fn quit_writes_a_live_sidebar_draft_even_behind_its_own_running_save(cx: &mut Te
                 draft.style.overrides.row_padding = Some(2.);
                 view.preview_sidebar(draft, cx);
             }
-            (view.shutdown(cx), base)
+            view.shutdown(cx)
         });
         let (done, result) = std::sync::mpsc::sync_channel(1);
         cx.executor()
@@ -390,16 +390,13 @@ fn quit_writes_a_live_sidebar_draft_even_behind_its_own_running_save(cx: &mut Te
             .advance_clock(std::time::Duration::from_millis(10));
         cx.run_until_parked();
         result.try_recv().unwrap().unwrap();
-        // The quit writes every key of the draft, so a value an in-flight
-        // save changed is put back even when the draft equals the last load.
+        // The quit writes every key the draft touched, so a value an
+        // in-flight save changed is put back even when the draft equals the
+        // last load; keys it never touched are left as the file has them.
         let quit = |indent, row_padding| {
             vec![
                 Preference::SidebarIndent(indent),
                 Preference::SidebarRowPadding(row_padding),
-                Preference::SidebarRowGap(None),
-                Preference::SidebarHostGap(None),
-                Preference::SidebarSelect(base.style.select),
-                Preference::SidebarDeviceFooter(base.style.device_footer),
             ]
         };
         let expected = match case {
@@ -409,21 +406,18 @@ fn quit_writes_a_live_sidebar_draft_even_behind_its_own_running_save(cx: &mut Te
                 expected.extend(quit(Some(10.), Some(2.)));
                 expected
             }
-            Case::InFlightThenRevert => {
-                let mut expected = vec![
-                    Preference::SidebarIndent(Some(10.)),
-                    Preference::HostColor {
-                        host: "Box".into(),
-                        color: Some(0x112233),
-                    },
-                ];
-                expected.extend(quit(None, None));
-                expected.push(Preference::HostColor {
+            Case::InFlightThenRevert => vec![
+                Preference::SidebarIndent(Some(10.)),
+                Preference::HostColor {
+                    host: "Box".into(),
+                    color: Some(0x112233),
+                },
+                Preference::SidebarIndent(None),
+                Preference::HostColor {
                     host: "Box".into(),
                     color: None,
-                });
-                expected
-            }
+                },
+            ],
         };
         assert_eq!(*edits.lock().unwrap(), expected, "{case:?}");
     }

@@ -285,9 +285,9 @@ impl SettingsWindow {
             let hex = self
                 .hex_edit
                 .as_ref()
-                .filter(|edit| edit.index == index)
+                .filter(|edit| edit.host == host)
                 .map(|edit| (edit.input.clone(), edit.invalid));
-            let changed = host.clone();
+            let (changed, editing) = (host.clone(), host.clone());
             page = page.child(ui::swatch_row(
                 theme,
                 &host,
@@ -306,7 +306,8 @@ impl SettingsWindow {
                 {
                     let view = cx.entity().downgrade();
                     move |window, cx| {
-                        let _ = view.update(cx, |this, cx| this.begin_hex_edit(index, window, cx));
+                        let _ =
+                            view.update(cx, |this, cx| this.begin_hex_edit(&editing, window, cx));
                     }
                 },
             ));

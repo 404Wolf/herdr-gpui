@@ -159,6 +159,9 @@ struct SettingsWindow {
     dropdown: Option<ui::Dropdown>,
     /// The number field being typed into, if any.
     number_edit: Option<ui::NumberEdit>,
+    /// A slider being dragged that writes only on release: its field and
+    /// the value it shows meanwhile.
+    number_preview: Option<(inputs::NumberField, f32)>,
     /// The host colour being typed as hex, if any.
     hex_edit: Option<sidebar::HexEdit>,
     error: Option<String>,
@@ -292,6 +295,7 @@ impl SettingsWindow {
             code: Default::default(),
             dropdown: None,
             number_edit: None,
+            number_preview: None,
             hex_edit: None,
             error: appearance.error,
             status: None,
@@ -653,7 +657,7 @@ impl Render for SettingsWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let searching = self.search_results.clone();
         let content = match &searching {
-            Some(results) => self.render_search_results(results, cx),
+            Some(_) => self.render_search_results(cx),
             None => match self.section {
                 Section::Theme => self.render_theme(window, cx),
                 Section::Integrations => self.render_integration_controls(cx),

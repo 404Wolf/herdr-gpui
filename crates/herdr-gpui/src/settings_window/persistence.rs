@@ -251,9 +251,7 @@ impl SettingsWindow {
                 if let Some(mode) = self.layout_intent {
                     self.config.layout.mode = mode;
                 }
-                if let Some(intent) = &self.sidebar_intent {
-                    intent.apply(&mut self.config);
-                }
+                self.rebase_sidebar_draft();
                 self.theme = loaded.theme;
                 if let Some((name, theme)) = live {
                     self.config.theme = name;

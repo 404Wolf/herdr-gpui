@@ -38,6 +38,7 @@ fn intent(overrides: SidebarOverrides, select: SelectMode) -> SidebarIntent {
             select,
             ..Default::default()
         },
+        touched: Default::default(),
     }
 }
 
@@ -150,10 +151,9 @@ fn closing_with_a_live_draft_saves_first_and_a_failed_save_keeps_the_window(
 fn one_commit_writes_every_changed_key_and_removed_hosts(cx: &mut TestAppContext) {
     let (_, view, cx, edits) = settings_with_source(cx);
     view.update(cx, |view, cx| {
-        view.loaded_config
-            .sidebar_style
-            .hosts
-            .insert("Gone".into(), 0x445566);
+        for config in [&mut view.config, &mut view.loaded_config] {
+            config.sidebar_style.hosts.insert("Gone".into(), 0x445566);
+        }
         let mut next = intent(
             SidebarOverrides {
                 host_gap: Some(4.),
@@ -269,7 +269,7 @@ fn typed_hex_commits_on_enter_and_invalid_text_writes_nothing(cx: &mut TestAppCo
     });
     // The fixture's endpoint is not connected and has no colour, so it has
     // no row; Archive, configured only, is row 0.
-    cx.update(|window, cx| view.update(cx, |view, cx| view.begin_hex_edit(0, window, cx)));
+    cx.update(|window, cx| view.update(cx, |view, cx| view.begin_hex_edit("Archive", window, cx)));
     let input = view.read_with(cx, |view, _| view.hex_edit.as_ref().unwrap().input.clone());
     assert_eq!(
         cx.update(|_, cx| input.read(cx).text().to_owned()),
@@ -299,7 +299,11 @@ fn typed_hex_commits_on_enter_and_invalid_text_writes_nothing(cx: &mut TestAppCo
 /// A writer whose reload reflects what it wrote, so a follow-up save diffs
 /// against the first one's result.
 fn disk_io(edits: Edits) -> controls::preferences::PreferenceIo {
-    let disk = Arc::new(Mutex::new(Config::default()));
+    disk_io_from(edits, Config::default())
+}
+
+fn disk_io_from(edits: Edits, start: Config) -> controls::preferences::PreferenceIo {
+    let disk = Arc::new(Mutex::new(start));
     let written = disk.clone();
     controls::preferences::PreferenceIo::with_load(
         move |edit| {
@@ -411,7 +415,7 @@ fn blur_keeps_an_invalid_hex_open_and_escape_discards_it(cx: &mut TestAppContext
             .insert("Archive".into(), 0x112233);
         view.loaded_config.sidebar_style.hosts = view.config.sidebar_style.hosts.clone();
     });
-    cx.update(|window, cx| view.update(cx, |view, cx| view.begin_hex_edit(0, window, cx)));
+    cx.update(|window, cx| view.update(cx, |view, cx| view.begin_hex_edit("Archive", window, cx)));
     let input = view.read_with(cx, |view, _| view.hex_edit.as_ref().unwrap().input.clone());
     cx.simulate_input("nope");
     cx.update(|window, cx| window.draw(cx).clear(cx));
@@ -446,4 +450,101 @@ fn blur_keeps_an_invalid_hex_open_and_escape_discards_it(cx: &mut TestAppContext
     cx.run_until_parked();
     assert!(view.read_with(cx, |view, _| view.hex_edit.is_none()));
     assert!(edits.lock().unwrap().is_empty());
+}
+
+#[gpui::test]
+fn a_reload_during_a_drag_keeps_an_external_edit_to_an_untouched_key(cx: &mut TestAppContext) {
+    let (_, view, cx, edits) = settings_with_source(cx);
+    let mut edited = Config::default();
+    edited.sidebar_style.overrides.gap = Some(8.);
+    view.update(cx, |view, _| {
+        view.controls.preference_io = Some(disk_io_from(edits.clone(), edited.clone()));
+    });
+    cx.simulate_resize(size(px(960.), px(1400.)));
+    cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
+    let slider = cx.debug_bounds("sidebar-indent-control-slider").unwrap();
+    let start = point(slider.left() + px(1.), slider.center().y);
+    let end = point(slider.right() - px(1.), slider.center().y);
+    cx.simulate_mouse_down(start, MouseButton::Left, Default::default());
+    cx.simulate_mouse_move(
+        point(start.x + px(20.), start.y),
+        MouseButton::Left,
+        Default::default(),
+    );
+    cx.simulate_mouse_move(end, MouseButton::Left, Default::default());
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |view, _| view.sidebar_dirty()));
+    // Someone edits `gap` in the file while Indent is still held.
+    view.update(cx, |view, cx| {
+        let mut loaded = fixture();
+        loaded.config = edited;
+        view.apply_loaded(Ok(loaded), cx);
+        assert_eq!(view.config.sidebar_style.overrides.gap, Some(8.));
+        assert_eq!(view.config.sidebar_style.overrides.indent, Some(48.));
+    });
+    cx.simulate_mouse_up(end, MouseButton::Left, Default::default());
+    cx.run_until_parked();
+    assert_eq!(
+        *edits.lock().unwrap(),
+        vec![Preference::SidebarIndent(Some(48.))]
+    );
+    view.read_with(cx, |view, _| {
+        assert!(!view.sidebar_dirty());
+        assert_eq!(view.config.sidebar_style.overrides.gap, Some(8.));
+        assert_eq!(view.config.sidebar_style.overrides.indent, Some(48.));
+    });
+}
+
+#[gpui::test]
+fn a_draft_fenced_main_window_load_takes_only_touched_keys(cx: &mut TestAppContext) {
+    let (_, view, cx, _) = settings_with_source(cx);
+    let revision = cx.update(|_, cx| sidebar_load_revision(cx));
+    view.update(cx, |view, cx| {
+        let mut next = SidebarIntent::of(&view.config);
+        next.style.overrides.indent = Some(20.);
+        view.preview_sidebar(next, cx)
+    });
+    let mut read = Config::default();
+    read.sidebar_style.overrides.gap = Some(8.);
+    cx.update(|_, cx| apply_loaded_sidebar(&mut read, revision, cx));
+    assert_eq!(read.sidebar_style.overrides.indent, Some(20.));
+    assert_eq!(
+        read.sidebar_style.overrides.gap,
+        Some(8.),
+        "untouched key kept"
+    );
+}
+
+#[gpui::test]
+fn a_hex_edit_lands_on_its_host_when_rows_reorder(cx: &mut TestAppContext) {
+    let (_, view, cx, edits) = settings_with_source(cx);
+    view.update(cx, |view, _| {
+        for config in [&mut view.config, &mut view.loaded_config] {
+            config.sidebar_style.hosts.insert("Work".into(), 0x112233);
+        }
+    });
+    cx.update(|window, cx| view.update(cx, |view, cx| view.begin_hex_edit("Work", window, cx)));
+    let input = view.read_with(cx, |view, _| view.hex_edit.as_ref().unwrap().input.clone());
+    // A host that sorts first arrives, so Work is no longer row 0.
+    view.update(cx, |view, cx| {
+        for config in [&mut view.config, &mut view.loaded_config] {
+            config.sidebar_style.hosts.insert("Alpha".into(), 0x445566);
+        }
+        let rows = view.host_rows(cx);
+        assert_eq!(rows[0].0, "Alpha");
+        assert_eq!(rows[1].0, "Work");
+        cx.notify();
+    });
+    cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
+    cx.update(|_, cx| input.update(cx, |input, cx| input.set_text_selected("#abcdef", cx)));
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |view, _| view.hex_edit.is_none()));
+    assert_eq!(
+        *edits.lock().unwrap(),
+        vec![Preference::HostColor {
+            host: "Work".into(),
+            color: Some(0xabcdef)
+        }]
+    );
 }

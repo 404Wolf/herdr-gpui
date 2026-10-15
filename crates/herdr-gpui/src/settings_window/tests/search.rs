@@ -64,15 +64,15 @@ fn every_catalog_id_is_unique_and_belongs_to_its_section() {
 
 #[gpui::test]
 fn every_catalog_id_is_a_rendered_row(cx: &mut TestAppContext) {
-    // The theme side row exists only while following; it has its own test.
-    const NOT_IN_FIXTURE: &[&str] = &["theme-side"];
     let (view, cx) = cx.add_window_view(skill_fixture);
     cx.simulate_resize(size(px(960.), px(3000.)));
     for section in Section::ALL.iter().copied() {
         view.update(cx, |view, _| view.section = section);
         cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
         for entry in catalog::CATALOG.iter().filter(|e| e.section == section) {
-            if NOT_IN_FIXTURE.contains(&entry.id) {
+            // A row the fixture's state does not render, such as the theme
+            // side row outside following, has its own test.
+            if !view.read_with(cx, |view, _| view.available(entry.availability)) {
                 continue;
             }
             assert!(
@@ -168,5 +168,31 @@ fn enter_picks_the_first_result_and_escape_clears(cx: &mut TestAppContext) {
     view.read_with(cx, |view, _| {
         assert_eq!(view.section, Section::Tabs);
         assert!(view.search_results.is_none());
+    });
+}
+
+#[gpui::test]
+fn search_offers_the_editing_row_only_while_following_a_pair(cx: &mut TestAppContext) {
+    use crate::config::ThemeName;
+    let (view, cx) = cx.add_window_view(skill_fixture);
+    let side = |view: &SettingsWindow| {
+        view.visible_results()
+            .iter()
+            .any(|index| catalog::CATALOG[*index].id == "theme-side")
+    };
+    view.update(cx, |view, cx| {
+        assert!(!ThemeName::follows_system(view.drafted_theme()));
+        view.set_search_query("editing", cx);
+        assert!(
+            view.search_results
+                .iter()
+                .flatten()
+                .any(|index| catalog::CATALOG[*index].id == "theme-side"),
+            "the catalog still knows the row"
+        );
+        assert!(!side(view), "a single theme renders no Editing row");
+        view.config.theme = ThemeName::system("Catppuccin Latte", "Catppuccin Mocha");
+        assert!(ThemeName::follows_system(view.drafted_theme()));
+        assert!(side(view), "a following pair does");
     });
 }

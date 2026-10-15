@@ -486,4 +486,29 @@ mod preference_writes {
         assert_eq!(config.sidebar_style.hosts.get("Personal"), Some(&0x3a4a6b));
         Ok(())
     }
+
+    #[test]
+    fn host_colour_change_keeps_its_comment() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("local.toml");
+        fs::write(
+            &path,
+            "[sidebar.hosts]\nWork = \"#112233\" # office machine\n",
+        )?;
+        write(
+            &path,
+            Preference::HostColor {
+                host: "Work".into(),
+                color: Some(0x445566),
+            },
+        )?;
+        let text = fs::read_to_string(&path)?;
+        assert!(
+            text.contains("Work = \"#445566\" # office machine"),
+            "{text}"
+        );
+        let config = Config::parse(&text)?;
+        assert_eq!(config.sidebar_style.hosts.get("Work"), Some(&0x445566));
+        Ok(())
+    }
 }

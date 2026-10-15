@@ -65,3 +65,66 @@ fn a_saved_volume_reaches_the_shared_sound_worker_at_once(cx: &mut TestAppContex
     sound.preview();
     assert_eq!(volumes.recv_timeout(Duration::from_secs(3)).unwrap(), 25);
 }
+
+/// Dragging the volume slider moves its fill and number at once; only the
+/// release writes, once.
+#[gpui::test]
+fn a_volume_drag_shows_its_value_before_release_and_writes_once(cx: &mut TestAppContext) {
+    let source = cx.add_window(crate::sidebar::layout_tests::fixture_window);
+    let weak = cx.update(|cx| source.update(cx, |_, _, cx| cx.weak_entity()).unwrap());
+    let (view, cx) = cx.add_window_view(move |_, cx| SettingsWindow::new(weak.clone(), cx));
+    let edits = Arc::new(Mutex::new(Vec::new()));
+    let captured = edits.clone();
+    view.update(cx, |view, cx| {
+        view.controls.preference_io = Some(PreferenceIo {
+            write: Arc::new(move |edit| {
+                captured.lock().unwrap().push(edit);
+                Ok(())
+            }),
+            load: Arc::new(quiet_load),
+        });
+        view.section = Section::Notifications;
+        cx.notify();
+    });
+    cx.simulate_resize(size(px(960.), px(3200.)));
+    cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
+    let saved = view.read_with(cx, |view, _| f32::from(view.config.sound.volume));
+    let shown = |cx: &mut VisualTestContext| {
+        view.read_with(cx, |view, _| {
+            view.number_value(
+                NumberField::SoundVolume,
+                f32::from(view.config.sound.volume),
+            )
+        })
+    };
+    assert_eq!(shown(cx), saved);
+    let slider = cx.debug_bounds("notif-volume-control-slider").unwrap();
+    let start = point(slider.left() + px(1.), slider.center().y);
+    let end = point(slider.right() - px(1.), slider.center().y);
+    cx.simulate_mouse_down(start, MouseButton::Left, Default::default());
+    // The first move past the threshold only starts the drag; the next one moves it.
+    cx.simulate_mouse_move(
+        point(start.x + px(20.), start.y),
+        MouseButton::Left,
+        Default::default(),
+    );
+    cx.simulate_mouse_move(end, MouseButton::Left, Default::default());
+    cx.run_until_parked();
+    let dragged = shown(cx);
+    assert!(dragged > saved, "the number follows the drag: {dragged}");
+    assert_eq!(
+        view.read_with(cx, |view, _| f32::from(view.config.sound.volume)),
+        saved,
+        "the config waits for the release"
+    );
+    assert!(edits.lock().unwrap().is_empty(), "no write while dragging");
+    cx.simulate_mouse_up(end, MouseButton::Left, Default::default());
+    cx.run_until_parked();
+    assert_eq!(
+        edits.lock().unwrap().as_slice(),
+        [crate::config::preferences::Preference::SoundVolume(
+            dragged as u8
+        )]
+    );
+    assert!(view.read_with(cx, |view, _| view.number_preview.is_none()));
+}
