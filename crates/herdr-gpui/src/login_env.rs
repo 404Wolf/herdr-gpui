@@ -303,16 +303,32 @@ mod unix {
         /// A socket an exited daemon left behind is not a daemon, so a launch
         /// still adopts the login shell's root; a listening one, or a file
         /// that is not a socket at all, is told apart the same way.
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
         #[test]
         fn only_a_listening_socket_answers() {
+            use nix::sys::socket::{AddressFamily, SockFlag, SockType, UnixAddr, bind, socket};
+            use std::os::fd::AsRawFd;
             let dir = tempfile::tempdir().unwrap();
-            let socket = dir.path().join("herdr-client.sock");
-            assert!(!answers(&socket));
-            let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
-            assert!(answers(&socket));
+            let socket_path = dir.path().join("herdr-client.sock");
+            assert!(!answers(&socket_path));
+            let listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+            assert!(answers(&socket_path));
             drop(listener);
-            assert!(socket.exists(), "a closed listener leaves its file");
-            assert!(!answers(&socket));
+            // A dropped listener can keep answering on macOS: a child another
+            // test thread spawns before it is marked close-on-exec inherits it.
+            // A socket that is bound but never listens refuses even if leaked.
+            let stale = dir.path().join("stale.sock");
+            let fd = socket(
+                AddressFamily::Unix,
+                SockType::Stream,
+                SockFlag::empty(),
+                None,
+            )
+            .unwrap();
+            bind(fd.as_raw_fd(), &UnixAddr::new(&stale).unwrap()).unwrap();
+            drop(fd);
+            assert!(stale.exists(), "a closed socket leaves its file");
+            assert!(!answers(&stale));
             let plain = dir.path().join("plain.sock");
             std::fs::write(&plain, b"").unwrap();
             assert!(!answers(&plain));
