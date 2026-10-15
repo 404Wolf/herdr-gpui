@@ -261,6 +261,7 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) {
         self.links.pointer = Some((position, modifiers));
+        let mut examined = false;
         let local = modifiers
             .secondary()
             .then(|| self.local_link_at(position))
@@ -274,10 +275,17 @@ impl HerdrWindow {
                     RowTarget::OtherHost(_) | RowTarget::Malformed => None,
                     RowTarget::Path { .. } => {
                         let file = self.file_link(link)?;
+                        examined = true;
                         self.file_found(file, cx).then_some(row)
                     }
                 }
             });
+        // The file may appear or go away meanwhile, so a path is checked
+        // again each time the user looks at it anew: after letting go of the
+        // modifier, or after leaving the path.
+        if !examined {
+            self.links.checked = None;
+        }
         if local != self.links.local {
             self.links.local = local;
             cx.notify();

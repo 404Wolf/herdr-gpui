@@ -24,7 +24,7 @@ const WRAPPED: &str = concat!(
 );
 const WIDTH: u16 = 120;
 /// The cell the pointer hovers and clicks: on the link in every case.
-const LINK: (u16, u16) = (2, 0);
+pub(super) const LINK: (u16, u16) = (2, 0);
 /// The cell the pointer rests on: a row no case writes to.
 const ELSEWHERE: (u16, u16) = (2, 3);
 
@@ -102,15 +102,15 @@ struct Outcome {
 /// A working directory for the pane, under the home folder so the cases can
 /// name it from `~/`. It holds `src/sample.rs`, `Cargo.toml`, and `crates`,
 /// and is removed when dropped.
-struct Sandbox {
+pub(super) struct Sandbox {
     _root: tempfile::TempDir,
-    work: std::path::PathBuf,
+    pub(super) work: std::path::PathBuf,
     work_url: String,
     tilde: String,
 }
 
 impl Sandbox {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let home = crate::config::home().unwrap();
         let root = tempfile::Builder::new()
             .prefix("herdr-gpui-links-")
@@ -134,7 +134,7 @@ impl Sandbox {
         }
     }
 
-    fn fill(&self, template: &str) -> String {
+    pub(super) fn fill(&self, template: &str) -> String {
         template
             .replace("{work_url}", &self.work_url)
             .replace("{work}", self.work.to_str().unwrap())
@@ -142,7 +142,7 @@ impl Sandbox {
     }
 
     /// The address the system is asked to open for `path`.
-    fn opened(&self, path: &str) -> String {
+    pub(super) fn opened(&self, path: &str) -> String {
         let real = self.work.join(path).canonicalize().unwrap();
         url::Url::from_file_path(real).unwrap().into()
     }
@@ -194,7 +194,7 @@ impl Sandbox {
 
 /// A pane showing `text` on its first rows, as an OSC 8 hyperlink to it
 /// when `hyperlink`.
-fn showing(text: &str, hyperlink: bool) -> Arc<PaneSurfaceFrame> {
+pub(super) fn showing(text: &str, hyperlink: bool) -> Arc<PaneSurfaceFrame> {
     let mut surface = wrapped(2);
     let shared = Arc::make_mut(&mut surface);
     let height = 4;
@@ -312,6 +312,32 @@ fn daemon_answers(peer: &mut MockPeer, view: &Entity<HerdrWindow>, cx: &mut Visu
     cx.run_until_parked();
 }
 
+/// A window whose pane shows `surface` and works in the sandbox. Files open
+/// in the system's application, which the test platform records.
+pub(super) fn in_sandbox<'a>(
+    sandbox: &Sandbox,
+    surface: Arc<PaneSurfaceFrame>,
+    peer: &MockPeer,
+    daemon: bool,
+    cx: &'a mut gpui::TestAppContext,
+) -> (Entity<HerdrWindow>, &'a mut VisualTestContext) {
+    let (view, cx) = window(peer, daemon, cx);
+    view.update(cx, |view, _| {
+        view.live.surface = Some(surface);
+        view.config.open_files_in = FileTarget::System;
+        let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
+        for pane in &mut snapshot.panes {
+            pane.cwd = Some(sandbox.work.to_str().unwrap().into());
+            pane.foreground_cwd = pane.cwd.clone();
+        }
+    });
+    cx.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    (view, cx)
+}
+
 fn check(
     text: &Text,
     rest: Look,
@@ -327,25 +353,12 @@ fn check(
     } else {
         MockPeer::new()
     };
-    let (view, cx) = window(&peer, daemon, cx);
     let surface = match text {
         Text::Osc8(target) => showing(&sandbox.fill(target), true),
         Text::Plain(text) => showing(&sandbox.fill(text), false),
         Text::Wrapped => showing(WRAPPED, false),
     };
-    view.update(cx, |view, _| {
-        view.live.surface = Some(surface);
-        view.config.open_files_in = FileTarget::System;
-        let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
-        for pane in &mut snapshot.panes {
-            pane.cwd = Some(sandbox.work.to_str().unwrap().into());
-            pane.foreground_cwd = pane.cwd.clone();
-        }
-    });
-    cx.update(|window, cx| {
-        window.refresh();
-        window.draw(cx).clear(cx);
-    });
+    let (view, cx) = in_sandbox(&sandbox, surface, &peer, daemon, cx);
     let link = at(&view, cx, LINK.0, LINK.1);
     let elsewhere = at(&view, cx, ELSEWHERE.0, ELSEWHERE.1);
     let (none, held) = (Modifiers::default(), Modifiers::secondary_key());

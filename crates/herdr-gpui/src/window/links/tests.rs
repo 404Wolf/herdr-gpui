@@ -10,6 +10,8 @@ use serde_json::json;
 mod cases;
 mod content_updates;
 mod external;
+#[cfg(unix)]
+mod file_checks;
 mod file_handlers;
 
 const URL: &str = "https://example.com/wrapped/path";
