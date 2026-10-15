@@ -15,11 +15,11 @@ const LOSS_CRITICAL: f32 = 15.;
 
 impl HerdrWindow {
     /// Nothing while hidden or before the first probe ends.
-    pub(crate) fn render_network_quality(&self) -> Option<impl IntoElement> {
+    pub(crate) fn render_network_quality(&self, cx: &App) -> Option<impl IntoElement> {
         if !self.config.show_network_quality {
             return None;
         }
-        let reading = self.network_quality.reading();
+        let reading = super::reading(cx)?;
         reading.latest()?;
         let theme = &self.theme;
         let colored =

@@ -917,7 +917,9 @@ A worker thread times one TCP connect to `1.1.1.1:443` every 15 seconds, in
 process and without ICMP, about a megabyte a day, so it suits a metered link
 such as a phone hotspot; no throughput test runs. Latency is the median of
 the last minute's handshakes; loss counts connects that failed or timed out
-over the last five minutes. The tooltip shows the last probe and the range.
+over the last five minutes, by wall-clock time, so probes from before a sleep
+do not count after waking. All windows share one worker. The tooltip shows the
+last probe and the range.
 It is off by default; turn it on here or with **Network latency and loss** under
 Settings > Status bar. Turning it off stops the probes.
 

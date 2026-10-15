@@ -7,8 +7,17 @@ use super::{
 use std::{
     io::ErrorKind,
     net::{SocketAddr, TcpListener},
-    time::Duration,
+    time::{Duration, SystemTime},
 };
+
+/// A fixed wall-clock time, so expiry tests do not depend on the real one.
+fn start() -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000)
+}
+
+fn seconds(count: u64) -> Duration {
+    Duration::from_secs(count)
+}
 
 fn reply(milliseconds: u64) -> Outcome {
     Outcome::Reply(Duration::from_millis(milliseconds))
@@ -51,9 +60,9 @@ fn latency_is_the_median_of_recent_answers() {
     let mut reading = Reading::default();
     assert_eq!(reading.latency(), None);
     // Older than the latency probes, so it does not count.
-    reading.apply(reply(900));
+    reading.apply(start(), reply(900));
     for milliseconds in [30, 500, 40, 35] {
-        reading.apply(reply(milliseconds));
+        reading.apply(start(), reply(milliseconds));
     }
     assert_eq!(reading.latency(), Some(Duration::from_millis(40)));
 }
@@ -61,9 +70,9 @@ fn latency_is_the_median_of_recent_answers() {
 #[test]
 fn latency_is_none_when_recent_probes_were_all_lost() {
     let mut reading = Reading::default();
-    reading.apply(reply(30));
+    reading.apply(start(), reply(30));
     for _ in 0..LATENCY_PROBES {
-        reading.apply(lost());
+        reading.apply(start(), lost());
     }
     assert_eq!(reading.latency(), None);
 }
@@ -72,10 +81,10 @@ fn latency_is_none_when_recent_probes_were_all_lost() {
 fn loss_and_range_cover_the_window() {
     let mut reading = Reading::default();
     assert_eq!(reading.loss_percent(), None);
-    reading.apply(reply(20));
-    reading.apply(lost());
-    reading.apply(reply(80));
-    reading.apply(reply(50));
+    reading.apply(start(), reply(20));
+    reading.apply(start(), lost());
+    reading.apply(start(), reply(80));
+    reading.apply(start(), reply(50));
     assert_eq!(reading.loss_percent(), Some(25.));
     assert_eq!(
         reading.range(),
@@ -86,9 +95,9 @@ fn loss_and_range_cover_the_window() {
 #[test]
 fn loss_forgets_probes_older_than_the_window() {
     let mut reading = Reading::default();
-    reading.apply(lost());
+    reading.apply(start(), lost());
     for _ in 0..WINDOW {
-        reading.apply(reply(30));
+        reading.apply(start(), reply(30));
     }
     assert_eq!(reading.probes(), WINDOW);
     assert_eq!(reading.loss_percent(), Some(0.));
@@ -97,8 +106,8 @@ fn loss_forgets_probes_older_than_the_window() {
 #[test]
 fn details_name_the_target_and_the_loss() {
     let mut reading = Reading::default();
-    reading.apply(reply(31));
-    reading.apply(Outcome::Lost(ErrorKind::TimedOut));
+    reading.apply(start(), reply(31));
+    reading.apply(start(), Outcome::Lost(ErrorKind::TimedOut));
     let text = super::render::details(&reading);
     assert!(text.contains("1.1.1.1:443"), "{text}");
     assert!(text.contains("no connection"), "{text}");
@@ -109,9 +118,41 @@ fn details_name_the_target_and_the_loss() {
 #[test]
 fn hiding_stops_and_forgets() {
     let mut quality = NetworkQuality::default();
-    assert!(!quality.poll(false), "nothing was shown");
-    quality.reading.apply(reply(30));
+    assert!(!quality.poll(false, start()), "nothing was shown");
+    quality.reading.apply(start(), reply(30));
     quality.started = true;
-    assert!(quality.poll(false), "the reading disappears");
-    assert!(quality.reading().latest().is_none());
+    assert!(quality.poll(false, start()), "the reading disappears");
+    assert!(quality.reading.latest().is_none());
+}
+
+#[test]
+fn probes_expire_after_the_span() {
+    let mut reading = Reading::default();
+    reading.apply(start(), reply(30));
+    reading.apply(start() + seconds(240), reply(40));
+    assert!(
+        !reading.expire(start() + super::SPAN),
+        "both are within the span"
+    );
+    assert!(reading.expire(start() + super::SPAN + seconds(1)));
+    assert_eq!(reading.probes(), 1);
+    assert_eq!(reading.latency(), Some(Duration::from_millis(40)));
+}
+
+#[test]
+fn a_night_asleep_leaves_nothing_shown() {
+    let mut reading = Reading::default();
+    reading.apply(start(), lost());
+    reading.apply(start(), reply(30));
+    assert!(reading.expire(start() + seconds(8 * 3600)));
+    assert_eq!(reading.latest(), None);
+    assert_eq!(reading.loss_percent(), None);
+}
+
+#[test]
+fn a_clock_set_back_drops_probes_from_the_future() {
+    let mut reading = Reading::default();
+    reading.apply(start(), reply(30));
+    assert!(reading.expire(start() - seconds(60)));
+    assert_eq!(reading.probes(), 0);
 }

@@ -518,7 +518,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         pr_actions: Default::default(),
         usage: Default::default(),
         system_load: Default::default(),
-        network_quality: Default::default(),
+        network_quality_seen: 0,
         devices_overview: Default::default(),
         checkpoints: Default::default(),
         port_forwards: Default::default(),
