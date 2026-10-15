@@ -166,3 +166,53 @@ fn local_and_one_device_swap(cx: &mut gpui::TestAppContext) {
     let local = cx.debug_bounds("host-local").unwrap();
     assert!(a.bottom() <= local.top());
 }
+
+/// Pressed in a scrolled list, the header still follows the pointer from
+/// where it was held and finds its gap, though folding scrolls the list.
+#[gpui::test]
+fn a_header_pressed_in_a_scrolled_list_stays_under_the_pointer(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = cx.add_window_view(|window, cx| {
+        let mut view = fixture_window(window, cx);
+        view.live.snapshot = Some(Arc::new(snapshot(12)));
+        view.endpoints
+            .extend(["a", "b", "c"].into_iter().map(remote));
+        view
+    });
+    cx.simulate_resize(size(px(800.), px(600.)));
+    draw(cx);
+    draw(cx);
+    // Scroll until the last device's header is in view.
+    view.update(cx, |view, _| {
+        view.sidebar_scroll[0].set_offset(point(px(0.), px(-1_000_000.)))
+    });
+    draw(cx);
+    draw(cx);
+    let offset = view.read_with(cx, |view, _| view.sidebar_scroll[0].offset().y);
+    assert!(offset < px(0.), "the list must scroll for this test");
+    let header = cx.debug_bounds("host-ssh:c").unwrap();
+    let held = point(header.center().x, header.top() + px(5.));
+    cx.simulate_mouse_down(held, MouseButton::Left, Modifiers::default());
+    cx.executor().advance_clock(LIFT_DELAY);
+    cx.run_until_parked();
+    draw(cx);
+    draw(cx);
+    let local = cx.debug_bounds("host-local").unwrap();
+    // Carried to the top of the folded list, it lands first.
+    let up = point(held.x, local.top() + px(5.));
+    for _ in 0..2 {
+        cx.simulate_mouse_move(up, MouseButton::Left, Modifiers::default());
+        draw(cx);
+    }
+    assert_eq!(cx.debug_bounds("host-ssh:c").unwrap().top(), local.top());
+    view.read_with(cx, |view, _| {
+        assert_eq!(
+            view.device_drag.as_ref().unwrap().target,
+            Some((0, Beside::Before("local".into())))
+        )
+    });
+    cx.simulate_mouse_up(up, MouseButton::Left, Modifiers::default());
+    draw(cx);
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.device_order, ["ssh:c", "local", "ssh:a", "ssh:b"])
+    });
+}

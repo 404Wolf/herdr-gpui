@@ -68,23 +68,27 @@ impl DevicePlan {
     }
 }
 
-/// The gap a header carried with its top at `card_top` points to, against the
-/// geometry the folded list last laid out.
+/// Where row `row` of the spaces list sits in the window. The handle reports
+/// where layout put it, before the list's scroll offset moves it.
+fn window_top(scroll: &ScrollHandle, row: usize) -> Option<Pixels> {
+    Some(scroll.bounds_for_item(row)?.top() + scroll.offset().y)
+}
+
+/// The gap a header carried with its top at `card_top`, in window
+/// coordinates, points to against the geometry the folded list last laid out.
 fn slot(drop: &DeviceDrop, scroll: &ScrollHandle, card_top: Pixels) -> Option<usize> {
-    let offset = scroll.offset().y;
     let mut spans = vec![None; drop.ids.len()];
     // Headers are measured where they rest, not where the preview slid them.
     for &(unit, row, shift) in &drop.rows {
-        let Some(bounds) = scroll.bounds_for_item(row) else {
+        let (Some(top), Some(bounds)) = (window_top(scroll, row), scroll.bounds_for_item(row))
+        else {
             continue;
         };
-        spans[unit] = Some((
-            f32::from(bounds.top() + offset - shift),
-            f32::from(bounds.bottom() + offset - shift),
-        ));
+        let top = f32::from(top - shift);
+        spans[unit] = Some((top, top + f32::from(bounds.size.height)));
     }
     let (top, bottom) = (*spans.get(drop.dragged)?)?;
-    let card = f32::from(card_top + offset);
+    let card = f32::from(card_top);
     Some(slot_for(&spans, drop.dragged, (card, card + bottom - top)))
 }
 
@@ -121,9 +125,7 @@ impl HerdrWindow {
         let Some(endpoint) = self.endpoints.get(index) else {
             return;
         };
-        let top = self.sidebar_scroll[0]
-            .bounds_for_item(row)
-            .map_or(position.y, |bounds| bounds.top());
+        let top = window_top(&self.sidebar_scroll[0], row).unwrap_or(position.y);
         let lift = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(LIFT_DELAY).await;
             let _ = this.update(cx, |this, cx| this.lift_device(cx));
@@ -203,11 +205,10 @@ impl HerdrWindow {
                 // The header rests where the folded list put it; it paints
                 // where the pointer holds it.
                 let previous = slides.get(id).map_or(0., |slide| slide.to);
-                let at = scroll
-                    .bounds_for_item(row)
+                let at = window_top(scroll, row)
                     .filter(|_| measured)
-                    .map_or(0., |bounds| {
-                        f32::from(drag.pointer.y - drag.grab - bounds.top()) + previous
+                    .map_or(0., |top| {
+                        f32::from(drag.pointer.y - drag.grab - top) + previous
                     });
                 slides.insert(
                     id.clone(),
