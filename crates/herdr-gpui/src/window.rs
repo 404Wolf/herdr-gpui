@@ -23,6 +23,7 @@ mod image_source;
 mod images;
 mod input;
 mod lifecycle;
+pub(crate) use lifecycle::reasserts;
 mod links;
 mod monitors;
 pub(crate) use links::PressedLink;
@@ -51,6 +52,8 @@ pub(crate) use transfers::tests::Peer as MockPeer;
 mod agent_model_tests;
 #[cfg(test)]
 mod font_size_tests;
+#[cfg(all(test, feature = "integration-test"))]
+mod idle_reassert_tests;
 #[cfg(test)]
 mod key_action_tests;
 #[cfg(all(test, feature = "integration-test"))]
@@ -139,6 +142,10 @@ pub(crate) struct HerdrWindow {
     pub(crate) options: ConnectOptions,
     pub(crate) last_queued_options: Option<ConnectOptions>,
     pub(crate) pending_resize: Option<(ConnectOptions, std::time::Instant)>,
+    /// When this window last forwarded user input; gates re-claiming a frame another client sized.
+    pub(crate) last_input: Option<std::time::Instant>,
+    /// The last pointer position over the panes, so a move event that did not move is not use.
+    pub(crate) last_pointer: Option<Point<Pixels>>,
     pub(crate) active: bool,
     pub(crate) sent_focus: Option<bool>,
     pub(crate) bounds: Bounds<Pixels>,
@@ -679,6 +686,8 @@ impl HerdrWindow {
             options: ConnectOptions::default(),
             last_queued_options: None,
             pending_resize: None,
+            last_input: None,
+            last_pointer: None,
             active: window.is_window_active(),
             sent_focus: None,
             bounds: Bounds::default(),

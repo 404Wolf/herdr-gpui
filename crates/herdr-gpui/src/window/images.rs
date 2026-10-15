@@ -205,6 +205,7 @@ impl HerdrWindow {
                 && let Some(source) = image_source::from_paste(&text)
                 && let Some(target) = self.focused_input_target()
             {
+                self.note_input();
                 self.start_remote_image(target, source, Some(text), cx);
             } else {
                 self.send(ClientPaneInputEvent::Paste(text), cx);
@@ -218,6 +219,7 @@ impl HerdrWindow {
             })
             && let Some(target) = self.focused_input_target()
         {
+            self.note_input();
             self.start_remote_image(target, Source::Clipboard(image), None, cx);
             return true;
         }

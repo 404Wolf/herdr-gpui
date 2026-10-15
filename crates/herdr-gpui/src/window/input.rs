@@ -223,6 +223,8 @@ impl HerdrWindow {
             self.wheel.drop_lines();
         }
         cx.stop_propagation();
+        // `handle` borrows the window, so the field is set directly.
+        self.last_input = Some(std::time::Instant::now());
         for input in target.wheel_events(steps, event.modifiers) {
             let result =
                 ConnectionBridge::send_input(handle, &snapshot.boot_id, &target.target, input);

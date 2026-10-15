@@ -92,7 +92,10 @@ impl HerdrWindow {
             Ok(())
         });
         match result {
-            Ok(()) => true,
+            Ok(()) => {
+                self.note_input();
+                true
+            }
             Err(error) => {
                 self.local_error = Some(format!("Files not pasted: {error}"));
                 cx.notify();
