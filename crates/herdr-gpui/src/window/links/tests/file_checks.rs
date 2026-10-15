@@ -45,3 +45,31 @@ fn a_path_found_missing_is_checked_again_when_looked_at_again(cx: &mut gpui::Tes
     cx.simulate_mouse_move(link, None, held);
     assert!(!shown(&view, cx), "after leaving the path");
 }
+
+#[gpui::test]
+fn a_click_before_the_check_ends_opens_the_file(cx: &mut gpui::TestAppContext) {
+    let sandbox = Sandbox::new();
+    let peer = MockPeer::new();
+    let (view, cx) = printed(&sandbox, "src/sample.rs", &peer, cx);
+    let link = at(&view, cx, LINK.0, LINK.1);
+    cx.simulate_mouse_move(link, None, Modifiers::default());
+
+    // The modifier goes down with the button, so no check has ended yet.
+    cx.simulate_click(link, Modifiers::secondary_key());
+    cx.run_until_parked();
+    assert_eq!(cx.opened_url(), Some(sandbox.opened("src/sample.rs")));
+}
+
+#[gpui::test]
+fn a_click_before_the_check_ends_opens_nothing_missing(cx: &mut gpui::TestAppContext) {
+    let sandbox = Sandbox::new();
+    let peer = MockPeer::new();
+    let (view, cx) = printed(&sandbox, "src/missing.rs", &peer, cx);
+    let link = at(&view, cx, LINK.0, LINK.1);
+    cx.simulate_mouse_move(link, None, Modifiers::default());
+
+    cx.simulate_click(link, Modifiers::secondary_key());
+    cx.run_until_parked();
+    assert!(cx.opened_url().is_none());
+    view.read_with(cx, |view, _| assert!(view.flash.is_none()));
+}

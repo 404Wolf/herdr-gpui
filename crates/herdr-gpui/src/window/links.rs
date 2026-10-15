@@ -243,11 +243,14 @@ impl HerdrWindow {
     }
 
     /// The file `link` names, when a click may open it: always for an
-    /// explicit hyperlink, and for printed text once it is found on disk.
+    /// explicit hyperlink, and for printed text unless a check found it
+    /// missing. A click before the check ends is not lost: opening reads the
+    /// disk again, and opens nothing for a printed path that is not there.
     fn clickable_file(&self, link: PaneLink) -> Option<FileLink> {
         let file = self.file_link(link)?;
-        let found = matches!(&self.links.checked, Some((checked, Some(true))) if *checked == file);
-        (file.explicit || found).then_some(file)
+        let missing =
+            matches!(&self.links.checked, Some((checked, Some(false))) if *checked == file);
+        (file.explicit || !missing).then_some(file)
     }
 
     /// Follows the pointer and the link modifier. Without the modifier

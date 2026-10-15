@@ -218,14 +218,15 @@ fn a_link_modifier_click_opens_a_printed_file_that_exists(cx: &mut gpui::TestApp
     let missing = at(&view, cx, 26);
 
     // A pointer that only passes over a path asks and shows nothing: the
-    // path is plain text, and a click there is not a link's.
+    // path is plain text, and a click there is not a link's. A press with
+    // the link modifier may still be one, as opening reads the disk itself.
     cx.simulate_mouse_move(found, None, Modifiers::default());
     cx.run_until_parked();
     view.read_with(cx, |view, _| {
         assert!(view.hovered_local_link().is_none());
         assert!(!view.terminal_link_hovered(found, Modifiers::default()));
         assert!(!view.terminal_link_hovered(found, Modifiers::secondary_key()));
-        assert!(!view.link_modifier_held(found, Modifiers::secondary_key()));
+        assert!(view.link_modifier_held(found, Modifiers::secondary_key()));
     });
     cx.simulate_click(found, Modifiers::default());
     cx.run_until_parked();
