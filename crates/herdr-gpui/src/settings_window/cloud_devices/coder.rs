@@ -1,4 +1,4 @@
-//! The Coder card of Settings > Cloud Devices. Its connection fields save to
+//! The Coder card of Settings > Cloud devices. Its connection fields save to
 //! `[coder]` in the local config; its OAuth client secret saves to the
 //! credential store. Sign-in, status, and device removal run through
 //! `cloud::worker`, never on the UI thread; destroying a device's workspace

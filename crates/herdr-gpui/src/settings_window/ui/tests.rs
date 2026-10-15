@@ -57,6 +57,7 @@ impl Render for Harness {
                 ],
                 Some(1),
                 true,
+                |_| true,
                 move |value, _, _| element_picked.set(Some(value)),
             ))
     }

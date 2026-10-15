@@ -379,7 +379,8 @@ pub(crate) async fn verify_native(
         Ok(())
     })??;
     eprintln!(
-        "SIDEBAR native standalone settings PASS: all 8 category clicks and bounds at 680x560/960x780, 2/4-column theme grid, native Nord search {filtered}/{unfiltered} and clear, native Nord card click, singleton Cmd-comma, isolated Cmd-W; theme draft live across windows without config writes; final theme persisted on close in sandbox"
+        "SIDEBAR native standalone settings PASS: all {} category clicks and bounds at 680x560/960x780, 2/4-column theme grid, native Nord search {filtered}/{unfiltered} and clear, native Nord card click, singleton Cmd-comma, isolated Cmd-W; theme draft live across windows without config writes; final theme persisted on close in sandbox",
+        Section::ALL.len()
     );
     Ok(())
 }

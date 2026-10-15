@@ -9,6 +9,16 @@ use crate::{
 use gpui::{prelude::*, *};
 use herdr_client::protocol::AgentStatus;
 
+/// Whether a style segment responds: any style while Herdr's file is
+/// writable, otherwise only the one Herdr already uses.
+pub(in crate::settings_window) fn indicator_style_live(
+    style: IndicatorStyle,
+    herdr: IndicatorStyle,
+    ready: bool,
+) -> bool {
+    ready || style == herdr
+}
+
 impl SettingsWindow {
     pub(in crate::settings_window) fn render_notifications(&self, cx: &mut Context<Self>) -> Div {
         let theme = &self.theme;
@@ -105,20 +115,32 @@ impl SettingsWindow {
             )
             .child(self.delay_row(cx))
             .child(
-                ui::row(theme, "notif-position", "Position").control(self.override_dropdown(
-                    DropdownField::ToastPosition,
-                    base_position,
-                    &position_names,
-                    position,
-                    cx,
-                )),
+                ui::row(theme, "notif-position", "Position")
+                    .description(
+                        "Controls show effective values; a managed-file override still \
+                         takes precedence.",
+                    )
+                    .control(self.override_dropdown(
+                        DropdownField::ToastPosition,
+                        base_position,
+                        &position_names,
+                        position,
+                        cx,
+                    )),
             )
             .child(ui::section(theme, "Sound", None))
             .child(
                 self.gate_shared(
                     ui::row(theme, "notif-sound", "Play agent sounds")
                         .tag(ui::Source::Shared)
-                        .description("Uses shared sound paths and per-agent overrides."),
+                        .description(if source_alive {
+                            "Uses shared sound paths and per-agent overrides. Missing custom \
+                             sounds fall back to bundled sounds."
+                        } else {
+                            "Uses shared sound paths and per-agent overrides. Missing custom \
+                             sounds fall back to bundled sounds. Open a main Herdr window to \
+                             preview audio."
+                        }),
                 )
                 .control(
                     ui::button(theme, "notif-sound-test", "Test", source_alive).when(
@@ -158,10 +180,11 @@ impl SettingsWindow {
                         .map(|shared| shared.indicators),
                     // Going back to the style Herdr already uses only drops
                     // this client's key, so it works where Herdr's file is
-                    // read-only.
+                    // read-only; the other styles stay dimmed there.
                     ready || icons.is_some(),
+                    move |style| indicator_style_live(style, herdr, ready),
                     on_value(cx, move |this, style, _, cx| {
-                        if ready || style == herdr {
+                        if indicator_style_live(style, herdr, ready) {
                             this.choose_herdr_indicators(style, cx)
                         }
                     }),
@@ -195,7 +218,10 @@ impl SettingsWindow {
         let value = self.config.notifications.delay_seconds as f32;
         let view = cx.entity().downgrade();
         ui::row(&self.theme, "notif-delay", "Delay")
-            .description("Wait before a toast appears, so quick turns stay quiet.")
+            .description(
+                "Wait before a toast appears, so quick turns stay quiet. Controls show \
+                 effective values; a managed-file override still takes precedence.",
+            )
             .control(ui::number(
                 &self.theme,
                 ui::Number {

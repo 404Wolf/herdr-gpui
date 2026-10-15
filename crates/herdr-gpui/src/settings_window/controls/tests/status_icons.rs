@@ -1,5 +1,6 @@
 use super::*;
 use crate::config::{StatusIcons, preferences::Preference};
+use crate::herdr_settings::IndicatorStyle;
 use crate::settings_window::controls::preferences::PreferenceIo;
 use std::sync::{Arc, Mutex};
 
@@ -71,6 +72,20 @@ fn herdr_style_undoes_icons_without_writable_shared_settings(cx: &mut TestAppCon
     cx.simulate_resize(size(px(960.), px(2200.)));
     cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
     // Unreadable shared settings leave Herdr's default, Dots, in charge.
+    assert!(
+        !crate::settings_window::pages::notifications::indicator_style_live(
+            IndicatorStyle::Symbols,
+            IndicatorStyle::Dots,
+            false,
+        )
+    );
+    assert!(
+        crate::settings_window::pages::notifications::indicator_style_live(
+            IndicatorStyle::Dots,
+            IndicatorStyle::Dots,
+            false,
+        )
+    );
     let symbols = cx.debug_bounds("notif-indicators-control-1").unwrap();
     cx.simulate_click(symbols.center(), Default::default());
     cx.run_until_parked();

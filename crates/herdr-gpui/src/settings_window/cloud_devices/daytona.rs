@@ -1,4 +1,4 @@
-//! The Daytona tab of Settings > Cloud Devices. Its account fields save to
+//! The Daytona tab of Settings > Cloud devices. Its account fields save to
 //! `[daytona]` in the local config; its API key saves to the credential store.
 //! Creating a sandbox hands a job to the main window, which shows progress in
 //! the device picker and a toast when it is ready. Account reads and removals

@@ -37,10 +37,12 @@ fn notification_rows_stack_inside_the_body_and_descriptions_wrap(cx: &mut TestAp
             // so the titles are what stack.
             for title_id in [
                 "notif-delivery-title",
+                "notif-finished-title",
                 "notif-show-title",
                 "notif-delay-title",
                 "notif-position-title",
                 "notif-sound-title",
+                "notif-volume-title",
                 "notif-indicators-title",
             ] {
                 let title = cx.debug_bounds(title_id).unwrap();

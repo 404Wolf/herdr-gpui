@@ -297,7 +297,7 @@ since its account panel goes away with the device. Local has no such menu.
 A cloud device's header (Coder, Daytona, or Railway) has a menu too:
 **Rename…** changes the name the sidebar shows, falling back to the machine's
 name when left empty; **Cloud device settings…** opens its provider under
-Settings > Cloud Devices; and **Remove device…** forgets it on this computer,
+Settings > Cloud devices; and **Remove device…** forgets it on this computer,
 leaving the workspace, sandbox, or VM as it is at the provider. Port forwards
 and server keybindings need a saved SSH host, so a cloud device does not offer
 them.
@@ -385,7 +385,7 @@ the app.
 
 ### Coder workspaces
 
-Settings > **Cloud Devices** holds accounts with providers that create machines
+Settings > **Cloud devices** holds accounts with providers that create machines
 to use as devices: Coder, Daytona, and Railway. Coder's card edits the `[coder]`
 keys (see `config-gpui.example.toml`), saves the OAuth client secret to the
 credential store rather than the config file, signs in and out, and lists the
@@ -437,7 +437,7 @@ devices are unavailable on Windows.
 
 ### Boat sandboxes (experimental)
 
-Settings > **Cloud Devices** > **Boat** holds a Boat account: the API URL
+Settings > **Cloud devices** > **Boat** holds a Boat account: the API URL
 (`https://boat.dev/api/v1` for Boat's cloud), an optional organization wallet,
 machine type, and environment, saved to `[boat]`, and an API key saved to the
 credential store (`HERDR_BOAT_API_KEY` takes precedence). The key needs
@@ -480,7 +480,7 @@ not yet been exercised against a live Boat account.
 
 ### Daytona sandboxes (experimental)
 
-Settings > **Cloud Devices** > **Daytona** holds a Daytona account: the API URL
+Settings > **Cloud devices** > **Daytona** holds a Daytona account: the API URL
 (`https://app.daytona.io/api` for Daytona's cloud), an optional organization,
 region, and snapshot, saved to `[daytona]`, and an API key saved to the
 credential store (`HERDR_DAYTONA_API_KEY` takes precedence). **Create sandbox**
@@ -502,7 +502,7 @@ against a live Daytona account.
 
 ### Railway free VMs (experimental)
 
-Settings > **Cloud Devices** > **Railway**, which **Railway** in **Add Device…**
+Settings > **Cloud devices** > **Railway**, which **Railway** in **Add Device…**
 also opens, sets up the temporary Linux VM that
 `ssh railway.new` gives out without an account. The SSH key is its identity, so
 pick an existing private key or generate one by name (an ed25519 key without a

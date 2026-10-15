@@ -79,6 +79,15 @@ pub enum DeviceFooter {
 }
 
 impl DeviceFooter {
+    /// The value written to the config file; matches the serde name.
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Always => "always",
+            Self::Auto => "auto",
+            Self::Never => "never",
+        }
+    }
+
     pub(crate) fn shown(self, devices: usize, adding: usize) -> bool {
         match self {
             Self::Always => true,

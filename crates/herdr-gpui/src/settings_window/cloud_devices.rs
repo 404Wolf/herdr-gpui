@@ -1,4 +1,4 @@
-//! Settings > Cloud Devices: one tab per cloud provider whose machines this
+//! Settings > Cloud devices: one tab per cloud provider whose machines this
 //! app uses as devices. Each provider's card keeps its own fields and account
 //! state; this section only switches between them, so another provider adds a
 //! tab and a card.
@@ -29,7 +29,7 @@ use crate::{
 };
 use gpui::{prelude::*, *};
 
-/// Open Settings > Cloud Devices, on `provider`'s tab when the device picker's
+/// Open Settings > Cloud devices, on `provider`'s tab when the device picker's
 /// row sets that provider up, or on the first tab for its general row.
 // Add Device records the request instead in unit tests.
 #[cfg_attr(test, allow(dead_code, unused_imports))]

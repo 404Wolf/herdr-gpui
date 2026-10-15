@@ -3,7 +3,7 @@
 mod configuration;
 mod fonts;
 mod general;
-mod notifications;
+pub(in crate::settings_window) mod notifications;
 mod sidebar;
 mod status_bar;
 mod tabs;

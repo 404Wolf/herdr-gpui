@@ -229,16 +229,19 @@ pub(in crate::settings_window) fn segmented<T: Copy + PartialEq + 'static>(
         .iter()
         .map(|(value, label)| (*value, (*label).into_any_element()))
         .collect();
-    segmented_elements(theme, id, options, selected, enabled, on_pick)
+    segmented_elements(theme, id, options, selected, enabled, |_| true, on_pick)
 }
 
 /// Like [`segmented`], with an element per segment (e.g. coloured status marks).
+/// `live` says which segments respond while the strip is enabled; the others
+/// are dimmed and ignore clicks.
 pub(in crate::settings_window) fn segmented_elements<T: Copy + PartialEq + 'static>(
     theme: &Theme,
     id: &'static str,
     options: Vec<(T, AnyElement)>,
     selected: Option<T>,
     enabled: bool,
+    live: impl Fn(T) -> bool,
     on_pick: impl Fn(T, &mut Window, &mut App) + 'static,
 ) -> Div {
     let on_pick = Rc::new(on_pick);
@@ -257,6 +260,7 @@ pub(in crate::settings_window) fn segmented_elements<T: Copy + PartialEq + 'stat
                 .enumerate()
                 .map(|(index, (value, label))| {
                     let on = selected == Some(value);
+                    let segment_live = enabled && live(value);
                     let on_pick = on_pick.clone();
                     div()
                         .id((id, index))
@@ -271,8 +275,9 @@ pub(in crate::settings_window) fn segmented_elements<T: Copy + PartialEq + 'stat
                             theme.subtext()
                         }))
                         .when(on, |seg| seg.bg(rgb(theme.active)))
-                        .when(enabled, |seg| seg.cursor_pointer())
-                        .when(enabled && !on, move |seg| {
+                        .when(enabled && !segment_live, |seg| seg.opacity(0.5))
+                        .when(segment_live, |seg| seg.cursor_pointer())
+                        .when(segment_live && !on, move |seg| {
                             seg.on_click(move |_, window, cx| on_pick(value, window, cx))
                         })
                         .child(label)

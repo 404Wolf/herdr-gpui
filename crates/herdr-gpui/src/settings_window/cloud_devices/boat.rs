@@ -1,4 +1,4 @@
-//! The Boat tab of Settings > Cloud Devices. Account fields save to `[boat]`;
+//! The Boat tab of Settings > Cloud devices. Account fields save to `[boat]`;
 //! its API key saves to the credential store. API reads and removals stay off
 //! the UI thread, and creation jobs belong to the main window.
 

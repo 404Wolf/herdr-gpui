@@ -189,11 +189,7 @@ impl Config {
                 Preference::SidebarDeviceFooter(footer) => (
                     Some("sidebar"),
                     "device_footer",
-                    Some(toml_edit::Value::from(match footer {
-                        DeviceFooter::Always => "always",
-                        DeviceFooter::Auto => "auto",
-                        DeviceFooter::Never => "never",
-                    })),
+                    Some(toml_edit::Value::from(footer.as_str())),
                 ),
                 Preference::HostColor { host, color } => {
                     if let Some(color) = color.filter(|color| *color > 0xFF_FFFF) {

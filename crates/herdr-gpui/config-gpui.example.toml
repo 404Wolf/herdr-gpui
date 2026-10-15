@@ -398,7 +398,7 @@ size = 12
 # accounts = [{ id = "0123456789abcdef0123456789abcdef", owners = ["my-emu-org"] }]
 
 # A Coder deployment whose workspaces can be created and added as devices from
-# the device picker's "Add Coder Workspace…". Settings > Cloud Devices edits
+# the device picker's "Add Coder Workspace…". Settings > Cloud devices edits
 # these keys and saves the client secret to the credential store, so editing
 # this table by hand is optional. Register an OAuth2 app in Coder
 # (the deployment must enable the `oauth2` experiment) with the redirect URI
@@ -409,7 +409,7 @@ size = 12
 # [coder]
 # url = "https://coder.example.com"
 # oauth_client_id = "YOUR_OAUTH2_APP_ID"
-# Coder requires a confidential client. Prefer Settings > Cloud Devices, which
+# Coder requires a confidential client. Prefer Settings > Cloud devices, which
 # keeps the secret out of this file; when set here or in the environment, this
 # value takes precedence. It identifies this app to Coder, not your account.
 # oauth_client_secret = "YOUR_OAUTH2_APP_SECRET"
@@ -425,7 +425,7 @@ size = 12
 # which is saved in its own 0600 coder-credentials file. Default is false.
 # allow_plaintext_credentials = false
 
-# Boat sandboxes as devices (experimental). Settings > Cloud Devices > Boat
+# Boat sandboxes as devices (experimental). Settings > Cloud devices > Boat
 # edits this table and saves the API key to the credential store; the
 # environment variable HERDR_BOAT_API_KEY takes precedence.
 #
@@ -439,7 +439,7 @@ size = 12
 # # is saved in its own 0600 boat-api-key file. Default is false.
 # allow_plaintext_credentials = false
 
-# Daytona sandboxes as devices (experimental). Settings > Cloud Devices >
+# Daytona sandboxes as devices (experimental). Settings > Cloud devices >
 # Daytona edits this table and saves the API key to the credential store; the
 # key is never read from this file. HERDR_DAYTONA_API_KEY overrides the saved
 # key and HERDR_DAYTONA_API_URL overrides api_url.
