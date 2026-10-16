@@ -6,8 +6,9 @@ verifiable on its own. Read `AGENTS.md` first; its rules apply throughout.
 
 ## Where Linux stands
 
-- `crates/herdr-gpui/Cargo.toml` pulls `gpui-wry` and `wry` only for macOS
-  and Windows: "wry has no working GPUI child-view backend on Linux yet".
+- `crates/herdr-gpui/Cargo.toml` pulls `wry` only for macOS and Windows:
+  "wry has no working GPUI child-view backend on Linux yet".
+  `browser/page.rs` lays a native view out where its group draws.
 - `browser::EMBEDDED` is `false` on Linux. `control::open_browser` then opens
   web addresses in the system browser and refuses local files with
   `ErrorCode::Unsupported`.
@@ -79,10 +80,9 @@ every Linux desktop, while pages still open outside the window.
 
 ## Phase 2: embedded pages on X11 and XWayland
 
-1. Add a Linux dependency on `wry` with its GTK feature set (and
-   `gpui-wry` if its child-view type supports Linux; otherwise a small
-   crate-local `WebView` entity with the same `show`/`hide`/bounds API that
-   `browser/native.rs` uses). Keep the versions in root
+1. Add a Linux dependency on `wry` with its GTK feature set, and give
+   `browser/page.rs`'s `Page` a Linux branch with the same
+   `show`/`hide`/bounds behavior. Keep the versions in root
    `[workspace.dependencies]`.
 2. Initialize GTK once on the main thread at startup when the window is X11
    (`gtk::init()`), and pump it from the GPUI foreground loop with a bounded
@@ -91,9 +91,9 @@ every Linux desktop, while pages still open outside the window.
    rendering.
 3. Get the X11 window handle from GPUI's `HasWindowHandle` and use
    `build_as_child`, as `native::Pages::ensure` does on macOS and Windows.
-   Position and size the child from the same page bounds the macOS path uses
-   (`browser.page_bounds`), and keep it in step on resize, split drags,
-   scrolling sidebars, and HiDPI scale changes.
+   Position and size the child where `browser/page.rs`'s `PageElement` lays
+   it out, and keep it in step on resize, split drags, scrolling sidebars,
+   and HiDPI scale changes.
 4. Widen the cfg gates from `any(macos, windows)` to include
    `all(target_os = "linux", feature-or-runtime X11)`. Prefer a runtime check
    (`EMBEDDED` becomes a function of the window's backend) so one binary

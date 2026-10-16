@@ -410,8 +410,8 @@ impl HerdrWindow {
                     if let Some(location) = visited {
                         Store::update(cx, |store| store.visited(id, Some(location), None));
                     }
-                    self.page_loaded(id, cx);
-                    self.browser.pages.script(id, &super::favicon::script(), cx);
+                    self.page_loaded(id);
+                    self.browser.pages.script(id, &super::favicon::script());
                 }
                 Event::Posted(id, body, from) => match super::favicon::Favicon::parse(&body) {
                     Some(favicon) => self.page_favicon(id, favicon, window, cx),
@@ -433,7 +433,7 @@ impl HerdrWindow {
                     // Without a tab the popup is dropped, and with it the
                     // opener's link to it.
                     if let Some((group, opened)) = self.open_beside(id, url, cx) {
-                        self.browser.pages.adopt(opened, source, popup, window, cx);
+                        self.browser.pages.adopt(opened, source, popup, window);
                         self.show_browser_tab_in(group, opened, window, cx);
                     }
                 }

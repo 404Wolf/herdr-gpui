@@ -257,7 +257,7 @@ impl HerdrWindow {
         #[cfg(not(any(target_os = "macos", windows)))]
         let (annotate_button, panel): (Option<Stateful<Div>>, Option<AnyElement>) = (None, None);
         #[cfg(any(target_os = "macos", windows))]
-        let page = self.browser.pages.page(id).cloned();
+        let page = self.browser.pages.element(id);
         #[cfg(not(any(target_os = "macos", windows)))]
         let page: Option<AnyView> = None;
         let failure = self.browser.failed.get(&id).cloned();
@@ -286,11 +286,11 @@ impl HerdrWindow {
                 "icons/arrow-left.svg",
                 loaded,
                 cx,
-                move |this, _, cx| {
+                move |this, _, _| {
                     #[cfg(any(target_os = "macos", windows))]
-                    this.browser.pages.back(id, cx);
+                    this.browser.pages.back(id);
                     #[cfg(not(any(target_os = "macos", windows)))]
-                    let _ = (this, cx);
+                    let _ = this;
                 },
             ))
             .child(self.toolbar_button(
@@ -299,11 +299,11 @@ impl HerdrWindow {
                 "icons/arrow-right.svg",
                 loaded,
                 cx,
-                move |this, _, cx| {
+                move |this, _, _| {
                     #[cfg(any(target_os = "macos", windows))]
-                    this.browser.pages.forward(id, cx);
+                    this.browser.pages.forward(id);
                     #[cfg(not(any(target_os = "macos", windows)))]
-                    let _ = (this, cx);
+                    let _ = this;
                 },
             ))
             .child(self.toolbar_button(
@@ -312,11 +312,11 @@ impl HerdrWindow {
                 "icons/refresh.svg",
                 loaded,
                 cx,
-                move |this, _, cx| {
+                move |this, _, _| {
                     #[cfg(any(target_os = "macos", windows))]
-                    this.browser.pages.reload(id, cx);
+                    this.browser.pages.reload(id);
                     #[cfg(not(any(target_os = "macos", windows)))]
-                    let _ = (this, cx);
+                    let _ = this;
                 },
             ))
             .child(
@@ -518,8 +518,8 @@ impl HerdrWindow {
         Store::update(cx, |store| store.visited(id, Some(location.clone()), None));
         #[cfg(any(target_os = "macos", windows))]
         if self.browser.pages.contains(id) {
-            self.browser.pages.load(id, &location, cx);
-            self.browser.pages.focus(id, cx);
+            self.browser.pages.load(id, &location);
+            self.browser.pages.focus(id);
         }
         self.show_browser_tab_in(Some(group), id, window, cx);
     }

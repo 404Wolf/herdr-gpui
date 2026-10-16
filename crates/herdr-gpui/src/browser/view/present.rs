@@ -84,7 +84,7 @@ impl HerdrWindow {
             let overlays = self.present_overlays();
             if cover.is_none() && overlays.is_empty() {
                 self.browser.frozen.clear();
-                self.browser.pages.present(&live, cx);
+                self.browser.pages.present(&live);
                 return false;
             }
             let bounds = self.browser.page_bounds.borrow().clone();
@@ -101,7 +101,7 @@ impl HerdrWindow {
                     None => {
                         let asked = bounds
                             .get(&id)
-                            .is_some_and(|page| self.browser.pages.freeze(id, page.size, cx));
+                            .is_some_and(|page| self.browser.pages.freeze(id, page.size));
                         let freeze = if asked {
                             shown.push(id);
                             settling = true;
@@ -123,7 +123,7 @@ impl HerdrWindow {
                     Some(Freeze::Blank) => {}
                 }
             }
-            self.browser.pages.present(&shown, cx);
+            self.browser.pages.present(&shown);
             settling
         }
         #[cfg(not(any(target_os = "macos", windows)))]

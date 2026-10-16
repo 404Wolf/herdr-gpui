@@ -29,6 +29,8 @@ mod location;
 mod markdown;
 #[cfg(any(target_os = "macos", windows))]
 mod native;
+#[cfg(any(target_os = "macos", windows))]
+mod page;
 #[cfg(target_os = "macos")]
 mod page_keys;
 #[cfg(target_os = "macos")]
