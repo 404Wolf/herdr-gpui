@@ -49,9 +49,13 @@ impl HerdrWindow {
             self.browser.pages.set_theme(&self.theme);
             let live = self.live_pages(cx);
             // On macOS every live page shows, beneath whatever the window
-            // draws over it.
+            // draws over it. A menu or dialog covers the whole window and
+            // takes every click, so pages refuse drops while one is open.
             #[cfg(target_os = "macos")]
-            let (shown, settling) = (live, false);
+            let (shown, settling) = {
+                self.browser.pages.refuse_drops(self.menu.page.is_some());
+                (live, false)
+            };
             #[cfg(windows)]
             let (shown, settling) = self.uncovered(live);
             self.browser.pages.present(&shown);

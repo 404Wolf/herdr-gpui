@@ -2310,7 +2310,9 @@ come back after a restart; closing a workspace in Herdr removes its tabs.
   macOS a page lies beneath the window's own drawing. Menus, popovers,
   dialogs, tooltips, toasts, and the file-transfer card show over it, and
   the page stays live around them. The grip between two groups keeps its
-  full width over a page.
+  full width over a page. While a menu or dialog is open, a file dropped on
+  the window never reaches a page. A file dropped on a toast or the
+  file-transfer card still reaches the page beneath.
 - On Windows a page is layered above the window, so it steps aside for a
   menu, popover, or status bar tooltip that would fall over it, and for a
   dialog, which dims the whole window. Its place is empty until the menu

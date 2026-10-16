@@ -24,10 +24,17 @@
 //! whatever its layout moves there next, as when a divider's drag narrows
 //! it. The router tells the page the pointer left, as AppKit would.
 //!
-//! Nothing else needs a router. AppKit finds a drag's target with a hit test
-//! of its own, which passes over GPUI's view, as it takes no drags, to the
-//! page beneath. Keys go to the first responder, which a click on the page
-//! makes the page, as before.
+//! AppKit finds a drag's target with a hit test of its own, which ignores
+//! the router and passes over GPUI's view, as it takes no drags, to the page
+//! beneath. During a drag from another app, GPUI gets no pointer events, so
+//! its hit test cannot decide there. A menu or dialog covers the whole
+//! window, though: while one is open, the router takes the page's drag types
+//! and refuses every drag, so a file dropped on the menu never reaches the
+//! page. A toast or the file-transfer card covers only part of a page, and a
+//! file dropped on one still reaches the page beneath.
+//!
+//! Keys go to the first responder, which a click on the page makes the page,
+//! as before.
 //!
 //! Four parts need `unsafe`, as `objc2-app-kit` has no safe form for them:
 //! reading a view's superview, borrowing GPUI's view from its window handle,
@@ -40,12 +47,12 @@ use {
     objc2::{
         DefinedClass, MainThreadMarker, MainThreadOnly, Message as _, define_class, msg_send,
         rc::Retained,
-        runtime::{NSObject, Sel},
+        runtime::{NSObject, NSObjectProtocol, ProtocolObject, Sel},
         sel,
     },
     objc2_app_kit::{
-        NSAutoresizingMaskOptions, NSEvent, NSEventType, NSResponder, NSTrackingAreaOptions,
-        NSView, NSWindowOrderingMode,
+        NSAutoresizingMaskOptions, NSDragOperation, NSDraggingDestination, NSDraggingInfo, NSEvent,
+        NSEventType, NSResponder, NSTrackingAreaOptions, NSView, NSWindowOrderingMode,
     },
     objc2_foundation::{NSPoint, NSProcessInfo, NSRect, NSSize},
     std::cell::Cell,
@@ -116,11 +123,14 @@ pub(crate) struct RouterIvars {
     /// GPUI's view, which takes the keyboard back from the page.
     gpui: Retained<NSView>,
     seen: Cell<Seen>,
+    /// Whether the router takes the page's drag types, to refuse them.
+    refusing: Cell<bool>,
 }
 
 define_class!(
     /// A page's router: a view over the page, above GPUI's view, that only
-    /// answers hit tests. It draws nothing and takes no events itself.
+    /// answers hit tests, and refuses drags while a menu covers the page. It
+    /// draws nothing and takes no other events itself.
     // SAFETY: NSView may be subclassed on the main thread, which
     // `MainThreadOnly` holds every use to, and `Router` does not implement
     // `Drop`.
@@ -134,6 +144,32 @@ define_class!(
         #[unsafe(method_id(hitTest:))]
         fn hit_test(&self, point: NSPoint) -> Option<Retained<NSView>> {
             self.target(point)
+        }
+    }
+
+    unsafe impl NSObjectProtocol for Router {}
+
+    // AppKit asks these only while the router takes drag types, which it does
+    // only to refuse them.
+    unsafe impl NSDraggingDestination for Router {
+        #[unsafe(method(draggingEntered:))]
+        fn dragging_entered(&self, _: &ProtocolObject<dyn NSDraggingInfo>) -> NSDragOperation {
+            NSDragOperation::None
+        }
+
+        #[unsafe(method(draggingUpdated:))]
+        fn dragging_updated(&self, _: &ProtocolObject<dyn NSDraggingInfo>) -> NSDragOperation {
+            NSDragOperation::None
+        }
+
+        #[unsafe(method(prepareForDragOperation:))]
+        fn prepare_for_drag_operation(&self, _: &ProtocolObject<dyn NSDraggingInfo>) -> bool {
+            false
+        }
+
+        #[unsafe(method(performDragOperation:))]
+        fn perform_drag_operation(&self, _: &ProtocolObject<dyn NSDraggingInfo>) -> bool {
+            false
         }
     }
 );
@@ -163,6 +199,7 @@ impl Router {
             page,
             gpui,
             seen: Cell::default(),
+            refusing: Cell::new(false),
         });
         // SAFETY: NSView's designated initializer, on an allocated instance
         // with its ivars set.
@@ -190,6 +227,21 @@ impl Router {
 
     pub(crate) fn set_shown(&self, shown: bool) {
         self.setHidden(!shown);
+    }
+
+    /// Refuses every drag over the page, or stops refusing. While refusing,
+    /// the router takes the page's drag types, so AppKit's drag hit test
+    /// finds the router, above the page, first.
+    pub(crate) fn refuse_drops(&self, refuse: bool) {
+        let ivars = self.ivars();
+        if ivars.refusing.replace(refuse) == refuse {
+            return;
+        }
+        if refuse {
+            self.registerForDraggedTypes(&ivars.page.registeredDraggedTypes());
+        } else {
+            self.unregisterDraggedTypes();
+        }
     }
 
     /// Moves keyboard input into the page.

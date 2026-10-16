@@ -383,6 +383,15 @@ impl Pages {
         page.show();
     }
 
+    /// Refuses drops on every page, as while a menu or dialog covers the
+    /// window, or takes them again.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn refuse_drops(&self, refuse: bool) {
+        for page in self.pages.values() {
+            page.refuse_drops(refuse);
+        }
+    }
+
     /// Shows the pages in `ids` and hides every other one; an empty list
     /// hides them all.
     pub(crate) fn present(&mut self, ids: &[TabId]) {

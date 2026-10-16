@@ -6,7 +6,8 @@
 //! must reach the page. GPUI's layer must be transparent in an opaque window.
 //! A page under the pointer must stop hovering once the pointer moves onto
 //! the grip, where AppKit tells the page nothing, and hover again once the
-//! pointer is back.
+//! pointer is back. While a dialog covers the window, AppKit's drag hit test
+//! must not reach the page, and must reach it again once the dialog closes.
 //!
 //! The page comes from this process, on the loopback address, so nothing
 //! leaves the machine. WebKit ignores the pointer in an inactive window, so
@@ -81,7 +82,8 @@ pub(super) fn start_pages(handle: WindowHandle<HerdrWindow>, cx: &mut App) {
             // there and then.
             let placed = check(&native)?;
             let hovered = hover(&native, handle, cx, &timer).await?;
-            Ok::<_, anyhow::Error>(format!("{placed}; {hovered}"))
+            let dropped = drops(&native, handle, cx, &timer).await?;
+            Ok::<_, anyhow::Error>(format!("{placed}; {hovered}; {dropped}"))
         }
         .await;
         match result {
@@ -236,6 +238,17 @@ fn check(native: &Native) -> Result<String> {
     if !on_grip.is_some_and(|view| std::ptr::eq(&*view, &*native.gpui)) {
         bail!("a click on the divider's grip over the page does not reach GPUI");
     }
+    if !drag_reaches_page(native) {
+        bail!("a drag over the page does not reach it");
+    }
+    Ok(format!(
+        "page {page} < GPUI view {gpui} < router {router}; GPUI's layer transparent in an opaque window; page click, grip click, and drag each reach their target"
+    ))
+}
+
+/// Whether AppKit's drag hit test, for the drag types the page takes, finds
+/// the page at its middle.
+fn drag_reaches_page(native: &Native) -> bool {
     let types = native.page.registeredDraggedTypes();
     // SAFETY: `setWithArray:` takes an array and returns a new set.
     let types: Retained<AnyObject> = unsafe { msg_send![class!(NSSet), setWithArray: &*types] };
@@ -243,17 +256,55 @@ fn check(native: &Native) -> Result<String> {
     // SAFETY: AppKit's own drag hit test on NSView, which takes a point in
     // the receiver's superview's coordinates by reference and a set of
     // pasteboard types, and returns a view or nil.
-    let dropped: *mut AnyObject = unsafe {
+    let found: *mut AnyObject = unsafe {
         msg_send![&*native.content, _hitTest: &mut at as *mut NSPoint, dragTypes: &*types]
     };
     // SAFETY: AppKit returns a live view in the window, or nil.
-    let dropped = unsafe { dropped.cast::<NSView>().as_ref() };
-    if !dropped.is_some_and(|view| view.isDescendantOf(&native.page)) {
-        bail!("a drag over the page does not reach it");
+    let found = unsafe { found.cast::<NSView>().as_ref() };
+    found.is_some_and(|view| view.isDescendantOf(&native.page))
+}
+
+/// Opens the command palette, a dialog over the whole window, and checks
+/// that a drag over the page no longer reaches it; then closes the palette
+/// and checks that a drag reaches the page again.
+async fn drops(
+    native: &Native,
+    handle: WindowHandle<HerdrWindow>,
+    cx: &mut AsyncApp,
+    timer: &BackgroundExecutor,
+) -> Result<&'static str> {
+    handle
+        .update(cx, |view, window, cx| {
+            view.command(Command::Palette, window, cx)
+        })
+        .map_err(|error| anyhow!("{error:#}"))?;
+    draw_frames(handle, cx, timer).await?;
+    if drag_reaches_page(native) {
+        bail!("a drag over a page under the palette reaches the page");
     }
-    Ok(format!(
-        "page {page} < GPUI view {gpui} < router {router}; GPUI's layer transparent in an opaque window; page click, grip click, and drag each reach their target"
-    ))
+    handle
+        .update(cx, |view, window, cx| view.dismiss_menu(window, cx))
+        .map_err(|error| anyhow!("{error:#}"))?;
+    draw_frames(handle, cx, timer).await?;
+    if !drag_reaches_page(native) {
+        bail!("a drag over the page does not reach it once the palette closes");
+    }
+    Ok("a drag over the page is refused under a dialog, and reaches it again after")
+}
+
+/// Lets the window draw a few frames, which present the pages.
+async fn draw_frames(
+    handle: WindowHandle<HerdrWindow>,
+    cx: &mut AsyncApp,
+    timer: &BackgroundExecutor,
+) -> Result<()> {
+    for _ in 0..3 {
+        timer.timer(Duration::from_millis(50)).await;
+        AnyWindowHandle::from(handle)
+            .update(cx, |_, window, cx| window.draw(cx).clear(cx))
+            .map_err(|error| anyhow!("{error:#}"))?;
+    }
+    Ok(())
 }
 
 /// Moves the pointer over the page, onto the divider's grip, and back, as

@@ -720,7 +720,8 @@ impl Render for HerdrWindow {
         {
             window.request_animation_frame();
         }
-        // A menu just opened, or a covered page's picture is on its way.
+        // On Windows a menu that just opened hides the pages it covers once
+        // it is laid out, a frame later.
         if self.present_browser(cx) {
             window.request_animation_frame();
         }

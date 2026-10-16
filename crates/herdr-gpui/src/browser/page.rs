@@ -96,6 +96,12 @@ impl Page {
         let _ = self.view.focus_parent();
     }
 
+    /// Refuses drops on the page, or takes them again.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn refuse_drops(&self, refuse: bool) {
+        self.router.refuse_drops(refuse);
+    }
+
     /// Puts the page at `bounds`, in the window's points.
     fn place(&self, bounds: Bounds<Pixels>) {
         #[cfg(target_os = "macos")]
