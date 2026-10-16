@@ -16,6 +16,7 @@ use crate::github::Tokens;
 use crate::teleport::{AgentKind, Host};
 use chrono::{DateTime, Utc};
 use herdr_client::ConnectTarget;
+use secrecy::SecretString;
 use std::{
     collections::{HashMap, VecDeque},
     path::PathBuf,
@@ -64,11 +65,8 @@ pub(super) fn retry_wait(error: &Error, cooldown: Option<Duration>) -> Duration 
             crate::Error::GitHubRepositoryHidden { .. } => HIDDEN_BACKOFF,
             _ => BACKOFF,
         },
-        Error::GitlabSignIn { .. }
-        | Error::GitlabAuthentication
-        | Error::GitlabForbidden { .. }
-        | Error::GitlabNotFound { .. } => HIDDEN_BACKOFF,
-        Error::GitlabRateLimit => BACKOFF,
+        Error::Gitlab(source) if source.needs_user() => HIDDEN_BACKOFF,
+        Error::Gitlab(_) => BACKOFF,
         _ => return BACKOFF,
     };
     cooldown.map_or(floor, |wait| wait.max(floor))

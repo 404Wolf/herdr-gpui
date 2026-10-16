@@ -6,11 +6,12 @@
 //! `GITLAB_HOST` names, gitlab.com by default, else from the GitLab CLI's own
 //! sign-in for the remote's host. Without one, public projects still list.
 
-use super::{Activity, Checkpoint, Error, Item, ItemKey, Result, SourceKey};
-use chrono::{DateTime, Utc};
+use super::{Activity, Checkpoint, Item, ItemKey, SourceKey};
+use chrono::{DateTime, SecondsFormat, Utc};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use std::{
+    collections::HashSet,
     ffi::OsString,
     io::Read,
     process::Command,
@@ -33,17 +34,55 @@ const DEFAULT_HOST: &str = "gitlab.com";
 /// The variables the GitLab CLI reads a token from, in its order.
 const TOKEN_VARIABLES: [&str; 2] = ["GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN"];
 
+/// Why GitLab could not be read.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("GitLab could not be reached: {0}")]
+    Network(#[source] Box<ureq::Error>),
+    #[error("GitLab's answer could not be read: {0}")]
+    Read(#[source] std::io::Error),
+    #[error("GitLab's answer exceeded the size limit")]
+    Size,
+    #[error("GitLab's answer is not the expected JSON: {0}")]
+    Json(#[source] serde_json::Error),
+    #[error("GitLab's address for {0:?} is not valid")]
+    Address(String),
+    #[error("The GitLab token is not one an HTTP header can carry")]
+    Token,
+    #[error(
+        "GitLab shows {repository} only when signed in: set GITLAB_TOKEN or run glab auth login"
+    )]
+    SignIn { repository: String },
+    #[error("GitLab refused the token; renew it with glab auth login or replace GITLAB_TOKEN")]
+    Authentication,
+    #[error("GitLab refused access to {repository}; the token needs the read_api scope")]
+    Forbidden { repository: String },
+    #[error("GitLab shows no project {repository} to this token")]
+    NotFound { repository: String },
+    #[error("GitLab rate limit reached; it is read again later")]
+    RateLimit,
+    #[error("GitLab request failed (HTTP {0})")]
+    Status(u16),
+}
+
+impl Error {
+    /// A failure only the user can fix, such as a missing or refused token.
+    pub(crate) fn needs_user(&self) -> bool {
+        matches!(
+            self,
+            Self::SignIn { .. }
+                | Self::Authentication
+                | Self::Forbidden { .. }
+                | Self::NotFound { .. }
+        )
+    }
+}
+
 /// One sync's result. Only a `complete` listing may replace the cache.
 pub(crate) struct Listing {
     pub(crate) items: Vec<Item>,
     pub(crate) checkpoint: Checkpoint,
     pub(crate) complete: bool,
-}
-
-/// One page of issues, and the page after it when GitLab names one.
-pub(super) struct Page {
-    pub(super) issues: Vec<IssueNode>,
-    pub(super) next: Option<u32>,
 }
 
 /// Lists `source`'s open issues, reading GitLab as `token` when given.
@@ -54,43 +93,57 @@ pub(crate) fn sync(
     previous: Option<&Checkpoint>,
     cancelled: &impl Fn() -> bool,
     cooldown: &mut Option<Duration>,
-) -> Result<Listing> {
+) -> super::Result<Listing> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(TIMEOUT))
         .max_redirects(0)
         .http_status_as_error(false)
         .build()
         .into();
-    let mut fetch = |page: u32| {
+    let mut fetch = |after| {
         if cancelled() {
-            return Err(Error::Cancelled);
+            return Err(super::Error::Cancelled);
         }
-        fetch_page(&agent, source, token, page, cooldown)
+        Ok(fetch_page(&agent, source, token, after, cooldown)?)
     };
     full(source, previous.cloned().unwrap_or_default(), &mut fetch)
 }
 
-/// Reads every page `fetch` returns, up to [`MAX_OPEN`] issues.
+/// Reads every open issue, oldest first, each page continuing from the
+/// creation time the last one reached. Numbered pages would not do: an issue
+/// edited or closed while the listing is read shifts the ones after it
+/// between pages, so one could be skipped and then dropped from the cache.
+/// Creation times never change, so this order holds still; `created_after`
+/// includes its bound, and issues read twice are counted once.
 pub(super) fn full(
     source: &SourceKey,
     previous: Checkpoint,
-    fetch: &mut impl FnMut(u32) -> Result<Page>,
-) -> Result<Listing> {
+    fetch: &mut impl FnMut(Option<DateTime<Utc>>) -> super::Result<Vec<IssueNode>>,
+) -> super::Result<Listing> {
     let started = Utc::now();
     let mut items = Vec::new();
+    let mut seen = HashSet::new();
     let mut complete = true;
-    let mut page = 1;
+    let mut after = None;
     loop {
-        let read = fetch(page)?;
-        items.extend(read.issues.into_iter().map(|node| node.into_item(source)));
-        match read.next {
-            Some(_) if items.len() >= MAX_OPEN => {
-                complete = false;
-                break;
-            }
-            Some(next) if next > page => page = next,
-            _ => break,
+        let page = fetch(after)?;
+        let more = page.len() >= PAGE;
+        let last = page.last().map(|node| node.created_at);
+        let before = items.len();
+        items.extend(
+            page.into_iter()
+                .filter(|node| seen.insert(node.iid))
+                .map(|node| node.into_item(source)),
+        );
+        if !more {
+            break;
         }
+        // A page of issues all created at one instant cannot be passed.
+        if items.len() >= MAX_OPEN || items.len() == before {
+            complete = false;
+            break;
+        }
+        after = last;
     }
     Ok(Listing {
         items,
@@ -105,9 +158,12 @@ pub(super) fn full(
     })
 }
 
-/// The API address of `source`'s open issues, page `page`.
-pub(super) fn issues_url(source: &SourceKey, page: u32) -> Result<url::Url> {
-    let invalid = || Error::RemoteUrl(source.repository.clone());
+/// The API address of `source`'s open issues created at or after `after`.
+pub(super) fn issues_url(
+    source: &SourceKey,
+    after: Option<DateTime<Utc>>,
+) -> Result<url::Url, Error> {
+    let invalid = || Error::Address(source.repository.clone());
     let mut url = url::Url::parse(&format!("https://{}/api/v4/projects", source.host))
         .map_err(|_| invalid())?;
     // One segment: the project's full path, its slashes escaped as GitLab asks.
@@ -115,13 +171,21 @@ pub(super) fn issues_url(source: &SourceKey, page: u32) -> Result<url::Url> {
         .map_err(|()| invalid())?
         .push(&source.repository)
         .push("issues");
-    url.query_pairs_mut()
+    let mut query = url.query_pairs_mut();
+    query
         .append_pair("state", "opened")
         .append_pair("scope", "all")
-        .append_pair("order_by", "updated_at")
-        .append_pair("sort", "desc")
-        .append_pair("per_page", &PAGE.to_string())
-        .append_pair("page", &page.to_string());
+        .append_pair("order_by", "created_at")
+        .append_pair("sort", "asc")
+        .append_pair("per_page", &PAGE.to_string());
+    if let Some(after) = after {
+        // Truncating to milliseconds moves the bound earlier, never past an issue.
+        query.append_pair(
+            "created_after",
+            &after.to_rfc3339_opts(SecondsFormat::Millis, true),
+        );
+    }
+    drop(query);
     Ok(url)
 }
 
@@ -129,11 +193,11 @@ fn fetch_page(
     agent: &ureq::Agent,
     source: &SourceKey,
     token: Option<&SecretString>,
-    page: u32,
+    after: Option<DateTime<Utc>>,
     cooldown: &mut Option<Duration>,
-) -> Result<Page> {
+) -> Result<Vec<IssueNode>, Error> {
     let mut request = agent
-        .get(issues_url(source, page)?.as_str())
+        .get(issues_url(source, after)?.as_str())
         .header("User-Agent", "Herdr-GPUI")
         .header("Accept", "application/json");
     if let Some(token) = token {
@@ -141,11 +205,10 @@ fn fetch_page(
     }
     let mut reply = request
         .call()
-        .map_err(|error| Error::GitlabNetwork(Box::new(error)))?;
+        .map_err(|error| Error::Network(Box::new(error)))?;
     let status = reply.status().as_u16();
-    let headers = reply.headers();
     if status != 200 {
-        *cooldown = retry_after(status, headers, SystemTime::now());
+        *cooldown = retry_after(status, reply.headers(), SystemTime::now());
         tracing::warn!(
             category = "orchestrator_gitlab",
             status,
@@ -154,27 +217,22 @@ fn fetch_page(
         );
         return Err(status_error(status, &source.repository, token.is_some()));
     }
-    let next = next_page(headers);
     let mut bytes = Vec::new();
     reply
         .body_mut()
         .as_reader()
         .take(LIMIT + 1)
         .read_to_end(&mut bytes)
-        .map_err(Error::GitlabRead)?;
+        .map_err(Error::Read)?;
     if bytes.len() as u64 > LIMIT {
-        return Err(Error::GitlabSize);
+        return Err(Error::Size);
     }
-    let issues = serde_json::from_slice(&bytes).map_err(|source| Error::OutputJson {
-        operation: "Reading GitLab",
-        source,
-    })?;
-    Ok(Page { issues, next })
+    serde_json::from_slice(&bytes).map_err(Error::Json)
 }
 
-fn authorization(token: &SecretString) -> Result<ureq::http::HeaderValue> {
+fn authorization(token: &SecretString) -> Result<ureq::http::HeaderValue, Error> {
     let text = Zeroizing::new(format!("Bearer {}", token.expose_secret()));
-    let mut header = ureq::http::HeaderValue::from_str(&text).map_err(|_| Error::GitlabToken)?;
+    let mut header = ureq::http::HeaderValue::from_str(&text).map_err(|_| Error::Token)?;
     header.set_sensitive(true);
     Ok(header)
 }
@@ -184,24 +242,13 @@ fn authorization(token: &SecretString) -> Result<ureq::http::HeaderValue> {
 pub(super) fn status_error(status: u16, repository: &str, token: bool) -> Error {
     let repository = repository.to_owned();
     match (status, token) {
-        (401 | 403 | 404, false) => Error::GitlabSignIn { repository },
-        (401, true) => Error::GitlabAuthentication,
-        (403, true) => Error::GitlabForbidden { repository },
-        (404, true) => Error::GitlabNotFound { repository },
-        (429, _) => Error::GitlabRateLimit,
-        (status, _) => Error::GitlabStatus(status),
+        (401 | 403 | 404, false) => Error::SignIn { repository },
+        (401, true) => Error::Authentication,
+        (403, true) => Error::Forbidden { repository },
+        (404, true) => Error::NotFound { repository },
+        (429, _) => Error::RateLimit,
+        (status, _) => Error::Status(status),
     }
-}
-
-/// GitLab's `x-next-page`, empty on the last page.
-pub(super) fn next_page(headers: &ureq::http::HeaderMap) -> Option<u32> {
-    headers
-        .get("x-next-page")?
-        .to_str()
-        .ok()?
-        .trim()
-        .parse()
-        .ok()
 }
 
 /// How long a rate-limited project waits: `retry-after` seconds, else until
