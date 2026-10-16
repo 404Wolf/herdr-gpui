@@ -6,7 +6,7 @@
 //! envelope are authoritative; the snapshot that follows shows the result.
 
 use crate::teleport::Host;
-use herdr_client::protocol::ClientShellSnapshot;
+use herdr_client::protocol::{ClientShellSnapshot, ClientShellWorkspace};
 use serde::Deserialize;
 use std::sync::atomic::AtomicBool;
 
@@ -74,15 +74,18 @@ pub(crate) fn choices(snapshot: &ClientShellSnapshot, tab_id: &str) -> Vec<Choic
 /// The workspaces a tab in `workspace_id` can move to: a new workspace first,
 /// then a new tab in each other workspace, in sidebar order.
 pub(crate) fn workspace_choices(snapshot: &ClientShellSnapshot, workspace_id: &str) -> Vec<Choice> {
+    let order: Vec<&ClientShellWorkspace> = crate::sidebar::workspace_entries(&snapshot.workspaces)
+        .into_iter()
+        .map(|(index, _)| &snapshot.workspaces[index])
+        .collect();
     std::iter::once(Choice {
         destination: Destination::NewWorkspace,
         workspace: None,
         place: "New Workspace".into(),
     })
     .chain(
-        snapshot
-            .workspaces
-            .iter()
+        order
+            .into_iter()
             .filter(|workspace| workspace.workspace_id != workspace_id)
             .map(|workspace| Choice {
                 destination: Destination::NewTab {
@@ -155,6 +158,13 @@ pub enum Error {
     Script(#[source] herdr_client::Error),
     #[error("Could not move the pane: herdr returned unexpected output.")]
     Decode(#[source] serde_json::Error),
+    #[error("Could not move pane {pane_id} into the created tab: {source}")]
+    PartialTabMove {
+        pane_id: String,
+        created_tab_id: String,
+        #[source]
+        source: Box<Error>,
+    },
 }
 
 pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
@@ -266,11 +276,10 @@ impl TabRequest {
         let tab_id = outcome_tab(&output)?;
         let tab_id = tab_id.ok_or_else(|| Error::InvalidId(String::new()))?;
         if let Some(tab_label) = &self.tab_label {
-            host.capture(
+            let _ = host.capture(
                 &Host::herdr_line(&["tab", "rename", tab_id.as_str(), tab_label.as_str()]),
                 cancelled,
-            )
-            .map_err(failure)?;
+            );
         }
         for pane_id in &self.rest {
             Request::new(
@@ -279,7 +288,12 @@ impl TabRequest {
                     tab_id: tab_id.clone(),
                 },
             )?
-            .run(host, cancelled)?;
+            .run(host, cancelled)
+            .map_err(|source| Error::PartialTabMove {
+                pane_id: pane_id.clone(),
+                created_tab_id: tab_id.clone(),
+                source: Box::new(source),
+            })?;
         }
         Ok(())
     }

@@ -319,7 +319,13 @@ impl HerdrWindow {
                     Destination::Tab { .. } | Destination::NewWorkspace => crate::Error::StaleTab,
                 });
             }
-            let label = (!target.label.trim().is_empty()).then(|| target.label.clone());
+            let label = snapshot
+                .tabs
+                .iter()
+                .find(|t| t.tab_id == target.tab && t.workspace_id == target.workspace)
+                .map(|t| t.label.as_str())
+                .unwrap_or(target.label.as_str());
+            let label = (!label.trim().is_empty()).then(|| label.to_owned());
             let request = pane_move::TabRequest::new(target.panes.clone(), destination, label)?;
             let host =
                 pane_move::host_for(&self.endpoints[self.selected_endpoint].connection.target)?;
