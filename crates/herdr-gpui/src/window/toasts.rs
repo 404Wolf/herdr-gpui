@@ -172,8 +172,9 @@ impl HerdrWindow {
             },
             Instant::now(),
         )
-        .with_snapshot(snapshot.as_deref())
-        .preview();
+        // Previews keep their own text rather than the pane's context.
+        .preview()
+        .with_snapshot(snapshot.as_deref());
         // Each QA action immediately presents its own card, even offline.
         for endpoint in &mut self.endpoints {
             endpoint.toasts.entries.retain(|(_, n)| !n.visible);
@@ -365,7 +366,24 @@ impl HerdrWindow {
                                             .when(!notice.is_local_feedback(), |body| {
                                                 body.max_h(px(48.)).overflow_hidden()
                                             })
-                                            .child(body),
+                                            // A long task must not wrap the
+                                            // place out of the clipped body.
+                                            .when(notice.described, |d| {
+                                                d.children(body.lines().enumerate().map(
+                                                    |(row, line)| {
+                                                    let endpoint_id = endpoint.id.clone();
+                                                    div()
+                                                        .debug_selector(move || {
+                                                            format!(
+                                                                "toast-body-row-{endpoint_id}-{id}-{row}"
+                                                            )
+                                                        })
+                                                        .truncate()
+                                                        .child(SharedString::from(line.to_owned()))
+                                                    },
+                                                ))
+                                            })
+                                            .when(!notice.described, |d| d.child(body)),
                                     )
                                 }),
                         )

@@ -39,6 +39,37 @@ Closing or detaching the GUI must leave the daemon and its terminals running.
 - Define shared types once in the lowest appropriate layer and re-export them. Do not create mirror enums or convert between them through strings.
 - Do not add a crate, runtime, service container, or speculative transport abstraction without a concrete need. Sibling checkouts are references, not build dependencies.
 
+## Parallel Pull Requests
+
+Many pull requests are open at once, so code that every feature appends to is
+a merge-conflict hotspot. Most past conflicts were two branches adding lines
+at the same spot, or both bumping one hard-coded count.
+
+- Do not assert hard-coded totals such as `assert_eq!(list.len(), 55)` or
+  fixed array lengths like `[T; 98]` for lists features grow. Compare against
+  the source list, assert uniqueness or membership, or use a slice.
+- Declare each item of a growing list once. Prefer one table, or a
+  `macro_rules!` table, that generates the matching `match` arms and `ALL`
+  lists over parallel lists edited in several places.
+- Keep lists whose order carries no meaning (enum variants without derived
+  ordering, asset tables, registries) sorted between `// keep-sorted start`
+  and `// keep-sorted end` markers. Additions then land on different lines.
+  `just check-sorted` (part of `just ci`) enforces the markers and `just sort`
+  fixes them. Never mark a list whose order is shown to users or is a wire
+  contract, such as menu rows or the vendored bincode types.
+- `just hooks` also enables `rerere`, so a resolution is reused when the same
+  conflict returns on another branch, and a `Cargo.lock` merge driver that
+  keeps one side and has Cargo rebuild it before the commit. After a clean
+  merge whose only conflict was the lockfile, the merge stops with the rebuilt
+  lockfile staged: run `git commit --no-edit` to finish it. The rebuild
+  refuses while a `Cargo.toml` or `Cargo.lock` change is unstaged, and an
+  aborted merge's pending rebuild is dropped with a warning. Squash merges
+  rebuild like merges. Cherry-picks, reverts, and rebases commit without
+  these hooks, so they stop with `Cargo.lock` conflicted: run
+  `cargo metadata`, `git add Cargo.lock`, and continue. GitHub's Update
+  branch button runs no hooks; there, run `cargo metadata` and commit
+  `Cargo.lock` by hand.
+
 ## Command Line
 
 `herdr-gpui COMMAND` drives the running app over its control socket, so
@@ -211,6 +242,15 @@ just test-perf
   guidance from the agent harness; add such lines only when the user asks for
   them in the current request.
 - Before creating a PR, review every included commit and the full diff from its base. Include a summary, exact validation commands/results, and remaining manual/native QA.
+- Run `just ci` on the exact commit before creating a PR or pushing to one, so
+  failures surface locally instead of minutes later in CI. `just setup-ci`
+  installs the tools it and the other CI-equivalent recipes need. Fix every
+  failure first; do not open or update a PR on a red or skipped run.
+- After a green run, create or update a single PR comment saying `just ci`
+  ran locally and passed: the commit SHA, the platform (for example macOS
+  arm64), and any extra recipes run (`just release-check`, `just lint-linux`,
+  `just lint-windows`). Edit that comment on later pushes rather than adding
+  a new one, and never post it for a run that failed or did not happen.
 - Include screenshots in any PR that changes something visible: before and
   after images of the real native window, showing the changed area. Add light
   and dark variants when colors or theming change, and a narrow window when

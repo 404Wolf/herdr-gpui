@@ -14,6 +14,7 @@ mod coder;
 mod daytona;
 mod devices;
 mod edit;
+mod features;
 mod files;
 mod font_weight;
 mod fonts;
@@ -25,11 +26,13 @@ pub(crate) mod preferences;
 pub(crate) mod sidebar;
 mod sidebar_style;
 pub(crate) mod status_bar;
+mod status_icons;
 #[cfg(any(feature = "boat", feature = "coder", feature = "daytona"))]
 mod table;
 mod theme;
 mod updates;
 pub(crate) mod watch;
+mod zen;
 
 pub use backdrop::Backdrop;
 pub use boat::BoatConfig;
@@ -44,6 +47,7 @@ pub(crate) use daytona::DaytonaFields;
 use devices::MAX_DEVICES;
 pub(crate) use devices::{DeviceSettings, KeybindingSource};
 pub(crate) use edit::{Layer, parse_value};
+pub use features::{Feature, Features};
 use files::write_config;
 pub use font_weight::bold as bold_font_weight;
 pub(crate) use fonts::FontFace;
@@ -68,6 +72,7 @@ pub(crate) use sidebar::{
 pub(crate) use sidebar_style::DeviceFooter;
 pub use sidebar_style::{SelectMode, SidebarOverrides, SidebarStyle};
 pub use status_bar::StatusBar;
+pub use status_icons::StatusIcons;
 use std::{
     collections::BTreeMap,
     env, fs,
@@ -78,6 +83,7 @@ pub use theme::Theme;
 pub(crate) use theme::ThemeName;
 pub(crate) use theme::mix;
 pub use updates::{UpdateChannel, UpdatesConfig};
+pub use zen::{Zen, ZenWidth};
 
 const DEFAULT_CONFIG: &str = include_str!("../config-gpui.example.toml");
 // Compare the first line so Windows checkouts and editors can use CRLF.
@@ -111,6 +117,8 @@ pub struct Config {
     pub show_sidebar_search: bool,
     /// The repository owner's avatar, or the GitHub mark, before a space's name.
     pub show_repository_icons: bool,
+    /// Drawn status icons in place of Herdr's dots or symbols; `None` follows Herdr.
+    pub status_icons: Option<StatusIcons>,
     /// The mark before a device's name in the sidebar, in the layouts that
     /// draw one: where the device runs and how it is reached.
     pub show_device_icons: bool,
@@ -127,6 +135,8 @@ pub struct Config {
     pub focus_follows_mouse: bool,
     /// Which status bar items show, and how compactly.
     pub status_bar: StatusBar,
+    /// What Toggle Zen Mode does beyond hiding the chrome.
+    pub zen: Zen,
     /// What shows behind the main window's terminals and chrome.
     pub backdrop: Backdrop,
     /// How far the app's own marks and labels stand off its chrome.
@@ -191,8 +201,8 @@ pub struct Config {
     pub(crate) missing_weight: Option<font_weight::MissingWeight>,
 }
 
-/// Where a clicked terminal link opens. Alt-click (Option on macOS) opens it
-/// in the other one.
+/// Where a link-modifier click on a terminal's web link opens it. Holding
+/// Alt (Option on macOS) as well opens it in the other one.
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum LinkTarget {
@@ -352,15 +362,6 @@ impl<'de> Deserialize<'de> for OptionAsAlt {
     }
 }
 
-/// Optional behaviors the config file turns on. Every flag is off by default,
-/// so a missing or empty `[features]` table is the shipped experience.
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(default)]
-pub struct Features {
-    /// Open a space's menu when the pointer rests on its sidebar row.
-    pub sidebar_hover_menu: bool,
-}
-
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct GitHubConfig {
@@ -432,6 +433,7 @@ impl Default for Config {
             show_agents: true,
             show_sidebar_search: true,
             show_repository_icons: true,
+            status_icons: None,
             show_device_icons: true,
             show_system_load: true,
             agent_checkpoints: true,
@@ -439,6 +441,7 @@ impl Default for Config {
             smooth_scroll: true,
             focus_follows_mouse: true,
             status_bar: StatusBar::default(),
+            zen: Zen::default(),
             backdrop: Backdrop::default(),
             contrast: Contrast::default(),
             usage: crate::usage::UsageConfig::default(),
@@ -489,6 +492,7 @@ struct Settings {
     show_agents: Option<bool>,
     show_sidebar_search: Option<bool>,
     show_repository_icons: Option<bool>,
+    status_icons: Option<StatusIcons>,
     show_device_icons: Option<bool>,
     show_system_load: Option<bool>,
     agent_checkpoints: Option<bool>,
@@ -496,6 +500,7 @@ struct Settings {
     smooth_scroll: Option<bool>,
     focus_follows_mouse: Option<bool>,
     status_bar: StatusBar,
+    zen: zen::ZenSettings,
     backdrop: Backdrop,
     contrast: Contrast,
     usage: crate::usage::UsageConfig,
@@ -543,9 +548,10 @@ pub(crate) fn home() -> Result<PathBuf> {
 
 /// The directory holding this app's `herdr` configuration directory. Upstream
 /// Herdr puts it under `%APPDATA%` on Windows, and the GUI config lives beside
-/// the daemon's, so the same root has to be used on both sides.
+/// the daemon's, so the same root has to be used on both sides, including the
+/// login shell's `XDG_CONFIG_HOME` for a launch that did not inherit it.
 fn config_root() -> Result<PathBuf> {
-    match env::var_os("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
+    match herdr_client::local_var("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
         Some(value) => {
             let path = PathBuf::from(value);
             if !path.is_absolute() {
@@ -697,13 +703,13 @@ impl Config {
     }
 
     pub fn load() -> Result<Self> {
-        Self::load_path(&Self::path()?, &daemon_config_path(|key| env::var_os(key)))
+        Self::load_path(&Self::path()?, &daemon_config_path(herdr_client::local_var))
     }
 
     /// First-frame settings only: no lock, migration, writes, or fsync. The
     /// background load performs maintenance after the window has appeared.
     pub(crate) fn load_startup() -> Result<Self> {
-        Self::load_startup_path(&Self::path()?, &daemon_config_path(|key| env::var_os(key)))
+        Self::load_startup_path(&Self::path()?, &daemon_config_path(herdr_client::local_var))
     }
 
     fn load_startup_path(path: &Path, daemon: &Path) -> Result<Self> {
@@ -884,6 +890,7 @@ impl Config {
         config.show_agents = settings.show_agents.unwrap_or(true);
         config.show_sidebar_search = settings.show_sidebar_search.unwrap_or(true);
         config.show_repository_icons = settings.show_repository_icons.unwrap_or(true);
+        config.status_icons = settings.status_icons;
         config.show_device_icons = settings.show_device_icons.unwrap_or(true);
         config.show_system_load = settings.show_system_load.unwrap_or(true);
         config.agent_checkpoints = settings.agent_checkpoints.unwrap_or(true);
@@ -891,6 +898,7 @@ impl Config {
         config.smooth_scroll = settings.smooth_scroll.unwrap_or(true);
         config.focus_follows_mouse = settings.focus_follows_mouse.unwrap_or(true);
         config.status_bar = settings.status_bar;
+        config.zen = settings.zen.try_into()?;
         settings.backdrop.validate()?;
         config.backdrop = settings.backdrop;
         config.contrast = settings.contrast;

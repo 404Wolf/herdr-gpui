@@ -195,6 +195,11 @@ pub(crate) struct Review {
 }
 
 impl Review {
+    /// The handle the tab holds the keyboard with.
+    pub(crate) fn focus(&self) -> &FocusHandle {
+        &self.focus
+    }
+
     fn loaded(&self) -> Option<&Loaded> {
         match &self.state {
             State::Loaded(loaded) => Some(loaded),

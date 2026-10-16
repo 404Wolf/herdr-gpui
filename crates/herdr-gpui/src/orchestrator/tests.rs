@@ -4,7 +4,9 @@ use chrono::{DateTime, Utc};
 #[cfg(unix)]
 mod actions;
 mod beads;
+mod full_listing;
 mod github;
+mod incremental;
 mod keys;
 mod location;
 mod naming;

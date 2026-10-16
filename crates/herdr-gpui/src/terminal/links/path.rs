@@ -1,7 +1,7 @@
-//! Local file paths in one row of terminal text, the way a compiler, a test
-//! runner, or `git status` prints them. Reading the row is all this does:
-//! whether the file exists is only checked, off the UI thread, once the path
-//! is clicked.
+//! Text in one row of a terminal that may name a local file, the way a
+//! compiler, a test runner, `git status`, or `ls` prints one. Any word may:
+//! reading the row is all this does, and whether a file is there is asked,
+//! off the UI thread, once the link modifier is held over the word.
 
 use super::super::selection::separates;
 use std::{borrow::Cow, ops::Range};
@@ -55,11 +55,6 @@ pub(super) fn plain_path(text: &str, hit: usize) -> Option<PlainPath<'_>> {
     }
     let (escaped, line) = without_location(token);
     let path = unescape(escaped);
-    // A bare name such as `README.md` or `v1.2` reads as a path only when
-    // a location says so, as in `main.rs:12`.
-    if !path.contains('/') && escaped.len() == token.len() {
-        return None;
-    }
     looks_like_path(&path).then_some(PlainPath {
         range: start..start + token.len(),
         path,

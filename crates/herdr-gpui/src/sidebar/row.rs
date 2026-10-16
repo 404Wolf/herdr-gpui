@@ -175,6 +175,50 @@ pub(super) fn tree_lines(
     ]
 }
 
+/// The trunk a child row's gutter carries on through the lines that ride
+/// under it (its note, its ports), so the next sibling stays tied to the same
+/// tree. A last child's elbow has already ended, so it has none, and neither
+/// does a row whose density draws no tree lines. Absolute: the caller places it
+/// in a relative box spanning those lines.
+pub(super) fn trunk_below(key: &str, tree: RowTree, cx: &RowContext<'_>) -> Option<Div> {
+    let layout = cx.look.density;
+    let extra_status_width = cx.indicators.width(cx.font) - STATUS_WIDTH;
+    // The same gutter `row` reserves between the parent's label column and
+    // the child's dot, so the trunk lines up with the one painted in the row.
+    let tree_width = layout.padding() + layout.child_indent() - layout.tree_gutter();
+    if tree != RowTree::Child || !layout.tree_lines || tree_width <= 0. {
+        return None;
+    }
+    let color = cx.theme.muted;
+    let key = key.to_owned();
+    Some(
+        div()
+            .debug_selector(move || format!("trunk-{key}"))
+            .absolute()
+            .left(px(cx.nest + cx.look.tree_gutter() + extra_status_width))
+            .w(px(tree_width))
+            .top_0()
+            .bottom_0()
+            .child(
+                canvas(
+                    |_, _, _| (),
+                    move |bounds, _, window, _| {
+                        let scale = window.scale_factor();
+                        let snap = |value: Pixels| px((f32::from(value) * scale).round() / scale);
+                        let x = snap(bounds.origin.x);
+                        let weight = px(scale.round().max(1.) / scale);
+                        let trunk = Bounds::from_corners(
+                            point(x, snap(bounds.origin.y)),
+                            point(x + weight, snap(bounds.bottom())),
+                        );
+                        window.paint_quad(fill(trunk, rgb(color)));
+                    },
+                )
+                .size_full(),
+            ),
+    )
+}
+
 /// A row's first line: segments joined by upstream's separator, the primary one
 /// carrying the row's weight and color while the rest stay muted. Segments are
 /// placed at measured offsets rather than flexed, because GPUI 0.2.2 only
@@ -461,19 +505,24 @@ pub(super) fn row(
             )
         })
         .when(show_status, |row| {
-            row.child(if removing {
-                div()
-                    .w(px(indicators.width(font)))
-                    .mt(px((line_height(font) - STATUS_WIDTH) / 2.))
-                    .flex_none()
-                    .flex()
-                    .justify_center()
-                    .child(removing_dot("worktree-removing", theme))
-            } else if let Some(token) = leading_icon {
-                configured_status(token, status, cx)
-            } else {
-                status_indicator(status, font, indicators)
-            })
+            let centered = indicators.centered();
+            row.child(
+                if removing {
+                    div()
+                        .w(px(indicators.width(font)))
+                        .mt(px((line_height(font) - STATUS_WIDTH) / 2.))
+                        .flex_none()
+                        .flex()
+                        .justify_center()
+                        .child(removing_dot("worktree-removing", theme))
+                } else if let Some(token) = leading_icon {
+                    configured_status(token, status, cx)
+                } else {
+                    status_indicator(status, font, indicators)
+                }
+                .debug_selector(|| format!("mark-{key}"))
+                .when(centered, |slot| slot.mt_0().self_center()),
+            )
         })
         .child(
             div()

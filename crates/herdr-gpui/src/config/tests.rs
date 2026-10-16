@@ -14,6 +14,7 @@ mod device_icons;
 mod device_theme;
 mod discovery;
 mod edit;
+mod features;
 mod finished_notifications;
 mod focus_follows_mouse;
 mod font_aliases;
@@ -34,12 +35,14 @@ mod sidebar_settings;
 mod sidebar_style;
 mod sound_volume;
 mod status_bar;
+mod status_icons;
 mod system_themes;
 mod terminal_padding;
 mod theme_files;
 mod themes;
 mod update_channel;
 mod usage_inline;
+mod zen;
 
 struct TempDirectory(PathBuf);
 

@@ -92,7 +92,9 @@ parent Wayland socket without exposing its HOME or runtime directory to daemons.
   a `BREAKING CHANGE: <what breaks>` footer.
 - Run `just hooks` once per clone to install the `commit-msg` hook that checks
   this locally; CI checks it again for every commit in a pull request. Preview
-  the result with `just changelog-unreleased`.
+  the result with `just changelog-unreleased`. The same recipe enables
+  `rerere` and a `Cargo.lock` merge driver; see Parallel Pull Requests in
+  `AGENTS.md`.
 - `main` requires a pull request and green CI. Review your own full diff
   against the base before marking it ready.
 - State the validation you actually ran, and say plainly which native or

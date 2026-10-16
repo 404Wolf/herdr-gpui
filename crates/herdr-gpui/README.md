@@ -569,7 +569,13 @@ are refused, and a file the GUI creates is private (`0600`).
 ## Configuration
 
 GUI settings live in `$XDG_CONFIG_HOME/herdr/`, falling back to
-`~/.config/herdr/` and, on Windows, to `%APPDATA%\herdr\`:
+`~/.config/herdr/` and, on Windows, to `%APPDATA%\herdr\`. An app opened from
+Finder or a desktop launcher does not inherit a shell's `XDG_CONFIG_HOME`, so
+when it has none and no daemon answers at `~/.config/herdr/` (a socket file
+an exited daemon left behind does not count), it asks the login shell for its
+value once at startup and uses it for these settings, the daemon's
+`config.toml`, and the daemon's sockets. A daemon the app starts is given the
+same root, so it listens where the app connects:
 
 - `config-gpui.toml` contains managed defaults and documentation. Its first line
   warns **DO NOT EDIT -- WILL BE OVERWRITTEN**. Startup and GUI config reload
@@ -602,7 +608,8 @@ action remains available; daemon config reload is separate.
 
 Settings opens a separate, reusable native window with **Appearance, Fonts,
 Indicators, Sound, Notifications, Integrations, Plugins, Code, and General** in
-a sidebar.
+a sidebar. General lists every optional `[features]` flag with a switch and a
+description of what it does.
 The terminal stays usable while Settings is open. Cmd-W (or Ctrl-W) closes only
 Settings; reopening activates the existing window instead of creating a duplicate.
 Local preferences remain editable if the originating session window closes.
@@ -730,9 +737,19 @@ by the next error too. The app does not change permissions automatically.
 Existing native theme selections remain overrides. Choose **Follow Herdr** to
 use the shared theme, all 18 upstream palettes, custom colors, and automatic
 light/dark selection. Selecting a shared theme disables upstream auto-switching,
-as in the TUI. Status indicators always use the shared indicator style and shared
-status colors, independent of a native terminal theme override. Terminal/default
-reset colors are projected to opaque native colors.
+as in the TUI. Status indicators always use the shared status colors,
+independent of a native terminal theme override, and the shared indicator style
+unless **Settings > Indicators** picks one of this app's own icon sets: Solid,
+Tiles, or Edge rail, saved as `status_icons` in `config-gpui.local.toml`. Herdr
+accepts only `dots` or `symbols` in `ui.status_indicators`, so these never reach
+the shared file, and the TUI keeps its own choice. The icons are about a line
+tall and replace the dot wherever one shows, tabs and the collapsed sidebar
+included. Herdr's own rows and Orca's cards center them across all of a row's
+lines, and Superset badges its icon slot with them. Edge rail also draws a bar
+on the leading edge of each working, done, or blocked row, in every layout.
+Choosing Dots or Symbols again removes `status_icons`; where the shared file is
+read-only, as on Windows, the style Herdr already uses stays available for that.
+Terminal/default reset colors are projected to opaque native colors.
 
 A saved SSH device can paint its terminal with a theme of its own, so the host
 an agent runs on shows where you are looking rather than only in the sidebar.
@@ -1022,8 +1039,8 @@ spacing:
 
 - `superset`: one line per row. An icon slot carries the pull request's state
   or the repository owner, with the activity status as a compact corner badge
-  (dot or symbol, following the indicator setting) that leaves the main icon
-  visible. The PR's change counts sit on the right, and the focused row is filled
+  (dot, symbol, or drawn icon, following the indicator setting) that leaves the
+  main icon visible; Tiles tint the whole slot instead. The PR's change counts sit on the right, and the focused row is filled
   with a stripe down its leading edge. Agents show where they run after their name.
 - `orca`: inset cards with a status column, the name and a `primary` mark on a
   repository's own checkout, then a meta line with the host, the branch when it
@@ -1480,6 +1497,10 @@ paths containing control characters are rejected rather than altered.
 On an SSH endpoint, a single supported image is transferred as described below.
 Other regular files and multiple-file drops are streamed using the SSH file-copy
 path below. POSIX shell escaping is not intended for Windows command shells.
+
+Files copied in the file manager (Cmd-C in Finder) and pasted into the focused
+pane or popup with Cmd-V are handled the same way as a drop. Finder also puts
+each file's name on the clipboard as text; the paste uses the full paths instead.
 
 ## SSH File Copies
 
@@ -1955,40 +1976,71 @@ tests remain useful for cancellation and ordering, but do not exercise NSPastebo
 
 ## Terminal Links
 
-Click an explicit terminal hyperlink or a visible `http://` / `https://` URL to
-open it in your default browser. A hand cursor indicates a clickable destination.
-In a mouse-aware application, hold Shift while clicking to open a link locally
-instead of sending the click to the application.
-Only HTTP and HTTPS destinations are opened. Links inside a popup target that
-popup, and menus block activation. Dragging does not activate a link: a drag
-across a link copies it as text, and the click that opens it is the one that
-never left the half-cell it pressed in.
+Cmd-click (Ctrl-click elsewhere) a link in a pane to open it. A click without
+the modifier opens nothing: it selects, focuses, or goes to the application.
 
-Plain URL detection is limited to one row within one pane; links that wrap or
-reach the right edge need explicit terminal hyperlink metadata. Other URI schemes
-are not activated.
+Each visual element has one meaning:
 
-Cmd-click (Ctrl-click elsewhere) a file path a pane prints, such as
-`src/main.rs:12:5`, `./build/out`, `~/notes.md`, or a `file://` hyperlink, to
-open it. Holding the modifier underlines the path under the pointer. Relative
-paths resolve against the pane's working directory, and a path opens only if it
-exists. A backslash-escaped path, as a file drop pastes, opens the unescaped
-name. A bare name needs a location (`main.rs:3`) to count as a path, and
-paths are not detected in panes on SSH hosts, whose files live on that host.
+- **A dashed underline** marks text that may be a link and is not verified.
+  An explicit terminal hyperlink (OSC 8) says it is a link, so it has one at
+  rest.
+- **A solid underline** marks text that is verified as a link.
+- **A hand cursor** marks text that a click acts on.
+
+A pointer that only passes over text shows and checks nothing. Holding the
+modifier over text says that you mean to use it as a link, and only then is
+the text verified:
+
+- **An address** is verified when it is well formed. Plain text is read as one
+  for `http://`, `https://`, `mailto:`, and `vscode:`; any other scheme there
+  is plain text.
+- **A file path** is verified when the file or folder exists, which the app
+  checks in the background. Any printed word may be one, such as
+  `src/main.rs:12:5`, `./build/out`, `~/notes.md`, `README.md`, or a
+  `file://` address. Relative paths resolve against the pane's working
+  directory. A backslash-escaped path, as a file drop pastes, names the
+  unescaped file.
+
+Verified text gets the solid underline and the hand cursor, and the modifier
+click opens it. In a mouse-aware application, the modifier click on a link
+opens it instead of going to the application; hold Shift to select text there.
+Links inside a popup target that popup, and menus block activation. Dragging
+does not activate a link: a drag across a link copies it as text, and the
+click that opens it is the one that never left the half-cell it pressed in.
+
+An explicit hyperlink shows the hand cursor whenever the modifier is held, and
+its dashes turn solid once its target is verified:
+
+- **A web, `mailto:`, or `vscode:` address** opens: web addresses in your
+  default browser, the others in the application registered for them.
+- **An address with any other scheme** first shows the whole address and asks
+  whether to open it, because terminal output is untrusted and such an address
+  starts another application.
+- **A file**, named by a `file://` address or by a target without a scheme
+  such as `/tmp/a`, `~/notes.md`, or `./src/main.rs`, opens when it exists.
+  When it does not, the link keeps its dashes and a click says that the file
+  was not found.
+- **A `file://` address on another host**, or a target that is no valid
+  address, keeps its dashes; a click says why nothing opens.
+
+A plain URL is read from its row. One that reaches the pane's right edge may
+wrap onto the next row; a daemon that offers `pane.link.resolve` reads it
+whole, and otherwise it needs explicit terminal hyperlink metadata. Paths are
+not links in panes on SSH hosts, whose files live on that host.
 
 A file opens in your terminal editor at the printed line, in a new pane split
 to the right of the pane that printed it (see [Code Navigation](#code-navigation)).
 Folders, images, videos, and PDFs open with the system's default application
-instead, as does every file with `open_files_in = "system"`. Alt-click
-(Option-click on macOS) opens a file in the other one. There, terminal output
+instead, as does every file with `open_files_in = "system"`. Holding Alt
+(Option on macOS) as well opens a file in the other one. There, terminal output
 is untrusted, so a click never launches anything: only a plain folder or a
 non-executable document (text, source, Markdown, JSON, images, PDF, and
 similar) opens itself, judged by where symlinks lead. An application, script,
 or unknown file type opens the folder that holds it, and a network path opens
 nothing.
 
-Set `open_links_in = "browser-tab"` to open links in a [browser tab](#browser-tabs)
-instead. Alt-click (Option-click on macOS) opens a link in the other target.
+Set `open_links_in = "browser-tab"` to open web links in a [browser tab](#browser-tabs)
+instead. Holding Alt (Option on macOS) as well opens a link in the other target.
 
 With a daemon that offers it, a link click, a file path or `file://` hyperlink
 included, first goes to the daemon so a plugin's `[[link_handlers]]` entry can
@@ -2920,7 +2972,8 @@ Ctrl+Shift+U is left unbound for
   when the daemon confirms the selection. A compact header repeats the target name
   and Git branch. Right-clicking another visible space while this menu is open
   selects it and switches the menu in one click.
-  With `features.sidebar_hover_menu` enabled, resting the pointer on a
+  With `features.sidebar_hover_menu` enabled (**Settings > General > Open
+  space menus on hover**), resting the pointer on a
   space of the selected connection opens the same menu, and moving the pointer
   anywhere but into that menu closes it again; the flag is off by default, so
   spaces normally open their menu only on right-click, and a menu opened by

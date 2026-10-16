@@ -59,6 +59,11 @@ impl SidebarSearch {
         }
     }
 
+    /// The field's handle, which holds the keyboard while it is typed in.
+    pub(crate) fn focus(&self, cx: &App) -> gpui::FocusHandle {
+        self.input.read(cx).focus.clone()
+    }
+
     /// The query results are shown for: none while the field is blank.
     pub(super) fn query(&self) -> Option<&str> {
         Some(self.query.trim()).filter(|query| !query.is_empty())
@@ -254,9 +259,8 @@ impl HerdrWindow {
         };
         let notes = crate::worktree_notes::Notes::of(cx);
         let devices: Vec<_> = self
-            .endpoints
-            .iter()
-            .enumerate()
+            .displayed_devices()
+            .into_iter()
             .filter(|(_, endpoint)| self.device_visible(&endpoint.id))
             .map(|(index, endpoint)| {
                 let live = if index == self.selected_endpoint {

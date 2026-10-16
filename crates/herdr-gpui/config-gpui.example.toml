@@ -54,6 +54,12 @@ show_sidebar_search = true
 # name in the sidebar, in the layouts that draw one (not orca or minimal).
 # Also under Settings > Appearance > Sidebar layout.
 show_repository_icons = true
+# Draw agent status as icons instead of Herdr's dots or symbols: "solid"
+# (filled discs), "tiles" (each mark on a tinted tile), or "rail" (outline
+# marks plus a bar on the edge of each working, done, or blocked row). Only
+# this app draws them; unset follows Herdr's `ui.status_indicators`.
+# Also under Settings > Indicators.
+# status_icons = "solid"
 # Show a mark before each device's name in the sidebar for where it runs: this
 # machine, a cloud provider, Tailscale, or SSH. In the layouts that draw one
 # (not orca or minimal). Also under Settings > Appearance > Sidebar layout.
@@ -90,15 +96,16 @@ focus_follows_mouse = true
 # layout, true from both, and false never. Alt always reaches the pane on
 # Linux and Windows.
 option_as_alt = "auto"
-# Where a clicked terminal link opens: "system" (the default browser) or
-# "browser-tab" (a browser tab beside the workspace's terminals, macOS and
-# Windows only). Alt-click (Option-click) opens a link in the other one.
+# Where a Cmd-click (Ctrl-click elsewhere) on a web link in a terminal opens
+# it: "system" (the default browser) or "browser-tab" (a browser tab beside the
+# workspace's terminals, macOS and Windows only). Holding Alt (Option) as well
+# opens a link in the other one.
 open_links_in = "system"
 # Where a Cmd-click (Ctrl-click elsewhere) on a file path a pane printed, such
 # as `src/main.rs:42`, opens it: "editor" (the terminal editor, at that line,
 # in a pane split beside the one that printed it) or "system" (the default
 # application). Folders, images, and PDFs always open in the system's
-# application, as does every file on Windows. Alt-click (Option-click) opens a
+# application, as does every file on Windows. Holding Alt (Option) as well opens a
 # file in the other one.
 open_files_in = "editor"
 # How that editor starts. Unset, the pane's $VISUAL or $EDITOR runs, then vi,
@@ -214,6 +221,7 @@ project_roots = []
 # focus_tab_1 = "cmd-1"   # through focus_tab_9 = "cmd-9"
 # toggle_sidebar = "cmd-b"
 # toggle_status_bar = "cmd-ctrl-b"   # unbound by default
+# toggle_zen_mode = "ctrl-cmd-z"   # Linux: "ctrl-alt-z"
 # increase_font_size = ["cmd-=", "cmd-+"]
 # decrease_font_size = "cmd--"
 # reset_font_size = "cmd-0"
@@ -466,7 +474,21 @@ size = 12
 # shortcuts = "label"
 # report_issue = "label"
 
-# Optional behaviors, all off unless turned on here.
+# Zen mode (View > Toggle Zen Mode, or `toggle_zen_mode`) hides the
+# header, sidebar, tab strips, status bar, and notices, and every group but
+# the one in use, for this window and session. Toasts and menus still show.
+# [zen]
+# Also enter native full screen, leaving it again when zen mode ends.
+# fullscreen = false
+# Centre a column this many terminal columns wide (20 to 1000), or this share
+# of the window ("10%" to "100%"), with blank room either side. Unset uses the
+# whole width.
+# width = 120
+# The terminal font size while in zen mode (8 to 48); the previous size comes
+# back when it ends. Unset keeps the current size.
+# font_size = 24
+
+# Optional behaviors, all off unless turned on here or in Settings > General.
 # [features]
 # Open a space's menu when the pointer rests on its sidebar row, without a
 # right click. Moving the pointer anywhere but into that menu closes it again.

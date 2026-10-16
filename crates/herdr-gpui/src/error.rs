@@ -608,6 +608,14 @@ pub enum Error {
     StateFileSize { path: PathBuf, limit: u64 },
     #[error("Browser tabs open only http and https addresses with a host, of at most 8 KiB.")]
     InvalidBrowserUrl,
+    #[error("Not an address with a scheme other than http, https, and file, of at most 8 KiB.")]
+    InvalidExternalUrl,
+    #[error("This link names a file on another computer, {host}. It is not opened from here.")]
+    LinkOnAnotherHost { host: String },
+    #[error("This link's address is not valid, so it opens nothing.")]
+    MalformedLink,
+    #[error("File not found: {}", path.display())]
+    LinkedFileMissing { path: PathBuf },
     #[error(
         "Local pages must be a plain file in a folder that is not hidden and does not hold your home directory."
     )]
@@ -809,6 +817,10 @@ pub enum Error {
     TooManyFontFallbacks(&'static str),
     #[error("layout.sidebar_gap must be finite and between 0 and 64 logical pixels")]
     InvalidSidebarGap,
+    #[error("zen.width must be 20 to 1000 columns, or a percentage from \"10%\" to \"100%\"")]
+    InvalidZenWidth,
+    #[error("zen.font_size must be finite and between 8 and 48 logical pixels")]
+    InvalidZenFontSize,
     #[error("sound.volume must be between 0 and 100")]
     InvalidSoundVolume,
     #[error(

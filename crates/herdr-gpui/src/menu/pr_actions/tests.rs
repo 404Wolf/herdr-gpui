@@ -28,7 +28,7 @@ fn open(
                 .seed(input(), pr, std::time::Instant::now());
             view.pr_actions.track(
                 view.git_open_pull_request()
-                    .and_then(|pr| crate::pr_actions::Target::try_from(pr).ok()),
+                    .and_then(|pr| crate::pr_actions::Target::try_from(&*pr).ok()),
             );
             view.open_git_menu(point(px(860.), px(20.)), window, cx);
         })

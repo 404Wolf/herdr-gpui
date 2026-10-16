@@ -1,7 +1,9 @@
 //! Prepared controls for the standalone window; persistence belongs to its serial save path.
 mod backdrop;
 pub(super) mod code;
+mod features;
 mod fonts;
+mod indicators;
 pub(super) mod plugins;
 mod preferences;
 mod sidebar_layout;
@@ -452,86 +454,6 @@ impl SettingsWindow {
             .child(content)
     }
 
-    fn render_indicator_controls(&self, cx: &mut Context<Self>) -> Div {
-        use herdr_client::protocol::AgentStatus;
-        let mut card = self.control_card("Agent status indicators");
-        let ready = self.controls_shared_ready();
-        let light = matches!(
-            cx.window_appearance(),
-            WindowAppearance::Light | WindowAppearance::VibrantLight
-        );
-        for (label, style) in [
-            ("Dots", IndicatorStyle::Dots),
-            ("Symbols", IndicatorStyle::Symbols),
-        ] {
-            let selected = self
-                .shared
-                .as_ref()
-                .is_some_and(|shared| shared.indicators == style);
-            let mut choice = self
-                .control_choice(
-                    format!("settings-indicators-{label}"),
-                    label,
-                    selected,
-                    ready,
-                )
-                .flex()
-                .flex_col()
-                .gap(px(18.))
-                .when(ready, |choice| {
-                    choice.on_click(cx.listener(move |this, _, _, cx| {
-                        this.save_shared(Edit::Indicators(style), cx)
-                    }))
-                });
-            if let Some(shared) = &self.shared {
-                let mut preview = div().flex().flex_wrap().gap(px(20.));
-                for (status, name, symbol) in [
-                    (AgentStatus::Working, "Working", "\u{25d0}"),
-                    (AgentStatus::Blocked, "Blocked", "\u{d7}"),
-                    (AgentStatus::Done, "Done", "\u{2713}"),
-                    (AgentStatus::Idle, "Idle", "\u{25cb}"),
-                    (AgentStatus::Unknown, "Unknown", "\u{b7}"),
-                ] {
-                    let color = rgb(self.theme.ink(shared.status_color(status, light)));
-                    let mark = div()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .w(px(self.config.ui.size))
-                        .h(px(self.config.ui.line_height()))
-                        .when(style == IndicatorStyle::Symbols, |mark| {
-                            mark.text_color(color).child(symbol)
-                        })
-                        .when(style == IndicatorStyle::Dots, |mark| {
-                            mark.child(
-                                div()
-                                    .size(px(if status == AgentStatus::Unknown {
-                                        3.
-                                    } else {
-                                        7.
-                                    }))
-                                    .rounded_full()
-                                    .border_1()
-                                    .border_color(color)
-                                    .when(status != AgentStatus::Idle, |dot| dot.bg(color)),
-                            )
-                        });
-                    preview = preview.child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(6.))
-                            .child(mark)
-                            .child(name),
-                    );
-                }
-                choice = choice.child(preview);
-            }
-            card = card.child(choice);
-        }
-        card
-    }
-
     fn render_sound_controls(&self, cx: &mut Context<Self>) -> Div {
         let ready = self.controls_shared_ready();
         let enabled = self
@@ -707,6 +629,7 @@ impl SettingsWindow {
                 cx,
             ))
             .children(self.mouse_switches(cx))
+            .children(self.feature_switches(cx))
             .children(self.confirm_close_switches(cx))
             .children(self.merged_worktree_controls(cx));
         div().flex().flex_col().gap(px(24.)).child(general)

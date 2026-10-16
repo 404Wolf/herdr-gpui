@@ -132,6 +132,10 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Check source file sizes
         run: bash scripts/check-file-size.sh
+      - name: Check keep-sorted regions
+        run: |
+          python3 scripts/test_check_sorted.py
+          python3 scripts/check-sorted.py
       - name: Test mockup feedback receiver
         run: python3 .claude/skills/gpui-mockup/scripts/test_wait.py
       - name: Lint every target and feature

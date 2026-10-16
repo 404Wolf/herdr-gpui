@@ -24,6 +24,7 @@ mod images;
 mod input;
 mod lifecycle;
 mod links;
+mod monitors;
 pub(crate) use links::PressedLink;
 mod mouse;
 mod pending_input;
@@ -38,10 +39,14 @@ mod sound;
 mod status_bar;
 pub(crate) mod system_notifications;
 mod tab_drag;
+#[cfg(target_os = "macos")]
+mod tab_float;
+mod tab_ghost;
 mod tab_strip;
 mod tab_tear;
 mod toasts;
 mod transfers;
+mod zen;
 #[cfg(test)]
 pub(crate) use transfers::tests::Peer as MockPeer;
 
@@ -277,12 +282,19 @@ pub(crate) struct HerdrWindow {
     /// Starts as `config.status_bar.show`; Toggle Status Bar flips it for the
     /// session, and a reload that changes the setting applies it again.
     pub(crate) status_bar_visible: bool,
+    /// Hides the chrome over the status bar and sidebar flags; see `zen`.
+    pub(crate) zen: zen::ZenState,
     pub(crate) device_filter: Option<String>,
     pub(crate) wheel: WheelAccumulator,
     pub(crate) sidebar_width: Option<f32>,
     pub(crate) sidebar_drag: Option<sidebar::SidebarDrag>,
     /// A press on a workspace row that may lift it for reordering.
     pub(crate) workspace_drag: Option<sidebar::WorkspaceDrag>,
+    /// A press on a device's header that may lift it for reordering.
+    pub(crate) device_drag: Option<sidebar::DeviceDrag>,
+    /// The device IDs in the order the user dragged them into; see
+    /// `endpoint::order`.
+    pub(crate) device_order: Vec<String>,
     /// A press on a tab that may lift it for reordering.
     pub(crate) tab_drag: Option<tab_drag::TabDrag>,
     pub(crate) sidebar_split: Option<f32>,
@@ -305,10 +317,15 @@ pub(crate) struct HerdrWindow {
     /// A spaces row revealed last frame, which the next render moves out from
     /// under the pinned host header if it landed there.
     pub(crate) sidebar_pin_reveal: std::cell::Cell<Option<usize>>,
+    /// Whether the last spaces list render was folded to its headers for a
+    /// lifted device, whose geometry the next frame must not pin from.
+    pub(crate) sidebar_folded: std::cell::Cell<bool>,
     pub(crate) sidebar_search: sidebar::SidebarSearch,
     pub(crate) _poll: Task<()>,
     pub(crate) _activation: Subscription,
     pub(crate) _appearance: Subscription,
+    /// Lists again the tabs carried off to a window that closed.
+    pub(crate) _window_closed: Subscription,
     /// The sidebar as a cached view; see `sidebar::SidebarView`.
     pub(crate) sidebar_view: Entity<sidebar::SidebarView>,
     /// Notified in place of this view by a surface-only update, which redraws
@@ -349,6 +366,7 @@ impl HerdrWindow {
         cx.observe_self(|this, cx| {
             let indicators = sidebar::Indicators::new(
                 this.settings.shared.as_ref(),
+                this.config.status_icons,
                 matches!(
                     cx.window_appearance(),
                     WindowAppearance::Light | WindowAppearance::VibrantLight
@@ -421,6 +439,11 @@ impl HerdrWindow {
         }
         if self.review_files_width.chosen().is_none() {
             self.review_files_width.restore(chrome.review_files_width);
+        }
+        // A device dragged before the stored order loaded keeps its place.
+        if self.device_order.is_empty() {
+            self.device_order = chrome.device_order;
+            self.arrange_devices();
         }
         if !self.agent_sort_modified
             && let Some(sort) = chrome.agent_sort
@@ -573,161 +596,6 @@ impl HerdrWindow {
         self.sync_window_title(window);
     }
 
-    /// Plan usage follows the selected host: a remote host reports its own
-    /// agents' sign-ins, never this machine's.
-    fn update_usage(&mut self, cx: &mut Context<Self>) -> bool {
-        let host = self
-            .config
-            .usage
-            .show
-            .then(|| self.endpoints.get(self.selected_endpoint))
-            .flatten()
-            .and_then(|endpoint| crate::usage::Host::of(&endpoint.connection.target));
-        let granted = crate::usage::KeychainGrants::granted(cx);
-        let changed = self.usage.poll(
-            host,
-            &self.config.usage,
-            &granted,
-            self.config_load_revision,
-            self.active,
-            std::time::Instant::now(),
-        );
-        // A denied prompt takes the grant back, so a later launch does not
-        // ask again in the background.
-        for provider in self.usage.take_denied() {
-            crate::usage::KeychainGrants::revoke(provider, cx);
-        }
-        changed
-    }
-
-    /// CPU and memory are sampled for every enabled host, while they are
-    /// shown, a Devices overview is open, or a host picker ranks hosts by them.
-    fn update_system_load(&mut self) -> bool {
-        if !self.config.show_system_load
-            && !self.devices_overview_open()
-            && !self.dispatch_sampling()
-            && !self.orchestrator_sampling
-        {
-            return self.system_load.poll(Vec::new());
-        }
-        let hosts = self.watched_hosts();
-        self.system_load.poll(hosts)
-    }
-
-    /// Listening ports are scanned on the same hosts as CPU and memory.
-    fn update_listening_ports(&mut self) -> bool {
-        if !self.config.show_listening_ports {
-            self.tunnels.close_all();
-            return self.listening_ports.poll(Vec::new());
-        }
-        let hosts = self.watched_hosts();
-        let changed = self.listening_ports.poll(hosts);
-        // A tunnel lives as long as its remote port is listed at the address
-        // it dials and its SSH child runs; either ending removes its close
-        // button.
-        let ports = &self.listening_ports;
-        let closed = self.tunnels.retain(|key| ports.tunnels_to(key));
-        changed || closed
-    }
-
-    /// The machines background monitors watch: this one always, a remote
-    /// host while it is connected, so a dropped host is not dialled every
-    /// few seconds.
-    fn watched_hosts(&self) -> Vec<crate::usage::Host> {
-        self.endpoints
-            .iter()
-            .enumerate()
-            .filter(|(index, endpoint)| {
-                let live = if *index == self.selected_endpoint {
-                    &self.live
-                } else {
-                    &endpoint.live
-                };
-                endpoint.enabled
-                    && (live.status.is_connected() || !endpoint.connection.target.is_remote())
-            })
-            .filter_map(|(_, endpoint)| crate::usage::Host::of(&endpoint.connection.target))
-            .collect()
-    }
-
-    /// Agent turns are watched on every enabled, connected host this client
-    /// may run Git on, and finished restores are reported wherever the user is.
-    fn update_checkpoints(&mut self, cx: &mut Context<Self>) {
-        self.close_stale_checkpoints();
-        let enabled = self.config.agent_checkpoints;
-        let mut watched = Vec::new();
-        for (index, endpoint) in self.endpoints.iter().enumerate() {
-            let live = if index == self.selected_endpoint {
-                &self.live
-            } else {
-                &endpoint.live
-            };
-            let (true, true, Some(host), Some(snapshot)) = (
-                enabled,
-                endpoint.enabled && live.status.is_connected(),
-                crate::checkpoint::host_for(&endpoint.connection.target, live),
-                live.snapshot.as_ref(),
-            ) else {
-                continue;
-            };
-            self.checkpoints.observe(&endpoint.id, &host, snapshot);
-            watched.push(endpoint.id.as_str());
-        }
-        self.checkpoints
-            .retain_endpoints(|endpoint| watched.contains(&endpoint));
-        let (changed, restored) = self.checkpoints.poll();
-        for restored in restored {
-            let flash = match restored.result {
-                Ok(()) => Flash::success(format!(
-                    "Restored a checkpoint of {}",
-                    restored.checkout.branch
-                )),
-                Err(error) => Flash::warning(format!(
-                    "Checkpoint not restored: {}",
-                    crate::checkpoint::describe(&error)
-                )),
-            };
-            self.show_flash(flash, cx);
-        }
-        if changed {
-            cx.notify();
-        }
-    }
-
-    /// Forwards outlive a dropped connection, since SSH may still reach the
-    /// host, but end once their host is removed or disabled. A report the
-    /// user did not just ask for is flashed.
-    pub(crate) fn update_port_forwards(&mut self, cx: &mut Context<Self>) {
-        let endpoints = &self.endpoints;
-        let mut changed = self.port_forwards.retain_hosts(|target| {
-            endpoints.iter().any(|endpoint| {
-                endpoint.enabled
-                    && endpoint
-                        .saved_ssh()
-                        .is_some_and(|(saved, _)| saved == target)
-            })
-        });
-        let notices = self.port_forwards.poll();
-        if let Some(notice) = notices.last() {
-            let flash = match notice {
-                crate::port_forward::Notice::Listening { .. } => Flash::success(notice.text()),
-                crate::port_forward::Notice::Ended { .. } => Flash::warning(notice.text()),
-            };
-            self.show_flash(flash, cx);
-            changed = true;
-        }
-        if changed {
-            cx.notify();
-        }
-    }
-
-    /// The machine the selected endpoint runs on.
-    pub(crate) fn selected_host(&self) -> Option<crate::usage::Host> {
-        self.endpoints
-            .get(self.selected_endpoint)
-            .and_then(|endpoint| crate::usage::Host::of(&endpoint.connection.target))
-    }
-
     pub(crate) fn new(
         target: ConnectTarget,
         window: &mut Window,
@@ -742,13 +610,16 @@ impl HerdrWindow {
         };
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
+        // Created by the first window; each later one shares its PR answers.
+        cx.default_global::<crate::pull_request::Shared>();
         let weak = cx.weak_entity();
-        let initial_theme = cx
+        let (initial_theme, initial_icons) = cx
             .try_global::<crate::app::InitialAppearance>()
-            .map(|appearance| appearance.theme.clone())
+            .map(|appearance| (appearance.theme.clone(), appearance.config.status_icons))
             .unwrap_or_default();
         let indicators = sidebar::Indicators::new(
             None,
+            initial_icons,
             matches!(
                 cx.window_appearance(),
                 WindowAppearance::Light | WindowAppearance::VibrantLight
@@ -787,6 +658,7 @@ impl HerdrWindow {
             app_update_notes_scroll: ScrollHandle::new(),
             configured_terminal_size: config.terminal.size,
             status_bar_visible: config.status_bar.show,
+            zen: Default::default(),
             gui_config_diagnostic: {
                 let mut diagnostic = crate::config_diagnostic::ConfigDiagnostic::default();
                 diagnostic.sync(config.diagnostic().as_deref());
@@ -907,6 +779,8 @@ impl HerdrWindow {
             sidebar_width: None,
             sidebar_drag: None,
             workspace_drag: None,
+            device_drag: None,
+            device_order: Vec::new(),
             tab_drag: None,
             sidebar_split: None,
             sidebar_split_modified: false,
@@ -920,6 +794,7 @@ impl HerdrWindow {
             sidebar_scroll: Default::default(),
             sidebar_revealed: Default::default(),
             sidebar_pin_reveal: Default::default(),
+            sidebar_folded: Default::default(),
             sidebar_search: sidebar::SidebarSearch::new(cx),
             _poll: poll,
             sidebar_view,
@@ -953,6 +828,7 @@ impl HerdrWindow {
                 this.report_focus();
                 cx.notify();
             }),
+            _window_closed: Self::give_back_torn_tabs(cx),
             _appearance: cx.observe_window_appearance(window, |this, _, cx| {
                 this.apply_shared_theme(cx);
                 this.apply_system_theme(cx);

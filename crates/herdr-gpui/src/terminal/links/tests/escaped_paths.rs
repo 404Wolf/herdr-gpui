@@ -2,8 +2,11 @@ use super::*;
 
 fn located(text: &str, column: u16) -> Option<(String, Option<u32>, Range<u16>)> {
     frame_link(&frame(text, 60, 1), column, 0, 0, 60).and_then(|link| match link.target {
-        RowTarget::Path { path, line } => Some((path, line, link.columns)),
-        RowTarget::Web(_) => None,
+        RowTarget::Path { path, line, .. } => Some((path, line, link.columns)),
+        RowTarget::Web(_)
+        | RowTarget::External(_)
+        | RowTarget::OtherHost(_)
+        | RowTarget::Malformed => None,
     })
 }
 
@@ -33,7 +36,8 @@ fn every_cell_of_a_pasted_path_links_to_the_original_name() {
                 found.target,
                 RowTarget::Path {
                     path: name.into(),
-                    line: None
+                    line: None,
+                    explicit: false,
                 },
                 "{text} at {column}"
             );

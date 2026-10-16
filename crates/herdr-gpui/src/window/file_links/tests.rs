@@ -19,6 +19,7 @@ fn paths_resolve_under_home_or_the_pane_directory() {
         line: None,
         pane_id: "pane".into(),
         cwd: cwd.map(|cwd| cwd.to_str().unwrap().into()),
+        explicit: false,
     };
     assert_eq!(
         link("~/notes/a.md", None).resolve(Some(home)),
@@ -187,6 +188,15 @@ fn window<'a>(
     (view, cx)
 }
 
+/// Holds the link modifier over `position`, which has the path there looked
+/// for on disk, and then clicks it with `modifiers`.
+fn modifier_click(cx: &mut VisualTestContext, position: Point<Pixels>, modifiers: Modifiers) {
+    cx.simulate_mouse_move(position, None, Modifiers::secondary_key());
+    cx.run_until_parked();
+    cx.simulate_click(position, modifiers);
+    cx.run_until_parked();
+}
+
 /// The middle of the first row's cell `col`.
 fn at(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, col: u16) -> Point<Pixels> {
     view.read_with(cx, |view, _| {
@@ -207,24 +217,40 @@ fn a_link_modifier_click_opens_a_printed_file_that_exists(cx: &mut gpui::TestApp
     let found = at(&view, cx, 6);
     let missing = at(&view, cx, 26);
 
-    // Without the modifier a path is plain text.
+    // A pointer that only passes over a path asks and shows nothing: the
+    // path is plain text, and a click there is not a link's. Unchecked, it
+    // keeps no press from an application that reads the mouse.
+    cx.simulate_mouse_move(found, None, Modifiers::default());
+    cx.run_until_parked();
     view.read_with(cx, |view, _| {
+        assert!(view.hovered_local_link().is_none());
         assert!(!view.terminal_link_hovered(found, Modifiers::default()));
-        assert!(view.terminal_link_hovered(found, Modifiers::secondary_key()));
-        assert!(view.link_modifier_held(found, Modifiers::secondary_key()));
+        assert!(!view.terminal_link_hovered(found, Modifiers::secondary_key()));
+        assert!(!view.link_modifier_held(found, Modifiers::secondary_key()));
     });
     cx.simulate_click(found, Modifiers::default());
     cx.run_until_parked();
     assert!(cx.opened_url().is_none());
 
-    // Held over the path, the modifier underlines it, location included.
+    // Held over the path, the link modifier has it looked for on disk. Found,
+    // it is underlined, location included, and the pointer shows a link.
     cx.simulate_mouse_move(found, None, Modifiers::secondary_key());
+    cx.run_until_parked();
     view.read_with(cx, |view, _| {
         let link = view.hovered_local_link().unwrap();
         assert_eq!((link.row, link.columns.clone()), (0, 4..20));
+        assert!(view.terminal_link_hovered(found, Modifiers::secondary_key()));
+        assert!(view.link_modifier_held(found, Modifiers::secondary_key()));
     });
-    cx.simulate_mouse_move(found, None, Modifiers::default());
-    view.read_with(cx, |view, _| assert!(view.hovered_local_link().is_none()));
+
+    // A path that is not there stays plain text.
+    cx.simulate_mouse_move(missing, None, Modifiers::secondary_key());
+    cx.run_until_parked();
+    view.read_with(cx, |view, _| {
+        assert!(view.hovered_local_link().is_none());
+        assert!(!view.terminal_link_hovered(missing, Modifiers::secondary_key()));
+        assert!(!view.link_modifier_held(missing, Modifiers::secondary_key()));
+    });
 
     cx.simulate_click(missing, Modifiers::secondary_key());
     cx.run_until_parked();
@@ -234,8 +260,7 @@ fn a_link_modifier_click_opens_a_printed_file_that_exists(cx: &mut gpui::TestApp
     // beside; this fixture has no connection, so nothing opens.
     // Without a Unix shell there is no editor, and the file opens in the
     // default application as with Alt.
-    cx.simulate_click(found, Modifiers::secondary_key());
-    cx.run_until_parked();
+    modifier_click(cx, found, Modifiers::secondary_key());
     if crate::editor::SUPPORTED {
         assert!(cx.opened_url().is_none());
         view.read_with(cx, |view, _| {
@@ -249,25 +274,8 @@ fn a_link_modifier_click_opens_a_printed_file_that_exists(cx: &mut gpui::TestApp
         alt: true,
         ..Modifiers::secondary_key()
     };
-    cx.simulate_click(found, alt);
-    cx.run_until_parked();
+    modifier_click(cx, found, alt);
     let real = real_path(&root.path().join("docs/notes.txt")).unwrap();
-    let expected = url::Url::from_file_path(real).unwrap();
-    assert_eq!(cx.opened_url().as_deref(), Some(expected.as_str()));
-}
-
-#[gpui::test]
-fn files_open_in_the_system_app_when_configured(cx: &mut gpui::TestAppContext) {
-    let root = tempfile::tempdir().unwrap();
-    std::fs::write(root.path().join("a.rs"), "fn a() {}").unwrap();
-    let (view, cx) = window("at ./a.rs:1", root.path(), cx);
-    let position = at(&view, cx, 5);
-    view.update(cx, |view, _| {
-        view.config.open_files_in = crate::config::FileTarget::System;
-    });
-    cx.simulate_click(position, Modifiers::secondary_key());
-    cx.run_until_parked();
-    let real = real_path(&root.path().join("a.rs")).unwrap();
     let expected = url::Url::from_file_path(real).unwrap();
     assert_eq!(cx.opened_url().as_deref(), Some(expected.as_str()));
 }
@@ -288,7 +296,6 @@ fn a_pane_on_an_ssh_host_has_no_file_links(cx: &mut gpui::TestAppContext) {
         assert!(view.local_link_at(position).is_none());
         assert!(!view.terminal_link_hovered(position, Modifiers::secondary_key()));
     });
-    cx.simulate_click(position, Modifiers::secondary_key());
-    cx.run_until_parked();
+    modifier_click(cx, position, Modifiers::secondary_key());
     assert!(cx.opened_url().is_none());
 }

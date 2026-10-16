@@ -13,6 +13,8 @@ pub(crate) enum Preference {
     ShowListeningPorts(bool),
     ShowSidebarSearch(bool),
     ShowRepositoryIcons(bool),
+    /// `status_icons`; `None` removes it, following Herdr's indicator style.
+    StatusIcons(Option<StatusIcons>),
     ShowDeviceIcons(bool),
     SmoothScroll(bool),
     FocusFollowsMouse(bool),
@@ -32,6 +34,8 @@ pub(crate) enum Preference {
     UsageInline(bool),
     /// `[updates] channel`: whether the updater also offers beta releases.
     UpdateChannel(UpdateChannel),
+    /// One `[features]` flag.
+    Feature(Feature, bool),
 }
 
 impl Config {
@@ -78,6 +82,11 @@ impl Config {
                     (None, "show_device_icons", Some(value.into()))
                 }
                 Preference::SmoothScroll(value) => (None, "smooth_scroll", Some(value.into())),
+                Preference::StatusIcons(value) => (
+                    None,
+                    "status_icons",
+                    value.map(|icons| icons.as_str().into()),
+                ),
                 Preference::FocusFollowsMouse(value) => {
                     (None, "focus_follows_mouse", Some(value.into()))
                 }
@@ -139,6 +148,9 @@ impl Config {
                 Preference::UsageInline(value) => (Some("usage"), "inline", Some(value.into())),
                 Preference::UpdateChannel(channel) => {
                     (Some("updates"), "channel", Some(channel.as_str().into()))
+                }
+                Preference::Feature(feature, value) => {
+                    (Some("features"), feature.key(), Some(value.into()))
                 }
                 Preference::TerminalPadding(axis, sides) => {
                     // The deprecated gap only stands in for an unset
@@ -230,6 +242,7 @@ mod tests {
             Preference::TerminalPadding(Axis::X, Sides::new(7.5, 7.5).expect("in band")),
             Preference::TerminalPadding(Axis::Y, Sides::new(4., 6.).expect("in band")),
             Preference::UpdateChannel(UpdateChannel::Beta),
+            Preference::Feature(Feature::SidebarHoverMenu, true),
         ] {
             Config::save_preference_path(edit, &path)?;
         }
@@ -253,6 +266,10 @@ mod tests {
         assert_eq!(table["smooth_scroll"].as_bool(), Some(false));
         assert_eq!(table["layout"].as_str(), Some("orca"));
         assert_eq!(table["updates"]["channel"].as_str(), Some("beta"));
+        assert_eq!(
+            table["features"]["sidebar_hover_menu"].as_bool(),
+            Some(true)
+        );
         assert_eq!(table["terminal"]["padding_x"].as_float(), Some(7.5));
         assert_eq!(
             table["terminal"]["padding_y"],
