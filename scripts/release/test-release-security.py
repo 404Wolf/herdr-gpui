@@ -140,7 +140,9 @@ class ReleaseTargets(unittest.TestCase):
                         'name: windows-package-${{ matrix.target }}'):
             self.assertIn(command, windows)
         for target in ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"):
-            self.assertIn(f"name: windows-package-{target}\n", jobs["attest"])
+            # Only the Authenticode-signed builds are attested and published.
+            self.assertIn(f"name: windows-signed-{target}\n", jobs["attest"])
+            self.assertNotIn(f"name: windows-package-{target}\n", jobs["attest"])
         for name in ("sign", "attest"):
             self.assertRegex(jobs[name], r"    needs: \[[^]]*\bwindows\b")
         attest = jobs["attest"].replace("${{ needs.validate.outputs.version }}", VERSION)
@@ -167,13 +169,16 @@ class ReleaseTargets(unittest.TestCase):
             ref = "github.sha" if name in ("audit", "validate") else "needs.validate.outputs.sha"
             self.assertIn("ref: ${{ " + ref + " }}", job)
             self.assertIn("persist-credentials: false", job)
-        for name in ("audit", "validate", "sign", "attest", "publish", "homebrew"):
+        for name in ("audit", "validate", "sign", "windows-sign", "attest", "publish", "homebrew", "winget"):
             for condition in ("github.repository == 'penso/herdr-gpui'", "github.ref == 'refs/heads/main'",
                               "github.actor == 'penso'", "github.triggering_actor == 'penso'"):
                 self.assertIn(condition, jobs[name])
-        for name in ("sign", "attest", "publish"):
+        for name in ("sign", "windows-sign", "attest", "publish"):
             self.assertIn("    environment: release\n", jobs[name])
         self.assertIn("    environment: homebrew\n", jobs["homebrew"])
+        self.assertIn("    environment: winget\n", jobs["winget"])
+        self.assertEqual([name for name, job in jobs.items() if "environment:" in job],
+                         ["windows-sign", "sign", "attest", "publish", "homebrew", "winget"])
         self.assertEqual(re.findall(r"^  (\w+):", workflow.split("permissions:", 1)[0], re.M),
                          ["workflow_dispatch"])
 
@@ -215,7 +220,7 @@ class ReleaseTargets(unittest.TestCase):
         self.assertNotIn("< <(", jobs["changelog"])
 
         promote, promotion = jobs_of("promote.yml")
-        self.assertEqual(list(promotion), ["audit", "validate", "promote", "homebrew"])
+        self.assertEqual(list(promotion), ["audit", "validate", "promote", "homebrew", "winget"])
         self.assertEqual(re.findall(r"^  (\w+):", promote.split("permissions:", 1)[0], re.M),
                          ["workflow_dispatch"])
         self.assertIn("group: manual-release\n", promote)
@@ -223,7 +228,7 @@ class ReleaseTargets(unittest.TestCase):
             for condition in ("github.repository == 'penso/herdr-gpui'", "github.ref == 'refs/heads/main'",
                               "github.actor == 'penso'", "github.triggering_actor == 'penso'"):
                 self.assertIn(condition, job, name)
-            if name != "homebrew":
+            if name not in ("homebrew", "winget"):
                 self.assertNotIn("secrets.", job)
         validate = promotion["validate"]
         self.assertIn('[[ "$VERSION" =~ ^[1-9][0-9]{7}\\.[1-9][0-9]*$ ]]', validate)
@@ -234,6 +239,11 @@ class ReleaseTargets(unittest.TestCase):
         # Nothing is rebuilt, re-signed or re-uploaded on promotion.
         for word in ("cargo ", "upload", "gh release create", "SIGNING_KEY", "id-token"):
             self.assertNotIn(word, promote)
+        # One winget policy too, and betas never reach it.
+        self.assertIn("needs.validate.outputs.channel == 'stable'", jobs["winget"])
+        self.assertEqual(promotion["winget"].replace("    needs: [validate, promote]\n", ""),
+                         jobs["winget"].replace(" &&\n      needs.validate.outputs.channel == 'stable'", "")
+                         .replace("    needs: [validate, publish]\n", ""))
         # One tap update policy: the promoted job is the release job minus its channel gate.
         self.assertEqual(promotion["homebrew"].replace("    needs: [validate, promote]\n", ""),
                          jobs["homebrew"].replace(" &&\n      needs.validate.outputs.channel == 'stable'", "")
@@ -263,6 +273,64 @@ class ReleaseTargets(unittest.TestCase):
         for name in ("update-manifest.json", "update-manifest.sig"):
             self.assertIn(f"            dist/{name}\n", sign)
         self.assertIn('test "$(wc -c < dist/update-manifest.sig | tr -d \' \')" = 64', sign)
+
+
+class WindowsTrust(unittest.TestCase):
+    def setUp(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        sections = re.split(r"^  ([a-z-]+):\n", workflow.split("\njobs:\n", 1)[1], flags=re.M)
+        self.jobs = dict(zip(sections[1::2], sections[2::2]))
+
+    def test_only_the_protected_signing_job_can_sign(self):
+        jobs = self.jobs
+        sign = jobs["windows-sign"]
+        self.assertIn("    needs: [validate, windows]\n", sign)
+        self.assertIn("      id-token: write\n", sign)
+        self.assertIn("uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0", sign)
+        self.assertIn("uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0", sign)
+        for setting in ("timestamp-rfc3161: http://timestamp.acs.microsoft.com", "timestamp-digest: SHA256",
+                        "file-digest: SHA256", "exclude-environment-credential: true",
+                        "cache-dependencies: false", "name: windows-package-${{ matrix.target }}",
+                        "}}\\herdr-gpui.exe\n", "}}\\bin\\herdr-gpui.exe\n",
+                        "name: windows-signed-${{ matrix.target }}"):
+            self.assertIn(setting, sign)
+        # Unpack, sign, check and repack, then sign the installer, then verify.
+        steps = ["windows-signing.py unpack", "artifact-signing-action", "windows-signing.py repack",
+                 "windows-installer.py build --sign",
+                 'windows-signing.py verify --subject "$WINDOWS_SIGNING_SUBJECT"']
+        self.assertEqual(sorted(steps, key=sign.index), steps)
+        # The signing job never runs what it signs.
+        self.assertNotIn("smoke", sign)
+        self.assertNotIn("secrets.", sign)
+        for name, job in jobs.items():
+            if name != "windows-sign":
+                for word in ("azure/", "ARTIFACT_SIGNING", "--sign "):
+                    self.assertNotIn(word, job, name)
+            if name not in ("windows-sign", "attest"):
+                self.assertNotIn("id-token", job, name)
+        for workflow in (ROOT / ".github/workflows").glob("*.yml"):
+            if workflow.name != "release.yml":
+                self.assertNotIn("azure/", workflow.read_text(), workflow.name)
+
+    def test_the_signed_installer_is_installed_before_it_is_attested(self):
+        jobs = self.jobs
+        smoke = jobs["windows-smoke"]
+        self.assertIn("    needs: [validate, windows-sign]\n", smoke)
+        self.assertIn('windows-installer.py smoke --signed "dist/Herdr-$VERSION-$TARGET-setup.exe"', smoke)
+        runners = r"- runner: (\S+)\n            target: (\S+)"
+        self.assertEqual(re.findall(runners, smoke), re.findall(runners, jobs["windows"]))
+        self.assertIn("    needs: [validate, sign, linux, windows-sign, windows-smoke, metadata]\n", jobs["attest"])
+        # The unsigned build is still installed and checked where it was built.
+        self.assertIn('python scripts/release/windows-installer.py smoke "dist/', jobs["windows"])
+
+    def test_winget_gets_only_published_stable_installers(self):
+        winget = self.jobs["winget"]
+        self.assertIn("    needs: [validate, publish]\n", winget)
+        self.assertIn(".isDraft == false and .isPrerelease == false", winget)
+        self.assertIn('gh release download "v$VERSION" --dir final --pattern SHA256SUMS', winget)
+        self.assertIn('winget.py submit "$VERSION" final/SHA256SUMS', winget)
+        for name, job in self.jobs.items():
+            self.assertEqual(job.count("secrets.WINGET_TOKEN"), int(name == "winget"), name)
 
 
 class SbomMerge(unittest.TestCase):

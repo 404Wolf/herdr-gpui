@@ -224,9 +224,9 @@ installer? Each [release](https://github.com/penso/herdr-gpui/releases/latest)
 also has `Herdr-VERSION-x86_64-pc-windows-msvc-setup.exe` and
 `Herdr-VERSION-aarch64-pc-windows-msvc-setup.exe`, which install the same files
 to the same place for the current user, without administrator rights, and add
-an uninstaller under **Settings > Apps**. Neither is Authenticode-signed yet,
-so SmartScreen warns the first time. The Start menu entry opens the app with
-no console window; `herdr-gpui` in a terminal runs the console copy in `bin`.
+an uninstaller under **Settings > Apps**. The installers, their uninstaller,
+and both executables are Authenticode-signed. The Start menu entry opens the
+app with no console window; `herdr-gpui` in a terminal runs the console copy in `bin`.
 Windows builds never update themselves; run the command or a newer installer
 again to update. See [Windows](#windows) for what
 works on the platform.
@@ -303,9 +303,8 @@ unavailable and report that plainly; see
 Each release publishes `Herdr-VERSION-x86_64-pc-windows-msvc.zip` and
 `Herdr-VERSION-aarch64-pc-windows-msvc.zip` (native ARM64), each containing
 `herdr-gpui.exe` and its license notices. They carry the same checksums,
-Sigstore signatures, and build provenance as the other assets, but they are not
-Authenticode-signed, so SmartScreen warns on first launch, and they never update
-themselves: rerun the [install script](#windows-experimental) or download each
+Sigstore signatures, and build provenance as the other assets, and both
+executables are Authenticode-signed. They never update themselves: rerun the [install script](#windows-experimental) or download each
 new release manually. The executable is
 console-subsystem, so launching it from Explorer also opens a console window.
 

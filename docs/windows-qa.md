@@ -31,7 +31,9 @@ Steps (PowerShell, from the repo root):
    (silent install to a temp dir, checks files, subsystems, console output and PATH, then uninstalls)
 
 Then, using computer use if you have it (otherwise give me exact steps and I'll do them):
-6. Run the setup exe normally (SmartScreen: More info → Run anyway), keep "Add herdr-gpui to PATH".
+6. Run the setup exe normally. A signed release names its publisher in any
+   SmartScreen prompt; a local build is unsigned and needs More info → Run
+   anyway. Keep "Add herdr-gpui to PATH".
 7. Open "Herdr UI" from the Start menu. Take screenshots right away: does any console window appear,
    even briefly? Use the app a bit (open a repo/worktree so git runs) and watch for console flashes.
 8. In a NEW PowerShell window: `herdr-gpui --help` (output prints, prompt returns after it),

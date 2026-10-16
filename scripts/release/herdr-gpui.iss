@@ -20,6 +20,9 @@
 #ifndef OutputDir
   #error Pass /DOutputDir=DIRECTORY
 #endif
+; Optional: the release workflow passes /DSignTool=NAME with a matching
+; /SNAME=COMMAND, and ISCC then Authenticode-signs the uninstaller and Setup.exe.
+; Local and pull request builds pass neither and stay unsigned.
 
 #define AppName "Herdr UI"
 #define AppExe "herdr-gpui.exe"
@@ -53,6 +56,10 @@ WizardStyle=modern
 UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#AppExe}
 SetupLogging=yes
+#ifdef SignTool
+SignTool={#SignTool}
+SignedUninstaller=yes
+#endif
 
 [Tasks]
 Name: "addtopath"; Description: "Add herdr-gpui to PATH, for terminals and agents"
