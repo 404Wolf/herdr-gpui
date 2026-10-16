@@ -85,10 +85,37 @@ pub(crate) struct Listing {
     pub(crate) complete: bool,
 }
 
-/// Lists `source`'s open issues, reading GitLab as `token` when given.
-/// `previous` keeps agent-launcher's markers, which herdr-gpui never adds.
+/// How the API is reached. The shared source key names only the host, as
+/// agent-launcher keys it, so the scheme comes from the remote's own URL.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Scheme {
+    Http,
+    Https,
+}
+
+impl Scheme {
+    /// HTTP for an `http://` remote, whose host may serve nothing else;
+    /// HTTPS for every other remote, SSH ones included.
+    pub(crate) fn of_remote(url: &str) -> Self {
+        match url::Url::parse(url) {
+            Ok(url) if url.scheme() == "http" => Self::Http,
+            _ => Self::Https,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Http => "http",
+            Self::Https => "https",
+        }
+    }
+}
+
+/// Lists `source`'s open issues over `scheme`, reading GitLab as `token`
+/// when given. `previous` keeps agent-launcher's markers, which herdr-gpui
+/// never adds.
 pub(crate) fn sync(
-    source: &SourceKey,
+    (source, scheme): (&SourceKey, Scheme),
     token: Option<&SecretString>,
     previous: Option<&Checkpoint>,
     cancelled: &impl Fn() -> bool,
@@ -104,7 +131,13 @@ pub(crate) fn sync(
         if cancelled() {
             return Err(super::Error::Cancelled);
         }
-        Ok(fetch_page(&agent, source, token, after, cooldown)?)
+        Ok(fetch_page(
+            &agent,
+            (source, scheme),
+            token,
+            after,
+            cooldown,
+        )?)
     };
     full(source, previous.cloned().unwrap_or_default(), &mut fetch)
 }
@@ -160,12 +193,12 @@ pub(super) fn full(
 
 /// The API address of `source`'s open issues created at or after `after`.
 pub(super) fn issues_url(
-    source: &SourceKey,
+    (source, scheme): (&SourceKey, Scheme),
     after: Option<DateTime<Utc>>,
 ) -> Result<url::Url, Error> {
     let invalid = || Error::Address(source.repository.clone());
-    let mut url = url::Url::parse(&format!("https://{}/api/v4/projects", source.host))
-        .map_err(|_| invalid())?;
+    let base = format!("{}://{}/api/v4/projects", scheme.as_str(), source.host);
+    let mut url = url::Url::parse(&base).map_err(|_| invalid())?;
     // One segment: the project's full path, its slashes escaped as GitLab asks.
     url.path_segments_mut()
         .map_err(|()| invalid())?
@@ -191,13 +224,13 @@ pub(super) fn issues_url(
 
 fn fetch_page(
     agent: &ureq::Agent,
-    source: &SourceKey,
+    (source, scheme): (&SourceKey, Scheme),
     token: Option<&SecretString>,
     after: Option<DateTime<Utc>>,
     cooldown: &mut Option<Duration>,
 ) -> Result<Vec<IssueNode>, Error> {
     let mut request = agent
-        .get(issues_url(source, after)?.as_str())
+        .get(issues_url((source, scheme), after)?.as_str())
         .header("User-Agent", "Herdr-GPUI")
         .header("Accept", "application/json");
     if let Some(token) = token {

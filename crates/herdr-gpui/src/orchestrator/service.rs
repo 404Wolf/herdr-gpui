@@ -640,10 +640,19 @@ impl Worker {
                 let token = self
                     .gitlab_token
                     .get_or_insert_with(|| gitlab::token(&key.host));
+                let scheme = self
+                    .snapshot
+                    .repo
+                    .as_ref()
+                    .and_then(|info| info.remote.as_ref())
+                    .filter(|remote| remote.source == *key)
+                    .map_or(gitlab::Scheme::Https, |remote| {
+                        gitlab::Scheme::of_remote(&remote.url)
+                    });
                 let previous = store.checkpoint(key)?;
                 let cancelled = &self.cancelled;
                 let listing = gitlab::sync(
-                    key,
+                    (key, scheme),
                     token.as_ref(),
                     previous.as_ref(),
                     &|| cancelled.load(Ordering::Relaxed),

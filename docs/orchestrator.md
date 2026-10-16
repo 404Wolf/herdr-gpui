@@ -79,7 +79,10 @@ it has no Stop, Send, or Remove, since no application owns it.
 `gitlab.rs` lists a GitLab project's open issues through the REST API
 (`/api/v4/projects/<escaped path>/issues`), on gitlab.com or a self-managed
 host, in agent-launcher's GitLab row format: `native_id` is the issue's
-project `iid`. Each sync is a complete listing of at most 2,000 issues, so it
+project `iid`. The API is reached over HTTPS, or over HTTP when the remote's
+own URL is `http://`; the shared source key names only the host, so the scheme
+is read from the remote each time. Pages follow a cursor on creation time
+(`order_by=created_at`, `created_after`), which edits and closes cannot shift. Each sync is a complete listing of at most 2,000 issues, so it
 may replace the cache; a larger project is shown and not written, as GitHub's
 is.
 
