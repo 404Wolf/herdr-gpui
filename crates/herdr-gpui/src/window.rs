@@ -30,7 +30,7 @@ pub(crate) use links::PressedLink;
 mod mouse;
 mod pending_input;
 mod plugin_selection;
-mod prefix;
+pub(crate) mod prefix;
 mod reconnecting;
 mod regions;
 mod render;
@@ -192,8 +192,9 @@ pub(crate) struct HerdrWindow {
     pub(crate) input_probe: smoke::InputProbe,
     pub(crate) install_warning_shown: bool,
     pub(crate) integrations: crate::integrations::Integrations,
-    /// The key code, and Shift, of the key being handled: AppKit's current
-    /// event, which names a function key macOS delivered without its name.
+    /// What a key code types in the active layout, to restore a dropped Shift.
+    pub(crate) key_layout: fn(u16) -> Option<prefix::KeyChars>,
+    /// The key code and Shift of the key being handled, from AppKit's event.
     pub(crate) key_press: fn() -> Option<(u16, bool)>,
     pub(crate) last_queued_options: Option<ConnectOptions>,
     pub(crate) links: links::DaemonLinks,

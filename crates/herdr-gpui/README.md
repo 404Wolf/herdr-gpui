@@ -3457,7 +3457,16 @@ Ctrl+Shift+U is left unbound for
   `switch_workspace` counts the selected host's rows, `focus_agent` counts the
   agent panel's, `last_pane` returns to the pane focused before this one,
   `move_tab_previous`/`_next` wrap a tab at either end to the other, and
-  `[keys.indexed]` combos bind the digits 1-9. `resize_mode` (`prefix+r`)
+  `[keys.indexed]` combos bind the digits 1-9. On macOS, the prefix, its
+  chords, and custom command shortcuts recognize a shifted key such as
+  Shift+1 by the active keyboard layout, so
+  `switch_workspace = "prefix+shift+1..9"` works on any layout that types
+  the digits unshifted. A chord or custom command bound to the symbol the
+  key types, such as `prefix+?`, takes precedence. A shortcut without the
+  prefix in `[keybindings]` or the daemon's `[keys]` does not get this and
+  needs the symbol itself, such as `ctrl+!`; such a shortcut, or a
+  `[pane_keys]` entry on the symbol, keeps its key even when a custom
+  command is bound to the shifted key. `resize_mode` (`prefix+r`)
   makes h, j, k, l or the arrows resize the focused pane until Escape, Enter,
   or the shortcut again; the status bar shows it. Renames and
   `close_workspace` open the same dialogs as their menus, and `reload_config`
