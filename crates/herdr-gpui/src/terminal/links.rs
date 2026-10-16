@@ -10,7 +10,7 @@ use std::ops::Range;
 
 mod external;
 mod path;
-pub(crate) use path::{escape_into, shell_special};
+pub(crate) use path::{escape_into, escaped_len};
 
 pub(crate) use external::ExternalUrl;
 

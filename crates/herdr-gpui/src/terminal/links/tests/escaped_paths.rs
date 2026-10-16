@@ -21,6 +21,12 @@ fn every_cell_of_a_pasted_path_links_to_the_original_name() {
         "/tmp/box\u{2500}name",
         "/tmp/wow!",
         "/tmp/$HOME~#^=*?&",
+        "/tmp/build:debug.log",
+        "/tmp/report:12",
+        "/tmp/report.",
+        "/tmp/dots..",
+        "/tmp/a:b:3:4.",
+        "README.",
     ] {
         // The exact text a file drop pastes.
         let mut text = String::from("see ");
@@ -54,6 +60,7 @@ fn backslashes_unescape_only_before_shell_special_characters() {
         (r"/tmp/a\b", r"/tmp/a\b"),
         (r"/tmp/wow\!", "/tmp/wow!"),
         (r"/tmp/x\ y:12.", "/tmp/x y"),
+        (r"/tmp/a\:b:7", "/tmp/a:b"),
     ] {
         assert_eq!(
             located(text, 1).map(|(path, _, _)| path),
@@ -62,4 +69,23 @@ fn backslashes_unescape_only_before_shell_special_characters() {
         );
     }
     assert_eq!(located(r"/tmp/x\ y:12.", 1).unwrap().1, Some(12));
+}
+
+#[test]
+fn an_unescaped_colon_still_names_a_location_or_a_scheme() {
+    assert_eq!(
+        located(r"/tmp/a\:12:3", 1).map(|(path, line, _)| (path, line)),
+        Some(("/tmp/a:12".into(), Some(3)))
+    );
+    assert_eq!(located(r"/tmp/a\:b:7", 1).unwrap().1, Some(7));
+    assert!(located("scp host:/path now", 6).is_none());
+}
+
+#[test]
+fn the_size_estimate_matches_what_is_pasted() {
+    for name in ["/tmp/plain", "/tmp/a b,c:d.", "/tmp/\u{202f}x?.", "."] {
+        let mut text = String::new();
+        escape_into(name, &mut text);
+        assert_eq!(escaped_len(name), text.len(), "{name}");
+    }
 }

@@ -5,7 +5,7 @@ use super::HerdrWindow;
 use crate::{
     Error, Result,
     connection::ConnectionBridge,
-    terminal::{InputTarget, escape_into, shell_special, wheel_target},
+    terminal::{InputTarget, escape_into, escaped_len, wheel_target},
 };
 use gpui::{Context, ExternalPaths, Pixels, Point, Window};
 use herdr_client::protocol::ClientPaneInputEvent;
@@ -141,7 +141,7 @@ pub(super) fn quote_paths(paths: &[PathBuf]) -> Result<String> {
         if text.chars().any(char::is_control) {
             return Err(Error::FileDropControl);
         }
-        bytes += text.len() + text.chars().filter(|ch| shell_special(*ch)).count();
+        bytes += escaped_len(text);
         if bytes > MAX_PASTE_BYTES {
             return Err(Error::FileDropSize);
         }

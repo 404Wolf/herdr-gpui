@@ -54,6 +54,9 @@ pub(super) fn plain_path(text: &str, hit: usize) -> Option<PlainPath<'_>> {
         return None;
     }
     let (escaped, line) = without_location(token);
+    if has_unescaped_colon(escaped) {
+        return None;
+    }
     let path = unescape(escaped);
     looks_like_path(&path).then_some(PlainPath {
         range: start..start + token.len(),
@@ -63,8 +66,24 @@ pub(super) fn plain_path(text: &str, hit: usize) -> Option<PlainPath<'_>> {
     })
 }
 
-/// `text` with the backslash before each `shell_special` character removed;
-/// any other backslash is part of the name.
+/// Whether `text` holds a colon no backslash escapes, which names a scheme,
+/// an `scp` host, or a drive rather than a local file.
+fn has_unescaped_colon(text: &str) -> bool {
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => {
+                chars.next();
+            }
+            ':' => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// `text` with the backslash before each `shell_special` character or period
+/// removed; any other backslash is part of the name.
 fn unescape(text: &str) -> Cow<'_, str> {
     if !text.contains('\\') {
         return Cow::Borrowed(text);
@@ -74,7 +93,7 @@ fn unescape(text: &str) -> Cow<'_, str> {
     while let Some(c) = chars.next() {
         if c == '\\'
             && let Some(&next) = chars.peek()
-            && shell_special(next)
+            && (shell_special(next) || next == '.')
         {
             path.push(next);
             chars.next();
@@ -86,24 +105,41 @@ fn unescape(text: &str) -> Cow<'_, str> {
 }
 
 /// `path` as one shell word, each `shell_special` character after a
-/// backslash: what a file drop pastes, and what `plain_path` reads back.
+/// backslash: what a file drop pastes, and what `plain_path` reads back. A
+/// final period is escaped too, or it would read as the end of a sentence.
 pub(crate) fn escape_into(path: &str, out: &mut String) {
-    for c in path.chars() {
-        if shell_special(c) {
+    let mut chars = path.chars().peekable();
+    while let Some(c) = chars.next() {
+        if escaped(c, chars.peek().is_none()) {
             out.push('\\');
         }
         out.push(c);
     }
 }
 
+/// The bytes `escape_into` writes for `path`.
+pub(crate) fn escaped_len(path: &str) -> usize {
+    let mut chars = path.chars().peekable();
+    let mut backslashes = 0;
+    while let Some(c) = chars.next() {
+        backslashes += usize::from(escaped(c, chars.peek().is_none()));
+    }
+    path.len() + backslashes
+}
+
+fn escaped(c: char, last: bool) -> bool {
+    shell_special(c) || (c == '.' && last)
+}
+
 /// Characters a pasted path escapes: every character that ends a path here,
 /// such as a comma or the narrow no-break space in macOS screenshot names,
-/// and every one a POSIX shell, bash, or zsh would expand or quote on.
-pub(crate) fn shell_special(c: char) -> bool {
+/// every one a POSIX shell, bash, or zsh would expand or quote on, and the
+/// colon, which would otherwise read as a location or a scheme.
+fn shell_special(c: char) -> bool {
     separates(c)
         || matches!(
             c,
-            '\\' | '$' | '&' | '*' | '?' | '!' | '#' | '~' | '^' | '='
+            '\\' | '$' | '&' | '*' | '?' | '!' | '#' | '~' | '^' | '=' | ':'
         )
 }
 
@@ -114,7 +150,8 @@ fn without_location(token: &str) -> (&str, Option<u32>) {
     for _ in 0..2 {
         match path.rsplit_once(':') {
             Some((rest, number))
-                if !number.is_empty()
+                if !rest.ends_with('\\')
+                    && !number.is_empty()
                     && number.len() <= 9
                     && number.bytes().all(|b| b.is_ascii_digit()) =>
             {
@@ -130,10 +167,6 @@ fn without_location(token: &str) -> (&str, Option<u32>) {
 
 fn looks_like_path(path: &str) -> bool {
     if path.is_empty() || path.len() > MAX_PATH_BYTES {
-        return false;
-    }
-    // A scheme, an `scp` host, or a drive letter is not a local path here.
-    if path.contains(':') {
         return false;
     }
     // `~user` names another account's home, which is not resolved.

@@ -1488,8 +1488,9 @@ keyboard selection is not exposed.
 Drop files from your file manager onto a terminal pane or popup to paste their
 paths there, even if another pane is focused. Paths are pasted bare, as native
 macOS terminals do, with a backslash before each space, quote, bracket, comma,
-or other character a shell would interpret (`/tmp/Shot\ 1.png`), separated by
-spaces; the drop never presses Enter. Local drops only paste paths; SSH drops
+colon, or other character a shell would interpret (`/tmp/Shot\ 1.png`), and
+before a final period, separated by spaces; the drop never presses Enter. The
+escapes keep a dropped path one Cmd-clickable link. Local drops only paste paths; SSH drops
 read and transfer the selected files.
 Drops are limited to 256 paths and 64 KiB of escaped text. Non-UTF-8 paths and
 paths containing control characters are rejected rather than altered.
@@ -1887,7 +1888,7 @@ or popup to send it through Herdr's existing image bridge. Clipboard images use
 Cmd-V (normal paste, with text taking precedence) or Ctrl-V (Herdr TUI's default
 image-paste shortcut). Ctrl-V retains its normal terminal meaning when the
 clipboard has no image. A pasted absolute image-file path is also recognized,
-including the quoted/backslash-escaped paths used by terminal file drops.
+including the backslash-escaped paths used by terminal file drops.
 
 Local endpoints on macOS and Linux use the same bridge for Cmd-V clipboard
 images, because a GUI text paste cannot carry image data. Local drops and pasted
