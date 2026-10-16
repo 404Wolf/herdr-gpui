@@ -249,7 +249,7 @@ pub enum Error {
     #[error("Git worker stopped. Retry the operation.")]
     GitWorker,
     #[error(
-        "No base branch to compare with: neither the pull request's base nor origin/HEAD, main, or master exists locally."
+        "No base branch to compare with: neither the pull request's base nor origin/HEAD, main, or master exists locally. Pick one with the base button above."
     )]
     ReviewNoBase,
     #[error("A saved review tab names a checkout that is not a local absolute path.")]
