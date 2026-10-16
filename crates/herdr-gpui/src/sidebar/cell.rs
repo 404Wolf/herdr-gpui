@@ -139,6 +139,12 @@ pub(super) struct RowState {
 pub(super) trait RowLayout {
     fn workspace(&self, row: WorkspaceRow<'_>, state: RowState, cx: &RowContext<'_>) -> Div;
     fn agent(&self, row: AgentRow<'_>, state: RowState, cx: &RowContext<'_>) -> Div;
+    /// What carries a worktree child's tree guide on through the lines under
+    /// its row (note, ports) to the next sibling. Only layouts that draw
+    /// guides have one to continue.
+    fn trunk_below(&self, _key: &str, _tree: RowTree, _cx: &RowContext<'_>) -> Option<Div> {
+        None
+    }
 }
 
 /// One row waiting for its state: build it, mark it, then take the element.

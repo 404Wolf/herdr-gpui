@@ -6,6 +6,9 @@ use crate::{
 use gpui::{prelude::*, *};
 use herdr_client::ConnectTarget;
 
+mod accounts;
+pub(crate) use accounts::AdditionalAccount;
+
 #[cfg(test)]
 mod tests;
 
@@ -15,6 +18,12 @@ pub(super) enum Action {
     Open,
     GitHubCli,
     Start,
+    /// Show the field for a pasted personal access token.
+    Token,
+    /// Add an account read for the repositories it owns.
+    Add,
+    SubmitToken,
+    CancelToken,
     SignOut,
     Close,
 }
@@ -26,6 +35,10 @@ impl Action {
             Self::Open => "github-open",
             Self::GitHubCli => "github-cli",
             Self::Start => "github-start",
+            Self::Token => "github-token-open",
+            Self::Add => "github-account-add-action",
+            Self::SubmitToken => "github-token-submit",
+            Self::CancelToken => "github-token-cancel",
             Self::SignOut => "github-sign-out",
             Self::Close => "github-header-close",
         }
@@ -42,14 +55,21 @@ impl HerdrWindow {
             .filter(|id| self.menu.github_hosts.contains_key(*id))
     }
 
-    /// The account the GitHub page shows and signs in or out.
+    /// The account the GitHub page shows and signs in or out: an additional
+    /// account when one is chosen, else the device's own.
     pub(crate) fn github_auth(&self) -> &Auth {
+        if let Some(account) = self.selected_github_account() {
+            return &account.auth;
+        }
         self.github_host()
             .and_then(|id| self.menu.github_hosts.get(id))
             .unwrap_or(&self.menu.github)
     }
 
     fn github_auth_mut(&mut self) -> &mut Auth {
+        if let Some(index) = self.selected_github_account_index() {
+            return &mut self.menu.github_accounts[index].auth;
+        }
         match self.github_host().map(str::to_owned) {
             Some(id) => self
                 .menu
@@ -62,11 +82,16 @@ impl HerdrWindow {
 
     /// Start signing in the account the GitHub page shows.
     pub(crate) fn start_github(&mut self) {
+        let config = &self.config;
+        if let Some(index) = self.selected_github_account_index() {
+            self.menu.github_accounts[index].auth.start(config);
+            return;
+        }
         let host = self.github_host().map(str::to_owned);
         let menu = &mut self.menu;
         host.and_then(|id| menu.github_hosts.get_mut(&id))
             .unwrap_or(&mut menu.github)
-            .start(&self.config);
+            .start(config);
     }
 
     /// The account pull requests on the selected device are read with: the
@@ -116,12 +141,14 @@ impl HerdrWindow {
 
     pub(crate) fn poll_github(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.sync_github_hosts();
+        self.sync_github_accounts();
         self.prune_device_removals();
         // Only the main account's page offers the local GitHub CLI, and only
         // a window that may touch credentials asks it.
         if self.avatars.is_some()
             && self.menu.page == Some(super::Page::GitHub)
             && self.github_host().is_none()
+            && self.menu.github_account.is_none()
         {
             self.menu.github.probe_github_cli(std::time::Instant::now());
         }
@@ -130,10 +157,15 @@ impl HerdrWindow {
         for auth in self.menu.github_hosts.values_mut() {
             changed |= auth.poll();
         }
+        for account in &mut self.menu.github_accounts {
+            changed |= account.auth.poll();
+        }
         if changed {
+            // An additional account stays shown, with the owners it reads.
             if !connected
                 && self.github_auth().connected()
                 && self.menu.page == Some(super::Page::GitHub)
+                && self.menu.github_account.is_none()
             {
                 self.dismiss_menu(window, cx);
             }
@@ -144,16 +176,30 @@ impl HerdrWindow {
     fn github_actions(&self) -> Vec<Action> {
         let auth = self.github_auth();
         let mut actions = Vec::new();
+        if self.menu.github_token.is_some() {
+            return vec![Action::SubmitToken, Action::CancelToken, Action::Close];
+        }
         if auth.code().is_some() {
             actions.extend([Action::Copy, Action::Open]);
         } else if !auth.busy() && !auth.loading_profile() && !auth.connected() {
             if self.github_host().is_none() && auth.github_cli_available() {
                 actions.push(Action::GitHubCli);
             }
-            actions.push(Action::Start);
+            actions.extend([Action::Start, Action::Token]);
         }
-        if auth.can_sign_out() && !auth.busy() && !auth.loading_profile() {
+        // An additional account can be removed even before it signs in.
+        if (auth.can_sign_out() || self.menu.github_account.is_some())
+            && !auth.busy()
+            && !auth.loading_profile()
+        {
             actions.push(Action::SignOut);
+        }
+        // Once the device's account is in, another can be added beside it.
+        if self.menu.github_account.is_none()
+            && auth.connected()
+            && self.menu.github_accounts.len() < crate::config::MAX_ACCOUNTS
+        {
+            actions.push(Action::Add);
         }
         actions.push(Action::Close);
         actions
@@ -172,6 +218,16 @@ impl HerdrWindow {
             Action::Open => cx.open_url(crate::github::VERIFY_URL),
             Action::GitHubCli => self.use_github_cli(),
             Action::Start => self.start_github(),
+            Action::Token => self.open_github_token(window, cx),
+            Action::Add => self.add_github_account(cx),
+            Action::SubmitToken => self.submit_github_token(window, cx),
+            Action::CancelToken => {
+                self.close_github_token();
+                window.focus(&self.menu.focus, cx);
+            }
+            Action::SignOut if self.menu.github_account.is_some() => {
+                self.remove_github_account(cx);
+            }
             Action::SignOut => {
                 self.menu.pr_cache.clear();
                 self.menu.pr.clear();
@@ -188,10 +244,16 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        cx.stop_propagation();
-        window.prevent_default();
         let key = event.keystroke.key.as_str();
         let modifiers = event.keystroke.modifiers;
+        // The token field edits itself; only Escape and Enter are the page's.
+        if let Some(input) = &self.menu.github_token
+            && (input.read(cx).is_composing() || !matches!(key, "escape" | "enter"))
+        {
+            return;
+        }
+        cx.stop_propagation();
+        window.prevent_default();
         let actions = self.github_actions();
         if key == "tab" && !modifiers.control && !modifiers.platform && !modifiers.alt {
             let selected = self
@@ -220,7 +282,20 @@ impl HerdrWindow {
             self.github_action(Action::Copy, window, cx);
         } else if modifiers == Modifiers::default() {
             let action = match key {
+                "escape" if self.menu.github_token.is_some() => Some(Action::CancelToken),
+                "enter" if self.menu.github_token.is_some() => Some(Action::SubmitToken),
                 "escape" => Some(Action::Close),
+                "a" => {
+                    if self.can_add_github_account() {
+                        self.add_github_account(cx);
+                    }
+                    None
+                }
+                "left" | "right" => {
+                    self.cycle_github_account(key == "right");
+                    None
+                }
+                "t" => Some(Action::Token),
                 "c" => {
                     if self.github_auth().busy() {
                         self.github_auth_mut().cancel();
@@ -266,9 +341,14 @@ impl HerdrWindow {
         let theme = &self.theme;
         // The GitHub CLI's sign-in, when offered, is the one-click choice.
         let primary = match action {
-            Action::Open | Action::GitHubCli => true,
+            Action::Open | Action::GitHubCli | Action::SubmitToken => true,
             Action::Start => !self.github_actions().contains(&Action::GitHubCli),
-            Action::Copy | Action::SignOut | Action::Close => false,
+            Action::Copy
+            | Action::Token
+            | Action::Add
+            | Action::CancelToken
+            | Action::SignOut
+            | Action::Close => false,
         };
         let danger = action == Action::SignOut;
         let accent = if danger {
@@ -331,9 +411,23 @@ impl HerdrWindow {
             .overflow_y_scroll()
             .track_scroll(&self.menu.github_scroll)
             .p(px(16.));
+        let additional = self.menu.github_account.is_some();
         let host = self
             .github_host()
+            .filter(|_| !additional)
             .map(|_| self.endpoints[self.selected_endpoint].label.as_str());
+        if let Some(strip) = self.render_github_accounts(cx) {
+            body = body.child(strip);
+        }
+        if let Some(note) = self.github_account_note() {
+            body = body.child(
+                div()
+                    .debug_selector(|| "github-account-note".into())
+                    .mb(px(12.))
+                    .text_color(rgb(theme.subtext()))
+                    .child(note),
+            );
+        }
         if let Some(label) = host {
             let note = match (&auth.profile, &self.menu.github.profile) {
                 (Some(_), _) => format!("Pull requests on {label} use this account."),
@@ -440,14 +534,16 @@ impl HerdrWindow {
                 "Checking GitHub account..."
             } else if auth.connected() {
                 "Your account is ready for pull request lookups."
-            } else if host.is_none() && auth.github_cli_available() {
+            } else if host.is_none() && !additional && auth.github_cli_available() {
                 "GitHub CLI is signed in on this computer. Use its session, or sign in securely in your browser."
             } else {
                 "Sign in securely in your browser to view pull requests. No GitHub CLI required."
             }
             .into()
         });
-        if !auth.connected() || auth.failed {
+        if let Some(field) = self.render_github_token() {
+            body = body.child(field);
+        } else if !auth.connected() || auth.failed {
             body = body.child(
                 div()
                     .debug_selector(|| "github-status".into())
@@ -507,7 +603,13 @@ impl HerdrWindow {
                 Action::Start if host.is_some() && self.menu.github.connected() => {
                     "Use another account (S)"
                 }
+                Action::Start if additional => "Sign in with browser (S)",
                 Action::Start => "Sign in (S)",
+                Action::Token => "Use a token (T)",
+                Action::Add => "Add account (A)",
+                Action::SubmitToken => "Save token (Enter)",
+                Action::CancelToken => "Cancel (Esc)",
+                Action::SignOut if additional => "Remove account (D)",
                 Action::SignOut
                     if auth
                         .profile

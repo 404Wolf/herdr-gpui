@@ -61,6 +61,8 @@ pub(crate) struct MenuState {
     /// The saved distribution the removal confirmation names.
     pub(super) wsl_remove: Option<String>,
     pub(super) session_edit: Option<super::sessions::Edit>,
+    /// The address the open-link question is about.
+    pub(super) open_link: Option<crate::terminal::ExternalUrl>,
     #[cfg(feature = "coder")]
     pub(super) coder: Option<super::devices::coder::Wizard>,
     pub(super) devices_scroll: ScrollHandle,
@@ -122,6 +124,15 @@ pub(crate) struct MenuState {
     /// Saved SSH devices' own accounts, keyed by endpoint ID. A device without
     /// one signed in looks up pull requests with `github`.
     pub(crate) github_hosts: std::collections::HashMap<String, crate::github::Auth>,
+    /// One sign-in per `[github] accounts` entry, in config order.
+    pub(crate) github_accounts: Vec<github::AdditionalAccount>,
+    /// The additional account the GitHub page shows, by ID; `None` shows
+    /// the device's own account.
+    pub(super) github_account: Option<String>,
+    /// An account whose config entry is being written, shown once it loads.
+    pub(super) github_adding: Option<String>,
+    /// The pasted-token field, while the GitHub page shows it.
+    pub(super) github_token: Option<Entity<crate::search_input::SearchInput>>,
     /// Saved devices whose removal is running, by endpoint ID. Kept after
     /// success until the catalog drops the device, so its header pulses
     /// until it disappears; the confirmation closes as soon as it starts.
@@ -296,6 +307,7 @@ impl MenuState {
             wsl_setup: None,
             wsl_remove: None,
             session_edit: None,
+            open_link: None,
             #[cfg(feature = "coder")]
             coder: None,
             devices_scroll: ScrollHandle::new(),
@@ -339,6 +351,10 @@ impl MenuState {
             pr_snapshot: None,
             github: Default::default(),
             github_hosts: Default::default(),
+            github_accounts: Vec::new(),
+            github_account: None,
+            github_adding: None,
+            github_token: None,
             removing_devices: Default::default(),
             github_selected: None,
             github_scroll: ScrollHandle::new(),
@@ -360,6 +376,7 @@ impl MenuState {
         self.wsl_setup = None;
         self.wsl_remove = None;
         self.session_edit = None;
+        self.open_link = None;
         #[cfg(feature = "coder")]
         {
             self.coder = None;
@@ -377,6 +394,14 @@ impl MenuState {
         if self.github.busy() {
             self.github.cancel();
         }
+        for account in &mut self.github_accounts {
+            if account.auth.busy() {
+                account.auth.cancel();
+            }
+        }
+        self.github_account = None;
+        self.github_adding = None;
+        self.github_token = None;
         self.page = None;
         if let Some(palette) = self.palette.take() {
             self.palette_resume = Some(palette.resume());
