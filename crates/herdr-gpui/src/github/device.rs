@@ -84,6 +84,8 @@ pub(super) enum Reply {
     Authenticated(Arc<SecretString>),
     /// The GitHub CLI's account, after the user chose it and it was verified.
     GitHubCli(Profile),
+    /// The account of a token the user pasted, verified and saved.
+    Pasted(Profile),
 }
 
 pub(crate) struct Profile {
@@ -92,6 +94,30 @@ pub(crate) struct Profile {
     pub token: Arc<SecretString>,
     pub(super) avatar_updates: Option<crate::avatars::AvatarUpdates>,
     pub source: Source,
+    /// The organizations the account belongs to, read only for an additional
+    /// account: the owners it covers besides its own login. `None` until
+    /// GitHub listed them, so a failed listing is not mistaken for none.
+    pub organizations: Option<Vec<String>>,
+}
+
+#[cfg(test)]
+impl Profile {
+    /// A signed-in account without an avatar, for tests outside this module.
+    pub(crate) fn fixture(login: &str, token: Arc<SecretString>, organizations: &[&str]) -> Self {
+        Self {
+            login: login.into(),
+            avatar: None,
+            token,
+            avatar_updates: None,
+            source: Source::Token,
+            organizations: Some(
+                organizations
+                    .iter()
+                    .map(|name| (*name).to_owned())
+                    .collect(),
+            ),
+        }
+    }
 }
 
 /// Where a signed-in account's token comes from.
@@ -162,7 +188,58 @@ pub(super) fn profile_from(token: Arc<SecretString>, github_cli: bool) -> Result
         token,
         avatar_updates,
         source,
+        organizations: None,
     })
+}
+
+impl Profile {
+    /// Keeps the organizations `old` listed when this check could not list
+    /// them, so a failed request never moves the account's repositories to
+    /// the main account. Only for the same login: another account's are not
+    /// this one's.
+    pub(super) fn keep_organizations(&mut self, old: &Self) {
+        if self.organizations.is_none() && self.login == old.login {
+            self.organizations = old.organizations.clone();
+        }
+    }
+}
+
+const ORGANIZATIONS: &str = "query { viewer { organizations(first: 100) { nodes { login } } } }";
+
+/// `profile` with the organizations its account belongs to, as far as its
+/// token may list them. A token that may not (a classic one without
+/// `read:org`, say) still covers its own login, so the failure is only logged
+/// and the organizations stay unknown: [`Profile::keep_organizations`] then
+/// keeps those an earlier check listed.
+pub(super) fn with_organizations(mut profile: Profile) -> Profile {
+    let mut cooldown = None;
+    match super::graphql(
+        "organizations",
+        &profile.token,
+        ORGANIZATIONS,
+        serde_json::json!({}),
+        Duration::from_secs(15),
+        || false,
+        &mut cooldown,
+    ) {
+        Ok(value) => profile.organizations = Some(organizations(&value)),
+        Err(error) => log::failure("organizations", &error),
+    }
+    profile
+}
+
+/// The organization logins of a viewer query, bounded and checked like the
+/// owners a config lists.
+pub(super) fn organizations(value: &serde_json::Value) -> Vec<String> {
+    value["data"]["viewer"]["organizations"]["nodes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|node| node["login"].as_str())
+        .filter(|login| crate::config::valid_owner(login))
+        .take(100)
+        .map(str::to_owned)
+        .collect()
 }
 
 /// Whether a classic token's `X-OAuth-Scopes` reach private repositories.

@@ -8,6 +8,7 @@ mod credentials;
 mod device;
 mod http;
 mod log;
+mod routing;
 #[cfg(target_os = "linux")]
 mod secret_service;
 mod store;
@@ -23,6 +24,7 @@ pub(crate) use {
     auth::Auth,
     device::{Profile, Source, VERIFY_URL},
     http::{graphql, graphql_aliases, hidden_hint, mutation},
+    routing::Tokens,
     store::{Account, Note, Store},
 };
 // Cloud providers keep their own secrets in the same store.

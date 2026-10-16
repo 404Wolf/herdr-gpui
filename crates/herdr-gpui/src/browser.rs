@@ -21,6 +21,7 @@ mod feedback;
 mod group_motion;
 mod groups;
 mod groups_view;
+mod hidden;
 #[cfg(any(target_os = "macos", windows, test))]
 mod kit;
 mod layouts;

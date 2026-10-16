@@ -28,13 +28,32 @@ fn without_a_resolved_config_home_the_login_one_is_removed() {
     assert_eq!(config_home(&command), Some(None));
 }
 
+/// Leaves a socket file nothing accepts on. A dropped `UnixListener` is not
+/// enough on macOS: it marks a new socket close-on-exec only after creating
+/// it, so a child another test thread spawns in between inherits the listener
+/// and keeps accepting. A socket that never listens refuses even if leaked.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn stale_socket(path: &Path) {
+    use nix::sys::socket::{AddressFamily, SockFlag, SockType, UnixAddr, bind, socket};
+    use std::os::fd::AsRawFd;
+    let fd = socket(
+        AddressFamily::Unix,
+        SockType::Stream,
+        SockFlag::empty(),
+        None,
+    )
+    .unwrap();
+    bind(fd.as_raw_fd(), &UnixAddr::new(path).unwrap()).unwrap();
+}
+
 /// A stale default socket is refused rather than trusted, so the daemon is
 /// started and the wait connects to it at the same path.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn a_stale_socket_is_replaced_by_a_daemon_at_the_polled_path() {
     let path = socket();
-    drop(UnixListener::bind(&path).unwrap());
-    assert!(path.exists(), "a closed listener leaves its file");
+    stale_socket(&path);
+    assert!(path.exists(), "a closed socket leaves its file");
     let mut listener = None;
     let stream = connect_or_start(
         &path,

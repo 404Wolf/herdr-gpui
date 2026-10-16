@@ -57,6 +57,17 @@ at the same spot, or both bumping one hard-coded count.
   `just check-sorted` (part of `just ci`) enforces the markers and `just sort`
   fixes them. Never mark a list whose order is shown to users or is a wire
   contract, such as menu rows or the vendored bincode types.
+- Give a new feature's failures their own `thiserror` enum in its module and
+  add one `#[error(transparent)] Feature(#[from] feature::Error)` variant to
+  the crate's root `Error`, as `teleport`, `pane_move`, and `backdrop` do,
+  rather than a run of variants in `error.rs`. The root enum stays sorted.
+- Shared state structs (`HerdrWindow`, `Config`, `herdr_settings::Settings`)
+  and their constructors keep their fields sorted. Run an initializer that has
+  an effect or depends on another (registering a subscription, creating an
+  entity, reading a value before it moves) in a `let` before the struct
+  literal, so the literal itself has no order to preserve. Derive `Debug`
+  rather than listing fields by hand; redact a private field through its own
+  type's `Debug`.
 - `just hooks` also enables `rerere`, so a resolution is reused when the same
   conflict returns on another branch, and a `Cargo.lock` merge driver that
   keeps one side and has Cargo rebuild it before the commit. After a clean
