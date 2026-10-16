@@ -214,8 +214,9 @@ impl Render for HerdrWindow {
             .iter()
             .map(|slot| self.group_shown(slot.id, cx))
             .collect();
-        // A divider's grip keeps off a native page, which would cover it. A
-        // folding group stands between two groups without a divider.
+        // On Windows a divider's grip keeps off a native page, which would
+        // cover it. A folding group stands between two groups without a
+        // divider.
         let pages: Vec<bool> = if self.folding_groups().is_empty() {
             shown.iter().map(|shown| native_page(shown, cx)).collect()
         } else {
@@ -719,7 +720,8 @@ impl Render for HerdrWindow {
         {
             window.request_animation_frame();
         }
-        // A menu just opened, or a covered page's picture is on its way.
+        // On Windows a menu that just opened hides the pages it covers once
+        // it is laid out, a frame later.
         if self.present_browser(cx) {
             window.request_animation_frame();
         }
