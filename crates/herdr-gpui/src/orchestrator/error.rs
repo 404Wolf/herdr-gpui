@@ -73,6 +73,28 @@ pub enum Error {
     /// Shown as GitHub's own failure, which already names GitHub and why.
     #[error("{0}")]
     Github(#[source] Box<crate::Error>),
+    #[error("GitLab could not be reached: {0}")]
+    GitlabNetwork(#[source] Box<ureq::Error>),
+    #[error("GitLab's answer could not be read: {0}")]
+    GitlabRead(#[source] std::io::Error),
+    #[error("GitLab's answer exceeded the size limit")]
+    GitlabSize,
+    #[error("The GitLab token is not one an HTTP header can carry")]
+    GitlabToken,
+    #[error(
+        "GitLab shows {repository} only when signed in: set GITLAB_TOKEN or run glab auth login"
+    )]
+    GitlabSignIn { repository: String },
+    #[error("GitLab refused the token; renew it with glab auth login or replace GITLAB_TOKEN")]
+    GitlabAuthentication,
+    #[error("GitLab refused access to {repository}; the token needs the read_api scope")]
+    GitlabForbidden { repository: String },
+    #[error("GitLab shows no project {repository} to this token")]
+    GitlabNotFound { repository: String },
+    #[error("GitLab rate limit reached; it is read again later")]
+    GitlabRateLimit,
+    #[error("GitLab request failed (HTTP {0})")]
+    GitlabStatus(u16),
     #[error("Cancelled")]
     Cancelled,
     #[error("Could not start the orchestrator's worker: {0}")]
