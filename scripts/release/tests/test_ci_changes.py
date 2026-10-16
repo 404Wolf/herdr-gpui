@@ -100,7 +100,8 @@ class WindowsPackageChanges(GitFixture):
     def test_windows_packaging_inputs_run_the_installer_check(self):
         for path in ("scripts/release/package-windows.py", "scripts/release/windows-installer.py",
                      "scripts/release/herdr-gpui.iss", "site/install.ps1",
-                     "crates/herdr-gpui/src/console.rs", ".github/workflows/ci.yml"):
+                     "crates/herdr-gpui/src/console.rs", "crates/herdr-gpui/build_resource.rs",
+                     "assets/icons/windows/herdr.ico", ".github/workflows/ci.yml"):
             self.base = self.git("rev-parse", "HEAD").strip()
             self.commit_path(path)
             self.assertEqual(self.outputs()["windows_package"], "true", path)

@@ -10,13 +10,15 @@
   smoke INSTALLER
       On Windows: install silently into a scratch directory with the PATH
       task, check the files, their subsystems, the console copy's output,
-      and the user PATH, then uninstall and check both are gone again. Changes
-      this user's PATH while it runs: for CI runners only.
+      the app's name and its Start menu shortcut's AppUserModelID, and the
+      user PATH, then uninstall and check both are gone again. Changes this
+      user's PATH and Start menu shortcut while it runs: for CI runners only.
 
 Pure standard library, like package-windows.py, for the Windows runner.
 """
 import argparse
 import hashlib
+import os
 from pathlib import Path
 import re
 import struct
@@ -109,6 +111,30 @@ def user_path_entries():
     return [entry.rstrip("\\").lower() for entry in value.split(";") if entry]
 
 
+def app_user_model_id():
+    """The AppUserModelID the installer gives its shortcuts."""
+    match = re.search(r'^#define AppUserModelID "([^"]+)"$', SCRIPT.read_text(), re.M)
+    if not match:
+        raise ValueError(f"{SCRIPT.name} defines no AppUserModelID")
+    return match.group(1)
+
+
+def shell_identity(app):
+    """The installed app's FileDescription and its Start menu shortcut's
+    AppUserModelID, which only the shell reads."""
+    script = (
+        "$ErrorActionPreference = 'Stop';"
+        "(Get-Item -LiteralPath $env:HERDR_SMOKE_APP).VersionInfo.FileDescription;"
+        "$programs = [Environment]::GetFolderPath('Programs');"
+        "(New-Object -ComObject Shell.Application).Namespace($programs)"
+        ".ParseName('Herdr UI.lnk').ExtendedProperty('System.AppUserModel.ID')"
+    )
+    output = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+                            capture_output=True, text=True, check=True, timeout=120,
+                            env={**os.environ, "HERDR_SMOKE_APP": str(app)}).stdout
+    return tuple(output.splitlines())
+
+
 def smoke(installer):
     with tempfile.TemporaryDirectory(prefix="herdr-installer-smoke-") as temp:
         app = Path(temp) / "Herdr UI"
@@ -127,16 +153,20 @@ def smoke(installer):
         # Printed through a pipe by the console copy, as an agent's shell reads it.
         if not info.startswith("worktree="):
             raise ValueError(f"Installed console copy printed no build info:\n{info}")
+        identity = shell_identity(gui)
+        if identity != ("Herdr UI", app_user_model_id()):
+            raise ValueError(f"Installed app or shortcut has the wrong identity: {identity}")
         bin_entry = str(app / "bin").lower()
         if bin_entry not in user_path_entries():
             raise ValueError("Installer did not add bin to the user PATH")
         subprocess.run([str(app / "unins000.exe"), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
                        check=True, timeout=600)
         # The uninstaller hands off to a copy of itself and returns early.
+        shortcut = Path(os.environ["APPDATA"]) / "Microsoft/Windows/Start Menu/Programs/Herdr UI.lnk"
         deadline = time.monotonic() + 120
-        while gui.exists() or bin_entry in user_path_entries():
+        while gui.exists() or shortcut.exists() or bin_entry in user_path_entries():
             if time.monotonic() > deadline:
-                raise ValueError("Uninstaller left the app or its PATH entry behind")
+                raise ValueError("Uninstaller left the app, its shortcut, or its PATH entry behind")
             time.sleep(1)
 
 

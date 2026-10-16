@@ -17,11 +17,16 @@ What the branch does:
 - Every child process (git, ssh, wsl.exe…) is created with CREATE_NO_WINDOW via
   herdr_client::new_command, so none flash a console.
 - scripts/release/herdr-gpui.iss is a per-user Inno Setup installer; scripts/release/windows-installer.py
-  builds and smoke-tests it.
+  builds and smoke-tests it. It shows Herdr's icon, and its shortcuts carry the app's
+  AppUserModelID (so.pen.herdr-gpui).
+- herdr-gpui.exe embeds Herdr's icon and a version resource (FileDescription "Herdr UI"), and
+  sets its AppUserModelID at startup, so the window and a pinned shortcut share one taskbar button.
 
 Steps (PowerShell, from the repo root):
 1. git fetch origin; git checkout windows; git pull
-2. cargo build --release -p herdr-gpui
+2. $env:HERDR_RELEASE_VERSION = '20261015.1'; cargo build --release -p herdr-gpui
+   (Get-Item target\release\herdr-gpui.exe).VersionInfo | Format-List FileDescription, ProductName, FileVersion
+   (expect Herdr UI, Herdr UI, 20261015.1)
 3. Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue; mkdir dist
    python scripts\release\package-windows.py 20261015.1 x86_64-pc-windows-msvc target\release\herdr-gpui.exe dist LICENSE
 4. Find ISCC.exe (Inno Setup 6 is installed; try "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
@@ -37,6 +42,10 @@ Then, using computer use if you have it (otherwise give me exact steps and I'll 
 8. In a NEW PowerShell window: `herdr-gpui --help` (output prints, prompt returns after it),
    `herdr-gpui --build-info; $LASTEXITCODE` (expect 0), and `herdr-gpui` alone (app opens, prompt
    returns immediately).
+   Check that Task Manager lists "Herdr UI" with the ram icon, and that Explorer shows the same icon
+   for the installed herdr-gpui.exe. Pin the running app to the taskbar, quit it, start it from the
+   pin, and trigger a system notification (Settings: system notifications on, then an agent that
+   needs attention): the window, the pin, and the notification must all use one taskbar button.
 9. Uninstall from Settings → Apps → Herdr UI; confirm %LOCALAPPDATA%\Programs\Herdr UI is gone and
    `herdr-gpui` is no longer found in a new terminal.
 
