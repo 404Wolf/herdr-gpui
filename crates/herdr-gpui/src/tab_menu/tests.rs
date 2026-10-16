@@ -4,6 +4,8 @@ use core::prelude::v1::test;
 use gpui::VisualTestContext;
 use std::sync::Arc;
 
+mod moves;
+
 #[test]
 fn tab_target_retains_membership_and_rejects_stale_snapshots() {
     let original: ClientShellSnapshot = serde_json::from_str(include_str!(
@@ -168,7 +170,7 @@ fn inactive_tab_menu_rename_composition_cancel_and_fences(cx: &mut TestAppContex
                     view.selection_epoch += 1;
                 }
                 assert!(!view.menu_target_current());
-                for (action, _) in ACTIONS {
+                for action in ACTIONS {
                     view.activate_tab_menu(action, window, cx);
                     assert!(view.menu.page == Some(Page::Tab));
                     assert!(view.menu.tab.as_ref().unwrap().error.is_some());

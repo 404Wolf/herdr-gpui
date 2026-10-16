@@ -71,6 +71,30 @@ pub(crate) fn choices(snapshot: &ClientShellSnapshot, tab_id: &str) -> Vec<Choic
     choices
 }
 
+/// The workspaces a tab in `workspace_id` can move to: a new workspace first,
+/// then a new tab in each other workspace, in sidebar order.
+pub(crate) fn workspace_choices(snapshot: &ClientShellSnapshot, workspace_id: &str) -> Vec<Choice> {
+    std::iter::once(Choice {
+        destination: Destination::NewWorkspace,
+        workspace: None,
+        place: "New Workspace".into(),
+    })
+    .chain(
+        snapshot
+            .workspaces
+            .iter()
+            .filter(|workspace| workspace.workspace_id != workspace_id)
+            .map(|workspace| Choice {
+                destination: Destination::NewTab {
+                    workspace_id: workspace.workspace_id.clone(),
+                },
+                workspace: None,
+                place: workspace.label.clone(),
+            }),
+    )
+    .collect()
+}
+
 impl Destination {
     /// Whether this destination still exists in `snapshot`.
     pub(crate) fn exists(&self, snapshot: &ClientShellSnapshot) -> bool {
@@ -142,6 +166,15 @@ pub(crate) struct Request {
     destination: Destination,
 }
 
+/// A move of every pane in a tab to a workspace destination. The first pane
+/// opens the new tab or workspace; any remaining panes join that tab.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TabRequest {
+    first: Request,
+    rest: Vec<String>,
+    tab_label: Option<String>,
+}
+
 /// An ID the CLI takes as one positional or option value: nonempty, never
 /// read as an option, and free of control characters.
 fn checked(id: &str) -> Result<&str> {
@@ -192,6 +225,66 @@ impl Request {
     }
 }
 
+impl TabRequest {
+    pub(crate) fn new(
+        panes: Vec<String>,
+        destination: Destination,
+        tab_label: Option<String>,
+    ) -> Result<Self> {
+        let mut panes = panes.into_iter();
+        let first = panes.next().unwrap_or_default();
+        let first = Request::new(first, destination)?;
+        let rest: Vec<String> = panes
+            .map(|id| checked(&id).map(str::to_owned))
+            .collect::<Result<_>>()?;
+        let tab_label = match tab_label {
+            Some(label) => {
+                let trimmed = label.trim();
+                if trimmed.chars().any(char::is_control) {
+                    return Err(Error::InvalidId(label));
+                }
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_owned())
+                }
+            }
+            None => None,
+        };
+        Ok(Self {
+            first,
+            rest,
+            tab_label,
+        })
+    }
+
+    /// Run the tab move on `host`. Blocking: call only on a background worker.
+    pub(crate) fn run(&self, host: &Host, cancelled: &AtomicBool) -> Result<()> {
+        let output = host
+            .capture(&Host::herdr_line(&self.first.args()), cancelled)
+            .map_err(failure)?;
+        let tab_id = outcome_tab(&output)?;
+        let tab_id = tab_id.ok_or_else(|| Error::InvalidId(String::new()))?;
+        if let Some(tab_label) = &self.tab_label {
+            host.capture(
+                &Host::herdr_line(&["tab", "rename", tab_id.as_str(), tab_label.as_str()]),
+                cancelled,
+            )
+            .map_err(failure)?;
+        }
+        for pane_id in &self.rest {
+            Request::new(
+                pane_id.clone(),
+                Destination::Tab {
+                    tab_id: tab_id.clone(),
+                },
+            )?
+            .run(host, cancelled)?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Deserialize)]
 struct Envelope<T> {
     result: T,
@@ -207,15 +300,29 @@ struct Outcome {
     changed: bool,
     #[serde(default)]
     reason: Option<Unchanged>,
+    #[serde(default)]
+    pane: Option<MovedTab>,
+    #[serde(default)]
+    created_tab: Option<MovedTab>,
+}
+
+#[derive(Deserialize)]
+struct MovedTab {
+    tab_id: String,
 }
 
 fn outcome(output: &[u8]) -> Result<()> {
+    outcome_tab(output).map(|_| ())
+}
+
+fn outcome_tab(output: &[u8]) -> Result<Option<String>> {
     let outcome = serde_json::from_slice::<Envelope<MoveResponse>>(output)
         .map_err(Error::Decode)?
         .result
         .move_result;
     if outcome.changed {
-        return Ok(());
+        let tab_id = outcome.created_tab.or(outcome.pane).map(|tab| tab.tab_id);
+        return Ok(tab_id);
     }
     Err(Error::Unchanged(outcome.reason.unwrap_or(Unchanged::Other)))
 }
@@ -264,6 +371,16 @@ pub(crate) fn host_for(target: &herdr_client::ConnectTarget) -> Result<Host> {
         crate::teleport::Error::DevelopmentSession => Error::DevelopmentSession,
         _ => Error::UnsupportedHost,
     })
+}
+
+/// Why panes on `target` cannot move, if they cannot: host scripts need a
+/// POSIX client (see `herdr_client::run_script`) and a host the `herdr` CLI
+/// can address.
+pub(crate) fn refusal(target: &herdr_client::ConnectTarget) -> Option<Error> {
+    if !cfg!(any(target_os = "linux", target_os = "macos")) {
+        return Some(Error::UnsupportedHost);
+    }
+    host_for(target).err()
 }
 
 #[cfg(test)]
