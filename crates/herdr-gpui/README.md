@@ -1486,15 +1486,18 @@ keyboard selection is not exposed.
 ## File Drops
 
 Drop files from your file manager onto a terminal pane or popup to paste their
-paths there, even if another pane is focused. Paths are quoted as POSIX shell
-words, separated by spaces; the drop never presses Enter. Local drops only paste
-paths; SSH drops read and transfer the selected files.
-Drops are limited to 256 paths and 64 KiB of quoted text. Non-UTF-8 paths and
+paths there, even if another pane is focused. Paths are pasted bare, as native
+macOS terminals do, with a backslash before each space, quote, bracket, comma,
+colon, or other character a shell would interpret (`/tmp/Shot\ 1.png`), and
+before a final period, separated by spaces; the drop never presses Enter. The
+escapes keep a dropped path one Cmd-clickable link. Local drops only paste paths; SSH drops
+read and transfer the selected files.
+Drops are limited to 256 paths and 64 KiB of escaped text. Non-UTF-8 paths and
 paths containing control characters are rejected rather than altered.
 
 On an SSH endpoint, a single supported image is transferred as described below.
 Other regular files and multiple-file drops are streamed using the SSH file-copy
-path below. POSIX quoting is not intended for Windows command shells.
+path below. POSIX shell escaping is not intended for Windows command shells.
 
 Files copied in the file manager (Cmd-C in Finder) and pasted into the focused
 pane or popup with Cmd-V are handled the same way as a drop. Finder also puts
@@ -1505,7 +1508,7 @@ each file's name on the clipboard as text; the paste uses the full paths instead
 Drop regular files onto an SSH pane or popup to copy them to that host. A
 `Copying...` card shows the filename (or file count), transferred bytes, percentage,
 progress bar, and Cancel button. Once all files are received and the SSH processes
-exit successfully, their quoted remote paths are pasted into the original target.
+exit successfully, their escaped remote paths are pasted into the original target.
 No partial list is pasted on failure. Directories and special files are rejected;
 symlinks to regular files are followed. A single recognized image uses the image
 bridge below instead; multiple-file drops copy their originals unchanged.
@@ -1885,7 +1888,7 @@ or popup to send it through Herdr's existing image bridge. Clipboard images use
 Cmd-V (normal paste, with text taking precedence) or Ctrl-V (Herdr TUI's default
 image-paste shortcut). Ctrl-V retains its normal terminal meaning when the
 clipboard has no image. A pasted absolute image-file path is also recognized,
-including the quoted/backslash-escaped paths used by terminal file drops.
+including the backslash-escaped paths used by terminal file drops.
 
 Local endpoints on macOS and Linux use the same bridge for Cmd-V clipboard
 images, because a GUI text paste cannot carry image data. Local drops and pasted
@@ -1996,7 +1999,8 @@ the text verified:
   checks in the background. Any printed word may be one, such as
   `src/main.rs:12:5`, `./build/out`, `~/notes.md`, `README.md`, or a
   `file://` address. Relative paths resolve against the pane's working
-  directory.
+  directory. A backslash-escaped path, as a file drop pastes, names the
+  unescaped file.
 
 Verified text gets the solid underline and the hand cursor, and the modifier
 click opens it. In a mouse-aware application, the modifier click on a link
