@@ -175,3 +175,45 @@ fn a_terminal_tab_reopens_with_its_label_and_folder() {
     );
     assert!(ClosedHerdrTab::capture(&snapshot, "gone").is_none());
 }
+
+#[test]
+fn reopened_terminal_is_not_re_recorded_by_another_window_observation() {
+    let mut store = Store::default();
+    let scope = Scope::endpoint("local");
+    // Window A records terminal t1 closed.
+    store.record_closed_herdr_tab(scope.clone(), herdr("t1", "w"));
+
+    // Window A reopens t1.
+    assert!(matches!(
+        store.pop_closed(&scope, "w"),
+        Some(ClosedTab::Herdr(tab)) if tab.tab_id == "t1"
+    ));
+    assert!(store.peek_closed(&scope, "w").is_none());
+
+    // Window B sees t1 disappeared in its snapshot and tries to record it.
+    store.record_closed_herdr_tab(scope.clone(), herdr("t1", "w"));
+
+    // t1 must not be added again!
+    assert!(store.peek_closed(&scope, "w").is_none());
+}
+
+#[test]
+fn reopened_page_restores_latest_visited_location() {
+    let mut store = Store::default();
+    let scope = Scope::endpoint("local");
+    let page = store
+        .open(scope.clone(), "w", web("https://example.com/first"), None)
+        .unwrap();
+    store.visited(page, None, Some("First Page"));
+    // Navigate to a second page before closing.
+    store.visited(page, web("https://example.com/second"), Some("Second Page"));
+    store.close(page);
+
+    let Some(ClosedTab::Page(closed)) = store.pop_closed(&scope, "w") else {
+        panic!("expected closed page");
+    };
+    let reopened = store.reopen_page(closed).unwrap();
+    let tab = store.get(reopened).unwrap();
+    assert_eq!(tab.title, "Second Page");
+    assert_eq!(tab.location, web("https://example.com/second"));
+}

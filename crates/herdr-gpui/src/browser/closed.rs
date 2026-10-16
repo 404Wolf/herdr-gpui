@@ -95,9 +95,12 @@ pub(crate) enum ClosedTab {
     Herdr(ClosedHerdrTab),
 }
 
+const MAX_RECORDED_HERDR: usize = 256;
+
 #[derive(Default)]
 pub(super) struct ClosedTabs {
     workspaces: Vec<((Scope, String), Vec<ClosedTab>)>,
+    recorded_herdr: Vec<((Scope, String), Vec<String>)>,
 }
 
 impl ClosedTabs {
@@ -119,6 +122,24 @@ impl ClosedTabs {
         &mut self.workspaces[last].1
     }
 
+    fn recorded_herdr_mut(&mut self, key: (Scope, String)) -> &mut Vec<String> {
+        if let Some(index) = self
+            .recorded_herdr
+            .iter()
+            .position(|(existing, _)| *existing == key)
+        {
+            let entry = self.recorded_herdr.remove(index);
+            self.recorded_herdr.push(entry);
+        } else {
+            if self.recorded_herdr.len() >= MAX_CLOSED_WORKSPACES {
+                self.recorded_herdr.remove(0);
+            }
+            self.recorded_herdr.push((key, Vec::new()));
+        }
+        let last = self.recorded_herdr.len() - 1;
+        &mut self.recorded_herdr[last].1
+    }
+
     pub(super) fn push_page(&mut self, tab: Tab) {
         let key = (tab.scope.clone(), tab.workspace_id.clone());
         let entries = self.workspace_mut(key);
@@ -136,6 +157,15 @@ impl ClosedTabs {
 
     pub(super) fn push_herdr(&mut self, scope: Scope, tab: ClosedHerdrTab) {
         let key = (scope, tab.workspace_id.clone());
+        let recorded = self.recorded_herdr_mut(key.clone());
+        if recorded.contains(&tab.tab_id) {
+            return;
+        }
+        if recorded.len() >= MAX_RECORDED_HERDR {
+            recorded.remove(0);
+        }
+        recorded.push(tab.tab_id.clone());
+
         let entries = self.workspace_mut(key);
         if entries
             .iter()
@@ -174,6 +204,8 @@ impl ClosedTabs {
 
     pub(super) fn forget_workspaces(&mut self, scope: &Scope, closed: &[String]) {
         self.workspaces
+            .retain(|((saved, workspace), _)| saved != scope || !closed.contains(workspace));
+        self.recorded_herdr
             .retain(|((saved, workspace), _)| saved != scope || !closed.contains(workspace));
     }
 
