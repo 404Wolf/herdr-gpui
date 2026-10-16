@@ -208,6 +208,8 @@ pub(crate) struct HerdrWindow {
     /// Removing worktrees whose pull request is merged, when enabled.
     pub(crate) merged_cleanup: crate::merged_cleanup::Cleanup,
     /// The notes panel beside a review or an annotated page; both share it.
+    /// The revision of the app-wide network reading this window last drew.
+    pub(crate) network_quality_seen: u64,
     pub(crate) notes_width: crate::panel_resize::PanelWidth,
     pub(crate) options: ConnectOptions,
     /// Orchestrator views' requests, acted on at the next tick.
@@ -578,6 +580,11 @@ impl HerdrWindow {
         }
         self.poll_devices_overview(cx);
         if self.update_system_load() {
+            cx.notify();
+        }
+        let network_quality = crate::network_quality::poll(self.config.show_network_quality, cx);
+        if network_quality != self.network_quality_seen {
+            self.network_quality_seen = network_quality;
             cx.notify();
         }
         self.update_checkpoints(cx);

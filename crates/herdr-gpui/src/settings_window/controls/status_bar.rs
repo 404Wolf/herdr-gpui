@@ -12,6 +12,7 @@ impl SettingsWindow {
         let items = self.config.status_bar;
         let usage = self.config.usage.show;
         let system_load = self.config.show_system_load;
+        let network_quality = self.config.show_network_quality;
         self.control_card("Items")
             .child(
                 self.control_switch("settings-usage", "Usage", usage, true)
@@ -45,6 +46,16 @@ impl SettingsWindow {
             ))
             .child(self.control_note(
                 "Hiding CPU and memory also removes them from sidebar host rows.",
+            ))
+            .child(self.preference_switch(
+                "settings-network-quality",
+                "Network latency and loss",
+                network_quality,
+                Preference::ShowNetworkQuality(!network_quality),
+                cx,
+            ))
+            .child(self.control_note(
+                "Times one TCP connect to 1.1.1.1:443 every 15 seconds from this machine, about a megabyte a day.",
             ))
             .child(self.preference_switch(
                 "settings-status-keep-awake",

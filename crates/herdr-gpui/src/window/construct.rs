@@ -193,6 +193,7 @@ impl HerdrWindow {
             marked_selection: None,
             menu,
             merged_cleanup: Default::default(),
+            network_quality_seen: 0,
             notes_width: crate::panel_resize::NOTES,
             options: ConnectOptions::default(),
             orchestrator_events: Vec::new(),
