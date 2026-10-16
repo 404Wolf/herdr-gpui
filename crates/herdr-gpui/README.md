@@ -3648,7 +3648,7 @@ executable natively for each architecture and publishes
 live-daemon behavior remain unproven. Local connections use the named pipe the Windows
 daemon binds, derived from the same socket path string upstream uses, so
 discovery and framing are the same code as on Unix. Receive deadlines are
-emulated with `PeekNamedPipe`, the one `unsafe` call in the workspace, because a
+emulated with `PeekNamedPipe`, an `unsafe` call, because a
 named pipe has no receive timeout; send timeouts cannot be enforced at all
 there. Configuration and state
 follow upstream's Windows layout: `%APPDATA%\herdr` and `%LOCALAPPDATA%\herdr`,
@@ -3694,6 +3694,15 @@ These features are unavailable on Windows and say so rather than failing quietly
 Starting a local `herdr server` looks for `herdr.exe` and uses
 `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` in place of `process_group(0)`, so
 the daemon survives the GUI and no console window appears.
+
+`herdr-gpui.exe` is a console program, so `herdr-gpui COMMAND` prints to the
+shell that ran it and returns its exit code there. Opening the app from
+Explorer or a shortcut therefore makes Windows create a console for it, which
+the GUI hides when no other process shares it (it may show for an instant at
+launch). The console is hidden rather than released because the app's console
+children (git, ssh, shells) inherit it; without one, each would open a window
+of its own. Launched from a terminal, the GUI keeps that terminal's console and
+holds it until the app exits.
 
 Cross type-check it from a Mac or Linux machine with `just lint-windows`, which
 targets `x86_64-pc-windows-gnu` because those hosts cannot supply the MSVC C

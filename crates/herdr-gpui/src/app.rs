@@ -279,6 +279,8 @@ pub(crate) fn run() -> std::process::ExitCode {
     if mode != LaunchMode::Normal {
         smoke::EXIT_CODE.store(1, std::sync::atomic::Ordering::SeqCst);
     }
+    // Only the GUI gets here: commands, help, and build info keep the console.
+    crate::console::hide_owned_window();
     let startup_failed = std::rc::Rc::new(std::cell::Cell::new(false));
     if let Err(error) = diagnostics::init() {
         eprintln!("Unable to initialize diagnostics: {error}");

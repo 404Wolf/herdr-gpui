@@ -100,6 +100,10 @@ rustix.workspace = true
 gpui-wry.workspace = true
 wry.workspace      = true
 
+# Only to hide the console window Windows gives a GUI launch from Explorer.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { features = ["Win32_System_Console", "Win32_UI_WindowsAndMessaging"], workspace = true }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 fontdb.workspace       = true
 futures-lite.workspace = true

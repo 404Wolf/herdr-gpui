@@ -43,6 +43,7 @@ mod coder;
 mod config;
 mod config_diagnostic;
 mod connection;
+mod console;
 mod constants;
 mod contrast;
 mod control;
