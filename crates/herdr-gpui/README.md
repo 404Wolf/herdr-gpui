@@ -3695,14 +3695,24 @@ Starting a local `herdr server` looks for `herdr.exe` and uses
 `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` in place of `process_group(0)`, so
 the daemon survives the GUI and no console window appears.
 
-`herdr-gpui.exe` is a console program, so `herdr-gpui COMMAND` prints to the
-shell that ran it and returns its exit code there. Opening the app from
-Explorer or a shortcut therefore makes Windows create a console for it, which
-the GUI hides when no other process shares it (it may show for an instant at
-launch). The console is hidden rather than released because the app's console
-children (git, ssh, shells) inherit it; without one, each would open a window
-of its own. Launched from a terminal, the GUI keeps that terminal's console and
-holds it until the app exits.
+As Zed does, Windows ships two executables. Release builds of
+`herdr-gpui.exe` are GUI-subsystem programs (`windows_subsystem = "windows"`),
+so opening the app from Explorer or the Start menu shows no console window.
+`bin\herdr-gpui.exe` is a console-subsystem copy of the same build, made at
+packaging time by changing only the PE header's subsystem field, and it is the
+one on `PATH`: a shell waits for it and sees its exit code, which terminals,
+scripts, and agents need for `herdr-gpui COMMAND`. Run with no command, the copy
+starts the app beside it and returns, so the terminal is not held. The managed
+agent skill names the copy. Run through the GUI build instead, a command
+attaches to the caller's console so its output still shows, but the shell does
+not wait for it. Debug builds keep the console subsystem, so `cargo run` output
+stays in the terminal.
+
+With no console of its own, the app must not let a console child (git, ssh,
+`wsl.exe`, a shell) open one: every child is built with
+`herdr_client::new_command`, which sets `CREATE_NO_WINDOW` on Windows, and
+clippy's `disallowed_methods` (`clippy.toml`) rejects `Command::new` elsewhere
+outside tests and the build script.
 
 Cross type-check it from a Mac or Linux machine with `just lint-windows`, which
 targets `x86_64-pc-windows-gnu` because those hosts cannot supply the MSVC C

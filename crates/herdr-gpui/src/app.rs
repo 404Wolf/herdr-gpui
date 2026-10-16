@@ -217,9 +217,10 @@ pub(crate) fn run() -> std::process::ExitCode {
     }
     // A control command asked for JSON gets its usage errors as JSON too.
     let json_errors = cli::control::wants_json(&args);
-    let LaunchOptions { target, mode } = match LaunchOptions::parse(args) {
+    let LaunchOptions { target, mode } = match LaunchOptions::parse(&args) {
         Ok(options) => options,
         Err(error) if json_errors => {
+            crate::console::attach_parent();
             println!(
                 "{}",
                 serde_json::json!({ "error": { "code": "usage", "message": error.to_string() } })
@@ -227,12 +228,23 @@ pub(crate) fn run() -> std::process::ExitCode {
             return std::process::ExitCode::from(2);
         }
         Err(error) => {
+            crate::console::attach_parent();
             eprintln!(
                 "{error}\nUsage: herdr-gpui [--socket CLIENT_SOCKET | --session NAME [--dev]]\n       herdr-gpui browser open URL [--workspace ID] [--no-focus]\n       herdr-gpui COMMAND ... (see herdr-gpui --help)"
             );
             return std::process::ExitCode::from(2);
         }
     };
+    // The windowed Windows build has no console of its own; the console copy
+    // in `bin\` hands the window to it (see `console`).
+    if matches!(
+        mode,
+        LaunchMode::Help | LaunchMode::BuildInfo | LaunchMode::Control(_)
+    ) {
+        crate::console::attach_parent();
+    } else if let Some(exit) = crate::console::open_app_beside(&args) {
+        return exit;
+    }
     if let LaunchMode::Control(invocation) = mode {
         return crate::control::run(invocation);
     }
@@ -279,8 +291,6 @@ pub(crate) fn run() -> std::process::ExitCode {
     if mode != LaunchMode::Normal {
         smoke::EXIT_CODE.store(1, std::sync::atomic::Ordering::SeqCst);
     }
-    // Only the GUI gets here: commands, help, and build info keep the console.
-    crate::console::hide_owned_window();
     let startup_failed = std::rc::Rc::new(std::cell::Cell::new(false));
     if let Err(error) = diagnostics::init() {
         eprintln!("Unable to initialize diagnostics: {error}");

@@ -1,3 +1,6 @@
+// Build-time tools run under Cargo, not from the app: no window to avoid.
+#![allow(clippy::disallowed_methods)]
+
 mod build_identity;
 
 /// The build script's own failures, as a typed error rather than the `&str`

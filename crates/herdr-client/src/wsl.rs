@@ -93,16 +93,11 @@ const SESSIONS_TIMEOUT: Duration = Duration::from_secs(30);
 /// on a WSL share that has since disappeared makes the spawn itself fail.
 #[cfg(windows)]
 fn wsl_exe() -> Command {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let system = std::env::var_os("SystemRoot")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
-    let mut command = Command::new(system.join("System32").join("wsl.exe"));
-    command
-        .env("WSL_UTF8", "1")
-        .current_dir(&system)
-        .creation_flags(CREATE_NO_WINDOW);
+    let mut command = crate::new_command(system.join("System32").join("wsl.exe"));
+    command.env("WSL_UTF8", "1").current_dir(&system);
     command
 }
 

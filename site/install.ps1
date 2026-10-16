@@ -4,9 +4,12 @@
 #   irm https://herdrui.dev/install.ps1 | iex
 #
 # It downloads the zip for this machine from GitHub Releases, checks it against
-# the release's published SHA-256, installs herdr-gpui.exe under
-# %LOCALAPPDATA%\Programs\Herdr UI, adds that directory to the user PATH, and
-# creates a Start menu shortcut. It never installs, starts or upgrades the Herdr
+# the release's published SHA-256, installs it under
+# %LOCALAPPDATA%\Programs\Herdr UI, adds its bin directory to the user PATH,
+# and creates a Start menu shortcut. herdr-gpui.exe there is the windowed app;
+# bin\herdr-gpui.exe is the console copy terminals and agents run. Releases
+# older than that split had one executable, and the directory itself on PATH.
+# The release's -setup.exe installs the same files to the same place. It never installs, starts or upgrades the Herdr
 # daemon. Windows builds are experimental and never update themselves: run this
 # again to update.
 & {
@@ -29,11 +32,13 @@
 
   $dest = Join-Path $env:LOCALAPPDATA 'Programs\Herdr UI'
   $exe = Join-Path $dest 'herdr-gpui.exe'
+  $bin = Join-Path $dest 'bin'
+  $cli = Join-Path $bin 'herdr-gpui.exe'
   # Windows will not overwrite a running executable, so an update needs the
   # installed app closed. Check before downloading and again before copying.
   $assertNotRunning = {
-    $running = Get-Process -Name 'herdr-gpui' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }
-    if ($running) { throw "Herdr UI is running from $exe. Quit it, then run this command again; your Herdr sessions keep running." }
+    $running = Get-Process -Name 'herdr-gpui' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe -or $_.Path -eq $cli }
+    if ($running) { throw "Herdr UI is running from $dest. Quit it, then run this command again; your Herdr sessions keep running." }
   }
   & $assertNotRunning
 
@@ -59,10 +64,16 @@
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $tmp
   }
 
-  $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-  if (-not (($userPath -split ';') -contains $dest)) {
-    [Environment]::SetEnvironmentVariable('Path', (@($userPath, $dest) | Where-Object { $_ }) -join ';', 'User')
-    Write-Host "Added $dest to your user PATH; open a new terminal to use herdr-gpui."
+  # The console copy goes on PATH, replacing the directory an older install
+  # put there: the windowed app is one a shell does not wait for. A release
+  # without the copy keeps the old layout.
+  $onPath, $stale = if (Test-Path -PathType Leaf $cli) { $bin, $dest } else { $dest, $bin }
+  $entries = @(([Environment]::GetEnvironmentVariable('Path', 'User') -split ';') | Where-Object { $_ })
+  $kept = @($entries | Where-Object { $_.TrimEnd('\') -ne $stale })
+  if (-not ($kept | Where-Object { $_.TrimEnd('\') -eq $onPath })) { $kept += $onPath }
+  if (($kept -join ';') -ne ($entries -join ';')) {
+    [Environment]::SetEnvironmentVariable('Path', ($kept -join ';'), 'User')
+    Write-Host "Added $onPath to your user PATH; open a new terminal to use herdr-gpui."
   }
 
   $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Herdr UI.lnk'

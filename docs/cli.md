@@ -16,6 +16,9 @@ the app's shim at `~/.local/state/herdr/gpui/bin/herdr-gpui` offers
 and every other command exits 8. A few commands work from files alone and
 need no running app; they say so below.
 Windows builds have no control socket yet: commands that need the app exit 8.
+On Windows, run `bin\herdr-gpui.exe`, the console copy the installers put on
+`PATH`; the app's own `herdr-gpui.exe` is a windowed program a shell does not
+wait for.
 
 ```sh
 herdr-gpui --help              # every command

@@ -122,7 +122,7 @@ fn open(host: &Host) -> Result<Shell> {
 
 #[cfg(unix)]
 fn local_shell() -> Result<Shell> {
-    let mut command = std::process::Command::new("/bin/sh");
+    let mut command = herdr_client::new_command("/bin/sh");
     command
         .arg("-s")
         .stdin(std::process::Stdio::piped())

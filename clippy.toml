@@ -1,0 +1,5 @@
+disallowed-methods = [
+  # A GUI-subsystem Windows app's console children each open a window unless
+  # created without one; herdr_client::new_command sets that once.
+  { path = "std::process::Command::new", reason = "use herdr_client::new_command, which opens no console window on Windows" },
+]

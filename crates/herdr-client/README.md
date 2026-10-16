@@ -471,7 +471,7 @@ WSL distribution. The worker runs `%SystemRoot%\System32\wsl.exe --distribution
 compatibility checks, output-ready marker, and `remote-client-bridge` handshake
 an SSH host uses, over the child's standard streams. `--exec` keeps `wsl.exe`
 from expanding `$VARIABLES` in the script. The child has no console window
-(`CREATE_NO_WINDOW`), starts in the system directory so a vanished WSL share
+(`CREATE_NO_WINDOW`, as for every child built with `new_command`), starts in the system directory so a vanished WSL share
 cannot be its working directory, and has its stderr discarded; the worker kills
 and reaps it on every exit. As over SSH, the bridge starts the session's server
 when it is down, and disconnecting never stops it.

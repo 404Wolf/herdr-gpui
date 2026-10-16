@@ -593,7 +593,7 @@ impl HerdrWindow {
             self.dismiss_menu(window, cx);
         }
         let install = cx.background_executor().spawn(async move {
-            let text = crate::agent_skill::text(std::env::current_exe().ok().as_deref());
+            let text = crate::agent_skill::text(crate::agent_skill::executable().as_deref());
             crate::agent_skill::install(&home, &text)
         });
         cx.spawn(async move |this, cx| {

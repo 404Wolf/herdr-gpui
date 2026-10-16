@@ -118,6 +118,9 @@ class ReleaseTargets(unittest.TestCase):
                         'test "$(rustc -vV | sed -n \'s/^host: //p\')" = "$TARGET"',
                         'python scripts/release/generate-notices.py',
                         'python scripts/release/package-windows.py "$VERSION" "$TARGET"',
+                        'python scripts/release/windows-installer.py install-iscc',
+                        'python scripts/release/windows-installer.py build "$VERSION" "$TARGET"',
+                        'python scripts/release/windows-installer.py smoke',
                         'name: windows-package-${{ matrix.target }}'):
             self.assertIn(command, windows)
         for target in ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"):
@@ -333,12 +336,16 @@ class ReleaseSecurity(unittest.TestCase):
               for extension in ("tar.gz", "deb", "rpm", "pkg.tar.zst")),
             "Herdr-20260920.1-x86_64-pc-windows-msvc.zip",
             "Herdr-20260920.1-aarch64-pc-windows-msvc.zip",
+            "Herdr-20260920.1-x86_64-pc-windows-msvc-setup.exe",
+            "Herdr-20260920.1-aarch64-pc-windows-msvc-setup.exe",
             "herdr-gpui-20260920.1-macos-universal.app.tar.gz",
             "herdr-gpui-20260920.1-x86_64-unknown-linux-gnu-update.tar.gz",
             "herdr-gpui-20260920.1-aarch64-unknown-linux-gnu-update.tar.gz",
             "update-manifest.json", "update-manifest.sig", "package-manifest.json", "package-manifest.sig"})
-        self.assertEqual(len((self.path / "SHA256SUMS").read_text().splitlines()), 95)
-        self.assertEqual(len(self.run_manifest("names").splitlines()), 96)
+        # Five files per base asset; SHA256SUMS lists all but itself.
+        assets = len(MANIFEST.base_names(VERSION)) * 5
+        self.assertEqual(len((self.path / "SHA256SUMS").read_text().splitlines()), assets)
+        self.assertEqual(len(self.run_manifest("names").splitlines()), assets + 1)
         self.assertEqual(self.run_manifest("base-names").splitlines(), MANIFEST.base_names(VERSION))
         with tempfile.TemporaryDirectory() as temp:
             name = MANIFEST.base_names(VERSION)[0]

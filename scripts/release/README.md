@@ -162,11 +162,23 @@ The experimental Windows targets are `x86_64-pc-windows-msvc` and
 there. `scripts/release/package-windows.py VERSION TARGET BINARY OUTPUT_DIR
 THIRD_PARTY_NOTICES` (standard-library Python, since the runner has no zip tool)
 writes one `Herdr-VERSION-TARGET.zip` per target with a same-named root containing
-`herdr-gpui.exe` and `licenses/` holding the same license and notice files as
-the Linux tree. Entries carry a fixed timestamp. Both zips are mandatory in the
-asset manifest and receive checksums, Sigstore sidecars and provenance like
-every other asset, but they are not Authenticode-signed and have no updater archive
-or update-manifest entry: Windows installs update by manual download.
+the windowed `herdr-gpui.exe`, its console-subsystem copy `bin/herdr-gpui.exe`
+(the release build must be GUI-subsystem; packaging refuses anything else), and
+`licenses/` holding the same license and notice files as the Linux tree.
+Entries carry a fixed timestamp.
+
+`scripts/release/windows-installer.py` then installs the pinned Inno Setup
+compiler (`install-iscc`, checked against its SHA-256), compiles
+`herdr-gpui.iss` over the extracted zip tree into
+`Herdr-VERSION-TARGET-setup.exe` (`build`), and installs and uninstalls it on
+the runner (`smoke`), checking the files, their subsystems, the console copy's
+output, and the user `PATH` entry. The installer is per-user (no elevation),
+installs to `%LOCALAPPDATA%\Programs\Herdr UI` as `site/install.ps1` does, adds
+`bin` to the user `PATH`, and creates the Start menu shortcut. Both zips and both
+installers are mandatory in the asset manifest and receive checksums, Sigstore
+sidecars and provenance like every other asset, but they are not
+Authenticode-signed and have no updater archive or update-manifest entry:
+Windows installs update by manual download.
 
 ## Updater Signing
 
@@ -177,10 +189,10 @@ signing step of `sign` receives it; builds, tests, metadata, OIDC and publicatio
 never do. The public key is validated before builds and matched against the
 private key before signing exact JSON bytes. See [updater setup](../../docs/updating.md).
 
-The exact release base set is nineteen files: the DMG, two manual Linux archives,
-their `.deb`, `.rpm` and Arch packages, two Windows zips, SBOM, three updater archives, `update-manifest.json`, and its
+The exact release base set is twenty-one files: the DMG, two manual Linux archives,
+their `.deb`, `.rpm` and Arch packages, two Windows zips and two Windows installers, SBOM, three updater archives, `update-manifest.json`, and its
 raw 64-byte Ed25519 `update-manifest.sig`, plus `package-manifest.json` and
-`package-manifest.sig` for the six Linux packages. All nineteen receive checksum and Sigstore sidecars and GitHub
+`package-manifest.sig` for the six Linux packages. All twenty-one receive checksum and Sigstore sidecars and GitHub
 provenance in the separate protected OIDC job. The raw signature is not overwritten:
 its Sigstore sidecar is `update-manifest.sig.sig`; the JSON's is
 `update-manifest.json.sig` (and likewise for the package manifest). `SHA256SUMS` covers all 95 base/sidecar files; the
