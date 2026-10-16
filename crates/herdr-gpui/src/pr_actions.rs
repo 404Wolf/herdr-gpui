@@ -282,6 +282,12 @@ impl Actions {
         self.comments.as_deref()
     }
 
+    /// A conversation as if it had been read, for views' tests.
+    #[cfg(test)]
+    pub(crate) fn set_comments(&mut self, comments: Vec<Comment>) {
+        self.comments = Some(comments);
+    }
+
     pub fn loading(&self) -> bool {
         self.loading
     }
