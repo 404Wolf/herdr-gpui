@@ -2273,7 +2273,8 @@ come back after a restart; closing a workspace in Herdr removes its tabs.
 - Pages are native web views (WebKit on macOS, WebView2 on Windows). On
   macOS a page lies beneath the window's own drawing. Menus, popovers,
   dialogs, tooltips, toasts, and the file-transfer card show over it, and
-  the page stays live around them.
+  the page stays live around them. The grip between two groups keeps its
+  full width over a page.
 - On Windows a page is layered above the window, so it steps aside for a
   menu, popover, or status bar tooltip that would fall over it, and for a
   dialog, which dims the whole window. Its place is empty until the menu

@@ -88,7 +88,6 @@ pub(crate) const EMBEDDED: bool = cfg!(any(target_os = "macos", windows));
 /// must hide a page its menus, tooltips, and toasts reach. On Windows a page
 /// is a child window, which always draws above its parent. On macOS a page
 /// lies beneath the window's drawing; see the `stacking` module.
-#[cfg(any(target_os = "macos", windows))]
 pub(crate) const PAGES_ABOVE: bool = cfg!(windows);
 
 const MAX_URL_BYTES: usize = 8192;
