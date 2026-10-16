@@ -66,7 +66,7 @@ fn competing_restores_load_the_rotated_credential_inside_the_transaction() {
                             token,
                             avatar_updates: None,
                             source: Default::default(),
-                            organizations: Vec::new(),
+                            organizations: None,
                         })
                     },
                     |_| {
@@ -101,7 +101,7 @@ fn competing_restores_load_the_rotated_credential_inside_the_transaction() {
                             token,
                             avatar_updates: None,
                             source: Default::default(),
-                            organizations: Vec::new(),
+                            organizations: None,
                         })
                     },
                     |_| panic!("the competing restore must not reuse the old refresh token"),

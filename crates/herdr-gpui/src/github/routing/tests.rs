@@ -62,11 +62,22 @@ fn sameness_follows_token_allocations_and_coverage_not_token_text() {
 }
 
 #[test]
-fn the_key_names_every_account_main_first() {
+fn the_key_names_every_account_main_first_with_the_owners_it_reads() {
     let main = profile("penso", "main-token", &[]);
-    let emu = profile("emu", "emu-token", &[]);
-    assert_eq!(Tokens::new(&main, [(&emu, &[][..])]).key(), "penso,emu");
+    let emu = profile("emu", "emu-token", &["emu-org"]);
+    assert_eq!(
+        Tokens::new(&main, [(&emu, &[][..])]).key(),
+        "penso,emu(emu emu-org)"
+    );
     assert_eq!(Tokens::new(&main, []).key(), "penso");
+    // Moving an owner to an account is another set, whose answers are its own.
+    let owners = vec!["acme".to_owned()];
+    assert_eq!(
+        Tokens::new(&main, [(&emu, owners.as_slice())]).key(),
+        "penso,emu(emu emu-org acme)"
+    );
+    let tokens = Tokens::new(&main, [(&emu, &[][..])]);
+    assert_eq!(tokens.logins().collect::<Vec<_>>(), ["penso", "emu"]);
 }
 
 #[test]

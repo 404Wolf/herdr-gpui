@@ -44,7 +44,7 @@ fn each_account_asks_only_for_the_repositories_it_reads() {
     );
     let shape: Vec<(bool, Vec<&str>)> = groups
         .iter()
-        .map(|(token, targets)| {
+        .map(|(_, token, targets)| {
             (
                 Arc::ptr_eq(token, &main),
                 targets
@@ -56,7 +56,10 @@ fn each_account_asks_only_for_the_repositories_it_reads() {
         .collect();
     // In the order each account's first repository came.
     assert_eq!(shape, [(true, vec!["a", "c"]), (false, vec!["b", "d"])]);
-    assert!(Arc::ptr_eq(&groups[1].0, &emu));
+    assert!(Arc::ptr_eq(&groups[1].1, &emu));
+    // Each group names the account it is, which a pause is kept under.
+    assert_eq!(groups[0].0, "penso");
+    assert_eq!(groups[1].0, "fabien_microsoft");
 }
 
 #[test]
@@ -67,7 +70,7 @@ fn a_lone_token_asks_for_everything_in_one_group() {
         &Tokens::from(token.clone()),
     );
     assert_eq!(groups.len(), 1);
-    assert_eq!(groups[0].1.len(), 2);
+    assert_eq!(groups[0].2.len(), 2);
 }
 
 #[test]
@@ -83,6 +86,6 @@ fn adding_an_account_rescopes_the_cache_and_keeps_its_answers_apart() {
     let both = Tokens::new(&main_profile, [(&emu_profile, &[][..])]);
     let key = both.key();
     cache.scope((0, 1, "boot".into()), both.clone(), &key, Origin::Local);
-    assert_eq!(cache.view.login, "penso,emu");
+    assert_eq!(cache.view.login, "penso,emu(emu)");
     assert!(cache.token.as_ref().unwrap().same(&both));
 }

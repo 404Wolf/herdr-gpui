@@ -47,7 +47,7 @@ impl Tokens {
                     login: profile.login.clone(),
                     token: profile.token.clone(),
                     owners: std::iter::once(&profile.login)
-                        .chain(&profile.organizations)
+                        .chain(profile.organizations.iter().flatten())
                         .chain(owners)
                         .cloned()
                         .collect(),
@@ -90,10 +90,25 @@ impl Tokens {
             })
     }
 
-    /// Every login, main first: names the account set answers belong to.
+    /// Every login, main first, each additional one with the owners it
+    /// reads: names the account set answers belong to. Moving an owner to
+    /// another account is a new set, so no answer or hidden repository the
+    /// old account recorded is shown for the new one.
     pub(crate) fn key(&self) -> String {
-        let logins: Vec<&str> = self.0.iter().map(|route| route.login.as_str()).collect();
-        logins.join(",")
+        let routes: Vec<String> = self
+            .0
+            .iter()
+            .map(|route| match route.owners.as_slice() {
+                [] => route.login.clone(),
+                owners => format!("{}({})", route.login, owners.join(" ")),
+            })
+            .collect();
+        routes.join(",")
+    }
+
+    /// Every account's login, main first.
+    pub(crate) fn logins(&self) -> impl Iterator<Item = &str> {
+        self.0.iter().map(|route| route.login.as_str())
     }
 }
 

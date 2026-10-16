@@ -44,21 +44,37 @@ const HEADS: &str = r#"query($owner: String!, $repo: String!, $branch: String!) 
 
 /// What a batch found: each checkout's own answer; the checkouts a failure of
 /// a whole request (an exhausted quota, the network) left unanswered, which
-/// share its error; and those it never asked about, which stay due.
+/// share its error; those it never asked about, which stay due; and the
+/// accounts GitHub paused, each with only its own checkouts.
 #[derive(Default)]
 pub(super) struct Batch {
     pub found: Vec<(Input, Result)>,
     pub failed: Vec<(Vec<Input>, Error)>,
     pub deferred: Vec<Input>,
+    pub paused: Vec<Paused>,
+    /// Checkouts read by an account that was already paused, never asked,
+    /// with that account's login.
+    pub held: Vec<(Input, String)>,
 }
 
+/// An account GitHub asked to wait, for how long, and the checkouts its
+/// requests carried, whose failures say why.
+pub(super) struct Paused {
+    pub login: String,
+    pub cooldown: Duration,
+    pub inputs: Vec<Input>,
+}
+
+/// Asks each account about the checkouts it reads. A pause is one account's:
+/// it holds that account's remaining checkouts, never another's, and an
+/// account in `paused` is not asked at all.
 pub(super) fn fetch_batch(
     inputs: Vec<Input>,
     origin: &Origin,
     origins: &mut Origins,
     tokens: &Tokens,
+    paused: &[String],
     cancelled: impl Fn() -> bool,
-    cooldown: &mut Option<Duration>,
 ) -> Batch {
     let mut batch = Batch::default();
     let targets = prepare(
@@ -68,7 +84,15 @@ pub(super) fn fetch_batch(
         |input, deadline| target(input, origin, origins, deadline, &cancelled),
         &mut batch,
     );
-    for (token, targets) in by_token(targets, tokens) {
+    for (login, token, targets) in by_token(targets, tokens) {
+        if paused.contains(&login) {
+            batch
+                .held
+                .extend(targets.into_iter().map(|(input, _)| (input, login.clone())));
+            continue;
+        }
+        let inputs: Vec<Input> = targets.iter().map(|(input, _)| input.clone()).collect();
+        let mut cooldown = None;
         ask(
             targets,
             |query, variables, aliases, cooldown| {
@@ -77,14 +101,21 @@ pub(super) fn fetch_batch(
                 )
             },
             |response, target, pause| answer_for(response, target, &token, &cancelled, pause),
-            (&mut batch, cooldown),
+            (&mut batch, &mut cooldown),
         );
+        if let Some(cooldown) = cooldown {
+            batch.paused.push(Paused {
+                login,
+                cooldown,
+                inputs,
+            });
+        }
     }
     batch
 }
 
-/// One account's token and the targets it reads.
-pub(super) type Group = (Arc<SecretString>, Vec<(Input, Target)>);
+/// One account's login and token, and the targets it reads.
+pub(super) type Group = (String, Arc<SecretString>, Vec<(Input, Target)>);
 
 /// The targets each account reads, in the order their first one came: a
 /// request carries one token, so each account's repositories are asked in
@@ -95,10 +126,14 @@ pub(super) fn by_token(targets: Vec<(Input, Target)>, tokens: &Tokens) -> Vec<Gr
         let token = tokens.for_owner(&target.owner);
         match groups
             .iter_mut()
-            .find(|(known, _)| Arc::ptr_eq(known, token))
+            .find(|(_, known, _)| Arc::ptr_eq(known, token))
         {
-            Some((_, group)) => group.push((input, target)),
-            None => groups.push((token.clone(), vec![(input, target)])),
+            Some((_, _, group)) => group.push((input, target)),
+            None => groups.push((
+                tokens.login_for(&target.owner).to_owned(),
+                token.clone(),
+                vec![(input, target)],
+            )),
         }
     }
     groups

@@ -122,11 +122,13 @@ impl Cache {
         );
     }
 
-    /// Forgets this account's answers and pauses, for signing out.
+    /// Forgets this account set's answers and its accounts' pauses, for
+    /// signing out.
     pub fn clear(&mut self) {
         self.suspend();
         if let Ok(mut store) = self.store.try_borrow_mut() {
-            store.forget(&self.view.login);
+            let logins = self.token.iter().flat_map(crate::github::Tokens::logins);
+            store.forget(&self.view.login, logins);
         }
         self.scope = None;
         self.token = None;
@@ -291,9 +293,17 @@ impl Cache {
         let Ok(mut store) = self.store.try_borrow_mut() else {
             return changed;
         };
-        if store.pause(&self.view.login, now).is_some() {
+        // A paused account's checkouts are held by the worker, which alone
+        // learns whose they are; with every account paused there is nothing
+        // to ask.
+        if pause(&store, &token, now).is_some() {
             return changed;
         }
+        let paused: Vec<String> = token
+            .logins()
+            .filter(|login| store.pause(login, now).is_some())
+            .map(str::to_owned)
+            .collect();
         let mut batch = Vec::new();
         while batch.len() < self.batch.0.max(1)
             && let Some(input) = self.queue.pop_front()
@@ -326,7 +336,7 @@ impl Cache {
         drop(store);
         self.cursor = self.cursor.wrapping_add(batch.len());
         self.prefetch
-            .request(batch.clone(), self.view.origin.clone(), token);
+            .request(batch.clone(), self.view.origin.clone(), token, paused);
         self.active = batch;
         // Send it now; only a worker that cannot start answers here.
         self.collect(now);
@@ -345,20 +355,38 @@ impl Cache {
         let active = std::mem::take(&mut self.active);
         store.release(&self.view, &active);
         let (found, failed) = match finished {
-            Finished::Answered(batch, cooldown) => {
-                // Rate/auth failures pause the account; a bad local repo must
-                // not prevent the remaining workspaces from being prefetched.
-                if let Some(cooldown) = cooldown {
+            Finished::Answered(batch) => {
+                // Rate/auth failures pause the account that hit them, never
+                // the others; a bad local repo must not prevent the remaining
+                // workspaces from being prefetched.
+                for paused in &batch.paused {
                     let reason = batch
                         .failed
-                        .first()
+                        .iter()
+                        .find(|(inputs, _)| {
+                            inputs.iter().any(|input| paused.inputs.contains(input))
+                        })
                         .map(|(_, error)| error.to_string())
                         .or_else(|| {
-                            batch.found.iter().find_map(|(_, result)| {
-                                result.as_ref().err().map(ToString::to_string)
+                            batch.found.iter().find_map(|(input, result)| {
+                                result
+                                    .as_ref()
+                                    .err()
+                                    .filter(|_| paused.inputs.contains(input))
+                                    .map(ToString::to_string)
                             })
                         });
-                    store.set_pause(&self.view.login, now + cooldown, reason);
+                    store.set_pause(&paused.login, now + paused.cooldown, reason);
+                }
+                // A paused account's checkouts wait for it, saying why.
+                for (input, login) in batch.held {
+                    if !active.contains(&input) {
+                        continue;
+                    }
+                    if let Some((until, reason)) = store.pause(&login, now) {
+                        let message = paused(until - now, reason, Local::now());
+                        store.hold(&self.view, input, message, (now, until));
+                    }
                 }
                 // Checkouts the batch had no time to prepare stay due and are
                 // asked in a later one.
@@ -412,8 +440,10 @@ impl Cache {
         };
         self.active.contains(input)
             || store.asking(&self.view, input)
-            || (self.token.is_some()
-                && store.pause(&self.view.login, now).is_none()
+            || (self
+                .token
+                .as_ref()
+                .is_some_and(|token| pause(&store, token, now).is_none())
                 && self.queue.contains(input))
     }
 
@@ -470,7 +500,11 @@ impl Cache {
             view.value = entry.value.clone();
             view.message = entry.message.clone();
             view.checked = Some(entry.checked);
-        } else if let Some((until, reason)) = store.pause(&self.view.login, now) {
+        } else if let Some((until, reason)) = self
+            .token
+            .as_ref()
+            .and_then(|token| pause(&store, token, now))
+        {
             view.message = Some(paused(until - now, reason, Local::now()));
         } else {
             view.loading = true;
@@ -484,6 +518,21 @@ impl Cache {
             ));
         }
     }
+}
+
+/// While every account of `tokens` is paused, when the first resumes and why
+/// it stopped. One healthy account keeps the set asking.
+fn pause<'a>(
+    store: &'a Store,
+    tokens: &crate::github::Tokens,
+    now: Instant,
+) -> Option<(Instant, Option<&'a str>)> {
+    tokens
+        .logins()
+        .map(|login| store.pause(login, now))
+        .collect::<Option<Vec<_>>>()?
+        .into_iter()
+        .min_by_key(|(until, _)| *until)
 }
 
 /// Why GitHub requests are paused and the local minute they resume, rounded

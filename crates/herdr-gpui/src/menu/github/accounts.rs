@@ -32,7 +32,7 @@ impl AdditionalAccount {
             .chain(
                 profile
                     .into_iter()
-                    .flat_map(|profile| &profile.organizations),
+                    .flat_map(|profile| profile.organizations.iter().flatten()),
             )
             .chain(&self.owners);
         for name in names {

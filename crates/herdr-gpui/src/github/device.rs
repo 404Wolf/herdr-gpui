@@ -95,8 +95,9 @@ pub(crate) struct Profile {
     pub(super) avatar_updates: Option<crate::avatars::AvatarUpdates>,
     pub source: Source,
     /// The organizations the account belongs to, read only for an additional
-    /// account: the owners it covers besides its own login.
-    pub organizations: Vec<String>,
+    /// account: the owners it covers besides its own login. `None` until
+    /// GitHub listed them, so a failed listing is not mistaken for none.
+    pub organizations: Option<Vec<String>>,
 }
 
 #[cfg(test)]
@@ -109,10 +110,12 @@ impl Profile {
             token,
             avatar_updates: None,
             source: Source::Token,
-            organizations: organizations
-                .iter()
-                .map(|name| (*name).to_owned())
-                .collect(),
+            organizations: Some(
+                organizations
+                    .iter()
+                    .map(|name| (*name).to_owned())
+                    .collect(),
+            ),
         }
     }
 }
@@ -185,15 +188,29 @@ pub(super) fn profile_from(token: Arc<SecretString>, github_cli: bool) -> Result
         token,
         avatar_updates,
         source,
-        organizations: Vec::new(),
+        organizations: None,
     })
+}
+
+impl Profile {
+    /// Keeps the organizations `old` listed when this check could not list
+    /// them, so a failed request never moves the account's repositories to
+    /// the main account. Only for the same login: another account's are not
+    /// this one's.
+    pub(super) fn keep_organizations(&mut self, old: &Self) {
+        if self.organizations.is_none() && self.login == old.login {
+            self.organizations = old.organizations.clone();
+        }
+    }
 }
 
 const ORGANIZATIONS: &str = "query { viewer { organizations(first: 100) { nodes { login } } } }";
 
 /// `profile` with the organizations its account belongs to, as far as its
 /// token may list them. A token that may not (a classic one without
-/// `read:org`, say) still covers its own login, so the failure is only logged.
+/// `read:org`, say) still covers its own login, so the failure is only logged
+/// and the organizations stay unknown: [`Profile::keep_organizations`] then
+/// keeps those an earlier check listed.
 pub(super) fn with_organizations(mut profile: Profile) -> Profile {
     let mut cooldown = None;
     match super::graphql(
@@ -205,7 +222,7 @@ pub(super) fn with_organizations(mut profile: Profile) -> Profile {
         || false,
         &mut cooldown,
     ) {
-        Ok(value) => profile.organizations = organizations(&value),
+        Ok(value) => profile.organizations = Some(organizations(&value)),
         Err(error) => log::failure("organizations", &error),
     }
     profile

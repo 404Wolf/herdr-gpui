@@ -8,7 +8,7 @@ fn pasted_profile() -> Profile {
         token: Arc::new("github_pat_fixture".into()),
         avatar_updates: None,
         source: Default::default(),
-        organizations: vec!["emu-org".into()],
+        organizations: Some(vec!["emu-org".into()]),
     }
 }
 
@@ -45,7 +45,10 @@ fn a_pasted_token_connects_once_github_accepted_it() {
     assert!(auth.can_sign_out());
     assert!(!auth.github_cli);
     assert!(auth.next_session_check.is_some());
-    assert_eq!(auth.profile.as_ref().unwrap().organizations, ["emu-org"]);
+    assert_eq!(
+        auth.profile.as_ref().unwrap().organizations.as_deref(),
+        Some(&["emu-org".to_owned()][..])
+    );
 }
 
 #[test]
@@ -118,4 +121,39 @@ fn signing_out_an_additional_account_says_what_reads_its_repositories() {
             .unwrap()
             .contains("Its repositories use your main account")
     );
+}
+
+#[test]
+fn a_check_that_cannot_list_organizations_keeps_those_listed_before() {
+    let mut auth = additional();
+    auth.initialized = true;
+    auth.profile = Some(pasted_profile());
+    let unlisted = || Profile {
+        organizations: None,
+        ..pasted_profile()
+    };
+    auth.complete_profile_fixture(Ok(Some(unlisted())));
+    auth.poll_with_store(|_| panic!("no storage"));
+    assert_eq!(
+        auth.profile.as_ref().unwrap().organizations.as_deref(),
+        Some(&["emu-org".to_owned()][..])
+    );
+    // A listing that succeeded replaces them, even when it is empty.
+    auth.complete_profile_fixture(Ok(Some(Profile {
+        organizations: Some(Vec::new()),
+        ..pasted_profile()
+    })));
+    auth.poll_with_store(|_| panic!("no storage"));
+    assert_eq!(
+        auth.profile.as_ref().unwrap().organizations.as_deref(),
+        Some(&[][..])
+    );
+    // Another login's check never inherits this account's organizations.
+    auth.profile = Some(pasted_profile());
+    auth.complete_profile_fixture(Ok(Some(Profile {
+        login: "someone_else".into(),
+        ..unlisted()
+    })));
+    auth.poll_with_store(|_| panic!("no storage"));
+    assert!(auth.profile.as_ref().unwrap().organizations.is_none());
 }

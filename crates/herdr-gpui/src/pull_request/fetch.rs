@@ -104,8 +104,8 @@ pub(super) fn fetch(
         &Origin::Local,
         &mut Origins::default(),
         &tokens,
+        &[],
         cancelled,
-        &mut None,
     );
     match (batch.found.pop(), batch.failed.pop()) {
         (Some((_, result)), _) => result,

@@ -82,7 +82,7 @@ impl Auth {
                 token: Arc::new("fixture-token".into()),
                 avatar_updates: None,
                 source: super::Source::Token,
-                organizations: Vec::new(),
+                organizations: None,
             }),
             ..Self::default()
         }
@@ -561,11 +561,12 @@ impl Auth {
                     self.next_session_check = Some(now + SESSION_CHECK_INTERVAL);
                     match result {
                         Ok(mut profile) => {
-                            if let (Some(old), Some(new)) = (&self.profile, &mut profile)
-                                && old.token.expose_secret() == new.token.expose_secret()
-                            {
-                                // PR caches use token identity to fence workers.
-                                new.token = old.token.clone();
+                            if let (Some(old), Some(new)) = (&self.profile, &mut profile) {
+                                new.keep_organizations(old);
+                                if old.token.expose_secret() == new.token.expose_secret() {
+                                    // PR caches use token identity to fence workers.
+                                    new.token = old.token.clone();
+                                }
                             }
                             self.profile = profile;
                             self.failed = false;

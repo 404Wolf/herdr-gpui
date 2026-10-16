@@ -43,7 +43,10 @@ fn repositories_an_additional_account_owns_are_read_with_it(cx: &mut TestAppCont
 
             add_account(view, Some("fabien_microsoft"));
             let tokens = view.pr_tokens().unwrap();
-            assert_eq!(tokens.key(), "fixture-user,fabien_microsoft");
+            assert_eq!(
+                tokens.key(),
+                "fixture-user,fabien_microsoft(fabien_microsoft emu-org listed-owner)"
+            );
             for owner in ["fabien_microsoft", "emu-org", "listed-owner"] {
                 assert_eq!(tokens.for_owner(owner).expose_secret(), "emu-token");
             }

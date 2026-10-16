@@ -8,7 +8,7 @@ fn cli_profile(repo_scope: bool) -> Profile {
         token: Arc::new("gho_fixture".into()),
         avatar_updates: None,
         source: Source::GitHubCli { repo_scope },
-        organizations: Vec::new(),
+        organizations: None,
     }
 }
 
