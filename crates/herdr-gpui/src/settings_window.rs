@@ -63,7 +63,6 @@ pub(super) enum Section {
     #[cfg(feature = "cloud")]
     CloudDevices,
     Code,
-    Features,
     Fonts,
     Indicators,
     Integrations,
@@ -82,7 +81,6 @@ impl Section {
         #[cfg(feature = "cloud")]
         Self::CloudDevices,
         Self::Code,
-        Self::Features,
         Self::Fonts,
         Self::Indicators,
         Self::Integrations,
@@ -95,7 +93,6 @@ impl Section {
     fn label(self) -> &'static str {
         match self {
             Self::Appearance => "Appearance",
-            Self::Features => "Features",
             Self::Fonts => "Fonts",
             Self::Indicators => "Indicators",
             Self::Sound => "Sound",
@@ -113,7 +110,6 @@ impl Section {
     fn icon(self) -> &'static str {
         match self {
             Self::Appearance => "icons/theme.svg",
-            Self::Features => "icons/pass.svg",
             Self::Fonts => "icons/pencil.svg",
             Self::Indicators => "icons/pulse.svg",
             Self::Sound => "icons/chart.svg",
@@ -131,7 +127,6 @@ impl Section {
     fn description(self) -> &'static str {
         match self {
             Self::Appearance => "A workspace that feels like yours.",
-            Self::Features => "Optional behaviors, off until you turn them on.",
             Self::Fonts => "Make every line comfortable to read.",
             Self::Indicators => "See what your agents are doing at a glance.",
             Self::Sound => "A little signal when something needs you.",

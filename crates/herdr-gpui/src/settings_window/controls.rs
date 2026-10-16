@@ -412,7 +412,6 @@ impl SettingsWindow {
 
     pub(super) fn render_controls(&self, _window: &mut Window, cx: &mut Context<Self>) -> Div {
         let content = match self.section {
-            Section::Features => self.render_feature_controls(cx),
             Section::Fonts => self.render_font_controls(cx),
             Section::Indicators => self.render_indicator_controls(cx),
             Section::Sound => self.render_sound_controls(cx),
@@ -630,6 +629,7 @@ impl SettingsWindow {
                 cx,
             ))
             .children(self.mouse_switches(cx))
+            .children(self.feature_switches(cx))
             .children(self.confirm_close_switches(cx))
             .children(self.merged_worktree_controls(cx));
         div().flex().flex_col().gap(px(24.)).child(general)

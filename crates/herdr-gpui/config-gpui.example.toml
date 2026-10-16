@@ -487,7 +487,7 @@ size = 12
 # back when it ends. Unset keeps the current size.
 # font_size = 24
 
-# Optional behaviors, all off unless turned on here or in Settings > Features.
+# Optional behaviors, all off unless turned on here or in Settings > General.
 # [features]
 # Open a space's menu when the pointer rests on its sidebar row, without a
 # right click. Moving the pointer anywhere but into that menu closes it again.

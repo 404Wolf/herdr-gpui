@@ -16,7 +16,7 @@ fn every_feature_has_a_switch_that_saves_the_opposite(cx: &mut TestAppContext) {
             }),
             load: skill_load,
         });
-        view.section = Section::Features;
+        view.section = Section::General;
         cx.notify();
     });
     cx.simulate_resize(size(px(960.), px(2200.)));

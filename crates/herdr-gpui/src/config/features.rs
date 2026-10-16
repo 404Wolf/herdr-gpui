@@ -1,6 +1,6 @@
 //! Optional behaviors under `[features]`. Each flag is declared once below,
 //! which generates its config field, its `Feature` variant, and the label and
-//! description Settings > Features lists it with.
+//! description Settings > General lists it with.
 use serde::Deserialize;
 
 macro_rules! features {
