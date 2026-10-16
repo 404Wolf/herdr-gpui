@@ -6,14 +6,16 @@ use std::{os::unix::fs::PermissionsExt, path::Path, process::Command, sync::atom
 
 mod agent_name;
 mod parent;
+mod remove;
 
 /// A home whose `herdr` logs each call and answers as Herdr would. A call
 /// whose arguments contain `$FAIL` exits 1. Its snapshot is `$HOME/snapshot`
-/// when written, else one where `w1` is the repository's parent workspace.
+/// when written, else one where `w1` is the repository's parent workspace
+/// and `w9` the linked worktree a dispatch creates.
 fn fake_home(dir: &Path, fail: &str) -> Host {
     let bin = dir.join("home/.local/bin");
     std::fs::create_dir_all(&bin).unwrap();
-    let snapshot = snapshot(&[("w1", false)]);
+    let snapshot = snapshot(&[("w1", false), ("w9", true)]);
     let script = format!(
         r#"#!/bin/sh
 printf '%s\n' "$*" >> "$HOME/calls"
