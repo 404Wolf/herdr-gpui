@@ -87,6 +87,8 @@ pub use surface_images::{
     valid_asset,
 };
 pub use transport::Stream;
+#[cfg(windows)]
+pub use transport::pipe_available;
 pub use upload::{remove_uploaded_files, upload_files};
 pub use wsl::{
     WslHost, WslHosts, add_wsl_host, delete_distro_session, list_distro_sessions, list_distros,

@@ -50,7 +50,6 @@ mod view_tests;
 #[cfg(any(target_os = "macos", windows))]
 pub(crate) use annotate_view::Annotations;
 pub(crate) use feedback::{Batch, Feedback, FeedbackKey};
-#[cfg(unix)]
 pub(crate) use feedback::{TAKE_BUDGET, json_size};
 pub(crate) use group_motion::Fold;
 #[cfg(test)]
