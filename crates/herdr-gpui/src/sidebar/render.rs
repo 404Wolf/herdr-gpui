@@ -341,6 +341,9 @@ impl HerdrWindow {
                         },
                     ))
                 });
+                // A child's trunk runs on past its note and ports to the next
+                // sibling, as it runs through the row itself.
+                let trunk = rows.trunk_below(&format!("{endpoint_id}-{id}"), tree, &row_cx);
                 let ports = (self.config.show_listening_ports && !removing_row)
                     .then_some(daemon.as_ref())
                     .flatten()
@@ -519,8 +522,16 @@ impl HerdrWindow {
                         .when(gap > 0., |unit| unit.mt(px(gap)))
                         .when(shift != px(0.), |unit| unit.top(shift))
                         .child(element)
-                        .children(note_line)
-                        .children(ports)
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .w_full()
+                                .relative()
+                                .children(trunk)
+                                .children(note_line)
+                                .children(ports),
+                        )
                         .into_any_element()
                 };
                 spaces = if carried {

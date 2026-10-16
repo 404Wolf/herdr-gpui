@@ -61,6 +61,10 @@ impl RowLayout for Herdr {
         )
     }
 
+    fn trunk_below(&self, key: &str, tree: RowTree, cx: &RowContext<'_>) -> Option<Div> {
+        super::super::row::trunk_below(key, tree, cx)
+    }
+
     fn agent(&self, agent: AgentRow<'_>, state: RowState, cx: &RowContext<'_>) -> Div {
         let (name, detail) = agent_labels(agent.name, agent.place, cx.host);
         super::super::row::row(
