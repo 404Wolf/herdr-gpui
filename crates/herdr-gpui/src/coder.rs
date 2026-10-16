@@ -5,6 +5,7 @@
 
 mod api;
 mod connect;
+mod destroy;
 mod error;
 mod http;
 mod names;

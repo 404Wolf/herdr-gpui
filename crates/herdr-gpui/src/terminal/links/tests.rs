@@ -290,5 +290,6 @@ fn click_dispatch_opens_browser_and_respects_menu_and_revision(cx: &mut gpui::Te
     });
 }
 
+mod escaped_paths;
 mod external;
 mod paths;

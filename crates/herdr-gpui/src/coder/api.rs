@@ -197,23 +197,8 @@ impl Workspace {
 
     pub(crate) fn readiness(&self) -> Readiness {
         let build = &self.latest_build;
-        if matches!(build.job.status, JobStatus::Failed | JobStatus::Canceled)
-            || matches!(build.status, BuildStatus::Failed | BuildStatus::Canceled)
-        {
-            return Readiness::Failed(
-                build
-                    .job
-                    .error
-                    .as_deref()
-                    .map(|text| {
-                        text.chars()
-                            .map(|c| if c.is_control() { ' ' } else { c })
-                            .take(300)
-                            .collect()
-                    })
-                    .filter(|text: &String| !text.trim().is_empty())
-                    .unwrap_or_else(|| "the workspace build did not finish".into()),
-            );
+        if let Some(reason) = build.failure() {
+            return Readiness::Failed(reason);
         }
         match (build.transition, build.status) {
             (_, BuildStatus::Deleted | BuildStatus::Deleting) | (Transition::Delete, _) => {
@@ -256,6 +241,31 @@ impl Workspace {
             Some(state) => Readiness::Failed(format!("the workspace agent is {state:?}")),
             None => Readiness::Building(BuildStatus::Running),
         }
+    }
+}
+
+impl Build {
+    /// Coder's bounded, single-line reason when this build failed or was
+    /// cancelled; `None` while it runs or after it succeeds.
+    pub(super) fn failure(&self) -> Option<String> {
+        if !matches!(self.job.status, JobStatus::Failed | JobStatus::Canceled)
+            && !matches!(self.status, BuildStatus::Failed | BuildStatus::Canceled)
+        {
+            return None;
+        }
+        Some(
+            self.job
+                .error
+                .as_deref()
+                .map(|text| {
+                    text.chars()
+                        .map(|c| if c.is_control() { ' ' } else { c })
+                        .take(300)
+                        .collect()
+                })
+                .filter(|text: &String| !text.trim().is_empty())
+                .unwrap_or_else(|| "the workspace build did not finish".into()),
+        )
     }
 }
 
@@ -450,15 +460,20 @@ pub(crate) fn wait_ready(
         if Instant::now() >= deadline {
             return Err(Error::BuildTimeout);
         }
-        // Sleep in short steps so cancellation is observed promptly.
-        let wake = Instant::now() + POLL;
-        while Instant::now() < wake {
-            if cancelled() {
-                return Err(Error::Cancelled);
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
+        pause(&cancelled)?;
     }
+}
+
+/// Wait one poll interval, in short steps so cancellation is observed promptly.
+pub(super) fn pause(cancelled: impl Fn() -> bool) -> Result<()> {
+    let wake = Instant::now() + POLL;
+    while Instant::now() < wake {
+        if cancelled() {
+            return Err(Error::Cancelled);
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

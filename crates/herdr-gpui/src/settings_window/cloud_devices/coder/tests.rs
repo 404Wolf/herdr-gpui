@@ -5,7 +5,9 @@ use super::{
 };
 use gpui::{Entity, TestAppContext, VisualTestContext, px, size};
 
-fn open(cx: &mut TestAppContext) -> (Entity<SettingsWindow>, &mut VisualTestContext) {
+mod destroy;
+
+pub(super) fn open(cx: &mut TestAppContext) -> (Entity<SettingsWindow>, &mut VisualTestContext) {
     let main = cx.add_window(crate::sidebar::layout_tests::fixture_window);
     let weak = cx.update(|cx| main.update(cx, |_, _, cx| cx.weak_entity()).unwrap());
     let (view, cx) = cx.add_window_view(|window, cx| {
@@ -23,7 +25,7 @@ fn open(cx: &mut TestAppContext) -> (Entity<SettingsWindow>, &mut VisualTestCont
     (view, cx)
 }
 
-fn draw(cx: &mut VisualTestContext) {
+pub(super) fn draw(cx: &mut VisualTestContext) {
     cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
 }
 
