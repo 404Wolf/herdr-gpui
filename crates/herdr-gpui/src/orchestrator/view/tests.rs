@@ -9,6 +9,7 @@ use herdr_client::protocol::AgentStatus;
 mod clicks;
 mod conversation;
 mod dialog;
+mod host_badges;
 mod markdown;
 mod rows;
 mod sessions;
