@@ -17,6 +17,7 @@ use std::{
 
 mod catalog;
 mod history;
+mod order;
 pub(crate) mod origin;
 mod polling;
 mod wake;

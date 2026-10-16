@@ -14,6 +14,7 @@ mod coder;
 mod daytona;
 mod devices;
 mod edit;
+mod features;
 mod files;
 mod font_weight;
 mod fonts;
@@ -47,6 +48,7 @@ pub(crate) use daytona::DaytonaFields;
 use devices::MAX_DEVICES;
 pub(crate) use devices::{DeviceSettings, KeybindingSource};
 pub(crate) use edit::{Layer, parse_value};
+pub use features::{Feature, Features};
 use files::write_config;
 pub use font_weight::bold as bold_font_weight;
 pub(crate) use fonts::FontFace;
@@ -202,8 +204,8 @@ pub struct Config {
     pub(crate) missing_weight: Option<font_weight::MissingWeight>,
 }
 
-/// Where a clicked terminal link opens. Alt-click (Option on macOS) opens it
-/// in the other one.
+/// Where a link-modifier click on a terminal's web link opens it. Holding
+/// Alt (Option on macOS) as well opens it in the other one.
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum LinkTarget {
@@ -361,15 +363,6 @@ impl<'de> Deserialize<'de> for OptionAsAlt {
             },
         }
     }
-}
-
-/// Optional behaviors the config file turns on. Every flag is off by default,
-/// so a missing or empty `[features]` table is the shipped experience.
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(default)]
-pub struct Features {
-    /// Open a space's menu when the pointer rests on its sidebar row.
-    pub sidebar_hover_menu: bool,
 }
 
 /// The daemon's config is read for a handful of keys, so a file far larger

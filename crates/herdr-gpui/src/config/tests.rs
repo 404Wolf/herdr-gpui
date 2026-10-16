@@ -14,6 +14,7 @@ mod device_icons;
 mod device_theme;
 mod discovery;
 mod edit;
+mod features;
 mod finished_notifications;
 mod focus_follows_mouse;
 mod font_aliases;

@@ -13,9 +13,8 @@ pub(crate) type Row<'a> = (usize, &'a str);
 impl HerdrWindow {
     /// Each host the sidebar lists, with the live state it draws from.
     fn listed_lives(&self) -> impl Iterator<Item = (usize, &LiveState)> {
-        self.endpoints
-            .iter()
-            .enumerate()
+        self.displayed_devices()
+            .into_iter()
             .filter(|(_, endpoint)| endpoint.enabled && self.device_visible(&endpoint.id))
             .map(|(index, endpoint)| {
                 let live = if index == self.selected_endpoint {
