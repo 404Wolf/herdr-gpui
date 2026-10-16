@@ -1,13 +1,13 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use super::{
-    LATENCY_PROBES, NetworkQuality, Reading, WINDOW,
+    LATENCY_PROBES, NetworkQuality, RELEASE, Reading, WINDOW,
     probe::{self, Outcome},
 };
 use std::{
     io::ErrorKind,
     net::{SocketAddr, TcpListener},
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 /// A fixed wall-clock time, so expiry tests do not depend on the real one.
@@ -118,11 +118,50 @@ fn details_name_the_target_and_the_loss() {
 #[test]
 fn hiding_stops_and_forgets() {
     let mut quality = NetworkQuality::default();
-    assert!(!quality.poll(false, start()), "nothing was shown");
+    let tick = Instant::now();
+    assert!(!quality.poll(false, tick, start()), "nothing was shown");
     quality.reading.apply(start(), reply(30));
     quality.started = true;
-    assert!(quality.poll(false, start()), "the reading disappears");
+    assert!(quality.poll(false, tick, start()), "the reading disappears");
     assert!(quality.reading.latest().is_none());
+}
+
+/// A window still holding `false` from before a settings change must not
+/// stop the probes another window asks for on the same ticks.
+#[test]
+fn a_stale_window_does_not_stop_probes_another_wants() {
+    // Marked started with no worker, so the test spawns no probing thread.
+    let mut quality = NetworkQuality {
+        started: true,
+        ..Default::default()
+    };
+    quality.reading.apply(start(), reply(30));
+    let tick = Instant::now();
+    quality.poll(true, tick, start());
+    assert!(!quality.poll(false, tick, start()), "the reading stays");
+    assert!(quality.started && quality.reading.latest().is_some());
+    let later = tick + Duration::from_millis(16);
+    assert!(!quality.poll(false, later, start()));
+    quality.poll(true, later, start());
+    assert!(quality.reading.latest().is_some());
+}
+
+#[test]
+fn probes_stop_once_no_window_has_asked_for_the_release_time() {
+    let mut quality = NetworkQuality {
+        started: true,
+        ..Default::default()
+    };
+    quality.reading.apply(start(), reply(30));
+    let tick = Instant::now();
+    quality.poll(true, tick, start());
+    let before = tick + RELEASE - Duration::from_millis(1);
+    assert!(
+        !quality.poll(false, before, start()),
+        "still within the release"
+    );
+    assert!(quality.poll(false, tick + RELEASE, start()), "released");
+    assert!(!quality.started && quality.reading.latest().is_none());
 }
 
 #[test]

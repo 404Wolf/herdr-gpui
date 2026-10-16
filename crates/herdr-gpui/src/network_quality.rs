@@ -35,6 +35,11 @@ const SPAN: Duration = Duration::from_secs(WINDOW as u64 * INTERVAL.as_secs());
 /// Latency shown is the median of this many recent probes, about a minute,
 /// so one slow handshake does not color the bar.
 const LATENCY_PROBES: usize = 4;
+/// How long the worker outlives the last window that asked for it. Windows
+/// reload settings separately, so one can still hold the old value while
+/// another has the new one; this keeps a stale `false` from stopping probes
+/// another window wants, while one that wants them ticks every 16 ms.
+const RELEASE: Duration = Duration::from_secs(1);
 
 struct Worker {
     stop: Arc<Stop>,
@@ -159,6 +164,8 @@ pub(crate) struct NetworkQuality {
     worker: Option<Worker>,
     /// A worker that could not start is not retried on every tick.
     started: bool,
+    /// When a window last asked for probes.
+    wanted: Option<Instant>,
     reading: Reading,
     /// Counts changes to what is shown, so each window can tell on its own
     /// tick whether to redraw after another window took the probes.
@@ -173,24 +180,33 @@ pub(crate) fn reading(cx: &App) -> Option<&Reading> {
         .map(|quality| &quality.reading)
 }
 
-/// Takes finished probes while `enabled`, or stops and forgets them, and
-/// returns the revision of what is shown.
+/// Takes finished probes while any window has them `enabled`, or stops and
+/// forgets them once none has for [`RELEASE`], and returns the revision of
+/// what is shown.
 pub(crate) fn poll(enabled: bool, cx: &mut App) -> u64 {
     let quality = cx.default_global::<NetworkQuality>();
-    if quality.poll(enabled, SystemTime::now()) {
+    if quality.poll(enabled, Instant::now(), SystemTime::now()) {
         quality.revision += 1;
     }
     quality.revision
 }
 
 impl NetworkQuality {
-    /// Probes while `enabled`, and stops and forgets the readings once not.
-    /// Returns whether anything shown changed.
-    fn poll(&mut self, enabled: bool, now: SystemTime) -> bool {
-        if !enabled {
+    /// Probes while some window asked within [`RELEASE`] of `tick`, and
+    /// stops and forgets the readings once none has. `now` stamps and
+    /// expires probes. Returns whether anything shown changed.
+    fn poll(&mut self, enabled: bool, tick: Instant, now: SystemTime) -> bool {
+        if enabled {
+            self.wanted = Some(tick);
+        }
+        let wanted = self
+            .wanted
+            .is_some_and(|at| tick.saturating_duration_since(at) < RELEASE);
+        if !wanted {
             let had_any = self.started;
             self.worker = None;
             self.started = false;
+            self.wanted = None;
             self.reading = Reading::default();
             return had_any;
         }
