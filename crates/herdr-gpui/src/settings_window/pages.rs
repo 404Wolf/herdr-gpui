@@ -19,7 +19,8 @@ pub(super) use window::padding_ids;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub(in crate::settings_window) use configuration::open_path;
 
-const SHARED_READ_ONLY: &str = "Shared Herdr settings are read-only on this platform.";
+pub(in crate::settings_window) const SHARED_READ_ONLY: &str =
+    "Shared Herdr settings are read-only on this platform.";
 const SHARED_UNAVAILABLE: &str = "Shared settings are unavailable. Reload to retry.";
 
 /// The text on an override dropdown: the local choice, or what Herdr says.
@@ -34,12 +35,20 @@ impl SettingsWindow {
     /// Disables a row that edits Herdr's shared file when that file cannot be
     /// written, saying why instead of showing the description.
     fn gate_shared(&self, row: ui::Row) -> ui::Row {
+        match self.shared_gate() {
+            Some(reason) => row.disabled(reason),
+            None => row,
+        }
+    }
+
+    /// Why rows that edit Herdr's shared file are disabled, if they are.
+    pub(in crate::settings_window) fn shared_gate(&self) -> Option<&'static str> {
         if !cfg!(unix) {
-            row.disabled(SHARED_READ_ONLY)
+            Some(SHARED_READ_ONLY)
         } else if self.shared.is_none() {
-            row.disabled(SHARED_UNAVAILABLE)
+            Some(SHARED_UNAVAILABLE)
         } else {
-            row
+            None
         }
     }
 

@@ -235,9 +235,21 @@ fn shared_rows_say_why_they_are_disabled(cx: &mut TestAppContext) {
         view.shared = Some(herdr_settings::Settings::parse_text("").unwrap());
     });
     show(&view, Section::Tabs, cx);
-    assert!(cx.debug_bounds("tabs-position-reason").is_none());
-    assert!(cx.debug_bounds("tabs-pane-history-reason").is_none());
-    assert!(cx.debug_bounds("tabs-pane-history-description").is_some());
+    let gate = view.read_with(cx, |view, _| view.shared_gate());
+    if cfg!(unix) {
+        // Loaded shared settings make the rows editable again.
+        assert_eq!(gate, None);
+        assert!(cx.debug_bounds("tabs-position-reason").is_none());
+        assert!(cx.debug_bounds("tabs-pane-history-reason").is_none());
+        assert!(cx.debug_bounds("tabs-pane-history-description").is_some());
+    } else {
+        // Elsewhere Herdr's file cannot be written, so loading it changes
+        // nothing: the rows keep the platform's reason over their description.
+        assert_eq!(gate, Some(pages::SHARED_READ_ONLY));
+        assert!(cx.debug_bounds("tabs-position-reason").is_some());
+        assert!(cx.debug_bounds("tabs-pane-history-reason").is_some());
+        assert!(cx.debug_bounds("tabs-pane-history-description").is_none());
+    }
 }
 
 #[gpui::test]

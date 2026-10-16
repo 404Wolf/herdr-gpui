@@ -57,8 +57,20 @@ fn notification_rows_stack_inside_the_body_and_descriptions_wrap(cx: &mut TestAp
                 previous_top = title.top();
             }
             if width == 680. {
-                let note = cx.debug_bounds("notif-delivery-description").unwrap();
-                assert!(note.size.height > px(18.), "narrow descriptions must wrap");
+                // The delay row is local, so it keeps its description on
+                // every platform. The shared delivery row shows it only where
+                // Herdr's file is writable; elsewhere its reason replaces it.
+                let mut wrapping = vec!["notif-delay-description"];
+                if cfg!(unix) {
+                    wrapping.push("notif-delivery-description");
+                } else {
+                    assert!(cx.debug_bounds("notif-delivery-description").is_none());
+                    assert!(cx.debug_bounds("notif-delivery-reason").is_some());
+                }
+                for id in wrapping {
+                    let note = cx.debug_bounds(id).unwrap_or_else(|| panic!("{id}"));
+                    assert!(note.size.height > px(18.), "narrow {id} must wrap");
+                }
             }
         }
     }
