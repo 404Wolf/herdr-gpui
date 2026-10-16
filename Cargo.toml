@@ -37,6 +37,7 @@ config_loader        = { default-features = false, features = ["toml"], package 
 core-graphics        = "0.25"
 crossbeam-channel    = "0.5"
 ed25519-dalek        = { default-features = false, features = ["std"], version = "2.2" }
+embed-resource       = "3.0.11"
 flate2               = "1"
 # Use the same strict macOS family lookup as GPUI, including legacy aliases.
 font-kit             = { package = "zed-font-kit", version = "=0.14.1-zed" }

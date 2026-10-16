@@ -65,6 +65,21 @@ gtk-update-icon-cache --force --ignore-theme-index ~/.local/share/icons/hicolor
 This user-local icon overrides the packaged icon. Remove that SVG when you want
 future artwork changes to come from package upgrades again, then refresh the cache.
 
+### Windows
+
+Windows shows the same circular artwork. `windows/herdr.ico` and
+`windows/herdr-worktree.ico` hold PNG images at 16, 20, 24, 32, 40, 48, 64, and
+256 pixels; the build script embeds one of them in `herdr-gpui.exe` as icon
+resource 1, which Explorer, the taskbar, and GPUI's window class all use.
+Linked-worktree builds embed the red one, as on macOS. The `wizard-*.png`
+images brand the Inno Setup installer, which also uses `herdr.ico` as its own
+icon.
+
+Run `just icons-windows` after changing the Linux SVGs. It rasterizes each size
+directly from the SVG with `rsvg-convert` (`brew install librsvg`) or `resvg`
+(`cargo install resvg`) and packs the `.ico` files with Python's standard
+library.
+
 ### macOS sizing
 
 The flattened `.icns` icons follow Apple's

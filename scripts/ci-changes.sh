@@ -46,5 +46,6 @@ windows_package=$(changed \
   scripts/release/package-windows.py scripts/release/windows-installer.py \
   scripts/release/herdr-gpui.iss site/install.ps1 \
   crates/herdr-gpui/src/console.rs crates/herdr-gpui/src/main.rs \
+  crates/herdr-gpui/build.rs crates/herdr-gpui/build_resource.rs assets/icons/windows \
   .github/workflows/ci.yml)
 printf 'code=%s\nwindows_package=%s\n' "$code" "$windows_package"

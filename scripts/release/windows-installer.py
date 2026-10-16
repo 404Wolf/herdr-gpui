@@ -13,21 +13,24 @@
   smoke [--signed] INSTALLER
       On Windows: install silently into a scratch directory with the PATH
       task, check the files, their subsystems, the console copy's output,
-      that the console copy opening the app does not hold its caller's pipes,
-      the user PATH, and the entry Settings lists under Installed apps, then
-      uninstall and check all of it is gone again. With --signed, also
-      require valid timestamped signatures from one signer on the installer
-      and on everything it installed that runs, the uninstaller included.
-      Changes this user's PATH, and opens the app (which may start a Herdr
-      daemon), while it runs: for CI runners only. Under a process a packaged
-      (MSIX) app started, Windows redirects HKCU into that app's private hive,
-      so the checks pass while Settings and new terminals see neither entry.
+      the app's name and its Start menu shortcut's AppUserModelID, that the
+      console copy opening the app does not hold its caller's pipes, the user
+      PATH, and the entry Settings lists under Installed apps, then uninstall
+      and check all of it is gone again. With --signed, also require valid
+      timestamped signatures from one signer on the installer and on
+      everything it installed that runs, the uninstaller included. Changes
+      this user's PATH and Start menu shortcut, and opens the app (which may
+      start a Herdr daemon), while it runs: for CI runners only. Under a
+      process a packaged (MSIX) app started, Windows redirects HKCU into that
+      app's private hive, so the checks pass while Settings and new terminals
+      see neither entry.
 
 Pure standard library, like package-windows.py, for the Windows runner.
 """
 import argparse
 import hashlib
 import importlib.util
+import os
 from pathlib import Path
 import re
 import struct
@@ -197,6 +200,30 @@ def check_signed(paths):
     signing.check_signed(paths)
 
 
+def app_user_model_id():
+    """The AppUserModelID the installer gives its shortcuts."""
+    match = re.search(r'^#define AppUserModelID "([^"]+)"$', SCRIPT.read_text(), re.M)
+    if not match:
+        raise ValueError(f"{SCRIPT.name} defines no AppUserModelID")
+    return match.group(1)
+
+
+def shell_identity(app):
+    """The installed app's FileDescription and its Start menu shortcut's
+    AppUserModelID, which only the shell reads."""
+    script = (
+        "$ErrorActionPreference = 'Stop';"
+        "(Get-Item -LiteralPath $env:HERDR_SMOKE_APP).VersionInfo.FileDescription;"
+        "$programs = [Environment]::GetFolderPath('Programs');"
+        "(New-Object -ComObject Shell.Application).Namespace($programs)"
+        ".ParseName('Herdr UI.lnk').ExtendedProperty('System.AppUserModel.ID')"
+    )
+    output = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+                            capture_output=True, text=True, check=True, timeout=120,
+                            env={**os.environ, "HERDR_SMOKE_APP": str(app)}).stdout
+    return tuple(output.splitlines())
+
+
 def smoke(installer, signed=False):
     with tempfile.TemporaryDirectory(prefix="herdr-installer-smoke-") as temp:
         app = Path(temp) / "Herdr UI"
@@ -226,6 +253,9 @@ def check_installation(app, signed_installer):
     # Printed through a pipe by the console copy, as an agent's shell reads it.
     if not info.startswith("worktree="):
         raise ValueError(f"Installed console copy printed no build info:\n{info}")
+    identity = shell_identity(gui)
+    if identity != ("Herdr UI", app_user_model_id()):
+        raise ValueError(f"Installed app or shortcut has the wrong identity: {identity}")
     if signed_installer is not None:
         check_signed([signed_installer.resolve(), gui, cli, app / "unins000.exe"])
     check_opens_app_without_holding_pipes(cli, gui)
@@ -239,10 +269,13 @@ def uninstall(app):
                    check=True, timeout=600)
     # The uninstaller hands off to a copy of itself and returns early.
     bin_entry = str(app / "bin").lower()
+    shortcut = Path(os.environ["APPDATA"]) / "Microsoft/Windows/Start Menu/Programs/Herdr UI.lnk"
     deadline = time.monotonic() + 120
-    while app.exists() or bin_entry in user_path_entries() or uninstall_entry() is not None:
+    while (app.exists() or shortcut.exists() or bin_entry in user_path_entries()
+           or uninstall_entry() is not None):
         if time.monotonic() > deadline:
-            raise ValueError("Uninstaller left the app directory, its PATH entry, or its Uninstall entry behind")
+            raise ValueError("Uninstaller left the app directory, its shortcut, its PATH entry, "
+                             "or its Uninstall entry behind")
         time.sleep(1)
 
 

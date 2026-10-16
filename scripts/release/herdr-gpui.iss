@@ -26,6 +26,11 @@
 
 #define AppName "Herdr UI"
 #define AppExe "herdr-gpui.exe"
+; The app's AppUserModelID (constants::APP_ID), which it sets at startup.
+; Shortcuts carry it too, so a pinned shortcut and the window share one
+; taskbar button.
+#define AppUserModelID "so.pen.herdr-gpui"
+#define Icons "..\..\assets\icons\windows"
 
 [Setup]
 ; Never change: Windows finds an existing installation by it.
@@ -53,6 +58,13 @@ OutputBaseFilename=Herdr-{#Version}-{#Target}-setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+; Herdr's icon in place of Inno's stock box: the setup file's own icon, the
+; corner image on every page, and, centered rather than stretched, the welcome
+; and finish pages' panel. Each list runs from 100% to 250% DPI.
+SetupIconFile={#Icons}\herdr.ico
+WizardSmallImageFile={#Icons}\wizard-small-55.png,{#Icons}\wizard-small-69.png,{#Icons}\wizard-small-83.png,{#Icons}\wizard-small-110.png,{#Icons}\wizard-small-138.png
+WizardImageFile={#Icons}\wizard-128.png,{#Icons}\wizard-160.png,{#Icons}\wizard-192.png,{#Icons}\wizard-256.png
+WizardImageStretch=no
 UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#AppExe}
 SetupLogging=yes
@@ -78,8 +90,8 @@ Type: dirifempty; Name: "{app}\bin"
 Type: dirifempty; Name: "{app}"
 
 [Icons]
-Name: "{userprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"
-Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{userprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; AppUserModelID: "{#AppUserModelID}"
+Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; AppUserModelID: "{#AppUserModelID}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
