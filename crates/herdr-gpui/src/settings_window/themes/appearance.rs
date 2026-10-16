@@ -504,6 +504,8 @@ impl SettingsWindow {
                     ),
             )
             .child(self.render_sidebar_layout_controls(cx))
-            .child(self.render_backdrop_controls(cx))
+            .child(self.terminal_padding_controls(cx))
+            // Each card stands off the one above by the same margin.
+            .child(self.render_backdrop_controls(cx).mt(px(24.)))
     }
 }

@@ -51,9 +51,10 @@ impl HerdrWindow {
     }
 
     /// Whether the modifiers keep a press here from a mouse-reporting
-    /// application. Shift keeps any gesture local; the platform link modifier
-    /// (cmd on macOS, ctrl elsewhere) claims only a press on a link, so the
-    /// application still receives it everywhere else.
+    /// application. Shift keeps any gesture local, for selecting; the platform
+    /// link modifier (cmd on macOS, ctrl elsewhere) claims only a press on a
+    /// verified link, so the application still receives it everywhere else,
+    /// a printed path still being looked for on disk included.
     pub(crate) fn link_modifier_held(
         &self,
         position: Point<Pixels>,
@@ -63,23 +64,25 @@ impl HerdrWindow {
             || (modifiers.secondary()
                 && (self.terminal_link_at(position).is_some()
                     || self.daemon_link_at(position).is_some()
-                    || self.file_link_at(position).is_some()))
+                    || self
+                        .terminal_link_press(position, modifiers)
+                        .is_some_and(|press| self.verified_press(&press))))
     }
 
-    /// Whether a left click here would open a link, which the pointer shows.
+    /// Whether the pointer shows a link here: only while the link modifier is
+    /// held, when a click would act on what is under it. That is every
+    /// explicit hyperlink, which says it is a link, and any other text once
+    /// it is verified as one.
     pub(crate) fn terminal_link_hovered(
         &self,
         position: Point<Pixels>,
         modifiers: gpui::Modifiers,
     ) -> bool {
-        let web = (self.terminal_link_at(position).is_some()
-            || self.daemon_link_at(position).is_some())
-            && (modifiers.secondary()
-                || modifiers.shift
-                || self
-                    .terminal_mouse_at(position)
-                    .is_none_or(|hit| !hit.mouse_reporting));
-        web || (modifiers.secondary() && self.file_link_at(position).is_some())
+        modifiers.secondary()
+            && (self.terminal_link_at(position).is_some()
+                || self.daemon_link_at(position).is_some()
+                || self.terminal_hyperlink_at(position)
+                || (self.hovered_local_link().is_some() && self.local_link_at(position).is_some()))
     }
 
     /// Whether wheel scrolling may draw panes between rows. Off in settings,
@@ -342,7 +345,9 @@ impl HerdrWindow {
         }
         self.clear_retained_selection(cx);
         if event.keystroke.key == "escape"
-            && (self.cancel_workspace_drag(cx) | self.cancel_tab_drag(cx))
+            && (self.cancel_workspace_drag(cx)
+                | self.cancel_device_drag(cx)
+                | self.cancel_tab_drag(cx))
         {
             cx.stop_propagation();
             window.prevent_default();

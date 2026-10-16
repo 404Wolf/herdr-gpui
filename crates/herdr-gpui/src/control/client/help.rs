@@ -11,12 +11,15 @@ Exit status: 0 done, 1 refused, 2 invalid arguments, 3 Herdr UI not running,
 7 timed out, 8 unsupported on this platform or by this app version.";
 
 const BROWSER: &str = "\
-herdr-gpui browser open URL|FILE [--workspace ID] [--no-focus]
+herdr-gpui browser open URL|FILE [--workspace ID] [--no-focus] [--beside|--tab]
     Show a web address, or a local HTML file, in a browser tab of the running
     Herdr UI. The tab joins the caller's own workspace (HERDR_WORKSPACE_ID),
     or the frontmost one outside Herdr. Showing the same page again from the
     same pane reuses and reloads its tab. Bare hosts such as localhost:3000
     are accepted. A file is served with the other files in its folder.
+    A file opened from a Herdr pane goes in a split next to that terminal,
+    which stays in view and keeps the keyboard; a web address takes a tab of
+    the group in use. --beside and --tab choose instead.
 herdr-gpui browser reload
     Reload the pages this pane opened, for example after editing the file.
 herdr-gpui browser feedback [--wait SECONDS]
@@ -33,6 +36,9 @@ herdr-gpui browser screenshot TAB PATH
     Save a PNG of the page (macOS).
 herdr-gpui browser skill
     Print the agent skill that explains these commands.
+herdr-gpui browser example
+    Print an example explainer page built on the kit Herdr UI serves to local
+    pages at /.herdr/kit.css and /.herdr/kit.js.
 Exit status: 0 done, 1 refused, 2 invalid arguments, 3 Herdr UI not running,
 4 no notes (feedback), 5 no such tab or workspace, 6 busy, 7 timed out,
 8 unsupported on this platform.";

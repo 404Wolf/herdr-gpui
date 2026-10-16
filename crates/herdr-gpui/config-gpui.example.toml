@@ -54,6 +54,16 @@ show_sidebar_search = true
 # name in the sidebar, in the layouts that draw one (not orca or minimal).
 # Also under Settings > Appearance > Sidebar layout.
 show_repository_icons = true
+# Draw agent status as icons instead of Herdr's dots or symbols: "solid"
+# (filled discs), "tiles" (each mark on a tinted tile), or "rail" (outline
+# marks plus a bar on the edge of each working, done, or blocked row). Only
+# this app draws them; unset follows Herdr's `ui.status_indicators`.
+# Also under Settings > Indicators.
+# status_icons = "solid"
+# Show a mark before each device's name in the sidebar for where it runs: this
+# machine, a cloud provider, Tailscale, or SSH. In the layouts that draw one
+# (not orca or minimal). Also under Settings > Appearance > Sidebar layout.
+show_device_icons = true
 # Show CPU and memory: the selected host's in the status bar, and each host's
 # on its sidebar row. Connected remote hosts are read over SSH every couple of
 # seconds; false stops all sampling. Also under Settings > Status bar.
@@ -70,10 +80,18 @@ agent_checkpoints = true
 # scanned every five seconds with ss or lsof, a remote one over SSH; false
 # stops all scanning. Also under Settings > General.
 show_listening_ports = true
+# Show latency and loss from this machine in the status bar, beside CPU and
+# memory. One timed TCP connect to 1.1.1.1:443 every 15 seconds, about a
+# megabyte a day, so it suits a metered link such as a phone hotspot. Also
+# under Settings > Status bar.
+show_network_quality = false
 # Draw wheel and trackpad scrollback between rows, following the OS deltas
 # and momentum; false scrolls by whole rows. Applications reading the mouse
 # always get whole rows. Also under Settings > General.
 smooth_scroll = true
+
+# Focus split terminal panes on hover in the active window, without clicking.
+focus_follows_mouse = true
 # macOS only: whether Option-letter reaches a pane as an Alt shortcut (Alt-P
 # for Option-P) or types the character the keyboard layout puts there. "auto"
 # sends Alt from the left Option on the U.S. and ABC layouts, while the right
@@ -83,15 +101,16 @@ smooth_scroll = true
 # layout, true from both, and false never. Alt always reaches the pane on
 # Linux and Windows.
 option_as_alt = "auto"
-# Where a clicked terminal link opens: "system" (the default browser) or
-# "browser-tab" (a browser tab beside the workspace's terminals, macOS and
-# Windows only). Alt-click (Option-click) opens a link in the other one.
+# Where a Cmd-click (Ctrl-click elsewhere) on a web link in a terminal opens
+# it: "system" (the default browser) or "browser-tab" (a browser tab beside the
+# workspace's terminals, macOS and Windows only). Holding Alt (Option) as well
+# opens a link in the other one.
 open_links_in = "system"
 # Where a Cmd-click (Ctrl-click elsewhere) on a file path a pane printed, such
 # as `src/main.rs:42`, opens it: "editor" (the terminal editor, at that line,
 # in a pane split beside the one that printed it) or "system" (the default
 # application). Folders, images, and PDFs always open in the system's
-# application, as does every file on Windows. Alt-click (Option-click) opens a
+# application, as does every file on Windows. Holding Alt (Option) as well opens a
 # file in the other one.
 open_files_in = "editor"
 # How that editor starts. Unset, the pane's $VISUAL or $EDITOR runs, then vi,
@@ -149,6 +168,13 @@ project_roots = []
 # The position also places the note saying why New Worktree opened no dialog.
 # position = "bottom-center"
 
+# How loud this app plays agent sounds (done and request), as a percentage of
+# the sound file's own level, inclusive 0..100. Herdr's [ui.sound] chooses
+# whether and which sounds play; it has no volume, so this is this app's own.
+# Also under Settings > Sound.
+# [sound]
+# volume = 50
+
 # What a pane's terminal bell (BEL) does. Herdr has no bell setting of its own:
 # it forwards each bell to the focused client, as an outer terminal would see it.
 # [bell]
@@ -162,14 +188,6 @@ project_roots = []
 # [updates]
 # channel = "stable"
 
-# To customize spacing too, REPLACE the top-level layout above with this table:
-# [layout]
-# mode = "normal"
-# Blank space between the sidebar and the terminal beside it, 0 to 64.
-# The terminal keeps the remaining width, so a wide gap costs columns.
-# Ignored while the sidebar is hidden. Set 0 to sit against the divider.
-# sidebar_gap = 8
-
 # Native shortcuts. Each key is a command; the value is one keystroke or a list,
 # primary first. "" or [] unbinds it. Assigning a keystroke here takes it away
 # from its default command. Modifiers: cmd (super on Linux), ctrl, alt, shift,
@@ -182,7 +200,8 @@ project_roots = []
 # close_window = "ctrl-alt-w", new_workspace = "ctrl-alt-shift-n",
 # new_worktree = "ctrl-shift-n",
 # split_right = "ctrl-shift-d", split_down = "ctrl-alt-shift-d",
-# command_palette = "ctrl-shift-p", toggle_full_screen = "f11".
+# command_palette = "ctrl-shift-p", resume_palette = "ctrl-alt-shift-r",
+# toggle_full_screen = "f11".
 # See Keyboard Shortcuts for the full platform-specific list. Explicit values
 # are used literally on every platform; cmd is not translated to Ctrl+Shift.
 # Ctrl+Shift+U is left to GNOME/IBus Unicode character entry.
@@ -207,6 +226,7 @@ project_roots = []
 # focus_tab_1 = "cmd-1"   # through focus_tab_9 = "cmd-9"
 # toggle_sidebar = "cmd-b"
 # toggle_status_bar = "cmd-ctrl-b"   # unbound by default
+# toggle_zen_mode = "ctrl-cmd-z"   # Linux: "ctrl-alt-z"
 # increase_font_size = ["cmd-=", "cmd-+"]
 # decrease_font_size = "cmd--"
 # reset_font_size = "cmd-0"
@@ -214,6 +234,7 @@ project_roots = []
 # keybindings = "cmd-/"
 # workspace_picker = "cmd-p"
 # command_palette = "cmd-shift-p"
+# resume_palette = "cmd-shift-r"   # last query, filters, and selection
 # go_to_symbol = "cmd-shift-o"
 # go_to_file = "cmd-o"
 # open_notification_target = "cmd-alt-n"
@@ -252,8 +273,12 @@ project_roots = []
 # "server" uses the [keys] profile that device's Herdr publishes instead, like
 # `herdr --remote-keybindings server`; [keybindings] still apply on top. Keyed
 # by catalog ID; a device's right-click menu toggles it.
+# A device's theme paints only its terminal, so each host is told apart
+# where you work; the chrome keeps `theme`. Any `theme` value works, and the
+# device's right-click menu picks it.
 # [devices.0123456789abcdef0123456789abcdef]
 # keybindings = "server"
+# theme = "Dracula"
 
 # Preferences offers a searchable picker for all four families together or each row.
 # Platform default removes the local family override; fallback cascades remain active.
@@ -319,6 +344,14 @@ size = 14
 # no face for draws at its nearest one, and on macOS is reported. Only
 # [terminal] takes this key.
 # weight = "medium"
+# Blank space between the cells and the edges of the terminal's tab group, in
+# logical pixels from 0 to 64. One number pads both sides; a pair pads each:
+# [left, right] for padding_x, [top, bottom] for padding_y. Default 0. The
+# terminal keeps the remaining size, so wide padding costs columns and rows.
+# Only [terminal] takes these keys. They replace the deprecated
+# [layout] sidebar_gap, which still loads as the left padding.
+# padding_x = 8
+# padding_y = [4, 8]
 
 [ui]
 # Default: ".SystemUIFont" on macOS and Windows, "DejaVu Sans" on Linux (or an installed
@@ -356,6 +389,13 @@ size = 12
 # WARNING: saves an UNENCRYPTED token in the separate 0600 github-credentials file.
 # Other software running as you and backups can read it. Default is false.
 # allow_plaintext_credentials = false
+# Additional accounts, such as an Enterprise Managed User beside a personal
+# account. The GitHub page adds and removes them (Add account); each signs in
+# with the browser or a pasted personal access token, saved like the main
+# sign-in under its id. A repository whose owner is an account's login, one of
+# its organizations, or one of its owners below is read with that account;
+# every other repository with the main sign-in. At most 8 accounts.
+# accounts = [{ id = "0123456789abcdef0123456789abcdef", owners = ["my-emu-org"] }]
 
 # A Coder deployment whose workspaces can be created and added as devices from
 # the device picker's "Add Coder Workspace…". Settings > Cloud Devices edits
@@ -383,6 +423,20 @@ size = 12
 # cli = "/opt/homebrew/bin/coder"
 # Same meaning as [github] allow_plaintext_credentials, for the Coder sign-in,
 # which is saved in its own 0600 coder-credentials file. Default is false.
+# allow_plaintext_credentials = false
+
+# Boat sandboxes as devices (experimental). Settings > Cloud Devices > Boat
+# edits this table and saves the API key to the credential store; the
+# environment variable HERDR_BOAT_API_KEY takes precedence.
+#
+# [boat]
+# api_url = "https://boat.dev/api/v1"
+# organization = "" # Optional organization ID or name; active wallet if empty.
+# machine_type = "" # Optional: small, default, large, or xlarge.
+# environment = ""  # Optional named environment; account default if empty.
+# auto_stop = "never" # Or seconds as a string, e.g. "7200". Trials require 1–7200.
+# # Linux without Secret Service may opt into a private credential file. The key
+# # is saved in its own 0600 boat-api-key file. Default is false.
 # allow_plaintext_credentials = false
 
 # Daytona sandboxes as devices (experimental). Settings > Cloud Devices >
@@ -432,7 +486,21 @@ size = 12
 # shortcuts = "label"
 # report_issue = "label"
 
-# Optional behaviors, all off unless turned on here.
+# Zen mode (View > Toggle Zen Mode, or `toggle_zen_mode`) hides the
+# header, sidebar, tab strips, status bar, and notices, and every group but
+# the one in use, for this window and session. Toasts and menus still show.
+# [zen]
+# Also enter native full screen, leaving it again when zen mode ends.
+# fullscreen = false
+# Centre a column this many terminal columns wide (20 to 1000), or this share
+# of the window ("10%" to "100%"), with blank room either side. Unset uses the
+# whole width.
+# width = 120
+# The terminal font size while in zen mode (8 to 48); the previous size comes
+# back when it ends. Unset keeps the current size.
+# font_size = 24
+
+# Optional behaviors, all off unless turned on here or in Settings > General.
 # [features]
 # Open a space's menu when the pointer rests on its sidebar row, without a
 # right click. Moving the pointer anywhere but into that menu closes it again.

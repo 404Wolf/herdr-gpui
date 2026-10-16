@@ -115,9 +115,9 @@ pub(crate) fn decide(
 
 /// The workspaces of `snapshot` whose cached pull request is merged, in
 /// snapshot order. Only linked worktrees qualify, never a main checkout.
-pub(crate) fn candidates<'a>(
+pub(crate) fn candidates<'a, R: std::ops::Deref<Target = PullRequest>>(
     snapshot: &'a ClientShellSnapshot,
-    pull_request: impl Fn(&Input) -> Option<&'a PullRequest> + 'a,
+    pull_request: impl Fn(&Input) -> Option<R> + 'a,
 ) -> impl Iterator<Item = Candidate> + 'a {
     snapshot.workspaces.iter().filter_map(move |workspace| {
         if !workspace

@@ -15,6 +15,10 @@ pub enum Error {
     Missing(&'static str),
     #[error("Coder sign-in required.")]
     Authentication,
+    #[error(
+        "Coder rejected the OAuth client secret. Copy the OAuth2 app's secret from Coder into Settings > Cloud Devices and sign in again."
+    )]
+    Client,
     #[error("Coder denied access. Check your account's permissions for this template.")]
     Forbidden,
     #[error("{0}")]
@@ -53,6 +57,8 @@ pub enum Error {
     Deleted,
     #[error("The Coder workspace did not become ready within 10 minutes.")]
     BuildTimeout,
+    #[error("The Coder workspace was not deleted within 10 minutes. Check it in Coder.")]
+    DeleteTimeout,
     #[error("The coder CLI was not found. Install it or set [coder] cli to its path.")]
     Cli,
     #[error(

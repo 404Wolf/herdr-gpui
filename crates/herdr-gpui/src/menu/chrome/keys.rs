@@ -117,6 +117,10 @@ impl HerdrWindow {
             self.fan_out_key(event, window, cx);
             return;
         }
+        if self.menu.page == Some(Page::DeviceTheme) {
+            self.device_theme_key(event, window, cx);
+            return;
+        }
         if matches!(
             self.menu.page,
             Some(Page::Host | Page::RenameDevice | Page::ForwardPort | Page::RemoveDevice)
@@ -324,6 +328,9 @@ impl HerdrWindow {
             }
             "enter" if self.menu.page == Some(Page::AgentSkill) => {
                 self.install_browser_skill(window, cx);
+            }
+            "enter" if self.menu.page == Some(Page::OpenLink) => {
+                self.confirm_open_link(window, cx);
             }
             "enter" if self.menu.page == Some(Page::VersionMismatch) => {
                 self.act_on_version_mismatch(window, cx);

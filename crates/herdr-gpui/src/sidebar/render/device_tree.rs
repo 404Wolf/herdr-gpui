@@ -11,7 +11,7 @@ use gpui::{prelude::*, *};
 
 impl HerdrWindow {
     /// What the Devices layout's search field holds.
-    pub(super) fn device_tree_query(&self, cx: &App) -> String {
+    pub(in crate::sidebar) fn device_tree_query(&self, cx: &App) -> String {
         self.devices_overview
             .tree_search
             .as_ref()
@@ -21,7 +21,7 @@ impl HerdrWindow {
 
     /// Whether endpoint `index` is listed for `query`: by its name, how it is
     /// reached, or one of its agents or workspaces.
-    pub(super) fn device_listed(&self, index: usize, query: &str) -> bool {
+    pub(in crate::sidebar) fn device_listed(&self, index: usize, query: &str) -> bool {
         if query.trim().is_empty() {
             return true;
         }
@@ -34,19 +34,6 @@ impl HerdrWindow {
             &endpoint.live
         };
         crate::devices_overview::Device::new(index, endpoint, live).matches(query)
-    }
-
-    /// The search field over the tree, when the tick has made it.
-    pub(super) fn device_tree_search(&self, look: SidebarLook) -> Option<Div> {
-        let search = self.devices_overview.tree_search.as_ref()?;
-        Some(
-            div()
-                .debug_selector(|| "device-tree-search".into())
-                .flex_none()
-                .px(px(look.content_x()))
-                .pb(px(4.))
-                .child(search.input.clone()),
-        )
     }
 
     /// Appends endpoint `index`'s agents, nested under its header, and

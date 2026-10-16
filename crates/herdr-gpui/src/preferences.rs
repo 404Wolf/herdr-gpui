@@ -112,7 +112,7 @@ impl AgentSort {
 }
 
 /// The window chrome this endpoint remembers between runs.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Chrome {
     pub sidebar_width: Option<f32>,
     pub sidebar_split: Option<f32>,
@@ -123,6 +123,8 @@ pub struct Chrome {
     pub notes_width: Option<f32>,
     /// The review's file list's width, once dragged.
     pub review_files_width: Option<f32>,
+    /// The device IDs in the order the user dragged them into.
+    pub device_order: Vec<String>,
 }
 
 pub struct Preferences {
@@ -305,8 +307,28 @@ fn read_chrome(path: &Path) -> crate::Result<Chrome> {
         agent_sort,
         notes_width: panel_width("notes_width_px"),
         review_files_width: panel_width("review_files_width_px"),
+        device_order: device_order(object.get("device_order")),
     })
 }
+
+/// The stored device order. Anything but a list of IDs is forgotten rather
+/// than failing the whole file, and the list is bounded like the catalogs.
+fn device_order(value: Option<&serde_json::Value>) -> Vec<String> {
+    value
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .filter(|id| !id.is_empty() && id.len() <= MAX_DEVICE_ID)
+        .take(MAX_DEVICES)
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Bounds on the stored device order: far more devices than anyone saves,
+/// each ID far longer than a catalog key.
+const MAX_DEVICES: usize = 1024;
+const MAX_DEVICE_ID: usize = 1024;
 
 fn write_chrome(path: &Path, chrome: Chrome) -> crate::Result<()> {
     let width = chrome.sidebar_width;
@@ -344,6 +366,7 @@ fn write_chrome(path: &Path, chrome: Chrome) -> crate::Result<()> {
                 "review_files_width_px": chrome
                     .review_files_width
                     .filter(|width| width.is_finite() && *width > 0.0),
+                "device_order": chrome.device_order,
             }),
         )?;
         file.write_all(b"\n")?;
@@ -386,7 +409,10 @@ mod busy_load_tests {
         assert_eq!(written.load(std::sync::atomic::Ordering::SeqCst), 1);
 
         view.update(cx, |view, cx| {
-            view.save_preference(|| Err(crate::Error::InvalidSidebarGap), cx);
+            view.save_preference(
+                || Err(crate::Error::InvalidTerminalPadding("padding_x")),
+                cx,
+            );
         });
         cx.run_until_parked();
         view.read_with(cx, |view, _| {

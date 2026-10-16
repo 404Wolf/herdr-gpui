@@ -1,8 +1,9 @@
-//! The single prefetch worker and the handle that talks to it. One request is
-//! in flight at a time; a superseded request is dropped by generation rather
+//! The single prefetch worker and the handle that talks to it. One batch is
+//! in flight at a time; a superseded batch is dropped by generation rather
 //! than cancelled mid-flight, and dropping the handle retires the generation.
 
-use super::{Input, Origin, Origins, PullRequest, Result, fetch_with_backoff};
+use super::{Input, Origin, Origins, PullRequest, batch::Batch, batch::fetch_batch};
+use crate::github::Tokens;
 use std::{
     sync::{
         Arc,
@@ -10,93 +11,103 @@ use std::{
         mpsc,
     },
     thread,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
-type Request = (u64, Input, Origin, Arc<secrecy::SecretString>);
+/// A batch's generation, checkouts, device, tokens, and the logins of the
+/// accounts paused when it was sent.
+pub(super) type Request = (u64, Vec<Input>, Origin, Tokens, Vec<String>);
 
 pub(super) struct Worker {
     pub(super) requests: mpsc::SyncSender<Request>,
-    pub(super) results: mpsc::Receiver<(u64, Result, Option<Duration>)>,
+    pub(super) results: mpsc::Receiver<(u64, Batch)>,
 }
 
+/// One checkout's lookup as a view shows it.
 #[derive(Default)]
 pub(crate) struct Lookup {
-    pub(super) worker: Option<Worker>,
-    pub(super) generation: Arc<AtomicU64>,
-    pub(super) busy: bool,
-    pub(super) waiting: Option<(Input, Origin, Arc<secrecy::SecretString>)>,
     pub loading: bool,
     pub value: Option<PullRequest>,
     pub message: Option<String>,
     pub checked: Option<Instant>,
-    pub(super) cooldown: Option<Duration>,
 }
 
-impl Drop for Lookup {
+impl Lookup {
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
+}
+
+/// How the current batch ended: answered, or never answered because the
+/// worker could not run, which every checkout in it reports.
+pub(super) enum Finished {
+    Answered(Batch),
+    Failed(&'static str),
+}
+
+#[derive(Default)]
+pub(super) struct Prefetch {
+    pub(super) worker: Option<Worker>,
+    pub(super) generation: Arc<AtomicU64>,
+    pub(super) busy: bool,
+    waiting: Option<(Vec<Input>, Origin, Tokens, Vec<String>)>,
+}
+
+impl Drop for Prefetch {
     fn drop(&mut self) {
         self.generation.fetch_add(1, Ordering::Relaxed);
     }
 }
 
-impl Lookup {
+impl Prefetch {
     pub fn clear(&mut self) {
         self.generation.fetch_add(1, Ordering::Relaxed);
         // Sign-out also drains already-queued private results without scheduling
-        // more work. A still-running cancelled request is drained on a later tick.
+        // more work. A still-running cancelled batch is drained on a later tick.
         if let Some(worker) = &self.worker
             && worker.results.try_recv().is_ok()
         {
             self.busy = false;
         }
         self.waiting = None;
-        self.loading = false;
-        self.value = None;
-        self.message = None;
-        self.checked = None;
-        self.cooldown = None;
     }
 
-    pub fn request(&mut self, input: Input, origin: Origin, token: Arc<secrecy::SecretString>) {
+    pub fn request(
+        &mut self,
+        inputs: Vec<Input>,
+        origin: Origin,
+        tokens: impl Into<Tokens>,
+        paused: Vec<String>,
+    ) {
         self.generation.fetch_add(1, Ordering::Relaxed);
-        self.waiting = Some((input, origin, token));
-        self.loading = true;
-        self.message = None;
+        self.waiting = Some((inputs, origin, tokens.into(), paused));
     }
 
-    pub fn poll(&mut self) -> bool {
-        let mut changed = false;
+    /// The current batch's answer, once, after sending a waiting batch to the
+    /// worker if it is free. A superseded batch's answer is discarded.
+    pub fn poll(&mut self) -> Option<Finished> {
+        let mut finished = None;
         if let Some(worker) = &self.worker {
             match worker.results.try_recv() {
-                Ok((generation, result, cooldown)) => {
+                Ok((generation, batch)) => {
                     self.busy = false;
                     if generation == self.generation.load(Ordering::Relaxed) {
-                        self.loading = false;
-                        self.checked = Some(Instant::now());
-                        self.cooldown = cooldown;
-                        match result {
-                            Ok(value) => {
-                                self.value = value;
-                                self.message = None;
-                            }
-                            Err(error) => self.message = Some(error.to_string()),
-                        }
-                        changed = true;
+                        finished = Some(Finished::Answered(batch));
                     }
                 }
                 Err(mpsc::TryRecvError::Disconnected) => {
                     self.busy = false;
-                    self.loading = false;
                     self.waiting = None;
-                    self.message = Some("PR worker stopped; retrying automatically.".into());
                     self.worker = None;
-                    return true;
+                    return Some(Finished::Failed(
+                        "PR worker stopped; retrying automatically.",
+                    ));
                 }
                 Err(mpsc::TryRecvError::Empty) => {}
             }
         }
         if !self.busy
-            && let Some((input, origin, token)) = self.waiting.take()
+            && let Some((inputs, origin, token, paused)) = self.waiting.take()
         {
             if self.worker.is_none() {
                 let (requests, incoming) = mpsc::sync_channel::<Request>(1);
@@ -108,27 +119,18 @@ impl Lookup {
                         // Remote repositories are resolved over SSH; remember
                         // them so a refresh does not dial the host again.
                         let mut origins = Origins::default();
-                        for (generation, input, origin, token) in incoming {
-                            let mut cooldown = None;
-                            let result = fetch_with_backoff(
-                                &input,
-                                &origin,
-                                &mut origins,
-                                &token,
-                                || current.load(Ordering::Relaxed) != generation,
-                                &mut cooldown,
-                            );
-                            if outgoing.send((generation, result, cooldown)).is_err() {
+                        for (generation, inputs, origin, token, paused) in incoming {
+                            let batch =
+                                fetch_batch(inputs, &origin, &mut origins, &token, &paused, || {
+                                    current.load(Ordering::Relaxed) != generation
+                                });
+                            if outgoing.send((generation, batch)).is_err() {
                                 break;
                             }
                         }
                     }) {
                     Ok(_) => self.worker = Some(Worker { requests, results }),
-                    Err(_) => {
-                        self.loading = false;
-                        self.message = Some("Could not start PR worker.".into());
-                        return true;
-                    }
+                    Err(_) => return Some(Finished::Failed("Could not start PR worker.")),
                 }
             }
             if let Some(worker) = &self.worker {
@@ -136,13 +138,14 @@ impl Lookup {
                     .requests
                     .try_send((
                         self.generation.load(Ordering::Relaxed),
-                        input,
+                        inputs,
                         origin,
                         token,
+                        paused,
                     ))
                     .is_ok();
             }
         }
-        changed
+        finished
     }
 }

@@ -39,6 +39,8 @@ mod host_groups;
 #[cfg(test)]
 mod host_nesting;
 #[cfg(test)]
+mod host_origin;
+#[cfg(test)]
 mod host_wash;
 #[cfg(test)]
 mod layouts;
@@ -46,6 +48,8 @@ mod layouts;
 mod listening_ports;
 #[cfg(test)]
 mod palette;
+#[cfg(test)]
+mod palette_header;
 #[cfg(test)]
 mod picker_scroll;
 #[cfg(test)]
@@ -68,6 +72,8 @@ mod split_pane;
 #[cfg(test)]
 mod status_bar;
 #[cfg(test)]
+mod status_icons;
+#[cfg(test)]
 mod sticky_hosts;
 #[cfg(test)]
 mod superset_badges;
@@ -83,6 +89,8 @@ mod update_notes_scrollbar;
 mod update_panel;
 #[cfg(test)]
 mod workspace_menu;
+#[cfg(test)]
+mod worktree_note_trunk;
 #[cfg(test)]
 mod worktree_notes;
 #[cfg(test)]
@@ -512,9 +520,11 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         pr_actions: Default::default(),
         usage: Default::default(),
         system_load: Default::default(),
+        network_quality_seen: 0,
         devices_overview: Default::default(),
         checkpoints: Default::default(),
         port_forwards: Default::default(),
+        remote_browser: Vec::new(),
         #[cfg(feature = "cloud")]
         cloud_jobs: Default::default(),
         listening_ports: Default::default(),
@@ -522,6 +532,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         sidebar_visible: true,
         sidebar_start_pending: true,
         status_bar_visible: true,
+        zen: Default::default(),
         device_filter: None,
         endpoints: vec![crate::endpoint::Endpoint::new(
             crate::endpoint::LOCAL.into(),
@@ -570,6 +581,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         held_keys: Default::default(),
         // No AppKit event to read; a test that needs one supplies its own.
         key_press: || None,
+        key_layout: |_| None,
         file_transfer: None,
         presentation: Default::default(),
         wake: crate::endpoint::WakeClock::new(
@@ -578,6 +590,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         ),
         painter: Default::default(),
         backdrop: Default::default(),
+        device_themes: Default::default(),
         regions: Vec::new(),
         marked: String::new(),
         marked_selection: None,
@@ -594,6 +607,8 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         sidebar_width: None,
         sidebar_drag: None,
         workspace_drag: None,
+        device_drag: None,
+        device_order: Vec::new(),
         tab_drag: None,
         sidebar_split: None,
         sidebar_split_modified: false,
@@ -607,9 +622,11 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         sidebar_scroll: Default::default(),
         sidebar_revealed: Default::default(),
         sidebar_pin_reveal: Default::default(),
+        sidebar_folded: Default::default(),
         sidebar_search: crate::sidebar::SidebarSearch::new(cx),
         _poll: Task::ready(()),
         _activation: cx.observe_window_activation(window, |_, _, _| {}),
+        _window_closed: HerdrWindow::give_back_torn_tabs(cx),
         _appearance: cx.observe_window_appearance(window, |this, _, cx| {
             this.apply_shared_theme(cx);
             cx.notify();
@@ -619,7 +636,12 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
             cx.new(|_| {
                 crate::sidebar::SidebarView::new(
                     weak,
-                    super::agents::Indicators::new(None, false, &crate::config::Theme::default()),
+                    super::agents::Indicators::new(
+                        None,
+                        None,
+                        false,
+                        &crate::config::Theme::default(),
+                    ),
                 )
             })
         },

@@ -1,6 +1,12 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
 
+mod machine_names;
+mod rename;
+
+#[cfg(feature = "boat")]
+mod boat_names;
+
 fn device(id: &str) -> SavedDevice {
     SavedDevice {
         provider: CloudProvider::ALL[0],
@@ -57,14 +63,6 @@ fn invalid_or_oversized_documents_are_rejected() {
     for bad in [
         SavedDevice {
             id: "../x".into(),
-            ..device("w")
-        },
-        SavedDevice {
-            machine: "-oProxyCommand=x".into(),
-            ..device("w")
-        },
-        SavedDevice {
-            machine: "a b".into(),
             ..device("w")
         },
         SavedDevice {

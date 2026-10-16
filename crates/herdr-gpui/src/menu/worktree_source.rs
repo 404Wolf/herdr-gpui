@@ -353,8 +353,10 @@ impl HerdrWindow {
             window,
             |this, _, _: &crate::search_input::Changed, _, cx| this.follow_worktree_name(cx),
         );
-        // The name is what most people change, so the form opens on it.
-        window.focus(&name.read(cx).focus.clone(), cx);
+        // The branch is what most people type; the name is optional, since an
+        // empty one lets the daemon name the workspace. The proposal starts
+        // selected, so typing replaces it.
+        window.focus(&self.menu.focus, cx);
         let proposal = self
             .menu
             .input
@@ -462,11 +464,10 @@ impl HerdrWindow {
         source.tab = tab;
         source.refresh();
         let search = source.search.clone();
-        let name = source.name.clone();
         let retry_branches = !source.branches.listed && !source.branches.loading;
         let list_checkouts = !source.checkouts.listed && source.checkouts.request.is_none();
         match tab {
-            Tab::New => window.focus(&name.read(cx).focus.clone(), cx),
+            Tab::New => window.focus(&self.menu.focus, cx),
             Tab::Existing => {
                 if list_checkouts {
                     self.list_checkouts();
@@ -633,19 +634,12 @@ impl HerdrWindow {
     /// The checkout to read and the token to read GitHub with.
     fn repo_items_request(
         &self,
-    ) -> crate::Result<(
-        crate::pull_request::Input,
-        std::sync::Arc<secrecy::SecretString>,
-    )> {
+    ) -> crate::Result<(crate::pull_request::Input, crate::github::Tokens)> {
         let input = self.local_repository_input()?;
-        let token = self
-            .menu
-            .github
-            .profile
-            .as_ref()
-            .map(|profile| profile.token.clone())
+        let tokens = self
+            .main_tokens()
             .ok_or(crate::Error::GitHubAuthentication)?;
-        Ok((input, token))
+        Ok((input, tokens))
     }
 
     /// Open or create whatever the row at `row` of the open listing names.

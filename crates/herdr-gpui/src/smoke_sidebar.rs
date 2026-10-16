@@ -547,11 +547,15 @@ pub fn start_sidebar(handle: WindowHandle<HerdrWindow>, cx: &mut App) {
                     let (before, branch) = opened.context("opening native dialog")??;
                     let view = root.downcast::<HerdrWindow>().map_err(|_| anyhow!("unexpected root"))?;
                     let name = if action == menu::WorkspaceAction::NewWorktree {
-                        if !view.read(cx).worktree_name_focused(window, cx) {
-                            bail!("new worktree did not focus its name field");
+                        if view.read(cx).worktree_name_focused(window, cx) || view.read(cx).worktree_search_focused(window, cx) {
+                            bail!("new worktree did not focus its branch field");
                         }
+                        // The name is one click away; focus its editor as that click does.
                         Some(inputs.borrow().iter()
-                            .find(|input| input.read(cx).focus.is_focused(window))
+                            .find(|input| {
+                                window.focus(&input.read(cx).focus.clone(), cx);
+                                view.read(cx).worktree_name_focused(window, cx)
+                            })
                             .cloned().context("missing native worktree name editor")?)
                     } else {
                         None

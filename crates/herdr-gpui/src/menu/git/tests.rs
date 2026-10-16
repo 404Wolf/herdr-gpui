@@ -180,6 +180,7 @@ fn the_popup_says_when_it_is_waiting_on_github(cx: &mut TestAppContext) {
             view.menu.pr_cache.scope(
                 (0, 1, "boot".into()),
                 Arc::new("fixture".into()),
+                "fixture",
                 crate::pull_request::Origin::Local,
             );
             view.menu

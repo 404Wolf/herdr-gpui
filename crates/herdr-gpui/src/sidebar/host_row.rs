@@ -14,6 +14,32 @@ use super::{
 use crate::{HerdrWindow, endpoint::Endpoint};
 use gpui::{prelude::*, *};
 
+/// Where the device runs and how it is reached, named again by its tooltip.
+fn origin_mark(
+    origin: crate::endpoint::origin::Origin,
+    id: String,
+    size: f32,
+    color: u32,
+    theme: &crate::config::Theme,
+) -> Stateful<Div> {
+    let text = SharedString::from(origin.describe());
+    let (foreground, surface) = (theme.foreground, theme.surface);
+    div()
+        .id(SharedString::from(id.clone()))
+        .debug_selector(move || id.clone())
+        .size(px(size))
+        .flex_none()
+        .child(svg().path(origin.icon()).size_full().text_color(rgb(color)))
+        .tooltip(move |_, cx| {
+            cx.new(|_| crate::usage::Hint {
+                text: text.clone(),
+                foreground,
+                surface,
+            })
+            .into()
+        })
+}
+
 impl HerdrWindow {
     /// A host's header row. `pinned` draws the copy that sits over the list
     /// instead of the one inside it: the same row under `sticky-` ids, so the
@@ -78,6 +104,12 @@ impl HerdrWindow {
             - gauges.as_ref().map_or(0., |(width, _)| width + host_gap))
         .max(0.);
         let lines = 1. + if load_line.is_some() { 1. } else { 0. };
+        // The layout decides whether headers have a mark; the setting turns it off.
+        let origin = (self.config.show_device_icons && self.config.layout.mode.device_icons())
+            .then(|| crate::endpoint::origin::Origin::of(&endpoint.connection.target));
+        let icon_size = (font.size * 0.9).round();
+        let icon_room = origin.map_or(0., |_| icon_size + host_gap);
+        let label_width = (label_width - icon_room).max(0.);
         div()
             .id(SharedString::from(format!("{prefix}host-{endpoint_id}")))
             .debug_selector(|| format!("{prefix}host-{endpoint_id}"))
@@ -111,14 +143,26 @@ impl HerdrWindow {
             })
             // Hosts mark selection only; they do not join the rows'
             // hover group.
-            .child(look.highlight(
-                &format!("{prefix}host-{endpoint_id}"),
-                RowState {
-                    selected,
-                    ..RowState::default()
+            // A carried header is a card lifted over the headers it passes.
+            .child(
+                if !pinned
+                    && self
+                        .device_drag
+                        .as_ref()
+                        .is_some_and(|drag| drag.carries(&endpoint.id))
+                {
+                    look.lifted(&format!("host-{endpoint_id}"), selected, theme)
+                } else {
+                    look.highlight(
+                        &format!("{prefix}host-{endpoint_id}"),
+                        RowState {
+                            selected,
+                            ..RowState::default()
+                        },
+                        theme,
+                    )
                 },
-                theme,
-            ))
+            )
             .text_color(rgb(if endpoint.enabled {
                 theme.foreground
             } else {
@@ -165,11 +209,25 @@ impl HerdrWindow {
                                 cx.notify();
                             })),
                     )
+                    .when_some(origin, |row, origin| {
+                        row.child(origin_mark(
+                            origin,
+                            format!("{prefix}host-origin-{endpoint_id}"),
+                            icon_size,
+                            if endpoint.enabled {
+                                theme.subtext()
+                            } else {
+                                theme.muted
+                            },
+                            theme,
+                        ))
+                    })
                     .when(removing, |row| {
                         row.child(removing_dot("host-removing", theme))
                     })
                     .child(
                         div()
+                            .debug_selector(|| format!("{prefix}host-label-{endpoint_id}"))
                             // As with workspace labels, avoid zero-basis text measurement.
                             .w(px(label_width))
                             .flex_none()
@@ -226,7 +284,7 @@ impl HerdrWindow {
                         .h(px(line_height(font)))
                         .flex()
                         .items_center()
-                        .pl(px(HOST_ARROW_WIDTH + host_gap))
+                        .pl(px(HOST_ARROW_WIDTH + host_gap + icon_room))
                         .overflow_hidden()
                         .child(crate::system_load::line(
                             reading,

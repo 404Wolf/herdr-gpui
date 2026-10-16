@@ -3,81 +3,87 @@
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Page {
-    Menu,
-    /// The Linux window's application menu, from the native menu definitions.
-    Application,
+    // keep-sorted start
     About,
-    Devices,
-    /// Local sessions and remote devices, with the state of each.
-    Sessions,
-    /// Plan usage details for one agent on the selected host.
-    Usage(crate::usage::Provider),
-    AddDevice,
-    /// A saved SSH device's context menu, from its sidebar host header.
-    Host,
-    RenameDevice,
-    /// Names a saved SSH device's port to forward to this computer.
-    ForwardPort,
-    RemoveDevice,
-    /// Sign in to Coder and add one of its workspaces as a device.
-    #[cfg(feature = "coder")]
-    AddCoder,
     /// A cloud provider in the Add Device rail whose machines are set up in
     /// Settings rather than in the dialog.
     #[cfg(feature = "cloud")]
     AddCloud(crate::cloud::CloudProvider),
+    /// Sign in to Coder and add one of its workspaces as a device.
+    #[cfg(feature = "coder")]
+    AddCoder,
+    AddDevice,
     /// Picking a WSL distribution to save as a device.
     AddWsl,
-    /// Confirming a saved WSL distribution should be forgotten.
-    RemoveWsl,
-    Keybinds,
-    Themes,
-    Palette,
-    /// Go to Symbol and Go to File over the focused pane's checkout.
-    CodeSearch,
-    ConfirmClose,
-    Update,
-    AppUpdate,
-    Install,
-    /// A daemon refused the handshake until one side is updated.
-    VersionMismatch,
     /// The one-time offer to install the agent skill for browser tabs.
     AgentSkill,
-    Tab,
-    RenameTab,
-    /// A group's "…" menu: opening tabs other than a terminal, closing
-    /// tabs, and splitting.
-    Group,
-    Pane,
-    RenamePane,
-    /// Where the pane menu's pane can move: new places, then other tabs.
-    MovePane,
+    /// The Linux window's application menu, from the native menu definitions.
+    Application,
+    AppUpdate,
     /// Reviewing, then following, a move of the pane menu's pane to another
     /// device.
     CarryPane,
-    /// The processes under the pane menu's pane.
-    PaneProcesses,
-    /// Confirming the processes chosen there should end.
-    KillProcesses,
-    Workspace,
-    GitHub,
+    /// A checkout's agent checkpoints, and restoring one.
+    Checkpoints,
+    /// Go to Symbol and Go to File over the focused pane's checkout.
+    CodeSearch,
+    ConfirmClose,
+    Devices,
+    /// Picks a saved SSH device's terminal theme.
+    DeviceTheme,
+    Dialog(WorkspaceAction),
+    /// One prompt sent to several agents, and their comparison.
+    FanOut,
+    /// Names a saved SSH device's port to forward to this computer.
+    ForwardPort,
     /// Titlebar Git actions for the focused checkout, and its commit dialog.
     Git,
     GitCommit,
-    /// The open pull request's checks and review conversation.
-    PrReview,
+    GitHub,
+    /// A group's "…" menu: opening tabs other than a terminal, closing
+    /// tabs, and splitting.
+    Group,
+    /// A saved SSH device's context menu, from its sidebar host header.
+    Host,
+    Install,
+    Keybinds,
+    /// Confirming the processes chosen there should end.
+    KillProcesses,
+    Menu,
+    /// Where the pane menu's pane can move: new places, then other tabs.
+    MovePane,
+    /// Asks before opening a terminal hyperlink with an unlisted scheme.
+    OpenLink,
+    Palette,
+    Pane,
+    /// The processes under the pane menu's pane.
+    PaneProcesses,
     PrComment,
     /// Choosing a merge method, and confirming it.
     PrMerge,
-    Dialog(WorkspaceAction),
+    /// The open pull request's checks and review conversation.
+    PrReview,
+    RemoveDevice,
+    /// Confirming a saved WSL distribution should be forgotten.
+    RemoveWsl,
+    RenameDevice,
+    RenamePane,
+    RenameTab,
+    /// Local sessions and remote devices, with the state of each.
+    Sessions,
+    Tab,
     /// Moving a linked worktree to another host.
     Teleport,
-    /// A checkout's agent checkpoints, and restoring one.
-    Checkpoints,
-    /// One prompt sent to several agents, and their comparison.
-    FanOut,
+    Themes,
+    Update,
+    /// Plan usage details for one agent on the selected host.
+    Usage(crate::usage::Provider),
+    /// A daemon refused the handshake until one side is updated.
+    VersionMismatch,
+    Workspace,
     /// Asks whether to trust a repository's worktree script before it runs.
     WorktreeScript,
+    // keep-sorted end
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

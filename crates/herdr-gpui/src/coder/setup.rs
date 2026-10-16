@@ -10,6 +10,7 @@ use super::{
 use crate::cloud::{self, CloudProvider, SavedDevice, install};
 use secrecy::SecretString;
 
+pub(crate) use super::destroy::Stage;
 pub(crate) use oauth::Pending;
 
 /// What the account can use, shown once signed in.
@@ -67,8 +68,9 @@ pub(crate) fn finish_sign_in(
     pending: Pending,
     cancelled: impl Fn() -> bool,
 ) -> Result<Account> {
-    let credential = pending.finish(settings, &cancelled)?;
-    store::save(settings, &credential)?;
+    pending.finish(settings, &cancelled, |credential| {
+        store::save(settings, &credential)
+    })?;
     account(settings)
 }
 
@@ -315,6 +317,19 @@ pub(crate) fn overview(settings: &Settings) -> Result<Overview> {
 /// Forget one saved device; its workspace is left untouched in Coder.
 pub(crate) fn forget_device(id: &str) -> Result<()> {
     Ok(cloud::remove(CloudProvider::Coder, id)?)
+}
+
+/// Delete a saved device's workspace at Coder, then forget the device. The
+/// device stays saved until Coder confirms the workspace is gone, so a failed
+/// or interrupted destroy can be retried from the same row.
+pub(crate) fn destroy_device(
+    settings: &Settings,
+    id: &str,
+    cancelled: impl Fn() -> bool,
+    stage: impl FnMut(Stage),
+) -> Result<()> {
+    super::destroy::destroy(settings, &tokens(settings), id, cancelled, stage)?;
+    forget_device(id)
 }
 
 /// Save (or with `None`, forget) the OAuth client secret typed into Settings.

@@ -1,9 +1,12 @@
 //! Prepared controls for the standalone window; persistence belongs to its serial save path.
 mod backdrop;
 pub(super) mod code;
+mod features;
 mod fonts;
+mod indicators;
 pub(super) mod plugins;
 mod preferences;
+mod sidebar_layout;
 mod status_bar;
 mod updates;
 
@@ -451,86 +454,6 @@ impl SettingsWindow {
             .child(content)
     }
 
-    fn render_indicator_controls(&self, cx: &mut Context<Self>) -> Div {
-        use herdr_client::protocol::AgentStatus;
-        let mut card = self.control_card("Agent status indicators");
-        let ready = self.controls_shared_ready();
-        let light = matches!(
-            cx.window_appearance(),
-            WindowAppearance::Light | WindowAppearance::VibrantLight
-        );
-        for (label, style) in [
-            ("Dots", IndicatorStyle::Dots),
-            ("Symbols", IndicatorStyle::Symbols),
-        ] {
-            let selected = self
-                .shared
-                .as_ref()
-                .is_some_and(|shared| shared.indicators == style);
-            let mut choice = self
-                .control_choice(
-                    format!("settings-indicators-{label}"),
-                    label,
-                    selected,
-                    ready,
-                )
-                .flex()
-                .flex_col()
-                .gap(px(18.))
-                .when(ready, |choice| {
-                    choice.on_click(cx.listener(move |this, _, _, cx| {
-                        this.save_shared(Edit::Indicators(style), cx)
-                    }))
-                });
-            if let Some(shared) = &self.shared {
-                let mut preview = div().flex().flex_wrap().gap(px(20.));
-                for (status, name, symbol) in [
-                    (AgentStatus::Working, "Working", "\u{25d0}"),
-                    (AgentStatus::Blocked, "Blocked", "\u{d7}"),
-                    (AgentStatus::Done, "Done", "\u{2713}"),
-                    (AgentStatus::Idle, "Idle", "\u{25cb}"),
-                    (AgentStatus::Unknown, "Unknown", "\u{b7}"),
-                ] {
-                    let color = rgb(self.theme.ink(shared.status_color(status, light)));
-                    let mark = div()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .w(px(self.config.ui.size))
-                        .h(px(self.config.ui.line_height()))
-                        .when(style == IndicatorStyle::Symbols, |mark| {
-                            mark.text_color(color).child(symbol)
-                        })
-                        .when(style == IndicatorStyle::Dots, |mark| {
-                            mark.child(
-                                div()
-                                    .size(px(if status == AgentStatus::Unknown {
-                                        3.
-                                    } else {
-                                        7.
-                                    }))
-                                    .rounded_full()
-                                    .border_1()
-                                    .border_color(color)
-                                    .when(status != AgentStatus::Idle, |dot| dot.bg(color)),
-                            )
-                        });
-                    preview = preview.child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(6.))
-                            .child(mark)
-                            .child(name),
-                    );
-                }
-                choice = choice.child(preview);
-            }
-            card = card.child(choice);
-        }
-        card
-    }
-
     fn render_sound_controls(&self, cx: &mut Context<Self>) -> Div {
         let ready = self.controls_shared_ready();
         let enabled = self
@@ -547,13 +470,14 @@ impl SettingsWindow {
         let source_alive = self.source.upgrade().is_some();
         self.control_card("Agent sounds").child(choices)
             .child(self.control_note("Uses shared sound paths and per-agent overrides. Missing custom sounds fall back to bundled sounds."))
+            .child(self.sound_volume_controls(cx))
             .child(self.control_choice("settings-sound-preview", "Play test sound", false, source_alive)
                 .when(source_alive, |button| button.on_click(cx.listener(|this, _, _, cx| {
                     if let Some(source) = this.source.upgrade() {
                         source.read(cx).sound.preview();
                     }
                 }))))
-            .child(self.control_note(if source_alive { "Preview plays only when requested, even when sounds are off." } else { "Open a main Herdr window to preview audio." }))
+            .child(self.control_note(if source_alive { "Preview plays at the chosen volume, even when sounds are off." } else { "Open a main Herdr window to preview audio." }))
     }
 
     fn render_notification_controls(&self, cx: &mut Context<Self>) -> Div {
@@ -704,13 +628,8 @@ impl SettingsWindow {
                 ),
                 cx,
             ))
-            .child(self.preference_switch(
-                "settings-smooth-scroll",
-                "Smooth scrolling",
-                self.config.smooth_scroll,
-                crate::config::preferences::Preference::SmoothScroll(!self.config.smooth_scroll),
-                cx,
-            ))
+            .children(self.mouse_switches(cx))
+            .children(self.feature_switches(cx))
             .children(self.confirm_close_switches(cx))
             .children(self.merged_worktree_controls(cx));
         div().flex().flex_col().gap(px(24.)).child(general)
@@ -855,137 +774,6 @@ impl SettingsWindow {
             }
         }
         card
-    }
-
-    pub(super) fn render_sidebar_layout_controls(&self, cx: &mut Context<Self>) -> Div {
-        let ready = !self.quitting && self.closing.is_none();
-        let mode = self.config.layout.mode;
-        let mut layouts = div().flex().flex_col().gap(px(4.));
-        for mode in LayoutMode::ALL {
-            layouts = layouts.child(
-                self.control_choice(
-                    format!("settings-layout-{}", mode.name()),
-                    mode.label(),
-                    self.config.layout.mode == mode,
-                    ready,
-                )
-                .debug_selector(move || format!("settings-layout-{}", mode.name()))
-                .py(px(5.))
-                .when(ready, |button| {
-                    button.on_click(cx.listener(move |this, _, _, cx| {
-                        this.accept_layout_choice(mode, cx);
-                    }))
-                }),
-            );
-        }
-        let widths = div().flex().gap_1().children(
-            crate::sidebar::preview::Preview::WIDTHS
-                .into_iter()
-                .map(|width| {
-                    self.control_choice(
-                        format!("preview-width-{width}"),
-                        width.to_string(),
-                        self.controls.sidebar_preview.width() == width,
-                        true,
-                    )
-                    .debug_selector(move || format!("preview-width-{width}"))
-                    .px_2()
-                    .py_1()
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.controls.sidebar_preview.set_width(width);
-                        cx.notify();
-                    }))
-                }),
-        );
-        let mut font = self.config.sidebar.clone();
-        font.size = self.controls.size(FontFace::Sidebar, &self.config);
-        let light = matches!(
-            cx.window_appearance(),
-            WindowAppearance::Light | WindowAppearance::VibrantLight
-        );
-        let preview = self.controls.sidebar_preview.render(
-            mode,
-            &font,
-            &self.theme,
-            crate::sidebar::Indicators::new(self.shared.as_ref(), light, &self.theme),
-            cx.listener(|this, _, _, cx| {
-                this.controls.sidebar_preview.toggle_fold();
-                cx.notify();
-            }),
-            |target| {
-                Box::new(cx.listener(move |this, _, _, cx| {
-                    this.controls.sidebar_preview.select(target);
-                    cx.notify();
-                }))
-            },
-        );
-        let chooser = div()
-            .flex()
-            .flex_wrap()
-            .gap_4()
-            .child(
-                div()
-                    .w(px(174.))
-                    .flex_none()
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .child(self.control_note("Choose a layout"))
-                    .child(layouts)
-                    .child(self.control_note("Preview width (px)"))
-                    .child(widths),
-            )
-            .child(
-                div()
-                    .flex_none()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(mode.label())
-                    .child(preview),
-            );
-        self.control_card("Sidebar layout")
-            .mt(px(24.))
-            .relative()
-            .debug_selector(|| "settings-sidebar-layout".into())
-            .map(|card| {
-                #[cfg(all(feature = "integration-test", target_os = "macos"))]
-                let card = card.child(super::native::probe(super::native::SIDEBAR_LAYOUT));
-                card
-            })
-            .child(chooser)
-            .child(
-                self.control_switch(
-                    "settings-show-agents",
-                    "Show agents",
-                    self.config.show_agents,
-                    true,
-                )
-                .debug_selector(|| "settings-show-agents".into())
-                .on_click(cx.listener(|this, _, _, cx| {
-                    let show = !this.config.show_agents;
-                    this.save_native(move || Config::save_show_agents(show), cx);
-                })),
-            )
-            .child(self.preference_switch(
-                "settings-sidebar-search",
-                "Show search",
-                self.config.show_sidebar_search,
-                crate::config::preferences::Preference::ShowSidebarSearch(
-                    !self.config.show_sidebar_search,
-                ),
-                cx,
-            ))
-            .child(self.preference_switch(
-                "settings-repository-icons",
-                "Show repository icons",
-                self.config.show_repository_icons,
-                crate::config::preferences::Preference::ShowRepositoryIcons(
-                    !self.config.show_repository_icons,
-                ),
-                cx,
-            ))
-            .child(self.sidebar_gap_control(cx))
     }
 }
 

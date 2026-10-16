@@ -42,6 +42,8 @@ pub enum Command {
     TabNumber(u8),
     ToggleSidebar,
     ToggleStatusBar,
+    /// Hides the window's chrome and every group but the one in use.
+    ToggleZenMode,
     DevicesOverview,
     IncreaseFontSize,
     DecreaseFontSize,
@@ -52,6 +54,8 @@ pub enum Command {
     Themes,
     WorkspacePicker,
     Palette,
+    /// Reopen the palette as it was last left: query, filters, and selection.
+    ResumePalette,
     /// Go to a definition in the focused pane's checkout.
     GoToSymbol,
     /// Go to a file in the focused pane's checkout.
@@ -520,6 +524,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         label: "Toggle Status Bar",
     },
     CommandInfo {
+        command: Command::ToggleZenMode,
+        name: "toggle_zen_mode",
+        label: "Toggle Zen Mode",
+    },
+    CommandInfo {
         command: Command::DevicesOverview,
         name: "devices_overview",
         label: "Devices Overview",
@@ -573,6 +582,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         command: Command::Palette,
         name: "command_palette",
         label: "Command Palette",
+    },
+    CommandInfo {
+        command: Command::ResumePalette,
+        name: "resume_palette",
+        label: "Resume Palette",
     },
     CommandInfo {
         command: Command::GoToSymbol,
@@ -793,6 +807,7 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         | Command::AnnotateSelection
         | Command::ToggleSidebar
         | Command::ToggleStatusBar
+        | Command::ToggleZenMode
         | Command::DevicesOverview
         | Command::IncreaseFontSize
         | Command::DecreaseFontSize
@@ -803,6 +818,7 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         | Command::Themes
         | Command::WorkspacePicker
         | Command::Palette
+        | Command::ResumePalette
         | Command::GoToSymbol
         | Command::GoToFile
         | Command::Detach

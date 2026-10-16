@@ -17,13 +17,13 @@ use gpui::{App, Context, Window};
 use std::time::Duration;
 
 /// What the cache knows of the caller's branch.
-enum Lookup<'a> {
-    Found(&'a PullRequest),
+enum Lookup {
+    Found(Box<PullRequest>),
     /// No pull request, with why when that is not simply the answer.
     Missing(Option<String>),
 }
 
-fn lookup<'a>(view: &'a HerdrWindow, caller: &Caller) -> Result<(Place, Lookup<'a>), Response> {
+fn lookup(view: &HerdrWindow, caller: &Caller) -> Result<(Place, Lookup), Response> {
     let place = Place::of(view, caller)?;
     if !place.selected(view) {
         return Err(Response::error(
@@ -56,8 +56,8 @@ fn lookup<'a>(view: &'a HerdrWindow, caller: &Caller) -> Result<(Place, Lookup<'
     let input = workspace_input(workspace, &origin)
         .map_err(|error| Response::error(ErrorCode::InvalidRequest, error.to_string()))?;
     let found = match view.menu.pr_cache.lookup(&input) {
-        Some((Some(pr), _)) => Lookup::Found(pr),
-        Some((None, message)) => Lookup::Missing(message.map(str::to_owned)),
+        Some((Some(pr), _)) => Lookup::Found(Box::new(pr)),
+        Some((None, message)) => Lookup::Missing(message),
         None => Lookup::Missing(Some(
             "Herdr UI is still looking up this branch's pull request; try again shortly".into(),
         )),
@@ -75,7 +75,7 @@ pub(super) fn status(view: &HerdrWindow, caller: &Caller) -> Response {
     match lookup(view, caller) {
         Ok((_, Lookup::Found(pr))) => Response::Host {
             reply: Reply::Pr {
-                pr: Some(Box::new(pr_info(pr))),
+                pr: Some(Box::new(pr_info(&pr))),
                 note: None,
             },
         },
@@ -128,7 +128,7 @@ fn start_comments(view: &mut HerdrWindow, caller: &Caller) -> Result<Target, Res
             Lookup::Found(pr) => pr,
             Lookup::Missing(note) => return Err(missing(note)),
         };
-        (place, Target::for_reading(pr).ok())
+        (place, Target::for_reading(&pr).ok())
     };
     let followed = view
         .pr_actions

@@ -1,7 +1,9 @@
-//! Local file paths a pane prints, opened by a link-modifier click. A path is
-//! read from its row alone; the click resolves it against the pane's working
-//! directory and checks that it exists off the UI thread, so a word that only
-//! looks like a path opens nothing. A pane on an SSH host prints that host's
+//! Local file paths a pane prints or names in an explicit hyperlink, opened
+//! by a link-modifier click. A path is read from its row alone; the click
+//! resolves it against the pane's working directory and checks that it
+//! exists off the UI thread, so a word that only looks like a path opens
+//! nothing. A hyperlink's path is a link without that check, so a click on
+//! one that is not there says so. A pane on an SSH host prints that host's
 //! paths, which this machine cannot open, so none are read there.
 //!
 //! Terminal output is untrusted, and a hyperlink's text need not match its
@@ -39,12 +41,31 @@ pub(crate) struct FileLink {
     pub(crate) line: Option<u32>,
     pub(crate) pane_id: String,
     pub(crate) cwd: Option<String>,
+    /// Whether an explicit hyperlink named the path. Such a path is a link
+    /// whether or not its file is there, so a click on a missing one says
+    /// so; a path read from printed text is a link only when it exists.
+    pub(crate) explicit: bool,
+}
+
+/// Why a path has no real one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Unresolved {
+    /// A step of the path is not there.
+    Missing,
+    /// A step could not be read, or is not a file name at all.
+    Unreadable,
+    /// The path leads to another machine.
+    Remote,
+    /// More symlinks than a path may follow.
+    Loop,
 }
 
 /// Where a clicked path opens, decided off the UI thread.
 enum Opened {
     Editor(EditorTarget),
     System(url::Url),
+    /// An explicit hyperlink's file is not there.
+    Missing(PathBuf),
 }
 
 impl FileLink {
@@ -83,8 +104,12 @@ fn remote(path: &Path) -> bool {
 
 /// `path` with every symlink resolved, one step at a time, so a link that
 /// leads to another machine is refused before anything follows it, unlike
-/// `canonicalize`. `None` when a step is missing, remote, or loops.
-fn real_path(path: &Path) -> Option<PathBuf> {
+/// `canonicalize`.
+fn real_path(path: &Path) -> Result<PathBuf, Unresolved> {
+    let unread = |error: std::io::Error| match error.kind() {
+        std::io::ErrorKind::NotFound => Unresolved::Missing,
+        _ => Unresolved::Unreadable,
+    };
     let mut resolved = PathBuf::new();
     let mut pending: Vec<_> = path
         .components()
@@ -93,7 +118,11 @@ fn real_path(path: &Path) -> Option<PathBuf> {
     pending.reverse();
     let mut followed = 0;
     while let Some(part) = pending.pop() {
-        match Path::new(&part).components().next()? {
+        match Path::new(&part)
+            .components()
+            .next()
+            .ok_or(Unresolved::Unreadable)?
+        {
             Component::CurDir => continue,
             Component::ParentDir => {
                 resolved.pop();
@@ -105,20 +134,23 @@ fn real_path(path: &Path) -> Option<PathBuf> {
             Component::Normal(name) => resolved.push(name),
         }
         if remote(&resolved) {
-            return None;
+            return Err(Unresolved::Remote);
         }
-        if !std::fs::symlink_metadata(&resolved).ok()?.is_symlink() {
+        if !std::fs::symlink_metadata(&resolved)
+            .map_err(unread)?
+            .is_symlink()
+        {
             continue;
         }
         followed += 1;
         if followed > MAX_SYMLINKS {
-            return None;
+            return Err(Unresolved::Loop);
         }
-        let target = std::fs::read_link(&resolved).ok()?;
+        let target = std::fs::read_link(&resolved).map_err(unread)?;
         resolved.pop();
         pending.extend(target.components().rev().map(|c| c.as_os_str().to_owned()));
     }
-    Some(resolved)
+    Ok(resolved)
 }
 
 /// What a click on `path` opens, once symlinks are resolved: a plain folder
@@ -126,7 +158,7 @@ fn real_path(path: &Path) -> Option<PathBuf> {
 /// is not itself a bundle the system would launch. `None` when the path
 /// does not exist or leads to another machine.
 fn opened(path: &Path) -> Option<PathBuf> {
-    let real = real_path(path)?;
+    let real = real_path(path).ok()?;
     let metadata = std::fs::metadata(&real).ok()?;
     let extension = real
         .extension()
@@ -148,6 +180,16 @@ fn opened(path: &Path) -> Option<PathBuf> {
         .skip(1)
         .find(|folder| folder.extension().is_none())
         .map(Path::to_owned)
+}
+
+impl FileLink {
+    /// Whether the path is there for a click to open. This reads the disk,
+    /// so it runs off the UI thread.
+    pub(crate) fn found(&self) -> bool {
+        let home = crate::config::home().ok();
+        self.resolve(home.as_deref())
+            .is_some_and(|path| real_path(&path).is_ok())
+    }
 }
 
 /// Whether a regular file carries an execute bit, which the system may honor
@@ -182,14 +224,25 @@ impl HerdrWindow {
             self.cell_width,
             self.config.terminal.line_height(),
         )?;
-        (matches!(link.link.target, RowTarget::Web(_)) || !self.selected_is_remote())
+        (!matches!(link.link.target, RowTarget::Path { .. }) || !self.selected_is_remote())
             .then_some(link)
     }
 
     /// The file path under `position`, with the directory it is relative to.
+    #[cfg(test)]
     pub(crate) fn file_link_at(&self, position: Point<Pixels>) -> Option<FileLink> {
-        let PaneLink { pane_id, link } = self.local_link_at(position)?;
-        let RowTarget::Path { path, line } = link.target else {
+        self.file_link(self.local_link_at(position)?)
+    }
+
+    /// The file path `link` reads, with the directory it is relative to.
+    pub(crate) fn file_link(&self, link: PaneLink) -> Option<FileLink> {
+        let PaneLink { pane_id, link } = link;
+        let RowTarget::Path {
+            path,
+            line,
+            explicit,
+        } = link.target
+        else {
             return None;
         };
         let cwd = self.live.snapshot.as_ref().and_then(|snapshot| {
@@ -201,6 +254,7 @@ impl HerdrWindow {
             line,
             pane_id,
             cwd,
+            explicit,
         })
     }
 
@@ -234,7 +288,13 @@ impl HerdrWindow {
         let found = cx.background_executor().spawn(async move {
             let home = crate::config::home().ok();
             let path = link.resolve(home.as_deref())?;
-            let real = real_path(&path)?;
+            let real = match real_path(&path) {
+                Ok(real) => real,
+                // The system opens a missing file silently, so the click
+                // on a link that promised one is answered here.
+                Err(Unresolved::Missing) if link.explicit => return Some(Opened::Missing(path)),
+                Err(_) => return None,
+            };
             if in_editor
                 && std::fs::metadata(&real)
                     .is_ok_and(|metadata| EditorTarget::editable(&real, &metadata))
@@ -261,6 +321,12 @@ impl HerdrWindow {
             let _ = this.update(cx, |this, cx| match opened {
                 Opened::Editor(target) => this.open_in_editor(&target, Some(&pane), cx),
                 Opened::System(url) => cx.open_url(url.as_str()),
+                Opened::Missing(path) => this.show_flash(
+                    super::flash::Flash::warning(
+                        crate::Error::LinkedFileMissing { path }.to_string(),
+                    ),
+                    cx,
+                ),
             });
         })
         .detach();

@@ -17,7 +17,7 @@ impl HerdrWindow {
     pub(super) fn update_pr_actions(&mut self, now: Instant) -> bool {
         let target = self
             .git_open_pull_request()
-            .and_then(|pr| Target::try_from(pr).ok());
+            .and_then(|pr| Target::try_from(&*pr).ok());
         self.pr_actions.track(target);
         let mut changed = self.pr_actions.poll();
         if self.pr_actions.take_settled() {
@@ -32,8 +32,13 @@ impl HerdrWindow {
         changed
     }
 
+    /// The token that reads the followed pull request's repository.
     pub(crate) fn pr_token(&self) -> Option<std::sync::Arc<secrecy::SecretString>> {
-        self.pr_profile().map(|profile| profile.token.clone())
+        let tokens = self.pr_tokens()?;
+        Some(match self.pr_actions.target() {
+            Some(target) => tokens.for_owner(&target.owner).clone(),
+            None => tokens.main().clone(),
+        })
     }
 
     pub(super) fn open_pr_review(&mut self) {
@@ -324,7 +329,7 @@ impl HerdrWindow {
         };
         body = body.child(heading("Checks"));
         let pr = self.git_open_pull_request();
-        let mut checks = pr.into_iter().flat_map(|pr| pr.check_list()).peekable();
+        let mut checks = pr.iter().flat_map(|pr| pr.check_list()).peekable();
         if checks.peek().is_none() {
             body = body.child(
                 div()

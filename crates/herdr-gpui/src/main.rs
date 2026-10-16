@@ -12,6 +12,8 @@ mod app_icon;
 mod avatars;
 mod backdrop;
 mod bell;
+#[cfg(feature = "boat")]
+mod boat;
 mod browser;
 mod caffeine;
 mod checkpoint;
@@ -20,10 +22,15 @@ mod close_modal;
 // `cloud` is the machinery every provider shares; alone it offers nothing to add.
 #[cfg(all(
     feature = "cloud",
-    not(any(feature = "coder", feature = "daytona", feature = "railway"))
+    not(any(
+        feature = "boat",
+        feature = "coder",
+        feature = "daytona",
+        feature = "railway"
+    ))
 ))]
 compile_error!(
-    "the `cloud` feature is enabled through a provider feature, such as `coder`, `daytona`, or `railway`"
+    "the `cloud` feature is enabled through a provider feature, such as `boat`, `coder`, `daytona`, or `railway`"
 );
 #[cfg(feature = "cloud")]
 mod cloud;
@@ -78,6 +85,7 @@ mod merged_cleanup;
 mod mockup;
 mod motion;
 mod navigation;
+mod network_quality;
 mod notifications;
 mod orchestrator;
 mod osc52;
@@ -96,6 +104,7 @@ mod pull_request;
 #[cfg(feature = "railway")]
 mod railway;
 mod release_notes;
+mod remote_browser;
 mod reorder;
 mod repo_items;
 mod review;

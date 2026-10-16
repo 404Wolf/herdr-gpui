@@ -42,12 +42,25 @@ impl Identity {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub(super) struct Snapshot {
     pub text: Option<String>,
     pub identity: Option<Identity>,
     pub directory: Option<Identity>,
     pub revision: Option<[i64; 4]>,
+}
+
+/// The document can hold private settings unrelated to this adapter, so
+/// diagnostics show only its size.
+impl std::fmt::Debug for Snapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Snapshot")
+            .field("text_len", &self.text.as_ref().map(String::len))
+            .field("identity", &self.identity)
+            .field("directory", &self.directory)
+            .field("revision", &self.revision)
+            .finish()
+    }
 }
 
 fn revision(meta: &Metadata) -> [i64; 4] {

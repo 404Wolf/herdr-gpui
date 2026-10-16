@@ -22,7 +22,7 @@ fn status_colors_keep_upstream_literals_where_they_already_read() {
             let mut theme = Theme::builtin(name).unwrap();
             assert_eq!(status_style(status, &theme).2, color, "{name}");
             theme.palette.fill(0x123456);
-            let indicators = Indicators::new(None, false, &theme);
+            let indicators = Indicators::new(None, None, false, &theme);
             assert_eq!(indicators.style, IndicatorStyle::Dots);
             assert_eq!(indicators.color(status), color);
         }
@@ -37,7 +37,7 @@ fn status_colors_keep_upstream_literals_where_they_already_read() {
 
 #[test]
 fn status_symbols_match_upstream_without_changing_status_colors() {
-    let mut indicators = Indicators::new(None, false, &Theme::default());
+    let mut indicators = Indicators::new(None, None, false, &Theme::default());
     indicators.style = IndicatorStyle::Symbols;
     for (status, symbol) in [
         (AgentStatus::Working, "\u{25d0}"),
@@ -66,7 +66,7 @@ fn status_slots_are_fixed_for_each_style_and_font_size() {
             weight: gpui::FontWeight::NORMAL,
         };
         for style in [IndicatorStyle::Dots, IndicatorStyle::Symbols] {
-            let mut indicators = Indicators::new(None, false, &Theme::default());
+            let mut indicators = Indicators::new(None, None, false, &Theme::default());
             indicators.style = style;
             let width = match style {
                 IndicatorStyle::Dots => STATUS_WIDTH,
@@ -113,7 +113,7 @@ fn symbol_rows_keep_layout_density_and_expand_child_indent() {
     ] {
         let layout = super::super::layout::for_mode(mode);
         for style in [IndicatorStyle::Dots, IndicatorStyle::Symbols] {
-            let mut indicators = Indicators::new(None, false, &theme);
+            let mut indicators = Indicators::new(None, None, false, &theme);
             indicators.style = style;
             for kind in [
                 RowKind::Workspace,

@@ -3,6 +3,8 @@
 //! state; this section only switches between them, so another provider adds a
 //! tab and a card.
 
+#[cfg(feature = "boat")]
+mod boat;
 #[cfg(feature = "coder")]
 mod coder;
 #[cfg(feature = "daytona")]
@@ -10,6 +12,8 @@ mod daytona;
 #[cfg(feature = "railway")]
 mod railway;
 
+#[cfg(feature = "boat")]
+pub(super) use boat::BoatCard;
 #[cfg(feature = "coder")]
 pub(super) use coder::CoderCard;
 #[cfg(feature = "daytona")]
@@ -77,7 +81,7 @@ fn input(
 /// Follow a reloaded config in a card's inputs: a field still showing what
 /// was loaded last takes the new value, and one the user has edited keeps the
 /// edit, so a later Save neither writes stale values back nor drops typing.
-#[cfg(any(feature = "coder", feature = "daytona"))]
+#[cfg(any(feature = "boat", feature = "coder", feature = "daytona"))]
 fn follow_config<const N: usize>(
     inputs: &[Entity<SearchInput>; N],
     previous: [&str; N],
@@ -102,6 +106,8 @@ impl SettingsWindow {
     pub(super) fn open_cloud_devices(&mut self, cx: &mut Context<Self>) {
         for &provider in CloudProvider::ALL {
             match provider {
+                #[cfg(feature = "boat")]
+                CloudProvider::Boat => self.open_boat_card(cx),
                 #[cfg(feature = "coder")]
                 CloudProvider::Coder => self.open_coder_card(cx),
                 #[cfg(feature = "daytona")]
@@ -117,6 +123,8 @@ impl SettingsWindow {
     pub(super) fn cloud_config_changed(&mut self, cx: &mut Context<Self>) {
         for &provider in CloudProvider::ALL {
             match provider {
+                #[cfg(feature = "boat")]
+                CloudProvider::Boat => self.boat_config_changed(cx),
                 #[cfg(feature = "coder")]
                 CloudProvider::Coder => self.coder_config_changed(cx),
                 #[cfg(feature = "daytona")]
@@ -165,6 +173,8 @@ impl SettingsWindow {
 
     pub(super) fn render_cloud_devices(&self, cx: &mut Context<Self>) -> Div {
         let card = match self.cloud_tab {
+            #[cfg(feature = "boat")]
+            CloudProvider::Boat => self.render_boat_card(cx),
             #[cfg(feature = "coder")]
             CloudProvider::Coder => self.render_coder_card(cx),
             #[cfg(feature = "daytona")]
@@ -226,7 +236,12 @@ impl SettingsWindow {
 
     /// A saved device with its Remove button; removal leaves the machine
     /// itself untouched at the provider.
-    #[cfg(any(feature = "coder", feature = "daytona", feature = "railway"))]
+    #[cfg(any(
+        feature = "boat",
+        feature = "coder",
+        feature = "daytona",
+        feature = "railway"
+    ))]
     fn cloud_device_row(
         &self,
         index: usize,
@@ -234,6 +249,27 @@ impl SettingsWindow {
         detail: String,
         ready: bool,
         forget: impl Fn(&mut Self, String, &mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        self.cloud_device_row_with(index, device, detail, ready, forget, [], cx)
+    }
+
+    /// `cloud_device_row` with provider `actions` before its Remove button.
+    #[cfg(any(
+        feature = "boat",
+        feature = "coder",
+        feature = "daytona",
+        feature = "railway"
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn cloud_device_row_with(
+        &self,
+        index: usize,
+        device: &crate::cloud::SavedDevice,
+        detail: String,
+        ready: bool,
+        forget: impl Fn(&mut Self, String, &mut Context<Self>) + 'static,
+        actions: impl IntoIterator<Item = AnyElement>,
         cx: &mut Context<Self>,
     ) -> Div {
         let key = device.provider.key();
@@ -255,15 +291,25 @@ impl SettingsWindow {
                     ),
             )
             .child(
-                self.cloud_button(
-                    SharedString::from(format!("cloud-{key}-remove-{index}")),
-                    "Remove",
-                    ready,
-                )
-                .debug_selector(move || format!("cloud-{key}-remove-{index}"))
-                .when(ready, |button| {
-                    button.on_click(cx.listener(move |this, _, _, cx| forget(this, id.clone(), cx)))
-                }),
+                div()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap(px(8.))
+                    .children(actions)
+                    .child(
+                        self.cloud_button(
+                            SharedString::from(format!("cloud-{key}-remove-{index}")),
+                            "Remove",
+                            ready,
+                        )
+                        .debug_selector(move || format!("cloud-{key}-remove-{index}"))
+                        .when(ready, |button| {
+                            button.on_click(
+                                cx.listener(move |this, _, _, cx| forget(this, id.clone(), cx)),
+                            )
+                        }),
+                    ),
             )
     }
 }

@@ -292,6 +292,10 @@ impl HerdrWindow {
                 );
                 return;
             }
+            Command::ResumePalette => {
+                self.resume_palette(window, cx);
+                return;
+            }
             Command::GoToSymbol | Command::GoToFile => {
                 let mode = if command == Command::GoToFile {
                     crate::code_search::Mode::Files
@@ -401,6 +405,10 @@ impl HerdrWindow {
                 self.status_bar_visible = !self.status_bar_visible;
                 window.focus(&self.focus, cx);
                 cx.notify();
+                return;
+            }
+            Command::ToggleZenMode => {
+                self.toggle_zen(window, cx);
                 return;
             }
             Command::DevicesOverview => {

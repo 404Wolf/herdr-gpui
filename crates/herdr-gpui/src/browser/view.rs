@@ -13,6 +13,7 @@ use gpui::{prelude::*, *};
 use present::Freeze;
 use std::collections::{HashMap, HashSet};
 
+mod agent_tab;
 pub(in crate::browser) mod present;
 mod render;
 #[cfg(unix)]
@@ -50,6 +51,8 @@ pub(crate) struct Browser {
     /// in another window, or in a workspace not on screen. Each is given
     /// another of its tabs, or closed, when its workspace next settles.
     pub(super) emptied: Vec<GroupId>,
+    /// Tabs this window keeps out of its strips, as tearing one off does.
+    pub(crate) hidden: super::hidden::Hidden,
     /// Tabs being closed one after another, as Close Others closes them.
     pub(crate) closing: Option<crate::close_modal::CloseRun>,
     /// Where each group drew last frame, so a carried tab knows the group
@@ -115,6 +118,7 @@ impl Browser {
             #[cfg(any(target_os = "macos", windows))]
             favicons: HashMap::new(),
             emptied: Vec::new(),
+            hidden: Default::default(),
             closing: None,
             group_bounds: Default::default(),
             addresses: HashMap::new(),
@@ -333,6 +337,7 @@ impl HerdrWindow {
         self.advance_close_run(window, cx);
         self.ensure_code_page(window, cx);
         self.poll_deliveries(cx);
+        self.poll_reveal(window, cx);
         self.poll_reviews(cx);
         self.poll_code_views(cx);
         self.poll_orchestrators(window, cx);
@@ -383,6 +388,7 @@ impl HerdrWindow {
         self.browser
             .layouts
             .retain(|(saved, workspace), _| saved != &scope || !closed.contains(workspace));
+        self.browser.hidden.forget_workspaces(&scope, &closed);
         super::Layouts::forget_workspaces(cx, &scope, &closed);
         if !store(cx).is_some_and(|store| store.has_workspaces(&scope, &closed)) {
             return;
@@ -411,9 +417,9 @@ impl HerdrWindow {
                     self.page_loaded(id, cx);
                     self.browser.pages.script(id, &super::favicon::script(), cx);
                 }
-                Event::Posted(id, body) => match super::favicon::Favicon::parse(&body) {
+                Event::Posted(id, body, from) => match super::favicon::Favicon::parse(&body) {
                     Some(favicon) => self.page_favicon(id, favicon, window, cx),
-                    None => self.page_posted(id, &body, window, cx),
+                    None => self.page_posted(id, &body, from, window, cx),
                 },
                 #[cfg(target_os = "macos")]
                 Event::Captured(id, capture, tiff) => self.page_captured(id, capture, tiff, cx),

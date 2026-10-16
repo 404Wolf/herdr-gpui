@@ -46,6 +46,11 @@ mod groups;
 #[cfg(any(target_os = "macos", windows))]
 mod notes;
 
+/// Results a local page sends with `herdr.send`, queued as notes. Notes
+/// belong to pages, which Linux builds do not show.
+#[cfg(any(target_os = "macos", windows))]
+mod page_results;
+
 /// Middle-clicking a strip's tab closes it.
 mod middle_click;
 
@@ -96,6 +101,6 @@ mod overlays;
 /// What closing a workspace does to its browser tabs.
 mod workspace_close;
 
-/// The sidebar gap beside a page; only builds that show pages open one.
+/// Terminal padding beside a page; only builds that show pages open one.
 #[cfg(any(target_os = "macos", windows))]
-mod sidebar_gap;
+mod terminal_padding;
