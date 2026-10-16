@@ -1,6 +1,5 @@
-//! How a daemon's JSON error reads in a message.
+//! The text shown for an error the daemon reported.
 
-/// The daemon's own message, else its code, for an error it reported.
 pub(super) fn daemon_error_message(error: &serde_json::Value) -> &str {
     error
         .get("message")
