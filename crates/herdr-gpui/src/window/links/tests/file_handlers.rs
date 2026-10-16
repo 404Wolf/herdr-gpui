@@ -1,7 +1,7 @@
 use super::*;
 
 /// A 20-column pane whose first row is an OSC 8 hyperlink to `target`.
-fn hyperlinked(target: &str) -> Arc<PaneSurfaceFrame> {
+pub(super) fn hyperlinked(target: &str) -> Arc<PaneSurfaceFrame> {
     let mut surface = wrapped(2);
     let frame = &mut Arc::make_mut(&mut surface).frame;
     frame.hyperlinks = vec![target.to_owned()];
@@ -241,19 +241,4 @@ fn a_remote_file_hyperlink_still_reaches_plugin_handlers(cx: &mut gpui::TestAppC
                 .is_none()
         );
     });
-}
-
-/// Without `pane.link.activate` a link-modifier click opens the file here,
-/// as it always has.
-#[gpui::test]
-fn file_hyperlinks_open_here_without_daemon_activation(cx: &mut gpui::TestAppContext) {
-    let document = Document::new();
-    let peer = MockPeer::new();
-    let (view, cx) = window(&peer, false, cx);
-    view.update(cx, |view, _| show(view, &document));
-    let link = at(&view, cx, 3, 0);
-    cx.simulate_click(link, Modifiers::secondary_key());
-    cx.run_until_parked();
-    let opened = cx.opened_url().unwrap();
-    assert!(opened.ends_with("/notes.md"), "{opened}");
 }

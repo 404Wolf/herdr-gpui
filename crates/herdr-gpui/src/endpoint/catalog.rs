@@ -262,7 +262,6 @@ impl HerdrWindow {
         #[cfg(feature = "cloud")] cloud: Option<Vec<crate::cloud::SavedDevice>>,
         cx: &mut Context<Self>,
     ) {
-        #[cfg_attr(not(feature = "cloud"), allow(unused_mut))]
         let mut devices = devices(hosts, wsl);
         #[cfg(feature = "cloud")]
         match cloud {
@@ -289,6 +288,7 @@ impl HerdrWindow {
                     }),
             ),
         }
+        devices.sort_by_key(|device| super::order::rank(&self.device_order, &device.id));
         let selected = &self.endpoints[self.selected_endpoint];
         let selected_id = selected.id.clone();
         let selected_retired = self.selected_endpoint != 0

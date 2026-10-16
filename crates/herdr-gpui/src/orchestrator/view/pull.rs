@@ -17,6 +17,15 @@ use crate::{
 use gpui::{prelude::*, *};
 
 impl OrchestratorView {
+    /// The token that reads the followed pull request's repository.
+    fn pr_token(&self) -> Option<std::sync::Arc<secrecy::SecretString>> {
+        let tokens = self.request.token.as_ref()?;
+        Some(match self.pr.target() {
+            Some(target) => tokens.for_owner(&target.owner).clone(),
+            None => tokens.main().clone(),
+        })
+    }
+
     /// The looked-up status of the open pull request, once it arrived.
     pub(super) fn open_pull_request(&self) -> Option<&PullRequest> {
         let number = self
@@ -46,7 +55,7 @@ impl OrchestratorView {
             && !self.pr.loading()
             && self.pr.comments_error().is_none()
             && self.pr.running().is_none()
-            && let Some(token) = self.request.token.clone()
+            && let Some(token) = self.pr_token()
         {
             let _ = self.pr.load_comments(token);
         }
@@ -54,7 +63,7 @@ impl OrchestratorView {
 
     pub(super) fn post_comment(&mut self, cx: &mut Context<Self>) {
         let text = self.comment.read(cx).text().trim().to_owned();
-        let (Some(token), Some(pr)) = (self.request.token.clone(), self.open_pull_request()) else {
+        let (Some(token), Some(pr)) = (self.pr_token(), self.open_pull_request()) else {
             return;
         };
         let methods = pr.merge_methods.clone();
@@ -90,7 +99,7 @@ impl OrchestratorView {
             cx.notify();
             return;
         }
-        let (Some(token), Some(pr)) = (self.request.token.clone(), self.open_pull_request()) else {
+        let (Some(token), Some(pr)) = (self.pr_token(), self.open_pull_request()) else {
             return;
         };
         let methods = pr.merge_methods.clone();
@@ -108,7 +117,7 @@ impl OrchestratorView {
         if shown
             && self.pr.target().is_some()
             && self.pr.running().is_none()
-            && let Some(token) = self.request.token.clone()
+            && let Some(token) = self.pr_token()
         {
             let _ = self.pr.load_comments(token);
         }

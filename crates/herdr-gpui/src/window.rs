@@ -9,6 +9,7 @@ mod backdrop;
 mod clipboard;
 mod commands;
 mod config_diagnostic;
+mod construct;
 mod copy_mode;
 mod device_themes;
 mod double_shift;
@@ -40,6 +41,9 @@ mod sound;
 mod status_bar;
 pub(crate) mod system_notifications;
 mod tab_drag;
+#[cfg(target_os = "macos")]
+mod tab_float;
+mod tab_ghost;
 mod tab_strip;
 mod tab_tear;
 mod toasts;
@@ -68,7 +72,7 @@ mod tests;
 #[cfg(feature = "integration-test")]
 use crate::smoke;
 use crate::{
-    WINDOW_TITLE, avatars, config, endpoint, git, log_window, menu,
+    avatars, config, endpoint, git, menu,
     navigation::OwnedNavigationTarget,
     preferences,
     presentation::Presentation,
@@ -78,269 +82,278 @@ use crate::{
     terminal_painter, updater,
 };
 use gpui::{prelude::*, *};
-use herdr_client::{ConnectOptions, ConnectTarget};
-#[cfg(feature = "integration-test")]
-use std::sync::Arc;
-use std::time::Duration;
+use herdr_client::ConnectOptions;
 
 pub(crate) use server_keys::ActiveServerKeymap;
 
 pub(crate) struct HerdrWindow {
-    /// Shared by every window; see `app::shared_sound`.
-    pub(crate) sound: std::rc::Rc<crate::sound::Service>,
-    pub(crate) bell: crate::bell::Bell,
-    pub(crate) updater: updater::Updater,
-    pub(crate) update_preview: Option<updater::State>,
-    /// Prepared daemon announcement and release notes text.
-    pub(crate) daemon_text: crate::release_notes::DaemonText,
-    /// The App Updates dialog's own notes cache, so scrolling and redraws do not
-    /// re-parse the release body.
-    pub(crate) app_update_notes: crate::release_notes::Prepared,
-    /// Where the App Updates notes are scrolled, read back to draw their bar.
-    pub(crate) app_update_notes_scroll: ScrollHandle,
-    pub(crate) config: config::Config,
-    /// The terminal size the last loaded config asked for. Increase/decrease
-    /// write straight to `config.terminal.size`, so this is what Reset Font
-    /// Size restores; a session adjustment never reaches disk.
-    pub(crate) configured_terminal_size: f32,
-    /// Unknown keys in the GUI config, ignored but reported; follows `config`.
-    pub(crate) gui_config_diagnostic: crate::config_diagnostic::ConfigDiagnostic,
-    /// Names the missing icon font once a pane draws an icon it lacks.
-    pub(crate) icon_font_notice: crate::icon_font_notice::IconFontNotice,
-    pub(crate) theme: config::Theme,
-    /// The system appearance `theme` was loaded for, which is what Herdr is
-    /// told. It trails the system while the theme for a new appearance
-    /// loads, so Herdr never pairs the new appearance with the old colors.
-    pub(crate) theme_light: bool,
-    pub(crate) config_load: Option<Task<()>>,
-    pub(crate) settings: crate::settings_panel::SettingsPanel,
-    pub(crate) integrations: crate::integrations::Integrations,
-    pub(crate) config_watch: Option<Task<()>>,
-    pub(crate) config_load_revision: u64,
-    pub(crate) endpoints: Vec<endpoint::Endpoint>,
-    pub(crate) selected_endpoint: usize,
-    pub(crate) selection_epoch: u64,
-    pub(crate) catalog: endpoint::Catalog,
-    /// Local sessions on this machine, scanned on a worker while the popup is open.
-    pub(crate) sessions: sessions::Sessions,
-    /// Where the footer's sessions button last painted. The window owns it so a
-    /// shortcut and a click anchor the list at the same place.
-    pub(crate) sessions_anchor: std::rc::Rc<std::cell::Cell<Point<Pixels>>>,
+    // keep-sorted start
+    pub(crate) _activation: Subscription,
+    pub(crate) _appearance: Subscription,
+    pub(crate) _browser_tabs: Subscription,
+    pub(crate) _host_theme: Subscription,
+    pub(crate) _poll: Task<()>,
+    pub(crate) _prefix_interceptor: Subscription,
+    pub(crate) _sidebar_invalidation: Subscription,
+    /// Lists again the tabs carried off to a window that closed.
+    pub(crate) _window_closed: Subscription,
+    /// Another window may edit a note this one shows.
+    pub(crate) _worktree_notes: Subscription,
     pub(crate) activation_deadline: Option<std::time::Instant>,
-    pub(crate) pending_navigation: Option<OwnedNavigationTarget>,
-    /// A tab torn off another window, waiting for its host to be listed.
-    pub(crate) arrival: Option<tab_tear::TornTab>,
-    /// Whether the leftmost strip gave Back and Forward their full width
-    /// when it was last laid out; see `HerdrWindow::strip_leading`.
-    pub(crate) strip_navigation_fits: bool,
-    pub(crate) pending_toast: Option<u64>,
-    pub(crate) toasts_hidden: bool,
-    pub(crate) pending_releases: Vec<endpoint::Release>,
-    pub(crate) selected_generation: u64,
-    pub(crate) live: LiveState,
-    pub(crate) focus: FocusHandle,
-    pub(crate) options: ConnectOptions,
-    pub(crate) last_queued_options: Option<ConnectOptions>,
-    pub(crate) pending_resize: Option<(ConnectOptions, std::time::Instant)>,
-    /// When this window last forwarded user input; gates re-claiming a frame another client sized.
-    pub(crate) last_input: Option<std::time::Instant>,
-    /// The last pointer position over the panes, so a move event that did not move is not use.
-    pub(crate) last_pointer: Option<Point<Pixels>>,
     pub(crate) active: bool,
-    pub(crate) sent_focus: Option<bool>,
-    pub(crate) bounds: Bounds<Pixels>,
-    /// Last title pushed to the OS, so the window is renamed only when it changes.
-    pub(crate) title: String,
-    pub(crate) cell_width: f32,
-    pub(crate) hovered_terminal_link: bool,
-    pub(crate) pressed_terminal_link: Option<PressedLink>,
-    pub(crate) links: links::DaemonLinks,
-    pub(crate) terminal_mouse: Option<mouse::Gesture>,
-    pub(crate) scrollbar_drag: Option<mouse::ScrollbarDrag>,
-    pub(crate) split_drag: Option<mouse::SplitDrag>,
-    /// The resize cursor of the pane border under the pointer, if any.
-    pub(crate) split_cursor: Option<CursorStyle>,
-    pub(crate) pending_images: Vec<images::PendingImage>,
-    pub(crate) pending_input: pending_input::PendingInput,
-    pub(crate) held_keys: crate::terminal::HeldKeys,
-    /// The key code, and Shift, of the key being handled: AppKit's current
-    /// event, which names a function key macOS delivered without its name.
-    pub(crate) key_press: fn() -> Option<(u16, bool)>,
-    pub(crate) file_transfer: Option<transfers::FileTransfer>,
-    /// The terminal cells the pointer is choosing. A release copies them and
-    /// clears this, so a highlight only ever belongs to a drag in progress.
-    pub(crate) selection: Option<Selection>,
-    pub(crate) selection_follow: selection::Follow,
-    /// The find bar, over the pane it searches.
-    pub(crate) find: Option<find::FindBar>,
-    /// How the find bar was left over each pane, to bring it back there.
-    pub(crate) find_memory: crate::find::memory::Memory,
-    /// Keyboard copy mode, when it holds the keyboard.
-    pub(crate) copy_mode: Option<copy_mode::CopyModeState>,
-    /// The brief message over the terminal, and when it stops showing.
-    pub(crate) flash: Option<(Flash, std::time::Instant)>,
-    /// The frame on screen, kept across the gap between two projections.
-    pub(crate) presentation: Presentation,
-    /// Tells a sleep from the clocks, so connections are checked on waking.
-    pub(crate) wake: endpoint::WakeClock,
-    pub(crate) painter: std::rc::Rc<std::cell::RefCell<terminal_painter::TerminalPainter>>,
-    /// The picture and platform appearance `[backdrop]` asks for.
-    pub(crate) backdrop: backdrop::State,
-    /// Each saved device's terminal theme, read off the UI thread.
-    pub(crate) device_themes: device_themes::DeviceThemes,
-    /// The terminal grid's cached regions; see `regions`.
-    pub(crate) regions: Vec<regions::RegionLayers>,
-    pub(crate) marked: String,
-    /// Where the IME's caret or converted clause is within `marked`, in
-    /// UTF-16; `None` puts the caret after it.
-    pub(crate) marked_selection: Option<std::ops::Range<usize>>,
-    /// The sidebar row the pointer is resting on, waiting to open its menu.
-    pub(crate) hover: Option<sidebar::HoverRest>,
-    /// The menu that resting opened, which the pointer closes by leaving it.
-    pub(crate) hover_menu: Option<sidebar::HoverMenu>,
-    pub(crate) local_error: Option<String>,
-    pub(crate) menu: menu::MenuState,
-    /// A `worktree.remove` queued after its dialog closed.
-    pub(crate) removal: Option<menu::Removal>,
-    /// Removing worktrees whose pull request is merged, when enabled.
-    pub(crate) merged_cleanup: crate::merged_cleanup::Cleanup,
-    /// The worktree script being located, read, trusted, or opened.
-    pub(crate) worktree_script: Option<crate::worktree_scripts::Job>,
-    /// The editor pane being opened, if any.
-    pub(crate) editor_open: Option<crate::editor::Job>,
-    /// Editor panes whose Neovim later files open in.
-    pub(crate) editor_panes: Vec<crate::editor::EditorPane>,
-    /// A teleport being set up or under way; a move outlives its dialog.
-    pub(crate) teleport: Option<crate::teleport::Teleport>,
-    /// Checkouts this client teleported away from, marked in the sidebar.
-    pub(crate) teleport_marks: crate::teleport::Marks,
-    /// The workspace a finished teleport keeps steering to until focused.
-    pub(crate) teleport_follow: Option<crate::teleport::Follow>,
-    /// A pane moving to another device; a move outlives its menu.
-    pub(crate) pane_carry: Option<crate::pane_menu::carry::Carry>,
-    /// A worktree or workspace being created on another host.
-    pub(crate) dispatch_job: Option<crate::dispatch::Job>,
-    /// Dispatched worktrees' setup scripts, waiting for their hosts in order.
-    pub(crate) dispatch_setups: std::collections::VecDeque<crate::dispatch::Setup>,
-    /// A prompt fanned out to several agents; once launched it outlives its
-    /// dialog so the lanes can be compared later.
-    pub(crate) fan_out: Option<crate::fan_out::FanOut>,
-    pub(crate) git: git::Git,
-    /// Notes waiting for their agents to be ready for them.
-    pub(crate) deliveries: crate::agent_notes::Deliveries,
-    /// Notes on selected terminal text, written or queued.
-    pub(crate) terminal_notes: annotate::TerminalNotes,
-    /// The notes panel beside a review or an annotated page; both share it.
-    pub(crate) notes_width: crate::panel_resize::PanelWidth,
-    /// The review's list of changed files.
-    pub(crate) review_files_width: crate::panel_resize::PanelWidth,
-    /// Each review tab's state, by its tab.
-    pub(crate) reviews: std::collections::HashMap<crate::browser::TabId, crate::review::Review>,
-    /// Code tabs' views, by tab.
-    pub(crate) code_views:
-        std::collections::HashMap<crate::browser::TabId, crate::code_view::CodeView>,
-    /// Checkouts indexed for Go to Symbol and Go to File.
-    pub(crate) code_indexes: crate::code_search::Indexes,
-    /// Each orchestrator tab's view, by its tab.
-    pub(crate) orchestrators:
-        std::collections::HashMap<crate::browser::TabId, crate::orchestrator::Orchestrator>,
-    pub(crate) orchestrator_live: crate::orchestrator::LiveCache,
-    /// Orchestrator views moved into windows of their own, by their old tab.
-    pub(crate) detached_orchestrators:
-        std::collections::HashMap<crate::browser::TabId, crate::orchestrator::Detached>,
-    /// Orchestrator views' requests, acted on at the next tick.
-    pub(crate) orchestrator_events: Vec<(crate::browser::TabId, crate::orchestrator::Event)>,
-    /// Whether an orchestrator's dispatch dialog ranks hosts by their load.
-    pub(crate) orchestrator_sampling: bool,
-    /// The window's width at its last render, which caps side panels.
-    pub(crate) viewport_width: f32,
-    /// Comment, merge, and review reads for the focused branch's open PR.
-    pub(crate) pr_actions: crate::pr_actions::Actions,
-    pub(crate) usage: crate::usage::Usage,
-    pub(crate) system_load: crate::system_load::SystemLoad,
-    /// The Devices overview's activity history and open tabs.
-    pub(crate) devices_overview: crate::devices_overview::Overview,
-    /// Snapshots of checkouts taken at agent turns, and the dialog listing them.
-    pub(crate) checkpoints: crate::checkpoint::Checkpoints,
-    /// Remote ports forwarded to this machine; they end with the window.
-    pub(crate) port_forwards: crate::port_forward::PortForwards,
-    /// Pages remote agents asked for, waiting for their port's forward.
-    pub(crate) remote_browser: Vec<crate::remote_browser::Forwarding>,
-    /// Cloud machines being added; see `cloud::Jobs`.
-    #[cfg(feature = "cloud")]
-    pub(crate) cloud_jobs: crate::cloud::Jobs,
-    pub(crate) listening_ports: crate::listening_ports::ListeningPorts,
-    /// SSH tunnels to remote ports that listen on their host's loopback only.
-    pub(crate) tunnels: crate::listening_ports::Tunnels,
-    pub(crate) install_warning_shown: bool,
-    /// Whether the selected endpoint's refused handshake was announced. Reset
-    /// once it has none, so a later refusal is announced again.
-    pub(crate) version_notice_shown: bool,
-    pub(crate) collapsed_repos: std::collections::HashSet<String>,
-    /// Expanded; collapsed leaves the rail or nothing, as Herdr's
-    /// `ui.sidebar_collapsed_mode` chooses (see `sidebar_mode`).
-    pub(crate) sidebar_visible: bool,
-    /// Herdr's `ui.sidebar_start_collapsed` still applies: no shared settings
-    /// have loaded yet and the user has not toggled the sidebar since startup.
-    pub(crate) sidebar_start_pending: bool,
-    /// Starts as `config.status_bar.show`; Toggle Status Bar flips it for the
-    /// session, and a reload that changes the setting applies it again.
-    pub(crate) status_bar_visible: bool,
-    /// Hides the chrome over the status bar and sidebar flags; see `zen`.
-    pub(crate) zen: zen::ZenState,
-    pub(crate) device_filter: Option<String>,
-    pub(crate) wheel: WheelAccumulator,
-    pub(crate) sidebar_width: Option<f32>,
-    pub(crate) sidebar_drag: Option<sidebar::SidebarDrag>,
-    /// A press on a workspace row that may lift it for reordering.
-    pub(crate) workspace_drag: Option<sidebar::WorkspaceDrag>,
-    /// A press on a tab that may lift it for reordering.
-    pub(crate) tab_drag: Option<tab_drag::TabDrag>,
-    pub(crate) sidebar_split: Option<f32>,
-    pub(crate) sidebar_split_modified: bool,
-    pub(crate) sidebar_preferences: Option<preferences::Preferences>,
-    pub(crate) sidebar_modified: bool,
     pub(crate) agent_sort: preferences::AgentSort,
     /// Whether the user chose the sort with the panel toggle, now or in a
     /// stored session. Until then the daemon's `ui.agent_panel_sort` decides,
     /// including after a config reload, as upstream's manual override does.
     pub(crate) agent_sort_modified: bool,
+    /// The App Updates dialog's own notes cache, so scrolling and redraws do not
+    /// re-parse the release body.
+    pub(crate) app_update_notes: crate::release_notes::Prepared,
+    /// Where the App Updates notes are scrolled, read back to draw their bar.
+    pub(crate) app_update_notes_scroll: ScrollHandle,
+    /// A tab torn off another window, waiting for its host to be listed.
+    pub(crate) arrival: Option<tab_tear::TornTab>,
     pub(crate) avatars: Option<avatars::Avatars>,
-    #[cfg(feature = "integration-test")]
-    pub(crate) input_probe: smoke::InputProbe,
-    /// Spaces and agents lists, in that order.
-    pub(crate) sidebar_scroll: [ScrollHandle; 2],
-    /// The row each list has scrolled into view, so a new selection is revealed
-    /// while the user's own scrolling of an unchanged one is left alone.
-    pub(crate) sidebar_revealed: [std::cell::Cell<Option<usize>>; 2],
-    /// A spaces row revealed last frame, which the next render moves out from
-    /// under the pinned host header if it landed there.
-    pub(crate) sidebar_pin_reveal: std::cell::Cell<Option<usize>>,
-    pub(crate) sidebar_search: sidebar::SidebarSearch,
-    pub(crate) _poll: Task<()>,
-    pub(crate) _activation: Subscription,
-    pub(crate) _appearance: Subscription,
-    /// The sidebar as a cached view; see `sidebar::SidebarView`.
-    pub(crate) sidebar_view: Entity<sidebar::SidebarView>,
-    /// Notified in place of this view by a surface-only update, which redraws
-    /// the window while the cached sidebar keeps its layout.
-    pub(crate) surface_signal: Entity<SurfaceSignal>,
-    pub(crate) _sidebar_invalidation: Subscription,
-    pub(crate) _host_theme: Subscription,
+    /// The picture and platform appearance `[backdrop]` asks for.
+    pub(crate) backdrop: backdrop::State,
+    pub(crate) bell: crate::bell::Bell,
+    pub(crate) bounds: Bounds<Pixels>,
     /// Browser tabs this window shows, and its pages for them.
     pub(crate) browser: crate::browser::Browser,
-    pub(crate) _browser_tabs: Subscription,
-    /// Another window may edit a note this one shows.
-    pub(crate) _worktree_notes: Subscription,
+    pub(crate) catalog: endpoint::Catalog,
+    pub(crate) cell_width: f32,
+    /// Snapshots of checkouts taken at agent turns, and the dialog listing them.
+    pub(crate) checkpoints: crate::checkpoint::Checkpoints,
+    /// Cloud machines being added; see `cloud::Jobs`.
+    #[cfg(feature = "cloud")]
+    pub(crate) cloud_jobs: crate::cloud::Jobs,
+    /// Checkouts indexed for Go to Symbol and Go to File.
+    pub(crate) code_indexes: crate::code_search::Indexes,
+    /// Code tabs' views, by tab.
+    pub(crate) code_views:
+        std::collections::HashMap<crate::browser::TabId, crate::code_view::CodeView>,
+    pub(crate) collapsed_repos: std::collections::HashSet<String>,
+    pub(crate) config: config::Config,
+    pub(crate) config_load: Option<Task<()>>,
+    pub(crate) config_load_revision: u64,
+    pub(crate) config_watch: Option<Task<()>>,
+    /// The terminal size the last loaded config asked for. Increase/decrease
+    /// write straight to `config.terminal.size`, so this is what Reset Font
+    /// Size restores; a session adjustment never reaches disk.
+    pub(crate) configured_terminal_size: f32,
+    /// Keyboard copy mode, when it holds the keyboard.
+    pub(crate) copy_mode: Option<copy_mode::CopyModeState>,
+    /// Prepared daemon announcement and release notes text.
+    pub(crate) daemon_text: crate::release_notes::DaemonText,
+    /// Notes waiting for their agents to be ready for them.
+    pub(crate) deliveries: crate::agent_notes::Deliveries,
+    /// Orchestrator views moved into windows of their own, by their old tab.
+    pub(crate) detached_orchestrators:
+        std::collections::HashMap<crate::browser::TabId, crate::orchestrator::Detached>,
+    /// A press on a device's header that may lift it for reordering.
+    pub(crate) device_drag: Option<sidebar::DeviceDrag>,
+    pub(crate) device_filter: Option<String>,
+    /// The device IDs in the order the user dragged them into; see
+    /// `endpoint::order`.
+    pub(crate) device_order: Vec<String>,
+    /// Each saved device's terminal theme, read off the UI thread.
+    pub(crate) device_themes: device_themes::DeviceThemes,
+    /// The Devices overview's activity history and open tabs.
+    pub(crate) devices_overview: crate::devices_overview::Overview,
+    /// A worktree or workspace being created on another host.
+    pub(crate) dispatch_job: Option<crate::dispatch::Job>,
+    /// Dispatched worktrees' setup scripts, waiting for their hosts in order.
+    pub(crate) dispatch_setups: std::collections::VecDeque<crate::dispatch::Setup>,
+    /// The editor pane being opened, if any.
+    pub(crate) editor_open: Option<crate::editor::Job>,
+    /// Editor panes whose Neovim later files open in.
+    pub(crate) editor_panes: Vec<crate::editor::EditorPane>,
+    pub(crate) endpoints: Vec<endpoint::Endpoint>,
+    /// A prompt fanned out to several agents; once launched it outlives its
+    /// dialog so the lanes can be compared later.
+    pub(crate) fan_out: Option<crate::fan_out::FanOut>,
+    pub(crate) file_transfer: Option<transfers::FileTransfer>,
+    /// The find bar, over the pane it searches.
+    pub(crate) find: Option<find::FindBar>,
+    /// How the find bar was left over each pane, to bring it back there.
+    pub(crate) find_memory: crate::find::memory::Memory,
+    /// The brief message over the terminal, and when it stops showing.
+    pub(crate) flash: Option<(Flash, std::time::Instant)>,
+    pub(crate) focus: FocusHandle,
+    pub(crate) git: git::Git,
+    /// Unknown keys in the GUI config, ignored but reported; follows `config`.
+    pub(crate) gui_config_diagnostic: crate::config_diagnostic::ConfigDiagnostic,
+    pub(crate) held_keys: crate::terminal::HeldKeys,
+    /// The sidebar row the pointer is resting on, waiting to open its menu.
+    pub(crate) hover: Option<sidebar::HoverRest>,
+    /// The menu that resting opened, which the pointer closes by leaving it.
+    pub(crate) hover_menu: Option<sidebar::HoverMenu>,
+    pub(crate) hovered_terminal_link: bool,
+    /// Names the missing icon font once a pane draws an icon it lacks.
+    pub(crate) icon_font_notice: crate::icon_font_notice::IconFontNotice,
+    #[cfg(feature = "integration-test")]
+    pub(crate) input_probe: smoke::InputProbe,
+    pub(crate) install_warning_shown: bool,
+    pub(crate) integrations: crate::integrations::Integrations,
+    /// The key code, and Shift, of the key being handled: AppKit's current
+    /// event, which names a function key macOS delivered without its name.
+    pub(crate) key_press: fn() -> Option<(u16, bool)>,
+    /// When this window last forwarded user input; gates re-claiming a frame another client sized.
+    pub(crate) last_input: Option<std::time::Instant>,
+    /// The last pointer position over the panes, so a move event that did not move is not use.
+    pub(crate) last_pointer: Option<Point<Pixels>>,
+    pub(crate) last_queued_options: Option<ConnectOptions>,
+    pub(crate) links: links::DaemonLinks,
+    pub(crate) listening_ports: crate::listening_ports::ListeningPorts,
+    pub(crate) live: LiveState,
+    pub(crate) local_error: Option<String>,
+    pub(crate) marked: String,
+    /// Where the IME's caret or converted clause is within `marked`, in
+    /// UTF-16; `None` puts the caret after it.
+    pub(crate) marked_selection: Option<std::ops::Range<usize>>,
+    pub(crate) menu: menu::MenuState,
+    /// Removing worktrees whose pull request is merged, when enabled.
+    pub(crate) merged_cleanup: crate::merged_cleanup::Cleanup,
+    /// The notes panel beside a review or an annotated page; both share it.
+    pub(crate) notes_width: crate::panel_resize::PanelWidth,
+    pub(crate) options: ConnectOptions,
+    /// Orchestrator views' requests, acted on at the next tick.
+    pub(crate) orchestrator_events: Vec<(crate::browser::TabId, crate::orchestrator::Event)>,
+    pub(crate) orchestrator_live: crate::orchestrator::LiveCache,
+    /// Whether an orchestrator's dispatch dialog ranks hosts by their load.
+    pub(crate) orchestrator_sampling: bool,
+    /// Each orchestrator tab's view, by its tab.
+    pub(crate) orchestrators:
+        std::collections::HashMap<crate::browser::TabId, crate::orchestrator::Orchestrator>,
+    pub(crate) painter: std::rc::Rc<std::cell::RefCell<terminal_painter::TerminalPainter>>,
+    /// A pane moving to another device; a move outlives its menu.
+    pub(crate) pane_carry: Option<crate::pane_menu::carry::Carry>,
+    pub(crate) pending_images: Vec<images::PendingImage>,
+    pub(crate) pending_input: pending_input::PendingInput,
+    pub(crate) pending_navigation: Option<OwnedNavigationTarget>,
+    pub(crate) pending_releases: Vec<endpoint::Release>,
+    pub(crate) pending_resize: Option<(ConnectOptions, std::time::Instant)>,
+    pub(crate) pending_toast: Option<u64>,
+    /// Remote ports forwarded to this machine; they end with the window.
+    pub(crate) port_forwards: crate::port_forward::PortForwards,
+    /// Comment, merge, and review reads for the focused branch's open PR.
+    pub(crate) pr_actions: crate::pr_actions::Actions,
     /// The daemon's prefix was typed, so the next keystroke completes a chord.
     pub(crate) prefix_armed: bool,
+    /// The frame on screen, kept across the gap between two projections.
+    pub(crate) presentation: Presentation,
+    pub(crate) pressed_terminal_link: Option<PressedLink>,
+    /// The terminal grid's cached regions; see `regions`.
+    pub(crate) regions: Vec<regions::RegionLayers>,
+    /// Pages remote agents asked for, waiting for their port's forward.
+    pub(crate) remote_browser: Vec<crate::remote_browser::Forwarding>,
+    /// A `worktree.remove` queued after its dialog closed.
+    pub(crate) removal: Option<menu::Removal>,
     /// Herdr's resize mode: direction keys resize the focused pane until
     /// Escape, Enter, or the mode's own shortcut ends it.
     pub(crate) resize_mode: bool,
+    /// The review's list of changed files.
+    pub(crate) review_files_width: crate::panel_resize::PanelWidth,
+    /// Each review tab's state, by its tab.
+    pub(crate) reviews: std::collections::HashMap<crate::browser::TabId, crate::review::Review>,
+    pub(crate) scrollbar_drag: Option<mouse::ScrollbarDrag>,
+    pub(crate) selected_endpoint: usize,
+    pub(crate) selected_generation: u64,
+    /// The terminal cells the pointer is choosing. A release copies them and
+    /// clears this, so a highlight only ever belongs to a drag in progress.
+    pub(crate) selection: Option<Selection>,
+    pub(crate) selection_epoch: u64,
+    pub(crate) selection_follow: selection::Follow,
+    pub(crate) sent_focus: Option<bool>,
     /// The selected device's server keymap, when it opted into one.
     pub(crate) server_keys: Option<server_keys::ServerKeymap>,
+    /// Local sessions on this machine, scanned on a worker while the popup is open.
+    pub(crate) sessions: sessions::Sessions,
+    /// Where the footer's sessions button last painted. The window owns it so a
+    /// shortcut and a click anchor the list at the same place.
+    pub(crate) sessions_anchor: std::rc::Rc<std::cell::Cell<Point<Pixels>>>,
+    pub(crate) settings: crate::settings_panel::SettingsPanel,
     pub(super) shift_taps: double_shift::ShiftTaps,
-    pub(crate) _prefix_interceptor: Subscription,
+    pub(crate) sidebar_drag: Option<sidebar::SidebarDrag>,
+    /// Whether the last spaces list render was folded to its headers for a
+    /// lifted device, whose geometry the next frame must not pin from.
+    pub(crate) sidebar_folded: std::cell::Cell<bool>,
+    pub(crate) sidebar_modified: bool,
+    /// A spaces row revealed last frame, which the next render moves out from
+    /// under the pinned host header if it landed there.
+    pub(crate) sidebar_pin_reveal: std::cell::Cell<Option<usize>>,
+    pub(crate) sidebar_preferences: Option<preferences::Preferences>,
+    /// The row each list has scrolled into view, so a new selection is revealed
+    /// while the user's own scrolling of an unchanged one is left alone.
+    pub(crate) sidebar_revealed: [std::cell::Cell<Option<usize>>; 2],
+    /// Spaces and agents lists, in that order.
+    pub(crate) sidebar_scroll: [ScrollHandle; 2],
+    pub(crate) sidebar_search: sidebar::SidebarSearch,
+    pub(crate) sidebar_split: Option<f32>,
+    pub(crate) sidebar_split_modified: bool,
+    /// Herdr's `ui.sidebar_start_collapsed` still applies: no shared settings
+    /// have loaded yet and the user has not toggled the sidebar since startup.
+    pub(crate) sidebar_start_pending: bool,
+    /// The sidebar as a cached view; see `sidebar::SidebarView`.
+    pub(crate) sidebar_view: Entity<sidebar::SidebarView>,
+    /// Expanded; collapsed leaves the rail or nothing, as Herdr's
+    /// `ui.sidebar_collapsed_mode` chooses (see `sidebar_mode`).
+    pub(crate) sidebar_visible: bool,
+    pub(crate) sidebar_width: Option<f32>,
+    /// Shared by every window; see `app::shared_sound`.
+    pub(crate) sound: std::rc::Rc<crate::sound::Service>,
+    /// The resize cursor of the pane border under the pointer, if any.
+    pub(crate) split_cursor: Option<CursorStyle>,
+    pub(crate) split_drag: Option<mouse::SplitDrag>,
+    /// Starts as `config.status_bar.show`; Toggle Status Bar flips it for the
+    /// session, and a reload that changes the setting applies it again.
+    pub(crate) status_bar_visible: bool,
+    /// Whether the leftmost strip gave Back and Forward their full width
+    /// when it was last laid out; see `HerdrWindow::strip_leading`.
+    pub(crate) strip_navigation_fits: bool,
+    /// Notified in place of this view by a surface-only update, which redraws
+    /// the window while the cached sidebar keeps its layout.
+    pub(crate) surface_signal: Entity<SurfaceSignal>,
+    pub(crate) system_load: crate::system_load::SystemLoad,
+    /// A press on a tab that may lift it for reordering.
+    pub(crate) tab_drag: Option<tab_drag::TabDrag>,
+    /// A teleport being set up or under way; a move outlives its dialog.
+    pub(crate) teleport: Option<crate::teleport::Teleport>,
+    /// The workspace a finished teleport keeps steering to until focused.
+    pub(crate) teleport_follow: Option<crate::teleport::Follow>,
+    /// Checkouts this client teleported away from, marked in the sidebar.
+    pub(crate) teleport_marks: crate::teleport::Marks,
+    pub(crate) terminal_mouse: Option<mouse::Gesture>,
+    /// Notes on selected terminal text, written or queued.
+    pub(crate) terminal_notes: annotate::TerminalNotes,
+    pub(crate) theme: config::Theme,
+    /// The system appearance `theme` was loaded for, which is what Herdr is
+    /// told. It trails the system while the theme for a new appearance
+    /// loads, so Herdr never pairs the new appearance with the old colors.
+    pub(crate) theme_light: bool,
+    /// Last title pushed to the OS, so the window is renamed only when it changes.
+    pub(crate) title: String,
+    pub(crate) toasts_hidden: bool,
+    /// SSH tunnels to remote ports that listen on their host's loopback only.
+    pub(crate) tunnels: crate::listening_ports::Tunnels,
+    pub(crate) update_preview: Option<updater::State>,
+    pub(crate) updater: updater::Updater,
+    pub(crate) usage: crate::usage::Usage,
+    /// Whether the selected endpoint's refused handshake was announced. Reset
+    /// once it has none, so a later refusal is announced again.
+    pub(crate) version_notice_shown: bool,
+    /// The window's width at its last render, which caps side panels.
+    pub(crate) viewport_width: f32,
+    /// Tells a sleep from the clocks, so connections are checked on waking.
+    pub(crate) wake: endpoint::WakeClock,
+    pub(crate) wheel: WheelAccumulator,
+    /// A press on a workspace row that may lift it for reordering.
+    pub(crate) workspace_drag: Option<sidebar::WorkspaceDrag>,
+    /// The worktree script being located, read, trusted, or opened.
+    pub(crate) worktree_script: Option<crate::worktree_scripts::Job>,
+    /// Hides the chrome over the status bar and sidebar flags; see `zen`.
+    pub(crate) zen: zen::ZenState,
+    // keep-sorted end
 }
 
 /// See `HerdrWindow::surface_signal`.
@@ -433,6 +446,11 @@ impl HerdrWindow {
         }
         if self.review_files_width.chosen().is_none() {
             self.review_files_width.restore(chrome.review_files_width);
+        }
+        // A device dragged before the stored order loaded keeps its place.
+        if self.device_order.is_empty() {
+            self.device_order = chrome.device_order;
+            self.arrange_devices();
         }
         if !self.agent_sort_modified
             && let Some(sort) = chrome.agent_sort
@@ -583,278 +601,5 @@ impl HerdrWindow {
         self.refresh_palette(window, cx);
         self.report_focus();
         self.sync_window_title(window);
-    }
-
-    pub(crate) fn new(
-        target: ConnectTarget,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-        #[cfg(feature = "integration-test")] sidebar_test: bool,
-    ) -> Self {
-        #[cfg(feature = "integration-test")]
-        let target = if sidebar_test {
-            ConnectTarget::Socket("/unused-sidebar-fixture.sock".into())
-        } else {
-            target
-        };
-        let focus = cx.focus_handle();
-        window.focus(&focus, cx);
-        // Created by the first window; each later one shares its PR answers.
-        cx.default_global::<crate::pull_request::Shared>();
-        let weak = cx.weak_entity();
-        let (initial_theme, initial_icons) = cx
-            .try_global::<crate::app::InitialAppearance>()
-            .map(|appearance| (appearance.theme.clone(), appearance.config.status_icons))
-            .unwrap_or_default();
-        let indicators = sidebar::Indicators::new(
-            None,
-            initial_icons,
-            matches!(
-                cx.window_appearance(),
-                WindowAppearance::Light | WindowAppearance::VibrantLight
-            ),
-            &initial_theme,
-        );
-        let sidebar_view = cx.new(|_| sidebar::SidebarView::new(weak, indicators));
-        let timer = cx.background_executor().clone();
-        let poll = cx.spawn_in(window, async move |this, cx| {
-            loop {
-                timer.timer(Duration::from_millis(16)).await;
-                if this
-                    .update_in(cx, |this, window, cx| this.tick(window, cx))
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        });
-        let appearance = cx
-            .try_global::<crate::app::InitialAppearance>()
-            .cloned()
-            .unwrap_or_default();
-        let crate::app::InitialAppearance {
-            config,
-            theme,
-            error,
-        } = appearance;
-        let mut this = Self {
-            sound: Default::default(),
-            bell: crate::bell::Bell::default(),
-            updater: updater::Updater::default(),
-            update_preview: None,
-            daemon_text: Default::default(),
-            app_update_notes: Default::default(),
-            app_update_notes_scroll: ScrollHandle::new(),
-            configured_terminal_size: config.terminal.size,
-            status_bar_visible: config.status_bar.show,
-            zen: Default::default(),
-            gui_config_diagnostic: {
-                let mut diagnostic = crate::config_diagnostic::ConfigDiagnostic::default();
-                diagnostic.sync(config.diagnostic().as_deref());
-                diagnostic
-            },
-            icon_font_notice: Default::default(),
-            config,
-            theme,
-            theme_light: crate::app::light_appearance(cx),
-            config_load: None,
-            settings: Default::default(),
-            integrations: Default::default(),
-            config_watch: None,
-            config_load_revision: 0,
-            catalog: endpoint::Catalog::new(&target),
-            sessions: sessions::Sessions::default(),
-            sessions_anchor: Default::default(),
-            endpoints: vec![endpoint::Endpoint::new(
-                endpoint::LOCAL.into(),
-                "Local".into(),
-                target,
-                true,
-            )],
-            selected_endpoint: 0,
-            selection_epoch: 0,
-            activation_deadline: None,
-            pending_navigation: None,
-            arrival: None,
-            strip_navigation_fits: true,
-            pending_toast: None,
-            toasts_hidden: false,
-            pending_releases: Vec::new(),
-            selected_generation: 0,
-            live: LiveState::default(),
-            focus,
-            options: ConnectOptions::default(),
-            last_queued_options: None,
-            pending_resize: None,
-            last_input: None,
-            last_pointer: None,
-            active: window.is_window_active(),
-            sent_focus: None,
-            bounds: Bounds::default(),
-            title: WINDOW_TITLE.to_owned(),
-            cell_width: 9.,
-            hovered_terminal_link: false,
-            pressed_terminal_link: None,
-            links: Default::default(),
-            terminal_mouse: None,
-            scrollbar_drag: None,
-            split_drag: None,
-            split_cursor: None,
-            pending_images: Vec::new(),
-            pending_input: Default::default(),
-            held_keys: Default::default(),
-            key_press: function_keys::current_press,
-            file_transfer: None,
-            selection: None,
-            selection_follow: Default::default(),
-            find: None,
-            copy_mode: None,
-            find_memory: Default::default(),
-            flash: None,
-            presentation: Default::default(),
-            wake: endpoint::WakeClock::new(std::time::Instant::now(), std::time::SystemTime::now()),
-            painter: Default::default(),
-            backdrop: Default::default(),
-            device_themes: Default::default(),
-            regions: Vec::new(),
-            marked: String::new(),
-            marked_selection: None,
-            hover: None,
-            hover_menu: None,
-            local_error: error,
-            menu: menu::MenuState::new(cx),
-            removal: None,
-            merged_cleanup: Default::default(),
-            worktree_script: None,
-            editor_open: None,
-            editor_panes: Vec::new(),
-            teleport: None,
-            teleport_marks: crate::teleport::Marks::start(),
-            teleport_follow: None,
-            pane_carry: None,
-            dispatch_job: None,
-            dispatch_setups: Default::default(),
-            fan_out: None,
-            git: git::Git::default(),
-            deliveries: Default::default(),
-            terminal_notes: Default::default(),
-            notes_width: crate::panel_resize::NOTES,
-            review_files_width: crate::panel_resize::REVIEW_FILES,
-            reviews: Default::default(),
-            code_views: Default::default(),
-            code_indexes: Default::default(),
-            orchestrators: Default::default(),
-            orchestrator_live: Default::default(),
-            detached_orchestrators: Default::default(),
-            orchestrator_events: Vec::new(),
-            orchestrator_sampling: false,
-            viewport_width: 0.,
-            pr_actions: Default::default(),
-            usage: Default::default(),
-            system_load: Default::default(),
-            devices_overview: Default::default(),
-            checkpoints: Default::default(),
-            port_forwards: Default::default(),
-            remote_browser: Vec::new(),
-            #[cfg(feature = "cloud")]
-            cloud_jobs: Default::default(),
-            listening_ports: Default::default(),
-            tunnels: Default::default(),
-            install_warning_shown: false,
-            version_notice_shown: false,
-            collapsed_repos: Default::default(),
-            sidebar_visible: true,
-            sidebar_start_pending: true,
-            device_filter: None,
-            wheel: WheelAccumulator::default(),
-            sidebar_width: None,
-            sidebar_drag: None,
-            workspace_drag: None,
-            tab_drag: None,
-            sidebar_split: None,
-            sidebar_split_modified: false,
-            sidebar_preferences: None,
-            sidebar_modified: false,
-            agent_sort: preferences::AgentSort::default(),
-            agent_sort_modified: false,
-            avatars: None,
-            #[cfg(feature = "integration-test")]
-            input_probe: smoke::InputProbe::default(),
-            sidebar_scroll: Default::default(),
-            sidebar_revealed: Default::default(),
-            sidebar_pin_reveal: Default::default(),
-            sidebar_search: sidebar::SidebarSearch::new(cx),
-            _poll: poll,
-            sidebar_view,
-            surface_signal: cx.new(|_| SurfaceSignal),
-            _sidebar_invalidation: Self::invalidate_sidebar(cx),
-            _host_theme: Self::observe_host_theme(cx),
-            browser: crate::browser::Browser::new(cx),
-            // Another window, or an agent, may open or close a tab.
-            _browser_tabs: cx.observe_global::<crate::browser::Store>(|_, cx| cx.notify()),
-            _worktree_notes: Self::observe_worktree_notes(window, cx),
-            prefix_armed: false,
-            resize_mode: false,
-            server_keys: None,
-            shift_taps: Default::default(),
-            _prefix_interceptor: Self::intercept_prefix(window, cx),
-            _activation: cx.observe_window_activation(window, |this, window, cx| {
-                this.active = window.is_window_active();
-                if this.active {
-                    this.publish_server_keymap(cx);
-                } else {
-                    this.shift_taps.cancel();
-                    this.disarm_prefix();
-                    this.cancel_terminal_mouse(cx);
-                    // A drag cut short is dropped; a selection kept for an
-                    // explicit copy outlives a trip to another window.
-                    if this.selection.as_ref().is_some_and(Selection::dragging) {
-                        this.selection = None;
-                    }
-                    this.pressed_terminal_link = None;
-                }
-                this.report_focus();
-                cx.notify();
-            }),
-            _appearance: cx.observe_window_appearance(window, |this, _, cx| {
-                this.apply_shared_theme(cx);
-                this.apply_system_theme(cx);
-                cx.notify();
-            }),
-        };
-        // Quitting need not drop this window, so its SSH children (port
-        // forwards and listening-port tunnels) are killed here rather than
-        // left forwarding after the app is gone.
-        cx.on_app_quit(|this, _| {
-            this.port_forwards.stop_all();
-            this.tunnels.close_all();
-            async {}
-        })
-        .detach();
-        Self::close_orchestrator_windows_on_release(cx);
-        #[cfg(feature = "integration-test")]
-        if sidebar_test {
-            this._poll = Task::ready(());
-            this.live.snapshot = Some(Arc::new(sidebar::layout_tests::snapshot(40)));
-            this.endpoints[0].live = this.live.clone();
-            if let Ok(mut inbox) = this.endpoints[0].connection.inbox.lock() {
-                *inbox = this.live.clone();
-            }
-            return this;
-        }
-        Self::poll_on_frame(cx.entity().downgrade(), window);
-        this.sidebar_preferences = this.endpoints[0]
-            .connection
-            .target
-            .socket_path()
-            .ok()
-            .map(|path| preferences::Preferences::new(&path));
-        this.avatars = Some(avatars::Avatars::new());
-        this.reconnect(cx);
-        log_window::set_appearance(&this.config, &this.theme, cx);
-        this.load_gui_config(cx);
-        this.load_shared_settings(cx);
-        this.watch_gui_config(cx);
-        this
     }
 }
