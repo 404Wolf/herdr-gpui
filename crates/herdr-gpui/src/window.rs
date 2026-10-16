@@ -30,7 +30,7 @@ pub(crate) use links::PressedLink;
 mod mouse;
 mod pending_input;
 mod plugin_selection;
-mod prefix;
+pub(crate) mod prefix;
 mod reconnecting;
 mod regions;
 mod render;
@@ -192,8 +192,9 @@ pub(crate) struct HerdrWindow {
     pub(crate) input_probe: smoke::InputProbe,
     pub(crate) install_warning_shown: bool,
     pub(crate) integrations: crate::integrations::Integrations,
-    /// The key code, and Shift, of the key being handled: AppKit's current
-    /// event, which names a function key macOS delivered without its name.
+    /// What a key code types in the active layout, to restore a dropped Shift.
+    pub(crate) key_layout: fn(u16) -> Option<prefix::KeyChars>,
+    /// The key code and Shift of the key being handled, from AppKit's event.
     pub(crate) key_press: fn() -> Option<(u16, bool)>,
     pub(crate) last_queued_options: Option<ConnectOptions>,
     pub(crate) links: links::DaemonLinks,
@@ -208,6 +209,8 @@ pub(crate) struct HerdrWindow {
     /// Removing worktrees whose pull request is merged, when enabled.
     pub(crate) merged_cleanup: crate::merged_cleanup::Cleanup,
     /// The notes panel beside a review or an annotated page; both share it.
+    /// The revision of the app-wide network reading this window last drew.
+    pub(crate) network_quality_seen: u64,
     pub(crate) notes_width: crate::panel_resize::PanelWidth,
     pub(crate) options: ConnectOptions,
     /// Orchestrator views' requests, acted on at the next tick.
@@ -578,6 +581,11 @@ impl HerdrWindow {
         }
         self.poll_devices_overview(cx);
         if self.update_system_load() {
+            cx.notify();
+        }
+        let network_quality = crate::network_quality::poll(self.config.show_network_quality, cx);
+        if network_quality != self.network_quality_seen {
+            self.network_quality_seen = network_quality;
             cx.notify();
         }
         self.update_checkpoints(cx);

@@ -520,6 +520,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         pr_actions: Default::default(),
         usage: Default::default(),
         system_load: Default::default(),
+        network_quality_seen: 0,
         devices_overview: Default::default(),
         checkpoints: Default::default(),
         port_forwards: Default::default(),
@@ -580,6 +581,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         held_keys: Default::default(),
         // No AppKit event to read; a test that needs one supplies its own.
         key_press: || None,
+        key_layout: |_| None,
         file_transfer: None,
         presentation: Default::default(),
         wake: crate::endpoint::WakeClock::new(

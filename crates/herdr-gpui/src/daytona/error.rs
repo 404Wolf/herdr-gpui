@@ -11,7 +11,7 @@ pub enum Error {
     Field(&'static str),
     #[error("{0} must be UTF-8.")]
     Encoding(&'static str),
-    #[error("Daytona needs an API key. Save one in Settings > Cloud Devices.")]
+    #[error("Daytona needs an API key. Save one in Settings > Cloud devices.")]
     MissingKey,
     #[error("Daytona rejected the API key.")]
     Authentication,

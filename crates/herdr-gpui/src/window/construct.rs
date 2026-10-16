@@ -1,7 +1,7 @@
 //! Building a window: its effects run in a fixed order before the fields,
 //! which stay sorted so parallel additions land on different lines.
 
-use super::{HerdrWindow, SurfaceSignal, function_keys};
+use super::{HerdrWindow, SurfaceSignal, function_keys, prefix};
 #[cfg(feature = "integration-test")]
 use crate::smoke;
 use crate::{
@@ -183,6 +183,7 @@ impl HerdrWindow {
             input_probe: smoke::InputProbe::default(),
             install_warning_shown: false,
             integrations: Default::default(),
+            key_layout: prefix::current_layout,
             key_press: function_keys::current_press,
             last_queued_options: None,
             links: Default::default(),
@@ -193,6 +194,7 @@ impl HerdrWindow {
             marked_selection: None,
             menu,
             merged_cleanup: Default::default(),
+            network_quality_seen: 0,
             notes_width: crate::panel_resize::NOTES,
             options: ConnectOptions::default(),
             orchestrator_events: Vec::new(),

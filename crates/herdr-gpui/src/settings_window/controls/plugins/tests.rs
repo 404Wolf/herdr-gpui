@@ -206,7 +206,7 @@ fn a_native_sidebar_says_switches_only_reach_the_terminal_and_offers_herdr_rows(
                 captured.lock().unwrap().push(edit);
                 Ok(())
             }),
-            load: super::super::tests::skill_load,
+            load: Arc::new(crate::settings_window::tests::skill_load),
         });
         cx.notify();
     });

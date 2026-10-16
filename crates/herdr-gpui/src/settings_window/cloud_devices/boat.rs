@@ -1,4 +1,4 @@
-//! The Boat tab of Settings > Cloud Devices. Account fields save to `[boat]`;
+//! The Boat tab of Settings > Cloud devices. Account fields save to `[boat]`;
 //! its API key saves to the credential store. API reads and removals stay off
 //! the UI thread, and creation jobs belong to the main window.
 
@@ -536,7 +536,7 @@ impl SettingsWindow {
         div()
             .flex()
             .flex_col()
-            .gap(px(24.))
+            .gap(px(4.))
             .min_w_0()
             .child(account)
             .child(sandboxes)

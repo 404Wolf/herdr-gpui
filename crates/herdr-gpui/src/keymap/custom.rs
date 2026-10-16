@@ -159,6 +159,12 @@ impl Keymap {
         }
     }
 
+    /// Whether `typed` belongs, as GPUI named it, to a keymap binding, one of
+    /// the app's reserved shortcuts, or a pane key, which then handle it.
+    pub(crate) fn holds_directly(&self, typed: &Keystroke) -> bool {
+        self.pane_key(typed).is_some() || self.bound_directly().contains(&identity(typed))
+    }
+
     /// Keystrokes GPUI binds directly: the keymap's, then the app's own.
     fn bound_directly(&self) -> HashSet<Identity> {
         let keymap = self.bindings().map(|(_, label)| label);
