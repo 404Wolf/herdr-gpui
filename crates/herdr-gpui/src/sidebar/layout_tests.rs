@@ -90,6 +90,8 @@ mod update_panel;
 #[cfg(test)]
 mod workspace_menu;
 #[cfg(test)]
+mod worktree_note_trunk;
+#[cfg(test)]
 mod worktree_notes;
 #[cfg(test)]
 mod worktree_rows;
