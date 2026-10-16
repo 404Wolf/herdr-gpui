@@ -364,7 +364,7 @@ impl HerdrWindow {
             && !event.keystroke.modifiers.alt
             && !event.keystroke.modifiers.shift
             // Local agents read the shared clipboard themselves on Ctrl-V.
-            && self.accepts_remote_images()
+            && self.bridges_clipboard_images()
         {
             self.paste_native_clipboard(true, key_input(event, alt_keys), cx);
             cx.stop_propagation();
