@@ -2,7 +2,7 @@
 use super::*;
 
 // A loopback API for the providers that have one; Railway is reached over SSH.
-#[cfg(any(feature = "coder", feature = "daytona"))]
+#[cfg(any(feature = "boat", feature = "coder", feature = "daytona"))]
 pub(crate) mod server;
 
 #[test]

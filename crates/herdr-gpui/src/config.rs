@@ -9,10 +9,12 @@ use crate::{
 };
 pub(crate) mod backdrop;
 mod bitmap_fonts;
+mod boat;
 mod coder;
 mod daytona;
 mod devices;
 mod edit;
+mod features;
 mod files;
 mod font_weight;
 mod fonts;
@@ -24,13 +26,18 @@ pub(crate) mod preferences;
 pub(crate) mod sidebar;
 mod sidebar_style;
 pub(crate) mod status_bar;
-#[cfg(any(feature = "coder", feature = "daytona"))]
+mod status_icons;
+#[cfg(any(feature = "boat", feature = "coder", feature = "daytona"))]
 mod table;
 mod theme;
 mod updates;
 pub(crate) mod watch;
+mod zen;
 
 pub use backdrop::Backdrop;
+pub use boat::BoatConfig;
+#[cfg(feature = "boat")]
+pub(crate) use boat::BoatFields;
 pub use coder::CoderConfig;
 #[cfg(feature = "coder")]
 pub(crate) use coder::CoderFields;
@@ -40,6 +47,7 @@ pub(crate) use daytona::DaytonaFields;
 use devices::MAX_DEVICES;
 pub(crate) use devices::{DeviceSettings, KeybindingSource};
 pub(crate) use edit::{Layer, parse_value};
+pub use features::{Feature, Features};
 use files::write_config;
 pub use font_weight::bold as bold_font_weight;
 pub(crate) use fonts::FontFace;
@@ -64,6 +72,7 @@ pub(crate) use sidebar::{
 pub(crate) use sidebar_style::DeviceFooter;
 pub use sidebar_style::{SelectMode, SidebarOverrides, SidebarStyle};
 pub use status_bar::StatusBar;
+pub use status_icons::StatusIcons;
 use std::{
     collections::BTreeMap,
     env, fs,
@@ -74,6 +83,7 @@ pub use theme::Theme;
 pub(crate) use theme::ThemeName;
 pub(crate) use theme::mix;
 pub use updates::{UpdateChannel, UpdatesConfig};
+pub use zen::{Zen, ZenWidth};
 
 const DEFAULT_CONFIG: &str = include_str!("../config-gpui.example.toml");
 // Compare the first line so Windows checkouts and editors can use CRLF.
@@ -100,6 +110,7 @@ pub struct Config {
     /// What shows behind the main window's terminals and chrome.
     pub backdrop: Backdrop,
     pub bell: BellConfig,
+    pub boat: BoatConfig,
     pub clipboard_toast: ClipboardToast,
     pub code: CodeConfig,
     pub coder: CoderConfig,
@@ -172,6 +183,8 @@ pub struct Config {
     pub sound: SoundConfig,
     /// Which status bar items show, and how compactly.
     pub status_bar: StatusBar,
+    /// Drawn status icons in place of Herdr's dots or symbols; `None` follows Herdr.
+    pub status_icons: Option<StatusIcons>,
     pub tabs: FontConfig,
     pub terminal: FontConfig,
     /// Blank space around every terminal's cells.
@@ -185,11 +198,13 @@ pub struct Config {
     /// Which releases the in-app updater offers.
     pub updates: UpdatesConfig,
     pub usage: crate::usage::UsageConfig,
+    /// What Toggle Zen Mode does beyond hiding the chrome.
+    pub zen: Zen,
     // keep-sorted end
 }
 
-/// Where a clicked terminal link opens. Alt-click (Option on macOS) opens it
-/// in the other one.
+/// Where a link-modifier click on a terminal's web link opens it. Holding
+/// Alt (Option on macOS) as well opens it in the other one.
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum LinkTarget {
@@ -349,15 +364,6 @@ impl<'de> Deserialize<'de> for OptionAsAlt {
     }
 }
 
-/// Optional behaviors the config file turns on. Every flag is off by default,
-/// so a missing or empty `[features]` table is the shipped experience.
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(default)]
-pub struct Features {
-    /// Open a space's menu when the pointer rests on its sidebar row.
-    pub sidebar_hover_menu: bool,
-}
-
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct GitHubConfig {
@@ -421,6 +427,7 @@ impl Default for Config {
             agent_checkpoints: true,
             backdrop: Backdrop::default(),
             bell: BellConfig::default(),
+            boat: BoatConfig::default(),
             clipboard_toast: ClipboardToast::default(),
             code: CodeConfig::default(),
             coder: CoderConfig::default(),
@@ -461,6 +468,7 @@ impl Default for Config {
             smooth_scroll: true,
             sound: SoundConfig::default(),
             status_bar: StatusBar::default(),
+            status_icons: None,
             // Tabs are terminal chrome, so they read in the monospace face the
             // sidebar and terminal use, as they do in the reference UI.
             tabs: font(monospace, 12.0),
@@ -471,6 +479,7 @@ impl Default for Config {
             unknown_keys: Vec::new(),
             updates: UpdatesConfig::default(),
             usage: crate::usage::UsageConfig::default(),
+            zen: Zen::default(),
             // keep-sorted end
         }
     }
@@ -483,6 +492,7 @@ struct Settings {
     agent_checkpoints: Option<bool>,
     backdrop: Backdrop,
     bell: BellConfig,
+    boat: BoatConfig,
     clipboard_toast: ClipboardToastSettings,
     code: CodeConfig,
     coder: CoderConfig,
@@ -516,12 +526,14 @@ struct Settings {
     smooth_scroll: Option<bool>,
     sound: SoundConfig,
     status_bar: StatusBar,
+    status_icons: Option<StatusIcons>,
     tabs: FontSettings,
     terminal: FontSettings,
     theme: Option<String>,
     ui: FontSettings,
     updates: UpdatesConfig,
     usage: crate::usage::UsageConfig,
+    zen: zen::ZenSettings,
     // keep-sorted end
 }
 
@@ -542,9 +554,10 @@ pub(crate) fn home() -> Result<PathBuf> {
 
 /// The directory holding this app's `herdr` configuration directory. Upstream
 /// Herdr puts it under `%APPDATA%` on Windows, and the GUI config lives beside
-/// the daemon's, so the same root has to be used on both sides.
+/// the daemon's, so the same root has to be used on both sides, including the
+/// login shell's `XDG_CONFIG_HOME` for a launch that did not inherit it.
 fn config_root() -> Result<PathBuf> {
-    match env::var_os("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
+    match herdr_client::local_var("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
         Some(value) => {
             let path = PathBuf::from(value);
             if !path.is_absolute() {
@@ -696,13 +709,13 @@ impl Config {
     }
 
     pub fn load() -> Result<Self> {
-        Self::load_path(&Self::path()?, &daemon_config_path(|key| env::var_os(key)))
+        Self::load_path(&Self::path()?, &daemon_config_path(herdr_client::local_var))
     }
 
     /// First-frame settings only: no lock, migration, writes, or fsync. The
     /// background load performs maintenance after the window has appeared.
     pub(crate) fn load_startup() -> Result<Self> {
-        Self::load_startup_path(&Self::path()?, &daemon_config_path(|key| env::var_os(key)))
+        Self::load_startup_path(&Self::path()?, &daemon_config_path(herdr_client::local_var))
     }
 
     fn load_startup_path(path: &Path, daemon: &Path) -> Result<Self> {
@@ -827,6 +840,9 @@ impl Config {
         };
         settings.github.client_id_with_override(None)?;
         config.github = settings.github;
+        #[cfg(feature = "boat")]
+        settings.boat.settings_with(|_| None)?;
+        config.boat = settings.boat;
         // Check what the file says so a bad value is reported at load; the
         // environment may still fill or override keys when Coder is used.
         #[cfg(feature = "coder")]
@@ -889,6 +905,8 @@ impl Config {
         config.smooth_scroll = settings.smooth_scroll.unwrap_or(true);
         // keep-sorted end
         config.status_bar = settings.status_bar;
+        config.status_icons = settings.status_icons;
+        config.zen = settings.zen.try_into()?;
         settings.backdrop.validate()?;
         config.backdrop = settings.backdrop;
         config.contrast = settings.contrast;

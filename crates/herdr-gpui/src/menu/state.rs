@@ -61,6 +61,8 @@ pub(crate) struct MenuState {
     /// The saved distribution the removal confirmation names.
     pub(super) wsl_remove: Option<String>,
     pub(super) session_edit: Option<super::sessions::Edit>,
+    /// The address the open-link question is about.
+    pub(super) open_link: Option<crate::terminal::ExternalUrl>,
     #[cfg(feature = "coder")]
     pub(super) coder: Option<super::devices::coder::Wizard>,
     pub(super) devices_scroll: ScrollHandle,
@@ -296,6 +298,7 @@ impl MenuState {
             wsl_setup: None,
             wsl_remove: None,
             session_edit: None,
+            open_link: None,
             #[cfg(feature = "coder")]
             coder: None,
             devices_scroll: ScrollHandle::new(),
@@ -329,7 +332,12 @@ impl MenuState {
             code_search: None,
             close: None,
             pr: Default::default(),
-            pr_cache: Default::default(),
+            // Every window reads and refreshes the same answers.
+            pr_cache: cx
+                .try_global::<crate::pull_request::Shared>()
+                .map_or_else(Default::default, |shared| {
+                    crate::pull_request::Cache::shared(shared.0.clone())
+                }),
             pr_cache_connection: None,
             pr_snapshot: None,
             github: Default::default(),
@@ -355,6 +363,7 @@ impl MenuState {
         self.wsl_setup = None;
         self.wsl_remove = None;
         self.session_edit = None;
+        self.open_link = None;
         #[cfg(feature = "coder")]
         {
             self.coder = None;

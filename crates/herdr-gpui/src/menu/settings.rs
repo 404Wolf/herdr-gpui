@@ -37,7 +37,7 @@ impl HerdrWindow {
         let Ok(path) = Config::local_path() else {
             return;
         };
-        let daemon = crate::config::daemon_config_path(|key| std::env::var_os(key));
+        let daemon = crate::config::daemon_config_path(herdr_client::local_var);
         let executor = cx.background_executor().clone();
         let mut theme = self.config.theme.clone();
         self.config_watch = Some(cx.spawn(async move |this, cx| {
@@ -361,6 +361,7 @@ impl HerdrWindow {
                 | Command::ToggleSidebar
                 | Command::OpenCode
                 | Command::ToggleStatusBar
+                | Command::ToggleZenMode
                 | Command::DevicesOverview
                 | Command::IncreaseFontSize
                 | Command::DecreaseFontSize

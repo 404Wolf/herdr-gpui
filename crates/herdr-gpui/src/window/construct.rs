@@ -31,13 +31,16 @@ impl HerdrWindow {
         };
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
+        // Created by the first window; each later one shares its PR answers.
+        cx.default_global::<crate::pull_request::Shared>();
         let weak = cx.weak_entity();
-        let initial_theme = cx
+        let (initial_theme, initial_icons) = cx
             .try_global::<crate::app::InitialAppearance>()
-            .map(|appearance| appearance.theme.clone())
+            .map(|appearance| (appearance.theme.clone(), appearance.config.status_icons))
             .unwrap_or_default();
         let indicators = sidebar::Indicators::new(
             None,
+            initial_icons,
             matches!(
                 cx.window_appearance(),
                 WindowAppearance::Light | WindowAppearance::VibrantLight
@@ -107,6 +110,7 @@ impl HerdrWindow {
             this.apply_system_theme(cx);
             cx.notify();
         });
+        let window_closed = Self::give_back_torn_tabs(cx);
         let mut this = Self {
             // keep-sorted start
             _activation: activation,
@@ -116,6 +120,7 @@ impl HerdrWindow {
             _poll: poll,
             _prefix_interceptor: prefix_interceptor,
             _sidebar_invalidation: sidebar_invalidation,
+            _window_closed: window_closed,
             _worktree_notes: worktree_notes,
             activation_deadline: None,
             active: window.is_window_active(),
@@ -146,7 +151,9 @@ impl HerdrWindow {
             daemon_text: Default::default(),
             deliveries: Default::default(),
             detached_orchestrators: Default::default(),
+            device_drag: None,
             device_filter: None,
+            device_order: Vec::new(),
             device_themes: Default::default(),
             devices_overview: Default::default(),
             dispatch_job: None,
@@ -224,6 +231,7 @@ impl HerdrWindow {
             settings: Default::default(),
             shift_taps: Default::default(),
             sidebar_drag: None,
+            sidebar_folded: Default::default(),
             sidebar_modified: false,
             sidebar_pin_reveal: Default::default(),
             sidebar_preferences: None,
@@ -263,6 +271,7 @@ impl HerdrWindow {
             wheel: WheelAccumulator::default(),
             workspace_drag: None,
             worktree_script: None,
+            zen: Default::default(),
             // keep-sorted end
         };
         // Quitting need not drop this window, so its SSH children (port

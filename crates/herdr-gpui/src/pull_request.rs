@@ -1,11 +1,13 @@
 //! Read-only PR prefetch. One worker, bounded memory, and no UI-thread I/O.
 //! Writes to a pull request live in `pr_actions`, behind explicit user actions.
 
+mod batch;
 mod cache;
 mod fetch;
 mod lookup;
 mod model;
 mod parse;
+mod store;
 
 #[cfg(test)]
 mod tests;
@@ -18,6 +20,7 @@ pub(crate) use {
         Input, MergeMethod, Origin, Outcome, PullRequest, ReviewDecision, State, clean,
         repository_input, workspace_input,
     },
+    store::Shared,
 };
 
 pub(crate) use fetch::{by_number, local_repository, repository_key};
@@ -26,7 +29,7 @@ pub(crate) use model::MergeState;
 #[cfg(any(test, all(feature = "integration-test", target_os = "macos")))]
 pub(crate) use model::fixture;
 
-use fetch::{Origins, fetch_with_backoff};
+use fetch::Origins;
 use parse::{parse_graphql, parse_numbered};
 
 /// Absence is a successful lookup with no PR, not an error.

@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn the_status_bar_shows_the_two_closest_to_a_limit() {
+fn the_status_bar_orders_providers_by_selection_and_usage() {
     let reading = |id: &str, used: Option<f64>| Reading {
         provider: provider(id),
         report: used.map(|used| report(provider(id), used)),
@@ -29,30 +29,20 @@ fn the_status_bar_shows_the_two_closest_to_a_limit() {
         error: None,
         access: None,
     });
-    let ids = |limit, chosen: Option<&str>| {
+    let ids = |chosen: Option<&str>| {
         entry
-            .headline(limit, chosen.map(provider))
+            .headline(chosen.map(provider))
             .iter()
             .map(|reading| reading.provider.id())
             .collect::<Vec<_>>()
     };
-    assert_eq!(ids(super::super::HEADLINE, None), ["claude", "codex"]);
     // Ties keep the registry order.
-    assert_eq!(ids(10, None), ["claude", "codex", "zed", "copilot"]);
+    assert_eq!(ids(None), ["claude", "codex", "zed", "copilot"]);
     // A provider picked in the panel leads, then the closest to a limit.
-    assert_eq!(
-        ids(super::super::HEADLINE, Some("copilot")),
-        ["copilot", "claude"]
-    );
-    assert_eq!(
-        ids(super::super::HEADLINE, Some("codex")),
-        ["codex", "claude"]
-    );
+    assert_eq!(ids(Some("copilot")), ["copilot", "claude", "codex", "zed"]);
+    assert_eq!(ids(Some("codex")), ["codex", "claude", "zed", "copilot"]);
     // One with nothing to show on this host leaves the bar as it was.
-    assert_eq!(
-        ids(super::super::HEADLINE, Some("gemini")),
-        ["claude", "codex"]
-    );
+    assert_eq!(ids(Some("gemini")), ["claude", "codex", "zed", "copilot"]);
 }
 
 #[test]

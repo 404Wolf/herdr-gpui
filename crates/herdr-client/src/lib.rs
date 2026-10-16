@@ -50,7 +50,7 @@ pub use compat::{MIN_HERDR_VERSION, VersionMismatch};
 pub use connect::{Transport, connect, connect_with_connector, connect_with_surface_active};
 #[cfg(feature = "cloud")]
 pub use discovery::CloudProvider;
-pub use discovery::{ConnectTarget, session_socket};
+pub use discovery::{ConnectTarget, local_var, session_socket, set_login_config_home};
 pub use environment::set_command_environment;
 /// Error returned when queueing commands; also available as the crate's `Error`.
 pub use error::Error as SendError;

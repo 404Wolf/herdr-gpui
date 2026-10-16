@@ -1,5 +1,6 @@
 //! Internal failures retain their categories and sources until presentation.
 pub use crate::updater::UpdateError;
+use daemon::daemon_error_message;
 pub use github::GitHubJsonError;
 use std::{
     io,
@@ -12,16 +13,6 @@ use wry::raw_window_handle::HandleError as WindowHandleError;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-fn daemon_error_message(error: &serde_json::Value) -> &str {
-    error
-        .get("message")
-        .and_then(serde_json::Value::as_str)
-        .or_else(|| error.as_str())
-        .or_else(|| error.get("code").and_then(serde_json::Value::as_str))
-        .filter(|message| !message.is_empty())
-        .unwrap_or("Invalid daemon error")
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     // keep-sorted start
@@ -33,6 +24,9 @@ pub enum Error {
     },
     #[error(transparent)]
     Backdrop(#[from] crate::backdrop::Error),
+    #[cfg(feature = "boat")]
+    #[error(transparent)]
+    Boat(#[from] crate::boat::Error),
     #[error("Searching the local network failed: {0}")]
     Bonjour(#[from] mdns_sd::Error),
     #[error("{} already exists; choose a new file name", path.display())]
@@ -423,6 +417,8 @@ pub enum Error {
     InvalidDevicesTable,
     #[error("Invalid saved dispatch history")]
     InvalidDispatchHistory,
+    #[error("Not an address with a scheme other than http, https, and file, of at most 8 KiB.")]
+    InvalidExternalUrl,
     #[error("{0}.size must be finite and between 8 and 48 logical pixels")]
     InvalidFontSize(&'static str),
     #[error("{0}.weight must be a weight name such as \"medium\" or a number from 100 to 900")]
@@ -478,6 +474,10 @@ pub enum Error {
     InvalidWindowState,
     #[error("Invalid saved worktree notes")]
     InvalidWorktreeNotes,
+    #[error("zen.font_size must be finite and between 8 and 48 logical pixels")]
+    InvalidZenFontSize,
+    #[error("zen.width must be 20 to 1000 columns, or a percentage from \"10%\" to \"100%\"")]
+    InvalidZenWidth,
     #[error("{0}")]
     Io(#[from] io::Error),
     #[error("{0}")]
@@ -495,6 +495,10 @@ pub enum Error {
         command: &'static str,
         keystroke: String,
     },
+    #[error("File not found: {}", path.display())]
+    LinkedFileMissing { path: PathBuf },
+    #[error("This link names a file on another computer, {host}. It is not opened from here.")]
+    LinkOnAnotherHost { host: String },
     #[error("Could not read listening ports on this host.")]
     ListeningPorts(#[source] Box<Error>),
     #[error("Neither ss nor lsof is installed on this host, so listening ports cannot be read.")]
@@ -519,6 +523,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("This link's address is not valid, so it opens nothing.")]
+    MalformedLink,
     #[error("Reopen the deletion dialog.")]
     MissingDeletion,
     #[error("HOME is not set")]
@@ -960,10 +966,6 @@ pub enum Error {
 }
 
 impl Error {
-    pub(crate) fn github_json(source: serde_json::Error) -> Self {
-        Self::GitHubJson(GitHubJsonError(source))
-    }
-
     pub(crate) fn at_path(self, path: &Path) -> Self {
         Self::Path {
             path: path.to_owned(),
@@ -984,6 +986,7 @@ impl From<config_loader::ConfigError> for Error {
     }
 }
 
+mod daemon;
 mod github;
 mod theme;
 

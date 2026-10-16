@@ -425,7 +425,7 @@ impl Settings {
 
     /// Background-only. A missing file yields defaults without creating anything.
     pub(crate) fn load() -> crate::Result<Self> {
-        let path = crate::config::daemon_config_path(|key| env::var_os(key));
+        let path = crate::config::daemon_config_path(herdr_client::local_var);
         let path = if path.is_absolute() {
             path
         } else {

@@ -1,9 +1,9 @@
 //! Machines cloud providers create and this app uses as devices. What every
 //! provider shares lives here: the saved device list, the background jobs that
 //! add machines (with their progress and toasts), and the connector that hands
-//! a cloud target to its provider. Each provider module (`coder`, `daytona`, `railway`)
-//! owns its API, sign-in, readiness rules, and the command that reaches a
-//! machine; supporting another one adds a `CloudProvider` variant and a module.
+//! a cloud target to its provider. Each provider module owns its API, sign-in,
+//! readiness rules, and the command that reaches a machine; supporting a
+//! provider adds a `CloudProvider` variant and a module.
 
 mod catalog;
 mod command;
@@ -62,7 +62,10 @@ pub(crate) fn unavailable() -> Option<&'static str> {
 
 /// What a job reports while it adds a machine, in words every provider shares.
 // Railway reports only the steps it has; the rest belong to the others.
-#[cfg_attr(not(any(feature = "coder", feature = "daytona")), allow(dead_code))]
+#[cfg_attr(
+    not(any(feature = "boat", feature = "coder", feature = "daytona")),
+    allow(dead_code)
+)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Step {
     Creating,
@@ -93,6 +96,8 @@ impl Step {
 /// The provider's name, as the UI shows it.
 pub(crate) fn name(provider: CloudProvider) -> &'static str {
     match provider {
+        #[cfg(feature = "boat")]
+        CloudProvider::Boat => "Boat",
         #[cfg(feature = "coder")]
         CloudProvider::Coder => "Coder",
         #[cfg(feature = "daytona")]
@@ -105,6 +110,8 @@ pub(crate) fn name(provider: CloudProvider) -> &'static str {
 /// The provider's logo, an embedded asset path.
 pub(crate) fn icon(provider: CloudProvider) -> &'static str {
     match provider {
+        #[cfg(feature = "boat")]
+        CloudProvider::Boat => "icons/terminal.svg",
         #[cfg(feature = "coder")]
         CloudProvider::Coder => "icons/cloud/coder.svg",
         #[cfg(feature = "daytona")]
@@ -117,6 +124,8 @@ pub(crate) fn icon(provider: CloudProvider) -> &'static str {
 /// What adding a device from the provider does, as Add Device says it.
 pub(crate) fn offer(provider: CloudProvider) -> &'static str {
     match provider {
+        #[cfg(feature = "boat")]
+        CloudProvider::Boat => "Create a Boat sandbox in Settings",
         #[cfg(feature = "coder")]
         CloudProvider::Coder => "Create or attach a Coder workspace",
         // Sandboxes are created in Settings; existing ones cannot be
@@ -131,6 +140,8 @@ pub(crate) fn offer(provider: CloudProvider) -> &'static str {
 /// What the provider calls one machine.
 pub(crate) fn noun(provider: CloudProvider) -> &'static str {
     match provider {
+        #[cfg(feature = "boat")]
+        CloudProvider::Boat => "sandbox",
         #[cfg(feature = "coder")]
         CloudProvider::Coder => "workspace",
         #[cfg(feature = "daytona")]
@@ -154,6 +165,8 @@ pub(crate) fn connect(target: &ConnectTarget, stop: &AtomicBool) -> io::Result<T
         return Err(io::Error::other(Error::Invalid("cloud target")));
     };
     match provider {
+        #[cfg(feature = "boat")]
+        CloudProvider::Boat => crate::boat::connect(account, id, session, stop),
         #[cfg(feature = "coder")]
         CloudProvider::Coder => crate::coder::connect(account, id, session, stop),
         #[cfg(feature = "daytona")]

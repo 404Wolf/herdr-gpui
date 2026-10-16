@@ -22,9 +22,10 @@ use std::time::Instant;
 impl HerdrWindow {
     /// Config warnings, then the daemon's announcement, stacked over the
     /// top-right of the terminal area below the tab strip, whose buttons stay
-    /// reachable. A menu page owns the window's attention; they wait behind it.
+    /// reachable. A menu page owns the window's attention, and zen mode keeps
+    /// the window clear; they wait behind either.
     fn render_notices(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        if self.menu.page.is_some() {
+        if self.menu.page.is_some() || self.zen_active() {
             return None;
         }
         let mut cards = self.config_diagnostic_cards(cx);
@@ -59,6 +60,7 @@ impl Render for HerdrWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.restore_menu_focus(window, cx);
         self.sync_backdrop(window, cx);
+        self.tick_chrome(window, cx);
         self.sync_device_themes(cx);
         let fill = self.fill();
         let ground = self.ground();
@@ -78,7 +80,12 @@ impl Render for HerdrWindow {
         let sidebar = self
             .sidebar_mode()
             .width(self.sidebar_width, f32::from(window.viewport_size().width))
-            .map(|width| crate::sidebar::cached_view(&self.sidebar_view, width));
+            .map(|width| {
+                (
+                    crate::sidebar::cached_view(&self.sidebar_view, width),
+                    width,
+                )
+            });
         // Paints the frame on screen, which during a focus change is the one
         // presented before it: the terminal area never blanks between two
         // projections. What the client knows to be current stays in `live`.
@@ -202,7 +209,7 @@ impl Render for HerdrWindow {
         let padding = self.config.terminal_padding;
         self.ensure_layout();
         self.forget_gone_strips();
-        let slots = self.group_slots();
+        let slots = self.drawn_group_slots();
         let shown: Vec<Shown> = slots
             .iter()
             .map(|slot| self.group_shown(slot.id, cx))
@@ -703,14 +710,22 @@ impl Render for HerdrWindow {
             groups.push(self.render_group(slot, body, ends, reach, window, cx));
         }
         let content = self.render_groups(groups, cx);
+        let content = self.zen_column(content);
         // Not `||`: asking forgets group motion that has finished.
-        if self.groups_moving() | self.tabs_growing() | self.annotations_moving() {
+        if self.groups_moving()
+            | self.tabs_growing()
+            | self.annotations_moving()
+            | self.chrome_sliding()
+        {
             window.request_animation_frame();
         }
         // A menu just opened, or a covered page's picture is on its way.
         if self.present_browser(cx) {
             window.request_animation_frame();
         }
+        // Zen mode keeps toasts and menus: they carry errors and what the
+        // user asked for, not chrome.
+        let zen = self.zen_layout();
         let root = div()
             .capture_key_down(cx.listener(Self::application_menu_shortcut))
             .on_modifiers_changed(cx.listener(Self::double_shift_modifiers))
@@ -819,22 +834,33 @@ impl Render for HerdrWindow {
             .text_color(rgb(self.theme.foreground))
             .text_font(&self.config.ui)
             .text_size(px(self.config.ui.size))
-            .when(cfg!(target_os = "linux"), |root| {
+            .when(cfg!(target_os = "linux") && !zen, |root| {
                 root.child(self.render_application_bar(window, cx))
             })
-            .when(!merged, |root| root.child(self.render_titlebar(window, cx)))
+            .when(!merged && !zen, |root| {
+                root.child(self.render_titlebar(window, cx))
+            })
+            .when(zen, |root| {
+                root.children(crate::titlebar::zen_inset(fill.ground(), window))
+            })
             // Under the traffic lights a banner would hide them, so with no
             // header it moves to the window's foot.
-            .when(!merged, |root| root.children(self.render_worktree_banner()))
+            .when(!merged && !zen, |root| {
+                root.children(self.render_worktree_banner())
+            })
             .child(
                 div()
                     .debug_selector(|| "window-body".into())
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .children(sidebar.map(|sidebar| match merged {
-                        true => self.sidebar_column(sidebar, window, cx).into_any_element(),
-                        false => sidebar.into_any_element(),
+                    .relative()
+                    .children(sidebar.map(|(sidebar, width)| {
+                        let column = match merged {
+                            true => self.sidebar_column(sidebar, window, cx).into_any_element(),
+                            false => sidebar.into_any_element(),
+                        };
+                        self.sliding_sidebar(column, width)
                     }))
                     .child(
                         div()
@@ -846,12 +872,13 @@ impl Render for HerdrWindow {
                             .relative()
                             .child(content)
                             .children(self.render_notices(cx))
-                            .when(self.status_bar_visible, |column| {
-                                column.child(self.render_status_bar(cx))
-                            }),
+                            .children(self.zen_status_bar(cx)),
                     ),
             )
-            .when(merged, |root| root.children(self.render_worktree_banner()))
+            .when(merged && !zen, |root| {
+                root.children(self.render_worktree_banner())
+            })
+            .children(self.render_tab_ghost(cx))
             .children(self.render_toasts(window, cx))
             .children(self.render_file_transfer(window, cx))
             .when(self.menu.page.is_some(), |root| {
