@@ -45,7 +45,7 @@ class ReleaseTargets(unittest.TestCase):
         jobs = dict(zip(sections[1::2], sections[2::2]))
         for job in jobs.values():
             self.assertIn("github.repository == 'penso/herdr-gpui'", job)
-        self.assertIn("    needs: [checks, windows, commits]\n", jobs["checks-passed"])
+        self.assertIn("    needs: [checks, windows, windows-package, commits]\n", jobs["checks-passed"])
         self.assertIn('test "$COMMITS" = success || exit 1', jobs["checks-passed"])
         self.assertIn('test "$RESULT" = success && test "$WINDOWS" = success', jobs["checks-passed"])
         self.assertIn('test "$CODE" = false && test "$RESULT" = skipped && test "$WINDOWS" = skipped', jobs["checks-passed"])
@@ -75,6 +75,22 @@ class ReleaseTargets(unittest.TestCase):
                 self.assertIn(f"run: {command}\n", jobs[name])
         self.assertNotIn("--release", windows)
         self.assertNotIn("cargo build", windows)
+        # The installer check runs only for its inputs, and the gate requires
+        # it then, and its absence otherwise.
+        package = jobs["windows-package"]
+        self.assertIn("needs.commits.outputs.windows_package == 'true'", package)
+        self.assertIn("needs: [zizmor, commits]", package)
+        self.assertNotIn("secrets.", package)
+        for command in ('cargo build --locked --release -p herdr-gpui --target "$TARGET"',
+                        'python scripts/release/package-windows.py "$VERSION" "$TARGET"',
+                        'python scripts/release/windows-installer.py install-iscc',
+                        'python scripts/release/windows-installer.py build "$VERSION" "$TARGET"',
+                        'python scripts/release/windows-installer.py smoke'):
+            self.assertIn(command, package)
+        self.assertIn("windows_package: ${{ steps.changes.outputs.windows_package }}", jobs["commits"])
+        self.assertIn("PACKAGE: ${{ needs.windows-package.result }}", jobs["checks-passed"])
+        self.assertIn('test "$PACKAGE" = success', jobs["checks-passed"])
+        self.assertIn('test "$PACKAGE_INPUTS" = false && test "$PACKAGE" = skipped', jobs["checks-passed"])
 
     def test_workflow_and_metadata_contract(self):
         # Keep this offline and dependency-free; actionlint validates YAML syntax.

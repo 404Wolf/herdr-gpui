@@ -172,7 +172,10 @@ compiler (`install-iscc`, checked against its SHA-256), compiles
 `herdr-gpui.iss` over the extracted zip tree into
 `Herdr-VERSION-TARGET-setup.exe` (`build`), and installs and uninstalls it on
 the runner (`smoke`), checking the files, their subsystems, the console copy's
-output, and the user `PATH` entry. The installer is per-user (no elevation),
+output, and the user `PATH` entry. CI's `windows-package` job runs the same
+optimized build, packaging, installer build, and install/uninstall check on
+`windows-2025` for any pull request that changes their inputs
+(`scripts/ci-changes.sh` lists them), and the required gate then requires it. The installer is per-user (no elevation),
 installs to `%LOCALAPPDATA%\Programs\Herdr UI` as `site/install.ps1` does, adds
 `bin` to the user `PATH`, and creates the Start menu shortcut. Both zips and both
 installers are mandatory in the asset manifest and receive checksums, Sigstore
