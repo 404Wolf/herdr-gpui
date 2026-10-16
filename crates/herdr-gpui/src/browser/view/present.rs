@@ -2,19 +2,19 @@
 //! beneath the window's drawing, so every live page shows, and the window's
 //! menus, tooltips, toasts, and file-transfer card draw over it. On Windows a
 //! page is a child window above the window's drawing, so a page that one of
-//! those reaches is hidden while it shows.
+//! those reaches is hidden while it shows. Only Windows builds carry that.
 
 use crate::HerdrWindow;
-#[cfg(any(target_os = "macos", windows))]
-use crate::browser::{PAGES_ABOVE, TabId};
+#[cfg(windows)]
+use crate::browser::TabId;
 use gpui::*;
 
-/// Where the window's toasts and file-transfer card drew, on Windows. They
-/// draw after the pages are presented, so each frame presents pages around
-/// where they drew the frame before, and one that draws anywhere else asks
-/// for another frame. One that no longer shows is left out at once, from the
-/// window's state, so its page comes back without waiting a frame.
-#[cfg(any(target_os = "macos", windows))]
+/// Where the window's toasts and file-transfer card drew. They draw after
+/// the pages are presented, so each frame presents pages around where they
+/// drew the frame before, and one that draws anywhere else asks for another
+/// frame. One that no longer shows is left out at once, from the window's
+/// state, so its page comes back without waiting a frame.
+#[cfg(windows)]
 #[derive(Default)]
 pub(in crate::browser) struct Overlays {
     /// Drawn since the pages were last presented.
@@ -25,7 +25,7 @@ pub(in crate::browser) struct Overlays {
 
 /// Whether a page drawn at `page` must be hidden: a menu or tooltip band
 /// `cover` covers it, or it reaches under one of `overlays`.
-#[cfg(any(target_os = "macos", windows))]
+#[cfg(windows)]
 pub(in crate::browser) fn covered(
     cover: Option<crate::menu::Cover>,
     overlays: &[Bounds<Pixels>],
@@ -36,7 +36,7 @@ pub(in crate::browser) fn covered(
 }
 
 /// How far above the status bar its tooltips may reach.
-#[cfg(any(target_os = "macos", windows))]
+#[cfg(windows)]
 const TOOLTIP_BAND: Pixels = px(320.);
 
 impl HerdrWindow {
@@ -48,11 +48,12 @@ impl HerdrWindow {
         {
             self.browser.pages.set_theme(&self.theme);
             let live = self.live_pages(cx);
-            let (shown, settling) = if PAGES_ABOVE {
-                self.uncovered(live)
-            } else {
-                (live, false)
-            };
+            // On macOS every live page shows, beneath whatever the window
+            // draws over it.
+            #[cfg(target_os = "macos")]
+            let (shown, settling) = (live, false);
+            #[cfg(windows)]
+            let (shown, settling) = self.uncovered(live);
             self.browser.pages.present(&shown);
             // The pages record where they draw as this frame lays out.
             self.browser.pages.next_frame();
@@ -68,7 +69,7 @@ impl HerdrWindow {
     /// The pages of `live` that nothing the window draws reaches, and
     /// whether another frame must settle first: a popover covers what it
     /// covers only once it is laid out.
-    #[cfg(any(target_os = "macos", windows))]
+    #[cfg(windows)]
     fn uncovered(&mut self, live: Vec<TabId>) -> (Vec<TabId>, bool) {
         use crate::menu::Cover;
         let open = self.menu.page;
@@ -96,25 +97,23 @@ impl HerdrWindow {
     }
 
     /// Whether something the window draws hides pages: an open menu, a
-    /// status bar tooltip, a toast, or the file-transfer card. Only Windows
-    /// hides pages; macOS builds it for the tests that show it never does.
-    #[cfg(all(test, any(target_os = "macos", windows)))]
+    /// status bar tooltip, a toast, or the file-transfer card.
+    #[cfg(all(test, windows))]
     pub(in crate::browser) fn pages_covered(&self) -> bool {
-        PAGES_ABOVE
-            && (self.menu.page.is_some()
-                || self.browser.tooltip_band.is_some()
-                || !self.browser.overlays.borrow().presented.is_empty())
+        self.menu.page.is_some()
+            || self.browser.tooltip_band.is_some()
+            || !self.browser.overlays.borrow().presented.is_empty()
     }
 
     /// The overlays pages were last presented around, for tests.
-    #[cfg(all(test, any(target_os = "macos", windows)))]
+    #[cfg(all(test, windows))]
     pub(crate) fn presented_overlays(&self) -> Vec<Bounds<Pixels>> {
         self.browser.overlays.borrow().presented.clone()
     }
 
     /// Where the overlays that still show drew, which this frame's pages are
     /// presented around.
-    #[cfg(any(target_os = "macos", windows))]
+    #[cfg(windows)]
     fn present_overlays(&self) -> Vec<Bounds<Pixels>> {
         let mut overlays = self.browser.overlays.borrow_mut();
         let drawn = std::mem::take(&mut overlays.drawn);
@@ -127,13 +126,13 @@ impl HerdrWindow {
     }
 
     /// Records where a stack of toasts or the file-transfer card draws,
-    /// filling it, so the pages it reaches hide while it shows. Only where
-    /// pages draw above the window: on macOS it draws over them.
+    /// filling it, so the pages it reaches hide while it shows. Only Windows
+    /// records it: elsewhere no page draws above the window.
     pub(crate) fn overlay_probe(&self) -> Option<impl IntoElement> {
-        #[cfg(any(target_os = "macos", windows))]
+        #[cfg(windows)]
         {
             let overlays = self.browser.overlays.clone();
-            PAGES_ABOVE.then(|| {
+            Some(
                 canvas(
                     move |bounds, window, _| {
                         let mut overlays = overlays.borrow_mut();
@@ -149,23 +148,24 @@ impl HerdrWindow {
                     |_, _, _, _| {},
                 )
                 .absolute()
-                .inset_0()
-            })
+                .inset_0(),
+            )
         }
-        #[cfg(not(any(target_os = "macos", windows)))]
+        #[cfg(not(windows))]
         None::<Div>
     }
 
     /// Notes whether the pointer is over the status bar, whose tooltips show
-    /// in the band above it, where pages that draw above the window hide.
+    /// in the band above it. On Windows the pages in the band hide; elsewhere
+    /// nothing needs the note.
     pub(crate) fn hover_status_bar(&mut self, hovered: bool, cx: &mut Context<Self>) {
-        #[cfg(any(target_os = "macos", windows))]
+        #[cfg(windows)]
         {
             let band = self
                 .browser
                 .status_bar
                 .get()
-                .filter(|_| PAGES_ABOVE && hovered)
+                .filter(|_| hovered)
                 .map(|bar| {
                     Bounds::new(
                         point(px(0.), bar.top() - TOOLTIP_BAND),
@@ -177,23 +177,23 @@ impl HerdrWindow {
                 cx.notify();
             }
         }
-        #[cfg(not(any(target_os = "macos", windows)))]
+        #[cfg(not(windows))]
         let _ = (hovered, cx);
     }
 
-    /// Records where the status bar draws, filling it, where pages draw
-    /// above the window.
+    /// Records where the status bar draws, filling it. Only Windows records
+    /// it, for the band above the bar where its pages hide.
     pub(crate) fn status_bar_probe(&self) -> Option<impl IntoElement> {
-        #[cfg(any(target_os = "macos", windows))]
+        #[cfg(windows)]
         {
             let bar = self.browser.status_bar.clone();
-            PAGES_ABOVE.then(|| {
+            Some(
                 canvas(move |bounds, _, _| bar.set(Some(bounds)), |_, _, _, _| {})
                     .absolute()
-                    .inset_0()
-            })
+                    .inset_0(),
+            )
         }
-        #[cfg(not(any(target_os = "macos", windows)))]
+        #[cfg(not(windows))]
         None::<Div>
     }
 }

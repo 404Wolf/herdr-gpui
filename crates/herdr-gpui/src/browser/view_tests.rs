@@ -98,11 +98,6 @@ mod status_tooltip;
 #[cfg(windows)]
 mod overlays;
 
-/// On macOS pages lie beneath the window's drawing, so its overlays show
-/// over them and no page hides.
-#[cfg(target_os = "macos")]
-mod beneath;
-
 /// What closing a workspace does to its browser tabs.
 mod workspace_close;
 

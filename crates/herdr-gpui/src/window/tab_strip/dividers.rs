@@ -3,10 +3,7 @@
 //! the line: the rest of it lies over the groups, inside their frames, and
 //! over the pages they show on macOS.
 
-use crate::{
-    HerdrWindow,
-    browser::{Shown, Store},
-};
+use crate::{HerdrWindow, browser::Shown};
 use gpui::{prelude::*, *};
 
 /// How wide a divider's line draws.
@@ -21,19 +18,22 @@ const GRIP: f32 = 5.;
 struct DividerDrag(usize);
 
 /// Whether `shown` is a native page that draws over everything the app
-/// draws, so a grip laid over it could not be pressed: only on Windows. On
-/// macOS a page lies beneath the app's drawing, and a grip over it takes the
-/// press.
+/// draws, so a grip laid over it could not be pressed.
+#[cfg(windows)]
 pub(in crate::window) fn native_page(shown: &Shown, cx: &App) -> bool {
-    if !crate::browser::PAGES_ABOVE {
-        return false;
-    }
     let Shown::Page(id) = shown else {
         return false;
     };
-    cx.try_global::<Store>()
+    cx.try_global::<crate::browser::Store>()
         .and_then(|store| store.get(*id))
         .is_some_and(|tab| tab.location.as_ref().is_none_or(|at| at.is_page()))
+}
+
+/// Only Windows pages draw over the app. On macOS a page lies beneath the
+/// app's drawing, and a grip over it takes the press; Linux shows no pages.
+#[cfg(not(windows))]
+pub(in crate::window) fn native_page(_: &Shown, _: &App) -> bool {
+    false
 }
 
 /// How far the grips of a group's two dividers lie over the group, from its

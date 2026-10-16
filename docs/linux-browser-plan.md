@@ -108,8 +108,8 @@ every Linux desktop, while pages still open outside the window.
    `webkit_web_view_get_snapshot` if it is practical.
 6. Overlays: an X11 child window sits above GPUI, so menus and toasts must
    hide the pages they reach, as on Windows (`present_browser`'s cover
-   logic, which `browser::PAGES_ABOVE` turns on). Hidden pages show a blank,
-   as on Windows.
+   logic, which only Windows builds include today). Hidden pages show a
+   blank, as on Windows.
 
 ## Phase 3: Wayland
 

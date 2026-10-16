@@ -84,12 +84,6 @@ pub(crate) use view::{Browser, PageOpened, scope};
 /// tab request opens the system browser instead.
 pub(crate) const EMBEDDED: bool = cfg!(any(target_os = "macos", windows));
 
-/// Whether pages lie above everything the window draws, so that the window
-/// must hide a page its menus, tooltips, and toasts reach. On Windows a page
-/// is a child window, which always draws above its parent. On macOS a page
-/// lies beneath the window's drawing; see the `stacking` module.
-pub(crate) const PAGES_ABOVE: bool = cfg!(windows);
-
 const MAX_URL_BYTES: usize = 8192;
 
 /// An address a browser tab may show: http or https with a host, bounded,

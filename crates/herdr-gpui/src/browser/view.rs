@@ -73,20 +73,21 @@ pub(crate) struct Browser {
     #[cfg(any(target_os = "macos", windows))]
     pub(super) annotations: Annotations,
     /// The menu page open when pages were last presented, which the menu's
-    /// measured cover belongs to. Only where pages draw above the window.
-    #[cfg(any(target_os = "macos", windows))]
+    /// measured cover belongs to. Windows pages draw above the window, so
+    /// those a menu covers hide.
+    #[cfg(windows)]
     pub(super) cover_page: Option<crate::menu::Page>,
     /// While the pointer is over the status bar, the band above it where
-    /// the bar's tooltips show. Where pages draw above the window, those in
-    /// the band hide, as for a menu.
-    #[cfg(any(target_os = "macos", windows))]
+    /// the bar's tooltips show. The Windows pages in the band hide, as for a
+    /// menu.
+    #[cfg(windows)]
     pub(super) tooltip_band: Option<Bounds<Pixels>>,
     /// Where the status bar last drew, which the band sits above.
-    #[cfg(any(target_os = "macos", windows))]
+    #[cfg(windows)]
     pub(super) status_bar: std::rc::Rc<std::cell::Cell<Option<Bounds<Pixels>>>>,
-    /// Where the window's toasts and file-transfer card drew. Where pages
-    /// draw above the window, those they reach hide, as for a menu.
-    #[cfg(any(target_os = "macos", windows))]
+    /// Where the window's toasts and file-transfer card drew. The Windows
+    /// pages they reach hide, as for a menu.
+    #[cfg(windows)]
     pub(super) overlays: std::rc::Rc<std::cell::RefCell<present::Overlays>>,
 }
 
@@ -117,13 +118,13 @@ impl Browser {
             workspaces: None,
             #[cfg(any(target_os = "macos", windows))]
             annotations: Annotations::default(),
-            #[cfg(any(target_os = "macos", windows))]
+            #[cfg(windows)]
             cover_page: None,
-            #[cfg(any(target_os = "macos", windows))]
+            #[cfg(windows)]
             tooltip_band: None,
-            #[cfg(any(target_os = "macos", windows))]
+            #[cfg(windows)]
             status_bar: Default::default(),
-            #[cfg(any(target_os = "macos", windows))]
+            #[cfg(windows)]
             overlays: Default::default(),
         }
     }
