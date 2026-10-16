@@ -115,11 +115,19 @@ fn a_workspace_already_deleting_or_gone_is_not_deleted_again() {
 
 #[test]
 fn a_failed_delete_build_keeps_coders_reason_and_cancelling_stops_polling() {
-    let (settings, _) = scripted(vec![(200, workspace("delete", "failed", "failed"))]);
+    let (settings, log) = scripted(vec![
+        (200, workspace("start", "running", "succeeded")),
+        (200, workspace("delete", "failed", "failed")),
+    ]);
     let error = destroy(&settings, &tokens, "w1", || false, |_| {}).unwrap_err();
     assert!(
         matches!(&error, Error::Workspace(reason) if reason == "no provisioner"),
         "{error:?}"
+    );
+    assert_eq!(
+        posts(&log),
+        1,
+        "the attempt's own failed delete is not retried"
     );
 
     let (settings, log) = scripted(vec![(200, workspace("start", "running", "succeeded"))]);
@@ -131,6 +139,28 @@ fn a_failed_delete_build_keeps_coders_reason_and_cancelling_stops_polling() {
         log.lock().unwrap().is_empty(),
         "nothing is sent once cancelled"
     );
+}
+
+#[test]
+fn a_delete_that_failed_or_was_canceled_before_is_queued_again() {
+    for status in ["failed", "canceled"] {
+        let (settings, log) = scripted(vec![
+            (200, workspace("delete", status, status)),
+            (200, workspace("delete", "deleting", "running")),
+            (410, r#"{"message":"Workspace was deleted."}"#.into()),
+        ]);
+        let mut stages = Vec::new();
+        destroy(
+            &settings,
+            &tokens,
+            "w1",
+            || false,
+            |stage| stages.push(stage),
+        )
+        .unwrap();
+        assert_eq!(stages, [Stage::Queued, Stage::Deleting], "{status}");
+        assert_eq!(posts(&log), 1, "{status}");
+    }
 }
 
 #[test]

@@ -1,7 +1,9 @@
 //! Deleting a workspace at Coder: wait out a build already running, queue a
 //! delete build, and poll until Coder no longer has the workspace. A workspace
 //! that is already gone, or already deleting, is not deleted twice, so a
-//! destroy interrupted by closing Settings can simply run again.
+//! destroy interrupted by closing Settings can simply run again. A delete that
+//! failed or was canceled before this attempt is queued again, so a destroy can
+//! be retried once the problem at Coder is fixed.
 
 use super::{
     Error, Result, Settings,
@@ -33,14 +35,20 @@ enum State {
     Idle,
 }
 
-fn state(workspace: &Workspace) -> Result<State> {
+/// `queued` says whether this attempt queued a delete build itself: only that
+/// build's failure ends the attempt, while an earlier one is retried.
+fn state(workspace: &Workspace, queued: bool) -> Result<State> {
     let build = &workspace.latest_build;
     if build.status == BuildStatus::Deleted {
         return Ok(State::Gone);
     }
     if build.transition == Transition::Delete {
         if let Some(reason) = build.failure() {
-            return Err(Error::Workspace(reason));
+            return if queued {
+                Err(Error::Workspace(reason))
+            } else {
+                Ok(State::Idle)
+            };
         }
         return Ok(State::Deleting(match build.status {
             BuildStatus::Pending => Stage::Queued,
@@ -67,6 +75,7 @@ pub(crate) fn destroy(
     mut stage: impl FnMut(Stage),
 ) -> Result<()> {
     let deadline = Instant::now() + BUILD_TIMEOUT;
+    let mut queued = false;
     loop {
         if cancelled() {
             return Err(Error::Cancelled);
@@ -76,7 +85,7 @@ pub(crate) fn destroy(
                 Err(Error::Deleted) => return Ok(()),
                 result => result?,
             };
-        match state(&workspace)? {
+        match state(&workspace, queued)? {
             State::Gone => return Ok(()),
             State::Deleting(current) => stage(current),
             State::Busy => stage(Stage::Waiting),
@@ -90,6 +99,7 @@ pub(crate) fn destroy(
                     })) => return Ok(()),
                     result => result?,
                 }
+                queued = true;
             }
         }
         if Instant::now() >= deadline {
