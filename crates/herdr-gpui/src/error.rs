@@ -1,5 +1,6 @@
 //! Internal failures retain their categories and sources until presentation.
 pub use crate::updater::UpdateError;
+use daemon::daemon_error_message;
 pub use github::{GitHubAccountsError, GitHubJsonError};
 use std::{
     io,
@@ -11,16 +12,6 @@ pub use theme::ThemeParseError;
 use wry::raw_window_handle::HandleError as WindowHandleError;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
-
-fn daemon_error_message(error: &serde_json::Value) -> &str {
-    error
-        .get("message")
-        .and_then(serde_json::Value::as_str)
-        .or_else(|| error.as_str())
-        .or_else(|| error.get("code").and_then(serde_json::Value::as_str))
-        .filter(|message| !message.is_empty())
-        .unwrap_or("Invalid daemon error")
-}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -975,18 +966,8 @@ impl Error {
     }
 }
 
-impl From<config_loader::ConfigError> for Error {
-    fn from(error: config_loader::ConfigError) -> Self {
-        // config preserves this cause but does not expose it through Error::source.
-        match error {
-            config_loader::ConfigError::FileParse { uri, cause } => {
-                Self::ConfigFile { uri, source: cause }
-            }
-            error => Self::Config(error),
-        }
-    }
-}
-
+mod config;
+mod daemon;
 mod github;
 mod theme;
 
