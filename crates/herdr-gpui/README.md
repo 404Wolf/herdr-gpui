@@ -1841,12 +1841,12 @@ or macOS client and the local session or a saved SSH host on both ends.
 
 The Orchestrator row of a group's "…" menu, the Open Orchestrator command, or
 the Orchestrator row of a workspace's popover opens a tab listing that
-workspace's repository: its GitHub issues and pull requests, its
+workspace's repository: its GitHub issues and pull requests or GitLab issues, its
 [Beads](https://github.com/steveyegge/beads) issues when the main checkout has
 a `.beads` folder, and the agent runs dispatched for them. It works for the
 local session and saved SSH hosts.
 
-- **Issues** lists open GitHub issues and beads together. A bead's children sit
+- **Issues** lists open GitHub or GitLab issues and beads together. A bead's children sit
   under it; filters narrow to Beads, items with a run, or blocked ones; five
   sorts are offered. Search matches every word you type across title, id,
   author, labels, state, and body, case-insensitively unless a word has a
@@ -1894,8 +1894,13 @@ updates only its own, and uses agent-launcher's prompt profiles from
 `~/.config/agent-launcher/agents/<name>/prompt.md` (the built-in prompt when
 none is chosen). Issues and runs are kept in agent-launcher's per-repository
 database under the platform data directory. GitHub is read as the account used
-for pull requests on that host; GitLab remotes and GitHub Enterprise are listed
-as not supported yet. The window button in the tab's header moves the view into
+for pull requests on that host. A GitLab remote, on gitlab.com or a
+self-managed host, lists its open issues (not yet its merge requests), read
+with `GITLAB_TOKEN` or `GITLAB_ACCESS_TOKEN` when `GITLAB_HOST` names that host
+(gitlab.com by default), else with the GitLab CLI's sign-in (`glab auth
+login`), and sent only over HTTPS; public projects need neither, and an
+`http://` remote is read without one. GitHub Enterprise is listed as not
+supported yet. The window button in the tab's header moves the view into
 a window of its own.
 
 ## Images
