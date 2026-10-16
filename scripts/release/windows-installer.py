@@ -3,25 +3,31 @@
 
   install-iscc DESTINATION_DIR
       Install the pinned Inno Setup compiler into DESTINATION_DIR after checking its SHA-256, and print the path of ISCC.exe.
-  build VERSION TARGET ZIP OUTPUT_DIR ISCC
+  build [--sign] VERSION TARGET ZIP OUTPUT_DIR ISCC
       Compile herdr-gpui.iss over the tree of the release ZIP that
       package-windows.py wrote, so the installer holds exactly the zip's files,
-      and print the installer's path.
-  smoke INSTALLER
+      and print the installer's path. With --sign, ISCC Authenticode-signs the
+      uninstaller it embeds and Setup.exe through windows-sign-file.ps1, which
+      only the release workflow's windows-sign job can run; local and pull
+      request builds leave it out and stay unsigned.
+  smoke [--signed] INSTALLER
       On Windows: install silently into a scratch directory with the PATH
       task, check the files, their subsystems, the console copy's output,
       that the console copy opening the app does not hold its caller's pipes,
       the user PATH, and the entry Settings lists under Installed apps, then
-      uninstall and check all of it is gone again. Changes this user's PATH,
-      and opens the app (which may start a Herdr daemon), while it runs: for
-      CI runners only. Under a process a packaged (MSIX) app started, Windows
-      redirects HKCU into that app's private hive, so the checks pass while
-      Settings and new terminals see neither entry.
+      uninstall and check all of it is gone again. With --signed, also
+      require valid timestamped signatures from one signer on the installer
+      and on everything it installed that runs, the uninstaller included.
+      Changes this user's PATH, and opens the app (which may start a Herdr
+      daemon), while it runs: for CI runners only. Under a process a packaged
+      (MSIX) app started, Windows redirects HKCU into that app's private hive,
+      so the checks pass while Settings and new terminals see neither entry.
 
 Pure standard library, like package-windows.py, for the Windows runner.
 """
 import argparse
 import hashlib
+import importlib.util
 from pathlib import Path
 import re
 import struct
@@ -34,6 +40,10 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/release/herdr-gpui.iss"
+SIGN_SCRIPT = ROOT / "scripts/release/windows-sign-file.ps1"
+# ISCC replaces $q with a quote and $f with the quoted file to sign. Quotes
+# inside the argument itself would not survive Windows command-line parsing.
+SIGN_TOOL = ("herdr", f"pwsh.exe -NoLogo -NoProfile -NonInteractive -File $q{SIGN_SCRIPT}$q $f")
 # Inno Setup's own architecture identifiers for each release target.
 ARCHITECTURES = {"x86_64-pc-windows-msvc": "x64compatible", "aarch64-pc-windows-msvc": "arm64"}
 # The digest was taken from the release asset when the pin was chosen; bump
@@ -61,18 +71,19 @@ def install_iscc(destination):
     return iscc
 
 
-def iscc_arguments(version, target, source, output_dir):
+def iscc_arguments(version, target, source, output_dir, sign=False):
     """The compiler's command line after ISCC itself."""
     if not re.fullmatch(r"[1-9][0-9]{7}\.[1-9][0-9]*", version):
         raise ValueError("Version must be YYYYMMDD.COUNTER (no v prefix, counter from 1, no leading zeros)")
     if target not in ARCHITECTURES:
         raise ValueError("Unsupported Windows target")
+    signing = [f"/S{SIGN_TOOL[0]}={SIGN_TOOL[1]}", f"/DSignTool={SIGN_TOOL[0]}"] if sign else []
     return ["/Q", f"/DVersion={version}", f"/DTarget={target}",
             f"/DArchitecture={ARCHITECTURES[target]}", f"/DSourceDir={source}",
-            f"/DOutputDir={output_dir}", str(SCRIPT)]
+            f"/DOutputDir={output_dir}", *signing, str(SCRIPT)]
 
 
-def build(version, target, archive, output_dir, iscc):
+def build(version, target, archive, output_dir, iscc, sign=False):
     arguments = iscc_arguments(version, target, "", "")
     if not archive.is_file() or not output_dir.is_dir():
         raise ValueError("Release zip and existing output directory required")
@@ -91,7 +102,7 @@ def build(version, target, archive, output_dir, iscc):
         for required in ("herdr-gpui.exe", "bin/herdr-gpui.exe"):
             if not (source / required).is_file():
                 raise ValueError(f"Release zip has no {required}")
-        arguments = iscc_arguments(version, target, source, output_dir)
+        arguments = iscc_arguments(version, target, source, output_dir, sign)
         subprocess.run([str(iscc), *arguments], check=True, timeout=1800)
     if not output.is_file() or not output.stat().st_size:
         raise ValueError(f"Inno Setup did not write {output}")
@@ -179,7 +190,14 @@ def check_uninstall_entry(app):
         raise ValueError(f"Uninstall entry does not run the uninstaller: {entry}")
 
 
-def smoke(installer):
+def check_signed(paths):
+    spec = importlib.util.spec_from_file_location("windows_signing", ROOT / "scripts/release/windows-signing.py")
+    signing = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(signing)
+    signing.check_signed(paths)
+
+
+def smoke(installer, signed=False):
     with tempfile.TemporaryDirectory(prefix="herdr-installer-smoke-") as temp:
         app = Path(temp) / "Herdr UI"
         subprocess.run([str(installer), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
@@ -188,12 +206,14 @@ def smoke(installer):
         # Uninstall even when a check fails, so the user PATH and the
         # uninstall entry never point into the deleted scratch directory.
         try:
-            check_installation(app)
+            check_installation(app, installer if signed else None)
         finally:
             uninstall(app)
 
 
-def check_installation(app):
+def check_installation(app, signed_installer):
+    """`signed_installer` is the installer whose signatures to require along
+    with the installed files', or None to skip signature checks."""
     gui, cli = app / "herdr-gpui.exe", app / "bin" / "herdr-gpui.exe"
     for path in (gui, cli, app / "licenses" / "THIRD-PARTY-NOTICES.txt"):
         if not path.is_file():
@@ -206,6 +226,8 @@ def check_installation(app):
     # Printed through a pipe by the console copy, as an agent's shell reads it.
     if not info.startswith("worktree="):
         raise ValueError(f"Installed console copy printed no build info:\n{info}")
+    if signed_installer is not None:
+        check_signed([signed_installer.resolve(), gui, cli, app / "unins000.exe"])
     check_opens_app_without_holding_pipes(cli, gui)
     if str(app / "bin").lower() not in user_path_entries():
         raise ValueError("Installer did not add bin to the user PATH")
@@ -230,20 +252,22 @@ def main():
     install = commands.add_parser("install-iscc")
     install.add_argument("destination", type=Path)
     compile_ = commands.add_parser("build")
+    compile_.add_argument("--sign", action="store_true")
     compile_.add_argument("version")
     compile_.add_argument("target")
     compile_.add_argument("archive", type=Path)
     compile_.add_argument("output_dir", type=Path)
     compile_.add_argument("iscc", type=Path)
     check = commands.add_parser("smoke")
+    check.add_argument("--signed", action="store_true")
     check.add_argument("installer", type=Path)
     args = parser.parse_args()
     if args.command == "install-iscc":
         print(install_iscc(args.destination))
     elif args.command == "build":
-        print(build(args.version, args.target, args.archive, args.output_dir, args.iscc))
+        print(build(args.version, args.target, args.archive, args.output_dir, args.iscc, args.sign))
     else:
-        smoke(args.installer)
+        smoke(args.installer, args.signed)
 
 
 if __name__ == "__main__":
