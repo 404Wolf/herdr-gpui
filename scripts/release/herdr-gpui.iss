@@ -63,6 +63,13 @@ Source: "{#SourceDir}\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\bin\{#AppExe}"; DestDir: "{app}\bin"; Flags: ignoreversion
 Source: "{#SourceDir}\licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion
 
+; Uninstall removes only directories Setup created. Over an install.ps1 copy
+; these already existed, and would otherwise be left behind empty.
+[UninstallDelete]
+Type: dirifempty; Name: "{app}\licenses"
+Type: dirifempty; Name: "{app}\bin"
+Type: dirifempty; Name: "{app}"
+
 [Icons]
 Name: "{userprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"
 Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Tasks: desktopicon

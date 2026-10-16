@@ -57,7 +57,10 @@ pub(crate) fn open_app_beside(args: &[std::ffi::OsString]) -> Option<std::proces
         .and_then(|cli| app_beside(&cli))
         .filter(|app| app.is_file())?;
     // The GUI build opens no console, so it needs no flags; it must not keep
-    // this terminal's handles, or the shell would wait on them.
+    // this terminal's handles, or the shell would wait on them. Null stdio is
+    // not enough: `spawn` inherits every inheritable handle, so a caller's
+    // capture pipes would stay open until the app exits.
+    keep_std_handles_from_children();
     let started = herdr_client::new_command(&app)
         .args(args)
         .stdin(std::process::Stdio::null())
@@ -71,6 +74,27 @@ pub(crate) fn open_app_beside(args: &[std::ffi::OsString]) -> Option<std::proces
             std::process::ExitCode::FAILURE
         }
     })
+}
+
+/// Stops this process's standard handles from passing to processes it starts.
+/// Only the console copy calls it, just before it starts the app and exits.
+#[cfg(windows)]
+fn keep_std_handles_from_children() {
+    use windows_sys::Win32::{
+        Foundation::{HANDLE_FLAG_INHERIT, SetHandleInformation},
+        System::Console::{GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE},
+    };
+    for which in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        // SAFETY: GetStdHandle only reads this process's parameters. A null
+        // or invalid result, or a handle that rejects the change, makes
+        // SetHandleInformation fail without effect, which is ignored: the
+        // handle then stays as it was. Clearing the flag changes only what
+        // later children inherit, not this process's use of the handle.
+        #[allow(unsafe_code)]
+        unsafe {
+            SetHandleInformation(GetStdHandle(which), HANDLE_FLAG_INHERIT, 0);
+        }
+    }
 }
 
 #[cfg(not(windows))]

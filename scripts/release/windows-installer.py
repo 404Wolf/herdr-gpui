@@ -10,8 +10,10 @@
   smoke INSTALLER
       On Windows: install silently into a scratch directory with the PATH
       task, check the files, their subsystems, the console copy's output,
-      and the user PATH, then uninstall and check both are gone again. Changes
-      this user's PATH while it runs: for CI runners only.
+      that the console copy opening the app does not hold its caller's pipes,
+      and the user PATH, then uninstall and check all of it is gone again.
+      Changes this user's PATH, and opens the app (which may start a Herdr
+      daemon), while it runs: for CI runners only.
 
 Pure standard library, like package-windows.py, for the Windows runner.
 """
@@ -109,35 +111,83 @@ def user_path_entries():
     return [entry.rstrip("\\").lower() for entry in value.split(";") if entry]
 
 
+def processes_at(path):
+    """Ids of running processes started from exactly `path`."""
+    query = ("Get-CimInstance Win32_Process -Filter \"Name='herdr-gpui.exe'\" | "
+             f"Where-Object ExecutablePath -eq '{path}' | ForEach-Object ProcessId")
+    output = subprocess.run(["powershell", "-NoProfile", "-Command", query],
+                            capture_output=True, text=True, check=True, timeout=60).stdout
+    return [int(line) for line in output.split()]
+
+
+def stop_processes_at(path):
+    for pid in processes_at(path):
+        subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True, timeout=60)
+
+
+def check_opens_app_without_holding_pipes(cli, gui):
+    """The console copy with no command starts the app and returns. A caller
+    reading its output through pipes must see them close then, not when the
+    app exits, or an agent's shell would hang on `herdr-gpui`."""
+    started = subprocess.Popen([str(cli)], stdin=subprocess.DEVNULL,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        # A timeout here, not in subprocess.run, which waits on the pipes
+        # again without one after killing the child.
+        started.communicate(timeout=30)
+    except subprocess.TimeoutExpired:
+        started.kill()
+        stop_processes_at(gui)
+        started.communicate()
+        raise ValueError("Console copy with no command held its caller's pipes open")
+    finally:
+        stop_processes_at(gui)
+    if started.returncode != 0:
+        raise ValueError(f"Console copy with no command exited with {started.returncode}")
+
+
 def smoke(installer):
     with tempfile.TemporaryDirectory(prefix="herdr-installer-smoke-") as temp:
         app = Path(temp) / "Herdr UI"
         subprocess.run([str(installer), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
                         "/TASKS=addtopath", f"/DIR={app}", f"/LOG={Path(temp) / 'setup.log'}"],
                        check=True, timeout=600)
-        gui, cli = app / "herdr-gpui.exe", app / "bin" / "herdr-gpui.exe"
-        for path in (gui, cli, app / "licenses" / "THIRD-PARTY-NOTICES.txt"):
-            if not path.is_file():
-                raise ValueError(f"Installer did not install {path}")
-        # 2 is the GUI subsystem, 3 the console one (package-windows.py).
-        if (subsystem(gui), subsystem(cli)) != (2, 3):
-            raise ValueError("Installed executables have the wrong subsystems")
-        info = subprocess.run([str(cli), "--build-info"], capture_output=True, text=True,
-                              check=True, timeout=60).stdout
-        # Printed through a pipe by the console copy, as an agent's shell reads it.
-        if not info.startswith("worktree="):
-            raise ValueError(f"Installed console copy printed no build info:\n{info}")
-        bin_entry = str(app / "bin").lower()
-        if bin_entry not in user_path_entries():
-            raise ValueError("Installer did not add bin to the user PATH")
-        subprocess.run([str(app / "unins000.exe"), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
-                       check=True, timeout=600)
-        # The uninstaller hands off to a copy of itself and returns early.
-        deadline = time.monotonic() + 120
-        while gui.exists() or bin_entry in user_path_entries():
-            if time.monotonic() > deadline:
-                raise ValueError("Uninstaller left the app or its PATH entry behind")
-            time.sleep(1)
+        # Uninstall even when a check fails, so the user PATH and the
+        # uninstall entry never point into the deleted scratch directory.
+        try:
+            check_installation(app)
+        finally:
+            uninstall(app)
+
+
+def check_installation(app):
+    gui, cli = app / "herdr-gpui.exe", app / "bin" / "herdr-gpui.exe"
+    for path in (gui, cli, app / "licenses" / "THIRD-PARTY-NOTICES.txt"):
+        if not path.is_file():
+            raise ValueError(f"Installer did not install {path}")
+    # 2 is the GUI subsystem, 3 the console one (package-windows.py).
+    if (subsystem(gui), subsystem(cli)) != (2, 3):
+        raise ValueError("Installed executables have the wrong subsystems")
+    info = subprocess.run([str(cli), "--build-info"], capture_output=True, text=True,
+                          check=True, timeout=60).stdout
+    # Printed through a pipe by the console copy, as an agent's shell reads it.
+    if not info.startswith("worktree="):
+        raise ValueError(f"Installed console copy printed no build info:\n{info}")
+    check_opens_app_without_holding_pipes(cli, gui)
+    if str(app / "bin").lower() not in user_path_entries():
+        raise ValueError("Installer did not add bin to the user PATH")
+
+
+def uninstall(app):
+    subprocess.run([str(app / "unins000.exe"), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+                   check=True, timeout=600)
+    # The uninstaller hands off to a copy of itself and returns early.
+    bin_entry = str(app / "bin").lower()
+    deadline = time.monotonic() + 120
+    while app.exists() or bin_entry in user_path_entries():
+        if time.monotonic() > deadline:
+            raise ValueError("Uninstaller left the app directory or its PATH entry behind")
+        time.sleep(1)
 
 
 def main():
