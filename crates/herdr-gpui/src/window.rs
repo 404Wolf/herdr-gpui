@@ -39,6 +39,9 @@ mod sound;
 mod status_bar;
 pub(crate) mod system_notifications;
 mod tab_drag;
+#[cfg(target_os = "macos")]
+mod tab_float;
+mod tab_ghost;
 mod tab_strip;
 mod tab_tear;
 mod toasts;
@@ -321,6 +324,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) _poll: Task<()>,
     pub(crate) _activation: Subscription,
     pub(crate) _appearance: Subscription,
+    /// Lists again the tabs carried off to a window that closed.
+    pub(crate) _window_closed: Subscription,
     /// The sidebar as a cached view; see `sidebar::SidebarView`.
     pub(crate) sidebar_view: Entity<sidebar::SidebarView>,
     /// Notified in place of this view by a surface-only update, which redraws
@@ -823,6 +828,7 @@ impl HerdrWindow {
                 this.report_focus();
                 cx.notify();
             }),
+            _window_closed: Self::give_back_torn_tabs(cx),
             _appearance: cx.observe_window_appearance(window, |this, _, cx| {
                 this.apply_shared_theme(cx);
                 this.apply_system_theme(cx);

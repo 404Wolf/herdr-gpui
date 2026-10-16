@@ -622,6 +622,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         sidebar_search: crate::sidebar::SidebarSearch::new(cx),
         _poll: Task::ready(()),
         _activation: cx.observe_window_activation(window, |_, _, _| {}),
+        _window_closed: HerdrWindow::give_back_torn_tabs(cx),
         _appearance: cx.observe_window_appearance(window, |this, _, cx| {
             this.apply_shared_theme(cx);
             cx.notify();
