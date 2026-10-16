@@ -1,7 +1,7 @@
 //! Internal failures retain their categories and sources until presentation.
 pub use crate::updater::UpdateError;
 use daemon::daemon_error_message;
-pub use github::GitHubJsonError;
+pub use github::{GitHubAccountsError, GitHubJsonError};
 use std::{
     io,
     path::{Path, PathBuf},
@@ -288,6 +288,8 @@ pub enum Error {
         operation: &'static str,
         details: String,
     },
+    #[error(transparent)]
+    GitHubAccounts(#[from] GitHubAccountsError),
     #[error(
         "GitHub authentication required. Use menu > GitHub sign-in or set GH_TOKEN / GITHUB_TOKEN."
     )]
@@ -974,18 +976,7 @@ impl Error {
     }
 }
 
-impl From<config_loader::ConfigError> for Error {
-    fn from(error: config_loader::ConfigError) -> Self {
-        // config preserves this cause but does not expose it through Error::source.
-        match error {
-            config_loader::ConfigError::FileParse { uri, cause } => {
-                Self::ConfigFile { uri, source: cause }
-            }
-            error => Self::Config(error),
-        }
-    }
-}
-
+mod config;
 mod daemon;
 mod github;
 mod theme;

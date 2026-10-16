@@ -41,6 +41,9 @@ pub(crate) enum Account {
     Main,
     /// A saved SSH device's own account, keyed by its catalog profile ID.
     Host(String),
+    /// An additional account, read for the repository owners it covers,
+    /// keyed by its `[github] accounts` ID.
+    Additional(String),
 }
 
 impl Account {
@@ -50,11 +53,17 @@ impl Account {
         herdr_client::valid_profile_id(id).then(|| Self::Host(id.to_owned()))
     }
 
+    /// The same rule as `host`, for an additional account's config ID.
+    pub(crate) fn additional(id: &str) -> Option<Self> {
+        crate::config::valid_account_id(id).then(|| Self::Additional(id.to_owned()))
+    }
+
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     fn keyring_account(&self) -> String {
         match self {
             Self::Main => "github.com".into(),
             Self::Host(id) => format!("github.com/host/{id}"),
+            Self::Additional(id) => format!("github.com/account/{id}"),
         }
     }
 
@@ -62,8 +71,9 @@ impl Account {
         let name = match self {
             Self::Main => "github-credentials".to_owned(),
             Self::Host(id) => format!("github-credentials-{id}"),
+            Self::Additional(id) => format!("github-credentials-account-{id}"),
         };
-        // Neither form can contain NUL: `host` admits only hex digits.
+        // No form can contain NUL: `host` and `additional` admit only hex digits.
         std::ffi::CString::new(name).unwrap_or_default()
     }
 }

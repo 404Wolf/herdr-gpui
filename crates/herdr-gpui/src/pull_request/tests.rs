@@ -24,6 +24,7 @@ mod fetch;
 mod fork_branch;
 mod lookup;
 mod responses;
+mod routing;
 mod upstream;
 mod workspace_directory;
 
