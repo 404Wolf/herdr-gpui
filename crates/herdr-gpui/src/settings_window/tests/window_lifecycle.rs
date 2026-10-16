@@ -15,7 +15,7 @@ fn singleton_reactivation_and_close_preserve_source(cx: &mut TestAppContext) {
         assert_eq!(cx.global::<SettingsWindowHandle>().window.unwrap(), first);
         first
             .update(cx, |view, window, _| {
-                assert_eq!(view.section, Section::Appearance);
+                assert_eq!(view.section, Section::Theme);
                 assert!(view.focus.is_focused(window));
                 assert!(!view.busy());
                 window.remove_window();

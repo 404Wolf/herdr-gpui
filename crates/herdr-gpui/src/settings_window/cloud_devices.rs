@@ -1,4 +1,4 @@
-//! Settings > Cloud Devices: one tab per cloud provider whose machines this
+//! Settings > Cloud devices: one tab per cloud provider whose machines this
 //! app uses as devices. Each provider's card keeps its own fields and account
 //! state; this section only switches between them, so another provider adds a
 //! tab and a card.
@@ -29,7 +29,7 @@ use crate::{
 };
 use gpui::{prelude::*, *};
 
-/// Open Settings > Cloud Devices, on `provider`'s tab when the device picker's
+/// Open Settings > Cloud devices, on `provider`'s tab when the device picker's
 /// row sets that provider up, or on the first tab for its general row.
 // Add Device records the request instead in unit tests.
 #[cfg_attr(test, allow(dead_code, unused_imports))]
@@ -183,10 +183,13 @@ impl SettingsWindow {
             CloudProvider::Railway => self.render_railway_card(cx),
         };
         div()
+            .relative()
+            .debug_selector(|| "cloud-accounts".into())
             .flex()
             .flex_col()
-            .gap(px(24.))
+            .gap(px(16.))
             .min_w_0()
+            .child(super::search::track_bounds("cloud-accounts".into()))
             .when_some(crate::cloud::unavailable(), |section, reason| {
                 section.child(self.control_note(format!(
                     "{reason} Accounts can still be edited here for other systems."

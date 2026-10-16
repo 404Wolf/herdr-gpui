@@ -1,8 +1,10 @@
 use super::*;
+use crate::settings_window::remote_history::HostState;
 
 #[gpui::test]
 fn connected_ssh_hosts_get_their_own_pane_history_rows(cx: &mut TestAppContext) {
     let (view, cx) = cx.add_window_view(skill_fixture);
+    view.update(cx, |view, _| view.section = Section::Tabs);
     cx.simulate_resize(size(px(680.), px(2200.)));
     let long = "a-very-long-ssh-host-label.with.many.domain.parts.example.internal";
     view.update(cx, |view, cx| {
@@ -25,11 +27,8 @@ fn connected_ssh_hosts_get_their_own_pane_history_rows(cx: &mut TestAppContext) 
         cx.notify();
     });
     cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
-    let body = cx.debug_bounds("settings-pane-history").unwrap();
-    for id in [
-        "settings-pane-history-host-0",
-        "settings-pane-history-host-1",
-    ] {
+    let body = cx.debug_bounds("tabs-pane-history").unwrap();
+    for id in ["tabs-pane-history-host-0", "tabs-pane-history-host-1"] {
         let row = cx.debug_bounds(id).unwrap();
         assert!(
             row.left() >= body.left() && row.right() <= body.right(),
@@ -38,7 +37,7 @@ fn connected_ssh_hosts_get_their_own_pane_history_rows(cx: &mut TestAppContext) 
         assert!(row.top() >= body.bottom(), "{id}");
     }
     // A host still being read cannot be toggled.
-    let loading = cx.debug_bounds("settings-pane-history-host-1").unwrap();
+    let loading = cx.debug_bounds("tabs-pane-history-host-1-toggle").unwrap();
     cx.simulate_click(loading.center(), Default::default());
     view.read_with(cx, |view, _| {
         let hosts = view.remote_history.hosts();

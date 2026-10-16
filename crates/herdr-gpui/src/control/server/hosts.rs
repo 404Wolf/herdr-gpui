@@ -281,7 +281,7 @@ fn cloud(caller: &Caller, cx: &mut App) -> Response {
         return Response::error(ErrorCode::NoWindow, "The window closed");
     };
     crate::settings_window::open_cloud(source, None, cx);
-    Response::done("Opened Settings at Cloud Devices; add a machine there")
+    Response::done("Opened Settings at Cloud devices; add a machine there")
 }
 
 #[cfg(not(feature = "cloud"))]

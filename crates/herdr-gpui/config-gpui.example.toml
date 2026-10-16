@@ -48,21 +48,21 @@ remove_merged_worktrees = false
 # Show the Agents section below Spaces in the sidebar.
 show_agents = true
 # Show the search field at the top of the sidebar, which finds devices,
-# worktrees, and branches. Also under Settings > Appearance > Sidebar layout.
+# worktrees, and branches. Also under Settings > Sidebar.
 show_sidebar_search = true
 # Show the repository owner's avatar, or the GitHub mark, before each space's
 # name in the sidebar, in the layouts that draw one (not orca or minimal).
-# Also under Settings > Appearance > Sidebar layout.
+# Also under Settings > Sidebar.
 show_repository_icons = true
 # Draw agent status as icons instead of Herdr's dots or symbols: "solid"
 # (filled discs), "tiles" (each mark on a tinted tile), or "rail" (outline
 # marks plus a bar on the edge of each working, done, or blocked row). Only
 # this app draws them; unset follows Herdr's `ui.status_indicators`.
-# Also under Settings > Indicators.
+# Also under Settings > Notifications > Icons.
 # status_icons = "solid"
 # Show a mark before each device's name in the sidebar for where it runs: this
 # machine, a cloud provider, Tailscale, or SSH. In the layouts that draw one
-# (not orca or minimal). Also under Settings > Appearance > Sidebar layout.
+# (not orca or minimal). Also under Settings > Sidebar.
 show_device_icons = true
 # Show CPU and memory: the selected host's in the status bar, and each host's
 # on its sidebar row. Connected remote hosts are read over SSH every couple of
@@ -171,7 +171,7 @@ project_roots = []
 # How loud this app plays agent sounds (done and request), as a percentage of
 # the sound file's own level, inclusive 0..100. Herdr's [ui.sound] chooses
 # whether and which sounds play; it has no volume, so this is this app's own.
-# Also under Settings > Sound.
+# Also under Settings > Notifications > Volume.
 # [sound]
 # volume = 50
 
@@ -398,7 +398,7 @@ size = 12
 # accounts = [{ id = "0123456789abcdef0123456789abcdef", owners = ["my-emu-org"] }]
 
 # A Coder deployment whose workspaces can be created and added as devices from
-# the device picker's "Add Coder Workspace…". Settings > Cloud Devices edits
+# the device picker's "Add Coder Workspace…". Settings > Cloud devices edits
 # these keys and saves the client secret to the credential store, so editing
 # this table by hand is optional. Register an OAuth2 app in Coder
 # (the deployment must enable the `oauth2` experiment) with the redirect URI
@@ -409,7 +409,7 @@ size = 12
 # [coder]
 # url = "https://coder.example.com"
 # oauth_client_id = "YOUR_OAUTH2_APP_ID"
-# Coder requires a confidential client. Prefer Settings > Cloud Devices, which
+# Coder requires a confidential client. Prefer Settings > Cloud devices, which
 # keeps the secret out of this file; when set here or in the environment, this
 # value takes precedence. It identifies this app to Coder, not your account.
 # oauth_client_secret = "YOUR_OAUTH2_APP_SECRET"
@@ -425,7 +425,7 @@ size = 12
 # which is saved in its own 0600 coder-credentials file. Default is false.
 # allow_plaintext_credentials = false
 
-# Boat sandboxes as devices (experimental). Settings > Cloud Devices > Boat
+# Boat sandboxes as devices (experimental). Settings > Cloud devices > Boat
 # edits this table and saves the API key to the credential store; the
 # environment variable HERDR_BOAT_API_KEY takes precedence.
 #
@@ -439,7 +439,7 @@ size = 12
 # # is saved in its own 0600 boat-api-key file. Default is false.
 # allow_plaintext_credentials = false
 
-# Daytona sandboxes as devices (experimental). Settings > Cloud Devices >
+# Daytona sandboxes as devices (experimental). Settings > Cloud devices >
 # Daytona edits this table and saves the API key to the credential store; the
 # key is never read from this file. HERDR_DAYTONA_API_KEY overrides the saved
 # key and HERDR_DAYTONA_API_URL overrides api_url.
@@ -454,7 +454,7 @@ size = 12
 # is saved in its own 0600 daytona-api-key file. Default is false.
 # allow_plaintext_credentials = false
 
-# What shows behind the main window, also under Settings > Appearance. At the
+# What shows behind the main window, also under Settings > Theme > Window. At the
 # default opacity the window paints as it always has.
 # [backdrop]
 # How solid the theme's background is, from 0 (clear) to 1 (opaque). Terminal

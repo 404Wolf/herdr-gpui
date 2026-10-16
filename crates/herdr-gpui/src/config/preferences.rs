@@ -2,7 +2,7 @@
 use super::*;
 use herdr_client::protocol::ToastHerdrPosition;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Preference {
     ConfirmCloseTab(bool),
     ConfirmClosePane(bool),
@@ -37,6 +37,40 @@ pub(crate) enum Preference {
     UpdateChannel(UpdateChannel),
     /// One `[features]` flag.
     Feature(Feature, bool),
+    /// `None` removes the override so the layout preset's value applies.
+    SidebarIndent(Option<f32>),
+    SidebarRowPadding(Option<f32>),
+    SidebarRowGap(Option<f32>),
+    SidebarHostGap(Option<f32>),
+    SidebarSelect(SelectMode),
+    /// `[sidebar] device_footer`: when the sidebar draws its device footer.
+    SidebarDeviceFooter(DeviceFooter),
+    /// `None` removes the host's colour.
+    HostColor {
+        host: String,
+        color: Option<u32>,
+    },
+}
+
+/// A `[sidebar]` metric key, checked against the parser's band table.
+fn sidebar_metric(
+    key: &'static str,
+    value: Option<f32>,
+) -> Result<(Option<&'static str>, &'static str, Option<toml_edit::Value>)> {
+    if let Some(value) = value {
+        let max = SidebarOverrides::BANDS
+            .iter()
+            .find_map(|(name, max)| (*name == key).then_some(*max))
+            .unwrap_or(0.);
+        if !value.is_finite() || !(0.0..=max).contains(&value) {
+            return Err(Error::InvalidSidebarMetric { key, max });
+        }
+    }
+    Ok((
+        Some("sidebar"),
+        key,
+        value.map(|value| toml_edit::Value::from(f64::from(value))),
+    ))
 }
 
 impl Config {
@@ -139,6 +173,58 @@ impl Config {
                         })
                     }),
                 ),
+                Preference::SidebarIndent(value) => sidebar_metric("indent", value)?,
+                Preference::SidebarRowPadding(value) => sidebar_metric("row_padding", value)?,
+                Preference::SidebarRowGap(value) => sidebar_metric("gap", value)?,
+                Preference::SidebarHostGap(value) => sidebar_metric("host_gap", value)?,
+                Preference::SidebarSelect(mode) => (
+                    Some("sidebar"),
+                    "select",
+                    Some(toml_edit::Value::from(match mode {
+                        SelectMode::Row => "row",
+                        SelectMode::Group => "group",
+                        SelectMode::GroupDim => "group-dim",
+                    })),
+                ),
+                Preference::SidebarDeviceFooter(footer) => (
+                    Some("sidebar"),
+                    "device_footer",
+                    Some(toml_edit::Value::from(footer.as_str())),
+                ),
+                Preference::HostColor { host, color } => {
+                    if let Some(color) = color.filter(|color| *color > 0xFF_FFFF) {
+                        return Err(Error::InvalidHostColor {
+                            host,
+                            value: format!("#{color:x}"),
+                        });
+                    }
+                    let sidebar = document
+                        .entry("sidebar")
+                        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+                        .as_table_like_mut()
+                        .ok_or(crate::herdr_settings::Error::Table("sidebar"))?;
+                    let hosts = sidebar
+                        .entry("hosts")
+                        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+                        .as_table_like_mut()
+                        .ok_or(crate::herdr_settings::Error::Table("sidebar.hosts"))?;
+                    match color {
+                        Some(color) => {
+                            let mut value = toml_edit::Value::from(format!("#{color:06x}"));
+                            // A comment on the old colour stays with the new one.
+                            if let Some(previous) =
+                                hosts.get(&host).and_then(toml_edit::Item::as_value)
+                            {
+                                *value.decor_mut() = previous.decor().clone();
+                            }
+                            hosts.insert(&host, toml_edit::Item::Value(value));
+                        }
+                        None => {
+                            hosts.remove(&host);
+                        }
+                    }
+                    return write_config(path, &document.to_string());
+                }
                 Preference::StatusBar(edit) => {
                     let (key, value) = edit.entry();
                     (Some("status_bar"), key, Some(value))
