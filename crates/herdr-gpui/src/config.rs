@@ -199,8 +199,8 @@ pub struct Config {
     pub(crate) missing_weight: Option<font_weight::MissingWeight>,
 }
 
-/// Where a clicked terminal link opens. Alt-click (Option on macOS) opens it
-/// in the other one.
+/// Where a link-modifier click on a terminal's web link opens it. Holding
+/// Alt (Option on macOS) as well opens it in the other one.
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum LinkTarget {

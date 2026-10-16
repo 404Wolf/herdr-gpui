@@ -30,10 +30,13 @@ fn dragging_across_a_link_copies_it_instead_of_opening_it(cx: &mut TestAppContex
         Some(url.into())
     );
 
-    // The press that never left its half-cell is still the click that opens
-    // the link, and it copies nothing.
+    // The link-modifier press that never left its half-cell is still the
+    // click that opens the link, and it copies nothing. Without the
+    // modifier a click opens nothing.
     cx.update(|_, cx| cx.write_to_clipboard(ClipboardItem::new_string("kept".into())));
     cx.simulate_click(at(1.), Modifiers::default());
+    assert!(cx.opened_url().is_none());
+    cx.simulate_click(at(1.), Modifiers::secondary_key());
     assert_eq!(cx.opened_url().as_deref(), Some(url));
     assert_eq!(
         cx.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text())),
@@ -42,7 +45,9 @@ fn dragging_across_a_link_copies_it_instead_of_opening_it(cx: &mut TestAppContex
 }
 
 #[gpui::test]
-fn application_mouse_takes_precedence_and_shift_keeps_copy_and_links(cx: &mut TestAppContext) {
+fn application_mouse_takes_precedence_shift_keeps_copy_and_the_link_modifier_links(
+    cx: &mut TestAppContext,
+) {
     let url = "https://example.com/x";
     let (view, cx) = cx.add_window_view(|window, cx| {
         let mut view = fixture_window(window, cx);
@@ -92,7 +97,11 @@ fn application_mouse_takes_precedence_and_shift_keeps_copy_and_links(cx: &mut Te
     );
     assert!(cx.opened_url().is_none());
     assert!(!view.read_with(cx, |view, _| view.terminal_notes.composing()));
+    // Shift selects and never opens; the link modifier claims a click on a
+    // link from the application and opens it.
     cx.simulate_click(at(1.), shift);
+    assert!(cx.opened_url().is_none());
+    cx.simulate_click(at(1.), Modifiers::secondary_key());
     assert_eq!(cx.opened_url().as_deref(), Some(url));
 }
 
