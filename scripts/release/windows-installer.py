@@ -10,8 +10,11 @@
   smoke INSTALLER
       On Windows: install silently into a scratch directory with the PATH
       task, check the files, their subsystems, the console copy's output,
-      and the user PATH, then uninstall and check both are gone again. Changes
-      this user's PATH while it runs: for CI runners only.
+      the user PATH, and the entry Settings lists under Installed apps, then
+      uninstall and check all are gone again. Changes this user's PATH while
+      it runs: for CI runners only. Under a process a packaged (MSIX) app
+      started, Windows redirects HKCU into that app's private hive, so the
+      checks pass while Settings and new terminals see neither entry.
 
 Pure standard library, like package-windows.py, for the Windows runner.
 """
@@ -109,6 +112,36 @@ def user_path_entries():
     return [entry.rstrip("\\").lower() for entry in value.split(";") if entry]
 
 
+def app_id():
+    """The installer's AppId, without the brace Inno Setup escapes it with."""
+    return re.search(r"^AppId=\{(\{[0-9A-F-]{36}\})$", SCRIPT.read_text(), re.MULTILINE)[1]
+
+
+def uninstall_entry():
+    """The values of the Uninstall key that Settings and Programs and Features
+    list the installation by, or None when it is missing."""
+    import winreg
+    name = rf"Software\Microsoft\Windows\CurrentVersion\Uninstall\{app_id()}_is1"
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, name) as key:
+            count = winreg.QueryInfoKey(key)[1]
+            return dict(winreg.EnumValue(key, index)[:2] for index in range(count))
+    except FileNotFoundError:
+        return None
+
+
+def check_uninstall_entry(app):
+    entry = uninstall_entry()
+    if entry is None:
+        raise ValueError("Installer wrote no Uninstall entry")
+    # Settings hides entries without a name, system components, and updates
+    # of another entry.
+    if entry.get("DisplayName") != "Herdr UI" or entry.get("SystemComponent") or entry.get("ParentKeyName"):
+        raise ValueError(f"Settings would not list the Uninstall entry: {entry}")
+    if Path(entry.get("UninstallString", "").strip('"')) != app / "unins000.exe":
+        raise ValueError(f"Uninstall entry does not run the uninstaller: {entry}")
+
+
 def smoke(installer):
     with tempfile.TemporaryDirectory(prefix="herdr-installer-smoke-") as temp:
         app = Path(temp) / "Herdr UI"
@@ -130,13 +163,14 @@ def smoke(installer):
         bin_entry = str(app / "bin").lower()
         if bin_entry not in user_path_entries():
             raise ValueError("Installer did not add bin to the user PATH")
+        check_uninstall_entry(app)
         subprocess.run([str(app / "unins000.exe"), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
                        check=True, timeout=600)
         # The uninstaller hands off to a copy of itself and returns early.
         deadline = time.monotonic() + 120
-        while gui.exists() or bin_entry in user_path_entries():
+        while gui.exists() or bin_entry in user_path_entries() or uninstall_entry() is not None:
             if time.monotonic() > deadline:
-                raise ValueError("Uninstaller left the app or its PATH entry behind")
+                raise ValueError("Uninstaller left the app, its PATH entry, or its Uninstall entry behind")
             time.sleep(1)
 
 
