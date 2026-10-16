@@ -43,6 +43,8 @@ pub(crate) struct Browser {
     /// in another window, or in a workspace not on screen. Each is given
     /// another of its tabs, or closed, when its workspace next settles.
     pub(super) emptied: Vec<GroupId>,
+    /// Tabs this window keeps out of its strips, as tearing one off does.
+    pub(crate) hidden: super::hidden::Hidden,
     /// Tabs being closed one after another, as Close Others closes them.
     pub(crate) closing: Option<crate::close_modal::CloseRun>,
     /// Where each group drew last frame, so a carried tab knows the group
@@ -105,6 +107,7 @@ impl Browser {
             #[cfg(any(target_os = "macos", windows))]
             favicons: HashMap::new(),
             emptied: Vec::new(),
+            hidden: Default::default(),
             closing: None,
             group_bounds: Default::default(),
             addresses: HashMap::new(),
@@ -373,6 +376,7 @@ impl HerdrWindow {
         self.browser
             .layouts
             .retain(|(saved, workspace), _| saved != &scope || !closed.contains(workspace));
+        self.browser.hidden.forget_workspaces(&scope, &closed);
         super::Layouts::forget_workspaces(cx, &scope, &closed);
         if !store(cx).is_some_and(|store| store.has_workspaces(&scope, &closed)) {
             return;

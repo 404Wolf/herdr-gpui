@@ -259,9 +259,8 @@ impl HerdrWindow {
         };
         let notes = crate::worktree_notes::Notes::of(cx);
         let devices: Vec<_> = self
-            .endpoints
-            .iter()
-            .enumerate()
+            .displayed_devices()
+            .into_iter()
             .filter(|(_, endpoint)| self.device_visible(&endpoint.id))
             .map(|(index, endpoint)| {
                 let live = if index == self.selected_endpoint {

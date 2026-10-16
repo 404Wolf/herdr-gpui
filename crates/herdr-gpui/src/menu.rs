@@ -10,6 +10,7 @@ mod devices;
 mod fan_out;
 mod git;
 mod github;
+mod open_link;
 mod page;
 mod pr;
 mod pr_actions;

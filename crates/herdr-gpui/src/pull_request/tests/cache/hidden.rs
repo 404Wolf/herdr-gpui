@@ -24,7 +24,7 @@ fn a_hidden_repository_pauses_all_its_branches_but_not_other_repositories() {
     assert_eq!(peer.complete(now, Err(hidden()), None).branch, "first");
 
     // The sibling branch is answered from the pause; the other repository asks.
-    let (_, next, _, _) = peer.incoming.try_recv().unwrap();
+    let (_, next, _, _, _) = peer.incoming.try_recv().unwrap();
     assert_eq!(next, [elsewhere("third")]);
     let mut view = Lookup::default();
     peer.cache.present(&input("second"), &mut view, now);
@@ -58,7 +58,7 @@ fn a_hidden_repository_asks_again_only_after_its_backoff() {
     let due = now + HIDDEN_BACKOFF;
     peer.cache.schedule([input("first"), input("second")], due);
     peer.cache.poll(due);
-    let (_, next, _, _) = peer.incoming.try_recv().unwrap();
+    let (_, next, _, _, _) = peer.incoming.try_recv().unwrap();
     assert_eq!(next, [input("first")]);
 }
 
@@ -71,7 +71,7 @@ fn asking_explicitly_lifts_the_repository_pause() {
     peer.complete(now, Err(hidden()), None);
     peer.cache.refresh(input("second"), now);
     peer.cache.poll(now);
-    let (_, next, _, _) = peer.incoming.try_recv().unwrap();
+    let (_, next, _, _, _) = peer.incoming.try_recv().unwrap();
     assert_eq!(next, [input("second")]);
 }
 
@@ -82,7 +82,7 @@ fn an_ordinary_failure_does_not_pause_the_repository() {
     peer.cache.schedule([input("first"), input("second")], now);
     peer.cache.poll(now);
     peer.complete(now, Err(Error::GitHubQuery), None);
-    let (_, next, _, _) = peer.incoming.try_recv().unwrap();
+    let (_, next, _, _, _) = peer.incoming.try_recv().unwrap();
     assert_eq!(next, [input("second")]);
 }
 

@@ -1,6 +1,7 @@
 //! Prepared controls for the standalone window; persistence belongs to its serial save path.
 mod backdrop;
 pub(super) mod code;
+mod features;
 mod fonts;
 mod indicators;
 pub(super) mod plugins;
@@ -628,6 +629,7 @@ impl SettingsWindow {
                 cx,
             ))
             .children(self.mouse_switches(cx))
+            .children(self.feature_switches(cx))
             .children(self.confirm_close_switches(cx))
             .children(self.merged_worktree_controls(cx));
         div().flex().flex_col().gap(px(24.)).child(general)

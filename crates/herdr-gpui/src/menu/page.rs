@@ -52,6 +52,8 @@ pub(crate) enum Page {
     Menu,
     /// Where the pane menu's pane can move: new places, then other tabs.
     MovePane,
+    /// Asks before opening a terminal hyperlink with an unlisted scheme.
+    OpenLink,
     Palette,
     Pane,
     /// The processes under the pane menu's pane.

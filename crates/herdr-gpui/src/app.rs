@@ -166,15 +166,17 @@ fn shared_sound(cx: &mut App) -> std::rc::Rc<crate::sound::Service> {
 
 /// Opens another window from inside the focused window's own update.
 pub(crate) fn open_additional_window(target: ConnectTarget, cx: &mut App) {
-    open_additional_window_then(target, None, |_, _, _| {}, cx);
+    open_additional_window_then(target, None, |_, _, _| {}, |_| {}, cx);
 }
 
 /// Opens another window at `placement` from inside a window's own update,
-/// then runs `then` on it before it is shown in front.
+/// then runs `then` on it before it is shown in front, or `failed` when it
+/// cannot be opened.
 pub(crate) fn open_additional_window_then(
     target: ConnectTarget,
     placement: Option<Placement>,
     then: impl FnOnce(&mut HerdrWindow, &mut Window, &mut Context<HerdrWindow>) + 'static,
+    failed: impl FnOnce(&mut App) + 'static,
     cx: &mut App,
 ) {
     cx.defer(move |cx| {
@@ -195,7 +197,10 @@ pub(crate) fn open_additional_window_then(
                     window.activate_window();
                 });
             }
-            Err(_) => tracing::error!("Unable to open an additional Herdr window"),
+            Err(_) => {
+                tracing::error!("Unable to open an additional Herdr window");
+                failed(cx);
+            }
         }
     });
 }

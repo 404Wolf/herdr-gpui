@@ -879,6 +879,7 @@ impl Render for HerdrWindow {
             .when(merged && !zen, |root| {
                 root.children(self.render_worktree_banner())
             })
+            .children(self.render_tab_ghost(cx))
             .children(self.render_toasts(window, cx))
             .children(self.render_file_transfer(window, cx))
             .when(self.menu.page.is_some(), |root| {
