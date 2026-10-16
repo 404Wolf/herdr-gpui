@@ -28,6 +28,11 @@ fn pieces(rows: &Rows) -> Vec<&Piece> {
         .collect()
 }
 
+/// Comments as a read hands them over; each call is a new read.
+fn read(comments: &[Comment]) -> Arc<[Comment]> {
+    comments.into()
+}
+
 #[test]
 fn each_body_line_is_a_row_of_one_card() {
     let comments = [comment(
@@ -37,7 +42,7 @@ fn each_body_line_is_a_row_of_one_card() {
         "one\ntwo\nthree",
     )];
     let mut rows = Rows::default();
-    rows.update(Some(&comments), Chrome::default());
+    rows.update(Some(&read(&comments)), Chrome::default());
     let cards: Vec<_> = (1..rows.list.item_count())
         .map(|index| {
             let row = rows.get(index).unwrap();
@@ -61,7 +66,7 @@ fn a_review_body_is_a_card_tinted_by_its_verdict() {
     let review = CommentKind::Review(Review::ChangesRequested);
     let comments = [comment("bob", review, "01", "fix this")];
     let mut rows = Rows::default();
-    rows.update(Some(&comments), Chrome::default());
+    rows.update(Some(&read(&comments)), Chrome::default());
     let body = rows.get(2).unwrap();
     assert!(matches!(body.piece, Piece::Body { line: 0, .. }));
     assert_eq!(
@@ -81,13 +86,13 @@ fn a_reread_that_changes_nothing_keeps_the_scroll_position() {
         comment("bob", CommentKind::Conversation, "02", "d\ne\nf"),
     ];
     let mut rows = Rows::default();
-    rows.update(Some(&comments), Chrome::default());
+    rows.update(Some(&read(&comments)), Chrome::default());
     let top = ListOffset {
         item_ix: 6,
         offset_in_item: px(3.),
     };
     rows.list.scroll_to(top);
-    rows.update(Some(&comments.clone()), Chrome::default());
+    rows.update(Some(&read(&comments)), Chrome::default());
     let kept = rows.list.logical_scroll_top();
     assert_eq!((kept.item_ix, kept.offset_in_item), (6, px(3.)));
 }
@@ -96,7 +101,7 @@ fn a_reread_that_changes_nothing_keeps_the_scroll_position() {
 fn a_new_comment_below_keeps_the_rows_above_and_the_scroll_position() {
     let first = comment("alice", CommentKind::Conversation, "01", "a\nb\nc");
     let mut rows = Rows::default();
-    rows.update(Some(std::slice::from_ref(&first)), Chrome::default());
+    rows.update(Some(&read(std::slice::from_ref(&first))), Chrome::default());
     let before = rows.rows.clone();
     let top = ListOffset {
         item_ix: 2,
@@ -105,7 +110,7 @@ fn a_new_comment_below_keeps_the_rows_above_and_the_scroll_position() {
     rows.list.scroll_to(top);
     let newer = comment("bob", CommentKind::Conversation, "02", "d");
     let comments = [first, newer];
-    rows.update(Some(&comments), Chrome::default());
+    rows.update(Some(&read(&comments)), Chrome::default());
     let kept = rows.list.logical_scroll_top();
     assert_eq!((kept.item_ix, kept.offset_in_item), (2, px(5.)));
     // The summary counts one more comment; the first comment's rows stay.
@@ -120,6 +125,7 @@ fn unfolding_a_resolved_thread_replaces_only_its_row() {
         thread("bob", true, "02"),
         comment("carol", CommentKind::Conversation, "06", "later"),
     ];
+    let comments = read(&comments);
     let mut rows = Rows::default();
     rows.update(Some(&comments), Chrome::default());
     let folded = pieces(&rows)
@@ -152,7 +158,7 @@ fn the_chrome_frames_the_comments() {
         composer: true,
     };
     let mut rows = Rows::default();
-    rows.update(Some(&comments), chrome);
+    rows.update(Some(&read(&comments)), chrome);
     let drawn = pieces(&rows);
     assert!(matches!(drawn[0], Piece::Summary(_)));
     assert!(matches!(drawn[2], Piece::Empty));

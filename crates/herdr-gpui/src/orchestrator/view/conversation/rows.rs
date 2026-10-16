@@ -17,6 +17,7 @@ use std::{
     collections::{HashMap, HashSet},
     ops::Range,
     rc::Rc,
+    sync::Arc,
 };
 
 #[cfg(test)]
@@ -116,8 +117,9 @@ pub(crate) struct Rows {
     list: ListState,
     rows: Vec<Row>,
     /// The comments and chrome the rows show; `None` until built, and again
-    /// after a thread unfolds.
-    built: Option<(Option<Vec<Comment>>, Chrome)>,
+    /// after a thread unfolds. Comments compare by pointer: a re-read is a
+    /// new `Arc`, so scrolling never reads the text to find nothing changed.
+    built: Option<(Option<Arc<[Comment]>>, Chrome)>,
     shown: HashSet<String>,
     bodies: HashMap<String, Rc<[Line]>>,
     /// Where the pointer holds the scrollbar's thumb, from its top.
@@ -176,20 +178,24 @@ impl Rows {
 
     /// Rebuilds the rows when `comments` or `chrome` differ from what they
     /// show, telling the list only which rows changed.
-    pub(super) fn update(&mut self, comments: Option<&[Comment]>, chrome: Chrome) {
+    pub(super) fn update(&mut self, comments: Option<&Arc<[Comment]>>, chrome: Chrome) {
         if let Some((built, built_chrome)) = &self.built
-            && built.as_deref() == comments
+            && match (built, comments) {
+                (Some(built), Some(comments)) => Arc::ptr_eq(built, comments),
+                (None, None) => true,
+                _ => false,
+            }
             && *built_chrome == chrome
         {
             return;
         }
-        let rows = self.build(comments, &chrome);
+        let rows = self.build(comments.map(|comments| &**comments), &chrome);
         for (range, count) in changes(&self.rows, &rows) {
             self.list.splice(range, count);
         }
         self.hinted.set(None);
         self.rows = rows;
-        self.built = Some((comments.map(<[Comment]>::to_vec), chrome));
+        self.built = Some((comments.cloned(), chrome));
     }
 
     fn build(&mut self, comments: Option<&[Comment]>, chrome: &Chrome) -> Vec<Row> {
