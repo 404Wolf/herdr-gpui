@@ -1,6 +1,14 @@
 use super::*;
 use gpui::ListOffset;
 
+fn notice(text: &str) -> Row {
+    wide(Piece::Notice(text.into()))
+}
+
+fn notices(texts: &[&str]) -> Vec<Row> {
+    texts.iter().map(|text| notice(text)).collect()
+}
+
 fn comment(author: &str, kind: CommentKind, at: &str, source: &str) -> Comment {
     Comment {
         author: author.into(),
@@ -148,14 +156,14 @@ fn unfolding_a_resolved_thread_replaces_only_its_row() {
     assert_eq!(rows.list.item_count(), before.len() + 2);
 }
 
-#[test]
-fn the_chrome_frames_the_comments() {
+#[gpui::test]
+fn the_chrome_frames_the_comments(cx: &mut gpui::TestAppContext) {
     let comments = [comment("alice", CommentKind::Conversation, "01", "")];
     let chrome = Chrome {
         notice: None,
         outcome: Some("Commented".into()),
         failure: Some("Rate limited".into()),
-        composer: true,
+        composer: Some(cx.update(|cx| cx.focus_handle())),
     };
     let mut rows = Rows::default();
     rows.update(Some(&read(&comments)), chrome);
@@ -178,4 +186,56 @@ fn the_chrome_frames_the_comments() {
     };
     rows.update(None, signed_out);
     assert_eq!(pieces(&rows), [&Piece::Notice("Sign in".into())]);
+}
+
+#[test]
+fn an_edit_above_and_a_comment_below_keep_the_rows_between() {
+    let first = comment("alice", CommentKind::Conversation, "01", "a");
+    let second = comment("bob", CommentKind::Conversation, "02", "b\nc\nd\ne");
+    let mut rows = Rows::default();
+    rows.update(
+        Some(&read(&[first.clone(), second.clone()])),
+        Chrome::default(),
+    );
+    let before = rows.rows.clone();
+    // Inside bob's comment, below alice's.
+    let top = ListOffset {
+        item_ix: 5,
+        offset_in_item: px(4.),
+    };
+    rows.list.scroll_to(top);
+    let edited = comment("alice", CommentKind::Conversation, "01", "a, edited");
+    let newer = comment("carol", CommentKind::Conversation, "03", "f");
+    rows.update(Some(&read(&[edited, second, newer])), Chrome::default());
+    let kept = rows.list.logical_scroll_top();
+    assert_eq!((kept.item_ix, kept.offset_in_item), (5, px(4.)));
+    assert_eq!(rows.rows[3..8], before[3..8]);
+    assert_eq!(rows.list.item_count(), rows.rows.len());
+}
+
+#[test]
+fn changes_replace_each_run_of_differing_rows_on_its_own() {
+    let old = notices(&["a", "b", "c", "d", "e"]);
+    let new = notices(&["a", "B", "c", "d", "e", "f"]);
+    assert_eq!(changes(&old, &new), [(1..2, 1..2), (5..5, 5..6)]);
+    // A run that grows shifts the ranges after it.
+    let new = notices(&["x", "y", "b", "c", "e", "z"]);
+    assert_eq!(
+        changes(&old, &new),
+        [(0..1, 0..2), (4..5, 4..4), (5..5, 5..6)]
+    );
+    assert!(changes(&old, &old).is_empty());
+    assert_eq!(changes(&old, &[]), [(0..5, 0..0)]);
+    assert_eq!(changes(&[], &old), [(0..0, 0..5)]);
+}
+
+#[test]
+fn changes_replace_everything_between_past_the_edit_limit() {
+    let texts: Vec<String> = (0..EDIT_LIMIT * 2).map(|index| index.to_string()).collect();
+    let old: Vec<Row> = texts.iter().map(|text| notice(text)).collect();
+    let new: Vec<Row> = texts
+        .iter()
+        .map(|text| notice(&format!("{text}!")))
+        .collect();
+    assert_eq!(changes(&old, &new), [(0..old.len(), 0..new.len())]);
 }

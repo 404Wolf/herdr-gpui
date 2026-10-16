@@ -241,7 +241,8 @@ impl OrchestratorView {
             notice,
             outcome: self.pr.outcome().map(|outcome| outcome.message.clone()),
             failure: self.pr.error().map(str::to_owned),
-            composer: open && self.pr.target().is_some(),
+            composer: (open && self.pr.target().is_some())
+                .then(|| self.comment.read(cx).focus.clone()),
         };
         self.conversation.update(comments, chrome);
         self.conversation.hint();

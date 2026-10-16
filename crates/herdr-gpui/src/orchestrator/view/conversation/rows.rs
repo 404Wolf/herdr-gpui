@@ -11,7 +11,7 @@ use crate::{
     pr_actions::{Comment, CommentKind, Review},
     release_notes::{self, Line},
 };
-use gpui::{ListAlignment, ListState, Pixels, px};
+use gpui::{FocusHandle, ListAlignment, ListState, Pixels, px};
 use std::{
     cell::Cell,
     collections::{HashMap, HashSet},
@@ -36,6 +36,9 @@ const OVERDRAW: f32 = 400.;
 /// The height the scrollbar counts for a row the list has not measured yet:
 /// about one body line, the row a conversation holds most of.
 const ROW_HINT: f32 = 20.;
+/// Edits between two builds `changes` looks for one by one; past them, the
+/// rows between the common start and end are replaced at once.
+const EDIT_LIMIT: usize = 512;
 
 /// One row of the conversation list.
 #[derive(Clone, Debug, PartialEq)]
@@ -109,7 +112,9 @@ pub(super) struct Chrome {
     pub(super) notice: Option<String>,
     pub(super) outcome: Option<String>,
     pub(super) failure: Option<String>,
-    pub(super) composer: bool,
+    /// The comment field's focus, when it shows. The list keeps a focused
+    /// field's row mounted while it is scrolled away, so typing reaches it.
+    pub(super) composer: Option<FocusHandle>,
 }
 
 /// The conversation's list, its rows, and what they were built from.
@@ -190,8 +195,12 @@ impl Rows {
             return;
         }
         let rows = self.build(comments.map(|comments| &**comments), &chrome);
-        for (range, count) in changes(&self.rows, &rows) {
-            self.list.splice(range, count);
+        for (range, added) in changes(&self.rows, &rows) {
+            let focus = rows[added].iter().map(|row| match row.piece {
+                Piece::Composer => chrome.composer.clone(),
+                _ => None,
+            });
+            self.list.splice_focusable(range, focus);
         }
         self.hinted.set(None);
         self.rows = rows;
@@ -233,7 +242,7 @@ impl Rows {
         let tail = [
             chrome.outcome.clone().map(Piece::Notice),
             chrome.failure.clone().map(Piece::Failure),
-            chrome.composer.then_some(Piece::Composer),
+            chrome.composer.is_some().then_some(Piece::Composer),
         ];
         rows.extend(tail.into_iter().flatten().map(wide));
         if let Some(first) = rows.first_mut() {
@@ -347,32 +356,93 @@ fn wide(piece: Piece) -> Row {
     }
 }
 
-/// The splices that turn `old` into `new`, in order. A row replaced in
-/// place between matching rows, such as the summary when a comment arrives,
-/// is a splice of its own, so the list keeps its scroll position past it;
-/// the rest is everything between the rows both start and end with.
-fn changes(old: &[Row], new: &[Row]) -> Vec<(Range<usize>, usize)> {
-    let mut splices = Vec::new();
-    let mut start = 0;
-    while start < old.len() && start < new.len() {
-        if old[start] != new[start] {
-            let next = old.get(start + 1);
-            if next.is_none() || next != new.get(start + 1) {
-                break;
-            }
-            splices.push((start..start + 1, 1));
-        }
-        start += 1;
-    }
-    if start == old.len() && start == new.len() {
-        return splices;
-    }
+/// The splices that turn `old` into `new`, in order: each replaces a range
+/// of the list as the splices before it left it with a range of `new`. Rows
+/// both builds share stay, so a reader among them keeps their place even when
+/// rows change on both sides of them; the list moves a scroll position only
+/// when its row is replaced.
+fn changes(old: &[Row], new: &[Row]) -> Vec<(Range<usize>, Range<usize>)> {
+    let start = old.iter().zip(new).take_while(|(a, b)| a == b).count();
     let end = old[start..]
         .iter()
         .rev()
         .zip(new[start..].iter().rev())
         .take_while(|(a, b)| a == b)
         .count();
-    splices.push((start..old.len() - end, new.len() - start - end));
+    let (old_mid, new_mid) = (&old[start..old.len() - end], &new[start..new.len() - end]);
+    if old_mid.is_empty() && new_mid.is_empty() {
+        return Vec::new();
+    }
+    let kept = shared(old_mid, new_mid).unwrap_or_default();
+    let mut splices = Vec::new();
+    let (mut from, mut to) = (0, 0);
+    for (at, into) in kept.into_iter().chain([(old_mid.len(), new_mid.len())]) {
+        if at > from || into > to {
+            // Rows before this point already read as `new`.
+            let first = start + to;
+            splices.push((first..first + at - from, first..start + into));
+        }
+        (from, to) = (at + 1, into + 1);
+    }
     splices
+}
+
+/// The rows `old` and `new` share, as index pairs in order, by Myers' diff;
+/// `None` past `EDIT_LIMIT` edits.
+fn shared(old: &[Row], new: &[Row]) -> Option<Vec<(usize, usize)>> {
+    let (n, m) = (old.len() as isize, new.len() as isize);
+    let limit = EDIT_LIMIT.min(old.len() + new.len()) as isize;
+    let at = |k: isize| (k + limit + 1) as usize;
+    // The furthest `x` reached on each diagonal `k = x - y`.
+    let mut furthest = vec![0isize; at(limit + 1) + 1];
+    let mut trace = Vec::new();
+    for d in 0..=limit {
+        trace.push(furthest.clone());
+        for k in (-d..=d).step_by(2) {
+            let mut x = if k == -d || (k != d && furthest[at(k - 1)] < furthest[at(k + 1)]) {
+                furthest[at(k + 1)]
+            } else {
+                furthest[at(k - 1)] + 1
+            };
+            let mut y = x - k;
+            while x < n && y < m && old[x as usize] == new[y as usize] {
+                (x, y) = (x + 1, y + 1);
+            }
+            furthest[at(k)] = x;
+            if x >= n && y >= m {
+                return Some(walk_back(&trace, n, m, &at));
+            }
+        }
+    }
+    None
+}
+
+/// Follows `trace` from the end back to the start, collecting the diagonal
+/// moves: the rows both sides share.
+fn walk_back(
+    trace: &[Vec<isize>],
+    n: isize,
+    m: isize,
+    at: &impl Fn(isize) -> usize,
+) -> Vec<(usize, usize)> {
+    let mut kept = Vec::new();
+    let (mut x, mut y) = (n, m);
+    for (d, furthest) in trace.iter().enumerate().rev() {
+        let d = d as isize;
+        let k = x - y;
+        let prev_k = if k == -d || (k != d && furthest[at(k - 1)] < furthest[at(k + 1)]) {
+            k + 1
+        } else {
+            k - 1
+        };
+        let prev_x = furthest[at(prev_k)];
+        let prev_y = prev_x - prev_k;
+        while x > prev_x && y > prev_y {
+            (x, y) = (x - 1, y - 1);
+            kept.push((x as usize, y as usize));
+        }
+        (x, y) = (prev_x, prev_y);
+    }
+    kept.reverse();
+    kept
 }
