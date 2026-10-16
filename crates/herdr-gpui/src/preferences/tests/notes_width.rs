@@ -10,7 +10,7 @@ fn the_notes_width_round_trips_and_a_damaged_one_is_forgotten() {
         review_files_width: Some(280.),
         ..Chrome::default()
     };
-    write_chrome(&path, chrome).unwrap();
+    write_chrome(&path, chrome.clone()).unwrap();
     assert_eq!(read_chrome(&path).unwrap(), chrome);
     // A bad width loses only itself, never the sidebar's.
     for damaged in [r#""wide""#, "-5", "0", "null"] {

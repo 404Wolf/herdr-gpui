@@ -287,6 +287,11 @@ pub(crate) struct HerdrWindow {
     pub(crate) sidebar_drag: Option<sidebar::SidebarDrag>,
     /// A press on a workspace row that may lift it for reordering.
     pub(crate) workspace_drag: Option<sidebar::WorkspaceDrag>,
+    /// A press on a device's header that may lift it for reordering.
+    pub(crate) device_drag: Option<sidebar::DeviceDrag>,
+    /// The device IDs in the order the user dragged them into; see
+    /// `endpoint::order`.
+    pub(crate) device_order: Vec<String>,
     /// A press on a tab that may lift it for reordering.
     pub(crate) tab_drag: Option<tab_drag::TabDrag>,
     pub(crate) sidebar_split: Option<f32>,
@@ -309,6 +314,9 @@ pub(crate) struct HerdrWindow {
     /// A spaces row revealed last frame, which the next render moves out from
     /// under the pinned host header if it landed there.
     pub(crate) sidebar_pin_reveal: std::cell::Cell<Option<usize>>,
+    /// Whether the last spaces list render was folded to its headers for a
+    /// lifted device, whose geometry the next frame must not pin from.
+    pub(crate) sidebar_folded: std::cell::Cell<bool>,
     pub(crate) sidebar_search: sidebar::SidebarSearch,
     pub(crate) _poll: Task<()>,
     pub(crate) _activation: Subscription,
@@ -426,6 +434,11 @@ impl HerdrWindow {
         }
         if self.review_files_width.chosen().is_none() {
             self.review_files_width.restore(chrome.review_files_width);
+        }
+        // A device dragged before the stored order loaded keeps its place.
+        if self.device_order.is_empty() {
+            self.device_order = chrome.device_order;
+            self.arrange_devices();
         }
         if !self.agent_sort_modified
             && let Some(sort) = chrome.agent_sort
@@ -761,6 +774,8 @@ impl HerdrWindow {
             sidebar_width: None,
             sidebar_drag: None,
             workspace_drag: None,
+            device_drag: None,
+            device_order: Vec::new(),
             tab_drag: None,
             sidebar_split: None,
             sidebar_split_modified: false,
@@ -774,6 +789,7 @@ impl HerdrWindow {
             sidebar_scroll: Default::default(),
             sidebar_revealed: Default::default(),
             sidebar_pin_reveal: Default::default(),
+            sidebar_folded: Default::default(),
             sidebar_search: sidebar::SidebarSearch::new(cx),
             _poll: poll,
             sidebar_view,
