@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 from test_release import windows_executable
@@ -133,6 +134,19 @@ class InstallerTests(unittest.TestCase):
                                 (VERSION, "x86_64-pc-windows-gnu")]:
             with self.subTest(version=version, target=target), self.assertRaises(ValueError):
                 INSTALLER.iscc_arguments(version, target, "src", "out")
+
+    def test_uninstall_entry_check(self):
+        self.assertEqual(INSTALLER.app_id(), "{7FA70894-4FC0-4923-BDCB-B05F7475610A}")
+        app = Path("C:/Users/runner/Herdr UI")
+        listed = {"DisplayName": "Herdr UI", "UninstallString": f'"{app / "unins000.exe"}"'}
+        with mock.patch.object(INSTALLER, "uninstall_entry", return_value=listed):
+            INSTALLER.check_uninstall_entry(app)
+        hidden = [None, {**listed, "DisplayName": "Herdr"}, {**listed, "SystemComponent": 1},
+                  {**listed, "ParentKeyName": "Other"}, {**listed, "UninstallString": '"C:/x/unins000.exe"'}]
+        for entry in hidden:
+            with self.subTest(entry=entry), mock.patch.object(INSTALLER, "uninstall_entry", return_value=entry), \
+                    self.assertRaises(ValueError):
+                INSTALLER.check_uninstall_entry(app)
 
     def test_the_inno_setup_pin_is_one_exact_release(self):
         self.assertRegex(INSTALLER.INNO_SHA256, r"^[0-9a-f]{64}$")
