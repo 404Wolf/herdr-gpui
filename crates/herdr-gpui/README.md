@@ -1893,7 +1893,8 @@ for pull requests on that host. A GitLab remote, on gitlab.com or a
 self-managed host, lists its open issues (not yet its merge requests), read
 with `GITLAB_TOKEN` or `GITLAB_ACCESS_TOKEN` when `GITLAB_HOST` names that host
 (gitlab.com by default), else with the GitLab CLI's sign-in (`glab auth
-login`); public projects need neither. GitHub Enterprise is listed as not
+login`), and sent only over HTTPS; public projects need neither, and an
+`http://` remote is read without one. GitHub Enterprise is listed as not
 supported yet. The window button in the tab's header moves the view into
 a window of its own.
 

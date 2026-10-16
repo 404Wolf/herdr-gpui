@@ -81,7 +81,9 @@ it has no Stop, Send, or Remove, since no application owns it.
 host, in agent-launcher's GitLab row format: `native_id` is the issue's
 project `iid`. The API is reached over HTTPS, or over HTTP when the remote's
 own URL is `http://`; the shared source key names only the host, so the scheme
-is read from the remote each time. Pages follow a cursor on creation time
+is read from the remote each time. A token is sent only over HTTPS: over HTTP
+the read is anonymous, and a project that is not public asks for an
+`https://` remote. Pages follow a cursor on creation time
 (`order_by=created_at`, `created_after`), which edits and closes cannot shift. Each sync is a complete listing of at most 2,000 issues, so it
 may replace the cache; a larger project is shown and not written, as GitHub's
 is.

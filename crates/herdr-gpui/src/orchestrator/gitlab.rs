@@ -53,6 +53,10 @@ pub enum Error {
         "GitLab shows {repository} only when signed in: set GITLAB_TOKEN or run glab auth login"
     )]
     SignIn { repository: String },
+    #[error(
+        "GitLab shows {repository} only when signed in, and a token is never sent over plain HTTP: use an https:// remote"
+    )]
+    InsecureRemote { repository: String },
     #[error("GitLab refused the token; renew it with glab auth login or replace GITLAB_TOKEN")]
     Authentication,
     #[error("GitLab refused access to {repository}; the token needs the read_api scope")]
@@ -71,6 +75,7 @@ impl Error {
         matches!(
             self,
             Self::SignIn { .. }
+                | Self::InsecureRemote { .. }
                 | Self::Authentication
                 | Self::Forbidden { .. }
                 | Self::NotFound { .. }
@@ -111,9 +116,29 @@ impl Scheme {
     }
 }
 
+/// What a request carries: a token only over HTTPS, since anyone who can
+/// watch a plain HTTP connection could take it. Over HTTP the token is
+/// withheld and the read is anonymous, which public projects allow.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum Credential<'a> {
+    Anonymous,
+    Withheld,
+    Token(&'a SecretString),
+}
+
+impl<'a> Credential<'a> {
+    pub(super) fn new(scheme: Scheme, token: Option<&'a SecretString>) -> Self {
+        match (scheme, token) {
+            (_, None) => Self::Anonymous,
+            (Scheme::Http, Some(_)) => Self::Withheld,
+            (Scheme::Https, Some(token)) => Self::Token(token),
+        }
+    }
+}
+
 /// Lists `source`'s open issues over `scheme`, reading GitLab as `token`
-/// when given. `previous` keeps agent-launcher's markers, which herdr-gpui
-/// never adds.
+/// when given and the scheme keeps it private. `previous` keeps
+/// agent-launcher's markers, which herdr-gpui never adds.
 pub(crate) fn sync(
     (source, scheme): (&SourceKey, Scheme),
     token: Option<&SecretString>,
@@ -127,6 +152,7 @@ pub(crate) fn sync(
         .http_status_as_error(false)
         .build()
         .into();
+    let credential = Credential::new(scheme, token);
     let mut fetch = |after| {
         if cancelled() {
             return Err(super::Error::Cancelled);
@@ -134,7 +160,7 @@ pub(crate) fn sync(
         Ok(fetch_page(
             &agent,
             (source, scheme),
-            token,
+            credential,
             after,
             cooldown,
         )?)
@@ -225,7 +251,7 @@ pub(super) fn issues_url(
 fn fetch_page(
     agent: &ureq::Agent,
     (source, scheme): (&SourceKey, Scheme),
-    token: Option<&SecretString>,
+    credential: Credential<'_>,
     after: Option<DateTime<Utc>>,
     cooldown: &mut Option<Duration>,
 ) -> Result<Vec<IssueNode>, Error> {
@@ -233,7 +259,7 @@ fn fetch_page(
         .get(issues_url((source, scheme), after)?.as_str())
         .header("User-Agent", "Herdr-GPUI")
         .header("Accept", "application/json");
-    if let Some(token) = token {
+    if let Credential::Token(token) = credential {
         request = request.header("Authorization", authorization(token)?);
     }
     let mut reply = request
@@ -248,7 +274,7 @@ fn fetch_page(
             host = source.host.as_str(),
             "GitLab refused an issue listing"
         );
-        return Err(status_error(status, &source.repository, token.is_some()));
+        return Err(status_error(status, &source.repository, credential));
     }
     let mut bytes = Vec::new();
     reply
@@ -272,13 +298,14 @@ fn authorization(token: &SecretString) -> Result<ureq::http::HeaderValue, Error>
 
 /// What a refusal means. GitLab answers a private project as missing to a
 /// reader without a token, so that asks for one rather than blaming the remote.
-pub(super) fn status_error(status: u16, repository: &str, token: bool) -> Error {
+pub(super) fn status_error(status: u16, repository: &str, credential: Credential<'_>) -> Error {
     let repository = repository.to_owned();
-    match (status, token) {
-        (401 | 403 | 404, false) => Error::SignIn { repository },
-        (401, true) => Error::Authentication,
-        (403, true) => Error::Forbidden { repository },
-        (404, true) => Error::NotFound { repository },
+    match (status, credential) {
+        (401 | 403 | 404, Credential::Anonymous) => Error::SignIn { repository },
+        (401 | 403 | 404, Credential::Withheld) => Error::InsecureRemote { repository },
+        (401, Credential::Token(_)) => Error::Authentication,
+        (403, Credential::Token(_)) => Error::Forbidden { repository },
+        (404, Credential::Token(_)) => Error::NotFound { repository },
         (429, _) => Error::RateLimit,
         (status, _) => Error::Status(status),
     }

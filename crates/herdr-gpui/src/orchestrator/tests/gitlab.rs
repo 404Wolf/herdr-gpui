@@ -1,11 +1,11 @@
 use super::*;
 use crate::orchestrator::gitlab::{
-    self, IssueNode, MAX_OPEN, Scheme, environment_token, full, issues_url, parse_cli, retry_after,
-    status_error,
+    self, Credential, IssueNode, MAX_OPEN, Scheme, environment_token, full, issues_url, parse_cli,
+    retry_after, status_error,
 };
 use crate::orchestrator::service::retry_wait;
 use chrono::TimeDelta;
-use secrecy::ExposeSecret;
+use secrecy::{ExposeSecret, SecretString};
 use std::{
     collections::HashMap,
     ffi::OsString,
@@ -257,34 +257,65 @@ fn a_failed_page_fails_the_listing() {
 
 #[test]
 fn refusals_say_whether_a_token_is_needed_or_wrong() {
+    let token = SecretString::from("glpat-abc");
+    let sent = Credential::Token(&token);
     for status in [401, 403, 404] {
         assert!(matches!(
-            status_error(status, "g/app", false),
+            status_error(status, "g/app", Credential::Anonymous),
             gitlab::Error::SignIn { repository } if repository == "g/app"
+        ));
+        assert!(matches!(
+            status_error(status, "g/app", Credential::Withheld),
+            gitlab::Error::InsecureRemote { repository } if repository == "g/app"
         ));
     }
     assert!(matches!(
-        status_error(401, "g/app", true),
+        status_error(401, "g/app", sent),
         gitlab::Error::Authentication
     ));
     assert!(matches!(
-        status_error(403, "g/app", true),
+        status_error(403, "g/app", sent),
         gitlab::Error::Forbidden { .. }
     ));
     assert!(matches!(
-        status_error(404, "g/app", true),
+        status_error(404, "g/app", sent),
         gitlab::Error::NotFound { .. }
     ));
     assert!(matches!(
-        status_error(429, "g/app", true),
+        status_error(429, "g/app", sent),
         gitlab::Error::RateLimit
     ));
     assert!(matches!(
-        status_error(502, "g/app", true),
+        status_error(502, "g/app", sent),
         gitlab::Error::Status(502)
     ));
-    let error = Error::from(status_error(404, "g/app", false));
+    let error = Error::from(status_error(404, "g/app", Credential::Anonymous));
     assert!(error.to_string().contains("GITLAB_TOKEN"));
+    let error = Error::from(status_error(404, "g/app", Credential::Withheld));
+    assert!(error.to_string().contains("https://"));
+}
+
+/// A token is never sent over plain HTTP, where anyone watching the
+/// connection could take it; the read goes anonymously instead.
+#[test]
+fn a_token_travels_only_over_https() {
+    let token = SecretString::from("glpat-abc");
+    assert!(matches!(
+        Credential::new(Scheme::Https, Some(&token)),
+        Credential::Token(sent) if sent.expose_secret() == "glpat-abc"
+    ));
+    assert!(matches!(
+        Credential::new(Scheme::Http, Some(&token)),
+        Credential::Withheld
+    ));
+    assert!(matches!(
+        Credential::new(Scheme::Http, None),
+        Credential::Anonymous
+    ));
+    assert!(matches!(
+        Credential::new(Scheme::Https, None),
+        Credential::Anonymous
+    ));
 }
 
 #[test]
