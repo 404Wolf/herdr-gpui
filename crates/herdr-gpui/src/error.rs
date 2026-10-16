@@ -674,6 +674,9 @@ pub enum Error {
     #[cfg(target_os = "macos")]
     #[error("The page that opened a popup is no longer in a window")]
     PopupOpener,
+    #[cfg(target_os = "macos")]
+    #[error("The window has no view to place a page beneath")]
+    PageStack,
     #[error("Could not install the agent skill at {}: {source}", path.display())]
     SkillInstall {
         path: PathBuf,

@@ -1,16 +1,27 @@
 //! A page in the window: the native view WebKit or WebView2 draws a page
 //! into, and the element that lays that view out where its group draws.
 //!
-//! The view is a child of the window's own view, so it draws above
-//! everything the window draws, and the window hides a page that one of its
-//! overlays reaches (`view::present`).
+//! On macOS the view lies beneath the window's own drawing, so the window's
+//! menus, toasts, and tooltips draw over it ([`crate::browser::stacking`]).
+//! On Windows it is a child window above the window's drawing, and the window
+//! hides a page that one of its overlays reaches (`view::present`).
 use {
+    crate::browser::TabId,
     gpui::{
         App, Bounds, DispatchPhase, Element, ElementId, GlobalElementId, Hitbox, HitboxBehavior,
         InspectorElementId, IntoElement, LayoutId, MouseDownEvent, Pixels, Size, Style, Window,
+        point, px,
     },
-    std::{cell::Cell, rc::Rc},
+    std::{
+        cell::{Cell, RefCell},
+        collections::HashMap,
+        rc::Rc,
+    },
 };
+
+/// Where each page drew in the frame being drawn, in the window's points.
+/// Pages fill it as they lay out, and the next frame starts it afresh.
+pub(crate) type Drawn = Rc<RefCell<HashMap<TabId, Bounds<Pixels>>>>;
 
 /// One tab's native page.
 pub(crate) struct Page {
@@ -18,19 +29,30 @@ pub(crate) struct Page {
     /// Read as the page lays out, after the window shows or hides it for
     /// the frame: a hidden page stays where it was moved out of the way.
     shown: Cell<bool>,
+    /// Hands mouse events between the page and the window's view above it.
+    #[cfg(target_os = "macos")]
+    router: objc2::rc::Retained<crate::browser::stacking::Router>,
 }
 
 impl Page {
-    /// Takes over `view`, which wry built as a child of `window`.
-    pub(crate) fn new(view: wry::WebView, window: &Window) -> Self {
-        let _ = window;
+    /// Takes over `view`, which wry built as a child of `window`. On macOS it
+    /// moves beneath the window's drawing.
+    pub(crate) fn new(view: wry::WebView, window: &Window) -> crate::Result<Self> {
+        #[cfg(target_os = "macos")]
+        let router = crate::browser::stacking::stack(&view, window)?;
         // Nothing until the window lays it out.
-        let _ = view.set_bounds(wry::Rect::default());
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = window;
+            let _ = view.set_bounds(wry::Rect::default());
+        }
         // Shown only once the window presents it.
-        Self {
+        Ok(Self {
             view,
             shown: Cell::new(false),
-        }
+            #[cfg(target_os = "macos")]
+            router,
+        })
     }
 
     pub(crate) fn raw(&self) -> &wry::WebView {
@@ -40,28 +62,45 @@ impl Page {
     pub(crate) fn show(&self) {
         self.shown.set(true);
         let _ = self.view.set_visible(true);
+        #[cfg(target_os = "macos")]
+        self.router.set_shown(true);
     }
 
     /// Hides the page, first taking the keyboard back from it: a hidden view
     /// would go on receiving keys.
     pub(crate) fn hide(&self) {
         self.shown.set(false);
+        #[cfg(target_os = "macos")]
+        {
+            self.router.release_keyboard();
+            self.router.set_shown(false);
+        }
+        #[cfg(not(target_os = "macos"))]
         let _ = self.view.focus_parent();
         let _ = self.view.set_visible(false);
     }
 
     /// Moves keyboard input into the page.
     pub(crate) fn focus(&self) {
+        #[cfg(target_os = "macos")]
+        self.router.focus();
+        #[cfg(not(target_os = "macos"))]
         let _ = self.view.focus();
     }
 
     /// Hands the keyboard back from the page to the window.
     pub(crate) fn blur(&self) {
+        #[cfg(target_os = "macos")]
+        self.router.blur();
+        #[cfg(not(target_os = "macos"))]
         let _ = self.view.focus_parent();
     }
 
     /// Puts the page at `bounds`, in the window's points.
     fn place(&self, bounds: Bounds<Pixels>) {
+        #[cfg(target_os = "macos")]
+        self.router.place(bounds);
+        #[cfg(not(target_os = "macos"))]
         let _ = self.view.set_bounds(wry::Rect {
             size: wry::dpi::Size::Logical(wry::dpi::LogicalSize::new(
                 bounds.size.width.into(),
@@ -78,18 +117,23 @@ impl Page {
 impl Drop for Page {
     fn drop(&mut self) {
         self.hide();
+        // wry takes the page's own view out of the window as it drops.
+        #[cfg(target_os = "macos")]
+        self.router.remove();
     }
 }
 
 /// The element a page lays out in: it fills its space, and the native view
 /// follows wherever that is.
 pub(crate) struct PageElement {
+    id: TabId,
     page: Rc<Page>,
+    drawn: Drawn,
 }
 
 impl PageElement {
-    pub(crate) fn new(page: Rc<Page>) -> Self {
-        Self { page }
+    pub(crate) fn new(id: TabId, page: Rc<Page>, drawn: Drawn) -> Self {
+        Self { id, page, drawn }
     }
 }
 
@@ -137,7 +181,16 @@ impl Element for PageElement {
         window: &mut Window,
         _: &mut App,
     ) -> Self::PrepaintState {
-        // A hidden page stays where it was moved out of the way.
+        // Whole device pixels, so the page's edges are sharp and meet the
+        // window's drawing around them exactly.
+        let scale = window.scale_factor();
+        let bounds = snap(bounds, scale);
+        // Only what shows of it: an opening group slides in under its
+        // frame's clip, with the page at its full width. Recorded while
+        // hidden too: on Windows an overlay hides the pages it reaches, which
+        // go on laying out beneath it.
+        let visible = snap(bounds.intersect(&window.content_mask().bounds), scale);
+        self.drawn.borrow_mut().insert(self.id, visible);
         if !self.page.shown.get() {
             return None;
         }
@@ -166,5 +219,22 @@ impl Element for PageElement {
                 page.blur();
             }
         });
+        #[cfg(target_os = "macos")]
+        crate::browser::stacking::Router::follow(&self.page.router, hitbox, window);
     }
 }
+
+/// `bounds` with each edge on the nearest whole device pixel at `scale`.
+pub(crate) fn snap(bounds: Bounds<Pixels>, scale: f32) -> Bounds<Pixels> {
+    if !scale.is_finite() || scale <= 0. {
+        return bounds;
+    }
+    let edge = |value: Pixels| px((f32::from(value) * scale).round() / scale);
+    Bounds::from_corners(
+        point(edge(bounds.left()), edge(bounds.top())),
+        point(edge(bounds.right()), edge(bounds.bottom())),
+    )
+}
+
+#[cfg(test)]
+mod tests;

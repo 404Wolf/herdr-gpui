@@ -1,10 +1,11 @@
-//! One window's native web views, one per browser tab it has shown. A view
-//! is a platform child view layered above the GPUI surface: one per side of a
-//! split is visible, and the window hides them while an overlay is open.
+//! One window's native web views, one per browser tab it has shown. One per
+//! side of a split is visible. On macOS each lies beneath the window's own
+//! drawing; on Windows each lies above it, and the window hides the ones its
+//! overlays reach. See [`super::page`].
 use super::{
     Location, Tab, TabId, WebUrl,
     location::PREVIEW_SCHEME,
-    page::{Page, PageElement},
+    page::{Drawn, Page, PageElement},
     preview::Preview,
 };
 use gpui::Window;
@@ -45,10 +46,6 @@ pub(crate) enum Event<P = TabId> {
     /// none. Only macOS takes them.
     #[cfg(target_os = "macos")]
     Captured(P, u64, Option<Vec<u8>>),
-    /// A picture of the whole page, as TIFF bytes, shown in its place while
-    /// a menu covers it. Only macOS takes them.
-    #[cfg(target_os = "macos")]
-    Frozen(P, Option<Vec<u8>>),
     /// A message the annotation picker or the page bridge posted, and the
     /// frame that posted it. Any script in any frame can post one, so it is
     /// parsed as untrusted input.
@@ -82,8 +79,6 @@ impl Event<Source> {
             Self::Closed(source) => Event::Closed(tab(source)?),
             #[cfg(target_os = "macos")]
             Self::Captured(source, capture, tiff) => Event::Captured(tab(source)?, capture, tiff),
-            #[cfg(target_os = "macos")]
-            Self::Frozen(source, tiff) => Event::Frozen(tab(source)?, tiff),
             Self::Posted(source, body, from) => Event::Posted(tab(source)?, body, from),
         })
     }
@@ -95,6 +90,8 @@ const MAX_POST_BYTES: usize = 64 * 1024;
 pub(crate) struct Pages {
     pages: HashMap<TabId, Rc<Page>>,
     shown: Vec<TabId>,
+    /// Where each page drew in the frame being drawn.
+    drawn: Drawn,
     outbox: Outbox,
     events: Receiver<Event<Source>>,
     /// The tab each adopted popup became.
@@ -118,6 +115,7 @@ impl Default for Pages {
         Self {
             pages: HashMap::new(),
             shown: Vec::new(),
+            drawn: Drawn::default(),
             outbox: Outbox {
                 sender,
                 #[cfg(target_os = "macos")]
@@ -252,10 +250,27 @@ impl Pages {
     /// The element tab `id`'s page lays out in, if the window has the page.
     pub(crate) fn element(&self, id: TabId) -> Option<PageElement> {
         let page = self.pages.get(&id)?;
-        Some(PageElement::new(page.clone()))
+        Some(PageElement::new(id, page.clone(), self.drawn.clone()))
     }
 
-    /// Whether tab `id`'s page is on screen, not hidden or stood in for.
+    /// Where each page drew in the frame being drawn, filled as they lay out.
+    pub(crate) fn drawn(&self) -> Drawn {
+        self.drawn.clone()
+    }
+
+    /// Where tab `id`'s page drew last, if it is laid out.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn drawn_at(&self, id: TabId) -> Option<gpui::Bounds<gpui::Pixels>> {
+        self.drawn.borrow().get(&id).copied()
+    }
+
+    /// Starts the next frame's record of where pages draw. The window calls
+    /// it as it presents the pages, before they lay out.
+    pub(crate) fn next_frame(&self) {
+        self.drawn.borrow_mut().clear();
+    }
+
+    /// Whether tab `id`'s page is on screen, not hidden.
     #[cfg(target_os = "macos")]
     pub(crate) fn is_shown(&self, id: TabId) -> bool {
         self.shown.contains(&id)
@@ -323,7 +338,7 @@ impl Pages {
         let view = builder.build_as_child(&handle)?;
         #[cfg(target_os = "macos")]
         super::page_keys::install();
-        self.pages.insert(id, Rc::new(Page::new(view, window)));
+        self.pages.insert(id, Rc::new(Page::new(view, window)?));
         // A new page appears only when the window presents it.
         self.hide(id);
         Ok(())
@@ -397,18 +412,17 @@ impl Pages {
         source: Source,
         popup: super::popup::Popup,
         window: &mut Window,
-    ) {
-        let Some(mtm) = objc2::MainThreadMarker::new() else {
-            return;
-        };
+    ) -> crate::Result<()> {
+        let mtm = objc2::MainThreadMarker::new().ok_or(crate::Error::PageStack)?;
         let (view, delegate, place) = popup.into_parts(mtm);
         // It was built hidden, and appears when the window presents it.
-        self.pages.insert(id, Rc::new(Page::new(view, window)));
+        self.pages.insert(id, Rc::new(Page::new(view, window)?));
         self.delegates.insert(id, delegate);
         self.parked.insert(id, place);
         if let Source::Popup(key) = source {
             self.adopted.insert(key, id);
         }
+        Ok(())
     }
 
     pub(crate) fn close(&mut self, id: TabId) {
@@ -419,6 +433,7 @@ impl Pages {
             self.parked.remove(&id);
         }
         self.shown.retain(|shown| *shown != id);
+        self.drawn.borrow_mut().remove(&id);
         // Dropping the page hides it; the platform releases its view with
         // the last handle.
         self.pages.remove(&id);
@@ -480,28 +495,6 @@ impl Pages {
             return true;
         }
         let _ = (id, rect, capture);
-        false
-    }
-
-    /// Asks for a picture of the whole page, `size` in CSS pixels, reported
-    /// as `Event::Frozen`. Returns whether one was asked for: only macOS
-    /// takes them.
-    pub(crate) fn freeze(&self, id: TabId, size: gpui::Size<gpui::Pixels>) -> bool {
-        #[cfg(target_os = "macos")]
-        if let Some(page) = self.pages.get(&id) {
-            let sender = self.outbox.sender.clone();
-            let rect = super::annotate::Rect {
-                x: 0.,
-                y: 0.,
-                width: f64::from(f32::from(size.width)),
-                height: f64::from(f32::from(size.height)),
-            };
-            super::snapshot::capture(page.raw(), rect, move |tiff| {
-                report(&sender, Event::Frozen(Source::Tab(id), tiff));
-            });
-            return true;
-        }
-        let _ = (id, size);
         false
     }
 

@@ -9,8 +9,6 @@ use super::{
 };
 use crate::{HerdrWindow, NavigationTarget, search_input::SearchInput, window::Flash};
 use gpui::{prelude::*, *};
-#[cfg(any(target_os = "macos", windows))]
-use present::Freeze;
 use std::collections::{HashMap, HashSet};
 
 mod agent_tab;
@@ -38,12 +36,6 @@ pub(crate) struct Browser {
     pub(super) fallback_group: GroupId,
     #[cfg(any(target_os = "macos", windows))]
     pub(super) pages: super::Pages,
-    /// Where each page drew last frame, to tell which ones a menu covers.
-    #[cfg(any(target_os = "macos", windows))]
-    page_bounds: std::rc::Rc<std::cell::RefCell<HashMap<TabId, Bounds<Pixels>>>>,
-    /// Pages a menu covers, stood in for by a picture of themselves.
-    #[cfg(any(target_os = "macos", windows))]
-    frozen: HashMap<TabId, Freeze>,
     /// Each page's icon, as this window's page last reported it.
     #[cfg(any(target_os = "macos", windows))]
     pub(super) favicons: HashMap<TabId, std::sync::Arc<RenderImage>>,
@@ -81,19 +73,19 @@ pub(crate) struct Browser {
     #[cfg(any(target_os = "macos", windows))]
     pub(super) annotations: Annotations,
     /// The menu page open when pages were last presented, which the menu's
-    /// measured cover belongs to.
+    /// measured cover belongs to. Only where pages draw above the window.
     #[cfg(any(target_os = "macos", windows))]
     pub(super) cover_page: Option<crate::menu::Page>,
     /// While the pointer is over the status bar, the band above it where
-    /// the bar's tooltips show. Pages draw above tooltips, so those in the
-    /// band step aside, as for a menu.
+    /// the bar's tooltips show. Where pages draw above the window, those in
+    /// the band hide, as for a menu.
     #[cfg(any(target_os = "macos", windows))]
     pub(super) tooltip_band: Option<Bounds<Pixels>>,
     /// Where the status bar last drew, which the band sits above.
     #[cfg(any(target_os = "macos", windows))]
     pub(super) status_bar: std::rc::Rc<std::cell::Cell<Option<Bounds<Pixels>>>>,
-    /// Where the window's toasts and file-transfer card drew. Pages draw
-    /// above them, so those they reach step aside, as for a menu.
+    /// Where the window's toasts and file-transfer card drew. Where pages
+    /// draw above the window, those they reach hide, as for a menu.
     #[cfg(any(target_os = "macos", windows))]
     pub(super) overlays: std::rc::Rc<std::cell::RefCell<present::Overlays>>,
 }
@@ -109,10 +101,6 @@ impl Browser {
             group_ids,
             #[cfg(any(target_os = "macos", windows))]
             pages: Default::default(),
-            #[cfg(any(target_os = "macos", windows))]
-            page_bounds: Default::default(),
-            #[cfg(any(target_os = "macos", windows))]
-            frozen: HashMap::new(),
             #[cfg(any(target_os = "macos", windows))]
             favicons: HashMap::new(),
             emptied: Vec::new(),
@@ -138,6 +126,13 @@ impl Browser {
             #[cfg(any(target_os = "macos", windows))]
             overlays: Default::default(),
         }
+    }
+
+    /// Where each page drew in the frame being drawn, which the window's
+    /// backgrounds leave unpainted.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn drawn_pages(&self) -> super::page::Drawn {
+        self.pages.drawn()
     }
 }
 
@@ -193,14 +188,6 @@ impl HerdrWindow {
     }
 
     pub(super) fn forget_browser_tabs(&mut self, mut gone: impl FnMut(TabId) -> bool) {
-        #[cfg(any(target_os = "macos", windows))]
-        {
-            self.browser.frozen.retain(|id, _| !gone(*id));
-            self.browser
-                .page_bounds
-                .borrow_mut()
-                .retain(|id, _| !gone(*id));
-        }
         let browser = &mut self.browser;
         for layout in browser.layouts.values_mut() {
             let closed: Vec<Pick> = layout
@@ -419,8 +406,6 @@ impl HerdrWindow {
                 },
                 #[cfg(target_os = "macos")]
                 Event::Captured(id, capture, tiff) => self.page_captured(id, capture, tiff, cx),
-                #[cfg(target_os = "macos")]
-                Event::Frozen(id, tiff) => self.page_frozen(id, tiff, cx),
                 Event::NewWindow(id, url) => {
                     if let Ok(url) = WebUrl::try_from(url.as_str())
                         && let Some(opened) = self.open_beside(id, url, cx)
@@ -433,7 +418,11 @@ impl HerdrWindow {
                     // Without a tab the popup is dropped, and with it the
                     // opener's link to it.
                     if let Some((group, opened)) = self.open_beside(id, url, cx) {
-                        self.browser.pages.adopt(opened, source, popup, window);
+                        if let Err(error) = self.browser.pages.adopt(opened, source, popup, window)
+                        {
+                            tracing::warn!(%error, "Cannot show a popup's page");
+                            self.browser.failed.insert(opened, error.to_string().into());
+                        }
                         self.show_browser_tab_in(group, opened, window, cx);
                     }
                 }

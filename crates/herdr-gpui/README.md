@@ -2270,15 +2270,17 @@ come back after a restart; closing a workspace in Herdr removes its tabs.
   only its own scripts in pages. On
   Windows, a frame inside a page that links to an application's URL scheme
   gets WebView2's own confirmation prompt rather than being refused outright.
-- Pages are native web views (WebKit on macOS, WebView2 on Windows) layered
-  above the window, so a page steps aside for a menu or popover that would
-  fall over it, and for a dialog, which dims the whole window. A page the menu
-  does not reach keeps showing. On macOS a page that steps aside leaves a
-  picture of itself, taken as the menu opens; on Windows its place is empty
-  until the menu closes. A page also steps aside while a toast or the
-  file-transfer card falls over it, as when a page or VS Code fills the
-  right-hand group or the whole editor area, so they stay visible and
-  clickable; a page they do not reach keeps showing.
+- Pages are native web views (WebKit on macOS, WebView2 on Windows). On
+  macOS a page lies beneath the window's own drawing. Menus, popovers,
+  dialogs, tooltips, toasts, and the file-transfer card show over it, and
+  the page stays live around them.
+- On Windows a page is layered above the window, so it steps aside for a
+  menu, popover, or status bar tooltip that would fall over it, and for a
+  dialog, which dims the whole window. Its place is empty until the menu
+  closes. A page also steps aside while a toast or the file-transfer card
+  falls over it, as when a page or VS Code fills the right-hand group or the
+  whole editor area, so they stay visible and clickable. A page that none of
+  these reach keeps showing.
 - Linux has no embedded pages yet: browser tab requests open the system
   browser, and local files and annotations are unavailable.
 
@@ -2703,8 +2705,7 @@ the page's storage, which belongs to one address.
 - VS Code fills its tab, without a browser tab's address bar, back,
   forward, reload, or **Annotate**: it is an editor, not a page to browse.
   Its page is otherwise a [browser tab](#browser-tabs)'s, so the same rules
-  apply: `http` and `https` only, native web views drawn above the window,
-  and no pages on Linux.
+  apply: `http` and `https` only, native web views, and no pages on Linux.
 - The keyboard goes to whatever has focus. While a page has it, this one or a
   browser tab's, the page's own shortcuts win, as a terminal program's do
   while its pane has focus. On macOS, Cut, Copy, and Paste act on the page,

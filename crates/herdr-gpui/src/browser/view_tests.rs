@@ -88,15 +88,20 @@ mod code_folder;
 #[cfg(any(target_os = "macos", windows))]
 mod code_start;
 
-/// Pages step aside under the status bar's tooltips; only builds that show
-/// pages have any.
-#[cfg(any(target_os = "macos", windows))]
+/// Pages hide under the status bar's tooltips where they draw above the
+/// window, which only Windows does.
+#[cfg(windows)]
 mod status_tooltip;
 
-/// Pages step aside for toasts and the file-transfer card, which they
-/// would hide; only builds that show pages have any.
-#[cfg(any(target_os = "macos", windows))]
+/// Pages hide under toasts and the file-transfer card where they draw above
+/// the window, which only Windows does.
+#[cfg(windows)]
 mod overlays;
+
+/// On macOS pages lie beneath the window's drawing, so its overlays show
+/// over them and no page hides.
+#[cfg(target_os = "macos")]
+mod beneath;
 
 /// What closing a workspace does to its browser tabs.
 mod workspace_close;

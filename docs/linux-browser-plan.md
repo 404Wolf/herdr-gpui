@@ -20,8 +20,9 @@ verifiable on its own. Read `AGENTS.md` first; its rules apply throughout.
   `browser/view/requests.rs`, and the VS Code tab's page in `browser/code.rs`.
   `grep -rn 'target_os = "macos", windows' crates/herdr-gpui/src` lists them.
 - macOS only: popups adopted as tabs (`browser/popup.rs`), WebKit snapshots
-  for note screenshots and frozen pages (`browser/snapshot.rs`), page keys
-  (`browser/page_keys.rs`). Windows does without these; Linux can too.
+  for note screenshots (`browser/snapshot.rs`), page keys
+  (`browser/page_keys.rs`), and pages beneath the window's drawing
+  (`browser/stacking.rs`). Windows does without these; Linux can too.
 - What already works on Linux and must keep working: tab strips, editor
   groups and splits, the control socket, `browser feedback`, notes sent from
   mockups, and the agent skill.
@@ -105,9 +106,10 @@ every Linux desktop, while pages still open outside the window.
    initialization script, title and load events, reload, annotation picker
    and notes panel, and then note screenshots with
    `webkit_web_view_get_snapshot` if it is practical.
-6. Overlays: pages sit above GPUI, so menus and toasts must hide them as on
-   macOS (`present_browser`'s cover logic). Without snapshots, hidden pages
-   show a blank, as on Windows.
+6. Overlays: an X11 child window sits above GPUI, so menus and toasts must
+   hide the pages they reach, as on Windows (`present_browser`'s cover
+   logic, which `browser::PAGES_ABOVE` turns on). Hidden pages show a blank,
+   as on Windows.
 
 ## Phase 3: Wayland
 

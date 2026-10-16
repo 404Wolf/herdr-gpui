@@ -281,7 +281,7 @@ impl HerdrWindow {
         if !self.browser.pages.is_shown(id) {
             return false;
         }
-        let Some(bounds) = self.browser.page_bounds.borrow().get(&id).copied() else {
+        let Some(bounds) = self.browser.pages.drawn_at(id) else {
             return false;
         };
         let rect = crate::browser::annotate::Rect {

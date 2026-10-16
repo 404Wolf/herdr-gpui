@@ -1,10 +1,11 @@
 //! Browser tabs: web pages shown in place of the terminal, or beside it in
 //! another editor group, next to a workspace's Herdr tabs. Herdr panes are always
 //! terminals, so these tabs belong to this client alone; the daemon and its
-//! other clients never see them. Pages are native web views drawn above the window, which is why the
-//! window hides them whenever one of its own overlays is open. Each workspace
-//! may also show VS Code in a panel to the right of its groups, or as a tab
-//! in its groups.
+//! other clients never see them. Pages are native web views. On macOS they lie
+//! beneath the window's own drawing, so its menus and toasts show over them;
+//! on Windows they lie above it, so the window hides a page that one of its
+//! overlays reaches. Each workspace may also show VS Code in a panel to the
+//! right of its groups, or as a tab in its groups.
 
 #[cfg(any(target_os = "macos", windows, test))]
 mod annotate;
@@ -41,9 +42,13 @@ mod popup;
 mod preview;
 #[cfg(target_os = "macos")]
 mod snapshot;
+#[cfg(target_os = "macos")]
+mod stacking;
 mod store;
 mod tab_appear;
 mod tab_scroll;
+#[cfg(target_os = "macos")]
+mod underlay;
 mod view;
 #[cfg(test)]
 mod view_tests;
@@ -69,11 +74,22 @@ pub(crate) use snapshot::png as page_png;
 pub(crate) use store::{Scope, Store, Tab, TabId};
 pub(crate) use tab_appear::{Leaving, Listed};
 pub(crate) use tab_scroll::{Thumb, ThumbDrag};
+#[cfg(target_os = "macos")]
+pub(crate) use underlay::{
+    AroundPages, ground as ground_around_pages, picture as picture_around_pages,
+};
 pub(crate) use view::{Browser, PageOpened, scope};
 
 /// Whether this build can show a page inside the window. Elsewhere a browser
 /// tab request opens the system browser instead.
 pub(crate) const EMBEDDED: bool = cfg!(any(target_os = "macos", windows));
+
+/// Whether pages lie above everything the window draws, so that the window
+/// must hide a page its menus, tooltips, and toasts reach. On Windows a page
+/// is a child window, which always draws above its parent. On macOS a page
+/// lies beneath the window's drawing; see the `stacking` module.
+#[cfg(any(target_os = "macos", windows))]
+pub(crate) const PAGES_ABOVE: bool = cfg!(windows);
 
 const MAX_URL_BYTES: usize = 8192;
 

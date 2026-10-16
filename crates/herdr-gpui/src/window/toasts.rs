@@ -461,7 +461,7 @@ impl HerdrWindow {
                         |d| d.right(px(12.)),
                     )
                     .children(cards)
-                    .child(self.overlay_probe())
+                    .children(self.overlay_probe())
                     .into_any_element(),
             )
         })

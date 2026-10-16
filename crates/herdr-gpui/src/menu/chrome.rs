@@ -10,7 +10,7 @@ use gpui::{prelude::*, *};
 use herdr_client::Method;
 
 /// How far past its panel a popover counts as covering, for the native pages
-/// that step aside for it.
+/// that hide under it where they draw above the window.
 const COVER_MARGIN: f32 = 8.;
 
 impl HerdrWindow {
@@ -707,8 +707,9 @@ impl HerdrWindow {
         } else {
             panel = panel.child(self.render_release_notes(cx));
         }
-        // Pages sit above everything GPUI draws, so the menu says what it
-        // covers: a dimmed dialog covers the window, a popover its panel.
+        // On Windows pages sit above everything GPUI draws, so the menu says
+        // what it covers: a dimmed dialog covers the window, a popover its
+        // panel.
         let dims = self.menu_dims();
         let cover = self.menu.cover.clone();
         if dims {

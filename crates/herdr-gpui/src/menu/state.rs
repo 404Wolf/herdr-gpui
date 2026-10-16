@@ -9,8 +9,9 @@ use crate::dialog_input::DialogInput;
 use gpui::{App, Entity, FocusHandle, Pixels, Point, ScrollHandle, Subscription};
 use herdr_client::protocol::ClientShellSnapshot;
 
-/// What an open menu covers, as its last frame laid it out: the window's
-/// native pages above GPUI would hide it, so the ones it covers step aside.
+/// What an open menu covers, as its last frame laid it out. Where native
+/// pages draw above GPUI, as on Windows, they would hide it, so the ones it
+/// covers hide instead.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) enum Cover {
     /// Not laid out yet.
