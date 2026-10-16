@@ -608,7 +608,8 @@ action remains available; daemon config reload is separate.
 
 Settings opens a separate, reusable native window with **Appearance, Fonts,
 Indicators, Sound, Notifications, Integrations, Plugins, Code, and General** in
-a sidebar.
+a sidebar. General lists every optional `[features]` flag with a switch and a
+description of what it does.
 The terminal stays usable while Settings is open. Cmd-W (or Ctrl-W) closes only
 Settings; reopening activates the existing window instead of creating a duplicate.
 Local preferences remain editable if the originating session window closes.
@@ -2968,7 +2969,8 @@ Ctrl+Shift+U is left unbound for
   when the daemon confirms the selection. A compact header repeats the target name
   and Git branch. Right-clicking another visible space while this menu is open
   selects it and switches the menu in one click.
-  With `features.sidebar_hover_menu` enabled, resting the pointer on a
+  With `features.sidebar_hover_menu` enabled (**Settings > General > Open
+  space menus on hover**), resting the pointer on a
   space of the selected connection opens the same menu, and moving the pointer
   anywhere but into that menu closes it again; the flag is off by default, so
   spaces normally open their menu only on right-click, and a menu opened by
