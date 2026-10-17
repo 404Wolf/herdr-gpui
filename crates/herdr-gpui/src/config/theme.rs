@@ -158,7 +158,7 @@ impl Config {
     /// `light:…,dark:…` value, and Herdr's light palette for `Follow Herdr`.
     pub fn theme(&self, light: bool) -> Result<Theme> {
         self.theme_with_directories(light, theme_directories)
-            .map(|theme| theme.with_contrast(self.contrast))
+            .map(|theme| self.styled(theme))
     }
 
     /// Resolves every side, so a pair is refused before it is saved rather
@@ -182,7 +182,13 @@ impl Config {
     /// appearance and with this config's contrast. Reads theme files, so it
     /// runs off the UI thread.
     pub(crate) fn theme_named(&self, value: &str, light: bool) -> Result<Theme> {
-        resolve(value, light, theme_directories).map(|theme| theme.with_contrast(self.contrast))
+        resolve(value, light, theme_directories).map(|theme| self.styled(theme))
+    }
+
+    /// `theme` with this config's contrast and accent; see
+    /// [`Theme::styled_for`].
+    fn styled(&self, theme: Theme) -> Theme {
+        theme.styled_for(self)
     }
 }
 
@@ -297,6 +303,9 @@ pub struct Theme {
     pub palette: [u32; 256],
     /// Applied by [`Theme::with_contrast`]; every theme loads as `Standard`.
     pub contrast: Contrast,
+    /// The system accent standing in for the theme's, from
+    /// [`Theme::with_accent`]; every theme loads without one.
+    pub system_accent: Option<u32>,
 }
 
 impl Default for Theme {
@@ -328,6 +337,7 @@ impl Default for Theme {
             accent: None,
             palette,
             contrast: Contrast::Standard,
+            system_accent: None,
         }
     }
 }
@@ -352,9 +362,20 @@ impl Theme {
     ];
 
     /// The theme's primary accent, used for selection colors that must read as
-    /// chosen rather than merely hovered.
+    /// chosen rather than merely hovered: the system's when asked for, else
+    /// the theme's own, else its palette's magenta.
     pub fn primary(&self) -> u32 {
-        self.accent.unwrap_or(self.palette[5])
+        self.system_accent
+            .or(self.accent)
+            .unwrap_or(self.palette[5])
+    }
+
+    /// Uses the system's `accent`, when there is one, as [`Self::primary`].
+    /// Terminal colors, including the palette slot the theme's accent comes
+    /// from, stay as the theme drew them.
+    pub fn with_accent(mut self, accent: Option<u32>) -> Self {
+        self.system_accent = accent;
+        self
     }
 
     /// The sidebar's fill: Herdr's `sidebar_bg` when set, else the surface.
@@ -408,9 +429,23 @@ impl Theme {
         )
     }
 
+    /// The theme as `config` shows it: its contrast, raised while a Windows
+    /// contrast theme is on, and the system accent when `accent = "system"`.
+    /// Every theme the app paints goes through this, whatever loaded it, so
+    /// a shared Herdr theme or a Settings draft looks as a configured one.
+    pub(crate) fn styled_for(self, config: &Config) -> Self {
+        self.with_contrast(config.contrast.or_system())
+            .with_accent(config.accent.color())
+    }
+
     /// High contrast parts selected rows further from the surface and raises
     /// dim labels to text contrast. Standard leaves the theme as drawn.
+    /// Applying the level the theme already has changes nothing, so a theme
+    /// styled once and styled again is not raised twice.
     pub fn with_contrast(mut self, contrast: Contrast) -> Self {
+        if self.contrast == contrast {
+            return self;
+        }
         self.contrast = contrast;
         if contrast == Contrast::High {
             self.active = mix(self.active, self.foreground, 12);

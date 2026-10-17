@@ -1033,6 +1033,12 @@ graphics) to 4.5:1 (the level for text), lifts dim labels to it too, and makes
 selected rows stand further off the surface. Terminal output is never
 adjusted; programs keep the colors they asked for.
 
+On Windows, top-level `accent = "system"` takes the app's own accent (the
+current tab, selected rows, focus marks) from **Settings > Personalization >
+Colors** instead of the theme. It is read whenever a theme loads, so a new
+accent shows at the next theme or appearance change, or the next start. Other
+platforms keep the theme's accent.
+
 **Settings > Theme > Window** offers three backdrop tiles: **Solid** (the
 default), **Translucent**, and **Picture**, each showing only its own controls.
 Translucent starts at 85%, and its **Background opacity** stepper moves in 5%
@@ -1049,6 +1055,12 @@ opaque.
 translucent window, through GPUI's public window API: macOS and Windows blur;
 on Linux only Wayland compositors with KDE's blur protocol do, and X11 needs a
 compositing window manager for any translucency at all.
+
+On Windows 11 (22H2 and later) the blur is a DWM system backdrop that also
+covers the title bar: acrylic by default, which blurs the windows behind, or
+Mica (the **Mica** switch, `material = "mica"`), which tints the window with
+the wallpaper the way Windows' own apps do. Windows 10 keeps the older blur,
+and other platforms ignore `material`.
 
 The **Picture** tile opens a file chooser and puts an image behind the window
 instead (`image`, an absolute path or one under `~/`), and starts it at 75%
@@ -3936,6 +3948,52 @@ its `localhost` ports to Windows. Teleport is not offered. It runs only on
 Linux and macOS clients, which cannot reach a distribution, and a Windows
 client cannot script its own checkouts, so the only move left would be between
 two distributions on the same machine.
+
+### Window chrome on Windows
+
+Every window keeps the title bar Windows draws, so its buttons, double-click,
+drag-to-snap, and the window menu are the system's own, and hovering the
+maximize button opens the Snap Layouts flyout. The title bar is light or dark
+with the window's theme rather than with the system's app mode, so a dark
+theme under light Windows no longer sits under a white bar. A translucent
+window's blur is DWM acrylic or Mica on Windows 11 (see
+**Settings > Theme > Window** under
+[Configuration](#configuration)), and `accent = "system"` takes the app's
+accent from Windows.
+
+### Screen readers on Windows
+
+GPUI reports the window to UI Automation through AccessKit, which is what
+Narrator and NVDA read. Checked against the UI Automation tree of a running
+window, the main window exposes:
+
+- the terminal as a document named **Terminal**, whose text pattern holds the
+  rows on screen and the selection (see `terminal/accessibility.rs`), so
+  Narrator's reading commands and selection tools work on it;
+- the title bar's **Sidebar** (expanded or collapsed), **Back**, **Forward**,
+  and **GitHub account** buttons;
+- the tab strip as a tab list: each tab by its label, with the current one
+  selected, its **Close tab** button, **New tab**, **Split**, and **Tab
+  actions**.
+
+Each button can be invoked from the screen reader. With a Windows contrast
+theme on (Settings > Accessibility > Contrast themes), the app's own marks and
+labels use the **High contrast** level whatever `contrast` says; terminal
+colors and the theme itself are unchanged, since GPUI does not paint with the
+system's contrast colors.
+
+Still missing, and not faked with labels that do nothing:
+
+- the sidebar's spaces, agents, and device rows, the status bar, menus,
+  popups, dialogs, and the Settings, Logs, and Orchestrator windows have no
+  roles yet, so a screen reader sees only their window;
+- Tab and Shift-Tab belong to the terminal, so keyboard focus never moves to
+  the chrome; its commands are in the command palette and the keyboard
+  shortcuts instead;
+- when the app starts in the background (from a script rather than the Start
+  menu), AccessKit can miss the first activation and report the window rather
+  than the terminal as focused until the window is activated again. This is
+  in GPUI's Windows adapter setup, not in this app.
 
 ### Saved sign-ins and the avatar cache
 

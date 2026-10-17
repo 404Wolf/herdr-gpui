@@ -7,6 +7,7 @@ use crate::{
     contrast::Contrast,
     keymap::{Binding, DaemonKeys, Keymap, PaneKeys},
 };
+mod accent;
 mod agents_placement;
 pub(crate) mod backdrop;
 mod bitmap_fonts;
@@ -39,8 +40,9 @@ mod updates;
 pub(crate) mod watch;
 mod zen;
 
+pub use accent::Accent;
 pub use agents_placement::AgentsPlacement;
-pub use backdrop::Backdrop;
+pub use backdrop::{Backdrop, Material};
 pub use boat::BoatConfig;
 #[cfg(feature = "boat")]
 pub(crate) use boat::BoatFields;
@@ -112,6 +114,8 @@ pub(crate) mod corners {
 #[derive(Clone, Debug)]
 pub struct Config {
     // keep-sorted start
+    /// Where the app's own accent color comes from.
+    pub accent: Accent,
     /// Snapshot a checkout's files each time one of its agents starts or
     /// finishes a turn, so they can be rolled back.
     pub agent_checkpoints: bool,
@@ -401,6 +405,7 @@ impl Default for Config {
         };
         Self {
             // keep-sorted start
+            accent: Accent::default(),
             agent_checkpoints: true,
             agents_placement: AgentsPlacement::default(),
             backdrop: Backdrop::default(),
@@ -470,6 +475,7 @@ impl Default for Config {
 #[serde(default)]
 struct Settings {
     // keep-sorted start
+    accent: Accent,
     agent_checkpoints: Option<bool>,
     agents_placement: AgentsPlacement,
     backdrop: Backdrop,
@@ -915,6 +921,7 @@ impl Config {
         config.zen = settings.zen.try_into()?;
         settings.backdrop.validate()?;
         config.backdrop = settings.backdrop;
+        config.accent = settings.accent;
         config.contrast = settings.contrast;
         config.agents_placement = settings.agents_placement;
         config.usage = settings.usage;
