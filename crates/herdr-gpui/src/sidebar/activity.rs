@@ -8,7 +8,6 @@ use super::{agents::Indicators, line_height};
 use crate::fonts::StyledFont;
 use crate::{
     Command, HerdrWindow,
-    browser::TabId,
     orchestrator::OrchestratorView,
     search_input::{Changed, SearchInput},
 };
@@ -18,6 +17,8 @@ use std::sync::Arc;
 
 mod panels;
 mod rows;
+
+pub(crate) use rows::Host;
 
 #[cfg(test)]
 mod tests;
@@ -100,7 +101,12 @@ pub(crate) struct Activity {
     /// Each orchestrator view's lists and live agents as last drawn, by
     /// identity, so a new snapshot or a live status change redraws the
     /// sidebar and nothing else does.
-    sources: Vec<(TabId, [usize; 3])>,
+    sources: Vec<(Host, [usize; 3])>,
+    /// A list panel was shown, so the panels read an orchestrator from then
+    /// on, for their counts too.
+    listed: bool,
+    /// The orchestrator view the panels read when no tab has one.
+    pub(crate) orchestrator: Option<crate::orchestrator::SidebarOrchestrator>,
     _changed: Subscription,
 }
 
@@ -118,6 +124,8 @@ impl Activity {
             picked: false,
             filter,
             sources: Vec::new(),
+            listed: false,
+            orchestrator: None,
             _changed: changed,
         }
     }
@@ -140,10 +148,15 @@ impl Activity {
         }
     }
 
+    /// Whether a list panel has been shown, which connects the orchestrator.
+    pub(crate) fn listed(&self) -> bool {
+        self.listed || self.panel != ActivityPanel::Workspaces
+    }
+
     /// Records the views' lists; whether they changed since last time.
     pub(crate) fn observe_sources(
         &mut self,
-        views: &[(TabId, Entity<OrchestratorView>)],
+        views: &[(Host, Entity<OrchestratorView>)],
         cx: &App,
     ) -> bool {
         let mut sources: Vec<_> = views
@@ -170,6 +183,24 @@ impl Activity {
 }
 
 impl HerdrWindow {
+    /// Every orchestrator view the panels read, tabs' in tab order, then the
+    /// sidebar's own.
+    pub(crate) fn activity_views(&self) -> Vec<(Host, Entity<OrchestratorView>)> {
+        let mut views: Vec<_> = self
+            .orchestrator_views()
+            .into_iter()
+            .map(|(tab, view)| (Host::Tab(tab), view))
+            .collect();
+        views.sort_unstable_by_key(|(host, _)| *host);
+        views.extend(
+            self.activity
+                .orchestrator
+                .as_ref()
+                .map(|connected| (Host::Sidebar, connected.view.clone())),
+        );
+        views
+    }
+
     /// Whether the expanded sidebar leads with the bar.
     pub(crate) fn activity_bar_shown(&self) -> bool {
         self.config.sidebar_style.activity_bar
@@ -202,6 +233,7 @@ impl HerdrWindow {
             self.toggle_sidebar();
         }
         if panel != self.activity.panel {
+            self.activity.listed |= panel != ActivityPanel::Workspaces;
             self.activity.panel = panel;
             self.activity.picked = true;
             self.activity.filter.update(cx, |input, cx| input.clear(cx));

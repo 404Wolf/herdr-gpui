@@ -54,8 +54,8 @@ fn run(id: &str, item: &Item, state: RunState) -> Run {
     }
 }
 
-fn tab() -> TabId {
-    TabId::test(7)
+fn tab() -> super::rows::Host {
+    super::rows::Host::Tab(TabId::test(7))
 }
 
 fn pull_request(number: u64) -> crate::orchestrator::PullRequest {

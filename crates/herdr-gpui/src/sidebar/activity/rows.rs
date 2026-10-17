@@ -38,13 +38,22 @@ impl Tag {
     }
 }
 
+/// The orchestrator view a row comes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum Host {
+    /// The view of an orchestrator tab, or of a window one moved into.
+    Tab(TabId),
+    /// The sidebar's own view, which no tab hosts yet.
+    Sidebar,
+}
+
 /// What clicking a row opens.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Opens {
     /// An orchestrator item, in the view of orchestrator tab `tab`.
-    Item { tab: TabId, key: String },
+    Item { host: Host, key: String },
     /// An orchestrator run, in the view of orchestrator tab `tab`.
-    Run { tab: TabId, id: String },
+    Run { host: Host, id: String },
     /// A workspace, with the menu that carries its pull request's card.
     Workspace(String),
 }
@@ -78,7 +87,7 @@ pub(super) struct Section {
 /// One open orchestrator view's lists.
 #[derive(Clone, Copy)]
 pub(super) struct Source<'a> {
-    pub(super) tab: TabId,
+    pub(super) host: Host,
     pub(super) items: &'a [Item],
     pub(super) runs: &'a [Run],
     /// Each run's status as the view shows it, live agents considered.
@@ -177,7 +186,7 @@ fn run_row(source: Source, run: &Run, status: RunStatus) -> Row {
         meta: join(&[repository, &run.agent]),
         tag: Some(run_tag(status)),
         opens: Opens::Run {
-            tab: source.tab,
+            host: source.host,
             id: run.id.clone(),
         },
     }
@@ -211,7 +220,7 @@ pub(super) fn issues(sources: &[Source]) -> Vec<Section> {
             let tag = working
                 .contains(key.as_str())
                 .then_some(Tag::new("agent", Tone::Busy));
-            rows.push(item_row(source.tab, item, key, tag));
+            rows.push(item_row(source.host, item, key, tag));
         }
     }
     vec![Section {
@@ -250,7 +259,7 @@ pub(super) fn pull_requests(branches: &[BranchPr], sources: &[Source]) -> Vec<Se
             if listed.len() >= ROW_LIMIT || !open(item) || !seen.insert((repository, pr.number)) {
                 continue;
             }
-            listed.push(item_row(source.tab, item, item.key.canonical(), None));
+            listed.push(item_row(source.host, item, item.key.canonical(), None));
         }
     }
     vec![
@@ -283,14 +292,14 @@ fn pr_tag(pr: &PullRequest) -> Option<Tag> {
     })
 }
 
-fn item_row(tab: TabId, item: &Item, key: String, tag: Option<Tag>) -> Row {
+fn item_row(host: Host, item: &Item, key: String, tag: Option<Tag>) -> Row {
     let label = item.labels.first().map_or("", String::as_str);
     Row {
         number: item.identifier.clone(),
         title: item.title.clone(),
         meta: join(&[repository_name(&item.key.source.repository), label]),
         tag,
-        opens: Opens::Item { tab, key },
+        opens: Opens::Item { host, key },
     }
 }
 

@@ -73,7 +73,9 @@ fn icons_switch_the_panel_and_the_shown_one_collapses_it(cx: &mut gpui::TestAppC
     // No checkout has a pull request yet, and no orchestrator is open.
     assert!(cx.debug_bounds("activity-empty").is_some());
     click(cx, "activity-issues");
-    assert!(cx.debug_bounds("activity-open-orchestrator").is_some());
+    // The fixture's socket cannot run the orchestrator's scripts, which the
+    // panel says rather than offering what cannot work.
+    assert!(cx.debug_bounds("activity-empty").is_some());
     // The overview is not a destination yet.
     click(cx, "activity-overview");
     assert_eq!(

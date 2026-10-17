@@ -5,7 +5,7 @@
 
 use super::{
     ActivityPanel,
-    rows::{self, BranchPr, Opens, Row, Section, Source, Tone},
+    rows::{self, BranchPr, Host, Opens, Row, Section, Source, Tone},
 };
 use crate::fonts::StyledFont;
 use crate::{
@@ -51,8 +51,7 @@ impl Lists {
 
 impl HerdrWindow {
     pub(super) fn activity_lists(&self, cx: &App) -> Lists {
-        let mut views = self.orchestrator_views();
-        views.sort_unstable_by_key(|(tab, _)| *tab);
+        let views = self.activity_views();
         let statuses: Vec<_> = views
             .iter()
             .map(|(_, view)| view.read(cx).run_statuses())
@@ -60,10 +59,10 @@ impl HerdrWindow {
         let sources: Vec<Source> = views
             .iter()
             .zip(&statuses)
-            .map(|((tab, view), statuses)| {
+            .map(|((host, view), statuses)| {
                 let view = view.read(cx);
                 Source {
-                    tab: *tab,
+                    host: *host,
                     items: view.items(),
                     runs: view.runs(),
                     statuses,
@@ -128,7 +127,7 @@ impl HerdrWindow {
             .pb(px(6.))
             .overflow_y_scroll();
         if sections.is_empty() {
-            list = list.child(self.empty_panel(panel, lists, !query.trim().is_empty(), cx));
+            list = list.child(self.empty_panel(panel, lists, !query.trim().is_empty()));
         }
         for (index, section) in sections.into_iter().enumerate() {
             list = list.child(self.section_heading(&section));
@@ -284,23 +283,16 @@ impl HerdrWindow {
     }
 
     /// Why the panel is empty, with the way to fill it when there is one.
-    fn empty_panel(
-        &self,
-        panel: ActivityPanel,
-        lists: &Lists,
-        filtered: bool,
-        cx: &mut Context<Self>,
-    ) -> Div {
+    fn empty_panel(&self, panel: ActivityPanel, lists: &Lists, filtered: bool) -> Div {
         let theme = &self.theme;
-        let needs_orchestrator = lists.sources == 0 && panel != ActivityPanel::PullRequests;
+        let unconnected = lists.sources == 0 && panel != ActivityPanel::PullRequests;
         let text = match (filtered, panel) {
             (true, _) => "No matches",
-            (false, _) if needs_orchestrator => "Open the orchestrator to list them here",
+            (false, _) if unconnected => self.orchestrator_unavailable(),
             (false, ActivityPanel::Orchestrator) => "No agent runs",
             (false, ActivityPanel::PullRequests) => "No pull requests for these checkouts",
             (false, _) => "No open issues",
         };
-        let hover = theme.active;
         div()
             .debug_selector(|| "activity-empty".into())
             .px(px(16.))
@@ -311,25 +303,6 @@ impl HerdrWindow {
             .gap(px(8.))
             .text_color(rgb(theme.muted))
             .child(text)
-            .when(needs_orchestrator && !filtered, |empty| {
-                empty.child(
-                    div()
-                        .id("activity-open-orchestrator")
-                        .debug_selector(|| "activity-open-orchestrator".into())
-                        .px(px(8.))
-                        .py(px(3.))
-                        .rounded(px(corners::CONTROL))
-                        .border_1()
-                        .border_color(rgb(theme.active))
-                        .text_color(rgb(theme.foreground))
-                        .cursor_pointer()
-                        .hover(move |style| style.bg(rgb(hover)))
-                        .child("Open Orchestrator")
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.open_orchestrator(window, cx);
-                        })),
-                )
-            })
     }
 
     fn open_activity_row(
@@ -344,15 +317,37 @@ impl HerdrWindow {
                 self.navigate(crate::NavigationTarget::Workspace(&workspace), cx);
                 self.open_workspace_menu(&workspace, anchor, window, cx);
             }
-            Opens::Item { tab, key } => {
-                if let Some(view) = self.show_orchestrator_tab(tab, window, cx) {
+            Opens::Item { host, key } => {
+                if let Some(view) = self.show_activity_host(host, window, cx) {
                     view.update(cx, |view, cx| view.reveal_item(key, cx));
                 }
             }
-            Opens::Run { tab, id } => {
-                if let Some(view) = self.show_orchestrator_tab(tab, window, cx) {
+            Opens::Run { host, id } => {
+                if let Some(view) = self.show_activity_host(host, window, cx) {
                     view.update(cx, |view, cx| view.reveal_run(id, cx));
                 }
+            }
+        }
+    }
+
+    /// Shows the orchestrator a row came from in its tab: the tab's own, or
+    /// for the sidebar's view, a tab opened for its workspace, which takes
+    /// the view over with its lists.
+    fn show_activity_host(
+        &mut self,
+        host: Host,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<Entity<crate::orchestrator::OrchestratorView>> {
+        match host {
+            Host::Tab(tab) => self.show_orchestrator_tab(tab, window, cx),
+            Host::Sidebar => {
+                let connected = self.activity.orchestrator.as_ref()?;
+                let view = connected.view.clone();
+                let workspace = connected.workspace().to_owned();
+                let checkout = connected.checkout().to_owned();
+                self.open_orchestrator_in(workspace, Some(checkout), window, cx);
+                Some(view)
             }
         }
     }

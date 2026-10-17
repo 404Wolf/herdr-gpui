@@ -142,7 +142,7 @@ impl HerdrWindow {
 
     /// A folder of the focused workspace: its focused pane's, else the one
     /// new tabs start in.
-    fn focused_checkout(&self) -> Option<String> {
+    pub(super) fn focused_checkout(&self) -> Option<String> {
         let snapshot = self.live.snapshot.as_deref()?;
         let workspace = snapshot.focused_workspace_id.as_deref()?;
         let pane = snapshot
@@ -162,7 +162,7 @@ impl HerdrWindow {
 
     /// The orchestrator's look: the UI font's family at the terminal font's
     /// size, so Cmd-+ and Cmd-- scale it with the terminals.
-    fn look(&self) -> Look {
+    pub(super) fn look(&self) -> Look {
         let mut ui = self.config.ui.clone();
         ui.size = self.config.terminal.size;
         Look {
@@ -214,21 +214,28 @@ impl HerdrWindow {
             .connection
             .target
             .clone();
-        let (token, login) = self.github_account(&target);
-        let request = Request {
-            target,
-            checkout: repo.checkout,
-            workspace_id,
-            token,
-            data_root: None,
-            timing: Timing::default(),
+        // The sidebar's panels may already read this repository: the tab
+        // takes their view, lists and all.
+        let view = match self.take_sidebar_orchestrator(&workspace_id, &repo.checkout) {
+            Some(view) => view,
+            None => {
+                let (token, login) = self.github_account(&target);
+                let request = Request {
+                    target,
+                    checkout: repo.checkout,
+                    workspace_id,
+                    token,
+                    data_root: None,
+                    timing: Timing::default(),
+                };
+                let look = self.look();
+                cx.new(|cx| {
+                    let mut view = OrchestratorView::new(request, look, cx);
+                    view.set_github(None, login, cx);
+                    view
+                })
+            }
         };
-        let look = self.look();
-        let view = cx.new(|cx| {
-            let mut view = OrchestratorView::new(request, look, cx);
-            view.set_github(None, login, cx);
-            view
-        });
         // Handled from the tick, which has the window acting on them needs.
         let events = cx.subscribe(&view, move |this, _, event: &Event, cx| {
             if this.orchestrator_events.len() < MAX_EVENTS {
@@ -271,12 +278,18 @@ impl HerdrWindow {
             }
         }
         self.forget_closed_orchestrator_windows(cx);
+        self.sync_sidebar_orchestrator(cx);
         let views = self.orchestrator_views();
         // The sidebar's panels list what the views polled last tick.
-        if self.activity.observe_sources(&views, cx) {
+        if self.activity.observe_sources(&self.activity_views(), cx) {
             cx.notify();
         }
-        if views.is_empty() {
+        let sidebar = self
+            .activity
+            .orchestrator
+            .as_ref()
+            .map(|connected| connected.view.clone());
+        if views.is_empty() && sidebar.is_none() {
             self.orchestrator_sampling = false;
             return;
         }
@@ -306,7 +319,7 @@ impl HerdrWindow {
         }
         let (live, branches) = self.live_agents();
         let look = self.look();
-        for (_, view) in views {
+        for view in views.into_iter().map(|(_, view)| view).chain(sidebar) {
             let (token, login) = self.github_account(view.read(cx).target());
             view.update(cx, |view, cx| {
                 view.poll(cx);

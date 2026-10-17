@@ -6,7 +6,7 @@ use crate::sidebar::activity::rows::{
 
 fn source<'a>(items: &'a [Item], runs: &'a [Run], statuses: &'a [RunStatus]) -> Source<'a> {
     Source {
-        tab: tab(),
+        host: tab(),
         items,
         runs,
         statuses,
@@ -50,7 +50,7 @@ fn runs_are_grouped_by_what_they_need_from_the_user() {
     assert_eq!(
         asking.opens,
         Opens::Run {
-            tab: tab(),
+            host: tab(),
             id: "c".into()
         }
     );
@@ -89,7 +89,7 @@ fn issues_list_open_items_and_mark_those_an_agent_works_on() {
     assert_eq!(
         sections[0].rows[0].opens,
         Opens::Item {
-            tab: tab(),
+            host: tab(),
             key: items[0].key.canonical()
         }
     );
