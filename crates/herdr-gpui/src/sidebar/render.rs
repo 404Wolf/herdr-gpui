@@ -806,11 +806,15 @@ impl HerdrWindow {
                             })
                             .min_h_0()
                             .overflow_hidden()
-                            .child(
-                                header("agents", font, theme, look)
-                                    .justify_between()
-                                    .child(agents_sort(self, cx)),
-                            )
+                            // A plugin view on any listed host filters the
+                            // rows, so the header stays to say so.
+                            .when(self.config.show_agents_header || filtered, |section| {
+                                section.child(
+                                    header("agents", font, theme, look)
+                                        .justify_between()
+                                        .child(agents_sort(self, cx)),
+                                )
+                            })
                             .child(agents),
                     )
             })

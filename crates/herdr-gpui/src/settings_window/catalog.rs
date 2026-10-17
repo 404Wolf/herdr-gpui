@@ -149,6 +149,12 @@ pub(super) const CATALOG: &[Entry] = &[
     ),
     entry(
         Section::Sidebar,
+        "sidebar-show-agents-header",
+        "Show agents header",
+        "The Agents title row with the sort toggle.",
+    ),
+    entry(
+        Section::Sidebar,
         "sidebar-show-search",
         "Show search",
         "The search field above the workspaces.",

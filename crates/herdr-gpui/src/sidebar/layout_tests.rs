@@ -22,6 +22,8 @@ use std::sync::Arc;
 mod agent_menu;
 #[cfg(test)]
 mod agent_rows;
+#[cfg(test)]
+mod agents_header;
 #[cfg(all(test, feature = "coder"))]
 mod coder_dialog;
 #[cfg(test)]

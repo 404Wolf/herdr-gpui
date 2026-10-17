@@ -13,6 +13,7 @@ pub(crate) enum Preference {
     ShowNetworkQuality(bool),
     AgentCheckpoints(bool),
     ShowListeningPorts(bool),
+    ShowAgentsHeader(bool),
     ShowSidebarSearch(bool),
     ShowRepositoryIcons(bool),
     /// `status_icons`; `None` removes it, following Herdr's indicator style.
@@ -113,6 +114,9 @@ impl Config {
                 }
                 Preference::ShowListeningPorts(value) => {
                     (None, "show_listening_ports", Some(value.into()))
+                }
+                Preference::ShowAgentsHeader(value) => {
+                    (None, "show_agents_header", Some(value.into()))
                 }
                 Preference::ShowSidebarSearch(value) => {
                     (None, "show_sidebar_search", Some(value.into()))

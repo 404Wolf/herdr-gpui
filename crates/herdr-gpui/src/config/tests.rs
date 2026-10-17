@@ -3,6 +3,7 @@ use anyhow::Context as _;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 mod accent;
+mod agents_header;
 mod agents_placement;
 mod backdrop;
 mod bitmap_fonts;
