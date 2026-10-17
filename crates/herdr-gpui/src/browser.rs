@@ -12,6 +12,7 @@ mod annotate;
 // Linux builds show no pages, so there is nothing to annotate there.
 #[cfg(any(target_os = "macos", windows))]
 mod annotate_view;
+mod closed;
 mod code;
 mod code_group;
 mod code_start;
@@ -56,6 +57,7 @@ mod view_tests;
 
 #[cfg(any(target_os = "macos", windows))]
 pub(crate) use annotate_view::Annotations;
+pub(crate) use closed::ClosedHerdrTab;
 pub(crate) use feedback::{Batch, Feedback, FeedbackKey};
 #[cfg(unix)]
 pub(crate) use feedback::{TAKE_BUDGET, json_size};
