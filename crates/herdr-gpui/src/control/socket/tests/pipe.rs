@@ -48,11 +48,18 @@ fn the_server_never_joins_a_pipe_someone_else_created() {
         .path(address.path.as_path())
         .create_duplex::<pipe_mode::Bytes>()
         .unwrap();
-    // It is this user's own pipe, so it reads as a server already running.
-    assert!(matches!(
-        Server::bind(&address.path),
-        Err(crate::Error::ControlSocketInUse { .. })
-    ));
+    // Default security makes the creator's default owner the pipe's owner:
+    // the user, so it reads as a server already running, or, in an elevated
+    // process such as a CI runner, Administrators, so it reads as someone
+    // else's. Either way the server refuses rather than joining it.
+    let error = Server::bind(&address.path).err();
+    assert!(
+        matches!(
+            error,
+            Some(crate::Error::ControlSocketInUse { .. } | crate::Error::ControlPipeForeign { .. })
+        ),
+        "{error:?}"
+    );
 }
 
 #[test]
