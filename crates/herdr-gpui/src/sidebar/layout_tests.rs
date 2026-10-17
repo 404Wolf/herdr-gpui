@@ -88,6 +88,8 @@ mod update_notes_scrollbar;
 #[cfg(test)]
 mod update_panel;
 #[cfg(test)]
+mod workspace_click_hover;
+#[cfg(test)]
 mod workspace_menu;
 #[cfg(test)]
 mod worktree_note_trunk;

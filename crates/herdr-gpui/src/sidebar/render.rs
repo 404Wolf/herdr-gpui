@@ -510,6 +510,9 @@ impl HerdrWindow {
                     row.on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                            if this.config.features.sidebar_hover_menu {
+                                this.press_hovered_workspace(&press_id, event.position);
+                            }
                             if event.click_count == 1 {
                                 this.press_workspace(&press_id, event.position, cx);
                             }
