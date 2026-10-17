@@ -479,8 +479,13 @@ size = 12
 # usage = "detailed"
 # "detailed" draws a CPU graph and a memory meter; "compact" shows the shares.
 # system_load = "detailed"
-# The cup that keeps the display awake; it stays while holding, so it can stop.
+# The cup that keeps the machine awake; it stays while holding, so it can stop.
 # keep_awake = true
+# What the cup keeps awake: "display" holds the display and the system, so the
+# screen never locks; "system" holds only the system (like `caffeinate -i`) and
+# lets the display sleep and lock. A cup already on keeps its scope until it is
+# turned off and on again.
+# keep_awake_scope = "display"
 # Buttons: "label" for icon and name, "icon" for the icon alone, or "hidden".
 # theme = "label"
 # shortcuts = "label"
