@@ -206,6 +206,10 @@ jobs:
     needs: [zizmor, commits]
     runs-on: windows-2025
     timeout-minutes: 60
+    # The steps read "$TARGET" and friends, as the release workflow's do.
+    defaults:
+      run:
+        shell: bash
     permissions:
       contents: read
     env:

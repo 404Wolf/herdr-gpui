@@ -308,10 +308,10 @@ Each release publishes `Herdr-VERSION-x86_64-pc-windows-msvc.zip` and
 `Herdr-VERSION-aarch64-pc-windows-msvc.zip` (native ARM64), each containing
 `herdr-gpui.exe`, `herdr-gpui-launcher.exe`, and their license notices, beside
 the matching `-setup.exe` installers. They carry the same checksums, Sigstore
-signatures, and build provenance as the other assets. Release builds
-Authenticode-sign both executables, the installers, and their uninstaller once
-the signing account in [`scripts/release/README.md`](scripts/release/README.md)
-is configured; until then SmartScreen warns on first launch. They never update
+signatures, and build provenance as the other assets, and both executables,
+the installers, and their uninstaller are Authenticode-signed: a release
+publishes only after Windows accepts those signatures (see
+[`scripts/release/README.md`](scripts/release/README.md)). They never update
 themselves: rerun the [install script](#windows-experimental) or a newer
 installer. `herdr-gpui.exe` is a console program, because it is also the
 command line agents and scripts run. Open the app with

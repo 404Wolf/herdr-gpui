@@ -81,7 +81,9 @@ class ReleaseTargets(unittest.TestCase):
         self.assertIn("needs.commits.outputs.windows_package == 'true'", package)
         self.assertIn("needs: [zizmor, commits]", package)
         self.assertNotIn("secrets.", package)
-        for command in ('cargo build --locked --release -p herdr-gpui --target "$TARGET"',
+        # Bash, so "$TARGET" and friends expand on the Windows runner.
+        self.assertIn("    defaults:\n      run:\n        shell: bash\n", package)
+        for command in ('cargo build --locked --release -p herdr-gpui -p herdr-gpui-launcher --target "$TARGET"',
                         'python scripts/release/package-windows.py "$VERSION" "$TARGET"',
                         'python scripts/release/windows-installer.py install-iscc',
                         'python scripts/release/windows-installer.py build "$VERSION" "$TARGET"',
