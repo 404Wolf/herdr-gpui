@@ -10,10 +10,15 @@
 //! only delivers stdin to a process on a terminal. So the relay starts a bare
 //! `/bin/sh` on a terminal and types one setup line: it makes the terminal raw
 //! so bytes pass unchanged, prints [`output::START`], then reads the remote
-//! command from stdin by length and runs it with stderr saved to a file, which
-//! it prints after [`output::STDERR`] once the command exits. The relay sends
-//! the remote command, and then the caller's input, only after the start
-//! marker, so nothing reaches the shell before the terminal is raw.
+//! command from stdin by length and runs it with stderr saved to a file. The
+//! relay sends the remote command, and then the caller's input, only after
+//! the start marker, so nothing reaches the shell before the terminal is raw.
+//!
+//! A terminal merges stdout and stderr, and no marker in that one stream can
+//! tell where stdout ends without holding back bytes the bridge may be
+//! waiting on. So everything after the start marker until the command exits
+//! is its stdout, and once it exits the relay reads the saved stderr through
+//! a second, short exec session.
 //!
 //! A raw terminal has no end of input, and closing the stream would end the
 //! command's output too. So the caller's input travels in frames, each its
@@ -102,21 +107,43 @@ fn run(account: &OsString, sandbox: &OsString, remote: &[OsString]) -> Result<Ex
         .sock
         .set_read_timeout(Some(POLL))
         .map_err(Error::Process)?;
-    let command = start(&mut socket, remote)?;
-    relay(
-        &mut socket,
-        &command,
-        input(),
-        &mut io::stdout().lock(),
-        &mut io::stderr().lock(),
-    )
+    let files = remote_files();
+    let command = start(&mut socket, remote, &files)?;
+    let code = relay(&mut socket, &command, input(), &mut io::stdout().lock())?;
+    let _ = socket.close(None);
+    let mut stderr = io::stderr().lock();
+    // The command ran and its exit code stands; only its diagnostics are
+    // missing, so say so rather than fail the command.
+    let fetched = open(&url, client.token().expose_secret()).and_then(|mut socket| {
+        socket
+            .get_ref()
+            .sock
+            .set_read_timeout(Some(POLL))
+            .map_err(Error::Process)?;
+        fetch_errors(&mut socket, &files, &mut stderr)
+    });
+    if let Err(error) = fetched {
+        let _ = writeln!(
+            stderr,
+            "herdr-gpui: could not read the sandbox command's stderr: {error}"
+        );
+    }
+    Ok(code)
 }
 
-/// Start the remote shell and type its setup line. Returns the remote
-/// command, which the shell reads once the terminal is raw.
+/// Where a remote command's saved stderr and its input FIFO go, as a path
+/// prefix unique to this run.
+fn remote_files() -> String {
+    format!("/tmp/herdr-relay-{}", uuid::Uuid::new_v4().simple())
+}
+
+/// Start the remote shell and type its setup line, which keeps the
+/// command's stderr and input FIFO at `files`. Returns the remote command,
+/// which the shell reads once the terminal is raw.
 pub(super) fn start<S: Read + Write>(
     socket: &mut WebSocket<S>,
     remote: &[OsString],
+    files: &str,
 ) -> Result<Vec<u8>> {
     let command = remote_command(remote)?;
     socket
@@ -124,10 +151,30 @@ pub(super) fn start<S: Read + Write>(
         .map_err(Error::Stream)?;
     socket
         .send(Message::text(stdin_message(
-            setup_line(command.len()).as_bytes(),
+            setup_line(command.len(), files).as_bytes(),
         )))
         .map_err(Error::Stream)?;
     Ok(command)
+}
+
+/// Write the stderr a finished command saved at `files` to `stderr`, through
+/// a new exec session on `socket`, and delete it there. That session's own
+/// stderr goes with it: nothing would read it.
+pub(super) fn fetch_errors<S: Read + Write>(
+    socket: &mut WebSocket<S>,
+    files: &str,
+    stderr: &mut impl Write,
+) -> Result<()> {
+    let own = remote_files();
+    let remote = [OsString::from(format!(
+        "cat {files}.err 2>/dev/null; rm -f {files}.err {own}.err"
+    ))];
+    let command = start(socket, &remote, &own)?;
+    // No input: the empty frame goes at once.
+    let (_, input) = mpsc::sync_channel(0);
+    relay(socket, &command, input, stderr)?;
+    let _ = socket.close(None);
+    Ok(())
 }
 
 /// The remote command as `ssh` joins its arguments.
@@ -139,29 +186,29 @@ pub(super) fn remote_command(remote: &[OsString]) -> Result<Vec<u8>> {
     Ok(words.join(" ").into_bytes())
 }
 
-/// Typed while the terminal still echoes, so the markers are spelled with
-/// `printf` escapes that the echo shows literally. `head -c` reads exactly
-/// the command, and then each frame of the caller's input; see
-/// [`input_frame`]. The frame reader runs in the background with the
-/// terminal as its explicit input, since a background list's input is
-/// otherwise `/dev/null`, and is killed once the command exits, as `ssh`
-/// stops forwarding input then. A shell on a terminal is interactive, so
-/// job control goes off first, or the reader would be stopped for reading
-/// the terminal; and its job is found with `jobs -p`, since an interactive
-/// bash would take `$!` as a history expansion.
-pub(super) fn setup_line(command_len: usize) -> String {
+/// Typed while the terminal still echoes, so the start marker is spelled
+/// with a `printf` escape that the echo shows literally. The shell the
+/// service starts is interactive, which brings job control, job notices on
+/// the terminal, and history expansion, so once the terminal is raw the rest
+/// runs in a non-interactive `sh`, quoted whole so the interactive shell
+/// expands none of it. `head -c` reads exactly the command, and then each
+/// frame of the caller's input; see [`input_frame`]. The frame reader runs in
+/// the background with the terminal as its explicit input, since a
+/// background list's input is otherwise `/dev/null`, and is killed once the
+/// command exits, as `ssh` stops forwarding input then. `files` is a path
+/// prefix of plain characters, from [`remote_files`].
+pub(super) fn setup_line(command_len: usize, files: &str) -> String {
     format!(
-        "stty raw -echo -iexten || exit {CONNECTION_FAILED}; set +m; \
-         e=$(mktemp) || exit {CONNECTION_FAILED}; \
-         f=\"$e.in\"; mkfifo \"$f\" || exit {CONNECTION_FAILED}; \
-         printf '\\001herdr-relay-start\\001'; \
+        "stty raw -echo -iexten || exit {CONNECTION_FAILED}; \
+         exec /bin/sh -c '\
+         e={files}.err; f={files}.in; \
+         mkfifo \"$f\" || exit {CONNECTION_FAILED}; \
+         printf \"\\001herdr-relay-start\\001\"; \
          s=$(head -c {command_len}); \
          exec 3<&0; \
-         {{ while IFS= read -r n && [ \"$n\" -gt 0 ]; do head -c \"$n\"; done; }} <&3 >\"$f\" & \
+         {{ while IFS= read -r n && [ \"$n\" -gt 0 ]; do head -c \"$n\"; done; }} <&3 >\"$f\" & r=$!; \
          eval \"$s\" <\"$f\" 2>\"$e\"; c=$?; \
-         kill $(jobs -p) 2>/dev/null; rm -f \"$f\"; \
-         printf '\\001herdr-relay-stderr\\001'; \
-         cat \"$e\"; rm -f \"$e\"; exit $c\n"
+         kill $r 2>/dev/null; rm -f \"$f\"; exit $c'\n"
     )
 }
 
@@ -317,7 +364,6 @@ pub(super) fn relay<S: Read + Write>(
     command: &[u8],
     input: Receiver<Option<Vec<u8>>>,
     stdout: &mut impl Write,
-    stderr: &mut impl Write,
 ) -> Result<ExitCode> {
     let mut output = Output::default();
     // Input that ends is passed on as an empty frame, which ends the remote
@@ -348,9 +394,6 @@ pub(super) fn relay<S: Read + Write>(
                     io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
                 ) =>
             {
-                // Quiet for a poll, so what may have begun the stderr
-                // marker was output after all.
-                output.flush(stdout)?;
                 continue;
             }
             Err(tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed) => {
@@ -367,7 +410,7 @@ pub(super) fn relay<S: Read + Write>(
             // A terminal has one output stream; the service may still label
             // some of it stderr.
             Event::Stdout(bytes) | Event::Stderr(bytes) => {
-                if output.push(&bytes, stdout, stderr)? && !command.is_empty() {
+                if output.push(&bytes, stdout)? && !command.is_empty() {
                     socket
                         .send(Message::text(stdin_message(command)))
                         .map_err(Error::Stream)?;
@@ -380,11 +423,7 @@ pub(super) fn relay<S: Read + Write>(
                 let _ = socket.close(None);
                 return Err(Error::Sandbox(output.diagnostic()));
             }
-            Event::Exit(code) => {
-                output.flush(stdout)?;
-                let _ = socket.close(None);
-                return Ok(ExitCode::from(code));
-            }
+            Event::Exit(code) => return Ok(ExitCode::from(code)),
             Event::Failed(message) => return Err(Error::Sandbox(message)),
             Event::Ignore => {}
         }

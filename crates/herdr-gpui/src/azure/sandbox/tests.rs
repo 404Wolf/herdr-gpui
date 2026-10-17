@@ -133,11 +133,12 @@ fn remote_command_is_joined_like_ssh_and_read_by_length() {
     let remote = [OsString::from("/bin/sh -c 'echo hi\nexit 3'")];
     let command = relay::remote_command(&remote).unwrap();
     assert_eq!(command, b"/bin/sh -c 'echo hi\nexit 3'");
-    let line = relay::setup_line(command.len());
+    let line = relay::setup_line(command.len(), "/tmp/herdr-relay-x");
     assert!(line.starts_with("stty raw -echo -iexten || exit 255;"));
     assert!(line.contains(&format!("s=$(head -c {});", command.len())));
-    assert!(line.ends_with("exit $c\n"));
-    // The echoed line must not contain the markers' bytes.
+    assert!(line.contains("e=/tmp/herdr-relay-x.err; f=/tmp/herdr-relay-x.in;"));
+    assert!(line.ends_with("exit $c'\n"));
+    // The echoed line must not contain the marker's bytes.
     assert!(!line.contains('\x01'));
     assert_eq!(line.matches('\n').count(), 1);
 }
@@ -197,78 +198,60 @@ fn helper_ignores_other_arguments_and_rejects_missing_ones() {
 }
 
 #[test]
-fn output_drops_the_setup_echo_and_splits_saved_stderr() {
+fn output_drops_the_setup_echo_and_passes_the_rest_unchanged() {
     let mut output = relay::output::Output::default();
-    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    let mut stdout = Vec::new();
     assert!(
         !output
-            .push(b"stty raw -echo\r\n\x01herdr-re", &mut stdout, &mut stderr)
+            .push(b"stty raw -echo\r\n\x01herdr-re", &mut stdout)
             .unwrap()
     );
     assert!(!output.started());
-    assert!(
-        output
-            .push(b"lay-start\x01\x00bin", &mut stdout, &mut stderr)
-            .unwrap()
-    );
+    assert!(output.push(b"lay-start\x01\x00bin", &mut stdout).unwrap());
     assert!(output.started());
-    // A stderr marker split across messages is still found.
+    // Nothing after the start marker is held back or taken out, a frame
+    // ending in the marker's first byte included.
+    assert!(!output.push(b"ary\r\n\x01", &mut stdout).unwrap());
     assert!(
         !output
-            .push(b"ary\r\n\x01herdr-relay-std", &mut stdout, &mut stderr)
+            .push(b"\x01herdr-relay-start\x01", &mut stdout)
             .unwrap()
     );
-    assert!(
-        !output
-            .push(b"err\x01warn\n", &mut stdout, &mut stderr)
-            .unwrap()
-    );
-    assert!(!output.push(b"more\n", &mut stdout, &mut stderr).unwrap());
-    assert_eq!(stdout, b"\x00binary\r\n");
-    assert_eq!(stderr, b"warn\nmore\n");
-}
-
-#[test]
-fn output_holds_back_only_what_may_begin_the_stderr_marker() {
-    let mut output = relay::output::Output::default();
-    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
-    output
-        .push(
-            b"\x01herdr-relay-start\x01frame\x01",
-            &mut stdout,
-            &mut stderr,
-        )
-        .unwrap();
-    assert_eq!(stdout, b"frame");
-    // The next message rules the marker out.
-    output.push(b"\x01her", &mut stdout, &mut stderr).unwrap();
-    assert_eq!(stdout, b"frame\x01");
-    // A quiet stream does too: the bridge may be waiting on these bytes.
-    output.flush(&mut stdout).unwrap();
-    assert_eq!(stdout, b"frame\x01\x01her");
-    assert!(stderr.is_empty());
+    assert_eq!(stdout, b"\x00binary\r\n\x01\x01herdr-relay-start\x01");
 }
 
 #[test]
 fn output_reports_what_a_shell_that_never_started_printed() {
     let mut output = relay::output::Output::default();
-    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    let mut stdout = Vec::new();
     output
-        .push(
-            b"exec failed: /bin/sh: not found\n",
-            &mut stdout,
-            &mut stderr,
-        )
+        .push(b"exec failed: /bin/sh: not found\n", &mut stdout)
         .unwrap();
     assert_eq!(output.diagnostic(), "exec failed: /bin/sh: not found");
-    assert!(stdout.is_empty() && stderr.is_empty());
+    assert!(stdout.is_empty());
 }
 
-/// A local exec stream peer: it checks what the relay sends, answers like the
-/// service's terminal, and reports the remote command and input it was given.
-#[test]
-fn relay_runs_a_command_and_carries_its_streams_and_exit_code() {
-    use std::{net::TcpListener, sync::mpsc, time::Duration};
+/// What a [`terminal`] peer was sent.
+struct Served {
+    setup: Vec<u8>,
+    command: Vec<u8>,
+    /// The input frames, up to the empty frame that ends them.
+    input: Vec<u8>,
+}
+
+/// A local exec stream peer that answers like the service's terminal: it
+/// checks the start message, echoes the setup line, prints the start marker,
+/// reads the command and input frames until the empty one, then sends
+/// `output` as stdout messages and exits with `exit`. Returns the relay's end
+/// of the stream, its reads timing out as the relay's do.
+fn terminal(
+    output: &'static [&'static [u8]],
+    exit: i64,
+) -> (
+    tungstenite::WebSocket<std::net::TcpStream>,
+    std::thread::JoinHandle<Served>,
+) {
+    use std::{net::TcpListener, time::Duration};
     use tungstenite::Message;
 
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -288,9 +271,9 @@ fn relay_runs_a_command_and_carries_its_streams_and_exit_code() {
                 .decode(message["data"].as_str().unwrap())
                 .unwrap()
         };
-        let send = |socket: &mut tungstenite::WebSocket<_>, kind: &str, data: &[u8]| {
+        let send = |socket: &mut tungstenite::WebSocket<_>, data: &[u8]| {
             let data = base64::engine::general_purpose::STANDARD.encode(data);
-            let value = serde_json::json!({ "type": kind, "data": data });
+            let value = serde_json::json!({ "type": "stdout", "data": data });
             socket.send(Message::text(value.to_string())).unwrap();
         };
         let start = next(&mut socket);
@@ -298,42 +281,66 @@ fn relay_runs_a_command_and_carries_its_streams_and_exit_code() {
         assert_eq!(start["start"]["command"], "/bin/sh");
         assert_eq!(start["start"]["tty"], true);
         let setup = decode(&next(&mut socket));
-        // The terminal echoes the setup line, then the shell starts.
-        send(&mut socket, "stdout", &setup);
-        send(&mut socket, "stdout", b"\x01herdr-relay-start\x01ready\n");
+        send(&mut socket, &setup);
+        send(&mut socket, b"\x01herdr-relay-start\x01");
         let command = decode(&next(&mut socket));
-        let reply = decode(&next(&mut socket));
-        let end = decode(&next(&mut socket));
-        assert_eq!(end, relay::input_frame(&[]));
-        send(&mut socket, "stderr", b"\x01herdr-relay-stderr\x01warn\n");
-        let exit = serde_json::json!({ "type": "exit_code", "exitCode": 3 });
+        let mut input = Vec::new();
+        loop {
+            let frame = decode(&next(&mut socket));
+            if frame == relay::input_frame(&[]) {
+                break;
+            }
+            input.extend(frame);
+        }
+        for chunk in output {
+            send(&mut socket, chunk);
+        }
+        let exit = serde_json::json!({ "type": "exit_code", "exitCode": exit });
         socket.send(Message::text(exit.to_string())).unwrap();
-        let _ = socket.read();
-        (setup, command, reply)
+        while socket.read().is_ok() {}
+        Served {
+            setup,
+            command,
+            input,
+        }
     });
 
     let stream = std::net::TcpStream::connect(address).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_millis(20)))
         .unwrap();
-    let (mut socket, _) = tungstenite::client(format!("ws://{address}/"), stream).unwrap();
-    let command = relay::start(&mut socket, &[OsString::from("/bin/sh -c 'probe'")]).unwrap();
+    let (socket, _) = tungstenite::client(format!("ws://{address}/"), stream).unwrap();
+    (socket, service)
+}
+
+#[test]
+fn relay_runs_a_command_and_carries_its_input_output_and_exit_code() {
+    use std::sync::mpsc;
+
+    // Output that ends in what once began a stderr marker passes unchanged.
+    let (mut socket, service) = terminal(&[b"ready\n", b"frame\x01"], 3);
+    let files = "/tmp/herdr-relay-x";
+    let command =
+        relay::start(&mut socket, &[OsString::from("/bin/sh -c 'probe'")], files).unwrap();
     let (send, input) = mpsc::sync_channel(4);
     // Queued before the shell starts, so it must follow the command.
     send.send(Some(b"accept\n".to_vec())).unwrap();
     // Input ending ends the command's input, not the command: a probe has
     // none at all.
     send.send(None).unwrap();
-    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
-    let code = relay::relay(&mut socket, &command, input, &mut stdout, &mut stderr).unwrap();
+    let mut stdout = Vec::new();
+    let code = relay::relay(&mut socket, &command, input, &mut stdout).unwrap();
+    drop(socket);
 
     assert_eq!(code, std::process::ExitCode::from(3));
-    assert_eq!(stdout, b"ready\n");
-    assert_eq!(stderr, b"warn\n");
-    let (setup, command, reply) = service.join().unwrap();
-    assert_eq!(setup, relay::setup_line(command.len()).as_bytes());
-    assert_eq!(command, b"/bin/sh -c 'probe'");
-    assert_eq!(reply, b"7\naccept\n");
+    assert_eq!(stdout, b"ready\nframe\x01");
+    let served = service.join().unwrap();
+    assert_eq!(
+        served.setup,
+        relay::setup_line(command.len(), files).as_bytes()
+    );
+    assert_eq!(served.command, b"/bin/sh -c 'probe'");
+    assert_eq!(served.input, b"7\naccept\n");
 }
 
 #[test]
@@ -363,8 +370,8 @@ fn a_shell_that_never_starts_is_a_failed_connection() {
         .unwrap();
     let (mut socket, _) = tungstenite::client(format!("ws://{address}/"), stream).unwrap();
     let (_send, input) = mpsc::sync_channel(1);
-    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
-    let error = relay::relay(&mut socket, b"true", input, &mut stdout, &mut stderr).unwrap_err();
+    let mut stdout = Vec::new();
+    let error = relay::relay(&mut socket, b"true", input, &mut stdout).unwrap_err();
     assert!(
         matches!(&error, Error::Sandbox(text) if text == "exec failed"),
         "{error:?}"
@@ -373,4 +380,5 @@ fn a_shell_that_never_starts_is_a_failed_connection() {
     service.join().unwrap();
 }
 
+mod errors;
 mod input;
