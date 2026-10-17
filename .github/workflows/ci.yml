@@ -228,6 +228,10 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install the pinned Herdr daemon
         run: echo "HERDR_TEST_BINARY=$(python scripts/install-herdr-windows.py "$RUNNER_TEMP/herdr")" >> "$GITHUB_ENV"
+      # Runners start at 1024x768; the sidebar fixture skips, and counts, any
+      # window size the display cannot hold if this is refused.
+      - name: Raise the desktop resolution
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/set-display-resolution.ps1
       - name: Native window, input, and live-daemon tests
         run: cargo test --locked -p herdr-gpui --features integration-test --test live_gui -- --ignored --nocapture --test-threads=1
       # The updater's Authenticode check against a real signature: the pinned
@@ -265,6 +269,11 @@ jobs:
       # Packaging names files after a release version; any valid one will do.
       VERSION: '20000101.1'
       TARGET: x86_64-pc-windows-msvc
+    # The steps expand "$TARGET" and friends as the release workflow does;
+    # Windows runners default to PowerShell, which would pass them empty.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
