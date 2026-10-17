@@ -66,8 +66,13 @@ pub(crate) fn remember(recent: &mut Vec<Recent>, entry: Recent) {
     recent.truncate(MAX_RECENT);
 }
 
+/// The jump list for these checkouts and devices. Devices are listed Local
+/// first, then by name: each window keeps its own device order, and the
+/// list must not change with whichever window looked last.
 pub(crate) fn entries(recent: &[Recent], devices: &[(String, String)]) -> Entries {
     let label = |text: &str| crate::notifications::safe_text(text, MAX_LABEL);
+    let mut devices: Vec<&(String, String)> = devices.iter().collect();
+    devices.sort_by_cached_key(|(id, name)| (id != LOCAL, name.to_lowercase(), id.clone()));
     Entries {
         recent: recent
             .iter()

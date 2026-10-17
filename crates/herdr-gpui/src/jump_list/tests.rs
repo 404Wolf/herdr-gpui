@@ -94,3 +94,15 @@ fn only_a_focused_local_git_checkout_is_remembered(cx: &mut gpui::TestAppContext
         })
         .unwrap();
 }
+
+#[test]
+fn windows_with_different_device_orders_publish_the_same_list() {
+    let local = ("local".to_owned(), "Local".to_owned());
+    let boat = ("ssh:boat".to_owned(), "boat".to_owned());
+    let alpha = ("ssh:alpha".to_owned(), "Alpha".to_owned());
+    let one = entries(&[], &[boat.clone(), local.clone(), alpha.clone()]);
+    let other = entries(&[], &[alpha, boat, local]);
+    assert_eq!(one, other);
+    let titles: Vec<&str> = one.devices.iter().map(|item| item.title.as_str()).collect();
+    assert_eq!(titles, ["Show Local", "Show Alpha", "Show boat"]);
+}
