@@ -121,3 +121,24 @@ fn a_frame_split_across_an_idle_gap_is_still_delivered_whole() {
     client.handle.disconnect();
     worker.join().unwrap().unwrap();
 }
+
+#[test]
+fn a_peer_that_stalls_mid_frame_is_timed_out_by_the_worker() {
+    let (client, mut server, worker) = test_client();
+    handshake(&mut server);
+    event(&client);
+    event(&client);
+    let bytes = encode_message(
+        &ServerMessage::PaneSurface(baseline()),
+        MAX_GRAPHICS_FRAME_SIZE,
+    )
+    .unwrap();
+    server.write_all(&bytes[..8]).unwrap();
+    let (done, finished) = bounded(1);
+    thread::spawn(move || done.send(worker.join().unwrap()));
+    let result = finished
+        .recv_timeout(TIMEOUT + Duration::from_secs(5))
+        .unwrap();
+    assert!(matches!(result, Err(Error::PartialFrameTimeout)));
+    drop(server);
+}
