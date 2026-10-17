@@ -23,7 +23,7 @@ pub fn set_command_environment(apply: fn(&mut Command)) -> bool {
 /// SSH children, so it never needs one.
 #[cfg(unix)]
 pub(crate) fn command(program: impl AsRef<OsStr>) -> Command {
-    let mut command = Command::new(program);
+    let mut command = crate::new_command(program);
     if let Some(apply) = APPLY.get() {
         apply(&mut command);
     }

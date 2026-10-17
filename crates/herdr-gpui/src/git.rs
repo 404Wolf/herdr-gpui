@@ -8,6 +8,7 @@
 //! are explicit user actions and are never retried or replayed automatically.
 use crate::{
     Error,
+    github::Tokens,
     pull_request::{Input, clean, local_checkout, origin_repository, run, run_bytes},
 };
 use secrecy::SecretString;
@@ -96,7 +97,7 @@ enum Job {
     /// Is there anything to commit? Cheaper than counting lines, and all a
     /// sidebar row needs to show its dot.
     Dirty,
-    Run(Action, Option<Arc<SecretString>>),
+    Run(Action, Option<Tokens>),
 }
 
 enum Completion {
@@ -293,7 +294,7 @@ impl Git {
     }
 
     /// Queue an explicit user action against the tracked checkout.
-    pub fn start(&mut self, action: Action, token: Option<Arc<SecretString>>) -> crate::Result<()> {
+    pub fn start(&mut self, action: Action, token: Option<Tokens>) -> crate::Result<()> {
         if self.running.is_some() {
             return Err(Error::GitBusy);
         }
@@ -513,7 +514,7 @@ pub(super) fn parse_numstat(text: &str) -> Status {
 fn perform(
     input: &Input,
     action: Action,
-    token: Option<Arc<SecretString>>,
+    token: Option<Tokens>,
     cancelled: &impl Fn() -> bool,
 ) -> crate::Result<Outcome> {
     let deadline = Instant::now() + OPERATION_TIMEOUT;
@@ -586,11 +587,12 @@ fn push(
 fn create_pull_request(
     checkout: &str,
     branch: &str,
-    token: &SecretString,
+    tokens: &Tokens,
     deadline: Instant,
     cancelled: &impl Fn() -> bool,
 ) -> crate::Result<Outcome> {
     let (owner, repo) = origin_repository(checkout, deadline, cancelled)?;
+    let token: &SecretString = tokens.for_owner(&owner);
     let title = clean(&git(
         checkout,
         &["log", "-1", "--pretty=format:%s"],
@@ -704,7 +706,7 @@ pub(crate) fn git_bytes(
 
 /// Git in `checkout`, read-only and without the file monitor.
 fn command(checkout: &str, args: &[&str]) -> Command {
-    let mut command = Command::new("git");
+    let mut command = herdr_client::new_command("git");
     command
         .args([
             "-c",

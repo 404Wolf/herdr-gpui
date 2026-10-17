@@ -1,8 +1,12 @@
 use super::*;
+use crate::config::{FontFace, LayoutMode};
+use crate::settings_window::inputs::NumberField;
 use core::prelude::v1::test;
 
+mod agents_placement;
 mod backdrop;
 mod device_icons;
+mod features;
 mod focus_follows_mouse;
 mod repository_icons;
 mod session_restore;
@@ -12,126 +16,64 @@ mod status_icons;
 mod terminal_padding;
 mod update_channel;
 
-pub(super) fn skill_fixture(
-    window: &mut Window,
-    cx: &mut Context<SettingsWindow>,
-) -> SettingsWindow {
-    let source = cx.new(|cx| crate::sidebar::layout_tests::fixture_window(window, cx));
-    let mut view = SettingsWindow::new(source.downgrade(), cx);
-    view.section = Section::General;
-    view
-}
-
-pub(super) fn skill_load() -> crate::Result<super::super::Loaded> {
-    Ok(super::super::Loaded {
-        config: Config::default(),
-        theme: Default::default(),
-        shared: None,
-        error: None,
-    })
-}
+use crate::agent_skill::{AgentSkill, Choice};
+use crate::settings_window::tests::{skill_fixture, skill_load};
 
 #[gpui::test]
-fn notification_delivery_columns_align_without_overflow(cx: &mut TestAppContext) {
+fn notification_rows_stack_inside_the_body_and_descriptions_wrap(cx: &mut TestAppContext) {
     let (view, cx) = cx.add_window_view(skill_fixture);
     for font_size in [12., 24., 48.] {
         for width in [680., 960.] {
-            cx.simulate_resize(size(px(width), px(2200.)));
+            cx.simulate_resize(size(px(width), px(3200.)));
             view.update(cx, |view, cx| {
                 view.section = Section::Notifications;
+                view.shared = Some(crate::herdr_settings::Settings::parse_text("").unwrap());
                 view.config.ui.size = font_size;
                 cx.notify();
             });
             cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
             let body = cx.debug_bounds("settings-body").unwrap();
-            let mut columns = None;
-            let mut previous_bottom = body.top();
-            for selectors in [
-                [
-                    "settings-delivery-Off",
-                    "delivery-label-Off",
-                    "delivery-radio-Off",
-                    "delivery-note-Off",
-                ],
-                [
-                    "settings-delivery-Herdr",
-                    "delivery-label-Herdr",
-                    "delivery-radio-Herdr",
-                    "delivery-note-Herdr",
-                ],
-                [
-                    "settings-delivery-Terminal",
-                    "delivery-label-Terminal",
-                    "delivery-radio-Terminal",
-                    "delivery-note-Terminal",
-                ],
-                [
-                    "settings-delivery-System",
-                    "delivery-label-System",
-                    "delivery-radio-System",
-                    "delivery-note-System",
-                ],
+            let mut previous_top = body.top();
+            // Rows that hold a dropdown or number field share their id with it,
+            // so the titles are what stack.
+            for title_id in [
+                "notif-delivery-title",
+                "notif-finished-title",
+                "notif-show-title",
+                "notif-delay-title",
+                "notif-position-title",
+                "notif-sound-title",
+                "notif-volume-title",
+                "notif-indicators-title",
             ] {
-                let [row, name, radio, note] =
-                    selectors.map(|selector| cx.debug_bounds(selector).unwrap());
-                let current = (radio.left(), note.left());
-                assert_eq!(*columns.get_or_insert(current), current);
-                assert_eq!(name.size.width, px(font_size * 5.));
-                assert_eq!(radio.size, size(px(14.), px(14.)));
-                assert_eq!(radio.left() - name.right(), px(12.));
-                assert_eq!(note.left() - radio.right(), px(12.));
-                assert!(note.size.width > px(0.));
-                assert!(row.left() >= body.left() && row.right() <= body.right());
-                assert!(row.top() >= previous_bottom);
-                for child in [name, radio, note] {
-                    assert!(child.left() >= row.left() && child.right() <= row.right());
-                    assert!(child.top() >= row.top() && child.bottom() <= row.bottom());
-                }
-                previous_bottom = row.bottom();
+                let title = cx.debug_bounds(title_id).unwrap();
+                assert!(
+                    title.left() >= body.left() && title.right() <= body.right(),
+                    "{title_id}"
+                );
+                assert!(
+                    title.top() > previous_top,
+                    "{title_id} overlaps the row above"
+                );
+                previous_top = title.top();
             }
             if width == 680. {
-                let note = cx.debug_bounds("delivery-note-System").unwrap();
-                assert!(note.size.height > px(18.), "narrow descriptions must wrap");
+                // The delay row is local, so it keeps its description on
+                // every platform. The shared delivery row shows it only where
+                // Herdr's file is writable; elsewhere its reason replaces it.
+                let mut wrapping = vec!["notif-delay-description"];
+                if cfg!(unix) {
+                    wrapping.push("notif-delivery-description");
+                } else {
+                    assert!(cx.debug_bounds("notif-delivery-description").is_none());
+                    assert!(cx.debug_bounds("notif-delivery-reason").is_some());
+                }
+                for id in wrapping {
+                    let note = cx.debug_bounds(id).unwrap_or_else(|| panic!("{id}"));
+                    assert!(note.size.height > px(18.), "narrow {id} must wrap");
+                }
             }
         }
-    }
-}
-
-#[gpui::test]
-fn general_shows_shared_tab_bar_and_copy_controls_and_holds_them_while_busy(
-    cx: &mut TestAppContext,
-) {
-    let (view, cx) = cx.add_window_view(skill_fixture);
-    cx.simulate_resize(size(px(960.), px(2200.)));
-    view.update(cx, |view, cx| {
-        view.shared = Some(
-            crate::herdr_settings::Settings::parse_text(
-                "[ui]\ncopy_on_select = false\ntab_bar_position = 'bottom'",
-            )
-            .unwrap(),
-        );
-        view.saving = true;
-        cx.notify();
-    });
-    cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
-    for id in [
-        "settings-tab-bar-top",
-        "settings-tab-bar-bottom",
-        "settings-hide-single-tab-bar",
-        "settings-copy-on-select",
-        "settings-pane-history",
-    ] {
-        let control = cx.debug_bounds(id).unwrap();
-        // A save in flight owns the shared snapshot: clicks wait for it.
-        cx.simulate_click(control.center(), Default::default());
-        view.read_with(cx, |view, _| {
-            assert!(view.save_completion.is_none(), "{id}");
-            let shared = view.shared.as_ref().unwrap();
-            assert!(!shared.copy_on_select);
-            assert_eq!(shared.tab_bar_position, TabBarPosition::Bottom);
-            assert!(!shared.hide_tab_bar_when_single_tab);
-            assert!(!shared.pane_history);
-        });
     }
 }
 
@@ -140,16 +82,16 @@ fn show_agents_is_in_appearance_and_disabled_during_saves(cx: &mut TestAppContex
     let (view, cx) = cx.add_window_view(skill_fixture);
     cx.simulate_resize(size(px(960.), px(2200.)));
     cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
-    assert!(cx.debug_bounds("settings-show-agents").is_none());
+    assert!(cx.debug_bounds("sidebar-show-agents-toggle").is_none());
     for show in [false, true] {
         view.update(cx, |view, cx| {
-            view.section = Section::Appearance;
+            view.section = Section::Sidebar;
             view.config.show_agents = show;
             view.saving = true;
             cx.notify();
         });
         cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
-        let button = cx.debug_bounds("settings-show-agents").unwrap();
+        let button = cx.debug_bounds("sidebar-show-agents-toggle").unwrap();
         cx.simulate_click(button.center(), Default::default());
         view.update(cx, |view, cx| {
             assert_eq!(view.config.show_agents, show);
@@ -179,62 +121,44 @@ fn show_agents_is_in_appearance_and_disabled_during_saves(cx: &mut TestAppContex
 }
 
 #[gpui::test]
-fn sidebar_chooser_wraps_and_sample_controls_never_save(cx: &mut TestAppContext) {
+fn sidebar_rows_stack_inside_the_body_and_layout_picks_are_drafts(cx: &mut TestAppContext) {
     let (view, cx) = cx.add_window_view(skill_fixture);
-    cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
-    assert!(cx.debug_bounds("sidebar-preview").is_none());
     view.update(cx, |view, cx| {
-        view.section = Section::Appearance;
+        view.section = Section::Sidebar;
         cx.notify();
     });
-    let original = view.read_with(cx, |view, _| view.config.layout.mode);
     for width in [680., 960.] {
         cx.simulate_resize(size(px(width), px(2200.)));
-        view.update(cx, |view, cx| {
-            view.controls.sidebar_preview = Default::default();
-            cx.notify();
-        });
         cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
         let body = cx.debug_bounds("settings-body").unwrap();
-        let panel = cx.debug_bounds("sidebar-preview").unwrap();
-        assert!(panel.right() <= body.right());
-        let mut previous = None;
-        for selector in [
-            "settings-layout-normal",
-            "settings-layout-compact",
-            "settings-layout-comfortable",
-            "settings-layout-normal-rounded",
-            "settings-layout-compact-rounded",
-            "settings-layout-comfortable-rounded",
-            "settings-layout-superset",
-            "settings-layout-orca",
-            "settings-layout-minimal",
+        let mut previous_top = body.top();
+        for title_id in [
+            "sidebar-layout-title",
+            "sidebar-select-title",
+            "sidebar-show-agents-title",
+            "sidebar-show-search-title",
+            "sidebar-repository-icons-title",
+            "sidebar-device-icons-title",
+            "sidebar-indent-title",
+            "sidebar-row-padding-title",
+            "sidebar-row-gap-title",
+            "sidebar-host-gap-title",
         ] {
-            let bounds = cx.debug_bounds(selector).unwrap();
-            if let Some(bottom) = previous {
-                assert!(bounds.top() >= bottom);
-            }
-            previous = Some(bounds.bottom());
+            let title = cx.debug_bounds(title_id).unwrap();
+            assert!(
+                title.left() >= body.left() && title.right() <= body.right(),
+                "{title_id}"
+            );
+            assert!(
+                title.top() > previous_top,
+                "{title_id} overlaps the row above"
+            );
+            previous_top = title.top();
         }
-        for selector in [
-            "preview-width-320",
-            "row-Settings window",
-            "row-preview-agent-0",
-            "collapse-0",
-        ] {
-            let bounds = cx.debug_bounds(selector).unwrap();
-            cx.simulate_click(bounds.center(), Default::default());
-            cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
-            view.read_with(cx, |view, _| {
-                assert!(!view.busy());
-                assert!(view.save_completion.is_none());
-                assert_eq!(view.config.layout.mode, original);
-            });
+        for control in ["sidebar-select-control-2", "sidebar-host-gap-control-plus"] {
+            let bounds = cx.debug_bounds(control).unwrap();
+            assert!(bounds.right() <= body.right(), "{control} at {width}");
         }
-        assert_eq!(
-            cx.debug_bounds("sidebar-preview").unwrap().size.width,
-            px(320.)
-        );
     }
     view.update(cx, |view, cx| {
         view.saving = true;
@@ -242,7 +166,11 @@ fn sidebar_chooser_wraps_and_sample_controls_never_save(cx: &mut TestAppContext)
         cx.notify();
     });
     cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
-    let choice = cx.debug_bounds("settings-layout-orca").unwrap();
+    let opener = cx.debug_bounds("sidebar-layout-control").unwrap();
+    cx.simulate_click(opener.center(), Default::default());
+    cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
+    // Option 7 of `LayoutMode::ALL` is Orca.
+    let choice = cx.debug_bounds("sidebar-layout-control-option-7").unwrap();
     cx.simulate_click(choice.center(), Default::default());
     view.update(cx, |view, _| {
         assert_eq!(view.layout_intent, Some(LayoutMode::Orca));
@@ -253,32 +181,33 @@ fn sidebar_chooser_wraps_and_sample_controls_never_save(cx: &mut TestAppContext)
 }
 
 #[gpui::test]
-fn appearance_scroll_reaches_sidebar_preview(cx: &mut TestAppContext) {
+fn sidebar_scroll_reaches_host_colours(cx: &mut TestAppContext) {
     let (view, cx) = cx.add_window_view(skill_fixture);
     for width in [680., 960.] {
         cx.simulate_resize(size(px(width), px(560.)));
         view.update(cx, |view, cx| {
-            view.section = Section::Appearance;
+            view.section = Section::Sidebar;
             view.body_scroll.set_offset(Point::default());
             cx.notify();
         });
         cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
-        let panel = cx.debug_bounds("sidebar-preview").unwrap();
+        let heading = cx.debug_bounds("sidebar-host-colours").unwrap();
         let body = cx.debug_bounds("settings-body").unwrap();
-        assert!(panel.top() > body.bottom());
+        assert!(
+            heading.bottom() > body.bottom(),
+            "host colours need scrolling"
+        );
         view.update(cx, |view, cx| {
             view.body_scroll
-                .set_offset(point(px(0.), body.top() - panel.top()));
+                .set_offset(point(px(0.), body.top() - heading.top()));
             cx.notify();
         });
         cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
-        let row = cx.debug_bounds("row-Settings window").unwrap();
-        assert!(row.top() >= body.top() && row.bottom() <= body.bottom());
-        cx.simulate_click(row.center(), Default::default());
+        let heading = cx.debug_bounds("sidebar-host-colours").unwrap();
+        assert!(heading.top() >= body.top() && heading.bottom() <= body.bottom());
         view.read_with(cx, |view, _| {
             assert!(!view.busy());
             assert!(view.save_completion.is_none());
-            assert!(view.layout_intent.is_none());
         });
     }
 }
@@ -308,6 +237,7 @@ fn browser_skill_general_card_tracks_choice_without_a_source(cx: &mut TestAppCon
     cx.update(|cx| cx.set_global(AgentSkill::unasked()));
     let (view, cx) = cx.add_window_view(skill_fixture);
     cx.simulate_resize(size(px(960.), px(1200.)));
+    view.update(cx, |view, _| view.section = Section::General);
     for choice in [None, Some(Choice::Installed), Some(Choice::Declined)] {
         cx.update(|window, cx| {
             if let Some(choice) = choice {
@@ -320,11 +250,11 @@ fn browser_skill_general_card_tracks_choice_without_a_source(cx: &mut TestAppCon
             window.draw(cx).clear(cx);
         });
         assert_eq!(
-            cx.debug_bounds("settings-install-browser-skill").is_some(),
+            cx.debug_bounds("general-browser-skill-install").is_some(),
             choice != Some(Choice::Installed)
         );
         assert_eq!(
-            cx.debug_bounds("settings-remove-browser-skill").is_some(),
+            cx.debug_bounds("general-browser-skill-remove").is_some(),
             choice == Some(Choice::Installed)
         );
     }
@@ -334,7 +264,7 @@ fn browser_skill_general_card_tracks_choice_without_a_source(cx: &mut TestAppCon
         cx.notify();
     });
     cx.update(|window, cx| window.draw(cx).clear(cx));
-    let button = cx.debug_bounds("settings-install-browser-skill").unwrap();
+    let button = cx.debug_bounds("general-browser-skill-install").unwrap();
     cx.simulate_click(button.center(), Modifiers::default());
     view.update(cx, |view, cx| {
         assert_eq!(AgentSkill::choice(cx), Some(Choice::Declined));
@@ -416,17 +346,6 @@ fn font_filter_keeps_all_four_hundred_families_and_matches_case_insensitively() 
 }
 
 #[test]
-fn size_steps_are_integral_bounded_and_reject_non_finite_values() {
-    assert_eq!(stepped_size(8., -1.), Some(8.));
-    assert_eq!(stepped_size(48., 1.), Some(48.));
-    assert_eq!(stepped_size(14.2, 1.), Some(15.));
-    for invalid in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
-        assert_eq!(stepped_size(invalid, 1.), None);
-        assert_eq!(stepped_size(14., invalid), None);
-    }
-}
-
-#[test]
 fn rapid_size_intents_coalesce_without_erasing_other_faces() {
     let mut pending = Vec::new();
     queue_size(&mut pending, FontFace::Sidebar, 15.);
@@ -445,10 +364,11 @@ fn busy_size_clicks_survive_config_refresh_without_starting_a_write(cx: &mut Tes
     settings.update(cx, |settings, cx| {
         settings.saving = true;
         settings.controls.saving_sizes = vec![(FontFace::Sidebar, 20.)];
-        for _ in 0..20 {
-            settings.step_control_size(FontFace::Sidebar, 1., cx);
+        for size in 21..=40 {
+            settings.accept_control_size(FontFace::Sidebar, size as f32, cx);
         }
-        settings.step_control_size(FontFace::Terminal, 1., cx);
+        let terminal = settings.controls.size(FontFace::Terminal, &settings.config);
+        settings.accept_control_size(FontFace::Terminal, terminal + 1., cx);
         settings.config.sidebar.size = 12.;
         settings.sync_controls(cx);
         assert_eq!(
@@ -487,7 +407,11 @@ fn numeric_size_accepts_only_bounded_ascii_integers() {
         ("NaN", None),
         ("999999", None),
     ] {
-        assert_eq!(parse_size(text), expected, "{text:?}");
+        assert_eq!(
+            crate::settings_window::ui::parse_number(text, &FONT_SIZE_RANGE),
+            expected,
+            "{text:?}"
+        );
     }
 }
 
@@ -509,18 +433,18 @@ fn numeric_enter_blur_and_escape_use_the_same_size_queue(cx: &mut TestAppContext
     cx.run_until_parked();
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
-            view.begin_control_size_edit(FontFace::Terminal, window, cx);
+            view.begin_number_edit(NumberField::FontSize(FontFace::Terminal), 13., window, cx);
         })
     });
     cx.simulate_input("23");
     cx.simulate_keystrokes("enter");
     view.read_with(cx, |view, _| {
-        assert!(view.controls.size_editor.is_none());
+        assert!(view.number_edit.is_none());
         assert_eq!(view.controls.pending_sizes, vec![(FontFace::Terminal, 23.)]);
     });
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
-            view.begin_control_size_edit(FontFace::Terminal, window, cx);
+            view.begin_number_edit(NumberField::FontSize(FontFace::Terminal), 13., window, cx);
         })
     });
     cx.simulate_input("41");
@@ -530,7 +454,7 @@ fn numeric_enter_blur_and_escape_use_the_same_size_queue(cx: &mut TestAppContext
     });
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
-            view.begin_control_size_edit(FontFace::Sidebar, window, cx);
+            view.begin_number_edit(NumberField::FontSize(FontFace::Sidebar), 12., window, cx);
         })
     });
     cx.simulate_input("18");
@@ -540,7 +464,7 @@ fn numeric_enter_blur_and_escape_use_the_same_size_queue(cx: &mut TestAppContext
     cx.update(|window, cx| window.draw(cx).clear(cx));
     cx.run_until_parked();
     view.update(cx, |view, _| {
-        assert!(view.controls.size_editor.is_none());
+        assert!(view.number_edit.is_none());
         assert_eq!(
             view.take_pending_control_sizes(),
             vec![(FontFace::Terminal, 23.), (FontFace::Sidebar, 18.)]
@@ -553,25 +477,25 @@ fn numeric_invalid_and_composition_do_not_enqueue_writes(cx: &mut TestAppContext
     let (view, cx) = cx.add_window_view(numeric_fixture);
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
-            view.begin_control_size_edit(FontFace::Ui, window, cx);
+            view.begin_number_edit(NumberField::FontSize(FontFace::Ui), 13., window, cx);
         })
     });
     cx.simulate_input("99");
     cx.simulate_keystrokes("enter");
     view.read_with(cx, |view, _| {
-        assert!(view.controls.size_editor.as_ref().unwrap().invalid);
+        assert!(view.number_edit.as_ref().unwrap().invalid);
         assert!(view.controls.pending_sizes.is_empty());
     });
     cx.simulate_keystrokes("escape");
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
-            view.begin_control_size_edit(FontFace::Ui, window, cx);
-            let input = view.controls.size_editor.as_ref().unwrap().input.clone();
+            view.begin_number_edit(NumberField::FontSize(FontFace::Ui), 13., window, cx);
+            let input = view.number_edit.as_ref().unwrap().input.clone();
             input.update(cx, |input, cx| {
                 input.replace_and_mark_text_in_range(None, "二十四", Some(3..3), window, cx)
             });
             for key in ["enter", "escape"] {
-                view.control_size_key(
+                view.settings_key(
                     &KeyDownEvent {
                         keystroke: Keystroke::parse(key).unwrap(),
                         is_held: false,
@@ -580,12 +504,12 @@ fn numeric_invalid_and_composition_do_not_enqueue_writes(cx: &mut TestAppContext
                     window,
                     cx,
                 );
-                assert!(view.controls.size_editor.is_some());
+                assert!(view.number_edit.is_some());
                 assert!(view.controls.pending_sizes.is_empty());
             }
             input.update(cx, |input, cx| input.unmark_text(window, cx));
-            assert!(!view.finish_control_size_edit(true, cx));
-            assert!(view.finish_control_size_edit(false, cx));
+            assert!(!view.finish_number_edit(true, cx));
+            assert!(view.finish_number_edit(false, cx));
             assert!(view.controls.pending_sizes.is_empty());
         })
     });

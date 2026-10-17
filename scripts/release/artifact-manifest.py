@@ -21,6 +21,8 @@ def base_names(version):
             f"Herdr-{version}-aarch64-unknown-linux-gnu.pkg.tar.zst",
             f"Herdr-{version}-x86_64-pc-windows-msvc.zip",
             f"Herdr-{version}-aarch64-pc-windows-msvc.zip",
+            f"Herdr-{version}-x86_64-pc-windows-msvc-setup.exe",
+            f"Herdr-{version}-aarch64-pc-windows-msvc-setup.exe",
             f"Herdr-{version}.cdx.json",
             f"herdr-gpui-{version}-macos-universal.app.tar.gz",
             f"herdr-gpui-{version}-x86_64-unknown-linux-gnu-update.tar.gz",

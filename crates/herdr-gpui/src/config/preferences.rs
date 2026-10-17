@@ -2,13 +2,15 @@
 use super::*;
 use herdr_client::protocol::ToastHerdrPosition;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Preference {
+    AgentsPlacement(AgentsPlacement),
     ConfirmCloseTab(bool),
     ConfirmClosePane(bool),
     ConfirmCloseWorkspace(bool),
     RemoveMergedWorktrees(bool),
     ShowSystemLoad(bool),
+    ShowNetworkQuality(bool),
     AgentCheckpoints(bool),
     ShowListeningPorts(bool),
     ShowSidebarSearch(bool),
@@ -34,6 +36,42 @@ pub(crate) enum Preference {
     UsageInline(bool),
     /// `[updates] channel`: whether the updater also offers beta releases.
     UpdateChannel(UpdateChannel),
+    /// One `[features]` flag.
+    Feature(Feature, bool),
+    /// `None` removes the override so the layout preset's value applies.
+    SidebarIndent(Option<f32>),
+    SidebarRowPadding(Option<f32>),
+    SidebarRowGap(Option<f32>),
+    SidebarHostGap(Option<f32>),
+    SidebarSelect(SelectMode),
+    /// `[sidebar] device_footer`: when the sidebar draws its device footer.
+    SidebarDeviceFooter(DeviceFooter),
+    /// `None` removes the host's colour.
+    HostColor {
+        host: String,
+        color: Option<u32>,
+    },
+}
+
+/// A `[sidebar]` metric key, checked against the parser's band table.
+fn sidebar_metric(
+    key: &'static str,
+    value: Option<f32>,
+) -> Result<(Option<&'static str>, &'static str, Option<toml_edit::Value>)> {
+    if let Some(value) = value {
+        let max = SidebarOverrides::BANDS
+            .iter()
+            .find_map(|(name, max)| (*name == key).then_some(*max))
+            .unwrap_or(0.);
+        if !value.is_finite() || !(0.0..=max).contains(&value) {
+            return Err(Error::InvalidSidebarMetric { key, max });
+        }
+    }
+    Ok((
+        Some("sidebar"),
+        key,
+        value.map(|value| toml_edit::Value::from(f64::from(value))),
+    ))
 }
 
 impl Config {
@@ -51,6 +89,9 @@ impl Config {
             };
             let mut document = text.parse::<toml_edit::DocumentMut>()?;
             let (table, key, value) = match edit {
+                Preference::AgentsPlacement(placement) => {
+                    (None, "agents_placement", Some(placement.as_str().into()))
+                }
                 Preference::ConfirmCloseTab(value) => {
                     (None, "confirm_close_tab", Some(value.into()))
                 }
@@ -64,6 +105,9 @@ impl Config {
                     (None, "remove_merged_worktrees", Some(value.into()))
                 }
                 Preference::ShowSystemLoad(value) => (None, "show_system_load", Some(value.into())),
+                Preference::ShowNetworkQuality(value) => {
+                    (None, "show_network_quality", Some(value.into()))
+                }
                 Preference::AgentCheckpoints(value) => {
                     (None, "agent_checkpoints", Some(value.into()))
                 }
@@ -133,6 +177,58 @@ impl Config {
                         })
                     }),
                 ),
+                Preference::SidebarIndent(value) => sidebar_metric("indent", value)?,
+                Preference::SidebarRowPadding(value) => sidebar_metric("row_padding", value)?,
+                Preference::SidebarRowGap(value) => sidebar_metric("gap", value)?,
+                Preference::SidebarHostGap(value) => sidebar_metric("host_gap", value)?,
+                Preference::SidebarSelect(mode) => (
+                    Some("sidebar"),
+                    "select",
+                    Some(toml_edit::Value::from(match mode {
+                        SelectMode::Row => "row",
+                        SelectMode::Group => "group",
+                        SelectMode::GroupDim => "group-dim",
+                    })),
+                ),
+                Preference::SidebarDeviceFooter(footer) => (
+                    Some("sidebar"),
+                    "device_footer",
+                    Some(toml_edit::Value::from(footer.as_str())),
+                ),
+                Preference::HostColor { host, color } => {
+                    if let Some(color) = color.filter(|color| *color > 0xFF_FFFF) {
+                        return Err(Error::InvalidHostColor {
+                            host,
+                            value: format!("#{color:x}"),
+                        });
+                    }
+                    let sidebar = document
+                        .entry("sidebar")
+                        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+                        .as_table_like_mut()
+                        .ok_or(crate::herdr_settings::Error::Table("sidebar"))?;
+                    let hosts = sidebar
+                        .entry("hosts")
+                        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+                        .as_table_like_mut()
+                        .ok_or(crate::herdr_settings::Error::Table("sidebar.hosts"))?;
+                    match color {
+                        Some(color) => {
+                            let mut value = toml_edit::Value::from(format!("#{color:06x}"));
+                            // A comment on the old colour stays with the new one.
+                            if let Some(previous) =
+                                hosts.get(&host).and_then(toml_edit::Item::as_value)
+                            {
+                                *value.decor_mut() = previous.decor().clone();
+                            }
+                            hosts.insert(&host, toml_edit::Item::Value(value));
+                        }
+                        None => {
+                            hosts.remove(&host);
+                        }
+                    }
+                    return write_config(path, &document.to_string());
+                }
                 Preference::StatusBar(edit) => {
                     let (key, value) = edit.entry();
                     (Some("status_bar"), key, Some(value))
@@ -146,6 +242,9 @@ impl Config {
                 Preference::UsageInline(value) => (Some("usage"), "inline", Some(value.into())),
                 Preference::UpdateChannel(channel) => {
                     (Some("updates"), "channel", Some(channel.as_str().into()))
+                }
+                Preference::Feature(feature, value) => {
+                    (Some("features"), feature.key(), Some(value.into()))
                 }
                 Preference::TerminalPadding(axis, sides) => {
                     // The deprecated gap only stands in for an unset
@@ -223,6 +322,7 @@ mod tests {
             Preference::ConfirmCloseWorkspace(false),
             Preference::RemoveMergedWorktrees(true),
             Preference::ShowSystemLoad(false),
+            Preference::ShowNetworkQuality(true),
             Preference::AgentCheckpoints(false),
             Preference::ShowListeningPorts(false),
             Preference::ShowSidebarSearch(false),
@@ -237,6 +337,7 @@ mod tests {
             Preference::TerminalPadding(Axis::X, Sides::new(7.5, 7.5).expect("in band")),
             Preference::TerminalPadding(Axis::Y, Sides::new(4., 6.).expect("in band")),
             Preference::UpdateChannel(UpdateChannel::Beta),
+            Preference::Feature(Feature::SidebarHoverMenu, true),
         ] {
             Config::save_preference_path(edit, &path)?;
         }
@@ -252,6 +353,7 @@ mod tests {
         assert_eq!(table["confirm_close_workspace"].as_bool(), Some(false));
         assert_eq!(table["remove_merged_worktrees"].as_bool(), Some(true));
         assert_eq!(table["show_system_load"].as_bool(), Some(false));
+        assert_eq!(table["show_network_quality"].as_bool(), Some(true));
         assert_eq!(table["agent_checkpoints"].as_bool(), Some(false));
         assert_eq!(table["show_listening_ports"].as_bool(), Some(false));
         assert_eq!(table["show_sidebar_search"].as_bool(), Some(false));
@@ -260,6 +362,10 @@ mod tests {
         assert_eq!(table["smooth_scroll"].as_bool(), Some(false));
         assert_eq!(table["layout"].as_str(), Some("orca"));
         assert_eq!(table["updates"]["channel"].as_str(), Some("beta"));
+        assert_eq!(
+            table["features"]["sidebar_hover_menu"].as_bool(),
+            Some(true)
+        );
         assert_eq!(table["terminal"]["padding_x"].as_float(), Some(7.5));
         assert_eq!(
             table["terminal"]["padding_y"],

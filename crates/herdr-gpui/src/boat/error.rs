@@ -11,7 +11,7 @@ pub enum Error {
     Field(&'static str),
     #[error("{0} must be UTF-8.")]
     Encoding(&'static str),
-    #[error("Boat needs an API key. Save one in Settings > Cloud Devices.")]
+    #[error("Boat needs an API key. Save one in Settings > Cloud devices.")]
     MissingKey,
     #[error("Boat rejected the API key.")]
     Authentication,
@@ -46,11 +46,11 @@ pub enum Error {
     #[error("Another Herdr UI process is creating or recovering a Boat sandbox for this account.")]
     PendingBusy,
     #[error(
-        "The pending Boat creation is too old to retry safely. Check the Boat dashboard for its sandbox before forgetting the pending request in Settings > Cloud Devices > Boat."
+        "The pending Boat creation is too old to retry safely. Check the Boat dashboard for its sandbox before forgetting the pending request in Settings > Cloud devices > Boat."
     )]
     PendingExpired,
     #[error(
-        "Boat creation may have succeeded. Use Recover creation in Settings > Cloud Devices > Boat to retry the saved request: {0}"
+        "Boat creation may have succeeded. Use Recover creation in Settings > Cloud devices > Boat to retry the saved request: {0}"
     )]
     PendingCreation(#[source] Box<Error>),
     #[error("Could not read the clock for Boat creation recovery: {0}")]
@@ -74,7 +74,7 @@ pub enum Error {
         source: Box<crate::Error>,
     },
     #[error(
-        "Boat sandbox {id} is saved. Use Finish setup in Settings > Cloud Devices > Boat to retry: {source}"
+        "Boat sandbox {id} is saved. Use Finish setup in Settings > Cloud devices > Boat to retry: {source}"
     )]
     Setup {
         id: String,

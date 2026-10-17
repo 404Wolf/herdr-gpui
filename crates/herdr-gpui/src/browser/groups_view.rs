@@ -272,17 +272,55 @@ impl HerdrWindow {
         }
     }
 
-    /// Whether `group`'s strip lists `pick`; see [`Layout::lists`].
+    /// Whether `group`'s strip lists `pick`; see [`Layout::lists`]. A tab
+    /// this window hides is listed only while the group shows it.
     pub(crate) fn group_lists(&self, group: GroupId, pick: &Pick) -> bool {
+        if self.hides_tab(pick) && self.shown_pick(group).as_ref() != Some(pick) {
+            return false;
+        }
         let Some(layout) = self.layout() else {
             return true;
         };
         layout.lists(group, pick)
     }
 
-    /// The focused workspace's tabs, in strip order: Herdr tabs first, then
-    /// browser tabs.
+    /// What `group` shows, reading a window without groups yet as one
+    /// following the terminal.
+    fn shown_pick(&self, group: GroupId) -> Option<Pick> {
+        let focused = self.focused_herdr_tab();
+        match self.layout() {
+            Some(layout) => layout.pick(group, focused),
+            None => focused.map(|tab| Pick::Herdr(tab.to_owned())),
+        }
+    }
+
+    /// Whether this window keeps `pick` out of the focused workspace's
+    /// strips; see [`super::hidden`].
+    fn hides_tab(&self, pick: &Pick) -> bool {
+        !self.browser.hidden.is_empty()
+            && self
+                .browser_key()
+                .is_some_and(|key| self.browser.hidden.hides(&key, pick))
+    }
+
+    /// The focused workspace's tabs this window lists, in strip order:
+    /// Herdr tabs first, then browser tabs. A hidden tab counts while a
+    /// group shows it.
     fn workspace_tabs(&self, cx: &App) -> Vec<Pick> {
+        let slots = self.group_slots();
+        self.open_workspace_tabs(cx)
+            .into_iter()
+            .filter(|pick| {
+                !self.hides_tab(pick)
+                    || slots
+                        .iter()
+                        .any(|slot| self.shown_pick(slot.id).as_ref() == Some(pick))
+            })
+            .collect()
+    }
+
+    /// Every tab of the focused workspace, hidden ones included.
+    pub(crate) fn open_workspace_tabs(&self, cx: &App) -> Vec<Pick> {
         let herdr = self.live.snapshot.as_ref().map(|snapshot| {
             snapshot
                 .tabs
@@ -643,6 +681,8 @@ impl HerdrWindow {
         if snapshot.focused_workspace_id.as_ref() != Some(&key.1) {
             return;
         }
+        let open = self.open_workspace_tabs(cx);
+        self.browser.hidden.retain_open(&key, &open);
         let tabs = self.workspace_tabs(cx);
         let Some(layout) = self.browser.layouts.get_mut(&key) else {
             return;
@@ -731,7 +771,7 @@ impl HerdrWindow {
             self.ensure_code_page(window, cx);
         } else {
             #[cfg(any(target_os = "macos", windows))]
-            match self.browser.pages.ensure(&tab, window, cx) {
+            match self.browser.pages.ensure(&tab, window) {
                 Ok(()) => {
                     self.browser.failed.remove(&id);
                 }

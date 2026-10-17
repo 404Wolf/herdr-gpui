@@ -18,7 +18,7 @@ pub(super) fn elevated_command(stage: &Path) -> Result<Command> {
 }
 
 fn authorization_command(stage: &Path) -> Command {
-    let mut command = Command::new("/usr/bin/pkexec");
+    let mut command = herdr_client::new_command("/usr/bin/pkexec");
     command
         .args([SYSTEM_EXECUTABLE, ROOT_FLAG])
         .arg(stage)

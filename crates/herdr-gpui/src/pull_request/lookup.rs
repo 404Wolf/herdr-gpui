@@ -3,6 +3,7 @@
 //! than cancelled mid-flight, and dropping the handle retires the generation.
 
 use super::{Input, Origin, Origins, PullRequest, batch::Batch, batch::fetch_batch};
+use crate::github::Tokens;
 use std::{
     sync::{
         Arc,
@@ -10,14 +11,16 @@ use std::{
         mpsc,
     },
     thread,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
-type Request = (u64, Vec<Input>, Origin, Arc<secrecy::SecretString>);
+/// A batch's generation, checkouts, device, tokens, and the logins of the
+/// accounts paused when it was sent.
+pub(super) type Request = (u64, Vec<Input>, Origin, Tokens, Vec<String>);
 
 pub(super) struct Worker {
     pub(super) requests: mpsc::SyncSender<Request>,
-    pub(super) results: mpsc::Receiver<(u64, Batch, Option<Duration>)>,
+    pub(super) results: mpsc::Receiver<(u64, Batch)>,
 }
 
 /// One checkout's lookup as a view shows it.
@@ -38,7 +41,7 @@ impl Lookup {
 /// How the current batch ended: answered, or never answered because the
 /// worker could not run, which every checkout in it reports.
 pub(super) enum Finished {
-    Answered(Batch, Option<Duration>),
+    Answered(Batch),
     Failed(&'static str),
 }
 
@@ -47,7 +50,7 @@ pub(super) struct Prefetch {
     pub(super) worker: Option<Worker>,
     pub(super) generation: Arc<AtomicU64>,
     pub(super) busy: bool,
-    waiting: Option<(Vec<Input>, Origin, Arc<secrecy::SecretString>)>,
+    waiting: Option<(Vec<Input>, Origin, Tokens, Vec<String>)>,
 }
 
 impl Drop for Prefetch {
@@ -73,10 +76,11 @@ impl Prefetch {
         &mut self,
         inputs: Vec<Input>,
         origin: Origin,
-        token: Arc<secrecy::SecretString>,
+        tokens: impl Into<Tokens>,
+        paused: Vec<String>,
     ) {
         self.generation.fetch_add(1, Ordering::Relaxed);
-        self.waiting = Some((inputs, origin, token));
+        self.waiting = Some((inputs, origin, tokens.into(), paused));
     }
 
     /// The current batch's answer, once, after sending a waiting batch to the
@@ -85,10 +89,10 @@ impl Prefetch {
         let mut finished = None;
         if let Some(worker) = &self.worker {
             match worker.results.try_recv() {
-                Ok((generation, batch, cooldown)) => {
+                Ok((generation, batch)) => {
                     self.busy = false;
                     if generation == self.generation.load(Ordering::Relaxed) {
-                        finished = Some(Finished::Answered(batch, cooldown));
+                        finished = Some(Finished::Answered(batch));
                     }
                 }
                 Err(mpsc::TryRecvError::Disconnected) => {
@@ -103,7 +107,7 @@ impl Prefetch {
             }
         }
         if !self.busy
-            && let Some((inputs, origin, token)) = self.waiting.take()
+            && let Some((inputs, origin, token, paused)) = self.waiting.take()
         {
             if self.worker.is_none() {
                 let (requests, incoming) = mpsc::sync_channel::<Request>(1);
@@ -115,17 +119,12 @@ impl Prefetch {
                         // Remote repositories are resolved over SSH; remember
                         // them so a refresh does not dial the host again.
                         let mut origins = Origins::default();
-                        for (generation, inputs, origin, token) in incoming {
-                            let mut cooldown = None;
-                            let batch = fetch_batch(
-                                inputs,
-                                &origin,
-                                &mut origins,
-                                &token,
-                                || current.load(Ordering::Relaxed) != generation,
-                                &mut cooldown,
-                            );
-                            if outgoing.send((generation, batch, cooldown)).is_err() {
+                        for (generation, inputs, origin, token, paused) in incoming {
+                            let batch =
+                                fetch_batch(inputs, &origin, &mut origins, &token, &paused, || {
+                                    current.load(Ordering::Relaxed) != generation
+                                });
+                            if outgoing.send((generation, batch)).is_err() {
                                 break;
                             }
                         }
@@ -142,6 +141,7 @@ impl Prefetch {
                         inputs,
                         origin,
                         token,
+                        paused,
                     ))
                     .is_ok();
             }

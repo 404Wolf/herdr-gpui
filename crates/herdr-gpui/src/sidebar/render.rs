@@ -19,13 +19,16 @@ use super::{
 };
 use crate::{
     Command, HerdrWindow, NavigationTarget,
-    config::{FontConfig, Theme},
+    config::{AgentsPlacement, FontConfig, Theme},
     fonts::StyledFont,
 };
 use gpui::{prelude::*, *};
 
 mod agent_rows;
 mod device_tree;
+mod nested_agents;
+
+pub(crate) use nested_agents::NestedReveal;
 
 impl HerdrWindow {
     pub(crate) fn render_sidebar(
@@ -83,13 +86,20 @@ impl HerdrWindow {
         agents = agents.track_scroll(&self.sidebar_scroll[1]);
         let multi = self.endpoints.len() > 1;
         let headed = multi || devices;
-        let agents_panel = self.config.show_agents && !devices;
+        let placement = self
+            .config
+            .show_agents
+            .then_some(self.config.agents_placement);
+        let agents_panel = placement == Some(AgentsPlacement::Panel) && !devices;
+        let nested_agents = placement == Some(AgentsPlacement::Nested) && !devices;
         let query = if tree_search {
             self.device_tree_query(cx)
         } else {
             String::new()
         };
         let mut agent_count = 0;
+        // The focused agent's row when agents nest under their workspaces.
+        let mut nested_focus = None;
         // A plugin view hid every agent, rather than there being none.
         let mut filtered = false;
         // Child positions of the highlighted rows, for the one-time reveal below.
@@ -105,8 +115,10 @@ impl HerdrWindow {
         let mut drop_requests = Vec::new();
         let mut drop_dragged = 0;
         let now = std::time::Instant::now();
-        let mut sliding = false;
-        for (endpoint_index, endpoint) in self.endpoints.iter().enumerate() {
+        // A lifted device folds the list to its headers.
+        let device_plan = headed.then(|| self.device_plan(devices, &query)).flatten();
+        let mut sliding = device_plan.as_ref().is_some_and(|plan| plan.sliding);
+        for (endpoint_index, endpoint) in self.displayed_devices() {
             if !self.device_visible(&endpoint.id)
                 || (devices && !self.device_listed(endpoint_index, &query))
             {
@@ -122,8 +134,18 @@ impl HerdrWindow {
             );
             if headed {
                 host_rows.push((endpoint_index, space_rows));
-                spaces = spaces.child(self.host_row(endpoint, selected, look, width, false, cx));
+                let header = self.host_row(endpoint, selected, look, width, false, cx);
+                spaces = self.place_host_row(
+                    spaces,
+                    header,
+                    (endpoint_index, space_rows),
+                    device_plan.as_ref(),
+                    cx,
+                );
                 space_rows += 1;
+            }
+            if device_plan.is_some() {
+                continue;
             }
             if devices {
                 let (list, rows, focused) =
@@ -341,6 +363,9 @@ impl HerdrWindow {
                         },
                     ))
                 });
+                // A child's trunk runs on past its note and ports to the next
+                // sibling, as it runs through the row itself.
+                let trunk = rows.trunk_below(&format!("{endpoint_id}-{id}"), tree, &row_cx);
                 let ports = (self.config.show_listening_ports && !removing_row)
                     .then_some(daemon.as_ref())
                     .flatten()
@@ -495,6 +520,9 @@ impl HerdrWindow {
                     row.on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                            if this.config.features.sidebar_hover_menu {
+                                this.press_hovered_workspace(&press_id, event.position);
+                            }
                             if event.click_count == 1 {
                                 this.press_workspace(&press_id, event.position, cx);
                             }
@@ -502,9 +530,24 @@ impl HerdrWindow {
                     )
                 })
                 .when(carried, |row| row.cursor_grabbing());
-                // The note and ports ride under their row as one list item, so
-                // the drop preview still measures one height per workspace.
-                let element = if note_line.is_none() && ports.is_none() {
+                let indent = layout.child_indent() * if indented { 2. } else { 1. };
+                let agent_rows = if nested_agents {
+                    let (rows, focused) = self.nested_agent_rows(
+                        endpoint_index,
+                        snapshot,
+                        &workspace.workspace_id,
+                        (&row_cx, indent),
+                        cx,
+                    );
+                    nested_focus = nested_focus.or(focused);
+                    rows
+                } else {
+                    Vec::new()
+                };
+                // The note, ports and nested agents ride under their row as one
+                // list item, so the drop preview still measures one height per
+                // workspace.
+                let element = if note_line.is_none() && ports.is_none() && agent_rows.is_empty() {
                     element
                         .when(gap > 0., |row| row.mt(px(gap)))
                         .when(shift != px(0.), |row| row.top(shift))
@@ -519,8 +562,20 @@ impl HerdrWindow {
                         .when(gap > 0., |unit| unit.mt(px(gap)))
                         .when(shift != px(0.), |unit| unit.top(shift))
                         .child(element)
-                        .children(note_line)
-                        .children(ports)
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .w_full()
+                                .relative()
+                                .children(note_line)
+                                .children(ports)
+                                .children(agent_rows)
+                                // Last, so a selected nested agent's fill does
+                                // not hide it, as a row draws its guide over
+                                // its own fill.
+                                .children(trunk),
+                        )
                         .into_any_element()
                 };
                 spaces = if carried {
@@ -556,7 +611,17 @@ impl HerdrWindow {
         }
         // Rows under the pinned header are hidden, so a reveal must clear it.
         let cover = px(sticky::cover(&headers));
+        // Search results stand in for the spaces list, so no nested row paints.
+        self.reveal_nested_agent(nested_focus.filter(|_| search.is_none()), cover, window);
+        // Folded headers slide under a pinned one, so none is pinned then,
+        // nor in the frame that unfolds, whose header places are the folded
+        // list's; the frame after pins from the unfolded one.
+        let unfolding = self.sidebar_folded.replace(device_plan.is_some()) && device_plan.is_none();
+        if unfolding {
+            window.request_animation_frame();
+        }
         let pinned_host = sticky::pinned(&headers)
+            .filter(|_| device_plan.is_none() && !unfolding)
             .and_then(|pinned| self.pinned_host_row(pinned, look, width, cx));
         // Follow the selection, but only once a frame has measured the viewport:
         // the handle resolves the request against the previous frame's bounds, so
@@ -793,6 +858,7 @@ impl HerdrWindow {
                         // Capture globally so dragging continues outside the narrow divider,
                         // and terminal handlers never receive the resize gesture's release.
                         let moving = view.clone();
+                        let device_drop = device_plan.map(|plan| plan.drop);
                         window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
                             if phase == DispatchPhase::Capture {
                                 let _ = moving.update(cx, |this, cx| {
@@ -809,6 +875,11 @@ impl HerdrWindow {
                                                 lift,
                                             )
                                         },
+                                        cx,
+                                    ) || this.move_device_drag(
+                                        event.position,
+                                        event.pressed_button == Some(MouseButton::Left),
+                                        device_drop.as_ref(),
                                         cx,
                                     ) {
                                         cx.stop_propagation();
@@ -852,7 +923,9 @@ impl HerdrWindow {
                             {
                                 let _ = released.update(cx, |this, cx| {
                                     // A lifted row's release is its drop, not a click.
-                                    if this.release_workspace_drag(cx) {
+                                    if this.release_workspace_drag(cx)
+                                        || this.release_device_drag(cx)
+                                    {
                                         cx.stop_propagation();
                                     } else if this.sidebar_drag.take().is_some() {
                                         this.save_chrome();

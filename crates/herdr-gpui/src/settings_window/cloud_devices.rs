@@ -1,4 +1,4 @@
-//! Settings > Cloud Devices: one tab per cloud provider whose machines this
+//! Settings > Cloud devices: one tab per cloud provider whose machines this
 //! app uses as devices. Each provider's card keeps its own fields and account
 //! state; this section only switches between them, so another provider adds a
 //! tab and a card.
@@ -11,6 +11,7 @@ mod coder;
 mod daytona;
 #[cfg(feature = "railway")]
 mod railway;
+mod setup;
 
 #[cfg(feature = "boat")]
 pub(super) use boat::BoatCard;
@@ -29,7 +30,7 @@ use crate::{
 };
 use gpui::{prelude::*, *};
 
-/// Open Settings > Cloud Devices, on `provider`'s tab when the device picker's
+/// Open Settings > Cloud devices, on `provider`'s tab when the device picker's
 /// row sets that provider up, or on the first tab for its general row.
 // Add Device records the request instead in unit tests.
 #[cfg_attr(test, allow(dead_code, unused_imports))]
@@ -183,15 +184,19 @@ impl SettingsWindow {
             CloudProvider::Railway => self.render_railway_card(cx),
         };
         div()
+            .relative()
+            .debug_selector(|| "cloud-accounts".into())
             .flex()
             .flex_col()
-            .gap(px(24.))
+            .gap(px(16.))
             .min_w_0()
+            .child(super::search::track_bounds("cloud-accounts".into()))
             .when_some(crate::cloud::unavailable(), |section, reason| {
                 section.child(self.control_note(format!(
                     "{reason} Accounts can still be edited here for other systems."
                 )))
             })
+            .child(self.render_cloud_setup(cx))
             .when(CloudProvider::ALL.len() > 1, |section| {
                 section.child(self.cloud_tabs(cx))
             })
@@ -251,6 +256,27 @@ impl SettingsWindow {
         forget: impl Fn(&mut Self, String, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>,
     ) -> Div {
+        self.cloud_device_row_with(index, device, detail, ready, forget, [], cx)
+    }
+
+    /// `cloud_device_row` with provider `actions` before its Remove button.
+    #[cfg(any(
+        feature = "boat",
+        feature = "coder",
+        feature = "daytona",
+        feature = "railway"
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn cloud_device_row_with(
+        &self,
+        index: usize,
+        device: &crate::cloud::SavedDevice,
+        detail: String,
+        ready: bool,
+        forget: impl Fn(&mut Self, String, &mut Context<Self>) + 'static,
+        actions: impl IntoIterator<Item = AnyElement>,
+        cx: &mut Context<Self>,
+    ) -> Div {
         let key = device.provider.key();
         let id = device.id.clone();
         div()
@@ -270,15 +296,25 @@ impl SettingsWindow {
                     ),
             )
             .child(
-                self.cloud_button(
-                    SharedString::from(format!("cloud-{key}-remove-{index}")),
-                    "Remove",
-                    ready,
-                )
-                .debug_selector(move || format!("cloud-{key}-remove-{index}"))
-                .when(ready, |button| {
-                    button.on_click(cx.listener(move |this, _, _, cx| forget(this, id.clone(), cx)))
-                }),
+                div()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap(px(8.))
+                    .children(actions)
+                    .child(
+                        self.cloud_button(
+                            SharedString::from(format!("cloud-{key}-remove-{index}")),
+                            "Remove",
+                            ready,
+                        )
+                        .debug_selector(move || format!("cloud-{key}-remove-{index}"))
+                        .when(ready, |button| {
+                            button.on_click(
+                                cx.listener(move |this, _, _, cx| forget(this, id.clone(), cx)),
+                            )
+                        }),
+                    ),
             )
     }
 }

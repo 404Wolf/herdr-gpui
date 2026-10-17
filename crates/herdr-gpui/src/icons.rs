@@ -220,6 +220,7 @@ embedded_icons! {
     "error.svg",
     "external.svg",
     "fan-out.svg",
+    "file.svg",
     "git-branch.svg",
     "github.svg",
     "globe.svg",

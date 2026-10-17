@@ -231,12 +231,14 @@ fn requested_repository(variables: &Value) -> Option<String> {
 }
 
 /// What to do when GitHub reports an existing repository as missing. A GitHub
-/// App user token only reaches repositories the App is installed on.
+/// App user token only reaches repositories the App is installed on, and no
+/// token reaches another account's private repositories, such as those of an
+/// Enterprise Managed User, which an additional account can read instead.
 pub(crate) fn hidden_hint(app_token: bool) -> &'static str {
     if app_token {
-        "This GitHub App sign-in only reaches repositories the App is installed on: install it for the repository's owner, or set GH_TOKEN."
+        "This GitHub App sign-in only reaches repositories the App is installed on: install it for the repository's owner, or add the account that owns it on the GitHub page."
     } else {
-        "Check the remote, the token's repository access, and SSO authorization."
+        "Check the remote, the token's repository access, and SSO authorization, or add the account that owns it on the GitHub page."
     }
 }
 
