@@ -1,8 +1,10 @@
 //! The activity bar: an icon column at the window's left edge that picks
 //! what the window shows. Workspaces is the sidebar beside the terminals, as
-//! it was; Orchestrator, Pull requests, and Issues each take the window's
-//! body for the focused workspace's orchestrator on that list (see
-//! `orchestrator::section`), keeping the bar, title bar, and status bar.
+//! it was; every other section takes the window's body, keeping the bar,
+//! title bar, and status bar: Overview what needs the user on every host
+//! (`crate::overview`), Orchestrator, Pull requests, and Issues the focused
+//! workspace's orchestrator on that list (see `orchestrator::section`), and
+//! Usage the plan limits of every host (`crate::usage::section`).
 //! `[sidebar] activity_bar = false` turns the bar off, and the collapsed
 //! rail of the Workspaces section never shows it.
 
@@ -33,28 +35,34 @@ const TITLE_HEIGHT: f32 = 32.;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ActivityPanel {
+    Overview,
     #[default]
     Workspaces,
     Orchestrator,
     PullRequests,
     Issues,
+    Usage,
 }
 
 impl ActivityPanel {
     pub(crate) const ALL: &[Self] = &[
+        Self::Overview,
         Self::Workspaces,
         Self::Orchestrator,
         Self::PullRequests,
         Self::Issues,
+        Self::Usage,
     ];
 
     /// The name the CLI and the preferences file use.
     pub(crate) fn name(self) -> &'static str {
         match self {
+            Self::Overview => "overview",
             Self::Workspaces => "workspaces",
             Self::Orchestrator => "orchestrator",
             Self::PullRequests => "pull-requests",
             Self::Issues => "issues",
+            Self::Usage => "usage",
         }
     }
 
@@ -64,19 +72,23 @@ impl ActivityPanel {
 
     fn label(self) -> &'static str {
         match self {
+            Self::Overview => "Overview",
             Self::Workspaces => "Workspaces",
             Self::Orchestrator => "Orchestrator",
             Self::PullRequests => "Pull requests",
             Self::Issues => "Issues",
+            Self::Usage => "Usage",
         }
     }
 
     fn icon(self) -> &'static str {
         match self {
+            Self::Overview => "icons/pulse.svg",
             Self::Workspaces => "icons/terminal.svg",
             Self::Orchestrator => "icons/fan-out.svg",
             Self::PullRequests => "icons/pull-request.svg",
             Self::Issues => "icons/issue.svg",
+            Self::Usage => "icons/chart.svg",
         }
     }
 }
@@ -93,6 +105,9 @@ pub(crate) struct Activity {
     /// The list last picked on that tab's view, so the user's own choice of
     /// list there stands until another section is picked.
     pub(crate) section_list: Option<List>,
+    /// What holds the keyboard while Overview or Usage is shown, so typing
+    /// never reaches a terminal the section hides.
+    pub(crate) section_focus: Option<FocusHandle>,
     /// Each orchestrator view's lists and live agents as last counted, by
     /// identity, so a new snapshot or a live status change redraws the bar
     /// and nothing else does.
@@ -214,10 +229,43 @@ impl HerdrWindow {
             self.save_chrome();
         }
         self.sync_activity_section(cx);
-        if self.activity_section().is_some() {
-            self.focus_activity_section(window, cx);
+        match self.activity_section() {
+            Some(ActivityPanel::Overview | ActivityPanel::Usage) => {
+                let focus = self
+                    .activity
+                    .section_focus
+                    .get_or_insert_with(|| cx.focus_handle())
+                    .clone();
+                window.focus(&focus, cx);
+            }
+            Some(_) => self.focus_activity_section(window, cx),
+            None => {}
         }
         cx.notify();
+    }
+
+    /// The shown section across the window's body, or `None` in Workspaces.
+    pub(crate) fn render_activity_section(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let section = match self.activity_section()? {
+            ActivityPanel::Workspaces => return None,
+            ActivityPanel::Overview => self.render_overview(cx),
+            ActivityPanel::Usage => self.render_usage_section(cx),
+            ActivityPanel::Orchestrator | ActivityPanel::PullRequests | ActivityPanel::Issues => {
+                return self.render_orchestrator_section();
+            }
+        };
+        let focus = self.activity.section_focus.clone();
+        Some(
+            div()
+                .flex()
+                .flex_1()
+                .size_full()
+                .min_w_0()
+                .min_h_0()
+                .when_some(focus, |section, focus| section.track_focus(&focus))
+                .child(section)
+                .into_any_element(),
+        )
     }
 
     /// The left column with the bar: beside a section, the bar alone; in
@@ -271,15 +319,7 @@ impl HerdrWindow {
             .py(px(6.))
             .bg(self.fill().panel(theme.sidebar_background()))
             .border_r_1()
-            .border_color(rgb(theme.active))
-            // The overview page is planned; its place is kept, unclickable.
-            .child(self.bar_button(
-                "activity-overview",
-                "icons/pulse.svg",
-                "Overview (coming soon)",
-                BarState::Disabled,
-                None,
-            ));
+            .border_color(rgb(theme.active));
         for &panel in ActivityPanel::ALL {
             let state = if panel == self.activity.panel {
                 BarState::Selected
@@ -326,7 +366,6 @@ impl HerdrWindow {
         let ink = match state {
             BarState::Selected => theme.foreground,
             BarState::Idle => theme.muted,
-            BarState::Disabled => theme.dimmed(theme.muted),
         };
         let glyph = div()
             .relative()
@@ -434,14 +473,15 @@ impl HerdrWindow {
 enum BarState {
     Selected,
     Idle,
-    Disabled,
 }
 
 fn panel_selector(panel: ActivityPanel) -> &'static str {
     match panel {
+        ActivityPanel::Overview => "activity-overview",
         ActivityPanel::Workspaces => "activity-workspaces",
         ActivityPanel::Orchestrator => "activity-orchestrator",
         ActivityPanel::PullRequests => "activity-pull-requests",
         ActivityPanel::Issues => "activity-issues",
+        ActivityPanel::Usage => "activity-usage",
     }
 }

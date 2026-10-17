@@ -18,7 +18,7 @@ fn the_activity_panel_round_trips_and_an_unknown_one_is_forgotten() {
     // Files from earlier builds, and panels a later build added, read as none.
     for stored in [
         "",
-        r#", "activity_panel": "overview""#,
+        r#", "activity_panel": "dashboard""#,
         r#", "activity_panel": 3"#,
     ] {
         fs::write(&path, format!(r#"{{"sidebar_width_px": 250{stored}}}"#)).unwrap();

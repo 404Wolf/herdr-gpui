@@ -204,6 +204,7 @@ impl HerdrWindow {
             orchestrator_live: Default::default(),
             orchestrator_sampling: false,
             orchestrators: Default::default(),
+            overview: Default::default(),
             painter: Default::default(),
             pane_carry: None,
             pending_images: Vec::new(),

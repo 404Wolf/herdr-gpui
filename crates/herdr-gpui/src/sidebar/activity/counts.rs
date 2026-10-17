@@ -1,7 +1,8 @@
-//! The bar's count bubbles, from the orchestrator views the window holds:
-//! runs an agent is on or that wait on the user, open pull requests, and
-//! open issues. An item or run two views list, such as one repository open
-//! in two workspaces, counts once.
+//! The bar's count bubbles: what needs the user, as the Overview counted it
+//! on the last tick, and from the orchestrator views the window holds, runs
+//! an agent is on or that wait on the user, open pull requests, and open
+//! issues. An item or run two views list, such as one repository open in two
+//! workspaces, counts once.
 
 use super::ActivityPanel;
 use crate::{
@@ -13,6 +14,7 @@ use std::collections::HashSet;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct Counts {
+    needs: usize,
     runs: usize,
     pull_requests: usize,
     issues: usize,
@@ -46,7 +48,8 @@ impl Counts {
     /// The bar's count for `panel`, if it shows one.
     pub(super) fn of(self, panel: ActivityPanel) -> Option<usize> {
         match panel {
-            ActivityPanel::Workspaces => None,
+            ActivityPanel::Overview => Some(self.needs),
+            ActivityPanel::Workspaces | ActivityPanel::Usage => None,
             ActivityPanel::Orchestrator => Some(self.runs),
             ActivityPanel::PullRequests => Some(self.pull_requests),
             ActivityPanel::Issues => Some(self.issues),
@@ -72,7 +75,10 @@ impl HerdrWindow {
     pub(super) fn activity_counts(&self, cx: &App) -> Counts {
         let mut views = self.orchestrator_views();
         views.sort_unstable_by_key(|(tab, _)| *tab);
-        let mut counts = Counts::default();
+        let mut counts = Counts {
+            needs: self.overview_needing(),
+            ..Counts::default()
+        };
         let mut seen = HashSet::new();
         for (_, view) in &views {
             let view = view.read(cx);

@@ -18,7 +18,7 @@ impl HerdrWindow {
     /// the orchestrator's scripts. Called from the tick and when a section
     /// is picked; a new tab, or a new section, gets its list picked here.
     pub(crate) fn sync_activity_section(&mut self, cx: &mut Context<Self>) {
-        let Some(list) = self.activity_section().map(list_of) else {
+        let Some(list) = self.activity_section().and_then(list_of) else {
             return;
         };
         let Some((scope, workspace)) = self.browser_key() else {
@@ -78,7 +78,9 @@ impl HerdrWindow {
     /// hidden behind the section. Another orchestrator's events leave the
     /// section alone.
     pub(crate) fn leave_activity_section(&mut self, id: TabId, cx: &mut Context<Self>) {
-        if self.activity_section().is_none() || self.activity.section_tab != Some(id) {
+        if self.activity_section().and_then(list_of).is_none()
+            || self.activity.section_tab != Some(id)
+        {
             return;
         }
         self.activity.pick(ActivityPanel::Workspaces);
@@ -112,9 +114,8 @@ impl HerdrWindow {
         window.focus(&focus, cx);
     }
 
-    /// The shown section across the window's body, or `None` in Workspaces.
-    pub(crate) fn render_activity_section(&self) -> Option<AnyElement> {
-        self.activity_section()?;
+    /// The shown orchestrator section across the window's body.
+    pub(crate) fn render_orchestrator_section(&self) -> Option<AnyElement> {
         let section = div()
             .id("activity-section")
             .debug_selector(|| "activity-section".into())
@@ -190,11 +191,12 @@ impl HerdrWindow {
     }
 }
 
-/// The orchestrator's list a section shows.
-fn list_of(section: ActivityPanel) -> List {
+/// The orchestrator's list a section shows, for the sections that show one.
+fn list_of(section: ActivityPanel) -> Option<List> {
     match section {
-        ActivityPanel::Issues => List::Issues,
-        ActivityPanel::PullRequests => List::PullRequests,
-        ActivityPanel::Workspaces | ActivityPanel::Orchestrator => List::Runs,
+        ActivityPanel::Issues => Some(List::Issues),
+        ActivityPanel::PullRequests => Some(List::PullRequests),
+        ActivityPanel::Orchestrator => Some(List::Runs),
+        ActivityPanel::Overview | ActivityPanel::Workspaces | ActivityPanel::Usage => None,
     }
 }

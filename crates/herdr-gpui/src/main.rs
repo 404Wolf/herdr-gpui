@@ -89,6 +89,7 @@ mod network_quality;
 mod notifications;
 mod orchestrator;
 mod osc52;
+mod overview;
 mod palette;
 mod pane_menu;
 mod pane_move;

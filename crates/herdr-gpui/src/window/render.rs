@@ -634,7 +634,7 @@ impl Render for HerdrWindow {
         let mut terminal = Some(terminal);
         // An activity bar section takes the body; its title bar is the
         // window's own, with no group's tab strip in it.
-        let section = self.render_activity_section();
+        let section = self.render_activity_section(cx);
         let merged = section.is_none()
             && slots
                 .first()

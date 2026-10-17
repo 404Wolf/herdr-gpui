@@ -230,6 +230,8 @@ pub(crate) struct HerdrWindow {
     /// Each orchestrator tab's view, by its tab.
     pub(crate) orchestrators:
         std::collections::HashMap<crate::browser::TabId, crate::orchestrator::Orchestrator>,
+    /// The activity bar's Overview page.
+    pub(crate) overview: crate::overview::Page,
     pub(crate) painter: std::rc::Rc<std::cell::RefCell<terminal_painter::TerminalPainter>>,
     /// A pane moving to another device; a move outlives its menu.
     pub(crate) pane_carry: Option<crate::pane_menu::carry::Carry>,
@@ -590,6 +592,7 @@ impl HerdrWindow {
             cx.notify();
         }
         self.poll_devices_overview(cx);
+        self.poll_overview(cx);
         if self.update_system_load() {
             cx.notify();
         }

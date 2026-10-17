@@ -83,12 +83,15 @@ fn a_section_takes_the_body_beside_the_bar_and_workspaces_brings_it_back(
     // The fixture's socket cannot run the orchestrator's scripts, which the
     // section says rather than showing an empty list.
     assert!(cx.debug_bounds("activity-section-empty").is_some());
-    // The overview is not a destination yet.
+    // The overview takes the body as the other sections do.
     click(cx, "activity-overview");
     assert_eq!(
         cx.update(|_, cx| view.read(cx).activity.panel),
-        ActivityPanel::PullRequests
+        ActivityPanel::Overview
     );
+    assert!(cx.debug_bounds("overview").is_some());
+    assert!(cx.debug_bounds("activity-section-empty").is_none());
+    click(cx, "activity-pull-requests");
     // A section picked again stays.
     click(cx, "activity-pull-requests");
     assert!(cx.debug_bounds("activity-section").is_some());
@@ -145,7 +148,7 @@ fn panel_names_round_trip_and_are_unique() {
         let json = serde_json::to_string(&panel).unwrap();
         assert_eq!(json, format!("\"{}\"", panel.name()));
     }
-    assert_eq!(ActivityPanel::parse("overview"), None);
+    assert_eq!(ActivityPanel::parse("dashboard"), None);
 }
 
 #[gpui::test]

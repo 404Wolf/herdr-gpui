@@ -51,3 +51,23 @@ fn ui_panel_shows_a_section_and_workspaces_expands_the_sidebar(cx: &mut gpui::Te
         ActivityPanel::Workspaces
     );
 }
+
+#[gpui::test]
+fn ui_panel_shows_the_overview_and_usage_across_the_window(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = cx.add_window_view(|window, cx| {
+        let mut view = fixture_window(window, cx);
+        view.config.sidebar_style.activity_bar = true;
+        view
+    });
+    for panel in [ActivityPanel::Overview, ActivityPanel::Usage] {
+        let shown = cx.cx.update(|cx| ui(call(UiOp::Panel { panel }), cx));
+        assert!(matches!(shown, Response::Done { .. }), "{shown:?}");
+        cx.cx.update(|cx| {
+            let view = view.read(cx);
+            assert_eq!(view.activity.panel, panel);
+            assert_eq!(view.activity_section(), Some(panel));
+            // Neither shows an orchestrator, so none is opened for it.
+            assert!(view.activity.section_tab.is_none());
+        });
+    }
+}
