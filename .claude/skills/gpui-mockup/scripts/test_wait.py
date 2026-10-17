@@ -1,5 +1,6 @@
 """Isolated receiver tests: no running app or personal control socket is used."""
 
+import ctypes
 import json
 import os
 from pathlib import Path
@@ -9,6 +10,29 @@ import sys
 import tempfile
 import time
 import unittest
+
+
+def process_exists(pid):
+    """Return whether `pid` names a running process."""
+    if os.name != "nt":
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        return True
+    # os.kill(pid, 0) is not a liveness probe on Windows: it raises
+    # WinError 87 for any pid, so ask the kernel for the exit code instead.
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    handle = kernel32.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
+    if not handle:
+        return False
+    try:
+        code = ctypes.c_ulong()
+        kernel32.GetExitCodeProcess(ctypes.c_void_p(handle), ctypes.byref(code))
+        return code.value == 259  # STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(ctypes.c_void_p(handle))
 
 
 class WaitTests(unittest.TestCase):
@@ -117,8 +141,7 @@ class WaitTests(unittest.TestCase):
             self.assertEqual(json.loads((self.root / "called").read_text()),
                              ["browser", "feedback", "--wait", "60"])
             self.assertEqual(Path(f"{self.feedback}.1").read_text(), stdout)
-            with self.assertRaises(ProcessLookupError):
-                os.kill(int(pid_file.read_text()), 0)
+            self.assertFalse(process_exists(int(pid_file.read_text())))
         finally:
             if process.poll() is None:
                 process.terminate()
