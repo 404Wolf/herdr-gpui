@@ -53,7 +53,9 @@ fn known_hosts_files_come_from_ssh_g_in_order() {
         "hostname box\nport 22\n".to_owned(),
         "hostname box\nport 22\nuserknownhostsfile none\n".to_owned(),
         "hostname box\nport 22\nuserknownhostsfile ~/.ssh/known_hosts\n".to_owned(),
-        // A path with a space reaches `ssh -G` output as two words.
+        // A path with a space reaches `ssh -G` output as two words, which only
+        // Windows drive letters can tell from two paths.
+        #[cfg(unix)]
         format!("hostname box\nport 22\nuserknownhostsfile {ROOT}/home/my files/known_hosts\n"),
         format!("hostname box\nport 22\nuserknownhostsfile \"{ROOT}/home/me/known_hosts\"\n"),
         format!("userknownhostsfile {ROOT}/k\nport 22\n"),
@@ -95,6 +97,37 @@ globalknownhostsfile __PROGRAMDATA__\ssh/ssh_known_hosts __PROGRAMDATA__\ssh/ssh
     assert_eq!(
         options[1],
         r#"UserKnownHostsFile="C:/Temp/scan/known_hosts" "C:/Users/me/.ssh/known_hosts" "C:/Users/me/.ssh/known_hosts2""#
+    );
+}
+
+/// A profile whose name has spaces reaches `ssh -G` unquoted. On Windows each
+/// listed file still starts with a drive, so the words rejoin into one path,
+/// and the scan quotes it whole.
+#[cfg(windows)]
+#[test]
+fn windows_profile_paths_with_spaces_stay_whole() {
+    let output = br"hostname box
+port 22
+userknownhostsfile C:\Users\Jane Doe/.ssh/known_hosts C:\Users\Jane  Q Doe/.ssh/known_hosts2
+globalknownhostsfile __PROGRAMDATA__\ssh/ssh_known_hosts
+";
+    let known = parse_known_hosts(output).unwrap();
+    assert_eq!(
+        known.user,
+        [
+            PathBuf::from(r"C:\Users\Jane Doe/.ssh/known_hosts"),
+            PathBuf::from(r"C:\Users\Jane  Q Doe/.ssh/known_hosts2"),
+        ]
+    );
+    assert_eq!(known.global.len(), 1);
+    let options = scan_options(Path::new(r"C:\Temp\known_hosts"), &known.user[..1]);
+    assert_eq!(
+        options[1],
+        r#"UserKnownHostsFile="C:/Temp/known_hosts" "C:/Users/Jane Doe/.ssh/known_hosts""#
+    );
+    // A word that starts no path still cannot begin the list.
+    assert!(
+        parse_known_hosts(b"hostname box\nport 22\nuserknownhostsfile Doe/known_hosts\n").is_none()
     );
 }
 

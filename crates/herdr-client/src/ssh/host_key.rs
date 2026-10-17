@@ -241,7 +241,10 @@ fn parse_known_hosts(output: &[u8]) -> Option<KnownHosts> {
             .filter(|value| !value.is_empty() && *value != "none")
     };
     let paths = |value: Option<&str>| -> Option<Vec<PathBuf>> {
-        let files: Vec<PathBuf> = value?.split_whitespace().map(expand_path).collect();
+        let files: Vec<PathBuf> = split_paths(value?)
+            .iter()
+            .map(|file| expand_path(file))
+            .collect();
         files
             .iter()
             .all(|file| file.is_absolute() && !file.to_string_lossy().contains(['"', '\'']))
@@ -262,6 +265,30 @@ fn parse_known_hosts(output: &[u8]) -> Option<KnownHosts> {
         return None;
     }
     Some(KnownHosts { user, global, name })
+}
+
+/// The files in one `ssh -G` list, which joins them with single spaces and
+/// quotes none. On Unix a path with a space cannot be told from two paths, so
+/// it stays split and the caller rejects the fragment. On Windows every
+/// absolute path starts with a drive or `\\` and no file name holds a `:`,
+/// so a word that starts neither continues the path before it, as in a
+/// profile such as `C:\Users\Jane Doe`.
+fn split_paths(list: &str) -> Vec<String> {
+    if !cfg!(windows) {
+        return list.split_whitespace().map(str::to_owned).collect();
+    }
+    let mut files: Vec<String> = Vec::new();
+    for word in list.split(' ') {
+        let starts = word.starts_with("__PROGRAMDATA__") || Path::new(word).is_absolute();
+        match files.last_mut() {
+            Some(file) if !starts => {
+                file.push(' ');
+                file.push_str(word);
+            }
+            _ => files.push(word.to_owned()),
+        }
+    }
+    files
 }
 
 /// A path as `ssh -G` prints it. Windows OpenSSH prints its system-wide
