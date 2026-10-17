@@ -160,4 +160,20 @@ impl HerdrWindow {
             .get(self.selected_endpoint)
             .and_then(|endpoint| crate::usage::Host::of(&endpoint.connection.target))
     }
+
+    /// Update cloud activity timestamps for active cloud device connections.
+    #[cfg(feature = "azure")]
+    pub(super) fn update_cloud_activity(&mut self) {
+        for endpoint in &self.endpoints {
+            if let herdr_client::ConnectTarget::Cloud {
+                provider: herdr_client::CloudProvider::Azure,
+                id,
+                ..
+            } = &endpoint.connection.target
+                && endpoint.live.status.is_connected()
+            {
+                crate::azure::record_activity(id);
+            }
+        }
+    }
 }

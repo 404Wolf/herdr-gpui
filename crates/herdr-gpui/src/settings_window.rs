@@ -214,6 +214,8 @@ struct SettingsWindow {
     /// The main window's finished cloud jobs when the cards last read them.
     #[cfg(feature = "cloud")]
     cloud_jobs_seen: u64,
+    #[cfg(feature = "azure")]
+    azure_card: Option<cloud_devices::AzureCard>,
     #[cfg(feature = "boat")]
     boat_card: Option<cloud_devices::BoatCard>,
     #[cfg(feature = "coder")]
@@ -334,6 +336,8 @@ impl SettingsWindow {
             cloud_tab: cloud_devices::first_tab(),
             #[cfg(feature = "cloud")]
             cloud_jobs_seen: 0,
+            #[cfg(feature = "azure")]
+            azure_card: None,
             #[cfg(feature = "boat")]
             boat_card: None,
             #[cfg(feature = "coder")]

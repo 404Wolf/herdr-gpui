@@ -7,6 +7,7 @@ use crate::{
     contrast::Contrast,
     keymap::{Binding, DaemonKeys, Keymap, PaneKeys},
 };
+mod azure;
 pub(crate) mod backdrop;
 mod bitmap_fonts;
 mod boat;
@@ -29,7 +30,12 @@ pub(crate) mod sidebar;
 mod sidebar_style;
 pub(crate) mod status_bar;
 mod status_icons;
-#[cfg(any(feature = "boat", feature = "coder", feature = "daytona"))]
+#[cfg(any(
+    feature = "azure",
+    feature = "boat",
+    feature = "coder",
+    feature = "daytona"
+))]
 mod table;
 pub(crate) use sidebar_style::parse_hex;
 mod theme;
@@ -37,6 +43,9 @@ mod updates;
 pub(crate) mod watch;
 mod zen;
 
+pub use azure::AzureConfig;
+#[cfg(feature = "azure")]
+pub(crate) use azure::AzureFields;
 pub use backdrop::Backdrop;
 pub use boat::BoatConfig;
 #[cfg(feature = "boat")]
@@ -113,6 +122,7 @@ pub struct Config {
     /// finishes a turn, so they can be rolled back.
     pub agent_checkpoints: bool,
     /// What shows behind the main window's terminals and chrome.
+    pub azure: AzureConfig,
     pub backdrop: Backdrop,
     pub bell: BellConfig,
     pub boat: BoatConfig,
@@ -397,6 +407,7 @@ impl Default for Config {
         Self {
             // keep-sorted start
             agent_checkpoints: true,
+            azure: AzureConfig::default(),
             backdrop: Backdrop::default(),
             bell: BellConfig::default(),
             boat: BoatConfig::default(),
@@ -465,6 +476,7 @@ impl Default for Config {
 struct Settings {
     // keep-sorted start
     agent_checkpoints: Option<bool>,
+    azure: AzureConfig,
     backdrop: Backdrop,
     bell: BellConfig,
     boat: BoatConfig,
@@ -823,6 +835,9 @@ impl Config {
         settings.github.client_id_with_override(None)?;
         settings.github.check_accounts()?;
         config.github = settings.github;
+        #[cfg(feature = "azure")]
+        settings.azure.check()?;
+        config.azure = settings.azure;
         #[cfg(feature = "boat")]
         settings.boat.settings_with(|_| None)?;
         config.boat = settings.boat;

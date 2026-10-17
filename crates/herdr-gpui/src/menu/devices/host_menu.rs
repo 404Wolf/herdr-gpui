@@ -414,6 +414,10 @@ impl HerdrWindow {
                 // The machine itself is left as it is at the provider.
                 #[cfg(feature = "cloud")]
                 Saved::Cloud { provider, id } => {
+                    #[cfg(feature = "azure")]
+                    if provider == herdr_client::CloudProvider::Azure {
+                        crate::azure::forget_activity(&id);
+                    }
                     crate::cloud::remove(provider, &id)?;
                     Ok(Ok(()))
                 }

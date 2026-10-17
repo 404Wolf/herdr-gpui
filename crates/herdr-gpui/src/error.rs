@@ -22,6 +22,9 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[cfg(feature = "azure")]
+    #[error(transparent)]
+    Azure(#[from] crate::azure::Error),
     #[error(transparent)]
     Backdrop(#[from] crate::backdrop::Error),
     #[cfg(feature = "boat")]

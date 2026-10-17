@@ -78,7 +78,12 @@ impl HerdrWindow {
     #[cfg(feature = "cloud")]
     // Providers that need no setting never read the environment.
     #[cfg_attr(
-        not(any(feature = "boat", feature = "coder", feature = "daytona")),
+        not(any(
+            feature = "azure",
+            feature = "boat",
+            feature = "coder",
+            feature = "daytona"
+        )),
         allow(unused_variables)
     )]
     fn cloud_providers_with_env(
@@ -92,6 +97,8 @@ impl HerdrWindow {
             .iter()
             .copied()
             .filter(|provider| match provider {
+                #[cfg(feature = "azure")]
+                crate::cloud::CloudProvider::Azure => self.config.azure.configured(&var),
                 #[cfg(feature = "boat")]
                 crate::cloud::CloudProvider::Boat => {
                     self.config.boat.api_url.is_some() || var("HERDR_BOAT_API_URL").is_some()

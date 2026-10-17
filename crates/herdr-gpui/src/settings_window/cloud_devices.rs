@@ -3,6 +3,8 @@
 //! state; this section only switches between them, so another provider adds a
 //! tab and a card.
 
+#[cfg(feature = "azure")]
+mod azure;
 #[cfg(feature = "boat")]
 mod boat;
 #[cfg(feature = "coder")]
@@ -13,6 +15,8 @@ mod daytona;
 mod railway;
 mod setup;
 
+#[cfg(feature = "azure")]
+pub(super) use azure::AzureCard;
 #[cfg(feature = "boat")]
 pub(super) use boat::BoatCard;
 #[cfg(feature = "coder")]
@@ -82,7 +86,12 @@ fn input(
 /// Follow a reloaded config in a card's inputs: a field still showing what
 /// was loaded last takes the new value, and one the user has edited keeps the
 /// edit, so a later Save neither writes stale values back nor drops typing.
-#[cfg(any(feature = "boat", feature = "coder", feature = "daytona"))]
+#[cfg(any(
+    feature = "azure",
+    feature = "boat",
+    feature = "coder",
+    feature = "daytona"
+))]
 fn follow_config<const N: usize>(
     inputs: &[Entity<SearchInput>; N],
     previous: [&str; N],
@@ -107,6 +116,8 @@ impl SettingsWindow {
     pub(super) fn open_cloud_devices(&mut self, cx: &mut Context<Self>) {
         for &provider in CloudProvider::ALL {
             match provider {
+                #[cfg(feature = "azure")]
+                CloudProvider::Azure => self.open_azure_card(cx),
                 #[cfg(feature = "boat")]
                 CloudProvider::Boat => self.open_boat_card(cx),
                 #[cfg(feature = "coder")]
@@ -124,6 +135,8 @@ impl SettingsWindow {
     pub(super) fn cloud_config_changed(&mut self, cx: &mut Context<Self>) {
         for &provider in CloudProvider::ALL {
             match provider {
+                #[cfg(feature = "azure")]
+                CloudProvider::Azure => self.azure_config_changed(cx),
                 #[cfg(feature = "boat")]
                 CloudProvider::Boat => self.boat_config_changed(cx),
                 #[cfg(feature = "coder")]
@@ -174,6 +187,8 @@ impl SettingsWindow {
 
     pub(super) fn render_cloud_devices(&self, cx: &mut Context<Self>) -> Div {
         let card = match self.cloud_tab {
+            #[cfg(feature = "azure")]
+            CloudProvider::Azure => self.render_azure_card(cx),
             #[cfg(feature = "boat")]
             CloudProvider::Boat => self.render_boat_card(cx),
             #[cfg(feature = "coder")]
@@ -242,6 +257,7 @@ impl SettingsWindow {
     /// A saved device with its Remove button; removal leaves the machine
     /// itself untouched at the provider.
     #[cfg(any(
+        feature = "azure",
         feature = "boat",
         feature = "coder",
         feature = "daytona",

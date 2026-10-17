@@ -58,6 +58,8 @@ impl Source {
     fn id(self) -> &'static str {
         match self {
             Self::Host => "add-device-source-host",
+            #[cfg(feature = "azure")]
+            Self::Cloud(crate::cloud::CloudProvider::Azure) => "add-device-source-azure",
             #[cfg(feature = "boat")]
             Self::Cloud(crate::cloud::CloudProvider::Boat) => "add-device-source-boat",
             #[cfg(feature = "coder")]
