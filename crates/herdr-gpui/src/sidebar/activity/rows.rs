@@ -4,7 +4,7 @@
 
 use crate::{
     browser::TabId,
-    orchestrator::{Item, Run, RunState},
+    orchestrator::{Item, Run, RunStatus},
     pull_request::{Outcome, PullRequest, State},
 };
 use std::collections::HashSet;
@@ -81,6 +81,14 @@ pub(super) struct Source<'a> {
     pub(super) tab: TabId,
     pub(super) items: &'a [Item],
     pub(super) runs: &'a [Run],
+    /// Each run's status as the view shows it, live agents considered.
+    pub(super) statuses: &'a [RunStatus],
+}
+
+impl<'a> Source<'a> {
+    fn runs(&self) -> impl Iterator<Item = (&'a Run, RunStatus)> + use<'a> {
+        self.runs.iter().zip(self.statuses.iter().copied())
+    }
 }
 
 /// A pull request the prefetch found for one of the shown device's
@@ -111,24 +119,26 @@ pub(super) fn count(sections: &[Section]) -> usize {
     sections.iter().map(|section| section.rows.len()).sum()
 }
 
-/// Runs, by what they need from the user: asking first, then running, then
-/// done.
+/// Runs, grouped as the orchestrator's Runs tab groups them: what needs the
+/// user first, then working, idle, and finished.
 pub(super) fn orchestrator(sources: &[Source]) -> Vec<Section> {
     let mut sections = [
         ("Needs you", Vec::new()),
-        ("Running", Vec::new()),
+        ("Working", Vec::new()),
+        ("Idle", Vec::new()),
         ("Finished", Vec::new()),
     ];
     for source in sources {
-        for run in source.runs {
-            let place = match run.state {
-                RunState::NeedsInput => 0,
-                RunState::Provisioning | RunState::Starting | RunState::Running => 1,
-                _ => 2,
+        for (run, status) in source.runs() {
+            let place = match status {
+                RunStatus::NeedsInput | RunStatus::Failed => 0,
+                RunStatus::Starting | RunStatus::Working => 1,
+                RunStatus::Idle => 2,
+                RunStatus::Done | RunStatus::Stopped => 3,
             };
             let rows = &mut sections[place].1;
             if rows.len() < ROW_LIMIT {
-                rows.push(run_row(*source, run));
+                rows.push(run_row(*source, run, status));
             }
         }
     }
@@ -138,27 +148,24 @@ pub(super) fn orchestrator(sources: &[Source]) -> Vec<Section> {
         .collect()
 }
 
-/// How many runs are under way or asking, for the bar's count.
+/// How many runs need the user or are working, for the bar's count.
 pub(super) fn active_runs(sources: &[Source]) -> usize {
     sources
         .iter()
-        .flat_map(|source| source.runs)
-        .filter(|run| !finished(run.state))
+        .flat_map(Source::runs)
+        .filter(|(_, status)| active(*status))
         .count()
 }
 
-fn finished(state: RunState) -> bool {
+/// Whether an agent is on the run or waiting for the user on it.
+fn active(status: RunStatus) -> bool {
     matches!(
-        state,
-        RunState::Idle
-            | RunState::Completed
-            | RunState::Failed
-            | RunState::Cancelled
-            | RunState::Disconnected
+        status,
+        RunStatus::Starting | RunStatus::Working | RunStatus::NeedsInput | RunStatus::Failed
     )
 }
 
-fn run_row(source: Source, run: &Run) -> Row {
+fn run_row(source: Source, run: &Run, status: RunStatus) -> Row {
     let item = source
         .items
         .iter()
@@ -168,7 +175,7 @@ fn run_row(source: Source, run: &Run) -> Row {
         number: item.map(|item| item.identifier.clone()).unwrap_or_default(),
         title: item.map_or_else(|| run.agent.clone(), |item| item.title.clone()),
         meta: join(&[repository, &run.agent]),
-        tag: Some(run_tag(run.state)),
+        tag: Some(run_tag(status)),
         opens: Opens::Run {
             tab: source.tab,
             id: run.id.clone(),
@@ -176,17 +183,15 @@ fn run_row(source: Source, run: &Run) -> Row {
     }
 }
 
-fn run_tag(state: RunState) -> Tag {
-    match state {
-        RunState::NeedsInput => Tag::new("needs you", Tone::Attention),
-        RunState::Provisioning | RunState::Starting => Tag::new("starting", Tone::Busy),
-        RunState::Running => Tag::new("working", Tone::Busy),
-        RunState::Idle => Tag::new("idle", Tone::Quiet),
-        RunState::Completed => Tag::new("done", Tone::Good),
-        RunState::Failed => Tag::new("failed", Tone::Attention),
-        RunState::Cancelled => Tag::new("cancelled", Tone::Quiet),
-        RunState::Disconnected => Tag::new("lost", Tone::Quiet),
-    }
+/// The Runs tab's own words for a status.
+fn run_tag(status: RunStatus) -> Tag {
+    let tone = match status {
+        RunStatus::NeedsInput | RunStatus::Failed => Tone::Attention,
+        RunStatus::Starting | RunStatus::Working => Tone::Busy,
+        RunStatus::Done => Tone::Good,
+        RunStatus::Idle | RunStatus::Stopped => Tone::Quiet,
+    };
+    Tag::new(status.label(), tone)
 }
 
 /// Open issues, with a tag on those an agent works on.
@@ -194,10 +199,9 @@ pub(super) fn issues(sources: &[Source]) -> Vec<Section> {
     let mut rows = Vec::new();
     for source in sources {
         let working: HashSet<&str> = source
-            .runs
-            .iter()
-            .filter(|run| !finished(run.state))
-            .map(|run| run.item_key.as_str())
+            .runs()
+            .filter(|(_, status)| active(*status) || *status == RunStatus::Idle)
+            .map(|(run, _)| run.item_key.as_str())
             .collect();
         for item in source.items {
             if item.pull_request.is_some() || !open(item) || rows.len() >= ROW_LIMIT {

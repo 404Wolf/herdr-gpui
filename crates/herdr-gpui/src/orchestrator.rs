@@ -41,7 +41,7 @@ pub(crate) use service::SourceStatus;
 pub(crate) use service::{Notice, Request, Service, Snapshot, SyncState, Timing};
 pub(crate) use store::{Access, SCHEMA_VERSION, Store};
 pub(crate) use tab::{LiveCache, Orchestrator};
-pub(crate) use view::{Event, LiveAgent, Look, OrchestratorView};
+pub(crate) use view::{Event, LiveAgent, Look, OrchestratorView, RunStatus};
 pub(crate) use window::Detached;
 
 #[cfg(test)]

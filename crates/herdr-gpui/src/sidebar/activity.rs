@@ -97,9 +97,10 @@ pub(crate) struct Activity {
     /// Picked in this window, so a stored panel arriving later yields to it.
     picked: bool,
     filter: Entity<SearchInput>,
-    /// Each orchestrator view's lists as last drawn, by identity, so a
-    /// view's new snapshot redraws the sidebar and nothing else does.
-    sources: Vec<(TabId, usize, usize)>,
+    /// Each orchestrator view's lists and live agents as last drawn, by
+    /// identity, so a new snapshot or a live status change redraws the
+    /// sidebar and nothing else does.
+    sources: Vec<(TabId, [usize; 3])>,
     _changed: Subscription,
 }
 
@@ -151,8 +152,11 @@ impl Activity {
                 let view = view.read(cx);
                 (
                     *id,
-                    Arc::as_ptr(view.items()) as usize,
-                    Arc::as_ptr(view.runs()) as usize,
+                    [
+                        Arc::as_ptr(view.items()) as usize,
+                        Arc::as_ptr(view.runs()) as usize,
+                        Arc::as_ptr(view.live()) as usize,
+                    ],
                 )
             })
             .collect();

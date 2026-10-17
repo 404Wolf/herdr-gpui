@@ -8,6 +8,7 @@ use crate::{
 };
 
 mod layout;
+mod orchestrator_rows;
 mod rows;
 
 fn item(native_id: &str, title: &str) -> Item {

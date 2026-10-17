@@ -23,7 +23,7 @@ mod rows;
 mod tests;
 
 pub(crate) use look::Look;
-pub(crate) use rows::LiveAgent;
+pub(crate) use rows::{LiveAgent, Status as RunStatus};
 
 use super::{Item, Notice, Request, Service, Snapshot};
 use crate::search_input::{self, SearchInput};
@@ -562,6 +562,20 @@ impl OrchestratorView {
     /// The runs the list shows, those found from branches included.
     pub(crate) fn runs(&self) -> &Arc<Vec<super::Run>> {
         &self.snapshot.runs
+    }
+
+    /// Each run's status as the Runs tab shows it: its live agent's when a
+    /// connected host shows one, else the state its owner stored.
+    pub(crate) fn run_statuses(&self) -> Vec<RunStatus> {
+        let runs = Runs::new(&self.snapshot.runs, &self.snapshot.sessions, &self.live);
+        (0..self.snapshot.runs.len())
+            .filter_map(|run| runs.status(run))
+            .collect()
+    }
+
+    /// The live agents last handed in, which change run statuses.
+    pub(crate) fn live(&self) -> &Arc<Vec<LiveAgent>> {
+        &self.live
     }
 
     /// Opens item `key` on its tab, as clicking its row would.

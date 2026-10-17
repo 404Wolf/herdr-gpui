@@ -53,29 +53,40 @@ impl HerdrWindow {
     pub(super) fn activity_lists(&self, cx: &App) -> Lists {
         let mut views = self.orchestrator_views();
         views.sort_unstable_by_key(|(tab, _)| *tab);
+        let statuses: Vec<_> = views
+            .iter()
+            .map(|(_, view)| view.read(cx).run_statuses())
+            .collect();
         let sources: Vec<Source> = views
             .iter()
-            .map(|(tab, view)| {
+            .zip(&statuses)
+            .map(|((tab, view), statuses)| {
                 let view = view.read(cx);
                 Source {
                     tab: *tab,
                     items: view.items(),
                     runs: view.runs(),
+                    statuses,
                 }
             })
             .collect();
-        // The prefetch holds only the shown device's lookups.
+        // The prefetch holds only the shown device's lookups, keyed as it
+        // looked them up, local checkouts without worktree metadata included.
         let cache = &self.menu.pr_cache;
-        let found: Vec<_> = self
-            .live
-            .snapshot
+        let origin = self.pr_origin();
+        let found: Vec<_> = origin
             .iter()
-            .flat_map(|snapshot| &snapshot.workspaces)
-            .filter_map(|workspace| {
-                let key = &workspace.worktree.as_ref()?.key;
-                let pr = cache.peek(key, workspace.branch.as_deref()?)?;
-                Some((workspace.workspace_id.as_str(), pr))
+            .flat_map(|origin| {
+                self.live
+                    .snapshot
+                    .iter()
+                    .flat_map(|snapshot| &snapshot.workspaces)
+                    .filter_map(move |workspace| {
+                        let input = crate::pull_request::workspace_input(workspace, origin).ok()?;
+                        Some((workspace.workspace_id.as_str(), input))
+                    })
             })
+            .filter_map(|(workspace, input)| Some((workspace, cache.get(&input)?)))
             .collect();
         let branches: Vec<BranchPr> = found
             .iter()

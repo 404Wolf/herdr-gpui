@@ -91,28 +91,49 @@ fn icons_switch_the_panel_and_the_shown_one_collapses_it(cx: &mut gpui::TestAppC
 }
 
 #[gpui::test]
-fn a_seeded_pull_request_is_listed_and_counted(cx: &mut gpui::TestAppContext) {
+fn prefetched_pull_requests_are_listed_and_counted(cx: &mut gpui::TestAppContext) {
     let (view, cx) = fixture(cx);
     view.update(cx, |view, cx| {
-        let mut value = crate::pull_request::fixture().unwrap();
-        value.title = "Seeded pull request".into();
-        view.menu.pr_cache.seed(
-            crate::pull_request::Input {
-                checkout: None,
-                repo_key: Some(crate::sidebar::layout_tests::REPO_KEY.into()),
-                branch: "develop".into(),
-            },
-            value,
-            std::time::Instant::now(),
-        );
+        // The verified local daemon, whose checkouts the prefetch reads.
+        view.live.local_daemon_peer = true;
+        let now = std::time::Instant::now();
+        for (number, input) in [
+            // A worktree the daemon made, keyed by its repository.
+            (
+                11,
+                crate::pull_request::Input {
+                    checkout: None,
+                    repo_key: Some(crate::sidebar::layout_tests::REPO_KEY.into()),
+                    branch: "develop".into(),
+                },
+            ),
+            // A plain local checkout, keyed by its directory.
+            (
+                12,
+                crate::pull_request::Input {
+                    checkout: Some("/tmp".into()),
+                    repo_key: None,
+                    branch: "main".into(),
+                },
+            ),
+        ] {
+            let mut value = crate::pull_request::fixture().unwrap();
+            value.number = number;
+            value.url = format!("https://github.com/penso/herdr-gpui/pull/{number}");
+            view.menu.pr_cache.seed(input, value, now);
+        }
         view.show_activity_panel(ActivityPanel::PullRequests, cx);
     });
     draw(cx);
-    assert!(cx.debug_bounds("activity-row-0-0").is_some());
-    assert!(cx.debug_bounds("activity-row-0-1").is_none());
+    assert!(cx.debug_bounds("activity-row-0-1").is_some());
+    assert!(cx.debug_bounds("activity-row-0-2").is_none());
     let lists = cx.update(|_, cx| view.read(cx).activity_lists(cx));
-    assert_eq!(lists.count(ActivityPanel::PullRequests), Some(1));
+    assert_eq!(lists.count(ActivityPanel::PullRequests), Some(2));
     assert_eq!(lists.count(ActivityPanel::Workspaces), None);
+    // A device whose checkouts cannot be verified lists none.
+    view.update(cx, |view, _| view.live.local_daemon_peer = false);
+    let lists = cx.update(|_, cx| view.read(cx).activity_lists(cx));
+    assert_eq!(lists.count(ActivityPanel::PullRequests), Some(0));
 }
 
 #[gpui::test]
