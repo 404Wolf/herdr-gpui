@@ -120,6 +120,36 @@ fn command(distro: &str, script: &str) -> Command {
     command
 }
 
+/// A `wsl.exe` child running `/bin/sh -s` in the default user's home inside
+/// `distro`, reading its script from standard input, as `ssh::script_command`
+/// does on a host. Nothing is started but the distribution. The caller owns
+/// the child: its streams, deadline, and reaping.
+#[cfg(windows)]
+pub fn wsl_shell_command(distro: &str) -> Result<Command> {
+    if !valid_distro(distro) {
+        return Err(Error::InvalidWslDistro);
+    }
+    let mut command = wsl_exe();
+    command.args([
+        "--distribution",
+        distro,
+        "--cd",
+        "~",
+        "--exec",
+        "/bin/sh",
+        "-s",
+    ]);
+    Ok(command)
+}
+
+#[cfg(not(windows))]
+pub fn wsl_shell_command(distro: &str) -> Result<std::process::Command> {
+    if !valid_distro(distro) {
+        return Err(Error::InvalidWslDistro);
+    }
+    Err(Error::WslUnsupported)
+}
+
 /// The distributions installed for this user, the default first. Blocks for at
 /// most `LIST_TIMEOUT`: call it from a background thread.
 #[cfg(windows)]
