@@ -879,6 +879,12 @@ The pane dialog's **Do not ask again** checkbox (click it or press Space) saves
 **Show agents** control in **Settings > Sidebar** saves
 `show_agents` immediately, independently of the layout draft saved on close.
 
+Agents list in their own section below Spaces by default. Set top-level
+`agents_placement = "nested"`, or pick **Under workspaces** for **Agents
+placement** in **Settings > Sidebar**, to list each agent under the workspace
+it runs in instead; Spaces then takes the full sidebar height. The collapsed
+rail keeps its own agents section either way.
+
 A search field at the top of the sidebar finds devices, worktrees, and
 branches by name; while it holds text, results grouped by kind replace the
 spaces list. Up and Down move through them, Enter opens one, and Escape

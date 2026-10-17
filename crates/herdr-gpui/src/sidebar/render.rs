@@ -19,13 +19,16 @@ use super::{
 };
 use crate::{
     Command, HerdrWindow, NavigationTarget,
-    config::{FontConfig, Theme},
+    config::{AgentsPlacement, FontConfig, Theme},
     fonts::StyledFont,
 };
 use gpui::{prelude::*, *};
 
 mod agent_rows;
 mod device_tree;
+mod nested_agents;
+
+pub(crate) use nested_agents::NestedReveal;
 
 impl HerdrWindow {
     pub(crate) fn render_sidebar(
@@ -83,13 +86,20 @@ impl HerdrWindow {
         agents = agents.track_scroll(&self.sidebar_scroll[1]);
         let multi = self.endpoints.len() > 1;
         let headed = multi || devices;
-        let agents_panel = self.config.show_agents && !devices;
+        let placement = self
+            .config
+            .show_agents
+            .then_some(self.config.agents_placement);
+        let agents_panel = placement == Some(AgentsPlacement::Panel) && !devices;
+        let nested_agents = placement == Some(AgentsPlacement::Nested) && !devices;
         let query = if tree_search {
             self.device_tree_query(cx)
         } else {
             String::new()
         };
         let mut agent_count = 0;
+        // The focused agent's row when agents nest under their workspaces.
+        let mut nested_focus = None;
         // A plugin view hid every agent, rather than there being none.
         let mut filtered = false;
         // Child positions of the highlighted rows, for the one-time reveal below.
@@ -520,9 +530,24 @@ impl HerdrWindow {
                     )
                 })
                 .when(carried, |row| row.cursor_grabbing());
-                // The note and ports ride under their row as one list item, so
-                // the drop preview still measures one height per workspace.
-                let element = if note_line.is_none() && ports.is_none() {
+                let indent = layout.child_indent() * if indented { 2. } else { 1. };
+                let agent_rows = if nested_agents {
+                    let (rows, focused) = self.nested_agent_rows(
+                        endpoint_index,
+                        snapshot,
+                        &workspace.workspace_id,
+                        (&row_cx, indent),
+                        cx,
+                    );
+                    nested_focus = nested_focus.or(focused);
+                    rows
+                } else {
+                    Vec::new()
+                };
+                // The note, ports and nested agents ride under their row as one
+                // list item, so the drop preview still measures one height per
+                // workspace.
+                let element = if note_line.is_none() && ports.is_none() && agent_rows.is_empty() {
                     element
                         .when(gap > 0., |row| row.mt(px(gap)))
                         .when(shift != px(0.), |row| row.top(shift))
@@ -543,9 +568,13 @@ impl HerdrWindow {
                                 .flex_col()
                                 .w_full()
                                 .relative()
-                                .children(trunk)
                                 .children(note_line)
-                                .children(ports),
+                                .children(ports)
+                                .children(agent_rows)
+                                // Last, so a selected nested agent's fill does
+                                // not hide it, as a row draws its guide over
+                                // its own fill.
+                                .children(trunk),
                         )
                         .into_any_element()
                 };
@@ -582,6 +611,8 @@ impl HerdrWindow {
         }
         // Rows under the pinned header are hidden, so a reveal must clear it.
         let cover = px(sticky::cover(&headers));
+        // Search results stand in for the spaces list, so no nested row paints.
+        self.reveal_nested_agent(nested_focus.filter(|_| search.is_none()), cover, window);
         // Folded headers slide under a pinned one, so none is pinned then,
         // nor in the frame that unfolds, whose header places are the folded
         // list's; the frame after pins from the unfolded one.
