@@ -107,15 +107,23 @@ wry.workspace      = true
 embed-resource = { optional = true, workspace = true }
 
 # Attaching the GUI build to a calling terminal's console (see `console`),
-# and the taskbar's COM interfaces (see `taskbar`), which windows-sys lacks.
+# and the control pipe: `interprocess` creates it with a DACL, and
+# `windows-sys` reads the user and the pipe owner it is checked against.
+# `windows` has the taskbar's COM interfaces (see `taskbar`), which
+# windows-sys lacks.
 [target.'cfg(windows)'.dependencies]
+interprocess.workspace = true
 windows = { features = [
   "Win32_Graphics_Gdi",
   "Win32_System_Com",
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
 ], workspace = true }
-windows-sys = { features = ["Win32_System_Console"], workspace = true }
+windows-sys = { features = [
+  "Win32_Security_Authorization",
+  "Win32_System_Console",
+  "Win32_System_Threading",
+], workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 fontdb.workspace       = true

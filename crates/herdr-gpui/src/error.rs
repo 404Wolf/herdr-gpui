@@ -651,10 +651,10 @@ pub enum Error {
         code: crate::control::ErrorCode,
         message: String,
     },
-    #[error(
-        "Controlling a running Herdr UI needs a Unix socket, which this platform build does not provide"
-    )]
-    ControlUnsupported,
+    #[error("{} is held by something other than this user's Herdr UI, so it is not used", path.display())]
+    ControlPipeForeign { path: PathBuf },
+    #[error("Could not identify the Windows user: {0}")]
+    ControlUser(#[source] io::Error),
     #[error("Could not run git in {}: {source}", path.display())]
     GitCommonDir {
         path: PathBuf,

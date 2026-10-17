@@ -13,7 +13,6 @@ pub enum Switch {
 
 impl Switch {
     /// The state after applying this to `current`.
-    #[cfg(unix)]
     pub fn apply(self, current: bool) -> bool {
         match self {
             Self::On => true,

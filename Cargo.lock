@@ -3564,6 +3564,7 @@ dependencies = [
  "herdr-client",
  "if-addrs",
  "image",
+ "interprocess",
  "keepawake",
  "lb-wry",
  "mdns-sd",

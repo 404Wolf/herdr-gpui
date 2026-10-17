@@ -15,7 +15,6 @@ use super::{
     ErrorCode,
     protocol::{Call, Caller, Request, Response},
 };
-#[cfg(unix)]
 use super::{socket, socket_path};
 use crate::cli::control::{BrowserCommand, ControlCommand, Invocation};
 use serde::Serialize;
@@ -173,15 +172,8 @@ fn caller(workspace: Option<String>) -> crate::Result<Caller> {
     })
 }
 
-#[cfg(unix)]
 fn send(request: &Request) -> crate::Result<Response> {
-    let path = socket_path().ok_or(crate::Error::MissingStateRoot)?;
-    socket::call(&path, request)
-}
-
-#[cfg(not(unix))]
-fn send(_: &Request) -> crate::Result<Response> {
-    Err(crate::Error::ControlUnsupported)
+    socket::call(&socket_path()?, request)
 }
 
 fn rejected(response: Response) -> crate::Error {
@@ -223,7 +215,6 @@ pub(crate) fn status(error: &crate::Error) -> u8 {
     match error {
         crate::Error::InvalidBrowserUrl | crate::Error::InvalidLocalPage => exit::USAGE,
         crate::Error::ControlUnavailable { .. } => exit::NOT_RUNNING,
-        crate::Error::ControlUnsupported => exit::UNSUPPORTED,
         crate::Error::ControlRejected { code, .. } => match code {
             ErrorCode::InvalidUrl => exit::USAGE,
             ErrorCode::NotFound | ErrorCode::WorkspaceNotFound | ErrorCode::NoWindow => {

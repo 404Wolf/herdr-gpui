@@ -24,12 +24,9 @@ use crate::{
 pub(super) use config::config;
 use serde_json::json;
 
-/// No app to ask: not running, or a platform without the control socket.
+/// No app to ask: it is not running.
 fn not_running(error: &crate::Error) -> bool {
-    matches!(
-        error,
-        crate::Error::ControlUnavailable { .. } | crate::Error::ControlUnsupported
-    )
+    matches!(error, crate::Error::ControlUnavailable { .. })
 }
 
 fn refused(code: ErrorCode, message: impl Into<String>) -> crate::Error {

@@ -180,7 +180,6 @@ impl Teleport {
     }
 
     /// Whether `endpoint_id` is among the hosts the work could move to.
-    #[cfg(unix)]
     pub(crate) fn offers(&self, endpoint_id: &str) -> bool {
         self.hosts
             .iter()
