@@ -623,6 +623,10 @@ impl SettingsWindow {
             .control_card("Azure devices")
             .debug_selector(|| "cloud-azure-devices".into());
         let creating = self.azure_job_rows(cx);
+        // The last delete's outcome leads, so it reads before an empty list.
+        if let Some(outcome) = self.azure_destroy_outcome() {
+            devices = devices.child(outcome);
+        }
         if card.devices().is_empty() && creating.is_empty() {
             devices = devices.child(self.control_note("None yet."));
         } else if !card.devices().is_empty() {
@@ -630,9 +634,6 @@ impl SettingsWindow {
                 "Removing a device deletes it at Azure, with its disk and IP. Remove from Herdr \
                  only, offered beside it, leaves it at Azure, still billing.",
             ));
-        }
-        if let Some(outcome) = self.azure_destroy_outcome() {
-            devices = devices.child(outcome);
         }
         devices = devices.children(creating);
         for (index, device) in card.devices().iter().enumerate() {
