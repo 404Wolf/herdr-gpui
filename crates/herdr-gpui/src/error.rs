@@ -2,10 +2,7 @@
 pub use crate::updater::UpdateError;
 use daemon::daemon_error_message;
 pub use github::{GitHubAccountsError, GitHubJsonError};
-use std::{
-    io,
-    path::{Path, PathBuf},
-};
+use std::{io, path::PathBuf};
 pub use theme::ThemeParseError;
 
 #[cfg(any(target_os = "macos", windows))]
@@ -986,18 +983,10 @@ pub enum Error {
     // keep-sorted end
 }
 
-impl Error {
-    pub(crate) fn at_path(self, path: &Path) -> Self {
-        Self::Path {
-            path: path.to_owned(),
-            source: Box::new(self),
-        }
-    }
-}
-
 mod config;
 mod daemon;
 mod github;
+mod path;
 mod theme;
 
 #[cfg(test)]
