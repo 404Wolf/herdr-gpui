@@ -1515,7 +1515,9 @@ paths containing control characters are rejected rather than altered.
 
 On an SSH endpoint, a single supported image is transferred as described below.
 Other regular files and multiple-file drops are streamed using the SSH file-copy
-path below. POSIX shell escaping is not intended for Windows command shells.
+path below. A WSL distribution is given its own paths for the files instead,
+with nothing copied; see [WSL distributions](#wsl-distributions). POSIX shell
+escaping is not intended for Windows command shells.
 
 Files copied in the file manager (Cmd-C in Finder) and pasted into the focused
 pane or popup with Cmd-V are handled the same way as a drop. Finder also puts
@@ -3761,8 +3763,20 @@ Agent checkpoints run Git inside the distribution, one `wsl.exe --exec
 host, so its checkouts are snapshotted and restored as an SSH host's are.
 Stopping a step kills its `wsl.exe`, which ends the shell it started.
 
+Files dropped onto a distribution's pane, or copied in Explorer and pasted
+there, paste as the distribution's own paths for them, as its `wslpath -u`
+maps them: `C:\Users\me\a.txt` becomes `/mnt/c/Users/me/a.txt` (or wherever
+`wsl.conf` mounts drives), and a file from inside the distribution
+(`\\wsl.localhost\NAME\home\me\a.txt`) becomes `/home/me/a.txt`. Nothing is
+copied: a distribution already reads this machine's drives, so a file of any
+size is ready at once, an image is pasted as its path rather than through the
+image bridge, and nothing is left in a temporary directory. The paths travel
+on `wsl.exe`'s standard input, at most 256 per drop. A file the distribution
+cannot reach, such as another distribution's or one on a network share, is
+named in the error and nothing is pasted.
+
 What else runs a shell on the host is not wired into a distribution yet and
-says so: teleport, file transfers, and port forwards.
+says so: teleport and port forwards.
 
 These features are unavailable on Windows and say so rather than failing quietly:
 

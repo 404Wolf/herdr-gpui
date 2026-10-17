@@ -275,9 +275,11 @@ fn wsl_error(error: Error) -> Error {
 }
 
 mod catalog;
+mod paths;
 pub use catalog::{
     WslHost, WslHosts, add_wsl_host, load_wsl_hosts, remove_wsl_host, store_wsl_selection,
 };
+pub use paths::wsl_paths;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

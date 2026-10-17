@@ -48,6 +48,7 @@ mod tab_strip;
 mod tab_tear;
 mod toasts;
 mod transfers;
+mod wsl_drop;
 mod zen;
 #[cfg(test)]
 pub(crate) use transfers::tests::Peer as MockPeer;

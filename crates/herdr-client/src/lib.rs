@@ -90,6 +90,6 @@ pub use transport::Stream;
 pub use upload::{remove_uploaded_files, upload_files};
 pub use wsl::{
     WslHost, WslHosts, add_wsl_host, delete_distro_session, list_distro_sessions, list_distros,
-    load_wsl_hosts, probe_distro, remove_wsl_host, store_wsl_selection, valid_distro,
+    load_wsl_hosts, probe_distro, remove_wsl_host, store_wsl_selection, valid_distro, wsl_paths,
     wsl_shell_command,
 };

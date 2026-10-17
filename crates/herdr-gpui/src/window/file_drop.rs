@@ -1,5 +1,6 @@
 //! External paths paste locally; one supported image on SSH uses the daemon's
-//! image bridge. A drop never submits the terminal command.
+//! image bridge, and a WSL distribution is given its own paths for them. A
+//! drop never submits the terminal command.
 
 use super::HerdrWindow;
 use crate::{
@@ -40,8 +41,9 @@ impl HerdrWindow {
     }
 
     /// Paste external files into `target` the way a drop does: quoted local
-    /// paths on a local pane, the image bridge for one image on a remote pane,
-    /// and a file copy for anything else there. Files copied in Finder and
+    /// paths on a local pane, the distribution's paths for them on a WSL pane,
+    /// the image bridge for one image on another remote pane, and a file copy
+    /// for anything else there. Files copied in Finder and
     /// pasted with Cmd-V take this path too. False when nothing was sent.
     pub(super) fn paste_files(
         &mut self,
@@ -70,6 +72,15 @@ impl HerdrWindow {
         // pane that is not ready refuses the files instead.
         let remote = self.selected_is_remote();
         let result = quote_paths(paths).and_then(|text| {
+            if let herdr_client::ConnectTarget::Wsl { distro, .. } =
+                &self.endpoints[self.selected_endpoint].connection.target
+            {
+                if !self.accepts_remote_images() {
+                    return Err(Error::ConnectionNotReady);
+                }
+                self.paste_wsl_files(target.clone(), distro.clone(), paths.to_vec(), cx);
+                return Ok(());
+            }
             if remote {
                 if !self.accepts_remote_images() {
                     return Err(Error::ConnectionNotReady);
