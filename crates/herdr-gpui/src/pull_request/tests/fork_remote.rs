@@ -100,6 +100,29 @@ fn base_repository_prefers_upstream_over_origin_and_falls_back_when_missing() {
 }
 
 #[test]
+fn an_upstream_naming_origins_own_repository_is_not_a_fork() {
+    // Some clones add `upstream` for the same repository; creating a pull
+    // request there must stay the ordinary same-repository path.
+    let (dir, git) = fixture_repo("main");
+    let path = dir.0.to_str().unwrap();
+    git(&[
+        "config",
+        "--local",
+        "remote.origin.url",
+        "https://github.com/base-owner/project.git",
+    ]);
+    git(&[
+        "config",
+        "--local",
+        "remote.upstream.url",
+        "git@github.com:Base-Owner/Project.git",
+    ]);
+    let base = base_repository(path, Instant::now() + TIMEOUT, &|| false).unwrap();
+    assert_eq!(base, origin_base("base-owner", "project"));
+    assert_eq!(base.head("feature").unwrap(), "feature");
+}
+
+#[test]
 fn a_new_pull_request_head_is_qualified_only_across_a_fork() {
     let own = origin_base("contributor", "project");
     assert_eq!(own.head("feature").unwrap(), "feature");

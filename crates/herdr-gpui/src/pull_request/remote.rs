@@ -56,22 +56,27 @@ impl Base {
     }
 }
 
-/// A GitHub `upstream` remote when the checkout has one, otherwise origin.
-/// An `upstream` that is not on GitHub.com is ignored rather than fatal, so
-/// such checkouts keep working exactly as before.
+/// A GitHub `upstream` remote when the checkout has one that names another
+/// repository than origin, otherwise origin. An `upstream` that is not on
+/// GitHub.com, or that names origin's own repository, is ignored rather than
+/// fatal, so such checkouts keep the ordinary same-repository path.
 pub(crate) fn base_repository(
     checkout: &str,
     deadline: Instant,
     cancelled: &impl Fn() -> bool,
 ) -> crate::Result<Base> {
+    let origin = origin_repository(checkout, deadline, cancelled);
     if let Ok(upstream) = git(
         checkout,
         &["config", "--default", "", "--get", "remote.upstream.url"],
         deadline,
         cancelled,
     ) && let Some((owner, repo)) = crate::avatars::github_repo(&upstream)
+        && !origin
+            .as_ref()
+            .is_ok_and(|origin| same_repository(origin, (&owner, &repo)))
     {
-        let fork_owner = origin_repository(checkout, deadline, cancelled)
+        let fork_owner = origin
             .ok()
             .map(|(fork, _)| fork)
             .filter(|fork| !fork.eq_ignore_ascii_case(&owner));
@@ -82,11 +87,16 @@ pub(crate) fn base_repository(
             fork_owner,
         });
     }
-    let (owner, repo) = origin_repository(checkout, deadline, cancelled)?;
+    let (owner, repo) = origin?;
     Ok(Base {
         owner,
         repo,
         remote: Remote::Origin,
         fork_owner: None,
     })
+}
+
+/// GitHub owner and repository names are case-insensitive.
+fn same_repository((owner, repo): &(String, String), other: (&str, &str)) -> bool {
+    owner.eq_ignore_ascii_case(other.0) && repo.eq_ignore_ascii_case(other.1)
 }
