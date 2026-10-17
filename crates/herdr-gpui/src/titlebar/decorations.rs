@@ -98,6 +98,15 @@ fn handles(tiling: Tiling) -> impl Iterator<Item = Div> {
     })
 }
 
+/// What a screen reader calls each window control.
+fn label(id: &str) -> &'static str {
+    match id {
+        "window-minimize" => "Minimize",
+        "window-maximize" => "Maximize",
+        _ => "Close",
+    }
+}
+
 fn selector(edge: ResizeEdge) -> &'static str {
     match edge {
         ResizeEdge::Top => "window-resize-top",
@@ -167,6 +176,8 @@ fn render_controls(
         div()
             .id(id)
             .debug_selector(move || id.into())
+            .role(Role::Button)
+            .aria_label(label(id))
             .flex_none()
             .size(px(28.))
             .flex()

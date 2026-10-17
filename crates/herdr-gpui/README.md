@@ -3763,6 +3763,40 @@ says so: plan usage, listening ports, agent checkpoints, teleport, file
 transfers, and port forwards. WSL already forwards a distribution's
 `localhost` ports to Windows.
 
+### Screen readers on Windows
+
+GPUI reports the window to UI Automation through AccessKit, which is what
+Narrator and NVDA read. Checked against the UI Automation tree of a running
+window, the main window exposes:
+
+- the terminal as a document named **Terminal**, whose text pattern holds the
+  rows on screen and the selection (see `terminal/accessibility.rs`), so
+  Narrator's reading commands and selection tools work on it;
+- the title bar's **Sidebar** (expanded or collapsed), **Back**, **Forward**,
+  and **GitHub account** buttons;
+- the tab strip as a tab list: each tab by its label, with the current one
+  selected, its **Close tab** button, **New tab**, **Split**, and **Tab
+  actions**.
+
+Each button can be invoked from the screen reader. With a Windows contrast
+theme on (Settings > Accessibility > Contrast themes), the app's own marks and
+labels use the **High contrast** level whatever `contrast` says; terminal
+colors and the theme itself are unchanged, since GPUI does not paint with the
+system's contrast colors.
+
+Still missing, and not faked with labels that do nothing:
+
+- the sidebar's spaces, agents, and device rows, the status bar, menus,
+  popups, dialogs, and the Settings, Logs, and Orchestrator windows have no
+  roles yet, so a screen reader sees only their window;
+- Tab and Shift-Tab belong to the terminal, so keyboard focus never moves to
+  the chrome; its commands are in the command palette and the keyboard
+  shortcuts instead;
+- when the app starts in the background (from a script rather than the Start
+  menu), AccessKit can miss the first activation and report the window rather
+  than the terminal as focused until the window is activated again. This is
+  in GPUI's Windows adapter setup, not in this app.
+
 These features are unavailable on Windows and say so rather than failing quietly:
 
 - **Saved SSH hosts.** The bridge gives the `ssh` child a socket pair as its

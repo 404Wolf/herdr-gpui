@@ -255,6 +255,9 @@ impl HerdrWindow {
         div()
             .id("toggle-sidebar")
             .debug_selector(|| "toggle-sidebar".into())
+            .role(Role::Button)
+            .aria_label("Sidebar")
+            .aria_expanded(self.sidebar_visible)
             .flex_none()
             .self_center()
             .size(px(SIDEBAR_TOGGLE_SIZE))
@@ -294,6 +297,8 @@ impl HerdrWindow {
                     .child(
                         div()
                             .id("titlebar-avatar")
+                            .role(Role::Button)
+                            .aria_label("GitHub account")
                             .group("titlebar-account")
                             .debug_selector(|| "titlebar-avatar".into())
                             .flex()

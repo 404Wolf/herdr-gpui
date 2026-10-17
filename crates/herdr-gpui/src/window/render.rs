@@ -273,6 +273,7 @@ impl Render for HerdrWindow {
             // the selection among them. The rows are built while GPUI
             // prepaints, and only while an assistive client is listening.
             .role(Role::Terminal)
+            .aria_label("Terminal")
             .when(
                 window.is_a11y_active() && self.live.surface_ready(),
                 |terminal| {

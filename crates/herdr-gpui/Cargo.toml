@@ -111,6 +111,8 @@ windows-sys = { features = [
   "Win32_Graphics_Dwm",
   "Win32_System_Registry",
   "Win32_System_SystemInformation",
+  "Win32_UI_Accessibility",
+  "Win32_UI_WindowsAndMessaging",
 ], workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]

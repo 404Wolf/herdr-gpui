@@ -179,10 +179,11 @@ impl Config {
         resolve(value, light, theme_directories).map(|theme| self.styled(theme))
     }
 
-    /// `theme` with this config's contrast and accent.
+    /// `theme` with this config's contrast, raised under a system contrast
+    /// theme, and accent.
     fn styled(&self, theme: Theme) -> Theme {
         theme
-            .with_contrast(self.contrast)
+            .with_contrast(self.contrast.or_system())
             .with_accent(self.accent.color())
     }
 }
