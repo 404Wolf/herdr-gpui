@@ -33,7 +33,6 @@ fn every_error_code_has_one_exit_status() {
     ] {
         assert_eq!(status(&rejected(code)), expected, "{code:?}");
     }
-    assert_eq!(status(&crate::Error::ControlUnsupported), exit::UNSUPPORTED);
 }
 
 #[test]

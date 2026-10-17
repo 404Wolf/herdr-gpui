@@ -60,7 +60,7 @@ pub use error::Error as SendError;
 pub use error::{Error, Result, StorageOperation};
 pub use event::ClientEvent;
 pub use forward::{ForwardEvent, PortForward, preferred_local_port};
-pub use handle::{CLIPBOARD_UPLOADS, Client, ClientHandle};
+pub use handle::{Client, ClientHandle};
 pub use host_theme::HostTheme;
 pub use local_network::{LocalNetworkAccess, local_network_access, wait_for_local_network};
 pub use method::Method;
@@ -74,9 +74,7 @@ pub use sessions::{
     LocalSession, RemoteSession, SessionState, delete_local_session, delete_remote_session,
     list_local_sessions, list_remote_sessions,
 };
-#[cfg(unix)]
-pub use ssh::script_command;
-pub use ssh::{Bridge, connect_command};
+pub use ssh::{Bridge, connect_command, script_command};
 pub use ssh::{
     Destination, FORWARD_READY, HostKeyFingerprint, HostKeyScan, HostProbe, NewHostKey, SshFailure,
     forward_command, probe_host, remote_config_value, remote_origin_url, resolve_destination,
@@ -87,8 +85,11 @@ pub use surface_images::{
     valid_asset,
 };
 pub use transport::Stream;
+#[cfg(windows)]
+pub use transport::pipe_available;
 pub use upload::{remove_uploaded_files, upload_files};
 pub use wsl::{
     WslHost, WslHosts, add_wsl_host, delete_distro_session, list_distro_sessions, list_distros,
-    load_wsl_hosts, probe_distro, remove_wsl_host, store_wsl_selection, valid_distro,
+    load_wsl_hosts, probe_distro, remove_wsl_host, store_wsl_selection, valid_distro, wsl_paths,
+    wsl_shell_command,
 };

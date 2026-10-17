@@ -8,18 +8,23 @@ use herdr_client::protocol::{
 };
 use std::sync::Arc;
 
+mod wsl_panes;
+
 #[test]
-fn quotes_shell_metacharacters_apostrophes_and_unicode_without_execution() {
+fn escapes_shell_metacharacters_and_keeps_plain_paths_bare() {
     let paths = [
+        "/Users/me/Screenshot.png",
         "/tmp/a b",
         "/tmp/it's",
-        "/tmp/$(touch bad);`echo bad`&|<>*?[]{}!~$HOME\\\"",
-        "/tmp/\u{65e5}\u{672c}\u{8a9e}",
+        "/tmp/$(touch bad);`echo bad`&|<>*?[]{}!~#^=$HOME\\\"",
+        "/tmp/\u{65e5}\u{672c}\u{8a9e}-v1.2_x+y@z%,:",
     ]
     .map(PathBuf::from);
     assert_eq!(
         quote_paths(&paths).unwrap(),
-        "'/tmp/a b' '/tmp/it'\\''s' '/tmp/$(touch bad);`echo bad`&|<>*?[]{}!~$HOME\\\"' '/tmp/\u{65e5}\u{672c}\u{8a9e}'"
+        "/Users/me/Screenshot.png /tmp/a\\ b /tmp/it\\'s \
+         /tmp/\\$\\(touch\\ bad\\)\\;\\`echo\\ bad\\`\\&\\|\\<\\>\\*\\?\\[\\]\\{\\}\\!\\~\\#\\^\\=\\$HOME\\\\\\\" \
+         /tmp/\u{65e5}\u{672c}\u{8a9e}-v1.2_x+y@z%\\,\\:"
     );
 }
 
@@ -45,13 +50,12 @@ fn bounds_path_count_and_expanded_utf8_bytes() {
         quote_paths(&vec![PathBuf::from("x"); MAX_PATHS + 1]),
         Err(Error::FileDropSize)
     ));
-    let text = "x".repeat(MAX_PASTE_BYTES - 2);
+    let text = "x".repeat(MAX_PASTE_BYTES);
     assert_eq!(quote_paths(&[text.into()]).unwrap().len(), MAX_PASTE_BYTES);
     for text in [
-        "x".repeat(MAX_PASTE_BYTES - 1),
-        "'".repeat(MAX_PASTE_BYTES / 4),
-        "\u{e9}".repeat(MAX_PASTE_BYTES / 2),
         "x".repeat(MAX_PASTE_BYTES + 1),
+        "'".repeat(MAX_PASTE_BYTES / 2 + 1),
+        "\u{e9}".repeat(MAX_PASTE_BYTES / 2 + 1),
     ] {
         assert!(matches!(
             quote_paths(&[text.into()]),
@@ -59,7 +63,7 @@ fn bounds_path_count_and_expanded_utf8_bytes() {
         ));
     }
     assert!(matches!(
-        quote_paths(&["x".repeat(MAX_PASTE_BYTES - 4).into(), "y".into()]),
+        quote_paths(&["x".repeat(MAX_PASTE_BYTES - 1).into(), "y".into()]),
         Err(Error::FileDropSize)
     ));
 }

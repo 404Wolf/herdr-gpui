@@ -292,7 +292,7 @@ jobs:
           test -n "$HERDR_WINDOWS_SIGNER" || { echo "Set the WINDOWS_SIGNING_SUBJECT repository variable" >&2; exit 1; }
       - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - run: cargo test --locked -p herdr-protocol -p herdr-client
-      - run: cargo build --locked --release -p herdr-gpui --target "$TARGET"
+      - run: cargo build --locked --release -p herdr-gpui -p herdr-gpui-launcher --target "$TARGET"
       - run: cargo test --locked --release -p herdr-gpui --test cli --target "$TARGET"
       # cargo-about gates its binary behind the non-default `cli` feature, and
       # `cargo install` only warns and exits 0 when it installs nothing. Verify
@@ -306,7 +306,7 @@ jobs:
       - name: Package experimental Windows executable
         run: |
           mkdir dist
-          python scripts/release/package-windows.py "$VERSION" "$TARGET" "target/$TARGET/release/herdr-gpui.exe" dist "target/$TARGET/release/THIRD-PARTY-NOTICES.txt"
+          python scripts/release/package-windows.py "$VERSION" "$TARGET" "target/$TARGET/release/herdr-gpui.exe" "target/$TARGET/release/herdr-gpui-launcher.exe" dist "target/$TARGET/release/THIRD-PARTY-NOTICES.txt"
       - name: Install the pinned Inno Setup compiler
         run: python scripts/release/windows-installer.py install-iscc "$RUNNER_TEMP/inno-setup" > "$RUNNER_TEMP/iscc-path"
       - name: Build the Windows installer
@@ -323,7 +323,7 @@ jobs:
           retention-days: 7
 
   # Signs the tested build without running it: unpack the zip, sign both
-  # executables (the console copy after package-windows.py patched it), check
+  # executables (herdr-gpui.exe and its windowed launcher), check
   # nothing else changed, repack, then rebuild the installer with ISCC signing
   # its uninstaller and Setup.exe. Azure Artifact Signing trusts only this
   # repository's OIDC token for the protected release environment, so the
@@ -377,7 +377,7 @@ jobs:
           certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
           files: |
             ${{ runner.temp }}\signing\Herdr-${{ needs.validate.outputs.version }}-${{ matrix.target }}\herdr-gpui.exe
-            ${{ runner.temp }}\signing\Herdr-${{ needs.validate.outputs.version }}-${{ matrix.target }}\bin\herdr-gpui.exe
+            ${{ runner.temp }}\signing\Herdr-${{ needs.validate.outputs.version }}-${{ matrix.target }}\herdr-gpui-launcher.exe
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256

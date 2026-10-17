@@ -1,11 +1,12 @@
-//! Settings > Appearance > Window backdrop: Solid, Translucent, or Picture,
+//! Settings > Theme > Window backdrop: Solid, Translucent, or Picture,
 //! each with only its own controls below. Settings and dialogs stay opaque
 //! whatever is chosen.
 use super::*;
 use crate::config::{
-    Backdrop, Theme,
+    Backdrop, Material, Theme,
     backdrop::{Edit, IMAGE_OPACITY},
 };
+use crate::settings_window::ui;
 
 mod ruler;
 
@@ -116,6 +117,15 @@ fn behind(theme: &Theme, mode: Mode) -> Div {
     }
 }
 
+/// Whether this system has more than one blur to pick: DWM's acrylic and
+/// Mica, from Windows 11 22H2.
+fn offers_materials() -> bool {
+    #[cfg(windows)]
+    return crate::caption::windows::system_backdrops();
+    #[cfg(not(windows))]
+    false
+}
+
 impl SettingsWindow {
     pub(in crate::settings_window) fn render_backdrop_controls(
         &self,
@@ -128,13 +138,12 @@ impl SettingsWindow {
             tiles = tiles.child(self.backdrop_tile(mode, current == mode, cx));
         }
         let details = match current {
-            Mode::Solid => div().child(self.control_note("The window paints as it always has.")),
+            Mode::Solid => div(),
             Mode::Translucent => {
                 let blur = backdrop.blur;
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(4.))
                     .child(self.backdrop_ruler(cx))
                     .child(
                         self.control_switch("settings-backdrop-blur", "Blur behind", blur, true)
@@ -142,23 +151,41 @@ impl SettingsWindow {
                                 this.save_backdrop(vec![Edit::Blur(!blur)], cx);
                             })),
                     )
+                    // Only Windows 11 has a second material to choose.
+                    .when(blur && offers_materials(), |details| {
+                        let mica = backdrop.material == Material::Mica;
+                        let next = if mica { Material::Acrylic } else { Material::Mica };
+                        details
+                            .child(
+                                self.control_switch("settings-backdrop-mica", "Mica", mica, true)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.save_backdrop(vec![Edit::Material(next)], cx);
+                                    })),
+                            )
+                            .child(self.control_note(
+                                "Mica tints the window with the wallpaper rather than the windows behind it.",
+                            ))
+                    })
             }
             Mode::Picture => div()
                 .flex()
                 .flex_col()
-                .gap(px(4.))
                 .child(self.backdrop_picture_row(cx))
-                .child(self.backdrop_ruler(cx))
-                .child(self.control_note(
-                    "The window stays opaque over the picture; lower opacity shows more of it.",
-                )),
+                .child(self.backdrop_ruler(cx)),
         };
-        self.control_card("Window backdrop")
+        let description = match current {
+            Mode::Solid => "The window paints as it always has.",
+            Mode::Translucent => "Colors a program chooses, popups, and dialogs stay opaque.",
+            Mode::Picture => {
+                "The window stays opaque over the picture; lower opacity shows more of it."
+            }
+        };
+        div()
             .debug_selector(|| "settings-backdrop".into())
-            .child(self.control_note(
-                "What shows behind the main window. Colors a program chooses, popups, and dialogs stay opaque.",
-            ))
-            .child(tiles)
+            .flex()
+            .flex_col()
+            .child(ui::row(&self.theme, "theme-backdrop", "Backdrop").description(description))
+            .child(tiles.py(px(10.)))
             .child(details)
     }
 

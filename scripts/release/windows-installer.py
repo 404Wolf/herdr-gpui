@@ -12,16 +12,16 @@
       request builds leave it out and stay unsigned.
   smoke [--signed] INSTALLER
       On Windows: install silently into a scratch directory with the PATH
-      task, check the files, their subsystems, the console copy's output,
-      the app's name and its Start menu shortcut's AppUserModelID, that the
-      console copy opening the app does not hold its caller's pipes, the user
-      PATH, and the entry Settings lists under Installed apps; run it again
-      as the in-app update does and check it starts the app; then uninstall
-      and check all of it is gone again. With --signed, also require valid
-      timestamped signatures from one signer on the installer and on
-      everything it installed that runs, the uninstaller included. Changes
-      this user's PATH and Start menu shortcut, and opens the app (which may
-      start a Herdr daemon), while it runs: for CI runners only. Under a
+      task, check the files, their subsystems, herdr-gpui.exe's output, the
+      app's name, the Start menu shortcut's AppUserModelID and target (the
+      launcher), the user PATH, and the entry Settings lists under Installed
+      apps; run it again as the in-app update does and check it starts the
+      app; then uninstall and check all of it is gone again. With --signed,
+      also require valid timestamped signatures from one signer on the
+      installer and on everything it installed that runs, the uninstaller
+      included. Changes this user's PATH and Start menu shortcut, and opens
+      the app (which may start a Herdr daemon), while it runs: for CI runners
+      only. Under a
       process a packaged (MSIX) app started, Windows redirects HKCU into that
       app's private hive, so the checks pass while Settings and new terminals
       see neither entry.
@@ -103,7 +103,7 @@ def build(version, target, archive, output_dir, iscc, sign=False):
                 raise ValueError("Release zip has entries outside its root")
             release.extractall(temp)
         source = Path(temp) / root
-        for required in ("herdr-gpui.exe", "bin/herdr-gpui.exe"):
+        for required in ("herdr-gpui.exe", "herdr-gpui-launcher.exe"):
             if not (source / required).is_file():
                 raise ValueError(f"Release zip has no {required}")
         arguments = iscc_arguments(version, target, source, output_dir, sign)
@@ -127,41 +127,6 @@ def user_path_entries():
         except FileNotFoundError:
             return []
     return [entry.rstrip("\\").lower() for entry in value.split(";") if entry]
-
-
-def processes_at(path):
-    """Ids of running processes started from exactly `path`."""
-    query = ("Get-CimInstance Win32_Process -Filter \"Name='herdr-gpui.exe'\" | "
-             f"Where-Object ExecutablePath -eq '{path}' | ForEach-Object ProcessId")
-    output = subprocess.run(["powershell", "-NoProfile", "-Command", query],
-                            capture_output=True, text=True, check=True, timeout=60).stdout
-    return [int(line) for line in output.split()]
-
-
-def stop_processes_at(path):
-    for pid in processes_at(path):
-        subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True, timeout=60)
-
-
-def check_opens_app_without_holding_pipes(cli, gui):
-    """The console copy with no command starts the app and returns. A caller
-    reading its output through pipes must see them close then, not when the
-    app exits, or an agent's shell would hang on `herdr-gpui`."""
-    started = subprocess.Popen([str(cli)], stdin=subprocess.DEVNULL,
-                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    try:
-        # A timeout here, not in subprocess.run, which waits on the pipes
-        # again without one after killing the child.
-        started.communicate(timeout=30)
-    except subprocess.TimeoutExpired:
-        started.kill()
-        stop_processes_at(gui)
-        started.communicate()
-        raise ValueError("Console copy with no command held its caller's pipes open")
-    finally:
-        stop_processes_at(gui)
-    if started.returncode != 0:
-        raise ValueError(f"Console copy with no command exited with {started.returncode}")
 
 
 def app_id():
@@ -194,6 +159,20 @@ def check_uninstall_entry(app):
         raise ValueError(f"Uninstall entry does not run the uninstaller: {entry}")
 
 
+def link_handler():
+    """The command Windows runs for a herdr-gpui:// link, or None when the
+    scheme is not registered for this user."""
+    import winreg
+    name = r"Software\Classes\herdr-gpui"
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, name) as key:
+            winreg.QueryValueEx(key, "URL Protocol")
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, name + r"\shell\open\command") as key:
+            return winreg.QueryValueEx(key, "")[0]
+    except FileNotFoundError:
+        return None
+
+
 def check_signed(paths):
     spec = importlib.util.spec_from_file_location("windows_signing", ROOT / "scripts/release/windows-signing.py")
     signing = importlib.util.module_from_spec(spec)
@@ -210,14 +189,15 @@ def app_user_model_id():
 
 
 def shell_identity(app):
-    """The installed app's FileDescription and its Start menu shortcut's
-    AppUserModelID, which only the shell reads."""
+    """The installed app's FileDescription, and its Start menu shortcut's
+    AppUserModelID and target, which only the shell reads."""
     script = (
         "$ErrorActionPreference = 'Stop';"
         "(Get-Item -LiteralPath $env:HERDR_SMOKE_APP).VersionInfo.FileDescription;"
         "$programs = [Environment]::GetFolderPath('Programs');"
-        "(New-Object -ComObject Shell.Application).Namespace($programs)"
-        ".ParseName('Herdr UI.lnk').ExtendedProperty('System.AppUserModel.ID')"
+        "$link = (New-Object -ComObject Shell.Application).Namespace($programs).ParseName('Herdr UI.lnk');"
+        "$link.ExtendedProperty('System.AppUserModel.ID');"
+        "$link.GetLink.Path"
     )
     output = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
                             capture_output=True, text=True, check=True, timeout=120,
@@ -227,7 +207,10 @@ def shell_identity(app):
 
 def smoke(installer, signed=False):
     with tempfile.TemporaryDirectory(prefix="herdr-installer-smoke-") as temp:
-        app = Path(temp) / "Herdr UI"
+        # Runners report %TEMP% as an 8.3 short path (C:\Users\RUNNER~1\...),
+        # while the shell answers with long ones; resolving first keeps every
+        # path the checks compare in one spelling.
+        app = Path(temp).resolve() / "Herdr UI"
         subprocess.run([str(installer), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
                         "/TASKS=addtopath", f"/DIR={app}", f"/LOG={Path(temp) / 'setup.log'}"],
                        check=True, timeout=600)
@@ -243,27 +226,44 @@ def smoke(installer, signed=False):
 def check_installation(app, signed_installer):
     """`signed_installer` is the installer whose signatures to require along
     with the installed files', or None to skip signature checks."""
-    gui, cli = app / "herdr-gpui.exe", app / "bin" / "herdr-gpui.exe"
-    for path in (gui, cli, app / "licenses" / "THIRD-PARTY-NOTICES.txt"):
+    exe, launcher = app / "herdr-gpui.exe", app / "herdr-gpui-launcher.exe"
+    for path in (exe, launcher, app / "licenses" / "THIRD-PARTY-NOTICES.txt"):
         if not path.is_file():
             raise ValueError(f"Installer did not install {path}")
-    # 2 is the GUI subsystem, 3 the console one (package-windows.py).
-    if (subsystem(gui), subsystem(cli)) != (2, 3):
+    # herdr-gpui.exe is the command line, a console program (3); the launcher
+    # opens it without a console window, so it is a GUI one (2).
+    if (subsystem(exe), subsystem(launcher)) != (3, 2):
         raise ValueError("Installed executables have the wrong subsystems")
-    info = subprocess.run([str(cli), "--build-info"], capture_output=True, text=True,
+    info = subprocess.run([str(exe), "--build-info"], capture_output=True, text=True,
                           check=True, timeout=60).stdout
-    # Printed through a pipe by the console copy, as an agent's shell reads it.
+    # Printed through a pipe, as an agent's shell reads it.
     if not info.startswith("worktree="):
-        raise ValueError(f"Installed console copy printed no build info:\n{info}")
-    identity = shell_identity(gui)
-    if identity != ("Herdr UI", app_user_model_id()):
+        raise ValueError(f"Installed herdr-gpui.exe printed no build info:\n{info}")
+    identity = shell_identity(exe)
+    if identity != ("Herdr UI", app_user_model_id(), str(launcher)):
         raise ValueError(f"Installed app or shortcut has the wrong identity: {identity}")
     if signed_installer is not None:
-        check_signed([signed_installer.resolve(), gui, cli, app / "unins000.exe"])
-    check_opens_app_without_holding_pipes(cli, gui)
-    if str(app / "bin").lower() not in user_path_entries():
-        raise ValueError("Installer did not add bin to the user PATH")
+        check_signed([signed_installer.resolve(), exe, launcher, app / "unins000.exe"])
+    if str(app).lower() not in user_path_entries():
+        raise ValueError("Installer did not add the app directory to the user PATH")
     check_uninstall_entry(app)
+    handler = link_handler()
+    if handler != f'"{launcher}" "%1"':
+        raise ValueError(f"Installer registered herdr-gpui:// links wrongly: {handler}")
+
+
+def processes_at(path):
+    """Ids of running processes started from exactly `path`."""
+    query = ("Get-CimInstance Win32_Process -Filter \"Name='herdr-gpui.exe'\" | "
+             f"Where-Object ExecutablePath -eq '{path}' | ForEach-Object ProcessId")
+    output = subprocess.run(["powershell", "-NoProfile", "-Command", query],
+                            capture_output=True, text=True, check=True, timeout=60).stdout
+    return [int(line) for line in output.split()]
+
+
+def stop_processes_at(path):
+    for pid in processes_at(path):
+        subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True, timeout=60)
 
 
 def check_update_relaunches(installer, app):
@@ -289,14 +289,14 @@ def uninstall(app):
     subprocess.run([str(app / "unins000.exe"), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
                    check=True, timeout=600)
     # The uninstaller hands off to a copy of itself and returns early.
-    bin_entry = str(app / "bin").lower()
+    entry = str(app).lower()
     shortcut = Path(os.environ["APPDATA"]) / "Microsoft/Windows/Start Menu/Programs/Herdr UI.lnk"
     deadline = time.monotonic() + 120
-    while (app.exists() or shortcut.exists() or bin_entry in user_path_entries()
-           or uninstall_entry() is not None):
+    while (app.exists() or shortcut.exists() or entry in user_path_entries()
+           or uninstall_entry() is not None or link_handler() is not None):
         if time.monotonic() > deadline:
             raise ValueError("Uninstaller left the app directory, its shortcut, its PATH entry, "
-                             "or its Uninstall entry behind")
+                             "its Uninstall entry, or its link handler behind")
         time.sleep(1)
 
 

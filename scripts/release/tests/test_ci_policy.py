@@ -135,10 +135,12 @@ class CiPolicy(unittest.TestCase):
         for native in ("failure", "cancelled", "skipped"):
             self.assertFalse(gate("true", "success", "success", native, "success"), native)
         self.assertFalse(gate("false", "skipped", "skipped", "success", "success"))
-        # The installer job is required exactly when its inputs changed.
-        for inputs, package, expected in (("true", "success", True), ("true", "failure", False),
-                                          ("true", "skipped", False), ("false", "skipped", True),
-                                          ("false", "success", False), ("", "skipped", False)):
+        # The Windows package job runs only when its inputs change, and must
+        # then succeed; missing detection fails like the platform jobs'.
+        for inputs, package in itertools.product(
+                ("true", "false", ""), ("success", "failure", "cancelled", "skipped")):
+            expected = ((inputs == "true" and package == "success")
+                        or (inputs == "false" and package == "skipped"))
             self.assertEqual(gate("true", "success", "success", "success", "success", inputs, package),
                              expected, (inputs, package))
 

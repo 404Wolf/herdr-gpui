@@ -4,6 +4,7 @@ use super::*;
 use crate::{
     config::{SidebarScope, Theme, mix},
     fonts::StyledFont,
+    herdr_settings::Edit,
     plugin_values::{
         HostReport, PreviewPart, PreviewRole, PreviewSource, SidebarValue, preview_agent,
         preview_space, sidebar_values,
@@ -79,10 +80,15 @@ impl SettingsWindow {
     pub(in crate::settings_window) fn render_plugin_controls(&self, cx: &mut Context<Self>) -> Div {
         let query = self.plugins.search.read(cx).text().trim().to_lowercase();
         let body = div()
+            .relative()
+            .debug_selector(|| "plugins-values".into())
             .flex()
             .flex_col()
             .gap(px(16.))
             .min_w_0()
+            .child(crate::settings_window::search::track_bounds(
+                "plugins-values".into(),
+            ))
             .child(self.plugins.search.clone());
         let Some(source) = self.source.upgrade() else {
             return body.child(self.control_note(
@@ -113,7 +119,7 @@ impl SettingsWindow {
             card = card.child(self.control_note(if !cfg!(unix) {
                 "Shared Herdr settings are read-only on this platform."
             } else {
-                "Shared settings are unavailable. Reload from General to retry."
+                "Shared settings are unavailable. Reload to retry."
             }));
         }
         card = card.child(self.rows_mode(cx));
@@ -266,13 +272,20 @@ impl SettingsWindow {
                 .child(self.control_note(
                     "This app draws its own sidebar rows ([usage] inline = false), so these switches only change the terminal app.",
                 ))
-                .child(self.preference_switch(
-                    "plugin-use-herdr-rows",
-                    "Use Herdr's sidebar rows in this app",
-                    false,
-                    crate::config::preferences::Preference::UsageInline(true),
-                    cx,
-                ));
+                .child(
+                    self.control_switch(
+                        "plugin-use-herdr-rows",
+                        "Use Herdr's sidebar rows in this app",
+                        false,
+                        true,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.save_preference(
+                            crate::config::preferences::Preference::UsageInline(true),
+                            cx,
+                        )
+                    })),
+                );
         }
         let layout = &self.config.sidebar_layout;
         if layout.agents == crate::config::AgentLayout::default()

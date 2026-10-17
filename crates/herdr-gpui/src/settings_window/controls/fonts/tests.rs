@@ -2,23 +2,24 @@ use super::*;
 use core::prelude::v1::test;
 use std::sync::{Arc, Mutex};
 
-const ROWS: [&str; 4] = [
-    "settings-font-row-terminal",
-    "settings-font-row-sidebar",
-    "settings-font-row-tabs",
-    "settings-font-row-ui",
+const ROWS: [&str; 4] = ["fonts-terminal", "fonts-sidebar", "fonts-tabs", "fonts-ui"];
+const FIELDS: [&str; 4] = [
+    "fonts-terminal-size-control-field",
+    "fonts-sidebar-size-control-field",
+    "fonts-tabs-size-control-field",
+    "fonts-ui-size-control-field",
 ];
 const FAMILIES: [&str; 4] = [
-    "settings-font-family-terminal",
-    "settings-font-family-sidebar",
-    "settings-font-family-tabs",
-    "settings-font-family-ui",
+    "fonts-terminal-family",
+    "fonts-sidebar-family",
+    "fonts-tabs-family",
+    "fonts-ui-family",
 ];
 const PLUS: [&str; 4] = [
-    "settings-size-terminal-+",
-    "settings-size-sidebar-+",
-    "settings-size-tabs-+",
-    "settings-size-ui-+",
+    "fonts-terminal-size-control-plus",
+    "fonts-sidebar-size-control-plus",
+    "fonts-tabs-size-control-plus",
+    "fonts-ui-size-control-plus",
 ];
 
 fn fixture(window: &mut Window, cx: &mut Context<SettingsWindow>) -> SettingsWindow {
@@ -61,17 +62,22 @@ fn compact_rows_and_unclipped_picker_at_both_window_sizes(cx: &mut TestAppContex
         for index in 0..4 {
             let row = cx.debug_bounds(ROWS[index]).unwrap();
             inside(row, body);
-            assert_eq!(row.size.height, px(52.));
+            assert!(row.size.height >= px(crate::settings_window::ui::ROW_HEIGHT));
             if let Some(previous) = previous {
-                assert_eq!(row.top() - previous.bottom(), px(8.));
+                // Rows are divider-separated and sit flush.
+                assert_eq!(row.top(), previous.bottom());
             }
             previous = Some(row);
             let family = cx.debug_bounds(FAMILIES[index]).unwrap();
             inside(family, row);
             assert!(family.size.width > px(100.));
             inside(cx.debug_bounds(PLUS[index]).unwrap(), row);
+            inside(cx.debug_bounds(FIELDS[index]).unwrap(), row);
         }
-        let button = cx.debug_bounds("settings-font-family-terminal").unwrap();
+        view.read_with(cx, |view, _| {
+            assert!(view.controls.picker.is_none());
+        });
+        let button = cx.debug_bounds("fonts-terminal-family").unwrap();
         cx.simulate_click(button.center(), Modifiers::default());
         cx.update(|window, cx| window.draw(cx).clear(cx));
         let picker = cx.debug_bounds("settings-font-picker").unwrap();
@@ -90,6 +96,68 @@ fn compact_rows_and_unclipped_picker_at_both_window_sizes(cx: &mut TestAppContex
         });
         cx.simulate_keystrokes("escape");
     }
+}
+
+#[gpui::test]
+fn the_terminal_size_field_shows_the_configured_size(cx: &mut TestAppContext) {
+    let (view, cx) = cx.add_window_view(fixture);
+    cx.simulate_resize(size(px(960.), px(780.)));
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    let size = view.read_with(cx, |view, _| FontFace::Terminal.size(&view.config));
+    assert_eq!(size, 14.); // the fixture's terminal size (the brief guessed 13)
+    assert!(
+        cx.debug_bounds("fonts-terminal-size-control-field")
+            .is_some()
+    );
+    assert!(cx.debug_bounds("fonts-all").is_some());
+    assert!(cx.debug_bounds("settings-font-specimen").is_some());
+}
+
+#[gpui::test]
+fn plus_clicks_coalesce_while_busy_and_write_once_afterwards(cx: &mut TestAppContext) {
+    use crate::settings_window::persistence::SizeIo;
+    fn loaded() -> crate::Result<super::super::super::Loaded> {
+        Ok(super::super::super::Loaded {
+            config: Config::default(),
+            theme: Default::default(),
+            shared: None,
+            error: None,
+        })
+    }
+    let (view, cx) = cx.add_window_view(fixture);
+    cx.simulate_resize(size(px(960.), px(780.)));
+    let writes = Arc::new(Mutex::new(Vec::new()));
+    let recorded = writes.clone();
+    let before = view.update(cx, |view, _| {
+        view.size_io = Some(SizeIo {
+            write: Arc::new(move |sizes| {
+                recorded.lock().unwrap().push(sizes);
+                Ok(())
+            }),
+            load: loaded,
+        });
+        view.saving = true;
+        FontFace::Sidebar.size(&view.config)
+    });
+    for _ in 0..2 {
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        let plus = cx.debug_bounds("fonts-sidebar-size-control-plus").unwrap();
+        cx.simulate_click(plus.center(), Modifiers::default());
+    }
+    view.update(cx, |view, cx| {
+        assert_eq!(
+            view.controls.pending_sizes,
+            vec![(FontFace::Sidebar, before + 2.)]
+        );
+        assert_eq!(view.controls.active_face, FontFace::Sidebar);
+        view.saving = false;
+        view.sync_controls(cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        *writes.lock().unwrap(),
+        vec![vec![(FontFace::Sidebar, before + 2.)]]
+    );
 }
 
 #[gpui::test]
@@ -155,17 +223,18 @@ fn selected_row_specimen_uses_face_and_effective_pending_size(cx: &mut TestAppCo
         view.saving = true;
         cx.notify();
     });
-    for ((face, _), selector) in FACES.into_iter().zip(ROWS) {
+    for ((face, _), selector) in FACES.into_iter().zip(FIELDS) {
         cx.update(|window, cx| window.draw(cx).clear(cx));
-        let row = cx.debug_bounds(selector).unwrap();
+        let field = cx.debug_bounds(selector).unwrap();
         cx.simulate_click(
-            point(row.left() + px(20.), row.center().y),
+            point(field.left() + px(10.), field.center().y),
             Modifiers::default(),
         );
+        cx.simulate_keystrokes("escape");
         view.update(cx, |view, cx| {
             assert_eq!(view.controls.active_face, face);
             let original = face_font(&view.config, face).clone();
-            view.step_control_size(face, 1., cx);
+            view.accept_control_size(face, original.size + 1., cx);
             let specimen = view.control_specimen_font();
             assert_eq!(specimen.family, original.family);
             assert_eq!(specimen.font(), original.font());

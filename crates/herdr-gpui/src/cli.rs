@@ -13,6 +13,9 @@ pub enum LaunchMode {
     /// Talk to the running app, or read its files, then exit without
     /// starting GPUI.
     Control(control::Invocation),
+    /// Hand a `herdr-gpui://` link to the running app, or start the app
+    /// and follow it there.
+    Link(crate::link::Link),
     /// Show the UI variants compiled in from `HERDR_MOCKUP_FILE`.
     #[cfg(feature = "mockup")]
     Mockup(MockupOptions),
@@ -95,6 +98,10 @@ pub enum CliError {
     },
     #[error("arguments must be UTF-8")]
     InvalidEncoding(OsString),
+    #[error("invalid link: {0}")]
+    Link(#[from] crate::link::Error),
+    #[error("a herdr-gpui:// link must be the only argument")]
+    LinkArguments,
     #[cfg(feature = "mockup")]
     #[error("{0} requires a path")]
     MissingMockupPath(&'static str),
@@ -163,6 +170,18 @@ impl LaunchOptions {
             return Ok(Self {
                 target: ConnectTarget::Local,
                 mode: LaunchMode::Control(control::parse(family, args)?),
+            });
+        }
+        if let Some(link) = args.next_if(|arg| crate::link::is_link(arg)) {
+            // The shell substitutes the whole link into one argument; a
+            // second one means it was split, perhaps to smuggle an option.
+            if args.next().is_some() {
+                return Err(CliError::LinkArguments);
+            }
+            let link = link.into_string().map_err(CliError::InvalidEncoding)?;
+            return Ok(Self {
+                target: ConnectTarget::Local,
+                mode: LaunchMode::Link(crate::link::Link::parse(&link)?),
             });
         }
         #[cfg(feature = "mockup")]

@@ -15,7 +15,6 @@ use super::{
     ErrorCode,
     protocol::{Call, Caller, Request, Response},
 };
-#[cfg(unix)]
 use super::{socket, socket_path};
 use crate::cli::control::{BrowserCommand, ControlCommand, Invocation};
 use serde::Serialize;
@@ -173,15 +172,39 @@ fn caller(workspace: Option<String>) -> crate::Result<Caller> {
     })
 }
 
-#[cfg(unix)]
 fn send(request: &Request) -> crate::Result<Response> {
-    let path = socket_path().ok_or(crate::Error::MissingStateRoot)?;
-    socket::call(&path, request)
+    socket::call(&socket_path()?, request)
 }
 
-#[cfg(not(unix))]
-fn send(_: &Request) -> crate::Result<Response> {
-    Err(crate::Error::ControlUnsupported)
+/// Hands a `herdr-gpui://` link to the running app; what it did, for a
+/// person. [`crate::Error::ControlUnavailable`] means no app is running.
+pub(crate) fn send_link(link: &crate::link::Link) -> crate::Result<String> {
+    // The shell lets the process it started for a click take the
+    // foreground; this passes that on to the app, so its window comes
+    // forward instead of flashing in the taskbar.
+    #[cfg(windows)]
+    allow_foreground();
+    let request = Request::Link(Call {
+        caller: Caller::default(),
+        op: super::protocol::LinkOp { url: link.to_url() },
+    });
+    match send(&request)? {
+        Response::Done { message } => Ok(message),
+        response => Err(rejected(response)),
+    }
+}
+
+// One documented call with no pointers; windows-sys and `windows` have no
+// safe wrapper for it.
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn allow_foreground() {
+    use windows::Win32::UI::WindowsAndMessaging::{ASFW_ANY, AllowSetForegroundWindow};
+    // SAFETY: takes a process ID and returns whether it applied. It does
+    // nothing for a process without the foreground right to pass on.
+    if let Err(error) = unsafe { AllowSetForegroundWindow(ASFW_ANY) } {
+        tracing::debug!(%error, "foreground not passed to the app");
+    }
 }
 
 fn rejected(response: Response) -> crate::Error {
@@ -223,7 +246,6 @@ pub(crate) fn status(error: &crate::Error) -> u8 {
     match error {
         crate::Error::InvalidBrowserUrl | crate::Error::InvalidLocalPage => exit::USAGE,
         crate::Error::ControlUnavailable { .. } => exit::NOT_RUNNING,
-        crate::Error::ControlUnsupported => exit::UNSUPPORTED,
         crate::Error::ControlRejected { code, .. } => match code {
             ErrorCode::InvalidUrl => exit::USAGE,
             ErrorCode::NotFound | ErrorCode::WorkspaceNotFound | ErrorCode::NoWindow => {

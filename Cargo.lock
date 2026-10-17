@@ -190,9 +190,9 @@ dependencies = [
 
 [[package]]
 name = "ammonia"
-version = "4.2.3"
+version = "4.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "061e83b03c2681c18a6787d956e355c74e0b98ba7ba3d69b0822ade1e6f1d716"
+checksum = "1f45dfa685e1ec33b1bf1a3b93b8047cbdbef41b6040deebbe6bea7720a45574"
 dependencies = [
  "cssparser 0.38.0",
  "html5ever 0.40.1",
@@ -1031,6 +1031,15 @@ dependencies = [
  "glob",
  "libc",
  "libloading",
+]
+
+[[package]]
+name = "clipboard-win"
+version = "5.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bde03770d3df201d4fb868f2c9c59e66a3e4e2bd06692a0fe701e7103c7e84d4"
+dependencies = [
+ "error-code",
 ]
 
 [[package]]
@@ -2106,6 +2115,12 @@ dependencies = [
  "libc",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "error-code"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b5343afd4a8365a643ac588dab4cf234a190c7f6c88c9f6dd6ffe00837661b7"
 
 [[package]]
 name = "etagere"
@@ -3357,17 +3372,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1bb25850ad31b88bbdef454afb93ec4cdb81f5e200ba5b3f1a0368111780d2c"
 
 [[package]]
-name = "gpui-wry"
-version = "0.6.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "529390779b0b86f97444b0512e4d5605e755f16210a53617eaa7c54bee21a4d0"
-dependencies = [
- "anyhow",
- "gpui-pre",
- "lb-wry",
-]
-
-[[package]]
 name = "gtk"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3547,12 +3551,12 @@ dependencies = [
  "block2 0.6.2",
  "cbc 0.2.1",
  "chrono",
+ "clipboard-win",
  "cocoa 0.27.0",
  "config",
  "core-graphics 0.25.0",
  "dispatch2",
  "ed25519-dalek",
- "embed-resource",
  "flate2",
  "fontdb 0.24.0",
  "foreign-types",
@@ -3560,10 +3564,10 @@ dependencies = [
  "getrandom 0.4.3",
  "gpui-pre",
  "gpui-pre-platform",
- "gpui-wry",
  "herdr-client",
  "if-addrs",
  "image",
+ "interprocess",
  "keepawake",
  "lb-wry",
  "mdns-sd",
@@ -3608,9 +3612,21 @@ dependencies = [
  "ureq",
  "url",
  "uuid",
+ "windows 0.62.2",
+ "windows-registry",
  "windows-sys 0.61.2",
+ "winresource",
  "zed-font-kit",
  "zeroize",
+]
+
+[[package]]
+name = "herdr-gpui-launcher"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.21",
+ "windows-sys 0.61.2",
+ "winresource",
 ]
 
 [[package]]
@@ -7745,7 +7761,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -9548,6 +9564,16 @@ checksum = "cb5a765337c50e9ec252c2069be9bf91c7df47afb103b642ba3a53bf8101be97"
 dependencies = [
  "cfg-if",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "winresource"
+version = "0.1.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2bc6d36480b829272a5bdabf08e6dca8004761c1da7e35efef800540c66221b"
+dependencies = [
+ "toml 1.1.6+spec-1.1.0",
+ "version_check",
 ]
 
 [[package]]

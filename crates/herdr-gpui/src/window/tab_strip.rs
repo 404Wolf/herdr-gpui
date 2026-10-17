@@ -213,6 +213,7 @@ impl HerdrWindow {
         let mut built: Vec<(Pick, Stateful<Div>)> = Vec::new();
         let mut tabs = div()
             .id(SharedString::from(slot.selector("tabs")))
+            .role(Role::TabList)
             .flex()
             .flex_none()
             .h(px(self.tab_strip_height()))
@@ -240,6 +241,9 @@ impl HerdrWindow {
                             let id = id.clone();
                             move || slot.selector(&format!("tab-{id}"))
                         })
+                        .role(Role::Tab)
+                        .aria_label(tab.label.clone())
+                        .aria_selected(selected)
                         .pl(px(12.))
                         // The close button hugs the tab's inner right edge, well
                         // clear of the label it would otherwise crowd.
@@ -296,6 +300,8 @@ impl HerdrWindow {
                         .child(
                             div()
                                 .id("close-tab")
+                                .role(Role::Button)
+                                .aria_label("Close tab")
                                 .debug_selector({
                                     let id = id.clone();
                                     move || slot.selector(&format!("close-tab-{id}"))
@@ -452,6 +458,8 @@ impl HerdrWindow {
                 div()
                     .id(SharedString::from(slot.selector("new-tab")))
                     .debug_selector(move || slot.selector("new-tab"))
+                    .role(Role::Button)
+                    .aria_label("New tab")
                     .w(px(34.))
                     .min_h(px(TAB_HEIGHT))
                     .border_r_1()
@@ -480,14 +488,14 @@ impl HerdrWindow {
             .child(self.strip_room(ends, window))
             .child(self.strip_button(
                 slot,
-                "split-editor",
+                ("split-editor", "Split"),
                 "icons/split.svg",
                 cx,
                 move |this, _, window, cx| this.split_group(slot.id, window, cx),
             ))
             .child(self.strip_button(
                 slot,
-                "tab-actions",
+                ("tab-actions", "Tab actions"),
                 "icons/more.svg",
                 cx,
                 move |this, event, window, cx| {
@@ -632,7 +640,7 @@ impl HerdrWindow {
     fn strip_button(
         &self,
         slot: Slot,
-        id: &'static str,
+        (id, label): (&'static str, &'static str),
         icon: &'static str,
         cx: &mut Context<Self>,
         action: impl Fn(&mut Self, &ClickEvent, &mut Window, &mut Context<Self>) + 'static,
@@ -640,6 +648,8 @@ impl HerdrWindow {
         div()
             .id(SharedString::from(slot.selector(id)))
             .debug_selector(move || slot.selector(id))
+            .role(Role::Button)
+            .aria_label(label)
             .w(px(30.))
             .min_h(px(TAB_HEIGHT))
             .flex_none()
@@ -807,14 +817,16 @@ impl HerdrWindow {
         let opened = self.group_opened(slot.id).filter(|_| !zen);
         // The body's ground, beside the strip rather than under it, so the
         // strip's own color is no more solid than the rest of the window.
-        let body = div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w_0()
-            .min_h_0()
-            .bg(self.fill().ground())
-            .child(body);
+        let body = self.with_ground(
+            div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_w_0()
+                .min_h_0()
+                .child(body),
+            self.fill().ground(),
+        );
         let column = div()
             .id(SharedString::from(slot.selector("group")))
             .debug_selector(move || slot.selector("group"))

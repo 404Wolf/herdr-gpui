@@ -1,7 +1,10 @@
-//! The Coder card of Settings > Cloud Devices. Its connection fields save to
+//! The Coder card of Settings > Cloud devices. Its connection fields save to
 //! `[coder]` in the local config; its OAuth client secret saves to the
 //! credential store. Sign-in, status, and device removal run through
-//! `cloud::worker`, never on the UI thread.
+//! `cloud::worker`, never on the UI thread; destroying a device's workspace
+//! lives in `destroy`.
+
+mod destroy;
 
 use super::{
     super::{Section, SettingsWindow},
@@ -63,6 +66,10 @@ pub(in crate::settings_window) struct CoderCard {
     devices: Vec<SavedDevice>,
     message: Option<String>,
     job: Option<Worker>,
+    /// The device whose Destroy is waiting for confirmation.
+    confirm_destroy: Option<String>,
+    destroying: Option<destroy::Destroying>,
+    outcome: Option<destroy::Outcome>,
 }
 
 impl CoderCard {
@@ -86,6 +93,9 @@ impl CoderCard {
             devices: Vec::new(),
             message: None,
             job: None,
+            confirm_destroy: None,
+            destroying: None,
+            outcome: None,
         }
     }
 
@@ -196,6 +206,10 @@ impl SettingsWindow {
                 cloud.account = Account::Known(overview.session);
                 cloud.secret_saved = overview.secret_saved;
                 cloud.devices = overview.devices;
+                let devices = &cloud.devices;
+                cloud
+                    .confirm_destroy
+                    .take_if(|id| !devices.iter().any(|device| &device.id == id));
             }
             Update::Overview(Err(error)) => {
                 cloud.account = Account::Known(Session::SignedOut);
@@ -412,21 +426,32 @@ impl SettingsWindow {
         if cloud.devices.is_empty() {
             devices =
                 devices.child(self.control_note("None yet. Add one from Coder in Add Device…."));
+        } else {
+            devices = devices.child(self.control_note(
+                "Remove takes a device off this list and leaves its workspace running in Coder. Destroy deletes the workspace at Coder.",
+            ));
+        }
+        if let Some(outcome) = self.coder_destroy_outcome() {
+            devices = devices.child(outcome);
         }
         for (index, device) in cloud.devices.iter().enumerate() {
-            devices = devices.child(self.cloud_device_row(
-                index,
-                device,
-                format!("{} · {}", device.machine, device.session),
-                ready,
-                Self::cloud_forget,
-                cx,
-            ));
+            let actions = self.coder_destroy_actions(index, device, ready, cx);
+            devices = devices
+                .child(self.cloud_device_row_with(
+                    index,
+                    device,
+                    format!("{} · {}", device.machine, device.session),
+                    ready && self.coder_removable(device),
+                    Self::cloud_forget,
+                    actions,
+                    cx,
+                ))
+                .children(self.coder_destroy_detail(device));
         }
         div()
             .flex()
             .flex_col()
-            .gap(px(24.))
+            .gap(px(4.))
             .min_w_0()
             .child(card)
             .child(devices)

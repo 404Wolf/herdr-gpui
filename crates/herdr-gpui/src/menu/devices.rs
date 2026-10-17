@@ -171,13 +171,6 @@ impl HerdrWindow {
         }
     }
 
-    /// Why saved SSH devices cannot be added or edited here. Windows saves WSL
-    /// distributions instead; its client has no SSH bridge.
-    pub(super) fn ssh_setup_unavailable(&self) -> Option<&'static str> {
-        self.device_setup_unavailable()
-            .or_else(|| cfg!(windows).then_some("Saved SSH devices are unavailable on Windows."))
-    }
-
     /// Whether the sidebar draws the device footer, per `[sidebar]
     /// device_footer`.
     pub(crate) fn device_footer_shown(&self) -> bool {
@@ -634,15 +627,11 @@ impl HerdrWindow {
             return;
         }
         tracing::info!(category = "device_setup", "Opening Add Device");
-        if cfg!(windows) {
-            self.open_add_wsl(window, cx);
-        } else {
-            self.open_add_device(window, cx);
-        }
+        self.open_add_device(window, cx);
         cx.notify();
     }
 
-    /// Opens Settings > Cloud Devices on `provider`'s tab.
+    /// Opens Settings > Cloud devices on `provider`'s tab.
     #[cfg(feature = "cloud")]
     pub(super) fn open_provider_settings(
         &mut self,

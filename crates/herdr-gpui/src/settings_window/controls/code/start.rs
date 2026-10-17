@@ -71,6 +71,11 @@ impl SettingsWindow {
             ),
         };
         self.control_card("VS Code")
+            .relative()
+            .debug_selector(|| "code-mode".into())
+            .child(crate::settings_window::search::track_bounds(
+                "code-mode".into(),
+            ))
             .child(
                 div()
                     .flex()

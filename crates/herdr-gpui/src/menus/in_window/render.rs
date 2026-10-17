@@ -179,14 +179,18 @@ impl HerdrWindow {
         crate::titlebar::movable(bar, window)
     }
 
-    fn application_shortcut(&self, action: &dyn Action, cx: &App) -> String {
+    /// A menu item's shortcut in keymap spelling, the way the palette and the
+    /// Keyboard Shortcuts page show it. A `cmd-` the user configured is
+    /// named for this desktop's platform key, as GPUI's `unparse` names it.
+    pub(super) fn application_shortcut(&self, action: &dyn Action, cx: &App) -> String {
         if let Some(command) = action.as_any().downcast_ref::<crate::RunCommand>() {
+            let platform = if cfg!(windows) { "win-" } else { "super-" };
             return self
                 .keymap()
                 .shortcuts(command.command)
                 .next()
                 .unwrap_or_default()
-                .replace("cmd-", "super-");
+                .replace("cmd-", platform);
         }
         cx.key_bindings()
             .borrow()
@@ -196,7 +200,7 @@ impl HerdrWindow {
                 binding
                     .keystrokes()
                     .iter()
-                    .map(ToString::to_string)
+                    .map(KeybindingKeystroke::unparse)
                     .collect::<Vec<_>>()
                     .join(" ")
             })
@@ -338,7 +342,6 @@ impl HerdrWindow {
                     })),
             );
         }
-        let cover = self.menu.cover.clone();
         let panel = div()
             .id("application-menu-panel")
             .debug_selector(|| "application-menu-panel".into())
@@ -377,8 +380,14 @@ impl HerdrWindow {
                         })),
                 )
             })
-            .child(rows)
-            .child(
+            .child(rows);
+        // On Windows pages sit above everything GPUI draws, so the menu says
+        // what its panel covers. Tests and native checks read it to find the
+        // menu.
+        #[cfg(any(windows, test, feature = "integration-test"))]
+        let panel = {
+            let cover = self.menu.cover.clone();
+            panel.child(
                 canvas(
                     move |bounds, _, _| {
                         cover.set(crate::menu::Cover::Panel(bounds.dilate(px(8.))));
@@ -387,7 +396,8 @@ impl HerdrWindow {
                 )
                 .absolute()
                 .inset_0(),
-            );
+            )
+        };
         // Repeat the bar above the occluding layer, so switching headings never
         // clicks through the dismissal layer into unrelated window controls.
         // The overlay fills the same content root as the underlying bar. Lay out

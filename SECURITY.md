@@ -63,7 +63,7 @@ Checksums alone are not authentication:
 | `.sha256`, `.sha512` | The bytes are intact |
 | `.sig` + `.crt` | Sigstore: this repository's workflow produced them |
 | GitHub attestation | Provenance: which workflow, commit, and runner built them |
-| Optional local `.asc` | Supplemental GPG approval, using a key CI never holds |
+| Optional local `.asc` | Supplemental GPG approval, using a key CI never holds; not produced for regular releases |
 
 ```sh
 # Exact asset set, SHA256/SHA512, Sigstore and GitHub provenance
@@ -113,6 +113,8 @@ that the expected person signed.
 downloads and verifies the immutable release, then saves detached signatures in
 `release-approval/gpg/`. It never uploads, clobbers, or modifies a release. Share
 these supplemental signatures separately; they are not promised release assets.
+Regular releases do not include them: provenance and Sigstore already show which
+workflow and commit built each binary. The maintainer produces them only on request.
 No GPG private key is stored in CI. To verify downloaded supplemental signatures:
 
 ```sh

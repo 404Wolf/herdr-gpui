@@ -14,7 +14,7 @@ fn beta_switch_is_in_general_and_saves_the_other_channel(cx: &mut TestAppContext
                 captured.lock().unwrap().push(edit);
                 Ok(())
             }),
-            load: skill_load,
+            load: Arc::new(skill_load),
         });
     });
     cx.simulate_resize(size(px(960.), px(3200.)));
@@ -28,7 +28,7 @@ fn beta_switch_is_in_general_and_saves_the_other_channel(cx: &mut TestAppContext
             cx.notify();
         });
         cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
-        let switch = cx.debug_bounds("settings-update-beta").unwrap();
+        let switch = cx.debug_bounds("general-update-beta-toggle").unwrap();
         cx.simulate_click(switch.center(), Default::default());
         cx.run_until_parked();
         assert_eq!(

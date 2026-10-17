@@ -1,5 +1,6 @@
 use super::*;
 use crate::config::{StatusIcons, preferences::Preference};
+use crate::herdr_settings::IndicatorStyle;
 use crate::settings_window::controls::preferences::PreferenceIo;
 use std::sync::{Arc, Mutex};
 
@@ -14,16 +15,16 @@ fn indicators_offer_each_icon_set_and_save_only_a_change(cx: &mut TestAppContext
                 captured.lock().unwrap().push(edit);
                 Ok(())
             }),
-            load: skill_load,
+            load: Arc::new(skill_load),
         });
-        view.section = Section::Indicators;
+        view.section = Section::Notifications;
         cx.notify();
     });
     cx.simulate_resize(size(px(960.), px(2200.)));
     for (icons, id) in [
-        (StatusIcons::Solid, "settings-indicators-solid"),
-        (StatusIcons::Tiles, "settings-indicators-tiles"),
-        (StatusIcons::Rail, "settings-indicators-rail"),
+        (StatusIcons::Solid, "notif-icons-control-1"),
+        (StatusIcons::Tiles, "notif-icons-control-2"),
+        (StatusIcons::Rail, "notif-icons-control-3"),
     ] {
         cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
         // Drawn icons are this client's own setting, so they stay available
@@ -62,20 +63,34 @@ fn herdr_style_undoes_icons_without_writable_shared_settings(cx: &mut TestAppCon
                 captured.lock().unwrap().push(edit);
                 Ok(())
             }),
-            load: skill_load,
+            load: Arc::new(skill_load),
         });
         view.config.status_icons = Some(StatusIcons::Tiles);
-        view.section = Section::Indicators;
+        view.section = Section::Notifications;
         cx.notify();
     });
     cx.simulate_resize(size(px(960.), px(2200.)));
     cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
     // Unreadable shared settings leave Herdr's default, Dots, in charge.
-    let symbols = cx.debug_bounds("settings-indicators-Symbols").unwrap();
+    assert!(
+        !crate::settings_window::pages::notifications::indicator_style_live(
+            IndicatorStyle::Symbols,
+            IndicatorStyle::Dots,
+            false,
+        )
+    );
+    assert!(
+        crate::settings_window::pages::notifications::indicator_style_live(
+            IndicatorStyle::Dots,
+            IndicatorStyle::Dots,
+            false,
+        )
+    );
+    let symbols = cx.debug_bounds("notif-indicators-control-1").unwrap();
     cx.simulate_click(symbols.center(), Default::default());
     cx.run_until_parked();
     assert!(edits.lock().unwrap().is_empty());
-    let dots = cx.debug_bounds("settings-indicators-Dots").unwrap();
+    let dots = cx.debug_bounds("notif-indicators-control-0").unwrap();
     cx.simulate_click(dots.center(), Default::default());
     cx.run_until_parked();
     assert_eq!(

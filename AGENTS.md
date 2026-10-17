@@ -25,7 +25,9 @@ Closing or detaching the GUI must leave the daemon and its terminals running.
 | `crates/herdr-protocol` | Generation-1 wire types, framing, validation, and atomic surface patches |
 | `crates/herdr-client` | Discovery, socket worker, session transitions, ordered commands, and client-local activity projection |
 | `crates/herdr-gpui` | Native UI, connection bridge, presentation state, semantic input, geometry, and painting |
+| `crates/herdr-gpui-launcher` | Windows-only windowed launcher that starts `herdr-gpui.exe` without a console window; std plus `MessageBoxW` for start failures |
 | `crates/test-support/sandbox.rs` | Shared isolated process setup for opt-in integration tests; not a production crate |
+| `crates/test-support/pe.rs` | Windows executable (PE) reader for tests that check subsystem and resources; not a production crate |
 
 - Keep dependency direction from UI to client to protocol. Protocol/client code must not depend on GPUI.
 - Keep session transitions separate from socket scheduling, and connection ownership separate from window rendering.
@@ -57,6 +59,17 @@ at the same spot, or both bumping one hard-coded count.
   `just check-sorted` (part of `just ci`) enforces the markers and `just sort`
   fixes them. Never mark a list whose order is shown to users or is a wire
   contract, such as menu rows or the vendored bincode types.
+- Give a new feature's failures their own `thiserror` enum in its module and
+  add one `#[error(transparent)] Feature(#[from] feature::Error)` variant to
+  the crate's root `Error`, as `teleport`, `pane_move`, and `backdrop` do,
+  rather than a run of variants in `error.rs`. The root enum stays sorted.
+- Shared state structs (`HerdrWindow`, `Config`, `herdr_settings::Settings`)
+  and their constructors keep their fields sorted. Run an initializer that has
+  an effect or depends on another (registering a subscription, creating an
+  entity, reading a value before it moves) in a `let` before the struct
+  literal, so the literal itself has no order to preserve. Derive `Debug`
+  rather than listing fields by hand; redact a private field through its own
+  type's `Debug`.
 - `just hooks` also enables `rerere`, so a resolution is reused when the same
   conflict returns on another branch, and a `Cargo.lock` merge driver that
   keeps one side and has Cargo rebuild it before the commit. After a clean
@@ -121,7 +134,7 @@ agents in Herdr panes can use what only this client shows or keeps
 
 - Treat app, window, and entity contexts as UI-thread execution. A foreground `spawn` future does not make blocking work safe.
 - Never perform blocking socket/disk I/O, process waits, sleeps, or expensive background computation on the UI thread. Use the existing worker threads or GPUI background executor, then apply results through the appropriate context update.
-- Start child processes with `herdr_client::new_command`, never `Command::new` (clippy rejects it outside tests). The Windows release app has no console, and a console child built any other way opens a window of its own.
+- Start child processes with `herdr_client::new_command`, never `Command::new` (clippy rejects it outside tests). On Windows a console child built any other way can open a window of its own.
 - Keep render and input paths thin. Render from prepared state and bounded caches; do not query the daemon, scan files, or launch processes while rendering.
 - Preserve continuously drained ordered events and the coalesced latest-state mailbox. Do not replace them with an unbounded UI event queue.
 - Route connection/startup failures through the authoritative inbox. Reconnect and detach must isolate old inboxes so delayed events and paint acknowledgements cannot affect the new connection.

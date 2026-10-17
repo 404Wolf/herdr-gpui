@@ -4,15 +4,20 @@
 
 mod auth;
 mod cli;
+#[cfg(windows)]
+mod credential_manager;
 mod credentials;
 mod device;
 mod http;
 mod log;
+mod routing;
 #[cfg(target_os = "linux")]
 mod secret_service;
 mod store;
 mod token;
 
+#[cfg(windows)]
+pub use credential_manager::Error as CredentialManagerError;
 #[cfg(all(unix, feature = "boat"))]
 pub(crate) use credentials::read_checked as read_private_entry;
 
@@ -23,6 +28,7 @@ pub(crate) use {
     auth::Auth,
     device::{Profile, Source, VERIFY_URL},
     http::{graphql, graphql_aliases, hidden_hint, mutation},
+    routing::Tokens,
     store::{Account, Note, Store},
 };
 // Cloud providers keep their own secrets in the same store.

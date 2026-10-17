@@ -634,19 +634,12 @@ impl HerdrWindow {
     /// The checkout to read and the token to read GitHub with.
     fn repo_items_request(
         &self,
-    ) -> crate::Result<(
-        crate::pull_request::Input,
-        std::sync::Arc<secrecy::SecretString>,
-    )> {
+    ) -> crate::Result<(crate::pull_request::Input, crate::github::Tokens)> {
         let input = self.local_repository_input()?;
-        let token = self
-            .menu
-            .github
-            .profile
-            .as_ref()
-            .map(|profile| profile.token.clone())
+        let tokens = self
+            .main_tokens()
             .ok_or(crate::Error::GitHubAuthentication)?;
-        Ok((input, token))
+        Ok((input, tokens))
     }
 
     /// Open or create whatever the row at `row` of the open listing names.
@@ -845,7 +838,7 @@ pub(super) fn pick_request(
 /// validation a typed branch does; only the base and the label differ, and
 /// neither widens what may be created.
 ///
-/// A pull request's head may exist only on `origin`, so its base names the
+/// A pull request's head may exist only on its remote, so its base names the
 /// ref the fetch just updated (a dedicated PR ref for forks). The daemon checks out a branch
 /// that already exists locally and ignores the base in that case. An issue's
 /// branch is new, so it keeps the dialog's default base of `HEAD`.

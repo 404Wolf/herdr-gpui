@@ -4,6 +4,7 @@ use super::*;
 use herdr_client::protocol::ClientShellWorktree;
 
 mod wanted;
+mod wsl_hosts;
 
 const KEY: &str = "/repo/.git";
 

@@ -10,6 +10,7 @@ mod devices;
 mod fan_out;
 mod git;
 mod github;
+mod open_checkout;
 mod open_link;
 mod page;
 mod pr;
@@ -46,6 +47,7 @@ mod worktree_open_tests;
 #[cfg(test)]
 mod worktree_tests;
 
+#[cfg(any(windows, test, feature = "integration-test"))]
 pub(crate) use state::Cover;
 pub(crate) use {
     colors::{accent, danger, online, teleported, tint},

@@ -375,7 +375,8 @@ then, when the app commits to quitting, starts the installer with
 `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RELAUNCH=1` and a log
 beside it, and quits. Setup closes any copy still running through Restart Manager,
 replaces the files for the current user without elevation, and starts the app again
-(`RelaunchRequested` in `herdr-gpui.iss`). The daemon and terminal sessions keep
+(`RelaunchRequested` in `herdr-gpui.iss`), through `herdr-gpui-launcher.exe` so no
+console window opens. The daemon and terminal sessions keep
 running. The new app opens without the old one's command-line arguments. A failed
 install leaves the previous version in place and its log in the staging directory;
 stages older than a day are removed by the next download. Revocation is not
@@ -388,7 +389,9 @@ uninstall entry Setup rewrites, so an in-app update leaves `winget list` and
 
 The app registers with Restart Manager (`RegisterApplicationRestart`, never after
 a crash or hang), so an installer or Windows Update that closes it, or a restart
-with **Restart apps** turned on, reopens it.
+with **Restart apps** turned on, reopens it. Windows restarts `herdr-gpui.exe`
+itself, a console program, with `--restart-manager`; that process starts the
+launcher beside it and exits, so its console can flash briefly.
 
 `windows-installer.py smoke` checks that Setup run this way restarts the app, and
 CI checks the Authenticode reader against a Microsoft-signed file. An update

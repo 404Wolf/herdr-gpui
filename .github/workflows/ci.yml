@@ -263,17 +263,16 @@ jobs:
     needs: [zizmor, commits]
     runs-on: windows-2025
     timeout-minutes: 60
+    # The steps read "$TARGET" and friends, as the release workflow's do.
+    defaults:
+      run:
+        shell: bash
     permissions:
       contents: read
     env:
       # Packaging names files after a release version; any valid one will do.
       VERSION: '20000101.1'
       TARGET: x86_64-pc-windows-msvc
-    # The steps expand "$TARGET" and friends as the release workflow does;
-    # Windows runners default to PowerShell, which would pass them empty.
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -284,14 +283,14 @@ jobs:
         with:
           key: windows-package
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Build optimized Windows executable
-        run: cargo build --locked --release -p herdr-gpui --target "$TARGET"
+      - name: Build optimized Windows executables
+        run: cargo build --locked --release -p herdr-gpui -p herdr-gpui-launcher --target "$TARGET"
       # The release job passes generated third-party notices; any nonempty
       # file exercises the same packaging.
       - name: Package the Windows zip
         run: |
           mkdir dist
-          python scripts/release/package-windows.py "$VERSION" "$TARGET" "target/$TARGET/release/herdr-gpui.exe" dist LICENSE
+          python scripts/release/package-windows.py "$VERSION" "$TARGET" "target/$TARGET/release/herdr-gpui.exe" "target/$TARGET/release/herdr-gpui-launcher.exe" dist LICENSE
       - name: Install the pinned Inno Setup compiler
         run: python scripts/release/windows-installer.py install-iscc "$RUNNER_TEMP/inno-setup" > "$RUNNER_TEMP/iscc-path"
       - name: Build the Windows installer
