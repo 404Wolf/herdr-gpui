@@ -28,6 +28,8 @@ pub(crate) enum Error {
     NotFolder(PathBuf),
     #[error("{} is not a Git checkout or worktree", .0.display())]
     NotCheckout(PathBuf),
+    /// Only Windows paths can name another computer's share.
+    #[cfg(windows)]
     #[error("{} is on another computer", .0.display())]
     Remote(PathBuf),
 }
@@ -50,8 +52,8 @@ pub(crate) fn defer(link: Link, cx: &mut App) {
 }
 
 /// Follows the link the app was started with once this window has what it
-/// needs: its devices at once, a checkout once this computer's Herdr is
-/// connected. A notification from before the app started is not known, so
+/// needs: a device once the saved devices are loaded (a window starts with
+/// Local alone), a checkout once this computer's Herdr is connected. A notification from before the app started is not known, so
 /// starting the app was all its click could do.
 pub(crate) fn poll(view: &HerdrWindow, window: &Window, cx: &mut Context<HerdrWindow>) {
     let ready = match cx
@@ -63,7 +65,9 @@ pub(crate) fn poll(view: &HerdrWindow, window: &Window, cx: &mut Context<HerdrWi
             cx.global_mut::<Pending>().0 = None;
             return;
         }
-        Some(Link::Device { .. }) => true,
+        Some(Link::Device { id }) => {
+            view.catalog.loaded() || view.endpoints.iter().any(|endpoint| &endpoint.id == id)
+        }
         Some(Link::Open { .. }) => local_snapshot(view).is_some(),
     };
     let Some(handle) = window.window_handle().downcast::<HerdrWindow>() else {

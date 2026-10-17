@@ -59,3 +59,24 @@ fn folders_that_are_not_checkouts_are_refused() {
         Err(Error::Unreadable { .. })
     ));
 }
+
+#[gpui::test]
+fn a_device_link_waits_until_the_saved_devices_are_read(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = cx.add_window_view(crate::sidebar::layout_tests::fixture_window);
+    cx.update(|window, cx| {
+        assert!(!view.read(cx).catalog.loaded());
+        // A window starts with Local alone; a saved device is not there yet.
+        defer(
+            Link::Device {
+                id: "ssh:later".into(),
+            },
+            cx,
+        );
+        view.update(cx, |view, cx| poll(view, window, cx));
+        assert!(cx.global::<Pending>().0.is_some());
+        // One the window already has is followed at once.
+        defer(Link::Device { id: LOCAL.into() }, cx);
+        view.update(cx, |view, cx| poll(view, window, cx));
+        assert!(cx.global::<Pending>().0.is_none());
+    });
+}
