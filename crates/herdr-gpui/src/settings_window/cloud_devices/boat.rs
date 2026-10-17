@@ -126,6 +126,15 @@ fn texts(values: &BoatFields) -> [&str; 5] {
     ]
 }
 
+/// The setup script a Boat job carries. Only a new sandbox runs it: Finish
+/// setup on a saved device, used to extend its auto-stop, would otherwise
+/// run it again; the device's menu does that when asked.
+fn job_script(target: &Target, script: Option<String>) -> Option<String> {
+    matches!(target, Target::Create(_))
+        .then_some(script)
+        .flatten()
+}
+
 fn setup_running(cx: &App) -> bool {
     cx.windows().into_iter().any(|window| {
         window
@@ -306,13 +315,13 @@ impl SettingsWindow {
             Target::Create(name) => name.clone(),
             Target::Saved(device) => device.label.clone(),
         };
+        let (install, run) = (card.install, card.setup);
+        let script = job_script(&target, self.cloud_setup_script(CloudProvider::Boat, run));
         let request = AddRequest {
             settings,
             target,
-            install: card.install,
+            install,
         };
-        let run = card.setup;
-        let script = self.cloud_setup_script(CloudProvider::Boat, run);
         let started = self.source.update(cx, |window, cx| {
             window.start_cloud_job(
                 CloudProvider::Boat,
@@ -518,7 +527,7 @@ impl SettingsWindow {
             .control_card("Boat devices")
             .debug_selector(|| "cloud-boat-devices".into())
             .child(self.control_note(
-                "Finish setup reuses the sandbox and applies Auto-stop after from now, extending a timed deadline or disabling it. The installation switch above also applies here.",
+                "Finish setup reuses the sandbox and applies Auto-stop after from now, extending a timed deadline or disabling it. The installation switch above also applies here; the setup script does not run again.",
             ));
         if card.devices().is_empty() {
             devices = devices.child(self.control_note("None yet."));

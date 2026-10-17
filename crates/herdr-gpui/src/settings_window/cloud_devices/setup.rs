@@ -56,9 +56,13 @@ impl SettingsWindow {
     /// The card choosing what every new cloud device runs.
     pub(super) fn render_cloud_setup(&self, cx: &mut Context<Self>) -> Div {
         let picked = self.config.cloud.shared_agents();
+        // A click while a save runs would be dropped, so the switches wait.
+        let ready = !self.busy();
         let mut card = self
             .control_card("New device setup")
+            .relative()
             .debug_selector(|| "cloud-setup".into())
+            .child(super::super::search::track_bounds("cloud-setup".into()))
             .child(self.control_note(
                 "Runs once, in a setup tab, the first time a new cloud device connects: \
                  the agents switched on here, then the setup script from [cloud] in the \
@@ -71,11 +75,13 @@ impl SettingsWindow {
                     format!("cloud-setup-agent-{}", agent.key()),
                     format!("Install {}", agent.label()),
                     on,
-                    true,
+                    ready,
                 )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.toggle_cloud_agent(agent, cx);
-                })),
+                .when(ready, |row| {
+                    row.on_click(cx.listener(move |this, _, _, cx| {
+                        this.toggle_cloud_agent(agent, cx);
+                    }))
+                }),
             );
         }
         card.child(self.cloud_setup_preview())
@@ -83,6 +89,9 @@ impl SettingsWindow {
     }
 
     fn toggle_cloud_agent(&mut self, agent: Agent, cx: &mut Context<Self>) {
+        if self.busy() {
+            return;
+        }
         let mut agents = self.config.cloud.shared_agents();
         if agents.contains(&agent) {
             agents.retain(|picked| *picked != agent);

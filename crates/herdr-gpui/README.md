@@ -541,13 +541,15 @@ agents = []
 The script is the agents' installs, in that order and each skipped when the
 tool is already on the machine, then your lines, run with `sh -e` so the first
 failing command stops it. Claude Code and OpenCode use their official
-`curl … | bash` installers; Codex and Gemini CLI need `npm` on the device and
+installers, downloaded before they run so a failed download stops the script;
+Codex and Gemini CLI need `npm` on the device and
 are skipped with a note when it is missing (a system Node may also need root
 for `npm install -g`). Open a new tab afterwards to pick up PATH changes.
 
 Each provider's form has a **Run the setup script when it connects** switch,
 shown when a script is configured: on for a new machine, and in Coder's form
-off when attaching an existing workspace. When the device is ready the script
+off when attaching an existing workspace. Boat's **Finish setup** on a saved
+sandbox does not run it again. When the device is ready the script
 waits, for up to 30 minutes, until a window shows that device, then runs in a
 new, focused `setup` tab of the device's first workspace, like a worktree's
 setup script; nothing runs in the background. The script is yours, from this
