@@ -14,6 +14,8 @@ mod macos;
 /// What one window has done about its backdrop so far.
 #[derive(Default)]
 pub(crate) struct State {
+    /// The system caption's colors, which follow the theme on Windows.
+    caption: crate::caption::Caption,
     picture: Picture,
     /// The running decode; replacing it cancels the one before.
     load: Option<Task<()>>,
@@ -42,6 +44,7 @@ impl HerdrWindow {
     /// config. Called while rendering, where the window is at hand; each
     /// changes only when the config does, and the decode runs off this thread.
     pub(super) fn sync_backdrop(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.backdrop.caption.sync(window, &self.theme);
         let config = &self.config.backdrop;
         // An opaque ground hides a picture, so none is decoded for it.
         let path = config.translucent().then(|| config.image_path()).flatten();

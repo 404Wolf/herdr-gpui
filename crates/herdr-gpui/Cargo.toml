@@ -102,9 +102,13 @@ rustix.workspace = true
 [target.'cfg(any(target_os = "macos", windows))'.dependencies]
 wry.workspace = true
 
+# Window attributes and system settings GPUI leaves to the app.
 [target.'cfg(windows)'.dependencies]
 raw-window-handle.workspace = true
 windows.workspace           = true
+windows-sys = { features = [
+  "Win32_Graphics_Dwm",
+], workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 fontdb.workspace       = true

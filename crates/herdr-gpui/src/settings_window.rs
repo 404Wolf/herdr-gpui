@@ -140,6 +140,7 @@ fn open_with(
 }
 
 struct SettingsWindow {
+    caption: crate::caption::Caption,
     config: Config,
     /// The config as the last successful load read it, which sidebar saves
     /// diff against; previews change only `config`.
@@ -281,6 +282,7 @@ impl SettingsWindow {
             },
         );
         Self {
+            caption: Default::default(),
             loaded_config: config.clone(),
             config,
             theme,
@@ -657,6 +659,7 @@ impl SettingsWindow {
 
 impl Render for SettingsWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.caption.sync(window, &self.theme);
         let searching = self.search_results.clone();
         let content = match &searching {
             Some(_) => self.render_search_results(cx),
