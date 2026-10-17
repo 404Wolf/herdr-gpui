@@ -41,3 +41,22 @@ fn missing_coverage_is_treated_as_no_text() {
     );
 }
 
+#[test]
+fn progress_maps_to_the_taskbar_bar() {
+    use super::Bar;
+    use crate::progress::Progress;
+    assert_eq!(Bar::from_progress(None), Bar::None);
+    assert_eq!(Bar::from_progress(Some(Progress::Busy)), Bar::Busy);
+    assert_eq!(
+        Bar::from_progress(Some(Progress::Fraction(0.25))),
+        Bar::Value(250)
+    );
+    assert_eq!(
+        Bar::from_progress(Some(Progress::Working(2.))),
+        Bar::Value(1000)
+    );
+    assert_eq!(
+        Bar::from_progress(Some(Progress::Fraction(-1.))),
+        Bar::Value(0)
+    );
+}

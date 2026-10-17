@@ -545,6 +545,11 @@ impl HerdrWindow {
         self.update_workspace_dialog(window, cx);
         self.poll_teleport(window, cx);
         self.poll_carry(window, cx);
+        #[cfg(windows)]
+        crate::taskbar::set_progress(
+            window.window_handle().window_id(),
+            crate::taskbar::Bar::from_progress(self.taskbar_progress()),
+        );
         self.poll_fan_out(window, cx);
         self.poll_dispatch(window, cx);
         self.poll_device_setup(window, cx);

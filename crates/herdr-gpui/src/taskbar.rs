@@ -1,4 +1,5 @@
-//! The Windows taskbar button: an overlay badge while agents need attention.
+//! The Windows taskbar button: an overlay badge while agents need attention,
+//! and a progress bar while a window copies files or moves work elsewhere.
 //!
 //! Every top-level window has its own taskbar button, and windows sharing the
 //! AppUserModelID are grouped into one. The grouped button shows the overlay
@@ -19,7 +20,9 @@ use std::{cell::RefCell, collections::HashMap, time::Duration};
 use windows::Win32::{
     Foundation::HWND,
     System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance},
-    UI::Shell::{ITaskbarList3, TaskbarList},
+    UI::Shell::{
+        ITaskbarList3, TBPF_INDETERMINATE, TBPF_NOPROGRESS, TBPF_NORMAL, TBPFLAG, TaskbarList,
+    },
 };
 use wry::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
@@ -36,6 +39,42 @@ pub(crate) enum Error {
     Badge(#[source] windows::core::Error),
     #[error("could not set the taskbar badge")]
     Overlay(#[source] windows::core::Error),
+    #[error("could not set the taskbar progress")]
+    Progress(#[source] windows::core::Error),
+}
+
+/// What one window's button shows, compared before calling into the shell
+/// so the poll loop sets it only when it changes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Bar {
+    #[default]
+    None,
+    Busy,
+    /// Done, out of [`Bar::TOTAL`].
+    Value(u64),
+}
+
+impl Bar {
+    const TOTAL: u64 = 1000;
+
+    pub(crate) fn from_progress(progress: Option<crate::progress::Progress>) -> Self {
+        use crate::progress::Progress;
+        match progress {
+            None => Self::None,
+            Some(Progress::Busy) => Self::Busy,
+            Some(Progress::Fraction(done) | Progress::Working(done)) => {
+                Self::Value((f64::from(done.clamp(0., 1.)) * Self::TOTAL as f64).round() as u64)
+            }
+        }
+    }
+
+    fn state(self) -> TBPFLAG {
+        match self {
+            Self::None => TBPF_NOPROGRESS,
+            Self::Busy => TBPF_INDETERMINATE,
+            Self::Value(_) => TBPF_NORMAL,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -45,6 +84,7 @@ struct State {
     taskbar: Option<Option<ITaskbarList3>>,
     windows: HashMap<WindowId, isize>,
     overlay: usize,
+    bars: HashMap<WindowId, Bar>,
 }
 
 thread_local! {
@@ -121,11 +161,53 @@ pub(crate) fn track(window: &Window, cx: &mut App) {
 
 /// Drops windows that closed, so a reused handle is never badged by mistake.
 pub(crate) fn retain(open: &[gpui::AnyWindowHandle]) {
+    let is_open = |id: &WindowId| open.iter().any(|window| window.window_id() == *id);
     STATE.with_borrow_mut(|state| {
-        state
-            .windows
-            .retain(|id, _| open.iter().any(|window| window.window_id() == *id));
+        state.windows.retain(|id, _| is_open(id));
+        state.bars.retain(|id, _| is_open(id));
     });
+}
+
+/// Shows `bar` on one window's taskbar button, if it changed. A window not
+/// yet tracked is skipped; [`track`] runs first in the same poll.
+pub(crate) fn set_progress(window: WindowId, bar: Bar) {
+    STATE.with_borrow_mut(|state| {
+        if state.bars.get(&window).copied().unwrap_or_default() == bar {
+            return;
+        }
+        let Some(hwnd) = state.windows.get(&window).copied() else {
+            return;
+        };
+        let Some(taskbar) = state.taskbar() else {
+            return;
+        };
+        match apply_progress(taskbar, HWND(hwnd as *mut _), bar) {
+            Ok(()) => {
+                state.bars.insert(window, bar);
+            }
+            // Not recorded, so the next poll tries again.
+            Err(error) => tracing::debug!(%error, "taskbar progress was not set"),
+        }
+    });
+}
+
+// The taskbar is reached only through COM, which has no safe wrapper.
+#[allow(unsafe_code)]
+fn apply_progress(taskbar: &ITaskbarList3, hwnd: HWND, bar: Bar) -> Result<(), Error> {
+    // SAFETY: `hwnd` is a GPUI window of this thread; one that has since
+    // closed only makes the calls fail. The state is set first because
+    // setting a value also switches an indeterminate bar to normal.
+    unsafe {
+        taskbar
+            .SetProgressState(hwnd, bar.state())
+            .map_err(Error::Progress)?;
+        if let Bar::Value(done) = bar {
+            taskbar
+                .SetProgressValue(hwnd, done, Bar::TOTAL)
+                .map_err(Error::Progress)?;
+        }
+    }
+    Ok(())
 }
 
 /// Shows `count` on every window's taskbar button, or clears it at zero.
