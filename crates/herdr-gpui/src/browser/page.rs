@@ -29,7 +29,7 @@ pub(crate) struct Page {
     /// Read as the page lays out, after the window shows or hides it for
     /// the frame: a hidden page stays where it was moved out of the way.
     shown: Cell<bool>,
-    /// The zoom last given the view, which starts at the page's own size.
+    /// The zoom the view last took, which starts at the page's own size.
     zoom: Cell<Zoom>,
     /// Hands mouse events between the page and the window's view above it.
     #[cfg(target_os = "macos")]
@@ -84,13 +84,15 @@ impl Page {
     }
 
     /// Draws the page at `zoom`. The view keeps it as it navigates, so only a
-    /// change reaches the platform.
+    /// change reaches the platform. A zoom the platform refused (WebView2 can)
+    /// is not taken, so the next presented frame asks again.
     pub(crate) fn zoom(&self, zoom: Zoom) {
-        if self.zoom.replace(zoom) == zoom {
+        if self.zoom.get() == zoom {
             return;
         }
-        if let Err(error) = self.view.zoom(zoom.factor()) {
-            tracing::debug!(%error, "Browser zoom failed");
+        match self.view.zoom(zoom.factor()) {
+            Ok(()) => self.zoom.set(zoom),
+            Err(error) => tracing::debug!(%error, "Browser zoom failed"),
         }
     }
 
