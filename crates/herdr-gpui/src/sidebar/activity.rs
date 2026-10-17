@@ -105,7 +105,12 @@ pub(crate) struct Activity {
 
 impl Activity {
     pub(crate) fn new(cx: &mut Context<HerdrWindow>) -> Self {
-        let filter = cx.new(SearchInput::new);
+        // The panel draws the field's frame, with the magnifier inside it.
+        let filter = cx.new(|cx| {
+            let mut input = SearchInput::new(cx);
+            input.set_frameless(cx);
+            input
+        });
         let changed = cx.subscribe(&filter, |_, _, _: &Changed, cx| cx.notify());
         Self {
             panel: ActivityPanel::default(),
