@@ -9,6 +9,15 @@ out=$(cd -- "$2" && pwd)
 version=$1
 shift 2
 
+# Windows is signed, and so updates in the app, only once release.yml's
+# validate job finds the signing publisher set. No default, so a preview can
+# never promise a signature the release will not have.
+case ${WINDOWS_SIGNED:-} in
+    true) windows='experimental, Authenticode-signed Windows x86_64 and ARM64 installers and zips; installed copies update in the app' ;;
+    false) windows='experimental, unsigned Windows x86_64 and ARM64 installers and zips; installed copies update in the app, except on Windows' ;;
+    *) fail 'WINDOWS_SIGNED must be true or false' ;;
+esac
+
 # Unpromoted beta tags fold into the release after them, so a stable release
 # (or a beta promoted to one) lists everything since the last stable release
 # rather than only what changed since the newest beta.
@@ -44,14 +53,6 @@ if (( ${#ignore[@]} )); then
 fi
 
 git-cliff --config cliff.toml --tag "$tag" ${ignore[@]+"${ignore[@]}"} --output "$out/CHANGELOG.md"
-
-# Windows is signed, and so updates in the app, only once release.yml's
-# validate job finds the signing publisher set (WINDOWS_SIGNED=false otherwise).
-if [[ ${WINDOWS_SIGNED:-true} == false ]]; then
-    windows='experimental, unsigned Windows x86_64 and ARM64 installers and zips; installed copies update in the app, except on Windows'
-else
-    windows='experimental, Authenticode-signed Windows x86_64 and ARM64 installers and zips; installed copies update in the app'
-fi
 
 # The release body keeps the platform and daemon facts every release states,
 # then lists what actually changed since the previous tag.
