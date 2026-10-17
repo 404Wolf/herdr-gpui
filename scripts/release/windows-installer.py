@@ -15,7 +15,8 @@
       task, check the files, their subsystems, the console copy's output,
       the app's name and its Start menu shortcut's AppUserModelID, that the
       console copy opening the app does not hold its caller's pipes, the user
-      PATH, and the entry Settings lists under Installed apps, then uninstall
+      PATH, and the entry Settings lists under Installed apps; run it again
+      as the in-app update does and check it starts the app; then uninstall
       and check all of it is gone again. With --signed, also require valid
       timestamped signatures from one signer on the installer and on
       everything it installed that runs, the uninstaller included. Changes
@@ -234,6 +235,7 @@ def smoke(installer, signed=False):
         # uninstall entry never point into the deleted scratch directory.
         try:
             check_installation(app, installer if signed else None)
+            check_update_relaunches(installer, app)
         finally:
             uninstall(app)
 
@@ -262,6 +264,25 @@ def check_installation(app, signed_installer):
     if str(app / "bin").lower() not in user_path_entries():
         raise ValueError("Installer did not add bin to the user PATH")
     check_uninstall_entry(app)
+
+
+def check_update_relaunches(installer, app):
+    """Run Setup over the installation as the app's in-app update does
+    (updater/windows.rs), and require it to start the app again."""
+    gui = app / "herdr-gpui.exe"
+    if processes_at(gui):
+        raise ValueError("A silent install started the app without /RELAUNCH=1")
+    subprocess.run([str(installer), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
+                    "/CLOSEAPPLICATIONS", "/RELAUNCH=1", f"/DIR={app}",
+                    f"/LOG={app.parent / 'update.log'}"], check=True, timeout=600)
+    try:
+        deadline = time.monotonic() + 60
+        while not processes_at(gui):
+            if time.monotonic() > deadline:
+                raise ValueError("Setup with /RELAUNCH=1 did not start the updated app")
+            time.sleep(1)
+    finally:
+        stop_processes_at(gui)
 
 
 def uninstall(app):

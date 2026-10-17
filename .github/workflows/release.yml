@@ -273,6 +273,9 @@ jobs:
       TARGET: ${{ matrix.target }}
       HERDR_RELEASE_VERSION: ${{ needs.validate.outputs.version }}
       HERDR_UPDATE_PUBLIC_KEY: ${{ vars.HERDR_UPDATE_PUBLIC_KEY }}
+      # The publisher the in-app updater requires on a downloaded installer
+      # (updater/windows.rs); windows-sign checks the release is signed by it.
+      HERDR_WINDOWS_SIGNER: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -506,7 +509,7 @@ jobs:
           retention-days: 7
 
   sign:
-    needs: [validate, macos-checks, macos-build, linux, windows]
+    needs: [validate, macos-checks, macos-build, linux, windows, windows-sign]
     if: >-
       github.repository == 'penso/herdr-gpui' && github.ref == 'refs/heads/main' &&
       github.actor == 'penso' && github.triggering_actor == 'penso'
@@ -554,6 +557,16 @@ jobs:
         with:
           name: linux-package-aarch64-unknown-linux-gnu
           path: dist
+      # The Authenticode-signed installers, so the Windows manifest lists the
+      # exact bytes users download and the in-app updater runs.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: windows-signed-x86_64-pc-windows-msvc
+          path: windows
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: windows-signed-aarch64-pc-windows-msvc
+          path: windows
       - name: Generate and verify signed update manifest
         env:
           HERDR_UPDATE_PUBLIC_KEY: ${{ vars.HERDR_UPDATE_PUBLIC_KEY }}
@@ -585,6 +598,14 @@ jobs:
           "$OPENSSL" pkeyutl -verify -rawin -pubin -inkey "$KEY_DIR/public.pem" \
             -in dist/package-manifest.json -sigfile dist/package-manifest.sig
           test "$(wc -c < dist/package-manifest.sig | tr -d ' ')" = 64
+          # Windows installers get a third manifest (schema 3) for the same reason.
+          python3 scripts/update-manifest.py create windows "$VERSION" --windows
+          mv windows/windows-manifest.json dist/
+          "$OPENSSL" pkeyutl -sign -rawin -inkey "$KEY_DIR/private.pem" -passin pass: \
+            -in dist/windows-manifest.json -out dist/windows-manifest.sig
+          "$OPENSSL" pkeyutl -verify -rawin -pubin -inkey "$KEY_DIR/public.pem" \
+            -in dist/windows-manifest.json -sigfile dist/windows-manifest.sig
+          test "$(wc -c < dist/windows-manifest.sig | tr -d ' ')" = 64
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: macos-signed
@@ -595,6 +616,8 @@ jobs:
             dist/update-manifest.sig
             dist/package-manifest.json
             dist/package-manifest.sig
+            dist/windows-manifest.json
+            dist/windows-manifest.sig
           if-no-files-found: error
           retention-days: 7
 
@@ -657,7 +680,7 @@ jobs:
       - uses: ./.github/actions/sign-artifacts # zizmor: ignore[self-repository]
         with:
           working-directory: dist
-          files: Herdr-${{ needs.validate.outputs.version }}-universal-apple-darwin.dmg Herdr-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu.tar.gz Herdr-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu.deb Herdr-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu.rpm Herdr-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu.pkg.tar.zst Herdr-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu.tar.gz Herdr-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu.deb Herdr-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu.rpm Herdr-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu.pkg.tar.zst Herdr-${{ needs.validate.outputs.version }}-x86_64-pc-windows-msvc.zip Herdr-${{ needs.validate.outputs.version }}-aarch64-pc-windows-msvc.zip Herdr-${{ needs.validate.outputs.version }}-x86_64-pc-windows-msvc-setup.exe Herdr-${{ needs.validate.outputs.version }}-aarch64-pc-windows-msvc-setup.exe Herdr-${{ needs.validate.outputs.version }}.cdx.json herdr-gpui-${{ needs.validate.outputs.version }}-macos-universal.app.tar.gz herdr-gpui-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu-update.tar.gz herdr-gpui-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu-update.tar.gz update-manifest.json update-manifest.sig package-manifest.json package-manifest.sig
+          files: Herdr-${{ needs.validate.outputs.version }}-universal-apple-darwin.dmg Herdr-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu.tar.gz Herdr-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu.deb Herdr-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu.rpm Herdr-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu.pkg.tar.zst Herdr-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu.tar.gz Herdr-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu.deb Herdr-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu.rpm Herdr-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu.pkg.tar.zst Herdr-${{ needs.validate.outputs.version }}-x86_64-pc-windows-msvc.zip Herdr-${{ needs.validate.outputs.version }}-aarch64-pc-windows-msvc.zip Herdr-${{ needs.validate.outputs.version }}-x86_64-pc-windows-msvc-setup.exe Herdr-${{ needs.validate.outputs.version }}-aarch64-pc-windows-msvc-setup.exe Herdr-${{ needs.validate.outputs.version }}.cdx.json herdr-gpui-${{ needs.validate.outputs.version }}-macos-universal.app.tar.gz herdr-gpui-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu-update.tar.gz herdr-gpui-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu-update.tar.gz update-manifest.json update-manifest.sig package-manifest.json package-manifest.sig windows-manifest.json windows-manifest.sig
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
@@ -682,6 +705,8 @@ jobs:
             dist/update-manifest.sig
             dist/package-manifest.json
             dist/package-manifest.sig
+            dist/windows-manifest.json
+            dist/windows-manifest.sig
       - run: python3 scripts/release/artifact-manifest.py create "$VERSION" dist
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

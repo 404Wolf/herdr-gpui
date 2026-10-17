@@ -2,7 +2,7 @@
 
 A GPUI 0.3.6 (`gpui-pre`) client for a Local daemon and saved SSH hosts, with macOS
 support, experimental Linux x86_64/ARM64 builds, and an experimental Windows build with
-headless CI coverage. See [Windows](#windows) for what is unavailable there.
+native CI coverage. See [Windows](#windows) for what is unavailable there.
 It starts an installed local `herdr server` when absent; explicit socket and
 development targets remain attach-only. On Unix, GUI launches resolve the login-shell
 environment once on the connection worker so daemon plugins can find tools such as
@@ -3638,14 +3638,20 @@ GPUI native action/menu/keybinding patterns.
 
 ## Windows
 
-Windows is experimental, not a supported platform. CI checks formatting, lints
-every target and feature, and runs workspace tests with default and all features
-on `windows-2025` (x86_64) and `windows-11-arm` (ARM64), including headless UI
-and CLI tests. The release workflow builds and CLI-tests the optimized
-executable natively for each architecture and publishes
+Windows is experimental. CI checks formatting, lints every target and feature,
+and runs workspace tests with default and all features on `windows-2025` (x86_64)
+and `windows-11-arm` (ARM64), including headless UI and CLI tests. Its
+`windows-native` job then runs the native tests in both runners' desktop
+sessions: `just test-sidebar`'s fixtures and `just test-gui` against a pinned
+Herdr `herdr.exe` (0.9.5, x86_64, emulated on ARM64) in the shared test sandbox,
+with PowerShell as the pane shell, followed by the release-mode performance
+budget, whose hover and scroll arrive as Win32 messages sent to the fixture's own
+window. The paint probes accept the sub-pixel offsets layout snapping gives at
+fractional display scales such as 150%. The release workflow builds and
+CLI-tests the optimized executable natively for each architecture, publishes
 `Herdr-VERSION-x86_64-pc-windows-msvc.zip` and
-`Herdr-VERSION-aarch64-pc-windows-msvc.zip`; native window, rendering, input, and
-live-daemon behavior remain unproven. Local connections use the named pipe the Windows
+`Herdr-VERSION-aarch64-pc-windows-msvc.zip`, and installs and uninstalls both
+signed installers. Local connections use the named pipe the Windows
 daemon binds, derived from the same socket path string upstream uses, so
 discovery and framing are the same code as on Unix. Receive deadlines are
 emulated with `PeekNamedPipe`, an `unsafe` call, because a
@@ -3682,14 +3688,17 @@ These features are unavailable on Windows and say so rather than failing quietly
 - **Saved SSH hosts.** The bridge gives the `ssh` child a socket pair as its
   standard streams, which requires `OwnedFd`. Connecting to an SSH endpoint
   reports `SSH endpoints are not supported on this platform`.
-- **In-app updates.** `release::target()` has no Windows updater asset (the
-  release zip is for manual download only), so the updater
-  stays disabled and reports that no standalone updater exists for this platform.
-  Homebrew delegation is macOS-only regardless.
 - **Saved GitHub credentials.** Neither the Keychain nor the private `0600` file
   exists here, so `GH_TOKEN` / `GITHUB_TOKEN` are the only sources of a token.
 - **The avatar disk cache.** It depends on `openat`, `flock`, and POSIX
   ownership and mode checks, so avatars stay in memory for the process lifetime.
+
+In-app updates download the release's signed per-user installer, check it
+against `windows-manifest.json` and its Authenticode publisher, and run it
+silently; Setup restarts the app (see
+[App Updates](../../docs/updating.md#windows-installers)). Only the copy in
+`%LOCALAPPDATA%\Programs\Herdr UI` updates itself. The app registers with Restart
+Manager, without arguments and never after a crash or hang.
 
 Starting a local `herdr server` looks for `herdr.exe` and uses
 `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` in place of `process_group(0)`, so

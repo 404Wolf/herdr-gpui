@@ -218,7 +218,12 @@ impl HerdrWindow {
                 Some(UpdateAction::Cancel),
             ),
             State::Ready { .. } => (
-                "Download verified. Install when you are ready; system packages may ask for administrator authentication.".into(),
+                if cfg!(windows) {
+                    "Download and publisher signature verified. Install when you are ready: Herdr UI quits, its installer runs, and it reopens; your daemon and terminal sessions stay running."
+                } else {
+                    "Download verified. Install when you are ready; system packages may ask for administrator authentication."
+                }
+                .into(),
                 Some(UpdateAction::Install),
             ),
             State::Installing => (

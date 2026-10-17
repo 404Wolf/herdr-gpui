@@ -290,15 +290,16 @@ signing step of `sign` receives it; builds, tests, metadata, OIDC and publicatio
 never do. The public key is validated before builds and matched against the
 private key before signing exact JSON bytes. See [updater setup](../../docs/updating.md).
 
-The exact release base set is twenty-one files: the DMG, two manual Linux archives,
+The exact release base set is twenty-three files: the DMG, two manual Linux archives,
 their `.deb`, `.rpm` and Arch packages, two Windows zips and two Windows installers, SBOM, three updater archives, `update-manifest.json`, and its
 raw 64-byte Ed25519 `update-manifest.sig`, plus `package-manifest.json` and
-`package-manifest.sig` for the six Linux packages. All twenty-one receive checksum and Sigstore sidecars and GitHub
+`package-manifest.sig` for the six Linux packages and `windows-manifest.json` and
+`windows-manifest.sig` for the two signed Windows installers. All twenty-three receive checksum and Sigstore sidecars and GitHub
 provenance in the separate protected OIDC job. The raw signature is not overwritten:
 its Sigstore sidecar is `update-manifest.sig.sig`; the JSON's is
-`update-manifest.json.sig` (and likewise for the package manifest). `SHA256SUMS` covers all 95 base/sidecar files; the
-immutable release has exactly 96 assets. Missing or additional files fail closed.
-`artifact-manifest.py base-names VERSION DIRECTORY` lists the nineteen base names.
+`update-manifest.json.sig` (and likewise for the package and Windows manifests). `SHA256SUMS` covers all 115 base/sidecar files; the
+immutable release has exactly 116 assets. Missing or additional files fail closed.
+`artifact-manifest.py base-names VERSION DIRECTORY` lists the twenty-three base names.
 The publication job verifies downloaded draft bytes and the complete exact asset
 set before making it public; Homebrew still verifies and uses only the final DMG.
 
