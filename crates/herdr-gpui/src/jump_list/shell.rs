@@ -83,7 +83,10 @@ pub(super) fn run(
         let removed = match publish(&entries, exe) {
             Ok(removed) => removed,
             Err(error) => {
-                tracing::warn!(error = ?error, "Cannot update the jump list");
+                tracing::warn!(error = ?error, "Cannot update the jump list; trying again later");
+                if let Ok(mut mailbox) = mailbox.lock() {
+                    mailbox.failed = true;
+                }
                 continue;
             }
         };

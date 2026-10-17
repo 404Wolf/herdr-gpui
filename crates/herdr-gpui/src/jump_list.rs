@@ -23,6 +23,7 @@ use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{Arc, Mutex, mpsc},
+    time::{Duration, Instant},
 };
 
 /// Recent checkouts listed; Windows shows about ten entries by default.
@@ -128,6 +129,23 @@ pub(crate) struct Mailbox {
     pub pending: Option<(Entries, Vec<Recent>)>,
     /// Links the user removed from the list, for the app to forget.
     pub removed: Vec<Link>,
+    /// Set when the shell refused the last entries, which are then sent
+    /// again after [`RETRY`].
+    pub failed: bool,
+}
+
+/// How long a refused jump list waits before it is sent again.
+const RETRY: Duration = Duration::from_secs(30);
+
+/// Whether `entries` go to the worker: when they differ from those last
+/// sent, or once a retry after a refusal is due.
+fn due(
+    published: Option<&Entries>,
+    entries: &Entries,
+    retry: Option<Instant>,
+    now: Instant,
+) -> bool {
+    published != Some(entries) || retry.is_some_and(|at| now >= at)
 }
 
 /// The app's jump list: what it shows and the worker that builds it.
@@ -137,6 +155,8 @@ pub(crate) struct JumpList {
     /// remembered when focus moves to it, not on every poll.
     focused: HashMap<WindowId, Option<PathBuf>>,
     published: Option<Entries>,
+    /// When to send the entries again after the shell refused them.
+    retry: Option<Instant>,
     mailbox: Arc<Mutex<Mailbox>>,
     wake: Option<mpsc::SyncSender<()>>,
 }
@@ -169,6 +189,7 @@ impl JumpList {
             recent,
             focused: HashMap::new(),
             published: None,
+            retry: None,
             mailbox: Arc::default(),
             wake: None,
         }
@@ -223,20 +244,30 @@ impl JumpList {
                 remember(&mut list.recent, checkout);
             }
         }
-        let removed = list
+        let (removed, failed) = list
             .mailbox
             .lock()
-            .map(|mut mailbox| std::mem::take(&mut mailbox.removed))
+            .map(|mut mailbox| {
+                (
+                    std::mem::take(&mut mailbox.removed),
+                    std::mem::take(&mut mailbox.failed),
+                )
+            })
             .unwrap_or_default();
+        let now = Instant::now();
+        if failed {
+            list.retry = Some(now + RETRY);
+        }
         list.recent.retain(|entry| {
             !removed.contains(&Link::Open {
                 path: entry.path.clone(),
             })
         });
         let entries = entries(&list.recent, &devices);
-        if list.published.as_ref() == Some(&entries) {
+        if !due(list.published.as_ref(), &entries, list.retry, now) {
             return;
         }
+        list.retry = None;
         list.published = Some(entries.clone());
         if let Ok(mut mailbox) = list.mailbox.lock() {
             mailbox.pending = Some((entries, list.recent.clone()));

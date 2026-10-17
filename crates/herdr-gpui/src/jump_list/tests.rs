@@ -106,3 +106,18 @@ fn windows_with_different_device_orders_publish_the_same_list() {
     let titles: Vec<&str> = one.devices.iter().map(|item| item.title.as_str()).collect();
     assert_eq!(titles, ["Show Local", "Show Alpha", "Show boat"]);
 }
+
+#[test]
+fn refused_entries_are_sent_again_once_the_retry_is_due() {
+    let now = Instant::now();
+    let list = entries(&[recent("C:/repo")], &[]);
+    // New entries always go.
+    assert!(due(None, &list, None, now));
+    // The same entries do not, unless the shell refused them.
+    assert!(!due(Some(&list), &list, None, now));
+    assert!(!due(Some(&list), &list, Some(now + RETRY), now));
+    assert!(due(Some(&list), &list, Some(now), now));
+    // Changed entries do not wait for the retry.
+    let other = entries(&[recent("C:/other")], &[]);
+    assert!(due(Some(&list), &other, Some(now + RETRY), now));
+}
