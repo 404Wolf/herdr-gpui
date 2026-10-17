@@ -95,11 +95,6 @@ impl ClientHandle {
             return Err(Error::MissingBootId);
         }
         validate_clipboard_image_target(&target)?;
-        // The Windows pipe wrapper cannot bound writes. Do not expose an upload
-        // that could indefinitely prevent cancellation and inbound processing.
-        if cfg!(windows) {
-            return Err(Error::ClipboardImageUnsupported);
-        }
         let lease = Arc::new(ImageLease {
             busy: self.inner.image_busy.clone(),
             claimed: AtomicBool::new(false),

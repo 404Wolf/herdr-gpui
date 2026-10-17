@@ -19,18 +19,24 @@ enum Action {
     /// Toggles `[devices.<id>] keybindings` between local and server.
     ServerKeybindings,
     /// Forwards one of the host's listening ports to this computer.
+    #[cfg(unix)]
     ForwardPort,
     /// Picks `[devices.<id>] theme`, the terminal's colors on this device.
     Theme,
     /// Opens Settings > Cloud devices on the device's provider.
     #[cfg(feature = "cloud")]
     ProviderSettings,
+    /// Runs the configured setup script on the cloud device again.
+    #[cfg(feature = "cloud")]
+    RunSetup,
     Remove,
 }
 
 const SSH_ACTIONS: &[(Action, &str)] = &[
     (Action::Rename, "Rename…"),
     (Action::ServerKeybindings, "Use server keybindings"),
+    // Port forwards need an `ssh` control master, which Windows OpenSSH lacks.
+    #[cfg(unix)]
     (Action::ForwardPort, "Forward port…"),
     (Action::Theme, "Terminal theme…"),
     (Action::Remove, "Remove device…"),
@@ -42,6 +48,7 @@ const SSH_ACTIONS: &[(Action, &str)] = &[
 const CLOUD_ACTIONS: &[(Action, &str)] = &[
     (Action::Rename, "Rename…"),
     (Action::ProviderSettings, "Cloud device settings…"),
+    (Action::RunSetup, "Run setup script"),
     (Action::Remove, "Remove device…"),
 ];
 
@@ -141,7 +148,7 @@ impl HerdrWindow {
         let (saved, target, session) = match endpoint.saved_target() {
             ConnectTarget::Ssh { target, session } => {
                 // The CLI edits the default catalog, the one device setup also uses.
-                if let Some(reason) = self.ssh_setup_unavailable() {
+                if let Some(reason) = self.device_setup_unavailable() {
                     tracing::info!(
                         category = "device_remove",
                         id,
@@ -264,6 +271,18 @@ impl HerdrWindow {
                 }
                 return;
             }
+            #[cfg(feature = "cloud")]
+            Action::RunSetup => {
+                let Some(id) = self.menu.host.as_ref().map(|host| host.id.clone()) else {
+                    return;
+                };
+                self.dismiss_menu(window, cx);
+                if let Err(error) = self.rerun_cloud_setup(&id, cx) {
+                    self.show_flash(crate::window::Flash::warning(error.to_string()), cx);
+                }
+                return;
+            }
+            #[cfg(unix)]
             Action::ForwardPort => {
                 let input = cx.new(SearchInput::new);
                 input.update(cx, |input, cx| {

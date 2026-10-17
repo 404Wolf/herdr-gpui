@@ -21,7 +21,7 @@ actions!(log_window, [Close, FocusSearch, FocusLevel]);
 /// The console's own keys, scoped to its window. They are bound with the app
 /// keymap so a config reload, which replaces every binding, keeps them.
 pub(crate) fn key_bindings() -> [KeyBinding; 5] {
-    let [close, search, level] = if cfg!(target_os = "linux") {
+    let [close, search, level] = if crate::controls::CTRL_SHORTCUTS {
         ["ctrl-w", "ctrl-f", "ctrl-l"]
     } else {
         ["cmd-w", "cmd-f", "cmd-l"]
@@ -106,6 +106,7 @@ fn open_deferred(cx: &mut App) {
 
 struct LogWindow {
     appearance: Appearance,
+    caption: crate::caption::Caption,
     _appearance: Subscription,
     focus: FocusHandle,
     search: Entity<SearchInput>,
@@ -319,6 +320,7 @@ impl LogWindow {
         });
         Self {
             appearance,
+            caption: Default::default(),
             _appearance: appearance_subscription,
             focus: cx.focus_handle(),
             search,
@@ -486,6 +488,7 @@ impl Render for LogWindow {
                 offset_in_item: px(0.),
             });
         }
+        self.caption.sync(window, &self.appearance.theme);
         let header = crate::titlebar::header(&self.appearance.theme, window, |window, _| {
             window.remove_window();
         });

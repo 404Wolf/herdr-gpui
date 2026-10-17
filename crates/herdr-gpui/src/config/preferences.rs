@@ -4,6 +4,7 @@ use herdr_client::protocol::ToastHerdrPosition;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Preference {
+    AgentsPlacement(AgentsPlacement),
     ConfirmCloseTab(bool),
     ConfirmClosePane(bool),
     ConfirmCloseWorkspace(bool),
@@ -12,6 +13,7 @@ pub(crate) enum Preference {
     ShowNetworkQuality(bool),
     AgentCheckpoints(bool),
     ShowListeningPorts(bool),
+    ShowAgentsHeader(bool),
     ShowSidebarSearch(bool),
     ShowRepositoryIcons(bool),
     /// `status_icons`; `None` removes it, following Herdr's indicator style.
@@ -88,6 +90,9 @@ impl Config {
             };
             let mut document = text.parse::<toml_edit::DocumentMut>()?;
             let (table, key, value) = match edit {
+                Preference::AgentsPlacement(placement) => {
+                    (None, "agents_placement", Some(placement.as_str().into()))
+                }
                 Preference::ConfirmCloseTab(value) => {
                     (None, "confirm_close_tab", Some(value.into()))
                 }
@@ -109,6 +114,9 @@ impl Config {
                 }
                 Preference::ShowListeningPorts(value) => {
                     (None, "show_listening_ports", Some(value.into()))
+                }
+                Preference::ShowAgentsHeader(value) => {
+                    (None, "show_agents_header", Some(value.into()))
                 }
                 Preference::ShowSidebarSearch(value) => {
                     (None, "show_sidebar_search", Some(value.into()))

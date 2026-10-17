@@ -90,12 +90,16 @@ everything since the previous stable one. `release.yml` and `promote.yml` share 
 
 Jobs run roughly: `audit` (shown as "Release Workflow Security") and `validate`,
 then `macos-checks`, `macos-build` (arm64 + x86_64), `linux` (aarch64 + x86_64),
-`windows` (x86_64 MSVC), `metadata` and `changelog`, then `sign`, `attest`, `publish`,
-and finally `homebrew`.
+`windows` (x86_64 and ARM64 MSVC), `metadata` and `changelog`, then `sign` and
+`windows-sign` (Authenticode, one per Windows target), `windows-smoke` (installs
+the signed installers), `attest`, `publish`, and finally `homebrew` and `winget`.
 
-`sign`, `attest` and `publish` use the **`release`** environment; `homebrew` uses
-the **`homebrew`** environment. Both have required reviewers, so the run pauses
-at each and waits. `sign` is additionally gated on the actor being `penso`.
+`sign`, `windows-sign`, `attest` and `publish` use the **`release`** environment;
+`homebrew` uses the **`homebrew`** environment and `winget` the **`winget`**
+environment. All have required reviewers, so the run pauses at each and waits.
+`sign` is additionally gated on the actor being `penso`. Betas skip `homebrew`
+and `winget`; `just release-promote` runs both. `winget` only warns until the
+first winget-pkgs version is submitted by hand (`scripts/release/README.md`).
 
 Approve a pending gate:
 

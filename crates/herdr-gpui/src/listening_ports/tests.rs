@@ -10,6 +10,7 @@ use herdr_client::ConnectTarget;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 mod ssh_links;
+mod wsl_hosts;
 
 /// The ports one workspace was found with, whichever daemon it named.
 fn of<'a>(ports: &'a Ports, workspace: &str) -> &'a [Port] {

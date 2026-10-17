@@ -10,14 +10,15 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-/// The machine whose agent sign-ins are read. A remote host is asked over SSH,
-/// so its own credentials are used and never leave it.
+/// The machine whose agent sign-ins are read. A remote host is asked over SSH
+/// and a WSL distribution through `wsl.exe`, so its own credentials are used
+/// and never leave it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Host {
     Local,
     Ssh(String),
-    /// A WSL distribution. Nothing is read from one yet: its files are not this
-    /// machine's, and no shell is opened into it for these probes.
+    /// A WSL distribution, asked through a `wsl.exe` shell as a remote host
+    /// is over SSH: its files and sign-ins are its own, not this machine's.
     Wsl(String),
 }
 
@@ -205,6 +206,10 @@ impl Window {
 impl Pace {
     /// `11% in reserve · Lasts until reset`, as CodexBar puts it.
     pub fn describe(&self, used: f32) -> String {
+        if used >= 100. {
+            // The header already shows when the window resets.
+            return "Ran out".into();
+        }
         let margin = self.expected - used;
         let standing = if margin >= 0.5 {
             format!("{}% in reserve", margin.round())

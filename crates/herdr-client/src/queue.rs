@@ -189,7 +189,7 @@ mod unix {
 }
 
 /// A named pipe has no descriptor to poll beside a wake, so the worker keeps
-/// relying on the stream's emulated receive timeout to notice queued commands.
+/// relying on the stream's receive timeout to notice queued commands.
 #[cfg(windows)]
 mod windows {
     use crate::{Result, transport::Stream};

@@ -509,7 +509,11 @@ impl HerdrWindow {
             .when(
                 matches!(
                     page,
-                    Page::Install | Page::AgentSkill | Page::VersionMismatch | Page::OpenLink
+                    Page::Install
+                        | Page::AgentSkill
+                        | Page::VersionMismatch
+                        | Page::OpenCheckout
+                        | Page::OpenLink
                 ),
                 |panel| {
                     panel
@@ -669,6 +673,8 @@ impl HerdrWindow {
             panel = panel.child(self.render_worktree_script(cx));
         } else if page == Page::OpenLink {
             panel = panel.child(self.render_open_link(cx));
+        } else if page == Page::OpenCheckout {
+            panel = panel.child(self.render_open_checkout(cx));
         } else if page == Page::Install {
             panel = panel
                 .child(div().p(px(8.)).child("Herdr must be installed"))
