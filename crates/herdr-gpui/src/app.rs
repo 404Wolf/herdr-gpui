@@ -217,7 +217,7 @@ pub(crate) fn run() -> std::process::ExitCode {
     }
     // A control command asked for JSON gets its usage errors as JSON too.
     let json_errors = cli::control::wants_json(&args);
-    let LaunchOptions { target, mode } = match LaunchOptions::parse(&args) {
+    let LaunchOptions { target, mut mode } = match LaunchOptions::parse(&args) {
         Ok(options) => options,
         Err(error) if json_errors => {
             crate::console::attach_parent();
@@ -247,6 +247,23 @@ pub(crate) fn run() -> std::process::ExitCode {
     }
     if let LaunchMode::Control(invocation) = mode {
         return crate::control::run(invocation);
+    }
+    // A link goes to the app already running, or starts the app with it.
+    let mut pending_link = None;
+    if let LaunchMode::Link(link) = mode {
+        match crate::control::send_link(&link) {
+            Ok(_) => return std::process::ExitCode::SUCCESS,
+            Err(crate::Error::ControlUnavailable { .. }) => {
+                pending_link = Some(link);
+                mode = LaunchMode::Normal;
+            }
+            Err(error) => {
+                tracing::warn!(%error, "The running app refused a link");
+                crate::console::attach_parent();
+                eprintln!("{error}");
+                return std::process::ExitCode::from(crate::control::exit_status(&error));
+            }
+        }
     }
     // A separate app of its own: no daemon, control socket, stores, or updater.
     #[cfg(feature = "mockup")]
@@ -381,6 +398,9 @@ pub(crate) fn run() -> std::process::ExitCode {
             dispatch_history.install(cx);
             agent_skill.install_global(cx);
             keychain_grants.install(cx);
+            if let Some(link) = pending_link {
+                crate::link::follow::defer(link, cx);
+            }
             // Only the user's own app answers agents; native test modes stay private.
             if mode == LaunchMode::Normal {
                 crate::control::install(cx);

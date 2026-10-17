@@ -193,6 +193,20 @@ def check_uninstall_entry(app):
         raise ValueError(f"Uninstall entry does not run the uninstaller: {entry}")
 
 
+def link_handler():
+    """The command Windows runs for a herdr-gpui:// link, or None when the
+    scheme is not registered for this user."""
+    import winreg
+    name = r"Software\Classes\herdr-gpui"
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, name) as key:
+            winreg.QueryValueEx(key, "URL Protocol")
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, name + r"\shell\open\command") as key:
+            return winreg.QueryValueEx(key, "")[0]
+    except FileNotFoundError:
+        return None
+
+
 def check_signed(paths):
     spec = importlib.util.spec_from_file_location("windows_signing", ROOT / "scripts/release/windows-signing.py")
     signing = importlib.util.module_from_spec(spec)
@@ -262,6 +276,9 @@ def check_installation(app, signed_installer):
     if str(app / "bin").lower() not in user_path_entries():
         raise ValueError("Installer did not add bin to the user PATH")
     check_uninstall_entry(app)
+    handler = link_handler()
+    if handler != f'"{app / "herdr-gpui.exe"}" "%1"':
+        raise ValueError(f"Installer registered herdr-gpui:// links wrongly: {handler}")
 
 
 def uninstall(app):
@@ -272,10 +289,10 @@ def uninstall(app):
     shortcut = Path(os.environ["APPDATA"]) / "Microsoft/Windows/Start Menu/Programs/Herdr UI.lnk"
     deadline = time.monotonic() + 120
     while (app.exists() or shortcut.exists() or bin_entry in user_path_entries()
-           or uninstall_entry() is not None):
+           or uninstall_entry() is not None or link_handler() is not None):
         if time.monotonic() > deadline:
             raise ValueError("Uninstaller left the app directory, its shortcut, its PATH entry, "
-                             "or its Uninstall entry behind")
+                             "its Uninstall entry, or its link handler behind")
         time.sleep(1)
 
 

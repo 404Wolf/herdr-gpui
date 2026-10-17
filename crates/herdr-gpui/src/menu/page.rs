@@ -52,6 +52,8 @@ pub(crate) enum Page {
     Menu,
     /// Where the pane menu's pane can move: new places, then other tabs.
     MovePane,
+    /// Asks before opening a workspace for a checkout a link named.
+    OpenCheckout,
     /// Asks before opening a terminal hyperlink with an unlisted scheme.
     OpenLink,
     Palette,

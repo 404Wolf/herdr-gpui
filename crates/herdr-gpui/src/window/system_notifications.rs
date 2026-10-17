@@ -81,25 +81,33 @@ pub(crate) fn install(cx: &mut App) {
     set_identity(cx);
     cx.on_system_notification_response(|response, cx| {
         // No actions are offered: any activation opens the target.
-        let Some((window, endpoint, generation, inbox, id)) =
-            cx.try_global::<Registry>().and_then(|registry| {
-                let posted = registry.find(&response.tag)?;
-                Some((
-                    posted.window,
-                    posted.endpoint.clone(),
-                    posted.generation,
-                    posted.inbox.clone(),
-                    posted.id,
-                ))
-            })
-        else {
-            return;
-        };
-        cx.activate(true);
-        let _ = window.update(cx, |view, window, cx| {
-            view.open_system_notification(&endpoint, generation, &inbox, id, window, cx);
-        });
+        open(&response.tag, cx);
     });
+}
+
+/// Brings forward the window that posted `tag` and opens its target, as a
+/// click on the notification does; whether this app posted it recently.
+pub(crate) fn open(tag: &str, cx: &mut App) -> bool {
+    let Some((window, endpoint, generation, inbox, id)) =
+        cx.try_global::<Registry>().and_then(|registry| {
+            let posted = registry.find(tag)?;
+            Some((
+                posted.window,
+                posted.endpoint.clone(),
+                posted.generation,
+                posted.inbox.clone(),
+                posted.id,
+            ))
+        })
+    else {
+        return false;
+    };
+    cx.activate(true);
+    window
+        .update(cx, |view, window, cx| {
+            view.open_system_notification(&endpoint, generation, &inbox, id, window, cx);
+        })
+        .is_ok()
 }
 
 /// Names the app to the notification center. Elsewhere only users of system

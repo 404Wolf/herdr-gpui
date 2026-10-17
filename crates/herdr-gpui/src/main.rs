@@ -78,6 +78,7 @@ mod input;
 mod integrations;
 mod keymap;
 mod lenient;
+mod link;
 mod links;
 mod listening_ports;
 mod local_path;

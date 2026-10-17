@@ -14,13 +14,14 @@ mod socket;
 use crate::HerdrWindow;
 use crate::browser::Location;
 pub(crate) use crate::cli::control::Placement;
-pub(crate) use client::run;
 #[cfg(feature = "mockup")]
 pub(crate) use client::send_notes;
+pub(crate) use client::{run, send_link, status as exit_status};
 use gpui::App;
 use protocol::Caller;
 pub use protocol::ErrorCode;
 pub(crate) use protocol::NotesTo;
+pub(crate) use protocol::Response;
 pub use protocol::{
     app::{FontSize, Size, Switch},
     events::{Cursor, EventKind},
