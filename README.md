@@ -271,8 +271,9 @@ dependency helper below installs both; on macOS, use `brew install python jq`.
 ### Linux Builds
 
 Application shortcuts use **Ctrl+Shift** on Linux, including Ctrl+Shift+T for a
-new tab and Ctrl+Shift+C/V for copy/paste. Customize them from **Herdr > Keyboard
-Shortcuts**; see [keyboard shortcuts](crates/herdr-gpui/README.md#keyboard-shortcuts).
+new tab and Ctrl+Shift+C/V for copy/paste, and Windows uses the same profile.
+Customize them from **Herdr > Keyboard Shortcuts**; see
+[keyboard shortcuts](crates/herdr-gpui/README.md#keyboard-shortcuts).
 
 On Ubuntu 24.04 (x86_64 or ARM64), run `bash scripts/install-linux-deps.sh`
 before building. This installs GPUI's X11/Wayland/font development dependencies
@@ -296,7 +297,10 @@ WSL distribution can be added as a device from **Add Device…**; see
 [WSL distributions](crates/herdr-gpui/README.md#wsl-distributions). Saved SSH
 hosts, in-app updates, saved GitHub credentials, and the avatar disk cache are
 unavailable and report that plainly; see
-[the GUI README](crates/herdr-gpui/README.md#windows).
+[the GUI README](crates/herdr-gpui/README.md#windows). Shortcuts use Ctrl, not
+the Win key, with the Linux defaults (Ctrl+Shift+T, Ctrl+Shift+P,
+Ctrl+Shift+Q); see
+[keyboard shortcuts](crates/herdr-gpui/README.md#keyboard-shortcuts).
 
 Each release publishes `Herdr-VERSION-x86_64-pc-windows-msvc.zip` and
 `Herdr-VERSION-aarch64-pc-windows-msvc.zip` (native ARM64), each containing

@@ -24,3 +24,5 @@ mod dragging;
 mod navigation;
 #[cfg(any(target_os = "linux", windows))]
 mod resizing;
+#[cfg(any(target_os = "linux", windows))]
+mod shortcut_labels;
