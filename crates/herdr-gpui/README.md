@@ -2375,7 +2375,8 @@ come back after a restart; closing a workspace in Herdr removes its tabs.
   `localhost:3000` becomes `http://localhost:3000/`.
 - Close Tab and Close Pane close the browser tab being shown, without asking.
   Clicking a Herdr tab, or switching Herdr tabs in the workspace, shows its
-  terminal again.
+  terminal again. Next Tab, Previous Tab, and the tab numbers count browser
+  tabs too, after the workspace's Herdr tabs.
 - Only `http` and `https` pages open, plus local files an agent shows (below).
   Pages cannot navigate to other schemes
   (so `file:` and applications' custom URL schemes stay closed), downloads are
@@ -2828,7 +2829,10 @@ the page's storage, which belongs to one address.
   browser tab's, the page's own shortcuts win, as a terminal program's do
   while its pane has focus. On macOS, Cut, Copy, and Paste act on the page,
   and the keys macOS keeps for the app (quit, hide, minimize, and cycling
-  windows) still reach the app. Click a terminal to take the keyboard back.
+  windows) still reach the app. So do the keys bound to Next Tab, Previous
+  Tab, the tab numbers, and moving to another workspace or agent, as a web
+  browser keeps its tab keys from its pages. Click a terminal to take the
+  keyboard back.
 
 ## System Notifications
 
