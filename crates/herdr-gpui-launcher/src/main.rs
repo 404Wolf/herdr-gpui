@@ -42,6 +42,10 @@ mod windows {
 
     /// Starts the GUI with this launcher's arguments and returns once it has
     /// started; the GUI is never waited on and keeps running after we exit.
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "the launcher sets CREATE_NO_WINDOW itself and links no herdr-client"
+    )]
     pub fn launch() -> Result<()> {
         let launcher = std::env::current_exe().map_err(Error::CurrentExe)?;
         let gui = gui_path(&launcher)?;

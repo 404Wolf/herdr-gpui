@@ -1,3 +1,6 @@
+// Build-time tools (git, gh) run under Cargo, not beside the app: no window to avoid.
+#![allow(clippy::disallowed_methods)]
+
 mod build_identity;
 mod release_version;
 mod windows_resource;
