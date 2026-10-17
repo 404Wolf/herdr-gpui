@@ -180,7 +180,7 @@ fn resolve_token(settings: &Settings, audience: Audience) -> Result<SecretString
     }
 
     if settings.use_azure_cli {
-        let token = super::cli::access_token(audience)?;
+        let token = super::cli::access_token(audience, &settings.subscription_id)?;
         return Ok(token.into());
     }
 

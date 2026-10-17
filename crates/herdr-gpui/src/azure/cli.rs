@@ -9,6 +9,12 @@ use std::{
 
 const SEARCH: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"];
 
+/// The CLI's file names: Windows installs it as a batch script, `az.cmd`.
+#[cfg(windows)]
+const NAMES: &[&str] = &["az.cmd", "az.exe", "az"];
+#[cfg(not(windows))]
+const NAMES: &[&str] = &["az"];
+
 /// Find the `az` executable on PATH or in standard directories.
 pub(crate) fn find_az() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("AZURE_CLI_PATH").map(PathBuf::from)
@@ -16,11 +22,14 @@ pub(crate) fn find_az() -> Option<PathBuf> {
     {
         return Some(path);
     }
-    std::env::var_os("PATH")
-        .into_iter()
-        .flat_map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
-        .chain(SEARCH.iter().map(PathBuf::from))
-        .map(|dir| dir.join("az"))
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    find_in(std::env::split_paths(&path).chain(SEARCH.iter().map(PathBuf::from)))
+}
+
+/// The first CLI executable in `dirs`, trying each of [`NAMES`] in turn.
+fn find_in(dirs: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
+    dirs.into_iter()
+        .flat_map(|dir| NAMES.iter().map(move |name| dir.join(name)))
         .find(|candidate| executable(candidate))
 }
 
@@ -56,13 +65,16 @@ fn run_az(args: &[&str]) -> Result<String> {
     Ok(stdout.trim().to_owned())
 }
 
-/// Retrieve an access token for `audience` from `az`.
-pub(crate) fn access_token(audience: super::http::Audience) -> Result<String> {
+/// Retrieve an access token for `audience` from `az`, issued by the tenant
+/// that owns `subscription` rather than whichever account `az` has active.
+pub(crate) fn access_token(audience: super::http::Audience, subscription: &str) -> Result<String> {
     run_az(&[
         "account",
         "get-access-token",
         "--resource",
         audience.resource(),
+        "--subscription",
+        subscription,
         "--query",
         "accessToken",
         "-o",
@@ -79,3 +91,6 @@ pub(crate) fn default_subscription() -> Result<String> {
 pub(crate) fn default_tenant() -> Result<String> {
     run_az(&["account", "show", "--query", "tenantId", "-o", "tsv"])
 }
+
+#[cfg(test)]
+mod tests;
