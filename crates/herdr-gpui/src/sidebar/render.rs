@@ -605,7 +605,8 @@ impl HerdrWindow {
         }
         // Rows under the pinned header are hidden, so a reveal must clear it.
         let cover = px(sticky::cover(&headers));
-        self.reveal_nested_agent(nested_focus, cover, window);
+        // Search results stand in for the spaces list, so no nested row paints.
+        self.reveal_nested_agent(nested_focus.filter(|_| search.is_none()), cover, window);
         // Folded headers slide under a pinned one, so none is pinned then,
         // nor in the frame that unfolds, whose header places are the folded
         // list's; the frame after pins from the unfolded one.

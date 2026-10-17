@@ -192,3 +192,44 @@ fn nested_agents_keep_the_configured_row_gap(cx: &mut gpui::TestAppContext) {
     }
     assert!(spacing[1] > spacing[0], "{spacing:?}");
 }
+
+/// Search results replace the spaces list, so a nested row never paints
+/// while they show: the reveal waits for the list to return instead of
+/// asking for frames, then brings the agent into view.
+#[gpui::test]
+fn search_results_hold_the_nested_reveal_until_the_list_returns(cx: &mut gpui::TestAppContext) {
+    let (fixture, cx) = cx.add_window_view(crowded(30));
+    let view = cx.update(|_, cx| fixture.read(cx).0.clone());
+    cx.simulate_resize(size(px(800.), px(400.)));
+    settle(cx);
+    cx.update(|window, cx| {
+        let focus = view.read(cx).sidebar_search.input.read(cx).focus.clone();
+        window.focus(&focus, cx);
+    });
+    cx.simulate_input("herdr");
+    settle(cx);
+    assert!(view.read_with(cx, |view, _| view.sidebar_search.query().is_some()));
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
+            snapshot.agents[29].focused = true;
+            cx.notify();
+        })
+    });
+    settle(cx);
+    assert!(cx.debug_bounds("agent-local-p29").is_none());
+    assert!(!view.read_with(cx, |view, _| view.sidebar_nested_reveal.retrying()));
+
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.clear_heading_search(super::super::search::Heading::Spaces, window, cx)
+        });
+    });
+    settle(cx);
+    let list = cx.debug_bounds("spaces-scroll").unwrap();
+    let focused = cx.debug_bounds("agent-local-p29").unwrap();
+    assert!(
+        list.top() <= focused.top() && focused.bottom() <= list.bottom(),
+        "{focused:?} in {list:?}"
+    );
+}

@@ -24,6 +24,19 @@ pub(crate) struct NestedReveal {
     /// The row last brought into view, so the user's own scrolling of an
     /// unchanged focus is left alone.
     revealed: RefCell<Option<SharedString>>,
+    /// The row a frame was requested for because it had not painted yet. One
+    /// retry is enough for a row that renders; one that never paints, being
+    /// hidden or clipped away, must not keep the window drawing.
+    waiting: RefCell<Option<SharedString>>,
+}
+
+impl NestedReveal {
+    /// Whether a reveal still waits for its row to paint.
+    #[cfg(test)]
+    pub(in crate::sidebar) fn retrying(&self) -> bool {
+        let waiting = self.waiting.borrow();
+        waiting.is_some() && *waiting != *self.revealed.borrow()
+    }
 }
 
 /// How far to scroll so `row` shows between `top` and `bottom`: down to its
@@ -106,6 +119,7 @@ impl HerdrWindow {
         let reveal = &self.sidebar_nested_reveal;
         let Some(key) = key else {
             reveal.revealed.replace(None);
+            reveal.waiting.replace(None);
             return;
         };
         if reveal.revealed.borrow().as_ref() == Some(&key) {
@@ -121,9 +135,14 @@ impl HerdrWindow {
         // The row has not been painted where it now sits, or the list not
         // measured: look again once this frame has painted both.
         let Some((_, row)) = painted.filter(|_| viewport.size.height > px(0.)) else {
-            window.request_animation_frame();
+            if reveal.waiting.replace(Some(key.clone())).as_ref() == Some(&key) {
+                reveal.revealed.replace(Some(key));
+            } else {
+                window.request_animation_frame();
+            }
             return;
         };
+        reveal.waiting.replace(None);
         let shift = reveal_shift(row, viewport.top() + cover, viewport.bottom());
         if shift != px(0.) {
             let offset = scroll.offset();
