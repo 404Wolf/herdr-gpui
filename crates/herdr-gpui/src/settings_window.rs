@@ -47,7 +47,7 @@ actions!(settings_window, [Close]);
 pub(crate) fn key_bindings() -> [KeyBinding; 2] {
     [
         KeyBinding::new(
-            if cfg!(target_os = "linux") {
+            if crate::controls::CTRL_SHORTCUTS {
                 "ctrl-shift-w"
             } else {
                 "cmd-w"
@@ -109,6 +109,7 @@ fn open_with(
             ..Default::default()
         },
         move |window, cx| {
+            crate::taskbar::mark(window, cx);
             let model = retained.unwrap_or_else(|| {
                 cx.new(|cx| {
                     let mut view = SettingsWindow::new(source.clone(), cx);
@@ -139,6 +140,7 @@ fn open_with(
 }
 
 struct SettingsWindow {
+    caption: crate::caption::Caption,
     config: Config,
     /// The config as the last successful load read it, which sidebar saves
     /// diff against; previews change only `config`.
@@ -280,6 +282,7 @@ impl SettingsWindow {
             },
         );
         Self {
+            caption: Default::default(),
             loaded_config: config.clone(),
             config,
             theme,
@@ -444,7 +447,7 @@ impl SettingsWindow {
                 WindowAppearance::Light | WindowAppearance::VibrantLight
             );
             match shared.theme(light) {
-                Ok(theme) => self.theme = theme.with_contrast(self.config.contrast),
+                Ok(theme) => self.theme = theme.styled_for(&self.config),
                 Err(error) => self.error = Some(format!("Apply system appearance: {error}")),
             }
         }
@@ -656,6 +659,7 @@ impl SettingsWindow {
 
 impl Render for SettingsWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.caption.sync(window, &self.theme);
         let searching = self.search_results.clone();
         let content = match &searching {
             Some(_) => self.render_search_results(cx),

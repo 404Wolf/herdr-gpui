@@ -272,6 +272,7 @@ impl Render for HerdrWindow {
             // the selection among them. The rows are built while GPUI
             // prepaints, and only while an assistive client is listening.
             .role(Role::Terminal)
+            .aria_label("Terminal")
             .when(
                 window.is_a11y_active() && self.live.surface_ready(),
                 |terminal| {
@@ -826,7 +827,7 @@ impl Render for HerdrWindow {
             .text_color(rgb(self.theme.foreground))
             .text_font(&self.config.ui)
             .text_size(px(self.config.ui.size))
-            .when(cfg!(target_os = "linux") && !zen, |root| {
+            .when(crate::menus::IN_WINDOW && !zen, |root| {
                 root.child(self.render_application_bar(window, cx))
             })
             .when(!merged && !zen, |root| {

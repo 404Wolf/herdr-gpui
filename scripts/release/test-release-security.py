@@ -45,7 +45,7 @@ class ReleaseTargets(unittest.TestCase):
         jobs = dict(zip(sections[1::2], sections[2::2]))
         for job in jobs.values():
             self.assertIn("github.repository == 'penso/herdr-gpui'", job)
-        self.assertIn("    needs: [checks, windows, commits]\n", jobs["checks-passed"])
+        self.assertIn("    needs: [checks, windows, windows-native, windows-package, commits]\n", jobs["checks-passed"])
         self.assertIn('test "$COMMITS" = success || exit 1', jobs["checks-passed"])
         self.assertIn('test "$RESULT" = success && test "$WINDOWS" = success', jobs["checks-passed"])
         self.assertIn('test "$CODE" = false && test "$RESULT" = skipped && test "$WINDOWS" = skipped', jobs["checks-passed"])
@@ -75,6 +75,38 @@ class ReleaseTargets(unittest.TestCase):
                 self.assertIn(f"run: {command}\n", jobs[name])
         self.assertNotIn("--release", windows)
         self.assertNotIn("cargo build", windows)
+        # The installer check runs only for its inputs, and the gate requires
+        # it then, and its absence otherwise.
+        package = jobs["windows-package"]
+        self.assertIn("needs.commits.outputs.windows_package == 'true'", package)
+        self.assertIn("needs: [zizmor, commits]", package)
+        self.assertNotIn("secrets.", package)
+        # Bash, so "$TARGET" and friends expand on the Windows runner.
+        self.assertIn("    defaults:\n      run:\n        shell: bash\n", package)
+        for command in ('cargo build --locked --release -p herdr-gpui -p herdr-gpui-launcher --target "$TARGET"',
+                        'python scripts/release/package-windows.py "$VERSION" "$TARGET"',
+                        'python scripts/release/windows-installer.py install-iscc',
+                        'python scripts/release/windows-installer.py build "$VERSION" "$TARGET"',
+                        'python scripts/release/windows-installer.py smoke'):
+            self.assertIn(command, package)
+        self.assertIn("windows_package: ${{ steps.changes.outputs.windows_package }}", jobs["commits"])
+        # Native Windows GUI tests run whenever code changes, against the
+        # pinned daemon only, and the gate requires them as it does windows.
+        native = jobs["windows-native"]
+        self.assertIn("needs.commits.outputs.code == 'true'", native)
+        self.assertIn("needs: [zizmor, commits]", native)
+        self.assertIn("        runner: [windows-2025, windows-11-arm]\n", native)
+        self.assertNotIn("secrets.", native)
+        for command in ('python scripts/install-herdr-windows.py "$RUNNER_TEMP/herdr"',
+                        "cargo test --locked -p herdr-gpui --features integration-test --test live_gui -- --ignored",
+                        "--performance-test"):
+            self.assertIn(command, native)
+        self.assertIn("NATIVE: ${{ needs.windows-native.result }}", jobs["checks-passed"])
+        self.assertIn('test "$WINDOWS" = success && test "$NATIVE" = success', jobs["checks-passed"])
+        self.assertIn('test "$WINDOWS" = skipped && test "$NATIVE" = skipped', jobs["checks-passed"])
+        self.assertIn("PACKAGE: ${{ needs.windows-package.result }}", jobs["checks-passed"])
+        self.assertIn('test "$PACKAGE" = success', jobs["checks-passed"])
+        self.assertIn('test "$PACKAGE_INPUTS" = false && test "$PACKAGE" = skipped', jobs["checks-passed"])
 
     def test_workflow_and_metadata_contract(self):
         # Keep this offline and dependency-free; actionlint validates YAML syntax.
@@ -111,17 +143,22 @@ class ReleaseTargets(unittest.TestCase):
         self.assertEqual(re.findall(r"- runner: (\S+)\n            target: (\S+)", windows), [
             ("windows-2025", "x86_64-pc-windows-msvc"),
             ("windows-11-arm", "aarch64-pc-windows-msvc")])
-        for command in ('cargo build --locked --release -p herdr-gpui --target "$TARGET"',
+        for command in ('cargo build --locked --release -p herdr-gpui -p herdr-gpui-launcher --target "$TARGET"',
                         'cargo test --locked --release -p herdr-gpui --test cli --target "$TARGET"',
                         'cargo clippy --locked --workspace --all-targets --all-features -- -D warnings',
                         'cargo test --locked -p herdr-protocol -p herdr-client',
                         'test "$(rustc -vV | sed -n \'s/^host: //p\')" = "$TARGET"',
                         'python scripts/release/generate-notices.py',
                         'python scripts/release/package-windows.py "$VERSION" "$TARGET"',
+                        'python scripts/release/windows-installer.py install-iscc',
+                        'python scripts/release/windows-installer.py build "$VERSION" "$TARGET"',
+                        'python scripts/release/windows-installer.py smoke',
                         'name: windows-package-${{ matrix.target }}'):
             self.assertIn(command, windows)
         for target in ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"):
-            self.assertIn(f"name: windows-package-{target}\n", jobs["attest"])
+            # Only the Authenticode-signed builds are attested and published.
+            self.assertIn(f"name: windows-signed-{target}\n", jobs["attest"])
+            self.assertNotIn(f"name: windows-package-{target}\n", jobs["attest"])
         for name in ("sign", "attest"):
             self.assertRegex(jobs[name], r"    needs: \[[^]]*\bwindows\b")
         attest = jobs["attest"].replace("${{ needs.validate.outputs.version }}", VERSION)
@@ -148,13 +185,16 @@ class ReleaseTargets(unittest.TestCase):
             ref = "github.sha" if name in ("audit", "validate") else "needs.validate.outputs.sha"
             self.assertIn("ref: ${{ " + ref + " }}", job)
             self.assertIn("persist-credentials: false", job)
-        for name in ("audit", "validate", "sign", "attest", "publish", "homebrew"):
+        for name in ("audit", "validate", "sign", "windows-sign", "attest", "publish", "homebrew", "winget"):
             for condition in ("github.repository == 'penso/herdr-gpui'", "github.ref == 'refs/heads/main'",
                               "github.actor == 'penso'", "github.triggering_actor == 'penso'"):
                 self.assertIn(condition, jobs[name])
-        for name in ("sign", "attest", "publish"):
+        for name in ("sign", "windows-sign", "attest", "publish"):
             self.assertIn("    environment: release\n", jobs[name])
         self.assertIn("    environment: homebrew\n", jobs["homebrew"])
+        self.assertIn("    environment: winget\n", jobs["winget"])
+        self.assertEqual([name for name, job in jobs.items() if "environment:" in job],
+                         ["windows-sign", "sign", "attest", "publish", "homebrew", "winget"])
         self.assertEqual(re.findall(r"^  (\w+):", workflow.split("permissions:", 1)[0], re.M),
                          ["workflow_dispatch"])
 
@@ -196,7 +236,7 @@ class ReleaseTargets(unittest.TestCase):
         self.assertNotIn("< <(", jobs["changelog"])
 
         promote, promotion = jobs_of("promote.yml")
-        self.assertEqual(list(promotion), ["audit", "validate", "promote", "homebrew"])
+        self.assertEqual(list(promotion), ["audit", "validate", "promote", "homebrew", "winget"])
         self.assertEqual(re.findall(r"^  (\w+):", promote.split("permissions:", 1)[0], re.M),
                          ["workflow_dispatch"])
         self.assertIn("group: manual-release\n", promote)
@@ -204,7 +244,7 @@ class ReleaseTargets(unittest.TestCase):
             for condition in ("github.repository == 'penso/herdr-gpui'", "github.ref == 'refs/heads/main'",
                               "github.actor == 'penso'", "github.triggering_actor == 'penso'"):
                 self.assertIn(condition, job, name)
-            if name != "homebrew":
+            if name not in ("homebrew", "winget"):
                 self.assertNotIn("secrets.", job)
         validate = promotion["validate"]
         self.assertIn('[[ "$VERSION" =~ ^[1-9][0-9]{7}\\.[1-9][0-9]*$ ]]', validate)
@@ -215,6 +255,11 @@ class ReleaseTargets(unittest.TestCase):
         # Nothing is rebuilt, re-signed or re-uploaded on promotion.
         for word in ("cargo ", "upload", "gh release create", "SIGNING_KEY", "id-token"):
             self.assertNotIn(word, promote)
+        # One winget policy too, and betas never reach it.
+        self.assertIn("needs.validate.outputs.channel == 'stable'", jobs["winget"])
+        self.assertEqual(promotion["winget"].replace("    needs: [validate, promote]\n", ""),
+                         jobs["winget"].replace(" &&\n      needs.validate.outputs.channel == 'stable'", "")
+                         .replace("    needs: [validate, publish]\n", ""))
         # One tap update policy: the promoted job is the release job minus its channel gate.
         self.assertEqual(promotion["homebrew"].replace("    needs: [validate, promote]\n", ""),
                          jobs["homebrew"].replace(" &&\n      needs.validate.outputs.channel == 'stable'", "")
@@ -244,6 +289,64 @@ class ReleaseTargets(unittest.TestCase):
         for name in ("update-manifest.json", "update-manifest.sig"):
             self.assertIn(f"            dist/{name}\n", sign)
         self.assertIn('test "$(wc -c < dist/update-manifest.sig | tr -d \' \')" = 64', sign)
+
+
+class WindowsTrust(unittest.TestCase):
+    def setUp(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        sections = re.split(r"^  ([a-z-]+):\n", workflow.split("\njobs:\n", 1)[1], flags=re.M)
+        self.jobs = dict(zip(sections[1::2], sections[2::2]))
+
+    def test_only_the_protected_signing_job_can_sign(self):
+        jobs = self.jobs
+        sign = jobs["windows-sign"]
+        self.assertIn("    needs: [validate, windows]\n", sign)
+        self.assertIn("      id-token: write\n", sign)
+        self.assertIn("uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0", sign)
+        self.assertIn("uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0", sign)
+        for setting in ("timestamp-rfc3161: http://timestamp.acs.microsoft.com", "timestamp-digest: SHA256",
+                        "file-digest: SHA256", "exclude-environment-credential: true",
+                        "cache-dependencies: false", "name: windows-package-${{ matrix.target }}",
+                        "}}\\herdr-gpui.exe\n", "}}\\herdr-gpui-launcher.exe\n",
+                        "name: windows-signed-${{ matrix.target }}"):
+            self.assertIn(setting, sign)
+        # Unpack, sign, check and repack, then sign the installer, then verify.
+        steps = ["windows-signing.py unpack", "artifact-signing-action", "windows-signing.py repack",
+                 "windows-installer.py build --sign",
+                 'windows-signing.py verify --subject "$WINDOWS_SIGNING_SUBJECT"']
+        self.assertEqual(sorted(steps, key=sign.index), steps)
+        # The signing job never runs what it signs.
+        self.assertNotIn("smoke", sign)
+        self.assertNotIn("secrets.", sign)
+        for name, job in jobs.items():
+            if name != "windows-sign":
+                for word in ("azure/", "ARTIFACT_SIGNING", "--sign "):
+                    self.assertNotIn(word, job, name)
+            if name not in ("windows-sign", "attest"):
+                self.assertNotIn("id-token", job, name)
+        for workflow in (ROOT / ".github/workflows").glob("*.yml"):
+            if workflow.name != "release.yml":
+                self.assertNotIn("azure/", workflow.read_text(), workflow.name)
+
+    def test_the_signed_installer_is_installed_before_it_is_attested(self):
+        jobs = self.jobs
+        smoke = jobs["windows-smoke"]
+        self.assertIn("    needs: [validate, windows-sign]\n", smoke)
+        self.assertIn('windows-installer.py smoke --signed "dist/Herdr-$VERSION-$TARGET-setup.exe"', smoke)
+        runners = r"- runner: (\S+)\n            target: (\S+)"
+        self.assertEqual(re.findall(runners, smoke), re.findall(runners, jobs["windows"]))
+        self.assertIn("    needs: [validate, sign, linux, windows-sign, windows-smoke, metadata]\n", jobs["attest"])
+        # The unsigned build is still installed and checked where it was built.
+        self.assertIn('python scripts/release/windows-installer.py smoke "dist/', jobs["windows"])
+
+    def test_winget_gets_only_published_stable_installers(self):
+        winget = self.jobs["winget"]
+        self.assertIn("    needs: [validate, publish]\n", winget)
+        self.assertIn(".isDraft == false and .isPrerelease == false", winget)
+        self.assertIn('gh release download "v$VERSION" --dir final --pattern SHA256SUMS', winget)
+        self.assertIn('winget.py submit "$VERSION" final/SHA256SUMS', winget)
+        for name, job in self.jobs.items():
+            self.assertEqual(job.count("secrets.WINGET_TOKEN"), int(name == "winget"), name)
 
 
 class SbomMerge(unittest.TestCase):
@@ -309,7 +412,7 @@ class ReleaseSecurity(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name)
         for name in MANIFEST.base_names(VERSION):
-            data = b"s" * 64 if name in ("update-manifest.sig", "package-manifest.sig") else name.encode()
+            data = b"s" * 64 if name in ("update-manifest.sig", "package-manifest.sig", "windows-manifest.sig") else name.encode()
             (self.path / name).write_bytes(data)
             for algorithm in ("sha256", "sha512"):
                 checksum = hashlib.new(algorithm, data).hexdigest()
@@ -333,12 +436,17 @@ class ReleaseSecurity(unittest.TestCase):
               for extension in ("tar.gz", "deb", "rpm", "pkg.tar.zst")),
             "Herdr-20260920.1-x86_64-pc-windows-msvc.zip",
             "Herdr-20260920.1-aarch64-pc-windows-msvc.zip",
+            "Herdr-20260920.1-x86_64-pc-windows-msvc-setup.exe",
+            "Herdr-20260920.1-aarch64-pc-windows-msvc-setup.exe",
             "herdr-gpui-20260920.1-macos-universal.app.tar.gz",
             "herdr-gpui-20260920.1-x86_64-unknown-linux-gnu-update.tar.gz",
             "herdr-gpui-20260920.1-aarch64-unknown-linux-gnu-update.tar.gz",
-            "update-manifest.json", "update-manifest.sig", "package-manifest.json", "package-manifest.sig"})
-        self.assertEqual(len((self.path / "SHA256SUMS").read_text().splitlines()), 95)
-        self.assertEqual(len(self.run_manifest("names").splitlines()), 96)
+            "update-manifest.json", "update-manifest.sig", "package-manifest.json", "package-manifest.sig",
+            "windows-manifest.json", "windows-manifest.sig"})
+        # Five files per base asset; SHA256SUMS lists all but itself.
+        assets = len(MANIFEST.base_names(VERSION)) * 5
+        self.assertEqual(len((self.path / "SHA256SUMS").read_text().splitlines()), assets)
+        self.assertEqual(len(self.run_manifest("names").splitlines()), assets + 1)
         self.assertEqual(self.run_manifest("base-names").splitlines(), MANIFEST.base_names(VERSION))
         with tempfile.TemporaryDirectory() as temp:
             name = MANIFEST.base_names(VERSION)[0]
@@ -361,7 +469,7 @@ class ReleaseSecurity(unittest.TestCase):
         self.run_manifest("verify", False)
 
     def test_raw_updater_signature_length(self):
-        for name in ("update-manifest.sig", "package-manifest.sig"):
+        for name in ("update-manifest.sig", "package-manifest.sig", "windows-manifest.sig"):
             path = self.path / name
             for size in (1, 63, 65, 128):
                 path.write_bytes(b"s" * size)

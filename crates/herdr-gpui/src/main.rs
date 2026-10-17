@@ -1,12 +1,14 @@
 // objc 0.2's selectors expand a legacy cargo-clippy cfg in the native test adapter.
 #![cfg_attr(feature = "integration-test", allow(unexpected_cfgs))]
+// Tests start real processes; production code builds them with `new_command`.
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
 
 mod about;
 mod actions;
 mod agent_notes;
 mod agent_skill;
 mod app;
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", windows, test))]
 mod app_badge;
 mod app_icon;
 mod avatars;
@@ -16,6 +18,7 @@ mod bell;
 mod boat;
 mod browser;
 mod caffeine;
+mod caption;
 mod checkpoint;
 mod cli;
 mod close_modal;
@@ -34,6 +37,7 @@ compile_error!(
 );
 #[cfg(feature = "cloud")]
 mod cloud;
+mod cloud_setup;
 mod code_index;
 mod code_search;
 mod code_server;
@@ -71,8 +75,11 @@ mod icon_font_notice;
 mod icons;
 mod input;
 mod integrations;
+#[cfg(windows)]
+mod jump_list;
 mod keymap;
 mod lenient;
+mod link;
 mod links;
 mod listening_ports;
 mod local_path;
@@ -108,6 +115,7 @@ mod release_notes;
 mod remote_browser;
 mod reorder;
 mod repo_items;
+mod restart_manager;
 mod review;
 mod scrollback;
 mod search_input;
@@ -124,6 +132,7 @@ mod state_file;
 mod storage_warning;
 mod system_load;
 mod tab_menu;
+mod taskbar;
 mod teleport;
 mod terminal;
 mod terminal_notes;

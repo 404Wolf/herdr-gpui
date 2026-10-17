@@ -378,6 +378,7 @@ impl HerdrWindow {
                     page,
                     Page::Tab
                         | Page::RenameTab
+                        | Page::MoveTab
                         | Page::Group
                         | Page::Pane
                         | Page::RenamePane
@@ -407,7 +408,7 @@ impl HerdrWindow {
                         } else if page == Page::PaneProcesses {
                             // Name, command, pid, CPU and memory columns.
                             560.
-                        } else if matches!(page, Page::Group | Page::MovePane) {
+                        } else if matches!(page, Page::Group | Page::MovePane | Page::MoveTab) {
                             240.
                         } else {
                             360.
@@ -502,7 +503,11 @@ impl HerdrWindow {
             .when(
                 matches!(
                     page,
-                    Page::Install | Page::AgentSkill | Page::VersionMismatch | Page::OpenLink
+                    Page::Install
+                        | Page::AgentSkill
+                        | Page::VersionMismatch
+                        | Page::OpenCheckout
+                        | Page::OpenLink
                 ),
                 |panel| {
                     panel
@@ -627,6 +632,8 @@ impl HerdrWindow {
                 | Page::RemoveDevice
         ) {
             panel = panel.child(self.render_host_menu(cx));
+        } else if page == Page::MoveTab {
+            panel = self.render_tab_move_picker(panel, cx);
         } else if matches!(page, Page::Tab | Page::RenameTab) {
             panel = panel.child(self.render_tab_menu(cx));
         } else if page == Page::Group {
@@ -660,6 +667,8 @@ impl HerdrWindow {
             panel = panel.child(self.render_worktree_script(cx));
         } else if page == Page::OpenLink {
             panel = panel.child(self.render_open_link(cx));
+        } else if page == Page::OpenCheckout {
+            panel = panel.child(self.render_open_checkout(cx));
         } else if page == Page::Install {
             panel = panel
                 .child(div().p(px(8.)).child("Herdr must be installed"))

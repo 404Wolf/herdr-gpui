@@ -47,8 +47,9 @@ fn configured_elsewhere() -> bool {
 fn every_provider_sits_beside_ssh_and_says_whether_it_is_set_up(cx: &mut gpui::TestAppContext) {
     let (view, cx) = open(cx);
     if crate::cloud::unavailable().is_some() {
-        // Nothing offers to create a device that could never connect.
-        assert!(cx.debug_bounds("add-device-rail").is_none());
+        // Nothing offers to create a device that could never connect. Windows
+        // still lists its WSL distributions beside SSH.
+        assert_eq!(cx.debug_bounds("add-device-rail").is_some(), cfg!(windows));
         return;
     }
     assert_eq!(page(&view, cx), Some(Page::AddDevice));
@@ -315,4 +316,19 @@ fn switching_sources_never_resizes_the_dialog(cx: &mut gpui::TestAppContext) {
     cx.simulate_resize(size(px(900.), px(400.)));
     draw(cx);
     assert!(cx.debug_bounds("menu-panel").unwrap().bottom() <= px(400.));
+}
+
+/// Windows offers its WSL distributions as a second source after SSH hosts,
+/// and the dialog opens on the SSH form.
+#[cfg(windows)]
+#[gpui::test]
+fn windows_lists_wsl_after_ssh_hosts(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = open(cx);
+    assert_eq!(page(&view, cx), Some(Page::AddDevice));
+    let host = cx.debug_bounds("add-device-source-host").unwrap();
+    let wsl = cx.debug_bounds("add-device-source-wsl").unwrap();
+    assert!(host.bottom() <= wsl.top());
+    assert_eq!(frame::Source::of(Page::AddWsl), Some(frame::Source::Wsl));
+    assert!(frame::add_device_offer(false).contains("SSH host"));
+    assert!(frame::add_device_offer(false).contains("WSL"));
 }

@@ -1,6 +1,6 @@
 //! Terminal and chrome colors: built-in palettes, Ghostty theme files, and
 //! where they are found.
-use super::{Config, config_root, home};
+use super::{Config, config_root, home, omarchy};
 use crate::{Error, Result, contrast::Contrast, error::ThemeParseError};
 use std::{
     env, fs,
@@ -106,7 +106,13 @@ impl Config {
     /// Discover names without parsing every theme. On failure, callers can use
     /// `Theme::BUILTIN_NAMES`, which remain loadable without any directories.
     pub fn available_themes(&self) -> Result<Vec<String>> {
-        self.available_themes_in(&theme_directories()?)
+        let mut names = self.available_themes_in(&theme_directories()?)?;
+        if home().is_ok_and(|home| omarchy::installed(&home)) {
+            names.push(omarchy::NAME.into());
+            names.sort_by_cached_key(|name| (name.to_lowercase(), name.clone()));
+            names.dedup();
+        }
+        Ok(names)
     }
 
     pub(super) fn available_themes_in(&self, directories: &[PathBuf]) -> Result<Vec<String>> {
@@ -152,7 +158,7 @@ impl Config {
     /// `light:…,dark:…` value, and Herdr's light palette for `Follow Herdr`.
     pub fn theme(&self, light: bool) -> Result<Theme> {
         self.theme_with_directories(light, theme_directories)
-            .map(|theme| theme.with_contrast(self.contrast))
+            .map(|theme| self.styled(theme))
     }
 
     /// Resolves every side, so a pair is refused before it is saved rather
@@ -176,7 +182,13 @@ impl Config {
     /// appearance and with this config's contrast. Reads theme files, so it
     /// runs off the UI thread.
     pub(crate) fn theme_named(&self, value: &str, light: bool) -> Result<Theme> {
-        resolve(value, light, theme_directories).map(|theme| theme.with_contrast(self.contrast))
+        resolve(value, light, theme_directories).map(|theme| self.styled(theme))
+    }
+
+    /// `theme` with this config's contrast and accent; see
+    /// [`Theme::styled_for`].
+    fn styled(&self, theme: Theme) -> Theme {
+        theme.styled_for(self)
     }
 }
 
@@ -191,6 +203,9 @@ pub(super) fn resolve(
     if name == FOLLOW_HERDR {
         return crate::herdr_settings::Settings::load()?.theme(light);
     }
+    if name == omarchy::NAME {
+        return omarchy::load(&home()?);
+    }
     if let Some(theme) = Theme::builtin(name) {
         return Ok(theme);
     }
@@ -204,7 +219,13 @@ impl Config {
     /// watcher can reload a theme file that changes in place. Built-ins and
     /// `Follow Herdr` read no file; a name found in no directory has none.
     pub(crate) fn theme_files(theme: &str) -> Vec<PathBuf> {
-        theme_files_in(theme, theme_directories)
+        let mut files = theme_files_in(theme, theme_directories);
+        let follows_omarchy = ThemeName::parse(theme)
+            .is_ok_and(|name| [name.get(true), name.get(false)].contains(&omarchy::NAME));
+        if follows_omarchy && let Ok(home) = home() {
+            files.extend(omarchy::files(&home));
+        }
+        files
     }
 }
 
@@ -217,7 +238,7 @@ pub(super) fn theme_files_in(
     };
     let mut files = Vec::new();
     for side in [name.get(true), name.get(false)] {
-        if side == FOLLOW_HERDR || Theme::BUILTIN_NAMES.contains(&side) {
+        if [FOLLOW_HERDR, omarchy::NAME].contains(&side) || Theme::BUILTIN_NAMES.contains(&side) {
             continue;
         }
         if let Ok(file) = theme_file(side, &directories)
@@ -276,9 +297,15 @@ pub struct Theme {
     /// Herdr's optional `sidebar_bg`, which colors only the sidebar. Unset,
     /// the sidebar stays on [`Self::surface`].
     pub sidebar: Option<u32>,
+    /// A desktop theme's own accent, as Omarchy's `colors.toml` names one.
+    /// Unset, [`Self::primary`] takes the palette's magenta.
+    pub accent: Option<u32>,
     pub palette: [u32; 256],
     /// Applied by [`Theme::with_contrast`]; every theme loads as `Standard`.
     pub contrast: Contrast,
+    /// The system accent standing in for the theme's, from
+    /// [`Theme::with_accent`]; every theme loads without one.
+    pub system_accent: Option<u32>,
 }
 
 impl Default for Theme {
@@ -307,8 +334,10 @@ impl Default for Theme {
             active: 0x2b2933,
             muted: 0x827e91,
             sidebar: None,
+            accent: None,
             palette,
             contrast: Contrast::Standard,
+            system_accent: None,
         }
     }
 }
@@ -333,9 +362,20 @@ impl Theme {
     ];
 
     /// The theme's primary accent, used for selection colors that must read as
-    /// chosen rather than merely hovered.
+    /// chosen rather than merely hovered: the system's when asked for, else
+    /// the theme's own, else its palette's magenta.
     pub fn primary(&self) -> u32 {
-        self.palette[5]
+        self.system_accent
+            .or(self.accent)
+            .unwrap_or(self.palette[5])
+    }
+
+    /// Uses the system's `accent`, when there is one, as [`Self::primary`].
+    /// Terminal colors, including the palette slot the theme's accent comes
+    /// from, stay as the theme drew them.
+    pub fn with_accent(mut self, accent: Option<u32>) -> Self {
+        self.system_accent = accent;
+        self
     }
 
     /// The sidebar's fill: Herdr's `sidebar_bg` when set, else the surface.
@@ -389,9 +429,23 @@ impl Theme {
         )
     }
 
+    /// The theme as `config` shows it: its contrast, raised while a Windows
+    /// contrast theme is on, and the system accent when `accent = "system"`.
+    /// Every theme the app paints goes through this, whatever loaded it, so
+    /// a shared Herdr theme or a Settings draft looks as a configured one.
+    pub(crate) fn styled_for(self, config: &Config) -> Self {
+        self.with_contrast(config.contrast.or_system())
+            .with_accent(config.accent.color())
+    }
+
     /// High contrast parts selected rows further from the surface and raises
     /// dim labels to text contrast. Standard leaves the theme as drawn.
+    /// Applying the level the theme already has changes nothing, so a theme
+    /// styled once and styled again is not raised twice.
     pub fn with_contrast(mut self, contrast: Contrast) -> Self {
+        if self.contrast == contrast {
+            return self;
+        }
         self.contrast = contrast;
         if contrast == Contrast::High {
             self.active = mix(self.active, self.foreground, 12);

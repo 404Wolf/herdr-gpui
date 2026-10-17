@@ -1,7 +1,9 @@
 use super::*;
 use control::BrowserCommand;
 
+mod cloud_setup;
 mod control_commands;
+mod links;
 mod ui_panel;
 
 #[test]
