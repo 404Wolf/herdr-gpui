@@ -14,6 +14,12 @@
 //! it prints after [`output::STDERR`] once the command exits. The relay sends
 //! the remote command, and then the caller's input, only after the start
 //! marker, so nothing reaches the shell before the terminal is raw.
+//!
+//! A raw terminal has no end of input, and closing the stream would end the
+//! command's output too. So the caller's input travels in frames, each its
+//! length on a line and then its bytes, and an empty frame is its end. A
+//! reader on the remote side unpacks them into a FIFO the command reads, so
+//! the command sees end of input the way it would over `ssh`.
 
 use super::{
     super::{
@@ -135,17 +141,36 @@ pub(super) fn remote_command(remote: &[OsString]) -> Result<Vec<u8>> {
 
 /// Typed while the terminal still echoes, so the markers are spelled with
 /// `printf` escapes that the echo shows literally. `head -c` reads exactly
-/// the command, leaving the caller's input for the command itself.
+/// the command, and then each frame of the caller's input; see
+/// [`input_frame`]. The frame reader runs in the background with the
+/// terminal as its explicit input, since a background list's input is
+/// otherwise `/dev/null`, and is killed once the command exits, as `ssh`
+/// stops forwarding input then. A shell on a terminal is interactive, so
+/// job control goes off first, or the reader would be stopped for reading
+/// the terminal; and its job is found with `jobs -p`, since an interactive
+/// bash would take `$!` as a history expansion.
 pub(super) fn setup_line(command_len: usize) -> String {
     format!(
-        "stty raw -echo -iexten || exit {CONNECTION_FAILED}; \
+        "stty raw -echo -iexten || exit {CONNECTION_FAILED}; set +m; \
          e=$(mktemp) || exit {CONNECTION_FAILED}; \
+         f=\"$e.in\"; mkfifo \"$f\" || exit {CONNECTION_FAILED}; \
          printf '\\001herdr-relay-start\\001'; \
          s=$(head -c {command_len}); \
-         eval \"$s\" 2>\"$e\"; c=$?; \
+         exec 3<&0; \
+         {{ while IFS= read -r n && [ \"$n\" -gt 0 ]; do head -c \"$n\"; done; }} <&3 >\"$f\" & \
+         eval \"$s\" <\"$f\" 2>\"$e\"; c=$?; \
+         kill $(jobs -p) 2>/dev/null; rm -f \"$f\"; \
          printf '\\001herdr-relay-stderr\\001'; \
          cat \"$e\"; rm -f \"$e\"; exit $c\n"
     )
+}
+
+/// One frame of the caller's input as the setup line's reader unpacks it:
+/// the length on a line, then the bytes. An empty `chunk` is end of input.
+pub(super) fn input_frame(chunk: &[u8]) -> Vec<u8> {
+    let mut frame = format!("{}\n", chunk.len()).into_bytes();
+    frame.extend_from_slice(chunk);
+    frame
 }
 
 fn open(url: &str, token: &str) -> Result<Socket> {
@@ -295,19 +320,25 @@ pub(super) fn relay<S: Read + Write>(
     stderr: &mut impl Write,
 ) -> Result<ExitCode> {
     let mut output = Output::default();
-    // Input that ends only stops forwarding: a probe runs with no input at
+    // Input that ends is passed on as an empty frame, which ends the remote
+    // command's input but not the command: a probe runs with no input at
     // all and still has to hear its answer. The caller ends a bridge by
     // killing this process.
     let mut input_open = true;
     loop {
         while input_open && output.started() {
-            match input.try_recv() {
-                Ok(Some(chunk)) => socket
-                    .send(Message::text(stdin_message(&chunk)))
-                    .map_err(Error::Stream)?,
-                Ok(None) | Err(TryRecvError::Disconnected) => input_open = false,
+            let frame = match input.try_recv() {
+                Ok(Some(chunk)) if chunk.is_empty() => continue,
+                Ok(Some(chunk)) => input_frame(&chunk),
+                Ok(None) | Err(TryRecvError::Disconnected) => {
+                    input_open = false;
+                    input_frame(&[])
+                }
                 Err(TryRecvError::Empty) => break,
-            }
+            };
+            socket
+                .send(Message::text(stdin_message(&frame)))
+                .map_err(Error::Stream)?;
         }
         let message = match socket.read() {
             Ok(message) => message,
@@ -317,6 +348,9 @@ pub(super) fn relay<S: Read + Write>(
                     io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
                 ) =>
             {
+                // Quiet for a poll, so what may have begun the stderr
+                // marker was output after all.
+                output.flush(stdout)?;
                 continue;
             }
             Err(tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed) => {
@@ -347,6 +381,7 @@ pub(super) fn relay<S: Read + Write>(
                 return Err(Error::Sandbox(output.diagnostic()));
             }
             Event::Exit(code) => {
+                output.flush(stdout)?;
                 let _ = socket.close(None);
                 return Ok(ExitCode::from(code));
             }

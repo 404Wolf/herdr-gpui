@@ -224,12 +224,12 @@ fn output_drops_the_setup_echo_and_splits_saved_stderr() {
             .unwrap()
     );
     assert!(!output.push(b"more\n", &mut stdout, &mut stderr).unwrap());
-    assert_eq!(stdout, b"\x00binary\r\n\x01herdr-relay-std");
+    assert_eq!(stdout, b"\x00binary\r\n");
     assert_eq!(stderr, b"warn\nmore\n");
 }
 
 #[test]
-fn output_never_holds_stdout_back() {
+fn output_holds_back_only_what_may_begin_the_stderr_marker() {
     let mut output = relay::output::Output::default();
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     output
@@ -239,7 +239,14 @@ fn output_never_holds_stdout_back() {
             &mut stderr,
         )
         .unwrap();
+    assert_eq!(stdout, b"frame");
+    // The next message rules the marker out.
+    output.push(b"\x01her", &mut stdout, &mut stderr).unwrap();
     assert_eq!(stdout, b"frame\x01");
+    // A quiet stream does too: the bridge may be waiting on these bytes.
+    output.flush(&mut stdout).unwrap();
+    assert_eq!(stdout, b"frame\x01\x01her");
+    assert!(stderr.is_empty());
 }
 
 #[test]
@@ -296,6 +303,8 @@ fn relay_runs_a_command_and_carries_its_streams_and_exit_code() {
         send(&mut socket, "stdout", b"\x01herdr-relay-start\x01ready\n");
         let command = decode(&next(&mut socket));
         let reply = decode(&next(&mut socket));
+        let end = decode(&next(&mut socket));
+        assert_eq!(end, relay::input_frame(&[]));
         send(&mut socket, "stderr", b"\x01herdr-relay-stderr\x01warn\n");
         let exit = serde_json::json!({ "type": "exit_code", "exitCode": 3 });
         socket.send(Message::text(exit.to_string())).unwrap();
@@ -312,7 +321,8 @@ fn relay_runs_a_command_and_carries_its_streams_and_exit_code() {
     let (send, input) = mpsc::sync_channel(4);
     // Queued before the shell starts, so it must follow the command.
     send.send(Some(b"accept\n".to_vec())).unwrap();
-    // Input ending must not end the command: a probe has none at all.
+    // Input ending ends the command's input, not the command: a probe has
+    // none at all.
     send.send(None).unwrap();
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     let code = relay::relay(&mut socket, &command, input, &mut stdout, &mut stderr).unwrap();
@@ -323,7 +333,7 @@ fn relay_runs_a_command_and_carries_its_streams_and_exit_code() {
     let (setup, command, reply) = service.join().unwrap();
     assert_eq!(setup, relay::setup_line(command.len()).as_bytes());
     assert_eq!(command, b"/bin/sh -c 'probe'");
-    assert_eq!(reply, b"accept\n");
+    assert_eq!(reply, b"7\naccept\n");
 }
 
 #[test]
@@ -362,3 +372,5 @@ fn a_shell_that_never_starts_is_a_failed_connection() {
     drop(socket);
     service.join().unwrap();
 }
+
+mod input;

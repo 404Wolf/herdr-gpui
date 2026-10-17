@@ -22,8 +22,8 @@ enum Phase {
     /// Waiting for [`START`]; holds what arrived so far.
     #[default]
     Setup,
-    /// The remote command's stdout. Holds the bytes already written that may
-    /// begin [`STDERR`], so a marker split across messages is still found.
+    /// The remote command's stdout. Holds back an ending that may begin
+    /// [`STDERR`], so a marker split across messages never reaches stdout.
     Stdout,
     Stderr,
 }
@@ -58,23 +58,19 @@ impl Output {
                 Ok(true)
             }
             Phase::Stdout => {
-                let seen = self.held.len();
                 self.held.extend_from_slice(bytes);
                 if let Some(at) = find(&self.held, STDERR) {
-                    // Bytes of a marker split across messages already went
-                    // out as stdout; the command had exited by then.
-                    let output = &self.held[seen.min(at)..at];
-                    write(stdout, output)?;
+                    write(stdout, &self.held[..at])?;
                     let rest = self.held.split_off(at + STDERR.len());
                     self.held.clear();
                     self.phase = Phase::Stderr;
                     return self.push(&rest, stdout, stderr).map(|_| false);
                 }
-                // Never hold stdout back: the bridge may be waiting for it.
-                write(stdout, bytes)?;
-                let keep = STDERR.len() - 1;
-                let excess = self.held.len().saturating_sub(keep);
-                self.held.drain(..excess);
+                // Only an ending that may begin the marker waits, for the
+                // next message or until the stream is quiet; see `flush`.
+                let ready = self.held.len() - marker_prefix(&self.held);
+                write(stdout, &self.held[..ready])?;
+                self.held.drain(..ready);
                 Ok(false)
             }
             Phase::Stderr => {
@@ -82,6 +78,19 @@ impl Output {
                 Ok(false)
             }
         }
+    }
+
+    /// Write stdout held back as a possible start of [`STDERR`]. The shell
+    /// prints the marker in one write, so a stream quiet for a poll, or a
+    /// command that exited, rules it out; the bridge may be waiting on the
+    /// bytes, which can end a binary frame.
+    pub(in crate::azure::sandbox) fn flush(&mut self, stdout: &mut impl Write) -> Result<()> {
+        if !matches!(self.phase, Phase::Stdout) {
+            return Ok(());
+        }
+        write(stdout, &self.held)?;
+        self.held.clear();
+        Ok(())
     }
 
     pub(in crate::azure::sandbox) fn started(&self) -> bool {
@@ -103,6 +112,15 @@ fn write(stdout: &mut impl Write, bytes: &[u8]) -> Result<()> {
     }
     stdout.write_all(bytes).map_err(Error::Process)?;
     stdout.flush().map_err(Error::Process)
+}
+
+/// The length of the longest ending of `bytes` that begins [`STDERR`]
+/// without completing it.
+fn marker_prefix(bytes: &[u8]) -> usize {
+    (1..STDERR.len())
+        .rev()
+        .find(|&len| bytes.ends_with(&STDERR[..len]))
+        .unwrap_or(0)
 }
 
 fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
