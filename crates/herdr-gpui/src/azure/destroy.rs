@@ -5,6 +5,44 @@
 
 use super::{Error, Result, Settings, api, http::Client, machine::Machine};
 use crate::cloud::{self, CloudProvider, SavedDevice};
+use std::{collections::BTreeSet, sync::Mutex};
+
+/// Devices being destroyed now, by ID. The minute's check leaves them be: it
+/// would find a half-deleted machine gone and forget the device under the
+/// destroy, or delete it a second time.
+static DESTROYING: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+/// Whether a destroy of `id` is running.
+pub(crate) fn destroying(id: &str) -> bool {
+    DESTROYING.lock().is_ok_and(|ids| ids.contains(id))
+}
+
+/// Marks `id` destroying until dropped, however the destroy ends.
+struct Mark(String);
+
+impl Mark {
+    fn new(id: &str) -> Self {
+        if let Ok(mut ids) = DESTROYING.lock() {
+            ids.insert(id.to_owned());
+        }
+        Self(id.to_owned())
+    }
+}
+
+/// Run `during` while `id` is marked destroying.
+#[cfg(test)]
+pub(crate) fn mark_for_test(id: &str, during: impl FnOnce()) {
+    let _mark = Mark::new(id);
+    during();
+}
+
+impl Drop for Mark {
+    fn drop(&mut self) {
+        if let Ok(mut ids) = DESTROYING.lock() {
+            ids.remove(&self.0);
+        }
+    }
+}
 
 /// What a destroy is waiting on, for its progress bar.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,6 +65,7 @@ pub(crate) fn destroy_device(
     if device.provider != CloudProvider::Azure || device.account != settings.account() {
         return Err(Error::Account);
     }
+    let _mark = Mark::new(&device.id);
     match Machine::parse(&device.id) {
         Machine::Vm(name) => {
             stage(Stage::Vm);

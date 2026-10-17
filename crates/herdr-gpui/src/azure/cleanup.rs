@@ -72,7 +72,11 @@ fn deallocate(client: &Client, vm_name: &str) -> Result<bool> {
 fn account_devices(devices: Vec<SavedDevice>, account: &str) -> Vec<SavedDevice> {
     devices
         .into_iter()
-        .filter(|device| device.provider == CloudProvider::Azure && device.account == account)
+        .filter(|device| {
+            device.provider == CloudProvider::Azure
+                && device.account == account
+                && !super::destroy::destroying(&device.id)
+        })
         .collect()
 }
 

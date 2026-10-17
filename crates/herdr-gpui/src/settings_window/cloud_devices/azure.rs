@@ -31,6 +31,7 @@ use secrecy::SecretString;
 use std::collections::HashMap;
 
 mod destroy;
+mod jobs;
 mod sizes;
 
 /// The VM Size field's place in [`FIELDS`]; the size choices draw it.
@@ -621,9 +622,10 @@ impl SettingsWindow {
         let mut devices = self
             .control_card("Azure devices")
             .debug_selector(|| "cloud-azure-devices".into());
-        if card.devices().is_empty() {
+        let creating = self.azure_job_rows(cx);
+        if card.devices().is_empty() && creating.is_empty() {
             devices = devices.child(self.control_note("None yet."));
-        } else {
+        } else if !card.devices().is_empty() {
             devices = devices.child(self.control_note(
                 "Removing a device deletes it at Azure, with its disk and IP. Remove from Herdr \
                  only, offered beside it, leaves it at Azure, still billing.",
@@ -632,6 +634,7 @@ impl SettingsWindow {
         if let Some(outcome) = self.azure_destroy_outcome() {
             devices = devices.child(outcome);
         }
+        devices = devices.children(creating);
         for (index, device) in card.devices().iter().enumerate() {
             let noun = Machine::parse(&device.id).noun();
             let detail = match card.device_size(&device.id) {

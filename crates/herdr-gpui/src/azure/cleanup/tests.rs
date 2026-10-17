@@ -42,3 +42,23 @@ fn only_this_accounts_devices_are_checked() {
     assert_eq!(ids, ["shared-name", "sandbox.box"]);
     assert!(mine.iter().all(|device| device.account == "sub-a"));
 }
+
+#[test]
+fn a_device_being_destroyed_is_left_to_its_destroy() {
+    use crate::cloud::{CloudProvider, SavedDevice};
+    let device = SavedDevice {
+        provider: CloudProvider::Azure,
+        id: "being-destroyed".into(),
+        label: "being-destroyed".into(),
+        account: "sub-a".into(),
+        machine: "being-destroyed".into(),
+        session: "herdr".into(),
+        enabled: true,
+    };
+    assert!(!super::super::destroy::destroying("being-destroyed"));
+    assert_eq!(account_devices(vec![device.clone()], "sub-a").len(), 1);
+    super::super::destroy::mark_for_test("being-destroyed", || {
+        assert!(account_devices(vec![device.clone()], "sub-a").is_empty());
+    });
+    assert_eq!(account_devices(vec![device], "sub-a").len(), 1);
+}

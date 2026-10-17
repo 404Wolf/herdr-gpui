@@ -111,6 +111,22 @@ fn follow_config<const N: usize>(
     }
 }
 
+/// A fingerprint of the cloud devices `window` lists, which changes when one
+/// is added or removed there, by the sidebar, a job, or auto-stop.
+fn cloud_devices(window: &crate::HerdrWindow) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for endpoint in &window.endpoints {
+        if matches!(
+            endpoint.connection.target,
+            herdr_client::ConnectTarget::Cloud { .. }
+        ) {
+            endpoint.id.hash(&mut hasher);
+        }
+    }
+    hasher.finish()
+}
+
 impl SettingsWindow {
     /// Build each provider's card on first view, then refresh what it reads.
     pub(super) fn open_cloud_devices(&mut self, cx: &mut Context<Self>) {
@@ -156,7 +172,20 @@ impl SettingsWindow {
         source: &Entity<crate::HerdrWindow>,
         cx: &mut Context<Self>,
     ) {
-        let finished = source.read(cx).cloud_jobs.finished();
+        let window = source.read(cx);
+        let devices = cloud_devices(window);
+        let jobs = &window.cloud_jobs;
+        let (finished, revision) = (jobs.finished(), jobs.revision());
+        if devices != self.cloud_devices_seen {
+            self.cloud_devices_seen = devices;
+            self.cloud_config_changed(cx);
+        }
+        if revision != self.cloud_jobs_drawn {
+            self.cloud_jobs_drawn = revision;
+            if self.section == super::Section::CloudDevices {
+                cx.notify();
+            }
+        }
         if finished == self.cloud_jobs_seen {
             return;
         }

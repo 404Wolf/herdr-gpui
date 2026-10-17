@@ -67,7 +67,8 @@ impl HerdrWindow {
         let collapse_id = endpoint_id.clone();
         let select_id = endpoint_id.clone();
         let menu_id = endpoint_id.clone();
-        let removing = self.menu.removing_devices.contains(&endpoint.id);
+        let removing = self.menu.removing_devices.contains(&endpoint.id)
+            || destroying_at_azure(&endpoint.connection.target);
         // Of cloud machines, only Azure's load is read so far.
         let host = crate::usage::Host::load_of(&endpoint.connection.target);
         let load = host
@@ -374,4 +375,20 @@ impl HerdrWindow {
         scroll.set_offset(point(offset.x, (offset.y + px(down)).min(px(0.))));
         true
     }
+}
+
+/// Whether the machine behind `target` is being deleted at Azure, by Remove
+/// from here or Settings, or by auto-stop: its header pulses as for removal.
+fn destroying_at_azure(target: &herdr_client::ConnectTarget) -> bool {
+    #[cfg(feature = "azure")]
+    if let herdr_client::ConnectTarget::Cloud {
+        provider: herdr_client::CloudProvider::Azure,
+        id,
+        ..
+    } = target
+    {
+        return crate::azure::destroy::destroying(id);
+    }
+    let _ = target;
+    false
 }

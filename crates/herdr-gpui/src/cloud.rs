@@ -86,6 +86,18 @@ pub(crate) enum Step {
 }
 
 impl Step {
+    /// About how far along a job at this step is, for a progress bar: a
+    /// build's own steps take the most time.
+    pub(crate) fn progress(&self) -> f32 {
+        match self {
+            Self::Creating => 0.15,
+            Self::Connecting => 0.25,
+            Self::Starting | Self::Building(_) => 0.4,
+            Self::CheckingHerdr => 0.7,
+            Self::InstallingHerdr => 0.85,
+        }
+    }
+
     pub(crate) fn text(&self) -> String {
         match self {
             Self::Creating => "Creating…".into(),

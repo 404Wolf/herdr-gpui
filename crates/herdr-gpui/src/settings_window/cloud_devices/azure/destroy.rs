@@ -123,6 +123,9 @@ impl SettingsWindow {
     }
 
     pub(super) fn apply_azure_destroy(&mut self, update: Update, cx: &mut Context<Self>) {
+        // The main window pulses the device's header while it is destroyed,
+        // and stops once it is gone or the destroy failed.
+        let _ = self.source.update(cx, |_, cx| cx.notify());
         let Some(card) = &mut self.azure_card else {
             return;
         };

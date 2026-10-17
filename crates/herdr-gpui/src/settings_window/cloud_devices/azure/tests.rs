@@ -41,3 +41,4 @@ fn a_client_id_replaces_a_saved_cli_choice() {
         SignIn::Keep
     );
 }
+mod progress;
