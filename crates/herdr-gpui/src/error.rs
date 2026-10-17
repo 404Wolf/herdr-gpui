@@ -725,7 +725,7 @@ pub enum Error {
         source: herdr_client::Error,
     },
     #[error(
-        "No base branch to compare with: neither the pull request's base nor origin/HEAD, main, or master exists locally."
+        "No base branch to compare with: neither the pull request's base nor origin/HEAD, main, or master exists locally. Pick one with the base button above."
     )]
     ReviewNoBase,
     #[error("These changes are too large to review here, even leaving out the largest files.")]

@@ -2497,6 +2497,12 @@ comments on a pull request.
   uncommitted work together. The base is the pull request's base branch when
   GitHub reported one, else `origin/HEAD`, then `main` or `master`, whichever
   exists locally; nothing is fetched. The choice is remembered.
+- Click the base after "against" in a branch review to compare with another
+  branch, such as an older release branch or the feature branch this one was
+  cut from. The list holds the checkout's local and remote-tracking branches,
+  those this branch left most recently first; **Automatic** goes back to the
+  base above. The pick holds while the review tab is open, and a picked
+  branch that no longer exists falls back to the automatic base.
 - The two icons in the header draw the diff **unified**, removed lines above
   the ones that replaced them, or **side by side**, the old version on the
   left and the new on the right, each run of removed lines paired with the
