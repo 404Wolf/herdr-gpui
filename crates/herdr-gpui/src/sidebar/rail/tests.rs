@@ -7,7 +7,7 @@ use crate::{
     sidebar::layout_tests::{SidebarFixture, fixture_window, full_draw, snapshot},
 };
 use core::prelude::v1::test;
-use gpui::{Modifiers, TestAppContext, VisualTestContext, size};
+use gpui::{Bounds, Modifiers, Pixels, TestAppContext, VisualTestContext, size};
 use herdr_client::ConnectTarget;
 use std::sync::Arc;
 
@@ -122,6 +122,109 @@ fn collapsed_sidebar_is_a_rail_in_every_layout_that_navigates(cx: &mut TestAppCo
     assert!(view.read_with(cx, |view, _| view.sidebar_visible));
     assert!(cx.debug_bounds("sidebar").is_some());
     assert!(cx.debug_bounds("sidebar-rail").is_none());
+}
+
+/// Agent rows use the same columns as the workspace badges above them: the
+/// host letter shares the badge's left edge, the status dots share a column,
+/// and the selected highlight wraps the letter, icon, and dot with even padding.
+#[gpui::test]
+fn collapsed_agent_rows_line_up_with_workspace_badges(cx: &mut TestAppContext) {
+    let (view, cx) = rail_window(cx, 2);
+    view.update(cx, |view, cx| {
+        let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
+        snapshot.agents[0].agent = Some("grok".into());
+        snapshot.agents[0].focused = true;
+        cx.notify();
+    });
+    cx.simulate_resize(size(px(900.), px(900.)));
+    for mode in LayoutMode::ALL {
+        view.update(cx, |view, cx| {
+            view.config.layout.mode = mode;
+            cx.notify();
+        });
+        cx.update(|window, cx| full_draw(window, cx).clear(cx));
+        let marks = [
+            "rail-mark-rail-workspace-local-w0",
+            "rail-mark-rail-workspace-local-w1",
+            "rail-mark-rail-workspace-ssh:host1-w0",
+            "rail-mark-rail-agent-local-p0",
+            "rail-mark-rail-agent-local-p1",
+            "rail-mark-rail-agent-ssh:host1-p0",
+        ]
+        .map(|selector| placed(cx, selector));
+        let dots = [
+            "rail-dot-rail-workspace-local-w0",
+            "rail-dot-rail-workspace-local-w1",
+            "rail-dot-rail-workspace-ssh:host1-w0",
+            "rail-dot-rail-agent-local-p0",
+            "rail-dot-rail-agent-local-p1",
+            "rail-dot-rail-agent-ssh:host1-p0",
+        ]
+        .map(|selector| placed(cx, selector));
+        let badge = marks[0];
+        for mark in marks {
+            assert!(
+                near(mark.left(), badge.left()),
+                "{mode:?}: mark {mark:?} left differs from badge {badge:?}"
+            );
+        }
+        let dot = dots[0];
+        for mark in dots {
+            assert!(
+                near(mark.left(), dot.left()),
+                "{mode:?}: dot {mark:?} left differs from {dot:?}"
+            );
+        }
+        let workspace = placed(cx, "highlight-rail-workspace-local-w0");
+        let agent = placed(cx, "highlight-rail-agent-local-p0");
+        let other = placed(cx, "highlight-rail-workspace-local-w1");
+        assert!(
+            near(agent.left(), workspace.left()) && near(agent.size.width, workspace.size.width),
+            "{mode:?}: agent highlight {agent:?} != workspace {workspace:?}"
+        );
+        assert!(
+            near(other.left(), workspace.left()) && near(other.size.width, workspace.size.width),
+            "{mode:?}: highlight width drifted {other:?} vs {workspace:?}"
+        );
+        let letter = placed(cx, "rail-mark-rail-agent-local-p0");
+        let icon = placed(cx, "rail-agent-icon-local-p0");
+        let status = placed(cx, "rail-dot-rail-agent-local-p0");
+        for (name, child) in [("letter", letter), ("icon", icon), ("dot", status)] {
+            assert!(
+                child.left() >= agent.left() - px(0.5)
+                    && child.right() <= agent.right() + px(0.5)
+                    && child.top() >= agent.top() - px(0.5)
+                    && child.bottom() <= agent.bottom() + px(0.5),
+                "{mode:?}: {name} {child:?} outside highlight {agent:?}"
+            );
+        }
+        assert!(icon.left() + px(1.) >= letter.right(), "{mode:?}");
+        assert!(status.left() + px(1.) >= icon.right(), "{mode:?}");
+        let pads = [
+            letter.left() - agent.left(),
+            agent.right() - status.right(),
+            letter.top().min(icon.top()).min(status.top()) - agent.top(),
+            agent.bottom() - letter.bottom().max(icon.bottom()).max(status.bottom()),
+        ];
+        let (mut low, mut high) = (pads[0], pads[0]);
+        for pad in pads {
+            low = low.min(pad);
+            high = high.max(pad);
+        }
+        assert!(
+            low >= px(2.) && high - low <= px(1.5),
+            "{mode:?}: padding {pads:?} is not even around {agent:?}"
+        );
+    }
+}
+
+fn placed(cx: &mut VisualTestContext, selector: &'static str) -> Bounds<Pixels> {
+    cx.debug_bounds(selector)
+        .unwrap_or_else(|| panic!("missing {selector}"))
+}
+
+fn near(actual: Pixels, expected: Pixels) -> bool {
+    (actual - expected).abs() <= px(1.)
 }
 
 #[gpui::test]

@@ -323,20 +323,38 @@ impl SidebarLook {
     /// measured geometry, and it must be the row's first child so content
     /// paints above it.
     pub(super) fn highlight(&self, key: &str, state: RowState, theme: &Theme) -> Div {
+        let inset = px(self.inset());
+        let edge = px(self.spacing() / 2.);
+        self.paint_highlight(
+            div()
+                .absolute()
+                .left(inset)
+                .right(inset)
+                .top(edge)
+                .bottom(edge),
+            key,
+            state,
+            theme,
+        )
+    }
+
+    /// Focus and hover paint for a highlight that is not the row's full
+    /// inset box. The rail's mark frame uses it so the box can hug the
+    /// shared column grid.
+    pub(super) fn paint_highlight(
+        &self,
+        layer: Div,
+        key: &str,
+        state: RowState,
+        theme: &Theme,
+    ) -> Div {
         let RowState {
             selected: focused,
             highlighted,
             ..
         } = state;
-        let inset = px(self.inset());
-        let edge = px(self.spacing() / 2.);
-        let layer = div()
+        let layer = layer
             .debug_selector(|| format!("highlight-{key}"))
-            .absolute()
-            .left(inset)
-            .right(inset)
-            .top(edge)
-            .bottom(edge)
             .rounded(px(self.density.radius));
         match self.density.highlight {
             Highlight::Fill => {
