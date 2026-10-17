@@ -1968,6 +1968,8 @@ data on request and never answers stalls only that thread: the paste reports a
 timeout, and no second reader starts until the stuck one returns. WSL
 distributions are the remote endpoints there, so dropped images, pasted image
 paths, and Ctrl-V images reach a distribution's panes through the same bridge.
+A pasted Windows path keeps its backslashes as separators; only matching quotes
+around it are removed, as Explorer's "Copy as path" adds them.
 Native clipboard/drop and real SSH behavior require explicit desktop/host
 verification in addition to the mock-peer and headless tests.
 
