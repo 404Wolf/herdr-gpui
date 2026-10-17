@@ -78,11 +78,11 @@ impl Health {
         self.received = now;
         self.ping = None;
     }
-    /// Ask the link to prove itself within `LIVENESS_TIMEOUT`, sooner than a
-    /// quiet link's routine ping. Returns whether a new ping must be sent; one
+    /// Ask the link to prove itself within `timeout`, sooner than a quiet
+    /// link's routine ping. Returns whether a new ping must be sent; one
     /// already outstanding only has its deadline brought forward.
-    pub(crate) fn probe(&mut self, now: Instant) -> bool {
-        let deadline = now + LIVENESS_TIMEOUT;
+    pub(crate) fn probe(&mut self, now: Instant, timeout: Duration) -> bool {
+        let deadline = now + timeout;
         match &mut self.ping {
             Some((_, due)) => {
                 *due = (*due).min(deadline);
@@ -197,27 +197,49 @@ impl Session {
     }
 }
 
-/// How long the worker may block before the earliest of `deadlines`, or
-/// `IDLE_WAIT` if none is nearer. Queued commands, `stop`, and liveness
-/// requests wake it themselves.
+/// The worker's own waits. Tests shorten or lengthen them to exercise a
+/// deadline, or to prove that a wake rather than the cap ended a wait.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Pace {
+    pub(crate) idle_wait: Duration,
+    pub(crate) liveness: Duration,
+    pub(crate) partial_frame: Duration,
+}
+
+impl Default for Pace {
+    fn default() -> Self {
+        Self {
+            idle_wait: IDLE_WAIT,
+            liveness: LIVENESS_TIMEOUT,
+            partial_frame: TIMEOUT,
+        }
+    }
+}
+
+/// How long the worker may block before the earliest of `deadlines`, or `cap`
+/// if none is nearer. Queued commands, `stop`, liveness requests, and image
+/// publication and cancellation wake it themselves.
 pub(crate) fn wait_timeout(
     now: Instant,
+    cap: Duration,
     deadlines: impl IntoIterator<Item = Option<Instant>>,
 ) -> Duration {
     deadlines
         .into_iter()
         .flatten()
-        .fold(now + IDLE_WAIT, Instant::min)
+        .fold(now + cap, Instant::min)
         .saturating_duration_since(now)
 }
 
-/// What the caller's handle tells the worker between commands.
+/// What the caller's handle tells the worker between commands, and the pace
+/// of the worker's waits.
 #[derive(Clone, Copy)]
 pub(crate) struct Signals<'a> {
     /// Ends the connection without flushing or replaying anything.
     pub(crate) stop: &'a AtomicBool,
     /// Asks an SSH link for an immediate health probe.
     pub(crate) liveness: &'a AtomicBool,
+    pub(crate) pace: Pace,
 }
 
 pub(crate) fn run_connection(
@@ -229,7 +251,11 @@ pub(crate) fn run_connection(
     tx: &Sender<ClientEvent>,
     signals: Signals<'_>,
 ) -> Result<()> {
-    let Signals { stop, liveness } = signals;
+    let Signals {
+        stop,
+        liveness,
+        pace,
+    } = signals;
     stream.set_read_timeout(Some(POLL))?;
     stream.set_write_timeout(Some(Duration::from_secs(1)))?;
     let hello = EndpointClientHello {
@@ -258,7 +284,7 @@ pub(crate) fn run_connection(
         },
         MAX_FRAME_SIZE,
     )?;
-    let mut reader = FrameReader::new();
+    let mut reader = FrameReader::with_timeout(pace.partial_frame);
     let mut session = Session::new(surface_active, remote);
     let mut queued: Option<Command> = None;
     while !stop.load(Ordering::Acquire) {
@@ -279,7 +305,7 @@ pub(crate) fn run_connection(
         // A liveness request waits for the same boundary rather than being lost.
         if !partial_image && let Some(health) = &mut session.health {
             let now = Instant::now();
-            let probe = liveness.swap(false, Ordering::AcqRel) && health.probe(now);
+            let probe = liveness.swap(false, Ordering::AcqRel) && health.probe(now, pace.liveness);
             if health.tick(now)? || probe {
                 write_message(
                     &mut stream,
@@ -370,24 +396,34 @@ pub(crate) fn run_connection(
                 });
             }
         }
-        // Commands left behind by the batch bound must not wait; ones fenced by
-        // a request, an image, or a partial frame wait for what unfences them.
-        // A queued clipboard image is published on its own channel, so it is polled.
-        let timeout = if queued.is_none() && reader.started.is_none() && !commands.is_empty() {
+        let image = queued
+            .as_ref()
+            .and_then(|c| Some((c.image.as_ref()?, !c.bytes.is_empty())));
+        let partial_image = image.is_some_and(|(image, _)| image.writer.offset > 0);
+        // A published image waits for room in the socket, unless an inbound
+        // frame fences it; one still being prepared is woken on publication.
+        let writable = image.is_some_and(|(_, published)| published)
+            && (reader.started.is_none() || partial_image);
+        // Commands left behind by the batch bound must not wait, nor a liveness
+        // request a partial image deferred; anything else fenced by a request,
+        // an image, or a partial frame waits for what unfences it.
+        let timeout = if (queued.is_none() && reader.started.is_none() && !commands.is_empty())
+            || (!partial_image && session.health.is_some() && liveness.load(Ordering::Acquire))
+        {
             Duration::ZERO
-        } else if queued.as_ref().is_some_and(|c| c.image.is_some()) {
-            POLL
         } else {
             wait_timeout(
                 Instant::now(),
+                pace.idle_wait,
                 [
                     session.deadline(),
                     reader.deadline(),
                     session.health.as_ref().map(Health::deadline),
+                    image.and_then(|(image, published)| image.deadline(published)),
                 ],
             )
         };
-        if !commands.wait(&stream, timeout)? {
+        if !commands.wait(&stream, writable, timeout)? {
             continue;
         }
         let message = match reader.poll_batch(&mut stream) {

@@ -4,7 +4,7 @@
 
 use crate::{
     Error, Result, SendError,
-    clipboard::{ClipboardImageUpload, ImageLease, ImageSlot},
+    clipboard::{ClipboardImageUpload, ImageLease, ImageSlot, WakeOnDrop},
     event::ClientEvent,
     host_theme::HostTheme,
     method::Method,
@@ -41,6 +41,9 @@ pub(crate) struct HandleInner {
 impl Drop for HandleInner {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
+        // An upload may outlive the handle and keep the wake channel open, so
+        // closing it is not enough to end the worker's wait.
+        self.commands.wake();
     }
 }
 pub(crate) struct Command {
@@ -103,6 +106,7 @@ impl ClientHandle {
             cancelled: Arc::new(AtomicBool::new(false)),
             finished: Arc::new(AtomicBool::new(false)),
             reserved_at: std::time::Instant::now(),
+            waker: self.inner.commands.waker(),
         });
         if claim_image {
             lease.claim_image()?;
@@ -121,6 +125,7 @@ impl ClientHandle {
         Ok(ClipboardImageUpload {
             target,
             sender,
+            _wake: WakeOnDrop(lease.waker.clone()),
             lease,
             stop: self.inner.stop.clone(),
         })

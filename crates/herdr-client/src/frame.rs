@@ -3,12 +3,12 @@
 
 use crate::{
     Error, Result,
-    limits::{COMMAND_TIMEOUT, POLL, TIMEOUT},
+    limits::{COMMAND_TIMEOUT, POLL},
     protocol::*,
 };
 use std::{
     io::{self, Read, Write},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 /// Only one bounded write attempt per poll; never restart a partial frame.
@@ -19,11 +19,12 @@ pub(crate) struct ImageWriter {
 }
 
 impl ImageWriter {
+    pub(crate) fn deadline(&self) -> Option<Instant> {
+        self.started.map(|started| started + COMMAND_TIMEOUT)
+    }
+
     pub(crate) fn check_timeout(&self) -> Result<()> {
-        if self
-            .started
-            .is_some_and(|started| started.elapsed() >= COMMAND_TIMEOUT)
-        {
+        if self.deadline().is_some_and(|due| Instant::now() >= due) {
             return Err(Error::ClipboardImageWriteTimeout);
         }
         Ok(())
@@ -55,13 +56,21 @@ pub(crate) struct FrameReader {
     pub(crate) bytes: Vec<u8>,
     pub(crate) target: usize,
     pub(crate) started: Option<Instant>,
+    /// How long one frame may take to arrive once its first byte has.
+    timeout: Duration,
 }
 impl FrameReader {
+    #[cfg(test)]
     pub(crate) fn new() -> Self {
+        Self::with_timeout(crate::limits::TIMEOUT)
+    }
+
+    pub(crate) fn with_timeout(timeout: Duration) -> Self {
         Self {
             bytes: Vec::new(),
             target: 4,
             started: None,
+            timeout,
         }
     }
 
@@ -86,9 +95,11 @@ impl FrameReader {
     }
 
     pub(crate) fn deadline(&self) -> Option<Instant> {
-        self.started.map(|started| started + TIMEOUT)
+        self.started.map(|started| started + self.timeout)
     }
 
+    /// The worker calls this on every pass, so a peer that stops mid-frame
+    /// fails the connection even though no further read happens.
     pub(crate) fn check_timeout(&self) -> Result<()> {
         if self.deadline().is_some_and(|due| Instant::now() >= due) {
             tracing::warn!(category = "partial_frame", "client timeout");
@@ -101,7 +112,6 @@ impl FrameReader {
         &mut self,
         stream: &mut (impl Read + ?Sized),
     ) -> Result<Option<ServerMessage>> {
-        self.check_timeout()?;
         let mut buf = [0; 8192];
         let len = buf.len().min(self.target - self.bytes.len());
         match stream.read(&mut buf[..len]) {

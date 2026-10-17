@@ -3,6 +3,7 @@ use super::*;
 mod fallback_paste;
 mod reservations;
 mod uploads;
+mod wakes;
 
 fn reserve(client: &Client) -> ClipboardImageUpload {
     client
