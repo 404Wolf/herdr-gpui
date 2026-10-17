@@ -47,6 +47,11 @@ confirm_close_workspace = true
 remove_merged_worktrees = false
 # Show the Agents section below Spaces in the sidebar.
 show_agents = true
+# Show the Agents title row, with the sort toggle on its right. Hidden, the
+# order follows Herdr's `ui.agent_panel_sort` until you toggle it, unless a
+# plugin sets the agent view, which keeps the header shown. Also under
+# Settings > Sidebar.
+show_agents_header = true
 # Show the search field at the top of the sidebar, which finds devices,
 # worktrees, and branches. Also under Settings > Sidebar.
 show_sidebar_search = true

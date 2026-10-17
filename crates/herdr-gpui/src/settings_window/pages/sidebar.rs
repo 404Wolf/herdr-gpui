@@ -218,6 +218,18 @@ impl SettingsWindow {
                     ),
             )
             .child(
+                ui::row(theme, "sidebar-show-agents-header", "Show agents header")
+                    .description(
+                        "The Agents title row with the sort toggle. Hidden, the order follows Herdr's ui.agent_panel_sort unless a plugin sets the agent view, which keeps the row.",
+                    )
+                    .control(self.preference_toggle(
+                        "sidebar-show-agents-header-toggle",
+                        self.config.show_agents_header,
+                        Preference::ShowAgentsHeader(!self.config.show_agents_header),
+                        cx,
+                    )),
+            )
+            .child(
                 ui::row(theme, "sidebar-show-search", "Show search")
                     .description("The search field above the workspaces.")
                     .control(self.preference_toggle(

@@ -838,6 +838,11 @@ The pane dialog's **Do not ask again** checkbox (click it or press Space) saves
 `confirm_close_pane = false` to `config-gpui.local.toml` once the close is sent. Saved edits apply automatically. The
 **Show agents** control in **Settings > Sidebar** saves
 `show_agents` immediately, independently of the layout draft saved on close.
+Set `show_agents_header = false` (**Settings > Sidebar > Show agents header**)
+to hide the Agents title row and its sort toggle while keeping the list. The
+order then follows Herdr's `ui.agent_panel_sort` (`priority` or `grouped`)
+unless it was toggled earlier or a plugin sets the agent view, which keeps the
+header shown while that view is active.
 
 A search field at the top of the sidebar finds devices, worktrees, and
 branches by name; while it holds text, results grouped by kind replace the
