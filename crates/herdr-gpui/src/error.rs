@@ -40,7 +40,7 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[error("Could not keep the display awake: {0}")]
+    #[error("Could not keep the machine awake: {0}")]
     Caffeine(#[source] keepawake::Error),
     #[error("No agent is working, so there is nothing to stay awake for")]
     CaffeineNoWorkingAgents,
@@ -972,8 +972,8 @@ pub enum Error {
     WorktreeScriptsUnsupportedHost,
     #[error("Select a checkout from the daemon's worktree list.")]
     WorktreeSelection,
-    /// Probes that open a shell on the host (usage, load, ports, checkpoints)
-    /// have no route into a WSL distribution yet.
+    /// Probes that open a shell on the host (usage, ports, checkpoints) have
+    /// no route into a WSL distribution yet; CPU and memory do.
     #[error("This is not available for WSL distributions yet.")]
     WslHostUnsupported,
     // keep-sorted end

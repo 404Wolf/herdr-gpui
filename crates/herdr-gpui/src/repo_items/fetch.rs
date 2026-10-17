@@ -7,10 +7,7 @@ use crate::{
     Error,
     pull_request::{Input, local_checkout, local_repository, run},
 };
-use std::{
-    process::Command,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 pub(super) const TIMEOUT: Duration = Duration::from_secs(20);
 /// Fetching one ref can wait on the network and on credential prompts that are
@@ -67,7 +64,7 @@ pub(super) fn fetch_branch(
     let deadline = Instant::now() + FETCH_TIMEOUT;
     let checkout = local_checkout(input, deadline, cancelled)?;
     let refspec = item.fetch_refspec();
-    let mut command = Command::new("git");
+    let mut command = herdr_client::new_command("git");
     command
         .args(["-c", "core.fsmonitor=false", "-C", &checkout])
         .args(["fetch", "--no-tags", "--quiet", "origin", &refspec]);

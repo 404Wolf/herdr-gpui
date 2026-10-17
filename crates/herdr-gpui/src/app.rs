@@ -222,7 +222,7 @@ pub(crate) fn run() -> std::process::ExitCode {
     }
     // A control command asked for JSON gets its usage errors as JSON too.
     let json_errors = cli::control::wants_json(&args);
-    let LaunchOptions { target, mode } = match LaunchOptions::parse(args) {
+    let LaunchOptions { target, mode } = match LaunchOptions::parse(&args) {
         Ok(options) => options,
         Err(error) if json_errors => {
             println!(

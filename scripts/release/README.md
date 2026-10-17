@@ -164,10 +164,121 @@ OUTPUT_DIR THIRD_PARTY_NOTICES` (standard-library Python, since the runner has n
 zip tool) writes one `Herdr-VERSION-TARGET.zip` per target with a same-named root
 containing `herdr-gpui.exe`, the windowed `herdr-gpui-launcher.exe` that the
 installer's Start menu shortcut opens, and `licenses/` holding the same license
-and notice files as the Linux tree. Entries carry a fixed timestamp. Both zips are mandatory in the
-asset manifest and receive checksums, Sigstore sidecars and provenance like
-every other asset, but they are not Authenticode-signed and have no updater archive
-or update-manifest entry: Windows installs update by manual download.
+and notice files as the Linux tree. Entries carry a fixed timestamp.
+
+`scripts/release/windows-installer.py` then installs the pinned Inno Setup
+compiler (`install-iscc`, checked against its SHA-256), compiles
+`herdr-gpui.iss` over the extracted zip tree into
+`Herdr-VERSION-TARGET-setup.exe` (`build`), and installs and uninstalls it on
+the runner (`smoke`), checking the files, their subsystems, `herdr-gpui.exe`'s
+output, the Start menu shortcut's target (the launcher) and AppUserModelID,
+the user `PATH` entry, and the Settings entry. CI's `windows-package` job runs the same
+optimized build, packaging, installer build, and install/uninstall check on
+`windows-2025` for any pull request that changes their inputs
+(`scripts/ci-changes.sh` lists them), and the required gate then requires it. The installer is per-user (no elevation),
+installs to `%LOCALAPPDATA%\Programs\Herdr UI` as `site/install.ps1` does, adds
+that directory to the user `PATH`, and creates the Start menu shortcut to the
+launcher. Both zips and both
+installers are mandatory in the asset manifest and receive checksums, Sigstore
+sidecars and provenance like every other asset, after the Authenticode signing
+below. They have no updater archive or update-manifest entry: Windows installs
+update by manual download, or through winget.
+
+## Windows Signing
+
+The `windows` job's zip and installer are unsigned, and so are every local and
+pull request build: `windows-installer.py build` signs only when given `--sign`,
+and `herdr-gpui.iss` only sets `SignTool` when ISCC receives one. The release
+workflow then signs in `windows-sign`, one job per target on `windows-2025`,
+gated by the protected **`release`** environment like `sign`:
+
+1. `windows-signing.py unpack` extracts the tested zip without running anything.
+2. `azure/login` signs in to Azure with the job's OIDC token, and
+   `azure/artifact-signing-action` signs `herdr-gpui.exe` and
+   `herdr-gpui-launcher.exe` with SHA-256 and an RFC 3161 timestamp from
+   `http://timestamp.acs.microsoft.com`.
+3. `windows-signing.py repack` refuses unless the tree holds exactly the zip's
+   files and each executable differs from the tested one only by its appended
+   signature (checksum, certificate table entry, alignment padding), then writes
+   the zip again with the same entry order and timestamps.
+4. `windows-installer.py build --sign` compiles the installer from the signed
+   zip. ISCC calls `windows-sign-file.ps1` as its `SignTool`, with
+   `SignedUninstaller=yes`, to sign the uninstaller it embeds and the final
+   `-setup.exe`, through the ArtifactSigning module and Azure CLI login of
+   step 2 and the same digest and timestamp.
+5. `windows-signing.py verify` requires Windows to report every signature as
+   valid and timestamped, from exactly `WINDOWS_SIGNING_SUBJECT`.
+
+`windows-smoke` then installs and uninstalls each signed installer on its own
+architecture, outside the signing environment, and checks the signatures of
+the installer and of the installed app, launcher and uninstaller. `attest`
+takes only the signed `windows-signed-TARGET` artifacts, so checksums, Sigstore
+and GitHub provenance (`actions/attest-build-provenance`) cover the bytes users
+download.
+
+Signing needs this one-time Azure setup, which only the maintainer can do:
+
+1. An Azure Artifact Signing (formerly Trusted Signing) account with a
+   completed identity validation and a public-trust certificate profile.
+2. A Microsoft Entra app registration with a federated credential for issuer
+   `https://token.actions.githubusercontent.com` and subject
+   `repo:penso/herdr-gpui:environment:release`, holding the **Artifact Signing
+   Certificate Profile Signer** role on the certificate profile and nothing
+   else. No client secret: only an OIDC token from a job in the protected
+   `release` environment can use it.
+3. These variables on the `release` environment (not the repository), none
+   secret:
+
+   | Variable | Value |
+   | --- | --- |
+   | `AZURE_CLIENT_ID` | the app registration's client ID |
+   | `AZURE_TENANT_ID` | its tenant ID |
+   | `AZURE_SUBSCRIPTION_ID` | the subscription holding the signing account |
+   | `ARTIFACT_SIGNING_ENDPOINT` | the account's regional endpoint, such as `https://eus.codesigning.azure.net/` |
+   | `ARTIFACT_SIGNING_ACCOUNT` | the signing account name |
+   | `ARTIFACT_SIGNING_PROFILE` | the certificate profile name |
+   | `WINDOWS_SIGNING_SUBJECT` | the certificate subject Windows reports, such as `CN=..., O=..., L=..., S=..., C=...` |
+
+   The subject is the validated identity, so read it from a first signed file
+   (`(Get-AuthenticodeSignature file.exe).SignerCertificate.Subject`). Until it
+   is set, `windows-sign` stops at its verify step, before anything is
+   published. Artifact Signing certificates last days, so pin the subject,
+   never a thumbprint.
+
+## Winget
+
+After a stable release publishes, the `winget` job (and the same job in
+`promote.yml` when a beta is promoted) submits it to
+[microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) as
+`Penso.HerdrUI`. It downloads the published `SHA256SUMS`, installs the pinned
+[Komac](https://github.com/russellbanks/Komac) after checking its SHA-256, and
+runs `winget.py submit`: Komac writes the new version's manifests from the
+previous winget-pkgs version and the `-setup.exe` release URLs (x64, plus
+arm64 whenever the release lists it), and the script refuses to submit unless
+every installer is a per-user (`Scope: user`) Inno Setup installer with the
+release's URL and SHA-256, the publisher is `Herdr UI`, and the product code is
+the installer's `AppId`. Only then does `komac submit` open the pull request.
+Betas never reach winget.
+
+`Penso.HerdrUI` and the publisher must never change: winget matches installed
+copies and upgrades by them. `winget.py` holds both, and its tests tie them to
+`herdr-gpui.iss`.
+
+The maintainer has to:
+
+1. Create the protected **`winget`** environment, with required reviewers and
+   deployments limited to `main`, like `homebrew`.
+2. Fork `microsoft/winget-pkgs` to the account that will submit, and store a
+   classic personal access token for that account with only the `public_repo`
+   scope as the `winget` environment secret `WINGET_TOKEN`. Komac cannot open
+   pull requests with a fine-grained token.
+3. Submit the first version by hand, after the first signed release: Komac's
+   update needs an existing version to start from. Run
+   `komac new Penso.HerdrUI --version VERSION --urls URL_X64 URL_ARM64` with
+   the two published `-setup.exe` URLs, check that it detects `inno` and
+   `user` scope, set the publisher and package name to `Herdr UI`, the license
+   and URLs, and submit. Until that version is merged, the job only prints a
+   warning.
 
 ## Updater Signing
 
@@ -178,10 +289,10 @@ signing step of `sign` receives it; builds, tests, metadata, OIDC and publicatio
 never do. The public key is validated before builds and matched against the
 private key before signing exact JSON bytes. See [updater setup](../../docs/updating.md).
 
-The exact release base set is nineteen files: the DMG, two manual Linux archives,
-their `.deb`, `.rpm` and Arch packages, two Windows zips, SBOM, three updater archives, `update-manifest.json`, and its
+The exact release base set is twenty-one files: the DMG, two manual Linux archives,
+their `.deb`, `.rpm` and Arch packages, two Windows zips and two Windows installers, SBOM, three updater archives, `update-manifest.json`, and its
 raw 64-byte Ed25519 `update-manifest.sig`, plus `package-manifest.json` and
-`package-manifest.sig` for the six Linux packages. All nineteen receive checksum and Sigstore sidecars and GitHub
+`package-manifest.sig` for the six Linux packages. All twenty-one receive checksum and Sigstore sidecars and GitHub
 provenance in the separate protected OIDC job. The raw signature is not overwritten:
 its Sigstore sidecar is `update-manifest.sig.sig`; the JSON's is
 `update-manifest.json.sig` (and likewise for the package manifest). `SHA256SUMS` covers all 95 base/sidecar files; the

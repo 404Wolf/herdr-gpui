@@ -165,7 +165,11 @@ mod linux {
             std::env::var_os("WAYLAND_DISPLAY").is_some(),
             std::env::var_os("DISPLAY").is_some(),
             |program, args, limit, deadline| {
-                output(Command::new(program).args(args), limit, deadline)
+                output(
+                    herdr_client::new_command(program).args(args),
+                    limit,
+                    deadline,
+                )
             },
         )
     }

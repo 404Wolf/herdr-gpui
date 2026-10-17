@@ -157,8 +157,8 @@ release workflow. A cask install updates itself through Homebrew: the in-app
 updater detects that Homebrew owns the bundle and runs `brew upgrade --cask
 herdr-gpui` for you, so Homebrew's records stay correct. If its metadata is stale,
 the updater runs `brew update` and retries once. The update panel shows progress
-throughout. macOS `.dmg`, experimental Linux packages, and experimental Windows `.zip`s
-are also published on [Releases](https://github.com/penso/herdr-gpui/releases).
+throughout. macOS `.dmg`, experimental Linux packages, and experimental Windows installers
+and `.zip`s are also published on [Releases](https://github.com/penso/herdr-gpui/releases).
 
 Betas are published as GitHub prereleases before being promoted to stable. To try
 them in a standalone install, turn on **Settings > General > Install beta releases**
@@ -224,8 +224,14 @@ The script ([`site/install.ps1`](site/install.ps1)) downloads the zip for your
 architecture, checks its published SHA-256, installs `herdr-gpui.exe` and
 `herdr-gpui-launcher.exe` under `%LOCALAPPDATA%\Programs\Herdr UI`, adds that
 directory to your user `PATH`, and creates a **Herdr UI** Start menu shortcut
-that opens the launcher. Windows builds never update
-themselves; run the command again to update. See [Windows](#windows) for what
+that opens the launcher. Prefer a regular installer? Each
+[release](https://github.com/penso/herdr-gpui/releases/latest) also has
+`Herdr-VERSION-x86_64-pc-windows-msvc-setup.exe` and
+`Herdr-VERSION-aarch64-pc-windows-msvc-setup.exe`, which install the same files
+to the same place for the current user, without administrator rights, and add
+an uninstaller under **Settings > Apps**. Windows builds never update
+themselves; run the command or a newer installer again to update. See
+[Windows](#windows) for what
 works on the platform.
 
 ### From source
@@ -271,8 +277,9 @@ dependency helper below installs both; on macOS, use `brew install python jq`.
 ### Linux Builds
 
 Application shortcuts use **Ctrl+Shift** on Linux, including Ctrl+Shift+T for a
-new tab and Ctrl+Shift+C/V for copy/paste. Customize them from **Herdr > Keyboard
-Shortcuts**; see [keyboard shortcuts](crates/herdr-gpui/README.md#keyboard-shortcuts).
+new tab and Ctrl+Shift+C/V for copy/paste, and Windows uses the same profile.
+Customize them from **Herdr > Keyboard Shortcuts**; see
+[keyboard shortcuts](crates/herdr-gpui/README.md#keyboard-shortcuts).
 
 On Ubuntu 24.04 (x86_64 or ARM64), run `bash scripts/install-linux-deps.sh`
 before building. This installs GPUI's X11/Wayland/font development dependencies
@@ -296,18 +303,24 @@ WSL distribution can be added as a device from **Add Device…**; see
 [WSL distributions](crates/herdr-gpui/README.md#wsl-distributions). Saved SSH
 hosts, in-app updates, saved GitHub credentials, and the avatar disk cache are
 unavailable and report that plainly; see
-[the GUI README](crates/herdr-gpui/README.md#windows).
+[the GUI README](crates/herdr-gpui/README.md#windows). Shortcuts use Ctrl, not
+the Win key, with the Linux defaults (Ctrl+Shift+T, Ctrl+Shift+P,
+Ctrl+Shift+Q); see
+[keyboard shortcuts](crates/herdr-gpui/README.md#keyboard-shortcuts).
 
 Each release publishes `Herdr-VERSION-x86_64-pc-windows-msvc.zip` and
 `Herdr-VERSION-aarch64-pc-windows-msvc.zip` (native ARM64), each containing
-`herdr-gpui.exe`, `herdr-gpui-launcher.exe`, and their license notices. They
-carry the same checksums, Sigstore signatures, and build provenance as the other
-assets, but they are not Authenticode-signed, so SmartScreen warns on first
-launch, and they never update themselves: rerun the
-[install script](#windows-experimental) or download each new release manually.
-`herdr-gpui.exe` is a console program, because it is also the command line
-agents and scripts run. Open the app with `herdr-gpui-launcher.exe` (the Start
-menu shortcut's target), which starts `herdr-gpui.exe` without a console window.
+`herdr-gpui.exe`, `herdr-gpui-launcher.exe`, and their license notices, beside
+the matching `-setup.exe` installers. They carry the same checksums, Sigstore
+signatures, and build provenance as the other assets, and both executables,
+the installers, and their uninstaller are Authenticode-signed: a release
+publishes only after Windows accepts those signatures (see
+[`scripts/release/README.md`](scripts/release/README.md)). They never update
+themselves: rerun the [install script](#windows-experimental) or a newer
+installer. `herdr-gpui.exe` is a console program, because it is also the
+command line agents and scripts run. Open the app with
+`herdr-gpui-launcher.exe` (the Start menu shortcut's target), which starts
+`herdr-gpui.exe` without a console window.
 
 ## How it connects
 

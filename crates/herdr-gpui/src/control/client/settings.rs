@@ -202,7 +202,7 @@ pub(super) fn integrations(
 fn install_skill() -> crate::Result<Output> {
     use crate::agent_skill::{self, Choice};
     let home = crate::config::home()?;
-    let text = agent_skill::text(std::env::current_exe().ok().as_deref());
+    let text = agent_skill::text(agent_skill::executable().as_deref());
     let paths = agent_skill::install(&home, &text)?;
     let mut message = String::from("Installed the agent skill at:");
     for path in &paths {

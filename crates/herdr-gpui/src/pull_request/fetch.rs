@@ -348,7 +348,7 @@ pub(crate) fn local_checkout(
             // metadata, use Git's own worktree registry, never pane cwd or the
             // new-workspace directory; that directory is read only when the
             // daemon has no metadata at all, and is verified like this one.
-            let mut command = Command::new("git");
+            let mut command = herdr_client::new_command("git");
             command.args([
                 "-c",
                 "core.fsmonitor=false",
@@ -401,7 +401,7 @@ fn git(
     deadline: Instant,
     cancelled: &impl Fn() -> bool,
 ) -> crate::Result<String> {
-    let mut command = Command::new("git");
+    let mut command = herdr_client::new_command("git");
     command
         .args(["-c", "core.fsmonitor=false", "-C", checkout])
         .args(args);

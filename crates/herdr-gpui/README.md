@@ -541,13 +541,15 @@ agents = []
 The script is the agents' installs, in that order and each skipped when the
 tool is already on the machine, then your lines, run with `sh -e` so the first
 failing command stops it. Claude Code and OpenCode use their official
-`curl … | bash` installers; Codex and Gemini CLI need `npm` on the device and
+installers, downloaded before they run so a failed download stops the script;
+Codex and Gemini CLI need `npm` on the device and
 are skipped with a note when it is missing (a system Node may also need root
 for `npm install -g`). Open a new tab afterwards to pick up PATH changes.
 
 Each provider's form has a **Run the setup script when it connects** switch,
 shown when a script is configured: on for a new machine, and in Coder's form
-off when attaching an existing workspace. When the device is ready the script
+off when attaching an existing workspace. Boat's **Finish setup** on a saved
+sandbox does not run it again. When the device is ready the script
 waits, for up to 30 minutes, until a window shows that device, then runs in a
 new, focused `setup` tab of the device's first workspace, like a worktree's
 setup script; nothing runs in the background. The script is yours, from this
@@ -876,6 +878,12 @@ The pane dialog's **Do not ask again** checkbox (click it or press Space) saves
 `confirm_close_pane = false` to `config-gpui.local.toml` once the close is sent. Saved edits apply automatically. The
 **Show agents** control in **Settings > Sidebar** saves
 `show_agents` immediately, independently of the layout draft saved on close.
+
+Agents list in their own section below Spaces by default. Set top-level
+`agents_placement = "nested"`, or pick **Under workspaces** for **Agents
+placement** in **Settings > Sidebar**, to list each agent under the workspace
+it runs in instead; Spaces then takes the full sidebar height. The collapsed
+rail keeps its own agents section either way.
 
 A search field at the top of the sidebar finds devices, worktrees, and
 branches by name; while it holds text, results grouped by kind replace the
@@ -1490,7 +1498,8 @@ buttons. Typing in the terminal or clicking elsewhere dismisses the pill.
 The whole selection must be visible on screen.
 This also works with copying on selection disabled or the highlight set to clear
 after copying. For an existing selection, use **Annotate Selection for the Agent**
-in the command palette (Cmd+Shift+A on macOS, Ctrl+Alt+Shift+A on Linux).
+in the command palette (Cmd+Shift+A on macOS, Ctrl+Alt+Shift+A on Linux and
+Windows).
 Notes go to the agent in that pane, falling back to the first agent in its
 workspace; with no agent, they are copied to the clipboard.
 
@@ -2946,14 +2955,19 @@ shortcuts remain visible in the reference and are configured in Herdr's own
 `[keys]` / `[[keys.command]]` tables. Clipboard shortcuts are fixed Edit actions.
 
 Defaults are selected independently for Linux, macOS, and Windows. macOS uses
-Cmd; the experimental Windows profile currently retains its existing bindings.
-Linux uses **Ctrl+Shift** for terminal-facing application actions, keeping Super
-available to the desktop and plain Ctrl keys available to terminal programs.
-This follows terminal conventions alongside the
+Cmd. Linux uses **Ctrl+Shift** for terminal-facing application actions, keeping
+Super available to the desktop and plain Ctrl keys available to terminal
+programs. This follows terminal conventions alongside the
 [GNOME keyboard guidelines](https://developer.gnome.org/hig/reference/keyboard.html),
 whose plain Ctrl editing shortcuts also work in the app's text fields.
 
-| Action | Linux default |
+Windows starts from the Linux profile, which matches Windows Terminal's
+Ctrl+Shift conventions: no default uses the Win key, which Windows keeps for
+itself, and plain Ctrl keys still reach terminal programs. Reset font size is
+Ctrl+0 there, as in Windows Terminal, because Windows can take Ctrl+Shift+0 for
+switching input languages. Alt+F4 closes a window through Windows itself.
+
+| Action | Linux and Windows default |
 | --- | --- |
 | New tab / New window | Ctrl+Shift+T / Ctrl+Alt+N |
 | New workspace / New worktree | Ctrl+Alt+Shift+N / Ctrl+Shift+N |
@@ -2965,6 +2979,9 @@ whose plain Ctrl editing shortcuts also work in the app's text fields.
 | Next / Previous tab | Ctrl+PageDown / Ctrl+PageUp |
 | Toggle sidebar / New browser tab | Ctrl+Shift+B / Ctrl+Alt+Shift+B |
 | Settings / Keyboard Shortcuts | Ctrl+Shift+, / Ctrl+Shift+/ |
+| Larger / Smaller text | Ctrl+Shift+= / Ctrl+Shift+- |
+| Reset text size | Ctrl+Shift+0 (Linux) / Ctrl+0 (Windows) |
+| Quit | Ctrl+Shift+Q |
 | Full screen | F11 |
 
 The in-app reference lists all platform defaults and current overrides. The
@@ -3394,7 +3411,7 @@ Ctrl+Shift+U is left unbound for
   Rows chosen often and recently rise among the matches for a typed query, and
   the Projects filter lists the most frecent projects first before anything is
   typed; that history stays on this machine in `palette-frecency.json`.
-  **Resume Palette** (Cmd-Shift-R, Ctrl+Alt+Shift+R on Linux) reopens the
+  **Resume Palette** (Cmd-Shift-R, Ctrl+Alt+Shift+R on Linux and Windows) reopens the
   palette with its last query, filters, and selected row. Navigation
   (Go To) also filters agents by the status the daemon reports, like Herdr's
   navigator: click **All agents**, **Blocked**, **Working**, **Idle**, or
@@ -3777,10 +3794,17 @@ catalog (`%LOCALAPPDATA%\herdr\client`), never in the catalog itself, whose
 strict schema cannot name one. The device you last chose, a distribution
 included, is selected again at startup.
 
-What still runs a shell on the host is not wired into a distribution yet and
-says so: plan usage, CPU and memory, listening ports, agent checkpoints,
-teleport, file transfers, and port forwards. WSL already forwards a
-distribution's `localhost` ports to Windows.
+CPU and memory are sampled as for an SSH host running Linux: one `/bin/sh`
+per distribution, started with `wsl.exe --distribution NAME --exec /bin/sh -s`
+and kept open between samples, which reads `/proc`. The status bar and the
+distribution's sidebar row show them. A distribution shares the machine's
+CPUs, so its CPU figure is what its processes use, and its memory is what
+WSL has given that distribution.
+
+What else runs a shell on the host is not wired into a distribution yet and
+says so: plan usage, listening ports, agent checkpoints, teleport, file
+transfers, and port forwards. WSL already forwards a distribution's
+`localhost` ports to Windows.
 
 These features are unavailable on Windows and say so rather than failing quietly:
 
@@ -3800,10 +3824,25 @@ Starting a local `herdr server` looks for `herdr.exe` and uses
 `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` in place of `process_group(0)`, so
 the daemon survives the GUI and no console window appears.
 
+Console children (git, ssh, `wsl.exe`, a shell) must not open a window of
+their own either: every child is built with `herdr_client::new_command`, which
+sets `CREATE_NO_WINDOW` on Windows, and clippy's `disallowed_methods`
+(`clippy.toml`) rejects `Command::new` elsewhere outside tests and the build
+script. Started by the launcher, they would share its hidden console anyway;
+run as `herdr-gpui.exe` from Explorer or another app, they still open none.
+
 The build script embeds the Herdr icon as icon resource 1, which GPUI loads for
 its windows, and version information that Explorer and Task Manager show as
 **Herdr UI** with the release version, or `dev` for a local build. See
 [the icon README](../../assets/icons/README.md#windows).
+
+Each release also has a per-user Inno Setup installer,
+`Herdr-VERSION-TARGET-setup.exe` (`scripts/release/herdr-gpui.iss`), which
+installs the zip's files where `site/install.ps1` does, adds the directory to
+the user `PATH`, points the Start menu shortcut at the launcher with the app's
+AppUserModelID, and adds an uninstaller under **Settings > Apps**. See
+[`scripts/release/README.md`](../../scripts/release/README.md) for building,
+signing, and smoke-testing it.
 
 Cross type-check it from a Mac or Linux machine with `just lint-windows`, which
 targets `x86_64-pc-windows-gnu` because those hosts cannot supply the MSVC C

@@ -22,6 +22,7 @@ mod keychain_access;
 mod labels;
 #[cfg(unix)]
 mod opencode_auth;
+mod pace_exhausted;
 mod provider_data;
 mod provider_settings;
 mod refresh;

@@ -49,6 +49,8 @@ mod layouts;
 #[cfg(test)]
 mod listening_ports;
 #[cfg(test)]
+mod nested_agents;
+#[cfg(test)]
 mod palette;
 #[cfg(test)]
 mod palette_header;
@@ -89,6 +91,8 @@ mod update_notes;
 mod update_notes_scrollbar;
 #[cfg(test)]
 mod update_panel;
+#[cfg(test)]
+mod workspace_click_hover;
 #[cfg(test)]
 mod workspace_menu;
 #[cfg(test)]
@@ -628,6 +632,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         sidebar_scroll: Default::default(),
         sidebar_revealed: Default::default(),
         sidebar_pin_reveal: Default::default(),
+        sidebar_nested_reveal: Default::default(),
         sidebar_folded: Default::default(),
         sidebar_search: crate::sidebar::SidebarSearch::new(cx),
         _poll: Task::ready(()),

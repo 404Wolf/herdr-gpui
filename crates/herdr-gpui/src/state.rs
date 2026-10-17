@@ -75,6 +75,8 @@ pub struct LiveState {
     /// Why `ssh` refused the bridge, when that is how the connection ended.
     pub(crate) ssh_failure: Option<herdr_client::SshFailure>,
     pub missing_installation: bool,
+    /// The daemon's reported version, from an accepted handshake or mismatch notice.
+    pub daemon_version: Option<String>,
     /// Why the last handshake was refused, when updating one side fixes it.
     /// Cleared by the next accepted handshake.
     pub version_mismatch: Option<herdr_client::VersionMismatch>,
@@ -196,6 +198,7 @@ impl Default for LiveState {
             error: None,
             ssh_failure: None,
             missing_installation: false,
+            daemon_version: None,
             version_mismatch: None,
             local_daemon_peer: false,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -254,6 +257,7 @@ impl LiveState {
             error,
             ssh_failure,
             missing_installation,
+            daemon_version,
             version_mismatch,
             local_daemon_peer,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -314,6 +318,7 @@ impl LiveState {
             && *error == self.error
             && *ssh_failure == self.ssh_failure
             && *missing_installation == self.missing_installation
+            && *daemon_version == self.daemon_version
             && *version_mismatch == self.version_mismatch
             && *local_daemon_peer == self.local_daemon_peer
             && *supports_pane_clear == self.supports_pane_clear
@@ -458,6 +463,15 @@ impl LiveState {
         }
     }
 
+    /// The daemon's reported version from an active connection or mismatch notice.
+    pub fn daemon_version(&self) -> Option<&str> {
+        self.daemon_version.as_deref().or_else(|| {
+            self.version_mismatch
+                .as_ref()
+                .and_then(|m| m.server_version())
+        })
+    }
+
     /// Track activation without treating receipt or focus gain as presentation.
     pub fn set_outer_focus(&mut self, focused: bool) {
         // A focus report retried after inbox contention must still cause a draw.
@@ -469,6 +483,7 @@ impl LiveState {
         match event {
             ClientEvent::Connected(welcome) => {
                 self.settings_reload = false;
+                self.daemon_version = sanitize_daemon_version(&welcome.server_version);
                 self.supports_pane_clear = Method::PaneClear.advertised_in(&welcome.methods);
                 self.supports_tab_move = Method::TabMove.advertised_in(&welcome.methods);
                 self.supports_workspace_move =
@@ -566,7 +581,12 @@ impl LiveState {
             }
             ClientEvent::SurfaceImages(images) => self.surface_images = images,
             // The `Disconnected` that follows carries the reason text.
-            ClientEvent::VersionMismatch(mismatch) => self.version_mismatch = Some(mismatch),
+            ClientEvent::VersionMismatch(mismatch) => {
+                if let Some(version) = mismatch.server_version() {
+                    self.daemon_version = sanitize_daemon_version(version);
+                }
+                self.version_mismatch = Some(mismatch);
+            }
             ClientEvent::Disconnected { reason, ssh } => {
                 self.ssh_failure = ssh;
                 self.settings_reload = false;
@@ -819,6 +839,19 @@ fn sanitize_window_title(title: &str) -> Option<String> {
         .collect::<String>();
     let title = title.trim();
     (!title.is_empty()).then(|| title.to_owned())
+}
+
+/// Maximum characters kept for a daemon version string.
+pub(crate) const MAX_DAEMON_VERSION_CHARS: usize = 64;
+
+fn sanitize_daemon_version(version: &str) -> Option<String> {
+    let version = version
+        .chars()
+        .filter(|ch| !ch.is_control())
+        .take(MAX_DAEMON_VERSION_CHARS)
+        .collect::<String>();
+    let version = version.trim();
+    (!version.is_empty()).then(|| version.to_owned())
 }
 
 fn coherent(snapshot: &ClientShellSnapshot, surface: &PaneSurfaceFrame) -> bool {
