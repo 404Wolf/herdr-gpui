@@ -900,8 +900,9 @@ every pane, so system services and servers started outside Herdr never show,
 and its `HERDR_SOCKET_PATH` names the same daemon, so two sessions on one
 machine never claim each other's servers.
 Every five seconds each host runs `ss -ltnp` (Linux) or `lsof -iTCP
--sTCP:LISTEN` (macOS) in its own shell, this machine's locally and a connected
-remote host's over SSH, listing only your own processes. A remote server
+-sTCP:LISTEN` (macOS) in its own shell, this machine's locally, a connected
+remote host's over SSH, and a WSL distribution's through `wsl.exe` (see
+[WSL distributions](#wsl-distributions)), listing only your own processes. A remote server
 always opens at `http://127.0.0.1:<port>` through an SSH tunnel started on the
 first click, never at the address SSH reaches the host by (a Tailscale
 `HostName`, say): `ssh -N -L` from this machine's loopback, with the same
@@ -3750,10 +3751,13 @@ Plan usage is read through its own `wsl.exe` shell in the same way, as on an
 SSH host: the distribution's own agent sign-ins, read with its `python3` or
 `jq` and sent with its `curl`, so they never leave it.
 
+Listening ports are scanned with the distribution's own `ss` (or `lsof`)
+through another `wsl.exe` shell. WSL forwards a distribution's `localhost`
+ports to Windows, so a port opens at `http://localhost:<port>` on this machine
+with no tunnel.
+
 What else runs a shell on the host is not wired into a distribution yet and
-says so: listening ports, agent checkpoints, teleport, file transfers, and
-port forwards. WSL already forwards a distribution's `localhost` ports to
-Windows.
+says so: agent checkpoints, teleport, file transfers, and port forwards.
 
 These features are unavailable on Windows and say so rather than failing quietly:
 
