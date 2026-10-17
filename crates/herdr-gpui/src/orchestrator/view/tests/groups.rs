@@ -37,7 +37,7 @@ fn issues_group_by_priority_and_children_stay_under_their_parent() {
         Sort::Updated,
         &HashSet::new(),
     );
-    let lines = issue_lines(&rows, &items);
+    let lines = issue_lines(&rows, |row| &items[row.item]);
     assert_eq!(
         headings(&lines, &items),
         [
@@ -130,13 +130,21 @@ fn pull_requests_group_by_what_each_waits_on() {
     .collect();
     let rows: Vec<ItemRow> = (0..items.len())
         .map(|item| ItemRow {
+            repo: 0,
             item,
             depth: 0,
             children: None,
             run: None,
         })
         .collect();
-    let lines = pull_request_lines(&rows, &items, &statuses, Some("Penso"));
+    let next = |login: Option<&'static str>| {
+        let (items, statuses) = (&items, &statuses);
+        move |row: &ItemRow| {
+            let item = &items[row.item];
+            Next::of(item, status_of(item, statuses), login)
+        }
+    };
+    let lines = pull_request_lines(&rows, next(Some("Penso")));
     assert_eq!(
         headings(&lines, &items),
         [
@@ -153,10 +161,44 @@ fn pull_requests_group_by_what_each_waits_on() {
         ]
     );
     // Signed out, nothing is the user's: all open ones wait or can merge.
-    let lines = pull_request_lines(&rows, &items, &statuses, None);
+    let lines = pull_request_lines(&rows, next(None));
     assert!(
         !headings(&lines, &items)
             .iter()
             .any(|line| line.starts_with("Next(Review)"))
     );
+}
+
+#[test]
+fn rows_of_several_repositories_merge_in_sort_order_keeping_children() {
+    let first = vec![
+        item(Provider::Beads, "hg-1", "Epic", "2026-10-01T00:00:00Z"),
+        item(Provider::Beads, "hg-1.1", "Child", "2026-10-09T00:00:00Z"),
+    ];
+    let second = vec![item(
+        Provider::Github,
+        "377",
+        "Newer",
+        "2026-10-05T00:00:00Z",
+    )];
+    let row = |repo: usize, item: usize, depth: u8| ItemRow {
+        repo,
+        item,
+        depth,
+        children: None,
+        run: None,
+    };
+    let repos = [&first, &second];
+    let merged = merge(
+        [vec![row(0, 0, 0), row(0, 1, 1)], vec![row(1, 0, 0)]],
+        |row| &repos[row.repo][row.item],
+        Sort::Updated,
+    );
+    // The newer top-level row leads; the child stays under its parent even
+    // though it is newer still.
+    let order: Vec<_> = merged
+        .iter()
+        .map(|row| repos[row.repo][row.item].identifier.as_str())
+        .collect();
+    assert_eq!(order, ["377", "hg-1", "hg-1.1"]);
 }

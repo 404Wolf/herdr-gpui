@@ -163,29 +163,28 @@ impl HerdrWindow {
                             .child(sections.needs.len().to_string()),
                     ),
             );
-        if sections.needs.is_empty() {
-            needs = needs.child(
-                div()
-                    .px_2()
-                    .py_2()
-                    .text_color(rgb(theme.muted))
-                    .child("Nothing needs you."),
-            );
-        }
         for waiting in &sections.needs {
             needs = needs.child(row(waiting, Shelf::Active, cx));
         }
-        list = list.child(needs);
+        // Only what is there shows: no card when nothing needs the user, no
+        // heading over an empty group.
+        if !sections.needs.is_empty() {
+            list = list.child(needs);
+        }
         // Finished work waits on the user too; working agents do not.
-        list = list.child(heading(
-            look,
-            "Ready for review",
-            Some(sections.ready.len()),
-        ));
+        if !sections.ready.is_empty() {
+            list = list.child(heading(
+                look,
+                "Ready for review",
+                Some(sections.ready.len()),
+            ));
+        }
         for ready in &sections.ready {
             list = list.child(row(ready, Shelf::Active, cx));
         }
-        list = list.child(heading(look, "Working", Some(sections.working.len())));
+        if !sections.working.is_empty() {
+            list = list.child(heading(look, "Working", Some(sections.working.len())));
+        }
         let mut host: Option<&str> = None;
         for working in &sections.working {
             // Rows arrive in sidebar order, so each host's run together.

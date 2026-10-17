@@ -12,6 +12,8 @@ mod conversation_list;
 mod dialog;
 mod groups;
 mod markdown;
+mod pills;
+mod refresh;
 mod rows;
 mod sessions;
 

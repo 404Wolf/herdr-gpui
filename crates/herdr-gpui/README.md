@@ -1855,21 +1855,31 @@ turns it off, and `herdr-gpui ui panel NAME` shows a section.
   own. A column beside the list shows each host's CPU, memory, agents, and
   ports; each host folds, and the column folds to a strip of load dots. The
   icon counts what needs you.
-- **Pull requests** and **Issues** list the focused workspace's repository
-  (see [Orchestrator](#orchestrator)).
+- **Pull requests** and **Issues** list every repository the connected hosts'
+  workspaces hold (see [Orchestrator](#orchestrator)). Refresh spins while a
+  sync runs.
 - **Usage** shows every host's plan limits, one card per signed-in agent. Only
   the selected host is read; another host shows what was read while it was
   selected.
 
+When Overview or a section opens an agent's pane, the title bar's Back returns
+to it before walking back through panes.
+
 ## Orchestrator
 
-The activity bar's **Pull requests** and **Issues** sections list the focused
-workspace's repository across the window: its GitHub issues and pull requests
-or GitLab issues, its [Beads](https://github.com/steveyegge/beads) issues when
-the main checkout has a `.beads` folder, and the agent runs dispatched for
-them. The Issues row of a group's "…" menu or of a workspace's popover, the
-Show Issues command, and `herdr-gpui orchestrator` open the Issues section. It
-works for the local session and saved SSH hosts.
+The activity bar's **Pull requests** and **Issues** sections list, across the
+window, every repository the workspaces of every connected local or SSH host
+hold: their GitHub issues and pull requests or GitLab issues, their
+[Beads](https://github.com/steveyegge/beads) issues when a main checkout has a
+`.beads` folder, and the agent runs dispatched for them. Worktrees of one
+repository count once, and each repository syncs on its own, so up to 32 are
+listed. A row shows its project while several are listed. Under the search, a
+row of pills picks backends (GitHub, GitLab, Beads) and projects, each with its
+count; none picked lists all. The Issues row of a group's "…" menu or of a
+workspace's popover, the Show Issues command, and `herdr-gpui orchestrator`
+open the Issues section narrowed to that workspace's project. A repository
+without a GitHub remote has no GitHub source; the header says "no GitHub
+remote" when none of them has one.
 
 - **Issues** lists open GitHub or GitLab issues and beads together, grouped by
   priority. A bead's children sit under it. The **Filters** button unfolds a

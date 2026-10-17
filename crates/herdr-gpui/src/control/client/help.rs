@@ -68,7 +68,7 @@ fn family(name: &str) -> &'static str {
             "herdr-gpui devices [open]\n    Open the Devices overview tab in the caller's workspace."
         }
         "orchestrator" => {
-            "herdr-gpui orchestrator [open] [--repo PATH]\n    Show the Issues section for the caller's checkout, or for PATH.\nherdr-gpui orchestrator items|issues|prs [--repo PATH]\n    List what it last synced, from its local database (no network).\n    Runs here; Herdr UI need not run. Exits 4 before its first sync."
+            "herdr-gpui orchestrator [open] [--repo PATH]\n    Show the Issues section narrowed to the caller's project, or PATH's.\nherdr-gpui orchestrator items|issues|prs [--repo PATH]\n    List what it last synced, from its local database (no network).\n    Runs here; Herdr UI need not run. Exits 4 before its first sync."
         }
         "review" => {
             "herdr-gpui review [open]\n    Open the review of the caller's workspace's uncommitted changes."

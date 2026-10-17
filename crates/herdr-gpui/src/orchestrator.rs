@@ -39,11 +39,11 @@ pub(crate) use model::{
 };
 pub(crate) use naming::LiveBranch;
 pub(crate) use review::{CheckState, PrStatus, Review};
-#[cfg(all(test, unix))]
+#[cfg(test)]
 pub(crate) use service::SourceStatus;
 pub(crate) use service::{Notice, Request, Service, Snapshot, SyncState, Timing};
 pub(crate) use store::{Access, SCHEMA_VERSION, Store};
-pub(crate) use view::{Event, List, LiveAgent, Look, OrchestratorView, key_label};
+pub(crate) use view::{Event, List, LiveAgent, Look, OrchestratorView, RepoSpec, key_label};
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

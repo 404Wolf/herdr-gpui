@@ -41,9 +41,9 @@ agent-launcher wrote it and check that migration keeps its rows.
 | `actions.rs` | Dispatch, stop, send, remove, delete: each on its own thread. |
 | `prompt.rs` | Prompt profiles, agent-launcher's built-in and review prompts. |
 | `naming.rs` | agent-launcher's branch names, and runs found from branches. |
-| `view/` | The view entity: a section's list, filters, the item pane, dialogs. Pure row and grouping logic is in `view/rows.rs`. |
-| `host.rs` | The window's views, one per workspace and repository the sections showed: the tick that feeds them, and their events. |
-| `section.rs` | The Pull requests and Issues sections: which view each shows, and the commands that open them. |
+| `view/` | The view entity: the list of every repository (`view/repo.rs` keeps each one's worker, snapshot, and rows; an item's page and actions go to its own), the backend and project pills, filters, the item pane, dialogs. Pure row, merge, and grouping logic is in `view/rows.rs`. |
+| `host.rs` | The window's one view and the repositories it lists, one per Git common directory per host across every connected host's workspaces: the tick that feeds it, and its events. |
+| `section.rs` | The Pull requests and Issues sections, and the commands that open them narrowed to a project. |
 
 The view is a GPUI entity that talks to its host only through `Event`s and
 setters (`set_look`, `set_live`, `set_github`, `set_hosts`). Tabs hosted it

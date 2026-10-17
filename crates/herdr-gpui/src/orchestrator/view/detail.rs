@@ -28,7 +28,7 @@ impl OrchestratorView {
             self.detail = None;
             return div().into_any_element();
         };
-        let runs = Runs::new(&self.snapshot.runs, &self.snapshot.sessions, &self.live);
+        let runs = Runs::new(&self.snapshot().runs, &self.snapshot().sessions, &self.live);
         let item_runs = runs.of_item(&detail.key);
         let body = match detail.tab {
             // The pane is narrow: the overview, with its actions, leads,
@@ -72,7 +72,7 @@ impl OrchestratorView {
             None => ("Issues", "icons/note.svg", Tab::Issues),
         };
         let repo = self
-            .snapshot
+            .snapshot()
             .repo
             .as_ref()
             .and_then(|info| info.remote.as_ref())
@@ -80,7 +80,7 @@ impl OrchestratorView {
             .unwrap_or_else(|| item.key.source.repository.clone());
         let key = item.key.canonical();
         let url = item.url.clone();
-        let writable = self.snapshot.access == Some(Access::ReadWrite);
+        let writable = self.snapshot().access == Some(Access::ReadWrite);
         let pull_request = item.pull_request.is_some();
         let review_key = item.key.canonical();
         div()
@@ -638,7 +638,7 @@ impl OrchestratorView {
             value.map_or_else(|| "\u{2014}".to_owned(), |value| value.to_rfc3339())
         };
         let deletable = item.key.source.provider == crate::orchestrator::Provider::Beads
-            && self.snapshot.access == Some(Access::ReadWrite);
+            && self.snapshot().access == Some(Access::ReadWrite);
         let (source, id) = (item.key.source.clone(), item.key.native_id.clone());
         rows.push(("Created", time(item.created_at)));
         rows.push(("Updated", time(item.updated_at)));
@@ -698,7 +698,7 @@ impl OrchestratorView {
         let look = &self.look;
         let theme = &look.theme;
         let own = run.owner == Owner::HerdrGpui;
-        let writable = self.snapshot.access == Some(Access::ReadWrite);
+        let writable = self.snapshot().access == Some(Access::ReadWrite);
         let branch = run
             .workspace
             .as_ref()

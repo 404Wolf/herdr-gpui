@@ -28,6 +28,8 @@ pub(crate) const BAR_WIDTH: f32 = 44.;
 const BUTTON: f32 = 32.;
 const ICON: f32 = 17.;
 const TITLE_HEIGHT: f32 = 32.;
+/// One breath of a busy icon's pulse.
+const BUSY_PULSE: std::time::Duration = std::time::Duration::from_millis(1600);
 
 /// What the window shows, picked on the bar. The bar lists them in
 /// declaration order, so this order is what users see.
@@ -96,12 +98,15 @@ pub(crate) struct Activity {
     picked: bool,
     /// The orchestrator view the shown section draws.
     pub(crate) section_view: Option<ViewId>,
-    /// A repository asked for by name for a workspace, which its sections
-    /// list instead of the one its focused pane is in.
-    pub(crate) section_repo: Option<(String, crate::browser::OrchestratorRepo)>,
+    /// The project the next section shown narrows to, as a menu or the
+    /// `orchestrator` command asked.
+    pub(crate) section_project: Option<String>,
     /// The list last picked on that tab's view, so the user's own choice of
     /// list there stands until another section is picked.
     pub(crate) section_list: Option<List>,
+    /// The section the window left for a pane it opened, which Back
+    /// returns to before walking the focus trail.
+    pub(crate) return_to: Option<ActivityPanel>,
     /// What holds the keyboard while Overview or Usage is shown, so typing
     /// never reaches a terminal the section hides.
     pub(crate) section_focus: Option<FocusHandle>,
@@ -149,9 +154,9 @@ impl Activity {
                 (
                     *id,
                     [
-                        Arc::as_ptr(view.items()) as usize,
-                        Arc::as_ptr(view.runs()) as usize,
+                        usize::try_from(view.revision()).unwrap_or(usize::MAX),
                         Arc::as_ptr(view.live()) as usize,
+                        0,
                     ],
                 )
             })
@@ -222,6 +227,8 @@ impl HerdrWindow {
         if panel == ActivityPanel::Workspaces && !self.sidebar_visible {
             self.toggle_sidebar();
         }
+        // A section picked is where the user is now, not a place to go back to.
+        self.activity.return_to = None;
         if self.activity.pick(panel) {
             self.save_chrome();
         }
@@ -323,12 +330,15 @@ impl HerdrWindow {
             } else {
                 BarState::Idle
             };
+            // Overview's icon pulses while agents work, as the sidebar's
+            // working dots do.
+            let busy = panel == ActivityPanel::Overview && self.overview_working() > 0;
             let button = self
                 .bar_button(
                     panel_selector(panel),
                     panel.icon(),
                     panel.label(),
-                    state,
+                    (state, busy),
                     counts.of(panel),
                 )
                 .on_click(cx.listener(move |this, _, window, cx| {
@@ -341,7 +351,7 @@ impl HerdrWindow {
                 "activity-settings",
                 "icons/settings.svg",
                 "Settings",
-                BarState::Idle,
+                (BarState::Idle, false),
                 None,
             )
             .on_click(cx.listener(|this, _, window, cx| {
@@ -355,7 +365,7 @@ impl HerdrWindow {
         id: &'static str,
         icon: &'static str,
         label: &'static str,
-        state: BarState,
+        (state, busy): (BarState, bool),
         count: Option<usize>,
     ) -> Stateful<Div> {
         let theme = &self.theme;
@@ -364,15 +374,25 @@ impl HerdrWindow {
             BarState::Selected => theme.foreground,
             BarState::Idle => theme.muted,
         };
-        let glyph = div()
-            .relative()
-            .child(
-                svg()
-                    .path(icon)
-                    .size(px(ICON))
-                    .flex_none()
-                    .text_color(rgb(ink)),
+        let icon = svg()
+            .path(icon)
+            .size(px(ICON))
+            .flex_none()
+            .text_color(rgb(ink));
+        let icon = if busy {
+            icon.with_animation(
+                SharedString::from(format!("{id}-busy")),
+                Animation::new(BUSY_PULSE).repeat(),
+                |icon, delta| icon.opacity(0.35 + 0.65 * (delta * std::f32::consts::PI).sin()),
             )
+            .into_any_element()
+        } else {
+            icon.into_any_element()
+        };
+        let glyph = div()
+            .debug_selector(move || format!("{id}-glyph"))
+            .relative()
+            .child(icon)
             .when_some(count.filter(|count| *count > 0), |glyph, count| {
                 glyph.child(
                     div()

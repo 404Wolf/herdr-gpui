@@ -18,13 +18,48 @@ use gpui::{prelude::*, *};
 /// A list's headings take its rows' height, as the list is uniform.
 const ISSUE_ROW: f32 = 32.;
 const PULL_REQUEST_ROW: f32 = 40.;
+/// The project column, while several projects are listed.
+const PROJECT_WIDTH: f32 = 130.;
+/// The source column, while the list mixes backends.
+const SOURCE_WIDTH: f32 = 22.;
+/// The column holding a row's action, such as Start agent.
+const ACTION_WIDTH: f32 = 96.;
 /// Checks a row names before counting the rest.
-const CHECK_PILLS: usize = 4;
+const CHECK_PILLS: usize = 3;
 
 impl OrchestratorView {
     /// Whether rows keep only the columns that fit beside an open item.
     fn compact(&self) -> bool {
         self.detail.is_some()
+    }
+
+    /// Whether rows of several projects are listed, so each names its own.
+    fn listing_projects(&self) -> bool {
+        self.repos.len() > 1 && self.projects.len() != 1
+    }
+
+    /// A row's project, in its own column while several are listed.
+    fn project_cell(&self, row: &ItemRow) -> Option<Div> {
+        let look = &self.look;
+        self.listing_projects().then(|| {
+            div()
+                .flex_none()
+                .w(px(PROJECT_WIDTH))
+                .truncate()
+                .text_size(look.small())
+                .text_color(rgb(look.theme.subtext()))
+                .child(self.project_label(&self.repos[row.repo]))
+        })
+    }
+
+    /// A row's source as a muted mark, while the list mixes backends.
+    fn source_cell(&self, provider: Provider) -> Option<Div> {
+        self.mixed_sources.then(|| {
+            div()
+                .flex_none()
+                .w(px(SOURCE_WIDTH))
+                .child(source_mark(&self.look, provider))
+        })
     }
 
     fn row_height(&self) -> f32 {
@@ -37,35 +72,51 @@ impl OrchestratorView {
     pub(super) fn render_list(&self, cx: &mut Context<Self>) -> AnyElement {
         let look = &self.look;
         let compact = self.compact();
-        let head: Vec<(&str, Option<f32>)> = match (self.tab, compact) {
-            (Tab::Issues, false) => vec![
-                ("AGE", Some(32.)),
-                ("SRC", Some(22.)),
-                ("RUN", Some(30.)),
-                ("TITLE", None),
-                ("AUTHOR", Some(110.)),
-                ("\u{1f4ac}", Some(34.)),
-                ("", Some(96.)),
-            ],
-            (Tab::Issues, true) => vec![("AGE", Some(32.)), ("RUN", Some(30.)), ("TITLE", None)],
-            (Tab::PullRequests, false) => vec![
-                ("PR", Some(48.)),
-                ("TITLE \u{00b7} BRANCH", None),
-                ("AUTHOR", Some(100.)),
-                ("REVIEW", Some(124.)),
-                ("CHECKS", Some(150.)),
-                ("SIZE", Some(70.)),
-                ("RUN", Some(30.)),
-                ("AGE", Some(32.)),
-            ],
-            (Tab::PullRequests, true) => vec![
-                ("PR", Some(48.)),
-                ("TITLE \u{00b7} BRANCH", None),
-                ("", Some(12.)),
-                ("", Some(12.)),
-                ("AGE", Some(32.)),
-            ],
-        };
+        let sources = self.mixed_sources;
+        let projects = self.listing_projects();
+        let mut head: Vec<(&str, Option<f32>)> = Vec::new();
+        match self.tab {
+            Tab::Issues => {
+                head.push(("AGE", Some(32.)));
+                if sources {
+                    head.push(("SRC", Some(SOURCE_WIDTH)));
+                }
+                head.push(("RUN", Some(30.)));
+                if projects {
+                    head.push(("PROJECT", Some(PROJECT_WIDTH)));
+                }
+                head.push(("TITLE", None));
+                if !compact {
+                    head.extend([
+                        ("AUTHOR", Some(110.)),
+                        ("\u{1f4ac}", Some(34.)),
+                        ("", Some(ACTION_WIDTH)),
+                    ]);
+                }
+            }
+            Tab::PullRequests => {
+                head.push(("PR", Some(48.)));
+                if sources {
+                    head.push(("SRC", Some(SOURCE_WIDTH)));
+                }
+                if projects {
+                    head.push(("PROJECT", Some(PROJECT_WIDTH)));
+                }
+                head.push(("TITLE \u{00b7} BRANCH", None));
+                if compact {
+                    head.extend([("", Some(12.)), ("", Some(12.))]);
+                } else {
+                    head.extend([
+                        ("AUTHOR", Some(100.)),
+                        ("REVIEW", Some(124.)),
+                        ("CHECKS", Some(150.)),
+                        ("SIZE", Some(70.)),
+                        ("RUN", Some(30.)),
+                    ]);
+                }
+                head.push(("AGE", Some(32.)));
+            }
+        }
         let count = self.lines.len();
         let list = if count == 0 {
             self.render_empty(cx).into_any_element()
@@ -99,14 +150,19 @@ impl OrchestratorView {
             Tab::Issues => "open issues",
             Tab::PullRequests => "pull requests",
         };
-        let loading = self.snapshot.error.is_none()
-            && (self.snapshot.repo.is_none()
-                || self
-                    .snapshot
-                    .sources
-                    .iter()
-                    .any(|status| matches!(status.state, SyncState::Syncing)));
-        let text = if loading && self.query.trim().is_empty() {
+        let loading = self.repos.iter().any(|repo| {
+            let snapshot = &repo.snapshot;
+            snapshot.error.is_none()
+                && (snapshot.repo.is_none()
+                    || snapshot
+                        .sources
+                        .iter()
+                        .any(|status| matches!(status.state, SyncState::Syncing)))
+        });
+        let text = if self.repos.is_empty() {
+            "No repositories: open a workspace in a Git checkout on this machine or an SSH host"
+                .to_owned()
+        } else if loading && self.query.trim().is_empty() {
             "Loading\u{2026}".to_owned()
         } else if self.query.trim().is_empty() {
             format!("No {what} yet")
@@ -209,6 +265,7 @@ impl OrchestratorView {
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, _, cx| {
                     this.selected = Some(key.clone());
+                    this.activate(&key);
                     if event.click_count == 2 {
                         this.open_detail(key.clone(), cx);
                     }
@@ -221,7 +278,7 @@ impl OrchestratorView {
         let look = &self.look;
         let theme = &look.theme;
         let compact = self.compact();
-        let item = &self.snapshot.items[row.item];
+        let item = self.row_item(&row);
         let key = item.key.canonical();
         let now = chrono::Utc::now();
         let expander = row.children.map(|open| {
@@ -245,11 +302,11 @@ impl OrchestratorView {
                     }),
                 )
         });
-        let writable = self.snapshot.access == Some(Access::ReadWrite);
+        let writable = self.repos[row.repo].snapshot.access == Some(Access::ReadWrite);
         let blocked = !item.blocked_by.is_empty() || item.state == "blocked";
         let start = (!compact && writable && row.run.is_none() && !blocked).then(|| {
             let key = key.clone();
-            look.button(("orchestrator-start", index), "Start agent", false)
+            compact_button(look, ("orchestrator-start", index), "Start agent")
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(move |this, _, window, cx| {
                     this.open_dispatch(key.clone(), window, cx);
@@ -265,15 +322,9 @@ impl OrchestratorView {
                     .text_color(rgb(theme.muted))
                     .child(age(item.updated_at, now)),
             )
-            .when(!compact, |el| {
-                el.child(
-                    div()
-                        .flex_none()
-                        .w(px(22.))
-                        .child(source_mark(look, item.key.source.provider)),
-                )
-            })
+            .children(self.source_cell(item.key.source.provider))
             .child(self.run_mark(&row))
+            .children(self.project_cell(&row))
             .child(
                 div()
                     .flex_1()
@@ -328,7 +379,7 @@ impl OrchestratorView {
                 .child(
                     div()
                         .flex_none()
-                        .w(px(96.))
+                        .w(px(ACTION_WIDTH))
                         .flex()
                         .justify_end()
                         .children(start)
@@ -347,11 +398,11 @@ impl OrchestratorView {
         let look = &self.look;
         let theme = &look.theme;
         let compact = self.compact();
-        let item = &self.snapshot.items[row.item];
+        let item = self.row_item(&row);
         let Some(pr) = &item.pull_request else {
             return div().h(px(self.row_height())).into_any_element();
         };
-        let status = super::rows::status_of(item, &self.snapshot.pr_status);
+        let status = super::rows::status_of(item, &self.repos[row.repo].snapshot.pr_status);
         let fork = pr
             .head_repository
             .as_deref()
@@ -377,6 +428,8 @@ impl OrchestratorView {
                             .text_color(rgb(theme.muted)),
                     ),
             )
+            .children(self.source_cell(item.key.source.provider))
+            .children(self.project_cell(&row))
             .child(
                 div()
                     .flex_1()
@@ -436,12 +489,13 @@ impl OrchestratorView {
                     .child(div().flex_none().w(px(124.)).flex().children(review_badge(
                         look,
                         status,
-                        self.reading_login(),
+                        self.repos[row.repo].reading_login(),
                     )))
                     .child(
                         div()
                             .flex_none()
                             .w(px(150.))
+                            .overflow_hidden()
                             .flex()
                             .items_center()
                             .gap(px(3.))
@@ -471,21 +525,41 @@ impl OrchestratorView {
             .items_center()
             .gap_1()
             .when_some(row.run, |el, run| {
-                let agent = &self.snapshot.runs[run.run].agent;
+                let agent = &self.repos[row.repo].snapshot.runs[run.run].agent;
                 el.child(look.icon(agent_icon(agent), 13., look.theme.foreground))
                     .child(look.dot(look.status_hue(run.status), 7.))
             })
     }
 }
 
+/// A backend's muted mark in a row.
 pub(super) fn source_mark(look: &Look, provider: Provider) -> AnyElement {
-    match provider {
-        Provider::Github => look
-            .icon("icons/github.svg", 13., look.theme.subtext())
-            .into_any_element(),
-        Provider::Beads => look.badge("bd", MAGENTA).into_any_element(),
-        Provider::Gitlab => look.badge("gl", RED).into_any_element(),
-    }
+    let icon = match provider {
+        Provider::Github => "icons/github.svg",
+        Provider::Beads => "icons/beads.svg",
+        Provider::Gitlab => "icons/git-branch.svg",
+    };
+    look.icon(icon, 12., look.theme.muted).into_any_element()
+}
+
+/// A button small enough to sit in a row with room above and below.
+fn compact_button(look: &Look, id: impl Into<ElementId>, label: &'static str) -> Stateful<Div> {
+    let theme = &look.theme;
+    let hover = theme.active;
+    div()
+        .id(id)
+        .flex_none()
+        .px_2()
+        .py(px(1.))
+        .rounded(px(crate::config::corners::SMALL))
+        .border_1()
+        .border_color(rgb(theme.active))
+        .bg(rgb(theme.surface))
+        .hover(move |style| style.bg(rgb(hover)))
+        .cursor_pointer()
+        .text_size(look.tiny())
+        .whitespace_nowrap()
+        .child(label)
 }
 
 fn column_head(look: &Look, cells: &[(&str, Option<f32>)]) -> Div {

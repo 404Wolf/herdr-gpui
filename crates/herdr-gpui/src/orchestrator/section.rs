@@ -1,8 +1,8 @@
-//! The activity bar's Pull requests and Issues sections: the focused
-//! workspace's repository, as an orchestrator view the window owns, drawn
-//! across the window in place of its terminals on the list the section
-//! names. A view is made the first time a workspace is shown and kept while
-//! that workspace exists, so switching back finds it as it was left.
+//! The activity bar's Pull requests and Issues sections: one orchestrator
+//! view the window owns, listing every repository the connected hosts'
+//! workspaces hold, drawn across the window in place of its terminals on the
+//! list the section names. The menus and `herdr-gpui orchestrator` open it
+//! narrowed to one workspace's project.
 
 use super::{List, OrchestratorView, ViewId};
 use crate::{HerdrWindow, browser::OrchestratorRepo, sidebar::ActivityPanel};
@@ -17,32 +17,29 @@ impl HerdrWindow {
         let Some(list) = self.activity_section().and_then(list_of) else {
             return;
         };
-        let workspace = self.browser_key().map(|(_, workspace)| workspace);
-        let asked = self
-            .activity
-            .section_repo
-            .clone()
-            .filter(|(of, _)| workspace.as_ref() == Some(of))
-            .map(|(_, repo)| repo);
-        let repo = asked
-            .or_else(|| {
-                self.focused_checkout()
-                    .and_then(|path| OrchestratorRepo::new(path).ok())
-            })
-            .filter(|_| self.orchestrator_host());
-        let id = workspace
-            .zip(repo)
-            .map(|(workspace, repo)| self.orchestrator_for(&workspace, repo, cx));
-        let changed = id != self.activity.section_view || self.activity.section_list != Some(list);
-        self.activity.section_view = id;
-        let Some(id) = id else {
+        let id = self.sections_view(cx);
+        let changed =
+            Some(id) != self.activity.section_view || self.activity.section_list != Some(list);
+        self.activity.section_view = Some(id);
+        let project = self.activity.section_project.take();
+        if !changed && project.is_none() {
+            return;
+        }
+        let Some(view) = self.orchestrator_view(id).cloned() else {
             return;
         };
-        if changed && let Some(view) = self.orchestrator_view(id).cloned() {
-            view.update(cx, |view, cx| view.show_list(list, cx));
-            self.activity.section_list = Some(list);
-            cx.notify();
-        }
+        let specs = self.repo_specs();
+        view.update(cx, |view, cx| {
+            view.set_repos(specs, cx);
+            if changed {
+                view.show_list(list, cx);
+            }
+            if let Some(key) = project {
+                view.only_project(key, cx);
+            }
+        });
+        self.activity.section_list = Some(list);
+        cx.notify();
     }
 
     /// Shows the focused workspace's issues.
@@ -81,9 +78,17 @@ impl HerdrWindow {
             );
             return;
         }
-        if let Some(repo) = checkout.and_then(|path| OrchestratorRepo::new(path).ok()) {
-            self.activity.section_repo = Some((workspace.clone(), repo));
-        }
+        // The section lists every project, narrowed to the one asked for:
+        // `checkout`'s when it is a listed repository, else the workspace's.
+        let asked = checkout
+            .and_then(|path| OrchestratorRepo::new(path).ok())
+            .and_then(|repo| {
+                self.repo_specs()
+                    .into_iter()
+                    .find(|spec| spec.request.checkout == repo.checkout)
+                    .map(|spec| spec.key)
+            });
+        self.activity.section_project = asked.or_else(|| self.workspace_repo_key(&workspace));
         self.dismiss_menu(window, cx);
         if self
             .browser_key()
@@ -103,7 +108,9 @@ impl HerdrWindow {
         {
             return;
         }
+        let left = self.activity.panel;
         self.activity.pick(ActivityPanel::Workspaces);
+        self.activity.return_to = Some(left);
         self.save_chrome();
         cx.notify();
     }
@@ -150,20 +157,16 @@ impl HerdrWindow {
         )
     }
 
-    /// Why a section has no view to show; while one is being made, that it is.
+    /// Why a section has no view to show.
     fn orchestrator_unavailable(&self) -> &'static str {
-        if !self.orchestrator_host() {
-            "Pull requests and issues need a local or SSH host"
-        } else if self.browser_key().is_none() {
-            "Open a workspace first"
-        } else if self
-            .focused_checkout()
-            .and_then(|path| OrchestratorRepo::new(path).ok())
-            .is_none()
+        if self
+            .endpoints
+            .iter()
+            .any(|endpoint| super::host::scripts_run_on(&endpoint.connection.target))
         {
-            "This workspace has no folder to read"
+            "Opening the repositories…"
         } else {
-            "Opening the repository…"
+            "Pull requests and issues need a local or SSH host"
         }
     }
 }

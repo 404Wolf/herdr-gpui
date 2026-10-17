@@ -113,8 +113,10 @@ fn the_overview_leads_with_what_needs_the_user(cx: &mut gpui::TestAppContext) {
     assert!(ready.top() > needs.bottom() && ready.bottom() <= working.top());
     // The host column sits beside the list.
     assert!(cx.debug_bounds("overview-hosts").unwrap().left() >= blocked.right());
-    // The bar counts what needs the user.
+    // The bar counts what needs the user, and its icon pulses while an
+    // agent works.
     assert_eq!(cx.update(|_, cx| view.read(cx).overview_needing()), 1);
+    assert_eq!(cx.update(|_, cx| view.read(cx).overview_working()), 1);
 }
 
 #[gpui::test]
@@ -210,4 +212,14 @@ fn a_narrow_window_folds_the_hosts_and_keeps_titles_readable(cx: &mut gpui::Test
     // The user can still open the column there.
     click(cx, "overview-hosts-toggle");
     assert!(cx.debug_bounds("overview-hosts").is_some());
+}
+
+#[gpui::test]
+fn nothing_shows_for_groups_with_nothing_in_them(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = fixture(cx);
+    let blocked = row(&view, cx, State::Blocked);
+    click(cx, format!("overview-settle-{blocked}"));
+    // Nothing needs the user now: no card says so.
+    assert!(cx.debug_bounds("overview-needs").is_none());
+    assert!(cx.debug_bounds("overview").is_some());
 }

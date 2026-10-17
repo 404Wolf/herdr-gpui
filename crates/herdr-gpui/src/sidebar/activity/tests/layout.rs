@@ -80,9 +80,9 @@ fn a_section_takes_the_body_beside_the_bar_and_workspaces_brings_it_back(
     // The status bar stays under it.
     let status = cx.debug_bounds("connection-status").unwrap();
     assert!(status.top() >= section.bottom());
-    // The fixture's socket cannot run the orchestrator's scripts, which the
-    // section says rather than showing an empty list.
-    assert!(cx.debug_bounds("activity-section-empty").is_some());
+    // The fixture's socket cannot run the orchestrator's scripts, so the
+    // list has no repository, which its empty state says.
+    assert!(cx.debug_bounds("orchestrator-list").is_some());
     // The overview takes the body as the other sections do.
     click(cx, "activity-overview");
     assert_eq!(

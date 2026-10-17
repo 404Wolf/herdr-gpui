@@ -48,7 +48,7 @@ impl Sort {
         }
     }
 
-    fn compare(self, left: &Item, right: &Item) -> Ordering {
+    pub(crate) fn compare(self, left: &Item, right: &Item) -> Ordering {
         let tie = || left.key.canonical().cmp(&right.key.canonical());
         match self {
             Self::Updated => right.updated_at.cmp(&left.updated_at),
@@ -272,6 +272,9 @@ impl<'a> Runs<'a> {
 /// One line of the Issues or Pull requests list.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ItemRow {
+    /// The repository listing it, by its place in the view's list.
+    pub(crate) repo: usize,
+    /// The item, by its place in that repository's snapshot.
     pub(crate) item: usize,
     pub(crate) depth: u8,
     /// `Some(open)` when the item has children shown under it.
@@ -398,6 +401,7 @@ pub(crate) fn issue_rows(
         // A search opens every branch it reaches into.
         let open = !collapsed.contains(&keys[index]) || !query.trim().is_empty();
         rows.push(ItemRow {
+            repo: 0,
             item: index,
             depth,
             children: kids.map(|_| open),
@@ -431,6 +435,7 @@ pub(crate) fn pull_request_rows(
         })
         .filter(|(_, item)| matches(item, query))
         .map(|(index, item)| ItemRow {
+            repo: 0,
             item: index,
             depth: 0,
             children: None,
@@ -536,17 +541,26 @@ pub(crate) fn status_of<'a>(
     statuses.get(&(item.key.source.repository.clone(), number))
 }
 
+/// Several repositories' rows as one list in `sort`'s order. A top-level
+/// row keeps the children that follow it.
+pub(crate) fn merge<'a>(
+    lists: impl IntoIterator<Item = Vec<ItemRow>>,
+    item: impl Fn(&ItemRow) -> &'a Item,
+    sort: Sort,
+) -> Vec<ItemRow> {
+    let mut blocks: Vec<Vec<ItemRow>> = Vec::new();
+    for row in lists.into_iter().flatten() {
+        match blocks.last_mut() {
+            Some(block) if row.depth > 0 => block.push(row),
+            _ => blocks.push(vec![row]),
+        }
+    }
+    blocks.sort_by(|a, b| sort.compare(item(&a[0]), item(&b[0])));
+    blocks.into_iter().flatten().collect()
+}
+
 /// Pull requests under what each waits on, in the order the rows came.
-pub(crate) fn pull_request_lines(
-    rows: &[ItemRow],
-    items: &[Item],
-    statuses: &HashMap<(String, u64), PrStatus>,
-    login: Option<&str>,
-) -> Vec<Line> {
-    let next = |row: &ItemRow| {
-        let item = &items[row.item];
-        Next::of(item, status_of(item, statuses), login)
-    };
+pub(crate) fn pull_request_lines(rows: &[ItemRow], next: impl Fn(&ItemRow) -> Next) -> Vec<Line> {
     let mut lines = Vec::new();
     for group in Next::ALL {
         let grouped: Vec<ItemRow> = rows
@@ -568,13 +582,13 @@ pub(crate) fn pull_request_lines(
 
 /// Issues under their priority, hottest first and none last. A Beads child
 /// stays under its parent, in its parent's group.
-pub(crate) fn issue_lines(rows: &[ItemRow], items: &[Item]) -> Vec<Line> {
+pub(crate) fn issue_lines<'a>(rows: &[ItemRow], item: impl Fn(&ItemRow) -> &'a Item) -> Vec<Line> {
     // Each top-level row with the children that follow it.
     let mut blocks: Vec<(Option<i64>, Vec<ItemRow>)> = Vec::new();
     for row in rows {
         match blocks.last_mut() {
             Some((_, block)) if row.depth > 0 => block.push(*row),
-            _ => blocks.push((items[row.item].priority, vec![*row])),
+            _ => blocks.push((item(row).priority, vec![*row])),
         }
     }
     let mut priorities: Vec<Option<i64>> = blocks.iter().map(|(priority, _)| *priority).collect();

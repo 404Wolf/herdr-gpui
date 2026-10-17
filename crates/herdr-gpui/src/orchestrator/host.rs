@@ -1,10 +1,11 @@
-//! The orchestrator's views, owned by the window rather than by tabs: one
-//! per workspace and repository the Pull requests and Issues sections have
-//! shown (see `section`), fed the theme, live agents and GitHub account from
-//! the window's tick, and whose events the window acts on. The view itself
-//! knows nothing of its host.
+//! The orchestrator's view, owned by the window: one, made the first time the
+//! Pull requests or Issues section is shown (see `section`), listing every
+//! distinct repository the workspaces of every connected host hold. The
+//! window's tick hands it those repositories, the theme, live agents, and
+//! each host's GitHub account, and acts on its events. The view itself knows
+//! nothing of its host.
 
-use super::{Event, LiveAgent, LiveBranch, Look, OrchestratorView, Request, Timing};
+use super::{Event, LiveAgent, LiveBranch, Look, OrchestratorView, RepoSpec, Request, Timing};
 use crate::{
     HerdrWindow, NavigationTarget,
     browser::{OrchestratorRepo, WebUrl},
@@ -27,11 +28,12 @@ impl ViewId {
     }
 }
 
-/// A view and what it lists: one workspace's repository on one host.
+/// The most repositories one view lists; workspaces beyond are left out.
+const MAX_REPOS: usize = 32;
+
+/// A view and its event subscription.
 pub(crate) struct Orchestrator {
     pub(super) view: Entity<OrchestratorView>,
-    pub(super) workspace: String,
-    pub(super) repo: OrchestratorRepo,
     pub(super) _events: Subscription,
 }
 
@@ -39,14 +41,6 @@ pub(crate) struct Orchestrator {
 impl Orchestrator {
     pub(crate) fn view(&self) -> &Entity<OrchestratorView> {
         &self.view
-    }
-
-    pub(crate) fn workspace(&self) -> &str {
-        &self.workspace
-    }
-
-    pub(crate) fn repo(&self) -> &OrchestratorRepo {
-        &self.repo
     }
 }
 
@@ -86,26 +80,6 @@ impl HerdrWindow {
             .filter(|path| !path.is_empty())
     }
 
-    /// A folder of the focused workspace: its focused pane's, else the one
-    /// new tabs start in.
-    pub(super) fn focused_checkout(&self) -> Option<String> {
-        let snapshot = self.live.snapshot.as_deref()?;
-        let workspace = snapshot.focused_workspace_id.as_deref()?;
-        let pane = snapshot
-            .panes
-            .iter()
-            .find(|pane| pane.workspace_id == workspace && pane.focused)
-            .and_then(|pane| pane.foreground_cwd.clone().or_else(|| pane.cwd.clone()));
-        pane.or_else(|| {
-            snapshot
-                .workspaces
-                .iter()
-                .find(|found| found.workspace_id == workspace)
-                .map(|found| found.new_workspace_cwd.clone())
-        })
-        .filter(|path| !path.is_empty())
-    }
-
     /// The orchestrator's look: the UI font's family at the terminal font's
     /// size, so Cmd-+ and Cmd-- scale it with the terminals.
     fn look(&self) -> Look {
@@ -141,43 +115,19 @@ impl HerdrWindow {
         }
     }
 
-    /// The view of `repo` in workspace `workspace` on the shown host, made
-    /// if the window has none yet.
-    pub(super) fn orchestrator_for(
-        &mut self,
-        workspace: &str,
-        repo: OrchestratorRepo,
-        cx: &mut Context<Self>,
-    ) -> ViewId {
-        let target = self.endpoints[self.selected_endpoint]
-            .connection
-            .target
-            .clone();
-        let existing = self.orchestrators.iter().find(|(_, orchestrator)| {
-            orchestrator.workspace == workspace
-                && orchestrator.repo == repo
-                && orchestrator.view.read(cx).target() == &target
-        });
-        if let Some((id, _)) = existing {
-            return *id;
+    /// The sections' view, made if the window has none yet.
+    pub(super) fn sections_view(&mut self, cx: &mut Context<Self>) -> ViewId {
+        if let Some(id) = self
+            .activity
+            .section_view
+            .filter(|id| self.orchestrators.contains_key(id))
+        {
+            return id;
         }
         self.next_orchestrator += 1;
         let id = ViewId(self.next_orchestrator);
-        let (token, login) = self.github_account(&target);
-        let request = Request {
-            target,
-            checkout: repo.checkout.clone(),
-            workspace_id: workspace.to_owned(),
-            token,
-            data_root: None,
-            timing: Timing::default(),
-        };
         let look = self.look();
-        let view = cx.new(|cx| {
-            let mut view = OrchestratorView::new(request, look, cx);
-            view.set_github(None, login, cx);
-            view
-        });
+        let view = cx.new(|cx| OrchestratorView::new(look, cx));
         // Handled from the tick, which has the window acting on them needs.
         let events = cx.subscribe(&view, move |this, _, event: &Event, cx| {
             if this.orchestrator_events.len() < MAX_EVENTS {
@@ -189,40 +139,81 @@ impl HerdrWindow {
             id,
             Orchestrator {
                 view,
-                workspace: workspace.to_owned(),
-                repo,
                 _events: events,
             },
         );
         id
     }
 
-    /// Forgets views whose workspace is gone from its host's snapshot. A
-    /// host without a snapshot, such as one reconnecting, keeps its views.
-    fn forget_closed_orchestrators(&mut self, cx: &App) {
-        let endpoints = &self.endpoints;
-        let selected = self.selected_endpoint;
-        let live = &self.live;
-        self.orchestrators.retain(|_, orchestrator| {
-            let target = orchestrator.view.read(cx).target();
-            let Some(index) = endpoints
-                .iter()
-                .position(|endpoint| &endpoint.connection.target == target)
-            else {
-                return false;
-            };
-            let state = if index == selected {
-                live
+    /// Every distinct repository the workspaces of the connected hosts that
+    /// can run the orchestrator's scripts hold, in sidebar order. Worktrees
+    /// of one repository are one: they share its database.
+    pub(super) fn repo_specs(&self) -> Vec<RepoSpec> {
+        let mut specs: Vec<RepoSpec> = Vec::new();
+        for (index, endpoint) in self.endpoints.iter().enumerate() {
+            let target = &endpoint.connection.target;
+            let state = if index == self.selected_endpoint {
+                &self.live
             } else {
-                &endpoints[index].live
+                &endpoint.live
             };
-            state.snapshot.as_deref().is_none_or(|snapshot| {
-                snapshot
-                    .workspaces
-                    .iter()
-                    .any(|workspace| workspace.workspace_id == orchestrator.workspace)
-            })
-        });
+            let (true, true, Some(snapshot)) = (
+                endpoint.enabled && state.status.is_connected(),
+                scripts_run_on(target),
+                state.snapshot.as_deref(),
+            ) else {
+                continue;
+            };
+            let (token, _) = self.github_account(target);
+            for workspace in &snapshot.workspaces {
+                let Ok(repo) = OrchestratorRepo::new(workspace.new_workspace_cwd.clone()) else {
+                    continue;
+                };
+                let key = repo_key(
+                    &endpoint.id,
+                    workspace.worktree.as_ref().map(|tree| tree.key.as_str()),
+                    &repo.checkout,
+                );
+                if specs.iter().any(|spec| spec.key == key) {
+                    continue;
+                }
+                if specs.len() == MAX_REPOS {
+                    return specs;
+                }
+                specs.push(RepoSpec {
+                    key,
+                    host: endpoint.label.clone(),
+                    request: Request {
+                        target: target.clone(),
+                        checkout: repo.checkout,
+                        workspace_id: workspace.workspace_id.clone(),
+                        token: token.clone(),
+                        data_root: None,
+                        timing: Timing::default(),
+                    },
+                });
+            }
+        }
+        specs
+    }
+
+    /// The key [`Self::repo_specs`] gives workspace `workspace` on the shown
+    /// host, so a section can pick that project.
+    pub(crate) fn workspace_repo_key(&self, workspace: &str) -> Option<String> {
+        let endpoint = self.endpoints.get(self.selected_endpoint)?;
+        let found = self
+            .live
+            .snapshot
+            .as_deref()?
+            .workspaces
+            .iter()
+            .find(|shown| shown.workspace_id == workspace)?;
+        let repo = OrchestratorRepo::new(found.new_workspace_cwd.clone()).ok()?;
+        Some(repo_key(
+            &endpoint.id,
+            found.worktree.as_ref().map(|tree| tree.key.as_str()),
+            &repo.checkout,
+        ))
     }
 
     pub(super) fn orchestrator_view(&self, id: ViewId) -> Option<&Entity<OrchestratorView>> {
@@ -249,7 +240,6 @@ impl HerdrWindow {
         for (id, event) in std::mem::take(&mut self.orchestrator_events) {
             self.orchestrator_event(id, event, window, cx);
         }
-        self.forget_closed_orchestrators(cx);
         self.sync_activity_section(cx);
         let views = self.orchestrator_views();
         // The bar's counts read what the views polled last tick.
@@ -269,11 +259,14 @@ impl HerdrWindow {
         let wanting: Vec<(Entity<OrchestratorView>, String)> = views
             .iter()
             .filter(|(_, view)| view.read(cx).wants_hosts())
-            .map(|(_, view)| (view.clone(), view.read(cx).workspace_id().to_owned()))
+            .filter_map(|(_, view)| {
+                let workspace = view.read(cx).workspace_id()?.to_owned();
+                Some((view.clone(), workspace))
+            })
             .collect();
         self.orchestrator_sampling = !wanting.is_empty();
         for (view, workspace) in wanting {
-            let hosts = if view.read(cx).target() == &shown {
+            let hosts = if view.read(cx).target() == Some(&shown) {
                 let label = self
                     .orchestrator_repository(&workspace)
                     .map(|(_, label)| label)
@@ -286,13 +279,25 @@ impl HerdrWindow {
         }
         let (live, branches) = self.live_agents();
         let look = self.look();
+        let specs = self.repo_specs();
         for (_, view) in views {
-            let (token, login) = self.github_account(view.read(cx).target());
+            let accounts: Vec<_> = view
+                .read(cx)
+                .targets()
+                .into_iter()
+                .map(|target| {
+                    let (token, login) = self.github_account(&target);
+                    (target, token, login)
+                })
+                .collect();
             view.update(cx, |view, cx| {
+                view.set_repos(specs.clone(), cx);
                 view.poll(cx);
                 view.set_look(look.clone(), cx);
                 view.set_live(live.clone(), branches.clone(), cx);
-                view.set_github(token, login, cx);
+                for (target, token, login) in accounts {
+                    view.set_github(&target, token, login, cx);
+                }
             });
         }
     }
@@ -389,7 +394,7 @@ impl HerdrWindow {
                             .iter()
                             .find(|e| &e.id == endpoint)
                             .map(|e| e.connection.target.clone()),
-                        None => Some(view.read(cx).target().clone()),
+                        None => view.read(cx).target().cloned(),
                     };
                     if let Some(target) = target {
                         view.update(cx, |view, cx| view.load_agents(endpoint, target, cx));
@@ -472,7 +477,7 @@ impl HerdrWindow {
         let shown = &self.endpoints[self.selected_endpoint].connection.target;
         if self
             .orchestrator_view(id)
-            .is_some_and(|view| view.read(cx).target() != shown)
+            .is_some_and(|view| view.read(cx).target() != Some(shown))
         {
             self.tell_orchestrator(id, super::Error::HostNotShown, cx);
             return;
@@ -558,4 +563,16 @@ impl HerdrWindow {
             view.update(cx, |view, cx| view.report(error, cx));
         }
     }
+}
+
+/// Whether the orchestrator's scripts run on `target`: the local session or
+/// an SSH host, not a bare socket or WSL.
+pub(super) fn scripts_run_on(target: &ConnectTarget) -> bool {
+    !matches!(target, ConnectTarget::Socket(_) | ConnectTarget::Wsl { .. })
+}
+
+/// How the view tells repositories apart: the endpoint, then the Git common
+/// directory its worktrees share, else the folder itself.
+fn repo_key(endpoint: &str, common: Option<&str>, checkout: &str) -> String {
+    format!("{endpoint}\u{1f}{}", common.unwrap_or(checkout))
 }

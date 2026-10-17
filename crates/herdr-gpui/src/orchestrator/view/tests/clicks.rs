@@ -24,13 +24,13 @@ fn a_double_click_opens_the_item_beside_the_list(cx: &mut TestAppContext) {
         ui: config.ui.clone(),
         mono: config.terminal.clone(),
     };
-    let (view, cx) = cx.add_window_view(|_, cx| OrchestratorView::new(request, look, cx));
+    let (view, cx) = cx.add_window_view(|_, cx| OrchestratorView::with_repo(request, look, cx));
     cx.simulate_resize(gpui::size(gpui::px(1100.), gpui::px(600.)));
     let issue = item(Provider::Github, "377", "Icons", "2026-10-04T00:00:00Z");
     let key = issue.key.canonical();
     cx.update(|_, cx| {
         view.update(cx, |view, cx| {
-            view.snapshot.items = Arc::new(vec![issue]);
+            view.repo_mut().snapshot.items = Arc::new(vec![issue]);
             view.tab = Tab::Issues;
             view.refresh_rows();
             cx.notify();

@@ -55,7 +55,9 @@ impl HerdrWindow {
         };
         let mut seen = HashSet::new();
         for (_, view) in self.orchestrator_views() {
-            counts.add(&mut seen, view.read(cx).items());
+            for (_, items, _) in view.read(cx).listed() {
+                counts.add(&mut seen, items);
+            }
         }
         counts
     }

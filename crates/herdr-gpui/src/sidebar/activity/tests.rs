@@ -6,6 +6,7 @@ use crate::{
     orchestrator::{Item, ItemKey, Provider, SourceKey},
 };
 
+mod back;
 mod counts;
 mod layout;
 mod sections;

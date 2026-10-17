@@ -58,7 +58,7 @@ pub(crate) struct Page {
     /// What the page last drew from: the minute its elapsed times were
     /// counted in, the marks' revision, and how many rows needed the user,
     /// so the tick redraws only when one of them moves.
-    drawn: (u64, u64, usize),
+    drawn: (u64, u64, usize, usize),
 }
 
 impl Default for Page {
@@ -71,7 +71,7 @@ impl Default for Page {
             snoozed_open: false,
             settled_open: false,
             scroll: ScrollHandle::new(),
-            drawn: (0, 0, 0),
+            drawn: (0, 0, 0, 0),
         }
     }
 }
@@ -99,52 +99,52 @@ impl HerdrWindow {
         }
         let mut runs = HashSet::new();
         for (tab, view) in self.orchestrator_views() {
-            let view = view.read(cx);
-            let host = self
-                .endpoints
-                .iter()
-                .find(|endpoint| endpoint.connection.target == *view.target())
-                .map(|endpoint| (endpoint.label.clone(), endpoint.id.clone()))
-                .unwrap_or_default();
-            for run in view.runs().iter() {
-                if run.state != RunState::Failed || !runs.insert(run.id.clone()) {
-                    continue;
-                }
-                let item = view
-                    .items()
+            for (target, items, listed) in view.read(cx).listed() {
+                let host = self
+                    .endpoints
                     .iter()
-                    .find(|item| item.key.canonical() == run.item_key);
-                let title = item.map_or_else(
-                    || crate::orchestrator::key_label(&run.item_key),
-                    |item| format!("{} {}", item.identifier, item.title),
-                );
-                rows.push(Row {
-                    key: Key::Run { id: run.id.clone() },
-                    state: State::Failed,
-                    title: format!("Run failed: {title}"),
-                    detail: run
-                        .message
-                        .as_deref()
-                        .map(|message| crate::notifications::safe_text(message, 200))
-                        .unwrap_or_else(|| run.agent.clone()),
-                    identity: None,
-                    workspace: run
-                        .workspace
-                        .as_ref()
-                        .and_then(|workspace| workspace.path.as_deref())
-                        .and_then(|path| path.file_name())
-                        .map(|name| name.to_string_lossy().into_owned())
-                        .unwrap_or_default(),
-                    branch: run
-                        .workspace
-                        .as_ref()
-                        .map(|workspace| workspace.branch.clone()),
-                    host: host.0.clone(),
-                    endpoint: host.1.clone(),
-                    since: Some(run.updated_at.into()),
-                    pr: None,
-                    open: Open::Run(tab),
-                });
+                    .find(|endpoint| endpoint.connection.target == *target)
+                    .map(|endpoint| (endpoint.label.clone(), endpoint.id.clone()))
+                    .unwrap_or_default();
+                for run in listed {
+                    if run.state != RunState::Failed || !runs.insert(run.id.clone()) {
+                        continue;
+                    }
+                    let item = items
+                        .iter()
+                        .find(|item| item.key.canonical() == run.item_key);
+                    let title = item.map_or_else(
+                        || crate::orchestrator::key_label(&run.item_key),
+                        |item| format!("{} {}", item.identifier, item.title),
+                    );
+                    rows.push(Row {
+                        key: Key::Run { id: run.id.clone() },
+                        state: State::Failed,
+                        title: format!("Run failed: {title}"),
+                        detail: run
+                            .message
+                            .as_deref()
+                            .map(|message| crate::notifications::safe_text(message, 200))
+                            .unwrap_or_else(|| run.agent.clone()),
+                        identity: None,
+                        workspace: run
+                            .workspace
+                            .as_ref()
+                            .and_then(|workspace| workspace.path.as_deref())
+                            .and_then(|path| path.file_name())
+                            .map(|name| name.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                        branch: run
+                            .workspace
+                            .as_ref()
+                            .map(|workspace| workspace.branch.clone()),
+                        host: host.0.clone(),
+                        endpoint: host.1.clone(),
+                        since: Some(run.updated_at.into()),
+                        pr: None,
+                        open: Open::Run(tab),
+                    });
+                }
             }
         }
         rows
@@ -191,12 +191,13 @@ impl HerdrWindow {
             marks.wake(rows.iter().map(|row| (&row.key, row.state)), now)
         });
         let revision = Marks::of(cx).map_or(0, Marks::revision);
-        let needing = Sections::of(rows, Marks::of(cx), now).needing();
+        let sections = Sections::of(rows, Marks::of(cx), now);
+        let (needing, working) = (sections.needing(), sections.working.len());
         let minute = now
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_or(0, |elapsed| elapsed.as_secs() / 60);
         let shown = self.activity_section() == Some(ActivityPanel::Overview);
-        let drawn = (if shown { minute } else { 0 }, revision, needing);
+        let drawn = (if shown { minute } else { 0 }, revision, needing, working);
         if drawn != self.overview.drawn {
             self.overview.drawn = drawn;
             cx.notify();
@@ -206,6 +207,12 @@ impl HerdrWindow {
     /// How many rows needed the user on the last tick, for the bar's count.
     pub(crate) fn overview_needing(&self) -> usize {
         self.overview.drawn.2
+    }
+
+    /// How many agents were working on the last tick, which animates the
+    /// bar's Overview icon.
+    pub(crate) fn overview_working(&self) -> usize {
+        self.overview.drawn.3
     }
 
     /// Whether the page is shown, so every host's load is sampled for its
@@ -240,6 +247,7 @@ impl HerdrWindow {
                         .browser_key()
                         .is_some_and(|(_, shown)| shown == *workspace);
                 self.show_activity_panel(ActivityPanel::Workspaces, window, cx);
+                self.activity.return_to = Some(ActivityPanel::Overview);
                 self.navigate_endpoint(endpoint, crate::NavigationTarget::Pane(pane), cx);
                 // An agent in the tab already focused moves nothing, so show
                 // it here, as the Devices overview does.

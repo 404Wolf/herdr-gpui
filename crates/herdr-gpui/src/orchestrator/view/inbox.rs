@@ -34,6 +34,7 @@ impl OrchestratorView {
             .flex_col()
             .child(self.render_header(cx))
             .child(self.render_search_row(window, cx))
+            .children(self.render_pills(cx))
             .children(self.render_chips(cx))
             .children(self.render_banners(cx))
             .child(
@@ -117,14 +118,16 @@ impl OrchestratorView {
             + usize::from(self.label.is_some())
     }
 
-    /// The Issues filters' column: state, source, and the labels the open
-    /// issues carry, most used first.
+    /// The Issues filters' column: state, and the labels the open issues
+    /// carry, most used first. Backends and projects are the pills'.
     fn render_facets(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let look = &self.look;
         let theme = &look.theme;
-        let items = &self.snapshot.items;
-        let open: Vec<&crate::orchestrator::Item> = items
+        // Counted across every repository listed.
+        let open: Vec<&crate::orchestrator::Item> = self
+            .repos
             .iter()
+            .flat_map(|repo| repo.snapshot.items.iter())
             .filter(|item| item.pull_request.is_none() && !super::rows::closed(item))
             .collect();
         let mut labels: Vec<(String, usize)> = Vec::new();
@@ -172,26 +175,17 @@ impl OrchestratorView {
         let has_run = open
             .iter()
             .filter(|item| {
-                self.snapshot
-                    .runs
+                let key = item.key.canonical();
+                self.repos
                     .iter()
-                    .any(|run| run.item_key == item.key.canonical())
+                    .flat_map(|repo| repo.snapshot.runs.iter())
+                    .any(|run| run.item_key == key)
             })
             .count();
         let blocked = open
             .iter()
             .filter(|item| !item.blocked_by.is_empty() || item.state == "blocked")
             .count();
-        let providers: Vec<Provider> = {
-            let mut found: Vec<Provider> = self
-                .snapshot
-                .sources
-                .iter()
-                .map(|source| source.key.provider)
-                .collect();
-            found.dedup();
-            found
-        };
         div()
             .id("orchestrator-facets")
             .debug_selector(|| "orchestrator-facets".into())
@@ -232,28 +226,6 @@ impl OrchestratorView {
                     cx.notify();
                 })),
             )
-            .when(providers.len() > 1, |el| {
-                el.child(heading("SOURCE"))
-                    .children(providers.into_iter().map(|provider| {
-                        let on = self.filters.provider == Some(provider);
-                        let count = open
-                            .iter()
-                            .filter(|item| item.key.source.provider == provider)
-                            .count();
-                        option(
-                            format!("orchestrator-facet-source-{}", provider_name(provider)).into(),
-                            provider_name(provider).into(),
-                            Some(count),
-                            on,
-                        )
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.filters.provider =
-                                (this.filters.provider != Some(provider)).then_some(provider);
-                            this.refresh_rows();
-                            cx.notify();
-                        }))
-                    }))
-            })
             .when(!labels.is_empty(), |el| {
                 el.child(heading("LABELS"))
                     .children(labels.into_iter().map(|(label, count)| {
@@ -348,69 +320,62 @@ impl OrchestratorView {
     fn render_header(&self, cx: &mut Context<Self>) -> Div {
         let look = &self.look;
         let theme = &look.theme;
-        let info = self.snapshot.repo.as_ref();
-        let name = info
-            .and_then(|info| info.remote.as_ref())
-            .map(|remote| remote.source.repository.clone())
-            .or_else(|| {
-                info.map(|info| {
-                    info.main_root
-                        .rsplit('/')
-                        .next()
-                        .unwrap_or(&info.main_root)
-                        .to_owned()
-                })
-            })
-            .unwrap_or_else(|| "Reading the repository\u{2026}".into());
-        let host = match &self.request.target {
-            herdr_client::ConnectTarget::Ssh { target, .. } => target.clone(),
-            _ => "local".into(),
+        let title = match self.repos.as_slice() {
+            [] => "No repositories yet".to_owned(),
+            [only] => only.name(),
+            many => format!("{} projects", many.len()),
         };
-        let sources = self
-            .snapshot
-            .sources
+        // Each backend once, across every repository: syncing while any is,
+        // failed or waiting for a sign-in if any is, else what was synced.
+        let mut providers: Vec<(Provider, Vec<&SyncState>)> = Vec::new();
+        for status in self.repos.iter().flat_map(|repo| &repo.snapshot.sources) {
+            match providers
+                .iter_mut()
+                .find(|(provider, _)| *provider == status.key.provider)
+            {
+                Some((_, states)) => states.push(&status.state),
+                None => providers.push((status.key.provider, vec![&status.state])),
+            }
+        }
+        let github = providers
             .iter()
+            .any(|(provider, _)| *provider == Provider::Github);
+        let sources = providers
+            .into_iter()
             .enumerate()
-            .map(|(index, status)| {
-                let (text, color, sign_in) = match &status.state {
-                    SyncState::Syncing => ("syncing\u{2026}".to_owned(), look.hue(BLUE), false),
-                    SyncState::Synced { count, at } => (
-                        format!("{count} \u{00b7} {}", synced(*at)),
-                        look.hue(GREEN),
-                        false,
-                    ),
-                    SyncState::Capped { count } => {
-                        (format!("first {count}"), look.hue(YELLOW), false)
+            .map(|(index, (provider, states))| {
+                let any = |wanted: fn(&SyncState) -> bool| states.iter().any(|state| wanted(state));
+                let (text, color, sign_in) = if any(|state| matches!(state, SyncState::Syncing)) {
+                    ("syncing\u{2026}".to_owned(), look.hue(BLUE), false)
+                } else if any(|state| matches!(state, SyncState::Failed(_))) {
+                    ("failed".to_owned(), look.hue(RED), false)
+                } else if any(|state| matches!(state, SyncState::SignIn)) {
+                    ("sign in".to_owned(), look.hue(YELLOW), true)
+                } else {
+                    let count: usize = states
+                        .iter()
+                        .map(|state| match state {
+                            SyncState::Synced { count, .. } | SyncState::Capped { count } => *count,
+                            _ => 0,
+                        })
+                        .sum();
+                    let at = states
+                        .iter()
+                        .filter_map(|state| match state {
+                            SyncState::Synced { at, .. } => Some(*at),
+                            _ => None,
+                        })
+                        .max();
+                    match at {
+                        Some(at) => (
+                            format!("{count} \u{00b7} {}", synced(at)),
+                            look.hue(GREEN),
+                            false,
+                        ),
+                        None => ("not supported yet".to_owned(), theme.muted, false),
                     }
-                    SyncState::SignIn => ("sign in".to_owned(), look.hue(YELLOW), true),
-                    SyncState::Unsupported => ("not supported yet".to_owned(), theme.muted, false),
-                    SyncState::Failed(_) => ("failed".to_owned(), look.hue(RED), false),
                 };
-                let provider = status.key.provider;
-                div()
-                    .id(("orchestrator-source", index))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .px_2()
-                    .py(px(2.))
-                    .rounded(px(corners::CONTROL))
-                    .border_1()
-                    .border_color(rgb(theme.active))
-                    .text_size(look.small())
-                    .child(match provider {
-                        Provider::Github => look
-                            .icon("icons/github.svg", 12., theme.subtext())
-                            .into_any_element(),
-                        Provider::Beads => look.badge("bd", MAGENTA).into_any_element(),
-                        Provider::Gitlab => look.badge("gl", RED).into_any_element(),
-                    })
-                    .child(match provider {
-                        Provider::Github => "GitHub",
-                        Provider::Beads => "Beads",
-                        Provider::Gitlab => "GitLab",
-                    })
+                source_chip(look, ("orchestrator-source", index), provider)
                     .child(look.dot(color, 6.))
                     .child(div().text_color(rgb(theme.muted)).child(text))
                     .when(sign_in, |el| {
@@ -418,8 +383,14 @@ impl OrchestratorView {
                             .on_click(cx.listener(|_, _, _, cx| cx.emit(Event::SignIn)))
                     })
             });
+        // A repository without a GitHub remote has no GitHub source, which
+        // reads like a missing account without this.
+        let no_github = (!github && !self.repos.is_empty()).then(|| {
+            source_chip(look, ("orchestrator-source-none", 0), Provider::Github)
+                .child(div().text_color(rgb(theme.muted)).child("no GitHub remote"))
+        });
         let dispatchable =
-            self.selected.is_some() && self.snapshot.access == Some(Access::ReadWrite);
+            self.selected.is_some() && self.snapshot().access == Some(Access::ReadWrite);
         div()
             .flex_none()
             .flex()
@@ -429,14 +400,11 @@ impl OrchestratorView {
             .px_4()
             .py_2()
             .child(look.icon("icons/git-branch.svg", 14., theme.subtext()))
-            .child(div().font_weight(FontWeight::SEMIBOLD).child(name))
-            .child(look.chip(host))
+            .child(div().font_weight(FontWeight::SEMIBOLD).child(title))
             .children(sources)
+            .children(no_github)
             .child(div().flex_1())
-            .child(
-                look.icon_button("orchestrator-refresh", "icons/refresh.svg")
-                    .on_click(cx.listener(|this, _, _, _| this.refresh())),
-            )
+            .child(self.render_refresh(cx))
             .when(dispatchable, |el| {
                 el.child(
                     look.button("orchestrator-dispatch", "Dispatch agent", true)
@@ -447,6 +415,40 @@ impl OrchestratorView {
                         })),
                 )
             })
+    }
+
+    /// Refresh, spinning and inert while a sync it would ask for runs.
+    fn render_refresh(&self, cx: &mut Context<Self>) -> AnyElement {
+        let look = &self.look;
+        if !self.refreshing() {
+            return look
+                .icon_button("orchestrator-refresh", "icons/refresh.svg")
+                .debug_selector(|| "orchestrator-refresh".into())
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.ask_refresh();
+                    cx.notify();
+                }))
+                .into_any_element();
+        }
+        div()
+            .id("orchestrator-refresh")
+            .debug_selector(|| "orchestrator-refresh-busy".into())
+            .flex_none()
+            .size(px(24.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                look.icon("icons/refresh.svg", 14., look.theme.muted)
+                    .with_animation(
+                        "orchestrator-refresh-spin",
+                        Animation::new(SPIN).repeat(),
+                        |icon, delta| {
+                            icon.with_transformation(Transformation::rotate(percentage(delta)))
+                        },
+                    ),
+            )
+            .into_any_element()
     }
 
     fn render_search_row(&self, window: &Window, cx: &mut Context<Self>) -> Div {
@@ -518,11 +520,14 @@ impl OrchestratorView {
                             this.filters.open_only = !this.filters.open_only;
                         },
                     ))
-                    .when(self.login.is_some(), |row| {
-                        row.child(toggle("orchestrator-mine", "Mine", self.mine, |this| {
-                            this.mine = !this.mine;
-                        }))
-                    })
+                    .when(
+                        self.repos.iter().any(|repo| repo.reading_login().is_some()),
+                        |row| {
+                            row.child(toggle("orchestrator-mine", "Mine", self.mine, |this| {
+                                this.mine = !this.mine;
+                            }))
+                        },
+                    )
                     .child(toggle(
                         "orchestrator-pr-has-run",
                         "Has agent",
@@ -644,37 +649,49 @@ impl OrchestratorView {
     fn render_banners(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let look = &self.look;
         let mut banners = Vec::new();
-        if let Some(Access::ReadOnly { found }) = self.snapshot.access {
-            banners.push(banner(
-                look,
-                RED,
-                "icons/lock.svg",
-                format!(
-                    "Shared data is schema {found}; this herdr-gpui understands up to {}. Read-only until updated.",
-                    crate::orchestrator::SCHEMA_VERSION
-                ),
-            ));
-        }
-        if let Some(error) = &self.snapshot.error {
-            banners.push(banner(look, RED, "icons/x.svg", error.to_string()));
-        }
-        for status in &self.snapshot.sources {
-            let text = match &status.state {
-                SyncState::Failed(error) => {
-                    format!("{}: {error}", provider_name(status.key.provider))
+        let named = self.repos.len() > 1;
+        for repo in &self.repos {
+            // With several projects listed, each says whose trouble it is.
+            let of = |text: String| {
+                if named {
+                    format!("{}: {text}", repo.name())
+                } else {
+                    text
                 }
-                SyncState::Capped { count } => format!(
-                    "{} has more than {count} items; the newest are shown and not cached.",
-                    provider_name(status.key.provider)
-                ),
-                _ => continue,
             };
-            let hue = if matches!(status.state, SyncState::Capped { .. }) {
-                YELLOW
-            } else {
-                RED
-            };
-            banners.push(banner(look, hue, "icons/refresh.svg", text));
+            let snapshot = &repo.snapshot;
+            if let Some(Access::ReadOnly { found }) = snapshot.access {
+                banners.push(banner(
+                    look,
+                    RED,
+                    "icons/lock.svg",
+                    of(format!(
+                        "Shared data is schema {found}; this herdr-gpui understands up to {}. Read-only until updated.",
+                        crate::orchestrator::SCHEMA_VERSION
+                    )),
+                ));
+            }
+            if let Some(error) = &snapshot.error {
+                banners.push(banner(look, RED, "icons/x.svg", of(error.to_string())));
+            }
+            for status in &snapshot.sources {
+                let text = match &status.state {
+                    SyncState::Failed(error) => {
+                        format!("{}: {error}", provider_name(status.key.provider))
+                    }
+                    SyncState::Capped { count } => format!(
+                        "{} has more than {count} items; the newest are shown and not cached.",
+                        provider_name(status.key.provider)
+                    ),
+                    _ => continue,
+                };
+                let hue = if matches!(status.state, SyncState::Capped { .. }) {
+                    YELLOW
+                } else {
+                    RED
+                };
+                banners.push(banner(look, hue, "icons/refresh.svg", of(text)));
+            }
         }
         banners
             .into_iter()
@@ -683,7 +700,10 @@ impl OrchestratorView {
                 banner
                     .id(("orchestrator-banner", index))
                     .cursor_pointer()
-                    .on_click(cx.listener(|this, _, _, _| this.refresh()))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.ask_refresh();
+                        cx.notify();
+                    }))
                     .into_any_element()
             })
             .collect()
@@ -692,6 +712,8 @@ impl OrchestratorView {
 
 /// The filters' column width, and the most labels it offers.
 const FACETS_WIDTH: f32 = 200.;
+/// One turn of the busy Refresh icon.
+const SPIN: std::time::Duration = std::time::Duration::from_millis(900);
 const FACET_LABELS: usize = 12;
 
 /// "synced now", "synced 4m ago": when a source last finished a sync.
@@ -702,11 +724,41 @@ fn synced(at: chrono::DateTime<chrono::Utc>) -> String {
     }
 }
 
-fn provider_name(provider: Provider) -> &'static str {
+pub(super) fn provider_name(provider: Provider) -> &'static str {
     match provider {
         Provider::Github => "GitHub",
         Provider::Beads => "Beads",
         Provider::Gitlab => "GitLab",
+    }
+}
+
+/// A backend's chip: its mark and name, for its state to follow.
+fn source_chip(look: &Look, id: (&'static str, usize), provider: Provider) -> Stateful<Div> {
+    let theme = &look.theme;
+    div()
+        .id(id)
+        .flex_none()
+        .flex()
+        .items_center()
+        .gap_1()
+        .px_2()
+        .py(px(2.))
+        .rounded(px(corners::CONTROL))
+        .border_1()
+        .border_color(rgb(theme.active))
+        .text_size(look.small())
+        .child(provider_mark(look, provider))
+        .child(provider_name(provider))
+}
+
+/// A backend's mark: GitHub's logo, else a short colored tag.
+pub(super) fn provider_mark(look: &Look, provider: Provider) -> AnyElement {
+    match provider {
+        Provider::Github => look
+            .icon("icons/github.svg", 12., look.theme.subtext())
+            .into_any_element(),
+        Provider::Beads => look.badge("bd", MAGENTA).into_any_element(),
+        Provider::Gitlab => look.badge("gl", RED).into_any_element(),
     }
 }
 

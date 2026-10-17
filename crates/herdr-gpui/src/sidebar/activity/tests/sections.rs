@@ -1,5 +1,5 @@
-//! The Pull requests and Issues sections show an orchestrator view of the
-//! focused workspace's repository, which the window makes and keeps.
+//! The Pull requests and Issues sections show one orchestrator view of every
+//! repository the connected hosts' workspaces hold.
 use super::*;
 use crate::{
     orchestrator::{List, ViewId},
@@ -10,14 +10,17 @@ use gpui::{AppContext as _, Entity, VisualTestContext, px, size};
 use herdr_client::ConnectTarget;
 use std::sync::Arc;
 
-fn local(cx: &mut gpui::TestAppContext) -> (Entity<HerdrWindow>, &mut VisualTestContext) {
+pub(super) fn local(
+    cx: &mut gpui::TestAppContext,
+) -> (Entity<HerdrWindow>, &mut VisualTestContext) {
     let (fixture, cx) = cx.add_window_view(|window, cx| {
         let view = cx.new(|cx| {
             let mut view = fixture_window(window, cx);
             view.config.sidebar_style.activity_bar = true;
             // The local session can run the orchestrator's scripts.
             view.endpoints[0].connection.target = ConnectTarget::Local;
-            let mut listing = snapshot(2);
+            // w3 to w5 are agent-launcher's worktrees; the others share a folder.
+            let mut listing = snapshot(4);
             listing.focused_workspace_id = Some("w0".into());
             view.live.snapshot = Some(Arc::new(listing));
             view.live.status = ConnectionStatus::Connected;
@@ -31,7 +34,7 @@ fn local(cx: &mut gpui::TestAppContext) -> (Entity<HerdrWindow>, &mut VisualTest
     (view, cx)
 }
 
-fn show(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, panel: ActivityPanel) {
+pub(super) fn show(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, panel: ActivityPanel) {
     cx.update(|window, cx| {
         view.update(cx, |view, cx| view.show_activity_panel(panel, window, cx));
         full_draw(window, cx).clear(cx);
@@ -84,43 +87,46 @@ fn a_section_makes_its_view_once_and_picks_its_list(cx: &mut gpui::TestAppContex
 }
 
 #[gpui::test]
-fn a_section_follows_the_focused_workspace_and_forgets_closed_ones(cx: &mut gpui::TestAppContext) {
+fn a_section_lists_every_repository_once_and_drops_closed_ones(cx: &mut gpui::TestAppContext) {
     let (view, cx) = local(cx);
     show(&view, cx, ActivityPanel::Issues);
+    let keys = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            let view = view.read(cx);
+            let id = view.activity.section_view.unwrap();
+            view.orchestrators[&id].view().read(cx).repo_keys()
+        })
+    };
+    // Worktrees of one repository are one.
+    assert_eq!(keys(cx).len(), 2);
+    // Another workspace focused lists the same: the section is not the
+    // focused workspace's.
     let first = cx.update(|_, cx| view.read(cx).activity.section_view);
-    cx.update(|window, cx| {
-        view.update(cx, |view, cx| {
+    cx.update(|_, cx| {
+        view.update(cx, |view, _| {
             if let Some(snapshot) = view.live.snapshot.as_mut() {
                 Arc::make_mut(snapshot).focused_workspace_id = Some("w1".into());
             }
-            view.poll_orchestrators(window, cx);
         })
     });
-    let second = cx.update(|_, cx| view.read(cx).activity.section_view);
-    assert_ne!(first, second);
-    assert_eq!(views(&view, cx), 2);
-    let workspace = cx.update(|_, cx| {
-        view.read(cx).orchestrators[&second.unwrap()]
-            .workspace()
-            .to_owned()
-    });
-    assert_eq!(workspace, "w1");
-    // Closing w0 drops its view; the shown one stays.
+    tick(&view, cx);
+    assert_eq!(
+        cx.update(|_, cx| view.read(cx).activity.section_view),
+        first
+    );
+    assert_eq!(keys(cx).len(), 2);
+    // Closing agent-launcher's worktree drops its repository.
     cx.update(|_, cx| {
         view.update(cx, |view, _| {
             if let Some(snapshot) = view.live.snapshot.as_mut() {
                 Arc::make_mut(snapshot)
                     .workspaces
-                    .retain(|workspace| workspace.workspace_id != "w0");
+                    .retain(|workspace| workspace.worktree.is_none());
             }
         })
     });
     tick(&view, cx);
-    assert_eq!(views(&view, cx), 1);
-    assert_eq!(
-        cx.update(|_, cx| view.read(cx).activity.section_view),
-        second
-    );
+    assert_eq!(keys(cx).len(), 1);
 }
 
 #[gpui::test]

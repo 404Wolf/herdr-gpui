@@ -65,7 +65,15 @@ impl HerdrWindow {
     /// Back or Forward along the selected endpoint's focus trail. The trail
     /// remembers the step only once its request is queued, so a press while
     /// an earlier one is still landing leaves that one in charge.
-    pub(crate) fn travel(&mut self, step: Step, cx: &mut Context<Self>) {
+    pub(crate) fn travel(&mut self, step: Step, window: &mut Window, cx: &mut Context<Self>) {
+        // A pane a section opened goes back to that section first.
+        if step == Step::Back
+            && self.activity_section().is_none()
+            && let Some(panel) = self.activity.return_to
+        {
+            self.show_activity_panel(panel, window, cx);
+            return;
+        }
         let Some(snapshot) = self.live.snapshot.clone() else {
             return;
         };
@@ -82,6 +90,12 @@ impl HerdrWindow {
     }
 
     pub(crate) fn can_travel(&self, step: Step) -> bool {
+        if step == Step::Back
+            && self.activity_section().is_none()
+            && self.activity.return_to.is_some()
+        {
+            return true;
+        }
         self.live.snapshot.as_deref().is_some_and(|snapshot| {
             self.endpoints[self.selected_endpoint]
                 .history
@@ -500,8 +514,10 @@ impl HerdrWindow {
                     Command::Back => Step::Back,
                     _ => Step::Forward,
                 };
-                self.travel(step, cx);
-                window.focus(&self.focus, cx);
+                self.travel(step, window, cx);
+                if self.activity_section().is_none() {
+                    window.focus(&self.focus, cx);
+                }
                 return;
             }
             Command::PreviousWorkspace
