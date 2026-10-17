@@ -1,11 +1,12 @@
 //! The collapsed sidebar's compact rail, as Herdr's default
 //! `ui.sidebar_collapsed_mode = "compact"` draws it: per host a small header
 //! box, then a status mark per workspace and per agent. The header box stays
-//! its own shape. Workspace badges and agent rows share one borderless grid,
-//! centered on that box, and the selection highlight is the only other box:
-//! one width, wrapped around the glyph, the icon, and the dot. Every mark
-//! navigates where its expanded row would, and its tooltip names what the
-//! narrow column cannot.
+//! its own shape. The host that holds the selected workspace is filled with
+//! the accent; the others are dimmed. Workspace badges and agent
+//! rows share one borderless grid, centered on that box, and the selection
+//! highlight is the only other box: one width, wrapped around the glyph, the
+//! icon, and the dot. Every mark navigates where its expanded row would, and
+//! its tooltip names what the narrow column cannot.
 
 use super::{
     agent_name,
@@ -158,6 +159,7 @@ impl HerdrWindow {
                     endpoint.label.clone()
                 };
                 let box_id = endpoint_id.clone();
+                let chrome = host_chrome(selected, theme);
                 spaces = spaces.child(
                     // No row highlight here. The letter's own box is the
                     // header; the selection highlight belongs to the rows
@@ -174,12 +176,10 @@ impl HerdrWindow {
                                 .justify_center()
                                 .rounded(px(crate::config::corners::SMALL))
                                 .border_1()
-                                .border_color(host_border(selected, theme))
-                                .text_color(rgb(if endpoint.enabled {
-                                    theme.foreground
-                                } else {
-                                    theme.muted
-                                }))
+                                .border_color(chrome.border)
+                                .bg(chrome.fill)
+                                .text_color(chrome.letter)
+                                .when(chrome.dimmed, |header| header.opacity(REST_OPACITY))
                                 .child(label_text(&initial))
                                 .child(
                                     div()
@@ -622,10 +622,39 @@ fn host_header(font: &FontConfig, look: SidebarLook) -> Div {
         .overflow_hidden()
 }
 
-/// The header box's border. A light ring at rest, a little stronger when that
-/// host is selected. Neither is the selection highlight's fill or outline.
-fn host_border(selected: bool, theme: &Theme) -> Rgba {
-    rgba((theme.foreground << 8) | if selected { 0x55 } else { 0x28 })
+/// How far an inactive host header fades. Low enough to read as dim next to
+/// the filled accent, high enough that the box and its status dot remain.
+const REST_OPACITY: f32 = 0.4;
+
+/// Paint for one host header. `active` is the host that holds the selected
+/// workspace: the box is filled with the theme accent and the letter is the
+/// brighter of the two text colors on that fill. Every other host keeps a
+/// faint ring, a muted letter, and [`REST_OPACITY`]. The accent is the theme
+/// primary, not the row highlight's `active` fill or its foreground outline.
+struct HostChrome {
+    border: Rgba,
+    fill: Rgba,
+    letter: Rgba,
+    dimmed: bool,
+}
+
+fn host_chrome(active: bool, theme: &Theme) -> HostChrome {
+    if active {
+        let fill = theme.primary();
+        HostChrome {
+            border: rgb(fill),
+            fill: rgb(fill),
+            letter: rgb(theme.text_on(fill)),
+            dimmed: false,
+        }
+    } else {
+        HostChrome {
+            border: rgba((theme.muted << 8) | 0x40),
+            fill: rgba(0),
+            letter: rgb(theme.muted),
+            dimmed: true,
+        }
+    }
 }
 
 /// A rail row: centered marks over the active layout's highlight, so the rail

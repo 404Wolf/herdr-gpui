@@ -7,7 +7,9 @@ use crate::{
     sidebar::layout_tests::{SidebarFixture, fixture_window, full_draw, snapshot},
 };
 use core::prelude::v1::test;
-use gpui::{Bounds, Modifiers, Pixels, TestAppContext, VisualTestContext, size};
+use gpui::{
+    Bounds, Hsla, Modifiers, Pixels, ScaledPixels, TestAppContext, VisualTestContext, size,
+};
 use herdr_client::ConnectTarget;
 use std::sync::Arc;
 
@@ -269,6 +271,117 @@ fn near(actual: Pixels, expected: Pixels) -> bool {
 
 fn center_x(bounds: Bounds<Pixels>) -> Pixels {
     bounds.left() + bounds.size.width / 2.
+}
+
+/// The host that holds the selected workspace is a saturated accent fill.
+/// The other hosts stay an empty, dimmed box. Neither look is the workspace
+/// row's selection highlight, and the accent follows the workspace when the
+/// selection moves.
+#[gpui::test]
+fn the_selected_workspaces_host_stands_apart(cx: &mut TestAppContext) {
+    let (view, cx) = rail_window(cx, 2);
+    let local = host_paint(cx, "rail-host-box-local");
+    let remote = host_paint(cx, "rail-host-box-ssh:host1");
+    let highlight = host_paint(cx, "highlight-rail-workspace-local-w0");
+    assert_header_apart(local, remote, highlight);
+
+    let workspace = placed(cx, "rail-workspace-ssh:host1-w0");
+    cx.simulate_click(workspace.center(), Modifiers::default());
+    cx.update(|window, cx| full_draw(window, cx).clear(cx));
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.endpoints[view.selected_endpoint].id, "ssh:host1");
+    });
+    let local = host_paint(cx, "rail-host-box-local");
+    let remote = host_paint(cx, "rail-host-box-ssh:host1");
+    let highlight = host_paint(cx, "highlight-rail-workspace-ssh:host1-w0");
+    assert_header_apart(remote, local, highlight);
+}
+
+/// Fill and border painted for one box. A border is its own quad, and a
+/// transparent fill paints nothing.
+#[derive(Debug)]
+struct HeaderPaint {
+    fill: Option<Hsla>,
+    border: Option<Hsla>,
+}
+
+/// `active` is the header of the host that holds the selected workspace,
+/// `rest` is another host, and `highlight` is that workspace's selection box.
+fn assert_header_apart(active: HeaderPaint, rest: HeaderPaint, highlight: HeaderPaint) {
+    let fill = active
+        .fill
+        .unwrap_or_else(|| panic!("active header has no fill"));
+    assert!(
+        fill.a > 0.5 && fill.s > 0.7,
+        "active header fill is not a strong accent: {fill:?}"
+    );
+    assert!(
+        rest.fill.is_none_or(|color| color.a < 0.05),
+        "resting header is filled: {rest:?}"
+    );
+    let border = active
+        .border
+        .unwrap_or_else(|| panic!("active header has no border"));
+    assert!(
+        border.a > 0.9,
+        "active border is not a solid accent: {border:?}"
+    );
+    let rest_border = rest
+        .border
+        .unwrap_or_else(|| panic!("resting header lost its box"));
+    assert!(
+        rest_border.a < 0.15,
+        "resting header is not dimmed: {rest_border:?}"
+    );
+    let mark_fill = highlight
+        .fill
+        .unwrap_or_else(|| panic!("selected workspace has no highlight"));
+    assert!(
+        fill.s > mark_fill.s + 0.35,
+        "header fill is too close to the row highlight: {fill:?} vs {mark_fill:?}"
+    );
+    assert_ne!(
+        Some(border),
+        highlight.border,
+        "header border matches the row highlight"
+    );
+}
+
+/// The background and border painted for `selector`.
+fn host_paint(cx: &mut VisualTestContext, selector: &'static str) -> HeaderPaint {
+    let bounds = placed(cx, selector);
+    cx.update(|window, _| {
+        let scale = window.scale_factor();
+        let wanted = bounds.scale(scale);
+        let slack = px(1.5).scale(scale);
+        let mut fill = None;
+        let mut border = None;
+        for quad in window.painted_quads() {
+            if !same_box(quad.bounds, wanted, slack) {
+                continue;
+            }
+            let bordered = quad.border_widths.top.0 > 0. || quad.border_widths.left.0 > 0.;
+            if bordered {
+                border = Some(quad.border_color);
+            } else if let Some(color) = quad.background.as_solid() {
+                fill = Some(color);
+            }
+        }
+        assert!(fill.is_some() || border.is_some(), "no quad for {selector}");
+        HeaderPaint { fill, border }
+    })
+}
+
+fn same_box(
+    actual: Bounds<ScaledPixels>,
+    wanted: Bounds<ScaledPixels>,
+    slack: ScaledPixels,
+) -> bool {
+    let close = |actual: ScaledPixels, wanted: ScaledPixels| (actual.0 - wanted.0).abs() <= slack.0;
+    close(actual.origin.x, wanted.origin.x)
+        && close(actual.origin.y, wanted.origin.y)
+        && close(actual.size.width, wanted.size.width)
+        && close(actual.size.height, wanted.size.height)
 }
 
 fn contains(outer: Bounds<Pixels>, inner: Bounds<Pixels>) -> bool {
