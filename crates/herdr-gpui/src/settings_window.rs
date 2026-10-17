@@ -447,7 +447,7 @@ impl SettingsWindow {
                 WindowAppearance::Light | WindowAppearance::VibrantLight
             );
             match shared.theme(light) {
-                Ok(theme) => self.theme = theme.with_contrast(self.config.contrast),
+                Ok(theme) => self.theme = theme.styled_for(&self.config),
                 Err(error) => self.error = Some(format!("Apply system appearance: {error}")),
             }
         }

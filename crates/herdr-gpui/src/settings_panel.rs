@@ -70,7 +70,7 @@ impl HerdrWindow {
             );
             match shared.theme(light) {
                 Ok(theme) => {
-                    self.theme = theme.with_contrast(self.config.contrast);
+                    self.theme = theme.styled_for(&self.config);
                     if let Some(mut appearance) =
                         cx.try_global::<crate::app::InitialAppearance>().cloned()
                         && appearance.config.theme == "Follow Herdr"

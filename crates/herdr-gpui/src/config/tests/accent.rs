@@ -36,3 +36,14 @@ fn the_system_accent_wins_over_a_themes_own() {
     );
     assert_eq!(theme.clone().with_accent(None).primary(), 0x7aa2f7);
 }
+
+#[test]
+fn styling_a_theme_twice_matches_styling_it_once() {
+    let config = Config {
+        contrast: Contrast::High,
+        ..Config::default()
+    };
+    let once = Theme::default().styled_for(&config);
+    assert_eq!(once.clone().styled_for(&config), once);
+    assert_eq!(once.contrast, Contrast::High);
+}

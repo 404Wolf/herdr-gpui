@@ -185,12 +185,10 @@ impl Config {
         resolve(value, light, theme_directories).map(|theme| self.styled(theme))
     }
 
-    /// `theme` with this config's contrast, raised under a system contrast
-    /// theme, and accent.
+    /// `theme` with this config's contrast and accent; see
+    /// [`Theme::styled_for`].
     fn styled(&self, theme: Theme) -> Theme {
-        theme
-            .with_contrast(self.contrast.or_system())
-            .with_accent(self.accent.color())
+        theme.styled_for(self)
     }
 }
 
@@ -431,9 +429,23 @@ impl Theme {
         )
     }
 
+    /// The theme as `config` shows it: its contrast, raised while a Windows
+    /// contrast theme is on, and the system accent when `accent = "system"`.
+    /// Every theme the app paints goes through this, whatever loaded it, so
+    /// a shared Herdr theme or a Settings draft looks as a configured one.
+    pub(crate) fn styled_for(self, config: &Config) -> Self {
+        self.with_contrast(config.contrast.or_system())
+            .with_accent(config.accent.color())
+    }
+
     /// High contrast parts selected rows further from the surface and raises
     /// dim labels to text contrast. Standard leaves the theme as drawn.
+    /// Applying the level the theme already has changes nothing, so a theme
+    /// styled once and styled again is not raised twice.
     pub fn with_contrast(mut self, contrast: Contrast) -> Self {
+        if self.contrast == contrast {
+            return self;
+        }
         self.contrast = contrast;
         if contrast == Contrast::High {
             self.active = mix(self.active, self.foreground, 12);
