@@ -82,7 +82,6 @@ struct Caffeine {
     scope: AwakeScope,
     /// Counts settled holds and releases, so a timer set after one can tell
     /// whether anyone changed the state since.
-    #[cfg(unix)]
     changes: u64,
     /// Dropping it ends the worker, which releases any hold on its own thread.
     worker: Option<SyncSender<Request>>,
@@ -114,7 +113,6 @@ pub(crate) fn scope(cx: &App) -> AwakeScope {
 }
 
 /// How many holds and releases have settled so far.
-#[cfg(unix)]
 pub(crate) fn changes(cx: &App) -> u64 {
     cx.try_global::<Caffeine>()
         .map_or(0, |caffeine| caffeine.changes)
@@ -157,7 +155,6 @@ pub(crate) fn toggle_until_agents_finish(
 
 /// Turns a hold until agents finish into one until turned off, as asking
 /// for caffeine "on" means; whether it did. The hold itself stays.
-#[cfg(unix)]
 pub(crate) fn hold_indefinitely(cx: &mut App) -> bool {
     let caffeine = cx.default_global::<Caffeine>();
     if caffeine.cup != Cup::On(Mode::UntilAgentsFinish) {
@@ -315,7 +312,6 @@ fn finish(
         // took its guard with it.
         (Change::Hold(_), Err(_)) | (Change::Release, _) => Cup::Off,
     };
-    #[cfg(unix)]
     {
         caffeine.changes = caffeine.changes.wrapping_add(1);
     }
