@@ -139,7 +139,13 @@ pub(super) const CATALOG: &[Entry] = &[
         Section::Sidebar,
         "sidebar-show-agents",
         "Show agents",
-        "List running agents under their workspace.",
+        "List running agents in the sidebar.",
+    ),
+    entry(
+        Section::Sidebar,
+        "sidebar-agents-placement",
+        "Agents placement",
+        "Their own section below the workspaces, or under the workspace each one runs in.",
     ),
     entry(
         Section::Sidebar,
@@ -389,6 +395,13 @@ pub(super) const CATALOG: &[Entry] = &[
         "cloud-accounts",
         "Cloud accounts",
         "Accounts for each cloud provider, and the machines saved as devices.",
+    ),
+    #[cfg(feature = "cloud")]
+    entry(
+        Section::CloudDevices,
+        "cloud-setup",
+        "New device setup",
+        "Agents such as Claude Code, Codex, Gemini CLI, or OpenCode, and a setup script, installed when a new cloud device first connects.",
     ),
     entry(
         Section::Configuration,

@@ -47,6 +47,10 @@ confirm_close_workspace = true
 remove_merged_worktrees = false
 # Show the Agents section below Spaces in the sidebar.
 show_agents = true
+# Where the sidebar lists agents while show_agents is on: "panel", their own
+# section below Spaces, or "nested", under the workspace each one runs in.
+# Also under Settings > Sidebar.
+agents_placement = "panel"
 # Show the search field at the top of the sidebar, which finds devices,
 # worktrees, and branches. Also under Settings > Sidebar.
 show_sidebar_search = true
@@ -457,6 +461,19 @@ size = 12
 # Same meaning as [github] allow_plaintext_credentials, for the API key, which
 # is saved in its own 0600 daytona-api-key file. Default is false.
 # allow_plaintext_credentials = false
+
+# What a new cloud device runs the first time it connects, in a "setup" tab:
+# the agents listed (claude, codex, gemini, opencode), each skipped when already
+# installed, then these lines with sh -e. Settings > Cloud devices > New device
+# setup switches the agents. A provider's table, such as [cloud.coder], replaces
+# either key for that provider; an empty list or script there turns it off.
+# [cloud]
+# agents = ["claude", "opencode"]
+# setup = """
+# git config --global pull.rebase true
+# """
+# [cloud.coder]
+# agents = []
 
 # What shows behind the main window, also under Settings > Theme > Window. At the
 # default opacity the window paints as it always has.

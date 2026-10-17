@@ -90,6 +90,8 @@ pub enum Error {
     #[error(transparent)]
     Cloud(#[from] crate::cloud::Error),
     #[error(transparent)]
+    CloudSetup(#[from] crate::cloud_setup::Error),
+    #[error(transparent)]
     Code(#[from] crate::code_server::Error),
     #[error("This file is missing, larger than 1 MiB, or not UTF-8 text")]
     CodeFileUnreadable,
@@ -120,6 +122,8 @@ pub enum Error {
     ControlMessageSize { limit: usize },
     #[error("Herdr UI closed the control connection without answering")]
     ControlNoResponse,
+    #[error("{} is held by something other than this user's Herdr UI, so it is not used", path.display())]
+    ControlPipeForeign { path: PathBuf },
     #[error("{message}")]
     ControlRejected {
         code: crate::control::ErrorCode,
@@ -133,10 +137,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[error(
-        "Controlling a running Herdr UI needs a Unix socket, which this platform build does not provide"
-    )]
-    ControlUnsupported,
+    #[error("Could not identify the Windows user: {0}")]
+    ControlUser(#[source] io::Error),
     #[error("Missing credential directory.")]
     CredentialDirectory,
     #[error("Cannot access private credential file.")]

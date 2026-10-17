@@ -14,7 +14,6 @@ mod script;
 #[cfg(test)]
 mod tests;
 
-#[cfg(any(unix, test))]
 pub(crate) use script::valid_id;
 
 use crate::{Error, Result, usage::Host};
@@ -427,7 +426,6 @@ impl Checkpoints {
     }
 
     /// Select checkpoint `id` in the open dialog once its list has loaded.
-    #[cfg(any(unix, test))]
     pub fn want(&mut self, id: String) {
         if let Some(view) = &mut self.view {
             view.wanted = Some(id);

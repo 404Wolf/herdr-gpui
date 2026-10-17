@@ -240,9 +240,7 @@ impl Pages {
         self.pages.contains_key(&id)
     }
 
-    /// Tab `id`'s page, for the control requests, which only Unix builds
-    /// serve.
-    #[cfg(unix)]
+    /// Tab `id`'s page, for the control requests.
     pub(crate) fn page(&self, id: TabId) -> Option<&Rc<Page>> {
         self.pages.get(&id)
     }

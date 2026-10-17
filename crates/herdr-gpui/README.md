@@ -518,10 +518,50 @@ host key on first use (`railway_known_hosts`). The VM is temporary: Railway
 limits its lifetime and how many a network can create. Needs
 `ssh` and `ssh-keygen` on the PATH; unavailable on Windows.
 
+### Setup scripts for new cloud devices
+
+A new cloud device can install coding agents and run your own setup the first
+time it connects. Settings > **Cloud devices** > **New device setup** has one
+switch per agent (Claude Code, Codex, Gemini CLI, OpenCode), saved to
+`[cloud] agents`, and previews your own lines from `[cloud] setup`, which
+**Edit setup script in config file** opens:
+
+```toml
+[cloud]
+agents = ["claude", "opencode"]
+setup = """
+git config --global pull.rebase true
+"""
+
+# Replaces either key for one provider; an empty list or script turns it off.
+[cloud.coder]
+agents = []
+```
+
+The script is the agents' installs, in that order and each skipped when the
+tool is already on the machine, then your lines, run with `sh -e` so the first
+failing command stops it. Claude Code and OpenCode use their official
+installers, downloaded before they run so a failed download stops the script;
+Codex and Gemini CLI need `npm` on the device and
+are skipped with a note when it is missing (a system Node may also need root
+for `npm install -g`). Open a new tab afterwards to pick up PATH changes.
+
+Each provider's form has a **Run the setup script when it connects** switch,
+shown when a script is configured: on for a new machine, and in Coder's form
+off when attaching an existing workspace. Boat's **Finish setup** on a saved
+sandbox does not run it again. When the device is ready the script
+waits, for up to 30 minutes, until a window shows that device, then runs in a
+new, focused `setup` tab of the device's first workspace, like a worktree's
+setup script; nothing runs in the background. The script is yours, from this
+computer's config, so no trust question is asked. Waiting scripts are kept in
+memory only, at most eight at once; one that never ran, or a later run, is
+started from **Run setup script** in the device's sidebar menu or with
+`herdr-gpui cloud setup ID`. Reconnecting never runs it again by itself.
+
 Each provider is a Cargo feature of `herdr-gpui`, on by default: `boat`, `coder`,
 `daytona`, and `railway`. A build with `--no-default-features` has no Cloud
 Devices section and no provider rows in the device picker; it still accepts
-the `[boat]`, `[coder]`, and `[daytona]` tables, so one config file serves every
+the `[boat]`, `[cloud]`, `[coder]`, and `[daytona]` tables, so one config file serves every
 build, but never reads them.
 
 Switching revokes the old host's focus before releasing its surface, then resizes
@@ -838,6 +878,12 @@ The pane dialog's **Do not ask again** checkbox (click it or press Space) saves
 `confirm_close_pane = false` to `config-gpui.local.toml` once the close is sent. Saved edits apply automatically. The
 **Show agents** control in **Settings > Sidebar** saves
 `show_agents` immediately, independently of the layout draft saved on close.
+
+Agents list in their own section below Spaces by default. Set top-level
+`agents_placement = "nested"`, or pick **Under workspaces** for **Agents
+placement** in **Settings > Sidebar**, to list each agent under the workspace
+it runs in instead; Spaces then takes the full sidebar height. The collapsed
+rail keeps its own agents section either way.
 
 A search field at the top of the sidebar finds devices, worktrees, and
 branches by name; while it holds text, results grouped by kind replace the
@@ -2391,10 +2437,8 @@ them to the agent that opened it, so it can change the page.
   working after two minutes). It is never typed into a pane where Herdr sees no
   running agent, since Enter there would run it in a shell, nor into an agent
   that is asking you a question; those notes wait for `browser feedback`, as
-  do notes for a pane this window does not show.
-  Windows has no `browser feedback` listener: notes that cannot be pasted
-  are copied instead, and the tab can send again. Notes written in a session
-  that is no longer shown are also copied, never handed to another session's
+  do notes for a pane this window does not show. Notes written in a session
+  that is no longer shown are copied, never handed to another session's
   agent.
 - Feedback is scoped to the caller's daemon socket and pane together, so two
   local sessions with the same pane ID cannot take each other's notes. Use the
@@ -2563,7 +2607,9 @@ The tab joins the caller's own workspace, which Herdr names in the pane's
 `HERDR_WORKSPACE_ID`, and remembers the caller's `HERDR_PANE_ID` so notes on
 the page go back to it. The command talks to the running app over a socket at
 `$XDG_STATE_HOME/herdr/gpui/control.sock`, readable only by you, and exits with
-3 when the app is not running. Only processes on this machine can reach it.
+3 when the app is not running. On Windows it is a named pipe only your user
+can open ([details](../../docs/cli.md#windows)). Only processes on this
+machine can reach it.
 
 Agents on a saved SSH host open pages another way, since that host cannot
 reach this machine. The app writes a small `herdr-gpui` shim there, at
@@ -3732,6 +3778,16 @@ named pipe has no receive timeout; send timeouts cannot be enforced at all
 there. Configuration and state
 follow upstream's Windows layout: `%APPDATA%\herdr` and `%LOCALAPPDATA%\herdr`,
 still overridden by `XDG_CONFIG_HOME` / `XDG_STATE_HOME` when they are set.
+
+`herdr-gpui COMMAND` and the managed agent skill reach the running app over
+`\\.\pipe\herdr-gpui-control-SID`, named for the Windows user. The app creates
+it owned by that user with a DACL granting only that user's SID, as the first
+instance, and with remote clients rejected; the command line opens it at
+identification level and checks its owner before sending anything, since any
+user could create a pipe of that name first. `docs/cli.md` has the details.
+Reading the user's SID and the pipe's owner takes two `unsafe` Win32 calls
+(`GetTokenInformation`, `GetSecurityInfo`), which neither the standard library
+nor `interprocess` wraps.
 
 ### WSL distributions
 

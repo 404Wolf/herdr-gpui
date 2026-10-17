@@ -4,6 +4,7 @@ use herdr_client::protocol::ToastHerdrPosition;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Preference {
+    AgentsPlacement(AgentsPlacement),
     ConfirmCloseTab(bool),
     ConfirmClosePane(bool),
     ConfirmCloseWorkspace(bool),
@@ -88,6 +89,9 @@ impl Config {
             };
             let mut document = text.parse::<toml_edit::DocumentMut>()?;
             let (table, key, value) = match edit {
+                Preference::AgentsPlacement(placement) => {
+                    (None, "agents_placement", Some(placement.as_str().into()))
+                }
                 Preference::ConfirmCloseTab(value) => {
                     (None, "confirm_close_tab", Some(value.into()))
                 }

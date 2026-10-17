@@ -7,7 +7,6 @@ use std::{
     thread::ThreadId,
 };
 
-#[cfg(unix)]
 mod changes;
 mod hidden_cup;
 mod right_click;

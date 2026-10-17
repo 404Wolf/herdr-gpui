@@ -2,9 +2,11 @@ use super::*;
 use anyhow::Context as _;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+mod agents_placement;
 mod backdrop;
 mod bitmap_fonts;
 mod bold_color;
+mod cloud_setup;
 mod code;
 mod code_navigation;
 mod code_start;
