@@ -37,18 +37,28 @@ fn a_distribution_needs_a_windows_client() {
 
 #[cfg(windows)]
 #[test]
-fn a_windows_client_runs_scripts_only_in_distributions() {
-    for host in [ScriptHost::Local, ScriptHost::Ssh("me@box")] {
-        let result = run_script(
-            host,
-            "true",
-            std::io::empty(),
-            std::io::sink(),
-            LIMITS,
-            &AtomicBool::new(false),
-        );
-        assert!(matches!(result, Err(Error::ScriptUnsupported)), "{host:?}");
-    }
+fn a_windows_client_runs_scripts_only_on_remote_hosts() {
+    // This machine has no `/bin/sh`.
+    let result = run_script(
+        ScriptHost::Local,
+        "true",
+        std::io::empty(),
+        std::io::sink(),
+        LIMITS,
+        &AtomicBool::new(false),
+    );
+    assert!(matches!(result, Err(Error::ScriptUnsupported)));
+    // An SSH host is accepted: cancelled first, it reports the cancellation
+    // instead of the platform, and never starts `ssh`.
+    let result = run_script(
+        ScriptHost::Ssh("me@box"),
+        "true",
+        std::io::empty(),
+        std::io::sink(),
+        LIMITS,
+        &AtomicBool::new(true),
+    );
+    assert!(matches!(result, Err(Error::ScriptCancelled)));
 }
 
 #[cfg(windows)]

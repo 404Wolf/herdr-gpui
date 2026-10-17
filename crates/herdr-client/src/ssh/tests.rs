@@ -2,7 +2,6 @@ use super::*;
 
 #[cfg(unix)]
 mod command;
-#[cfg(unix)]
 mod forward;
 mod incompatible;
 mod probe_failure;

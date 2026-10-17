@@ -473,7 +473,6 @@ pub const FORWARD_READY: &str = "herdr-forward-ready";
 /// than in a shared master, so killing the child closes it; a host that needs
 /// an interactively authenticated master cannot be tunnelled. The caller owns
 /// the child: its streams, readiness, and reaping.
-#[cfg(unix)]
 pub fn forward_command(
     target: &str,
     local: u16,
@@ -503,19 +502,6 @@ pub fn forward_command(
         target,
     ]);
     Ok(command)
-}
-
-/// Windows OpenSSH has no control master, so the forward worker cannot run
-/// there; see `forward`.
-#[cfg(windows)]
-pub fn forward_command(
-    target: &str,
-    _local: u16,
-    _address: Option<std::net::IpAddr>,
-    _remote: u16,
-) -> Result<Command> {
-    validate_target(target)?;
-    Err(Error::SshUnsupported)
 }
 
 /// A one-shot, noninteractive `ssh` child that runs `script` under the remote
