@@ -67,7 +67,8 @@ pub(super) fn from_path(path: &Path) -> Option<Source> {
 }
 
 /// Match upstream's Unix terminal-drop escaping, even inside matching quotes.
-/// Remote GUI image bridging is Unix-only; this is not Windows shell parsing.
+/// On Windows a backslash separates path components (Explorer's "Copy as path"
+/// and terminal drops quote the path instead), so it is kept as written.
 pub(super) fn from_paste(text: &str) -> Option<Source> {
     if text.len() > MAX_SOURCE_BYTES {
         return None;
@@ -89,6 +90,9 @@ pub(super) fn from_paste(text: &str) -> Option<Source> {
     } else {
         text
     };
+    if cfg!(windows) {
+        return from_path(Path::new(text));
+    }
     let mut path = String::with_capacity(text.len());
     let mut chars = text.chars();
     while let Some(ch) = chars.next() {

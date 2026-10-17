@@ -179,14 +179,18 @@ impl HerdrWindow {
         crate::titlebar::movable(bar, window)
     }
 
-    fn application_shortcut(&self, action: &dyn Action, cx: &App) -> String {
+    /// A menu item's shortcut in keymap spelling, the way the palette and the
+    /// Keyboard Shortcuts page show it. A `cmd-` the user configured is
+    /// named for this desktop's platform key, as GPUI's `unparse` names it.
+    pub(super) fn application_shortcut(&self, action: &dyn Action, cx: &App) -> String {
         if let Some(command) = action.as_any().downcast_ref::<crate::RunCommand>() {
+            let platform = if cfg!(windows) { "win-" } else { "super-" };
             return self
                 .keymap()
                 .shortcuts(command.command)
                 .next()
                 .unwrap_or_default()
-                .replace("cmd-", "super-");
+                .replace("cmd-", platform);
         }
         cx.key_bindings()
             .borrow()
@@ -196,7 +200,7 @@ impl HerdrWindow {
                 binding
                     .keystrokes()
                     .iter()
-                    .map(ToString::to_string)
+                    .map(KeybindingKeystroke::unparse)
                     .collect::<Vec<_>>()
                     .join(" ")
             })

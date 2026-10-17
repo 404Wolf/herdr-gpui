@@ -49,6 +49,8 @@ mod layouts;
 #[cfg(test)]
 mod listening_ports;
 #[cfg(test)]
+mod nested_agents;
+#[cfg(test)]
 mod palette;
 #[cfg(test)]
 mod palette_header;
@@ -89,6 +91,8 @@ mod update_notes;
 mod update_notes_scrollbar;
 #[cfg(test)]
 mod update_panel;
+#[cfg(test)]
+mod workspace_click_hover;
 #[cfg(test)]
 mod workspace_menu;
 #[cfg(test)]
@@ -473,6 +477,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         removal: None,
         merged_cleanup: Default::default(),
         worktree_script: None,
+        wsl_paste: None,
         editor_open: None,
         editor_panes: Vec::new(),
         teleport: None,
@@ -529,6 +534,8 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         remote_browser: Vec::new(),
         #[cfg(feature = "cloud")]
         cloud_jobs: Default::default(),
+        #[cfg(feature = "cloud")]
+        cloud_setup: None,
         listening_ports: Default::default(),
         tunnels: Default::default(),
         sidebar_visible: true,
@@ -626,6 +633,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         sidebar_scroll: Default::default(),
         sidebar_revealed: Default::default(),
         sidebar_pin_reveal: Default::default(),
+        sidebar_nested_reveal: Default::default(),
         sidebar_folded: Default::default(),
         sidebar_search: crate::sidebar::SidebarSearch::new(cx),
         _poll: Task::ready(()),

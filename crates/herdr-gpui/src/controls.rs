@@ -2,6 +2,7 @@ use herdr_client::{Method, protocol::ClientShellSnapshot};
 use serde_json::{Value, json};
 
 mod shortcuts;
+pub(crate) use shortcuts::CTRL_SHORTCUTS;
 #[cfg(test)]
 pub(crate) use shortcuts::platform_default;
 

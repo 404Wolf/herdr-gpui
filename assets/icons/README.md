@@ -79,6 +79,12 @@ Run `just icons-windows` to regenerate both files. It needs Python's standard
 library and `rsvg-convert` (`apt-get install librsvg2-bin` or
 `brew install librsvg`), so on Windows run it under WSL. `just icons` runs it too.
 
+The Inno Setup installer uses `Herdr.ico` as its own icon, and the same tile at
+each DPI scale for its pages: `windows/wizard-small-*.png` in every page's
+corner, and `windows/wizard-*.png` centered on the welcome and finish pages.
+`just icons-windows` regenerates those too, with
+`scripts/generate-installer-images.py` (`rsvg-convert` or `resvg`).
+
 ### macOS sizing
 
 The flattened `.icns` icons follow Apple's
