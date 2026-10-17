@@ -243,6 +243,10 @@ impl HerdrWindow {
                     for auth in this.menu.github_hosts.values_mut() {
                         reloaded |= auth.initialize(&this.config);
                     }
+                    for account in &mut this.menu.github_accounts {
+                        reloaded |= account.auth.initialize(&this.config);
+                    }
+                    this.sync_github_accounts();
                 }
                 if reloaded {
                     this.menu.pr_cache.clear();

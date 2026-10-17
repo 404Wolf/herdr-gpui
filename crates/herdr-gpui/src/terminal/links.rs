@@ -10,6 +10,7 @@ use std::ops::Range;
 
 mod external;
 mod path;
+pub(crate) use path::{escape_into, escaped_len};
 
 pub(crate) use external::ExternalUrl;
 
@@ -320,7 +321,7 @@ fn frame_link(frame: &FrameData, column: u16, row: u16, start: u16, end: u16) ->
                 return None;
             }
             let target = RowTarget::Path {
-                path: found.path.to_owned(),
+                path: found.path.into_owned(),
                 line: found.line,
                 explicit: false,
             };

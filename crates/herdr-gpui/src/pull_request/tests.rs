@@ -28,6 +28,7 @@ mod fork_branch;
 mod fork_remote;
 mod lookup;
 mod responses;
+mod routing;
 mod upstream;
 mod workspace_directory;
 

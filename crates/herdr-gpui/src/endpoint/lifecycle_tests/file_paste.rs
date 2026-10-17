@@ -20,7 +20,7 @@ fn cmd_v() -> gpui::KeyDownEvent {
 }
 
 #[gpui::test]
-fn copied_files_paste_their_quoted_paths_into_a_local_pane(cx: &mut gpui::TestAppContext) {
+fn copied_files_paste_their_escaped_paths_into_a_local_pane(cx: &mut gpui::TestAppContext) {
     let (fixture, cx) = cx.add_window_view(|window, cx| {
         Fixture(cx.new(|cx| crate::sidebar::layout_tests::fixture_window(window, cx)))
     });
@@ -30,10 +30,12 @@ fn copied_files_paste_their_quoted_paths_into_a_local_pane(cx: &mut gpui::TestAp
         .path()
         .join("Screenshot 2026-10-14 at 11.01.09 AM.png");
     let quoted = directory.path().join("it's.txt");
+    let mut directory_text = String::new();
+    crate::terminal::escape_into(directory.path().to_str().unwrap(), &mut directory_text);
+    let separator = std::path::MAIN_SEPARATOR_STR.replace('\\', "\\\\");
     let expected = format!(
-        "'{}' '{}/it'\\''s.txt'",
-        image.display(),
-        directory.path().display()
+        "{directory_text}{separator}Screenshot\\ 2026-10-14\\ at\\ 11.01.09\\ AM.png \
+         {directory_text}{separator}it\\'s.txt"
     );
     // Cmd-V reads the clipboard on a background task on macOS and through
     // GPUI's own clipboard elsewhere; both paste the paths, never the name.

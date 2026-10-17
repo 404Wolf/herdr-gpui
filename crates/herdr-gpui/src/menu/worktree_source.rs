@@ -634,19 +634,12 @@ impl HerdrWindow {
     /// The checkout to read and the token to read GitHub with.
     fn repo_items_request(
         &self,
-    ) -> crate::Result<(
-        crate::pull_request::Input,
-        std::sync::Arc<secrecy::SecretString>,
-    )> {
+    ) -> crate::Result<(crate::pull_request::Input, crate::github::Tokens)> {
         let input = self.local_repository_input()?;
-        let token = self
-            .menu
-            .github
-            .profile
-            .as_ref()
-            .map(|profile| profile.token.clone())
+        let tokens = self
+            .main_tokens()
             .ok_or(crate::Error::GitHubAuthentication)?;
-        Ok((input, token))
+        Ok((input, tokens))
     }
 
     /// Open or create whatever the row at `row` of the open listing names.

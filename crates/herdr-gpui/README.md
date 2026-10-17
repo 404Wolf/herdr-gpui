@@ -912,6 +912,18 @@ local port is free. Windows clients
 do not scan this machine. Set top-level `show_listening_ports = false`, or
 turn off **Show listening ports** in Settings, to hide them and stop scanning.
 
+Set top-level `show_network_quality = true` to show latency and packet loss
+from this machine in the status bar, after CPU and memory: `NET 31ms 0%`.
+A worker thread times one TCP connect to `1.1.1.1:443` every 15 seconds, in
+process and without ICMP, about a megabyte a day, so it suits a metered link
+such as a phone hotspot; no throughput test runs. Latency is the median of
+the last minute's handshakes; loss counts connects that failed or timed out
+over the last five minutes, by wall-clock time, so probes from before a sleep
+do not count after waking. All windows share one worker. The tooltip shows the
+last probe and the range.
+It is off by default; turn it on here or with **Network latency and loss** under
+Settings > Status bar. Turning it off stops the probes.
+
 `[notifications]` in `config-gpui.local.toml` overrides shared toast preferences
 for GUI-local in-app delivery, independently per key. `enabled = true` shows
 in-app toasts even when shared delivery is `system`; `enabled = false` leaves
@@ -1486,15 +1498,18 @@ keyboard selection is not exposed.
 ## File Drops
 
 Drop files from your file manager onto a terminal pane or popup to paste their
-paths there, even if another pane is focused. Paths are quoted as POSIX shell
-words, separated by spaces; the drop never presses Enter. Local drops only paste
-paths; SSH drops read and transfer the selected files.
-Drops are limited to 256 paths and 64 KiB of quoted text. Non-UTF-8 paths and
+paths there, even if another pane is focused. Paths are pasted bare, as native
+macOS terminals do, with a backslash before each space, quote, bracket, comma,
+colon, or other character a shell would interpret (`/tmp/Shot\ 1.png`), and
+before a final period, separated by spaces; the drop never presses Enter. The
+escapes keep a dropped path one Cmd-clickable link. Local drops only paste paths; SSH drops
+read and transfer the selected files.
+Drops are limited to 256 paths and 64 KiB of escaped text. Non-UTF-8 paths and
 paths containing control characters are rejected rather than altered.
 
 On an SSH endpoint, a single supported image is transferred as described below.
 Other regular files and multiple-file drops are streamed using the SSH file-copy
-path below. POSIX quoting is not intended for Windows command shells.
+path below. POSIX shell escaping is not intended for Windows command shells.
 
 Files copied in the file manager (Cmd-C in Finder) and pasted into the focused
 pane or popup with Cmd-V are handled the same way as a drop. Finder also puts
@@ -1505,7 +1520,7 @@ each file's name on the clipboard as text; the paste uses the full paths instead
 Drop regular files onto an SSH pane or popup to copy them to that host. A
 `Copying...` card shows the filename (or file count), transferred bytes, percentage,
 progress bar, and Cancel button. Once all files are received and the SSH processes
-exit successfully, their quoted remote paths are pasted into the original target.
+exit successfully, their escaped remote paths are pasted into the original target.
 No partial list is pasted on failure. Directories and special files are rejected;
 symlinks to regular files are followed. A single recognized image uses the image
 bridge below instead; multiple-file drops copy their originals unchanged.
@@ -1885,7 +1900,7 @@ or popup to send it through Herdr's existing image bridge. Clipboard images use
 Cmd-V (normal paste, with text taking precedence) or Ctrl-V (Herdr TUI's default
 image-paste shortcut). Ctrl-V retains its normal terminal meaning when the
 clipboard has no image. A pasted absolute image-file path is also recognized,
-including the quoted/backslash-escaped paths used by terminal file drops.
+including the backslash-escaped paths used by terminal file drops.
 
 Local endpoints on macOS and Linux use the same bridge for Cmd-V clipboard
 images, because a GUI text paste cannot carry image data. Local drops and pasted
@@ -1996,7 +2011,8 @@ the text verified:
   checks in the background. Any printed word may be one, such as
   `src/main.rs:12:5`, `./build/out`, `~/notes.md`, `README.md`, or a
   `file://` address. Relative paths resolve against the pane's working
-  directory.
+  directory. A backslash-escaped path, as a file drop pastes, names the
+  unescaped file.
 
 Verified text gets the solid underline and the hand cursor, and the modifier
 click opens it. In a mouse-aware application, the modifier click on a link
@@ -3093,6 +3109,21 @@ Ctrl+Shift+U is left unbound for
   `GITHUB_TOKEN` apply only to the main account. Removing a device keeps its
   saved credential until you sign out of it, so re-adding the device finds it. See
   [PR lookup scope and limits](../../README.md) for authentication and remote limits.
+- Additional GitHub accounts read the repositories another account owns, such as
+  an Enterprise Managed User's beside a personal account. Once signed in, the
+  GitHub panel offers **Add account (A)**; a strip then switches between the
+  device's account and each additional one (Left/Right). Each signs in with the
+  browser, or with **Use a token (T)** for a personal access token, which GitHub
+  checks before it is saved: an Enterprise Managed User cannot install Herdr's
+  GitHub App on its own repositories, so a token is how one reads them. A
+  repository is read with the first additional account whose login, organizations
+  (read when it signs in, if its token may list them), or configured owners
+  include the repository's owner, and with the device's account otherwise. This
+  applies to sidebar PR badges, the New worktree pull request and issue lists, PR
+  checks, comments and merges, creating a pull request, and the orchestrator.
+  Accounts are listed in `[github] accounts` with an `id` naming their credential
+  entry (`github.com/account/<id>`, or `github-credentials-account-<id>`) and
+  optional `owners`; **Remove account (D)** deletes the credential, then the entry.
    Herdr does not give endpoint clients a workspace's checkout path, so every
     daemon version uses this worktree-registry path. No Git or HTTP requests run from menu-open or render paths.
   Opening the top-right Git/PR dropdown also queues a fresh lookup for the focused
@@ -3440,7 +3471,16 @@ Ctrl+Shift+U is left unbound for
   `switch_workspace` counts the selected host's rows, `focus_agent` counts the
   agent panel's, `last_pane` returns to the pane focused before this one,
   `move_tab_previous`/`_next` wrap a tab at either end to the other, and
-  `[keys.indexed]` combos bind the digits 1-9. `resize_mode` (`prefix+r`)
+  `[keys.indexed]` combos bind the digits 1-9. On macOS, the prefix, its
+  chords, and custom command shortcuts recognize a shifted key such as
+  Shift+1 by the active keyboard layout, so
+  `switch_workspace = "prefix+shift+1..9"` works on any layout that types
+  the digits unshifted. A chord or custom command bound to the symbol the
+  key types, such as `prefix+?`, takes precedence. A shortcut without the
+  prefix in `[keybindings]` or the daemon's `[keys]` does not get this and
+  needs the symbol itself, such as `ctrl+!`; such a shortcut, or a
+  `[pane_keys]` entry on the symbol, keeps its key even when a custom
+  command is bound to the shifted key. `resize_mode` (`prefix+r`)
   makes h, j, k, l or the arrows resize the focused pane until Escape, Enter,
   or the shortcut again; the status bar shows it. Renames and
   `close_workspace` open the same dialogs as their menus, and `reload_config`

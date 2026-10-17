@@ -80,6 +80,11 @@ agent_checkpoints = true
 # scanned every five seconds with ss or lsof, a remote one over SSH; false
 # stops all scanning. Also under Settings > General.
 show_listening_ports = true
+# Show latency and loss from this machine in the status bar, beside CPU and
+# memory. One timed TCP connect to 1.1.1.1:443 every 15 seconds, about a
+# megabyte a day, so it suits a metered link such as a phone hotspot. Also
+# under Settings > Status bar.
+show_network_quality = false
 # Draw wheel and trackpad scrollback between rows, following the OS deltas
 # and momentum; false scrolls by whole rows. Applications reading the mouse
 # always get whole rows. Also under Settings > General.
@@ -384,6 +389,13 @@ size = 12
 # WARNING: saves an UNENCRYPTED token in the separate 0600 github-credentials file.
 # Other software running as you and backups can read it. Default is false.
 # allow_plaintext_credentials = false
+# Additional accounts, such as an Enterprise Managed User beside a personal
+# account. The GitHub page adds and removes them (Add account); each signs in
+# with the browser or a pasted personal access token, saved like the main
+# sign-in under its id. A repository whose owner is an account's login, one of
+# its organizations, or one of its owners below is read with that account;
+# every other repository with the main sign-in. At most 8 accounts.
+# accounts = [{ id = "0123456789abcdef0123456789abcdef", owners = ["my-emu-org"] }]
 
 # A Coder deployment whose workspaces can be created and added as devices from
 # the device picker's "Add Coder Workspace…". Settings > Cloud Devices edits

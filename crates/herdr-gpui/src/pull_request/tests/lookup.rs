@@ -23,23 +23,25 @@ fn worker_discards_stale_batches_and_runs_only_requested_jobs() {
         vec![input.clone()],
         Origin::Local,
         Arc::new("fixture".into()),
+        Vec::new(),
     );
     assert!(prefetch.poll().is_none());
-    let (old, _, _, _) = incoming.try_recv().unwrap();
+    let (old, _, _, _, _) = incoming.try_recv().unwrap();
     prefetch.clear();
     prefetch.request(
         vec![input.clone()],
         Origin::Local,
         Arc::new("fixture".into()),
+        Vec::new(),
     );
     assert!(prefetch.poll().is_none());
     assert!(incoming.try_recv().is_err(), "single in-flight batch");
-    outgoing.send((old, answer(&input), None)).unwrap();
+    outgoing.send((old, answer(&input))).unwrap();
     assert!(prefetch.poll().is_none(), "a superseded batch is discarded");
-    let (current, inputs, _, _) = incoming.try_recv().unwrap();
+    let (current, inputs, _, _, _) = incoming.try_recv().unwrap();
     assert_eq!(inputs, std::slice::from_ref(&input));
-    outgoing.send((current, answer(&input), None)).unwrap();
-    let Some(Finished::Answered(batch, None)) = prefetch.poll() else {
+    outgoing.send((current, answer(&input))).unwrap();
+    let Some(Finished::Answered(batch)) = prefetch.poll() else {
         panic!("the current batch is answered");
     };
     assert_eq!(batch.found.len(), 1);
