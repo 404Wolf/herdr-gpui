@@ -143,6 +143,12 @@ impl HerdrWindow {
         let Some(snapshot) = self.live.snapshot.as_ref() else {
             return;
         };
+        // The daemon refuses `tab.create` from a client with no active shell
+        // surface ("this method requires an active client shell surface"),
+        // and a device just shown is connected before its surface is ready.
+        if !self.live.surface_ready() {
+            return;
+        }
         let workspace = snapshot
             .focused_workspace_id
             .as_ref()
@@ -162,6 +168,11 @@ impl HerdrWindow {
             return;
         };
         let label = pending.label.clone();
+        tracing::info!(
+            category = "cloud_setup",
+            endpoint = %pending.endpoint_id,
+            "Opening the setup tab of a new cloud device"
+        );
         if let Err(error) = self.start_cloud_setup(pending, &workspace, boot) {
             self.fail_cloud_setup(&label, error, cx);
         }

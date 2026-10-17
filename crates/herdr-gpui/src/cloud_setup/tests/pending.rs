@@ -264,3 +264,26 @@ fn a_finished_job_queues_its_script_and_a_failed_one_does_not(cx: &mut gpui::Tes
     let waiting = cx.update(|_, cx| PendingSetups::waiting(cx));
     assert_eq!(waiting, [format!("{}:made", provider().key())]);
 }
+
+#[gpui::test]
+fn a_script_waits_for_the_devices_first_surface(cx: &mut gpui::TestAppContext) {
+    let peer = MockPeer::advertising(&["tab.create"]);
+    let (view, cx) = cx.add_window_view(fixture_window);
+    let now = Instant::now();
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            connect(view, &peer, cx);
+            // Connected with a snapshot, but the daemon has not sent this
+            // client a surface yet, so it would refuse `tab.create`.
+            let surface = view.live.surface.take();
+            view.queue_cloud_setup(pending(local(), now), cx);
+            view.poll_cloud_setup(now, cx);
+            assert!(view.cloud_setup.is_none());
+            assert_eq!(PendingSetups::waiting(cx), [local()]);
+            view.live.surface = surface;
+            view.poll_cloud_setup(now, cx);
+            assert!(view.cloud_setup.is_some());
+            assert!(PendingSetups::waiting(cx).is_empty());
+        })
+    });
+}
