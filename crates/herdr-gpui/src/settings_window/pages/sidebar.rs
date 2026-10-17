@@ -3,7 +3,8 @@
 use super::{SettingsWindow, on_value, ui};
 use crate::{
     config::{
-        Config, DeviceFooter, LayoutMode, SelectMode, SidebarOverrides, preferences::Preference,
+        AgentsPlacement, Config, DeviceFooter, LayoutMode, SelectMode, SidebarOverrides,
+        preferences::Preference,
     },
     settings_window::{
         inputs::{DropdownField, NumberField},
@@ -154,7 +155,7 @@ impl SettingsWindow {
             .child(ui::section(theme, "Layout", None))
             .child(
                 ui::row(theme, "sidebar-layout", "Layout preset")
-                    .tag(ui::Source::Local)
+                    .tag(ui::Source::HerdrUi)
                     .description("Row shape and density; spacing below starts from the preset.")
                     .control(self.layout_dropdown(ready, cx)),
             )
@@ -203,7 +204,7 @@ impl SettingsWindow {
             )
             .child(
                 ui::row(theme, "sidebar-show-agents", "Show agents")
-                    .description("List running agents under their workspace.")
+                    .description("List running agents in the sidebar.")
                     .control(
                         ui::toggle(
                             theme,
@@ -216,6 +217,38 @@ impl SettingsWindow {
                             this.save_native(move || Config::save_show_agents(show), cx);
                         })),
                     ),
+            )
+            .child(
+                ui::row(theme, "sidebar-show-agents-header", "Show agents header")
+                    .description(
+                        "The Agents title row with the sort toggle. Hidden, the order follows Herdr's ui.agent_panel_sort unless a plugin sets the agent view, which keeps the row.",
+                    )
+                    .control(self.preference_toggle(
+                        "sidebar-show-agents-header-toggle",
+                        self.config.show_agents_header,
+                        Preference::ShowAgentsHeader(!self.config.show_agents_header),
+                        cx,
+                    )),
+            )
+            .child(
+                ui::row(theme, "sidebar-agents-placement", "Agents placement")
+                    .description(
+                        "Their own section below the workspaces, or under the workspace each \
+                         one runs in.",
+                    )
+                    .control(ui::segmented(
+                        theme,
+                        "sidebar-agents-placement-control",
+                        &[
+                            (AgentsPlacement::Panel, "Own section"),
+                            (AgentsPlacement::Nested, "Under workspaces"),
+                        ],
+                        Some(self.config.agents_placement),
+                        ready && self.config.show_agents,
+                        on_value(cx, |this, placement, _, cx| {
+                            this.save_preference(Preference::AgentsPlacement(placement), cx);
+                        }),
+                    )),
             )
             .child(
                 ui::row(theme, "sidebar-show-search", "Show search")

@@ -1,6 +1,4 @@
 //! Requires an active native desktop and an explicitly selected daemon executable.
-//! The daemon and its sandbox are POSIX, so the harness compiles on Unix only.
-#![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::disallowed_methods)]
 #[path = "../../test-support/sandbox.rs"]
 mod sandbox;
@@ -198,7 +196,8 @@ fn native_fixture(fixture: Fixture) {
 impl Drop for Isolated {
     fn drop(&mut self) {
         stop_children([&mut self.gui, &mut self.daemon]);
-        for name in ["gui.log", "daemon.log"] {
+        // The daemon's own log says why it refused or failed a request.
+        for name in ["gui.log", "daemon.log", "config/herdr/herdr-server.log"] {
             if let Ok(log) = fs::read_to_string(self.sandbox.dir.join(name)) {
                 eprintln!("{name} (last 40 lines, at most 600 chars each):");
                 let lines = log.lines().rev().take(40).collect::<Vec<_>>();
@@ -325,6 +324,9 @@ fn native_gui_live() {
     );
 }
 
+// Windows has no display variables to forward; the GUI reaches the desktop
+// of the session it runs in.
+#[cfg(unix)]
 #[test]
 fn gui_desktop_environment_preserves_sandbox_isolation() {
     use std::{collections::BTreeMap, ffi::OsStr, os::unix::ffi::OsStrExt};

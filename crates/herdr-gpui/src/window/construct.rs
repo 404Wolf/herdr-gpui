@@ -34,13 +34,20 @@ impl HerdrWindow {
         // Created by the first window; each later one shares its PR answers.
         cx.default_global::<crate::pull_request::Shared>();
         let weak = cx.weak_entity();
-        let (initial_theme, initial_icons) = cx
+        let (initial_theme, initial_icons, initial_rail) = cx
             .try_global::<crate::app::InitialAppearance>()
-            .map(|appearance| (appearance.theme.clone(), appearance.config.status_icons))
+            .map(|appearance| {
+                (
+                    appearance.theme.clone(),
+                    appearance.config.status_icons,
+                    appearance.config.edge_rail,
+                )
+            })
             .unwrap_or_default();
         let indicators = sidebar::Indicators::new(
             None,
             initial_icons,
+            initial_rail,
             matches!(
                 cx.window_appearance(),
                 WindowAppearance::Light | WindowAppearance::VibrantLight
@@ -124,6 +131,7 @@ impl HerdrWindow {
             _worktree_notes: worktree_notes,
             activation_deadline: None,
             active: window.is_window_active(),
+            activity: Default::default(),
             agent_sort: preferences::AgentSort::default(),
             agent_sort_modified: false,
             app_update_notes: Default::default(),
@@ -139,6 +147,8 @@ impl HerdrWindow {
             checkpoints: Default::default(),
             #[cfg(feature = "cloud")]
             cloud_jobs: Default::default(),
+            #[cfg(feature = "cloud")]
+            cloud_setup: None,
             code_indexes: Default::default(),
             code_views: Default::default(),
             collapsed_repos: Default::default(),
@@ -150,7 +160,6 @@ impl HerdrWindow {
             copy_mode: None,
             daemon_text: Default::default(),
             deliveries: Default::default(),
-            detached_orchestrators: Default::default(),
             device_drag: None,
             device_filter: None,
             device_order: Vec::new(),
@@ -197,12 +206,14 @@ impl HerdrWindow {
             menu,
             merged_cleanup: Default::default(),
             network_quality_seen: 0,
+            next_orchestrator: 0,
             notes_width: crate::panel_resize::NOTES,
             options: ConnectOptions::default(),
             orchestrator_events: Vec::new(),
             orchestrator_live: Default::default(),
             orchestrator_sampling: false,
             orchestrators: Default::default(),
+            overview: Default::default(),
             painter: Default::default(),
             pane_carry: None,
             pending_images: Vec::new(),
@@ -237,6 +248,7 @@ impl HerdrWindow {
             sidebar_drag: None,
             sidebar_folded: Default::default(),
             sidebar_modified: false,
+            sidebar_nested_reveal: Default::default(),
             sidebar_pin_reveal: Default::default(),
             sidebar_preferences: None,
             sidebar_revealed: Default::default(),
@@ -275,6 +287,7 @@ impl HerdrWindow {
             wheel: WheelAccumulator::default(),
             workspace_drag: None,
             worktree_script: None,
+            wsl_paste: None,
             zen: Default::default(),
             // keep-sorted end
         };
@@ -287,7 +300,6 @@ impl HerdrWindow {
             async {}
         })
         .detach();
-        Self::close_orchestrator_windows_on_release(cx);
         #[cfg(feature = "integration-test")]
         if sidebar_test {
             this._poll = Task::ready(());

@@ -255,6 +255,9 @@ impl HerdrWindow {
         div()
             .id("toggle-sidebar")
             .debug_selector(|| "toggle-sidebar".into())
+            .role(Role::Button)
+            .aria_label("Sidebar")
+            .aria_expanded(self.sidebar_visible)
             .flex_none()
             .self_center()
             .size(px(SIDEBAR_TOGGLE_SIZE))
@@ -294,6 +297,8 @@ impl HerdrWindow {
                     .child(
                         div()
                             .id("titlebar-avatar")
+                            .role(Role::Button)
+                            .aria_label("GitHub account")
                             .group("titlebar-account")
                             .debug_selector(|| "titlebar-avatar".into())
                             .flex()
@@ -345,7 +350,8 @@ impl HerdrWindow {
                             ),
                     ),
             )
-            .when(!cfg!(target_os = "linux"), |end| {
+            // The in-window menu bar carries the window controls instead.
+            .when(!crate::menus::IN_WINDOW, |end| {
                 end.children(controls(window, &self.theme, |window, _| {
                     window.remove_window();
                 }))
@@ -597,14 +603,10 @@ mod tests {
                     size(px(28.), px(28.))
                 )
             );
-            let banner_height = if env!("HERDR_BUILD_WORKTREE") == "1" {
-                22.
-            } else {
-                0.
-            };
+            // A worktree build's banner sits at the window's foot, not here.
             assert_eq!(
                 cx.debug_bounds("window-body").unwrap().top(),
-                menu_bottom + px(34. + banner_height)
+                menu_bottom + px(34.)
             );
         }
         let bounds = cx.debug_bounds("titlebar-avatar").unwrap();
@@ -721,12 +723,8 @@ mod native_chrome_tests {
                     )
                 );
                 let body = cx.debug_bounds("window-body").unwrap();
-                let banner_height = if env!("HERDR_BUILD_WORKTREE") == "1" {
-                    22.
-                } else {
-                    0.
-                };
-                assert_eq!(body.top(), px(34. + banner_height));
+                // A worktree build's banner sits at the window's foot.
+                assert_eq!(body.top(), px(34.));
                 assert_eq!(body.size.width, px(width));
                 assert!(body.bottom() <= px(height));
             }

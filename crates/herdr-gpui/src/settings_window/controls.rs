@@ -278,6 +278,7 @@ impl SettingsWindow {
             Section::Fonts => self.render_fonts(cx),
             Section::StatusBar => self.render_status_bar(cx),
             Section::Sidebar => self.render_sidebar(cx),
+            Section::Indicators => self.render_indicators(cx),
             Section::General => self.render_general(cx),
             Section::Tabs => self.render_tabs(cx),
             Section::Notifications => self.render_notifications(cx),

@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = (ROOT / ".github/workflows/ci.yml").read_text()
 SECTIONS = re.split(r"^  ([a-z-]+):\n", WORKFLOW.split("\njobs:\n", 1)[1], flags=re.M)
 JOBS = dict(zip(SECTIONS[1::2], SECTIONS[2::2]))
-PR_JOBS = ("zizmor", "commits", "checks", "windows", "checks-passed")
+PR_JOBS = ("zizmor", "commits", "checks", "windows", "windows-native", "checks-passed")
 
 
 def condition_matches(job, context):
@@ -108,38 +108,41 @@ class CiPolicy(unittest.TestCase):
             context = self.context(**{"needs.commits.outputs.code": code})
             for job in PR_JOBS:
                 self.assertEqual(condition_matches(job, context),
-                                 job not in ("checks", "windows"), (job, code))
+                                 job not in ("checks", "windows", "windows-native"), (job, code))
 
     def test_required_gate_rejects_failures_skips_and_missing_detection(self):
         # Run the actual shell gate, including the docs-only exception.
         script = JOBS["checks-passed"].split("        run: |\n", 1)[1]
         script = "\n".join(line[10:] for line in script.splitlines() if line.startswith("          "))
+
+        def gate(code, checks, windows, native, commits, package_inputs="false", package="skipped"):
+            return subprocess.run(
+                ["bash", "-e", "-c", script], capture_output=True,
+                env={**os.environ, "CODE": code, "RESULT": checks, "WINDOWS": windows,
+                     "NATIVE": native, "COMMITS": commits,
+                     "PACKAGE_INPUTS": package_inputs, "PACKAGE": package},
+            ).returncode == 0
+
         for code, checks, windows, commits in itertools.product(
                 ("true", "false", ""), ("success", "failure", "cancelled", "skipped"),
                 ("success", "failure", "cancelled", "skipped"), ("success", "failure", "skipped")):
             expected = commits == "success" and (
                 (code == "true" and checks == windows == "success")
                 or (code == "false" and checks == windows == "skipped"))
-            result = subprocess.run(
-                ["bash", "-e", "-c", script], capture_output=True,
-                env={**os.environ, "CODE": code, "RESULT": checks,
-                     "WINDOWS": windows, "COMMITS": commits,
-                     "PACKAGE_INPUTS": "false", "PACKAGE": "skipped"},
-            )
-            self.assertEqual(result.returncode == 0, expected, (code, checks, windows, commits))
+            # The native Windows job follows the same rule as the Windows check.
+            self.assertEqual(gate(code, checks, windows, windows, commits), expected,
+                             (code, checks, windows, commits))
+        for native in ("failure", "cancelled", "skipped"):
+            self.assertFalse(gate("true", "success", "success", native, "success"), native)
+        self.assertFalse(gate("false", "skipped", "skipped", "success", "success"))
         # The Windows package job runs only when its inputs change, and must
         # then succeed; missing detection fails like the platform jobs'.
         for inputs, package in itertools.product(
                 ("true", "false", ""), ("success", "failure", "cancelled", "skipped")):
             expected = ((inputs == "true" and package == "success")
                         or (inputs == "false" and package == "skipped"))
-            result = subprocess.run(
-                ["bash", "-e", "-c", script], capture_output=True,
-                env={**os.environ, "CODE": "true", "RESULT": "success",
-                     "WINDOWS": "success", "COMMITS": "success",
-                     "PACKAGE_INPUTS": inputs, "PACKAGE": package},
-            )
-            self.assertEqual(result.returncode == 0, expected, (inputs, package))
+            self.assertEqual(gate("true", "success", "success", "success", "success", inputs, package),
+                             expected, (inputs, package))
 
     def test_ci_has_no_privileged_trigger_or_credentials(self):
         triggers = WORKFLOW.split("\npermissions:", 1)[0]
@@ -159,10 +162,12 @@ class CiPolicy(unittest.TestCase):
         # Keep runners a fixed hosted set; never accept a PR-controlled label.
         self.assertEqual(re.findall(r"^    runs-on: (.+)$", WORKFLOW, re.M), [
             "ubuntu-latest", "ubuntu-24.04", "${{ matrix.runner }}",
-            "${{ matrix.runner }}", "windows-2025", "ubuntu-24.04", "${{ matrix.runner }}",
+            "${{ matrix.runner }}", "${{ matrix.runner }}", "windows-2025",
+            "ubuntu-24.04", "${{ matrix.runner }}",
         ])
         self.assertEqual(re.findall(r"^        runner: (.+)$", WORKFLOW, re.M), [
             "[macos-14, macos-15, ubuntu-24.04, ubuntu-24.04-arm]",
+            "[windows-2025, windows-11-arm]",
             "[windows-2025, windows-11-arm]",
         ])
         self.assertEqual(re.findall(r"^          - runner: (.+)$", WORKFLOW, re.M),

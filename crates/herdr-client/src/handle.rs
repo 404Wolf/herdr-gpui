@@ -4,7 +4,7 @@
 
 use crate::{
     Error, Result, SendError,
-    clipboard::{ClipboardImageUpload, ImageLease, ImageSlot},
+    clipboard::{ClipboardImageUpload, ImageLease, ImageSlot, WakeOnDrop},
     event::ClientEvent,
     host_theme::HostTheme,
     method::Method,
@@ -41,6 +41,9 @@ pub(crate) struct HandleInner {
 impl Drop for HandleInner {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
+        // An upload may outlive the handle and keep the wake channel open, so
+        // closing it is not enough to end the worker's wait.
+        self.commands.wake();
     }
 }
 pub(crate) struct Command {
@@ -56,12 +59,6 @@ pub(crate) struct PendingRequest {
     pub(crate) id: String,
     pub(crate) method: Method,
 }
-
-/// Whether this platform's connections accept clipboard uploads. The Windows
-/// pipe wrapper cannot bound writes, so an upload there could indefinitely
-/// prevent cancellation and inbound processing: every reservation is refused,
-/// and callers should not offer one.
-pub const CLIPBOARD_UPLOADS: bool = !cfg!(windows);
 
 impl ClientHandle {
     /// Reserve FIFO position now, before reading an image in the background.
@@ -98,15 +95,13 @@ impl ClientHandle {
             return Err(Error::MissingBootId);
         }
         validate_clipboard_image_target(&target)?;
-        if !CLIPBOARD_UPLOADS {
-            return Err(Error::ClipboardImageUnsupported);
-        }
         let lease = Arc::new(ImageLease {
             busy: self.inner.image_busy.clone(),
             claimed: AtomicBool::new(false),
             cancelled: Arc::new(AtomicBool::new(false)),
             finished: Arc::new(AtomicBool::new(false)),
             reserved_at: std::time::Instant::now(),
+            waker: self.inner.commands.waker(),
         });
         if claim_image {
             lease.claim_image()?;
@@ -125,6 +120,7 @@ impl ClientHandle {
         Ok(ClipboardImageUpload {
             target,
             sender,
+            _wake: WakeOnDrop(lease.waker.clone()),
             lease,
             stop: self.inner.stop.clone(),
         })

@@ -3,19 +3,20 @@
 `herdr-gpui` is also a command line for the running Herdr UI. Herdr's own
 `herdr` CLI drives the daemon: workspaces, terminal tabs, panes, agents,
 worktrees, and notifications. `herdr-gpui COMMAND` covers what only this
-client knows or draws: its windows, its own tabs (pages, code, reviews, the
-orchestrator, Devices), worktree notes, checkpoints, forwarded ports, and its
-settings.
+client knows or draws: its windows, its own tabs (pages, code, reviews,
+Devices), the activity bar's sections, worktree notes, checkpoints, forwarded
+ports, and its settings.
 
 Commands reach the app over a socket of its own,
 `$XDG_STATE_HOME/herdr/gpui/control.sock` (default `~/.local/state/`), which
-only your user can open. An agent on an SSH host has no path to it; there,
+only your user can open; on Windows, over a named pipe (see
+[Windows](#windows)). An agent on an SSH host has no path to it; there,
 the app's shim at `~/.local/state/herdr/gpui/bin/herdr-gpui` offers
 `browser open` and `browser reload` through Herdr workspace metadata (see
 [remote agents](../crates/herdr-gpui/README.md#letting-agents-open-pages)),
 and every other command exits 8. A few commands work from files alone and
 need no running app; they say so below.
-Windows builds have no control socket yet: commands that need the app exit 8.
+
 On Windows, `herdr-gpui.exe` is a console program, so a shell waits for it and
 sees its exit code; the installers put its directory on `PATH`. The Start menu
 opens `herdr-gpui-launcher.exe` instead, which starts it without a console
@@ -67,6 +68,7 @@ Every command accepts:
 | `window detach\|reconnect` | Detach from, or reconnect to, the selected host |
 | `ui sidebar\|statusbar [on\|off\|toggle]` | For this window and session |
 | `ui font-size +\|-\|reset\|POINTS` | The terminal font size for this session |
+| `ui panel workspaces\|overview\|pull-requests\|issues\|usage` | Show an activity bar section: Workspaces with the sidebar expanded, Overview of what needs you on every host, the focused workspace's pull requests or issues across the window, or every host's plan usage |
 | `run COMMAND` | Any app command by its `[keybindings]` name, as the palette runs it |
 | `commands` | The names `run` accepts (no app needed) |
 
@@ -74,7 +76,7 @@ Every command accepts:
 
 | Command | What it does |
 | --- | --- |
-| `tab [list]` | Pages, code, reviews, the orchestrator, and Devices tabs with IDs |
+| `tab [list]` | Pages, code, reviews, and Devices tabs with IDs |
 | `tab focus\|close ID` | |
 | `browser open\|reload\|feedback` | See [browser tabs](../crates/herdr-gpui/README.md#browser-tabs) |
 | `browser list` | Page tabs only |
@@ -85,7 +87,7 @@ Every command accepts:
 | `code open FILE[:LINE]` | A read-only code tab at a line |
 | `code edit FILE[:LINE]` | Your terminal editor, in a new pane beside yours |
 | `devices` | The Devices overview |
-| `orchestrator [--repo PATH]` | The orchestrator of your checkout, or of PATH |
+| `orchestrator [--repo PATH]` | Show the Issues section narrowed to your checkout's project, or PATH's |
 | `orchestrator items\|issues\|prs` | What it last synced, from its local database (no app needed) |
 | `review` | The review of your workspace's uncommitted changes |
 
@@ -117,6 +119,7 @@ Every command accepts:
 | `usage`, `system` | Plan usage and load of the selected host |
 | `cloud [list]` | Saved cloud machines (no app needed) |
 | `cloud add` | Open the settings that add one |
+| `cloud setup ID` | Run the `[cloud]` setup script on a saved machine again, in a new tab once the window shows it. `ID` is the machine ID from `cloud list`, its host ID, or its label |
 | `processes [--pane ID]` | The processes under a pane, with CPU and memory (no app needed) |
 | `search symbol\|file QUERY` | Go to Symbol or Go to File over the current checkout (no app needed) |
 
@@ -152,8 +155,19 @@ herdr-gpui cloud add                         # open Cloud devices, then choose B
 Numeric deadlines are fixed, even during active SSH work; trials require at
 most 7200 seconds. The setting applies on create and resume. In Boat settings,
 **Finish setup** extends a running sandbox from now or disables its deadline.
+
 **Recover creation** retries a persisted creation request with its original
 options and key; forgetting an unresolved request requires confirmation there.
+
+What a new cloud machine installs and runs when it first connects is set the
+same way, and `cloud setup` runs it again on one already saved:
+
+```sh
+herdr-gpui config set cloud.agents '["claude", "opencode"]'
+herdr-gpui config set cloud.setup '"git config --global pull.rebase true"'
+herdr-gpui config set cloud.coder.agents '[]'   # nothing extra on Coder
+herdr-gpui cloud setup herdr-tidy-lark-aa
+```
 
 Focus-on-hover between split terminal panes is on by default. Disable it with
 `herdr-gpui config set focus_follows_mouse false`.
@@ -193,6 +207,26 @@ Scrollback search is not repeated here: `herdr pane read` covers it. Moving a
 window, capturing a whole window, and destroying a cloud machine have no
 command because the app cannot do them.
 
+## Links
+
+`herdr-gpui URL`, with a `herdr-gpui://` link as the only argument, hands the
+link to the running app, or starts the app and follows it once it is
+connected. On Windows the installer registers the scheme, so the shell runs
+this for jump list entries, notification clicks, and links in other apps.
+
+| Link | What the app does |
+| --- | --- |
+| `herdr-gpui://open?path=PATH` | Focus the workspace showing the Git checkout or worktree at `PATH`, or ask in the window before opening one there |
+| `herdr-gpui://device?id=ID` | Show the device `host list` names `ID` |
+| `herdr-gpui://notification?tag=TAG` | Open the pane of a notification this app posted |
+
+A link is untrusted input, checked by the command and again by the app: only
+those shapes, each parameter once, bounded lengths, no control characters, and
+an absolute local path without `..` (on Windows a drive path, never a UNC or
+`\\?\` one). A link only ever shows something; it never runs a command. A
+refused link exits 2, an unknown device or notification 5, as for commands.
+The request is `{"method": "link", "caller", "op": {"url"}}`.
+
 ## The protocol
 
 One JSON request line, one JSON response line, then the socket closes. A
@@ -200,6 +234,31 @@ request is `{"method", "caller", "op"}`, where `caller` carries the pane,
 workspace, daemon socket, and window, and `op` is tagged with `"op"`. Browser
 requests keep their original flat form (`browser.open`, `browser.reload`,
 `browser.feedback`, `notes.send`). `status` reports the protocol version,
-currently 2. Requests and responses are bounded to 256 KiB, a request that
+currently 4. Requests and responses are bounded to 256 KiB, a request that
 waits says for how long (at most 600 seconds), and the app answers at most a
 few requests at a time.
+
+### Windows
+
+On Windows the same lines travel over a named pipe,
+`\\.\pipe\herdr-gpui-control-SID`, where `SID` is your Windows user's
+security identifier. When `XDG_STATE_HOME` is set, a hash of the state
+directory is appended, so a test or side-by-side install gets a pipe of its
+own; without it, every shell of yours reaches the same app whatever `HOME` it
+has. Pipe names are shared by all users of the machine, so:
+
+- The app creates the pipe owned by you, with a DACL that grants only your
+  SID and inherits nothing, so no other user can connect or add an instance.
+- It creates it as the first instance and rejects remote clients
+  (`PIPE_REJECT_REMOTE_CLIENTS`), so it never joins a pipe someone else made
+  and nothing off this machine can reach it. If another user made the name
+  first, the app does not listen, and logs why.
+- `herdr-gpui COMMAND` opens the pipe at identification level, so the server
+  can learn who called but cannot act as you, and checks that the pipe's
+  owner is you before it sends anything. A pipe someone else owns is refused
+  with exit 1.
+
+A pipe has no receive or send timeout. Reads poll with `PeekNamedPipe`, as
+the daemon client does; writes have no deadline, so the app's out buffer
+holds a whole answer and the connection bound limits what a stalled caller
+can hold.

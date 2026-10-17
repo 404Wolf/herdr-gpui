@@ -90,6 +90,18 @@ Source: "{#SourceDir}\licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversi
 Type: dirifempty; Name: "{app}\licenses"
 Type: dirifempty; Name: "{app}"
 
+; herdr-gpui:// links, for this user only: jump list entries, notification
+; clicks, and links from other apps start the launcher with the link as its
+; only argument; it passes the link to herdr-gpui.exe, which hands it to the
+; running app. Removed on uninstall. The app also registers its
+; AppUserModelID for notifications on first use; that key goes too.
+[Registry]
+Root: HKCU; Subkey: "Software\Classes\herdr-gpui"; ValueType: string; ValueName: ""; ValueData: "URL:Herdr UI link"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\herdr-gpui"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\herdr-gpui\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"",0"
+Root: HKCU; Subkey: "Software\Classes\herdr-gpui\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#Launcher}"" ""%1"""
+Root: HKCU; Subkey: "Software\Classes\AppUserModelId\{#AppUserModelID}"; Flags: uninsdeletekey dontcreatekey
+
 ; Shortcuts open the launcher, so the app starts without a console window.
 [Icons]
 Name: "{userprograms}\{#AppName}"; Filename: "{app}\{#Launcher}"; WorkingDir: "{app}"; IconFilename: "{app}\{#AppExe}"; AppUserModelID: "{#AppUserModelID}"
@@ -97,10 +109,19 @@ Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#Launcher}"; WorkingDir: "{a
 
 [Run]
 Filename: "{app}\{#Launcher}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+; The app's in-app update runs Setup silently with /RELAUNCH=1 and quits; this
+; starts the updated app, through the launcher, once its files are in place.
+Filename: "{app}\{#Launcher}"; WorkingDir: "{app}"; Flags: nowait; Check: RelaunchRequested
 
 [Code]
 const
   EnvironmentKey = 'Environment';
+
+{ Set by the app's own updater, which has quit for the install. }
+function RelaunchRequested(): Boolean;
+begin
+  Result := ExpandConstant('{param:RELAUNCH|0}') = '1';
+end;
 
 function UserPath(): String;
 begin

@@ -62,7 +62,6 @@ impl Drop for Shell {
 }
 
 impl Shell {
-    #[cfg(unix)]
     pub fn connect(target: &str) -> Result<Self> {
         let mut command = herdr_client::script_command(target, "exec /bin/sh -s")?;
         command
@@ -70,11 +69,6 @@ impl Shell {
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
         Self::start(command)
-    }
-
-    #[cfg(windows)]
-    pub fn connect(_target: &str) -> Result<Self> {
-        Err(Error::UsageUnsupported)
     }
 
     /// `/bin/sh` inside a WSL distribution, through `wsl.exe`.

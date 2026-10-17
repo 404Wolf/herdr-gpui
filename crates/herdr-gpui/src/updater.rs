@@ -15,7 +15,13 @@ mod release;
 #[cfg(not(unix))]
 mod unsupported;
 #[cfg(not(unix))]
-use unsupported::{brew, install};
+use unsupported::brew;
+#[cfg(not(any(unix, windows)))]
+use unsupported::install;
+#[cfg(windows)]
+mod windows;
+#[cfg(windows)]
+use windows as install;
 
 pub(crate) use release::{RELEASES_PAGE, release_page};
 
@@ -156,7 +162,12 @@ fn installation_format(cancel: &AtomicBool) -> Result<release::Format> {
     {
         Ok(linux::detect(cancel)?.map_or(release::Format::Archive, |package| package.format))
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    {
+        let _ = cancel;
+        Ok(release::Format::Installer)
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
         let _ = cancel;
         Ok(release::Format::Archive)
@@ -235,6 +246,11 @@ impl Updater {
         }
         if release::target().is_none() {
             updater.state = State::Disabled("No standalone updater is available for this platform. Use your package manager or download a supported release.".into());
+            return updater;
+        }
+        #[cfg(windows)]
+        if let Some(reason) = windows::missing_publisher() {
+            updater.state = State::Disabled(reason.to_string());
             return updater;
         }
         // At most one operation and its cancellation acknowledgement are queued.
@@ -546,6 +562,20 @@ fn worker(
                 // Only a channel change rechecks with a download staged, and
                 // that download survives only if the same release is offered.
                 let staged = prepared.take();
+                // Re-proved on every check, off the UI thread: the user may
+                // move or replace the installation while the app runs.
+                #[cfg(windows)]
+                if let Some(reason) = windows::unsupported() {
+                    drop(staged);
+                    offer = None;
+                    publish(
+                        &mailbox,
+                        generation,
+                        State::Disabled(reason.to_string()),
+                        None,
+                    );
+                    continue;
+                }
                 // The tap only ever carries stable releases, so a Homebrew
                 // installation never chases a beta it could not upgrade to.
                 let homebrew = cask().is_some();

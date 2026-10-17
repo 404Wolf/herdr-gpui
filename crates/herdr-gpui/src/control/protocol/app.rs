@@ -13,7 +13,6 @@ pub enum Switch {
 
 impl Switch {
     /// The state after applying this to `current`.
-    #[cfg(unix)]
     pub fn apply(self, current: bool) -> bool {
         match self {
             Self::On => true,
@@ -80,9 +79,19 @@ pub enum FontSize {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum UiOp {
-    Sidebar { switch: Switch },
-    StatusBar { switch: Switch },
-    FontSize { size: FontSize },
+    Sidebar {
+        switch: Switch,
+    },
+    StatusBar {
+        switch: Switch,
+    },
+    FontSize {
+        size: FontSize,
+    },
+    /// Shows an activity bar section.
+    Panel {
+        panel: crate::sidebar::ActivityPanel,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

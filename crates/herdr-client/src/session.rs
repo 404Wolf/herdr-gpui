@@ -8,8 +8,8 @@ use crate::{
     frame::FrameReader,
     handle::Command,
     limits::{
-        COMMAND_TIMEOUT, LIVENESS_TIMEOUT, MAX_RESPONSE_BYTES, PING_TIMEOUT, POLL, SLOW_REQUEST,
-        TIMEOUT,
+        COMMAND_TIMEOUT, IDLE_WAIT, LIVENESS_TIMEOUT, MAX_RESPONSE_BYTES, PING_TIMEOUT, POLL,
+        QUIET_PING, SLOW_REQUEST, TIMEOUT,
     },
     method::Method,
     options::ConnectOptions,
@@ -78,11 +78,11 @@ impl Health {
         self.received = now;
         self.ping = None;
     }
-    /// Ask the link to prove itself within `LIVENESS_TIMEOUT`, sooner than a
-    /// quiet link's routine ping. Returns whether a new ping must be sent; one
+    /// Ask the link to prove itself within `timeout`, sooner than a quiet
+    /// link's routine ping. Returns whether a new ping must be sent; one
     /// already outstanding only has its deadline brought forward.
-    pub(crate) fn probe(&mut self, now: Instant) -> bool {
-        let deadline = now + LIVENESS_TIMEOUT;
+    pub(crate) fn probe(&mut self, now: Instant, timeout: Duration) -> bool {
+        let deadline = now + timeout;
         match &mut self.ping {
             Some((_, due)) => {
                 *due = (*due).min(deadline);
@@ -94,18 +94,20 @@ impl Health {
             }
         }
     }
+    /// When `tick` next has something to do.
+    pub(crate) fn deadline(&self) -> Instant {
+        self.ping.map_or(self.received + QUIET_PING, |(_, due)| due)
+    }
     pub(crate) fn tick(&mut self, now: Instant) -> Result<bool> {
-        if self.ping.is_some_and(|(_, due)| now >= due) {
+        if now < self.deadline() {
+            return Ok(false);
+        }
+        if self.ping.is_some() {
             tracing::warn!(category = "health_check", "client timeout");
             return Err(Error::HealthTimeout);
         }
-        if self.ping.is_none()
-            && now.saturating_duration_since(self.received) >= Duration::from_secs(5)
-        {
-            self.ping = Some((now, now + PING_TIMEOUT));
-            return Ok(true);
-        }
-        Ok(false)
+        self.ping = Some((now, now + PING_TIMEOUT));
+        Ok(true)
     }
 }
 
@@ -138,16 +140,29 @@ impl Session {
         }
     }
 
+    fn handshake_deadline(&self) -> Option<Instant> {
+        self.snapshot.is_none().then(|| self.started + TIMEOUT)
+    }
+
+    fn request_deadline(&self) -> Option<Instant> {
+        self.pending.as_ref().map(|p| p.started + COMMAND_TIMEOUT)
+    }
+
+    /// The earliest instant `check_timeouts` fails the connection.
+    pub(crate) fn deadline(&self) -> Option<Instant> {
+        [self.handshake_deadline(), self.request_deadline()]
+            .into_iter()
+            .flatten()
+            .min()
+    }
+
     pub(crate) fn check_timeouts(&self) -> Result<()> {
-        if self.snapshot.is_none() && self.started.elapsed() > TIMEOUT {
+        let now = Instant::now();
+        if self.handshake_deadline().is_some_and(|due| now >= due) {
             tracing::warn!(category = "initial_snapshot", "client timeout");
             return Err(Error::HandshakeTimeout);
         }
-        if self
-            .pending
-            .as_ref()
-            .is_some_and(|p| p.started.elapsed() > COMMAND_TIMEOUT)
-        {
+        if self.request_deadline().is_some_and(|due| now >= due) {
             tracing::warn!(category = "request", "client timeout; request not replayed");
             return Err(Error::RequestTimeout);
         }
@@ -182,13 +197,49 @@ impl Session {
     }
 }
 
-/// What the caller's handle tells the worker between commands.
+/// The worker's own waits. Tests shorten or lengthen them to exercise a
+/// deadline, or to prove that a wake rather than the cap ended a wait.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Pace {
+    pub(crate) idle_wait: Duration,
+    pub(crate) liveness: Duration,
+    pub(crate) partial_frame: Duration,
+}
+
+impl Default for Pace {
+    fn default() -> Self {
+        Self {
+            idle_wait: IDLE_WAIT,
+            liveness: LIVENESS_TIMEOUT,
+            partial_frame: TIMEOUT,
+        }
+    }
+}
+
+/// How long the worker may block before the earliest of `deadlines`, or `cap`
+/// if none is nearer. Queued commands, `stop`, liveness requests, and image
+/// publication and cancellation wake it themselves.
+pub(crate) fn wait_timeout(
+    now: Instant,
+    cap: Duration,
+    deadlines: impl IntoIterator<Item = Option<Instant>>,
+) -> Duration {
+    deadlines
+        .into_iter()
+        .flatten()
+        .fold(now + cap, Instant::min)
+        .saturating_duration_since(now)
+}
+
+/// What the caller's handle tells the worker between commands, and the pace
+/// of the worker's waits.
 #[derive(Clone, Copy)]
 pub(crate) struct Signals<'a> {
     /// Ends the connection without flushing or replaying anything.
     pub(crate) stop: &'a AtomicBool,
     /// Asks an SSH link for an immediate health probe.
     pub(crate) liveness: &'a AtomicBool,
+    pub(crate) pace: Pace,
 }
 
 pub(crate) fn run_connection(
@@ -200,7 +251,11 @@ pub(crate) fn run_connection(
     tx: &Sender<ClientEvent>,
     signals: Signals<'_>,
 ) -> Result<()> {
-    let Signals { stop, liveness } = signals;
+    let Signals {
+        stop,
+        liveness,
+        pace,
+    } = signals;
     stream.set_read_timeout(Some(POLL))?;
     stream.set_write_timeout(Some(Duration::from_secs(1)))?;
     let hello = EndpointClientHello {
@@ -229,11 +284,12 @@ pub(crate) fn run_connection(
         },
         MAX_FRAME_SIZE,
     )?;
-    let mut reader = FrameReader::new();
+    let mut reader = FrameReader::with_timeout(pace.partial_frame);
     let mut session = Session::new(surface_active, remote);
     let mut queued: Option<Command> = None;
     while !stop.load(Ordering::Acquire) {
         session.check_timeouts()?;
+        reader.check_timeout()?;
         let partial_image = queued
             .as_ref()
             .and_then(|c| c.image.as_ref())
@@ -249,7 +305,7 @@ pub(crate) fn run_connection(
         // A liveness request waits for the same boundary rather than being lost.
         if !partial_image && let Some(health) = &mut session.health {
             let now = Instant::now();
-            let probe = liveness.swap(false, Ordering::AcqRel) && health.probe(now);
+            let probe = liveness.swap(false, Ordering::AcqRel) && health.probe(now, pace.liveness);
             if health.tick(now)? || probe {
                 write_message(
                     &mut stream,
@@ -340,16 +396,46 @@ pub(crate) fn run_connection(
                 });
             }
         }
-        // Commands left behind by the batch bound must not wait out a poll;
-        // ones fenced by a request, an image, or a partial frame do.
-        let timeout = if queued.is_none() && reader.started.is_none() && !commands.is_empty() {
+        let image = queued
+            .as_ref()
+            .and_then(|c| Some((c.image.as_ref()?, !c.bytes.is_empty())));
+        let partial_image = image.is_some_and(|(image, _)| image.writer.offset > 0);
+        // An inbound frame fences an image not yet begun: until the frame ends,
+        // the batch can neither write it nor expire it, so neither its socket
+        // room nor its deadline may end the wait.
+        let image = image.filter(|_| reader.started.is_none() || partial_image);
+        // A published image waits for room in the socket; one still being
+        // prepared is woken on publication.
+        let writable = image.is_some_and(|(_, published)| published);
+        // Commands left behind by the batch bound must not wait, nor a liveness
+        // request a partial image deferred; anything else fenced by a request,
+        // an image, or a partial frame waits for what unfences it.
+        let timeout = if (queued.is_none() && reader.started.is_none() && !commands.is_empty())
+            || (!partial_image && session.health.is_some() && liveness.load(Ordering::Acquire))
+        {
             Duration::ZERO
         } else {
-            POLL
+            wait_timeout(
+                Instant::now(),
+                pace.idle_wait,
+                [
+                    session.deadline(),
+                    reader.deadline(),
+                    // A partial image defers health checks, so their deadline
+                    // cannot end the wait either; the image's own deadline does.
+                    session
+                        .health
+                        .as_ref()
+                        .filter(|_| !partial_image)
+                        .map(Health::deadline),
+                    image.and_then(|(image, published)| image.deadline(published)),
+                ],
+            )
         };
-        if !commands.wait(&stream, timeout)? {
+        if !commands.wait(&stream, writable, timeout)? {
             continue;
         }
+        let read = reader.bytes.len();
         let message = match reader.poll_batch(&mut stream) {
             // Daemons before the endpoint protocol cannot decode the hello and
             // close without a word. SSH discovery vets the remote binary first,
@@ -360,6 +446,13 @@ pub(crate) fn run_connection(
             result => result?,
         };
         let Some(message) = message else {
+            // A large frame can take longer than a health deadline to arrive;
+            // its bytes prove the link alive as well as a whole message would.
+            if reader.bytes.len() > read
+                && let Some(health) = &mut session.health
+            {
+                health.received(Instant::now());
+            }
             continue;
         };
         session.handle_message(message, |event| deliver(tx, event, stop))?;

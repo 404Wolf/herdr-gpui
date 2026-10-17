@@ -10,6 +10,7 @@ mod devices;
 mod fan_out;
 mod git;
 mod github;
+mod open_checkout;
 mod open_link;
 mod page;
 mod pr;
@@ -57,7 +58,7 @@ pub(crate) use {
     worktree_source::WorktreeSource,
 };
 
-pub(crate) use devices::enter as enter_key;
+pub(crate) use devices::{SettingsHint, enter as enter_key};
 use page::WorkspaceMenuAction;
 use state::Submission;
 use workspace::WorkspaceTarget;
