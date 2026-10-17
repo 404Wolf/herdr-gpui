@@ -118,8 +118,10 @@ impl Store {
         });
     }
 
-    /// Forgets an account's answers and pauses, for signing it out.
-    pub(super) fn forget(&mut self, login: &str) {
+    /// Forgets an account set's answers and its accounts' pauses, for
+    /// signing it out.
+    pub(super) fn forget<'a>(&mut self, login: &str, accounts: impl IntoIterator<Item = &'a str>) {
+        let accounts: Vec<&str> = accounts.into_iter().collect();
         let before = (
             self.entries.len(),
             self.hidden.len(),
@@ -128,7 +130,8 @@ impl Store {
         );
         self.entries.retain(|entry| entry.view.login != login);
         self.hidden.retain(|hidden| hidden.view.login != login);
-        self.pauses.retain(|pause| pause.login != login);
+        self.pauses
+            .retain(|pause| !accounts.contains(&pause.login.as_str()));
         self.asking.retain(|(view, _)| view.login != login);
         // Clearing runs every tick while signed out, like `release`.
         let after = (
@@ -188,6 +191,26 @@ impl Store {
             used: now,
             urgent: false,
         });
+    }
+
+    /// Holds a checkout whose account is paused until `until`, saying why,
+    /// without marking it checked: its visible answer stays as it was.
+    pub(super) fn hold(
+        &mut self,
+        view: &View,
+        input: Input,
+        message: String,
+        (now, until): (Instant, Instant),
+    ) {
+        match self.entry_mut(view, &input) {
+            Some(entry) => {
+                entry.message = Some(message);
+                entry.due = entry.due.max(until);
+                entry.urgent = false;
+                self.changed();
+            }
+            None => self.record(view, input, None, Some(message), (now, until)),
+        }
     }
 
     /// Pauses every branch of `repo_key` until `until`, and shows why on those

@@ -144,7 +144,7 @@ Boat's sandbox lifetime uses the existing config commands:
 herdr-gpui config set boat.auto_stop never
 herdr-gpui config set boat.auto_stop '"7200"'  # seconds, stored as a string
 herdr-gpui config get boat.auto_stop --json
-herdr-gpui cloud add                         # open Cloud Devices, then choose Boat
+herdr-gpui cloud add                         # open Cloud devices, then choose Boat
 ```
 
 `never` is the default: billing continues until the sandbox is stopped in Boat.

@@ -9,13 +9,21 @@ use std::sync::{
 mod config_watch;
 mod layout_drafts;
 mod load_save;
+mod navigation_groups;
 mod navigation_resize;
 mod navigation_scroll;
+mod pages_behaviour;
 mod quit_saves;
+mod remote_history_reload;
+mod save_now;
 mod scrollbars;
+mod search;
 mod section_order;
+mod sidebar_drafts;
 mod theme_drafts;
 // Saving a shared Herdr theme is Unix-only.
+mod theme_hover;
+mod theme_mode;
 #[cfg(unix)]
 mod theme_recovery;
 mod theme_sources;
@@ -106,4 +114,23 @@ pub(super) fn fixture() -> Loaded {
 
 fn open_fixture(source: WeakEntity<HerdrWindow>, cx: &mut App) {
     open_with(source, cx, |_, _, _| {});
+}
+
+pub(super) fn skill_fixture(
+    window: &mut Window,
+    cx: &mut Context<SettingsWindow>,
+) -> SettingsWindow {
+    let source = cx.new(|cx| crate::sidebar::layout_tests::fixture_window(window, cx));
+    let mut view = SettingsWindow::new(source.downgrade(), cx);
+    view.section = Section::General;
+    view
+}
+
+pub(super) fn skill_load() -> crate::Result<Loaded> {
+    Ok(Loaded {
+        config: Config::default(),
+        theme: Default::default(),
+        shared: None,
+        error: None,
+    })
 }

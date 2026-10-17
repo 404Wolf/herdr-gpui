@@ -14,17 +14,18 @@ fn focus_follows_mouse_switch_saves_the_opposite(cx: &mut TestAppContext) {
                 captured.lock().unwrap().push(edit);
                 Ok(())
             }),
-            load: skill_load,
+            load: Arc::new(skill_load),
         });
     });
     cx.simulate_resize(size(px(960.), px(2200.)));
     for enabled in [false, true] {
         view.update(cx, |view, cx| {
+            view.section = Section::Tabs;
             view.config.focus_follows_mouse = enabled;
             cx.notify();
         });
         cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
-        let switch = cx.debug_bounds("settings-focus-follows-mouse").unwrap();
+        let switch = cx.debug_bounds("tabs-focus-follows-mouse-toggle").unwrap();
         cx.simulate_click(switch.center(), Default::default());
         cx.run_until_parked();
         assert_eq!(

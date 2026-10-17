@@ -29,7 +29,6 @@ use super::{Item, Notice, Request, Service, Snapshot};
 use crate::search_input::{self, SearchInput};
 use gpui::{prelude::*, *};
 use rows::{Filters, ItemRow, RunLine, Runs, Sort, Tab};
-use secrecy::SecretString;
 use std::{collections::HashSet, sync::Arc};
 
 /// What the view asks its host to do.
@@ -176,12 +175,10 @@ pub(crate) struct OrchestratorView {
     /// The open pull request's conversation, comment, and merge.
     pr: crate::pr_actions::Actions,
     comment: Entity<SearchInput>,
-    /// Conversation bodies, parsed once per text.
-    bodies: conversation::Bodies,
+    /// Conversation rows, the list drawing them, and the threads unfolded.
+    conversation: conversation::Rows,
     /// Conversation authors' avatars by URL.
     avatars: conversation::Avatars,
-    /// Resolved threads unfolded, by author, path, and time.
-    shown_threads: HashSet<String>,
     merge_open: bool,
     /// Hosts a dispatch could go to, while the dialog is open.
     hosts: Arc<Vec<crate::dispatch::Candidate>>,
@@ -260,9 +257,8 @@ impl OrchestratorView {
             message,
             pr: crate::pr_actions::Actions::default(),
             comment,
-            bodies: conversation::Bodies::default(),
+            conversation: conversation::Rows::default(),
             avatars: conversation::Avatars::default(),
-            shown_threads: HashSet::new(),
             merge_open: false,
             hosts: Arc::default(),
             detached: false,
@@ -393,6 +389,7 @@ impl OrchestratorView {
             });
         }
         self.look = look;
+        self.conversation.remeasure();
         cx.notify();
     }
 
@@ -415,12 +412,12 @@ impl OrchestratorView {
     /// the open pull request again.
     pub(crate) fn set_github(
         &mut self,
-        token: Option<Arc<SecretString>>,
+        token: Option<crate::github::Tokens>,
         login: Option<String>,
         cx: &mut Context<Self>,
     ) {
         let same = match (&token, &self.request.token) {
-            (Some(new), Some(old)) => Arc::ptr_eq(new, old),
+            (Some(new), Some(old)) => new.same(old),
             (None, None) => true,
             _ => false,
         };
@@ -448,6 +445,26 @@ impl OrchestratorView {
         }
         self.reload_pull_request();
         self.reload_conversation();
+    }
+
+    /// The login GitHub is read as for this repository: the account that
+    /// reads its owner, or the device's own before the remote is known.
+    fn reading_login(&self) -> Option<&str> {
+        let owner = self
+            .snapshot
+            .repo
+            .as_ref()
+            .and_then(|info| info.remote.as_ref())
+            .map(|remote| {
+                let repository = remote.source.repository.as_str();
+                repository
+                    .split_once('/')
+                    .map_or(repository, |(owner, _)| owner)
+            });
+        match (&self.request.token, owner) {
+            (Some(tokens), Some(owner)) => Some(tokens.login_for(owner)),
+            _ => self.login.as_deref(),
+        }
     }
 
     fn refresh_rows(&mut self) {
@@ -479,7 +496,7 @@ impl OrchestratorView {
             &runs,
             &self.query,
             self.filters,
-            self.login.as_deref(),
+            self.reading_login(),
             self.mine,
             self.sort,
         );

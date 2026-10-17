@@ -22,7 +22,7 @@ enum Action {
     ForwardPort,
     /// Picks `[devices.<id>] theme`, the terminal's colors on this device.
     Theme,
-    /// Opens Settings > Cloud Devices on the device's provider.
+    /// Opens Settings > Cloud devices on the device's provider.
     #[cfg(feature = "cloud")]
     ProviderSettings,
     Remove,

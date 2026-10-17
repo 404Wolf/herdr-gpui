@@ -118,14 +118,24 @@ impl Default for NotificationConfig {
 
 /// Each key overrides the daemon's answer on its own, so naming one of them
 /// here does not silently reset the other to a GUI default.
-#[derive(Default, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize)]
 #[serde(default)]
-pub(super) struct ClipboardToastSettings {
+pub(crate) struct ClipboardToastSettings {
     enabled: Option<bool>,
     position: Option<ClipboardToastPosition>,
 }
 
 impl ClipboardToastSettings {
+    /// The GUI's own `enabled` override, if one is set.
+    pub(crate) fn enabled(self) -> Option<bool> {
+        self.enabled
+    }
+
+    /// The GUI's own `position` override, if one is set.
+    pub(crate) fn position(self) -> Option<ClipboardToastPosition> {
+        self.position
+    }
+
     pub(super) fn resolve(self, base: ClipboardToast) -> ClipboardToast {
         ClipboardToast {
             enabled: self.enabled.unwrap_or(base.enabled),
@@ -166,6 +176,18 @@ impl NotificationConfig {
 }
 
 impl NotificationSettings {
+    pub(crate) fn enabled(self) -> Option<bool> {
+        self.enabled
+    }
+
+    pub(crate) fn delay_seconds(self) -> Option<u64> {
+        self.delay_seconds
+    }
+
+    pub(crate) fn position(self) -> Option<herdr_client::protocol::ToastHerdrPosition> {
+        self.position
+    }
+
     pub(super) fn resolve(self, base: NotificationConfig) -> NotificationConfig {
         NotificationConfig {
             enabled: self.enabled.unwrap_or(base.enabled),

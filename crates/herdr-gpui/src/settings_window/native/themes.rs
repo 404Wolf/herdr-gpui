@@ -11,7 +11,7 @@ pub(super) async fn verify_themes(
     cx: &mut AsyncApp,
 ) -> Result<(usize, usize)> {
     settings.update(cx, |view, window, cx| {
-        view.select_section(Section::Appearance, window, cx)
+        view.select_section(Section::Theme, window, cx)
     })?;
     let deadline = Instant::now() + Duration::from_secs(3);
     while !settings.update(cx, |view, _, cx| {

@@ -1,4 +1,5 @@
 //! Independent native preferences window. Disk work never owns a window or a socket.
+mod catalog;
 #[cfg(feature = "cloud")]
 mod cloud_devices;
 #[cfg(feature = "cloud")]
@@ -6,17 +7,27 @@ mod cloud_devices;
 #[cfg_attr(test, allow(dead_code, unused_imports))]
 pub(crate) use cloud_devices::open as open_cloud;
 mod controls;
+mod inputs;
 mod layouts;
+mod navigation;
+mod pages;
 pub(crate) use layouts::{apply_loaded_layout, layout_load_revision};
 #[cfg(all(feature = "integration-test", target_os = "macos"))]
 mod native;
 mod persistence;
 mod remote_history;
 mod scrollbar;
+mod search;
+mod section;
+use section::{Group, Section};
+mod sidebar;
 #[cfg(test)]
 use persistence::SizeIo;
 use persistence::{Loaded, SaveCompletion};
+use sidebar::SidebarIntent;
+pub(crate) use sidebar::{apply_loaded_sidebar, sidebar_load_revision};
 mod themes;
+mod ui;
 #[cfg(all(feature = "integration-test", target_os = "macos"))]
 pub(crate) use native::verify_native;
 pub(crate) use themes::{
@@ -54,97 +65,6 @@ struct SettingsWindowHandle {
     model: Option<WeakEntity<SettingsWindow>>,
 }
 impl Global for SettingsWindowHandle {}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum Section {
-    General,
-    #[default]
-    Appearance,
-    #[cfg(feature = "cloud")]
-    CloudDevices,
-    Code,
-    Fonts,
-    Indicators,
-    Integrations,
-    Notifications,
-    Plugins,
-    Sound,
-    StatusBar,
-}
-
-impl Section {
-    /// Sidebar order: General first, as the catch-all people look in when
-    /// they do not know where a setting lives, then alphabetical by label.
-    const ALL: &[Self] = &[
-        Self::General,
-        Self::Appearance,
-        #[cfg(feature = "cloud")]
-        Self::CloudDevices,
-        Self::Code,
-        Self::Fonts,
-        Self::Indicators,
-        Self::Integrations,
-        Self::Notifications,
-        Self::Plugins,
-        Self::Sound,
-        Self::StatusBar,
-    ];
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::Appearance => "Appearance",
-            Self::Fonts => "Fonts",
-            Self::Indicators => "Indicators",
-            Self::Sound => "Sound",
-            Self::Notifications => "Notifications",
-            Self::StatusBar => "Status bar",
-            Self::Integrations => "Integrations",
-            Self::Plugins => "Plugins",
-            Self::Code => "Code",
-            #[cfg(feature = "cloud")]
-            Self::CloudDevices => "Cloud Devices",
-            Self::General => "General",
-        }
-    }
-
-    fn icon(self) -> &'static str {
-        match self {
-            Self::Appearance => "icons/theme.svg",
-            Self::Fonts => "icons/pencil.svg",
-            Self::Indicators => "icons/pulse.svg",
-            Self::Sound => "icons/chart.svg",
-            Self::Notifications => "icons/bell.svg",
-            Self::StatusBar => "icons/status-bar.svg",
-            Self::Integrations => "icons/agent-generic.svg",
-            Self::Plugins => "icons/plug.svg",
-            Self::Code => "icons/vscode.svg",
-            #[cfg(feature = "cloud")]
-            Self::CloudDevices => "icons/globe.svg",
-            Self::General => "icons/settings.svg",
-        }
-    }
-
-    fn description(self) -> &'static str {
-        match self {
-            Self::Appearance => "A workspace that feels like yours.",
-            Self::Fonts => "Make every line comfortable to read.",
-            Self::Indicators => "See what your agents are doing at a glance.",
-            Self::Sound => "A little signal when something needs you.",
-            Self::Notifications => "Stay informed without losing your place.",
-            Self::StatusBar => "Keep the bottom bar to what you use.",
-            Self::Integrations => "Connect the agents you work with.",
-            Self::Plugins => "Show what your plugins report in the sidebar.",
-            Self::Code => {
-                "Review code and diffs beside your terminals by connecting to a Visual Studio Code server."
-            }
-            #[cfg(feature = "cloud")]
-            Self::CloudDevices => {
-                "Create machines from your cloud accounts and use them as devices."
-            }
-            Self::General => "The small details of your daily workflow.",
-        }
-    }
-}
 
 pub(crate) fn open(source: WeakEntity<HerdrWindow>, cx: &mut App) {
     cx.defer(move |cx| {
@@ -220,19 +140,35 @@ fn open_with(
 
 struct SettingsWindow {
     config: Config,
+    /// The config as the last successful load read it, which sidebar saves
+    /// diff against; previews change only `config`.
+    loaded_config: Config,
     theme: Theme,
     shared: Option<herdr_settings::Settings>,
     source: WeakEntity<HerdrWindow>,
     section: Section,
+    /// Catalog indices matching the query in `nav_search`; the body shows
+    /// them in place of `section` while it is `Some`.
+    search_results: Option<Vec<usize>>,
+    nav_search: Entity<crate::search_input::SearchInput>,
     themes: themes::ThemeBrowser,
     controls: controls::Controls,
     plugins: controls::plugins::Plugins,
     code: controls::code::CodeSettings,
+    /// The open override dropdown, if any; its list renders inside its button.
+    dropdown: Option<ui::Dropdown>,
+    /// The number field being typed into, if any.
+    number_edit: Option<ui::NumberEdit>,
+    /// A slider being dragged, or released and saving, that writes only on
+    /// release.
+    number_preview: Option<inputs::NumberPreview>,
+    /// The host colour being typed as hex, if any.
+    hex_edit: Option<sidebar::HexEdit>,
     error: Option<String>,
     status: Option<String>,
     focus: FocusHandle,
     body_scroll: ScrollHandle,
-    /// The category list scrolls when the window is too short for it.
+    /// The section list scrolls when the window is too short for it.
     navigation_scroll: ScrollHandle,
     /// Where on a scrollbar's thumb the pointer took hold of it.
     thumb_grab: f32,
@@ -245,6 +181,7 @@ struct SettingsWindow {
     quitting: bool,
     save_completion: Option<std::sync::mpsc::Receiver<SaveCompletion>>,
     _quit: Subscription,
+    _search: Subscription,
     new_window_target: Option<herdr_client::ConnectTarget>,
     #[cfg(test)]
     size_io: Option<SizeIo>,
@@ -263,11 +200,15 @@ struct SettingsWindow {
     theme_saving: bool,
     layout_intent: Option<crate::config::LayoutMode>,
     layout_saving: bool,
+    sidebar_intent: Option<SidebarIntent>,
+    /// The draft a running save is writing.
+    sidebar_saving: Option<SidebarIntent>,
+    /// A committed draft waiting for the running save to finish.
+    sidebar_queued: bool,
     #[cfg(test)]
     layout_io: Option<layouts::LayoutIo>,
     remote_history: remote_history::RemoteHistory,
-    /// The Coder card, built when Cloud Devices is first shown.
-    /// The provider whose tab Cloud Devices shows.
+    /// The provider whose tab Cloud devices shows.
     #[cfg(feature = "cloud")]
     cloud_tab: crate::cloud::CloudProvider,
     /// The main window's finished cloud jobs when the cards last read them.
@@ -286,6 +227,8 @@ struct SettingsWindow {
     theme_light: bool,
     theme_load_failed: bool,
     closing: Option<AnyWindowHandle>,
+    /// True while the footer's "Save now" writes the pending drafts.
+    flushing: bool,
     theme_cache: std::collections::VecDeque<(String, Theme)>,
     _theme_guard: Subscription,
     #[cfg(test)]
@@ -327,15 +270,33 @@ impl SettingsWindow {
                 }
             }
         });
+        let nav_search = cx.new(crate::search_input::SearchInput::new);
+        nav_search.update(cx, |input, cx| input.set_placeholder("Search settings", cx));
+        let search_changed = cx.subscribe(
+            &nav_search,
+            |this, input, _: &crate::search_input::Changed, cx| {
+                let query = input.read(cx).text().to_owned();
+                this.set_search_query(&query, cx);
+            },
+        );
         Self {
+            loaded_config: config.clone(),
             config,
             theme,
             shared,
             source,
-            section: Section::Appearance,
+            section: Section::Theme,
+            search_results: None,
+            _search: search_changed,
+            nav_search,
             themes: themes::ThemeBrowser::new(cx),
             controls: controls::Controls::new(cx),
             plugins: controls::plugins::Plugins::new(cx),
+            code: Default::default(),
+            dropdown: None,
+            number_edit: None,
+            number_preview: None,
+            hex_edit: None,
             error: appearance.error,
             status: None,
             focus: cx.focus_handle(),
@@ -363,10 +324,12 @@ impl SettingsWindow {
             theme_saving: false,
             layout_intent: None,
             layout_saving: false,
+            sidebar_intent: None,
+            sidebar_saving: None,
+            sidebar_queued: false,
             #[cfg(test)]
             layout_io: None,
             remote_history: Default::default(),
-            code: Default::default(),
             #[cfg(feature = "cloud")]
             cloud_tab: cloud_devices::first_tab(),
             #[cfg(feature = "cloud")]
@@ -384,6 +347,7 @@ impl SettingsWindow {
             theme_light: false,
             theme_load_failed: false,
             closing: None,
+            flushing: false,
             theme_cache: Default::default(),
             // Shared-theme/OS callbacks in main windows also publish here. Fence
             // their prepared, older palette while an explicit choice is live.
@@ -407,6 +371,15 @@ impl SettingsWindow {
                 {
                     this.broadcast_layout(cx);
                 }
+                if this.sidebar_intent.is_some()
+                    && cx
+                        .try_global::<crate::app::InitialAppearance>()
+                        .is_some_and(|appearance| {
+                            SidebarIntent::of(&appearance.config) != SidebarIntent::of(&this.config)
+                        })
+                {
+                    this.broadcast_sidebar(cx);
+                }
             }),
             #[cfg(test)]
             theme_io: None,
@@ -421,7 +394,7 @@ impl SettingsWindow {
         if matches!(self.section, Section::Integrations | Section::Plugins) {
             cx.notify();
         }
-        if self.section == Section::General {
+        if matches!(self.section, Section::General | Section::Tabs) {
             self.sync_remote_history(false, cx);
         }
     }
@@ -448,7 +421,7 @@ impl SettingsWindow {
         if self.section == Section::Integrations {
             owner.update(cx, |source, cx| source.load_integrations(cx));
         }
-        if self.section == Section::General {
+        if matches!(self.section, Section::General | Section::Tabs) {
             self.sync_remote_history(false, cx);
         }
         cx.notify();
@@ -528,18 +501,60 @@ impl SettingsWindow {
         self.theme_intent.is_some()
     }
 
+    /// Starts the writes the footer's "Save now" stands for; completions chain
+    /// theme, then layout, then sidebar, through `finish_flush`.
+    fn save_pending_drafts(&mut self, cx: &mut Context<Self>) {
+        if self.busy() {
+            return;
+        }
+        self.theme_load_failed = false;
+        self.flushing = true;
+        self.finish_flush(cx);
+    }
+
+    fn finish_flush(&mut self, cx: &mut Context<Self>) {
+        if !self.flushing {
+            return;
+        }
+        if self.closing.is_some() {
+            // Closing writes the same drafts and removes the window itself.
+            self.flushing = false;
+            return;
+        }
+        if self.busy() {
+            return;
+        }
+        if self.theme_dirty() {
+            self.drive_theme_intent(cx);
+        } else if self.layout_intent.is_some() {
+            self.save_layout_draft(cx);
+        } else if self.sidebar_dirty() {
+            self.save_sidebar_draft(cx);
+        } else {
+            self.flushing = false;
+            self.status = None;
+            cx.notify();
+        }
+    }
+
     /// Shared entry point for the native titlebar and keyboard close actions.
     pub(super) fn should_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        self.hover_theme(None, cx);
         if self.closing.is_some() {
             return false;
         }
-        if !self.finish_control_size_edit(true, cx) {
+        if !self.finish_number_edit(true, cx) || !self.finish_hex_edit(true, cx) {
             return false;
         }
         if !self.finish_code_edit(true, cx) {
             self.finish_code_edit(false, cx);
         }
-        if !self.theme_dirty() && self.layout_intent.is_none() && !self.busy() {
+        self.dropdown = None;
+        if !self.theme_dirty()
+            && self.layout_intent.is_none()
+            && !self.sidebar_dirty()
+            && !self.busy()
+        {
             return true;
         }
         self.closing = Some(window.window_handle());
@@ -556,17 +571,24 @@ impl SettingsWindow {
     }
 
     fn finish_close(&mut self, cx: &mut Context<Self>) {
-        if !self.busy()
-            && !self.theme_dirty()
-            && self.closing.is_some()
-            && self.layout_intent.is_some()
-        {
-            self.save_layout_draft(cx);
-            return;
+        self.finish_flush(cx);
+        if self.sidebar_queued && self.closing.is_none() && !self.busy() {
+            self.save_sidebar_draft(cx);
+        }
+        if !self.busy() && !self.theme_dirty() && self.closing.is_some() {
+            if self.layout_intent.is_some() {
+                self.save_layout_draft(cx);
+                return;
+            }
+            if self.sidebar_dirty() {
+                self.save_sidebar_draft(cx);
+                return;
+            }
         }
         if !self.busy()
             && !self.theme_dirty()
             && self.layout_intent.is_none()
+            && !self.sidebar_dirty()
             && let Some(handle) = self.closing.take()
         {
             cx.defer(move |cx| {
@@ -594,14 +616,23 @@ impl SettingsWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.finish_control_size_edit(true, cx) {
-            self.finish_control_size_edit(false, cx);
+        self.hover_theme(None, cx);
+        self.drop_number_preview(cx);
+        if !self.finish_number_edit(true, cx) {
+            self.finish_number_edit(false, cx);
+        }
+        if !self.finish_hex_edit(true, cx) {
+            self.finish_hex_edit(false, cx);
         }
         if !self.finish_code_edit(true, cx) {
             self.finish_code_edit(false, cx);
         }
+        self.dropdown = None;
         self.dismiss_control_font_picker(window, cx);
+        self.clear_search(cx);
         self.section = section;
+        // A page opened from search or elsewhere shows in a short list too.
+        self.navigation_scroll.scroll_to_item(section.nav_item());
         if section == Section::Code {
             self.open_code_page(window, cx);
         }
@@ -612,7 +643,7 @@ impl SettingsWindow {
                 .source
                 .update(cx, |source, cx| source.load_integrations(cx));
         }
-        if section == Section::General {
+        if matches!(section, Section::General | Section::Tabs) {
             self.sync_remote_history(false, cx);
         }
         #[cfg(feature = "cloud")]
@@ -621,132 +652,22 @@ impl SettingsWindow {
         }
         cx.notify();
     }
-
-    fn navigation(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        use crate::panel_resize::{PanelDrag, Side, handle};
-        let theme = &self.theme;
-        div()
-            .id("settings-navigation")
-            .relative()
-            .w(px(self.navigation_width.width(self.viewport_width)))
-            .on_drag_move(
-                cx.listener(|this, event: &DragMoveEvent<PanelDrag>, _, cx| {
-                    if *event.drag(cx) == PanelDrag::SettingsNavigation
-                        && this.navigation_width.drag(
-                            Side::Left,
-                            event.bounds,
-                            event.event.position.x,
-                        )
-                    {
-                        cx.notify();
-                    }
-                }),
-            )
-            .child(handle(
-                "settings-navigation-resize",
-                Side::Left,
-                PanelDrag::SettingsNavigation,
-                cx.listener(|this, _, _, cx| {
-                    this.navigation_width.reset();
-                    cx.notify();
-                }),
-            ))
-            .h_full()
-            .flex_none()
-            .flex()
-            .flex_col()
-            .p(px(12.))
-            .gap(px(4.))
-            .bg(rgb(mix(theme.surface, theme.background, 25)))
-            .border_r_1()
-            .border_color(rgb(theme.active))
-            .child(
-                div()
-                    .px(px(10.))
-                    .py(px(20.))
-                    .child(
-                        div()
-                            .text_size(px(18.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("Herdr"),
-                    )
-                    .child(
-                        div()
-                            .mt(px(3.))
-                            .text_color(rgb(theme.subtext()))
-                            .child("Settings"),
-                    ),
-            )
-            .child(
-                self.scroll_area(
-                    scrollbar::Pane::Sections,
-                    div()
-                        .id("settings-sections")
-                        .debug_selector(|| "settings-sections".into())
-                        .flex_1()
-                        .min_h_0()
-                        .flex()
-                        .flex_col()
-                        .gap(px(4.))
-                        .overflow_y_scroll()
-                        .track_scroll(&self.navigation_scroll)
-                        .children(Section::ALL.iter().copied().enumerate().map(
-                            |(index, section)| {
-                                let selected = self.section == section;
-                                div()
-                                    .id(("settings-section", index))
-                                    .relative()
-                                    .map(|row| {
-                                        #[cfg(all(
-                                            feature = "integration-test",
-                                            target_os = "macos"
-                                        ))]
-                                        let row = row.child(native::probe(index));
-                                        row
-                                    })
-                                    .debug_selector(move || format!("settings-section-{index}"))
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(10.))
-                                    .px(px(10.))
-                                    .py(px(11.))
-                                    .rounded(px(corners::CONTROL))
-                                    .cursor_pointer()
-                                    .when(selected, |el| el.bg(rgb(theme.primary_wash())))
-                                    .hover(|el| el.bg(rgb(theme.active)))
-                                    .child(
-                                        svg()
-                                            .path(section.icon())
-                                            .size(px(17.))
-                                            .flex_none()
-                                            .text_color(rgb(if selected {
-                                                theme.primary()
-                                            } else {
-                                                theme.subtext()
-                                            })),
-                                    )
-                                    .child(section.label())
-                                    .on_click(cx.listener(move |this, _, window, cx| {
-                                        this.select_section(section, window, cx)
-                                    }))
-                            },
-                        )),
-                    cx,
-                ),
-            )
-    }
 }
 
 impl Render for SettingsWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let content = match self.section {
-            Section::Appearance => self.render_appearance(window, cx),
-            Section::Integrations => self.render_integration_controls(cx),
-            Section::Plugins => self.render_plugin_controls(cx),
-            Section::Code => self.render_code_controls(window, cx),
-            #[cfg(feature = "cloud")]
-            Section::CloudDevices => self.render_cloud_devices(cx),
-            _ => self.render_controls(window, cx),
+        let searching = self.search_results.clone();
+        let content = match &searching {
+            Some(_) => self.render_search_results(cx),
+            None => match self.section {
+                Section::Theme => self.render_theme(window, cx),
+                Section::Integrations => self.render_integration_controls(cx),
+                Section::Plugins => self.render_plugin_controls(cx),
+                Section::Code => self.render_code_controls(window, cx),
+                #[cfg(feature = "cloud")]
+                Section::CloudDevices => self.render_cloud_devices(cx),
+                _ => self.render_controls(window, cx),
+            },
         };
         self.viewport_width = f32::from(window.viewport_size().width);
         let navigation = self.navigation(cx);
@@ -760,6 +681,7 @@ impl Render for SettingsWindow {
             .key_context("SettingsWindow")
             .relative()
             .track_focus(&self.focus)
+            .on_key_down(cx.listener(Self::settings_key))
             .on_action(cx.listener(|this, action: &crate::RunCommand, window, cx| {
                 match action.command {
                     // Its own close path, which saves pending edits first.
@@ -792,79 +714,46 @@ impl Render for SettingsWindow {
             .text_color(rgb(theme.foreground))
             .children(header)
             .child(
-                div().flex_1().min_h_0().flex().child(navigation).child(self.scroll_area(scrollbar::Pane::Body,
-                    div()
-                        .id("settings-body")
-                        .debug_selector(|| "settings-body".into())
-                        .flex_1()
-                        .min_w_0()
-                        .min_h_0()
-                        .overflow_y_scroll()
-                        .track_scroll(&self.body_scroll)
-                        .p(px(28.))
-                        .child(
-                            div()
-                                .text_size(px(28.))
-                                .line_height(px(36.))
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .child(self.section.label()),
-                        )
-                        .child(
-                            div()
-                                .mt(px(5.))
-                                .mb(px(24.))
-                                .text_color(rgb(theme.subtext()))
-                                .child(self.section.description()),
-                        )
-                        .child(content), cx)),
-            )
-            .child(
-                div()
-                    .flex_none()
-                    .min_h(px(36.))
-                    .px(px(16.))
-                    .py(px(8.))
-                    .flex()
-                    .items_center()
-                    .gap(px(12.))
-                    .border_t_1()
-                    .border_color(rgb(theme.active))
-                    .text_size(px(11.))
-                    .child(
-                        div().debug_selector(|| "settings-footer-status".into()).flex_1().min_w_0().child(
-                            self.error
-                                .clone()
-                                .or_else(|| {
-                                    if self.loading {
-                                        Some("Loading preferences...".into())
+                div().flex_1().min_h_0().flex().child(navigation).child(
+                    self.scroll_area(
+                        scrollbar::Pane::Body,
+                        div()
+                            .id("settings-body")
+                            .debug_selector(|| "settings-body".into())
+                            .flex_1()
+                            .min_w_0()
+                            .min_h_0()
+                            .overflow_y_scroll()
+                            .track_scroll(&self.body_scroll)
+                            .p(px(28.))
+                            .child(
+                                div()
+                                    .text_size(px(18.))
+                                    .line_height(px(26.))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child(if searching.is_some() {
+                                        "Results"
                                     } else {
-                                        self.status.clone()
-                                    }
-                                })
-                                .unwrap_or_else(|| {
-                                    match self.section {
-                                        Section::Appearance => {
-                                            "Themes and layouts change live; saved on Settings close or app quit."
-                                        }
-                                        #[cfg(feature = "cloud")]
-                                        Section::CloudDevices => {
-                                            "Account fields save with Save; sign-in and removal apply at once."
-                                        }
-                                        _ => "Changes are saved automatically.",
-                                    }
-                                    .into()
-                                }),
-                        ),
-                    )
-                    .child(
-                        self.control_choice("settings-footer-reload", "Reload", false, true)
-                            .debug_selector(|| "settings-footer-reload".into())
-                            .flex_none()
-                            .px(px(10.))
-                            .py(px(3.))
-                            .on_click(cx.listener(|this, _, _, cx| this.reload(cx))),
+                                        self.section.label()
+                                    }),
+                            )
+                            .child(div().mb(px(16.)).when_some(
+                                self.section.lead().filter(|_| searching.is_none()),
+                                |header, lead| {
+                                    header.mt(px(2.)).child(
+                                        div()
+                                            .text_size(px(12.))
+                                            .text_color(rgb(theme.subtext()))
+                                            .child(lead),
+                                    )
+                                },
+                            ))
+                            .child(content),
+                        cx,
                     ),
+                ),
             )
+            .child(self.footer(cx))
             .children(font_picker);
         let border = self.theme.active;
         crate::titlebar::frame(window, border, root)

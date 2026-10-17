@@ -14,13 +14,22 @@ fn layout_clicks_apply_live_without_writing_and_close_commits_only_final(cx: &mu
         window.focus(&view.focus, cx);
         view
     });
+    view.update(cx, |view, _| view.section = Section::Sidebar);
     cx.simulate_resize(size(px(960.), px(2200.)));
     let revision = cx.update(|_, cx| layout_load_revision(cx));
+    // Options follow `LayoutMode::ALL`.
     for (mode, selector) in [
-        (LayoutMode::Orca, "settings-layout-orca"),
-        (LayoutMode::Minimal, "settings-layout-minimal"),
-        (LayoutMode::Superset, "settings-layout-superset"),
+        (LayoutMode::Orca, "sidebar-layout-control-option-7"),
+        (LayoutMode::Minimal, "sidebar-layout-control-option-8"),
+        (LayoutMode::Superset, "sidebar-layout-control-option-6"),
     ] {
+        assert_eq!(
+            LayoutMode::ALL[selector[30..].parse::<usize>().unwrap()],
+            mode
+        );
+        cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
+        let opener = cx.debug_bounds("sidebar-layout-control").unwrap();
+        cx.simulate_click(opener.center(), Default::default());
         cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
         let bounds = cx.debug_bounds(selector).unwrap();
         cx.simulate_click(bounds.center(), Default::default());

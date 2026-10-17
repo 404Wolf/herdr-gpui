@@ -1,12 +1,9 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
-use crate::settings_window::controls::{
-    preferences::PreferenceIo,
-    tests::{skill_fixture, skill_load},
-};
+use crate::settings_window::{Section, controls::preferences::PreferenceIo, tests::skill_fixture};
 use core::prelude::v1::test;
-use gpui::VisualTestContext;
+use gpui::{TestAppContext, VisualTestContext, px, size};
 use std::sync::{Arc, Mutex};
 
 #[gpui::test]
@@ -16,13 +13,9 @@ fn status_bar_controls_save_typed_edits(cx: &mut TestAppContext) {
     let captured = edits.clone();
     view.update(cx, |view, _| {
         view.section = Section::StatusBar;
-        view.controls.preference_io = Some(PreferenceIo {
-            write: Arc::new(move |edit| {
-                captured.lock().unwrap().push(edit);
-                Ok(())
-            }),
-            load: skill_load,
-        });
+        view.controls.preference_io = Some(PreferenceIo::recording(move |edit| {
+            captured.lock().unwrap().push(edit)
+        }));
     });
     cx.simulate_resize(size(px(960.), px(2200.)));
     let click = |cx: &mut VisualTestContext, selector: &'static str| {
@@ -33,20 +26,17 @@ fn status_bar_controls_save_typed_edits(cx: &mut TestAppContext) {
         edits.lock().unwrap().pop()
     };
     for (selector, edit) in [
-        ("settings-usage-compact", Edit::Usage(Detail::Compact)),
+        ("status-usage-detail-1", Edit::Usage(Detail::Compact)),
         (
-            "settings-system-load-compact",
+            "status-system-load-detail-1",
             Edit::SystemLoad(Detail::Compact),
         ),
-        ("settings-status-keep-awake", Edit::KeepAwake(false)),
-        ("settings-status-theme", Edit::Theme(Button::Hidden)),
-        ("settings-status-theme-icon", Edit::Theme(Button::Icon)),
+        ("status-keep-awake-toggle", Edit::KeepAwake(false)),
+        ("status-theme-toggle", Edit::Theme(Button::Hidden)),
+        ("status-theme-style-1", Edit::Theme(Button::Icon)),
+        ("status-shortcuts-style-1", Edit::Shortcuts(Button::Icon)),
         (
-            "settings-status-shortcuts-icon",
-            Edit::Shortcuts(Button::Icon),
-        ),
-        (
-            "settings-status-report-issue",
+            "status-report-issue-toggle",
             Edit::ReportIssue(Button::Hidden),
         ),
     ] {
@@ -57,18 +47,18 @@ fn status_bar_controls_save_typed_edits(cx: &mut TestAppContext) {
         );
     }
     assert_eq!(
-        click(cx, "settings-system-load"),
+        click(cx, "status-system-load-toggle"),
         Some(Preference::ShowSystemLoad(false))
     );
     // The current choice, and the choices of a hidden item, save nothing.
-    assert_eq!(click(cx, "settings-usage-detailed"), None);
+    assert_eq!(click(cx, "status-usage-detail-0"), None);
     view.update(cx, |view, cx| {
         view.config.status_bar.theme = Button::Hidden;
         cx.notify();
     });
-    assert_eq!(click(cx, "settings-status-theme-icon"), None);
+    assert_eq!(click(cx, "status-theme-style-1"), None);
     assert_eq!(
-        click(cx, "settings-status-theme"),
+        click(cx, "status-theme-toggle"),
         Some(Preference::StatusBar(Edit::Theme(Button::Label)))
     );
 }

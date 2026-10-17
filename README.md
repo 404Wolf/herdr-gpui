@@ -86,9 +86,13 @@ running another terminal emulator or wrapping the TUI.
       <br>
       <sub><b>CPU and memory per host.</b> The status bar follows the selected host, and with several hosts each sidebar host row shows its own, read over SSH for remote machines.</sub>
       <br><br>
-      <img src="docs/screenshots/settings-themes.png" alt="Settings window on the Appearance page with a live preview and a searchable grid of theme cards">
+      <img src="docs/screenshots/settings-themes.png" alt="Settings window on the Theme page with grouped navigation and a grid of theme cards">
       <br>
-      <sub><b>Native settings.</b> A live preview and a searchable grid of every built-in and Ghostty theme, plus fonts, indicators, sounds, and notifications.</sub>
+      <sub><b>Native settings.</b> Grouped, searchable pages for themes, sidebar, fonts, tabs, notifications, and integrations; every change applies live to the open windows, and hovering a theme previews it in the app.</sub>
+      <br><br>
+      <img src="docs/screenshots/settings-sidebar.png" alt="Settings window on the Sidebar page with spacing sliders and per-host colour swatches">
+      <br>
+      <sub><b>Sidebar page.</b> Pick the layout and selection marks, tune spacing with sliders, and give each host its own colour.</sub>
     </td>
   </tr>
   <tr>
