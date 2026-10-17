@@ -33,6 +33,7 @@ mod handshake;
 mod health;
 mod host_theme_order;
 mod host_themes;
+mod idle_wait;
 mod liveness;
 mod session_state;
 mod surface_encoding;

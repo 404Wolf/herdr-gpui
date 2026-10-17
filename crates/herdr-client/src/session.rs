@@ -8,8 +8,8 @@ use crate::{
     frame::FrameReader,
     handle::Command,
     limits::{
-        COMMAND_TIMEOUT, LIVENESS_TIMEOUT, MAX_RESPONSE_BYTES, PING_TIMEOUT, POLL, SLOW_REQUEST,
-        TIMEOUT,
+        COMMAND_TIMEOUT, IDLE_WAIT, LIVENESS_TIMEOUT, MAX_RESPONSE_BYTES, PING_TIMEOUT, POLL,
+        QUIET_PING, SLOW_REQUEST, TIMEOUT,
     },
     method::Method,
     options::ConnectOptions,
@@ -94,18 +94,20 @@ impl Health {
             }
         }
     }
+    /// When `tick` next has something to do.
+    pub(crate) fn deadline(&self) -> Instant {
+        self.ping.map_or(self.received + QUIET_PING, |(_, due)| due)
+    }
     pub(crate) fn tick(&mut self, now: Instant) -> Result<bool> {
-        if self.ping.is_some_and(|(_, due)| now >= due) {
+        if now < self.deadline() {
+            return Ok(false);
+        }
+        if self.ping.is_some() {
             tracing::warn!(category = "health_check", "client timeout");
             return Err(Error::HealthTimeout);
         }
-        if self.ping.is_none()
-            && now.saturating_duration_since(self.received) >= Duration::from_secs(5)
-        {
-            self.ping = Some((now, now + PING_TIMEOUT));
-            return Ok(true);
-        }
-        Ok(false)
+        self.ping = Some((now, now + PING_TIMEOUT));
+        Ok(true)
     }
 }
 
@@ -138,16 +140,29 @@ impl Session {
         }
     }
 
+    fn handshake_deadline(&self) -> Option<Instant> {
+        self.snapshot.is_none().then(|| self.started + TIMEOUT)
+    }
+
+    fn request_deadline(&self) -> Option<Instant> {
+        self.pending.as_ref().map(|p| p.started + COMMAND_TIMEOUT)
+    }
+
+    /// The earliest instant `check_timeouts` fails the connection.
+    pub(crate) fn deadline(&self) -> Option<Instant> {
+        [self.handshake_deadline(), self.request_deadline()]
+            .into_iter()
+            .flatten()
+            .min()
+    }
+
     pub(crate) fn check_timeouts(&self) -> Result<()> {
-        if self.snapshot.is_none() && self.started.elapsed() > TIMEOUT {
+        let now = Instant::now();
+        if self.handshake_deadline().is_some_and(|due| now >= due) {
             tracing::warn!(category = "initial_snapshot", "client timeout");
             return Err(Error::HandshakeTimeout);
         }
-        if self
-            .pending
-            .as_ref()
-            .is_some_and(|p| p.started.elapsed() > COMMAND_TIMEOUT)
-        {
+        if self.request_deadline().is_some_and(|due| now >= due) {
             tracing::warn!(category = "request", "client timeout; request not replayed");
             return Err(Error::RequestTimeout);
         }
@@ -180,6 +195,20 @@ impl Session {
             None
         }
     }
+}
+
+/// How long the worker may block before the earliest of `deadlines`, or
+/// `IDLE_WAIT` if none is nearer. Queued commands, `stop`, and liveness
+/// requests wake it themselves.
+pub(crate) fn wait_timeout(
+    now: Instant,
+    deadlines: impl IntoIterator<Item = Option<Instant>>,
+) -> Duration {
+    deadlines
+        .into_iter()
+        .flatten()
+        .fold(now + IDLE_WAIT, Instant::min)
+        .saturating_duration_since(now)
 }
 
 /// What the caller's handle tells the worker between commands.
@@ -234,6 +263,7 @@ pub(crate) fn run_connection(
     let mut queued: Option<Command> = None;
     while !stop.load(Ordering::Acquire) {
         session.check_timeouts()?;
+        reader.check_timeout()?;
         let partial_image = queued
             .as_ref()
             .and_then(|c| c.image.as_ref())
@@ -340,12 +370,22 @@ pub(crate) fn run_connection(
                 });
             }
         }
-        // Commands left behind by the batch bound must not wait out a poll;
-        // ones fenced by a request, an image, or a partial frame do.
+        // Commands left behind by the batch bound must not wait; ones fenced by
+        // a request, an image, or a partial frame wait for what unfences them.
+        // A queued clipboard image is published on its own channel, so it is polled.
         let timeout = if queued.is_none() && reader.started.is_none() && !commands.is_empty() {
             Duration::ZERO
-        } else {
+        } else if queued.as_ref().is_some_and(|c| c.image.is_some()) {
             POLL
+        } else {
+            wait_timeout(
+                Instant::now(),
+                [
+                    session.deadline(),
+                    reader.deadline(),
+                    session.health.as_ref().map(Health::deadline),
+                ],
+            )
         };
         if !commands.wait(&stream, timeout)? {
             continue;

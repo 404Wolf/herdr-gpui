@@ -85,14 +85,23 @@ impl FrameReader {
         Ok(None)
     }
 
+    pub(crate) fn deadline(&self) -> Option<Instant> {
+        self.started.map(|started| started + TIMEOUT)
+    }
+
+    pub(crate) fn check_timeout(&self) -> Result<()> {
+        if self.deadline().is_some_and(|due| Instant::now() >= due) {
+            tracing::warn!(category = "partial_frame", "client timeout");
+            return Err(Error::PartialFrameTimeout);
+        }
+        Ok(())
+    }
+
     pub(crate) fn poll(
         &mut self,
         stream: &mut (impl Read + ?Sized),
     ) -> Result<Option<ServerMessage>> {
-        if self.started.is_some_and(|t| t.elapsed() > TIMEOUT) {
-            tracing::warn!(category = "partial_frame", "client timeout");
-            return Err(Error::PartialFrameTimeout);
-        }
+        self.check_timeout()?;
         let mut buf = [0; 8192];
         let len = buf.len().min(self.target - self.bytes.len());
         match stream.read(&mut buf[..len]) {

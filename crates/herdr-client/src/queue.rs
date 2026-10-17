@@ -92,7 +92,7 @@ mod unix {
         pub(super) fn wake(&self) {
             // Best effort by design: `WouldBlock` means a wake is already
             // pending, and a closed peer means no worker is left to wake. The
-            // worker's bounded poll timeout covers anything else.
+            // worker's idle wait cap bounds anything else.
             let _ = (&self.0).write(&[1]);
         }
     }
