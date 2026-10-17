@@ -2,7 +2,11 @@
 //! its items show and how compactly, so a crowded bar can give room back.
 
 use super::HerdrWindow;
-use crate::{APP_VERSION, config::status_bar::Button, state::ConnectionStatus};
+use crate::{
+    APP_VERSION,
+    config::status_bar::{AwakeScope, Button},
+    state::ConnectionStatus,
+};
 use gpui::{prelude::*, *};
 use std::time::Duration;
 
@@ -32,13 +36,13 @@ impl HerdrWindow {
         div()
             .id("connection-status")
             .debug_selector(|| "connection-status".into())
-            // Pages draw above the bar's tooltips, so those under where a
-            // tooltip shows step aside while the pointer is over the bar.
+            // Windows pages draw above the bar's tooltips, so those under
+            // where a tooltip shows hide while the pointer is over the bar.
             .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
                 this.hover_status_bar(*hovered, cx);
             }))
             .relative()
-            .child(self.status_bar_probe())
+            .children(self.status_bar_probe())
             .flex()
             .flex_none()
             .h(height)
@@ -107,10 +111,15 @@ impl HerdrWindow {
             .children(self.caffeine_button(items.keep_awake, cx))
             .when(items.theme.shown(), |bar| {
                 bar.child(
-                    self.status_button("status-theme", glyph("icons/theme.svg", self.theme.foreground), "Theme", items.theme)
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.open_theme_picker(window, cx);
-                        })),
+                    self.status_button(
+                        "status-theme",
+                        glyph("icons/theme.svg", self.theme.foreground),
+                        "Theme",
+                        items.theme,
+                    )
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.open_theme_picker(window, cx);
+                    })),
                 )
             })
             .when(items.shortcuts.shown(), |bar| {
@@ -128,13 +137,13 @@ impl HerdrWindow {
             })
             .when(items.report_issue.shown(), |bar| {
                 bar.child(
-                    self.status_button("report-issue", self.issue_ring(), "Report issue", items.report_issue)
-                        .on_click(|_, _, cx| {
-                            cx.open_url(&format!(
-                                "https://github.com/penso/herdr-gpui/issues/new?template=bug_report.yml&version={}",
-                                APP_VERSION.replace('+', "%2B"),
-                            ));
-                        }),
+                    self.status_button(
+                        "report-issue",
+                        self.issue_ring(),
+                        "Report issue",
+                        items.report_issue,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| this.open_report_issue(cx))),
                 )
             })
             .child(
@@ -317,13 +326,24 @@ impl HerdrWindow {
                     )
                 },
             ))
-            .tooltip(self.hint(match cup {
-                Cup::On(Mode::UntilAgentsFinish) => "Keeping the display awake until agents finish",
-                Cup::On(Mode::Indefinite) => {
+            .tooltip(self.hint(match (cup, crate::caffeine::scope(cx)) {
+                (Cup::On(Mode::UntilAgentsFinish), AwakeScope::Display) => {
+                    "Keeping the display awake until agents finish"
+                }
+                (Cup::On(Mode::UntilAgentsFinish), AwakeScope::System) => {
+                    "Keeping the system awake until agents finish"
+                }
+                (Cup::On(Mode::Indefinite), AwakeScope::Display) => {
                     "Keeping the display awake · Right-click: until agents finish"
                 }
-                Cup::Off | Cup::Pending => {
+                (Cup::On(Mode::Indefinite), AwakeScope::System) => {
+                    "Keeping the system awake · Right-click: until agents finish"
+                }
+                (Cup::Off | Cup::Pending, AwakeScope::Display) => {
                     "Keep the display awake · Right-click: until agents finish"
+                }
+                (Cup::Off | Cup::Pending, AwakeScope::System) => {
+                    "Keep the system awake · Right-click: until agents finish"
                 }
             }))
             .on_click(cx.listener(|_, _, _, cx| {

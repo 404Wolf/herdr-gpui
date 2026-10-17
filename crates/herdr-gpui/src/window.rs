@@ -24,6 +24,7 @@ mod image_source;
 mod images;
 mod input;
 mod lifecycle;
+pub(crate) use lifecycle::reasserts;
 mod links;
 mod monitors;
 pub(crate) use links::PressedLink;
@@ -34,6 +35,7 @@ pub(crate) mod prefix;
 mod reconnecting;
 mod regions;
 mod render;
+mod report_issue;
 mod selection;
 mod server_keys;
 mod sound;
@@ -55,6 +57,8 @@ pub(crate) use transfers::tests::Peer as MockPeer;
 mod agent_model_tests;
 #[cfg(test)]
 mod font_size_tests;
+#[cfg(all(test, feature = "integration-test"))]
+mod idle_reassert_tests;
 #[cfg(test)]
 mod key_action_tests;
 #[cfg(all(test, feature = "integration-test"))]
@@ -124,6 +128,9 @@ pub(crate) struct HerdrWindow {
     /// Cloud machines being added; see `cloud::Jobs`.
     #[cfg(feature = "cloud")]
     pub(crate) cloud_jobs: crate::cloud::Jobs,
+    /// A new cloud device's setup script whose tab is being opened.
+    #[cfg(feature = "cloud")]
+    pub(crate) cloud_setup: Option<crate::cloud_setup::Running>,
     /// Checkouts indexed for Go to Symbol and Go to File.
     pub(crate) code_indexes: crate::code_search::Indexes,
     /// Code tabs' views, by tab.
@@ -196,6 +203,10 @@ pub(crate) struct HerdrWindow {
     pub(crate) key_layout: fn(u16) -> Option<prefix::KeyChars>,
     /// The key code and Shift of the key being handled, from AppKit's event.
     pub(crate) key_press: fn() -> Option<(u16, bool)>,
+    /// When this window last forwarded user input; gates re-claiming a frame another client sized.
+    pub(crate) last_input: Option<std::time::Instant>,
+    /// The last pointer position over the panes, so a move event that did not move is not use.
+    pub(crate) last_pointer: Option<Point<Pixels>>,
     pub(crate) last_queued_options: Option<ConnectOptions>,
     pub(crate) links: links::DaemonLinks,
     pub(crate) listening_ports: crate::listening_ports::ListeningPorts,
@@ -275,6 +286,7 @@ pub(crate) struct HerdrWindow {
     /// lifted device, whose geometry the next frame must not pin from.
     pub(crate) sidebar_folded: std::cell::Cell<bool>,
     pub(crate) sidebar_modified: bool,
+    pub(crate) sidebar_nested_reveal: sidebar::NestedReveal,
     /// A spaces row revealed last frame, which the next render moves out from
     /// under the pinned host header if it landed there.
     pub(crate) sidebar_pin_reveal: std::cell::Cell<Option<usize>>,
@@ -550,6 +562,11 @@ impl HerdrWindow {
         self.poll_dispatch(window, cx);
         self.poll_device_setup(window, cx);
         self.poll_worktree_script(window, cx);
+        #[cfg(feature = "cloud")]
+        {
+            self.poll_cloud_setup(std::time::Instant::now(), cx);
+            self.poll_cloud_setup_tab(cx);
+        }
         self.poll_editor_open(cx);
         self.poll_worktree_source(cx);
         self.poll_hover_menu(std::time::Instant::now(), window, cx);

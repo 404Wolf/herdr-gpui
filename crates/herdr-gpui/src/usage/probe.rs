@@ -486,7 +486,7 @@ impl<'a> Probe<'a> {
                 if !cfg!(target_os = "macos") {
                     return None;
                 }
-                let mut command = Command::new("/usr/bin/security");
+                let mut command = herdr_client::new_command("/usr/bin/security");
                 command.args(&args);
                 let (success, bytes) =
                     output(&mut command, STEP_TIMEOUT, "read a keychain item").ok()?;
@@ -555,7 +555,7 @@ impl<'a> Probe<'a> {
     pub fn command(&mut self, program: &str, args: &[&str], timeout: Duration) -> Result<Output> {
         match self.exec {
             Exec::Local => {
-                let mut command = Command::new(program);
+                let mut command = herdr_client::new_command(program);
                 command
                     .args(args)
                     .env("PATH", local_path())

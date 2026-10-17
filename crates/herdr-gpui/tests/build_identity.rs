@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::disallowed_methods)]
 
 // `lookup_pr` is exercised through a POSIX mock executable, so it has no caller
 // in this binary elsewhere.
@@ -210,6 +210,18 @@ fn second_cargo_build_is_fresh_for_archive_ordinary_and_linked_checkouts() {
         fs::write(
             path.join("build_identity.rs"),
             include_str!("../build_identity.rs"),
+        )
+        .unwrap();
+        fs::write(
+            path.join("release_version.rs"),
+            include_str!("../release_version.rs"),
+        )
+        .unwrap();
+        // The real module needs winresource; this fixture has no dependencies.
+        // The stub names the parser as the real module does, so it is not dead code.
+        fs::write(
+            path.join("windows_resource.rs"),
+            "pub fn embed(_: &std::path::Path, _: bool) -> std::io::Result<()> {\n    let _ = crate::release_version::numeric;\n    Ok(())\n}\n",
         )
         .unwrap();
         for attempt in 0..2 {

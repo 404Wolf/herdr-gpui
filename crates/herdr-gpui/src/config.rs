@@ -7,9 +7,11 @@ use crate::{
     contrast::Contrast,
     keymap::{Binding, DaemonKeys, Keymap, PaneKeys},
 };
+mod agents_placement;
 pub(crate) mod backdrop;
 mod bitmap_fonts;
 mod boat;
+mod cloud;
 mod coder;
 mod daytona;
 mod devices;
@@ -30,15 +32,18 @@ pub(crate) mod status_bar;
 mod status_icons;
 #[cfg(any(feature = "boat", feature = "coder", feature = "daytona"))]
 mod table;
+pub(crate) use sidebar_style::parse_hex;
 mod theme;
 mod updates;
 pub(crate) mod watch;
 mod zen;
 
+pub use agents_placement::AgentsPlacement;
 pub use backdrop::Backdrop;
 pub use boat::BoatConfig;
 #[cfg(feature = "boat")]
 pub(crate) use boat::BoatFields;
+pub use cloud::CloudConfig;
 pub use coder::CoderConfig;
 #[cfg(feature = "coder")]
 pub(crate) use coder::CoderFields;
@@ -71,7 +76,6 @@ pub(crate) use sidebar::{
     AgentLayout, AgentToken, MAX_ROWS as MAX_SIDEBAR_ROWS, Rows, SidebarConfigError, SidebarLayout,
     SidebarScope, SpaceLayout, SpaceToken, TokenStyle,
 };
-#[cfg(test)]
 pub(crate) use sidebar_style::DeviceFooter;
 pub use sidebar_style::{SelectMode, SidebarOverrides, SidebarStyle};
 pub use status_bar::StatusBar;
@@ -110,11 +114,18 @@ pub struct Config {
     /// Snapshot a checkout's files each time one of its agents starts or
     /// finishes a turn, so they can be rolled back.
     pub agent_checkpoints: bool,
+    /// Where the sidebar lists agents while `show_agents` is on.
+    pub agents_placement: AgentsPlacement,
     /// What shows behind the main window's terminals and chrome.
     pub backdrop: Backdrop,
     pub bell: BellConfig,
     pub boat: BoatConfig,
+    /// Only the keys this GUI's own file sets, so Settings can tell an
+    /// override from the Herdr value it shadows.
+    pub(crate) clipboard_overrides: ClipboardToastSettings,
     pub clipboard_toast: ClipboardToast,
+    /// What a new cloud device runs the first time it connects.
+    pub cloud: CloudConfig,
     pub code: CodeConfig,
     pub coder: CoderConfig,
     pub confirm_close_pane: bool,
@@ -390,10 +401,13 @@ impl Default for Config {
         Self {
             // keep-sorted start
             agent_checkpoints: true,
+            agents_placement: AgentsPlacement::default(),
             backdrop: Backdrop::default(),
             bell: BellConfig::default(),
             boat: BoatConfig::default(),
+            clipboard_overrides: ClipboardToastSettings::default(),
             clipboard_toast: ClipboardToast::default(),
+            cloud: CloudConfig::default(),
             code: CodeConfig::default(),
             coder: CoderConfig::default(),
             confirm_close_pane: true,
@@ -456,10 +470,12 @@ impl Default for Config {
 struct Settings {
     // keep-sorted start
     agent_checkpoints: Option<bool>,
+    agents_placement: AgentsPlacement,
     backdrop: Backdrop,
     bell: BellConfig,
     boat: BoatConfig,
     clipboard_toast: ClipboardToastSettings,
+    cloud: CloudConfig,
     code: CodeConfig,
     coder: CoderConfig,
     confirm_close_pane: Option<bool>,
@@ -803,6 +819,7 @@ impl Config {
         }
         // A newer build may keep more accounts or owners than this one.
         unknown_keys.extend(settings.github.limit_accounts());
+        unknown_keys.extend(settings.cloud.retain_known());
         unknown_keys.sort();
         unknown_keys.dedup();
         let mut config = Self {
@@ -815,6 +832,8 @@ impl Config {
         #[cfg(feature = "boat")]
         settings.boat.settings_with(|_| None)?;
         config.boat = settings.boat;
+        settings.cloud.check()?;
+        config.cloud = settings.cloud;
         // Check what the file says so a bad value is reported at load; the
         // environment may still fill or override keys when Coder is used.
         #[cfg(feature = "coder")]
@@ -828,6 +847,7 @@ impl Config {
         config.notifications = settings
             .notifications
             .resolve(NotificationConfig::default());
+        config.clipboard_overrides = settings.clipboard_toast;
         config.clipboard_toast = settings.clipboard_toast.resolve(base.clipboard_toast);
         config.bell = settings.bell;
         config.sound = settings.sound;
@@ -883,6 +903,7 @@ impl Config {
         settings.backdrop.validate()?;
         config.backdrop = settings.backdrop;
         config.contrast = settings.contrast;
+        config.agents_placement = settings.agents_placement;
         config.usage = settings.usage;
         config.option_as_alt = settings.option_as_alt;
         config.open_links_in = settings.open_links_in;

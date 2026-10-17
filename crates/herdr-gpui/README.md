@@ -68,7 +68,7 @@ Healthy connections leave the status bar quiet; connection indicators live in th
 device picker. Startup, disconnection, and operation errors remain in the status bar.
 
 For split terminal panes within a tab, **Focus follows mouse** is on by default.
-Disable it in **Settings > General > Interface**, or run
+Disable it in **Settings > Tabs & panes > Panes**, or run
 `herdr-gpui config set focus_follows_mouse false`.
 Hovering a pane focuses it when the window is active and
 terminal input has keyboard focus. Held mouse buttons, modifiers, dragging,
@@ -284,7 +284,7 @@ Tailscale logo when it is a `*.ts.net` name or a Tailscale address
 (`100.64.0.0/10` or `fd7a:115c:a1e0::/48`). Hover the mark to see what it means.
 Orca and Minimal draw no icons on their rows and draw no mark either. Set
 top-level `show_device_icons = false`, or turn off **Show device icons** under
-Settings > Appearance > Sidebar layout, to leave it out everywhere; the name
+Settings > Sidebar, to leave it out everywhere; the name
 then starts where the mark was.
 
 Right-click a saved SSH device's header in the Spaces list to **Rename** it or
@@ -297,7 +297,7 @@ since its account panel goes away with the device. Local has no such menu.
 A cloud device's header (Coder, Daytona, or Railway) has a menu too:
 **Rename…** changes the name the sidebar shows, falling back to the machine's
 name when left empty; **Cloud device settings…** opens its provider under
-Settings > Cloud Devices; and **Remove device…** forgets it on this computer,
+Settings > Cloud devices; and **Remove device…** forgets it on this computer,
 leaving the workspace, sandbox, or VM as it is at the provider. Port forwards
 and server keybindings need a saved SSH host, so a cloud device does not offer
 them.
@@ -385,7 +385,7 @@ the app.
 
 ### Coder workspaces
 
-Settings > **Cloud Devices** holds accounts with providers that create machines
+Settings > **Cloud devices** holds accounts with providers that create machines
 to use as devices: Coder, Daytona, and Railway. Coder's card edits the `[coder]`
 keys (see `config-gpui.example.toml`), saves the OAuth client secret to the
 credential store rather than the config file, signs in and out, and lists the
@@ -437,7 +437,7 @@ devices are unavailable on Windows.
 
 ### Boat sandboxes (experimental)
 
-Settings > **Cloud Devices** > **Boat** holds a Boat account: the API URL
+Settings > **Cloud devices** > **Boat** holds a Boat account: the API URL
 (`https://boat.dev/api/v1` for Boat's cloud), an optional organization wallet,
 machine type, and environment, saved to `[boat]`, and an API key saved to the
 credential store (`HERDR_BOAT_API_KEY` takes precedence). The key needs
@@ -480,7 +480,7 @@ not yet been exercised against a live Boat account.
 
 ### Daytona sandboxes (experimental)
 
-Settings > **Cloud Devices** > **Daytona** holds a Daytona account: the API URL
+Settings > **Cloud devices** > **Daytona** holds a Daytona account: the API URL
 (`https://app.daytona.io/api` for Daytona's cloud), an optional organization,
 region, and snapshot, saved to `[daytona]`, and an API key saved to the
 credential store (`HERDR_DAYTONA_API_KEY` takes precedence). **Create sandbox**
@@ -502,7 +502,7 @@ against a live Daytona account.
 
 ### Railway free VMs (experimental)
 
-Settings > **Cloud Devices** > **Railway**, which **Railway** in **Add Device…**
+Settings > **Cloud devices** > **Railway**, which **Railway** in **Add Device…**
 also opens, sets up the temporary Linux VM that
 `ssh railway.new` gives out without an account. The SSH key is its identity, so
 pick an existing private key or generate one by name (an ed25519 key without a
@@ -518,10 +518,50 @@ host key on first use (`railway_known_hosts`). The VM is temporary: Railway
 limits its lifetime and how many a network can create. Needs
 `ssh` and `ssh-keygen` on the PATH; unavailable on Windows.
 
+### Setup scripts for new cloud devices
+
+A new cloud device can install coding agents and run your own setup the first
+time it connects. Settings > **Cloud devices** > **New device setup** has one
+switch per agent (Claude Code, Codex, Gemini CLI, OpenCode), saved to
+`[cloud] agents`, and previews your own lines from `[cloud] setup`, which
+**Edit setup script in config file** opens:
+
+```toml
+[cloud]
+agents = ["claude", "opencode"]
+setup = """
+git config --global pull.rebase true
+"""
+
+# Replaces either key for one provider; an empty list or script turns it off.
+[cloud.coder]
+agents = []
+```
+
+The script is the agents' installs, in that order and each skipped when the
+tool is already on the machine, then your lines, run with `sh -e` so the first
+failing command stops it. Claude Code and OpenCode use their official
+installers, downloaded before they run so a failed download stops the script;
+Codex and Gemini CLI need `npm` on the device and
+are skipped with a note when it is missing (a system Node may also need root
+for `npm install -g`). Open a new tab afterwards to pick up PATH changes.
+
+Each provider's form has a **Run the setup script when it connects** switch,
+shown when a script is configured: on for a new machine, and in Coder's form
+off when attaching an existing workspace. Boat's **Finish setup** on a saved
+sandbox does not run it again. When the device is ready the script
+waits, for up to 30 minutes, until a window shows that device, then runs in a
+new, focused `setup` tab of the device's first workspace, like a worktree's
+setup script; nothing runs in the background. The script is yours, from this
+computer's config, so no trust question is asked. Waiting scripts are kept in
+memory only, at most eight at once; one that never ran, or a later run, is
+started from **Run setup script** in the device's sidebar menu or with
+`herdr-gpui cloud setup ID`. Reconnecting never runs it again by itself.
+
 Each provider is a Cargo feature of `herdr-gpui`, on by default: `boat`, `coder`,
 `daytona`, and `railway`. A build with `--no-default-features` has no Cloud
 Devices section and no provider rows in the device picker; it still accepts
-the `[boat]`, `[coder]`, and `[daytona]` tables, so one config file serves every
+the `[boat]`, `[cloud]`, `[coder]`, and `[daytona]` tables, so one config file serves every
 build, but never reads them.
 
 Switching revokes the old host's focus before releasing its surface, then resizes
@@ -651,16 +691,24 @@ Accepted saves survive closing Settings. Family and size edits preserve configur
 fallbacks and unrelated settings in `config-gpui.local.toml`. General retains
 browser-skill installation/removal and configuration paths.
 
-General provides switches for **Show usage**, **Confirm tab close**, **Confirm pane close**, **Confirm workspace close**, and the
-clipboard copied notification, plus all six clipboard positions. Notifications
-provides a native in-app switch, a bounded delay stepper (0-3600 seconds), and
-four corner choices. Each notification and clipboard field has a **Follow shared**
-action that removes only its local override; effective values are shown after
-reload. Appearance provides switches for **Show agents**, **Show search**,
-**Show repository icons**, and **High contrast**, and a sidebar-gap stepper (0-64 logical pixels). Sound enablement uses a switch;
-custom sound paths and per-agent sound policies remain shared-file settings, not
-read-only preference rows in this window. Configuration paths and installation
-status are diagnostic facts rather than editable preference values.
+Settings groups its pages: Appearance (Theme, Sidebar, Fonts, Status bar),
+Behaviour (General, Tabs & panes, Code, Notifications), Connect (Integrations,
+Plugins, Cloud devices) and Advanced (Configuration), with a search box above
+them that finds any row. Every row shows whether it is shared with Herdr or
+local to this app. General has **Show listening ports**, **Checkpoint agent
+turns**, **Smooth scrolling**, the clipboard notification overrides, **Remove
+worktrees of merged PRs**, the browser skill and **Install beta releases**.
+Tabs & panes has the tab bar, **Confirm before closing** a tab, pane or
+workspace, **Focus follows mouse** and session restore. Notifications has
+delivery, **Finished notifications**, the in-app toast overrides (a 0-3600
+second delay field), agent sounds with a 0-100% **Volume**, and the status
+indicator style and icon set. An override dropdown's first entry follows
+Herdr's value and removes only the local override. Sidebar has the layout
+preset, selection marks, **Device footer**, **Show agents**, **Show search**,
+**Show repository icons**, **Show device icons**, spacing sliders and host
+colours. Theme ends with the window backdrop and terminal padding. Custom sound
+paths and per-agent sound policies remain shared-file settings. Configuration
+paths are diagnostic facts rather than editable preference values.
 
 These native edits save automatically through the serial background save path,
 preserving unrelated TOML keys/comments and pending theme/layout selections.
@@ -739,7 +787,7 @@ use the shared theme, all 18 upstream palettes, custom colors, and automatic
 light/dark selection. Selecting a shared theme disables upstream auto-switching,
 as in the TUI. Status indicators always use the shared status colors,
 independent of a native terminal theme override, and the shared indicator style
-unless **Settings > Indicators** picks one of this app's own icon sets: Solid,
+unless **Settings > Notifications > Icons** picks one of this app's own icon sets: Solid,
 Tiles, or Edge rail, saved as `status_icons` in `config-gpui.local.toml`. Herdr
 accepts only `dots` or `symbols` in `ui.status_indicators`, so these never reach
 the shared file, and the TUI keeps its own choice. The icons are about a line
@@ -828,20 +876,26 @@ dialog instead of being removed. The branch is not deleted, and a checkout
 the daemon finds dirty is never force removed.
 The pane dialog's **Do not ask again** checkbox (click it or press Space) saves
 `confirm_close_pane = false` to `config-gpui.local.toml` once the close is sent. Saved edits apply automatically. The
-**Show agents** control in **Settings > Appearance > Sidebar layout** saves
+**Show agents** control in **Settings > Sidebar** saves
 `show_agents` immediately, independently of the layout draft saved on close.
+
+Agents list in their own section below Spaces by default. Set top-level
+`agents_placement = "nested"`, or pick **Under workspaces** for **Agents
+placement** in **Settings > Sidebar**, to list each agent under the workspace
+it runs in instead; Spaces then takes the full sidebar height. The collapsed
+rail keeps its own agents section either way.
 
 A search field at the top of the sidebar finds devices, worktrees, and
 branches by name; while it holds text, results grouped by kind replace the
 spaces list. Up and Down move through them, Enter opens one, and Escape
 clears the search. Set top-level `show_sidebar_search = false`, or turn off
-**Show search** in **Settings > Appearance > Sidebar layout**, to hide it.
+**Show search** in **Settings > Sidebar**, to hide it.
 
 In the Normal, Compact, and Comfortable layouts and in Superset, each space's
 sidebar row starts with its repository owner's avatar, or the GitHub mark;
 Orca and Minimal draw neither. Set top-level `show_repository_icons = false`,
-or turn off **Show repository icons** in **Settings > Appearance > Sidebar
-layout**, to leave both out and give the name their room. The Superset layout
+or turn off **Show repository icons** in **Settings > Sidebar**, to leave
+both out and give the name their room. The Superset layout
 keeps its icon slot and draws its branch glyph there instead.
 
 `[usage]` provides independent switches in `config-gpui.local.toml`:
@@ -962,7 +1016,7 @@ On Linux and Windows it stays in the same position when the sidebar collapses
 to a rail. The leftmost tab strip takes the button when the sidebar is hidden
 or the rail cannot fit it beside macOS's traffic lights.
 It stays available when the sidebar is hidden; the existing View menu command and shortcut still work.
-In **Settings > General**, toggle **Show usage** to turn the bottom quota display on or off.
+In **Settings > Status bar**, toggle **Usage** to turn the bottom quota display on or off.
 The choice is saved to `config-gpui.local.toml` and follows the existing `[usage] show` setting.
 
 The app's own colored marks and labels (status dots and words, pull request
@@ -971,13 +1025,13 @@ contrast against the sidebar, menus, and selected rows. Each color keeps its
 hue and moves only its lightness, and only as far as it has to, so a theme
 that already reads well is drawn as authored: on dark themes the status dots
 keep upstream's colors, while light themes such as Catppuccin Latte get darker
-versions of the same hues. **Settings > Appearance > High contrast**, or
+versions of the same hues. **Settings > Theme > High contrast**, or
 top-level `contrast = "high"`, raises that minimum from 3:1 (the WCAG level for
 graphics) to 4.5:1 (the level for text), lifts dim labels to it too, and makes
 selected rows stand further off the surface. Terminal output is never
 adjusted; programs keep the colors they asked for.
 
-**Settings > Appearance > Window backdrop** offers three tiles: **Solid** (the
+**Settings > Theme > Window** offers three backdrop tiles: **Solid** (the
 default), **Translucent**, and **Picture**, each showing only its own controls.
 Translucent starts at 85%, and its **Background opacity** stepper moves in 5%
 steps between 10% and 100%; `[backdrop] opacity` in `config-gpui.local.toml`
@@ -1012,13 +1066,10 @@ top-level line there (before any table headers):
 layout = "compact"
 ```
 
-**Settings > Appearance > Sidebar layout**, below the theme grid, lists all nine
-choices beside a live preview using the current theme and sidebar font. Preview widths of 240,
-280, and 320 pixels, clicking workspace or agent rows to select them, and clicking
-the repository arrow to fold affect only the sample. Choosing a layout applies it
-live to the sample and app windows, like themes, without writing on each click.
-Only the final choice is saved when Settings closes or the app quits. The list and
-preview stack in narrow Settings windows.
+**Settings > Sidebar > Layout preset** lists all nine choices. Choosing a layout
+applies it live to the app windows, like themes, without writing on each click.
+Only the final choice is saved when Settings closes, **Save now** is pressed, or
+the app quits.
 
 Three densities of Herdr's own rows are available:
 
@@ -1106,7 +1157,7 @@ padding_y = [4, 8]   # top, then bottom
 - Every terminal takes the padding, in every tab group, whether the sidebar shows or not. A browser, VS Code, review, or orchestrator tab pads its own content and takes none.
 - The terminal keeps the remaining size, so the daemon is resized to the columns and rows it actually has.
 - The padding shows the theme background.
-- **Settings > Appearance > Terminal padding** steps each of the four sides by one pixel. It writes one number when the two sides of an axis agree, and a pair when they differ.
+- **Settings > Theme > Terminal padding** sets each of the four sides with a slider, a typed value, or one-pixel steps. It writes one number when the two sides of an axis agree, and a pair when they differ.
 
 `[layout] sidebar_gap` is deprecated. It padded only the left side of the terminal beside the sidebar. A file that still sets it keeps loading: while `padding_x` is unset, the gap becomes the left padding of every terminal, and the app reports the key as deprecated. Setting the horizontal padding in Settings writes `padding_x` and removes `sidebar_gap`.
 
@@ -1260,7 +1311,7 @@ override `path`, and relative paths resolve beside the local TUI config.
 
 Volume is this app's own, since Herdr's `[ui.sound]` has none: `[sound] volume`
 in `config-gpui.local.toml`, a percentage of each sound's own level from 0 to 100
-(default 50), also under **Settings > Sound**. It follows loudness rather than
+(default 50), also under **Settings > Notifications > Volume**. It follows loudness rather than
 raw amplitude, so 50 plays at a quarter of the amplitude, about 12 dB quieter;
 0 plays nothing. It applies to every sound, previews and `sound play` included,
 and not to the system alert `[bell]` plays, which follows the OS alert volume.
@@ -1447,7 +1498,8 @@ buttons. Typing in the terminal or clicking elsewhere dismisses the pill.
 The whole selection must be visible on screen.
 This also works with copying on selection disabled or the highlight set to clear
 after copying. For an existing selection, use **Annotate Selection for the Agent**
-in the command palette (Cmd+Shift+A on macOS, Ctrl+Alt+Shift+A on Linux).
+in the command palette (Cmd+Shift+A on macOS, Ctrl+Alt+Shift+A on Linux and
+Windows).
 Notes go to the agent in that pane, falling back to the first agent in its
 workspace; with no agent, they are copied to the clipboard.
 
@@ -1836,12 +1888,12 @@ or macOS client and the local session or a saved SSH host on both ends.
 
 The Orchestrator row of a group's "…" menu, the Open Orchestrator command, or
 the Orchestrator row of a workspace's popover opens a tab listing that
-workspace's repository: its GitHub issues and pull requests, its
+workspace's repository: its GitHub issues and pull requests or GitLab issues, its
 [Beads](https://github.com/steveyegge/beads) issues when the main checkout has
 a `.beads` folder, and the agent runs dispatched for them. It works for the
 local session and saved SSH hosts.
 
-- **Issues** lists open GitHub issues and beads together. A bead's children sit
+- **Issues** lists open GitHub or GitLab issues and beads together. A bead's children sit
   under it; filters narrow to Beads, items with a run, or blocked ones; five
   sorts are offered. Search matches every word you type across title, id,
   author, labels, state, and body, case-insensitively unless a word has a
@@ -1889,8 +1941,13 @@ updates only its own, and uses agent-launcher's prompt profiles from
 `~/.config/agent-launcher/agents/<name>/prompt.md` (the built-in prompt when
 none is chosen). Issues and runs are kept in agent-launcher's per-repository
 database under the platform data directory. GitHub is read as the account used
-for pull requests on that host; GitLab remotes and GitHub Enterprise are listed
-as not supported yet. The window button in the tab's header moves the view into
+for pull requests on that host. A GitLab remote, on gitlab.com or a
+self-managed host, lists its open issues (not yet its merge requests), read
+with `GITLAB_TOKEN` or `GITLAB_ACCESS_TOKEN` when `GITLAB_HOST` names that host
+(gitlab.com by default), else with the GitLab CLI's sign-in (`glab auth
+login`), and sent only over HTTPS; public projects need neither, and an
+`http://` remote is read without one. GitHub Enterprise is listed as not
+supported yet. The window button in the tab's header moves the view into
 a window of its own.
 
 ## Images
@@ -2318,15 +2375,20 @@ come back after a restart; closing a workspace in Herdr removes its tabs.
   only its own scripts in pages. On
   Windows, a frame inside a page that links to an application's URL scheme
   gets WebView2's own confirmation prompt rather than being refused outright.
-- Pages are native web views (WebKit on macOS, WebView2 on Windows) layered
-  above the window, so a page steps aside for a menu or popover that would
-  fall over it, and for a dialog, which dims the whole window. A page the menu
-  does not reach keeps showing. On macOS a page that steps aside leaves a
-  picture of itself, taken as the menu opens; on Windows its place is empty
-  until the menu closes. A page also steps aside while a toast or the
-  file-transfer card falls over it, as when a page or VS Code fills the
-  right-hand group or the whole editor area, so they stay visible and
-  clickable; a page they do not reach keeps showing.
+- Pages are native web views (WebKit on macOS, WebView2 on Windows). On
+  macOS a page lies beneath the window's own drawing. Menus, popovers,
+  dialogs, tooltips, toasts, and the file-transfer card show over it, and
+  the page stays live around them. The grip between two groups keeps its
+  full width over a page. While a menu or dialog is open, a file dropped on
+  the window never reaches a page. A file dropped on a toast or the
+  file-transfer card still reaches the page beneath.
+- On Windows a page is layered above the window, so it steps aside for a
+  menu, popover, or status bar tooltip that would fall over it, and for a
+  dialog, which dims the whole window. Its place is empty until the menu
+  closes. A page also steps aside while a toast or the file-transfer card
+  falls over it, as when a page or VS Code fills the right-hand group or the
+  whole editor area, so they stay visible and clickable. A page that none of
+  these reach keeps showing.
 - Linux has no embedded pages yet: browser tab requests open the system
   browser, and local files and annotations are unavailable.
 
@@ -2751,8 +2813,7 @@ the page's storage, which belongs to one address.
 - VS Code fills its tab, without a browser tab's address bar, back,
   forward, reload, or **Annotate**: it is an editor, not a page to browse.
   Its page is otherwise a [browser tab](#browser-tabs)'s, so the same rules
-  apply: `http` and `https` only, native web views drawn above the window,
-  and no pages on Linux.
+  apply: `http` and `https` only, native web views, and no pages on Linux.
 - The keyboard goes to whatever has focus. While a page has it, this one or a
   browser tab's, the page's own shortcuts win, as a terminal program's do
   while its pane has focus. On macOS, Cut, Copy, and Paste act on the page,
@@ -2894,14 +2955,19 @@ shortcuts remain visible in the reference and are configured in Herdr's own
 `[keys]` / `[[keys.command]]` tables. Clipboard shortcuts are fixed Edit actions.
 
 Defaults are selected independently for Linux, macOS, and Windows. macOS uses
-Cmd; the experimental Windows profile currently retains its existing bindings.
-Linux uses **Ctrl+Shift** for terminal-facing application actions, keeping Super
-available to the desktop and plain Ctrl keys available to terminal programs.
-This follows terminal conventions alongside the
+Cmd. Linux uses **Ctrl+Shift** for terminal-facing application actions, keeping
+Super available to the desktop and plain Ctrl keys available to terminal
+programs. This follows terminal conventions alongside the
 [GNOME keyboard guidelines](https://developer.gnome.org/hig/reference/keyboard.html),
 whose plain Ctrl editing shortcuts also work in the app's text fields.
 
-| Action | Linux default |
+Windows starts from the Linux profile, which matches Windows Terminal's
+Ctrl+Shift conventions: no default uses the Win key, which Windows keeps for
+itself, and plain Ctrl keys still reach terminal programs. Reset font size is
+Ctrl+0 there, as in Windows Terminal, because Windows can take Ctrl+Shift+0 for
+switching input languages. Alt+F4 closes a window through Windows itself.
+
+| Action | Linux and Windows default |
 | --- | --- |
 | New tab / New window | Ctrl+Shift+T / Ctrl+Alt+N |
 | New workspace / New worktree | Ctrl+Alt+Shift+N / Ctrl+Shift+N |
@@ -2913,6 +2979,9 @@ whose plain Ctrl editing shortcuts also work in the app's text fields.
 | Next / Previous tab | Ctrl+PageDown / Ctrl+PageUp |
 | Toggle sidebar / New browser tab | Ctrl+Shift+B / Ctrl+Alt+Shift+B |
 | Settings / Keyboard Shortcuts | Ctrl+Shift+, / Ctrl+Shift+/ |
+| Larger / Smaller text | Ctrl+Shift+= / Ctrl+Shift+- |
+| Reset text size | Ctrl+Shift+0 (Linux) / Ctrl+0 (Windows) |
+| Quit | Ctrl+Shift+Q |
 | Full screen | F11 |
 
 The in-app reference lists all platform defaults and current overrides. The
@@ -3356,7 +3425,7 @@ Ctrl+Shift+U is left unbound for
   Rows chosen often and recently rise among the matches for a typed query, and
   the Projects filter lists the most frecent projects first before anything is
   typed; that history stays on this machine in `palette-frecency.json`.
-  **Resume Palette** (Cmd-Shift-R, Ctrl+Alt+Shift+R on Linux) reopens the
+  **Resume Palette** (Cmd-Shift-R, Ctrl+Alt+Shift+R on Linux and Windows) reopens the
   palette with its last query, filters, and selected row. Navigation
   (Go To) also filters agents by the status the daemon reports, like Herdr's
   navigator: click **All agents**, **Blocked**, **Working**, **Idle**, or
@@ -3699,10 +3768,23 @@ and CLI tests. The release workflow builds and CLI-tests the optimized
 executable natively for each architecture and publishes
 `Herdr-VERSION-x86_64-pc-windows-msvc.zip` and
 `Herdr-VERSION-aarch64-pc-windows-msvc.zip`; native window, rendering, input, and
-live-daemon behavior remain unproven. Local connections use the named pipe the Windows
+live-daemon behavior remain unproven. Each zip also holds
+`herdr-gpui-launcher.exe` (`crates/herdr-gpui-launcher`), a windowed program
+that starts the console-subsystem `herdr-gpui.exe` from its own directory with
+`CREATE_NO_WINDOW` and exits. The GUI then shows no console window, and console
+programs it starts (git, gh, `wsl.exe`) share its hidden console instead of
+each opening one. `herdr-gpui.exe` stays a console program so the command line
+keeps its output, exit codes, and a shell that waits for it. When the GUI
+cannot be started, the launcher shows the error in a message box. When the
+launcher sits beside it, every Herdr window carries the AppUserModelID
+`so.pen.herdr-gpui` and relaunch properties naming the launcher
+(`src/taskbar.rs`), so pinning a running window to the taskbar pins
+`herdr-gpui-launcher.exe` as **Herdr UI**, and the pin and the running window
+share one taskbar button. The properties are cleared as each window closes. Local
+connections use the named pipe the Windows
 daemon binds, derived from the same socket path string upstream uses, so
 discovery and framing are the same code as on Unix. Receive deadlines are
-emulated with `PeekNamedPipe`, the one `unsafe` call in the workspace, because a
+emulated with `PeekNamedPipe`, an `unsafe` call, because a
 named pipe has no receive timeout; send timeouts cannot be enforced at all
 there. Configuration and state
 follow upstream's Windows layout: `%APPDATA%\herdr` and `%LOCALAPPDATA%\herdr`,
@@ -3726,10 +3808,17 @@ catalog (`%LOCALAPPDATA%\herdr\client`), never in the catalog itself, whose
 strict schema cannot name one. The device you last chose, a distribution
 included, is selected again at startup.
 
-What still runs a shell on the host is not wired into a distribution yet and
-says so: plan usage, CPU and memory, listening ports, agent checkpoints,
-teleport, file transfers, and port forwards. WSL already forwards a
-distribution's `localhost` ports to Windows.
+CPU and memory are sampled as for an SSH host running Linux: one `/bin/sh`
+per distribution, started with `wsl.exe --distribution NAME --exec /bin/sh -s`
+and kept open between samples, which reads `/proc`. The status bar and the
+distribution's sidebar row show them. A distribution shares the machine's
+CPUs, so its CPU figure is what its processes use, and its memory is what
+WSL has given that distribution.
+
+What else runs a shell on the host is not wired into a distribution yet and
+says so: plan usage, listening ports, agent checkpoints, teleport, file
+transfers, and port forwards. WSL already forwards a distribution's
+`localhost` ports to Windows.
 
 These features are unavailable on Windows and say so rather than failing quietly:
 
@@ -3749,9 +3838,30 @@ Starting a local `herdr server` looks for `herdr.exe` and uses
 `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` in place of `process_group(0)`, so
 the daemon survives the GUI and no console window appears.
 
+Console children (git, ssh, `wsl.exe`, a shell) must not open a window of
+their own either: every child is built with `herdr_client::new_command`, which
+sets `CREATE_NO_WINDOW` on Windows, and clippy's `disallowed_methods`
+(`clippy.toml`) rejects `Command::new` elsewhere outside tests and the build
+script. Started by the launcher, they would share its hidden console anyway;
+run as `herdr-gpui.exe` from Explorer or another app, they still open none.
+
+The build script embeds the Herdr icon as icon resource 1, which GPUI loads for
+its windows, and version information that Explorer and Task Manager show as
+**Herdr UI** with the release version, or `dev` for a local build. See
+[the icon README](../../assets/icons/README.md#windows).
+
+Each release also has a per-user Inno Setup installer,
+`Herdr-VERSION-TARGET-setup.exe` (`scripts/release/herdr-gpui.iss`), which
+installs the zip's files where `site/install.ps1` does, adds the directory to
+the user `PATH`, points the Start menu shortcut at the launcher with the app's
+AppUserModelID, and adds an uninstaller under **Settings > Apps**. See
+[`scripts/release/README.md`](../../scripts/release/README.md) for building,
+signing, and smoke-testing it.
+
 Cross type-check it from a Mac or Linux machine with `just lint-windows`, which
 targets `x86_64-pc-windows-gnu` because those hosts cannot supply the MSVC C
-toolchain; CI lints the MSVC target on a Windows runner. `just lint-linux` is
+toolchain; it needs mingw's `x86_64-w64-mingw32-windres` on `PATH` to compile
+the icon resource. CI lints the MSVC target on a Windows runner. `just lint-linux` is
 the matching check for Linux, in the Ubuntu 24.04 container CI uses, because a
 `cfg` gate that is wrong only on Linux is invisible from both macOS and the
 Windows cross-check.

@@ -126,6 +126,7 @@ impl SettingsWindow {
         write: impl FnOnce(Vec<(FontFace, f32)>) -> crate::Result<()> + Send + 'static,
         cx: &mut Context<Self>,
     ) -> Task<crate::Result<()>> {
+        self.hover_theme(None, cx);
         self.quitting = true;
         self._watch = None;
         let pending = self.take_pending_control_sizes();
@@ -136,6 +137,7 @@ impl SettingsWindow {
             .filter(|_| !self.layout_saving)
             .map(|mode| self.layout_operation(mode));
         let code = self.take_shutdown_code_url();
+        let sidebar = self.take_shutdown_sidebar();
         let completion = self.save_completion.take();
         let executor = cx.background_executor().clone();
         cx.background_executor().spawn(async move {
@@ -168,7 +170,13 @@ impl SettingsWindow {
             let theme = theme.map_or(Ok(()), |theme| theme(shared));
             let layout = layout.map_or(Ok(()), |write| write());
             let code = code.map_or(Ok(()), |write| write());
-            preceding.and(sizes).and(theme).and(layout).and(code)
+            let sidebar = sidebar.map_or(Ok(()), |write| write());
+            preceding
+                .and(sizes)
+                .and(theme)
+                .and(layout)
+                .and(sidebar)
+                .and(code)
         })
     }
 
@@ -231,17 +239,23 @@ impl SettingsWindow {
 
     pub(super) fn apply_loaded(&mut self, loaded: crate::Result<Loaded>, cx: &mut Context<Self>) {
         self.load_revision = self.load_revision.wrapping_add(1);
+        // A released slider's save has reloaded, or a reload with no save
+        // replaced a drag that never ended: either way show the file.
+        self.drop_number_preview(cx);
         let valid = loaded.is_ok();
         match loaded {
             Ok(loaded) => {
+                self.loaded_config = loaded.config.clone();
                 let live = self
                     .theme_intent
                     .as_ref()
                     .map(|_| (self.config.theme.clone(), self.theme.clone()));
+                crate::caffeine::set_scope(loaded.config.status_bar.keep_awake_scope, cx);
                 self.config = loaded.config;
                 if let Some(mode) = self.layout_intent {
                     self.config.layout.mode = mode;
                 }
+                self.rebase_sidebar_draft();
                 self.theme = loaded.theme;
                 if let Some((name, theme)) = live {
                     self.config.theme = name;
@@ -276,15 +290,26 @@ impl SettingsWindow {
     }
 
     pub(super) fn reload(&mut self, cx: &mut Context<Self>) {
+        let load = self.loader(cx);
+        self.reload_everything(load, cx);
+    }
+
+    /// Re-reads the local files with `load` and, on a page that shows SSH
+    /// hosts, every host's switch, so a failed host gets another try.
+    pub(super) fn reload_everything(
+        &mut self,
+        load: impl FnOnce() -> crate::Result<Loaded> + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
         // Buttons stay clickable while busy; the remote re-read must not start
         // for a reload `reload_with` would then refuse.
         if self.busy() {
             return;
         }
-        if self.section == Section::General {
+        if matches!(self.section, Section::General | Section::Tabs) {
             self.sync_remote_history(true, cx);
         }
-        self.reload_with(self.loader(cx), cx);
+        self.reload_with(load, cx);
     }
 
     pub(super) fn reload_with(
@@ -399,8 +424,13 @@ impl SettingsWindow {
                 let reloaded = loaded.is_ok();
                 let theme_save = std::mem::take(&mut this.theme_saving);
                 let layout_save = std::mem::take(&mut this.layout_saving);
+                let sidebar_save = this.sidebar_saving.take();
                 if saved.is_err() {
                     this.closing = None;
+                    this.flushing = false;
+                    // A failed write keeps its draft for close or Save now,
+                    // rather than retrying on every completion.
+                    this.sidebar_queued = false;
                 }
                 if theme_save && saved.is_ok() {
                     this.theme_intent = None;
@@ -410,7 +440,11 @@ impl SettingsWindow {
                     this.layout_intent = None;
                     layouts::clear_layout_draft(cx);
                 }
+                let sidebar_saved = this.finish_sidebar_save(sidebar_save, saved.is_ok(), cx);
                 this.apply_loaded(loaded, cx);
+                if sidebar_saved {
+                    this.broadcast_sidebar(cx);
+                }
                 if theme_save && saved.is_ok() {
                     this.broadcast_theme(cx);
                 }

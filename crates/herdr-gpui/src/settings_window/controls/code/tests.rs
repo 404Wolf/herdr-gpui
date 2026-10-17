@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
-use crate::settings_window::controls::tests::{skill_fixture, skill_load};
+use crate::settings_window::tests::{skill_fixture, skill_load};
 use core::prelude::v1::test;
 use gpui::{TestAppContext, VisualTestContext, px, size};
 use std::sync::{Arc, Mutex};

@@ -21,7 +21,7 @@ actions!(log_window, [Close, FocusSearch, FocusLevel]);
 /// The console's own keys, scoped to its window. They are bound with the app
 /// keymap so a config reload, which replaces every binding, keeps them.
 pub(crate) fn key_bindings() -> [KeyBinding; 5] {
-    let [close, search, level] = if cfg!(target_os = "linux") {
+    let [close, search, level] = if crate::controls::CTRL_SHORTCUTS {
         ["ctrl-w", "ctrl-f", "ctrl-l"]
     } else {
         ["cmd-w", "cmd-f", "cmd-l"]
@@ -94,7 +94,10 @@ fn open_deferred(cx: &mut App) {
             app_owns_titlebar_drag: cfg!(target_os = "macos"),
             ..Default::default()
         },
-        |window, cx| cx.new(|cx| LogWindow::new(window, cx)),
+        |window, cx| {
+            crate::taskbar::mark(window, cx);
+            cx.new(|cx| LogWindow::new(window, cx))
+        },
     ) {
         Ok(handle) => cx.set_global(LogWindowHandle(Some(handle))),
         Err(_) => tracing::error!("Unable to open log window"),

@@ -37,7 +37,7 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[error("Could not keep the display awake: {0}")]
+    #[error("Could not keep the machine awake: {0}")]
     Caffeine(#[source] keepawake::Error),
     #[error("No agent is working, so there is nothing to stay awake for")]
     CaffeineNoWorkingAgents,
@@ -89,6 +89,8 @@ pub enum Error {
     #[cfg(feature = "cloud")]
     #[error(transparent)]
     Cloud(#[from] crate::cloud::Error),
+    #[error(transparent)]
+    CloudSetup(#[from] crate::cloud_setup::Error),
     #[error(transparent)]
     Code(#[from] crate::code_server::Error),
     #[error("This file is missing, larger than 1 MiB, or not UTF-8 text")]
@@ -547,6 +549,9 @@ pub enum Error {
     NotInCheckout,
     #[error("Could not read the orchestrator's database: {0}")]
     OrchestratorItems(#[source] crate::orchestrator::Error),
+    #[cfg(target_os = "macos")]
+    #[error("The window has no view to place a page beneath")]
+    PageStack,
     #[error("This command changed or was removed. Reopen the palette.")]
     PaletteCommandChanged,
     #[error("The selected connection is not ready.")]
@@ -960,8 +965,8 @@ pub enum Error {
     WorktreeScriptsUnsupportedHost,
     #[error("Select a checkout from the daemon's worktree list.")]
     WorktreeSelection,
-    /// Probes that open a shell on the host (usage, load, ports, checkpoints)
-    /// have no route into a WSL distribution yet.
+    /// Probes that open a shell on the host (usage, ports, checkpoints) have
+    /// no route into a WSL distribution yet; CPU and memory do.
     #[error("This is not available for WSL distributions yet.")]
     WslHostUnsupported,
     // keep-sorted end

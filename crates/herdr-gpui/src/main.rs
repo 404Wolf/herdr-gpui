@@ -1,5 +1,7 @@
 // objc 0.2's selectors expand a legacy cargo-clippy cfg in the native test adapter.
 #![cfg_attr(feature = "integration-test", allow(unexpected_cfgs))]
+// Tests start real processes; production code builds them with `new_command`.
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
 
 mod about;
 mod actions;
@@ -34,6 +36,7 @@ compile_error!(
 );
 #[cfg(feature = "cloud")]
 mod cloud;
+mod cloud_setup;
 mod code_index;
 mod code_search;
 mod code_server;
@@ -123,6 +126,7 @@ mod state_file;
 mod storage_warning;
 mod system_load;
 mod tab_menu;
+mod taskbar;
 mod teleport;
 mod terminal;
 mod terminal_notes;

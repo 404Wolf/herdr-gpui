@@ -710,7 +710,7 @@ pub(crate) fn git_bytes(
 
 /// Git in `checkout`, read-only and without the file monitor.
 fn command(checkout: &str, args: &[&str]) -> Command {
-    let mut command = Command::new("git");
+    let mut command = herdr_client::new_command("git");
     command
         .args([
             "-c",

@@ -14,7 +14,7 @@ fn each_side_steps_alone_within_the_band(cx: &mut TestAppContext) {
                 captured.lock().unwrap().push(edit);
                 Ok(())
             }),
-            load: skill_load,
+            load: Arc::new(skill_load),
         });
     });
     cx.simulate_resize(size(px(960.), px(2600.)));
@@ -87,7 +87,7 @@ fn each_side_steps_alone_within_the_band(cx: &mut TestAppContext) {
         ),
     ] {
         view.update(cx, |view, cx| {
-            view.section = Section::Appearance;
+            view.section = Section::Theme;
             view.config.terminal_padding = Padding { x, y };
             cx.notify();
         });
@@ -104,20 +104,21 @@ fn each_side_steps_alone_within_the_band(cx: &mut TestAppContext) {
     }
 }
 
-/// The cards under the theme grid keep one distance from each other.
+/// The sections under the theme grid keep one distance from what is above.
 #[gpui::test]
 fn the_appearance_cards_are_evenly_spaced(cx: &mut TestAppContext) {
     let (view, cx) = cx.add_window_view(skill_fixture);
     cx.simulate_resize(size(px(960.), px(2600.)));
     view.update(cx, |view, cx| {
-        view.section = Section::Appearance;
+        view.section = Section::Theme;
         cx.notify();
     });
     cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
-    let layout = cx.debug_bounds("settings-sidebar-layout").unwrap();
+    let grid = cx.debug_bounds("settings-theme-grid").unwrap();
+    let window = cx.debug_bounds("settings-window-section").unwrap();
     let padding = cx.debug_bounds("settings-terminal-padding").unwrap();
     let backdrop = cx.debug_bounds("settings-backdrop").unwrap();
-    let gap = padding.top() - layout.bottom();
+    let gap = window.top() - grid.bottom();
     assert!(gap > px(0.));
-    assert_eq!(backdrop.top() - padding.bottom(), gap);
+    assert_eq!(padding.top() - backdrop.bottom(), gap);
 }
