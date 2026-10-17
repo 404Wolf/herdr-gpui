@@ -30,52 +30,93 @@ fn fingerprints_are_read_from_ssh_keygen_lines() {
     }
 }
 
+/// An absolute path on this platform: Windows needs a drive for one.
+const ROOT: &str = if cfg!(windows) { "C:" } else { "" };
+
 #[test]
 fn known_hosts_files_come_from_ssh_g_in_order() {
-    let output = b"hostname Box\nport 22\nuserknownhostsfile /home/me/.ssh/known_hosts /home/me/.ssh/known_hosts2\nglobalknownhostsfile /etc/ssh/ssh_known_hosts\n";
+    let output = format!(
+        "hostname Box\nport 22\nuserknownhostsfile {ROOT}/home/me/.ssh/known_hosts {ROOT}/home/me/.ssh/known_hosts2\nglobalknownhostsfile {ROOT}/etc/ssh/ssh_known_hosts\n"
+    );
     assert_eq!(
-        parse_known_hosts(output),
+        parse_known_hosts(output.as_bytes()),
         Some(KnownHosts {
             user: vec![
-                PathBuf::from("/home/me/.ssh/known_hosts"),
-                PathBuf::from("/home/me/.ssh/known_hosts2"),
+                PathBuf::from(format!("{ROOT}/home/me/.ssh/known_hosts")),
+                PathBuf::from(format!("{ROOT}/home/me/.ssh/known_hosts2")),
             ],
-            global: vec![PathBuf::from("/etc/ssh/ssh_known_hosts")],
+            global: vec![PathBuf::from(format!("{ROOT}/etc/ssh/ssh_known_hosts"))],
             name: "box".into(),
         })
     );
     for output in [
-        &b"hostname box\nport 22\n"[..],
-        b"hostname box\nport 22\nuserknownhostsfile none\n",
-        b"hostname box\nport 22\nuserknownhostsfile ~/.ssh/known_hosts\n",
+        "hostname box\nport 22\n".to_owned(),
+        "hostname box\nport 22\nuserknownhostsfile none\n".to_owned(),
+        "hostname box\nport 22\nuserknownhostsfile ~/.ssh/known_hosts\n".to_owned(),
         // A path with a space reaches `ssh -G` output as two words.
-        b"hostname box\nport 22\nuserknownhostsfile /home/my files/known_hosts\n",
-        b"hostname box\nport 22\nuserknownhostsfile \"/home/me/known_hosts\"\n",
-        b"userknownhostsfile /k\nport 22\n",
-        b"hostname -oProxyCommand=x\nport 22\nuserknownhostsfile /k\n",
+        format!("hostname box\nport 22\nuserknownhostsfile {ROOT}/home/my files/known_hosts\n"),
+        format!("hostname box\nport 22\nuserknownhostsfile \"{ROOT}/home/me/known_hosts\"\n"),
+        format!("userknownhostsfile {ROOT}/k\nport 22\n"),
+        format!("hostname -oProxyCommand=x\nport 22\nuserknownhostsfile {ROOT}/k\n"),
     ] {
-        assert_eq!(
-            parse_known_hosts(output),
-            None,
-            "{:?}",
-            String::from_utf8_lossy(output)
-        );
+        assert_eq!(parse_known_hosts(output.as_bytes()), None, "{output:?}");
     }
+}
+
+/// What OpenSSH for Windows 9.5 prints: the profile with mixed separators,
+/// and its system-wide directory as a placeholder it expands itself.
+#[cfg(windows)]
+#[test]
+fn windows_known_hosts_files_keep_their_drive_and_expand_program_data() {
+    let output = br"hostname box
+port 22
+userknownhostsfile C:\Users\me/.ssh/known_hosts C:\Users\me/.ssh/known_hosts2
+globalknownhostsfile __PROGRAMDATA__\ssh/ssh_known_hosts __PROGRAMDATA__\ssh/ssh_known_hosts2
+";
+    let known = parse_known_hosts(output).unwrap();
+    assert_eq!(
+        known.user,
+        [
+            PathBuf::from(r"C:\Users\me/.ssh/known_hosts"),
+            PathBuf::from(r"C:\Users\me/.ssh/known_hosts2"),
+        ]
+    );
+    let data = PathBuf::from(std::env::var_os("ProgramData").unwrap());
+    assert_eq!(
+        known.global,
+        [
+            PathBuf::from(format!(r"{}\ssh/ssh_known_hosts", data.display())),
+            PathBuf::from(format!(r"{}\ssh/ssh_known_hosts2", data.display())),
+        ]
+    );
+    // The scan lists them for `ssh` with forward slashes, so no backslash
+    // can read as an escape inside the quotes.
+    let options = scan_options(Path::new(r"C:\Temp\scan\known_hosts"), &known.user);
+    assert_eq!(
+        options[1],
+        r#"UserKnownHostsFile="C:/Temp/scan/known_hosts" "C:/Users/me/.ssh/known_hosts" "C:/Users/me/.ssh/known_hosts2""#
+    );
 }
 
 #[test]
 fn keys_are_looked_up_under_the_alias_and_port_ssh_uses() {
-    let name = |output: &[u8]| parse_known_hosts(output).unwrap().name;
+    let name = |output: String| parse_known_hosts(output.as_bytes()).unwrap().name;
     assert_eq!(
-        name(b"hostname box\nport 2222\nuserknownhostsfile /k\n"),
+        name(format!(
+            "hostname box\nport 2222\nuserknownhostsfile {ROOT}/k\n"
+        )),
         "[box]:2222"
     );
     assert_eq!(
-        name(b"hostname box\nhostkeyalias Alias\nport 22\nuserknownhostsfile /k\n"),
+        name(format!(
+            "hostname box\nhostkeyalias Alias\nport 22\nuserknownhostsfile {ROOT}/k\n"
+        )),
         "Alias"
     );
     assert_eq!(
-        name(b"hostname box\nport 22\nuserknownhostsfile /k\nglobalknownhostsfile none\n"),
+        name(format!(
+            "hostname box\nport 22\nuserknownhostsfile {ROOT}/k\nglobalknownhostsfile none\n"
+        )),
         "box"
     );
 }
@@ -189,6 +230,7 @@ fn trusting_appends_after_an_unterminated_last_line() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn trusting_creates_a_private_directory_and_file() {
     use std::os::unix::fs::PermissionsExt;

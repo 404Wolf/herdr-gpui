@@ -1,7 +1,7 @@
 # Native Client API
 
 Local, SSH, and WSL client for Herdr's stable generation 1 endpoint. Local
-connections work on Unix and on Windows; SSH endpoints are Unix-only, and WSL
+connections and SSH endpoints work on Unix and on Windows, and WSL
 distributions are Windows-only. This crate
 does not link Herdr, GPUI, ratatui, crossterm, Tokio, or a PTY implementation.
 The workspace centralizes the pinned GPUI dependency (`gpui-pre` 0.3.6) for the GUI member.
@@ -61,8 +61,7 @@ spawning. The client never removes session directories itself. It validates
 names, bounds local stopping to 20 seconds and deletion to 15 seconds (45 seconds
 for the complete SSH operation), discards remote diagnostics, and kills/reaps
 only its CLI or SSH child on failure. A
-timeout is an uncertain result: refresh rather than replay. SSH functions are
-unavailable on Windows. Creating a session is the connection/startup layer's
+timeout is an uncertain result: refresh rather than replay. Creating a session is the connection/startup layer's
 responsibility, not an interactive `session attach` command.
 
 `ClientHandle` is cloneable. Its exact methods are:
@@ -133,8 +132,8 @@ The peek is the crate's only `unsafe`, a single `PeekNamedPipe` call with no
 safe wrapper available, matching what the daemon's own Windows client does; no
 extra threads are involved. `set_write_timeout` is accepted and not enforced,
 because a named pipe has no send timeout: a peer that stops reading can block a
-write until it exits. A WSL bridge's stream is the same wrapper around the
-`wsl.exe` child's anonymous stdin and stdout pipes, which `PeekNamedPipe` also
+write until it exits. An SSH or WSL bridge's stream is the same wrapper around the
+`ssh.exe` or `wsl.exe` child's anonymous stdin and stdout pipes, which `PeekNamedPipe` also
 accepts, with the same limits.
 If adapting a typed error to that callback, use
 `io::Error::new(error.kind(), error)`, not `error.to_string()`, to retain sources.
@@ -439,14 +438,22 @@ another process took first is never reported. It reports
 every port is refused, or the master does not connect within 30 seconds.
 `stop`, or dropping the handle, kills the master without waiting; the worker
 reaps it and removes its directory. Nothing reconnects. Callers name the remote
-port, so discovery stays elsewhere. Windows returns `Error::SshUnsupported`.
+port, so discovery stays elsewhere. Windows OpenSSH has no control master, so
+there `PortForward::start` and `forward_command` return `Error::SshUnsupported`.
 
-Limitations: POSIX remote hosts only, reachable from a Unix client only. The
-bridge hands the `ssh` child a socket pair as its standard streams, which needs
-`OwnedFd`; a Windows client therefore validates the target and session and then
-returns `Error::SshUnsupported` without spawning anything. There is no Windows
-remote discovery, interactive bootstrap/install/upgrade, version-specific mise
-install scanning, or retry/replay.
+On Unix the bridge hands the `ssh` child one end of a socket pair as its
+standard streams. On Windows it gives the child a pipe each way and reads the
+pipe with the same `PeekNamedPipe` receive deadline as the daemon's named pipe,
+so the handshake, its 16 KiB banner bound, cancellation, and the session loop
+behave the same; a send cannot time out there. `ssh` and `ssh-keygen` are
+OpenSSH for Windows, the first on an absolute `PATH` directory or else
+`%SystemRoot%\System32\OpenSSH`, started without a console window. Every
+command there also passes `ControlPath=none`: Windows OpenSSH cannot share a
+connection, and a configured `ControlPath` fails each one with exit 127, which
+would read as a host without Herdr.
+
+Limitations: there is no interactive bootstrap/install/upgrade,
+version-specific mise install scanning, or retry/replay.
 Shell-initialized PATH entries unavailable to `/bin/sh` are not discovered unless
 covered by the known roots. The remote bridge itself can start the named daemon,
 as upstream does; disconnect only detaches and never stops the remote daemon.

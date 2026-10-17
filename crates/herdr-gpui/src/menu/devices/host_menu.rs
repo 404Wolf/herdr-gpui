@@ -19,6 +19,7 @@ enum Action {
     /// Toggles `[devices.<id>] keybindings` between local and server.
     ServerKeybindings,
     /// Forwards one of the host's listening ports to this computer.
+    #[cfg(unix)]
     ForwardPort,
     /// Picks `[devices.<id>] theme`, the terminal's colors on this device.
     Theme,
@@ -31,6 +32,8 @@ enum Action {
 const SSH_ACTIONS: &[(Action, &str)] = &[
     (Action::Rename, "Rename…"),
     (Action::ServerKeybindings, "Use server keybindings"),
+    // Port forwards need an `ssh` control master, which Windows OpenSSH lacks.
+    #[cfg(unix)]
     (Action::ForwardPort, "Forward port…"),
     (Action::Theme, "Terminal theme…"),
     (Action::Remove, "Remove device…"),
@@ -141,7 +144,7 @@ impl HerdrWindow {
         let (saved, target, session) = match endpoint.saved_target() {
             ConnectTarget::Ssh { target, session } => {
                 // The CLI edits the default catalog, the one device setup also uses.
-                if let Some(reason) = self.ssh_setup_unavailable() {
+                if let Some(reason) = self.device_setup_unavailable() {
                     tracing::info!(
                         category = "device_remove",
                         id,
@@ -264,6 +267,7 @@ impl HerdrWindow {
                 }
                 return;
             }
+            #[cfg(unix)]
             Action::ForwardPort => {
                 let input = cx.new(SearchInput::new);
                 input.update(cx, |input, cx| {

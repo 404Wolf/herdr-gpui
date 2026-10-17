@@ -9,20 +9,19 @@
 //! those exact entries, so the approved fingerprint is the one saved.
 use super::SshFailure;
 use crate::{Error, Result};
-use std::path::{Path, PathBuf};
+use crate::{StorageOperation, catalog::validate_target};
 #[cfg(unix)]
-use {
-    crate::{StorageOperation, catalog::validate_target},
-    std::{
-        io::{Read, Seek, SeekFrom, Write},
-        process::Stdio,
-        time::Duration,
-    },
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::path::{Path, PathBuf};
+use std::{
+    fs::{DirBuilder, OpenOptions},
+    io::{Read, Seek, SeekFrom, Write},
+    process::Stdio,
+    time::Duration,
 };
 
 /// Upper bound on the entries `ssh` records for one host, normally one line
 /// (two when `CheckHostIP` also records the address).
-#[cfg(unix)]
 const ENTRIES_LIMIT: u64 = 16 * 1024;
 
 /// What a host's key check found, learned without authenticating.
@@ -71,7 +70,6 @@ impl NewHostKey {
 /// Connects to `target` without authenticating, only to learn its host key.
 /// Every authentication method is off, so no credential is offered and no
 /// remote command runs. Blocks on SSH: call it from a background thread.
-#[cfg(unix)]
 pub fn scan_host_key(target: &str) -> Result<HostKeyScan> {
     validate_target(target)?;
     let known = known_hosts(target)?;
@@ -133,21 +131,14 @@ pub fn scan_host_key(target: &str) -> Result<HostKeyScan> {
     })
 }
 
-#[cfg(windows)]
-pub fn scan_host_key(target: &str) -> Result<HostKeyScan> {
-    crate::catalog::validate_target(target)?;
-    Err(Error::SshUnsupported)
-}
-
 /// Options that come before [`super::POLICY`], so they win over it: record a
 /// new key into `recorded`, check the user's own files too, and never offer a
 /// credential or touch a shared connection. Nothing is forwarded either, since
 /// the host is not verified: the user's config may forward the agent to it.
-#[cfg(unix)]
 fn scan_options(recorded: &Path, files: &[PathBuf]) -> Vec<String> {
     let known: Vec<String> = std::iter::once(recorded)
         .chain(files.iter().map(PathBuf::as_path))
-        .map(|path| format!("\"{}\"", path.display()))
+        .map(|path| format!("\"{}\"", option_path(path)))
         .collect();
     [
         format!("UserKnownHostsFile={}", known.join(" ")),
@@ -170,8 +161,19 @@ fn scan_options(recorded: &Path, files: &[PathBuf]) -> Vec<String> {
     .collect()
 }
 
+/// `path` for a quoted list in an `ssh` option. OpenSSH reads a backslash in
+/// one as an escape before a quote or another backslash, so on Windows, whose
+/// OpenSSH takes either separator, the path is written with forward slashes.
+fn option_path(path: &Path) -> String {
+    let text = path.display().to_string();
+    if cfg!(windows) {
+        text.replace('\\', "/")
+    } else {
+        text
+    }
+}
+
 /// What `ssh -G` resolves for a target's host keys.
-#[cfg(unix)]
 #[derive(Debug, PartialEq, Eq)]
 struct KnownHosts {
     /// The user files, first one first: that is where `ssh` itself saves a
@@ -183,7 +185,6 @@ struct KnownHosts {
     name: String,
 }
 
-#[cfg(unix)]
 impl KnownHosts {
     fn files(&self) -> impl Iterator<Item = &PathBuf> {
         self.user.iter().chain(&self.global)
@@ -193,7 +194,6 @@ impl KnownHosts {
 /// Whether any of `files` already lists a key under `name`; `ssh-keygen -F`
 /// also matches hashed entries. Only a missing file is skipped: one that
 /// cannot be read fails the check rather than passing it.
-#[cfg(unix)]
 fn lists_host<'a>(name: &str, files: impl IntoIterator<Item = &'a PathBuf>) -> Result<bool> {
     for file in files {
         match std::fs::metadata(file) {
@@ -220,7 +220,6 @@ fn lists_host<'a>(name: &str, files: impl IntoIterator<Item = &'a PathBuf>) -> R
     Ok(false)
 }
 
-#[cfg(unix)]
 fn known_hosts(target: &str) -> Result<KnownHosts> {
     let mut command = crate::environment::command("ssh");
     command.args(["-G", "--", target]);
@@ -233,7 +232,6 @@ fn known_hosts(target: &str) -> Result<KnownHosts> {
 
 /// `None` unless every user file is an absolute path without quotes, which
 /// also rejects a path with spaces, since `ssh -G` prints those unquoted.
-#[cfg(unix)]
 fn parse_known_hosts(output: &[u8]) -> Option<KnownHosts> {
     let text = std::str::from_utf8(output).ok()?;
     let value = |key: &str| {
@@ -243,7 +241,7 @@ fn parse_known_hosts(output: &[u8]) -> Option<KnownHosts> {
             .filter(|value| !value.is_empty() && *value != "none")
     };
     let paths = |value: Option<&str>| -> Option<Vec<PathBuf>> {
-        let files: Vec<PathBuf> = value?.split_whitespace().map(PathBuf::from).collect();
+        let files: Vec<PathBuf> = value?.split_whitespace().map(expand_path).collect();
         files
             .iter()
             .all(|file| file.is_absolute() && !file.to_string_lossy().contains(['"', '\'']))
@@ -266,8 +264,21 @@ fn parse_known_hosts(output: &[u8]) -> Option<KnownHosts> {
     Some(KnownHosts { user, global, name })
 }
 
+/// A path as `ssh -G` prints it. Windows OpenSSH prints its system-wide
+/// directory as `__PROGRAMDATA__`, which it expands only when it opens a file.
+fn expand_path(path: &str) -> PathBuf {
+    if cfg!(windows)
+        && let Some(rest) = path.strip_prefix("__PROGRAMDATA__")
+        && let Some(data) = std::env::var_os("ProgramData")
+    {
+        let mut expanded = PathBuf::from(data).into_os_string();
+        expanded.push(rest);
+        return expanded.into();
+    }
+    PathBuf::from(path)
+}
+
 /// Describes each key in `file`, one per distinct fingerprint.
-#[cfg(unix)]
 fn fingerprints(file: &Path) -> Result<Vec<HostKeyFingerprint>> {
     let mut command = crate::environment::command("ssh-keygen");
     command.args(["-l", "-E", "sha256", "-f"]).arg(file);
@@ -296,7 +307,6 @@ fn fingerprints(file: &Path) -> Result<Vec<HostKeyFingerprint>> {
 }
 
 /// One `ssh-keygen -l` line: `256 SHA256:<digest> <host> (ED25519)`.
-#[cfg(unix)]
 fn parse_fingerprint(line: &str) -> Option<HostKeyFingerprint> {
     let mut words = line.split_whitespace();
     let bits = words.next()?.parse().ok()?;
@@ -322,7 +332,6 @@ fn parse_fingerprint(line: &str) -> Option<HostKeyFingerprint> {
 
 /// Known hosts lines as `ssh` wrote them, refused if any carries a control
 /// character, so appending them can never add something else.
-#[cfg(unix)]
 fn valid_entries(entries: &str) -> Result<String> {
     let mut valid = String::with_capacity(entries.len());
     for line in entries.lines().filter(|line| !line.trim().is_empty()) {
@@ -338,9 +347,7 @@ fn valid_entries(entries: &str) -> Result<String> {
 /// Appends the approved entries to the user's known hosts file, creating it
 /// and its directory privately when missing. Blocks on disk: call it from a
 /// background thread.
-#[cfg(unix)]
 pub fn trust_host_key(key: &NewHostKey) -> Result<()> {
-    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
     // The files may have changed since the key was shown: a key trusted for
     // the host meanwhile makes this one a replacement, which is never saved.
     if lists_host(&key.name, &key.checked)? {
@@ -352,17 +359,21 @@ pub fn trust_host_key(key: &NewHostKey) -> Result<()> {
     }
     let path = key.known_hosts.as_path();
     if let Some(parent) = path.parent() {
-        std::fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
+        let mut builder = DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        builder.mode(0o700);
+        builder
             .create(parent)
             .map_err(|error| Error::storage(StorageOperation::CreateDirectory, parent, error))?;
     }
-    let mut file = std::fs::OpenOptions::new()
-        .read(true)
-        .append(true)
-        .create(true)
-        .mode(0o600)
+    // Windows has no mode bits: the file inherits its directory's ACL, as
+    // one `ssh` itself creates there does.
+    let mut options = OpenOptions::new();
+    options.read(true).append(true).create(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options
         .open(path)
         .map_err(|error| Error::storage(StorageOperation::Open, path, error))?;
     let write = |error| Error::storage(StorageOperation::Write, path, error);
@@ -384,11 +395,6 @@ pub fn trust_host_key(key: &NewHostKey) -> Result<()> {
     Ok(())
 }
 
-#[cfg(windows)]
-pub fn trust_host_key(_key: &NewHostKey) -> Result<()> {
-    Err(Error::SshUnsupported)
-}
-
-#[cfg(all(test, unix))]
+#[cfg(test)]
 #[allow(clippy::unwrap_used)] // Test fixtures only.
 mod tests;
