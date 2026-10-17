@@ -12,6 +12,10 @@
 //!
 //! Anywhere else (the settings window's previews, test views, and a popover
 //! deferred past the layer) the mark draws in place, as it always did.
+//!
+//! The layer paints after everything in the window body, so what a host
+//! draws over its own rows, such as the sidebar's pinned host header, marks
+//! itself with [`covering`] and the layer keeps marks out from under it.
 
 use gpui::{prelude::*, *};
 use std::{
@@ -37,6 +41,8 @@ struct Slot {
 pub(crate) struct Marks {
     hosts: RefCell<Vec<EntityId>>,
     slots: RefCell<Vec<Slot>>,
+    /// What each host draws over its own rows, which no mark shows through.
+    covers: RefCell<Vec<(EntityId, Bounds<Pixels>)>>,
     /// Whether the layer is still to prepaint this frame. A slot recorded
     /// after it would show only on the next frame, under whatever covered it.
     open: Cell<bool>,
@@ -63,6 +69,35 @@ impl Marks {
     /// keeps its slots, as GPUI keeps its paint.
     pub(crate) fn forget(&self, host: EntityId) {
         self.slots.borrow_mut().retain(|slot| slot.host != host);
+        self.covers.borrow_mut().retain(|(cover, _)| *cover != host);
+    }
+
+    /// `mask` less what its host covers: a cover as wide as the mask, such
+    /// as a pinned header across the list, moves the edge it overlaps.
+    fn uncovered(&self, host: EntityId, mut mask: ContentMask<Pixels>) -> ContentMask<Pixels> {
+        for (_, cover) in self
+            .covers
+            .borrow()
+            .iter()
+            .filter(|(cover, _)| *cover == host)
+        {
+            let area = mask.bounds;
+            if !cover.intersects(&area)
+                || cover.left() > area.left()
+                || cover.right() < area.right()
+            {
+                continue;
+            }
+            let (mut top, mut bottom) = (area.top(), area.bottom());
+            if cover.top() <= top {
+                top = cover.bottom().min(bottom);
+            } else if cover.bottom() >= bottom {
+                bottom = cover.top().max(top);
+            }
+            mask.bounds =
+                Bounds::from_corners(point(area.left(), top), point(area.right(), bottom));
+        }
+        mask
     }
 
     fn hosts(&self, view: EntityId) -> bool {
@@ -174,7 +209,10 @@ impl Element for LayerElement {
             .slots
             .borrow()
             .iter()
-            .map(|slot| (slot.bounds, slot.mask, slot.fade, slot.build.clone()))
+            .map(|slot| {
+                let mask = self.marks.uncovered(slot.host, slot.mask);
+                (slot.bounds, mask, slot.fade, slot.build.clone())
+            })
             .collect();
         self.drawn = slots
             .into_iter()
@@ -221,6 +259,77 @@ impl Element for LayerElement {
                 window.with_content_mask(Some(*mask), |window| mark.paint(window, cx));
             });
         }
+    }
+}
+
+/// `element`, drawn over its view's own rows: no layered mark under it
+/// shows through.
+pub(crate) fn covering(element: impl IntoElement) -> impl IntoElement {
+    Covering(element.into_any_element())
+}
+
+struct Covering(AnyElement);
+
+impl IntoElement for Covering {
+    type Element = Self;
+
+    fn into_element(self) -> Self {
+        self
+    }
+}
+
+impl Element for Covering {
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, ()) {
+        // Laid out as the element itself, so these bounds are its own.
+        (self.0.request_layout(window, cx), ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        if let Some(marks) = Marks::of(window, cx) {
+            let host = window.current_view();
+            if marks.hosts(host) {
+                marks.covers.borrow_mut().push((host, bounds));
+            }
+        }
+        self.0.prepaint(window, cx);
+    }
+
+    fn paint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
+        _: &mut (),
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.0.paint(window, cx);
     }
 }
 
@@ -353,8 +462,33 @@ impl Element for Layered {
 mod tests {
     #![allow(clippy::expect_used)]
 
+    use super::Marks;
     use crate::sidebar::layout_tests::fixture_window;
+    use gpui::{Bounds, ContentMask, EntityId, point, px, size};
     use std::time::Duration;
+
+    /// A header pinned across the list hides the marks under it: their clip
+    /// starts below it. A narrower cover, or another host's, clips nothing.
+    #[test]
+    fn a_full_width_cover_moves_the_clip_edge_it_overlaps() {
+        let (list, other) = (EntityId::from(1_u64), EntityId::from(2_u64));
+        let mask = ContentMask {
+            bounds: Bounds::new(point(px(0.), px(40.)), size(px(200.), px(300.))),
+        };
+        let marks = Marks::default();
+        let header = Bounds::new(point(px(0.), px(40.)), size(px(200.), px(24.)));
+        marks.covers.borrow_mut().push((list, header));
+        let uncovered = marks.uncovered(list, mask);
+        assert_eq!(uncovered.bounds.top(), px(64.));
+        assert_eq!(uncovered.bounds.bottom(), px(340.));
+        assert_eq!(marks.uncovered(other, mask), mask);
+        let narrow = Marks::default();
+        let chip = Bounds::new(point(px(20.), px(40.)), size(px(60.), px(24.)));
+        narrow.covers.borrow_mut().push((list, chip));
+        assert_eq!(narrow.uncovered(list, mask), mask);
+        marks.forget(list);
+        assert_eq!(marks.uncovered(list, mask), mask);
+    }
 
     /// Working agents spin in the layer: time passing redraws the layer
     /// and never the cached sidebar, and the marks still draw.
@@ -367,7 +501,7 @@ mod tests {
             (view.sidebar_view.clone(), view.mark_layer.clone())
         });
         let (renders, layer_renders) = cx.update(|window, cx| {
-            let marks = super::Marks::of(window, cx).expect("the window has a layer");
+            let marks = Marks::of(window, cx).expect("the window has a layer");
             assert!(
                 marks.len() > 0,
                 "the fixture's working agents reserve slots"

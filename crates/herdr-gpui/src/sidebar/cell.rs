@@ -44,10 +44,11 @@ pub(super) struct RowContext<'a> {
 
 impl RowContext<'_> {
     /// The indicators for a status mark in one of these rows: faded with
-    /// the host's dimming, which a mark drawn in the window's mark layer
-    /// does not inherit.
+    /// the row's own fade and the host's dimming, which a mark drawn in the
+    /// window's mark layer does not inherit.
     pub(super) fn status_indicators(&self) -> super::agents::Indicators {
-        self.indicators.faded(self.mark.opacity())
+        self.indicators
+            .faded(self.indicators.fade() * self.mark.opacity())
     }
 }
 
