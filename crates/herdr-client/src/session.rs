@@ -426,6 +426,7 @@ pub(crate) fn run_connection(
         if !commands.wait(&stream, writable, timeout)? {
             continue;
         }
+        let read = reader.bytes.len();
         let message = match reader.poll_batch(&mut stream) {
             // Daemons before the endpoint protocol cannot decode the hello and
             // close without a word. SSH discovery vets the remote binary first,
@@ -436,6 +437,13 @@ pub(crate) fn run_connection(
             result => result?,
         };
         let Some(message) = message else {
+            // A large frame can take longer than a health deadline to arrive;
+            // its bytes prove the link alive as well as a whole message would.
+            if reader.bytes.len() > read
+                && let Some(health) = &mut session.health
+            {
+                health.received(Instant::now());
+            }
             continue;
         };
         session.handle_message(message, |event| deliver(tx, event, stop))?;

@@ -192,3 +192,40 @@ fn a_peer_that_stalls_mid_frame_is_timed_out_at_its_deadline() {
     assert!(stalled.elapsed() >= partial_frame);
     drop(server);
 }
+
+#[test]
+fn bytes_of_a_slow_frame_answer_a_liveness_probe() {
+    let liveness = Duration::from_millis(500);
+    let pace = Pace {
+        liveness,
+        ..paced(NEVER, NEVER)
+    };
+    let (client, mut server, worker, _) = test_client_paced(false, true, pace);
+    ssh_handshake(&mut server);
+    event(&client);
+    event(&client);
+    let surface = baseline();
+    let bytes = encode_message(
+        &ServerMessage::PaneSurface(surface.clone()),
+        MAX_GRAPHICS_FRAME_SIZE,
+    )
+    .unwrap();
+    client.handle.check_liveness();
+    assert!(
+        matches!(receive(&mut server), ClientMessage::EndpointControl { kind, .. } if kind == "endpoint.health.ping.v1")
+    );
+    // The frame takes several probe deadlines to arrive, but never pauses
+    // for one: the link is alive, only the frame is large and the link slow.
+    let started = Instant::now();
+    let mut sent = 0;
+    while started.elapsed() < liveness * 3 && sent < bytes.len() - 1 {
+        server.write_all(&bytes[sent..=sent]).unwrap();
+        sent += 1;
+        thread::sleep(liveness / 10);
+    }
+    assert!(started.elapsed() >= liveness * 3, "the frame is too short");
+    server.write_all(&bytes[sent..]).unwrap();
+    assert!(matches!(event(&client), ClientEvent::Surface(s) if *s == surface));
+    client.handle.disconnect();
+    join_within(worker, BOUND).unwrap();
+}
