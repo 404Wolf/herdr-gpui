@@ -924,8 +924,6 @@ pub enum Error {
     UsageTimeout,
     #[error("Could not reach this host over SSH to read usage.")]
     UsageUnreachable,
-    #[error("Remote usage needs SSH, which this platform's client does not support.")]
-    UsageUnsupported,
     #[cfg(any(target_os = "macos", windows))]
     #[error("Could not create the page: {0}")]
     WebView(#[from] wry::Error),

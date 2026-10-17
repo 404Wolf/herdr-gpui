@@ -78,20 +78,18 @@ pub fn run_script(
     }
     #[cfg(windows)]
     {
-        // This machine has no `/bin/sh`, and SSH children need Unix sockets.
-        let ScriptHost::Wsl(distro) = host else {
-            return Err(Error::ScriptUnsupported);
+        // This machine has no `/bin/sh`; a remote host runs the script.
+        let command = match host {
+            ScriptHost::Local => return Err(Error::ScriptUnsupported),
+            ScriptHost::Ssh(target) => {
+                crate::ssh::command(target, &format!("/bin/sh -c {}", shell_quote(script)))
+            }
+            ScriptHost::Wsl(distro) => crate::wsl::command(distro, script),
         };
         if cancelled.load(std::sync::atomic::Ordering::Acquire) {
             return Err(Error::ScriptCancelled);
         }
-        runner::run(
-            crate::wsl::command(distro, script),
-            input,
-            output,
-            limits,
-            cancelled,
-        )
+        runner::run(command, input, output, limits, cancelled)
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     {
@@ -114,11 +112,11 @@ pub fn run_script_command(
     if cancelled.load(std::sync::atomic::Ordering::Acquire) {
         return Err(Error::ScriptCancelled);
     }
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     {
         runner::run(command, input, output, limits, cancelled)
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     {
         let _ = (command, input, output, limits);
         Err(Error::ScriptUnsupported)
@@ -131,9 +129,9 @@ mod wsl_tests;
 
 /// Streams a script child's pipes under the output and idle bounds. On Unix
 /// the child leads its own process group, so stopping it reaches its
-/// descendants too. On Windows the child is `wsl.exe`, and killing it ends the
-/// shell it started in the distribution; a background process that shell
-/// left behind loses only its pipes.
+/// descendants too. On Windows the child is `wsl.exe` or `ssh`, and killing it
+/// ends the shell it started in the distribution or the remote session; a
+/// background process that shell left behind loses only its pipes.
 #[cfg(any(target_os = "linux", target_os = "macos", windows))]
 mod runner {
     use super::*;
