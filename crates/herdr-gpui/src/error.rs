@@ -582,6 +582,8 @@ pub enum Error {
     InvalidWorktreeNotes,
     #[error("Invalid saved dispatch history")]
     InvalidDispatchHistory,
+    #[error("Invalid saved fan-out journal")]
+    InvalidFanOutJournal,
     #[error("Invalid saved editor groups")]
     InvalidGroupLayouts,
     #[error("Herdr UI is not running, or its control socket {} is unreachable: {source}", path.display())]
