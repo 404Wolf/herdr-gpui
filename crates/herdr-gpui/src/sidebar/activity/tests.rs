@@ -54,7 +54,7 @@ fn run(id: &str, item: &Item, state: RunState) -> Run {
 }
 
 fn tab() -> TabId {
-    TabId::from(7)
+    TabId::test(7)
 }
 
 fn pull_request(number: u64) -> crate::orchestrator::PullRequest {
