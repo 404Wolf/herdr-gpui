@@ -35,6 +35,7 @@ pub(crate) mod prefix;
 mod reconnecting;
 mod regions;
 mod render;
+mod report_issue;
 mod selection;
 mod server_keys;
 mod sound;
@@ -48,6 +49,7 @@ mod tab_strip;
 mod tab_tear;
 mod toasts;
 mod transfers;
+mod wsl_drop;
 mod zen;
 #[cfg(test)]
 pub(crate) use transfers::tests::Peer as MockPeer;
@@ -127,6 +129,9 @@ pub(crate) struct HerdrWindow {
     /// Cloud machines being added; see `cloud::Jobs`.
     #[cfg(feature = "cloud")]
     pub(crate) cloud_jobs: crate::cloud::Jobs,
+    /// A new cloud device's setup script whose tab is being opened.
+    #[cfg(feature = "cloud")]
+    pub(crate) cloud_setup: Option<crate::cloud_setup::Running>,
     /// Checkouts indexed for Go to Symbol and Go to File.
     pub(crate) code_indexes: crate::code_search::Indexes,
     /// Code tabs' views, by tab.
@@ -282,6 +287,7 @@ pub(crate) struct HerdrWindow {
     /// lifted device, whose geometry the next frame must not pin from.
     pub(crate) sidebar_folded: std::cell::Cell<bool>,
     pub(crate) sidebar_modified: bool,
+    pub(crate) sidebar_nested_reveal: sidebar::NestedReveal,
     /// A spaces row revealed last frame, which the next render moves out from
     /// under the pinned host header if it landed there.
     pub(crate) sidebar_pin_reveal: std::cell::Cell<Option<usize>>,
@@ -354,6 +360,9 @@ pub(crate) struct HerdrWindow {
     pub(crate) workspace_drag: Option<sidebar::WorkspaceDrag>,
     /// The worktree script being located, read, trusted, or opened.
     pub(crate) worktree_script: Option<crate::worktree_scripts::Job>,
+    /// Files dropped on a WSL pane whose paths are still being mapped; input
+    /// typed meanwhile is held so it lands after them.
+    pub(crate) wsl_paste: Option<wsl_drop::WslPaste>,
     /// Hides the chrome over the status bar and sidebar flags; see `zen`.
     pub(crate) zen: zen::ZenState,
     // keep-sorted end
@@ -557,6 +566,11 @@ impl HerdrWindow {
         self.poll_dispatch(window, cx);
         self.poll_device_setup(window, cx);
         self.poll_worktree_script(window, cx);
+        #[cfg(feature = "cloud")]
+        {
+            self.poll_cloud_setup(std::time::Instant::now(), cx);
+            self.poll_cloud_setup_tab(cx);
+        }
         self.poll_editor_open(cx);
         self.poll_worktree_source(cx);
         self.poll_hover_menu(std::time::Instant::now(), window, cx);

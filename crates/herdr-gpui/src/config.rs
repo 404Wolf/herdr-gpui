@@ -7,9 +7,11 @@ use crate::{
     contrast::Contrast,
     keymap::{Binding, DaemonKeys, Keymap, PaneKeys},
 };
+mod agents_placement;
 pub(crate) mod backdrop;
 mod bitmap_fonts;
 mod boat;
+mod cloud;
 mod coder;
 mod daytona;
 mod devices;
@@ -22,6 +24,7 @@ mod github;
 mod keybindings;
 mod layout;
 mod notifications;
+mod omarchy;
 mod padding;
 pub(crate) mod preferences;
 pub(crate) mod sidebar;
@@ -36,10 +39,12 @@ mod updates;
 pub(crate) mod watch;
 mod zen;
 
+pub use agents_placement::AgentsPlacement;
 pub use backdrop::Backdrop;
 pub use boat::BoatConfig;
 #[cfg(feature = "boat")]
 pub(crate) use boat::BoatFields;
+pub use cloud::CloudConfig;
 pub use coder::CoderConfig;
 #[cfg(feature = "coder")]
 pub(crate) use coder::CoderFields;
@@ -110,6 +115,8 @@ pub struct Config {
     /// Snapshot a checkout's files each time one of its agents starts or
     /// finishes a turn, so they can be rolled back.
     pub agent_checkpoints: bool,
+    /// Where the sidebar lists agents while `show_agents` is on.
+    pub agents_placement: AgentsPlacement,
     /// What shows behind the main window's terminals and chrome.
     pub backdrop: Backdrop,
     pub bell: BellConfig,
@@ -118,6 +125,8 @@ pub struct Config {
     /// override from the Herdr value it shadows.
     pub(crate) clipboard_overrides: ClipboardToastSettings,
     pub clipboard_toast: ClipboardToast,
+    /// What a new cloud device runs the first time it connects.
+    pub cloud: CloudConfig,
     pub code: CodeConfig,
     pub coder: CoderConfig,
     pub confirm_close_pane: bool,
@@ -393,11 +402,13 @@ impl Default for Config {
         Self {
             // keep-sorted start
             agent_checkpoints: true,
+            agents_placement: AgentsPlacement::default(),
             backdrop: Backdrop::default(),
             bell: BellConfig::default(),
             boat: BoatConfig::default(),
             clipboard_overrides: ClipboardToastSettings::default(),
             clipboard_toast: ClipboardToast::default(),
+            cloud: CloudConfig::default(),
             code: CodeConfig::default(),
             coder: CoderConfig::default(),
             confirm_close_pane: true,
@@ -460,10 +471,12 @@ impl Default for Config {
 struct Settings {
     // keep-sorted start
     agent_checkpoints: Option<bool>,
+    agents_placement: AgentsPlacement,
     backdrop: Backdrop,
     bell: BellConfig,
     boat: BoatConfig,
     clipboard_toast: ClipboardToastSettings,
+    cloud: CloudConfig,
     code: CodeConfig,
     coder: CoderConfig,
     confirm_close_pane: Option<bool>,
@@ -693,6 +706,7 @@ impl Config {
         let (text, source) = Self::overrides_text(path)?;
         Self::parse_layers([DEFAULT_CONFIG, &text], &daemon_settings(daemon))
             .map_err(|error| error.at_path(&source))
+            .map(|config| config.with_desktop_theme(&text))
     }
 
     /// The user's overrides as the app reads them now, and the file they
@@ -723,7 +737,18 @@ impl Config {
         // Validate the override independently so bad types/unknown keys cannot
         // disappear inside the merge. Empty arrays explicitly replace defaults.
         Self::parse_over(&text, &base).map_err(|error| error.at_path(&local))?;
-        Self::parse_layers([DEFAULT_CONFIG, &text], &base).map_err(|error| error.at_path(&local))
+        Self::parse_layers([DEFAULT_CONFIG, &text], &base)
+            .map_err(|error| error.at_path(&local))
+            .map(|config| config.with_desktop_theme(&text))
+    }
+
+    /// Without a home directory there is no desktop theme to find, and the
+    /// managed default stays.
+    fn with_desktop_theme(mut self, overrides: &str) -> Self {
+        if let Ok(home) = home() {
+            self.follow_omarchy(overrides, &home);
+        }
+        self
     }
 
     /// The GUI file on its own, with nothing layered under it: the shape the
@@ -807,6 +832,7 @@ impl Config {
         }
         // A newer build may keep more accounts or owners than this one.
         unknown_keys.extend(settings.github.limit_accounts());
+        unknown_keys.extend(settings.cloud.retain_known());
         unknown_keys.sort();
         unknown_keys.dedup();
         let mut config = Self {
@@ -819,6 +845,8 @@ impl Config {
         #[cfg(feature = "boat")]
         settings.boat.settings_with(|_| None)?;
         config.boat = settings.boat;
+        settings.cloud.check()?;
+        config.cloud = settings.cloud;
         // Check what the file says so a bad value is reported at load; the
         // environment may still fill or override keys when Coder is used.
         #[cfg(feature = "coder")]
@@ -888,6 +916,7 @@ impl Config {
         settings.backdrop.validate()?;
         config.backdrop = settings.backdrop;
         config.contrast = settings.contrast;
+        config.agents_placement = settings.agents_placement;
         config.usage = settings.usage;
         config.option_as_alt = settings.option_as_alt;
         config.open_links_in = settings.open_links_in;

@@ -2,8 +2,8 @@
 //! No installers, daemon restarts, or SSH config edits. A host key is trusted
 //! only after the user approves its fingerprint (see `host_key`).
 //! The remote host is POSIX or Windows. On Unix the `ssh` child's standard
-//! streams are one end of a socket pair; on Windows they are anonymous pipes,
-//! read with the same emulated receive timeout as the daemon's named pipe (see
+//! streams are one end of a socket pair; on Windows they are private pipes,
+//! driven with the same read and write deadlines as the daemon's named pipe (see
 //! `transport`). Windows OpenSSH has no connection multiplexing, so there a
 //! configured `ControlPath` is never used and each connection authenticates.
 //! The bridge and probe scripts, and the handshake that reads them, are shared
@@ -656,20 +656,18 @@ fn spawn_bridge(mut command: Command) -> Result<(Stream, ChildGuard)> {
     Ok((stream, child))
 }
 
-/// Spawn `command` with a pipe each way, which `Stream` reads with an
-/// emulated receive timeout. Only the child holds the pipes' other ends, so a
-/// bridge that exits reads as closed. Stderr is piped as on Unix.
+/// Spawn `command` with a private pipe each way, which `Stream` drives with
+/// the same read and write deadlines as the daemon's named pipe. Stderr is
+/// piped as on Unix.
 #[cfg(windows)]
 fn spawn_bridge(mut command: Command) -> Result<(Stream, ChildGuard)> {
-    command
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut child = ChildGuard(command.spawn()?);
-    let (Some(stdin), Some(stdout)) = (child.0.stdin.take(), child.0.stdout.take()) else {
-        return Err(Error::SshClosed);
-    };
-    Ok((Stream::from_child(stdin, stdout), child))
+    let (stream, stdin, stdout) = Stream::child()?;
+    command.stdin(stdin).stdout(stdout).stderr(Stdio::piped());
+    let child = ChildGuard(command.spawn()?);
+    // The command still owns the child's ends of the pipes; while it lives,
+    // a bridge that exits early never reads as closed, only as timed out.
+    drop(command);
+    Ok((stream, child))
 }
 
 /// Answer the bridge script: skip each incompatible candidate it reports and

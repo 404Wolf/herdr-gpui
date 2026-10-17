@@ -2,15 +2,12 @@
 import importlib.util
 import os
 from pathlib import Path
-import struct
 import subprocess
 import sys
 import tempfile
 import unittest
 from unittest import mock
 import zipfile
-
-from test_release import windows_executable
 
 SCRIPT = Path(__file__).resolve().parents[1] / "package-windows.py"
 
@@ -33,49 +30,11 @@ MOCK_ISCC = """#!/usr/bin/env python3
 import pathlib, sys
 defines = dict(arg[2:].split("=", 1) for arg in sys.argv[1:] if arg.startswith("/D"))
 source = pathlib.Path(defines["SourceDir"])
-assert (source / "herdr-gpui.exe").is_file() and (source / "bin/herdr-gpui.exe").is_file()
+assert (source / "herdr-gpui.exe").is_file() and (source / "herdr-gpui-launcher.exe").is_file()
 assert sys.argv[-1].endswith("herdr-gpui.iss")
 name = f"Herdr-{defines['Version']}-{defines['Target']}-setup.exe"
 (pathlib.Path(defines["OutputDir"]) / name).write_bytes(b"setup " + defines["Architecture"].encode())
 """
-
-
-class ConsoleCopyTests(unittest.TestCase):
-    def test_only_the_subsystem_changes(self):
-        app = windows_executable()
-        cli = PACKAGE.console_copy(app)
-        self.assertEqual(len(cli), len(app))
-        changed = [i for i, (a, b) in enumerate(zip(app, cli)) if a != b]
-        field = 0x40 + 24 + PACKAGE.SUBSYSTEM_OFFSET
-        self.assertEqual(changed, [field])
-        self.assertEqual(struct.unpack_from("<H", cli, field)[0], PACKAGE.SUBSYSTEM_CONSOLE)
-
-    def test_pe32_images_are_patched_too(self):
-        app = bytearray(windows_executable())
-        struct.pack_into("<H", app, 0x40 + 24, 0x10B)
-        cli = PACKAGE.console_copy(bytes(app))
-        self.assertEqual(struct.unpack_from("<H", cli, 0x40 + 24 + 68)[0], 3)
-
-    def test_rejects_what_is_not_a_gui_release_build(self):
-        app = windows_executable()
-        bad_magic = bytearray(app)
-        struct.pack_into("<H", bad_magic, 0x40 + 24, 0x107)
-        far_header = bytearray(app)
-        struct.pack_into("<I", far_header, 0x3C, len(app))
-        cases = {
-            "empty": b"",
-            "not MZ": b"ZM" + app[2:],
-            "no PE signature": app[:0x40] + b"NE\0\0" + app[0x44:],
-            "header past the end": bytes(far_header),
-            "truncated": app[:0x40 + 24 + 60],
-            "unknown optional header": bytes(bad_magic),
-            # A debug build keeps the console subsystem; packaging it would
-            # ship an app that opens a console window.
-            "console build": windows_executable(3),
-        }
-        for name, data in cases.items():
-            with self.subTest(name), self.assertRaises(ValueError):
-                PACKAGE.console_copy(data)
 
 
 class InstallerTests(unittest.TestCase):
@@ -104,7 +63,7 @@ class InstallerTests(unittest.TestCase):
 
     def test_builds_from_the_zip_tree(self):
         root = f"Herdr-{VERSION}-{TARGET}/"
-        archive = self.release_zip([root + "herdr-gpui.exe", root + "bin/herdr-gpui.exe",
+        archive = self.release_zip([root + "herdr-gpui.exe", root + "herdr-gpui-launcher.exe",
                                     root + "licenses/LICENSE"])
         output = Path(self.build(archive).stdout.strip())
         self.assertEqual(output, self.work.resolve() / f"Herdr-{VERSION}-{TARGET}-setup.exe")
@@ -115,9 +74,9 @@ class InstallerTests(unittest.TestCase):
     def test_rejects_a_zip_without_the_layout(self):
         root = f"Herdr-{VERSION}-{TARGET}/"
         cases = {
-            "no console copy": [root + "herdr-gpui.exe"],
-            "outside the root": [root + "herdr-gpui.exe", root + "bin/herdr-gpui.exe", "other/x"],
-            "escaping the root": [root + "herdr-gpui.exe", root + "bin/herdr-gpui.exe", root + "../x"],
+            "no launcher": [root + "herdr-gpui.exe"],
+            "outside the root": [root + "herdr-gpui.exe", root + "herdr-gpui-launcher.exe", "other/x"],
+            "escaping the root": [root + "herdr-gpui.exe", root + "herdr-gpui-launcher.exe", root + "../x"],
         }
         for name, entries in cases.items():
             with self.subTest(name):

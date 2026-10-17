@@ -47,7 +47,7 @@ actions!(settings_window, [Close]);
 pub(crate) fn key_bindings() -> [KeyBinding; 2] {
     [
         KeyBinding::new(
-            if cfg!(target_os = "linux") {
+            if crate::controls::CTRL_SHORTCUTS {
                 "ctrl-shift-w"
             } else {
                 "cmd-w"
@@ -109,6 +109,7 @@ fn open_with(
             ..Default::default()
         },
         move |window, cx| {
+            crate::taskbar::mark(window, cx);
             let model = retained.unwrap_or_else(|| {
                 cx.new(|cx| {
                     let mut view = SettingsWindow::new(source.clone(), cx);
