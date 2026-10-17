@@ -57,6 +57,8 @@ pub(in crate::settings_window) struct BoatCard {
     key: Entity<SearchInput>,
     account: Account,
     install: bool,
+    /// Run the setup script on the next device made here, when one is set.
+    setup: bool,
     message: Option<String>,
     job: Option<Worker>,
     confirm_forget: bool,
@@ -80,6 +82,7 @@ impl BoatCard {
             key,
             account: Account::Checking,
             install: true,
+            setup: true,
             message: None,
             job: None,
             confirm_forget: false,
@@ -308,10 +311,13 @@ impl SettingsWindow {
             target,
             install: card.install,
         };
+        let run = card.setup;
+        let script = self.cloud_setup_script(CloudProvider::Boat, run);
         let started = self.source.update(cx, |window, cx| {
             window.start_cloud_job(
                 CloudProvider::Boat,
                 name.clone(),
+                script,
                 move |cancelled, report| setup::add_device(request, cancelled, report),
                 cx,
             )
@@ -458,6 +464,17 @@ impl SettingsWindow {
                     }))
                 }),
             )
+            .children(self.cloud_setup_switch(
+                CloudProvider::Boat,
+                card.setup,
+                ready,
+                |this| {
+                    if let Some(card) = &mut this.boat_card {
+                        card.setup = !card.setup;
+                    }
+                },
+                cx,
+            ))
             .child(
                 div().flex().justify_end().child(
                     self.cloud_button("cloud-boat-create", create_label, create)
