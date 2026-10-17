@@ -107,7 +107,10 @@ wry.workspace = true
 # sets the window attributes and reads the system settings GPUI leaves to the
 # app, keeps saved sign-ins in Credential Manager (`github::credential_manager`),
 # and opens avatar cache entries without following reparse points.
+# `clipboard-win` reads the clipboard on a background thread (see
+# `window/clipboard`).
 [target.'cfg(windows)'.dependencies]
+clipboard-win.workspace     = true
 interprocess.workspace      = true
 raw-window-handle.workspace = true
 windows.workspace           = true

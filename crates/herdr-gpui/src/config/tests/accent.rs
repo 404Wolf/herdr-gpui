@@ -22,3 +22,17 @@ fn a_system_accent_replaces_the_primary_color_but_no_terminal_color() {
     assert_eq!(accented.palette, theme.palette);
     assert_eq!(theme.clone().with_accent(None), theme);
 }
+
+#[test]
+fn the_system_accent_wins_over_a_themes_own() {
+    let theme = Theme {
+        accent: Some(0x7aa2f7),
+        ..Theme::default()
+    };
+    assert_eq!(theme.primary(), 0x7aa2f7);
+    assert_eq!(
+        theme.clone().with_accent(Some(0x0078d4)).primary(),
+        0x0078d4
+    );
+    assert_eq!(theme.clone().with_accent(None).primary(), 0x7aa2f7);
+}

@@ -57,12 +57,6 @@ pub(crate) struct PendingRequest {
     pub(crate) method: Method,
 }
 
-/// Whether this platform's connections accept clipboard uploads. The Windows
-/// pipe wrapper cannot bound writes, so an upload there could indefinitely
-/// prevent cancellation and inbound processing: every reservation is refused,
-/// and callers should not offer one.
-pub const CLIPBOARD_UPLOADS: bool = !cfg!(windows);
-
 impl ClientHandle {
     /// Reserve FIFO position now, before reading an image in the background.
     /// Only one image may be preparing, queued, or writing per connection.
@@ -98,9 +92,6 @@ impl ClientHandle {
             return Err(Error::MissingBootId);
         }
         validate_clipboard_image_target(&target)?;
-        if !CLIPBOARD_UPLOADS {
-            return Err(Error::ClipboardImageUnsupported);
-        }
         let lease = Arc::new(ImageLease {
             busy: self.inner.image_busy.clone(),
             claimed: AtomicBool::new(false),

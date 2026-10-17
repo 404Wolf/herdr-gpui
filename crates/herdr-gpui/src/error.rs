@@ -78,7 +78,7 @@ pub enum Error {
     ClipboardChanged,
     #[error("Clipboard text is not valid UTF-8.")]
     ClipboardEncoding(#[source] std::str::Utf8Error),
-    #[error("Could not read the clipboard using wl-paste or xclip.")]
+    #[error("Could not read the clipboard; on Linux, install wl-paste or xclip.")]
     ClipboardProcess(#[source] io::Error),
     #[error("Clipboard content exceeds the {limit}-byte limit.")]
     ClipboardSize { limit: usize },
@@ -725,7 +725,7 @@ pub enum Error {
         source: herdr_client::Error,
     },
     #[error(
-        "No base branch to compare with: neither the pull request's base nor origin/HEAD, main, or master exists locally."
+        "No base branch to compare with: neither the pull request's base nor origin/HEAD, main, or master exists locally. Pick one with the base button above."
     )]
     ReviewNoBase,
     #[error("These changes are too large to review here, even leaving out the largest files.")]

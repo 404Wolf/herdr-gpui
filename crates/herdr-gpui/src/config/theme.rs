@@ -1,6 +1,6 @@
 //! Terminal and chrome colors: built-in palettes, Ghostty theme files, and
 //! where they are found.
-use super::{Config, config_root, home};
+use super::{Config, config_root, home, omarchy};
 use crate::{Error, Result, contrast::Contrast, error::ThemeParseError};
 use std::{
     env, fs,
@@ -106,7 +106,13 @@ impl Config {
     /// Discover names without parsing every theme. On failure, callers can use
     /// `Theme::BUILTIN_NAMES`, which remain loadable without any directories.
     pub fn available_themes(&self) -> Result<Vec<String>> {
-        self.available_themes_in(&theme_directories()?)
+        let mut names = self.available_themes_in(&theme_directories()?)?;
+        if home().is_ok_and(|home| omarchy::installed(&home)) {
+            names.push(omarchy::NAME.into());
+            names.sort_by_cached_key(|name| (name.to_lowercase(), name.clone()));
+            names.dedup();
+        }
+        Ok(names)
     }
 
     pub(super) fn available_themes_in(&self, directories: &[PathBuf]) -> Result<Vec<String>> {
@@ -199,6 +205,9 @@ pub(super) fn resolve(
     if name == FOLLOW_HERDR {
         return crate::herdr_settings::Settings::load()?.theme(light);
     }
+    if name == omarchy::NAME {
+        return omarchy::load(&home()?);
+    }
     if let Some(theme) = Theme::builtin(name) {
         return Ok(theme);
     }
@@ -212,7 +221,13 @@ impl Config {
     /// watcher can reload a theme file that changes in place. Built-ins and
     /// `Follow Herdr` read no file; a name found in no directory has none.
     pub(crate) fn theme_files(theme: &str) -> Vec<PathBuf> {
-        theme_files_in(theme, theme_directories)
+        let mut files = theme_files_in(theme, theme_directories);
+        let follows_omarchy = ThemeName::parse(theme)
+            .is_ok_and(|name| [name.get(true), name.get(false)].contains(&omarchy::NAME));
+        if follows_omarchy && let Ok(home) = home() {
+            files.extend(omarchy::files(&home));
+        }
+        files
     }
 }
 
@@ -225,7 +240,7 @@ pub(super) fn theme_files_in(
     };
     let mut files = Vec::new();
     for side in [name.get(true), name.get(false)] {
-        if side == FOLLOW_HERDR || Theme::BUILTIN_NAMES.contains(&side) {
+        if [FOLLOW_HERDR, omarchy::NAME].contains(&side) || Theme::BUILTIN_NAMES.contains(&side) {
             continue;
         }
         if let Ok(file) = theme_file(side, &directories)
@@ -284,12 +299,15 @@ pub struct Theme {
     /// Herdr's optional `sidebar_bg`, which colors only the sidebar. Unset,
     /// the sidebar stays on [`Self::surface`].
     pub sidebar: Option<u32>,
+    /// A desktop theme's own accent, as Omarchy's `colors.toml` names one.
+    /// Unset, [`Self::primary`] takes the palette's magenta.
+    pub accent: Option<u32>,
     pub palette: [u32; 256],
     /// Applied by [`Theme::with_contrast`]; every theme loads as `Standard`.
     pub contrast: Contrast,
     /// The system accent standing in for the theme's, from
     /// [`Theme::with_accent`]; every theme loads without one.
-    pub accent: Option<u32>,
+    pub system_accent: Option<u32>,
 }
 
 impl Default for Theme {
@@ -318,9 +336,10 @@ impl Default for Theme {
             active: 0x2b2933,
             muted: 0x827e91,
             sidebar: None,
+            accent: None,
             palette,
             contrast: Contrast::Standard,
-            accent: None,
+            system_accent: None,
         }
     }
 }
@@ -345,16 +364,19 @@ impl Theme {
     ];
 
     /// The theme's primary accent, used for selection colors that must read as
-    /// chosen rather than merely hovered.
+    /// chosen rather than merely hovered: the system's when asked for, else
+    /// the theme's own, else its palette's magenta.
     pub fn primary(&self) -> u32 {
-        self.accent.unwrap_or(self.palette[5])
+        self.system_accent
+            .or(self.accent)
+            .unwrap_or(self.palette[5])
     }
 
-    /// Uses `accent`, when there is one, as [`Self::primary`]. Terminal
-    /// colors, including the palette slot the theme's accent comes from,
-    /// stay as the theme drew them.
+    /// Uses the system's `accent`, when there is one, as [`Self::primary`].
+    /// Terminal colors, including the palette slot the theme's accent comes
+    /// from, stay as the theme drew them.
     pub fn with_accent(mut self, accent: Option<u32>) -> Self {
-        self.accent = accent;
+        self.system_accent = accent;
         self
     }
 
