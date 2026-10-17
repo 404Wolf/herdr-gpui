@@ -400,10 +400,13 @@ pub(crate) fn run_connection(
             .as_ref()
             .and_then(|c| Some((c.image.as_ref()?, !c.bytes.is_empty())));
         let partial_image = image.is_some_and(|(image, _)| image.writer.offset > 0);
-        // A published image waits for room in the socket, unless an inbound
-        // frame fences it; one still being prepared is woken on publication.
-        let writable = image.is_some_and(|(_, published)| published)
-            && (reader.started.is_none() || partial_image);
+        // An inbound frame fences an image not yet begun: until the frame ends,
+        // the batch can neither write it nor expire it, so neither its socket
+        // room nor its deadline may end the wait.
+        let image = image.filter(|_| reader.started.is_none() || partial_image);
+        // A published image waits for room in the socket; one still being
+        // prepared is woken on publication.
+        let writable = image.is_some_and(|(_, published)| published);
         // Commands left behind by the batch bound must not wait, nor a liveness
         // request a partial image deferred; anything else fenced by a request,
         // an image, or a partial frame waits for what unfences it.

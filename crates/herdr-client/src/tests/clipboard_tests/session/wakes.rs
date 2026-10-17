@@ -172,3 +172,72 @@ fn a_stalled_image_sleeps_past_the_health_deadline_it_defers() {
     client.handle.disconnect();
     worker.join().unwrap().unwrap();
 }
+
+#[test]
+fn a_reservation_expiring_behind_an_inbound_frame_waits_for_the_frame() {
+    use crate::{
+        clipboard::{ImageLease, ImageSlot},
+        handle::Command,
+    };
+    let expires_in = Duration::from_millis(500);
+    // A reservation made `COMMAND_TIMEOUT - expires_in` ago, without
+    // subtracting from an `Instant` that may be younger than that.
+    let Some(reserved_at) = Instant::now().checked_sub(COMMAND_TIMEOUT - expires_in) else {
+        return;
+    };
+    let (client, mut server, worker, waits) = ready_idle();
+    let lease = Arc::new(ImageLease {
+        busy: client.handle.inner.image_busy.clone(),
+        claimed: AtomicBool::new(false),
+        cancelled: Arc::new(AtomicBool::new(false)),
+        finished: Arc::new(AtomicBool::new(false)),
+        reserved_at,
+        waker: client.handle.inner.commands.waker(),
+    });
+    let (_sender, receiver) = bounded::<Vec<u8>>(1);
+    let idle = idle_after(&waits, 0);
+    client
+        .handle
+        .inner
+        .commands
+        .try_send(Command {
+            boot_id: "boot-v1".into(),
+            bytes: Vec::new(),
+            request: None,
+            image: Some(ImageSlot {
+                receiver,
+                lease,
+                writer: Default::default(),
+            }),
+        })
+        .unwrap_or_else(|_| panic!("empty queue"));
+    // The worker holds the unpublished slot, then starts an inbound frame
+    // that fences it before it expires.
+    let idle = idle_after(&waits, idle);
+    let bytes = encode_message(
+        &ServerMessage::PaneSurface(baseline()),
+        MAX_GRAPHICS_FRAME_SIZE,
+    )
+    .unwrap();
+    server.write_all(&bytes[..6]).unwrap();
+    idle_after(&waits, idle);
+    thread::sleep(expires_in * 2);
+    let before = waits.load(std::sync::atomic::Ordering::Acquire);
+    thread::sleep(expires_in);
+    let passes = waits.load(std::sync::atomic::Ordering::Acquire) - before;
+    // The expiry cannot run behind the frame, so its deadline must not keep
+    // ending the wait.
+    assert!(passes <= 2, "{passes} wait entries and exits");
+    // Once the frame ends, the slot expires.
+    server.write_all(&bytes[6..]).unwrap();
+    assert!(matches!(event(&client), ClientEvent::Surface(_)));
+    assert!(matches!(
+        event(&client),
+        ClientEvent::CommandRejected {
+            reason: Error::ClipboardImagePreparationTimeout,
+            ..
+        }
+    ));
+    client.handle.disconnect();
+    worker.join().unwrap().unwrap();
+}
