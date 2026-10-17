@@ -117,3 +117,5 @@ fn a_new_window_joins_the_callers_own_session(cx: &mut gpui::TestAppContext) {
         assert_eq!(code(&refused), Some(ErrorCode::NotFound));
     });
 }
+
+mod ui_panel;

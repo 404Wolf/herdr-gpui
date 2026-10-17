@@ -2,6 +2,7 @@ use super::*;
 use anyhow::Context as _;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+mod activity_bar;
 mod backdrop;
 mod bitmap_fonts;
 mod bold_color;

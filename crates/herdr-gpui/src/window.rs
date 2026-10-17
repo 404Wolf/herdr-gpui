@@ -101,6 +101,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) _worktree_notes: Subscription,
     pub(crate) activation_deadline: Option<std::time::Instant>,
     pub(crate) active: bool,
+    /// The activity bar's panel and filter.
+    pub(crate) activity: sidebar::Activity,
     pub(crate) agent_sort: preferences::AgentSort,
     /// Whether the user chose the sort with the panel toggle, now or in a
     /// stored session. Until then the daemon's `ui.agent_panel_sort` decides,
@@ -438,6 +440,7 @@ impl HerdrWindow {
     /// Stored chrome yields to anything changed before it arrived. A stored
     /// sort is a past toggle, so it overrides the daemon's from then on.
     pub(crate) fn apply_stored_chrome(&mut self, chrome: preferences::Chrome) {
+        self.activity.restore(chrome.activity_panel);
         if !self.sidebar_modified {
             self.sidebar_width = chrome.sidebar_width;
         }

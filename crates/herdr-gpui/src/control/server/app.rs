@@ -241,6 +241,16 @@ pub(super) fn ui(call: Call<UiOp>, cx: &mut App) -> Response {
                 "Sidebar hidden"
             })
         }
+        UiOp::Panel { panel } => {
+            if !view.activity_bar_shown() {
+                return Response::error(
+                    ErrorCode::Unsupported,
+                    "The activity bar is off: [sidebar] activity_bar = false",
+                );
+            }
+            view.show_activity_panel(panel, cx);
+            Response::done(format!("Showing {}", panel.name()))
+        }
         UiOp::StatusBar { switch } => {
             let visible = switch.apply(view.status_bar_visible);
             if visible != view.status_bar_visible {

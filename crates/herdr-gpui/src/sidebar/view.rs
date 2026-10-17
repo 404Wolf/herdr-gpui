@@ -59,6 +59,9 @@ impl Render for SidebarView {
                 SidebarMode::Rail => view
                     .render_rail(self.indicators, window, cx)
                     .into_any_element(),
+                _ if view.activity_bar_shown() => view
+                    .render_activity(self.indicators, window, cx)
+                    .into_any_element(),
                 _ => view
                     .render_sidebar(self.indicators, window, cx)
                     .into_any_element(),

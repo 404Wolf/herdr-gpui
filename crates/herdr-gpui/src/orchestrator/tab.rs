@@ -272,6 +272,10 @@ impl HerdrWindow {
         }
         self.forget_closed_orchestrator_windows(cx);
         let views = self.orchestrator_views();
+        // The sidebar's panels list what the views polled last tick.
+        if self.activity.observe_sources(&views, cx) {
+            cx.notify();
+        }
         if views.is_empty() {
             self.orchestrator_sampling = false;
             return;

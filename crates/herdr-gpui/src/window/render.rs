@@ -78,8 +78,7 @@ impl Render for HerdrWindow {
         // Registers the window for surface-only redraws; see `redraw_terminal`.
         self.surface_signal.read(cx);
         let sidebar = self
-            .sidebar_mode()
-            .width(self.sidebar_width, f32::from(window.viewport_size().width))
+            .sidebar_column_width(f32::from(window.viewport_size().width))
             .map(|width| {
                 (
                     crate::sidebar::cached_view(&self.sidebar_view, width),

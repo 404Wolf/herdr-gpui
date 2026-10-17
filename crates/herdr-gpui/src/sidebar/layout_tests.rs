@@ -496,6 +496,12 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
                 mode: crate::config::LayoutMode::from(crate::config::Density::Comfortable),
                 ..Default::default()
             },
+            // The plain sidebar, at the window's edge; the activity bar's
+            // tests turn the bar on.
+            sidebar_style: crate::config::SidebarStyle {
+                activity_bar: false,
+                ..Default::default()
+            },
             ..Default::default()
         },
         theme: Default::default(),
@@ -567,6 +573,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         last_input: None,
         last_pointer: None,
         active: false,
+        activity: crate::sidebar::Activity::new(cx),
         sent_focus: None,
         bounds: Bounds::default(),
         title: crate::WINDOW_TITLE.to_owned(),

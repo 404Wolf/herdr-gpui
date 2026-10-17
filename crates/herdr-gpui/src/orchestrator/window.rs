@@ -127,7 +127,7 @@ impl HerdrWindow {
     }
 
     /// Every hosted view, in a tab or a window.
-    pub(super) fn orchestrator_views(&self) -> Vec<(TabId, Entity<OrchestratorView>)> {
+    pub(crate) fn orchestrator_views(&self) -> Vec<(TabId, Entity<OrchestratorView>)> {
         self.orchestrators
             .iter()
             .map(|(id, orchestrator)| (*id, orchestrator.view.clone()))
@@ -137,5 +137,35 @@ impl HerdrWindow {
                     .map(|(id, detached)| (*id, detached.orchestrator.view.clone())),
             )
             .collect()
+    }
+
+    /// Shows orchestrator tab `id`'s view where it is hosted: its window
+    /// brought forward, or its tab in its workspace, which is switched to
+    /// when it is on the shown device. `None` once the tab closed.
+    pub(crate) fn show_orchestrator_tab(
+        &mut self,
+        id: TabId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<Entity<OrchestratorView>> {
+        if let Some(detached) = self.detached_orchestrators.get(&id) {
+            let view = detached.orchestrator.view.clone();
+            let _ = detached
+                .window
+                .update(cx, |_, window, _| window.activate_window());
+            return Some(view);
+        }
+        let view = self.orchestrators.get(&id)?.view.clone();
+        let tab = cx.try_global::<Store>()?.get(id)?.clone();
+        self.show_browser_tab(id, window, cx);
+        if self
+            .browser_key()
+            .is_some_and(|(scope, focused)| scope == tab.scope && focused != tab.workspace_id)
+        {
+            self.navigate(crate::NavigationTarget::Workspace(&tab.workspace_id), cx);
+        }
+        let focus = view.read(cx).focus_handle().clone();
+        window.focus(&focus, cx);
+        Some(view)
     }
 }

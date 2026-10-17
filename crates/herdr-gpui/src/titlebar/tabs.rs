@@ -54,8 +54,7 @@ impl HerdrWindow {
     /// Keep the toggle anchored in the sidebar whenever it fits. The rail has
     /// room on Linux/Windows, but not beside macOS's traffic-light clearance.
     fn sidebar_header_has_toggle(&self, window: &Window) -> bool {
-        self.sidebar_mode()
-            .width(self.sidebar_width, f32::from(window.viewport_size().width))
+        self.sidebar_column_width(f32::from(window.viewport_size().width))
             .is_some_and(|width| width >= LEADING + SIDEBAR_TOGGLE_SIZE)
     }
 
@@ -64,8 +63,8 @@ impl HerdrWindow {
     /// that hands them to the leftmost strip instead.
     fn navigation_in_sidebar(&self, window: &Window) -> bool {
         let mode = self.sidebar_mode();
-        let column = mode
-            .width(self.sidebar_width, f32::from(window.viewport_size().width))
+        let column = self
+            .sidebar_column_width(f32::from(window.viewport_size().width))
             .unwrap_or(0.);
         mode == SidebarMode::Expanded
             && column >= LEADING + SIDEBAR_TOGGLE_SIZE + Style::NATIVE.width() + SIDEBAR_END
@@ -102,8 +101,7 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) -> Div {
         let width = self
-            .sidebar_mode()
-            .width(self.sidebar_width, f32::from(window.viewport_size().width))
+            .sidebar_column_width(f32::from(window.viewport_size().width))
             .unwrap_or(0.);
         div()
             .flex()
@@ -146,7 +144,6 @@ impl HerdrWindow {
             .min_w_0()
             .overflow_hidden()
             .items_center();
-        let mode = self.sidebar_mode();
         // Keep the toggle in the rail or expanded sidebar when it fits;
         // Back and Forward alone lead the content beside it.
         if self.sidebar_header_has_toggle(window) {
@@ -158,8 +155,8 @@ impl HerdrWindow {
                     .child(self.strip_navigation(cx)),
             );
         }
-        let column = mode
-            .width(self.sidebar_width, f32::from(window.viewport_size().width))
+        let column = self
+            .sidebar_column_width(f32::from(window.viewport_size().width))
             .unwrap_or(0.);
         Some(
             leading

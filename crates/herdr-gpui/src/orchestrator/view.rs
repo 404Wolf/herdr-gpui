@@ -554,6 +554,44 @@ impl OrchestratorView {
             .find(|item| item.key.canonical() == key)
     }
 
+    /// What the list shows, for the sidebar's panels.
+    pub(crate) fn items(&self) -> &Arc<Vec<Item>> {
+        &self.snapshot.items
+    }
+
+    /// The runs the list shows, those found from branches included.
+    pub(crate) fn runs(&self) -> &Arc<Vec<super::Run>> {
+        &self.snapshot.runs
+    }
+
+    /// Opens item `key` on its tab, as clicking its row would.
+    pub(crate) fn reveal_item(&mut self, key: String, cx: &mut Context<Self>) {
+        let Some(item) = self.item(&key) else {
+            return;
+        };
+        let tab = if item.pull_request.is_some() {
+            Tab::PullRequests
+        } else {
+            Tab::Issues
+        };
+        self.reveal(tab, key, cx);
+    }
+
+    /// Opens run `id` on the Runs tab, as clicking its row would.
+    pub(crate) fn reveal_run(&mut self, id: String, cx: &mut Context<Self>) {
+        self.reveal(Tab::Runs, id, cx);
+    }
+
+    fn reveal(&mut self, tab: Tab, key: String, cx: &mut Context<Self>) {
+        if self.tab != tab {
+            self.select_tab(tab, cx);
+        }
+        self.selected = Some(key.clone());
+        let line = self.line_of(&key);
+        self.scroll.scroll_to_item(line, ScrollStrategy::Center);
+        self.open_detail(key, cx);
+    }
+
     fn select_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {
         self.tab = tab;
         self.selected = None;

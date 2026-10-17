@@ -80,9 +80,19 @@ pub enum FontSize {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum UiOp {
-    Sidebar { switch: Switch },
-    StatusBar { switch: Switch },
-    FontSize { size: FontSize },
+    Sidebar {
+        switch: Switch,
+    },
+    StatusBar {
+        switch: Switch,
+    },
+    FontSize {
+        size: FontSize,
+    },
+    /// Shows an activity bar panel, expanding the sidebar for it.
+    Panel {
+        panel: crate::sidebar::ActivityPanel,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
