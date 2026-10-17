@@ -12,6 +12,7 @@ use std::{
     io,
     os::windows::io::{AsRawHandle as _, BorrowedHandle, FromRawHandle as _, OwnedHandle},
     ptr,
+    sync::OnceLock,
 };
 use windows_sys::Win32::{
     Foundation::{HANDLE, HLOCAL, LocalFree},
@@ -58,8 +59,18 @@ unsafe fn sid_string(sid: PSID) -> io::Result<String> {
     String::from_utf16(units).map_err(|_| io::ErrorKind::InvalidData.into())
 }
 
-/// The SID of the user this process runs as.
+/// The SID of the user this process runs as. A process token's user never
+/// changes, so it is read once and kept.
 pub(in crate::control::socket) fn user_sid() -> io::Result<String> {
+    static SID: OnceLock<String> = OnceLock::new();
+    if let Some(sid) = SID.get() {
+        return Ok(sid.clone());
+    }
+    let sid = read_user_sid()?;
+    Ok(SID.get_or_init(|| sid).clone())
+}
+
+fn read_user_sid() -> io::Result<String> {
     let mut raw: HANDLE = ptr::null_mut();
     // SAFETY: the current-process pseudo handle needs no closing, and `raw`
     // is a live out pointer.

@@ -97,16 +97,19 @@ fn plain(value: &str, limit: usize) -> bool {
         && value.chars().all(|c| !c.is_control() && !c.is_whitespace())
 }
 
+/// A daemon socket path: compared and echoed like an identifier, but it may
+/// hold spaces, as a Windows profile such as `C:\Users\Jane Doe` does.
+fn plain_path(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 4096 && !value.chars().any(char::is_control)
+}
+
 fn valid_caller(caller: &Caller) -> bool {
     caller
         .workspace_id
         .as_deref()
         .is_none_or(|id| plain(id, 256))
         && caller.pane_id.as_deref().is_none_or(|id| plain(id, 256))
-        && caller
-            .daemon_socket
-            .as_deref()
-            .is_none_or(|path| plain(path, 4096))
+        && caller.daemon_socket.as_deref().is_none_or(plain_path)
 }
 
 fn main_windows(cx: &App) -> Vec<gpui::WindowHandle<HerdrWindow>> {
@@ -134,5 +137,17 @@ mod tests {
             assert!(!plain(invalid, 256), "{invalid:?}");
         }
         assert!(!plain(&"w".repeat(257), 256));
+    }
+
+    #[test]
+    fn daemon_paths_may_hold_spaces_but_not_control_characters() {
+        assert!(plain_path(
+            r"C:\Users\Jane Doe\AppData\Roaming\herdr\herdr-client.sock"
+        ));
+        assert!(plain_path("/home/jane/.config/herdr/herdr.sock"));
+        for invalid in ["", "/tmp/a\nb.sock", "/tmp/\u{1b}[2J"] {
+            assert!(!plain_path(invalid), "{invalid:?}");
+        }
+        assert!(!plain_path(&"a".repeat(4097)));
     }
 }
