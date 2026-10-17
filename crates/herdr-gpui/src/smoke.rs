@@ -289,7 +289,10 @@ pub fn start(handle: WindowHandle<HerdrWindow>, cx: &mut App) {
                     bail!(diagnostic());
                 }
                 if since.elapsed() > Duration::from_secs(20) {
-                    bail!("timeout: {}", diagnostic());
+                    // What the pane showed, so a CI timeout says what the
+                    // terminal did with the input.
+                    let screen = live.surface.as_ref().map(|s| screen_text(&s.frame)).unwrap_or_default();
+                    bail!("timeout: {}; screen:\n{screen}", diagnostic());
                 }
                 if !focused || !actions_ready { return Ok(false); }
                 let (Some(snapshot), Some(surface)) = (&live.snapshot, &live.surface) else { return Ok(false) };
@@ -719,6 +722,26 @@ fn has_output(frame: &FrameData, marker: &str) -> bool {
                 .trim()
                 == marker
         })
+}
+
+/// The frame's non-blank rows, bounded for a failure message.
+fn screen_text(frame: &FrameData) -> String {
+    if frame.width == 0 {
+        return String::new();
+    }
+    frame
+        .cells
+        .chunks(usize::from(frame.width))
+        .map(|row| {
+            row.iter()
+                .map(|cell| cell.symbol.as_str())
+                .collect::<String>()
+        })
+        .filter(|row| !row.trim().is_empty())
+        .map(|row| row.trim_end().chars().take(160).collect::<String>())
+        .take(40)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Whether the cursor sits after a shell prompt: the sandbox's `LIVE> ` for
