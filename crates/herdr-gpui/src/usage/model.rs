@@ -16,8 +16,9 @@ use std::{
 pub(crate) enum Host {
     Local,
     Ssh(String),
-    /// A WSL distribution. Nothing is read from one yet: its files are not this
-    /// machine's, and no shell is opened into it for these probes.
+    /// A WSL distribution. Its CPU and memory are sampled through a `wsl.exe`
+    /// shell; plan usage is not read from it yet, since its files are not this
+    /// machine's.
     Wsl(String),
 }
 

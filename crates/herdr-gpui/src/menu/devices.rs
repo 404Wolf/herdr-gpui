@@ -631,7 +631,7 @@ impl HerdrWindow {
         cx.notify();
     }
 
-    /// Opens Settings > Cloud Devices on `provider`'s tab.
+    /// Opens Settings > Cloud devices on `provider`'s tab.
     #[cfg(feature = "cloud")]
     pub(super) fn open_provider_settings(
         &mut self,

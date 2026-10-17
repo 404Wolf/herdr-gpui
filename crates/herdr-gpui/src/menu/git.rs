@@ -247,13 +247,7 @@ impl HerdrWindow {
     }
 
     fn start_git(&mut self, action: Action) {
-        let token = self
-            .menu
-            .github
-            .profile
-            .as_ref()
-            .map(|profile| profile.token.clone());
-        if let Err(error) = self.git.start(action, token) {
+        if let Err(error) = self.git.start(action, self.main_tokens()) {
             self.menu.error = Some(error.to_string());
         } else {
             self.menu.error = None;

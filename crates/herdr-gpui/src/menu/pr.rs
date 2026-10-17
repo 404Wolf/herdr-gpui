@@ -75,16 +75,18 @@ impl HerdrWindow {
             self.menu.pr_cache.suspend();
             self.menu.pr_cache_connection = Some(Arc::downgrade(&endpoint.connection.inbox));
         }
-        if let (Some(snapshot), Some(profile), Some(origin)) =
-            (&self.live.snapshot, self.pr_profile(), self.pr_origin())
+        if let (Some(snapshot), Some(tokens), Some(origin)) =
+            (&self.live.snapshot, self.pr_tokens(), self.pr_origin())
         {
             let scope = (
                 self.selection_epoch,
                 self.endpoints[self.selected_endpoint].generation,
                 snapshot.boot_id.clone(),
             );
-            let (token, login) = (profile.token.clone(), profile.login.clone());
-            self.menu.pr_cache.scope(scope, token, &login, origin);
+            // Answers belong to the whole account set: adding or signing in
+            // an account may change which one reads a repository.
+            let key = tokens.key();
+            self.menu.pr_cache.scope(scope, tokens, &key, origin);
         }
     }
 

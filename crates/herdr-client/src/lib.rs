@@ -60,7 +60,7 @@ pub use error::Error as SendError;
 pub use error::{Error, Result, StorageOperation};
 pub use event::ClientEvent;
 pub use forward::{ForwardEvent, PortForward, preferred_local_port};
-pub use handle::{Client, ClientHandle};
+pub use handle::{CLIPBOARD_UPLOADS, Client, ClientHandle};
 pub use host_theme::HostTheme;
 pub use local_network::{LocalNetworkAccess, local_network_access, wait_for_local_network};
 pub use method::Method;
@@ -89,4 +89,5 @@ pub use upload::{remove_uploaded_files, upload_files};
 pub use wsl::{
     WslHost, WslHosts, add_wsl_host, delete_distro_session, list_distro_sessions, list_distros,
     load_wsl_hosts, probe_distro, remove_wsl_host, store_wsl_selection, valid_distro,
+    wsl_shell_command,
 };

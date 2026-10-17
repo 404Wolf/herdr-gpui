@@ -191,7 +191,13 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) {
         self.shift_taps.cancel();
-        if self.menu.page.is_some() || !self.input_ready() {
+        if self.menu.page.is_some() {
+            return;
+        }
+        // A wheel over the panes is use even before the frame is ready, so the
+        // window takes back a frame another client sized.
+        self.note_input();
+        if !self.input_ready() {
             return;
         }
         let (Some(handle), Some(snapshot), Some(surface)) = (
@@ -364,7 +370,7 @@ impl HerdrWindow {
             && !event.keystroke.modifiers.alt
             && !event.keystroke.modifiers.shift
             // Local agents read the shared clipboard themselves on Ctrl-V.
-            && self.accepts_remote_images()
+            && self.bridges_clipboard_images()
         {
             self.paste_native_clipboard(true, key_input(event, alt_keys), cx);
             cx.stop_propagation();

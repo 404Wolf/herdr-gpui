@@ -107,6 +107,14 @@ impl HerdrWindow {
         self.selected_is_remote() && self.accepts_image_input()
     }
 
+    /// Whether clipboard content for a remote pane becomes an upload: Ctrl-V
+    /// reading an image, or a pasted image path. Where the client refuses
+    /// uploads (Windows), Ctrl-V stays a key and the text is pasted, as when
+    /// the clipboard holds no image.
+    pub(crate) fn bridges_clipboard_images(&self) -> bool {
+        herdr_client::CLIPBOARD_UPLOADS && self.accepts_remote_images()
+    }
+
     pub(crate) fn selected_is_remote(&self) -> bool {
         self.endpoints[self.selected_endpoint]
             .connection
@@ -187,7 +195,13 @@ impl HerdrWindow {
         image_only: bool,
         cx: &mut Context<Self>,
     ) -> bool {
-        if self.menu.page.is_some() || !self.input_ready() || self.mouse_focus_pending() {
+        if self.menu.page.is_some() {
+            return false;
+        }
+        // A paste is use even before the frame is ready, so the window takes
+        // back a frame another client sized; its contents wait for that frame.
+        self.note_input();
+        if !self.input_ready() || self.mouse_focus_pending() {
             return false;
         }
         // Files copied in a file manager carry their names as text too; paste
@@ -201,7 +215,7 @@ impl HerdrWindow {
             return true;
         }
         if !image_only && let Some(text) = item.text().filter(|text| !text.is_empty()) {
-            if self.accepts_remote_images()
+            if self.bridges_clipboard_images()
                 && let Some(source) = image_source::from_paste(&text)
                 && let Some(target) = self.focused_input_target()
             {

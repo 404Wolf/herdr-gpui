@@ -93,15 +93,14 @@ fn source_chips_preserve_search_identity_and_draft_without_writing(cx: &mut Test
             view.theme_revision,
         )
     });
-    // Each click is an independent toggle, including the all-disabled state.
+    // Each click picks one library; the grid never ends up with neither.
     for (id, ghostty, herdr, selected) in [
-        ("theme-scope-herdr", true, false, Some(Scope::App)),
-        ("theme-scope-herdr", true, true, Some(Scope::App)),
-        ("theme-scope-app", false, true, Some(Scope::Herdr)),
-        ("theme-scope-app", true, true, Some(Scope::Herdr)),
-        ("theme-scope-herdr", true, false, Some(Scope::App)),
-        ("theme-scope-app", false, false, None),
-        ("theme-scope-herdr", false, true, Some(Scope::Herdr)),
+        ("theme-source-control-1", true, false, Some(Scope::App)),
+        ("theme-source-control-0", true, true, Some(Scope::App)),
+        ("theme-source-control-2", false, true, Some(Scope::Herdr)),
+        ("theme-source-control-0", true, true, Some(Scope::Herdr)),
+        ("theme-source-control-1", true, false, Some(Scope::App)),
+        ("theme-source-control-2", false, true, Some(Scope::Herdr)),
     ] {
         cx.update(|window, cx| window.draw(cx).clear(cx));
         let bounds = cx.debug_bounds(id).unwrap();
@@ -118,15 +117,8 @@ fn source_chips_preserve_search_identity_and_draft_without_writing(cx: &mut Test
             assert_eq!(view.theme, theme);
             assert_eq!(view.config.theme, config_theme);
             assert!(!view.saving && !view.theme_saving);
-            if selected.is_none() {
-                assert!(view.themes.filtered.is_empty());
-            }
         });
-        assert!(cx.debug_bounds("theme-scope-app").is_some());
-        assert!(cx.debug_bounds("theme-scope-herdr").is_some());
-        if selected.is_none() {
-            assert!(cx.debug_bounds("settings-theme-empty").is_some());
-        }
+        assert!(cx.debug_bounds("theme-source-control-0").is_some());
     }
 }
 
@@ -160,7 +152,7 @@ fn combined_cards_save_only_on_close_to_their_own_destination(cx: &mut TestAppCo
                     return;
                 }
                 assert_eq!(view.theme_intent.as_ref().unwrap().choice.scope, scope);
-                view.toggle_theme_source(scope, cx);
+                view.set_theme_sources(scope != Scope::App, scope != Scope::Herdr, cx);
                 assert!(writes.lock().unwrap().is_empty());
                 assert!(!view.should_close(window, cx));
             });
@@ -337,32 +329,41 @@ fn worker_loads_only_latest_search_preview_without_applying_it(cx: &mut TestAppC
 }
 
 #[gpui::test]
-fn normal_window_keeps_preview_search_list_and_actions_visible(cx: &mut TestAppContext) {
-    let (_, cx) = cx.add_window_view(fixture);
+fn normal_window_stacks_rows_search_and_grid_without_a_mock_preview(cx: &mut TestAppContext) {
+    let (view, cx) = cx.add_window_view(fixture);
     cx.simulate_resize(size(px(960.), px(780.)));
     cx.update(|window, cx| window.draw(cx).clear(cx));
-    let preview = cx.debug_bounds("settings-theme-preview").unwrap();
-    let search = cx.debug_bounds("settings-theme-search").unwrap();
-    let list = cx.debug_bounds("settings-theme-list").unwrap();
-    let actions = cx.debug_bounds("settings-theme-actions").unwrap();
-    assert_eq!(preview.size.height, px(225.));
-    assert_eq!(search.size.height, px(32.));
-    assert_eq!(list.size.height, px(LIST_HEIGHT));
-    assert!(preview.bottom() <= search.top());
-    assert!(search.bottom() <= list.top());
-    assert!(list.bottom() <= actions.top());
-    assert!(actions.bottom() <= px(780.), "actions: {actions:?}");
+    assert!(cx.debug_bounds("settings-theme-preview").is_none());
+    assert!(cx.debug_bounds("settings-theme-preview-status").is_none());
+    let mode = cx.debug_bounds("theme-mode").unwrap();
     let follow = cx.debug_bounds("theme-follow").unwrap();
     let contrast = cx.debug_bounds("theme-contrast").unwrap();
-    assert_eq!(
-        follow.center().y,
-        contrast.center().y,
-        "actions share a midline"
-    );
-    assert!(
-        follow.size.height < contrast.size.height,
-        "the button keeps its own height"
-    );
+    let source = cx.debug_bounds("theme-source").unwrap();
+    let search = cx.debug_bounds("settings-theme-search").unwrap();
+    let count = cx.debug_bounds("settings-theme-count").unwrap();
+    let list = cx.debug_bounds("settings-theme-list").unwrap();
+    assert_eq!(search.size.height, px(32.));
+    assert!(mode.bottom() <= follow.top());
+    assert!(follow.bottom() <= contrast.top());
+    assert!(contrast.bottom() <= source.top());
+    assert!(source.bottom() <= search.top());
+    assert!(search.bottom() <= count.top());
+    assert!(count.bottom() <= list.top());
+    assert!(list.size.height >= px(240.), "list: {list:?}");
+    for id in ["theme-follow-toggle", "theme-contrast-toggle"] {
+        assert!(cx.debug_bounds(id).is_some(), "{id}");
+    }
+    view.update(cx, |view, cx| {
+        view.themes.query = "zzz no match".into();
+        view.themes.filter(None);
+        cx.notify();
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds("settings-theme-empty").is_some());
+    view.update(cx, |view, cx| view.set_theme_sources(false, false, cx));
+    view.read_with(cx, |view, _| {
+        assert!(view.themes.ghostty_enabled && view.themes.herdr_enabled);
+    });
 }
 
 #[gpui::test]
@@ -376,6 +377,7 @@ fn list_materializes_only_visible_rows_and_scrolls_to_last(cx: &mut TestAppConte
     cx.update(|window, cx| window.draw(cx).clear(cx));
     assert!(cx.debug_bounds("settings-theme-row-399").is_some());
     assert!(cx.debug_bounds("settings-theme-row-0").is_none());
+    let list_height = f32::from(cx.debug_bounds("settings-theme-list").unwrap().size.height);
     let visible = (0..400)
         .filter(|index| {
             cx.debug_bounds(Box::leak(
@@ -385,7 +387,7 @@ fn list_materializes_only_visible_rows_and_scrolls_to_last(cx: &mut TestAppConte
         })
         .count();
     assert!(
-        visible <= ((LIST_HEIGHT / ROW_HEIGHT).ceil() as usize + 2) * 4,
+        visible <= ((list_height / ROW_HEIGHT).ceil() as usize + 2) * 4,
         "{visible} materialized rows"
     );
     cx.simulate_resize(size(px(680.), px(1000.)));

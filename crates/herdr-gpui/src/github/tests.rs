@@ -22,6 +22,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod additional;
 mod aliases;
 mod device_auth;
 mod github_cli;
