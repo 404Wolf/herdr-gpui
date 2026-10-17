@@ -94,19 +94,18 @@ impl Avatars {
 }
 
 fn repo_owner(cwd: &str) -> Option<String> {
-    let output = herdr_client::new_command("git")
-        .args(["-C", cwd, "config", "--get", "remote.origin.url"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
+    for key in ["remote.upstream.url", "remote.origin.url"] {
+        if let Ok(output) = herdr_client::new_command("git")
+            .args(["-C", cwd, "config", "--default", "", "--get", key])
+            .output()
+            && output.status.success()
+            && let Ok(text) = std::str::from_utf8(&output.stdout)
+            && let Some(owner) = github_owner(text.trim_end_matches(['\r', '\n']))
+        {
+            return Some(owner);
+        }
     }
-    // Git resolves both normal repositories and linked worktrees for us.
-    github_owner(
-        std::str::from_utf8(&output.stdout)
-            .ok()?
-            .trim_end_matches(['\r', '\n']),
-    )
+    None
 }
 
 fn github_owner(remote: &str) -> Option<String> {

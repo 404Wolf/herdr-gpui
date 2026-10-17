@@ -7,6 +7,7 @@ mod fetch;
 mod lookup;
 mod model;
 mod parse;
+mod remote;
 mod store;
 
 #[cfg(test)]
@@ -14,12 +15,13 @@ mod tests;
 
 pub(crate) use {
     cache::Cache,
-    fetch::{local_checkout, origin_repository, run, run_bytes},
+    fetch::{local_checkout, run, run_bytes},
     lookup::Lookup,
     model::{
         Input, MergeMethod, Origin, Outcome, PullRequest, ReviewDecision, State, clean,
         repository_input, workspace_input,
     },
+    remote::{Base, Remote, base_repository},
     store::Shared,
 };
 
