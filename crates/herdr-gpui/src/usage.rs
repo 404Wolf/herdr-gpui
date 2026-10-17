@@ -482,7 +482,8 @@ fn read(
     let mut exec = match host {
         Host::Local => Exec::Local,
         Host::Ssh(target) => Exec::Remote(Shell::connect(target)?),
-        Host::Wsl(_) => return Err(crate::Error::WslHostUnsupported),
+        // A distribution is read as a Linux host, its sign-ins its own.
+        Host::Wsl(distro) => Exec::Remote(Shell::connect_wsl(distro)?),
     };
     for provider in registry::all() {
         if config.hidden(provider) {

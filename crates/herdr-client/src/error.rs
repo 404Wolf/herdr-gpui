@@ -204,6 +204,14 @@ pub enum Error {
     WslHostExists,
     #[error("this WSL distribution is not a saved device")]
     WslHostMissing,
+    #[error("a WSL distribution takes at most 256 dropped paths at once")]
+    WslPathLimit,
+    #[error("{} is not an absolute Windows path a WSL distribution can map", .0.display())]
+    WslPathInvalid(PathBuf),
+    #[error("{} is not reachable from this WSL distribution; only its own files and mounted drives are", .0.display())]
+    WslPathUnmapped(PathBuf),
+    #[error("invalid answer from wslpath")]
+    WslPathResponse,
     #[error("remote Git directory must be an absolute path")]
     InvalidGitDir,
     #[error("remote command failed ({0})")]
@@ -355,7 +363,10 @@ impl Error {
             | Self::DefaultSession
             | Self::NoLocalSocket
             | Self::InvalidSshTarget
-            | Self::InvalidWslDistro => io::ErrorKind::InvalidInput,
+            | Self::InvalidWslDistro
+            | Self::WslPathLimit
+            | Self::WslPathInvalid(_) => io::ErrorKind::InvalidInput,
+            Self::WslPathUnmapped(_) => io::ErrorKind::NotFound,
             Self::SshUnsupported | Self::WslUnsupported => io::ErrorKind::Unsupported,
             Self::ClipboardImageCancelled => io::ErrorKind::Interrupted,
             Self::ClipboardImageWriteTimeout | Self::ClipboardImagePreparationTimeout => {

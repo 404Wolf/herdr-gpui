@@ -946,8 +946,9 @@ every pane, so system services and servers started outside Herdr never show,
 and its `HERDR_SOCKET_PATH` names the same daemon, so two sessions on one
 machine never claim each other's servers.
 Every five seconds each host runs `ss -ltnp` (Linux) or `lsof -iTCP
--sTCP:LISTEN` (macOS) in its own shell, this machine's locally and a connected
-remote host's over SSH, listing only your own processes. A remote server
+-sTCP:LISTEN` (macOS) in its own shell, this machine's locally, a connected
+remote host's over SSH, and a WSL distribution's through `wsl.exe` (see
+[WSL distributions](#wsl-distributions)), listing only your own processes. A remote server
 always opens at `http://127.0.0.1:<port>` through an SSH tunnel started on the
 first click, never at the address SSH reaches the host by (a Tailscale
 `HostName`, say): `ssh -N -L` from this machine's loopback, with the same
@@ -1561,7 +1562,9 @@ paths containing control characters are rejected rather than altered.
 
 On an SSH endpoint, a single supported image is transferred as described below.
 Other regular files and multiple-file drops are streamed using the SSH file-copy
-path below. POSIX shell escaping is not intended for Windows command shells.
+path below. A WSL distribution is given its own paths for the files instead,
+with nothing copied; see [WSL distributions](#wsl-distributions). POSIX shell
+escaping is not intended for Windows command shells.
 
 Files copied in the file manager (Cmd-C in Finder) and pasted into the focused
 pane or popup with Cmd-V are handled the same way as a drop. Finder also puts
@@ -2497,6 +2500,12 @@ comments on a pull request.
   uncommitted work together. The base is the pull request's base branch when
   GitHub reported one, else `origin/HEAD`, then `main` or `master`, whichever
   exists locally; nothing is fetched. The choice is remembered.
+- Click the base after "against" in a branch review to compare with another
+  branch, such as an older release branch or the feature branch this one was
+  cut from. The list holds the checkout's local and remote-tracking branches,
+  those this branch left most recently first; **Automatic** goes back to the
+  base above. The pick holds while the review tab is open, and a picked
+  branch that no longer exists falls back to the automatic base.
 - The two icons in the header draw the diff **unified**, removed lines above
   the ones that replaced them, or **side by side**, the old version on the
   left and the new on the right, each run of removed lines paired with the
@@ -3843,10 +3852,44 @@ distribution's sidebar row show them. A distribution shares the machine's
 CPUs, so its CPU figure is what its processes use, and its memory is what
 WSL has given that distribution.
 
-What else runs a shell on the host is not wired into a distribution yet and
-says so: plan usage, listening ports, agent checkpoints, teleport, file
-transfers, and port forwards. WSL already forwards a distribution's
-`localhost` ports to Windows.
+Plan usage is read through its own `wsl.exe` shell in the same way, as on an
+SSH host: the distribution's own agent sign-ins, read with its `python3` or
+`jq` and sent with its `curl`, so they never leave it.
+
+Listening ports are scanned with the distribution's own `ss` (or `lsof`)
+through another `wsl.exe` shell. WSL forwards a distribution's `localhost`
+ports to Windows, so a port opens at `http://localhost:<port>` on this machine
+with no tunnel.
+
+Agent checkpoints run Git inside the distribution, one `wsl.exe --exec
+/bin/sh -c SCRIPT` per step under the same output and idle limits as on an SSH
+host, so its checkouts are snapshotted and restored as an SSH host's are.
+Stopping a step kills its `wsl.exe`, which ends the shell it started.
+
+Files dropped onto a distribution's pane, or copied in Explorer and pasted
+there, paste as the distribution's own paths for them, as its `wslpath -u`
+maps them: `C:\Users\me\a.txt` becomes `/mnt/c/Users/me/a.txt` (or wherever
+`wsl.conf` mounts drives), and a file from inside the distribution
+(`\\wsl.localhost\NAME\home\me\a.txt`) becomes `/home/me/a.txt`. Nothing is
+copied: a distribution already reads this machine's drives, so a file of any
+size is ready at once, an image is pasted as its path rather than through the
+image bridge, and nothing is left in a temporary directory. The paths travel
+on `wsl.exe`'s standard input, at most 256 per drop. Keys typed while they
+are mapped are held and sent after the paths, so Enter cannot run a command
+ahead of them, and one drop maps at a time. The paths are not pasted if the
+pane is covered by a popup or the window moves to another device meanwhile;
+paths that arrive while the terminal waits for its next frame wait with the
+held keys and are pasted once it arrives.
+A file the distribution
+cannot reach, such as another distribution's or one on a network share, is
+named in the error and nothing is pasted.
+
+Ports need no forwarding: a distribution's device menu offers none, and
+`herdr-gpui ports forward` refuses with that reason, since WSL already forwards
+its `localhost` ports to Windows. Teleport is not offered. It runs only on
+Linux and macOS clients, which cannot reach a distribution, and a Windows
+client cannot script its own checkouts, so the only move left would be between
+two distributions on the same machine.
 
 ### Saved sign-ins and the avatar cache
 
