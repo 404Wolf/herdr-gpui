@@ -90,6 +90,21 @@ class ChangelogTests(unittest.TestCase):
         self.assertIn("- Mock entry", notes)
         self.assertIn("# Changelog", (self.out / "CHANGELOG.md").read_text())
 
+    def test_the_body_says_whether_windows_is_signed(self):
+        self.env["WINDOWS_SIGNED"] = "false"
+        self.generate()
+        notes = (self.out / "RELEASE_NOTES.md").read_text()
+        self.assertIn("unsigned Windows", notes)
+        self.assertIn("except on Windows", notes)
+        self.assertNotIn("Authenticode", notes)
+        shutil.rmtree(self.out)
+        self.out.mkdir()
+        self.env["WINDOWS_SIGNED"] = "true"
+        self.generate()
+        notes = (self.out / "RELEASE_NOTES.md").read_text()
+        self.assertIn("Authenticode-signed Windows", notes)
+        self.assertNotIn("unsigned", notes)
+
     def test_the_tag_being_cut_names_the_still_unreleased_commits(self):
         self.generate()
         changelog, notes = self.calls()

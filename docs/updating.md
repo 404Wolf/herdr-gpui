@@ -135,7 +135,8 @@ standalone archive when package metadata is absent.
 
 Windows installers use a third manifest, `windows-manifest.json` with raw
 `windows-manifest.sig`, signed with the same key. Its schema is 3, listing exactly
-the two Authenticode-signed `Herdr-VERSION-TARGET-setup.exe` installers for
+the two `Herdr-VERSION-TARGET-setup.exe` installers (Authenticode-signed once
+Windows signing is set up) for
 `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc`, one per target. Each
 family's client requires its own schema, so no manifest can answer for another.
 
@@ -221,8 +222,9 @@ size, and hash checks and never changes the legacy manifest.
    validate it. Package the **same final signed, stapled app copy** as updater
    USTAR before signing-script cleanup. The input `dist/Herdr.app` is still
    unsigned and must never be used for the updater. No ZIP is published.
-4. Download both current-run Linux artifacts and both Authenticode-signed Windows
-   installers without executing their contents. Require all three updater
+4. Download both current-run Linux artifacts and both Windows installers
+   (Authenticode-signed once Windows signing is set up) without executing their
+   contents. Require all three updater
    archives, all six Linux packages and both installers, check the PEM/public-key
    match, sign the three exact manifest JSON files, verify the three signatures,
    and require 64 raw bytes each. Upload the DMG, macOS updater archive, the three
@@ -359,8 +361,9 @@ new version is confirmed working; cleanup is manual.
 
 A Windows release build embeds the update key and, from the
 `WINDOWS_SIGNING_SUBJECT` repository variable, the exact Authenticode subject its
-installers are signed by (`HERDR_WINDOWS_SIGNER`). The release's `windows` job
-refuses to build without it; any other build without either never checks. Updates are
+installers are signed by (`HERDR_WINDOWS_SIGNER`). Until that variable is set,
+releases ship unsigned and embed no subject, so, like any other build without
+either, they never check. Updates are
 offered only to the copy installed in `%LOCALAPPDATA%\Programs\Herdr UI`, where
 both the installer and `install.ps1` put it; a copy run from anywhere else says so
 and points to the release page.

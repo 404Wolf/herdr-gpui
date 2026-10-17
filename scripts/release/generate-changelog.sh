@@ -45,10 +45,18 @@ fi
 
 git-cliff --config cliff.toml --tag "$tag" ${ignore[@]+"${ignore[@]}"} --output "$out/CHANGELOG.md"
 
+# Windows is signed, and so updates in the app, only once release.yml's
+# validate job finds the signing publisher set (WINDOWS_SIGNED=false otherwise).
+if [[ ${WINDOWS_SIGNED:-true} == false ]]; then
+    windows='experimental, unsigned Windows x86_64 and ARM64 installers and zips; installed copies update in the app, except on Windows'
+else
+    windows='experimental, Authenticode-signed Windows x86_64 and ARM64 installers and zips; installed copies update in the app'
+fi
+
 # The release body keeps the platform and daemon facts every release states,
 # then lists what actually changed since the previous tag.
 cat > "$out/RELEASE_NOTES.md" <<NOTES
-GUI-only release. macOS 14.2+ universal signed/notarized DMG; experimental x86_64 and ARM64 Linux .deb, .rpm, Arch packages and tarballs (glibc 2.39+); experimental, Authenticode-signed Windows x86_64 and ARM64 installers and zips; installed copies update in the app. Requires an existing Herdr daemon. Source: $source_sha.
+GUI-only release. macOS 14.2+ universal signed/notarized DMG; experimental x86_64 and ARM64 Linux .deb, .rpm, Arch packages and tarballs (glibc 2.39+); $windows. Requires an existing Herdr daemon. Source: $source_sha.
 
 NOTES
 if (( ${#ignore[@]} )); then
