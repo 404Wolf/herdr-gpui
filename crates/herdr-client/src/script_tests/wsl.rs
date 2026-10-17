@@ -1,7 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use super::*;
-use std::io;
 
 const LIMITS: ScriptLimits = ScriptLimits {
     output: 1 << 20,
@@ -43,8 +42,8 @@ fn a_windows_client_runs_scripts_only_in_distributions() {
         let result = run_script(
             host,
             "true",
-            io::empty(),
-            io::sink(),
+            std::io::empty(),
+            std::io::sink(),
             LIMITS,
             &AtomicBool::new(false),
         );
@@ -113,7 +112,7 @@ fn live_wsl_scripts() {
     let result = run_script(
         ScriptHost::Wsl(&distro),
         "head -c 4096 /dev/zero",
-        io::empty(),
+        std::io::empty(),
         &mut output,
         ScriptLimits {
             output: 1024,
@@ -125,4 +124,77 @@ fn live_wsl_scripts() {
         matches!(result, Err(Error::ScriptOutputLimit)),
         "{result:?}"
     );
+}
+
+/// Runs `script` in `distro` and returns how it ended and how long that took,
+/// failing if it outlives `deadline`: a hung pipe reader would never return.
+#[cfg(windows)]
+fn bounded(
+    distro: &str,
+    script: &str,
+    limits: ScriptLimits,
+    cancel_after: Option<Duration>,
+    deadline: Duration,
+) -> (Result<u64>, Duration) {
+    let (done, finished) = std::sync::mpsc::channel();
+    let distro = distro.to_owned();
+    let script = script.to_owned();
+    std::thread::spawn(move || {
+        let cancelled = std::sync::Arc::new(AtomicBool::new(false));
+        if let Some(after) = cancel_after {
+            let flag = cancelled.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(after);
+                flag.store(true, std::sync::atomic::Ordering::Release);
+            });
+        }
+        let started = std::time::Instant::now();
+        let result = run_script(
+            ScriptHost::Wsl(&distro),
+            &script,
+            std::io::empty(),
+            std::io::sink(),
+            limits,
+            &cancelled,
+        );
+        let _ = done.send((result, started.elapsed()));
+    });
+    finished
+        .recv_timeout(deadline)
+        .expect("the script outlived its deadline")
+}
+
+/// A silent script and a cancelled one both end promptly on Windows, where
+/// only `wsl.exe` is killed, even while a background process inside the
+/// distribution still holds the script's output open:
+/// `HERDR_TEST_WSL_DISTRO=Ubuntu-22.04 cargo test -p herdr-client
+/// live_wsl_stops -- --ignored --nocapture`.
+#[cfg(windows)]
+#[test]
+#[ignore = "runs scripts in a real WSL distribution"]
+fn live_wsl_stops() {
+    let distro = std::env::var("HERDR_TEST_WSL_DISTRO").expect("HERDR_TEST_WSL_DISTRO");
+    let holder = "sleep 57 & sleep 58";
+    let quiet = ScriptLimits {
+        output: 1024,
+        idle: Duration::from_secs(3),
+    };
+    let (result, took) = bounded(&distro, holder, quiet, None, Duration::from_secs(20));
+    println!("idle: {result:?} after {took:?}");
+    assert!(matches!(result, Err(Error::ScriptTimeout)), "{result:?}");
+
+    let patient = ScriptLimits {
+        output: 1024,
+        idle: Duration::from_secs(60),
+    };
+    let (result, took) = bounded(
+        &distro,
+        holder,
+        patient,
+        Some(Duration::from_secs(2)),
+        Duration::from_secs(20),
+    );
+    println!("cancelled: {result:?} after {took:?}");
+    assert!(matches!(result, Err(Error::ScriptCancelled)), "{result:?}");
+    assert!(took < Duration::from_secs(15), "{took:?}");
 }
