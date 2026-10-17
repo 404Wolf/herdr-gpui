@@ -13,11 +13,12 @@
 //! and kept in a thread-local rather than a global that would need `Send`.
 
 mod badge;
+mod created;
 #[cfg(test)]
 mod tests;
 
-use gpui::{App, Window, WindowId};
-use std::{cell::RefCell, collections::HashMap, time::Duration};
+use gpui::{Window, WindowId};
+use std::{cell::RefCell, collections::HashMap};
 use windows::Win32::{
     Foundation::HWND,
     System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance},
@@ -26,11 +27,6 @@ use windows::Win32::{
     },
 };
 use wry::raw_window_handle::{HasWindowHandle, RawWindowHandle};
-
-/// Explorer creates a window's taskbar button shortly after the window is
-/// shown, and drops an overlay set before then. A new window gets its badge
-/// again after this long.
-const BUTTON_DELAY: Duration = Duration::from_secs(2);
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
@@ -103,6 +99,19 @@ impl State {
             .as_ref()
     }
 
+    /// Sets every window's badge again, and forgets the progress shown, so
+    /// the next poll sets it again too.
+    fn reapply(&mut self) {
+        self.bars.clear();
+        if self.overlay == 0 {
+            return;
+        }
+        let windows: Vec<isize> = self.windows.values().copied().collect();
+        for hwnd in windows {
+            self.apply_overlay(hwnd);
+        }
+    }
+
     fn apply_overlay(&mut self, hwnd: isize) {
         let count = self.overlay;
         let Some(taskbar) = self.taskbar() else {
@@ -129,9 +138,13 @@ fn create() -> Result<ITaskbarList3, Error> {
 }
 
 /// Notes a window's native handle the first time it is seen, and gives it the
-/// current badge. Cheap enough for the poll loop: a known window is one map
-/// lookup.
-pub(crate) fn track(window: &Window, cx: &mut App) {
+/// current badge. When Explorer created a button since, for a new window or
+/// after Explorer restarted, every window's badge and progress are set again.
+/// Cheap enough for the poll loop: otherwise a flag and one map lookup.
+pub(crate) fn track(window: &Window) {
+    if created::take() {
+        STATE.with_borrow_mut(State::reapply);
+    }
     let id = window.window_handle().window_id();
     if STATE.with_borrow(|state| state.windows.contains_key(&id)) {
         return;
@@ -143,21 +156,14 @@ pub(crate) fn track(window: &Window, cx: &mut App) {
         return;
     };
     let hwnd = handle.hwnd.get();
+    // Watch first, so a button created right after is not missed.
+    created::watch(HWND(hwnd as *mut _));
     STATE.with_borrow_mut(|state| {
         state.windows.insert(id, hwnd);
         if state.overlay > 0 {
             state.apply_overlay(hwnd);
         }
     });
-    cx.spawn(async move |cx| {
-        cx.background_executor().timer(BUTTON_DELAY).await;
-        STATE.with_borrow_mut(|state| {
-            if state.overlay > 0 && state.windows.get(&id) == Some(&hwnd) {
-                state.apply_overlay(hwnd);
-            }
-        });
-    })
-    .detach();
 }
 
 /// Drops windows that closed, so a reused handle is never badged by mistake.

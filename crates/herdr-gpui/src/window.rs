@@ -546,7 +546,7 @@ impl HerdrWindow {
         self.follow_selection(cx);
         self.poll_copy_mode(window, cx);
         #[cfg(windows)]
-        crate::taskbar::button::track(window, cx);
+        crate::taskbar::button::track(window);
         #[cfg(any(target_os = "macos", windows))]
         crate::app_badge::sync(window.window_handle().window_id(), &self.endpoints, cx);
         self.observe_agent_work(window, cx);
