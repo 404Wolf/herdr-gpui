@@ -78,7 +78,7 @@ pub enum Error {
     ClipboardChanged,
     #[error("Clipboard text is not valid UTF-8.")]
     ClipboardEncoding(#[source] std::str::Utf8Error),
-    #[error("Could not read the clipboard using wl-paste or xclip.")]
+    #[error("Could not read the clipboard; on Linux, install wl-paste or xclip.")]
     ClipboardProcess(#[source] io::Error),
     #[error("Clipboard content exceeds the {limit}-byte limit.")]
     ClipboardSize { limit: usize },
@@ -143,6 +143,9 @@ pub enum Error {
     CredentialDirectory,
     #[error("Cannot access private credential file.")]
     CredentialIo(#[source] io::Error),
+    #[cfg(windows)]
+    #[error(transparent)]
+    CredentialManager(#[from] crate::github::CredentialManagerError),
     #[error(
         "Cannot access private credential file. Require an owned directory and regular 0600 file; symlinks are rejected."
     )]

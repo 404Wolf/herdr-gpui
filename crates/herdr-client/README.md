@@ -44,7 +44,7 @@ ConnectTarget::Session { name: String, development: bool }
 ConnectTarget::Socket(PathBuf)
 ConnectTarget::Ssh { target: String, session: String }
 ConnectTarget::socket_path(&self) -> Result<PathBuf>
-Stream  // std::os::unix::net::UnixStream, or a named-pipe wrapper on Windows
+Stream  // std::os::unix::net::UnixStream, or an overlapped named pipe on Windows
 session_socket(config_dir: &Path, name: &str) -> Result<PathBuf>
 list_local_sessions(development: bool) -> Result<Vec<LocalSession>>
 list_remote_sessions(target: &str) -> Result<Vec<RemoteSession>>
@@ -120,22 +120,35 @@ Errors are not `Clone`, `PartialEq`, or `Eq`; match their typed variants instead
 `connect_with_connector` also returns `Result<Client>`. Its injected connector
 still returns `io::Result<Stream>` because it is an actual I/O interface.
 `Stream` is the crate's local endpoint type, re-exported at the root. It is
-`std::os::unix::net::UnixStream` on Unix. On Windows it wraps an `interprocess`
-named pipe, because that is what the Windows daemon binds: upstream maps the
-same socket path string into the NPFS namespace, so discovery is unchanged.
-Named pipes expose neither a pollable descriptor nor `SO_RCVTIMEO`, so the
-wrapper emulates `set_read_timeout` by peeking the pipe and sleeping briefly
-until data arrives or the deadline passes, keeping the session loop's receive
-deadlines and cancellation identical to the Unix socket. `PIPE_NOWAIT` cannot
-serve here: it reports "no data yet" as `ERROR_NO_DATA`, which the standard
-library maps to `BrokenPipe`, so an idle connection would read as a disconnect.
-The peek is the crate's only `unsafe`, a single `PeekNamedPipe` call with no
-safe wrapper available, matching what the daemon's own Windows client does; no
-extra threads are involved. `set_write_timeout` is accepted and not enforced,
-because a named pipe has no send timeout: a peer that stops reading can block a
-write until it exits. A WSL bridge's stream is the same wrapper around the
-`wsl.exe` child's anonymous stdin and stdout pipes, which `PeekNamedPipe` also
-accepts, with the same limits.
+`std::os::unix::net::UnixStream` on Unix. On Windows it is a named pipe,
+because that is what the Windows daemon binds: upstream maps the same socket
+path string into the NPFS namespace, so discovery is unchanged. `interprocess`
+opens the pipe, overlapped, and the stream takes its handle. A named pipe has
+neither `SO_RCVTIMEO` nor `SO_SNDTIMEO`, so each direction keeps one overlapped
+operation and waits for it only until the caller's deadline:
+
+- A read starts into a 64 KiB buffer the stream owns. At the deadline it reports
+  `TimedOut` and stays in flight, so whatever arrives meanwhile is what the next
+  read returns: no byte is lost and no partial frame restarts.
+- A write copies up to 64 KiB into an operation it starts and reports those
+  bytes written, as a socket's send buffer would. The next write, or a flush,
+  first waits for that operation, again only until its own deadline. One that
+  passes leaves the operation in flight with its bytes, so a call that timed
+  out wrote nothing, and the caller resumes at the same offset. A completion
+  that moved fewer bytes than were reported fails the stream as `WriteZero`.
+- Nothing is cancelled except by dropping the stream, which ends the
+  connection: `CancelIoEx`, then a bounded wait for the kernel to finish with
+  the buffer, on the worker thread. A peer that never reads cannot hold the
+  worker or the drop.
+
+These calls (`transport/overlapped.rs`) are the stream's only `unsafe`, because
+`interprocess` and the standard library block in `WriteFile` and the asynchronous
+wrappers need a runtime or a completion-port reactor. The crate also exports
+`pipe_available`, one `PeekNamedPipe` call, for the app's control pipe, which
+reads a synchronous pipe and has no other bounded way to. A WSL bridge's stream is
+the same type over two private pipes the crate creates for the child's stdin and
+stdout, overlapped on this end, with the same deadlines; the standard library's
+`Stdio::piped` ends are not documented to be overlapped.
 If adapting a typed error to that callback, use
 `io::Error::new(error.kind(), error)`, not `error.to_string()`, to retain sources.
 
@@ -254,9 +267,9 @@ Dropping a pending permit or cancelling before any bytes are written skips the
 slot. Cancellation after a partial write, a write deadline, or a boot change
 closes the connection instead of leaving broken framing or resuming stale data.
 
-Windows returns `ClipboardImageUnsupported` at reservation: its current local
-named-pipe wrapper cannot enforce bounded writes, and remote SSH is already
-unsupported there. Ordinary Windows commands retain their existing behavior.
+Windows follows the same rules over its overlapped pipe, whose send timeout
+behaves as the socket's does: an image write waits at most 10 ms per attempt,
+and a timed-out attempt has written nothing.
 
 `ClientEvent` variants:
 

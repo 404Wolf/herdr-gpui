@@ -24,6 +24,7 @@ mod github;
 mod keybindings;
 mod layout;
 mod notifications;
+mod omarchy;
 mod padding;
 pub(crate) mod preferences;
 pub(crate) mod sidebar;
@@ -705,6 +706,7 @@ impl Config {
         let (text, source) = Self::overrides_text(path)?;
         Self::parse_layers([DEFAULT_CONFIG, &text], &daemon_settings(daemon))
             .map_err(|error| error.at_path(&source))
+            .map(|config| config.with_desktop_theme(&text))
     }
 
     /// The user's overrides as the app reads them now, and the file they
@@ -735,7 +737,18 @@ impl Config {
         // Validate the override independently so bad types/unknown keys cannot
         // disappear inside the merge. Empty arrays explicitly replace defaults.
         Self::parse_over(&text, &base).map_err(|error| error.at_path(&local))?;
-        Self::parse_layers([DEFAULT_CONFIG, &text], &base).map_err(|error| error.at_path(&local))
+        Self::parse_layers([DEFAULT_CONFIG, &text], &base)
+            .map_err(|error| error.at_path(&local))
+            .map(|config| config.with_desktop_theme(&text))
+    }
+
+    /// Without a home directory there is no desktop theme to find, and the
+    /// managed default stays.
+    fn with_desktop_theme(mut self, overrides: &str) -> Self {
+        if let Ok(home) = home() {
+            self.follow_omarchy(overrides, &home);
+        }
+        self
     }
 
     /// The GUI file on its own, with nothing layered under it: the shape the

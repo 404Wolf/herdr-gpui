@@ -1959,8 +1959,9 @@ image-paste shortcut). Ctrl-V retains its normal terminal meaning when the
 clipboard has no image. A pasted absolute image-file path is also recognized,
 including the backslash-escaped paths used by terminal file drops.
 
-Local endpoints on macOS and Linux use the same bridge for Cmd-V clipboard
-images, because a GUI text paste cannot carry image data. Local drops and pasted
+Local endpoints on macOS, Linux, and Windows use the same bridge for Cmd-V
+clipboard images (Ctrl-Shift-V or Shift-Insert on Windows), because a GUI text
+paste cannot carry image data. Local drops and pasted
 paths stay ordinary path pastes, and local Ctrl-V is sent to the terminal
 unchanged so agents can read the shared clipboard themselves.
 
@@ -2005,10 +2006,19 @@ chunks and a three-second deadline between reads, but an OS-blocked network/FUSE
 filesystem operation cannot be forcibly interrupted. Such a read stays isolated
 from the UI and holds its bounded preparation slot until it returns.
 
-Windows SSH and image uploads, including local clipboard images, remain
-unsupported. Native clipboard/drop
-and real SSH behavior require explicit desktop/host verification in addition to
-the mock-peer and headless tests.
+Windows reads the clipboard on a thread of its own, for every paste: copied
+files (`CF_HDROP`), then text, then the `PNG`, `JFIF`, and `GIF` formats other
+programs register, a device-independent bitmap (`CF_DIB`, sent as BMP), and
+`CF_TIFF`. Each format's size is checked before any of it is copied, and the
+whole read has a three-second deadline. A program that renders its clipboard
+data on request and never answers stalls only that thread: the paste reports a
+timeout, and no second reader starts until the stuck one returns. WSL
+distributions are the remote endpoints there, so dropped images, pasted image
+paths, and Ctrl-V images reach a distribution's panes through the same bridge.
+A pasted Windows path keeps its backslashes as separators; only matching quotes
+around it are removed, as Explorer's "Copy as path" adds them.
+Native clipboard/drop and real SSH behavior require explicit desktop/host
+verification in addition to the mock-peer and headless tests.
 
 ### Native Clipboard Regression Test (macOS)
 
@@ -2365,7 +2375,8 @@ come back after a restart; closing a workspace in Herdr removes its tabs.
   `localhost:3000` becomes `http://localhost:3000/`.
 - Close Tab and Close Pane close the browser tab being shown, without asking.
   Clicking a Herdr tab, or switching Herdr tabs in the workspace, shows its
-  terminal again.
+  terminal again. Next Tab, Previous Tab, and the tab numbers count browser
+  tabs too, after the workspace's Herdr tabs.
 - Only `http` and `https` pages open, plus local files an agent shows (below).
   Pages cannot navigate to other schemes
   (so `file:` and applications' custom URL schemes stay closed), downloads are
@@ -2818,7 +2829,10 @@ the page's storage, which belongs to one address.
   browser tab's, the page's own shortcuts win, as a terminal program's do
   while its pane has focus. On macOS, Cut, Copy, and Paste act on the page,
   and the keys macOS keeps for the app (quit, hide, minimize, and cycling
-  windows) still reach the app. Click a terminal to take the keyboard back.
+  windows) still reach the app. So do the keys bound to Next Tab, Previous
+  Tab, the tab numbers, and moving to another workspace or agent, as a web
+  browser keeps its tab keys from its pages. Click a terminal to take the
+  keyboard back.
 
 ## System Notifications
 
@@ -2920,8 +2934,9 @@ the binary client socket path to `--socket`, not the JSON API socket. No debug
 build or `RUST_LOG` setting is needed: client debug records are captured in
 release builds too. For a connection failure, inspect `operation`, `kind`, and
 `raw_os_error` in the log: `pipe_name` is name conversion, `pipe_connect` is the
-pipe library's open/wait operation, and `pipe_peek` is `PeekNamedPipe` after
-connection. Config failures distinguish `config_lock_open` from
+pipe library's open/wait operation, `pipe_read` is a read that failed after
+connection, and `pipe_cancel` is a cancelled operation the kernel did not
+finish within five seconds of the connection closing. Config failures distinguish `config_lock_open` from
 `config_lock_acquire`. These operation records omit paths and retain native
 error codes (for example, `5` for Windows access denied). A successful plain
 pipe client alone does not establish why the GUI was denied; include these
@@ -3076,9 +3091,17 @@ Ctrl+Shift+U is left unbound for
   cancels; dialog input never reaches terminals or native creation actions.
   Context menus and dialogs anchor to the pointer and clamp to the viewport.
   Rename trims surrounding whitespace and rejects blank labels inline.
+  The PR and issues tabs need a GitHub account signed in to Herdr itself; until
+  then they are faded, and hovering one says to sign in from the account
+  button. A `gh` or browser login is not picked up by itself, and a development build
+  (`just run`) keeps its sign-in apart from the installed app's Keychain entry.
   The PR tab supports fork pull requests: it fetches GitHub's PR head ref from
-  the repository's origin and creates a local `pr/<number>` branch. Existing
-  local branches are preserved; repository trust is not granted.
+  the listed repository's remote and creates a local `pr/<number>` branch.
+  Existing local branches are preserved; repository trust is not granted. In a
+  fork checkout whose `upstream` remote is on GitHub.com, the tabs list the
+  upstream repository: its own branches are fetched from `upstream`, pull
+  requests from the fork behind `origin` check out their real branch from
+  `origin`, and other forks use the PR head ref fetched from `upstream`.
 - Open worktree... asynchronously lists the clicked parent's existing checkouts
   through `worktree.list`, including already-open and detached checkouts but
   excluding bare/prunable entries. Use Up/Down and Enter, the Open button, or
@@ -3126,6 +3149,11 @@ Ctrl+Shift+U is left unbound for
    branch, so renamed local branches can identify fork PRs. Without an upstream,
    lookup uses the local branch name and requires the origin owner as before.
    Unsupported upstreams fail closed rather than matching an unrelated fork.
+   A checkout with a GitHub.com `upstream` remote is treated as a fork: lookup
+   queries the upstream repository, an untracked branch's head defaults to the
+   fork behind `origin`, and **Create pull request** pushes to `origin` and
+   opens the pull request against upstream's default branch with an
+   `owner:branch` head.
   On macOS and Linux, all socket modes (including explicit/inherited sockets)
   require a same-user kernel peer (`getpeereid` on macOS, `SO_PEERCRED` on
   Linux) at the standard configured session socket. The socket must be owned by
@@ -3146,18 +3174,19 @@ Ctrl+Shift+U is left unbound for
   verified or it is world-writable; check ownership, remove world-write access
   with `chmod o-w` on it, and reconnect.
   On a saved SSH device, the checkout lives on that host, so local Git cannot
-  verify it. The worker instead reads the repository's `remote.origin.url` over
-  the same noninteractive SSH options as the bridge (`BatchMode=yes`, strict host
-  keys, no master connection), keeping stdout bounded and discarding stderr.
-  Each resolved origin repository is reused for ten minutes. Upstream configuration
-  is read over SSH on each lookup using the daemon-reported local branch. Sidebar PR badges
-  show only on the selected device's rows, because the cache holds that device's
-  lookups and the same path and branch may exist on another host.
+  verify it. The worker instead reads the repository's `remote.upstream.url` or
+  `remote.origin.url` over the same noninteractive SSH options as the bridge
+  (`BatchMode=yes`, strict host keys, no master connection), keeping stdout
+  bounded and discarding stderr. Each resolved origin repository is reused for
+  ten minutes. Upstream configuration is read over SSH on each lookup using the
+  daemon-reported local branch. Sidebar PR badges show only on the selected
+  device's rows, because the cache holds that device's lookups and the same path
+  and branch may exist on another host.
 - Each saved SSH device can have its own GitHub account, for hosts whose
   repositories another account owns. Select the device, open the GitHub panel,
   and choose **Use another account** to run the same device sign-in for that
-  device only. It is stored with the main account's mechanism (the app's Keychain
-  or Secret Service entry under a per-device account name, or its own private
+  device only. It is stored with the main account's mechanism (the app's Keychain,
+  Secret Service, or Credential Manager entry under a per-device account name, or its own private
   `github-credentials-<device-id>` file) and renewed the same way. Pull requests on
   that device then use it; a device without one uses the main account. Signing
   out in that panel removes only the device's credential. `GH_TOKEN` /
@@ -3212,6 +3241,11 @@ Ctrl+Shift+U is left unbound for
   Service (GNOME Keyring, KWallet, KeePassXC), under service
   `dev.herdr.gpui.github`; the desktop may ask to unlock it. With no Secret
   Service running, restore finds nothing saved and saving a sign-in says so.
+  Windows builds keep tokens in Windows Credential Manager as generic
+  credentials named `dev.herdr.gpui.github/github.com` (and
+  `dev.herdr.gpui.github/github.com/host/<device-id>` per device), persisted for
+  your Windows account on this computer only, never roamed; see
+  [Windows](#windows).
   `GH_TOKEN` / `GITHUB_TOKEN` override any of them. Access tokens and retained device/user codes use redacted, zeroizing
   `secrecy` types; HTTP headers are sensitive and application-owned raw OAuth
   buffers are wiped. The user code is intentionally exposed for rendering.
@@ -3222,9 +3256,8 @@ Ctrl+Shift+U is left unbound for
   is not moved to the other, so changing the opt-in means signing in again; macOS
   development builds use that same store, enabled by default and warned about in
   the profile panel. Signed macOS release builds still use Keychain. Windows has
-  neither store: the opt-in does not select the file there, saving a token
-  reports `CredentialUnsupported`, and sign-in says to use `GH_TOKEN` /
-  `GITHUB_TOKEN`. Sign-out suppresses environment tokens for this app session and
+  no private file store, so the opt-in does not select the file there and
+  Credential Manager stays in use. Sign-out suppresses environment tokens for this app session and
   fences late profile/avatar/PR results. Plaintext policy reloads re-evaluate the
   active credential, without reactivating an explicitly signed-out session.
   Disabling plaintext stops its session use but keeps the file; explicit sign-out
@@ -3248,8 +3281,7 @@ Ctrl+Shift+U is left unbound for
   panel asks `gh auth token --hostname github.com` on a background thread, at
   most every 30 seconds while it is open and signed out, and drops the answer.
   Choosing it reads the token again, verifies it with GitHub, and saves only a
-  marker in the credential store, never the token; Windows, which has no store,
-  keeps the choice for the app session. Every load and five-minute session check
+  marker in the credential store, never the token. Every load and five-minute session check
   asks `gh` again, so `gh auth logout`, a revoked token, or an uninstalled `gh`
   signs the app out at the next check with an error naming the fix, and a token
   `gh` refreshed is picked up. The panel reads "Connected with GitHub CLI", warns
@@ -3769,10 +3801,10 @@ launcher sits beside it, every Herdr window carries the AppUserModelID
 share one taskbar button. The properties are cleared as each window closes. Local
 connections use the named pipe the Windows
 daemon binds, derived from the same socket path string upstream uses, so
-discovery and framing are the same code as on Unix. Receive deadlines are
-emulated with `PeekNamedPipe`, an `unsafe` call, because a
-named pipe has no receive timeout; send timeouts cannot be enforced at all
-there. Configuration and state
+discovery and framing are the same code as on Unix. The pipe, and a WSL
+bridge's standard streams, are driven with overlapped I/O, so receive and send
+timeouts hold as they do on a socket, and clipboard and dropped images upload
+as on macOS and Linux. Configuration and state
 follow upstream's Windows layout: `%APPDATA%\herdr` and `%LOCALAPPDATA%\herdr`,
 still overridden by `XDG_CONFIG_HOME` / `XDG_STATE_HOME` when they are set.
 
@@ -3816,6 +3848,42 @@ says so: plan usage, listening ports, agent checkpoints, teleport, file
 transfers, and port forwards. WSL already forwards a distribution's
 `localhost` ports to Windows.
 
+### Saved sign-ins and the avatar cache
+
+GitHub sign-ins are kept in Windows Credential Manager, which plays the part
+of the Keychain and the Secret Service. Each account is one generic credential,
+`dev.herdr.gpui.github/github.com` for the main account,
+`dev.herdr.gpui.github/github.com/host/<device-id>` for a device's own, and
+`dev.herdr.gpui.github/github.com/account/<id>` for an additional account, holding
+exactly what the other keyrings hold: the device-flow token pair with its
+expiry, or only the GitHub CLI marker, never the CLI's token. Entries are
+persisted for your Windows account on this computer only
+(`CRED_PERSIST_LOCAL_MACHINE`), so they survive restarts and sign-outs of
+Windows but never roam to other computers in a domain, and other Windows users
+cannot read them. They are listed under **Windows Credentials** in Control
+Panel's Credential Manager; signing out in the app removes them. All windows
+share one credential through the same in-process lock as elsewhere, so a
+single-use refresh token is rotated once. Boat, Coder, and Daytona sign-ins use
+the same store under their own service names. A secret larger than Credential
+Manager's 2,560-byte limit is refused with an error rather than truncated. There
+is no private-file store here, so `allow_plaintext_credentials` changes nothing,
+and `GH_TOKEN` / `GITHUB_TOKEN` still take precedence for the main account. The
+`Cred*` calls are the only `unsafe` code involved (`github/credential_manager.rs`):
+neither the standard library nor the workspace's dependencies wrap them, and the
+maintained wrapper crates would add a second `windows-sys` version.
+
+Profile and owner avatars are cached on disk in
+`%LOCALAPPDATA%\herdr\gpui\cache\avatars-v1`, with the same 128 slots, 1 MB
+entry limit, and 24-hour stale-while-refresh behavior as on Unix.
+`XDG_CACHE_HOME` is not honoured for it. A non-blocking `File::try_lock` on the
+directory's `lock` file keeps one writer at a time, and a contended cache is a
+miss rather than a wait. Entries are opened without following reparse points,
+and a symbolic link or junction, whether an entry or the directory itself, is
+refused. There is no ownership or mode check, unlike Unix: the directory is
+always inside your profile, whose inherited access list lets only you, SYSTEM,
+and Administrators create, replace, or link files there, and anyone else who
+could would already be able to replace the app itself.
+
 These features are unavailable on Windows and say so rather than failing quietly:
 
 - **Saved SSH hosts.** The bridge gives the `ssh` child a socket pair as its
@@ -3825,10 +3893,6 @@ These features are unavailable on Windows and say so rather than failing quietly
   release zip is for manual download only), so the updater
   stays disabled and reports that no standalone updater exists for this platform.
   Homebrew delegation is macOS-only regardless.
-- **Saved GitHub credentials.** Neither the Keychain nor the private `0600` file
-  exists here, so `GH_TOKEN` / `GITHUB_TOKEN` are the only sources of a token.
-- **The avatar disk cache.** It depends on `openat`, `flock`, and POSIX
-  ownership and mode checks, so avatars stay in memory for the process lifetime.
 
 Starting a local `herdr server` looks for `herdr.exe` and uses
 `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` in place of `process_group(0)`, so
