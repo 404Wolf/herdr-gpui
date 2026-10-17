@@ -3748,10 +3748,17 @@ catalog (`%LOCALAPPDATA%\herdr\client`), never in the catalog itself, whose
 strict schema cannot name one. The device you last chose, a distribution
 included, is selected again at startup.
 
-What still runs a shell on the host is not wired into a distribution yet and
-says so: plan usage, CPU and memory, listening ports, agent checkpoints,
-teleport, file transfers, and port forwards. WSL already forwards a
-distribution's `localhost` ports to Windows.
+CPU and memory are sampled as for an SSH host running Linux: one `/bin/sh`
+per distribution, started with `wsl.exe --distribution NAME --exec /bin/sh -s`
+and kept open between samples, which reads `/proc`. The status bar and the
+distribution's sidebar row show them. A distribution shares the machine's
+CPUs, so its CPU figure is what its processes use, and its memory is what
+WSL has given that distribution.
+
+What else runs a shell on the host is not wired into a distribution yet and
+says so: plan usage, listening ports, agent checkpoints, teleport, file
+transfers, and port forwards. WSL already forwards a distribution's
+`localhost` ports to Windows.
 
 These features are unavailable on Windows and say so rather than failing quietly:
 
@@ -3771,10 +3778,25 @@ Starting a local `herdr server` looks for `herdr.exe` and uses
 `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` in place of `process_group(0)`, so
 the daemon survives the GUI and no console window appears.
 
+Console children (git, ssh, `wsl.exe`, a shell) must not open a window of
+their own either: every child is built with `herdr_client::new_command`, which
+sets `CREATE_NO_WINDOW` on Windows, and clippy's `disallowed_methods`
+(`clippy.toml`) rejects `Command::new` elsewhere outside tests and the build
+script. Started by the launcher, they would share its hidden console anyway;
+run as `herdr-gpui.exe` from Explorer or another app, they still open none.
+
 The build script embeds the Herdr icon as icon resource 1, which GPUI loads for
 its windows, and version information that Explorer and Task Manager show as
 **Herdr UI** with the release version, or `dev` for a local build. See
 [the icon README](../../assets/icons/README.md#windows).
+
+Each release also has a per-user Inno Setup installer,
+`Herdr-VERSION-TARGET-setup.exe` (`scripts/release/herdr-gpui.iss`), which
+installs the zip's files where `site/install.ps1` does, adds the directory to
+the user `PATH`, points the Start menu shortcut at the launcher with the app's
+AppUserModelID, and adds an uninstaller under **Settings > Apps**. See
+[`scripts/release/README.md`](../../scripts/release/README.md) for building,
+signing, and smoke-testing it.
 
 Cross type-check it from a Mac or Linux machine with `just lint-windows`, which
 targets `x86_64-pc-windows-gnu` because those hosts cannot supply the MSVC C

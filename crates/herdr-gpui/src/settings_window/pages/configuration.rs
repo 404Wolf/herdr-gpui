@@ -11,7 +11,7 @@ pub(in crate::settings_window) fn open_path(reveal: bool, path: PathBuf, cx: &mu
         .spawn(async move {
             #[cfg(target_os = "macos")]
             let mut command = {
-                let mut command = std::process::Command::new("open");
+                let mut command = herdr_client::new_command("open");
                 if reveal {
                     command.arg("-R");
                 }
@@ -20,7 +20,7 @@ pub(in crate::settings_window) fn open_path(reveal: bool, path: PathBuf, cx: &mu
             };
             #[cfg(target_os = "linux")]
             let mut command = {
-                let mut command = std::process::Command::new("xdg-open");
+                let mut command = herdr_client::new_command("xdg-open");
                 command.arg(if reveal {
                     path.parent().unwrap_or(&path)
                 } else {

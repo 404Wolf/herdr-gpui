@@ -209,7 +209,7 @@ impl SettingsWindow {
                 match choice {
                     Choice::Installed => {
                         let text =
-                            crate::agent_skill::text(std::env::current_exe().ok().as_deref());
+                            crate::agent_skill::text(crate::agent_skill::executable().as_deref());
                         crate::agent_skill::install(&home, &text)?;
                     }
                     Choice::Declined => {

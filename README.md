@@ -157,8 +157,8 @@ release workflow. A cask install updates itself through Homebrew: the in-app
 updater detects that Homebrew owns the bundle and runs `brew upgrade --cask
 herdr-gpui` for you, so Homebrew's records stay correct. If its metadata is stale,
 the updater runs `brew update` and retries once. The update panel shows progress
-throughout. macOS `.dmg`, experimental Linux packages, and experimental Windows `.zip`s
-are also published on [Releases](https://github.com/penso/herdr-gpui/releases).
+throughout. macOS `.dmg`, experimental Linux packages, and experimental Windows installers
+and `.zip`s are also published on [Releases](https://github.com/penso/herdr-gpui/releases).
 
 Betas are published as GitHub prereleases before being promoted to stable. To try
 them in a standalone install, turn on **Settings > General > Install beta releases**
@@ -224,8 +224,14 @@ The script ([`site/install.ps1`](site/install.ps1)) downloads the zip for your
 architecture, checks its published SHA-256, installs `herdr-gpui.exe` and
 `herdr-gpui-launcher.exe` under `%LOCALAPPDATA%\Programs\Herdr UI`, adds that
 directory to your user `PATH`, and creates a **Herdr UI** Start menu shortcut
-that opens the launcher. Windows builds never update
-themselves; run the command again to update. See [Windows](#windows) for what
+that opens the launcher. Prefer a regular installer? Each
+[release](https://github.com/penso/herdr-gpui/releases/latest) also has
+`Herdr-VERSION-x86_64-pc-windows-msvc-setup.exe` and
+`Herdr-VERSION-aarch64-pc-windows-msvc-setup.exe`, which install the same files
+to the same place for the current user, without administrator rights, and add
+an uninstaller under **Settings > Apps**. Windows builds never update
+themselves; run the command or a newer installer again to update. See
+[Windows](#windows) for what
 works on the platform.
 
 ### From source
@@ -304,14 +310,17 @@ Ctrl+Shift+Q); see
 
 Each release publishes `Herdr-VERSION-x86_64-pc-windows-msvc.zip` and
 `Herdr-VERSION-aarch64-pc-windows-msvc.zip` (native ARM64), each containing
-`herdr-gpui.exe`, `herdr-gpui-launcher.exe`, and their license notices. They
-carry the same checksums, Sigstore signatures, and build provenance as the other
-assets, but they are not Authenticode-signed, so SmartScreen warns on first
-launch, and they never update themselves: rerun the
-[install script](#windows-experimental) or download each new release manually.
-`herdr-gpui.exe` is a console program, because it is also the command line
-agents and scripts run. Open the app with `herdr-gpui-launcher.exe` (the Start
-menu shortcut's target), which starts `herdr-gpui.exe` without a console window.
+`herdr-gpui.exe`, `herdr-gpui-launcher.exe`, and their license notices, beside
+the matching `-setup.exe` installers. They carry the same checksums, Sigstore
+signatures, and build provenance as the other assets, and both executables,
+the installers, and their uninstaller are Authenticode-signed: a release
+publishes only after Windows accepts those signatures (see
+[`scripts/release/README.md`](scripts/release/README.md)). They never update
+themselves: rerun the [install script](#windows-experimental) or a newer
+installer. `herdr-gpui.exe` is a console program, because it is also the
+command line agents and scripts run. Open the app with
+`herdr-gpui-launcher.exe` (the Start menu shortcut's target), which starts
+`herdr-gpui.exe` without a console window.
 
 ## How it connects
 

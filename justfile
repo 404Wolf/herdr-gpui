@@ -120,9 +120,11 @@ install:
 icons-linux:
     python3 scripts/generate-linux-icons.py
 
-# Regenerate the Windows executable icons (Python standard library and rsvg-convert).
+# Regenerate the Windows executable icons and the installer's images (Python
+# standard library and rsvg-convert).
 icons-windows:
     python3 scripts/generate-windows-icons.py
+    python3 scripts/generate-installer-images.py
 
 # Regenerate all checked-in artwork on macOS (requires brew install librsvg).
 icons: icons-linux icons-windows

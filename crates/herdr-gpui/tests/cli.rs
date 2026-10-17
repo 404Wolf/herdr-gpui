@@ -1,5 +1,5 @@
 //! Informational and usage-error paths must not reach GPUI or require a desktop/daemon.
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::disallowed_methods)]
 
 use std::{
     process::{Command, Output, Stdio},
