@@ -98,15 +98,6 @@ fn handles(tiling: Tiling) -> impl Iterator<Item = Div> {
     })
 }
 
-/// What a screen reader calls each window control.
-fn label(id: &str) -> &'static str {
-    match id {
-        "window-minimize" => "Minimize",
-        "window-maximize" => "Maximize",
-        _ => "Close",
-    }
-}
-
 fn selector(edge: ResizeEdge) -> &'static str {
     match edge {
         ResizeEdge::Top => "window-resize-top",
@@ -172,12 +163,13 @@ fn render_controls(
     close: impl Fn(&mut Window, &mut App) + 'static,
 ) -> AnyElement {
     let (active, foreground) = (theme.active, theme.foreground);
-    let button = |id: &'static str, icon: &'static str| {
+    // `label` is what a screen reader calls the button.
+    let button = |id: &'static str, icon: &'static str, label: &'static str| {
         div()
             .id(id)
             .debug_selector(move || id.into())
             .role(Role::Button)
-            .aria_label(label(id))
+            .aria_label(label)
             .flex_none()
             .size(px(28.))
             .flex()
@@ -201,25 +193,29 @@ fn render_controls(
         .h_full()
         .when(buttons.minimize, |bar| {
             bar.child(
-                button("window-minimize", "icons/window-minimize.svg").on_click(|_, window, cx| {
-                    cx.stop_propagation();
-                    window.minimize_window();
-                }),
+                button("window-minimize", "icons/window-minimize.svg", "Minimize").on_click(
+                    |_, window, cx| {
+                        cx.stop_propagation();
+                        window.minimize_window();
+                    },
+                ),
             )
         })
         .when(buttons.maximize, |bar| {
-            let icon = if buttons.maximized {
-                "icons/window-restore.svg"
+            let (icon, label) = if buttons.maximized {
+                ("icons/window-restore.svg", "Restore")
             } else {
-                "icons/window-maximize.svg"
+                ("icons/window-maximize.svg", "Maximize")
             };
-            bar.child(button("window-maximize", icon).on_click(|_, window, cx| {
-                cx.stop_propagation();
-                window.zoom_window();
-            }))
+            bar.child(
+                button("window-maximize", icon, label).on_click(|_, window, cx| {
+                    cx.stop_propagation();
+                    window.zoom_window();
+                }),
+            )
         })
         .child(
-            button("window-close", "icons/close.svg").on_click(move |_, window, cx| {
+            button("window-close", "icons/close.svg", "Close").on_click(move |_, window, cx| {
                 cx.stop_propagation();
                 close(window, cx);
             }),

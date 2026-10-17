@@ -9,7 +9,8 @@ mod windows;
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Accent {
-    /// The theme's own accent: its magenta palette slot, or Herdr's `accent`.
+    /// The theme's own accent: a desktop theme's or Herdr's `accent`, else
+    /// its palette's magenta.
     #[default]
     Theme,
     /// The accent color chosen in Windows Settings > Personalization >

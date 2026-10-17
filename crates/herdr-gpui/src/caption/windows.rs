@@ -48,8 +48,9 @@ fn build() -> u32 {
     if status < 0 { 0 } else { info.dwBuildNumber }
 }
 
-/// Sets a 32-bit attribute: a `BOOL` or a backdrop type. A failure leaves the window as
-/// GPUI drew it, which is still usable, so it is logged rather than surfaced.
+/// Sets a 32-bit attribute: a `BOOL` or a backdrop type. A failure leaves the
+/// window as GPUI drew it, which is still usable, so it is logged rather than
+/// surfaced.
 fn set(window: &Window, attribute: DWMWINDOWATTRIBUTE, value: i32) {
     let Ok(handle) = HasWindowHandle::window_handle(window) else {
         return;
