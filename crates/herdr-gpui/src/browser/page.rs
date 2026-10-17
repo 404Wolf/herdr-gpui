@@ -96,6 +96,13 @@ impl Page {
         }
     }
 
+    /// The zoom the page is drawn at, which turns the CSS pixels its scripts
+    /// measure into the view's points.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn drawn_zoom(&self) -> Zoom {
+        self.zoom.get()
+    }
+
     /// Moves keyboard input into the page.
     pub(crate) fn focus(&self) {
         #[cfg(target_os = "macos")]

@@ -35,9 +35,23 @@ impl Zoom {
     }
 
     /// The scale a web view takes, where 1 draws the page at its own size.
-    #[cfg(any(target_os = "macos", windows))]
+    #[cfg(any(target_os = "macos", windows, test))]
     pub(crate) fn factor(self) -> f64 {
         f64::from(self.0) / f64::from(ACTUAL)
+    }
+
+    /// `rect`, in CSS pixels of a page drawn at this zoom, in its web view's
+    /// own points, which a snapshot of the view is asked for. They match only
+    /// at 100%: at 150% a CSS pixel covers one and a half points.
+    #[cfg(any(target_os = "macos", test))]
+    pub(crate) fn view_rect(self, rect: super::annotate::Rect) -> super::annotate::Rect {
+        let factor = self.factor();
+        super::annotate::Rect {
+            x: rect.x * factor,
+            y: rect.y * factor,
+            width: rect.width * factor,
+            height: rect.height * factor,
+        }
     }
 
     /// Whether the page draws at its own size.

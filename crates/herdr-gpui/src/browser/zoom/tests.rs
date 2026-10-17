@@ -88,3 +88,33 @@ fn saved_zooms_are_validated_when_read() {
         assert!(tab(invalid).is_err(), "{invalid}");
     }
 }
+
+#[test]
+fn a_snapshot_of_a_zoomed_page_asks_for_its_rect_in_view_points() {
+    use crate::browser::annotate::Rect;
+    let rect = Rect {
+        x: 10.,
+        y: 20.,
+        width: 100.,
+        height: 50.,
+    };
+    assert_eq!(Zoom::default().view_rect(rect), rect);
+    assert_eq!(
+        zoom(150).view_rect(rect),
+        Rect {
+            x: 15.,
+            y: 30.,
+            width: 150.,
+            height: 75.,
+        }
+    );
+    assert_eq!(
+        zoom(50).view_rect(rect),
+        Rect {
+            x: 5.,
+            y: 10.,
+            width: 50.,
+            height: 25.,
+        }
+    );
+}

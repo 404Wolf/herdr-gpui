@@ -570,6 +570,9 @@ impl Pages {
         #[cfg(target_os = "macos")]
         if let Some(page) = self.pages.get(&id) {
             let sender = self.outbox.sender.clone();
+            // The picker measures `rect` in CSS pixels, which a zoomed page
+            // draws larger in the view.
+            let rect = page.drawn_zoom().view_rect(rect);
             super::snapshot::capture(page.raw(), rect, move |tiff| {
                 report(&sender, Event::Captured(Source::Tab(id), capture, tiff));
             });
