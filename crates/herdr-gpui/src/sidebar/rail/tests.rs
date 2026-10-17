@@ -124,9 +124,10 @@ fn collapsed_sidebar_is_a_rail_in_every_layout_that_navigates(cx: &mut TestAppCo
     assert!(cx.debug_bounds("sidebar-rail").is_none());
 }
 
-/// Agent rows use the same columns as the workspace badges above them: the
-/// host letter shares the badge's left edge, the status dots share a column,
-/// and the selected highlight wraps the letter, icon, and dot with even padding.
+/// Host headers keep their own small box, centered on the grid the rows
+/// beneath share. Workspace badges and agent rows use one borderless cell:
+/// the same left edge, size, and dot offset, with one highlight width around
+/// the glyph, the icon, and the dot.
 #[gpui::test]
 fn collapsed_agent_rows_line_up_with_workspace_badges(cx: &mut TestAppContext) {
     let (view, cx) = rail_window(cx, 2);
@@ -186,6 +187,45 @@ fn collapsed_agent_rows_line_up_with_workspace_badges(cx: &mut TestAppContext) {
             near(other.left(), workspace.left()) && near(other.size.width, workspace.size.width),
             "{mode:?}: highlight width drifted {other:?} vs {workspace:?}"
         );
+        assert!(
+            near(agent.size.height, workspace.size.height)
+                && near(other.size.height, workspace.size.height),
+            "{mode:?}: highlight height drifted {agent:?} {other:?} vs {workspace:?}"
+        );
+        let dot_offset = dots[0].left() - workspace.left();
+        for (mark, cell) in [(dots[1], other), (dots[3], agent)] {
+            assert!(
+                near(mark.left() - cell.left(), dot_offset),
+                "{mode:?}: dot offset {mark:?} in {cell:?} != {dot_offset:?}"
+            );
+        }
+        let number = placed(cx, "rail-mark-rail-workspace-local-w0");
+        for (name, child) in [("number", number), ("workspace dot", dots[0])] {
+            assert!(
+                contains(workspace, child),
+                "{mode:?}: {name} {child:?} outside highlight {workspace:?}"
+            );
+        }
+        // The header box is a smaller, separate shape, centered on the same
+        // line as the selection highlight. It does not wear that highlight.
+        assert!(cx.debug_bounds("highlight-rail-host-local").is_none());
+        let header = placed(cx, "rail-host-box-local");
+        let other_header = placed(cx, "rail-host-box-ssh:host1");
+        let axis = center_x(workspace);
+        assert!(
+            near(center_x(header), axis) && near(center_x(other_header), axis),
+            "{mode:?}: header {header:?} / {other_header:?} off the row axis {workspace:?}"
+        );
+        assert!(
+            near(center_x(agent), axis),
+            "{mode:?}: agent highlight off the header axis"
+        );
+        assert!(
+            header.size.width + px(4.) < workspace.size.width
+                && near(header.size.width, other_header.size.width)
+                && near(header.size.height, other_header.size.height),
+            "{mode:?}: header box {header:?} is not a smaller shared cell"
+        );
         let letter = placed(cx, "rail-mark-rail-agent-local-p0");
         let icon = placed(cx, "rail-agent-icon-local-p0");
         let status = placed(cx, "rail-dot-rail-agent-local-p0");
@@ -225,6 +265,17 @@ fn placed(cx: &mut VisualTestContext, selector: &'static str) -> Bounds<Pixels> 
 
 fn near(actual: Pixels, expected: Pixels) -> bool {
     (actual - expected).abs() <= px(1.)
+}
+
+fn center_x(bounds: Bounds<Pixels>) -> Pixels {
+    bounds.left() + bounds.size.width / 2.
+}
+
+fn contains(outer: Bounds<Pixels>, inner: Bounds<Pixels>) -> bool {
+    inner.left() >= outer.left() - px(0.5)
+        && inner.right() <= outer.right() + px(0.5)
+        && inner.top() >= outer.top() - px(0.5)
+        && inner.bottom() <= outer.bottom() + px(0.5)
 }
 
 #[gpui::test]

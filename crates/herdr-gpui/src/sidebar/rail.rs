@@ -1,9 +1,11 @@
 //! The collapsed sidebar's compact rail, as Herdr's default
-//! `ui.sidebar_collapsed_mode = "compact"` draws it: per host a header mark,
-//! then a status mark per workspace and per agent. Workspace badges and agent
-//! rows share one column grid, so a host letter, agent icon, and status dot
-//! line up with the badges above them. Every mark navigates where its
-//! expanded row would, and its tooltip names what the narrow column cannot.
+//! `ui.sidebar_collapsed_mode = "compact"` draws it: per host a small header
+//! box, then a status mark per workspace and per agent. The header box stays
+//! its own shape. Workspace badges and agent rows share one borderless grid,
+//! centered on that box, and the selection highlight is the only other box:
+//! one width, wrapped around the glyph, the icon, and the dot. Every mark
+//! navigates where its expanded row would, and its tooltip names what the
+//! narrow column cannot.
 
 use super::{
     agent_name,
@@ -155,66 +157,64 @@ impl HerdrWindow {
                 } else {
                     endpoint.label.clone()
                 };
+                let box_id = endpoint_id.clone();
                 spaces = spaces.child(
-                    rail_row(
-                        &format!("rail-host-{endpoint_id}"),
-                        RowState {
-                            selected,
-                            ..RowState::default()
-                        },
-                        font,
-                        look,
-                        theme,
-                    )
-                    .child(
-                        div()
-                            .relative()
-                            .size(px(HOST_MARK))
-                            .flex_none()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded(px(crate::config::corners::SMALL))
-                            .border_1()
-                            .border_color(rgb(theme.active))
-                            .text_color(rgb(if endpoint.enabled {
-                                theme.foreground
-                            } else {
-                                theme.muted
-                            }))
-                            .child(label_text(&initial))
-                            .child(
-                                div()
-                                    .debug_selector(|| format!("rail-host-status-{endpoint_id}"))
-                                    .absolute()
-                                    .right(px(-2.))
-                                    .bottom(px(-2.))
-                                    .size(px(6.))
-                                    .rounded_full()
-                                    .bg(rgb(if connected {
-                                        crate::menu::online(theme)
-                                    } else {
-                                        theme.muted
-                                    })),
-                            ),
-                    )
-                    .id(SharedString::from(format!("rail-host-{endpoint_id}")))
-                    .debug_selector(|| format!("rail-host-{endpoint_id}"))
-                    .cursor_pointer()
-                    .tooltip(hint.with(text))
-                    .on_mouse_down(
-                        MouseButton::Right,
-                        cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                            cx.stop_propagation();
-                            this.open_host_menu(&menu_id, event.position, window, cx);
-                            this.menu.opening_right_click =
-                                this.menu.page == Some(crate::menu::Page::Host);
-                        }),
-                    )
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.select_endpoint(&select_id, cx);
-                        window.focus(&this.focus, cx);
-                    })),
+                    // No row highlight here. The letter's own box is the
+                    // header; the selection highlight belongs to the rows
+                    // beneath it, and painting both made two boxes clash.
+                    host_header(font, look)
+                        .child(
+                            div()
+                                .debug_selector(move || format!("rail-host-box-{box_id}"))
+                                .relative()
+                                .size(px(HOST_MARK))
+                                .flex_none()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded(px(crate::config::corners::SMALL))
+                                .border_1()
+                                .border_color(host_border(selected, theme))
+                                .text_color(rgb(if endpoint.enabled {
+                                    theme.foreground
+                                } else {
+                                    theme.muted
+                                }))
+                                .child(label_text(&initial))
+                                .child(
+                                    div()
+                                        .debug_selector(|| {
+                                            format!("rail-host-status-{endpoint_id}")
+                                        })
+                                        .absolute()
+                                        .right(px(-2.))
+                                        .bottom(px(-2.))
+                                        .size(px(6.))
+                                        .rounded_full()
+                                        .bg(rgb(if connected {
+                                            crate::menu::online(theme)
+                                        } else {
+                                            theme.muted
+                                        })),
+                                ),
+                        )
+                        .id(SharedString::from(format!("rail-host-{endpoint_id}")))
+                        .debug_selector(|| format!("rail-host-{endpoint_id}"))
+                        .cursor_pointer()
+                        .tooltip(hint.with(text))
+                        .on_mouse_down(
+                            MouseButton::Right,
+                            cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                                cx.stop_propagation();
+                                this.open_host_menu(&menu_id, event.position, window, cx);
+                                this.menu.opening_right_click =
+                                    this.menu.page == Some(crate::menu::Page::Host);
+                            }),
+                        )
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.select_endpoint(&select_id, cx);
+                            window.focus(&this.focus, cx);
+                        })),
                 );
             }
             if multi && endpoint.collapsed {
@@ -605,6 +605,27 @@ fn dot_slot(selector: String, width: f32, height: f32, mark: Div) -> Div {
         .items_center()
         .justify_center()
         .child(mark)
+}
+
+/// A host header: the letter box, centered on the same line as the row grid
+/// below it. Lighter and smaller than the selection highlight, and always
+/// bordered, so a selected workspace never wears the same box.
+fn host_header(font: &FontConfig, look: SidebarLook) -> Div {
+    div()
+        .relative()
+        .flex_none()
+        .h(px(look.row_height(line_height(font).max(HOST_MARK))))
+        .w_full()
+        .flex()
+        .items_center()
+        .justify_center()
+        .overflow_hidden()
+}
+
+/// The header box's border. A light ring at rest, a little stronger when that
+/// host is selected. Neither is the selection highlight's fill or outline.
+fn host_border(selected: bool, theme: &Theme) -> Rgba {
+    rgba((theme.foreground << 8) | if selected { 0x55 } else { 0x28 })
 }
 
 /// A rail row: centered marks over the active layout's highlight, so the rail
