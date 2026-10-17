@@ -136,3 +136,39 @@ fn an_upload_kept_past_its_handle_does_not_keep_the_worker_waiting() {
         .unwrap();
     drop(upload);
 }
+
+#[test]
+fn a_stalled_image_sleeps_past_the_health_deadline_it_defers() {
+    let liveness = Duration::from_secs(1);
+    let pace = Pace {
+        liveness,
+        ..paced(NEVER, TIMEOUT)
+    };
+    let (client, mut server, worker, waits) = test_client_paced(false, true, pace);
+    ssh_handshake(&mut server);
+    event(&client);
+    event(&client);
+    // An unanswered probe puts the health deadline `liveness` away.
+    client.handle.check_liveness();
+    assert!(
+        matches!(receive(&mut server), ClientMessage::EndpointControl { kind, .. } if kind == "endpoint.health.ping.v1")
+    );
+    let probed = Instant::now();
+    // The peer reads only the image's prefix, so the frame stays part written
+    // and the health check stays deferred well past that deadline.
+    reserve(&client)
+        .complete("png", vec![7; MAX_FRAME_SIZE + 1])
+        .unwrap();
+    let mut prefix = [0; 4];
+    server.read_exact(&mut prefix).unwrap();
+    assert!(probed.elapsed() < liveness, "the image started too late");
+    thread::sleep((probed + liveness * 3 / 2).saturating_duration_since(Instant::now()));
+    let before = waits.load(std::sync::atomic::Ordering::Acquire);
+    thread::sleep(liveness / 2);
+    let passes = waits.load(std::sync::atomic::Ordering::Acquire) - before;
+    // A worker that kept waking for the deferred check would pass here about
+    // every 10 ms; one waiting for room in the socket does not pass at all.
+    assert!(passes <= 2, "{passes} wait entries and exits");
+    client.handle.disconnect();
+    worker.join().unwrap().unwrap();
+}

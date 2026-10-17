@@ -418,7 +418,13 @@ pub(crate) fn run_connection(
                 [
                     session.deadline(),
                     reader.deadline(),
-                    session.health.as_ref().map(Health::deadline),
+                    // A partial image defers health checks, so their deadline
+                    // cannot end the wait either; the image's own deadline does.
+                    session
+                        .health
+                        .as_ref()
+                        .filter(|_| !partial_image)
+                        .map(Health::deadline),
                     image.and_then(|(image, published)| image.deadline(published)),
                 ],
             )
