@@ -36,7 +36,7 @@ mod updates;
 pub(crate) mod watch;
 mod zen;
 
-pub use backdrop::Backdrop;
+pub use backdrop::{Backdrop, Material};
 pub use boat::BoatConfig;
 #[cfg(feature = "boat")]
 pub(crate) use boat::BoatFields;

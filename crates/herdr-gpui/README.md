@@ -1002,6 +1002,12 @@ translucent window, through GPUI's public window API: macOS and Windows blur;
 on Linux only Wayland compositors with KDE's blur protocol do, and X11 needs a
 compositing window manager for any translucency at all.
 
+On Windows 11 (22H2 and later) the blur is a DWM system backdrop that also
+covers the title bar: acrylic by default, which blurs the windows behind, or
+Mica (the **Mica** switch, `material = "mica"`), which tints the window with
+the wallpaper the way Windows' own apps do. Windows 10 keeps the older blur,
+and other platforms ignore `material`.
+
 The **Picture** tile opens a file chooser and puts an image behind the window
 instead (`image`, an absolute path or one under `~/`), and starts it at 75%
 opacity if the window was opaque, so the picture shows. The picture covers the

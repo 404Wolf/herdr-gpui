@@ -3,7 +3,7 @@
 //! whatever is chosen.
 use super::*;
 use crate::config::{
-    Backdrop, Theme,
+    Backdrop, Material, Theme,
     backdrop::{Edit, IMAGE_OPACITY},
 };
 use crate::settings_window::ui;
@@ -142,6 +142,21 @@ impl SettingsWindow {
                                 this.save_backdrop(vec![Edit::Blur(!blur)], cx);
                             })),
                     )
+                    // Only Windows 11 has a second material to choose.
+                    .when(cfg!(windows) && blur, |details| {
+                        let mica = backdrop.material == Material::Mica;
+                        let next = if mica { Material::Acrylic } else { Material::Mica };
+                        details
+                            .child(
+                                self.control_switch("settings-backdrop-mica", "Mica", mica, true)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.save_backdrop(vec![Edit::Material(next)], cx);
+                                    })),
+                            )
+                            .child(self.control_note(
+                                "Mica tints the window with the wallpaper rather than the windows behind it.",
+                            ))
+                    })
             }
             Mode::Picture => div()
                 .flex()

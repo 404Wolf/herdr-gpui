@@ -463,6 +463,9 @@ size = 12
 # Blur the desktop behind a translucent window: macOS, Windows, and Wayland
 # compositors with KDE's blur protocol.
 # blur = false
+# What blur paints on Windows 11: "acrylic" (the windows behind, blurred) or
+# "mica" (the wallpaper). Ignored elsewhere.
+# material = "acrylic"
 # A picture behind the window, absolute or under ~/. The window stays opaque
 # over it; lower opacity shows more of it.
 # image = "~/Pictures/wallpaper.jpg"

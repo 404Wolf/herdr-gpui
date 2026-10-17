@@ -10,6 +10,8 @@ use gpui::{prelude::*, *};
 
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(windows)]
+mod windows_material;
 
 /// What one window has done about its backdrop so far.
 #[derive(Default)]
@@ -80,6 +82,9 @@ impl HerdrWindow {
         }
         #[cfg(not(target_os = "macos"))]
         if appearance != state.appearance {
+            #[cfg(windows)]
+            windows_material::apply(window, state.appearance, appearance);
+            #[cfg(not(windows))]
             window.set_background_appearance(appearance);
             state.appearance = appearance;
         }

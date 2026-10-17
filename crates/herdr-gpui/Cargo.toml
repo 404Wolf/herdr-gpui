@@ -107,7 +107,9 @@ wry.workspace = true
 raw-window-handle.workspace = true
 windows.workspace           = true
 windows-sys = { features = [
+  "Wdk_System_SystemServices",
   "Win32_Graphics_Dwm",
+  "Win32_System_SystemInformation",
 ], workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
