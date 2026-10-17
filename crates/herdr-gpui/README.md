@@ -3749,9 +3749,15 @@ Starting a local `herdr server` looks for `herdr.exe` and uses
 `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` in place of `process_group(0)`, so
 the daemon survives the GUI and no console window appears.
 
+The build script embeds the Herdr icon as icon resource 1, which GPUI loads for
+its windows, and version information that Explorer and Task Manager show as
+**Herdr UI** with the release version, or `dev` for a local build. See
+[the icon README](../../assets/icons/README.md#windows).
+
 Cross type-check it from a Mac or Linux machine with `just lint-windows`, which
 targets `x86_64-pc-windows-gnu` because those hosts cannot supply the MSVC C
-toolchain; CI lints the MSVC target on a Windows runner. `just lint-linux` is
+toolchain; it needs mingw's `x86_64-w64-mingw32-windres` on `PATH` to compile
+the icon resource. CI lints the MSVC target on a Windows runner. `just lint-linux` is
 the matching check for Linux, in the Ubuntu 24.04 container CI uses, because a
 `cfg` gate that is wrong only on Linux is invisible from both macOS and the
 Windows cross-check.
