@@ -47,6 +47,10 @@ confirm_close_workspace = true
 remove_merged_worktrees = false
 # Show the Agents section below Spaces in the sidebar.
 show_agents = true
+# Where the sidebar lists agents while show_agents is on: "panel", their own
+# section below Spaces, or "nested", under the workspace each one runs in.
+# Also under Settings > Sidebar.
+agents_placement = "panel"
 # Show the search field at the top of the sidebar, which finds devices,
 # worktrees, and branches. Also under Settings > Sidebar.
 show_sidebar_search = true
@@ -190,18 +194,22 @@ project_roots = []
 
 # Native shortcuts. Each key is a command; the value is one keystroke or a list,
 # primary first. "" or [] unbinds it. Assigning a keystroke here takes it away
-# from its default command. Modifiers: cmd (super on Linux), ctrl, alt, shift,
-# fn; keystrokes need at least one of cmd, ctrl, alt, or fn, or a function key
-# F1 through F24. Herdr > Keyboard Shortcuts also edits, unbinds, and resets them.
+# from its default command. Modifiers: cmd (Super on Linux, Win on Windows),
+# ctrl, alt, shift, fn; keystrokes need at least one of cmd, ctrl, alt, or fn,
+# or a function key F1 through F24. Herdr > Keyboard Shortcuts also edits,
+# unbinds, and resets them.
 # Herdr's own [keys] in config.toml (prefix chords included) add to these
 # defaults; a command named here keeps only the keystrokes listed here.
-# The examples below use the macOS defaults. Linux has its own Ctrl+Shift
-# defaults (not Super): new_tab = "ctrl-shift-t", new_window = "ctrl-alt-n",
-# close_window = "ctrl-alt-w", new_workspace = "ctrl-alt-shift-n",
+# The examples below use the macOS defaults. Linux and Windows have their own
+# Ctrl+Shift defaults (not Super or Win): new_tab = "ctrl-shift-t",
+# new_window = "ctrl-alt-n", close_window = "ctrl-alt-w",
+# new_workspace = "ctrl-alt-shift-n",
 # new_worktree = "ctrl-shift-n",
 # split_right = "ctrl-shift-d", split_down = "ctrl-alt-shift-d",
 # command_palette = "ctrl-shift-p", resume_palette = "ctrl-alt-shift-r",
-# toggle_full_screen = "f11".
+# toggle_full_screen = "f11", quit = "ctrl-shift-q", and reset_font_size =
+# "ctrl-shift-0" on Linux but "ctrl-0" on Windows, which can take
+# Ctrl+Shift+0 for switching input languages.
 # See Keyboard Shortcuts for the full platform-specific list. Explicit values
 # are used literally on every platform; cmd is not translated to Ctrl+Shift.
 # Ctrl+Shift+U is left to GNOME/IBus Unicode character entry.
@@ -226,7 +234,7 @@ project_roots = []
 # focus_tab_1 = "cmd-1"   # through focus_tab_9 = "cmd-9"
 # toggle_sidebar = "cmd-b"
 # toggle_status_bar = "cmd-ctrl-b"   # unbound by default
-# toggle_zen_mode = "ctrl-cmd-z"   # Linux: "ctrl-alt-z"
+# toggle_zen_mode = "ctrl-cmd-z"   # Linux and Windows: "ctrl-alt-z"
 # increase_font_size = ["cmd-=", "cmd-+"]
 # decrease_font_size = "cmd--"
 # reset_font_size = "cmd-0"
@@ -454,6 +462,19 @@ size = 12
 # is saved in its own 0600 daytona-api-key file. Default is false.
 # allow_plaintext_credentials = false
 
+# What a new cloud device runs the first time it connects, in a "setup" tab:
+# the agents listed (claude, codex, gemini, opencode), each skipped when already
+# installed, then these lines with sh -e. Settings > Cloud devices > New device
+# setup switches the agents. A provider's table, such as [cloud.coder], replaces
+# either key for that provider; an empty list or script there turns it off.
+# [cloud]
+# agents = ["claude", "opencode"]
+# setup = """
+# git config --global pull.rebase true
+# """
+# [cloud.coder]
+# agents = []
+
 # What shows behind the main window, also under Settings > Theme > Window. At the
 # default opacity the window paints as it always has.
 # [backdrop]
@@ -479,8 +500,13 @@ size = 12
 # usage = "detailed"
 # "detailed" draws a CPU graph and a memory meter; "compact" shows the shares.
 # system_load = "detailed"
-# The cup that keeps the display awake; it stays while holding, so it can stop.
+# The cup that keeps the machine awake; it stays while holding, so it can stop.
 # keep_awake = true
+# What the cup keeps awake: "display" holds the display and the system, so the
+# screen never locks; "system" holds only the system (like `caffeinate -i`) and
+# lets the display sleep and lock. A cup already on keeps its scope until it is
+# turned off and on again.
+# keep_awake_scope = "display"
 # Buttons: "label" for icon and name, "icon" for the icon alone, or "hidden".
 # theme = "label"
 # shortcuts = "label"

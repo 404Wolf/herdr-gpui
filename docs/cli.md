@@ -117,6 +117,7 @@ Every command accepts:
 | `usage`, `system` | Plan usage and load of the selected host |
 | `cloud [list]` | Saved cloud machines (no app needed) |
 | `cloud add` | Open the settings that add one |
+| `cloud setup ID` | Run the `[cloud]` setup script on a saved machine again, in a new tab once the window shows it. `ID` is the machine ID from `cloud list`, its host ID, or its label |
 | `processes [--pane ID]` | The processes under a pane, with CPU and memory (no app needed) |
 | `search symbol\|file QUERY` | Go to Symbol or Go to File over the current checkout (no app needed) |
 
@@ -152,8 +153,19 @@ herdr-gpui cloud add                         # open Cloud devices, then choose B
 Numeric deadlines are fixed, even during active SSH work; trials require at
 most 7200 seconds. The setting applies on create and resume. In Boat settings,
 **Finish setup** extends a running sandbox from now or disables its deadline.
+
 **Recover creation** retries a persisted creation request with its original
 options and key; forgetting an unresolved request requires confirmation there.
+
+What a new cloud machine installs and runs when it first connects is set the
+same way, and `cloud setup` runs it again on one already saved:
+
+```sh
+herdr-gpui config set cloud.agents '["claude", "opencode"]'
+herdr-gpui config set cloud.setup '"git config --global pull.rebase true"'
+herdr-gpui config set cloud.coder.agents '[]'   # nothing extra on Coder
+herdr-gpui cloud setup herdr-tidy-lark-aa
+```
 
 Focus-on-hover between split terminal panes is on by default. Disable it with
 `herdr-gpui config set focus_follows_mouse false`.

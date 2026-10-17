@@ -139,7 +139,13 @@ pub(super) const CATALOG: &[Entry] = &[
         Section::Sidebar,
         "sidebar-show-agents",
         "Show agents",
-        "List running agents under their workspace.",
+        "List running agents in the sidebar.",
+    ),
+    entry(
+        Section::Sidebar,
+        "sidebar-agents-placement",
+        "Agents placement",
+        "Their own section below the workspaces, or under the workspace each one runs in.",
     ),
     entry(
         Section::Sidebar,
@@ -215,8 +221,8 @@ pub(super) const CATALOG: &[Entry] = &[
     entry(
         Section::StatusBar,
         "status-keep-awake",
-        "Keep display awake",
-        "",
+        "Keep awake",
+        "The cup keeps the machine from sleeping. System only lets the display sleep and lock, like caffeinate -i. A cup already on keeps its scope until it is turned off and on again.",
     ),
     entry(Section::StatusBar, "status-theme", "Theme", ""),
     entry(Section::StatusBar, "status-shortcuts", "Shortcuts", ""),
@@ -389,6 +395,13 @@ pub(super) const CATALOG: &[Entry] = &[
         "cloud-accounts",
         "Cloud accounts",
         "Accounts for each cloud provider, and the machines saved as devices.",
+    ),
+    #[cfg(feature = "cloud")]
+    entry(
+        Section::CloudDevices,
+        "cloud-setup",
+        "New device setup",
+        "Agents such as Claude Code, Codex, Gemini CLI, or OpenCode, and a setup script, installed when a new cloud device first connects.",
     ),
     entry(
         Section::Configuration,
