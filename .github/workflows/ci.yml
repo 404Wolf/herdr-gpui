@@ -232,8 +232,13 @@ jobs:
       # window size the display cannot hold if this is refused.
       - name: Raise the desktop resolution
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/set-display-resolution.ps1
+      # Herdr publishes no ARM64 Windows build. Under x64 emulation on
+      # windows-11-arm its panes echo typed text but never act on Enter, so
+      # the live-daemon test runs on x64; the native fixtures run on both.
       - name: Native window, input, and live-daemon tests
-        run: cargo test --locked -p herdr-gpui --features integration-test --test live_gui -- --ignored --nocapture --test-threads=1
+        env:
+          SKIP_LIVE: ${{ matrix.runner == 'windows-11-arm' && '--skip native_gui_live' || '' }}
+        run: cargo test --locked -p herdr-gpui --features integration-test --test live_gui -- --ignored --nocapture --test-threads=1 $SKIP_LIVE
       # The updater's Authenticode check against a real signature: the pinned
       # archive's Microsoft-signed OpenConsole.exe, compared with PowerShell.
       - name: Update installer signer check

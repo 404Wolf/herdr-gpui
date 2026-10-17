@@ -7,6 +7,8 @@ Downloads Herdr's x86_64 Windows release, checks its SHA-256, extracts it into
 DESTINATION_DIR, and prints the path of herdr.exe for HERDR_TEST_BINARY. Herdr
 publishes no ARM64 Windows build; Windows on ARM runs this one under x64
 emulation, and the archive carries an ARM64 OpenConsole for its terminals.
+Emulated there, its panes echo typed text but never act on Enter, so CI runs
+the live-daemon GUI test on x64 only.
 
 The digest is the one GitHub records for this exact asset; bump the version
 and digest together. Nothing here discovers or touches a user's own Herdr.

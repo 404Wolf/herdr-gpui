@@ -296,12 +296,14 @@ audio player is required. Custom notification sounds are MP3 only. See
 Windows is experimental, and now tested natively. On every change, CI checks
 formatting, lints every target and feature, and runs workspace tests with default
 and all features on `windows-2025` (x86_64) and `windows-11-arm` (ARM64). On the
-same two runners it also opens real windows in a desktop session: the native
-sidebar, notification, and paint-probe fixtures, and the live GUI test against a
-pinned, checksummed Herdr `herdr.exe` in an isolated sandbox, which creates tabs,
-splits and workspaces with the keyboard, types into a PowerShell pane and reads
-its output back, resizes the window, reconnects, follows a workspace another
-client pushes, and opens a second window. A release-mode run then holds the dense
+same two runners it also opens real windows in a desktop session for the native
+sidebar, notification, and paint-probe fixtures. On x86_64 it runs the live GUI
+test against a pinned, checksummed Herdr `herdr.exe` in an isolated sandbox,
+which creates tabs, splits and workspaces with the keyboard, types into a
+PowerShell pane and reads its output back, resizes the window, reconnects,
+follows a workspace another client pushes, and opens a second window. Herdr
+publishes no ARM64 Windows build, and under x64 emulation its panes do not act
+on Enter, so the live test is not run on ARM64. A release-mode run then holds the dense
 terminal's hover, scroll, and redraw frames to a p95 budget with real Win32 mouse
 and wheel messages. The release workflow installs and uninstalls both signed
 installers. Hosted runners have no GPU, so CI proves rendering on Direct3D's
