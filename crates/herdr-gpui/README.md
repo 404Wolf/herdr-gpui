@@ -1452,7 +1452,8 @@ buttons. Typing in the terminal or clicking elsewhere dismisses the pill.
 The whole selection must be visible on screen.
 This also works with copying on selection disabled or the highlight set to clear
 after copying. For an existing selection, use **Annotate Selection for the Agent**
-in the command palette (Cmd+Shift+A on macOS, Ctrl+Alt+Shift+A on Linux).
+in the command palette (Cmd+Shift+A on macOS, Ctrl+Alt+Shift+A on Linux and
+Windows).
 Notes go to the agent in that pane, falling back to the first agent in its
 workspace; with no agent, they are copied to the clipboard.
 
@@ -2914,14 +2915,19 @@ shortcuts remain visible in the reference and are configured in Herdr's own
 `[keys]` / `[[keys.command]]` tables. Clipboard shortcuts are fixed Edit actions.
 
 Defaults are selected independently for Linux, macOS, and Windows. macOS uses
-Cmd; the experimental Windows profile currently retains its existing bindings.
-Linux uses **Ctrl+Shift** for terminal-facing application actions, keeping Super
-available to the desktop and plain Ctrl keys available to terminal programs.
-This follows terminal conventions alongside the
+Cmd. Linux uses **Ctrl+Shift** for terminal-facing application actions, keeping
+Super available to the desktop and plain Ctrl keys available to terminal
+programs. This follows terminal conventions alongside the
 [GNOME keyboard guidelines](https://developer.gnome.org/hig/reference/keyboard.html),
 whose plain Ctrl editing shortcuts also work in the app's text fields.
 
-| Action | Linux default |
+Windows starts from the Linux profile, which matches Windows Terminal's
+Ctrl+Shift conventions: no default uses the Win key, which Windows keeps for
+itself, and plain Ctrl keys still reach terminal programs. Reset font size is
+Ctrl+0 there, as in Windows Terminal, because Windows can take Ctrl+Shift+0 for
+switching input languages. Alt+F4 closes a window through Windows itself.
+
+| Action | Linux and Windows default |
 | --- | --- |
 | New tab / New window | Ctrl+Shift+T / Ctrl+Alt+N |
 | New workspace / New worktree | Ctrl+Alt+Shift+N / Ctrl+Shift+N |
@@ -2933,6 +2939,9 @@ whose plain Ctrl editing shortcuts also work in the app's text fields.
 | Next / Previous tab | Ctrl+PageDown / Ctrl+PageUp |
 | Toggle sidebar / New browser tab | Ctrl+Shift+B / Ctrl+Alt+Shift+B |
 | Settings / Keyboard Shortcuts | Ctrl+Shift+, / Ctrl+Shift+/ |
+| Larger / Smaller text | Ctrl+Shift+= / Ctrl+Shift+- |
+| Reset text size | Ctrl+Shift+0 (Linux) / Ctrl+0 (Windows) |
+| Quit | Ctrl+Shift+Q |
 | Full screen | F11 |
 
 The in-app reference lists all platform defaults and current overrides. The
@@ -3362,7 +3371,7 @@ Ctrl+Shift+U is left unbound for
   Rows chosen often and recently rise among the matches for a typed query, and
   the Projects filter lists the most frecent projects first before anything is
   typed; that history stays on this machine in `palette-frecency.json`.
-  **Resume Palette** (Cmd-Shift-R, Ctrl+Alt+Shift+R on Linux) reopens the
+  **Resume Palette** (Cmd-Shift-R, Ctrl+Alt+Shift+R on Linux and Windows) reopens the
   palette with its last query, filters, and selected row. Navigation
   (Go To) also filters agents by the status the daemon reports, like Herdr's
   navigator: click **All agents**, **Blocked**, **Working**, **Idle**, or
