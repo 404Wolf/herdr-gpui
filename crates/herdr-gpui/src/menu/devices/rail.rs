@@ -21,8 +21,7 @@ pub(in crate::menu) const HEIGHT: f32 = 620.;
 pub(in crate::menu) enum Source {
     /// SSH hosts.
     Host,
-    /// WSL distributions on this Windows machine.
-    #[cfg(windows)]
+    /// WSL distributions on this machine, listed only on Windows.
     Wsl,
     #[cfg(feature = "cloud")]
     Cloud(crate::cloud::CloudProvider),
@@ -33,7 +32,6 @@ impl Source {
     pub(in crate::menu) fn of(page: Page) -> Option<Self> {
         match page {
             Page::AddDevice => Some(Self::Host),
-            #[cfg(windows)]
             Page::AddWsl => Some(Self::Wsl),
             #[cfg(feature = "coder")]
             Page::AddCoder => Some(Self::Cloud(crate::cloud::CloudProvider::Coder)),
@@ -46,7 +44,6 @@ impl Source {
     fn name(self) -> &'static str {
         match self {
             Self::Host => "SSH host",
-            #[cfg(windows)]
             Self::Wsl => "WSL",
             #[cfg(feature = "cloud")]
             Self::Cloud(provider) => crate::cloud::name(provider),
@@ -56,7 +53,6 @@ impl Source {
     fn icon(self) -> &'static str {
         match self {
             Self::Host => "icons/terminal.svg",
-            #[cfg(windows)]
             Self::Wsl => "icons/computer.svg",
             #[cfg(feature = "cloud")]
             Self::Cloud(provider) => crate::cloud::icon(provider),
@@ -66,7 +62,6 @@ impl Source {
     fn id(self) -> &'static str {
         match self {
             Self::Host => "add-device-source-host",
-            #[cfg(windows)]
             Self::Wsl => "add-device-source-wsl",
             #[cfg(feature = "boat")]
             Self::Cloud(crate::cloud::CloudProvider::Boat) => "add-device-source-boat",
@@ -123,10 +118,10 @@ impl HerdrWindow {
 
     /// This platform's own hosts first, then each offered cloud provider.
     fn rail_sources(&self) -> Vec<Source> {
-        #[allow(unused_mut)]
         let mut sources = vec![Source::Host];
-        #[cfg(windows)]
-        sources.push(Source::Wsl);
+        if cfg!(windows) {
+            sources.push(Source::Wsl);
+        }
         #[cfg(feature = "cloud")]
         if self.cloud_offered() {
             sources.extend(
@@ -152,7 +147,6 @@ impl HerdrWindow {
                 })
                 .filter(|count| *count > 0)
                 .map_or(State::None, State::Nearby),
-            #[cfg(windows)]
             Source::Wsl => State::None,
             #[cfg(feature = "cloud")]
             Source::Cloud(provider) if self.cloud_providers().contains(&provider) => State::Ready,
@@ -173,7 +167,6 @@ impl HerdrWindow {
         }
         self.menu.error = None;
         match source {
-            #[cfg(windows)]
             Source::Wsl => {
                 if self.menu.wsl_setup.is_some() {
                     self.menu.page = Some(Page::AddWsl);
