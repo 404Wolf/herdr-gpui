@@ -37,7 +37,7 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[error("Could not keep the display awake: {0}")]
+    #[error("Could not keep the machine awake: {0}")]
     Caffeine(#[source] keepawake::Error),
     #[error("No agent is working, so there is nothing to stay awake for")]
     CaffeineNoWorkingAgents,
