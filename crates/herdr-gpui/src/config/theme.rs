@@ -152,7 +152,7 @@ impl Config {
     /// `light:…,dark:…` value, and Herdr's light palette for `Follow Herdr`.
     pub fn theme(&self, light: bool) -> Result<Theme> {
         self.theme_with_directories(light, theme_directories)
-            .map(|theme| theme.with_contrast(self.contrast))
+            .map(|theme| self.styled(theme))
     }
 
     /// Resolves every side, so a pair is refused before it is saved rather
@@ -176,7 +176,14 @@ impl Config {
     /// appearance and with this config's contrast. Reads theme files, so it
     /// runs off the UI thread.
     pub(crate) fn theme_named(&self, value: &str, light: bool) -> Result<Theme> {
-        resolve(value, light, theme_directories).map(|theme| theme.with_contrast(self.contrast))
+        resolve(value, light, theme_directories).map(|theme| self.styled(theme))
+    }
+
+    /// `theme` with this config's contrast and accent.
+    fn styled(&self, theme: Theme) -> Theme {
+        theme
+            .with_contrast(self.contrast)
+            .with_accent(self.accent.color())
     }
 }
 
@@ -279,6 +286,9 @@ pub struct Theme {
     pub palette: [u32; 256],
     /// Applied by [`Theme::with_contrast`]; every theme loads as `Standard`.
     pub contrast: Contrast,
+    /// The system accent standing in for the theme's, from
+    /// [`Theme::with_accent`]; every theme loads without one.
+    pub accent: Option<u32>,
 }
 
 impl Default for Theme {
@@ -309,6 +319,7 @@ impl Default for Theme {
             sidebar: None,
             palette,
             contrast: Contrast::Standard,
+            accent: None,
         }
     }
 }
@@ -335,7 +346,15 @@ impl Theme {
     /// The theme's primary accent, used for selection colors that must read as
     /// chosen rather than merely hovered.
     pub fn primary(&self) -> u32 {
-        self.palette[5]
+        self.accent.unwrap_or(self.palette[5])
+    }
+
+    /// Uses `accent`, when there is one, as [`Self::primary`]. Terminal
+    /// colors, including the palette slot the theme's accent comes from,
+    /// stay as the theme drew them.
+    pub fn with_accent(mut self, accent: Option<u32>) -> Self {
+        self.accent = accent;
+        self
     }
 
     /// The sidebar's fill: Herdr's `sidebar_bg` when set, else the surface.

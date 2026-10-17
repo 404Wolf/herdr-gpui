@@ -1,0 +1,24 @@
+use super::*;
+
+#[test]
+fn the_accent_follows_the_theme_unless_the_system_is_asked_for() -> anyhow::Result<()> {
+    assert_eq!(Config::default().accent, Accent::Theme);
+    assert_eq!(Config::parse("accent = 'theme'\n")?.accent, Accent::Theme);
+    assert_eq!(Config::parse("accent = 'system'\n")?.accent, Accent::System);
+    assert!(Config::parse("accent = 'blue'\n").is_err());
+    assert_eq!(Accent::Theme.color(), None);
+    if !cfg!(windows) {
+        assert_eq!(Accent::System.color(), None);
+    }
+    Ok(())
+}
+
+#[test]
+fn a_system_accent_replaces_the_primary_color_but_no_terminal_color() {
+    let theme = Theme::default();
+    let accented = theme.clone().with_accent(Some(0x0078d4));
+    assert_eq!(theme.primary(), theme.palette[5]);
+    assert_eq!(accented.primary(), 0x0078d4);
+    assert_eq!(accented.palette, theme.palette);
+    assert_eq!(theme.clone().with_accent(None), theme);
+}

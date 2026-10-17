@@ -7,6 +7,7 @@ use crate::{
     contrast::Contrast,
     keymap::{Binding, DaemonKeys, Keymap, PaneKeys},
 };
+mod accent;
 pub(crate) mod backdrop;
 mod bitmap_fonts;
 mod boat;
@@ -36,6 +37,7 @@ mod updates;
 pub(crate) mod watch;
 mod zen;
 
+pub use accent::Accent;
 pub use backdrop::{Backdrop, Material};
 pub use boat::BoatConfig;
 #[cfg(feature = "boat")]
@@ -107,6 +109,8 @@ pub(crate) mod corners {
 #[derive(Clone, Debug)]
 pub struct Config {
     // keep-sorted start
+    /// Where the app's own accent color comes from.
+    pub accent: Accent,
     /// Snapshot a checkout's files each time one of its agents starts or
     /// finishes a turn, so they can be rolled back.
     pub agent_checkpoints: bool,
@@ -392,6 +396,7 @@ impl Default for Config {
         };
         Self {
             // keep-sorted start
+            accent: Accent::default(),
             agent_checkpoints: true,
             backdrop: Backdrop::default(),
             bell: BellConfig::default(),
@@ -459,6 +464,7 @@ impl Default for Config {
 #[serde(default)]
 struct Settings {
     // keep-sorted start
+    accent: Accent,
     agent_checkpoints: Option<bool>,
     backdrop: Backdrop,
     bell: BellConfig,
@@ -887,6 +893,7 @@ impl Config {
         config.zen = settings.zen.try_into()?;
         settings.backdrop.validate()?;
         config.backdrop = settings.backdrop;
+        config.accent = settings.accent;
         config.contrast = settings.contrast;
         config.usage = settings.usage;
         config.option_as_alt = settings.option_as_alt;

@@ -985,6 +985,12 @@ graphics) to 4.5:1 (the level for text), lifts dim labels to it too, and makes
 selected rows stand further off the surface. Terminal output is never
 adjusted; programs keep the colors they asked for.
 
+On Windows, top-level `accent = "system"` takes the app's own accent (the
+current tab, selected rows, focus marks) from **Settings > Personalization >
+Colors** instead of the theme. It is read whenever a theme loads, so a new
+accent shows at the next theme or appearance change, or the next start. Other
+platforms keep the theme's accent.
+
 **Settings > Theme > Window** offers three backdrop tiles: **Solid** (the
 default), **Translucent**, and **Picture**, each showing only its own controls.
 Translucent starts at 85%, and its **Background opacity** stepper moves in 5%
