@@ -117,8 +117,8 @@ impl HerdrWindow {
         cx.notify();
     }
 
-    /// Start the shown device's waiting script once it is connected, lists a
-    /// workspace, and no other script is starting. Expired ones are dropped.
+    /// Start the shown device's waiting script once it is connected, has its
+    /// shell surface, lists a workspace, and no other script is starting. Expired ones are dropped.
     pub(crate) fn poll_cloud_setup(&mut self, now: Instant, cx: &mut Context<Self>) {
         if cx
             .try_global::<PendingSetups>()
@@ -143,6 +143,12 @@ impl HerdrWindow {
         let Some(snapshot) = self.live.snapshot.as_ref() else {
             return;
         };
+        // The daemon refuses `tab.create` from a client with no active shell
+        // surface, and a device just shown is connected before it has one.
+        // Taking the script then would fail it for good, so it keeps waiting.
+        if !self.live.surface_ready() {
+            return;
+        }
         let workspace = snapshot
             .focused_workspace_id
             .as_ref()
