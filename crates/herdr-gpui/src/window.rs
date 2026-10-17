@@ -547,6 +547,8 @@ impl HerdrWindow {
         self.poll_carry(window, cx);
         crate::link::follow::poll(self, window, cx);
         #[cfg(windows)]
+        crate::jump_list::JumpList::observe(window.window_handle().window_id(), self, cx);
+        #[cfg(windows)]
         crate::taskbar::set_progress(
             window.window_handle().window_id(),
             crate::taskbar::Bar::from_progress(self.taskbar_progress()),

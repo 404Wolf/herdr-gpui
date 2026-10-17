@@ -372,6 +372,9 @@ pub(crate) fn run() -> std::process::ExitCode {
     } else {
         crate::worktree_notes::Notes::default()
     };
+    // Nor with the user's jump list, which they would replace.
+    #[cfg(windows)]
+    let jump_list = (mode == LaunchMode::Normal).then(crate::jump_list::JumpList::load);
     // Nor with which palette rows the user chooses.
     let palette_frecency = if mode == LaunchMode::Normal {
         crate::palette::Frecency::load()
@@ -398,6 +401,10 @@ pub(crate) fn run() -> std::process::ExitCode {
             dispatch_history.install(cx);
             agent_skill.install_global(cx);
             keychain_grants.install(cx);
+            #[cfg(windows)]
+            if let Some(jump_list) = jump_list {
+                jump_list.install(cx);
+            }
             if let Some(link) = pending_link {
                 crate::link::follow::defer(link, cx);
             }

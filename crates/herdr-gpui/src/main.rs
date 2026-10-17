@@ -76,6 +76,8 @@ mod icon_font_notice;
 mod icons;
 mod input;
 mod integrations;
+#[cfg(windows)]
+mod jump_list;
 mod keymap;
 mod lenient;
 mod link;

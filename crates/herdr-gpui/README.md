@@ -3752,6 +3752,15 @@ Windows cross-check.
   downloads and installs an app update. Copies and downloads show their real
   fraction; steps without one show the moving bar. Checks the app runs on its
   own, and dialogs waiting for you, show nothing.
+- **Jump list.** Right-click the taskbar button, or the Start menu entry, for
+  the Git checkouts of the workspaces you last focused on this computer, under
+  **Recent workspaces**, and a **Show DEVICE** task for each device. Each entry
+  is a `herdr-gpui://` link (below), so it reaches the running app, or starts
+  it. Windows shows recent workspaces only while **Settings > Personalization >
+  Start > Show recently opened items in Start, Jump Lists, and File Explorer**
+  is on; with it off, only the devices are listed. An entry you remove from the
+  list is forgotten. The recent checkouts are kept in `jump-list.json` in the
+  state directory.
 - **`herdr-gpui://` links.** The installer registers the scheme for the current
   user (`HKCU\Software\Classes\herdr-gpui`) and removes it on uninstall.
   `herdr-gpui://open?path=C:\src\repo` shows a local Git checkout or worktree:
