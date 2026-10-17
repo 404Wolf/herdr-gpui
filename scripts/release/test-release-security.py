@@ -156,9 +156,13 @@ class ReleaseTargets(unittest.TestCase):
                         'name: windows-package-${{ matrix.target }}'):
             self.assertIn(command, windows)
         for target in ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"):
-            # Only the Authenticode-signed builds are attested and published.
-            self.assertIn(f"name: windows-signed-{target}\n", jobs["attest"])
-            self.assertNotIn(f"name: windows-package-{target}\n", jobs["attest"])
+            # The Authenticode-signed builds are attested and published once
+            # signing is set up; the tested unsigned ones only until then.
+            choice = ("name: ${{ needs.validate.outputs.windows_signed == 'true' && 'windows-signed' "
+                      f"|| 'windows-package' }}}}-{target}\n")
+            for name in ("sign", "attest"):
+                self.assertIn(choice, jobs[name], name)
+                self.assertNotIn(f"name: windows-package-{target}\n", jobs[name], name)
         for name in ("sign", "attest"):
             self.assertRegex(jobs[name], r"    needs: \[[^]]*\bwindows\b")
         attest = jobs["attest"].replace("${{ needs.validate.outputs.version }}", VERSION)
@@ -339,9 +343,34 @@ class WindowsTrust(unittest.TestCase):
         # The unsigned build is still installed and checked where it was built.
         self.assertIn('python scripts/release/windows-installer.py smoke "dist/', jobs["windows"])
 
+    def test_signing_is_optional_until_its_publisher_is_set(self):
+        jobs = self.jobs
+        validate = jobs["validate"]
+        self.assertIn("windows_signed: ${{ steps.windows-signing.outputs.signed }}", validate)
+        self.assertIn("WINDOWS_SIGNING_SUBJECT: ${{ vars.WINDOWS_SIGNING_SUBJECT }}", validate)
+        self.assertIn('if [[ -n "$WINDOWS_SIGNING_SUBJECT" ]]; then', validate)
+        # Unset, the build names no publisher, so its updater stays off; it
+        # must not refuse to build.
+        self.assertIn("HERDR_WINDOWS_SIGNER: ${{ vars.WINDOWS_SIGNING_SUBJECT }}", jobs["windows"])
+        self.assertNotIn("test -n \"$HERDR_WINDOWS_SIGNER\"", jobs["windows"])
+        self.assertIn("needs.validate.outputs.windows_signed == 'true'", jobs["windows-sign"])
+        # A skipped signing job may stand in for a successful one only when
+        # signing is off; a failed or cancelled one still stops the release.
+        unsigned = "needs.validate.outputs.windows_signed == 'false' && needs.windows-sign.result == 'skipped'"
+        for name in ("sign", "attest"):
+            job = jobs[name]
+            self.assertIn("!cancelled() &&", job, name)
+            self.assertIn("needs.windows-sign.result == 'success'", job, name)
+            self.assertIn(unsigned, job, name)
+            for need in re.search(r"    needs: \[([^]]+)\]", job)[1].split(", "):
+                if need not in ("windows-sign", "windows-smoke"):
+                    self.assertIn(f"needs.{need}.result == 'success'", job, (name, need))
+        self.assertIn("needs.windows-smoke.result == 'skipped'", jobs["attest"])
+
     def test_winget_gets_only_published_stable_installers(self):
         winget = self.jobs["winget"]
         self.assertIn("    needs: [validate, publish]\n", winget)
+        self.assertIn("needs.validate.outputs.windows_signed == 'true'", winget)
         self.assertIn(".isDraft == false and .isPrerelease == false", winget)
         self.assertIn('gh release download "v$VERSION" --dir final --pattern SHA256SUMS', winget)
         self.assertIn('winget.py submit "$VERSION" final/SHA256SUMS', winget)

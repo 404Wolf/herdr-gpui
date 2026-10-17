@@ -343,12 +343,15 @@ Each release publishes `Herdr-VERSION-x86_64-pc-windows-msvc.zip` and
 `Herdr-VERSION-aarch64-pc-windows-msvc.zip` (native ARM64), each containing
 `herdr-gpui.exe`, `herdr-gpui-launcher.exe`, and their license notices, beside
 the matching `-setup.exe` installers. They carry the same checksums, Sigstore
-signatures, and build provenance as the other assets, and both executables,
-the installers, and their uninstaller are Authenticode-signed: a release
-publishes only after Windows accepts those signatures (see
-[`scripts/release/README.md`](scripts/release/README.md)). A copy installed by
-the installer, winget, or the [install script](#windows-experimental) updates
-itself in the app: the installer it downloads must match the release's
+signatures, and build provenance as the other assets. Once Windows signing is
+set up, both executables, the installers, and their uninstaller are
+Authenticode-signed, and a release publishes only after Windows accepts those
+signatures; until then they ship unsigned, are not submitted to winget, and do
+not update themselves (see
+[`scripts/release/README.md`](scripts/release/README.md#windows-signing)). A
+signed copy installed by the installer, winget, or the
+[install script](#windows-experimental) updates itself in the app: the
+installer it downloads must match the release's
 Ed25519-signed `windows-manifest.json` and carry a valid signature from Herdr
 UI's publisher, or it never runs (see
 [App Updates](docs/updating.md#windows-installers)). The app registers with

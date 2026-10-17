@@ -181,10 +181,11 @@ that directory to the user `PATH`, and creates the Start menu shortcut to the
 launcher. Both zips and both
 installers are mandatory in the asset manifest and receive checksums, Sigstore
 sidecars and provenance like every other asset, after the Authenticode signing
-below. The signed installers are also listed in their own Ed25519-signed
-`windows-manifest.json`, so a copy in the standard install location updates
-itself in the app (see [App Updates](../../docs/updating.md#windows-installers));
-other copies update by manual download, or through winget.
+below when it is set up. The installers are also listed in their own
+Ed25519-signed `windows-manifest.json`, so a signed copy in the standard install
+location updates itself in the app (see
+[App Updates](../../docs/updating.md#windows-installers)); other copies update
+by manual download, or through winget.
 
 ## Windows Signing
 
@@ -192,7 +193,17 @@ The `windows` job's zip and installer are unsigned, and so are every local and
 pull request build: `windows-installer.py build` signs only when given `--sign`,
 and `herdr-gpui.iss` only sets `SignTool` when ISCC receives one. The release
 workflow then signs in `windows-sign`, one job per target on `windows-2025`,
-gated by the protected **`release`** environment like `sign`:
+gated by the protected **`release`** environment like `sign`.
+
+Signing is optional until it is set up: `validate` turns it on once the
+`WINDOWS_SIGNING_SUBJECT` repository variable (below) is set, and warns while it
+is not. Until then `windows-sign`, `windows-smoke` and `winget` are skipped,
+`sign` and `attest` take the unsigned `windows-package-TARGET` artifacts, and
+the release ships unsigned Windows zips and installers. Those builds embed no
+publisher, so their in-app updater stays off rather than trusting an unsigned
+installer, and Windows SmartScreen warns on first run. Once the variable is
+set, `windows-sign` requires the Azure setup below, and a release without it
+fails instead of falling back to unsigned. When signing is on:
 
 1. `windows-signing.py unpack` extracts the tested zip without running anything.
 2. `azure/login` signs in to Azure with the job's OIDC token, and
@@ -214,9 +225,9 @@ gated by the protected **`release`** environment like `sign`:
 `windows-smoke` then installs and uninstalls each signed installer on its own
 architecture, outside the signing environment, and checks the signatures of
 the installer and of the installed app, launcher and uninstaller. `attest`
-takes only the signed `windows-signed-TARGET` artifacts, so checksums, Sigstore
-and GitHub provenance (`actions/attest-build-provenance`) cover the bytes users
-download.
+then takes only the signed `windows-signed-TARGET` artifacts, so checksums,
+Sigstore and GitHub provenance (`actions/attest-build-provenance`) cover the
+bytes users download.
 
 Signing needs this one-time Azure setup, which only the maintainer can do:
 
@@ -247,8 +258,8 @@ Signing needs this one-time Azure setup, which only the maintainer can do:
    (`HERDR_WINDOWS_SIGNER`), and `windows-sign` verifies against the same
    value. The subject is the validated identity, so read it from a first signed
    file (`(Get-AuthenticodeSignature file.exe).SignerCertificate.Subject`).
-   Until it is set, the `windows` job stops before building, so no release can
-   ship a Windows app that cannot update. Artifact Signing certificates last
+   Set it only once the Azure variables above are in place: it is the switch
+   that turns signing on. Artifact Signing certificates last
    days, so pin the subject, never a thumbprint.
 
 ## Winget
