@@ -208,8 +208,12 @@ pub(crate) fn open_additional_window_then(
 
 pub(crate) fn run() -> std::process::ExitCode {
     use cli::{LaunchMode, LaunchOptions};
-    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    let mut args: Vec<_> = std::env::args_os().skip(1).collect();
     if let Some(exit) = updater::run_helper(&args) {
+        return exit;
+    }
+    // Restart Manager restarts this executable itself; see `restart_manager`.
+    if let Some(exit) = crate::restart_manager::hand_off(&mut args) {
         return exit;
     }
     #[cfg(unix)]
@@ -222,7 +226,7 @@ pub(crate) fn run() -> std::process::ExitCode {
     }
     // A control command asked for JSON gets its usage errors as JSON too.
     let json_errors = cli::control::wants_json(&args);
-    let LaunchOptions { target, mode } = match LaunchOptions::parse(&args) {
+    let LaunchOptions { target, mut mode } = match LaunchOptions::parse(&args) {
         Ok(options) => options,
         Err(error) if json_errors => {
             println!(
@@ -240,6 +244,22 @@ pub(crate) fn run() -> std::process::ExitCode {
     };
     if let LaunchMode::Control(invocation) = mode {
         return crate::control::run(invocation);
+    }
+    // A link goes to the app already running, or starts the app with it.
+    let mut pending_link = None;
+    if let LaunchMode::Link(link) = mode {
+        match crate::control::send_link(&link) {
+            Ok(_) => return std::process::ExitCode::SUCCESS,
+            Err(crate::Error::ControlUnavailable { .. }) => {
+                pending_link = Some(link);
+                mode = LaunchMode::Normal;
+            }
+            Err(error) => {
+                tracing::warn!(%error, "The running app refused a link");
+                eprintln!("{error}");
+                return std::process::ExitCode::from(crate::control::exit_status(&error));
+            }
+        }
     }
     // A separate app of its own: no daemon, control socket, stores, or updater.
     #[cfg(feature = "mockup")]
@@ -298,6 +318,9 @@ pub(crate) fn run() -> std::process::ExitCode {
         arch = std::env::consts::ARCH,
         "GPUI client starting"
     );
+    if mode == LaunchMode::Normal {
+        crate::restart_manager::register();
+    }
     // Only read first-frame settings here. Migration, defaults refresh, and font
     // discovery run after opening; CLI and fixtures skip personal settings.
     let appearance = if mode == LaunchMode::Normal {
@@ -348,6 +371,15 @@ pub(crate) fn run() -> std::process::ExitCode {
     } else {
         crate::worktree_notes::Notes::default()
     };
+    // Nor with what the user snoozed, settled, or pinned in the Overview.
+    let overview_marks = if mode == LaunchMode::Normal {
+        crate::overview::Marks::load()
+    } else {
+        crate::overview::Marks::default()
+    };
+    // Nor with the user's jump list, which they would replace.
+    #[cfg(windows)]
+    let jump_list = (mode == LaunchMode::Normal).then(crate::jump_list::JumpList::load);
     // Nor with which palette rows the user chooses.
     let palette_frecency = if mode == LaunchMode::Normal {
         crate::palette::Frecency::load()
@@ -372,11 +404,19 @@ pub(crate) fn run() -> std::process::ExitCode {
             browser_tabs.install(cx);
             group_layouts.install(cx);
             worktree_notes.install(cx);
+            overview_marks.install(cx);
             palette_frecency.install(cx);
             dispatch_history.install(cx);
             agent_skill.install_global(cx);
             keychain_grants.install(cx);
             taskbar.install(cx);
+            #[cfg(windows)]
+            if let Some(jump_list) = jump_list {
+                jump_list.install(cx);
+            }
+            if let Some(link) = pending_link {
+                crate::link::follow::defer(link, cx);
+            }
             // Only the user's own app answers agents; native test modes stay private.
             if mode == LaunchMode::Normal {
                 crate::control::install(cx);
@@ -389,7 +429,7 @@ pub(crate) fn run() -> std::process::ExitCode {
             cx.set_global(appearance.select(light_appearance(cx)));
             app_icon::install();
             crate::caffeine::install(cx);
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", windows))]
             crate::app_badge::install(cx);
             cx.on_action(|_: &Quit, cx| cx.quit());
             cx.on_action(|_: &Hide, cx| cx.hide());

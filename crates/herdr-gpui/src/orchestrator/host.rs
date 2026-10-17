@@ -1,13 +1,14 @@
-//! The orchestrator in a tab: opening it for the focused workspace's
-//! repository, restoring it after a restart, feeding it the theme, live
-//! agents and GitHub account from the window's tick, and acting on its
-//! events. The view itself is an entity that knows nothing of tabs.
+//! The orchestrator's view, owned by the window: one, made the first time the
+//! Pull requests or Issues section is shown (see `section`), listing every
+//! distinct repository the workspaces of every connected host hold. The
+//! window's tick hands it those repositories, the theme, live agents, and
+//! each host's GitHub account, and acts on its events. The view itself knows
+//! nothing of its host.
 
-use super::{Event, LiveAgent, LiveBranch, Look, OrchestratorView, Request, Timing};
+use super::{Event, LiveAgent, LiveBranch, Look, OrchestratorView, RepoSpec, Request, Timing};
 use crate::{
     HerdrWindow, NavigationTarget,
-    browser::{Location, OrchestratorRepo, Pick, Slot, Store, Tab, TabId, WebUrl},
-    window::Flash,
+    browser::{OrchestratorRepo, WebUrl},
 };
 use gpui::{prelude::*, *};
 use herdr_client::ConnectTarget;
@@ -16,7 +17,21 @@ use std::sync::Arc;
 /// Events waiting for the tick; a view cannot emit more than a few per frame.
 const MAX_EVENTS: usize = 16;
 
-/// An open orchestrator tab's view and its event subscription.
+/// A view the window made, by the order it was made in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(crate) struct ViewId(u64);
+
+#[cfg(test)]
+impl ViewId {
+    pub(crate) fn test(id: u64) -> Self {
+        Self(id)
+    }
+}
+
+/// The most repositories one view lists; workspaces beyond are left out.
+const MAX_REPOS: usize = 32;
+
+/// A view and its event subscription.
 pub(crate) struct Orchestrator {
     pub(super) view: Entity<OrchestratorView>,
     pub(super) _events: Subscription,
@@ -39,81 +54,6 @@ pub(crate) struct LiveCache {
 }
 
 impl HerdrWindow {
-    /// Opens the focused workspace's orchestrator tab, or brings back the one
-    /// already open.
-    pub(crate) fn open_orchestrator(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some((_, workspace)) = self.browser_key() else {
-            self.show_flash(Flash::warning("Open a workspace first"), cx);
-            return;
-        };
-        let checkout = self.focused_checkout();
-        self.open_orchestrator_in(workspace, checkout, window, cx);
-    }
-
-    /// Opens workspace `workspace`'s orchestrator tab, listing the repository
-    /// of `checkout`. Another workspace than the focused one is switched to,
-    /// and its tab shows once it is.
-    pub(crate) fn open_orchestrator_in(
-        &mut self,
-        workspace: String,
-        checkout: Option<String>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let target = &self.endpoints[self.selected_endpoint].connection.target;
-        if matches!(target, ConnectTarget::Socket(_) | ConnectTarget::Wsl { .. }) {
-            self.show_flash(
-                Flash::warning("The orchestrator needs a local or SSH host"),
-                cx,
-            );
-            return;
-        }
-        let scope = crate::browser::scope(&self.endpoints[self.selected_endpoint]);
-        let Some(repo) = checkout.and_then(|path| OrchestratorRepo::new(path).ok()) else {
-            self.show_flash(Flash::warning("This workspace has no folder to read"), cx);
-            return;
-        };
-        let existing = cx.try_global::<Store>().and_then(|store| {
-            store
-                .in_workspace(&scope, &workspace)
-                .find(|tab| matches!(&tab.location, Some(Location::Orchestrator { .. })))
-                .map(|tab| tab.id)
-        });
-        let opened = existing.or_else(|| {
-            Store::update(cx, |store| {
-                store.open(
-                    scope,
-                    &workspace,
-                    Some(Location::Orchestrator { repo }),
-                    None,
-                )
-            })
-        });
-        let Some(id) = opened else {
-            self.show_flash(Flash::warning("Too many tabs are open"), cx);
-            return;
-        };
-        self.dismiss_menu(window, cx);
-        if self
-            .browser_key()
-            .is_none_or(|(_, focused)| focused != workspace)
-        {
-            self.navigate(NavigationTarget::Workspace(&workspace), cx);
-            return;
-        }
-        self.ensure_orchestrator(id, cx);
-        // A workspace has one orchestrator tab: asked for again, it moves
-        // to the group in use.
-        match self.ensure_layout().map(|layout| layout.active()) {
-            Some(group) => self.move_tab_to_group(Pick::Page(id), group, window, cx),
-            None => self.show_browser_tab(id, window, cx),
-        }
-        if let Some(orchestrator) = self.orchestrators.get(&id) {
-            let focus = orchestrator.view.read(cx).focus_handle().clone();
-            window.focus(&focus, cx);
-        }
-    }
-
     /// Whether the focused workspace's repository can be listed: a host
     /// scripts can run on, with a workspace open.
     pub(crate) fn can_open_orchestrator(&self) -> bool {
@@ -138,26 +78,6 @@ impl HerdrWindow {
             .find(|workspace| workspace.workspace_id == id)
             .map(|workspace| workspace.new_workspace_cwd.clone())
             .filter(|path| !path.is_empty())
-    }
-
-    /// A folder of the focused workspace: its focused pane's, else the one
-    /// new tabs start in.
-    fn focused_checkout(&self) -> Option<String> {
-        let snapshot = self.live.snapshot.as_deref()?;
-        let workspace = snapshot.focused_workspace_id.as_deref()?;
-        let pane = snapshot
-            .panes
-            .iter()
-            .find(|pane| pane.workspace_id == workspace && pane.focused)
-            .and_then(|pane| pane.foreground_cwd.clone().or_else(|| pane.cwd.clone()));
-        pane.or_else(|| {
-            snapshot
-                .workspaces
-                .iter()
-                .find(|found| found.workspace_id == workspace)
-                .map(|found| found.new_workspace_cwd.clone())
-        })
-        .filter(|path| !path.is_empty())
     }
 
     /// The orchestrator's look: the UI font's family at the terminal font's
@@ -195,40 +115,19 @@ impl HerdrWindow {
         }
     }
 
-    /// Makes `id`'s view from its tab, if the window has none yet.
-    fn ensure_orchestrator(&mut self, id: TabId, cx: &mut Context<Self>) {
-        if self.orchestrators.contains_key(&id) {
-            return;
+    /// The sections' view, made if the window has none yet.
+    pub(super) fn sections_view(&mut self, cx: &mut Context<Self>) -> ViewId {
+        if let Some(id) = self
+            .activity
+            .section_view
+            .filter(|id| self.orchestrators.contains_key(id))
+        {
+            return id;
         }
-        let Some(Location::Orchestrator { repo }) = cx
-            .try_global::<Store>()
-            .and_then(|store| store.get(id))
-            .and_then(|tab| tab.location.clone())
-        else {
-            return;
-        };
-        let Some((_, workspace_id)) = self.browser_key() else {
-            return;
-        };
-        let target = self.endpoints[self.selected_endpoint]
-            .connection
-            .target
-            .clone();
-        let (token, login) = self.github_account(&target);
-        let request = Request {
-            target,
-            checkout: repo.checkout,
-            workspace_id,
-            token,
-            data_root: None,
-            timing: Timing::default(),
-        };
+        self.next_orchestrator += 1;
+        let id = ViewId(self.next_orchestrator);
         let look = self.look();
-        let view = cx.new(|cx| {
-            let mut view = OrchestratorView::new(request, look, cx);
-            view.set_github(None, login, cx);
-            view
-        });
+        let view = cx.new(|cx| OrchestratorView::new(look, cx));
         // Handled from the tick, which has the window acting on them needs.
         let events = cx.subscribe(&view, move |this, _, event: &Event, cx| {
             if this.orchestrator_events.len() < MAX_EVENTS {
@@ -243,35 +142,110 @@ impl HerdrWindow {
                 _events: events,
             },
         );
+        id
     }
 
-    /// Runs every window tick: views for restored tabs are made, closed
-    /// tabs' views go, and every view gets its worker's news and the
+    /// Every distinct repository the workspaces of the connected hosts that
+    /// can run the orchestrator's scripts hold, in sidebar order. Worktrees
+    /// of one repository are one: they share its database.
+    pub(super) fn repo_specs(&self) -> Vec<RepoSpec> {
+        let mut specs: Vec<RepoSpec> = Vec::new();
+        for (index, endpoint) in self.endpoints.iter().enumerate() {
+            let target = &endpoint.connection.target;
+            let state = if index == self.selected_endpoint {
+                &self.live
+            } else {
+                &endpoint.live
+            };
+            let (true, true, Some(snapshot)) = (
+                endpoint.enabled && state.status.is_connected(),
+                scripts_run_on(target),
+                state.snapshot.as_deref(),
+            ) else {
+                continue;
+            };
+            let (token, _) = self.github_account(target);
+            for workspace in &snapshot.workspaces {
+                let Ok(repo) = OrchestratorRepo::new(workspace.new_workspace_cwd.clone()) else {
+                    continue;
+                };
+                let key = repo_key(
+                    &endpoint.id,
+                    workspace.worktree.as_ref().map(|tree| tree.key.as_str()),
+                    &repo.checkout,
+                );
+                if specs.iter().any(|spec| spec.key == key) {
+                    continue;
+                }
+                if specs.len() == MAX_REPOS {
+                    return specs;
+                }
+                specs.push(RepoSpec {
+                    key,
+                    host: endpoint.label.clone(),
+                    request: Request {
+                        target: target.clone(),
+                        checkout: repo.checkout,
+                        workspace_id: workspace.workspace_id.clone(),
+                        token: token.clone(),
+                        data_root: None,
+                        timing: Timing::default(),
+                    },
+                });
+            }
+        }
+        specs
+    }
+
+    /// The key [`Self::repo_specs`] gives workspace `workspace` on the shown
+    /// host, so a section can pick that project.
+    pub(crate) fn workspace_repo_key(&self, workspace: &str) -> Option<String> {
+        let endpoint = self.endpoints.get(self.selected_endpoint)?;
+        let found = self
+            .live
+            .snapshot
+            .as_deref()?
+            .workspaces
+            .iter()
+            .find(|shown| shown.workspace_id == workspace)?;
+        let repo = OrchestratorRepo::new(found.new_workspace_cwd.clone()).ok()?;
+        Some(repo_key(
+            &endpoint.id,
+            found.worktree.as_ref().map(|tree| tree.key.as_str()),
+            &repo.checkout,
+        ))
+    }
+
+    pub(super) fn orchestrator_view(&self, id: ViewId) -> Option<&Entity<OrchestratorView>> {
+        self.orchestrators
+            .get(&id)
+            .map(|orchestrator| &orchestrator.view)
+    }
+
+    /// Every view, by id.
+    pub(crate) fn orchestrator_views(&self) -> Vec<(ViewId, Entity<OrchestratorView>)> {
+        let mut views: Vec<_> = self
+            .orchestrators
+            .iter()
+            .map(|(id, orchestrator)| (*id, orchestrator.view.clone()))
+            .collect();
+        views.sort_unstable_by_key(|(id, _)| *id);
+        views
+    }
+
+    /// Runs every window tick: views of closed workspaces go, the shown
+    /// section gets its view, and every view gets its worker's news and the
     /// window's current look, agents, and account.
     pub(crate) fn poll_orchestrators(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         for (id, event) in std::mem::take(&mut self.orchestrator_events) {
             self.orchestrator_event(id, event, window, cx);
         }
-        let Some(store) = cx.try_global::<Store>() else {
-            self.orchestrators.clear();
-            return;
-        };
-        self.orchestrators.retain(|id, _| store.get(*id).is_some());
-        if let Some((scope, workspace)) = self.browser_key() {
-            let missing: Vec<TabId> = store
-                .in_workspace(&scope, &workspace)
-                .filter(|tab| {
-                    matches!(tab.location, Some(Location::Orchestrator { .. }))
-                        && !self.orchestrators.contains_key(&tab.id)
-                })
-                .map(|tab| tab.id)
-                .collect();
-            for id in missing {
-                self.ensure_orchestrator(id, cx);
-            }
-        }
-        self.forget_closed_orchestrator_windows(cx);
+        self.sync_activity_section(cx);
         let views = self.orchestrator_views();
+        // The bar's counts read what the views polled last tick.
+        if self.activity.observe_sources(&views, cx) {
+            cx.notify();
+        }
         if views.is_empty() {
             self.orchestrator_sampling = false;
             return;
@@ -285,11 +259,14 @@ impl HerdrWindow {
         let wanting: Vec<(Entity<OrchestratorView>, String)> = views
             .iter()
             .filter(|(_, view)| view.read(cx).wants_hosts())
-            .map(|(_, view)| (view.clone(), view.read(cx).workspace_id().to_owned()))
+            .filter_map(|(_, view)| {
+                let workspace = view.read(cx).workspace_id()?.to_owned();
+                Some((view.clone(), workspace))
+            })
             .collect();
         self.orchestrator_sampling = !wanting.is_empty();
         for (view, workspace) in wanting {
-            let hosts = if view.read(cx).target() == &shown {
+            let hosts = if view.read(cx).target() == Some(&shown) {
                 let label = self
                     .orchestrator_repository(&workspace)
                     .map(|(_, label)| label)
@@ -302,13 +279,25 @@ impl HerdrWindow {
         }
         let (live, branches) = self.live_agents();
         let look = self.look();
+        let specs = self.repo_specs();
         for (_, view) in views {
-            let (token, login) = self.github_account(view.read(cx).target());
+            let accounts: Vec<_> = view
+                .read(cx)
+                .targets()
+                .into_iter()
+                .map(|target| {
+                    let (token, login) = self.github_account(&target);
+                    (target, token, login)
+                })
+                .collect();
             view.update(cx, |view, cx| {
+                view.set_repos(specs.clone(), cx);
                 view.poll(cx);
                 view.set_look(look.clone(), cx);
                 view.set_live(live.clone(), branches.clone(), cx);
-                view.set_github(token, login, cx);
+                for (target, token, login) in accounts {
+                    view.set_github(&target, token, login, cx);
+                }
             });
         }
     }
@@ -391,7 +380,7 @@ impl HerdrWindow {
 
     fn orchestrator_event(
         &mut self,
-        id: TabId,
+        id: ViewId,
         event: Event,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -405,7 +394,7 @@ impl HerdrWindow {
                             .iter()
                             .find(|e| &e.id == endpoint)
                             .map(|e| e.connection.target.clone()),
-                        None => Some(view.read(cx).target().clone()),
+                        None => view.read(cx).target().cloned(),
                     };
                     if let Some(target) = target {
                         view.update(cx, |view, cx| view.load_agents(endpoint, target, cx));
@@ -417,7 +406,6 @@ impl HerdrWindow {
             Event::Dispatch { request, endpoint } => {
                 self.dispatch_elsewhere(id, *request, &endpoint, cx)
             }
-            Event::OpenWindow => self.detach_orchestrator(id, cx),
             Event::OpenRun {
                 endpoint, pane_id, ..
             } => {
@@ -425,7 +413,9 @@ impl HerdrWindow {
                     self.tell_orchestrator(id, super::Error::WorkspaceClosed, cx);
                     return;
                 };
-                if !self.navigate_endpoint(&endpoint, NavigationTarget::Pane(&pane_id), cx) {
+                if self.navigate_endpoint(&endpoint, NavigationTarget::Pane(&pane_id), cx) {
+                    self.leave_activity_section(id, cx);
+                } else {
                     self.tell_orchestrator(id, super::Error::MenuOpen, cx);
                 }
             }
@@ -440,7 +430,13 @@ impl HerdrWindow {
                 Ok(url) => {
                     if let Some((_, workspace)) = self.browser_key() {
                         let endpoint = self.endpoints[self.selected_endpoint].id.clone();
-                        self.open_workspace_page(&endpoint, &workspace, url, window, cx);
+                        // Only a page tab shows behind the section; the system
+                        // browser, or a page that did not open, leaves it be.
+                        let opened =
+                            self.open_workspace_page(&endpoint, &workspace, url, window, cx);
+                        if opened == crate::browser::PageOpened::Tab {
+                            self.leave_activity_section(id, cx);
+                        }
                     }
                 }
                 Err(_) => self.tell_orchestrator(id, super::Error::NotWebAddress, cx),
@@ -470,10 +466,10 @@ impl HerdrWindow {
     }
 
     /// Sets `request` up for host `endpoint` as smart dispatch does, then
-    /// hands it back to tab `id`'s view to run.
+    /// hands it back to view `id` to run.
     fn dispatch_elsewhere(
         &mut self,
-        id: TabId,
+        id: ViewId,
         mut request: super::DispatchRequest,
         endpoint: &str,
         cx: &mut Context<Self>,
@@ -481,7 +477,7 @@ impl HerdrWindow {
         let shown = &self.endpoints[self.selected_endpoint].connection.target;
         if self
             .orchestrator_view(id)
-            .is_some_and(|view| view.read(cx).target() != shown)
+            .is_some_and(|view| view.read(cx).target() != Some(shown))
         {
             self.tell_orchestrator(id, super::Error::HostNotShown, cx);
             return;
@@ -522,7 +518,7 @@ impl HerdrWindow {
     /// the shown host when it fits, else the first that does.
     fn open_run_workspace(
         &mut self,
-        view: TabId,
+        view: ViewId,
         host: Option<&str>,
         session: Option<&str>,
         workspace_id: &str,
@@ -553,30 +549,30 @@ impl HerdrWindow {
             return;
         };
         let id = self.endpoints[index].id.clone();
-        if !self.navigate_endpoint(&id, NavigationTarget::Workspace(workspace_id), cx) {
+        if self.navigate_endpoint(&id, NavigationTarget::Workspace(workspace_id), cx) {
+            self.leave_activity_section(view, cx);
+        } else {
             self.tell_orchestrator(view, super::Error::MenuOpen, cx);
         }
     }
 
     /// Shows why a view's request did not happen in that view's own banner:
-    /// the window's flash draws over terminals, behind the view's tab.
-    fn tell_orchestrator(&self, id: TabId, error: super::Error, cx: &mut Context<Self>) {
+    /// the window's flash would draw over terminals the section hides.
+    fn tell_orchestrator(&self, id: ViewId, error: super::Error, cx: &mut Context<Self>) {
         if let Some(view) = self.orchestrator_view(id).cloned() {
             view.update(cx, |view, cx| view.report(error, cx));
         }
     }
+}
 
-    /// An orchestrator tab, drawn in `slot` where a page would be.
-    pub(crate) fn render_orchestrator_tab(&self, slot: Slot, tab: &Tab) -> AnyElement {
-        let body = match self.orchestrators.get(&tab.id) {
-            Some(orchestrator) => orchestrator.view.clone().into_any_element(),
-            None => div().into_any_element(),
-        };
-        div()
-            .id(SharedString::from(slot.selector("orchestrator-tab")))
-            .size_full()
-            .min_w_0()
-            .child(body)
-            .into_any_element()
-    }
+/// Whether the orchestrator's scripts run on `target`: the local session or
+/// an SSH host, not a bare socket or WSL.
+pub(super) fn scripts_run_on(target: &ConnectTarget) -> bool {
+    !matches!(target, ConnectTarget::Socket(_) | ConnectTarget::Wsl { .. })
+}
+
+/// How the view tells repositories apart: the endpoint, then the Git common
+/// directory its worktrees share, else the folder itself.
+fn repo_key(endpoint: &str, common: Option<&str>, checkout: &str) -> String {
+    format!("{endpoint}\u{1f}{}", common.unwrap_or(checkout))
 }

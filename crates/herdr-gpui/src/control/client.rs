@@ -176,6 +176,37 @@ fn send(request: &Request) -> crate::Result<Response> {
     socket::call(&socket_path()?, request)
 }
 
+/// Hands a `herdr-gpui://` link to the running app; what it did, for a
+/// person. [`crate::Error::ControlUnavailable`] means no app is running.
+pub(crate) fn send_link(link: &crate::link::Link) -> crate::Result<String> {
+    // The shell lets the process it started for a click take the
+    // foreground; this passes that on to the app, so its window comes
+    // forward instead of flashing in the taskbar.
+    #[cfg(windows)]
+    allow_foreground();
+    let request = Request::Link(Call {
+        caller: Caller::default(),
+        op: super::protocol::LinkOp { url: link.to_url() },
+    });
+    match send(&request)? {
+        Response::Done { message } => Ok(message),
+        response => Err(rejected(response)),
+    }
+}
+
+// One documented call with no pointers; windows-sys and `windows` have no
+// safe wrapper for it.
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn allow_foreground() {
+    use windows::Win32::UI::WindowsAndMessaging::{ASFW_ANY, AllowSetForegroundWindow};
+    // SAFETY: takes a process ID and returns whether it applied. It does
+    // nothing for a process without the foreground right to pass on.
+    if let Err(error) = unsafe { AllowSetForegroundWindow(ASFW_ANY) } {
+        tracing::debug!(%error, "foreground not passed to the app");
+    }
+}
+
 fn rejected(response: Response) -> crate::Error {
     match response {
         Response::Error { code, message } => crate::Error::ControlRejected { code, message },

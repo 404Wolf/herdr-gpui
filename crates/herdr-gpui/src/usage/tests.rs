@@ -30,6 +30,7 @@ mod quiet_app_data;
 mod refresh;
 #[cfg(unix)]
 mod remote_hosts;
+mod section;
 mod shown_providers;
 mod status_bar_room;
 mod wsl_hosts;

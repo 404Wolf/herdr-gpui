@@ -22,6 +22,8 @@ use std::sync::Arc;
 mod agent_menu;
 #[cfg(test)]
 mod agent_rows;
+#[cfg(test)]
+mod agents_header;
 #[cfg(all(test, feature = "coder"))]
 mod coder_dialog;
 #[cfg(test)]
@@ -57,6 +59,9 @@ mod palette_header;
 #[cfg(test)]
 mod picker_scroll;
 #[cfg(test)]
+mod probe_bar;
+#[cfg(test)]
+mod probe_scale;
 #[cfg(test)]
 mod probes;
 #[cfg(test)]
@@ -313,38 +318,65 @@ impl ProbeText {
             && super::sidebar_width(None, f32::from(window.viewport_size().width))
                 == super::SIDEBAR_WIDTH
         {
-            let mode = window
+            // The activity bar, when shown, puts the sidebar beside it.
+            let (mode, bar) = window
                 .root::<HerdrWindow>()
                 .flatten()
-                .map(|view| view.read(cx).config.layout.mode)
+                .map(|view| {
+                    let view = view.read(cx);
+                    let bar = if view.activity_bar_shown() {
+                        super::activity::BAR_WIDTH
+                    } else {
+                        0.
+                    };
+                    (view.config.layout.mode, bar)
+                })
                 .unwrap_or_default();
-            probe.verify_child(&self.0, mode)?;
+            probe.verify_child(&self.0, mode, bar, window.scale_factor())?;
             eprintln!("SIDEBAR child verified: {}", probe.glyph_text);
         }
         Ok(probe)
     }
 }
 
+/// Whether a painted edge or width is within one device pixel of its logical
+/// value. Layout snaps edges to device pixels (`scale` per logical pixel), so
+/// at a fractional scale such as Windows' default 150% a column may land a
+/// fraction of a logical pixel from where it was laid out.
+pub(crate) fn within_device_pixel(actual: Pixels, expected: Pixels, scale: f32) -> bool {
+    (actual - expected).abs() < px(1. / scale.max(1.))
+}
+
 impl PaintedText {
-    fn verify_child(&self, input: &str, mode: crate::config::LayoutMode) -> Result<()> {
+    /// `bar` is the width of the activity bar left of the sidebar, if any;
+    /// `scale` is the window's device pixels per logical pixel; see
+    /// [`within_device_pixel`].
+    fn verify_child(
+        &self,
+        input: &str,
+        mode: crate::config::LayoutMode,
+        bar: f32,
+        scale: f32,
+    ) -> Result<()> {
+        let near = |actual, expected| within_device_pixel(actual, expected, scale);
         let look = super::layout::for_mode(mode);
         let layout = look.density;
         // Menu labels share text keys, and retained paint probes can still
         // describe the previous layout. Compute the sidebar column directly.
         let left =
-            px(look.content_x() + layout.child_indent() + super::STATUS_WIDTH + layout.gap());
+            px(bar + look.content_x() + layout.child_indent() + super::STATUS_WIDTH + layout.gap());
         let width = px(look.content_width(super::SIDEBAR_WIDTH)
             - super::STATUS_WIDTH
             - layout.gap()
             - layout.child_indent()
             - super::ARROW_RESERVE);
         ensure!(
-            self.bounds.left() == left,
+            near(self.bounds.left(), left),
             "child label left: actual {:?}, expected {left:?}",
             self.bounds.left()
         );
         ensure!(
-            self.bounds.size.width == width,
+            near(self.bounds.size.width, width),
             "child label width: actual {:?}, expected {width:?}",
             self.bounds.size.width
         );
@@ -374,8 +406,12 @@ impl PaintedText {
                 "long child label did not truncate correctly: {:?}",
                 self.glyph_text
             );
+            // GPUI keeps the longest prefix that fits beside the ellipsis
+            // and drops the glyph that would not, so a correct truncation
+            // can fall one glyph plus the ellipsis short. Segoe UI on Windows
+            // leaves 13px where macOS's system font left under 12.
             ensure!(
-                self.width > self.bounds.size.width - px(12.),
+                self.width > self.bounds.size.width - px(16.),
                 "child glyph width {:?} did not fill label width {:?}",
                 self.width,
                 self.bounds.size.width
@@ -503,6 +539,12 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
                 mode: crate::config::LayoutMode::from(crate::config::Density::Comfortable),
                 ..Default::default()
             },
+            // The plain sidebar, at the window's edge; the activity bar's
+            // tests turn the bar on.
+            sidebar_style: crate::config::SidebarStyle {
+                activity_bar: false,
+                ..Default::default()
+            },
             ..Default::default()
         },
         theme: Default::default(),
@@ -520,9 +562,10 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         code_indexes: Default::default(),
         orchestrators: Default::default(),
         orchestrator_live: Default::default(),
-        detached_orchestrators: Default::default(),
+        next_orchestrator: 0,
         orchestrator_events: Vec::new(),
         orchestrator_sampling: false,
+        overview: Default::default(),
         viewport_width: 0.,
         pr_actions: Default::default(),
         usage: Default::default(),
@@ -576,6 +619,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         last_input: None,
         last_pointer: None,
         active: false,
+        activity: Default::default(),
         sent_focus: None,
         bounds: Bounds::default(),
         title: crate::WINDOW_TITLE.to_owned(),
@@ -650,7 +694,8 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
                     weak,
                     super::agents::Indicators::new(
                         None,
-                        None,
+                        crate::config::StatusIcons::default(),
+                        false,
                         false,
                         &crate::config::Theme::default(),
                     ),

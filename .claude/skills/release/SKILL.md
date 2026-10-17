@@ -93,6 +93,8 @@ then `macos-checks`, `macos-build` (arm64 + x86_64), `linux` (aarch64 + x86_64),
 `windows` (x86_64 and ARM64 MSVC), `metadata` and `changelog`, then `sign` and
 `windows-sign` (Authenticode, one per Windows target), `windows-smoke` (installs
 the signed installers), `attest`, `publish`, and finally `homebrew` and `winget`.
+Until the `WINDOWS_SIGNING_SUBJECT` repository variable is set, `windows-sign`,
+`windows-smoke` and `winget` are skipped and Windows ships unsigned.
 
 `sign`, `windows-sign`, `attest` and `publish` use the **`release`** environment;
 `homebrew` uses the **`homebrew`** environment and `winget` the **`winget`**

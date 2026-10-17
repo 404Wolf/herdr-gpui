@@ -18,7 +18,7 @@ impl SettingsWindow {
         let mut page = div()
             .flex()
             .flex_col()
-            .child(ui::section(theme, "Tab bar", Some(ui::Source::Shared)))
+            .child(ui::section(theme, "Tab bar", Some(ui::Source::Herdr)))
             .child(
                 self.gate_shared(ui::row(theme, "tabs-position", "Position"))
                     .control(ui::segmented(
@@ -101,7 +101,7 @@ impl SettingsWindow {
                         "tabs-pane-history",
                         "Restore scrollback after Herdr restarts",
                     )
-                    .tag(ui::Source::Shared)
+                    .tag(ui::Source::Herdr)
                     .description(
                         "Experimental. Herdr saves pane output to session-history.json and \
                          replays it when the daemon restarts.",

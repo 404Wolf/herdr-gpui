@@ -79,7 +79,7 @@ pub(crate) struct ShowToastPreview {
 #[action(no_json)]
 pub(crate) struct ShowSystemNotificationPreview;
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", windows, test))]
 #[derive(Clone, PartialEq, serde::Deserialize, Action)]
 #[action(no_json)]
 pub(crate) struct SetBadgePreview {
@@ -158,6 +158,17 @@ pub(crate) fn edit_modifiers(modifiers: Modifiers) -> bool {
         && !modifiers.function
         && ((modifiers.platform && !modifiers.control && !modifiers.shift)
             || (CTRL_SHORTCUTS && modifiers.control && !modifiers.platform))
+}
+
+/// Whether a field moves or deletes by word on an arrow, Backspace, or
+/// Delete: Option on macOS, Ctrl on the other desktops. Shift extends.
+pub(crate) fn word_modifiers(modifiers: Modifiers) -> bool {
+    let (word, other) = if cfg!(target_os = "macos") {
+        (modifiers.alt, modifiers.control)
+    } else {
+        (modifiers.control, modifiers.alt)
+    };
+    word && !other && !modifiers.platform && !modifiers.function
 }
 
 /// macOS's Hide, Hide Others, and Minimize, bound there alone.

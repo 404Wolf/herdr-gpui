@@ -3,9 +3,9 @@
 `herdr-gpui` is also a command line for the running Herdr UI. Herdr's own
 `herdr` CLI drives the daemon: workspaces, terminal tabs, panes, agents,
 worktrees, and notifications. `herdr-gpui COMMAND` covers what only this
-client knows or draws: its windows, its own tabs (pages, code, reviews, the
-orchestrator, Devices), worktree notes, checkpoints, forwarded ports, and its
-settings.
+client knows or draws: its windows, its own tabs (pages, code, reviews,
+Devices), the activity bar's sections, worktree notes, checkpoints, forwarded
+ports, and its settings.
 
 Commands reach the app over a socket of its own,
 `$XDG_STATE_HOME/herdr/gpui/control.sock` (default `~/.local/state/`), which
@@ -16,6 +16,7 @@ the app's shim at `~/.local/state/herdr/gpui/bin/herdr-gpui` offers
 [remote agents](../crates/herdr-gpui/README.md#letting-agents-open-pages)),
 and every other command exits 8. A few commands work from files alone and
 need no running app; they say so below.
+
 On Windows, `herdr-gpui.exe` is a console program, so a shell waits for it and
 sees its exit code; the installers put its directory on `PATH`. The Start menu
 opens `herdr-gpui-launcher.exe` instead, which starts it without a console
@@ -67,6 +68,7 @@ Every command accepts:
 | `window detach\|reconnect` | Detach from, or reconnect to, the selected host |
 | `ui sidebar\|statusbar [on\|off\|toggle]` | For this window and session |
 | `ui font-size +\|-\|reset\|POINTS` | The terminal font size for this session |
+| `ui panel workspaces\|overview\|pull-requests\|issues\|usage` | Show an activity bar section: Workspaces with the sidebar expanded, Overview of what needs you on every host, the focused workspace's pull requests or issues across the window, or every host's plan usage |
 | `run COMMAND` | Any app command by its `[keybindings]` name, as the palette runs it |
 | `commands` | The names `run` accepts (no app needed) |
 
@@ -74,7 +76,7 @@ Every command accepts:
 
 | Command | What it does |
 | --- | --- |
-| `tab [list]` | Pages, code, reviews, the orchestrator, and Devices tabs with IDs |
+| `tab [list]` | Pages, code, reviews, and Devices tabs with IDs |
 | `tab focus\|close ID` | |
 | `browser open\|reload\|feedback` | See [browser tabs](../crates/herdr-gpui/README.md#browser-tabs) |
 | `browser list` | Page tabs only |
@@ -85,7 +87,7 @@ Every command accepts:
 | `code open FILE[:LINE]` | A read-only code tab at a line |
 | `code edit FILE[:LINE]` | Your terminal editor, in a new pane beside yours |
 | `devices` | The Devices overview |
-| `orchestrator [--repo PATH]` | The orchestrator of your checkout, or of PATH |
+| `orchestrator [--repo PATH]` | Show the Issues section narrowed to your checkout's project, or PATH's |
 | `orchestrator items\|issues\|prs` | What it last synced, from its local database (no app needed) |
 | `review` | The review of your workspace's uncommitted changes |
 
@@ -205,6 +207,26 @@ Scrollback search is not repeated here: `herdr pane read` covers it. Moving a
 window, capturing a whole window, and destroying a cloud machine have no
 command because the app cannot do them.
 
+## Links
+
+`herdr-gpui URL`, with a `herdr-gpui://` link as the only argument, hands the
+link to the running app, or starts the app and follows it once it is
+connected. On Windows the installer registers the scheme, so the shell runs
+this for jump list entries, notification clicks, and links in other apps.
+
+| Link | What the app does |
+| --- | --- |
+| `herdr-gpui://open?path=PATH` | Focus the workspace showing the Git checkout or worktree at `PATH`, or ask in the window before opening one there |
+| `herdr-gpui://device?id=ID` | Show the device `host list` names `ID` |
+| `herdr-gpui://notification?tag=TAG` | Open the pane of a notification this app posted |
+
+A link is untrusted input, checked by the command and again by the app: only
+those shapes, each parameter once, bounded lengths, no control characters, and
+an absolute local path without `..` (on Windows a drive path, never a UNC or
+`\\?\` one). A link only ever shows something; it never runs a command. A
+refused link exits 2, an unknown device or notification 5, as for commands.
+The request is `{"method": "link", "caller", "op": {"url"}}`.
+
 ## The protocol
 
 One JSON request line, one JSON response line, then the socket closes. A
@@ -212,7 +234,7 @@ request is `{"method", "caller", "op"}`, where `caller` carries the pane,
 workspace, daemon socket, and window, and `op` is tagged with `"op"`. Browser
 requests keep their original flat form (`browser.open`, `browser.reload`,
 `browser.feedback`, `notes.send`). `status` reports the protocol version,
-currently 2. Requests and responses are bounded to 256 KiB, a request that
+currently 4. Requests and responses are bounded to 256 KiB, a request that
 waits says for how long (at most 600 seconds), and the app answers at most a
 few requests at a time.
 

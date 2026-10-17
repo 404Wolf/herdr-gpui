@@ -70,6 +70,7 @@ jobs:
       sha: ${{ steps.validate.outputs.sha }}
       version: ${{ steps.validate.outputs.version }}
       channel: ${{ steps.validate.outputs.channel }}
+      windows_signed: ${{ steps.windows-signing.outputs.signed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -100,6 +101,21 @@ jobs:
         env:
           HERDR_UPDATE_PUBLIC_KEY: ${{ vars.HERDR_UPDATE_PUBLIC_KEY }}
         run: python3 scripts/update-manifest.py validate-public-key
+      # Windows signing is on once its publisher, the WINDOWS_SIGNING_SUBJECT
+      # repository variable, is set; windows-sign then requires the Azure
+      # variables too. Until then Windows ships unsigned and skips winget, and
+      # those builds name no publisher, so their in-app updater stays off
+      # (updater/windows.rs) rather than trusting an unsigned installer.
+      - id: windows-signing
+        env:
+          WINDOWS_SIGNING_SUBJECT: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
+        run: |
+          if [[ -n "$WINDOWS_SIGNING_SUBJECT" ]]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::WINDOWS_SIGNING_SUBJECT is not set: Windows ships unsigned, without winget or in-app updates"
+          fi
 
   macos-checks:
     needs: validate
@@ -273,6 +289,11 @@ jobs:
       TARGET: ${{ matrix.target }}
       HERDR_RELEASE_VERSION: ${{ needs.validate.outputs.version }}
       HERDR_UPDATE_PUBLIC_KEY: ${{ vars.HERDR_UPDATE_PUBLIC_KEY }}
+      # The publisher the in-app updater requires on a downloaded installer
+      # (updater/windows.rs); windows-sign checks the release is signed by it.
+      # A repository variable: this job is outside the release environment.
+      # Empty while signing is not set up, which turns that build's updater off.
+      HERDR_WINDOWS_SIGNER: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -325,7 +346,8 @@ jobs:
     needs: [validate, windows]
     if: >-
       github.repository == 'penso/herdr-gpui' && github.ref == 'refs/heads/main' &&
-      github.actor == 'penso' && github.triggering_actor == 'penso'
+      github.actor == 'penso' && github.triggering_actor == 'penso' &&
+      needs.validate.outputs.windows_signed == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -456,6 +478,7 @@ jobs:
       - name: Generate the changelog and release notes from git history
         env:
           GH_TOKEN: ${{ github.token }}
+          WINDOWS_SIGNED: ${{ needs.validate.outputs.windows_signed }}
         run: |
           set -euo pipefail
           mkdir release-notes
@@ -506,10 +529,18 @@ jobs:
           retention-days: 7
 
   sign:
-    needs: [validate, macos-checks, macos-build, linux, windows]
+    needs: [validate, macos-checks, macos-build, linux, windows, windows-sign]
+    # windows-sign is skipped while Windows signing is not set up, and a
+    # skipped need skips this job unless its condition checks results itself.
     if: >-
+      !cancelled() &&
       github.repository == 'penso/herdr-gpui' && github.ref == 'refs/heads/main' &&
-      github.actor == 'penso' && github.triggering_actor == 'penso'
+      github.actor == 'penso' && github.triggering_actor == 'penso' &&
+      needs.validate.result == 'success' && needs.macos-checks.result == 'success' &&
+      needs.macos-build.result == 'success' && needs.linux.result == 'success' &&
+      needs.windows.result == 'success' &&
+      (needs.windows-sign.result == 'success' ||
+       (needs.validate.outputs.windows_signed == 'false' && needs.windows-sign.result == 'skipped'))
     runs-on: macos-15
     timeout-minutes: 60
     environment: release
@@ -554,6 +585,18 @@ jobs:
         with:
           name: linux-package-aarch64-unknown-linux-gnu
           path: dist
+      # The Authenticode-signed installers, so the Windows manifest lists the
+      # exact bytes users download and the in-app updater runs; the tested
+      # unsigned ones while signing is not set up, which no build's updater
+      # accepts (none names a publisher, and signed ones check it).
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.validate.outputs.windows_signed == 'true' && 'windows-signed' || 'windows-package' }}-x86_64-pc-windows-msvc
+          path: windows
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.validate.outputs.windows_signed == 'true' && 'windows-signed' || 'windows-package' }}-aarch64-pc-windows-msvc
+          path: windows
       - name: Generate and verify signed update manifest
         env:
           HERDR_UPDATE_PUBLIC_KEY: ${{ vars.HERDR_UPDATE_PUBLIC_KEY }}
@@ -585,6 +628,14 @@ jobs:
           "$OPENSSL" pkeyutl -verify -rawin -pubin -inkey "$KEY_DIR/public.pem" \
             -in dist/package-manifest.json -sigfile dist/package-manifest.sig
           test "$(wc -c < dist/package-manifest.sig | tr -d ' ')" = 64
+          # Windows installers get a third manifest (schema 3) for the same reason.
+          python3 scripts/update-manifest.py create windows "$VERSION" --windows
+          mv windows/windows-manifest.json dist/
+          "$OPENSSL" pkeyutl -sign -rawin -inkey "$KEY_DIR/private.pem" -passin pass: \
+            -in dist/windows-manifest.json -out dist/windows-manifest.sig
+          "$OPENSSL" pkeyutl -verify -rawin -pubin -inkey "$KEY_DIR/public.pem" \
+            -in dist/windows-manifest.json -sigfile dist/windows-manifest.sig
+          test "$(wc -c < dist/windows-manifest.sig | tr -d ' ')" = 64
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: macos-signed
@@ -595,14 +646,23 @@ jobs:
             dist/update-manifest.sig
             dist/package-manifest.json
             dist/package-manifest.sig
+            dist/windows-manifest.json
+            dist/windows-manifest.sig
           if-no-files-found: error
           retention-days: 7
 
   attest:
     needs: [validate, sign, linux, windows-sign, windows-smoke, metadata]
+    # Like sign: the Windows signing jobs may be skipped, never failed.
     if: >-
+      !cancelled() &&
       github.repository == 'penso/herdr-gpui' && github.ref == 'refs/heads/main' &&
-      github.actor == 'penso' && github.triggering_actor == 'penso'
+      github.actor == 'penso' && github.triggering_actor == 'penso' &&
+      needs.validate.result == 'success' && needs.sign.result == 'success' &&
+      needs.linux.result == 'success' && needs.metadata.result == 'success' &&
+      ((needs.windows-sign.result == 'success' && needs.windows-smoke.result == 'success') ||
+       (needs.validate.outputs.windows_signed == 'false' && needs.windows-sign.result == 'skipped' &&
+        needs.windows-smoke.result == 'skipped'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: release
@@ -630,14 +690,15 @@ jobs:
           name: linux-package-aarch64-unknown-linux-gnu
           path: dist
       # The Authenticode-signed builds, so checksums, Sigstore and provenance
-      # cover the bytes users download.
+      # cover the bytes users download; the tested unsigned builds while
+      # signing is not set up.
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: windows-signed-x86_64-pc-windows-msvc
+          name: ${{ needs.validate.outputs.windows_signed == 'true' && 'windows-signed' || 'windows-package' }}-x86_64-pc-windows-msvc
           path: dist
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: windows-signed-aarch64-pc-windows-msvc
+          name: ${{ needs.validate.outputs.windows_signed == 'true' && 'windows-signed' || 'windows-package' }}-aarch64-pc-windows-msvc
           path: dist
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -657,7 +718,7 @@ jobs:
       - uses: ./.github/actions/sign-artifacts # zizmor: ignore[self-repository]
         with:
           working-directory: dist
-          files: Herdr-${{ needs.validate.outputs.version }}-universal-apple-darwin.dmg Herdr-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu.tar.gz Herdr-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu.deb Herdr-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu.rpm Herdr-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu.pkg.tar.zst Herdr-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu.tar.gz Herdr-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu.deb Herdr-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu.rpm Herdr-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu.pkg.tar.zst Herdr-${{ needs.validate.outputs.version }}-x86_64-pc-windows-msvc.zip Herdr-${{ needs.validate.outputs.version }}-aarch64-pc-windows-msvc.zip Herdr-${{ needs.validate.outputs.version }}-x86_64-pc-windows-msvc-setup.exe Herdr-${{ needs.validate.outputs.version }}-aarch64-pc-windows-msvc-setup.exe Herdr-${{ needs.validate.outputs.version }}.cdx.json herdr-gpui-${{ needs.validate.outputs.version }}-macos-universal.app.tar.gz herdr-gpui-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu-update.tar.gz herdr-gpui-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu-update.tar.gz update-manifest.json update-manifest.sig package-manifest.json package-manifest.sig
+          files: Herdr-${{ needs.validate.outputs.version }}-universal-apple-darwin.dmg Herdr-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu.tar.gz Herdr-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu.deb Herdr-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu.rpm Herdr-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu.pkg.tar.zst Herdr-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu.tar.gz Herdr-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu.deb Herdr-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu.rpm Herdr-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu.pkg.tar.zst Herdr-${{ needs.validate.outputs.version }}-x86_64-pc-windows-msvc.zip Herdr-${{ needs.validate.outputs.version }}-aarch64-pc-windows-msvc.zip Herdr-${{ needs.validate.outputs.version }}-x86_64-pc-windows-msvc-setup.exe Herdr-${{ needs.validate.outputs.version }}-aarch64-pc-windows-msvc-setup.exe Herdr-${{ needs.validate.outputs.version }}.cdx.json herdr-gpui-${{ needs.validate.outputs.version }}-macos-universal.app.tar.gz herdr-gpui-${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu-update.tar.gz herdr-gpui-${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu-update.tar.gz update-manifest.json update-manifest.sig package-manifest.json package-manifest.sig windows-manifest.json windows-manifest.sig
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
@@ -682,6 +743,8 @@ jobs:
             dist/update-manifest.sig
             dist/package-manifest.json
             dist/package-manifest.sig
+            dist/windows-manifest.json
+            dist/windows-manifest.sig
       - run: python3 scripts/release/artifact-manifest.py create "$VERSION" dist
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -809,12 +872,14 @@ jobs:
         run: bash scripts/release/update-homebrew.sh "$VERSION" rendered-cask.rb
 
   # Keep these steps identical in release.yml and promote.yml. Betas never
-  # reach winget: promote.yml submits one when it is promoted.
+  # reach winget: promote.yml submits one when it is promoted. Neither do
+  # unsigned releases.
   winget:
     needs: [validate, publish]
     if: >-
       github.repository == 'penso/herdr-gpui' && github.ref == 'refs/heads/main' &&
       github.actor == 'penso' && github.triggering_actor == 'penso' &&
+      needs.validate.outputs.windows_signed == 'true' &&
       needs.validate.outputs.channel == 'stable'
     runs-on: ubuntu-24.04
     timeout-minutes: 20

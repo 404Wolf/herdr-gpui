@@ -2,7 +2,7 @@
 
 A GPUI 0.3.6 (`gpui-pre`) client for a Local daemon and saved SSH hosts, with macOS
 support, experimental Linux x86_64/ARM64 builds, and an experimental Windows build with
-headless CI coverage. See [Windows](#windows) for what is unavailable there.
+native CI coverage. See [Windows](#windows) for what is unavailable there.
 It starts an installed local `herdr server` when absent; explicit socket and
 development targets remain attach-only. On Unix, GUI launches resolve the login-shell
 environment once on the connection worker so daemon plugins can find tools such as
@@ -654,7 +654,10 @@ a sidebar. General lists every optional `[features]` flag with a switch and a
 description of what it does.
 The terminal stays usable while Settings is open. Cmd-W (or Ctrl-W) closes only
 Settings; reopening activates the existing window instead of creating a duplicate.
-Local preferences remain editable if the originating session window closes.
+Herdr UI's own settings remain editable if the originating session window closes.
+Each row is tagged with the app that reads it: **Herdr** for settings in
+Herdr's shared config, which its terminal client follows too, and **Herdr UI**
+for settings only this app reads, kept in `config-gpui.local.toml`.
 
 Appearance provides a large live preview and a searchable, virtualized grid of
 theme cards, including every discovered Ghostty theme rather than a small
@@ -788,17 +791,32 @@ Existing native theme selections remain overrides. Choose **Follow Herdr** to
 use the shared theme, all 18 upstream palettes, custom colors, and automatic
 light/dark selection. Selecting a shared theme disables upstream auto-switching,
 as in the TUI. Status indicators always use the shared status colors,
-independent of a native terminal theme override, and the shared indicator style
-unless **Settings > Notifications > Icons** picks one of this app's own icon sets: Solid,
-Tiles, or Edge rail, saved as `status_icons` in `config-gpui.local.toml`. Herdr
-accepts only `dots` or `symbols` in `ui.status_indicators`, so these never reach
-the shared file, and the TUI keeps its own choice. The icons are about a line
+independent of a native terminal theme override, drawn with the set picked on
+**Settings > Appearance > Indicators** and saved as `status_icons` in
+`config-gpui.local.toml`. This app draws only its own sets and ignores Herdr's
+`ui.status_indicators`, which the TUI keeps for itself; unset means **Dots**.
+The page shows each set as a card previewing all five statuses with the
+sidebar's own marks:
+
+- **Dots**: Herdr's dots, with a ring and a turning arc while working.
+- **Solid**: filled discs with a cut-out mark and a crescent for idle.
+- **Outline**: the same marks in outline.
+- **Tiles**: each mark on a tile tinted with its status color.
+- **Wave**: after Superset, every status in one 3×3 grid of cells. Working is
+  Superset's wave, and a gap runs round the frame while an agent is blocked.
+- **Braille**: every status a braille cell. Working spins, and a blocked cell
+  empties and fills dot by dot.
+- **Orca**: after Orca, a stepping ring, a question bubble when blocked, and a
+  ringed check when done.
+
+Working always moves, and moving marks turn in step on one shared clock. They
+hold still when the system asks to reduce motion. Drawn icons are about a line
 tall and replace the dot wherever one shows, tabs and the collapsed sidebar
 included. Herdr's own rows and Orca's cards center them across all of a row's
-lines, and Superset badges its icon slot with them. Edge rail also draws a bar
-on the leading edge of each working, done, or blocked row, in every layout.
-Choosing Dots or Symbols again removes `status_icons`; where the shared file is
-read-only, as on Windows, the style Herdr already uses stays available for that.
+lines, and Superset badges its icon slot with them. The **Edge rail** switch at
+the top of the page (`edge_rail`) draws a bar on the leading edge of each
+working, done, or blocked row, in every layout and with any set. The retired
+`status_icons = "rail"` reads as Outline with the edge rail on.
 Terminal/default reset colors are projected to opaque native colors.
 
 A saved SSH device can paint its terminal with a theme of its own, so the host
@@ -880,6 +898,11 @@ The pane dialog's **Do not ask again** checkbox (click it or press Space) saves
 `confirm_close_pane = false` to `config-gpui.local.toml` once the close is sent. Saved edits apply automatically. The
 **Show agents** control in **Settings > Sidebar** saves
 `show_agents` immediately, independently of the layout draft saved on close.
+Set `show_agents_header = false` (**Settings > Sidebar > Show agents header**)
+to hide the Agents title row and its sort toggle while keeping the list. The
+order then follows Herdr's `ui.agent_panel_sort` (`priority` or `grouped`)
+unless it was toggled earlier or a plugin sets the agent view, which keeps the
+header shown while that view is active.
 
 Agents list in their own section below Spaces by default. Set top-level
 `agents_placement = "nested"`, or pick **Under workspaces** for **Agents
@@ -1168,7 +1191,7 @@ padding_y = [4, 8]   # top, then bottom
 
 - One number pads both sides of the axis. A pair of numbers pads each side: left then right for `padding_x`, top then bottom for `padding_y`.
 - Each side is a finite number of logical pixels from 0 to 64. The default is `0`, which keeps the cells against the edges.
-- Every terminal takes the padding, in every tab group, whether the sidebar shows or not. A browser, VS Code, review, or orchestrator tab pads its own content and takes none.
+- Every terminal takes the padding, in every tab group, whether the sidebar shows or not. A browser, VS Code, or review tab pads its own content and takes none.
 - The terminal keeps the remaining size, so the daemon is resized to the columns and rows it actually has.
 - The padding shows the theme background.
 - **Settings > Theme > Terminal padding** sets each of the four sides with a slider, a typed value, or one-pixel steps. It writes one number when the two sides of an axis agree, and a pair when they differ.
@@ -1900,27 +1923,72 @@ Where new checkouts went is kept in `dispatch-history.json` in the state
 directory, by repository name and host. Like Teleport, dispatch needs a Linux
 or macOS client and the local session or a saved SSH host on both ends.
 
+## Activity bar
+
+An icon column at the window's left edge picks what the window shows. Every
+section but Workspaces takes the window's body, keeping the title bar and the
+status bar; zen mode keeps the terminals. `[sidebar] activity_bar = false`
+turns it off, and `herdr-gpui ui panel NAME` shows a section.
+
+- **Workspaces** is the sidebar beside the terminals. Clicking it while shown
+  folds the sidebar to its rail.
+- **Overview** shows what needs you on every connected host: agents waiting on
+  you and failed runs first, in a card of their own, then finished agents
+  ready for review, working agents by host, and idle ones. Hovering a row
+  offers **Snooze** (until a preset time), **Settle**, **Pin**, and **Open**;
+  snoozed and settled rows fold away at the bottom and come back once their
+  time comes or the agent works or asks again. These marks are this client's
+  own. A column beside the list shows each host's CPU, memory, agents, and
+  ports; each host folds, and the column folds to a strip of load dots. The
+  icon counts what needs you.
+- **Pull requests** and **Issues** list every repository the connected hosts'
+  workspaces hold (see [Orchestrator](#orchestrator)). Refresh spins while a
+  sync runs.
+- **Usage** shows every host's plan limits, one card per signed-in agent. Only
+  the selected host is read; another host shows what was read while it was
+  selected.
+
+When Overview or a section opens an agent's pane, the title bar's Back returns
+to it before walking back through panes.
+
 ## Orchestrator
 
-The Orchestrator row of a group's "…" menu, the Open Orchestrator command, or
-the Orchestrator row of a workspace's popover opens a tab listing that
-workspace's repository: its GitHub issues and pull requests or GitLab issues, its
-[Beads](https://github.com/steveyegge/beads) issues when the main checkout has
-a `.beads` folder, and the agent runs dispatched for them. It works for the
-local session and saved SSH hosts.
+The activity bar's **Pull requests** and **Issues** sections list, across the
+window, every repository the workspaces of every connected local or SSH host
+hold: their GitHub issues and pull requests or GitLab issues, their
+[Beads](https://github.com/steveyegge/beads) issues when a main checkout has a
+`.beads` folder, and the agent runs dispatched for them. Worktrees of one
+repository count once, and each repository syncs on its own, so up to 32 are
+listed. A row shows its project while several are listed. Under the search, a
+row of pills picks backends (GitHub, GitLab, Beads) and projects, each with its
+count; none picked lists all. The Issues row of a group's "…" menu or of a
+workspace's popover, the Show Issues command, and `herdr-gpui orchestrator`
+open the Issues section narrowed to that workspace's project. A repository
+without a GitHub remote has no GitHub source; the header says "no GitHub
+remote" when none of them has one.
 
-- **Issues** lists open GitHub or GitLab issues and beads together. A bead's children sit
-  under it; filters narrow to Beads, items with a run, or blocked ones; five
-  sorts are offered. Search matches every word you type across title, id,
-  author, labels, state, and body, case-insensitively unless a word has a
-  capital, and keeps a match's parents in view.
-- **Pull requests** lists open ones and the 50 most recently closed or merged,
-  with their diff size and activity.
-- **Runs** lists every run, grouped by what needs you first. Its status comes
-  from Herdr's live view of each connected host.
+- **Issues** lists open GitHub or GitLab issues and beads together, grouped by
+  priority. A bead's children sit under it. The **Filters** button unfolds a
+  column narrowing to items with a run, blocked ones, one source, or one
+  label; folded, the filters in use show as chips that clear them. Five sorts
+  are offered. Search matches every word you type across title, id, author,
+  labels, state, and body, case-insensitively unless a word has a capital, and
+  keeps a match's parents in view. **Start agent** on a row opens the dispatch
+  dialog.
+- **Pull requests** is a table grouped by what each waits on: a review asked
+  of you, your own to fix (changes requested or failing checks), those ready to
+  merge, the rest, and recently closed or merged ones. Each row shows its
+  branch, author, review state, its checks as colored pills, diff size, its
+  run, and age. Review state, review requests, and checks are read from GitHub
+  after every sync and kept in memory only, never in the shared database.
 
-Selecting a row shows it in the preview, whose left edge drags to resize or
-close it; Enter or a double-click opens its page. An issue's page shows its
+Runs have no list of their own: the [Overview](#activity-bar) shows the agents and
+failed runs that need you, and an item's **Agent** page shows its runs. Their
+status comes from Herdr's live view of each connected host.
+
+A click selects a row; Enter or a double-click opens its page in a pane beside
+the list, which keeps only the columns that fit. The pane's left edge drags to
+resize or close it, and × closes it. An issue's page shows its
 description as plain text with Markdown structure, its runs, and its details. A
 pull request's page also has its conversation, read as on GitHub: authors'
 avatars, Markdown comments, each review holding its inline threads with
@@ -1942,8 +2010,8 @@ request's **Review with agent** does the same on an `agent/review-…` branch wi
 read-only prompt: the agent verifies the pull request, reads its diff, and
 reports findings without writing to GitHub. A run's card sends it messages, stops
 it, or removes its worktree; a bead's details can delete it with `bd`. Each of
-those asks first. Closing the Orchestrator tab or its detached window leaves
-an already-started dispatch running; it does not remove the new worktree.
+those asks first. Leaving the section leaves an already-started dispatch
+running; it does not remove the new worktree.
 
 The hash at the end of a branch name is the item's own, so the Orchestrator
 finds work without its database, such as on another machine: a Herdr workspace
@@ -2895,11 +2963,15 @@ while the GUI runs: a click cannot reopen a closed window.
   compositor's focus policy. Notifications are neither replaced nor retracted, so
   each event shows separately, and each keeps a small waiting thread until the
   server closes it.
-- **Windows** uses WinRT toasts. The first notification sets the process
-  AppUserModelID to `so.pen.herdr-gpui` and registers its display name under
-  `HKCU\Software\Classes\AppUserModelId`. Because this changes taskbar grouping,
-  it happens only once system delivery posts. Native Windows behavior has not been
-  verified.
+- **Windows** uses WinRT toasts under the AppUserModelID `so.pen.herdr-gpui`,
+  which the app sets at startup and registers, with its display name, under
+  `HKCU\Software\Classes\AppUserModelId`. Once the installer has registered
+  `herdr-gpui://` links, a toast opens through one: clicking the banner, or the
+  toast later in the notification center, starts the launcher with
+  `herdr-gpui://notification?tag=…`; `herdr-gpui.exe` hands the click to the
+  running app, and its window comes forward. A click after the app quit only starts it.
+  Without that registration (a build run from `target`), toasts answer clicks
+  only while the app runs and still holds them, as GPUI posts them.
 
 ## macOS Dock Badge
 
@@ -2919,7 +2991,9 @@ seen. The daemon may acknowledge all panes in a viewed tab together. Blocked
 agents remain counted until their status changes, even after you view them.
 Disconnecting a host or closing a window removes its contribution, while other
 windows can keep the badge visible. Quitting the GUI stops monitoring; this is
-not a background notification service. Linux and Windows do not show this badge.
+not a background notification service. Windows shows the same count as an
+overlay on the taskbar button (see [Windows shell](#windows-shell)); Linux shows
+no badge.
 
 macOS draws the badge only when **Badges** is allowed in **System Settings >
 Notifications > Herdr**. The first time the count rises above zero, Herdr asks
@@ -2931,7 +3005,7 @@ that list and relaunch it to be asked again. A bare `target/*/herdr-gpui`
 binary cannot ask for permission.
 
 To preview it without waiting for an agent, choose **QA > Enable badge** in the
-macOS menu bar. The preview shows at least `2` and stays on until you choose **QA > Disable badge preview**
+macOS menu bar (on Windows, in the window's menu). The preview shows at least `2` and stays on until you choose **QA > Disable badge preview**
 or quit. Disabling the preview restores daemon-driven behavior, so real agent
 attention can keep the badge visible. This QA setting is not saved.
 
@@ -3802,14 +3876,22 @@ GPUI native action/menu/keybinding patterns.
 
 ## Windows
 
-Windows is experimental, not a supported platform. CI checks formatting, lints
-every target and feature, and runs workspace tests with default and all features
-on `windows-2025` (x86_64) and `windows-11-arm` (ARM64), including headless UI
-and CLI tests. The release workflow builds and CLI-tests the optimized
-executable natively for each architecture and publishes
+Windows is experimental. CI checks formatting, lints every target and feature,
+and runs workspace tests with default and all features on `windows-2025` (x86_64)
+and `windows-11-arm` (ARM64), including headless UI and CLI tests. Its
+`windows-native` job then runs the native tests in both runners' desktop
+sessions: `just test-sidebar`'s fixtures, and on x86_64 `just test-gui` against
+a pinned Herdr `herdr.exe` (0.9.5) in the shared test sandbox, with PowerShell
+as the pane shell. Herdr publishes no ARM64 Windows build; emulated on
+`windows-11-arm`, its panes echo typed text but never act on Enter, so CI skips
+`native_gui_live` there. Both runners then run the release-mode performance
+budget, whose hover and scroll arrive as Win32 messages sent to the fixture's own
+window. The paint probes accept the sub-pixel offsets layout snapping gives at
+fractional display scales such as 150%. The release workflow builds and
+CLI-tests the optimized executable natively for each architecture, publishes
 `Herdr-VERSION-x86_64-pc-windows-msvc.zip` and
-`Herdr-VERSION-aarch64-pc-windows-msvc.zip`; native window, rendering, input, and
-live-daemon behavior remain unproven. Each zip also holds
+`Herdr-VERSION-aarch64-pc-windows-msvc.zip`, and installs and uninstalls both
+signed installers. Each zip also holds
 `herdr-gpui-launcher.exe` (`crates/herdr-gpui-launcher`), a windowed program
 that starts the console-subsystem `herdr-gpui.exe` from its own directory with
 `CREATE_NO_WINDOW` and exits. The GUI then shows no console window, and console
@@ -4031,12 +4113,14 @@ always inside your profile, whose inherited access list lets only you, SYSTEM,
 and Administrators create, replace, or link files there, and anyone else who
 could would already be able to replace the app itself.
 
-These features are unavailable on Windows and say so rather than failing quietly:
 
-- **In-app updates.** `release::target()` has no Windows updater asset (the
-  release zip is for manual download only), so the updater
-  stays disabled and reports that no standalone updater exists for this platform.
-  Homebrew delegation is macOS-only regardless.
+In-app updates download the release's signed per-user installer, check it
+against `windows-manifest.json` and its Authenticode publisher, and run it
+silently; Setup restarts the app (see
+[App Updates](../../docs/updating.md#windows-installers)). Only the copy in
+`%LOCALAPPDATA%\Programs\Herdr UI` updates itself. The app registers with Restart
+Manager, never after a crash or hang; the `herdr-gpui.exe --restart-manager`
+Windows starts hands off to the launcher (`src/restart_manager.rs`).
 
 Starting a local `herdr server` looks for `herdr.exe` and uses
 `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` in place of `process_group(0)`, so
@@ -4069,6 +4153,41 @@ the icon resource. CI lints the MSVC target on a Windows runner. `just lint-linu
 the matching check for Linux, in the Ubuntu 24.04 container CI uses, because a
 `cfg` gate that is wrong only on Linux is invisible from both macOS and the
 Windows cross-check.
+
+### Windows shell
+
+- **Taskbar badge.** While agents are `Done` or `Blocked`, the taskbar button
+  carries a red overlay with their number, `9+` past nine: the count the macOS
+  Dock badge shows, from the same deduplicated source. It is drawn at the
+  system's small-icon size, set on every window (windows group into one
+  button), and cleared at zero. Screen readers hear "N agents need attention".
+- **Taskbar progress.** A window's button fills in while it copies dropped
+  files to an SSH host, teleports a worktree, moves a pane to another host, or
+  downloads and installs an app update. Copies and downloads show their real
+  fraction; steps without one show the moving bar. Checks the app runs on its
+  own, and dialogs waiting for you, show nothing.
+- **Jump list.** Right-click the taskbar button, or the Start menu entry, for
+  the Git checkouts of the workspaces you last focused on this computer, under
+  **Recent workspaces**, and a **Show DEVICE** task for each device. Each entry
+  is a `herdr-gpui://` link (below) opened through the launcher, so it reaches
+  the running app, or starts it. Windows shows recent workspaces only while **Settings > Personalization >
+  Start > Show recently opened items in Start, Jump Lists, and File Explorer**
+  is on; with it off, only the devices are listed. An entry you remove from the
+  list is forgotten. The recent checkouts are kept in `jump-list.json` in the
+  state directory.
+- **`herdr-gpui://` links.** The installer registers the scheme for the current
+  user (`HKCU\Software\Classes\herdr-gpui`) and removes it on uninstall.
+  `herdr-gpui://open?path=C:\src\repo` shows a local Git checkout or worktree:
+  the workspace already open there, or, after you agree in the window, a new
+  one (the repository's scripts are not trusted). `herdr-gpui://device?id=ID`
+  switches to a device by the ID `host list` prints. A link is untrusted input:
+  only those shapes are accepted, paths must be absolute drive paths (never
+  `\\server\share`, which would send your credentials to that server, nor
+  `..`), and a link never runs a command. Windows starts
+  `herdr-gpui-launcher.exe` with the link as its only argument, so no console
+  window opens; `herdr-gpui.exe` hands the link to the running app over the
+  control pipe, or starts the app and follows it once connected. See
+  [the command line](../../docs/cli.md#links).
 
 ## Build And Test
 

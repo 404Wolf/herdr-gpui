@@ -15,17 +15,19 @@ pub(in crate::settings_window) use swatches::{HostColorChange, parse_hex_input, 
 
 pub(in crate::settings_window) const ROW_HEIGHT: f32 = 38.;
 
-/// Where a setting is stored: shared with every machine or local to this one.
+/// Where a setting is stored: Herdr's own config, which its terminal client
+/// reads too, or Herdr UI's file, which only this app reads. The tags name
+/// the apps rather than the files, since that is what decides who sees it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::settings_window) enum Source {
-    Shared,
-    Local,
+    Herdr,
+    HerdrUi,
 }
 
 pub(in crate::settings_window) fn tag(theme: &Theme, source: Source) -> Div {
     let (label, color) = match source {
-        Source::Shared => ("Shared", theme.ink(0x8fb8d9)),
-        Source::Local => ("Local", theme.ink(0xc9b26f)),
+        Source::Herdr => ("Herdr", theme.ink(0x8fb8d9)),
+        Source::HerdrUi => ("Herdr UI", theme.ink(0xc9b26f)),
     };
     div()
         .text_size(px(9.))

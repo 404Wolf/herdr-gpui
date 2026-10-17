@@ -19,11 +19,11 @@ impl Render for Harness {
         let off_picked = self.off_picked.clone();
         div()
             .size_full()
-            .child(section(&theme, "Layout", Some(Source::Shared)))
+            .child(section(&theme, "Layout", Some(Source::Herdr)))
             .child(
                 row(&theme, "row-a", "Indent")
                     .description("Pixels per level")
-                    .tag(Source::Local)
+                    .tag(Source::HerdrUi)
                     .control(toggle(&theme, "toggle-a", self.checked, true)),
             )
             .child(

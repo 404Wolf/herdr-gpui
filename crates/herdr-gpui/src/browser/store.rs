@@ -190,7 +190,10 @@ impl Store {
         Self::with_tabs(tabs, writer)
     }
 
-    fn with_tabs(tabs: Vec<Tab>, writer: Option<state_file::Writer<Saved>>) -> Self {
+    fn with_tabs(mut tabs: Vec<Tab>, writer: Option<state_file::Writer<Saved>>) -> Self {
+        // Earlier builds hosted the orchestrator in a tab; its sections now
+        // own it, so such tabs are dropped rather than restored.
+        tabs.retain(|tab| !matches!(tab.location, Some(Location::Orchestrator { .. })));
         let next = tabs.iter().map(|tab| tab.id.0 + 1).max().unwrap_or(0);
         Self {
             tabs,

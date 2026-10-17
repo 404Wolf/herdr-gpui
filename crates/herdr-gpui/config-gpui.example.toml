@@ -53,6 +53,11 @@ confirm_close_workspace = true
 remove_merged_worktrees = false
 # Show the Agents section below Spaces in the sidebar.
 show_agents = true
+# Show the Agents title row, with the sort toggle on its right. Hidden, the
+# order follows Herdr's `ui.agent_panel_sort` until you toggle it, unless a
+# plugin sets the agent view, which keeps the header shown. Also under
+# Settings > Sidebar.
+show_agents_header = true
 # Where the sidebar lists agents while show_agents is on: "panel", their own
 # section below Spaces, or "nested", under the workspace each one runs in.
 # Also under Settings > Sidebar.
@@ -64,12 +69,14 @@ show_sidebar_search = true
 # name in the sidebar, in the layouts that draw one (not orca or minimal).
 # Also under Settings > Sidebar.
 show_repository_icons = true
-# Draw agent status as icons instead of Herdr's dots or symbols: "solid"
-# (filled discs), "tiles" (each mark on a tinted tile), or "rail" (outline
-# marks plus a bar on the edge of each working, done, or blocked row). Only
-# this app draws them; unset follows Herdr's `ui.status_indicators`.
-# Also under Settings > Notifications > Icons.
-# status_icons = "solid"
+# How agent status is drawn: "dots" (the default), "solid", "outline",
+# "tiles", "wave" (Superset's grid), "braille", or "orca". Only this app reads
+# it; Herdr's `ui.status_indicators` stays the terminal client's. Working always
+# moves. Also under Settings > Appearance > Indicators.
+# status_icons = "dots"
+# Draw a bar on the leading edge of each working, done, or blocked row, with
+# any set. Also under Settings > Appearance > Indicators.
+# edge_rail = false
 # Show a mark before each device's name in the sidebar for where it runs: this
 # machine, a cloud provider, Tailscale, or SSH. In the layouts that draw one
 # (not orca or minimal). Also under Settings > Sidebar.
@@ -325,6 +332,12 @@ size = 12
 # keep their shortcuts and command palette entries, and Devices Overview in
 # the palette still offers Add Device.
 # device_footer = "always"
+
+# The activity bar: an icon column at the window's left edge. Workspaces is
+# the sidebar beside the terminals; Orchestrator, Pull requests, and Issues
+# show the focused workspace's orchestrator across the window on that list.
+# Settings sits at its foot. false keeps the plain sidebar.
+# activity_bar = true
 
 # A colour per host, keyed by the host's name in the sidebar, as #rgb or
 # #rrggbb. It washes the host's header, its workspace rows, and its agents'

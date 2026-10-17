@@ -181,8 +181,11 @@ that directory to the user `PATH`, and creates the Start menu shortcut to the
 launcher. Both zips and both
 installers are mandatory in the asset manifest and receive checksums, Sigstore
 sidecars and provenance like every other asset, after the Authenticode signing
-below. They have no updater archive or update-manifest entry: Windows installs
-update by manual download, or through winget.
+below when it is set up. The installers are also listed in their own
+Ed25519-signed `windows-manifest.json`, so a signed copy in the standard install
+location updates itself in the app (see
+[App Updates](../../docs/updating.md#windows-installers)); other copies update
+by manual download, or through winget.
 
 ## Windows Signing
 
@@ -190,7 +193,17 @@ The `windows` job's zip and installer are unsigned, and so are every local and
 pull request build: `windows-installer.py build` signs only when given `--sign`,
 and `herdr-gpui.iss` only sets `SignTool` when ISCC receives one. The release
 workflow then signs in `windows-sign`, one job per target on `windows-2025`,
-gated by the protected **`release`** environment like `sign`:
+gated by the protected **`release`** environment like `sign`.
+
+Signing is optional until it is set up: `validate` turns it on once the
+`WINDOWS_SIGNING_SUBJECT` repository variable (below) is set, and warns while it
+is not. Until then `windows-sign`, `windows-smoke` and `winget` are skipped,
+`sign` and `attest` take the unsigned `windows-package-TARGET` artifacts, and
+the release ships unsigned Windows zips and installers. Those builds embed no
+publisher, so their in-app updater stays off rather than trusting an unsigned
+installer, and Windows SmartScreen warns on first run. Once the variable is
+set, `windows-sign` requires the Azure setup below, and a release without it
+fails instead of falling back to unsigned. When signing is on:
 
 1. `windows-signing.py unpack` extracts the tested zip without running anything.
 2. `azure/login` signs in to Azure with the job's OIDC token, and
@@ -212,9 +225,9 @@ gated by the protected **`release`** environment like `sign`:
 `windows-smoke` then installs and uninstalls each signed installer on its own
 architecture, outside the signing environment, and checks the signatures of
 the installer and of the installed app, launcher and uninstaller. `attest`
-takes only the signed `windows-signed-TARGET` artifacts, so checksums, Sigstore
-and GitHub provenance (`actions/attest-build-provenance`) cover the bytes users
-download.
+then takes only the signed `windows-signed-TARGET` artifacts, so checksums,
+Sigstore and GitHub provenance (`actions/attest-build-provenance`) cover the
+bytes users download.
 
 Signing needs this one-time Azure setup, which only the maintainer can do:
 
@@ -227,7 +240,7 @@ Signing needs this one-time Azure setup, which only the maintainer can do:
    else. No client secret: only an OIDC token from a job in the protected
    `release` environment can use it.
 3. These variables on the `release` environment (not the repository), none
-   secret:
+   secret, except `WINDOWS_SIGNING_SUBJECT`, below:
 
    | Variable | Value |
    | --- | --- |
@@ -237,13 +250,17 @@ Signing needs this one-time Azure setup, which only the maintainer can do:
    | `ARTIFACT_SIGNING_ENDPOINT` | the account's regional endpoint, such as `https://eus.codesigning.azure.net/` |
    | `ARTIFACT_SIGNING_ACCOUNT` | the signing account name |
    | `ARTIFACT_SIGNING_PROFILE` | the certificate profile name |
-   | `WINDOWS_SIGNING_SUBJECT` | the certificate subject Windows reports, such as `CN=..., O=..., L=..., S=..., C=...` |
 
-   The subject is the validated identity, so read it from a first signed file
-   (`(Get-AuthenticodeSignature file.exe).SignerCertificate.Subject`). Until it
-   is set, `windows-sign` stops at its verify step, before anything is
-   published. Artifact Signing certificates last days, so pin the subject,
-   never a thumbprint.
+4. `WINDOWS_SIGNING_SUBJECT` as a **repository** variable: the certificate
+   subject Windows reports, such as `CN=..., O=..., L=..., S=..., C=...`. The
+   unsigned `windows` build job, which runs outside the `release` environment,
+   embeds it as the publisher the in-app updater requires
+   (`HERDR_WINDOWS_SIGNER`), and `windows-sign` verifies against the same
+   value. The subject is the validated identity, so read it from a first signed
+   file (`(Get-AuthenticodeSignature file.exe).SignerCertificate.Subject`).
+   Set it only once the Azure variables above are in place: it is the switch
+   that turns signing on. Artifact Signing certificates last
+   days, so pin the subject, never a thumbprint.
 
 ## Winget
 
@@ -289,15 +306,16 @@ signing step of `sign` receives it; builds, tests, metadata, OIDC and publicatio
 never do. The public key is validated before builds and matched against the
 private key before signing exact JSON bytes. See [updater setup](../../docs/updating.md).
 
-The exact release base set is twenty-one files: the DMG, two manual Linux archives,
+The exact release base set is twenty-three files: the DMG, two manual Linux archives,
 their `.deb`, `.rpm` and Arch packages, two Windows zips and two Windows installers, SBOM, three updater archives, `update-manifest.json`, and its
 raw 64-byte Ed25519 `update-manifest.sig`, plus `package-manifest.json` and
-`package-manifest.sig` for the six Linux packages. All twenty-one receive checksum and Sigstore sidecars and GitHub
+`package-manifest.sig` for the six Linux packages and `windows-manifest.json` and
+`windows-manifest.sig` for the two signed Windows installers. All twenty-three receive checksum and Sigstore sidecars and GitHub
 provenance in the separate protected OIDC job. The raw signature is not overwritten:
 its Sigstore sidecar is `update-manifest.sig.sig`; the JSON's is
-`update-manifest.json.sig` (and likewise for the package manifest). `SHA256SUMS` covers all 95 base/sidecar files; the
-immutable release has exactly 96 assets. Missing or additional files fail closed.
-`artifact-manifest.py base-names VERSION DIRECTORY` lists the nineteen base names.
+`update-manifest.json.sig` (and likewise for the package and Windows manifests). `SHA256SUMS` covers all 115 base/sidecar files; the
+immutable release has exactly 116 assets. Missing or additional files fail closed.
+`artifact-manifest.py base-names VERSION DIRECTORY` lists the twenty-three base names.
 The publication job verifies downloaded draft bytes and the complete exact asset
 set before making it public; Homebrew still verifies and uses only the final DMG.
 
