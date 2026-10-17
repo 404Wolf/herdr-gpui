@@ -3746,10 +3746,14 @@ distribution's sidebar row show them. A distribution shares the machine's
 CPUs, so its CPU figure is what its processes use, and its memory is what
 WSL has given that distribution.
 
+Plan usage is read through its own `wsl.exe` shell in the same way, as on an
+SSH host: the distribution's own agent sign-ins, read with its `python3` or
+`jq` and sent with its `curl`, so they never leave it.
+
 What else runs a shell on the host is not wired into a distribution yet and
-says so: plan usage, listening ports, agent checkpoints, teleport, file
-transfers, and port forwards. WSL already forwards a distribution's
-`localhost` ports to Windows.
+says so: listening ports, agent checkpoints, teleport, file transfers, and
+port forwards. WSL already forwards a distribution's `localhost` ports to
+Windows.
 
 These features are unavailable on Windows and say so rather than failing quietly:
 
