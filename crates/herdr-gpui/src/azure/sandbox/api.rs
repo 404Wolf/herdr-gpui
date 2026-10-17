@@ -235,6 +235,11 @@ pub(super) fn sizes(client: &Client, settings: &Settings) -> Result<HashMap<Stri
         .collect())
 }
 
+/// Whether the sandbox runs now, without resuming it.
+pub(super) fn running(client: &Client, settings: &Settings, id: &str) -> Result<bool> {
+    Ok(matches!(state(client, settings, id)?, State::Running))
+}
+
 fn state(client: &Client, settings: &Settings, id: &str) -> Result<State> {
     let path = format!("{}?api-version={API_VERSION}", sandbox_path(settings, id)?);
     match client.get::<SandboxResponse>(&path) {

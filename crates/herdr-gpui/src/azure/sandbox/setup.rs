@@ -31,6 +31,15 @@ pub(crate) fn command(
     relay_command(settings, sandbox)
 }
 
+/// The relay to a sandbox that runs now; a suspended one is left suspended.
+pub(crate) fn running_command(settings: &Settings, sandbox: &str) -> Result<Command> {
+    let client = Client::for_audience(settings, Audience::Sandboxes)?;
+    if !api::running(&client, settings, sandbox)? {
+        return Err(Error::NotRunning);
+    }
+    relay_command(settings, sandbox)
+}
+
 /// The size of each sandbox in the group, by ID.
 pub(crate) fn sizes(
     settings: &Settings,

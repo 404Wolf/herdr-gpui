@@ -116,6 +116,8 @@ fn open(host: &Host) -> Result<Shell> {
         Host::Local => local_shell(),
         Host::Ssh(target) => Shell::connect(target),
         Host::Wsl(_) => Err(Error::WslHostUnsupported),
+        #[cfg(feature = "azure")]
+        Host::Azure { .. } => Err(Error::CloudHostUnsupported),
     }
     .map_err(failed)
 }

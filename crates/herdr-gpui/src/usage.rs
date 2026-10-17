@@ -483,6 +483,8 @@ fn read(
         Host::Local => Exec::Local,
         Host::Ssh(target) => Exec::Remote(Shell::connect(target)?),
         Host::Wsl(_) => return Err(crate::Error::WslHostUnsupported),
+        #[cfg(feature = "azure")]
+        Host::Azure { .. } => return Err(crate::Error::CloudHostUnsupported),
     };
     for provider in registry::all() {
         if config.hidden(provider) {

@@ -16,6 +16,9 @@ pub(crate) mod store;
 
 pub(crate) use cleanup::{forget_activity, install, record_activity};
 pub(crate) use connect::{command, connect};
+// Monitors sample through a remote shell, which only Unix clients start.
+#[cfg(unix)]
+pub(crate) use connect::monitor_command;
 pub(crate) use error::{Error, Result};
 pub(crate) use settings::Settings;
 

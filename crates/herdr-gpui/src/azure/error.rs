@@ -83,4 +83,6 @@ pub enum Error {
     },
     #[error("The Azure account in Settings disagrees with this saved device.")]
     Account,
+    #[error("The Azure machine is not running; connecting to it starts it.")]
+    NotRunning,
 }

@@ -10,7 +10,28 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
+/// Whether reaching a machine may start it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Wake {
+    Start,
+    /// Only `monitor_command` asks for this, on Unix clients.
+    #[cfg_attr(not(unix), allow(dead_code))]
+    Never,
+}
+
 pub(crate) fn command(account: &str, id: &str, stop: &AtomicBool) -> Result<Command> {
+    reach(account, id, stop, Wake::Start)
+}
+
+/// The command a background monitor reaches a machine with: only one that
+/// runs now. A stopped VM or suspended sandbox is left as it is, and the
+/// monitor does not count as the activity that holds off auto-stop.
+#[cfg(unix)]
+pub(crate) fn monitor_command(account: &str, id: &str) -> Result<Command> {
+    reach(account, id, &AtomicBool::new(false), Wake::Never)
+}
+
+fn reach(account: &str, id: &str, stop: &AtomicBool, wake: Wake) -> Result<Command> {
     if let Some(reason) = crate::cloud::unavailable() {
         return Err(crate::cloud::Error::Unavailable(reason).into());
     }
@@ -34,12 +55,24 @@ pub(crate) fn command(account: &str, id: &str, stop: &AtomicBool) -> Result<Comm
 
     let id = match Machine::parse(id) {
         Machine::Vm(name) => name,
+        Machine::Sandbox(sandbox) if wake == Wake::Never => {
+            return super::sandbox::running_command(&settings, sandbox);
+        }
         Machine::Sandbox(sandbox) => {
             return super::sandbox::command(&settings, sandbox, &cancelled);
         }
     };
 
     let client = Client::new(&settings)?;
+    if wake == Wake::Never {
+        if api::get_vm_power_state(&client, id)? != api::PowerState::Running {
+            return Err(Error::NotRunning);
+        }
+        let ip = api::get_vm_public_ip(&client, id)?
+            .filter(|ip| !ip.is_empty())
+            .ok_or(Error::NotRunning)?;
+        return Gateway::new(&settings.admin_username, &ip)?.build_command();
+    }
 
     // If VM is deallocated or stopped, start it
     if let Ok(state) = api::get_vm_power_state(&client, id)

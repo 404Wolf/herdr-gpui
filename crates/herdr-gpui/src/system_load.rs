@@ -65,20 +65,35 @@ impl Source {
                 primed: false,
                 disk: HomeDisk::open(),
             }),
-            Host::Ssh(target) => {
-                let mut shell = Shell::connect(target).map_err(remote)?;
-                let uname = shell.run("uname -s", STEP_TIMEOUT).map_err(remote)?;
-                let os = Os::from_uname(&uname.stdout).ok_or_else(|| {
-                    Error::SystemLoadUnsupported(uname.stdout.trim().chars().take(32).collect())
-                })?;
-                Ok(Self::Remote {
-                    shell,
-                    os,
-                    ticks: None,
-                })
-            }
+            Host::Ssh(target) => Self::from_shell(Shell::connect(target).map_err(remote)?),
             Host::Wsl(_) => Err(Error::WslHostUnsupported),
+            #[cfg(all(feature = "azure", unix))]
+            Host::Azure { account, id } => {
+                let mut command = crate::azure::monitor_command(account, id)?;
+                command
+                    .arg("exec /bin/sh -s")
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::null());
+                Self::from_shell(Shell::start(command).map_err(remote)?)
+            }
+            // A remote shell needs a Unix client, as an SSH host's does.
+            #[cfg(all(feature = "azure", not(unix)))]
+            Host::Azure { .. } => Err(Error::CloudHostUnsupported),
         }
+    }
+
+    /// Sample through `shell`, once it says which system it is.
+    fn from_shell(mut shell: Shell) -> Result<Self> {
+        let uname = shell.run("uname -s", STEP_TIMEOUT).map_err(remote)?;
+        let os = Os::from_uname(&uname.stdout).ok_or_else(|| {
+            Error::SystemLoadUnsupported(uname.stdout.trim().chars().take(32).collect())
+        })?;
+        Ok(Self::Remote {
+            shell,
+            os,
+            ticks: None,
+        })
     }
 
     fn sample(&mut self) -> Result<Sample> {

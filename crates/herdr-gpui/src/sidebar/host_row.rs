@@ -68,8 +68,8 @@ impl HerdrWindow {
         let select_id = endpoint_id.clone();
         let menu_id = endpoint_id.clone();
         let removing = self.menu.removing_devices.contains(&endpoint.id);
-        // A cloud machine has no host to read its load from.
-        let host = crate::usage::Host::of(&endpoint.connection.target);
+        // Of cloud machines, only Azure's load is read so far.
+        let host = crate::usage::Host::load_of(&endpoint.connection.target);
         let load = host
             .as_ref()
             .filter(|_| self.config.show_system_load)

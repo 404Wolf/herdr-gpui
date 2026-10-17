@@ -10,7 +10,7 @@ mod api;
 pub(crate) mod relay;
 mod setup;
 
-pub(crate) use setup::{add_device, command, sizes};
+pub(crate) use setup::{add_device, command, running_command, sizes};
 
 #[cfg(test)]
 mod tests;
