@@ -552,6 +552,8 @@ pub enum Error {
     NotInCheckout,
     #[error("Could not read the orchestrator's database: {0}")]
     OrchestratorItems(#[source] crate::orchestrator::Error),
+    #[error(transparent)]
+    Overview(#[from] crate::overview::Error),
     #[cfg(target_os = "macos")]
     #[error("The window has no view to place a page beneath")]
     PageStack,

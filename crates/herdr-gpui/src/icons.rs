@@ -201,6 +201,7 @@ embedded_icons! {
     // keep-sorted start
     "arrow-left.svg",
     "arrow-right.svg",
+    "beads.svg",
     "bell.svg",
     "chart.svg",
     "check.svg",
@@ -226,6 +227,7 @@ embedded_icons! {
     "git-branch.svg",
     "github.svg",
     "globe.svg",
+    "issue.svg",
     "keyboard.svg",
     "lock.svg",
     "more.svg",
@@ -238,6 +240,7 @@ embedded_icons! {
     "play.svg",
     "plug.svg",
     "plus.svg",
+    "pull-request.svg",
     "pulse.svg",
     "refresh.svg",
     "search.svg",

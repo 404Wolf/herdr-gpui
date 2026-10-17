@@ -38,6 +38,7 @@ impl HerdrWindow {
     pub(super) fn update_system_load(&mut self) -> bool {
         if !self.config.show_system_load
             && !self.devices_overview_open()
+            && !self.overview_shown()
             && !self.dispatch_sampling()
             && !self.orchestrator_sampling
         {

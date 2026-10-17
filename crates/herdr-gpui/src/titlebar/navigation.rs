@@ -133,8 +133,11 @@ impl HerdrWindow {
                         })
                         .on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
-                            this.travel(step, cx);
-                            window.focus(&this.focus, cx);
+                            this.travel(step, window, cx);
+                            // A section returned to keeps the keyboard it took.
+                            if this.activity_section().is_none() {
+                                window.focus(&this.focus, cx);
+                            }
                         }))
                 })
         };

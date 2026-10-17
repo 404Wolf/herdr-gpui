@@ -3,9 +3,9 @@
 `herdr-gpui` is also a command line for the running Herdr UI. Herdr's own
 `herdr` CLI drives the daemon: workspaces, terminal tabs, panes, agents,
 worktrees, and notifications. `herdr-gpui COMMAND` covers what only this
-client knows or draws: its windows, its own tabs (pages, code, reviews, the
-orchestrator, Devices), worktree notes, checkpoints, forwarded ports, and its
-settings.
+client knows or draws: its windows, its own tabs (pages, code, reviews,
+Devices), the activity bar's sections, worktree notes, checkpoints, forwarded
+ports, and its settings.
 
 Commands reach the app over a socket of its own,
 `$XDG_STATE_HOME/herdr/gpui/control.sock` (default `~/.local/state/`), which
@@ -68,6 +68,7 @@ Every command accepts:
 | `window detach\|reconnect` | Detach from, or reconnect to, the selected host |
 | `ui sidebar\|statusbar [on\|off\|toggle]` | For this window and session |
 | `ui font-size +\|-\|reset\|POINTS` | The terminal font size for this session |
+| `ui panel workspaces\|overview\|pull-requests\|issues\|usage` | Show an activity bar section: Workspaces with the sidebar expanded, Overview of what needs you on every host, the focused workspace's pull requests or issues across the window, or every host's plan usage |
 | `run COMMAND` | Any app command by its `[keybindings]` name, as the palette runs it |
 | `commands` | The names `run` accepts (no app needed) |
 
@@ -75,7 +76,7 @@ Every command accepts:
 
 | Command | What it does |
 | --- | --- |
-| `tab [list]` | Pages, code, reviews, the orchestrator, and Devices tabs with IDs |
+| `tab [list]` | Pages, code, reviews, and Devices tabs with IDs |
 | `tab focus\|close ID` | |
 | `browser open\|reload\|feedback` | See [browser tabs](../crates/herdr-gpui/README.md#browser-tabs) |
 | `browser list` | Page tabs only |
@@ -86,7 +87,7 @@ Every command accepts:
 | `code open FILE[:LINE]` | A read-only code tab at a line |
 | `code edit FILE[:LINE]` | Your terminal editor, in a new pane beside yours |
 | `devices` | The Devices overview |
-| `orchestrator [--repo PATH]` | The orchestrator of your checkout, or of PATH |
+| `orchestrator [--repo PATH]` | Show the Issues section narrowed to your checkout's project, or PATH's |
 | `orchestrator items\|issues\|prs` | What it last synced, from its local database (no app needed) |
 | `review` | The review of your workspace's uncommitted changes |
 

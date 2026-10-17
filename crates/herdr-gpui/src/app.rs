@@ -367,6 +367,12 @@ pub(crate) fn run() -> std::process::ExitCode {
     } else {
         crate::worktree_notes::Notes::default()
     };
+    // Nor with what the user snoozed, settled, or pinned in the Overview.
+    let overview_marks = if mode == LaunchMode::Normal {
+        crate::overview::Marks::load()
+    } else {
+        crate::overview::Marks::default()
+    };
     // Nor with the user's jump list, which they would replace.
     #[cfg(windows)]
     let jump_list = (mode == LaunchMode::Normal).then(crate::jump_list::JumpList::load);
@@ -394,6 +400,7 @@ pub(crate) fn run() -> std::process::ExitCode {
             browser_tabs.install(cx);
             group_layouts.install(cx);
             worktree_notes.install(cx);
+            overview_marks.install(cx);
             palette_frecency.install(cx);
             dispatch_history.install(cx);
             agent_skill.install_global(cx);
