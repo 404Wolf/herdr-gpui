@@ -70,12 +70,6 @@ impl Connection {
     pub(super) fn peer_closed(&self) -> bool {
         !matches!((&self.0).read(&mut [0]), Err(error) if matches!(error.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted))
     }
-
-    #[cfg(test)]
-    pub(super) fn pair() -> io::Result<(Self, UnixStream)> {
-        let (server, client) = UnixStream::pair()?;
-        Ok((Self(server), client))
-    }
 }
 
 impl Read for &Connection {
