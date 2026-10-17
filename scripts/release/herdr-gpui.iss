@@ -139,7 +139,7 @@ begin
 end;
 
 { The user PATH without this installation's entries. Pre-release builds of this
-  installer put {app}\bin there instead, so that goes too. }
+  installer put the bin subdirectory there instead, so that goes too. }
 function PathWithoutApp(): String;
 begin
   Result := WithoutEntry(WithoutEntry(UserPath(), ExpandConstant('{app}')), ExpandConstant('{app}\bin'));
