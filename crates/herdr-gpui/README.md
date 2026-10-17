@@ -3763,6 +3763,18 @@ says so: plan usage, listening ports, agent checkpoints, teleport, file
 transfers, and port forwards. WSL already forwards a distribution's
 `localhost` ports to Windows.
 
+### Window chrome on Windows
+
+Every window keeps the title bar Windows draws, so its buttons, double-click,
+drag-to-snap, and the window menu are the system's own, and hovering the
+maximize button opens the Snap Layouts flyout. The title bar is light or dark
+with the window's theme rather than with the system's app mode, so a dark
+theme under light Windows no longer sits under a white bar. A translucent
+window's blur is DWM acrylic or Mica on Windows 11 (see
+**Settings > Theme > Window** under
+[Configuration](#configuration)), and `accent = "system"` takes the app's
+accent from Windows.
+
 ### Screen readers on Windows
 
 GPUI reports the window to UI Automation through AccessKit, which is what
