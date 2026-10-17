@@ -11,6 +11,9 @@
 //! window then resolves the target through the toast path, which rejects a
 //! reconnected inbox or a restarted daemon instead of guessing.
 
+#[cfg(windows)]
+mod toast;
+
 use super::HerdrWindow;
 use crate::{notifications::SystemPost, state::LiveState};
 use gpui::{App, Context, Global, SharedString, SystemNotification, Window, WindowHandle};
@@ -42,6 +45,11 @@ struct Posted {
 pub(crate) struct Registry {
     posted: VecDeque<Posted>,
     identity: bool,
+    /// What the shell offers, once known; until then GPUI posts.
+    #[cfg(windows)]
+    shell: Option<toast::Shell>,
+    #[cfg(windows)]
+    toasts: toast::Toasts,
 }
 
 impl Global for Registry {}
@@ -78,7 +86,15 @@ pub(crate) fn install(cx: &mut App) {
     // the Start menu shortcut, which carries the same ID, from the start
     // rather than moving when the first notification is posted.
     #[cfg(windows)]
-    set_identity(cx);
+    {
+        set_identity(cx);
+        let prepare = cx.background_executor().spawn(async { toast::prepare() });
+        cx.spawn(async move |cx| {
+            let shell = prepare.await;
+            cx.update(|cx| cx.global_mut::<Registry>().shell = Some(shell));
+        })
+        .detach();
+    }
     cx.on_system_notification_response(|response, cx| {
         // No actions are offered: any activation opens the target.
         open(&response.tag, cx);
@@ -196,6 +212,16 @@ impl HerdrWindow {
             id,
             at: now,
         });
+        #[cfg(windows)]
+        {
+            let registry = cx.global_mut::<Registry>();
+            if registry.shell.is_some_and(|shell| shell.links) {
+                match registry.toasts.show(&notification) {
+                    Ok(()) => return,
+                    Err(error) => tracing::warn!(error = ?error, "Falling back to GPUI's toast"),
+                }
+            }
+        }
         cx.show_system_notification(notification);
     }
 

@@ -2781,11 +2781,15 @@ while the GUI runs: a click cannot reopen a closed window.
   compositor's focus policy. Notifications are neither replaced nor retracted, so
   each event shows separately, and each keeps a small waiting thread until the
   server closes it.
-- **Windows** uses WinRT toasts. The first notification sets the process
-  AppUserModelID to `so.pen.herdr-gpui` and registers its display name under
-  `HKCU\Software\Classes\AppUserModelId`. Because this changes taskbar grouping,
-  it happens only once system delivery posts. Native Windows behavior has not been
-  verified.
+- **Windows** uses WinRT toasts under the AppUserModelID `so.pen.herdr-gpui`,
+  which the app sets at startup and registers, with its display name, under
+  `HKCU\Software\Classes\AppUserModelId`. Once the installer has registered
+  `herdr-gpui://` links, a toast opens through one: clicking the banner, or the
+  toast later in the notification center, starts `herdr-gpui.exe
+  herdr-gpui://notification?tag=…`, which hands the click to the running app
+  and lets its window come forward. A click after the app quit only starts it.
+  Without that registration (a build run from `target`), toasts answer clicks
+  only while the app runs and still holds them, as GPUI posts them.
 
 ## macOS Dock Badge
 

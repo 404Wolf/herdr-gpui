@@ -22,6 +22,9 @@ fn every_link_reads_back_from_its_url() {
         Link::Notification {
             tag: "herdr:local:boot-1:w1:p2".into(),
         },
+        Link::Notification {
+            tag: "herdr-preview:local".into(),
+        },
     ] {
         let url = link.to_url();
         assert!(url.starts_with("herdr-gpui://"), "{url}");

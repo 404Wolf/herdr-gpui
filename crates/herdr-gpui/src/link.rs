@@ -113,8 +113,9 @@ impl Link {
             "notification" => {
                 parameters.only(&["tag"])?;
                 let tag = parameters.take("tag")?;
+                // `herdr:` for daemon notices, `herdr-preview:` for the QA one.
                 if tag.len() > MAX_TAG
-                    || !tag.starts_with("herdr:")
+                    || !tag.starts_with("herdr")
                     || tag.chars().any(crate::notifications::unsafe_char)
                 {
                     return Err(Error::Tag);
