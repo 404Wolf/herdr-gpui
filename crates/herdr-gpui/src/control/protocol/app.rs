@@ -89,7 +89,7 @@ pub(crate) enum UiOp {
     FontSize {
         size: FontSize,
     },
-    /// Shows an activity bar panel, expanding the sidebar for it.
+    /// Shows an activity bar section.
     Panel {
         panel: crate::sidebar::ActivityPanel,
     },

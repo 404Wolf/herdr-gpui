@@ -57,95 +57,78 @@ fn the_bar_leads_the_expanded_sidebar_and_widens_its_column(cx: &mut gpui::TestA
 }
 
 #[gpui::test]
-fn icons_switch_the_panel_and_the_shown_one_collapses_it(cx: &mut gpui::TestAppContext) {
+fn a_section_takes_the_body_beside_the_bar_and_workspaces_brings_it_back(
+    cx: &mut gpui::TestAppContext,
+) {
     let (view, cx) = fixture(cx);
+    let terminal_column = cx.debug_bounds("sidebar").unwrap().right();
     click(cx, "activity-pull-requests");
     assert_eq!(
         cx.update(|_, cx| view.read(cx).activity.panel),
         ActivityPanel::PullRequests
     );
-    assert!(cx.debug_bounds("sidebar").is_none());
-    let panel = cx.debug_bounds("activity-panel").unwrap();
+    // The bar stays; the sidebar and the terminals give way to the section.
     let bar = cx.debug_bounds("activity-bar").unwrap();
-    assert_eq!(panel.left(), bar.right());
-    assert!(cx.debug_bounds("activity-filter").is_some());
-    assert!(cx.debug_bounds("device-footer").is_some());
-    // No checkout has a pull request yet, and no orchestrator is open.
-    assert!(cx.debug_bounds("activity-empty").is_some());
-    click(cx, "activity-issues");
+    let section = cx.debug_bounds("activity-section").unwrap();
+    assert!(cx.debug_bounds("sidebar").is_none());
+    assert_eq!(section.left(), bar.right());
+    assert!(section.left() < terminal_column);
+    assert_eq!(
+        cx.update(|_, cx| view.read(cx).sidebar_column_width(1000.)),
+        Some(BAR_WIDTH)
+    );
+    // The status bar stays under it.
+    let status = cx.debug_bounds("connection-status").unwrap();
+    assert!(status.top() >= section.bottom());
     // The fixture's socket cannot run the orchestrator's scripts, which the
-    // panel says rather than offering what cannot work.
-    assert!(cx.debug_bounds("activity-empty").is_some());
+    // section says rather than showing an empty list.
+    assert!(cx.debug_bounds("activity-section-empty").is_some());
     // The overview is not a destination yet.
     click(cx, "activity-overview");
     assert_eq!(
         cx.update(|_, cx| view.read(cx).activity.panel),
-        ActivityPanel::Issues
+        ActivityPanel::PullRequests
     );
-    click(cx, "activity-issues");
-    cx.update(|_, cx| {
-        let view = view.read(cx);
-        assert!(!view.sidebar_visible);
-        assert_eq!(view.activity.panel, ActivityPanel::Issues);
-    });
-    // The collapsed rail keeps no bar.
+    // A section picked again stays.
+    click(cx, "activity-pull-requests");
+    assert!(cx.debug_bounds("activity-section").is_some());
+    click(cx, "activity-workspaces");
+    assert!(cx.debug_bounds("activity-section").is_none());
+    assert_eq!(
+        cx.debug_bounds("sidebar").unwrap().left(),
+        cx.debug_bounds("activity-bar").unwrap().right()
+    );
+    // Workspaces picked again collapses the sidebar to the rail, with no bar.
+    click(cx, "activity-workspaces");
+    cx.update(|_, cx| assert!(!view.read(cx).sidebar_visible));
     assert!(cx.debug_bounds("activity-bar").is_none());
 }
 
 #[gpui::test]
-fn prefetched_pull_requests_are_listed_and_counted(cx: &mut gpui::TestAppContext) {
+fn zen_mode_keeps_the_terminals_whatever_section_was_shown(cx: &mut gpui::TestAppContext) {
     let (view, cx) = fixture(cx);
-    view.update(cx, |view, cx| {
-        // The verified local daemon, whose checkouts the prefetch reads.
-        view.live.local_daemon_peer = true;
-        let now = std::time::Instant::now();
-        for (number, input) in [
-            // A worktree the daemon made, keyed by its repository.
-            (
-                11,
-                crate::pull_request::Input {
-                    checkout: None,
-                    repo_key: Some(crate::sidebar::layout_tests::REPO_KEY.into()),
-                    branch: "develop".into(),
-                },
-            ),
-            // A plain local checkout, keyed by its directory.
-            (
-                12,
-                crate::pull_request::Input {
-                    checkout: Some("/tmp".into()),
-                    repo_key: None,
-                    branch: "main".into(),
-                },
-            ),
-        ] {
-            let mut value = crate::pull_request::fixture().unwrap();
-            value.number = number;
-            value.url = format!("https://github.com/penso/herdr-gpui/pull/{number}");
-            view.menu.pr_cache.seed(input, value, now);
-        }
-        view.show_activity_panel(ActivityPanel::PullRequests, cx);
+    click(cx, "activity-issues");
+    assert!(view.read_with(cx, |view, _| view.activity_section().is_some()));
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.command(crate::controls::Command::ToggleZenMode, window, cx)
+        })
     });
-    draw(cx);
-    assert!(cx.debug_bounds("activity-row-0-1").is_some());
-    assert!(cx.debug_bounds("activity-row-0-2").is_none());
-    let lists = cx.update(|_, cx| view.read(cx).activity_lists(cx));
-    assert_eq!(lists.count(ActivityPanel::PullRequests), Some(2));
-    assert_eq!(lists.count(ActivityPanel::Workspaces), None);
-    // A device whose checkouts cannot be verified lists none.
-    view.update(cx, |view, _| view.live.local_daemon_peer = false);
-    let lists = cx.update(|_, cx| view.read(cx).activity_lists(cx));
-    assert_eq!(lists.count(ActivityPanel::PullRequests), Some(0));
+    assert!(view.read_with(cx, |view, _| view.activity_section().is_none()));
 }
 
 #[gpui::test]
 fn turning_the_bar_off_restores_the_plain_sidebar(cx: &mut gpui::TestAppContext) {
     let (view, cx) = fixture(cx);
     view.update(cx, |view, cx| {
+        // A stored section waits for the bar; the terminals show meanwhile.
+        view.activity.panel = ActivityPanel::Issues;
         view.config.sidebar_style.activity_bar = false;
         cx.notify();
     });
     draw(cx);
+    assert!(view.read_with(cx, |view, _| view.activity_section().is_none()));
+    assert!(cx.debug_bounds("activity-section").is_none());
     assert!(cx.debug_bounds("activity-bar").is_none());
     assert_eq!(cx.debug_bounds("sidebar").unwrap().left(), px(0.));
     assert!(cx.debug_bounds("device-settings").is_some());
@@ -174,10 +157,12 @@ fn a_stored_panel_yields_to_one_picked_before_it_loaded(cx: &mut gpui::TestAppCo
         assert_eq!(view.activity.panel, ActivityPanel::Orchestrator);
     });
     let (view, cx) = fixture(cx);
-    view.update(cx, |view, cx| {
-        view.show_activity_panel(ActivityPanel::Issues, cx);
-        view.activity.restore(Some(ActivityPanel::Orchestrator));
-        assert_eq!(view.activity.panel, ActivityPanel::Issues);
-        assert_eq!(view.activity.chosen(), Some(ActivityPanel::Issues));
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.show_activity_panel(ActivityPanel::Issues, window, cx);
+            view.activity.restore(Some(ActivityPanel::Orchestrator));
+            assert_eq!(view.activity.panel, ActivityPanel::Issues);
+            assert_eq!(view.activity.chosen(), Some(ActivityPanel::Issues));
+        })
     });
 }

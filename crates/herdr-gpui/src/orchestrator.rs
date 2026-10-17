@@ -19,8 +19,8 @@ mod model;
 mod naming;
 mod prompt;
 mod repo;
+mod section;
 mod service;
-mod sidebar;
 mod store;
 mod tab;
 mod view;
@@ -40,10 +40,9 @@ pub(crate) use naming::LiveBranch;
 #[cfg(all(test, unix))]
 pub(crate) use service::SourceStatus;
 pub(crate) use service::{Notice, Request, Service, Snapshot, SyncState, Timing};
-pub(crate) use sidebar::SidebarOrchestrator;
 pub(crate) use store::{Access, SCHEMA_VERSION, Store};
 pub(crate) use tab::{LiveCache, Orchestrator};
-pub(crate) use view::{Event, LiveAgent, Look, OrchestratorView, RunStatus};
+pub(crate) use view::{Event, List, LiveAgent, Look, OrchestratorView, RunStatus};
 pub(crate) use window::Detached;
 
 #[cfg(test)]

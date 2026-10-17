@@ -29,7 +29,7 @@ pub enum UiCommand {
     Sidebar(Switch),
     StatusBar(Switch),
     FontSize(FontSize),
-    /// The activity bar's panel to show, expanding the sidebar for it.
+    /// The activity bar section to show.
     Panel(crate::sidebar::ActivityPanel),
 }
 

@@ -100,8 +100,9 @@ impl DeviceFooter {
 /// Sidebar styling the config file adds to a layout preset.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SidebarStyle {
-    /// `activity_bar`: the icon column that picks the expanded sidebar's
-    /// panel. On unless turned off.
+    /// `activity_bar`: the icon column that picks what the window shows:
+    /// the sidebar and terminals, or an orchestrator section. On unless
+    /// turned off.
     pub activity_bar: bool,
     pub device_footer: DeviceFooter,
     /// A colour per host, keyed by the host's display name, as `0xRRGGBB`.

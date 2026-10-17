@@ -632,9 +632,13 @@ impl Render for HerdrWindow {
             .then(|| self.active_group())
             .flatten();
         let mut terminal = Some(terminal);
-        let merged = slots
-            .first()
-            .is_some_and(|first| self.tabs_in_titlebar(first.id, cx));
+        // An activity bar section takes the body; its title bar is the
+        // window's own, with no group's tab strip in it.
+        let section = self.render_activity_section();
+        let merged = section.is_none()
+            && slots
+                .first()
+                .is_some_and(|first| self.tabs_in_titlebar(first.id, cx));
         let count = slots.len();
         let mut groups = Vec::with_capacity(count);
         for (slot, shown) in slots.into_iter().zip(shown) {
@@ -697,7 +701,7 @@ impl Render for HerdrWindow {
             groups.push(self.render_group(slot, body, ends, reach, window, cx));
         }
         let content = self.render_groups(groups, cx);
-        let content = self.zen_column(content);
+        let content = section.unwrap_or_else(|| self.zen_column(content));
         // Not `||`: asking forgets group motion that has finished.
         if self.groups_moving()
             | self.tabs_growing()

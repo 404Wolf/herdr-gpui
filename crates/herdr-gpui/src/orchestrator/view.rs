@@ -23,7 +23,7 @@ mod rows;
 mod tests;
 
 pub(crate) use look::Look;
-pub(crate) use rows::{LiveAgent, Status as RunStatus};
+pub(crate) use rows::{LiveAgent, Status as RunStatus, Tab as List};
 
 use super::{Item, Notice, Request, Service, Snapshot};
 use crate::search_input::{self, SearchInput};
@@ -578,32 +578,18 @@ impl OrchestratorView {
         &self.live
     }
 
-    /// Opens item `key` on its tab, as clicking its row would.
-    pub(crate) fn reveal_item(&mut self, key: String, cx: &mut Context<Self>) {
-        let Some(item) = self.item(&key) else {
-            return;
-        };
-        let tab = if item.pull_request.is_some() {
-            Tab::PullRequests
-        } else {
-            Tab::Issues
-        };
-        self.reveal(tab, key, cx);
+    /// The list shown.
+    #[cfg(test)]
+    pub(crate) fn list(&self) -> Tab {
+        self.tab
     }
 
-    /// Opens run `id` on the Runs tab, as clicking its row would.
-    pub(crate) fn reveal_run(&mut self, id: String, cx: &mut Context<Self>) {
-        self.reveal(Tab::Runs, id, cx);
-    }
-
-    fn reveal(&mut self, tab: Tab, key: String, cx: &mut Context<Self>) {
+    /// Lists `tab`'s items, as clicking its header would; the activity
+    /// bar's sections pick the list they show.
+    pub(crate) fn show_list(&mut self, tab: Tab, cx: &mut Context<Self>) {
         if self.tab != tab {
             self.select_tab(tab, cx);
         }
-        self.selected = Some(key.clone());
-        let line = self.line_of(&key);
-        self.scroll.scroll_to_item(line, ScrollStrategy::Center);
-        self.open_detail(key, cx);
     }
 
     fn select_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {

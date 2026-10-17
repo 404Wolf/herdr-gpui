@@ -312,9 +312,10 @@ size = 12
 # the palette still offers Add Device.
 # device_footer = "always"
 
-# The activity bar: an icon column at the expanded sidebar's left edge that
-# switches its panel between Workspaces, Orchestrator, Pull requests, and
-# Issues, with Settings at its foot. false keeps the plain sidebar.
+# The activity bar: an icon column at the window's left edge. Workspaces is
+# the sidebar beside the terminals; Orchestrator, Pull requests, and Issues
+# show the focused workspace's orchestrator across the window on that list.
+# Settings sits at its foot. false keeps the plain sidebar.
 # activity_bar = true
 
 # A colour per host, keyed by the host's name in the sidebar, as #rgb or

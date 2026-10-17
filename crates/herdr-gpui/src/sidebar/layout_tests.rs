@@ -573,7 +573,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         last_input: None,
         last_pointer: None,
         active: false,
-        activity: crate::sidebar::Activity::new(cx),
+        activity: Default::default(),
         sent_focus: None,
         bounds: Bounds::default(),
         title: crate::WINDOW_TITLE.to_owned(),

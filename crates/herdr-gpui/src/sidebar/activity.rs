@@ -1,24 +1,23 @@
-//! The activity bar: an icon column at the expanded sidebar's left edge that
-//! picks what the panel beside it lists. Workspaces is the sidebar as it was;
-//! Orchestrator, Pull requests, and Issues list what the window already holds
-//! (see `rows`). `[sidebar] activity_bar = false` turns the bar off, and the
-//! collapsed rail never shows it.
+//! The activity bar: an icon column at the window's left edge that picks
+//! what the window shows. Workspaces is the sidebar beside the terminals, as
+//! it was; Orchestrator, Pull requests, and Issues each take the window's
+//! body for the focused workspace's orchestrator on that list (see
+//! `orchestrator::section`), keeping the bar, title bar, and status bar.
+//! `[sidebar] activity_bar = false` turns the bar off, and the collapsed
+//! rail of the Workspaces section never shows it.
 
 use super::{agents::Indicators, line_height};
 use crate::fonts::StyledFont;
 use crate::{
     Command, HerdrWindow,
-    orchestrator::OrchestratorView,
-    search_input::{Changed, SearchInput},
+    browser::TabId,
+    orchestrator::{List, OrchestratorView},
 };
 use gpui::{prelude::*, *};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-mod panels;
-mod rows;
-
-pub(crate) use rows::Host;
+mod counts;
 
 #[cfg(test)]
 mod tests;
@@ -29,8 +28,8 @@ const BUTTON: f32 = 32.;
 const ICON: f32 = 17.;
 const TITLE_HEIGHT: f32 = 32.;
 
-/// What the panel beside the bar shows. The bar lists them in declaration
-/// order, so this order is what users see.
+/// What the window shows, picked on the bar. The bar lists them in
+/// declaration order, so this order is what users see.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ActivityPanel {
@@ -80,67 +79,33 @@ impl ActivityPanel {
             Self::Issues => "icons/issue.svg",
         }
     }
-
-    fn placeholder(self) -> &'static str {
-        match self {
-            Self::Workspaces => "",
-            Self::Orchestrator => "Filter runs",
-            Self::PullRequests => "Filter pull requests",
-            Self::Issues => "Filter issues",
-        }
-    }
 }
 
-/// The window's bar: the panel it shows and the list panels' filter, which
-/// one field serves since one panel shows at a time.
+/// The window's bar: the section it shows, and the orchestrator tab a
+/// section shows.
+#[derive(Debug, Default)]
 pub(crate) struct Activity {
     pub(crate) panel: ActivityPanel,
-    /// Picked in this window, so a stored panel arriving later yields to it.
+    /// Picked in this window, so a stored section arriving later yields to it.
     picked: bool,
-    filter: Entity<SearchInput>,
-    /// Each orchestrator view's lists and live agents as last drawn, by
-    /// identity, so a new snapshot or a live status change redraws the
-    /// sidebar and nothing else does.
-    sources: Vec<(Host, [usize; 3])>,
-    /// A list panel was shown, so the panels read an orchestrator from then
-    /// on, for their counts too.
-    listed: bool,
-    /// The orchestrator view the panels read when no tab has one.
-    pub(crate) orchestrator: Option<crate::orchestrator::SidebarOrchestrator>,
-    _changed: Subscription,
+    /// The orchestrator tab the shown section draws.
+    pub(crate) section_tab: Option<TabId>,
+    /// The list last picked on that tab's view, so the user's own choice of
+    /// list there stands until another section is picked.
+    pub(crate) section_list: Option<List>,
+    /// Each orchestrator view's lists and live agents as last counted, by
+    /// identity, so a new snapshot or a live status change redraws the bar
+    /// and nothing else does.
+    sources: Vec<(TabId, [usize; 3])>,
 }
 
 impl Activity {
-    pub(crate) fn new(cx: &mut Context<HerdrWindow>) -> Self {
-        // The panel draws the field's frame, with the magnifier inside it.
-        let filter = cx.new(|cx| {
-            let mut input = SearchInput::new(cx);
-            input.set_frameless(cx);
-            input
-        });
-        let changed = cx.subscribe(&filter, |_, _, _: &Changed, cx| cx.notify());
-        Self {
-            panel: ActivityPanel::default(),
-            picked: false,
-            filter,
-            sources: Vec::new(),
-            listed: false,
-            orchestrator: None,
-            _changed: changed,
-        }
-    }
-
-    /// Whether a list panel's filter holds the keyboard.
-    pub(crate) fn filter_focused(&self, window: &Window, cx: &App) -> bool {
-        self.filter.read(cx).focus.contains_focused(window, cx)
-    }
-
-    /// The panel to store: only one the user picked.
+    /// The section to store: only one the user picked.
     pub(crate) fn chosen(&self) -> Option<ActivityPanel> {
         self.picked.then_some(self.panel)
     }
 
-    /// Applies the stored panel unless one was picked before it loaded.
+    /// Applies the stored section unless one was picked before it loaded.
     pub(crate) fn restore(&mut self, stored: Option<ActivityPanel>) {
         if let Some(panel) = stored.filter(|_| !self.picked) {
             self.panel = panel;
@@ -148,15 +113,10 @@ impl Activity {
         }
     }
 
-    /// Whether a list panel has been shown, which connects the orchestrator.
-    pub(crate) fn listed(&self) -> bool {
-        self.listed || self.panel != ActivityPanel::Workspaces
-    }
-
     /// Records the views' lists; whether they changed since last time.
     pub(crate) fn observe_sources(
         &mut self,
-        views: &[(Host, Entity<OrchestratorView>)],
+        views: &[(TabId, Entity<OrchestratorView>)],
         cx: &App,
     ) -> bool {
         let mut sources: Vec<_> = views
@@ -183,103 +143,114 @@ impl Activity {
 }
 
 impl HerdrWindow {
-    /// Every orchestrator view the panels read, tabs' in tab order, then the
-    /// sidebar's own.
-    pub(crate) fn activity_views(&self) -> Vec<(Host, Entity<OrchestratorView>)> {
-        let mut views: Vec<_> = self
-            .orchestrator_views()
-            .into_iter()
-            .map(|(tab, view)| (Host::Tab(tab), view))
-            .collect();
-        views.sort_unstable_by_key(|(host, _)| *host);
-        views.extend(
-            self.activity
-                .orchestrator
-                .as_ref()
-                .map(|connected| (Host::Sidebar, connected.view.clone())),
-        );
-        views
-    }
-
-    /// Whether the expanded sidebar leads with the bar.
+    /// Whether the window leads with the bar.
     pub(crate) fn activity_bar_shown(&self) -> bool {
         self.config.sidebar_style.activity_bar
     }
 
-    /// The sidebar column's width as its mode lays it out, with the bar's
-    /// room added beside an expanded panel.
+    /// The section that takes the window's body, if one other than
+    /// Workspaces is shown. Zen mode keeps the terminals.
+    pub(crate) fn activity_section(&self) -> Option<ActivityPanel> {
+        (self.activity_bar_shown() && !self.zen_layout())
+            .then_some(self.activity.panel)
+            .filter(|panel| *panel != ActivityPanel::Workspaces)
+    }
+
+    /// The left column's width: the bar alone beside a section, else the
+    /// sidebar as its mode lays it out with the bar's room added beside an
+    /// expanded one.
     pub(crate) fn sidebar_column_width(&self, window_width: f32) -> Option<f32> {
+        if self.activity_section().is_some() {
+            return Some(BAR_WIDTH);
+        }
         let mode = self.sidebar_mode();
         let width = mode.width(self.sidebar_width, window_width)?;
         let bar = mode == super::SidebarMode::Expanded && self.activity_bar_shown();
         Some(if bar { width + BAR_WIDTH } else { width })
     }
 
-    /// Shows `panel`, expanding the sidebar for it. Picking the panel already
-    /// shown collapses the sidebar instead, as a second click on a tab bar's
-    /// selected icon does.
-    pub(crate) fn select_activity_panel(&mut self, panel: ActivityPanel, cx: &mut Context<Self>) {
-        if panel == self.activity.panel && self.sidebar_visible {
+    /// Shows `panel`. Picking Workspaces while it is shown collapses the
+    /// sidebar instead, as a second click on a tab bar's selected icon does.
+    pub(crate) fn select_activity_panel(
+        &mut self,
+        panel: ActivityPanel,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if panel == ActivityPanel::Workspaces
+            && self.activity.panel == panel
+            && self.sidebar_visible
+        {
             self.toggle_sidebar();
+            cx.notify();
         } else {
-            self.show_activity_panel(panel, cx);
+            self.show_activity_panel(panel, window, cx);
         }
-        cx.notify();
     }
 
-    /// Shows `panel` with the sidebar expanded, whatever was shown before.
-    pub(crate) fn show_activity_panel(&mut self, panel: ActivityPanel, cx: &mut Context<Self>) {
-        if !self.sidebar_visible {
+    /// Shows `panel`, whatever was shown before: Workspaces with its sidebar
+    /// expanded, a section with its orchestrator holding the keyboard.
+    pub(crate) fn show_activity_panel(
+        &mut self,
+        panel: ActivityPanel,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if panel == ActivityPanel::Workspaces && !self.sidebar_visible {
             self.toggle_sidebar();
         }
         if panel != self.activity.panel {
-            self.activity.listed |= panel != ActivityPanel::Workspaces;
             self.activity.panel = panel;
             self.activity.picked = true;
-            self.activity.filter.update(cx, |input, cx| input.clear(cx));
+            self.activity.section_list = None;
             self.save_chrome();
+        }
+        self.sync_activity_section(cx);
+        if self.activity_section().is_some() {
+            self.focus_activity_section(window, cx);
         }
         cx.notify();
     }
 
-    /// The bar and the panel it picked, in place of the plain sidebar.
+    /// The left column with the bar: beside a section, the bar alone; in
+    /// Workspaces, the bar and the sidebar under the section's name.
     pub(crate) fn render_activity(
         &self,
         indicators: Indicators,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        let panel = self.activity.panel;
-        let lists = self.activity_lists(cx);
-        let body = match panel {
-            ActivityPanel::Workspaces => self
-                .render_sidebar(indicators, window, cx)
-                .into_any_element(),
-            _ => self
-                .render_list_panel(panel, &lists, window, cx)
-                .into_any_element(),
-        };
-        div()
+        let column = div()
             .id("activity")
             .debug_selector(|| "activity".into())
             .flex()
             .flex_none()
             .h_full()
             .min_h_0()
-            .child(self.render_activity_bar(&lists, cx))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .h_full()
-                    .min_h_0()
-                    .child(self.panel_title(panel))
-                    .child(div().flex().flex_1().min_h_0().child(body)),
-            )
+            .child(self.render_activity_bar(cx));
+        if self.activity_section().is_some() {
+            return column;
+        }
+        column.child(
+            div()
+                .flex()
+                .flex_col()
+                .h_full()
+                .min_h_0()
+                .child(self.panel_title(ActivityPanel::Workspaces))
+                .child(
+                    div()
+                        .flex()
+                        .flex_1()
+                        .min_h_0()
+                        .child(self.render_sidebar(indicators, window, cx)),
+                ),
+        )
     }
 
-    fn render_activity_bar(&self, lists: &panels::Lists, cx: &mut Context<Self>) -> Div {
+    fn render_activity_bar(&self, cx: &mut Context<Self>) -> Div {
         let theme = &self.theme;
+        let counts = self.activity_counts(cx);
         let mut bar = div()
             .debug_selector(|| "activity-bar".into())
             .w(px(BAR_WIDTH))
@@ -313,10 +284,10 @@ impl HerdrWindow {
                     panel.icon(),
                     panel.label(),
                     state,
-                    lists.count(panel),
+                    counts.of(panel),
                 )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.select_activity_panel(panel, cx);
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.select_activity_panel(panel, window, cx);
                 }));
             bar = bar.child(button);
         }
@@ -429,7 +400,7 @@ impl HerdrWindow {
             .child(text)
     }
 
-    /// The panel's name over its list, across the panel's width.
+    /// The section's name over the sidebar, across its width.
     fn panel_title(&self, panel: ActivityPanel) -> Div {
         let theme = &self.theme;
         let font = &self.config.sidebar;

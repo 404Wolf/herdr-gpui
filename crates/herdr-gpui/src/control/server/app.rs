@@ -228,7 +228,7 @@ pub(super) fn window(call: Call<WindowOp>, cx: &mut App) -> Response {
 }
 
 pub(super) fn ui(call: Call<UiOp>, cx: &mut App) -> Response {
-    in_window(&call.caller, cx, |view, _, cx| match call.op {
+    in_window(&call.caller, cx, |view, window, cx| match call.op {
         UiOp::Sidebar { switch } => {
             let visible = switch.apply(view.sidebar_visible);
             if visible != view.sidebar_visible {
@@ -248,7 +248,7 @@ pub(super) fn ui(call: Call<UiOp>, cx: &mut App) -> Response {
                     "The activity bar is off: [sidebar] activity_bar = false",
                 );
             }
-            view.show_activity_panel(panel, cx);
+            view.show_activity_panel(panel, window, cx);
             Response::done(format!("Showing {}", panel.name()))
         }
         UiOp::StatusBar { switch } => {

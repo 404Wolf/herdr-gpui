@@ -63,7 +63,7 @@ Every command accepts:
 | `window detach\|reconnect` | Detach from, or reconnect to, the selected host |
 | `ui sidebar\|statusbar [on\|off\|toggle]` | For this window and session |
 | `ui font-size +\|-\|reset\|POINTS` | The terminal font size for this session |
-| `ui panel workspaces\|orchestrator\|pull-requests\|issues` | Show an activity bar panel, expanding the sidebar for it |
+| `ui panel workspaces\|orchestrator\|pull-requests\|issues` | Show an activity bar section: Workspaces with the sidebar expanded, or the orchestrator across the window on that list |
 | `run COMMAND` | Any app command by its `[keybindings]` name, as the palette runs it |
 | `commands` | The names `run` accepts (no app needed) |
 

@@ -3,13 +3,12 @@
 use super::{ActivityPanel, BAR_WIDTH};
 use crate::{
     HerdrWindow,
-    browser::TabId,
     orchestrator::{Item, ItemKey, Owner, Provider, Run, RunState, SourceKey},
 };
 
+mod counts;
 mod layout;
-mod orchestrator_rows;
-mod rows;
+mod sections;
 
 fn item(native_id: &str, title: &str) -> Item {
     Item {
@@ -52,10 +51,6 @@ fn run(id: &str, item: &Item, state: RunState) -> Run {
         updated_at: chrono::Utc::now(),
         owner: Owner::HerdrGpui,
     }
-}
-
-fn tab() -> super::rows::Host {
-    super::rows::Host::Tab(TabId::test(7))
 }
 
 fn pull_request(number: u64) -> crate::orchestrator::PullRequest {
