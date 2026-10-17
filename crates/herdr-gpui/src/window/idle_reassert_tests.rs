@@ -184,6 +184,55 @@ fn a_stationary_click_on_a_frame_another_client_sized_is_use(cx: &mut gpui::Test
 }
 
 #[gpui::test]
+fn a_paste_on_a_frame_another_client_sized_is_use(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = overridden_window(cx);
+    view.update(cx, |view, cx| {
+        assert!(!view.input_ready(), "the fixture holds input");
+        let item = gpui::ClipboardItem::new_string("x".into());
+        assert!(
+            !view.paste_terminal_clipboard(item, false, cx),
+            "a paste waits for a ready frame"
+        );
+        assert!(view.last_input.is_some(), "a paste is use");
+        assert!(reclaims(view), "the paste re-claims the frame");
+    });
+}
+
+#[gpui::test]
+fn a_drop_on_a_frame_another_client_sized_is_use(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = overridden_window(cx);
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            assert!(!view.input_ready(), "the fixture holds input");
+            view.bounds = gpui::Bounds::new(
+                gpui::point(gpui::px(0.), gpui::px(0.)),
+                gpui::size(gpui::px(800.), gpui::px(600.)),
+            );
+            assert!(view.bounds.contains(&window.mouse_position()));
+            view.drop_terminal_files(&gpui::ExternalPaths::default(), window, cx);
+            assert!(view.last_input.is_some(), "a drop over the panes is use");
+            assert!(reclaims(view), "the drop re-claims the frame");
+        })
+    });
+}
+
+#[gpui::test]
+fn a_drop_outside_the_panes_is_not_use(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = overridden_window(cx);
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.bounds = gpui::Bounds::new(
+                gpui::point(gpui::px(1000.), gpui::px(1000.)),
+                gpui::size(gpui::px(10.), gpui::px(10.)),
+            );
+            assert!(!view.bounds.contains(&window.mouse_position()));
+            view.drop_terminal_files(&gpui::ExternalPaths::default(), window, cx);
+            assert!(view.last_input.is_none(), "a drop on the chrome is not use");
+        })
+    });
+}
+
+#[gpui::test]
 fn input_held_across_a_projection_gap_counts_as_use(cx: &mut gpui::TestAppContext) {
     let (view, cx) = overridden_window(cx);
     view.update(cx, |view, cx| {

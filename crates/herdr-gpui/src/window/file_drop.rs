@@ -23,7 +23,14 @@ impl HerdrWindow {
     ) {
         // GPUI translates the platform Submit position into window mouse state
         // before invoking on_drop; the payload itself carries no coordinates.
-        let Some(target) = self.file_drop_target(window.mouse_position()) else {
+        let position = window.mouse_position();
+        // A drop over the panes is use even before the frame is ready, so the
+        // window takes back a frame another client sized; its files are not
+        // pasted until then.
+        if self.menu.page.is_none() && self.bounds.contains(&position) {
+            self.note_input();
+        }
+        let Some(target) = self.file_drop_target(position) else {
             return;
         };
         cx.stop_propagation();

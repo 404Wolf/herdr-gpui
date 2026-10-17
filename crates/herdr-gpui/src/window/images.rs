@@ -187,7 +187,13 @@ impl HerdrWindow {
         image_only: bool,
         cx: &mut Context<Self>,
     ) -> bool {
-        if self.menu.page.is_some() || !self.input_ready() || self.mouse_focus_pending() {
+        if self.menu.page.is_some() {
+            return false;
+        }
+        // A paste is use even before the frame is ready, so the window takes
+        // back a frame another client sized; its contents wait for that frame.
+        self.note_input();
+        if !self.input_ready() || self.mouse_focus_pending() {
             return false;
         }
         // Files copied in a file manager carry their names as text too; paste
@@ -205,7 +211,6 @@ impl HerdrWindow {
                 && let Some(source) = image_source::from_paste(&text)
                 && let Some(target) = self.focused_input_target()
             {
-                self.note_input();
                 self.start_remote_image(target, source, Some(text), cx);
             } else {
                 self.send(ClientPaneInputEvent::Paste(text), cx);
@@ -219,7 +224,6 @@ impl HerdrWindow {
             })
             && let Some(target) = self.focused_input_target()
         {
-            self.note_input();
             self.start_remote_image(target, Source::Clipboard(image), None, cx);
             return true;
         }
