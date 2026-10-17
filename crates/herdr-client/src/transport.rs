@@ -12,7 +12,7 @@ pub use std::os::unix::net::UnixStream as Stream;
 pub(crate) use std::os::unix::net::UnixListener as Listener;
 
 #[cfg(windows)]
-pub use windows::Stream;
+pub use windows::{Stream, available as pipe_available};
 
 #[cfg(windows)]
 mod windows {
@@ -100,7 +100,7 @@ mod windows {
     /// bridge child's anonymous pipe has the same limits, and `PeekNamedPipe`
     /// documents accepting it too.
     #[allow(unsafe_code)]
-    fn available(pipe: BorrowedHandle<'_>) -> io::Result<Option<u32>> {
+    pub fn available(pipe: BorrowedHandle<'_>) -> io::Result<Option<u32>> {
         let mut ready: u32 = 0;
         // SAFETY: the handle is borrowed from a pipe that outlives this call.
         // `lpBuffer`/`lpBytesRead`/`lpBytesLeftThisMessage` are documented as

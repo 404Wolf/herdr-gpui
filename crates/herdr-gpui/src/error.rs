@@ -120,6 +120,8 @@ pub enum Error {
     ControlMessageSize { limit: usize },
     #[error("Herdr UI closed the control connection without answering")]
     ControlNoResponse,
+    #[error("{} is held by something other than this user's Herdr UI, so it is not used", path.display())]
+    ControlPipeForeign { path: PathBuf },
     #[error("{message}")]
     ControlRejected {
         code: crate::control::ErrorCode,
@@ -133,10 +135,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[error(
-        "Controlling a running Herdr UI needs a Unix socket, which this platform build does not provide"
-    )]
-    ControlUnsupported,
+    #[error("Could not identify the Windows user: {0}")]
+    ControlUser(#[source] io::Error),
     #[error("Missing credential directory.")]
     CredentialDirectory,
     #[error("Cannot access private credential file.")]

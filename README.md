@@ -297,7 +297,10 @@ on `windows-2025`, including headless UI and CLI tests. The release workflow als
 builds and CLI-tests the optimized executable, but no native window, renderer,
 or live daemon has been exercised. Local
 connections use the named pipe the Windows daemon binds, and configuration and
-state follow its `%APPDATA%` / `%LOCALAPPDATA%` layout. A Herdr daemon inside a
+state follow its `%APPDATA%` / `%LOCALAPPDATA%` layout. `herdr-gpui COMMAND`
+reaches the running app over a named pipe that only
+your Windows user can open and that rejects remote clients; see
+[the command line](docs/cli.md#windows). A Herdr daemon inside a
 WSL distribution can be added as a device from **Add Device…**; see
 [WSL distributions](crates/herdr-gpui/README.md#wsl-distributions). Saved SSH
 hosts, in-app updates, saved GitHub credentials, and the avatar disk cache are
