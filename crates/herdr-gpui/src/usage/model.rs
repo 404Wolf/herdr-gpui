@@ -10,15 +10,15 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-/// The machine whose agent sign-ins are read. A remote host is asked over SSH,
-/// so its own credentials are used and never leave it.
+/// The machine whose agent sign-ins are read. A remote host is asked over SSH
+/// and a WSL distribution through `wsl.exe`, so its own credentials are used
+/// and never leave it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Host {
     Local,
     Ssh(String),
-    /// A WSL distribution. Its CPU and memory are sampled through a `wsl.exe`
-    /// shell; plan usage is not read from it yet, since its files are not this
-    /// machine's.
+    /// A WSL distribution, asked through a `wsl.exe` shell as a remote host
+    /// is over SSH: its files and sign-ins are its own, not this machine's.
     Wsl(String),
     /// An Azure machine, by its saved account and ID. Only its CPU and memory
     /// are sampled, through the command its connection uses; see `load_of`.

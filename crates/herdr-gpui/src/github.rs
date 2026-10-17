@@ -4,6 +4,8 @@
 
 mod auth;
 mod cli;
+#[cfg(windows)]
+mod credential_manager;
 mod credentials;
 mod device;
 mod http;
@@ -14,6 +16,8 @@ mod secret_service;
 mod store;
 mod token;
 
+#[cfg(windows)]
+pub use credential_manager::Error as CredentialManagerError;
 #[cfg(all(unix, feature = "boat"))]
 pub(crate) use credentials::read_checked as read_private_entry;
 

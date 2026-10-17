@@ -81,7 +81,7 @@ pub enum Error {
     ClipboardChanged,
     #[error("Clipboard text is not valid UTF-8.")]
     ClipboardEncoding(#[source] std::str::Utf8Error),
-    #[error("Could not read the clipboard using wl-paste or xclip.")]
+    #[error("Could not read the clipboard; on Linux, install wl-paste or xclip.")]
     ClipboardProcess(#[source] io::Error),
     #[error("Clipboard content exceeds the {limit}-byte limit.")]
     ClipboardSize { limit: usize },
@@ -129,6 +129,8 @@ pub enum Error {
     ControlMessageSize { limit: usize },
     #[error("Herdr UI closed the control connection without answering")]
     ControlNoResponse,
+    #[error("{} is held by something other than this user's Herdr UI, so it is not used", path.display())]
+    ControlPipeForeign { path: PathBuf },
     #[error("{message}")]
     ControlRejected {
         code: crate::control::ErrorCode,
@@ -142,14 +144,15 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[error(
-        "Controlling a running Herdr UI needs a Unix socket, which this platform build does not provide"
-    )]
-    ControlUnsupported,
+    #[error("Could not identify the Windows user: {0}")]
+    ControlUser(#[source] io::Error),
     #[error("Missing credential directory.")]
     CredentialDirectory,
     #[error("Cannot access private credential file.")]
     CredentialIo(#[source] io::Error),
+    #[cfg(windows)]
+    #[error(transparent)]
+    CredentialManager(#[from] crate::github::CredentialManagerError),
     #[error(
         "Cannot access private credential file. Require an owned directory and regular 0600 file; symlinks are rejected."
     )]
@@ -729,7 +732,7 @@ pub enum Error {
         source: herdr_client::Error,
     },
     #[error(
-        "No base branch to compare with: neither the pull request's base nor origin/HEAD, main, or master exists locally."
+        "No base branch to compare with: neither the pull request's base nor origin/HEAD, main, or master exists locally. Pick one with the base button above."
     )]
     ReviewNoBase,
     #[error("These changes are too large to review here, even leaving out the largest files.")]
@@ -972,10 +975,14 @@ pub enum Error {
     WorktreeScriptsUnsupportedHost,
     #[error("Select a checkout from the daemon's worktree list.")]
     WorktreeSelection,
-    /// Probes that open a shell on the host (usage, ports, checkpoints) have
-    /// no route into a WSL distribution yet; CPU and memory do.
-    #[error("This is not available for WSL distributions yet.")]
+    /// A shell into a WSL distribution starts through `wsl.exe`, which only a
+    /// Windows client has.
+    #[error("WSL distributions can only be reached from Windows.")]
     WslHostUnsupported,
+    #[error("Another drop's paths are still being mapped in WSL. Try again in a moment.")]
+    WslPasteBusy,
+    #[error("The pane the files were dropped on changed before their paths were ready.")]
+    WslPasteTargetGone,
     // keep-sorted end
 }
 
