@@ -304,9 +304,11 @@ reaches the running app over a named pipe that only
 your Windows user can open and that rejects remote clients; see
 [the command line](docs/cli.md#windows). A Herdr daemon inside a
 WSL distribution can be added as a device from **Add Device…**; see
-[WSL distributions](crates/herdr-gpui/README.md#wsl-distributions). Saved SSH
-hosts, in-app updates, saved GitHub credentials, and the avatar disk cache are
-unavailable and report that plainly; see
+[WSL distributions](crates/herdr-gpui/README.md#wsl-distributions). GitHub
+sign-ins are saved in Windows Credential Manager and avatars are cached under
+`%LOCALAPPDATA%\herdr`; see
+[saved sign-ins and the avatar cache](crates/herdr-gpui/README.md#saved-sign-ins-and-the-avatar-cache).
+Saved SSH hosts and in-app updates are unavailable and report that plainly; see
 [the GUI README](crates/herdr-gpui/README.md#windows). Shortcuts use Ctrl, not
 the Win key, with the Linux defaults (Ctrl+Shift+T, Ctrl+Shift+P,
 Ctrl+Shift+Q); see
