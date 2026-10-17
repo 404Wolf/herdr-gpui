@@ -154,9 +154,15 @@ impl HerdrWindow {
         {
             return false;
         }
+        self.input_target_shown(&image.target)
+    }
+
+    /// Whether `target` still takes input as it did: a pane the snapshot
+    /// lists with no popup over it, or the same popup still open.
+    pub(super) fn input_target_shown(&self, target: &InputTarget) -> bool {
         // Snapshot delivery can briefly invalidate the surface without changing
         // the target. Missing cells are not evidence that a pane disappeared.
-        if let InputTarget::Pane(id) = &image.target
+        if let InputTarget::Pane(id) = target
             && self
                 .live
                 .snapshot
@@ -168,7 +174,7 @@ impl HerdrWindow {
         self.live
             .surface
             .as_ref()
-            .is_none_or(|surface| match &image.target {
+            .is_none_or(|surface| match target {
                 InputTarget::Pane(id) => {
                     surface.popup.is_none() && surface.panes.iter().any(|pane| &pane.pane_id == id)
                 }

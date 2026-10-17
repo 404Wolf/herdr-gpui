@@ -4,7 +4,8 @@
 //! revision, and an agent's title spinner bumps that revision several times a
 //! second. Without a coherent surface the popup target is unknown, so input
 //! waits here instead of being discarded, and leaves only for the target that
-//! was focused when the gap opened.
+//! was focused when the gap opened. A WSL drop whose paths are still being
+//! mapped holds input the same way, so keys typed after it land after it.
 
 use super::{Flash, HerdrWindow};
 use crate::{connection::ConnectionBridge, terminal::InputTarget};
@@ -41,7 +42,8 @@ impl HerdrWindow {
         if self.menu.page.is_some() || self.mouse_focus_pending() {
             return;
         }
-        if !self.input_ready() {
+        // Keys typed while a WSL drop's paths are mapped follow those paths.
+        if !self.input_ready() || self.wsl_paste.is_some() {
             if self.disconnected() {
                 // Nothing typed into a lost connection is replayed into the
                 // next one: the user sees that it went nowhere.
@@ -110,7 +112,7 @@ impl HerdrWindow {
     /// discard it if focus moved during the gap. Returns whether the
     /// projection is coherent, so the caller may send after held input.
     pub(crate) fn flush_pending_input(&mut self, cx: &mut Context<Self>) -> bool {
-        if !self.input_ready() {
+        if !self.input_ready() || self.wsl_paste.is_some() {
             return false;
         }
         let target = self
@@ -154,5 +156,7 @@ impl HerdrWindow {
     /// nothing held for the old one.
     pub(crate) fn clear_pending_input(&mut self) {
         self.pending_input = PendingInput::default();
+        // Its paths name files for the old connection's pane.
+        self.wsl_paste = None;
     }
 }

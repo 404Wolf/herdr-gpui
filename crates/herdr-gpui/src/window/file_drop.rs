@@ -78,8 +78,7 @@ impl HerdrWindow {
                 if !self.accepts_remote_images() {
                     return Err(Error::ConnectionNotReady);
                 }
-                self.paste_wsl_files(target.clone(), distro.clone(), paths.to_vec(), cx);
-                return Ok(());
+                return self.paste_wsl_files(target.clone(), distro.clone(), paths.to_vec(), cx);
             }
             if remote {
                 if !self.accepts_remote_images() {

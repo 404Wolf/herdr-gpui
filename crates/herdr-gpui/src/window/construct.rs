@@ -275,6 +275,7 @@ impl HerdrWindow {
             wheel: WheelAccumulator::default(),
             workspace_drag: None,
             worktree_script: None,
+            wsl_paste: None,
             zen: Default::default(),
             // keep-sorted end
         };

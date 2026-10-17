@@ -967,6 +967,10 @@ pub enum Error {
     /// Windows client has.
     #[error("WSL distributions can only be reached from Windows.")]
     WslHostUnsupported,
+    #[error("Another drop's paths are still being mapped in WSL. Try again in a moment.")]
+    WslPasteBusy,
+    #[error("The pane the files were dropped on changed before their paths were ready.")]
+    WslPasteTargetGone,
     // keep-sorted end
 }
 
