@@ -3706,7 +3706,12 @@ that starts the console-subsystem `herdr-gpui.exe` from its own directory with
 programs it starts (git, gh, `wsl.exe`) share its hidden console instead of
 each opening one. `herdr-gpui.exe` stays a console program so the command line
 keeps its output, exit codes, and a shell that waits for it. When the GUI
-cannot be started, the launcher shows the error in a message box. Local
+cannot be started, the launcher shows the error in a message box. When the
+launcher sits beside it, every Herdr window carries the AppUserModelID
+`so.pen.herdr-gpui` and relaunch properties naming the launcher
+(`src/taskbar.rs`), so pinning a running window to the taskbar pins
+`herdr-gpui-launcher.exe` as **Herdr UI**, and the pin and the running window
+share one taskbar button. The properties are cleared as each window closes. Local
 connections use the named pipe the Windows
 daemon binds, derived from the same socket path string upstream uses, so
 discovery and framing are the same code as on Unix. Receive deadlines are
