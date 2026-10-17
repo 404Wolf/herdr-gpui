@@ -5,8 +5,10 @@
 //! drives, so a file of any size is ready at once and nothing is left behind.
 //!
 //! Mapping takes a `wsl.exe` round trip, so keys typed meanwhile are held
-//! (see `pending_input`) and sent after the paths, as they were typed. One
-//! drop maps at a time.
+//! (see `pending_input`) and sent after the paths, as they were typed. Paths
+//! that arrive while a snapshot waits for its surface wait with those keys,
+//! and are delivered once the same pane takes input again. One drop maps at
+//! a time.
 
 use super::{HerdrWindow, file_drop::quote_paths};
 use crate::{Error, Result, connection::ConnectionBridge, terminal::InputTarget};
@@ -15,7 +17,12 @@ use herdr_client::protocol::ClientPaneInputEvent;
 use std::{
     path::PathBuf,
     sync::{Arc, atomic::AtomicBool},
+    time::{Duration, Instant},
 };
+
+/// A snapshot's surface normally follows within a frame; mapped paths wait
+/// this long for it before they are refused, so held keys cannot stall.
+const GAP_LIMIT: Duration = Duration::from_secs(5);
 
 /// A drop whose paths are being mapped, and where they were meant to go.
 pub(crate) struct WslPaste {
@@ -27,6 +34,9 @@ pub(crate) struct WslPaste {
     epoch: u64,
     boot: String,
     target: InputTarget,
+    /// The distribution's paths, once mapped, and when, until the pane
+    /// takes them.
+    mapped: Option<(Vec<String>, Instant)>,
 }
 
 impl HerdrWindow {
@@ -53,6 +63,7 @@ impl HerdrWindow {
             epoch: self.selection_epoch,
             boot: snapshot.boot_id.clone(),
             target,
+            mapped: None,
         });
         // Mapping is instant once the distribution runs; starting a stopped
         // one is bounded by herdr-client's idle limit, so nothing cancels it.
@@ -81,19 +92,62 @@ impl HerdrWindow {
         {
             return;
         }
-        let Some(paste) = self.wsl_paste.take() else {
-            return;
+        match mapped {
+            Ok(mapped) => {
+                if let Some(paste) = &mut self.wsl_paste {
+                    paste.mapped = Some((mapped, Instant::now()));
+                }
+            }
+            Err(error) => {
+                self.wsl_paste = None;
+                self.local_error = Some(format!("Files not pasted: {}", Error::from(error)));
+                cx.notify();
+            }
+        }
+        // Delivers the paths and then the keys typed while they were mapped,
+        // or leaves both waiting for the surface.
+        self.flush_pending_input(cx);
+    }
+
+    /// Sends a mapped drop's paths, or refuses them with a reason. False
+    /// while they cannot go yet: still being mapped, or a snapshot waiting
+    /// for its surface on the same connection (for up to `GAP_LIMIT`), which
+    /// polling retries.
+    pub(super) fn deliver_wsl_paste(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(paste) = &self.wsl_paste else {
+            return true;
         };
-        let pasted = mapped
-            .map_err(Error::from)
-            .and_then(|mapped| self.send_wsl_paths(&paste, mapped));
-        if let Err(error) = pasted {
+        let Some((_, mapped_at)) = &paste.mapped else {
+            return false;
+        };
+        let endpoint = &self.endpoints[self.selected_endpoint];
+        let same_connection = paste.epoch == self.selection_epoch
+            && paste.generation == endpoint.generation
+            && paste.endpoint == endpoint.id
+            && self
+                .live
+                .snapshot
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.boot_id == paste.boot);
+        if same_connection
+            && !self.disconnected()
+            && self.menu.page.is_none()
+            && !self.input_ready()
+            && mapped_at.elapsed() < GAP_LIMIT
+        {
+            return false;
+        }
+        let Some(mut paste) = self.wsl_paste.take() else {
+            return true;
+        };
+        let Some((mapped, _)) = paste.mapped.take() else {
+            return true;
+        };
+        if let Err(error) = self.send_wsl_paths(&paste, mapped) {
             self.local_error = Some(format!("Files not pasted: {error}"));
             cx.notify();
         }
-        // Keys typed while the paths were mapped follow them, or are refused
-        // with a reason if focus moved meanwhile.
-        self.flush_pending_input(cx);
+        true
     }
 
     fn send_wsl_paths(&self, paste: &WslPaste, mapped: Vec<String>) -> Result<()> {

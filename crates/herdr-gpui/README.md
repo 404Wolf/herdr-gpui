@@ -3867,7 +3867,9 @@ image bridge, and nothing is left in a temporary directory. The paths travel
 on `wsl.exe`'s standard input, at most 256 per drop. Keys typed while they
 are mapped are held and sent after the paths, so Enter cannot run a command
 ahead of them, and one drop maps at a time. The paths are not pasted if the
-pane is covered by a popup or the window moves to another device meanwhile.
+pane is covered by a popup or the window moves to another device meanwhile;
+paths that arrive while the terminal waits for its next frame wait with the
+held keys and are pasted once it arrives.
 A file the distribution
 cannot reach, such as another distribution's or one on a network share, is
 named in the error and nothing is pasted.

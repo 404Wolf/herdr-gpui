@@ -74,7 +74,7 @@ impl HerdrWindow {
     }
 
     /// Whether the selected endpoint is down or reconnecting after a drop.
-    fn disconnected(&self) -> bool {
+    pub(super) fn disconnected(&self) -> bool {
         !self.live.status.is_connected()
             || self.endpoints[self.selected_endpoint].outage().is_some()
     }
@@ -112,7 +112,11 @@ impl HerdrWindow {
     /// discard it if focus moved during the gap. Returns whether the
     /// projection is coherent, so the caller may send after held input.
     pub(crate) fn flush_pending_input(&mut self, cx: &mut Context<Self>) -> bool {
-        if !self.input_ready() || self.wsl_paste.is_some() {
+        // A WSL drop's paths go before keys typed after it.
+        if self.wsl_paste.is_some() && !self.deliver_wsl_paste(cx) {
+            return false;
+        }
+        if !self.input_ready() {
             return false;
         }
         let target = self

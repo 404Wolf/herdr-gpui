@@ -44,6 +44,7 @@ fn mapping(cx: &mut TestAppContext) -> (Entity<HerdrWindow>, MockPeer, &mut Visu
             epoch: view.selection_epoch,
             boot: view.live.snapshot.as_ref().unwrap().boot_id.clone(),
             target: InputTarget::Pane(PANE.into()),
+            mapped: None,
         });
     });
     (view, peer, cx)
@@ -150,5 +151,81 @@ fn a_second_drop_waits_for_the_first(cx: &mut TestAppContext) {
             )
             .unwrap_err();
         assert!(matches!(error, Error::WslPasteBusy));
+    });
+}
+
+/// The daemon published a snapshot whose surface has not arrived yet.
+fn open_gap(view: &mut HerdrWindow) {
+    Arc::make_mut(view.live.surface.as_mut().unwrap()).projection_revision += 1;
+    assert!(!view.input_ready());
+}
+
+fn close_gap(view: &mut HerdrWindow) {
+    Arc::make_mut(view.live.surface.as_mut().unwrap()).projection_revision -= 1;
+    assert!(view.input_ready());
+}
+
+#[gpui::test]
+fn paths_mapped_during_a_surface_gap_wait_and_then_lead_the_held_keys(cx: &mut TestAppContext) {
+    let (view, mut peer, cx) = mapping(cx);
+    view.update(cx, |view, cx| {
+        view.send(ClientPaneInputEvent::TextCommit("x".into()), cx);
+        open_gap(view);
+        finish(view, &["/mnt/c/a"], cx);
+        // Nothing is lost or sent while the surface is missing.
+        assert!(view.wsl_paste.is_some());
+        assert!(view.local_error.is_none(), "{:?}", view.local_error);
+        assert!(!view.flush_pending_input(cx));
+        close_gap(view);
+        // Polling delivers the paths first, then the key typed after them.
+        assert!(view.flush_pending_input(cx));
+        assert!(view.wsl_paste.is_none());
+        assert!(view.local_error.is_none(), "{:?}", view.local_error);
+    });
+    assert_eq!(
+        peer.receive(),
+        pane_input(vec![ClientPaneInputEvent::Paste("/mnt/c/a".into())])
+    );
+    assert_eq!(
+        peer.receive(),
+        pane_input(vec![ClientPaneInputEvent::TextCommit("x".into())])
+    );
+}
+
+#[gpui::test]
+fn paths_stop_waiting_for_a_surface_that_never_comes(cx: &mut TestAppContext) {
+    let (view, mut peer, cx) = mapping(cx);
+    view.update(cx, |view, cx| {
+        open_gap(view);
+        finish(view, &["/mnt/c/a"], cx);
+        let (_, mapped_at) = view.wsl_paste.as_mut().unwrap().mapped.as_mut().unwrap();
+        *mapped_at -= GAP_LIMIT;
+        assert!(!view.flush_pending_input(cx));
+        assert!(view.wsl_paste.is_none());
+        assert!(view.local_error.is_some());
+        close_gap(view);
+        sentinel(view, &mut peer);
+    });
+}
+
+#[gpui::test]
+fn paths_waiting_in_a_gap_are_refused_once_the_connection_drops(cx: &mut TestAppContext) {
+    let (view, mut peer, cx) = mapping(cx);
+    view.update(cx, |view, cx| {
+        open_gap(view);
+        finish(view, &["/mnt/c/a"], cx);
+        assert!(view.wsl_paste.is_some());
+        view.live.status = crate::state::ConnectionStatus::Disconnected;
+        assert!(!view.flush_pending_input(cx));
+        assert!(view.wsl_paste.is_none());
+        assert_eq!(
+            view.local_error.as_deref(),
+            Some(
+                "Files not pasted: The pane the files were dropped on changed before their paths were ready."
+            )
+        );
+        view.live.status = crate::state::ConnectionStatus::Connected;
+        close_gap(view);
+        sentinel(view, &mut peer);
     });
 }
