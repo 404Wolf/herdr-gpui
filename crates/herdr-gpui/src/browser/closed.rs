@@ -165,7 +165,25 @@ impl ClosedTabs {
             recorded.remove(0);
         }
         recorded.push(tab.tab_id.clone());
+        self.push_herdr_entry(key, tab);
+    }
 
+    /// Puts back a terminal tab whose reopen could not be sent. It was
+    /// recorded when it closed, so the cross-window guard in [`Self::push_herdr`]
+    /// would otherwise drop it.
+    pub(super) fn restore_herdr(&mut self, scope: Scope, tab: ClosedHerdrTab) {
+        let key = (scope, tab.workspace_id.clone());
+        let recorded = self.recorded_herdr_mut(key.clone());
+        if !recorded.contains(&tab.tab_id) {
+            if recorded.len() >= MAX_RECORDED_HERDR {
+                recorded.remove(0);
+            }
+            recorded.push(tab.tab_id.clone());
+        }
+        self.push_herdr_entry(key, tab);
+    }
+
+    fn push_herdr_entry(&mut self, key: (Scope, String), tab: ClosedHerdrTab) {
         let entries = self.workspace_mut(key);
         if entries
             .iter()
@@ -223,6 +241,10 @@ impl Store {
 
     pub(crate) fn record_closed_herdr_tab(&mut self, scope: Scope, tab: ClosedHerdrTab) {
         self.closed.push_herdr(scope, tab);
+    }
+
+    pub(crate) fn restore_closed_herdr_tab(&mut self, scope: Scope, tab: ClosedHerdrTab) {
+        self.closed.restore_herdr(scope, tab);
     }
 
     pub(crate) fn peek_closed(&self, scope: &Scope, workspace_id: &str) -> Option<&ClosedTab> {
@@ -417,7 +439,7 @@ impl HerdrWindow {
                     });
                 if !sent {
                     self.browser.new_tab_group = previous_group;
-                    Store::update(cx, |store| store.record_closed_herdr_tab(scope, tab));
+                    Store::update(cx, |store| store.restore_closed_herdr_tab(scope, tab));
                     return;
                 }
                 self.discard_composition(cx);

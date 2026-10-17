@@ -217,3 +217,25 @@ fn reopened_page_restores_latest_visited_location() {
     assert_eq!(tab.title, "Second Page");
     assert_eq!(tab.location, web("https://example.com/second"));
 }
+
+#[test]
+fn a_terminal_whose_reopen_failed_can_be_reopened_again() {
+    let mut store = Store::default();
+    let scope = Scope::endpoint("local");
+    store.record_closed_herdr_tab(scope.clone(), herdr("t1", "w"));
+    let Some(ClosedTab::Herdr(tab)) = store.pop_closed(&scope, "w") else {
+        panic!("expected the closed terminal");
+    };
+
+    // The tab.create request could not be queued, so the entry goes back.
+    store.restore_closed_herdr_tab(scope.clone(), tab);
+    assert!(matches!(
+        store.peek_closed(&scope, "w"),
+        Some(ClosedTab::Herdr(tab)) if tab.tab_id == "t1"
+    ));
+
+    // Another window observing the same close still does not duplicate it.
+    store.record_closed_herdr_tab(scope.clone(), herdr("t1", "w"));
+    assert!(store.pop_closed(&scope, "w").is_some());
+    assert!(store.pop_closed(&scope, "w").is_none());
+}
