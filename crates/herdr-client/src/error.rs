@@ -158,7 +158,7 @@ pub enum Error {
     ResponseId,
     #[error("{0}")]
     ServerShutdown(String),
-    #[error("SSH endpoints are not supported on this platform")]
+    #[error("SSH port forwarding is not supported on this platform")]
     SshUnsupported,
     #[error("SSH connection cancelled")]
     SshCancelled,

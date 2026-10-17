@@ -220,12 +220,12 @@ The picker refreshes after success or
 failure, including timeouts whose result is uncertain. File, process and SSH
 work runs off the UI thread, with one deletion outstanding per window.
 Local add/delete is unavailable with explicit sockets or development catalogs;
-saved-device management is unavailable on Windows or for disabled devices.
+saved-device management is unavailable for disabled devices.
 Remote hosts need an installed Herdr supporting the session commands and
 noninteractive SSH authentication. The GUI does not install or update it.
 
 **Add Device…** opens one dialog for every kind of device. A rail on its left
-lists SSH hosts (WSL distributions on Windows) and, under **Cloud**, each cloud
+lists SSH hosts (then WSL distributions on Windows) and, under **Cloud**, each cloud
 provider the build includes, shown by its logo: a green dot marks a provider
 whose account is configured, and **Set up** one that is not. Each entry keeps
 its own form, so switching between them keeps what was typed. **Ctrl-Tab** and
@@ -353,7 +353,9 @@ setup; complete any prompts in that workspace. The saved device appears
 automatically on the next catalog refresh. No credentials are collected by the
 GUI. Closing the workspace hangs the setup up, and so does quitting the app,
 since the setup belongs to it. Explicit-socket and development-catalog windows
-do not offer setup, and saved SSH devices remain unsupported on Windows.
+do not offer setup. Windows has no terminal setup yet: there the dialog names
+what needs a terminal and asks you to run `herdr machine add TARGET` in one
+(see [Windows](#ssh-hosts)).
 
 #### Local Network access
 
@@ -924,8 +926,7 @@ machine is read in process; each connected Linux or macOS remote host is read
 every two seconds over its own SSH shell, kept open while the host is connected
 (`/proc` on Linux; `vm_stat` and a one-second `iostat` on macOS; `df -Pk
 "$HOME"` on both, with `/proc/uptime` on Linux and `kern.boottime` on macOS).
-Other remote systems, and remote hosts from a Windows client, show it as
-unavailable. Set top-level `show_system_load = false`, or turn off **Show CPU
+Other remote systems show it as unavailable. Set top-level `show_system_load = false`, or turn off **Show CPU
 and memory** in Settings, to hide it and stop sampling while no
 [Devices overview](#devices-overview) is open.
 
@@ -1032,6 +1033,12 @@ graphics) to 4.5:1 (the level for text), lifts dim labels to it too, and makes
 selected rows stand further off the surface. Terminal output is never
 adjusted; programs keep the colors they asked for.
 
+On Windows, top-level `accent = "system"` takes the app's own accent (the
+current tab, selected rows, focus marks) from **Settings > Personalization >
+Colors** instead of the theme. It is read whenever a theme loads, so a new
+accent shows at the next theme or appearance change, or the next start. Other
+platforms keep the theme's accent.
+
 **Settings > Theme > Window** offers three backdrop tiles: **Solid** (the
 default), **Translucent**, and **Picture**, each showing only its own controls.
 Translucent starts at 85%, and its **Background opacity** stepper moves in 5%
@@ -1048,6 +1055,12 @@ opaque.
 translucent window, through GPUI's public window API: macOS and Windows blur;
 on Linux only Wayland compositors with KDE's blur protocol do, and X11 needs a
 compositing window manager for any translucency at all.
+
+On Windows 11 (22H2 and later) the blur is a DWM system backdrop that also
+covers the title bar: acrylic by default, which blurs the windows behind, or
+Mica (the **Mica** switch, `material = "mica"`), which tints the window with
+the wallpaper the way Windows' own apps do. Windows 10 keeps the older blur,
+and other platforms ignore `material`.
 
 The **Picture** tile opens a file chooser and puts an image behind the window
 instead (`image`, an absolute path or one under `~/`), and starts it at 75%
@@ -2020,6 +2033,8 @@ distributions are the remote endpoints there, so dropped images, pasted image
 paths, and Ctrl-V images reach a distribution's panes through the same bridge.
 A pasted Windows path keeps its backslashes as separators; only matching quotes
 around it are removed, as Explorer's "Copy as path" adds them.
+Files and images dropped or pasted on an SSH host's pane are not uploaded from
+a Windows client yet.
 Native clipboard/drop and real SSH behavior require explicit desktop/host
 verification in addition to the mock-peer and headless tests.
 
@@ -2278,7 +2293,7 @@ a window.
 
 The search field narrows the lanes and the table to devices whose name,
 address, agents, or workspaces match every word typed. Load columns wrap in
-narrow tabs. **Add Device** opens SSH setup, or WSL setup on Windows; it is
+narrow tabs. **Add Device** opens SSH setup, with WSL beside it on Windows; it is
 unavailable in explicit-socket and development-catalog windows.
 
 The window keeps the activity history from the snapshots it already receives,
@@ -2713,8 +2728,7 @@ removed; a skill of the same name you wrote yourself is left alone.
   or `~/.agents`. As here, a shim or skill file without the app's marker is
   left alone. A host without a POSIX shell is skipped. Removing the skill
   takes the shim and those copies off each host again, the next time a
-  window connects to it. Windows has no saved SSH hosts, so it installs
-  nothing.
+  window connects to it.
 
 `herdr-gpui browser skill` prints the same text, for example to install it
 elsewhere:
@@ -3827,6 +3841,50 @@ Reading the user's SID and the pipe's owner takes two `unsafe` Win32 calls
 (`GetTokenInformation`, `GetSecurityInfo`), which neither the standard library
 nor `interprocess` wraps.
 
+### SSH hosts
+
+Saved SSH hosts work as they do on macOS and Linux, through OpenSSH for
+Windows: the copy Windows installs as an optional feature,
+`%SystemRoot%\System32\OpenSSH\ssh.exe`, or without it the first `ssh.exe` in
+an absolute `PATH` directory. The system copy comes first because `PATH` often
+leads with Git's MSYS `ssh`, which reads another home's config and known hosts.
+`ssh-keygen.exe` is found the same way. No console window opens for either.
+The `ssh` child's standard streams are two private pipes rather than a socket
+pair, driven with the same overlapped read and write deadlines as the daemon's
+named pipe. **Add Device** lists **SSH host** first, then **WSL**. It checks the
+host, asks before trusting an unknown host key (appended to the first user
+known hosts file `ssh -G` names, normally `%USERPROFILE%\.ssh\known_hosts`),
+and saves a host that already runs a compatible Herdr through `herdr machine
+add`. Sessions on the host can be listed, created, and deleted.
+
+Where this differs from macOS and Linux:
+
+- **No terminal setup.** A host that needs a password or passphrase prompt,
+  your key installed, or Herdr installed, updated, or restarted is set up in a
+  local workspace on macOS and Linux. On Windows the dialog says which of
+  these it needs and asks you to run `herdr machine add TARGET` in a terminal,
+  then add the device again.
+- **No connection sharing.** Windows OpenSSH has no `ControlMaster`, and with
+  any `ControlPath` set it fails every connection ("getsockname failed: Not a
+  socket"). The bridge passes `ControlPath=none`, so each connection
+  authenticates on its own: keep a key in the OpenSSH Authentication Agent
+  service (`ssh-agent`), since a master you authenticated interactively cannot
+  carry these connections.
+- **`ProxyJump` and `ProxyCommand`** come from your SSH config and run as
+  Windows OpenSSH runs them. A jump host that cannot be reached is reported as
+  an unreachable host.
+- **Forward port…** is not offered in a device's menu: each of those forwards
+  holds its listener in a private control master. A listening port found on
+  the host still opens, through its own `ssh -N -L` child.
+- **Uploads.** Files and images dropped or pasted on an SSH host's pane are
+  not uploaded yet.
+- **Steps that also run here.** Agent checkpoints, teleport, fan-out, process
+  lists, and pane moves also run this machine's `/bin/sh` and stay
+  unavailable from Windows.
+
+CPU and memory, plan usage, listening ports, and the agent skill's install run
+on the host's `/bin/sh` through `ssh`, as they do from macOS and Linux.
+
 ### WSL distributions
 
 A Herdr daemon inside a WSL distribution is reachable as a device. Choose
@@ -3891,6 +3949,52 @@ Linux and macOS clients, which cannot reach a distribution, and a Windows
 client cannot script its own checkouts, so the only move left would be between
 two distributions on the same machine.
 
+### Window chrome on Windows
+
+Every window keeps the title bar Windows draws, so its buttons, double-click,
+drag-to-snap, and the window menu are the system's own, and hovering the
+maximize button opens the Snap Layouts flyout. The title bar is light or dark
+with the window's theme rather than with the system's app mode, so a dark
+theme under light Windows no longer sits under a white bar. A translucent
+window's blur is DWM acrylic or Mica on Windows 11 (see
+**Settings > Theme > Window** under
+[Configuration](#configuration)), and `accent = "system"` takes the app's
+accent from Windows.
+
+### Screen readers on Windows
+
+GPUI reports the window to UI Automation through AccessKit, which is what
+Narrator and NVDA read. Checked against the UI Automation tree of a running
+window, the main window exposes:
+
+- the terminal as a document named **Terminal**, whose text pattern holds the
+  rows on screen and the selection (see `terminal/accessibility.rs`), so
+  Narrator's reading commands and selection tools work on it;
+- the title bar's **Sidebar** (expanded or collapsed), **Back**, **Forward**,
+  and **GitHub account** buttons;
+- the tab strip as a tab list: each tab by its label, with the current one
+  selected, its **Close tab** button, **New tab**, **Split**, and **Tab
+  actions**.
+
+Each button can be invoked from the screen reader. With a Windows contrast
+theme on (Settings > Accessibility > Contrast themes), the app's own marks and
+labels use the **High contrast** level whatever `contrast` says; terminal
+colors and the theme itself are unchanged, since GPUI does not paint with the
+system's contrast colors.
+
+Still missing, and not faked with labels that do nothing:
+
+- the sidebar's spaces, agents, and device rows, the status bar, menus,
+  popups, dialogs, and the Settings, Logs, and Orchestrator windows have no
+  roles yet, so a screen reader sees only their window;
+- Tab and Shift-Tab belong to the terminal, so keyboard focus never moves to
+  the chrome; its commands are in the command palette and the keyboard
+  shortcuts instead;
+- when the app starts in the background (from a script rather than the Start
+  menu), AccessKit can miss the first activation and report the window rather
+  than the terminal as focused until the window is activated again. This is
+  in GPUI's Windows adapter setup, not in this app.
+
 ### Saved sign-ins and the avatar cache
 
 GitHub sign-ins are kept in Windows Credential Manager, which plays the part
@@ -3929,9 +4033,6 @@ could would already be able to replace the app itself.
 
 These features are unavailable on Windows and say so rather than failing quietly:
 
-- **Saved SSH hosts.** The bridge gives the `ssh` child a socket pair as its
-  standard streams, which requires `OwnedFd`. Connecting to an SSH endpoint
-  reports `SSH endpoints are not supported on this platform`.
 - **In-app updates.** `release::target()` has no Windows updater asset (the
   release zip is for manual download only), so the updater
   stays disabled and reports that no standalone updater exists for this platform.

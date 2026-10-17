@@ -110,7 +110,8 @@ wry.workspace = true
 
 # The control pipe: `interprocess` creates it with a DACL, and `windows-sys`
 # reads the user and the pipe owner it is checked against. `windows-sys` also
-# keeps saved sign-ins in Credential Manager (`github::credential_manager`)
+# sets the window attributes and reads the system settings GPUI leaves to the
+# app, keeps saved sign-ins in Credential Manager (`github::credential_manager`),
 # and opens avatar cache entries without following reparse points.
 # `clipboard-win` reads the clipboard on a background thread (see
 # `window/clipboard`).
@@ -120,10 +121,16 @@ interprocess.workspace      = true
 raw-window-handle.workspace = true
 windows.workspace           = true
 windows-sys = { features = [
+  "Wdk_System_SystemServices",
+  "Win32_Graphics_Dwm",
   "Win32_Security_Authorization",
   "Win32_Security_Credentials",
   "Win32_Storage_FileSystem",
+  "Win32_System_Registry",
+  "Win32_System_SystemInformation",
   "Win32_System_Threading",
+  "Win32_UI_Accessibility",
+  "Win32_UI_WindowsAndMessaging",
 ], workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]

@@ -20,6 +20,7 @@ mod bell;
 mod boat;
 mod browser;
 mod caffeine;
+mod caption;
 mod checkpoint;
 mod cli;
 mod close_modal;
