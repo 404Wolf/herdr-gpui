@@ -92,13 +92,16 @@ impl OpenMenu {
 
 /// Action availability belongs to the previously focused element, not the
 /// popup that is about to take focus. OS-only menu entries aren't selectable.
-fn validate(menu: &mut OwnedMenu, window: &Window, cx: &App) {
+fn validate(menu: &mut OwnedMenu, window: &Window, cx: &mut App) {
     for item in &mut menu.items {
         match item {
             OwnedMenuItem::Action {
                 action, disabled, ..
             } => {
-                *disabled |= !window.is_action_available(action.as_ref(), cx);
+                // The window's dispatch tree misses app-wide handlers such as
+                // Quit's, which only the app's own check counts.
+                *disabled |= !window.is_action_available(action.as_ref(), cx)
+                    && !cx.is_action_available(action.as_ref());
             }
             OwnedMenuItem::Submenu(menu) => validate(menu, window, cx),
             _ => {}
