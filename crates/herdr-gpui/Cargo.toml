@@ -105,10 +105,13 @@ wry.workspace = true
 # The control pipe: `interprocess` creates it with a DACL, and `windows-sys`
 # reads the user and the pipe owner it is checked against. `windows-sys` also
 # keeps saved sign-ins in Credential Manager (`github::credential_manager`)
-# and opens avatar cache entries without following reparse points. `windows`
-# has the shell's COM and WinRT interfaces (the taskbar, the jump list, and
-# toasts); `windows-registry` reads the link handler.
+# and opens avatar cache entries without following reparse points.
+# `clipboard-win` reads the clipboard on a background thread (see
+# `window/clipboard`). `windows` has the shell's COM and WinRT interfaces (the
+# taskbar, the jump list, and toasts); `windows-registry` reads the link
+# handler.
 [target.'cfg(windows)'.dependencies]
+clipboard-win.workspace     = true
 interprocess.workspace      = true
 raw-window-handle.workspace = true
 windows = { features = [

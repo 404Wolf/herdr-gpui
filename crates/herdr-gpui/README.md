@@ -1959,8 +1959,9 @@ image-paste shortcut). Ctrl-V retains its normal terminal meaning when the
 clipboard has no image. A pasted absolute image-file path is also recognized,
 including the backslash-escaped paths used by terminal file drops.
 
-Local endpoints on macOS and Linux use the same bridge for Cmd-V clipboard
-images, because a GUI text paste cannot carry image data. Local drops and pasted
+Local endpoints on macOS, Linux, and Windows use the same bridge for Cmd-V
+clipboard images (Ctrl-Shift-V or Shift-Insert on Windows), because a GUI text
+paste cannot carry image data. Local drops and pasted
 paths stay ordinary path pastes, and local Ctrl-V is sent to the terminal
 unchanged so agents can read the shared clipboard themselves.
 
@@ -2005,10 +2006,19 @@ chunks and a three-second deadline between reads, but an OS-blocked network/FUSE
 filesystem operation cannot be forcibly interrupted. Such a read stays isolated
 from the UI and holds its bounded preparation slot until it returns.
 
-Windows SSH and image uploads, including local clipboard images, remain
-unsupported. Native clipboard/drop
-and real SSH behavior require explicit desktop/host verification in addition to
-the mock-peer and headless tests.
+Windows reads the clipboard on a thread of its own, for every paste: copied
+files (`CF_HDROP`), then text, then the `PNG`, `JFIF`, and `GIF` formats other
+programs register, a device-independent bitmap (`CF_DIB`, sent as BMP), and
+`CF_TIFF`. Each format's size is checked before any of it is copied, and the
+whole read has a three-second deadline. A program that renders its clipboard
+data on request and never answers stalls only that thread: the paste reports a
+timeout, and no second reader starts until the stuck one returns. WSL
+distributions are the remote endpoints there, so dropped images, pasted image
+paths, and Ctrl-V images reach a distribution's panes through the same bridge.
+A pasted Windows path keeps its backslashes as separators; only matching quotes
+around it are removed, as Explorer's "Copy as path" adds them.
+Native clipboard/drop and real SSH behavior require explicit desktop/host
+verification in addition to the mock-peer and headless tests.
 
 ### Native Clipboard Regression Test (macOS)
 
@@ -2926,8 +2936,9 @@ the binary client socket path to `--socket`, not the JSON API socket. No debug
 build or `RUST_LOG` setting is needed: client debug records are captured in
 release builds too. For a connection failure, inspect `operation`, `kind`, and
 `raw_os_error` in the log: `pipe_name` is name conversion, `pipe_connect` is the
-pipe library's open/wait operation, and `pipe_peek` is `PeekNamedPipe` after
-connection. Config failures distinguish `config_lock_open` from
+pipe library's open/wait operation, `pipe_read` is a read that failed after
+connection, and `pipe_cancel` is a cancelled operation the kernel did not
+finish within five seconds of the connection closing. Config failures distinguish `config_lock_open` from
 `config_lock_acquire`. These operation records omit paths and retain native
 error codes (for example, `5` for Windows access denied). A successful plain
 pipe client alone does not establish why the GUI was denied; include these
@@ -3792,10 +3803,10 @@ launcher sits beside it, every Herdr window carries the AppUserModelID
 share one taskbar button. The properties are cleared as each window closes. Local
 connections use the named pipe the Windows
 daemon binds, derived from the same socket path string upstream uses, so
-discovery and framing are the same code as on Unix. Receive deadlines are
-emulated with `PeekNamedPipe`, an `unsafe` call, because a
-named pipe has no receive timeout; send timeouts cannot be enforced at all
-there. Configuration and state
+discovery and framing are the same code as on Unix. The pipe, and a WSL
+bridge's standard streams, are driven with overlapped I/O, so receive and send
+timeouts hold as they do on a socket, and clipboard and dropped images upload
+as on macOS and Linux. Configuration and state
 follow upstream's Windows layout: `%APPDATA%\herdr` and `%LOCALAPPDATA%\herdr`,
 still overridden by `XDG_CONFIG_HOME` / `XDG_STATE_HOME` when they are set.
 
