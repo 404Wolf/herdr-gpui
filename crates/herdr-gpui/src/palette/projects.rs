@@ -116,8 +116,8 @@ pub(super) fn collect(roots: &[String], cancelled: &AtomicBool) -> Collection {
         }
         let result = (|| -> Result<()> {
             let root = expand(root, |name| std::env::var_os(name), home.as_deref())?;
-            let root =
-                fs::canonicalize(&root).map_err(|error| Error::from(error).at_path(&root))?;
+            let root = super::canonical::canonicalize(&root)
+                .map_err(|error| Error::from(error).at_path(&root))?;
             for entry in fs::read_dir(&root).map_err(|error| Error::from(error).at_path(&root))? {
                 if cancelled.load(Ordering::Relaxed) {
                     break;
@@ -167,7 +167,7 @@ pub(super) fn collect(roots: &[String], cancelled: &AtomicBool) -> Collection {
 
 pub(super) fn validate(project: &Project) -> Result<()> {
     valid_path(&project.path)?;
-    let path = fs::canonicalize(&project.path)
+    let path = super::canonical::canonicalize(&project.path)
         .map_err(|error| Error::from(error).at_path(&project.path))?;
     if path != project.path || !path.is_dir() {
         return Err(Error::PaletteProjectRemoved);
@@ -183,7 +183,7 @@ pub(super) fn workspace_for_path(snapshot: &ClientShellSnapshot, path: &Path) ->
         .into_iter()
         .find_map(|(workspace, cwd)| {
             let cwd = Path::new(&cwd);
-            (cwd.is_absolute() && fs::canonicalize(cwd).is_ok_and(|cwd| cwd == path))
+            (cwd.is_absolute() && super::canonical::canonicalize(cwd).is_ok_and(|cwd| cwd == path))
                 .then_some(workspace)
         })
 }
@@ -304,7 +304,7 @@ mod tests {
     #[test]
     fn matches_only_the_root_panes_launch_directory() -> anyhow::Result<()> {
         let root = tempfile::tempdir()?;
-        let path = fs::canonicalize(root.path())?;
+        let path = super::super::canonical::canonicalize(root.path())?;
         let nested = path.join("nested");
         fs::create_dir(&nested)?;
         let mut snapshot: ClientShellSnapshot = serde_json::from_str(include_str!(
