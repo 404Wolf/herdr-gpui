@@ -102,15 +102,20 @@ rustix.workspace = true
 [target.'cfg(any(target_os = "macos", windows))'.dependencies]
 wry.workspace = true
 
-# Window attributes and system settings GPUI leaves to the app.
+# The control pipe: `interprocess` creates it with a DACL, and `windows-sys`
+# reads the user and the pipe owner it is checked against. `windows-sys` also
+# sets the window attributes and reads the system settings GPUI leaves to the app.
 [target.'cfg(windows)'.dependencies]
+interprocess.workspace      = true
 raw-window-handle.workspace = true
 windows.workspace           = true
 windows-sys = { features = [
   "Wdk_System_SystemServices",
   "Win32_Graphics_Dwm",
+  "Win32_Security_Authorization",
   "Win32_System_Registry",
   "Win32_System_SystemInformation",
+  "Win32_System_Threading",
   "Win32_UI_Accessibility",
   "Win32_UI_WindowsAndMessaging",
 ], workspace = true }

@@ -24,14 +24,12 @@ impl TabId {
 
 /// An ID a control request names, as `tab list` printed it. Only ever
 /// compared with the store's own IDs.
-#[cfg(unix)]
 impl From<u64> for TabId {
     fn from(id: u64) -> Self {
         Self(id)
     }
 }
 
-#[cfg(unix)]
 impl From<TabId> for u64 {
     fn from(id: TabId) -> Self {
         id.0
@@ -62,7 +60,6 @@ impl Scope {
     }
 
     /// The scope as `tab list` reports a tab's host.
-    #[cfg(unix)]
     pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
@@ -240,7 +237,6 @@ impl Store {
     }
 
     /// Every tab of every workspace, in the order they were opened.
-    #[cfg(any(unix, test))]
     pub(crate) fn tabs(&self) -> impl Iterator<Item = &Tab> {
         self.tabs.iter()
     }
