@@ -55,11 +55,9 @@ mod page_results;
 mod middle_click;
 
 /// Pages a control request opens, only in a workspace the window shows.
-#[cfg(unix)]
 mod requests;
 
 /// Notes a control request sends, only to a pane the window shows.
-#[cfg(unix)]
 mod requested_notes;
 
 /// Browser tabs in a group's strip: reordering and growing in.

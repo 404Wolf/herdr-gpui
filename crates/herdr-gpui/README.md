@@ -2437,10 +2437,8 @@ them to the agent that opened it, so it can change the page.
   working after two minutes). It is never typed into a pane where Herdr sees no
   running agent, since Enter there would run it in a shell, nor into an agent
   that is asking you a question; those notes wait for `browser feedback`, as
-  do notes for a pane this window does not show.
-  Windows has no `browser feedback` listener: notes that cannot be pasted
-  are copied instead, and the tab can send again. Notes written in a session
-  that is no longer shown are also copied, never handed to another session's
+  do notes for a pane this window does not show. Notes written in a session
+  that is no longer shown are copied, never handed to another session's
   agent.
 - Feedback is scoped to the caller's daemon socket and pane together, so two
   local sessions with the same pane ID cannot take each other's notes. Use the
@@ -2615,7 +2613,9 @@ The tab joins the caller's own workspace, which Herdr names in the pane's
 `HERDR_WORKSPACE_ID`, and remembers the caller's `HERDR_PANE_ID` so notes on
 the page go back to it. The command talks to the running app over a socket at
 `$XDG_STATE_HOME/herdr/gpui/control.sock`, readable only by you, and exits with
-3 when the app is not running. Only processes on this machine can reach it.
+3 when the app is not running. On Windows it is a named pipe only your user
+can open ([details](../../docs/cli.md#windows)). Only processes on this
+machine can reach it.
 
 Agents on a saved SSH host open pages another way, since that host cannot
 reach this machine. The app writes a small `herdr-gpui` shim there, at
@@ -3082,9 +3082,17 @@ Ctrl+Shift+U is left unbound for
   cancels; dialog input never reaches terminals or native creation actions.
   Context menus and dialogs anchor to the pointer and clamp to the viewport.
   Rename trims surrounding whitespace and rejects blank labels inline.
+  The PR and issues tabs need a GitHub account signed in to Herdr itself; until
+  then they are faded, and hovering one says to sign in from the account
+  button. A `gh` or browser login is not picked up by itself, and a development build
+  (`just run`) keeps its sign-in apart from the installed app's Keychain entry.
   The PR tab supports fork pull requests: it fetches GitHub's PR head ref from
-  the repository's origin and creates a local `pr/<number>` branch. Existing
-  local branches are preserved; repository trust is not granted.
+  the listed repository's remote and creates a local `pr/<number>` branch.
+  Existing local branches are preserved; repository trust is not granted. In a
+  fork checkout whose `upstream` remote is on GitHub.com, the tabs list the
+  upstream repository: its own branches are fetched from `upstream`, pull
+  requests from the fork behind `origin` check out their real branch from
+  `origin`, and other forks use the PR head ref fetched from `upstream`.
 - Open worktree... asynchronously lists the clicked parent's existing checkouts
   through `worktree.list`, including already-open and detached checkouts but
   excluding bare/prunable entries. Use Up/Down and Enter, the Open button, or
@@ -3132,6 +3140,11 @@ Ctrl+Shift+U is left unbound for
    branch, so renamed local branches can identify fork PRs. Without an upstream,
    lookup uses the local branch name and requires the origin owner as before.
    Unsupported upstreams fail closed rather than matching an unrelated fork.
+   A checkout with a GitHub.com `upstream` remote is treated as a fork: lookup
+   queries the upstream repository, an untracked branch's head defaults to the
+   fork behind `origin`, and **Create pull request** pushes to `origin` and
+   opens the pull request against upstream's default branch with an
+   `owner:branch` head.
   On macOS and Linux, all socket modes (including explicit/inherited sockets)
   require a same-user kernel peer (`getpeereid` on macOS, `SO_PEERCRED` on
   Linux) at the standard configured session socket. The socket must be owned by
@@ -3152,13 +3165,14 @@ Ctrl+Shift+U is left unbound for
   verified or it is world-writable; check ownership, remove world-write access
   with `chmod o-w` on it, and reconnect.
   On a saved SSH device, the checkout lives on that host, so local Git cannot
-  verify it. The worker instead reads the repository's `remote.origin.url` over
-  the same noninteractive SSH options as the bridge (`BatchMode=yes`, strict host
-  keys, no master connection), keeping stdout bounded and discarding stderr.
-  Each resolved origin repository is reused for ten minutes. Upstream configuration
-  is read over SSH on each lookup using the daemon-reported local branch. Sidebar PR badges
-  show only on the selected device's rows, because the cache holds that device's
-  lookups and the same path and branch may exist on another host.
+  verify it. The worker instead reads the repository's `remote.upstream.url` or
+  `remote.origin.url` over the same noninteractive SSH options as the bridge
+  (`BatchMode=yes`, strict host keys, no master connection), keeping stdout
+  bounded and discarding stderr. Each resolved origin repository is reused for
+  ten minutes. Upstream configuration is read over SSH on each lookup using the
+  daemon-reported local branch. Sidebar PR badges show only on the selected
+  device's rows, because the cache holds that device's lookups and the same path
+  and branch may exist on another host.
 - Each saved SSH device can have its own GitHub account, for hosts whose
   repositories another account owns. Select the device, open the GitHub panel,
   and choose **Use another account** to run the same device sign-in for that
@@ -3781,6 +3795,16 @@ named pipe has no receive timeout; send timeouts cannot be enforced at all
 there. Configuration and state
 follow upstream's Windows layout: `%APPDATA%\herdr` and `%LOCALAPPDATA%\herdr`,
 still overridden by `XDG_CONFIG_HOME` / `XDG_STATE_HOME` when they are set.
+
+`herdr-gpui COMMAND` and the managed agent skill reach the running app over
+`\\.\pipe\herdr-gpui-control-SID`, named for the Windows user. The app creates
+it owned by that user with a DACL granting only that user's SID, as the first
+instance, and with remote clients rejected; the command line opens it at
+identification level and checks its owner before sending anything, since any
+user could create a pipe of that name first. `docs/cli.md` has the details.
+Reading the user's SID and the pipe's owner takes two `unsafe` Win32 calls
+(`GetTokenInformation`, `GetSecurityInfo`), which neither the standard library
+nor `interprocess` wraps.
 
 ### WSL distributions
 
