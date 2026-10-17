@@ -57,7 +57,7 @@ impl Gateway {
     }
 
     pub(crate) fn build_command(&self) -> Result<Command> {
-        let mut command = Command::new("ssh");
+        let mut command = herdr_client::new_command("ssh");
         command.arg("-F").arg("/dev/null");
         command.arg("-T");
 
@@ -98,7 +98,7 @@ pub(crate) fn persistent_key() -> Result<(PathBuf, String)> {
     let public_path = directory.join(format!("{}.pub", KEY_NAME));
 
     if !private_path.exists() {
-        let status = Command::new("ssh-keygen")
+        let status = herdr_client::new_command("ssh-keygen")
             .args(["-q", "-t", "ed25519", "-N", "", "-f"])
             .arg(&private_path)
             .stdin(Stdio::null())
@@ -127,7 +127,7 @@ pub(crate) fn persistent_key() -> Result<(PathBuf, String)> {
 }
 
 fn read_public_key(private: &Path) -> Result<String> {
-    let output = Command::new("ssh-keygen")
+    let output = herdr_client::new_command("ssh-keygen")
         .args(["-y", "-f"])
         .arg(private)
         .stdin(Stdio::null())

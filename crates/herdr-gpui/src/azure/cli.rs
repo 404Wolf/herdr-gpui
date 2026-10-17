@@ -4,7 +4,7 @@
 use super::{Error, Result};
 use std::{
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Stdio,
 };
 
 const SEARCH: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"];
@@ -42,7 +42,7 @@ pub(crate) fn is_az_available() -> bool {
 
 fn run_az(args: &[&str]) -> Result<String> {
     let az_bin = find_az().ok_or(Error::AzMissing)?;
-    let mut command = Command::new(az_bin);
+    let mut command = herdr_client::new_command(az_bin);
     command.args(args);
     command.stdin(Stdio::null());
     crate::login_env::apply(&mut command);

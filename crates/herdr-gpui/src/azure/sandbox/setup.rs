@@ -66,7 +66,7 @@ pub(crate) fn sizes(
 /// This executable as the relay, for the remote command a caller appends.
 fn relay_command(settings: &Settings, sandbox: &str) -> Result<Command> {
     let executable = std::env::current_exe().map_err(Error::Executable)?;
-    let mut command = Command::new(executable);
+    let mut command = herdr_client::new_command(executable);
     command
         .arg(relay::HELPER)
         .arg(settings.account())

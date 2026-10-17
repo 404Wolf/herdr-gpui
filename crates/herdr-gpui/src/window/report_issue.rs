@@ -171,7 +171,7 @@ pub(super) fn clean_cpu_brand(brand: &str) -> String {
 
 #[cfg(target_os = "macos")]
 fn mac_hardware_model() -> Option<String> {
-    if let Ok(output) = std::process::Command::new("ioreg")
+    if let Ok(output) = herdr_client::new_command("ioreg")
         .args(["-rd1", "-c", "IOPlatformDevice", "-n", "product"])
         .output()
         && output.status.success()
@@ -185,7 +185,7 @@ fn mac_hardware_model() -> Option<String> {
             }
         }
     }
-    if let Ok(output) = std::process::Command::new("sysctl")
+    if let Ok(output) = herdr_client::new_command("sysctl")
         .args(["-n", "hw.model"])
         .output()
         && output.status.success()
