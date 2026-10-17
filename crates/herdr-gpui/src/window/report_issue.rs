@@ -16,27 +16,26 @@ static PLATFORM: OnceLock<String> = OnceLock::new();
 impl HerdrWindow {
     /// Opens the prefilled bug report. The platform is gathered on the
     /// background executor because it runs child processes, so the window
-    /// stays responsive while they finish.
+    /// stays responsive while they finish. The versions and error are taken
+    /// now, so a reconnect or host switch during that wait cannot clear or
+    /// replace the error the user clicked to report.
     pub(super) fn open_report_issue(&self, cx: &mut Context<Self>) {
+        let report = self.report_issue();
+        let install_method = std::env::current_exe()
+            .ok()
+            .and_then(|exe| install_method(&exe, RELEASE_BUILD));
         let platform = cx
             .background_executor()
             .spawn(async { PLATFORM.get_or_init(report_issue_os).as_str() });
-        cx.spawn(async move |this, cx| {
+        cx.spawn(async move |_, cx| {
             let os = platform.await;
-            let install_method = std::env::current_exe()
-                .ok()
-                .and_then(|exe| install_method(&exe, RELEASE_BUILD));
-            this.update(cx, |this, cx| {
-                cx.open_url(&this.report_issue_url(os, install_method));
-            })
-            .ok();
+            cx.update(|cx| cx.open_url(&report.url(os, install_method)));
         })
         .detach();
     }
 
-    /// A prefilled bug report URL with the client version, daemon version,
-    /// the given platform and install method, and the active error if any.
-    pub(super) fn report_issue_url(&self, os: &str, install_method: Option<&str>) -> String {
+    /// The window state a bug report describes, read at one moment.
+    pub(super) fn report_issue(&self) -> ReportIssue {
         let daemon_version = self.live.daemon_version().or_else(|| {
             self.live
                 .missing_installation
@@ -48,12 +47,32 @@ impl HerdrWindow {
             .as_deref()
             .or(self.local_error.as_deref())
             .map(|err| format!("{}: {err}", self.live.status));
+        ReportIssue {
+            version: client_version(RELEASE_BUILD, crate::constants::BUILD_COMMIT),
+            daemon_version: daemon_version.map(str::to_owned),
+            logs,
+        }
+    }
+}
+
+/// The versions and error captured when the report was requested, owned so
+/// they can wait for the platform description without borrowing the window.
+pub(super) struct ReportIssue {
+    version: String,
+    daemon_version: Option<String>,
+    logs: Option<String>,
+}
+
+impl ReportIssue {
+    /// A prefilled bug report URL with the client version, daemon version,
+    /// the given platform and install method, and the error if any.
+    pub(super) fn url(&self, os: &str, install_method: Option<&str>) -> String {
         report_issue_url(
-            &client_version(RELEASE_BUILD, crate::constants::BUILD_COMMIT),
-            daemon_version,
+            &self.version,
+            self.daemon_version.as_deref(),
             os,
             install_method,
-            logs.as_deref(),
+            self.logs.as_deref(),
         )
     }
 }

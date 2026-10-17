@@ -177,7 +177,7 @@ fn herdr_window_report_issue_url_integrates_state(cx: &mut TestAppContext) {
 
     // Default window without error or daemon reports client version and OS
     let default_url = view.read_with(cx, |this, _| {
-        this.report_issue_url("macOS, Apple Silicon", None)
+        this.report_issue().url("macOS, Apple Silicon", None)
     });
     assert!(default_url.contains("template=bug_report.yml"));
     assert!(default_url.contains("version="));
@@ -191,7 +191,7 @@ fn herdr_window_report_issue_url_integrates_state(cx: &mut TestAppContext) {
         this.live.daemon_version = Some("0.9.5".into());
     });
     let with_daemon = view.read_with(cx, |this, _| {
-        this.report_issue_url("macOS, Apple Silicon", None)
+        this.report_issue().url("macOS, Apple Silicon", None)
     });
     assert!(with_daemon.contains("daemon_version=0.9.5"));
 
@@ -201,7 +201,7 @@ fn herdr_window_report_issue_url_integrates_state(cx: &mut TestAppContext) {
         this.live.missing_installation = true;
     });
     let missing = view.read_with(cx, |this, _| {
-        this.report_issue_url("macOS, Apple Silicon", None)
+        this.report_issue().url("macOS, Apple Silicon", None)
     });
     assert!(missing.contains("daemon_version=none+%28not+installed%29"));
 
@@ -210,8 +210,28 @@ fn herdr_window_report_issue_url_integrates_state(cx: &mut TestAppContext) {
         this.local_error = Some("Connection refused".into());
     });
     let with_error = view.read_with(cx, |this, _| {
-        this.report_issue_url("macOS, Apple Silicon", None)
+        this.report_issue().url("macOS, Apple Silicon", None)
     });
     assert!(with_error.contains("logs="));
     assert!(with_error.contains("Connection+refused"));
+}
+
+#[gpui::test]
+fn herdr_window_report_issue_keeps_the_error_seen_at_the_click(cx: &mut TestAppContext) {
+    let (view, cx) = cx.add_window_view(fixture_window);
+    view.update(cx, |this, _| {
+        this.live.daemon_version = Some("0.9.5".into());
+        this.local_error = Some("Connection refused".into());
+    });
+    let report = view.read_with(cx, |this, _| this.report_issue());
+
+    // A reconnect or host switch while the platform is gathered.
+    view.update(cx, |this, _| {
+        this.live.daemon_version = Some("0.10.0".into());
+        this.local_error = None;
+    });
+
+    let url = report.url("macOS, Apple Silicon", None);
+    assert!(url.contains("daemon_version=0.9.5"));
+    assert!(url.contains("Connection+refused"));
 }
