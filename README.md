@@ -113,7 +113,8 @@ symbol, file, or printed `path:line` in your terminal editor,
 [editor groups](crates/herdr-gpui/README.md#editor-groups), and
 [system notifications](crates/herdr-gpui/README.md#system-notifications),
 [sounds](crates/herdr-gpui/README.md#notification-sounds), and a
-[Dock badge](crates/herdr-gpui/README.md#macos-dock-badge) when an agent needs you.
+[Dock badge](crates/herdr-gpui/README.md#macos-dock-badge) (on Windows, a
+[taskbar badge](crates/herdr-gpui/README.md#windows-shell)) when an agent needs you.
 
 ## Install
 
@@ -311,7 +312,12 @@ Saved SSH hosts and in-app updates are unavailable and report that plainly; see
 [the GUI README](crates/herdr-gpui/README.md#windows). Shortcuts use Ctrl, not
 the Win key, with the Linux defaults (Ctrl+Shift+T, Ctrl+Shift+P,
 Ctrl+Shift+Q); see
-[keyboard shortcuts](crates/herdr-gpui/README.md#keyboard-shortcuts).
+[keyboard shortcuts](crates/herdr-gpui/README.md#keyboard-shortcuts). The
+taskbar button shows a badge while agents need you and progress for long
+operations, the jump list offers recent workspaces and devices, clicking a
+notification brings its pane forward, and the installer registers
+`herdr-gpui://` links that open a checkout or a device in the running app; see
+[Windows shell](crates/herdr-gpui/README.md#windows-shell).
 
 Windows keep the system title bar, so Snap Layouts, drag-to-snap, and the
 window menu are the system's own; the title bar follows the app's light or dark

@@ -2895,11 +2895,15 @@ while the GUI runs: a click cannot reopen a closed window.
   compositor's focus policy. Notifications are neither replaced nor retracted, so
   each event shows separately, and each keeps a small waiting thread until the
   server closes it.
-- **Windows** uses WinRT toasts. The first notification sets the process
-  AppUserModelID to `so.pen.herdr-gpui` and registers its display name under
-  `HKCU\Software\Classes\AppUserModelId`. Because this changes taskbar grouping,
-  it happens only once system delivery posts. Native Windows behavior has not been
-  verified.
+- **Windows** uses WinRT toasts under the AppUserModelID `so.pen.herdr-gpui`,
+  which the app sets at startup and registers, with its display name, under
+  `HKCU\Software\Classes\AppUserModelId`. Once the installer has registered
+  `herdr-gpui://` links, a toast opens through one: clicking the banner, or the
+  toast later in the notification center, starts the launcher with
+  `herdr-gpui://notification?tag=…`; `herdr-gpui.exe` hands the click to the
+  running app, and its window comes forward. A click after the app quit only starts it.
+  Without that registration (a build run from `target`), toasts answer clicks
+  only while the app runs and still holds them, as GPUI posts them.
 
 ## macOS Dock Badge
 
@@ -2919,7 +2923,9 @@ seen. The daemon may acknowledge all panes in a viewed tab together. Blocked
 agents remain counted until their status changes, even after you view them.
 Disconnecting a host or closing a window removes its contribution, while other
 windows can keep the badge visible. Quitting the GUI stops monitoring; this is
-not a background notification service. Linux and Windows do not show this badge.
+not a background notification service. Windows shows the same count as an
+overlay on the taskbar button (see [Windows shell](#windows-shell)); Linux shows
+no badge.
 
 macOS draws the badge only when **Badges** is allowed in **System Settings >
 Notifications > Herdr**. The first time the count rises above zero, Herdr asks
@@ -2931,7 +2937,7 @@ that list and relaunch it to be asked again. A bare `target/*/herdr-gpui`
 binary cannot ask for permission.
 
 To preview it without waiting for an agent, choose **QA > Enable badge** in the
-macOS menu bar. The preview shows at least `2` and stays on until you choose **QA > Disable badge preview**
+macOS menu bar (on Windows, in the window's menu). The preview shows at least `2` and stays on until you choose **QA > Disable badge preview**
 or quit. Disabling the preview restores daemon-driven behavior, so real agent
 attention can keep the badge visible. This QA setting is not saved.
 
@@ -4069,6 +4075,41 @@ the icon resource. CI lints the MSVC target on a Windows runner. `just lint-linu
 the matching check for Linux, in the Ubuntu 24.04 container CI uses, because a
 `cfg` gate that is wrong only on Linux is invisible from both macOS and the
 Windows cross-check.
+
+### Windows shell
+
+- **Taskbar badge.** While agents are `Done` or `Blocked`, the taskbar button
+  carries a red overlay with their number, `9+` past nine: the count the macOS
+  Dock badge shows, from the same deduplicated source. It is drawn at the
+  system's small-icon size, set on every window (windows group into one
+  button), and cleared at zero. Screen readers hear "N agents need attention".
+- **Taskbar progress.** A window's button fills in while it copies dropped
+  files to an SSH host, teleports a worktree, moves a pane to another host, or
+  downloads and installs an app update. Copies and downloads show their real
+  fraction; steps without one show the moving bar. Checks the app runs on its
+  own, and dialogs waiting for you, show nothing.
+- **Jump list.** Right-click the taskbar button, or the Start menu entry, for
+  the Git checkouts of the workspaces you last focused on this computer, under
+  **Recent workspaces**, and a **Show DEVICE** task for each device. Each entry
+  is a `herdr-gpui://` link (below) opened through the launcher, so it reaches
+  the running app, or starts it. Windows shows recent workspaces only while **Settings > Personalization >
+  Start > Show recently opened items in Start, Jump Lists, and File Explorer**
+  is on; with it off, only the devices are listed. An entry you remove from the
+  list is forgotten. The recent checkouts are kept in `jump-list.json` in the
+  state directory.
+- **`herdr-gpui://` links.** The installer registers the scheme for the current
+  user (`HKCU\Software\Classes\herdr-gpui`) and removes it on uninstall.
+  `herdr-gpui://open?path=C:\src\repo` shows a local Git checkout or worktree:
+  the workspace already open there, or, after you agree in the window, a new
+  one (the repository's scripts are not trusted). `herdr-gpui://device?id=ID`
+  switches to a device by the ID `host list` prints. A link is untrusted input:
+  only those shapes are accepted, paths must be absolute drive paths (never
+  `\\server\share`, which would send your credentials to that server, nor
+  `..`), and a link never runs a command. Windows starts
+  `herdr-gpui-launcher.exe` with the link as its only argument, so no console
+  window opens; `herdr-gpui.exe` hands the link to the running app over the
+  control pipe, or starts the app and follows it once connected. See
+  [the command line](../../docs/cli.md#links).
 
 ## Build And Test
 

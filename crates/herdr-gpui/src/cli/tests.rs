@@ -3,6 +3,7 @@ use control::BrowserCommand;
 
 mod cloud_setup;
 mod control_commands;
+mod links;
 
 #[test]
 fn build_info_is_an_informational_mode() {

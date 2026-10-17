@@ -79,7 +79,7 @@ pub(crate) struct ShowToastPreview {
 #[action(no_json)]
 pub(crate) struct ShowSystemNotificationPreview;
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", windows, test))]
 #[derive(Clone, PartialEq, serde::Deserialize, Action)]
 #[action(no_json)]
 pub(crate) struct SetBadgePreview {

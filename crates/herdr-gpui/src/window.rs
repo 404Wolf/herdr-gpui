@@ -554,7 +554,9 @@ impl HerdrWindow {
         self.follow_terminal_note(window, cx);
         self.follow_selection(cx);
         self.poll_copy_mode(window, cx);
-        #[cfg(target_os = "macos")]
+        #[cfg(windows)]
+        crate::taskbar::button::track(window);
+        #[cfg(any(target_os = "macos", windows))]
         crate::app_badge::sync(window.window_handle().window_id(), &self.endpoints, cx);
         self.observe_agent_work(window, cx);
         self.cancel_stale_image();
@@ -562,6 +564,14 @@ impl HerdrWindow {
         self.update_workspace_dialog(window, cx);
         self.poll_teleport(window, cx);
         self.poll_carry(window, cx);
+        crate::link::follow::poll(self, window, cx);
+        #[cfg(windows)]
+        crate::jump_list::JumpList::observe(window.window_handle().window_id(), self, cx);
+        #[cfg(windows)]
+        crate::taskbar::button::set_progress(
+            window.window_handle().window_id(),
+            crate::taskbar::button::Bar::from_progress(self.taskbar_progress()),
+        );
         self.poll_fan_out(window, cx);
         self.poll_dispatch(window, cx);
         self.poll_device_setup(window, cx);

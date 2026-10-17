@@ -8,7 +8,7 @@ mod actions;
 mod agent_notes;
 mod agent_skill;
 mod app;
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", windows, test))]
 mod app_badge;
 mod app_icon;
 mod avatars;
@@ -75,8 +75,11 @@ mod icon_font_notice;
 mod icons;
 mod input;
 mod integrations;
+#[cfg(windows)]
+mod jump_list;
 mod keymap;
 mod lenient;
+mod link;
 mod links;
 mod listening_ports;
 mod local_path;
