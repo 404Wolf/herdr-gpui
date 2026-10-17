@@ -36,8 +36,7 @@ pub(super) fn list(
     cooldown: &mut Option<Duration>,
 ) -> crate::Result<(Origin, Vec<Item>)> {
     let deadline = Instant::now() + TIMEOUT;
-    let (owner, repo) = local_repository(input, deadline, &cancelled)?;
-    let origin = Origin { owner, repo };
+    let origin = Origin::from(local_repository(input, deadline, &cancelled)?);
     let timeout = deadline
         .checked_duration_since(Instant::now())
         .ok_or(Error::PrTimeout)?;
@@ -55,7 +54,8 @@ pub(super) fn list(
     Ok((origin, items))
 }
 
-/// Fetch the PR's head from origin, including GitHub's published fork PR refs.
+/// Fetch the PR's head from the remote it lives on, including GitHub's
+/// published fork PR refs on the listed repository's remote.
 /// Existing local branches are never moved by this fetch.
 pub(super) fn fetch_branch(
     input: &Input,
@@ -68,7 +68,13 @@ pub(super) fn fetch_branch(
     let mut command = Command::new("git");
     command
         .args(["-c", "core.fsmonitor=false", "-C", &checkout])
-        .args(["fetch", "--no-tags", "--quiet", "origin", &refspec]);
+        .args([
+            "fetch",
+            "--no-tags",
+            "--quiet",
+            item.remote.name(),
+            &refspec,
+        ]);
     let (ok, output) = run(&mut command, deadline, cancelled)?;
     if ok {
         return Ok(());

@@ -8,7 +8,7 @@
 //! are explicit user actions and are never retried or replayed automatically.
 use crate::{
     Error,
-    pull_request::{Input, clean, local_checkout, origin_repository, run, run_bytes},
+    pull_request::{Input, base_repository, clean, local_checkout, run, run_bytes},
 };
 use secrecy::SecretString;
 use std::{
@@ -590,7 +590,10 @@ fn create_pull_request(
     deadline: Instant,
     cancelled: &impl Fn() -> bool,
 ) -> crate::Result<Outcome> {
-    let (owner, repo) = origin_repository(checkout, deadline, cancelled)?;
+    // A fork checkout opens its pull request against `upstream`, from the
+    // branch pushed to its own `origin` below.
+    let base = base_repository(checkout, deadline, cancelled)?;
+    let head = base.head(branch)?;
     let title = clean(&git(
         checkout,
         &["log", "-1", "--pretty=format:%s"],
@@ -615,7 +618,7 @@ fn create_pull_request(
         "create_pr_repository",
         token,
         REPOSITORY_QUERY,
-        serde_json::json!({"owner": owner, "repo": repo}),
+        serde_json::json!({"owner": base.owner, "repo": base.repo}),
         API_TIMEOUT,
         cancelled,
         &mut cooldown,
@@ -625,12 +628,12 @@ fn create_pull_request(
         .filter(|id| !id.is_empty())
         .ok_or(Error::PrRepository)?
         .to_owned();
-    let base = repository["data"]["repository"]["defaultBranchRef"]["name"]
+    let default_branch = repository["data"]["repository"]["defaultBranchRef"]["name"]
         .as_str()
         .filter(|name| !name.is_empty())
         .ok_or(Error::PrRepository)?
         .to_owned();
-    if base == branch {
+    if base.is_own_base(branch, &default_branch) {
         return Err(Error::GitPullRequestBase);
     }
     let created = crate::github::graphql(
@@ -638,13 +641,13 @@ fn create_pull_request(
         token,
         CREATE_MUTATION,
         serde_json::json!({
-            "repository": id, "base": base, "head": branch, "title": title, "body": ""
+            "repository": id, "base": default_branch, "head": head, "title": title, "body": ""
         }),
         API_TIMEOUT,
         cancelled,
         &mut cooldown,
     )?;
-    parse_created(&created, &owner, &repo)
+    parse_created(&created, &base.owner, &base.repo)
 }
 
 fn parse_created(response: &serde_json::Value, owner: &str, repo: &str) -> crate::Result<Outcome> {

@@ -6,6 +6,7 @@ use super::{
 };
 use crate::{
     HerdrWindow,
+    pull_request::Remote,
     repo_items::{Branch, Item, Kind, Origin},
     sidebar,
 };
@@ -24,6 +25,7 @@ fn origin() -> Origin {
     Origin {
         owner: "penso".into(),
         repo: "herdr-gpui".into(),
+        ..Origin::default()
     }
 }
 
@@ -37,6 +39,7 @@ fn items() -> Vec<Item> {
             author: "penso".into(),
             head: Some("worktree/rapid-forest".into()),
             fork_owner: None,
+            remote: Remote::Origin,
             draft: false,
         },
         Item {
@@ -47,6 +50,7 @@ fn items() -> Vec<Item> {
             author: "outsider".into(),
             head: Some("patch-1".into()),
             fork_owner: Some("outsider".into()),
+            remote: Remote::Origin,
             draft: true,
         },
         Item {
@@ -57,6 +61,7 @@ fn items() -> Vec<Item> {
             author: "penso".into(),
             head: None,
             fork_owner: None,
+            remote: Remote::Origin,
             draft: false,
         },
     ]
