@@ -299,9 +299,11 @@ or live daemon has been exercised. Local
 connections use the named pipe the Windows daemon binds, and configuration and
 state follow its `%APPDATA%` / `%LOCALAPPDATA%` layout. A Herdr daemon inside a
 WSL distribution can be added as a device from **Add Device…**; see
-[WSL distributions](crates/herdr-gpui/README.md#wsl-distributions). Saved SSH
-hosts, in-app updates, saved GitHub credentials, and the avatar disk cache are
-unavailable and report that plainly; see
+[WSL distributions](crates/herdr-gpui/README.md#wsl-distributions). GitHub
+sign-ins are saved in Windows Credential Manager and avatars are cached under
+`%LOCALAPPDATA%\herdr`; see
+[saved sign-ins and the avatar cache](crates/herdr-gpui/README.md#saved-sign-ins-and-the-avatar-cache).
+Saved SSH hosts and in-app updates are unavailable and report that plainly; see
 [the GUI README](crates/herdr-gpui/README.md#windows).
 
 Each release publishes `Herdr-VERSION-x86_64-pc-windows-msvc.zip` and

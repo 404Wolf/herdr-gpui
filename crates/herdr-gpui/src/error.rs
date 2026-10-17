@@ -141,6 +141,9 @@ pub enum Error {
     CredentialDirectory,
     #[error("Cannot access private credential file.")]
     CredentialIo(#[source] io::Error),
+    #[cfg(windows)]
+    #[error(transparent)]
+    CredentialManager(#[from] crate::github::CredentialManagerError),
     #[error(
         "Cannot access private credential file. Require an owned directory and regular 0600 file; symlinks are rejected."
     )]
