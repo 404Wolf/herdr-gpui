@@ -3672,10 +3672,17 @@ catalog (`%LOCALAPPDATA%\herdr\client`), never in the catalog itself, whose
 strict schema cannot name one. The device you last chose, a distribution
 included, is selected again at startup.
 
-What still runs a shell on the host is not wired into a distribution yet and
-says so: plan usage, CPU and memory, listening ports, agent checkpoints,
-teleport, file transfers, and port forwards. WSL already forwards a
-distribution's `localhost` ports to Windows.
+CPU and memory are sampled as for an SSH host running Linux: one `/bin/sh`
+per distribution, started with `wsl.exe --distribution NAME --exec /bin/sh -s`
+and kept open between samples, which reads `/proc`. The status bar and the
+distribution's sidebar row show them. A distribution shares the machine's
+CPUs, so its CPU figure is what its processes use, and its memory is what
+WSL has given that distribution.
+
+What else runs a shell on the host is not wired into a distribution yet and
+says so: plan usage, listening ports, agent checkpoints, teleport, file
+transfers, and port forwards. WSL already forwards a distribution's
+`localhost` ports to Windows.
 
 These features are unavailable on Windows and say so rather than failing quietly:
 
