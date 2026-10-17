@@ -155,7 +155,7 @@ impl SettingsWindow {
             .child(ui::section(theme, "Layout", None))
             .child(
                 ui::row(theme, "sidebar-layout", "Layout preset")
-                    .tag(ui::Source::Local)
+                    .tag(ui::Source::HerdrUi)
                     .description("Row shape and density; spacing below starts from the preset.")
                     .control(self.layout_dropdown(ready, cx)),
             )

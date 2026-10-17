@@ -143,6 +143,9 @@ pub struct Config {
     pub daytona: DaytonaConfig,
     /// Per saved device, by catalog profile ID.
     pub(crate) devices: BTreeMap<String, DeviceSettings>,
+    /// A bar on the leading edge of each working, blocked, or done row,
+    /// whichever status icons are drawn.
+    pub edge_rail: bool,
     /// How the editor starts; the pane's `$VISUAL` or `$EDITOR` when unset.
     pub(crate) editor_command: Option<crate::editor::EditorCommand>,
     pub features: Features,
@@ -210,8 +213,8 @@ pub struct Config {
     pub sound: SoundConfig,
     /// Which status bar items show, and how compactly.
     pub status_bar: StatusBar,
-    /// Drawn status icons in place of Herdr's dots or symbols; `None` follows Herdr.
-    pub status_icons: Option<StatusIcons>,
+    /// The set agent status is drawn with.
+    pub status_icons: StatusIcons,
     pub tabs: FontConfig,
     pub terminal: FontConfig,
     /// Blank space around every terminal's cells.
@@ -428,6 +431,7 @@ impl Default for Config {
             contrast: Contrast::default(),
             daytona: DaytonaConfig::default(),
             devices: BTreeMap::new(),
+            edge_rail: false,
             editor_command: None,
             features: Features::default(),
             focus_follows_mouse: true,
@@ -461,7 +465,7 @@ impl Default for Config {
             smooth_scroll: true,
             sound: SoundConfig::default(),
             status_bar: StatusBar::default(),
-            status_icons: None,
+            status_icons: StatusIcons::default(),
             // Tabs are terminal chrome, so they read in the monospace face the
             // sidebar and terminal use, as they do in the reference UI.
             tabs: font(monospace, 12.0),
@@ -498,6 +502,7 @@ struct Settings {
     contrast: Contrast,
     daytona: DaytonaConfig,
     devices: BTreeMap<String, DeviceSettings>,
+    edge_rail: Option<bool>,
     editor_command: Option<crate::editor::EditorCommand>,
     features: Features,
     focus_follows_mouse: Option<bool>,
@@ -524,7 +529,7 @@ struct Settings {
     smooth_scroll: Option<bool>,
     sound: SoundConfig,
     status_bar: StatusBar,
-    status_icons: Option<StatusIcons>,
+    status_icons: Option<status_icons::SavedIcons>,
     tabs: FontSettings,
     terminal: FontSettings,
     theme: Option<String>,
@@ -926,7 +931,9 @@ impl Config {
         config.smooth_scroll = settings.smooth_scroll.unwrap_or(true);
         // keep-sorted end
         config.status_bar = settings.status_bar;
-        config.status_icons = settings.status_icons;
+        let (status_icons, legacy_rail) = status_icons::SavedIcons::resolve(settings.status_icons);
+        config.status_icons = status_icons;
+        config.edge_rail = settings.edge_rail.unwrap_or(legacy_rail);
         config.zen = settings.zen.try_into()?;
         settings.backdrop.validate()?;
         config.backdrop = settings.backdrop;

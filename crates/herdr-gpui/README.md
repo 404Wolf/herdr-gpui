@@ -654,7 +654,10 @@ a sidebar. General lists every optional `[features]` flag with a switch and a
 description of what it does.
 The terminal stays usable while Settings is open. Cmd-W (or Ctrl-W) closes only
 Settings; reopening activates the existing window instead of creating a duplicate.
-Local preferences remain editable if the originating session window closes.
+Herdr UI's own settings remain editable if the originating session window closes.
+Each row is tagged with the app that reads it: **Herdr** for settings in
+Herdr's shared config, which its terminal client follows too, and **Herdr UI**
+for settings only this app reads, kept in `config-gpui.local.toml`.
 
 Appearance provides a large live preview and a searchable, virtualized grid of
 theme cards, including every discovered Ghostty theme rather than a small
@@ -788,17 +791,32 @@ Existing native theme selections remain overrides. Choose **Follow Herdr** to
 use the shared theme, all 18 upstream palettes, custom colors, and automatic
 light/dark selection. Selecting a shared theme disables upstream auto-switching,
 as in the TUI. Status indicators always use the shared status colors,
-independent of a native terminal theme override, and the shared indicator style
-unless **Settings > Notifications > Icons** picks one of this app's own icon sets: Solid,
-Tiles, or Edge rail, saved as `status_icons` in `config-gpui.local.toml`. Herdr
-accepts only `dots` or `symbols` in `ui.status_indicators`, so these never reach
-the shared file, and the TUI keeps its own choice. The icons are about a line
+independent of a native terminal theme override, drawn with the set picked on
+**Settings > Appearance > Indicators** and saved as `status_icons` in
+`config-gpui.local.toml`. This app draws only its own sets and ignores Herdr's
+`ui.status_indicators`, which the TUI keeps for itself; unset means **Dots**.
+The page shows each set as a card previewing all five statuses with the
+sidebar's own marks:
+
+- **Dots**: Herdr's dots, with a ring and a turning arc while working.
+- **Solid**: filled discs with a cut-out mark and a crescent for idle.
+- **Outline**: the same marks in outline.
+- **Tiles**: each mark on a tile tinted with its status color.
+- **Wave**: after Superset, every status in one 3×3 grid of cells. Working is
+  Superset's wave, and a gap runs round the frame while an agent is blocked.
+- **Braille**: every status a braille cell. Working spins, and a blocked cell
+  empties and fills dot by dot.
+- **Orca**: after Orca, a stepping ring, a question bubble when blocked, and a
+  ringed check when done.
+
+Working always moves, and moving marks turn in step on one shared clock. They
+hold still when the system asks to reduce motion. Drawn icons are about a line
 tall and replace the dot wherever one shows, tabs and the collapsed sidebar
 included. Herdr's own rows and Orca's cards center them across all of a row's
-lines, and Superset badges its icon slot with them. Edge rail also draws a bar
-on the leading edge of each working, done, or blocked row, in every layout.
-Choosing Dots or Symbols again removes `status_icons`; where the shared file is
-read-only, as on Windows, the style Herdr already uses stays available for that.
+lines, and Superset badges its icon slot with them. The **Edge rail** switch at
+the top of the page (`edge_rail`) draws a bar on the leading edge of each
+working, done, or blocked row, in every layout and with any set. The retired
+`status_icons = "rail"` reads as Outline with the edge rail on.
 Terminal/default reset colors are projected to opaque native colors.
 
 A saved SSH device can paint its terminal with a theme of its own, so the host

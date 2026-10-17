@@ -97,9 +97,9 @@ mod tests {
             view.read(cx).sidebar_view.clone()
         });
         for text in [
-            "[ui]\nstatus_indicators = 'symbols'\n[theme.custom]\nyellow = '#123456'\n",
-            "[ui]\nstatus_indicators = 'symbols'\n[theme.custom]\nyellow = '#ff9900'\n",
-            "[ui]\nstatus_indicators = 'dots'\n[theme.custom]\nyellow = '#ff9900'\n",
+            "[theme.custom]\nyellow = '#123456'\n",
+            "[theme.custom]\nyellow = '#ff9900'\n",
+            "[theme.custom]\nyellow = '#00ff00'\n",
         ] {
             let (before, previous) = cx.update(|_, cx| {
                 let sidebar = sidebar.read(cx);
@@ -115,6 +115,7 @@ mod tests {
                 let expected = Indicators::new(
                     parent.settings.shared.as_ref(),
                     parent.config.status_icons,
+                    parent.config.edge_rail,
                     matches!(
                         cx.window_appearance(),
                         gpui::WindowAppearance::Light | gpui::WindowAppearance::VibrantLight
