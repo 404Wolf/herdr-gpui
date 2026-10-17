@@ -2,7 +2,7 @@
 
 A GPUI 0.3.6 (`gpui-pre`) client for a Local daemon and saved SSH hosts, with macOS
 support, experimental Linux x86_64/ARM64 builds, and an experimental Windows build with
-headless CI coverage. See [Windows](#windows) for what is unavailable there.
+native CI coverage. See [Windows](#windows) for what is unavailable there.
 It starts an installed local `herdr server` when absent; explicit socket and
 development targets remain attach-only. On Unix, GUI launches resolve the login-shell
 environment once on the connection worker so daemon plugins can find tools such as
@@ -3813,14 +3813,22 @@ GPUI native action/menu/keybinding patterns.
 
 ## Windows
 
-Windows is experimental, not a supported platform. CI checks formatting, lints
-every target and feature, and runs workspace tests with default and all features
-on `windows-2025` (x86_64) and `windows-11-arm` (ARM64), including headless UI
-and CLI tests. The release workflow builds and CLI-tests the optimized
-executable natively for each architecture and publishes
+Windows is experimental. CI checks formatting, lints every target and feature,
+and runs workspace tests with default and all features on `windows-2025` (x86_64)
+and `windows-11-arm` (ARM64), including headless UI and CLI tests. Its
+`windows-native` job then runs the native tests in both runners' desktop
+sessions: `just test-sidebar`'s fixtures, and on x86_64 `just test-gui` against
+a pinned Herdr `herdr.exe` (0.9.5) in the shared test sandbox, with PowerShell
+as the pane shell. Herdr publishes no ARM64 Windows build; emulated on
+`windows-11-arm`, its panes echo typed text but never act on Enter, so CI skips
+`native_gui_live` there. Both runners then run the release-mode performance
+budget, whose hover and scroll arrive as Win32 messages sent to the fixture's own
+window. The paint probes accept the sub-pixel offsets layout snapping gives at
+fractional display scales such as 150%. The release workflow builds and
+CLI-tests the optimized executable natively for each architecture, publishes
 `Herdr-VERSION-x86_64-pc-windows-msvc.zip` and
-`Herdr-VERSION-aarch64-pc-windows-msvc.zip`; native window, rendering, input, and
-live-daemon behavior remain unproven. Each zip also holds
+`Herdr-VERSION-aarch64-pc-windows-msvc.zip`, and installs and uninstalls both
+signed installers. Each zip also holds
 `herdr-gpui-launcher.exe` (`crates/herdr-gpui-launcher`), a windowed program
 that starts the console-subsystem `herdr-gpui.exe` from its own directory with
 `CREATE_NO_WINDOW` and exits. The GUI then shows no console window, and console
@@ -4042,12 +4050,14 @@ always inside your profile, whose inherited access list lets only you, SYSTEM,
 and Administrators create, replace, or link files there, and anyone else who
 could would already be able to replace the app itself.
 
-These features are unavailable on Windows and say so rather than failing quietly:
 
-- **In-app updates.** `release::target()` has no Windows updater asset (the
-  release zip is for manual download only), so the updater
-  stays disabled and reports that no standalone updater exists for this platform.
-  Homebrew delegation is macOS-only regardless.
+In-app updates download the release's signed per-user installer, check it
+against `windows-manifest.json` and its Authenticode publisher, and run it
+silently; Setup restarts the app (see
+[App Updates](../../docs/updating.md#windows-installers)). Only the copy in
+`%LOCALAPPDATA%\Programs\Herdr UI` updates itself. The app registers with Restart
+Manager, never after a crash or hang; the `herdr-gpui.exe --restart-manager`
+Windows starts hands off to the launcher (`src/restart_manager.rs`).
 
 Starting a local `herdr server` looks for `herdr.exe` and uses
 `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` in place of `process_group(0)`, so

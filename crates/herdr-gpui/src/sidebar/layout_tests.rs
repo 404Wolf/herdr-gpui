@@ -57,6 +57,7 @@ mod palette_header;
 #[cfg(test)]
 mod picker_scroll;
 #[cfg(test)]
+mod probe_scale;
 #[cfg(test)]
 mod probes;
 #[cfg(test)]
@@ -318,15 +319,26 @@ impl ProbeText {
                 .flatten()
                 .map(|view| view.read(cx).config.layout.mode)
                 .unwrap_or_default();
-            probe.verify_child(&self.0, mode)?;
+            probe.verify_child(&self.0, mode, window.scale_factor())?;
             eprintln!("SIDEBAR child verified: {}", probe.glyph_text);
         }
         Ok(probe)
     }
 }
 
+/// Whether a painted edge or width is within one device pixel of its logical
+/// value. Layout snaps edges to device pixels (`scale` per logical pixel), so
+/// at a fractional scale such as Windows' default 150% a column may land a
+/// fraction of a logical pixel from where it was laid out.
+pub(crate) fn within_device_pixel(actual: Pixels, expected: Pixels, scale: f32) -> bool {
+    (actual - expected).abs() < px(1. / scale.max(1.))
+}
+
 impl PaintedText {
-    fn verify_child(&self, input: &str, mode: crate::config::LayoutMode) -> Result<()> {
+    /// `scale` is the window's device pixels per logical pixel; see
+    /// [`within_device_pixel`].
+    fn verify_child(&self, input: &str, mode: crate::config::LayoutMode, scale: f32) -> Result<()> {
+        let near = |actual, expected| within_device_pixel(actual, expected, scale);
         let look = super::layout::for_mode(mode);
         let layout = look.density;
         // Menu labels share text keys, and retained paint probes can still
@@ -339,12 +351,12 @@ impl PaintedText {
             - layout.child_indent()
             - super::ARROW_RESERVE);
         ensure!(
-            self.bounds.left() == left,
+            near(self.bounds.left(), left),
             "child label left: actual {:?}, expected {left:?}",
             self.bounds.left()
         );
         ensure!(
-            self.bounds.size.width == width,
+            near(self.bounds.size.width, width),
             "child label width: actual {:?}, expected {width:?}",
             self.bounds.size.width
         );
@@ -374,8 +386,12 @@ impl PaintedText {
                 "long child label did not truncate correctly: {:?}",
                 self.glyph_text
             );
+            // GPUI keeps the longest prefix that fits beside the ellipsis
+            // and drops the glyph that would not, so a correct truncation
+            // can fall one glyph plus the ellipsis short. Segoe UI on Windows
+            // leaves 13px where macOS's system font left under 12.
             ensure!(
-                self.width > self.bounds.size.width - px(12.),
+                self.width > self.bounds.size.width - px(16.),
                 "child glyph width {:?} did not fill label width {:?}",
                 self.width,
                 self.bounds.size.width

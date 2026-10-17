@@ -117,8 +117,8 @@ pub enum CliError {
     #[cfg(feature = "integration-test")]
     #[error("--integration-test requires an explicit --socket")]
     MissingIntegrationSocket,
-    #[cfg(all(feature = "integration-test", not(target_os = "macos")))]
-    #[error("--performance-test currently requires macOS native event delivery")]
+    #[cfg(all(feature = "integration-test", not(any(target_os = "macos", windows))))]
+    #[error("--performance-test currently requires macOS or Windows native event delivery")]
     UnsupportedPerformancePlatform,
 }
 
@@ -268,7 +268,7 @@ impl LaunchOptions {
             if mode == LaunchMode::Integration && socket.is_none() {
                 return Err(CliError::MissingIntegrationSocket);
             }
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(any(target_os = "macos", windows)))]
             if mode == LaunchMode::Performance {
                 return Err(CliError::UnsupportedPerformancePlatform);
             }

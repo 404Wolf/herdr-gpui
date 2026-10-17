@@ -109,10 +109,19 @@ Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#Launcher}"; WorkingDir: "{a
 
 [Run]
 Filename: "{app}\{#Launcher}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+; The app's in-app update runs Setup silently with /RELAUNCH=1 and quits; this
+; starts the updated app, through the launcher, once its files are in place.
+Filename: "{app}\{#Launcher}"; WorkingDir: "{app}"; Flags: nowait; Check: RelaunchRequested
 
 [Code]
 const
   EnvironmentKey = 'Environment';
+
+{ Set by the app's own updater, which has quit for the install. }
+function RelaunchRequested(): Boolean;
+begin
+  Result := ExpandConstant('{param:RELAUNCH|0}') = '1';
+end;
 
 function UserPath(): String;
 begin

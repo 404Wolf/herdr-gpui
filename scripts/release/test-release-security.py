@@ -45,7 +45,7 @@ class ReleaseTargets(unittest.TestCase):
         jobs = dict(zip(sections[1::2], sections[2::2]))
         for job in jobs.values():
             self.assertIn("github.repository == 'penso/herdr-gpui'", job)
-        self.assertIn("    needs: [checks, windows, windows-package, commits]\n", jobs["checks-passed"])
+        self.assertIn("    needs: [checks, windows, windows-native, windows-package, commits]\n", jobs["checks-passed"])
         self.assertIn('test "$COMMITS" = success || exit 1', jobs["checks-passed"])
         self.assertIn('test "$RESULT" = success && test "$WINDOWS" = success', jobs["checks-passed"])
         self.assertIn('test "$CODE" = false && test "$RESULT" = skipped && test "$WINDOWS" = skipped', jobs["checks-passed"])
@@ -90,6 +90,20 @@ class ReleaseTargets(unittest.TestCase):
                         'python scripts/release/windows-installer.py smoke'):
             self.assertIn(command, package)
         self.assertIn("windows_package: ${{ steps.changes.outputs.windows_package }}", jobs["commits"])
+        # Native Windows GUI tests run whenever code changes, against the
+        # pinned daemon only, and the gate requires them as it does windows.
+        native = jobs["windows-native"]
+        self.assertIn("needs.commits.outputs.code == 'true'", native)
+        self.assertIn("needs: [zizmor, commits]", native)
+        self.assertIn("        runner: [windows-2025, windows-11-arm]\n", native)
+        self.assertNotIn("secrets.", native)
+        for command in ('python scripts/install-herdr-windows.py "$RUNNER_TEMP/herdr"',
+                        "cargo test --locked -p herdr-gpui --features integration-test --test live_gui -- --ignored",
+                        "--performance-test"):
+            self.assertIn(command, native)
+        self.assertIn("NATIVE: ${{ needs.windows-native.result }}", jobs["checks-passed"])
+        self.assertIn('test "$WINDOWS" = success && test "$NATIVE" = success', jobs["checks-passed"])
+        self.assertIn('test "$WINDOWS" = skipped && test "$NATIVE" = skipped', jobs["checks-passed"])
         self.assertIn("PACKAGE: ${{ needs.windows-package.result }}", jobs["checks-passed"])
         self.assertIn('test "$PACKAGE" = success', jobs["checks-passed"])
         self.assertIn('test "$PACKAGE_INPUTS" = false && test "$PACKAGE" = skipped', jobs["checks-passed"])
@@ -398,7 +412,7 @@ class ReleaseSecurity(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name)
         for name in MANIFEST.base_names(VERSION):
-            data = b"s" * 64 if name in ("update-manifest.sig", "package-manifest.sig") else name.encode()
+            data = b"s" * 64 if name in ("update-manifest.sig", "package-manifest.sig", "windows-manifest.sig") else name.encode()
             (self.path / name).write_bytes(data)
             for algorithm in ("sha256", "sha512"):
                 checksum = hashlib.new(algorithm, data).hexdigest()
@@ -427,7 +441,8 @@ class ReleaseSecurity(unittest.TestCase):
             "herdr-gpui-20260920.1-macos-universal.app.tar.gz",
             "herdr-gpui-20260920.1-x86_64-unknown-linux-gnu-update.tar.gz",
             "herdr-gpui-20260920.1-aarch64-unknown-linux-gnu-update.tar.gz",
-            "update-manifest.json", "update-manifest.sig", "package-manifest.json", "package-manifest.sig"})
+            "update-manifest.json", "update-manifest.sig", "package-manifest.json", "package-manifest.sig",
+            "windows-manifest.json", "windows-manifest.sig"})
         # Five files per base asset; SHA256SUMS lists all but itself.
         assets = len(MANIFEST.base_names(VERSION)) * 5
         self.assertEqual(len((self.path / "SHA256SUMS").read_text().splitlines()), assets)
@@ -454,7 +469,7 @@ class ReleaseSecurity(unittest.TestCase):
         self.run_manifest("verify", False)
 
     def test_raw_updater_signature_length(self):
-        for name in ("update-manifest.sig", "package-manifest.sig"):
+        for name in ("update-manifest.sig", "package-manifest.sig", "windows-manifest.sig"):
             path = self.path / name
             for size in (1, 63, 65, 128):
                 path.write_bytes(b"s" * size)

@@ -106,7 +106,10 @@ wry.workspace = true
 # reads the user and the pipe owner it is checked against. `windows-sys` also
 # sets the window attributes and reads the system settings GPUI leaves to the
 # app, keeps saved sign-ins in Credential Manager (`github::credential_manager`),
-# and opens avatar cache entries without following reparse points.
+# and opens avatar cache entries without following reparse points. It also
+# checks an update installer's Authenticode signature (`updater::windows`),
+# registers with Restart Manager (`restart_manager`), and sends the
+# performance fixture its window messages.
 # `clipboard-win` reads the clipboard on a background thread (see
 # `window/clipboard`). `windows` has the shell's COM and WinRT interfaces (the
 # taskbar, the jump list, and toasts); `windows-registry` reads the link
@@ -126,9 +129,15 @@ windows-registry.workspace = true
 windows-sys = { features = [
   "Wdk_System_SystemServices",
   "Win32_Graphics_Dwm",
+  "Win32_Graphics_Gdi",
   "Win32_Security_Authorization",
   "Win32_Security_Credentials",
+  "Win32_Security_Cryptography",
+  "Win32_Security_Cryptography_Catalog",
+  "Win32_Security_Cryptography_Sip",
+  "Win32_Security_WinTrust",
   "Win32_Storage_FileSystem",
+  "Win32_System_Recovery",
   "Win32_System_Registry",
   "Win32_System_SystemInformation",
   "Win32_System_Threading",

@@ -208,8 +208,12 @@ pub(crate) fn open_additional_window_then(
 
 pub(crate) fn run() -> std::process::ExitCode {
     use cli::{LaunchMode, LaunchOptions};
-    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    let mut args: Vec<_> = std::env::args_os().skip(1).collect();
     if let Some(exit) = updater::run_helper(&args) {
+        return exit;
+    }
+    // Restart Manager restarts this executable itself; see `restart_manager`.
+    if let Some(exit) = crate::restart_manager::hand_off(&mut args) {
         return exit;
     }
     #[cfg(unix)]
@@ -310,6 +314,9 @@ pub(crate) fn run() -> std::process::ExitCode {
         arch = std::env::consts::ARCH,
         "GPUI client starting"
     );
+    if mode == LaunchMode::Normal {
+        crate::restart_manager::register();
+    }
     // Only read first-frame settings here. Migration, defaults refresh, and font
     // discovery run after opening; CLI and fixtures skip personal settings.
     let appearance = if mode == LaunchMode::Normal {

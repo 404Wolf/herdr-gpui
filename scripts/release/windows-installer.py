@@ -15,11 +15,13 @@
       task, check the files, their subsystems, herdr-gpui.exe's output, the
       app's name, the Start menu shortcut's AppUserModelID and target (the
       launcher), the user PATH, and the entry Settings lists under Installed
-      apps, then uninstall and check all of it is gone again. With --signed,
+      apps; run it again as the in-app update does and check it starts the
+      app; then uninstall and check all of it is gone again. With --signed,
       also require valid timestamped signatures from one signer on the
       installer and on everything it installed that runs, the uninstaller
-      included. Changes this user's PATH and Start menu shortcut while it
-      runs: for CI runners only. Under a
+      included. Changes this user's PATH and Start menu shortcut, and opens
+      the app (which may start a Herdr daemon), while it runs: for CI runners
+      only. Under a
       process a packaged (MSIX) app started, Windows redirects HKCU into that
       app's private hive, so the checks pass while Settings and new terminals
       see neither entry.
@@ -216,6 +218,7 @@ def smoke(installer, signed=False):
         # uninstall entry never point into the deleted scratch directory.
         try:
             check_installation(app, installer if signed else None)
+            check_update_relaunches(installer, app)
         finally:
             uninstall(app)
 
@@ -247,6 +250,39 @@ def check_installation(app, signed_installer):
     handler = link_handler()
     if handler != f'"{launcher}" "%1"':
         raise ValueError(f"Installer registered herdr-gpui:// links wrongly: {handler}")
+
+
+def processes_at(path):
+    """Ids of running processes started from exactly `path`."""
+    query = ("Get-CimInstance Win32_Process -Filter \"Name='herdr-gpui.exe'\" | "
+             f"Where-Object ExecutablePath -eq '{path}' | ForEach-Object ProcessId")
+    output = subprocess.run(["powershell", "-NoProfile", "-Command", query],
+                            capture_output=True, text=True, check=True, timeout=60).stdout
+    return [int(line) for line in output.split()]
+
+
+def stop_processes_at(path):
+    for pid in processes_at(path):
+        subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True, timeout=60)
+
+
+def check_update_relaunches(installer, app):
+    """Run Setup over the installation as the app's in-app update does
+    (updater/windows.rs), and require it to start the app again."""
+    gui = app / "herdr-gpui.exe"
+    if processes_at(gui):
+        raise ValueError("A silent install started the app without /RELAUNCH=1")
+    subprocess.run([str(installer), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
+                    "/CLOSEAPPLICATIONS", "/RELAUNCH=1", f"/DIR={app}",
+                    f"/LOG={app.parent / 'update.log'}"], check=True, timeout=600)
+    try:
+        deadline = time.monotonic() + 60
+        while not processes_at(gui):
+            if time.monotonic() > deadline:
+                raise ValueError("Setup with /RELAUNCH=1 did not start the updated app")
+            time.sleep(1)
+    finally:
+        stop_processes_at(gui)
 
 
 def uninstall(app):

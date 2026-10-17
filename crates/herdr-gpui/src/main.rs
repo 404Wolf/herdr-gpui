@@ -114,6 +114,7 @@ mod release_notes;
 mod remote_browser;
 mod reorder;
 mod repo_items;
+mod restart_manager;
 mod review;
 mod scrollback;
 mod search_input;

@@ -230,10 +230,10 @@ that opens the launcher. Prefer a regular installer? Each
 `Herdr-VERSION-x86_64-pc-windows-msvc-setup.exe` and
 `Herdr-VERSION-aarch64-pc-windows-msvc-setup.exe`, which install the same files
 to the same place for the current user, without administrator rights, and add
-an uninstaller under **Settings > Apps**. Windows builds never update
-themselves; run the command or a newer installer again to update. See
-[Windows](#windows) for what
-works on the platform.
+an uninstaller under **Settings > Apps**. Either way, the app updates itself
+from **Check for Updates**: it downloads the new installer, checks it against
+the release's signed manifest and its Authenticode publisher, runs it silently,
+and reopens. See [Windows](#windows) for what works on the platform.
 
 ### From source
 
@@ -293,12 +293,24 @@ audio player is required. Custom notification sounds are MP3 only. See
 
 ### Windows
 
-Windows is experimental, not a supported platform: CI checks formatting, lints
-every target and feature, and runs workspace tests with default and all features
-on `windows-2025`, including headless UI and CLI tests. The release workflow also
-builds and CLI-tests the optimized executable, but no native window, renderer,
-or live daemon has been exercised. Local
-connections use the named pipe the Windows daemon binds, and configuration and
+Windows is experimental, and now tested natively. On every change, CI checks
+formatting, lints every target and feature, and runs workspace tests with default
+and all features on `windows-2025` (x86_64) and `windows-11-arm` (ARM64). On the
+same two runners it also opens real windows in a desktop session for the native
+sidebar, notification, and paint-probe fixtures. On x86_64 it runs the live GUI
+test against a pinned, checksummed Herdr `herdr.exe` in an isolated sandbox,
+which creates tabs, splits and workspaces with the keyboard, types into a
+PowerShell pane and reads its output back, resizes the window, reconnects,
+follows a workspace another client pushes, and opens a second window. Herdr
+publishes no ARM64 Windows build, and under x64 emulation its panes do not act
+on Enter, so the live test is not run on ARM64. A release-mode run then holds the dense
+terminal's hover, scroll, and redraw frames to a p95 budget with real Win32 mouse
+and wheel messages. The release workflow installs and uninstalls both signed
+installers. Hosted runners have no GPU, so CI proves rendering on Direct3D's
+software rasterizer; IME composition, the clipboard, and taskbar pinning are
+still checked by hand ([Windows QA](docs/windows-qa.md)).
+
+Local connections use the named pipe the Windows daemon binds, and configuration and
 state follow its `%APPDATA%` / `%LOCALAPPDATA%` layout. `herdr-gpui COMMAND`
 reaches the running app over a named pipe that only
 your Windows user can open and that rejects remote clients; see
@@ -308,7 +320,7 @@ WSL distribution can be added as a device from **Add Device…**; see
 sign-ins are saved in Windows Credential Manager and avatars are cached under
 `%LOCALAPPDATA%\herdr`; see
 [saved sign-ins and the avatar cache](crates/herdr-gpui/README.md#saved-sign-ins-and-the-avatar-cache).
-Saved SSH hosts and in-app updates are unavailable and report that plainly; see
+Saved SSH hosts are unavailable and report that plainly; see
 [the GUI README](crates/herdr-gpui/README.md#windows). Shortcuts use Ctrl, not
 the Win key, with the Linux defaults (Ctrl+Shift+T, Ctrl+Shift+P,
 Ctrl+Shift+Q); see
@@ -334,9 +346,15 @@ the matching `-setup.exe` installers. They carry the same checksums, Sigstore
 signatures, and build provenance as the other assets, and both executables,
 the installers, and their uninstaller are Authenticode-signed: a release
 publishes only after Windows accepts those signatures (see
-[`scripts/release/README.md`](scripts/release/README.md)). They never update
-themselves: rerun the [install script](#windows-experimental) or a newer
-installer. `herdr-gpui.exe` is a console program, because it is also the
+[`scripts/release/README.md`](scripts/release/README.md)). A copy installed by
+the installer, winget, or the [install script](#windows-experimental) updates
+itself in the app: the installer it downloads must match the release's
+Ed25519-signed `windows-manifest.json` and carry a valid signature from Herdr
+UI's publisher, or it never runs (see
+[App Updates](docs/updating.md#windows-installers)). The app registers with
+Restart Manager, so an update, or a restart with **Restart apps** turned on,
+reopens it. A copy run from anywhere else does not update itself; download each
+new release manually. `herdr-gpui.exe` is a console program, because it is also the
 command line agents and scripts run. Open the app with
 `herdr-gpui-launcher.exe` (the Start menu shortcut's target), which starts
 `herdr-gpui.exe` without a console window.
