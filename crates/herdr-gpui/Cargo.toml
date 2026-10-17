@@ -103,8 +103,11 @@ rustix.workspace = true
 wry.workspace = true
 
 # The control pipe: `interprocess` creates it with a DACL, and `windows-sys`
-# reads the user and the pipe owner it is checked against. `clipboard-win`
-# reads the clipboard on a background thread (see `window/clipboard`).
+# reads the user and the pipe owner it is checked against. `windows-sys` also
+# keeps saved sign-ins in Credential Manager (`github::credential_manager`)
+# and opens avatar cache entries without following reparse points.
+# `clipboard-win` reads the clipboard on a background thread (see
+# `window/clipboard`).
 [target.'cfg(windows)'.dependencies]
 clipboard-win.workspace     = true
 interprocess.workspace      = true
@@ -112,6 +115,8 @@ raw-window-handle.workspace = true
 windows.workspace           = true
 windows-sys = { features = [
   "Win32_Security_Authorization",
+  "Win32_Security_Credentials",
+  "Win32_Storage_FileSystem",
   "Win32_System_Threading",
 ], workspace = true }
 
