@@ -29,12 +29,13 @@ Use OpenCode's ChatGPT browser or device login; an OpenAI API key does not
 provide ChatGPT subscription limits. OpenCode's own Zen/Go billing is tracked
 by the separate OpenCode providers.
 
-Detection follows the selected host, including SSH hosts. Each usage refresh
+Detection follows the selected host, including SSH hosts and, on Windows, WSL
+distributions. Each usage refresh
 reads the current saved token; OpenCode handles renewing its sign-in. If both
 Codex and OpenCode have OAuth credentials, Codex takes precedence, including
 when its usage request fails, so a failure does not switch the shown account.
-SSH hosts need `python3` or `jq` to read the JSON sign-in; detection is skipped
-when neither parser is available.
+SSH hosts and WSL distributions need `python3` or `jq` to read the JSON
+sign-in; detection is skipped when neither parser is available.
 
 ## The trait
 

@@ -968,10 +968,14 @@ pub enum Error {
     WorktreeScriptsUnsupportedHost,
     #[error("Select a checkout from the daemon's worktree list.")]
     WorktreeSelection,
-    /// Probes that open a shell on the host (usage, ports, checkpoints) have
-    /// no route into a WSL distribution yet; CPU and memory do.
-    #[error("This is not available for WSL distributions yet.")]
+    /// A shell into a WSL distribution starts through `wsl.exe`, which only a
+    /// Windows client has.
+    #[error("WSL distributions can only be reached from Windows.")]
     WslHostUnsupported,
+    #[error("Another drop's paths are still being mapped in WSL. Try again in a moment.")]
+    WslPasteBusy,
+    #[error("The pane the files were dropped on changed before their paths were ready.")]
+    WslPasteTargetGone,
     // keep-sorted end
 }
 
