@@ -34,8 +34,11 @@ use std::{
 };
 
 const PREFIX: &str = r"\\.\pipe\";
-/// How long an idle read sleeps before peeking again.
+/// How long an idle read first sleeps before peeking again. The sleep
+/// doubles up to [`MAX_RETRY`]: an answer usually comes within
+/// milliseconds, but a caller may wait minutes for the user.
 const RETRY: Duration = Duration::from_millis(1);
+const MAX_RETRY: Duration = Duration::from_millis(50);
 /// `ERROR_PIPE_BUSY`: every instance is taken; the listener makes another.
 const PIPE_BUSY: i32 = 231;
 /// `FILE_FLAG_OVERLAPPED`, which `interprocess` opens its pipes with.
@@ -161,6 +164,7 @@ impl Read for &Connection {
             return Ok(0);
         }
         let deadline = Instant::now() + self.read_timeout;
+        let mut retry = RETRY;
         loop {
             match herdr_client::pipe_available(self.pipe.as_handle())? {
                 // A closed peer reads as end of stream, as a socket does.
@@ -172,10 +176,12 @@ impl Read for &Connection {
                     return (&self.pipe).read(&mut buf[..len]);
                 }
             }
-            if Instant::now() >= deadline {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
                 return Err(io::ErrorKind::TimedOut.into());
             }
-            thread::sleep(RETRY);
+            thread::sleep(retry.min(left));
+            retry = (retry * 2).min(MAX_RETRY);
         }
     }
 }
