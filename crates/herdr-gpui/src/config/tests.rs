@@ -28,6 +28,7 @@ mod line_height;
 mod loading;
 mod missing_fonts;
 mod notification_settings;
+mod omarchy_theme;
 mod preferences;
 mod repository_icons;
 mod sidebar_scope;

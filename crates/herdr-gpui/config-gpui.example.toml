@@ -21,6 +21,8 @@
 # Built-ins: Default, Nord, Dracula, Catppuccin Mocha, Catppuccin Latte.
 # Also accepts a Ghostty theme name, an absolute path, or a ~/ path.
 # Set "Follow Herdr" in config-gpui.local.toml to follow the local Herdr theme.
+# On an Omarchy desktop, "Omarchy" follows its current theme as it switches,
+# and is what you get until config-gpui.local.toml names another theme.
 # To follow the system light/dark appearance, name a theme for each side, as
 # Ghostty does: theme = "light:Catppuccin Latte,dark:Catppuccin Mocha"
 theme = "Default"
