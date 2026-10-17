@@ -136,12 +136,29 @@ fn tab_moves_offer_workspaces_and_settle_once(cx: &mut TestAppContext) {
             assert!(tab.error.as_ref().unwrap().contains("Unzoom"));
             assert_eq!(v.menu.page, Some(Page::MoveTab));
             v.menu.tab.as_mut().unwrap().moving = Some(8);
-            v.finish_tab_move(8, Ok(()), window, cx);
+            v.finish_tab_move(8, Ok(pane_move::TabMoved::default()), window, cx);
             assert!(v.menu.page.is_none());
             // A success after the menu closed changes nothing visible.
             v.local_error = None;
-            v.finish_tab_move(9, Ok(()), window, cx);
+            v.finish_tab_move(9, Ok(pane_move::TabMoved::default()), window, cx);
             assert!(v.local_error.is_none());
+            // A move that lost the tab's name closes the menu and says so.
+            v.open_tab_menu("inactive", None, Point::default(), window, cx);
+            v.menu.tab.as_mut().unwrap().moving = Some(10);
+            let moved = pane_move::TabMoved {
+                warning: Some(pane_move::Error::Rename {
+                    tab_id: "w2:t9".into(),
+                    source: Box::new(pane_move::Error::Unchanged(pane_move::Unchanged::Other)),
+                }),
+            };
+            v.finish_tab_move(10, Ok(moved), window, cx);
+            assert!(v.menu.tab.is_none());
+            assert!(
+                v.local_error
+                    .as_deref()
+                    .unwrap()
+                    .starts_with("Moved the tab, but could not keep its name")
+            );
         })
     });
 }

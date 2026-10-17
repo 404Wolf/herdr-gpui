@@ -165,6 +165,13 @@ pub enum Error {
         #[source]
         source: Box<Error>,
     },
+    /// Every pane moved, but the created tab did not keep the source name.
+    #[error("Moved the tab, but could not keep its name: {source}")]
+    Rename {
+        tab_id: String,
+        #[source]
+        source: Box<Error>,
+    },
 }
 
 pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
@@ -183,6 +190,13 @@ pub(crate) struct TabRequest {
     first: Request,
     rest: Vec<String>,
     tab_label: Option<String>,
+}
+
+/// A finished tab move. Every pane moved; `warning` holds what was left
+/// undone, so the caller can say so instead of reporting a clean move.
+#[derive(Debug, Default)]
+pub(crate) struct TabMoved {
+    pub(crate) warning: Option<Error>,
 }
 
 /// An ID the CLI takes as one positional or option value: nonempty, never
@@ -269,18 +283,25 @@ impl TabRequest {
     }
 
     /// Run the tab move on `host`. Blocking: call only on a background worker.
-    pub(crate) fn run(&self, host: &Host, cancelled: &AtomicBool) -> Result<()> {
+    /// A failed rename does not stop the remaining panes, which would leave
+    /// the tab split across workspaces; it comes back as the warning.
+    pub(crate) fn run(&self, host: &Host, cancelled: &AtomicBool) -> Result<TabMoved> {
         let output = host
             .capture(&Host::herdr_line(&self.first.args()), cancelled)
             .map_err(failure)?;
         let tab_id = outcome_tab(&output)?;
         let tab_id = tab_id.ok_or_else(|| Error::InvalidId(String::new()))?;
-        if let Some(tab_label) = &self.tab_label {
-            let _ = host.capture(
+        let warning = self.tab_label.as_ref().and_then(|tab_label| {
+            host.capture(
                 &Host::herdr_line(&["tab", "rename", tab_id.as_str(), tab_label.as_str()]),
                 cancelled,
-            );
-        }
+            )
+            .err()
+            .map(|source| Error::Rename {
+                tab_id: tab_id.clone(),
+                source: Box::new(failure(source)),
+            })
+        });
         for pane_id in &self.rest {
             Request::new(
                 pane_id.clone(),
@@ -295,7 +316,7 @@ impl TabRequest {
                 source: Box::new(source),
             })?;
         }
-        Ok(())
+        Ok(TabMoved { warning })
     }
 }
 

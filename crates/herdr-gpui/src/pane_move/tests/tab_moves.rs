@@ -140,7 +140,7 @@ esac
         Some("tab-name".into()),
     )
     .unwrap();
-    request.run(&host, &cancelled).unwrap();
+    assert!(request.run(&host, &cancelled).unwrap().warning.is_none());
     assert_eq!(
         std::fs::read_to_string(home.path().join("calls")).unwrap(),
         "--session work pane move w1:p1 --new-tab --workspace w2 --focus\n\
@@ -207,5 +207,69 @@ esac
             assert_eq!(created_tab_id, "w2:t9");
         }
         other => panic!("expected PartialTabMove, got {other:?}"),
+    }
+}
+
+#[test]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn tab_request_finishes_the_move_and_warns_when_the_rename_fails() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = tempfile::tempdir().unwrap();
+    let bin = home.path().join(".local/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let fake = bin.join("herdr");
+    std::fs::write(
+        &fake,
+        r#"#!/bin/sh
+printf '%s\n' "$*" >> "$HOME/calls"
+if [ "$3" = "tab" ] && [ "$4" = "rename" ]; then
+  printf '%s\n' '{"id":"cli:tab:rename","error":{"code":"tab_not_found","message":"tab not found"}}' >&2
+  exit 1
+fi
+case "$5" in
+  w1:p1)
+    printf '%s\n' '{"result":{"type":"pane_move","move_result":{"changed":true,"created_tab":{"tab_id":"w2:t9"},"pane":{"tab_id":"w2:t9"}}}}'
+    ;;
+  w1:p2)
+    printf '%s\n' '{"result":{"type":"pane_move","move_result":{"changed":true,"pane":{"tab_id":"w2:t9"}}}}'
+    ;;
+esac
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut host = host_for(&ConnectTarget::Session {
+        name: "work".into(),
+        development: false,
+    })
+    .unwrap();
+    host.env = vec![
+        ("HOME".into(), home.path().to_string_lossy().into_owned()),
+        ("PATH".into(), "/usr/bin:/bin".into()),
+    ];
+    let cancelled = AtomicBool::new(false);
+    let request = TabRequest::new(
+        vec!["w1:p1".into(), "w1:p2".into()],
+        Destination::NewTab {
+            workspace_id: "w2".into(),
+        },
+        Some("tab-name".into()),
+    )
+    .unwrap();
+    let moved = request.run(&host, &cancelled).unwrap();
+    // The remaining pane still moved after the rename failed.
+    assert!(
+        std::fs::read_to_string(home.path().join("calls"))
+            .unwrap()
+            .ends_with("--session work pane move w1:p2 --tab w2:t9 --split right --focus\n")
+    );
+    let warning = moved.warning.unwrap();
+    assert!(warning.to_string().contains("tab not found"));
+    match warning {
+        Error::Rename { tab_id, source } => {
+            assert_eq!(tab_id, "w2:t9");
+            assert!(matches!(*source, Error::Refused { ref code, .. } if code == "tab_not_found"));
+        }
+        other => panic!("expected Rename, got {other:?}"),
     }
 }

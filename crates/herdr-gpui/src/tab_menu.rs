@@ -360,7 +360,7 @@ impl HerdrWindow {
     pub(super) fn finish_tab_move(
         &mut self,
         id: u64,
-        result: pane_move::Result<()>,
+        result: pane_move::Result<pane_move::TabMoved>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -370,8 +370,17 @@ impl HerdrWindow {
             .as_ref()
             .is_some_and(|tab| tab.moving == Some(id));
         match result {
-            Ok(()) if open => self.dismiss_menu(window, cx),
-            Ok(()) => {}
+            Ok(moved) => {
+                if open {
+                    self.dismiss_menu(window, cx);
+                }
+                // The panes all moved, so the menu closes either way; a lost
+                // name is reported on the window rather than in a closed menu.
+                if let Some(warning) = moved.warning {
+                    self.local_error = Some(warning.to_string());
+                    cx.notify();
+                }
+            }
             Err(error) if open => {
                 if let Some(tab) = &mut self.menu.tab {
                     tab.moving = None;
