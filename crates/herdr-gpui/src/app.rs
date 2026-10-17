@@ -305,6 +305,9 @@ pub(crate) fn run() -> std::process::ExitCode {
         arch = std::env::consts::ARCH,
         "GPUI client starting"
     );
+    if mode == LaunchMode::Normal {
+        crate::restart_manager::register();
+    }
     // Only read first-frame settings here. Migration, defaults refresh, and font
     // discovery run after opening; CLI and fixtures skip personal settings.
     let appearance = if mode == LaunchMode::Normal {
