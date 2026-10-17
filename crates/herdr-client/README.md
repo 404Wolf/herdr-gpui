@@ -446,8 +446,9 @@ standard streams. On Windows it gives the child a pipe each way and reads the
 pipe with the same `PeekNamedPipe` receive deadline as the daemon's named pipe,
 so the handshake, its 16 KiB banner bound, cancellation, and the session loop
 behave the same; a send cannot time out there. `ssh` and `ssh-keygen` are
-OpenSSH for Windows, the first on an absolute `PATH` directory or else
-`%SystemRoot%\System32\OpenSSH`, started without a console window. Every
+OpenSSH for Windows from `%SystemRoot%\System32\OpenSSH`, or without it the
+first absolute `PATH` directory that has them (never Git's MSYS `ssh` ahead of
+the system copy), started without a console window. Every
 command there also passes `ControlPath=none`: Windows OpenSSH cannot share a
 connection, and a configured `ControlPath` fails each one with exit 127, which
 would read as a host without Herdr.

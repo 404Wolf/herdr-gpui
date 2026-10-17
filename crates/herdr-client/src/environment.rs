@@ -5,9 +5,8 @@
 //! agent. The application supplies how its children get the user's login
 //! environment, and every `ssh` and `ssh-keygen` started here uses it.
 //!
-//! On Windows the tools are OpenSSH for Windows: the first one on `PATH`, or
-//! else the copy Windows installs as an optional feature, whose directory a
-//! GUI application's `PATH` may lack.
+//! On Windows the tools are OpenSSH for Windows: the copy Windows installs as
+//! an optional feature, and only without it the first one on `PATH`.
 #[cfg(windows)]
 use std::path::{Path, PathBuf};
 use std::{process::Command, sync::OnceLock};
@@ -41,11 +40,13 @@ pub(crate) fn command(program: &str) -> Command {
     command
 }
 
-/// Where `program` is on Windows: `program.exe` in the first absolute `PATH`
-/// directory that has it, so a newer OpenSSH the user installed wins as it
-/// does in their terminal, then in `SystemRoot\System32\OpenSSH`. A relative
-/// `PATH` entry would resolve against whatever directory this process has,
-/// so it is skipped. With neither, the bare name is spawned and fails as not
+/// Where `program` is on Windows: `program.exe` in `SystemRoot\System32\OpenSSH`,
+/// else in the first absolute `PATH` directory that has it. The system copy
+/// comes first because `PATH` often leads with Git's MSYS `ssh`, which keeps
+/// its own home and prints known hosts files as `/c/...` paths, so neither the
+/// user's config nor their host keys would be the ones Windows OpenSSH uses.
+/// A relative `PATH` entry would resolve against whatever directory this
+/// process has, so it is skipped. With neither, the bare name is spawned and fails as not
 /// found, which callers already report.
 #[cfg(windows)]
 fn locate(
@@ -55,10 +56,14 @@ fn locate(
     exists: impl Fn(&Path) -> bool,
 ) -> PathBuf {
     let file = format!("{program}.exe");
-    path.into_iter()
-        .flat_map(std::env::split_paths)
-        .filter(|dir| dir.is_absolute())
-        .chain(system_root.map(|root| Path::new(root).join("System32").join("OpenSSH")))
+    system_root
+        .map(|root| Path::new(root).join("System32").join("OpenSSH"))
+        .into_iter()
+        .chain(
+            path.into_iter()
+                .flat_map(std::env::split_paths)
+                .filter(|dir| dir.is_absolute()),
+        )
         .map(|dir| dir.join(&file))
         .find(|candidate| exists(candidate))
         .unwrap_or_else(|| PathBuf::from(file))
@@ -93,47 +98,49 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn openssh_is_found_on_path_first_then_in_the_system_directory() {
-        let path = std::env::join_paths([r"relative\bin", r"C:\Tools", r"C:\OpenSSH"]).unwrap();
+    fn openssh_is_the_system_copy_then_the_first_absolute_path_entry() {
+        let path = std::env::join_paths([
+            r"relative\bin",
+            r"C:\Program Files\Git\usr\bin",
+            r"C:\OpenSSH",
+        ])
+        .unwrap();
         let root = OsStr::new(r"C:\Windows");
         let at = |found: &'static [&'static str]| {
             move |candidate: &Path| found.iter().any(|file| candidate == Path::new(file))
         };
-        // A newer install on PATH wins over the system copy, in PATH order.
+        // Git's MSYS `ssh` leading PATH never shadows the system copy.
         assert_eq!(
             locate(
                 "ssh",
                 Some(&path),
                 Some(root),
                 at(&[
-                    r"C:\OpenSSH\ssh.exe",
+                    r"C:\Program Files\Git\usr\bin\ssh.exe",
                     r"C:\Windows\System32\OpenSSH\ssh.exe"
                 ])
             ),
-            Path::new(r"C:\OpenSSH\ssh.exe")
+            Path::new(r"C:\Windows\System32\OpenSSH\ssh.exe")
         );
-        // A relative entry is never searched, even when it has the tool.
+        // Without the optional feature, PATH decides, in order, and a
+        // relative entry is never searched even when it has the tool.
         assert_eq!(
             locate(
                 "ssh-keygen",
                 Some(&path),
                 Some(root),
-                at(&[
-                    r"relative\bin\ssh-keygen.exe",
-                    r"C:\Windows\System32\OpenSSH\ssh-keygen.exe"
-                ])
+                at(&[r"relative\bin\ssh-keygen.exe", r"C:\OpenSSH\ssh-keygen.exe"])
             ),
-            Path::new(r"C:\Windows\System32\OpenSSH\ssh-keygen.exe")
+            Path::new(r"C:\OpenSSH\ssh-keygen.exe")
         );
-        // A GUI process's PATH may lack the optional feature's directory.
         assert_eq!(
             locate(
                 "ssh",
+                Some(&path),
                 None,
-                Some(root),
                 at(&[r"C:\Windows\System32\OpenSSH\ssh.exe"])
             ),
-            Path::new(r"C:\Windows\System32\OpenSSH\ssh.exe")
+            Path::new("ssh.exe")
         );
         assert_eq!(
             locate("ssh", Some(&path), Some(root), at(&[])),

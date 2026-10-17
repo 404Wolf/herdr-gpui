@@ -3713,9 +3713,10 @@ still overridden by `XDG_CONFIG_HOME` / `XDG_STATE_HOME` when they are set.
 ### SSH hosts
 
 Saved SSH hosts work as they do on macOS and Linux, through OpenSSH for
-Windows: the first `ssh.exe` in an absolute `PATH` directory, or else the copy
-Windows installs as an optional feature,
-`%SystemRoot%\System32\OpenSSH\ssh.exe`, which an app's `PATH` may lack.
+Windows: the copy Windows installs as an optional feature,
+`%SystemRoot%\System32\OpenSSH\ssh.exe`, or without it the first `ssh.exe` in
+an absolute `PATH` directory. The system copy comes first because `PATH` often
+leads with Git's MSYS `ssh`, which reads another home's config and known hosts.
 `ssh-keygen.exe` is found the same way. No console window opens for either.
 The `ssh` child's standard streams are anonymous pipes rather than a socket
 pair; reads use the same emulated receive timeout as the daemon's named pipe,
