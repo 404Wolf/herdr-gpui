@@ -42,6 +42,15 @@ pub(super) struct RowContext<'a> {
     pub(super) host: Option<&'a str>,
 }
 
+impl RowContext<'_> {
+    /// The indicators for a status mark in one of these rows: faded with
+    /// the host's dimming, which a mark drawn in the window's mark layer
+    /// does not inherit.
+    pub(super) fn status_indicators(&self) -> super::agents::Indicators {
+        self.indicators.faded(self.mark.opacity())
+    }
+}
+
 /// A click listener, erased so rows of every group share one type.
 pub(super) type ClickHandler = dyn Fn(&ClickEvent, &mut Window, &mut App);
 
