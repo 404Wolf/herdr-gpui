@@ -10,6 +10,7 @@ use crate::{
 pub(crate) mod backdrop;
 mod bitmap_fonts;
 mod boat;
+mod cloud;
 mod coder;
 mod daytona;
 mod devices;
@@ -40,6 +41,7 @@ pub use backdrop::Backdrop;
 pub use boat::BoatConfig;
 #[cfg(feature = "boat")]
 pub(crate) use boat::BoatFields;
+pub use cloud::CloudConfig;
 pub use coder::CoderConfig;
 #[cfg(feature = "coder")]
 pub(crate) use coder::CoderFields;
@@ -118,6 +120,8 @@ pub struct Config {
     /// override from the Herdr value it shadows.
     pub(crate) clipboard_overrides: ClipboardToastSettings,
     pub clipboard_toast: ClipboardToast,
+    /// What a new cloud device runs the first time it connects.
+    pub cloud: CloudConfig,
     pub code: CodeConfig,
     pub coder: CoderConfig,
     pub confirm_close_pane: bool,
@@ -398,6 +402,7 @@ impl Default for Config {
             boat: BoatConfig::default(),
             clipboard_overrides: ClipboardToastSettings::default(),
             clipboard_toast: ClipboardToast::default(),
+            cloud: CloudConfig::default(),
             code: CodeConfig::default(),
             coder: CoderConfig::default(),
             confirm_close_pane: true,
@@ -464,6 +469,7 @@ struct Settings {
     bell: BellConfig,
     boat: BoatConfig,
     clipboard_toast: ClipboardToastSettings,
+    cloud: CloudConfig,
     code: CodeConfig,
     coder: CoderConfig,
     confirm_close_pane: Option<bool>,
@@ -807,6 +813,7 @@ impl Config {
         }
         // A newer build may keep more accounts or owners than this one.
         unknown_keys.extend(settings.github.limit_accounts());
+        unknown_keys.extend(settings.cloud.retain_known());
         unknown_keys.sort();
         unknown_keys.dedup();
         let mut config = Self {
@@ -819,6 +826,8 @@ impl Config {
         #[cfg(feature = "boat")]
         settings.boat.settings_with(|_| None)?;
         config.boat = settings.boat;
+        settings.cloud.check()?;
+        config.cloud = settings.cloud;
         // Check what the file says so a bad value is reported at load; the
         // environment may still fill or override keys when Coder is used.
         #[cfg(feature = "coder")]
