@@ -48,11 +48,13 @@ pub(crate) fn add_device(
         install,
     } = request;
 
-    if let Target::Saved(device) = &target
-        && (device.provider != CloudProvider::Azure || device.account != settings.account())
-    {
-        return Err(super::Error::Account.into());
-    }
+    let settings = match &target {
+        Target::Saved(device) if device.provider != CloudProvider::Azure => {
+            return Err(super::Error::Account.into());
+        }
+        Target::Saved(device) => settings.for_device(&device.account)?,
+        Target::Create(_) => settings,
+    };
     if let Some(reason) = cloud::unavailable() {
         return Err(cloud::Error::Unavailable(reason).into());
     }
@@ -81,7 +83,7 @@ pub(crate) fn add_device(
         provider: CloudProvider::Azure,
         id: vm_name.clone(),
         label,
-        account: settings.account(),
+        account: settings.vm_account(),
         machine: vm_name.clone(),
         session: SESSION.to_owned(),
         enabled: true,
@@ -172,10 +174,9 @@ pub(crate) struct Overview {
 }
 
 pub(crate) fn overview(settings: &Settings) -> Result<Overview> {
-    let account = settings.account();
     let devices = cloud::load()?
         .into_iter()
-        .filter(|saved| saved.provider == CloudProvider::Azure && saved.account == account)
+        .filter(|saved| saved.provider == CloudProvider::Azure && settings.owns(&saved.account))
         .collect();
 
     let credential = if std::env::var_os(store::VARIABLE).is_some() {

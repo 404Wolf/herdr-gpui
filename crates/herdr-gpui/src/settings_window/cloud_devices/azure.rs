@@ -192,6 +192,15 @@ impl AzureCard {
         }
     }
 
+    /// The resource group `device` is in: the one it was saved in, not the
+    /// group configured now.
+    fn device_group<'a>(&'a self, device: &'a SavedDevice) -> &'a str {
+        match &self.account {
+            Account::Known { settings, .. } => settings.group_of(&device.account),
+            Account::Checking | Account::Unconfigured { .. } => &device.account,
+        }
+    }
+
     fn catalog(&self) -> Option<&crate::azure::sizes::Catalog> {
         match &self.account {
             Account::Known { catalog, .. } => catalog.as_deref(),
@@ -638,9 +647,10 @@ impl SettingsWindow {
         devices = devices.children(creating);
         for (index, device) in card.devices().iter().enumerate() {
             let noun = Machine::parse(&device.id).noun();
+            let group = card.device_group(device);
             let detail = match card.device_size(&device.id) {
-                Some(size) => format!("{noun} · {size} in {}", device.account),
-                None => format!("{noun} in {}", device.account),
+                Some(size) => format!("{noun} · {size} in {group}"),
+                None => format!("{noun} in {group}"),
             };
             let actions = self.azure_destroy_actions(
                 index,

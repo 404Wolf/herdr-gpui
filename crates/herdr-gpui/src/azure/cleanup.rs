@@ -69,12 +69,12 @@ fn deallocate(client: &Client, vm_name: &str) -> Result<bool> {
 /// The saved Azure devices of `account`. A device saved under another
 /// subscription is not this client's to check: a machine of the same name
 /// here would be stopped or forgotten instead.
-fn account_devices(devices: Vec<SavedDevice>, account: &str) -> Vec<SavedDevice> {
+fn account_devices(devices: Vec<SavedDevice>, settings: &Settings) -> Vec<SavedDevice> {
     devices
         .into_iter()
         .filter(|device| {
             device.provider == CloudProvider::Azure
-                && device.account == account
+                && settings.owns(&device.account)
                 && !super::destroy::destroying(&device.id)
         })
         .collect()
@@ -112,7 +112,7 @@ pub(crate) fn check_all_idle_devices() {
     let Ok(Some(settings)) = config.azure.settings() else {
         return;
     };
-    let devices = account_devices(devices, &settings.account());
+    let devices = account_devices(devices, &settings);
     let (vms, sandboxes): (Vec<_>, Vec<_>) = devices
         .iter()
         .partition(|device| matches!(Machine::parse(&device.id), Machine::Vm(_)));

@@ -115,4 +115,5 @@ fn settings_resolution_with_auto_stop() {
 
 mod check;
 mod destroy;
+mod scope;
 mod template;

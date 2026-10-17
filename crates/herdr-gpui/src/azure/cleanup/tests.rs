@@ -1,5 +1,18 @@
 use super::*;
 
+const MINE: &str = "11111111-1111-1111-1111-111111111111";
+const OTHER: &str = "22222222-2222-2222-2222-222222222222";
+
+fn settings() -> Settings {
+    let config = crate::config::AzureConfig {
+        subscription_id: Some(MINE.into()),
+        ..Default::default()
+    };
+    Settings::resolve(&config, |_| None)
+        .expect("settings resolve")
+        .expect("settings configured")
+}
+
 #[test]
 fn activity_tracking_records_and_detects_idle() {
     let id = "test-vm-activity-id";
@@ -33,14 +46,14 @@ fn only_this_accounts_devices_are_checked() {
         enabled: true,
     };
     let devices = vec![
-        device("sub-a", "shared-name"),
-        device("sub-b", "shared-name"),
-        device("sub-a", "sandbox.box"),
+        device(MINE, "shared-name"),
+        device(OTHER, "shared-name"),
+        device(&format!("{OTHER}/herdr-devices"), "elsewhere"),
+        device(&format!("{MINE}/other-rg/boxes/eastus"), "sandbox.box"),
     ];
-    let mine = account_devices(devices, "sub-a");
+    let mine = account_devices(devices, &settings());
     let ids: Vec<&str> = mine.iter().map(|device| device.id.as_str()).collect();
     assert_eq!(ids, ["shared-name", "sandbox.box"]);
-    assert!(mine.iter().all(|device| device.account == "sub-a"));
 }
 
 #[test]
@@ -50,15 +63,15 @@ fn a_device_being_destroyed_is_left_to_its_destroy() {
         provider: CloudProvider::Azure,
         id: "being-destroyed".into(),
         label: "being-destroyed".into(),
-        account: "sub-a".into(),
+        account: MINE.into(),
         machine: "being-destroyed".into(),
         session: "herdr".into(),
         enabled: true,
     };
     assert!(!super::super::destroy::destroying("being-destroyed"));
-    assert_eq!(account_devices(vec![device.clone()], "sub-a").len(), 1);
+    assert_eq!(account_devices(vec![device.clone()], &settings()).len(), 1);
     super::super::destroy::mark_for_test("being-destroyed", || {
-        assert!(account_devices(vec![device.clone()], "sub-a").is_empty());
+        assert!(account_devices(vec![device.clone()], &settings()).is_empty());
     });
-    assert_eq!(account_devices(vec![device], "sub-a").len(), 1);
+    assert_eq!(account_devices(vec![device], &settings()).len(), 1);
 }

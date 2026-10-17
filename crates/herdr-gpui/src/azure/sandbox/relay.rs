@@ -87,9 +87,7 @@ fn run(account: &OsString, sandbox: &OsString, remote: &[OsString]) -> Result<Ex
         .settings()
         .map_err(|error| Error::Storage(Box::new(error)))?
         .ok_or(Error::Account)?;
-    if settings.account() != account {
-        return Err(Error::Account);
-    }
+    let settings = settings.for_device(account)?;
     let client = Client::for_audience(&settings, Audience::Sandboxes)?;
     let url = api::exec_stream_url(&settings, sandbox)?;
     let mut socket = open(&url, client.token().expose_secret())?;

@@ -69,7 +69,7 @@ fn relay_command(settings: &Settings, sandbox: &str) -> Result<Command> {
     let mut command = herdr_client::new_command(executable);
     command
         .arg(relay::HELPER)
-        .arg(settings.account())
+        .arg(settings.sandbox_account())
         .arg(sandbox);
     Ok(command)
 }
@@ -121,7 +121,7 @@ pub(crate) fn add_device(
         provider: CloudProvider::Azure,
         id: Machine::sandbox_id(&sandbox),
         label,
-        account: settings.account(),
+        account: settings.sandbox_account(),
         machine: sandbox,
         session: SESSION.to_owned(),
         enabled: true,

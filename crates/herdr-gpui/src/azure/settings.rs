@@ -223,6 +223,63 @@ impl Settings {
     pub(crate) fn account(&self) -> String {
         self.subscription_id.clone()
     }
+
+    /// The `account` a VM saved now records: its subscription and resource
+    /// group, so changing the group in Settings cannot redirect the device.
+    pub(crate) fn vm_account(&self) -> String {
+        format!("{}/{}", self.subscription_id, self.resource_group)
+    }
+
+    /// The `account` a sandbox saved now records: its resource group, and the
+    /// sandbox group and region whose data plane reaches it.
+    pub(crate) fn sandbox_account(&self) -> String {
+        format!(
+            "{}/{}/{}/{}",
+            self.subscription_id, self.resource_group, self.sandbox_group, self.sandbox_location
+        )
+    }
+
+    /// Whether a device saved under `account` is in this subscription.
+    pub(crate) fn owns(&self, account: &str) -> bool {
+        account.split('/').next() == Some(self.subscription_id.as_str())
+    }
+
+    /// These settings pointed at where a device saved under `account` lives.
+    /// A device saved before devices recorded their group has only the
+    /// subscription, and follows the configured groups as it always did.
+    pub(crate) fn for_device(&self, account: &str) -> Result<Self> {
+        if !self.owns(account) {
+            return Err(Error::Account);
+        }
+        let place: Vec<&str> = account.split('/').skip(1).collect();
+        if place.iter().any(|part| part.is_empty()) {
+            return Err(Error::Field("saved Azure device account"));
+        }
+        let mut scoped = self.clone();
+        match place[..] {
+            [] => {}
+            [resource_group] => scoped.resource_group = resource_group.to_owned(),
+            [resource_group, sandbox_group, sandbox_location] => {
+                if !is_segment(sandbox_group) || !is_segment(sandbox_location) {
+                    return Err(Error::Field("saved Azure device account"));
+                }
+                scoped.resource_group = resource_group.to_owned();
+                scoped.sandbox_group = sandbox_group.to_owned();
+                scoped.sandbox_location = sandbox_location.to_owned();
+            }
+            _ => return Err(Error::Field("saved Azure device account")),
+        }
+        Ok(scoped)
+    }
+
+    /// The resource group a device saved under `account` is in, for display.
+    pub(crate) fn group_of<'a>(&'a self, account: &'a str) -> &'a str {
+        account
+            .split('/')
+            .nth(1)
+            .filter(|group| !group.is_empty())
+            .unwrap_or(&self.resource_group)
+    }
 }
 
 pub(crate) fn parse_auto_stop(text: &str) -> Result<Option<std::time::Duration>> {

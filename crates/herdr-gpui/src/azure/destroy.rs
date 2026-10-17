@@ -62,9 +62,10 @@ pub(crate) fn destroy_device(
     cancelled: &dyn Fn() -> bool,
     mut stage: impl FnMut(Stage),
 ) -> Result<()> {
-    if device.provider != CloudProvider::Azure || device.account != settings.account() {
+    if device.provider != CloudProvider::Azure {
         return Err(Error::Account);
     }
+    let settings = &settings.for_device(&device.account)?;
     let _mark = Mark::new(&device.id);
     match Machine::parse(&device.id) {
         Machine::Vm(name) => {

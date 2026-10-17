@@ -44,9 +44,7 @@ fn reach(account: &str, id: &str, stop: &AtomicBool, wake: Wake) -> Result<Comma
         .map_err(|error| Error::Storage(Box::new(error)))?
         .ok_or(Error::Account)?;
 
-    if settings.account() != account {
-        return Err(Error::Account);
-    }
+    let settings = settings.for_device(account)?;
 
     let cancelled = || stop.load(Ordering::Acquire);
     if cancelled() {
