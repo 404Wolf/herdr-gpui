@@ -1,62 +1,53 @@
-use super::badge::{compose, description, label};
+use std::path::MAIN_SEPARATOR;
 
-#[test]
-fn label_fits_two_characters() {
-    assert_eq!(label(1), "1");
-    assert_eq!(label(9), "9");
-    assert_eq!(label(10), "9+");
-    assert_eq!(label(usize::MAX), "9+");
+use super::*;
+
+#[cfg(windows)]
+const ROOT: &str = r"C:\";
+#[cfg(not(windows))]
+const ROOT: &str = "/";
+
+fn gui_in(directory: &str) -> PathBuf {
+    Path::new(directory).join("herdr-gpui.exe")
 }
 
 #[test]
-fn description_counts_agents() {
-    assert_eq!(description(1), "1 agent needs attention");
-    assert_eq!(description(3), "3 agents need attention");
-}
+fn relaunch_points_a_pin_at_the_launcher_beside_the_gui() {
+    let directory = format!("{ROOT}Herdr");
+    let launcher = format!("{directory}{MAIN_SEPARATOR}herdr-gpui-launcher.exe");
 
-#[test]
-fn disc_is_opaque_inside_clear_outside_and_text_is_white() {
-    let size = 16;
-    let mut text = vec![0; size * size];
-    let centre = 8 * size + 8;
-    text[centre] = 255;
-    let pixels = compose(size, &text);
-    assert_eq!(pixels.len(), size * size);
-    // Corners lie outside the disc.
-    assert_eq!(pixels[0][3], 0);
-    assert_eq!(pixels[size * size - 1][3], 0);
-    // Inside: opaque red, with white where the text is.
-    let inside = pixels[centre + 2];
-    assert_eq!(inside, [0x4D, 0x48, 0xE5, 255]);
-    assert_eq!(pixels[centre], [255, 255, 255, 255]);
-}
+    let relaunch = relaunch(&gui_in(&directory));
 
-#[test]
-fn missing_coverage_is_treated_as_no_text() {
-    let pixels = compose(4, &[]);
-    assert!(
-        pixels
-            .iter()
-            .all(|pixel| pixel[0] == 0x4D || pixel[3] < 255)
-    );
-}
-
-#[test]
-fn progress_maps_to_the_taskbar_bar() {
-    use super::Bar;
-    use crate::progress::Progress;
-    assert_eq!(Bar::from_progress(None), Bar::None);
-    assert_eq!(Bar::from_progress(Some(Progress::Busy)), Bar::Busy);
     assert_eq!(
-        Bar::from_progress(Some(Progress::Fraction(0.25))),
-        Bar::Value(250)
+        relaunch,
+        Some(Relaunch {
+            command: OsString::from(format!("\"{launcher}\"")),
+            display_name: "Herdr UI",
+            icon: OsString::from(format!("{launcher},-1")),
+            id: crate::constants::APP_ID,
+            launcher: PathBuf::from(launcher),
+        })
     );
+}
+
+#[test]
+fn relaunch_quotes_a_launcher_path_with_spaces() {
+    let directory = format!("{ROOT}Program Files{MAIN_SEPARATOR}Herdr UI");
+    let launcher = format!("{directory}{MAIN_SEPARATOR}herdr-gpui-launcher.exe");
+
+    let relaunch = relaunch(&gui_in(&directory)).map(|relaunch| (relaunch.command, relaunch.icon));
+
     assert_eq!(
-        Bar::from_progress(Some(Progress::Working(2.))),
-        Bar::Value(1000)
+        relaunch,
+        Some((
+            OsString::from(format!("\"{launcher}\"")),
+            OsString::from(format!("{launcher},-1"))
+        ))
     );
-    assert_eq!(
-        Bar::from_progress(Some(Progress::Fraction(-1.))),
-        Bar::Value(0)
-    );
+}
+
+#[test]
+fn relaunch_needs_a_parent_directory() {
+    assert_eq!(relaunch(Path::new(ROOT)), None);
+    assert_eq!(relaunch(Path::new("")), None);
 }

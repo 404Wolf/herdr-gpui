@@ -16,9 +16,12 @@ the app's shim at `~/.local/state/herdr/gpui/bin/herdr-gpui` offers
 [remote agents](../crates/herdr-gpui/README.md#letting-agents-open-pages)),
 and every other command exits 8. A few commands work from files alone and
 need no running app; they say so below.
-On Windows, run `bin\herdr-gpui.exe`, the console copy the installers put on
-`PATH`; the app's own `herdr-gpui.exe` is a windowed program a shell does not
-wait for.
+
+On Windows, `herdr-gpui.exe` is a console program, so a shell waits for it and
+sees its exit code; the installers put its directory on `PATH`. The Start menu
+opens `herdr-gpui-launcher.exe` instead, which starts it without a console
+window. Commands reach the running app over a named pipe (see
+[Windows](#windows)).
 
 ```sh
 herdr-gpui --help              # every command

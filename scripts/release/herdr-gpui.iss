@@ -1,7 +1,8 @@
 ; Per-user Windows installer for Herdr UI, compiled by
 ; `windows-installer.py build`, which passes the defines below. It installs the
-; release zip's tree unchanged: the windowed app, the console copy in bin\ for
-; terminals and agents, and the licenses. It never installs, starts, or stops
+; release zip's tree unchanged: herdr-gpui.exe, a console program because it is
+; also the command line terminals and agents run, herdr-gpui-launcher.exe,
+; which starts it without a console window, and the licenses. It never installs, starts, or stops
 ; the Herdr daemon, and uninstalling keeps settings and Herdr sessions.
 ; The directory and shortcut match site/install.ps1, so either replaces the other.
 
@@ -26,11 +27,12 @@
 
 #define AppName "Herdr UI"
 #define AppExe "herdr-gpui.exe"
-; The app's AppUserModelID (constants::APP_ID), which it sets at startup.
-; Shortcuts carry it too, so a pinned shortcut and the window share one
-; taskbar button.
+#define Launcher "herdr-gpui-launcher.exe"
+; The app's AppUserModelID (constants::APP_ID), which each window carries with
+; relaunch properties naming the launcher (src/taskbar.rs). Shortcuts carry it
+; too, so a pinned shortcut and the window share one taskbar button.
 #define AppUserModelID "so.pen.herdr-gpui"
-#define Icons "..\..\assets\icons\windows"
+#define Icons "..\..\assets\icons"
 
 [Setup]
 ; Never change: Windows finds an existing installation by it.
@@ -61,9 +63,9 @@ WizardStyle=modern
 ; Herdr's icon in place of Inno's stock box: the setup file's own icon, the
 ; corner image on every page, and, centered rather than stretched, the welcome
 ; and finish pages' panel. Each list runs from 100% to 250% DPI.
-SetupIconFile={#Icons}\herdr.ico
-WizardSmallImageFile={#Icons}\wizard-small-55.png,{#Icons}\wizard-small-69.png,{#Icons}\wizard-small-83.png,{#Icons}\wizard-small-110.png,{#Icons}\wizard-small-138.png
-WizardImageFile={#Icons}\wizard-128.png,{#Icons}\wizard-160.png,{#Icons}\wizard-192.png,{#Icons}\wizard-256.png
+SetupIconFile={#Icons}\Herdr.ico
+WizardSmallImageFile={#Icons}\windows\wizard-small-55.png,{#Icons}\windows\wizard-small-69.png,{#Icons}\windows\wizard-small-83.png,{#Icons}\windows\wizard-small-110.png,{#Icons}\windows\wizard-small-138.png
+WizardImageFile={#Icons}\windows\wizard-128.png,{#Icons}\windows\wizard-160.png,{#Icons}\windows\wizard-192.png,{#Icons}\windows\wizard-256.png
 WizardImageStretch=no
 UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#AppExe}
@@ -79,34 +81,34 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#SourceDir}\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourceDir}\bin\{#AppExe}"; DestDir: "{app}\bin"; Flags: ignoreversion
+Source: "{#SourceDir}\{#Launcher}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion
 
 ; Uninstall removes only directories Setup created. Over an install.ps1 copy
 ; these already existed, and would otherwise be left behind empty.
 [UninstallDelete]
 Type: dirifempty; Name: "{app}\licenses"
-Type: dirifempty; Name: "{app}\bin"
 Type: dirifempty; Name: "{app}"
 
 ; herdr-gpui:// links, for this user only: jump list entries, notification
-; clicks, and links from other apps start the app with the link as its only
-; argument, and it hands the link to the running app. Removed on uninstall.
-; The app also registers its AppUserModelID for notifications on first use;
-; that key goes too.
+; clicks, and links from other apps start the launcher with the link as its
+; only argument; it passes the link to herdr-gpui.exe, which hands it to the
+; running app. Removed on uninstall. The app also registers its
+; AppUserModelID for notifications on first use; that key goes too.
 [Registry]
 Root: HKCU; Subkey: "Software\Classes\herdr-gpui"; ValueType: string; ValueName: ""; ValueData: "URL:Herdr UI link"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\herdr-gpui"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
 Root: HKCU; Subkey: "Software\Classes\herdr-gpui\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"",0"
-Root: HKCU; Subkey: "Software\Classes\herdr-gpui\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"" ""%1"""
+Root: HKCU; Subkey: "Software\Classes\herdr-gpui\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#Launcher}"" ""%1"""
 Root: HKCU; Subkey: "Software\Classes\AppUserModelId\{#AppUserModelID}"; Flags: uninsdeletekey dontcreatekey
 
+; Shortcuts open the launcher, so the app starts without a console window.
 [Icons]
-Name: "{userprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; AppUserModelID: "{#AppUserModelID}"
-Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; AppUserModelID: "{#AppUserModelID}"; Tasks: desktopicon
+Name: "{userprograms}\{#AppName}"; Filename: "{app}\{#Launcher}"; WorkingDir: "{app}"; IconFilename: "{app}\{#AppExe}"; AppUserModelID: "{#AppUserModelID}"
+Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#Launcher}"; WorkingDir: "{app}"; IconFilename: "{app}\{#AppExe}"; AppUserModelID: "{#AppUserModelID}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#Launcher}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
 const
@@ -148,9 +150,8 @@ begin
   end;
 end;
 
-{ The user PATH without this installation's entries. The app directory itself
-  was on PATH before the console copy moved to bin\; it now holds the windowed
-  build, which a shell does not wait for. }
+{ The user PATH without this installation's entries. Pre-release builds of this
+  installer put the bin subdirectory there instead, so that goes too. }
 function PathWithoutApp(): String;
 begin
   Result := WithoutEntry(WithoutEntry(UserPath(), ExpandConstant('{app}')), ExpandConstant('{app}\bin'));
@@ -173,7 +174,7 @@ begin
   begin
     if Path <> '' then
       Path := Path + ';';
-    Path := Path + ExpandConstant('{app}\bin');
+    Path := Path + ExpandConstant('{app}');
   end;
   SetUserPath(Path);
 end;

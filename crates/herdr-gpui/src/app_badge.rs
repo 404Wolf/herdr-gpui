@@ -96,7 +96,7 @@ pub(super) fn install(cx: &mut App) {
     cx.on_window_closed(|cx, _| {
         let open = cx.windows();
         #[cfg(windows)]
-        crate::taskbar::retain(&open);
+        crate::taskbar::button::retain(&open);
         let badge = cx.default_global::<Badge>();
         badge
             .windows
@@ -147,7 +147,7 @@ fn set_native(count: usize) {
 
 #[cfg(all(not(test), windows))]
 fn set_native(count: usize) {
-    crate::taskbar::set_overlay(count);
+    crate::taskbar::button::set_overlay(count);
 }
 
 // Headless tests must never initialize AppKit or change the test runner's Dock icon.

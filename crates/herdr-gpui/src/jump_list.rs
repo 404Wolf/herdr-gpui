@@ -172,10 +172,16 @@ impl JumpList {
     pub(crate) fn install(mut self, cx: &mut App) {
         let mailbox = self.mailbox.clone();
         let path = Self::path();
+        // Entries start the windowed launcher when it is installed, so a
+        // click opens no console window; a `cargo run` build has none.
+        let exe = cx
+            .try_global::<crate::taskbar::Taskbar>()
+            .and_then(|taskbar| taskbar.launcher().map(std::path::Path::to_owned))
+            .or_else(|| std::env::current_exe().ok());
         let (wake, receiver) = mpsc::sync_channel::<()>(1);
         let started = std::thread::Builder::new()
             .name("jump-list".into())
-            .spawn(move || shell::run(&receiver, &mailbox, path.as_deref()));
+            .spawn(move || shell::run(&receiver, &mailbox, path.as_deref(), exe.as_deref()));
         match started {
             Ok(_) => self.wake = Some(wake),
             Err(error) => tracing::warn!(%error, "The jump list is off"),

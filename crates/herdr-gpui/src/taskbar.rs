@@ -1,224 +1,148 @@
-//! The Windows taskbar button: an overlay badge while agents need attention,
-//! and a progress bar while a window copies files or moves work elsewhere.
-//!
-//! Every top-level window has its own taskbar button, and windows sharing the
-//! AppUserModelID are grouped into one. The grouped button shows the overlay
-//! of whichever window last set one, so the badge is applied to every window
-//! alike. The taskbar copies an overlay icon, so each is destroyed right after
-//! it is set.
-//!
-//! All of this runs on the UI thread, where GPUI has initialized COM (OLE) as
-//! a single-threaded apartment, so the interface is created and used there
-//! and kept in a thread-local rather than a global that would need `Send`.
+//! The taskbar identity of Herdr's windows on Windows. Herdr starts through
+//! `herdr-gpui-launcher.exe`, but its windows belong to the console-subsystem
+//! `herdr-gpui.exe`, so a pinned window would reopen with a console. Each
+//! top-level window instead carries an explicit AppUserModelID and relaunch
+//! properties that point a pin at the launcher. Other platforms set nothing.
+//! The button's badge and progress bar live in [`button`].
 
-mod badge;
+use gpui::{App, Global, Window};
+
+#[cfg(any(windows, test))]
+use std::{
+    ffi::OsString,
+    path::{Path, PathBuf},
+};
+
+/// The windowed launcher, installed beside `herdr-gpui.exe`.
+#[cfg(any(windows, test))]
+const LAUNCHER_EXE: &str = "herdr-gpui-launcher.exe";
+
+/// The name a pinned Herdr shows on the taskbar and in its Jump List.
+#[cfg(any(windows, test))]
+const DISPLAY_NAME: &str = "Herdr UI";
+
+/// What a window sets so that pinning it pins the launcher.
+#[cfg(any(windows, test))]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct Relaunch {
+    command: OsString,
+    display_name: &'static str,
+    icon: OsString,
+    id: &'static str,
+    launcher: PathBuf,
+}
+
+/// The relaunch properties for the `herdr-gpui.exe` at `gui`, or `None` when
+/// it has no parent directory. Touches no filesystem.
+#[cfg(any(windows, test))]
+fn relaunch(gui: &Path) -> Option<Relaunch> {
+    let launcher = gui.parent()?.join(LAUNCHER_EXE);
+    let mut command = OsString::from("\"");
+    command.push(&launcher);
+    command.push("\"");
+    // Resource ID 1 is the icon both executables embed.
+    let mut icon = launcher.clone().into_os_string();
+    icon.push(",-1");
+    Some(Relaunch {
+        command,
+        display_name: DISPLAY_NAME,
+        icon,
+        id: crate::constants::APP_ID,
+        launcher,
+    })
+}
+
+/// Startup's verdict on whether windows get relaunch properties, and the
+/// windows that carry them, so they are cleared before each one closes.
+#[derive(Debug, Default)]
+pub(crate) struct Taskbar {
+    #[cfg(windows)]
+    relaunch: Option<Relaunch>,
+    #[cfg(windows)]
+    windows: std::collections::HashMap<gpui::WindowId, native::Hwnd>,
+}
+
+impl Global for Taskbar {}
+
+impl Taskbar {
+    /// Decides, before GPUI starts, whether the launcher is installed beside
+    /// this executable. Without it (a `cargo run` build, an old archive)
+    /// windows get nothing, as before.
+    #[cfg(windows)]
+    pub(crate) fn load() -> Self {
+        let gui = match std::env::current_exe() {
+            Ok(gui) => gui,
+            Err(error) => {
+                tracing::warn!(%error, "Unable to locate herdr-gpui.exe; a pinned window will open it directly");
+                return Self::default();
+            }
+        };
+        let relaunch = relaunch(&gui).filter(|relaunch| relaunch.launcher.is_file());
+        if relaunch.is_none() {
+            tracing::info!(gui = %gui.display(), "No {LAUNCHER_EXE} beside the GUI; windows keep the default taskbar identity");
+        }
+        Self {
+            relaunch,
+            windows: Default::default(),
+        }
+    }
+
+    /// The windowed launcher beside this executable, when it is installed.
+    #[cfg(windows)]
+    pub(crate) fn launcher(&self) -> Option<&Path> {
+        self.relaunch
+            .as_ref()
+            .map(|relaunch| relaunch.launcher.as_path())
+    }
+
+    #[cfg(not(windows))]
+    pub(crate) fn load() -> Self {
+        Self::default()
+    }
+
+    /// Makes the verdict available to window sites and clears each marked
+    /// window's properties when it closes.
+    pub(crate) fn install(self, cx: &mut App) {
+        cx.set_global(self);
+        #[cfg(windows)]
+        cx.on_window_closed(|cx, id| {
+            let hwnd = cx
+                .has_global::<Self>()
+                .then(|| cx.global_mut::<Self>().windows.remove(&id))
+                .flatten();
+            if let Some(hwnd) = hwnd {
+                native::clear(hwnd);
+            }
+        })
+        .detach();
+    }
+}
+
+/// Gives a newly built top-level `window` the relaunch properties, when the
+/// launcher was found at startup.
+#[cfg(windows)]
+pub(crate) fn mark(window: &Window, cx: &mut App) {
+    let Some(relaunch) = cx
+        .try_global::<Taskbar>()
+        .and_then(|taskbar| taskbar.relaunch.clone())
+    else {
+        return;
+    };
+    if let Some(hwnd) = native::apply(window, &relaunch) {
+        cx.global_mut::<Taskbar>()
+            .windows
+            .insert(window.window_handle().window_id(), hwnd);
+    }
+}
+
+#[cfg(not(windows))]
+pub(crate) fn mark(_window: &Window, _cx: &mut App) {}
+
+/// The button itself: the attention badge and progress.
+#[cfg(windows)]
+pub(crate) mod button;
+#[cfg(windows)]
+mod native;
+
 #[cfg(test)]
 mod tests;
-
-use gpui::{App, Window, WindowId};
-use std::{cell::RefCell, collections::HashMap, time::Duration};
-use windows::Win32::{
-    Foundation::HWND,
-    System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance},
-    UI::Shell::{
-        ITaskbarList3, TBPF_INDETERMINATE, TBPF_NOPROGRESS, TBPF_NORMAL, TBPFLAG, TaskbarList,
-    },
-};
-use wry::raw_window_handle::{HasWindowHandle, RawWindowHandle};
-
-/// Explorer creates a window's taskbar button shortly after the window is
-/// shown, and drops an overlay set before then. A new window gets its badge
-/// again after this long.
-const BUTTON_DELAY: Duration = Duration::from_secs(2);
-
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum Error {
-    #[error("could not reach the taskbar")]
-    Taskbar(#[source] windows::core::Error),
-    #[error("could not draw the taskbar badge")]
-    Badge(#[source] windows::core::Error),
-    #[error("could not set the taskbar badge")]
-    Overlay(#[source] windows::core::Error),
-    #[error("could not set the taskbar progress")]
-    Progress(#[source] windows::core::Error),
-}
-
-/// What one window's button shows, compared before calling into the shell
-/// so the poll loop sets it only when it changes.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum Bar {
-    #[default]
-    None,
-    Busy,
-    /// Done, out of [`Bar::TOTAL`].
-    Value(u64),
-}
-
-impl Bar {
-    const TOTAL: u64 = 1000;
-
-    pub(crate) fn from_progress(progress: Option<crate::progress::Progress>) -> Self {
-        use crate::progress::Progress;
-        match progress {
-            None => Self::None,
-            Some(Progress::Busy) => Self::Busy,
-            Some(Progress::Fraction(done) | Progress::Working(done)) => {
-                Self::Value((f64::from(done.clamp(0., 1.)) * Self::TOTAL as f64).round() as u64)
-            }
-        }
-    }
-
-    fn state(self) -> TBPFLAG {
-        match self {
-            Self::None => TBPF_NOPROGRESS,
-            Self::Busy => TBPF_INDETERMINATE,
-            Self::Value(_) => TBPF_NORMAL,
-        }
-    }
-}
-
-#[derive(Default)]
-struct State {
-    /// `None` until first needed; `Some(None)` once creating it failed, so a
-    /// broken shell is not asked again on every change.
-    taskbar: Option<Option<ITaskbarList3>>,
-    windows: HashMap<WindowId, isize>,
-    overlay: usize,
-    bars: HashMap<WindowId, Bar>,
-}
-
-thread_local! {
-    static STATE: RefCell<State> = RefCell::default();
-}
-
-impl State {
-    fn taskbar(&mut self) -> Option<&ITaskbarList3> {
-        self.taskbar
-            .get_or_insert_with(|| {
-                create()
-                    .inspect_err(|error| tracing::warn!(%error, "taskbar integration is off"))
-                    .ok()
-            })
-            .as_ref()
-    }
-
-    fn apply_overlay(&mut self, hwnd: isize) {
-        let count = self.overlay;
-        let Some(taskbar) = self.taskbar() else {
-            return;
-        };
-        if let Err(error) = badge::set(taskbar, HWND(hwnd as *mut _), count) {
-            tracing::debug!(%error, "taskbar badge was not set");
-        }
-    }
-}
-
-// The taskbar is reached only through COM, which has no safe wrapper.
-#[allow(unsafe_code)]
-fn create() -> Result<ITaskbarList3, Error> {
-    // SAFETY: COM is initialized on this (the UI) thread by GPUI's Windows
-    // platform before any window exists, and the class ID and interface are
-    // the documented pair for the taskbar list.
-    let taskbar: ITaskbarList3 =
-        unsafe { CoCreateInstance(&TaskbarList, None, CLSCTX_INPROC_SERVER) }
-            .map_err(Error::Taskbar)?;
-    // SAFETY: `HrInit` must be called once before the other methods.
-    unsafe { taskbar.HrInit() }.map_err(Error::Taskbar)?;
-    Ok(taskbar)
-}
-
-/// Notes a window's native handle the first time it is seen, and gives it the
-/// current badge. Cheap enough for the poll loop: a known window is one map
-/// lookup.
-pub(crate) fn track(window: &Window, cx: &mut App) {
-    let id = window.window_handle().window_id();
-    if STATE.with_borrow(|state| state.windows.contains_key(&id)) {
-        return;
-    }
-    let Ok(handle) = HasWindowHandle::window_handle(window) else {
-        return;
-    };
-    let RawWindowHandle::Win32(handle) = handle.as_raw() else {
-        return;
-    };
-    let hwnd = handle.hwnd.get();
-    STATE.with_borrow_mut(|state| {
-        state.windows.insert(id, hwnd);
-        if state.overlay > 0 {
-            state.apply_overlay(hwnd);
-        }
-    });
-    cx.spawn(async move |cx| {
-        cx.background_executor().timer(BUTTON_DELAY).await;
-        STATE.with_borrow_mut(|state| {
-            if state.overlay > 0 && state.windows.get(&id) == Some(&hwnd) {
-                state.apply_overlay(hwnd);
-            }
-        });
-    })
-    .detach();
-}
-
-/// Drops windows that closed, so a reused handle is never badged by mistake.
-pub(crate) fn retain(open: &[gpui::AnyWindowHandle]) {
-    let is_open = |id: &WindowId| open.iter().any(|window| window.window_id() == *id);
-    STATE.with_borrow_mut(|state| {
-        state.windows.retain(|id, _| is_open(id));
-        state.bars.retain(|id, _| is_open(id));
-    });
-}
-
-/// Shows `bar` on one window's taskbar button, if it changed. A window not
-/// yet tracked is skipped; [`track`] runs first in the same poll.
-pub(crate) fn set_progress(window: WindowId, bar: Bar) {
-    STATE.with_borrow_mut(|state| {
-        if state.bars.get(&window).copied().unwrap_or_default() == bar {
-            return;
-        }
-        let Some(hwnd) = state.windows.get(&window).copied() else {
-            return;
-        };
-        let Some(taskbar) = state.taskbar() else {
-            return;
-        };
-        match apply_progress(taskbar, HWND(hwnd as *mut _), bar) {
-            Ok(()) => {
-                state.bars.insert(window, bar);
-            }
-            // Not recorded, so the next poll tries again.
-            Err(error) => tracing::debug!(%error, "taskbar progress was not set"),
-        }
-    });
-}
-
-// The taskbar is reached only through COM, which has no safe wrapper.
-#[allow(unsafe_code)]
-fn apply_progress(taskbar: &ITaskbarList3, hwnd: HWND, bar: Bar) -> Result<(), Error> {
-    // SAFETY: `hwnd` is a GPUI window of this thread; one that has since
-    // closed only makes the calls fail. The state is set first because
-    // setting a value also switches an indeterminate bar to normal.
-    unsafe {
-        taskbar
-            .SetProgressState(hwnd, bar.state())
-            .map_err(Error::Progress)?;
-        if let Bar::Value(done) = bar {
-            taskbar
-                .SetProgressValue(hwnd, done, Bar::TOTAL)
-                .map_err(Error::Progress)?;
-        }
-    }
-    Ok(())
-}
-
-/// Shows `count` on every window's taskbar button, or clears it at zero.
-/// Headless tests never reach the shell (see `app_badge::set_native`).
-#[cfg(not(test))]
-pub(crate) fn set_overlay(count: usize) {
-    STATE.with_borrow_mut(|state| {
-        state.overlay = count;
-        let windows: Vec<isize> = state.windows.values().copied().collect();
-        for hwnd in windows {
-            state.apply_overlay(hwnd);
-        }
-    });
-}

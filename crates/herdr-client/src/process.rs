@@ -1,11 +1,13 @@
 //! Every child process the client and app start, built in one place.
 //!
-//! Release builds of the Windows app are GUI-subsystem programs with no
-//! console. A console child (git, ssh, `wsl.exe`, a shell) started from one
-//! gets a console window of its own unless it is created without one, so a
-//! background `git status` would flash a window. Building every command here
-//! keeps that flag from being forgotten; clippy's `disallowed_methods`
-//! rejects `Command::new` anywhere else.
+//! On Windows the app usually runs with a hidden console (its launcher starts
+//! it that way), but started any other way, such as from Explorer, it may have
+//! none, and a console child (git, ssh, `wsl.exe`, a shell) started from a
+//! process without one gets a console window of its own. Creating every child
+//! without a window means a background `git status` never flashes one,
+//! however the app started. Building every command here keeps that flag from
+//! being forgotten; clippy's `disallowed_methods` rejects `Command::new`
+//! anywhere else.
 
 use std::{ffi::OsStr, process::Command};
 

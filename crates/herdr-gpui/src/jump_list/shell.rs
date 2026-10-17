@@ -43,8 +43,6 @@ const MAX_ARGUMENTS: usize = 1024;
 enum Error {
     #[error("the shell refused the jump list")]
     Shell(#[from] windows::core::Error),
-    #[error("cannot find this executable")]
-    Executable(#[source] std::io::Error),
 }
 
 /// Ends COM on the worker thread when it stops.
@@ -58,7 +56,16 @@ impl Drop for Apartment {
     }
 }
 
-pub(super) fn run(wake: &mpsc::Receiver<()>, mailbox: &Mutex<Mailbox>, path: Option<&Path>) {
+pub(super) fn run(
+    wake: &mpsc::Receiver<()>,
+    mailbox: &Mutex<Mailbox>,
+    path: Option<&Path>,
+    exe: Option<&Path>,
+) {
+    let Some(exe) = exe else {
+        tracing::warn!("The jump list is off: this executable was not found");
+        return;
+    };
     // SAFETY: called once on this thread before any COM use.
     if let Err(error) = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.ok() {
         tracing::warn!(%error, "The jump list is off");
@@ -73,7 +80,7 @@ pub(super) fn run(wake: &mpsc::Receiver<()>, mailbox: &Mutex<Mailbox>, path: Opt
         else {
             continue;
         };
-        let removed = match publish(&entries) {
+        let removed = match publish(&entries, exe) {
             Ok(removed) => removed,
             Err(error) => {
                 tracing::warn!(error = ?error, "Cannot update the jump list");
@@ -100,7 +107,7 @@ pub(super) fn run(wake: &mpsc::Receiver<()>, mailbox: &Mutex<Mailbox>, path: Opt
 
 /// Replaces the jump list, leaving out what the user removed from it since
 /// the last one, as the shell requires; returns those links.
-fn publish(entries: &Entries) -> Result<Vec<Link>, Error> {
+fn publish(entries: &Entries, exe: &Path) -> Result<Vec<Link>, Error> {
     // SAFETY: the documented class and interface pair, in this thread's
     // apartment.
     let list: ICustomDestinationList =
@@ -113,7 +120,6 @@ fn publish(entries: &Entries) -> Result<Vec<Link>, Error> {
     // abandoned (on drop) below.
     let removed: IObjectArray = unsafe { list.BeginList(&mut slots)? };
     let removed = removed_links(&removed)?;
-    let exe = std::env::current_exe().map_err(Error::Executable)?;
     let exe = HSTRING::from(exe.as_os_str());
     if let Some(recent) = collection(&exe, &entries.recent, &removed)? {
         // SAFETY: the name outlives the call.
@@ -161,7 +167,7 @@ fn collection(
     added.then(|| collection.cast()).transpose()
 }
 
-/// A shortcut to this executable with the item's link as its only argument,
+/// A shortcut to the app (`exe`) with the item's link as its only argument,
 /// or `None` for a link too long for a shortcut to keep.
 fn shell_link(exe: &HSTRING, item: &Item) -> windows::core::Result<Option<IShellLinkW>> {
     // The link is percent-encoded, so quoting it keeps it one argument.

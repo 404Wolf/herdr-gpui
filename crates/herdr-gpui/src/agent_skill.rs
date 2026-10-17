@@ -30,16 +30,11 @@ fn shell_word(path: &str) -> String {
     }
 }
 
-/// The executable agents are told to run: this one, or on Windows the
-/// console copy installed beside the windowed app, which a shell waits for
-/// and whose exit code it sees. Checks the disk: call it off the UI thread.
+/// The executable agents are told to run: this one. On Windows that is the
+/// console program `herdr-gpui.exe`, which a shell waits for, never its
+/// windowed launcher. Call it off the UI thread.
 pub(crate) fn executable() -> Option<PathBuf> {
-    let current = std::env::current_exe().ok()?;
-    #[cfg(windows)]
-    if let Some(cli) = crate::console::cli_beside(&current).filter(|cli| cli.is_file()) {
-        return Some(cli);
-    }
-    Some(current)
+    std::env::current_exe().ok()
 }
 
 /// How agents run `executable`. A macOS app bundle puts nothing on `PATH`,

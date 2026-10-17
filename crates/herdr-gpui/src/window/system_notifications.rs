@@ -81,13 +81,8 @@ impl Registry {
 /// so they never reach the notification center or prompt for permission.
 pub(crate) fn install(cx: &mut App) {
     cx.set_global(Registry::default());
-    // On Windows the identity is also the AppUserModelID, which decides
-    // taskbar grouping: set it before any window opens, so windows group with
-    // the Start menu shortcut, which carries the same ID, from the start
-    // rather than moving when the first notification is posted.
     #[cfg(windows)]
     {
-        set_identity(cx);
         let prepare = cx.background_executor().spawn(async { toast::prepare() });
         cx.spawn(async move |cx| {
             let shell = prepare.await;
@@ -124,13 +119,6 @@ pub(crate) fn open(tag: &str, cx: &mut App) -> bool {
             view.open_system_notification(&endpoint, generation, &inbox, id, window, cx);
         })
         .is_ok()
-}
-
-/// Names the app to the notification center. Elsewhere only users of system
-/// delivery need it, so it waits for the first notice.
-fn set_identity(cx: &mut App) {
-    cx.set_app_identity(crate::constants::APP_ID, crate::constants::WINDOW_TITLE);
-    cx.global_mut::<Registry>().identity = true;
 }
 
 /// The host leads the body's last line, which names the agent's place, so
@@ -191,8 +179,11 @@ impl HerdrWindow {
         let Some(registry) = cx.try_global::<Registry>() else {
             return;
         };
+        // Windows needs an AppUserModelID to show toasts, and setting one
+        // changes taskbar grouping, so only users of system delivery get it.
         if !registry.identity {
-            set_identity(cx);
+            cx.set_app_identity(crate::constants::APP_ID, crate::constants::WINDOW_TITLE);
+            cx.global_mut::<Registry>().identity = true;
         }
         let label =
             (self.endpoints.len() > 1).then(|| crate::notifications::safe_text(&source.label, 80));
@@ -354,18 +345,6 @@ mod tests {
                 view.live.snapshot.as_ref().unwrap().focused_pane_id
             );
         });
-    }
-
-    #[gpui::test]
-    fn windows_sets_the_app_identity_at_startup(cx: &mut TestAppContext) {
-        cx.update(super::install);
-        let expected = cfg!(windows).then(|| {
-            (
-                crate::constants::APP_ID.into(),
-                crate::constants::WINDOW_TITLE.into(),
-            )
-        });
-        assert_eq!(cx.app_identity(), expected);
     }
 
     #[test]
