@@ -1,4 +1,4 @@
-//! Linux presentation of the same menu tree installed in macOS's menu bar.
+//! Linux and Windows presentation of the same menu tree installed in macOS's menu bar.
 //! The shared popup state isolates terminal input; actions are dispatched only
 //! after restoring the focus from before the menu opened.
 
@@ -113,7 +113,7 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if cfg!(target_os = "linux")
+        if super::IN_WINDOW
             && self.menu.page.is_none()
             && event.keystroke.key == "f10"
             && event.keystroke.modifiers == Modifiers::default()
