@@ -152,3 +152,30 @@ fn only_the_sections_orchestrator_opening_something_leaves_the_section(
         })
     });
 }
+
+#[gpui::test]
+fn a_link_leaves_the_section_only_for_a_page_tab(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = local(cx);
+    show(&view, cx, ActivityPanel::Issues);
+    let mut event = |url: &str| {
+        let id = view.read_with(cx, |view, _| view.activity.section_tab.unwrap());
+        cx.update(|window, cx| {
+            view.update(cx, |view, cx| {
+                view.orchestrator_events
+                    .push((id, crate::orchestrator::Event::OpenUrl(url.into())));
+                view.poll_orchestrators(window, cx);
+                view.activity.panel
+            })
+        })
+    };
+    // An address that is not a page opens nothing, so the list stays.
+    assert_eq!(event("not a page"), ActivityPanel::Issues);
+    // A page tab shows in Workspaces; the system browser, where builds have
+    // no page tabs, leaves the list in place.
+    let expected = if crate::browser::EMBEDDED {
+        ActivityPanel::Workspaces
+    } else {
+        ActivityPanel::Issues
+    };
+    assert_eq!(event("https://example.com/issues/1"), expected);
+}
