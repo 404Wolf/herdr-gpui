@@ -335,3 +335,180 @@ fn only_new_installs_start_with_the_rounded_comfortable_layout() -> anyhow::Resu
     }
     Ok(())
 }
+
+mod preference_writes {
+    use super::*;
+    use crate::config::preferences::Preference;
+    use crate::config::{DeviceFooter, SelectMode};
+    use std::fs;
+
+    fn write(path: &Path, edit: Preference) -> Result<()> {
+        Config::save_preference_path(edit, path)
+    }
+
+    #[test]
+    fn sidebar_keys_round_trip_reset_and_keep_decor() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("local.toml");
+        fs::write(
+            &path,
+            "[sidebar]\nfamily = 'Inter' # font\nindent = 8 # old\n",
+        )?;
+        write(&path, Preference::SidebarIndent(Some(14.)))?;
+        write(&path, Preference::SidebarRowPadding(Some(2.)))?;
+        write(&path, Preference::SidebarRowGap(Some(6.)))?;
+        write(&path, Preference::SidebarHostGap(Some(10.)))?;
+        write(&path, Preference::SidebarSelect(SelectMode::GroupDim))?;
+        write(&path, Preference::SidebarDeviceFooter(DeviceFooter::Auto))?;
+        write(
+            &path,
+            Preference::HostColor {
+                host: "Personal".into(),
+                color: Some(0x3a4a6b),
+            },
+        )?;
+        let text = fs::read_to_string(&path)?;
+        assert!(text.contains("family = 'Inter' # font"), "{text}");
+        assert!(
+            text.contains("indent = 14 # old") || text.contains("indent = 14.0 # old"),
+            "{text}"
+        );
+        let config = Config::parse(&text)?;
+        assert_eq!(config.sidebar_style.overrides.indent, Some(14.));
+        assert_eq!(config.sidebar_style.overrides.row_padding, Some(2.));
+        assert_eq!(config.sidebar_style.overrides.gap, Some(6.));
+        assert_eq!(config.sidebar_style.overrides.host_gap, Some(10.));
+        assert_eq!(config.sidebar_style.select, SelectMode::GroupDim);
+        assert_eq!(config.sidebar_style.device_footer, DeviceFooter::Auto);
+        assert_eq!(config.sidebar_style.hosts.get("Personal"), Some(&0x3a4a6b));
+        assert!(text.contains("Personal = \"#3a4a6b\""), "{text}");
+
+        write(&path, Preference::SidebarIndent(None))?;
+        write(
+            &path,
+            Preference::HostColor {
+                host: "Personal".into(),
+                color: None,
+            },
+        )?;
+        let config = Config::parse(&fs::read_to_string(&path)?)?;
+        assert_eq!(config.sidebar_style.overrides.indent, None);
+        assert!(config.sidebar_style.hosts.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn sidebar_keys_are_validated_atomically() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("local.toml");
+        let original = "[sidebar]\nindent = 4\n";
+        fs::write(&path, original)?;
+        for (edit, key, max) in [
+            (Preference::SidebarIndent(Some(49.)), "indent", 48.),
+            (Preference::SidebarRowPadding(Some(-1.)), "row_padding", 16.),
+            (Preference::SidebarRowPadding(Some(17.)), "row_padding", 16.),
+            (Preference::SidebarRowGap(Some(33.)), "gap", 32.),
+            (Preference::SidebarRowGap(Some(f32::NAN)), "gap", 32.),
+            (Preference::SidebarHostGap(Some(49.)), "host_gap", 48.),
+            (
+                Preference::SidebarHostGap(Some(f32::INFINITY)),
+                "host_gap",
+                48.,
+            ),
+        ] {
+            let Err(error) = write(&path, edit) else {
+                anyhow::bail!("out-of-band value was accepted");
+            };
+            assert!(std::error::Error::source(&error).is_some());
+            let Error::Path { source: cause, .. } = &error else {
+                anyhow::bail!("not path-wrapped: {error:?}");
+            };
+            let cause = Some(&**cause);
+            assert!(
+                matches!(cause, Some(Error::InvalidSidebarMetric { key: k, max: m }) if *k == key && *m == max),
+                "{cause:?}"
+            );
+            assert_eq!(fs::read_to_string(&path)?, original);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn host_colour_above_rrggbb_is_rejected_before_writing() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("local.toml");
+        let original = "theme = 'Default'\n";
+        fs::write(&path, original)?;
+        let Err(error) = write(
+            &path,
+            Preference::HostColor {
+                host: "Work".into(),
+                color: Some(0x100_0000),
+            },
+        ) else {
+            anyhow::bail!("oversized colour was accepted");
+        };
+        assert!(std::error::Error::source(&error).is_some());
+        let Error::Path { source: cause, .. } = &error else {
+            anyhow::bail!("not path-wrapped: {error:?}");
+        };
+        let cause = Some(&**cause);
+        assert!(
+            matches!(cause, Some(Error::InvalidHostColor { host, value }) if host == "Work" && value == "#1000000"),
+            "{cause:?}"
+        );
+        assert_eq!(fs::read_to_string(&path)?, original);
+        Ok(())
+    }
+
+    #[test]
+    fn host_colour_write_creates_the_hosts_table_and_keeps_siblings() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("local.toml");
+        fs::write(&path, "theme = 'Default'\n")?;
+        for (host, color) in [
+            ("Work", Some(0x5a3a3a)),
+            ("Personal", Some(0x3a4a6b)),
+            ("Work", None),
+        ] {
+            write(
+                &path,
+                Preference::HostColor {
+                    host: host.into(),
+                    color,
+                },
+            )?;
+        }
+        let text = fs::read_to_string(&path)?;
+        let config = Config::parse(&text)?;
+        assert_eq!(config.theme, "Default");
+        assert_eq!(config.sidebar_style.hosts.len(), 1);
+        assert_eq!(config.sidebar_style.hosts.get("Personal"), Some(&0x3a4a6b));
+        Ok(())
+    }
+
+    #[test]
+    fn host_colour_change_keeps_its_comment() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("local.toml");
+        fs::write(
+            &path,
+            "[sidebar.hosts]\nWork = \"#112233\" # office machine\n",
+        )?;
+        write(
+            &path,
+            Preference::HostColor {
+                host: "Work".into(),
+                color: Some(0x445566),
+            },
+        )?;
+        let text = fs::read_to_string(&path)?;
+        assert!(
+            text.contains("Work = \"#445566\" # office machine"),
+            "{text}"
+        );
+        let config = Config::parse(&text)?;
+        assert_eq!(config.sidebar_style.hosts.get("Work"), Some(&0x445566));
+        Ok(())
+    }
+}

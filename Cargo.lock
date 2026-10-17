@@ -3357,17 +3357,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1bb25850ad31b88bbdef454afb93ec4cdb81f5e200ba5b3f1a0368111780d2c"
 
 [[package]]
-name = "gpui-wry"
-version = "0.6.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "529390779b0b86f97444b0512e4d5605e755f16210a53617eaa7c54bee21a4d0"
-dependencies = [
- "anyhow",
- "gpui-pre",
- "lb-wry",
-]
-
-[[package]]
 name = "gtk"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3559,7 +3548,6 @@ dependencies = [
  "getrandom 0.4.3",
  "gpui-pre",
  "gpui-pre-platform",
- "gpui-wry",
  "herdr-client",
  "if-addrs",
  "image",
@@ -3607,8 +3595,19 @@ dependencies = [
  "ureq",
  "url",
  "uuid",
+ "windows 0.62.2",
+ "winresource",
  "zed-font-kit",
  "zeroize",
+]
+
+[[package]]
+name = "herdr-gpui-launcher"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.21",
+ "windows-sys 0.61.2",
+ "winresource",
 ]
 
 [[package]]
@@ -9546,6 +9545,16 @@ checksum = "cb5a765337c50e9ec252c2069be9bf91c7df47afb103b642ba3a53bf8101be97"
 dependencies = [
  "cfg-if",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "winresource"
+version = "0.1.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2bc6d36480b829272a5bdabf08e6dca8004761c1da7e35efef800540c66221b"
+dependencies = [
+ "toml 1.1.6+spec-1.1.0",
+ "version_check",
 ]
 
 [[package]]

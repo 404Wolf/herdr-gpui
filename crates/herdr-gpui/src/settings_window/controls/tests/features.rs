@@ -14,16 +14,16 @@ fn every_feature_has_a_switch_that_saves_the_opposite(cx: &mut TestAppContext) {
                 captured.lock().unwrap().push(edit);
                 Ok(())
             }),
-            load: skill_load,
+            load: Arc::new(skill_load),
         });
         view.section = Section::General;
         cx.notify();
     });
-    cx.simulate_resize(size(px(960.), px(2200.)));
+    cx.simulate_resize(size(px(960.), px(3200.)));
     for &feature in Feature::ALL {
         cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
         // Debug selectors are looked up by static name.
-        let selector = format!("settings-feature-{}", feature.key()).leak();
+        let selector = format!("{}-toggle", feature.setting_id()).leak();
         let switch = cx.debug_bounds(selector).unwrap();
         cx.simulate_click(switch.center(), Default::default());
         cx.run_until_parked();
@@ -38,7 +38,7 @@ fn every_feature_has_a_switch_that_saves_the_opposite(cx: &mut TestAppContext) {
     });
     cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
     let switch = cx
-        .debug_bounds("settings-feature-sidebar_hover_menu")
+        .debug_bounds("general-feature-sidebar_hover_menu-toggle")
         .unwrap();
     cx.simulate_click(switch.center(), Default::default());
     cx.run_until_parked();

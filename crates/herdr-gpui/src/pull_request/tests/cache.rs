@@ -1,12 +1,13 @@
 use super::*;
 use crate::pull_request::{
-    batch::{BATCH_LIMIT, Batch},
+    batch::{BATCH_LIMIT, Batch, Paused},
     cache::{
         BatchSize, CACHE_LIMIT, ERROR_BACKOFF, HIDDEN_BACKOFF, IDLE_STRETCH, QUIET_REFRESH,
         REFRESH, SETTLED_REFRESH,
     },
 };
 
+mod accounts;
 mod batched;
 mod freshness;
 mod hidden;
@@ -24,8 +25,14 @@ fn input(branch: &str) -> Input {
 
 struct Peer {
     cache: Cache,
-    incoming: mpsc::Receiver<(u64, Vec<Input>, Origin, Arc<secrecy::SecretString>)>,
-    outgoing: mpsc::SyncSender<(u64, Batch, Option<Duration>)>,
+    incoming: mpsc::Receiver<crate::pull_request::lookup::Request>,
+    outgoing: mpsc::SyncSender<(u64, Batch)>,
+}
+
+/// The fixture account alone, signed in as `fixture`.
+fn tokens() -> crate::github::Tokens {
+    let profile = crate::github::Profile::fixture("fixture", Arc::new("fixture".into()), &[]);
+    crate::github::Tokens::new(&profile, [])
 }
 
 fn answered(input: Input, result: Result) -> Batch {
@@ -47,12 +54,7 @@ impl Peer {
         let mut cache = Cache::default();
         cache.prefetch.worker = Some(Worker { requests, results });
         cache.batch = BatchSize(size);
-        cache.scope(
-            (0, 1, "boot".into()),
-            Arc::new("fixture".into()),
-            "fixture",
-            Origin::Local,
-        );
+        cache.scope((0, 1, "boot".into()), tokens(), "fixture", Origin::Local);
         Self {
             cache,
             incoming,
@@ -68,12 +70,16 @@ impl Peer {
     }
 
     fn complete(&mut self, now: Instant, result: Result, cooldown: Option<Duration>) -> Input {
-        let (generation, mut inputs, _, _) = self.incoming.try_recv().unwrap();
+        let (generation, mut inputs, _, _, _) = self.incoming.try_recv().unwrap();
         assert_eq!(inputs.len(), 1);
         let input = inputs.pop().unwrap();
-        self.outgoing
-            .send((generation, answered(input.clone(), result), cooldown))
-            .unwrap();
+        let mut batch = answered(input.clone(), result);
+        batch.paused.extend(cooldown.map(|cooldown| Paused {
+            login: "fixture".into(),
+            cooldown,
+            inputs: vec![input.clone()],
+        }));
+        self.outgoing.send((generation, batch)).unwrap();
         self.cache.poll(now);
         input
     }
@@ -218,7 +224,7 @@ fn scope_changes_fence_late_results_and_only_another_account_forgets_answers() {
         peer.cache.seed(input("cached"), fixture().unwrap(), now);
         peer.cache.schedule([input("old")], now);
         peer.cache.poll(now);
-        let (generation, _, _, _) = peer.incoming.try_recv().unwrap();
+        let (generation, _, _, _, _) = peer.incoming.try_recv().unwrap();
         let token = peer.cache.token.as_ref().unwrap().clone();
         match change {
             0 => peer.cache.clear(), // sign-out
@@ -261,7 +267,6 @@ fn scope_changes_fence_late_results_and_only_another_account_forgets_answers() {
             .send((
                 generation,
                 answered(input("old"), Ok(Some(fixture().unwrap()))),
-                None,
             ))
             .unwrap();
         peer.cache.poll(now);
@@ -335,12 +340,11 @@ fn signout_drains_private_results_without_starting_queued_work() {
     let now = Instant::now();
     peer.cache.schedule([input("active"), input("queued")], now);
     peer.cache.poll(now);
-    let (generation, _, _, _) = peer.incoming.try_recv().unwrap();
+    let (generation, _, _, _, _) = peer.incoming.try_recv().unwrap();
     peer.outgoing
         .send((
             generation,
             answered(input("active"), Ok(Some(fixture().unwrap()))),
-            None,
         ))
         .unwrap();
     peer.cache.clear();

@@ -20,6 +20,7 @@ fn profile(token: Arc<SecretString>) -> Result<Profile> {
         token,
         avatar_updates: None,
         source: Default::default(),
+        organizations: None,
     })
 }
 

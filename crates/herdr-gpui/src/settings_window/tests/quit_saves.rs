@@ -337,3 +337,88 @@ fn quit_shared_theme_uses_only_successfully_reconciled_preceding_snapshot(cx: &m
         });
     }
 }
+
+#[gpui::test]
+fn quit_writes_a_live_sidebar_draft_even_behind_its_own_running_save(cx: &mut TestAppContext) {
+    use crate::config::SidebarOverrides;
+    use crate::config::preferences::Preference;
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum Case {
+        Idle,
+        InFlight,
+        /// A writes indent 10 and a host colour; the draft then goes back to
+        /// the loaded values before quit.
+        InFlightThenRevert,
+    }
+    for case in [Case::Idle, Case::InFlight, Case::InFlightThenRevert] {
+        let edits = Arc::new(Mutex::new(Vec::new()));
+        let captured = edits.clone();
+        let (view, cx) = cx.add_window_view(skill_fixture);
+        let task = view.update(cx, |view, cx| {
+            view.controls.preference_io = Some(controls::preferences::PreferenceIo::recording(
+                move |edit| captured.lock().unwrap().push(edit),
+            ));
+            let base = SidebarIntent::of(&view.config);
+            let mut draft = base.clone();
+            draft.style.overrides = SidebarOverrides {
+                indent: Some(10.),
+                ..Default::default()
+            };
+            if case != Case::Idle {
+                if case == Case::InFlightThenRevert {
+                    draft.style.hosts.insert("Box".into(), 0x112233);
+                }
+                view.commit_sidebar(draft.clone(), cx);
+                assert!(view.busy());
+            }
+            if case == Case::InFlightThenRevert {
+                view.preview_sidebar(base.clone(), cx);
+            } else {
+                draft.style.overrides.row_padding = Some(2.);
+                view.preview_sidebar(draft, cx);
+            }
+            view.shutdown(cx)
+        });
+        let (done, result) = std::sync::mpsc::sync_channel(1);
+        cx.executor()
+            .spawn(async move {
+                done.send(task.await).unwrap();
+            })
+            .detach();
+        cx.run_until_parked();
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(10));
+        cx.run_until_parked();
+        result.try_recv().unwrap().unwrap();
+        // The quit writes every key the draft touched, so a value an
+        // in-flight save changed is put back even when the draft equals the
+        // last load; keys it never touched are left as the file has them.
+        let quit = |indent, row_padding| {
+            vec![
+                Preference::SidebarIndent(indent),
+                Preference::SidebarRowPadding(row_padding),
+            ]
+        };
+        let expected = match case {
+            Case::Idle => quit(Some(10.), Some(2.)),
+            Case::InFlight => {
+                let mut expected = vec![Preference::SidebarIndent(Some(10.))];
+                expected.extend(quit(Some(10.), Some(2.)));
+                expected
+            }
+            Case::InFlightThenRevert => vec![
+                Preference::SidebarIndent(Some(10.)),
+                Preference::HostColor {
+                    host: "Box".into(),
+                    color: Some(0x112233),
+                },
+                Preference::SidebarIndent(None),
+                Preference::HostColor {
+                    host: "Box".into(),
+                    color: None,
+                },
+            ],
+        };
+        assert_eq!(*edits.lock().unwrap(), expected, "{case:?}");
+    }
+}

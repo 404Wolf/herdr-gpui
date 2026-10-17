@@ -46,7 +46,7 @@ pub(crate) fn reload_command() -> String {
         .get_or_init(|| {
             format!(
                 "{} browser reload",
-                crate::agent_skill::command(std::env::current_exe().ok().as_deref())
+                crate::agent_skill::command(crate::agent_skill::executable().as_deref())
             )
         })
         .clone()

@@ -7,7 +7,7 @@ fn due_checkouts_share_one_request_and_each_keeps_its_own_answer() {
     peer.cache
         .schedule((0..BATCH_LIMIT + 5).map(|i| input(&i.to_string())), now);
     peer.cache.poll(now);
-    let (generation, inputs, _, _) = peer.incoming.try_recv().unwrap();
+    let (generation, inputs, _, _, _) = peer.incoming.try_recv().unwrap();
     assert_eq!(inputs.len(), BATCH_LIMIT);
     assert!(peer.cache.loading(&input("0"), now));
     let found = inputs
@@ -28,7 +28,6 @@ fn due_checkouts_share_one_request_and_each_keeps_its_own_answer() {
                 found,
                 ..Batch::default()
             },
-            None,
         ))
         .unwrap();
     peer.cache.poll(now);
@@ -40,7 +39,7 @@ fn due_checkouts_share_one_request_and_each_keeps_its_own_answer() {
     );
     assert!(peer.cache.lookup(&input("2")).unwrap().1.is_none());
     // The rest go together in the next request.
-    let (_, rest, _, _) = peer.incoming.try_recv().unwrap();
+    let (_, rest, _, _, _) = peer.incoming.try_recv().unwrap();
     assert_eq!(rest.len(), 5);
 }
 
@@ -53,17 +52,21 @@ fn a_failed_request_keeps_every_checkouts_last_answer_and_pauses_once() {
         peer.cache.refresh(input(branch), now);
     }
     peer.cache.poll(now);
-    let (generation, inputs, _, _) = peer.incoming.try_recv().unwrap();
+    let (generation, inputs, _, _, _) = peer.incoming.try_recv().unwrap();
     assert_eq!(inputs, [input("second"), input("first")]);
     peer.outgoing
         .send((
             generation,
             Batch {
                 found: Vec::new(),
-                failed: vec![(inputs, Error::GitHubRateLimit { reset: None })],
+                failed: vec![(inputs.clone(), Error::GitHubRateLimit { reset: None })],
+                paused: vec![Paused {
+                    login: "fixture".into(),
+                    cooldown: Duration::from_secs(600),
+                    inputs,
+                }],
                 ..Batch::default()
             },
-            Some(Duration::from_secs(600)),
         ))
         .unwrap();
     peer.cache.poll(now);
@@ -90,7 +93,7 @@ fn a_checkout_gone_mid_request_is_dropped_but_the_rest_are_answered() {
     let now = Instant::now();
     peer.cache.schedule([input("kept"), input("gone")], now);
     peer.cache.poll(now);
-    let (generation, inputs, _, _) = peer.incoming.try_recv().unwrap();
+    let (generation, inputs, _, _, _) = peer.incoming.try_recv().unwrap();
     peer.cache.retain(|input| input.branch == "kept");
     let found = inputs
         .into_iter()
@@ -103,7 +106,6 @@ fn a_checkout_gone_mid_request_is_dropped_but_the_rest_are_answered() {
                 found,
                 ..Batch::default()
             },
-            None,
         ))
         .unwrap();
     peer.cache.poll(now);

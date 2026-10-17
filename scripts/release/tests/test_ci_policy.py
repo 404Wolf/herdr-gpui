@@ -54,6 +54,7 @@ class CiPolicy(unittest.TestCase):
             "github.event.pull_request.user.login": "larry0x",
             "github.event.pull_request.head.repo.full_name": "larry0x/herdr-gpui",
             "needs.commits.outputs.code": "true",
+            "needs.commits.outputs.windows_package": "true",
             **overrides,
         }
 
@@ -122,9 +123,23 @@ class CiPolicy(unittest.TestCase):
             result = subprocess.run(
                 ["bash", "-e", "-c", script], capture_output=True,
                 env={**os.environ, "CODE": code, "RESULT": checks,
-                     "WINDOWS": windows, "COMMITS": commits},
+                     "WINDOWS": windows, "COMMITS": commits,
+                     "PACKAGE_INPUTS": "false", "PACKAGE": "skipped"},
             )
             self.assertEqual(result.returncode == 0, expected, (code, checks, windows, commits))
+        # The Windows package job runs only when its inputs change, and must
+        # then succeed; missing detection fails like the platform jobs'.
+        for inputs, package in itertools.product(
+                ("true", "false", ""), ("success", "failure", "cancelled", "skipped")):
+            expected = ((inputs == "true" and package == "success")
+                        or (inputs == "false" and package == "skipped"))
+            result = subprocess.run(
+                ["bash", "-e", "-c", script], capture_output=True,
+                env={**os.environ, "CODE": "true", "RESULT": "success",
+                     "WINDOWS": "success", "COMMITS": "success",
+                     "PACKAGE_INPUTS": inputs, "PACKAGE": package},
+            )
+            self.assertEqual(result.returncode == 0, expected, (inputs, package))
 
     def test_ci_has_no_privileged_trigger_or_credentials(self):
         triggers = WORKFLOW.split("\npermissions:", 1)[0]
@@ -144,7 +159,7 @@ class CiPolicy(unittest.TestCase):
         # Keep runners a fixed hosted set; never accept a PR-controlled label.
         self.assertEqual(re.findall(r"^    runs-on: (.+)$", WORKFLOW, re.M), [
             "ubuntu-latest", "ubuntu-24.04", "${{ matrix.runner }}",
-            "${{ matrix.runner }}", "ubuntu-24.04", "${{ matrix.runner }}",
+            "${{ matrix.runner }}", "windows-2025", "ubuntu-24.04", "${{ matrix.runner }}",
         ])
         self.assertEqual(re.findall(r"^        runner: (.+)$", WORKFLOW, re.M), [
             "[macos-14, macos-15, ubuntu-24.04, ubuntu-24.04-arm]",

@@ -102,6 +102,7 @@ fn split_ratio_wire_name() {
 /// only methods it answers on the client endpoint. Anything else is
 /// rejected, so a variant outside this list is a dead code path.
 const OFFERED: &[&str] = &[
+    // keep-sorted start
     "client_shell.surface.set",
     "command.invoke",
     "integration.install",
@@ -142,98 +143,12 @@ const OFFERED: &[&str] = &[
     "worktree.list",
     "worktree.open",
     "worktree.remove",
-];
-
-/// Every variant. The match in the test stops compiling when a variant is
-/// added, as a reminder to list it here too.
-const ALL: &[Method] = &[
-    Method::ClientShellSurfaceSet,
-    Method::CommandInvoke,
-    Method::IntegrationList,
-    Method::IntegrationInstall,
-    Method::LayoutSetSplitRatio,
-    Method::PaneClear,
-    Method::PaneClose,
-    Method::PaneCopyMotion,
-    Method::PaneCopySearch,
-    Method::PaneEditScrollback,
-    Method::PaneFocus,
-    Method::PaneFocusDirection,
-    Method::PaneInputSet,
-    Method::PaneLinkActivate,
-    Method::PaneLinkResolve,
-    Method::PaneRename,
-    Method::PaneResize,
-    Method::PaneScroll,
-    Method::PaneSelectionRead,
-    Method::PaneSplit,
-    Method::PaneSwap,
-    Method::PaneZoom,
-    Method::ProductAnnouncementDismiss,
-    Method::ReleaseNotesDismiss,
-    Method::ServerReloadConfig,
-    Method::TabClose,
-    Method::TabCreate,
-    Method::TabFocus,
-    Method::TabMove,
-    Method::TabRename,
-    Method::WorkspaceClose,
-    Method::WorkspaceCreate,
-    Method::WorkspaceFocus,
-    Method::WorkspaceMove,
-    Method::WorkspaceMoveBlock,
-    Method::WorkspaceRename,
-    Method::WorktreeCreate,
-    Method::WorktreeList,
-    Method::WorktreeOpen,
-    Method::WorktreeRemove,
+    // keep-sorted end
 ];
 
 #[test]
 fn every_method_is_offered_to_endpoint_clients() {
-    for method in ALL {
-        match method {
-            Method::ClientShellSurfaceSet
-            | Method::CommandInvoke
-            | Method::IntegrationList
-            | Method::IntegrationInstall
-            | Method::LayoutSetSplitRatio
-            | Method::PaneClear
-            | Method::PaneClose
-            | Method::PaneCopyMotion
-            | Method::PaneCopySearch
-            | Method::PaneEditScrollback
-            | Method::PaneFocus
-            | Method::PaneFocusDirection
-            | Method::PaneInputSet
-            | Method::PaneLinkActivate
-            | Method::PaneLinkResolve
-            | Method::PaneRename
-            | Method::PaneResize
-            | Method::PaneScroll
-            | Method::PaneSelectionRead
-            | Method::PaneSplit
-            | Method::PaneSwap
-            | Method::PaneZoom
-            | Method::ProductAnnouncementDismiss
-            | Method::ReleaseNotesDismiss
-            | Method::ServerReloadConfig
-            | Method::TabClose
-            | Method::TabCreate
-            | Method::TabFocus
-            | Method::TabMove
-            | Method::TabRename
-            | Method::WorkspaceClose
-            | Method::WorkspaceCreate
-            | Method::WorkspaceFocus
-            | Method::WorkspaceMove
-            | Method::WorkspaceMoveBlock
-            | Method::WorkspaceRename
-            | Method::WorktreeCreate
-            | Method::WorktreeList
-            | Method::WorktreeOpen
-            | Method::WorktreeRemove => {}
-        }
+    for method in Method::ALL {
         assert!(
             OFFERED.contains(&method.as_str()),
             "{method} is not offered to endpoint clients"

@@ -368,7 +368,7 @@ fn setup_command(
     request: &Request,
     install_key: bool,
 ) -> Command {
-    let mut command = Command::new(app);
+    let mut command = herdr_client::new_command(app);
     command.arg(crate::setup_relay::SESSION);
     if install_key {
         command.args(["/bin/sh", "-c", INSTALL_KEY_THEN, "sh", request.target()]);
@@ -528,7 +528,7 @@ fn run_bounded_untraced(
     timeout: Duration,
     limit: u64,
 ) -> Result<(ExitStatus, Vec<u8>, Vec<u8>)> {
-    let mut command = Command::new(executable);
+    let mut command = herdr_client::new_command(executable);
     cli_environment(&mut command);
     let mut child = command
         .args(args)

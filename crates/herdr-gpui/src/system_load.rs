@@ -1,7 +1,8 @@
 //! CPU and memory of each host the window lists, for the status bar and the
 //! sidebar's host rows. Every host has its own worker thread sampling it every
 //! couple of seconds: this machine through `sysinfo`, a remote host over one
-//! SSH shell kept open between samples. The UI thread only starts and stops
+//! SSH shell, and a WSL distribution over one `wsl.exe` shell, kept open
+//! between samples. The UI thread only starts and stops
 //! workers and takes their samples on later ticks, so a slow or unreachable
 //! host never blocks rendering or delays another host.
 
@@ -65,20 +66,23 @@ impl Source {
                 primed: false,
                 disk: HomeDisk::open(),
             }),
-            Host::Ssh(target) => {
-                let mut shell = Shell::connect(target).map_err(remote)?;
-                let uname = shell.run("uname -s", STEP_TIMEOUT).map_err(remote)?;
-                let os = Os::from_uname(&uname.stdout).ok_or_else(|| {
-                    Error::SystemLoadUnsupported(uname.stdout.trim().chars().take(32).collect())
-                })?;
-                Ok(Self::Remote {
-                    shell,
-                    os,
-                    ticks: None,
-                })
-            }
-            Host::Wsl(_) => Err(Error::WslHostUnsupported),
+            Host::Ssh(target) => Self::remote(Shell::connect(target)),
+            // A distribution is sampled as a Linux host, through `wsl.exe`.
+            Host::Wsl(distro) => Self::remote(Shell::connect_wsl(distro)),
         }
+    }
+
+    fn remote(shell: Result<Shell>) -> Result<Self> {
+        let mut shell = shell.map_err(remote)?;
+        let uname = shell.run("uname -s", STEP_TIMEOUT).map_err(remote)?;
+        let os = Os::from_uname(&uname.stdout).ok_or_else(|| {
+            Error::SystemLoadUnsupported(uname.stdout.trim().chars().take(32).collect())
+        })?;
+        Ok(Self::Remote {
+            shell,
+            os,
+            ticks: None,
+        })
     }
 
     fn sample(&mut self) -> Result<Sample> {

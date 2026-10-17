@@ -98,13 +98,14 @@ pub(super) fn fetch(
     token: &secrecy::SecretString,
     cancelled: impl Fn() -> bool,
 ) -> Result {
+    let tokens = crate::github::Tokens::from(std::sync::Arc::new(token.clone()));
     let mut batch = super::batch::fetch_batch(
         vec![input.clone()],
         &Origin::Local,
         &mut Origins::default(),
-        token,
+        &tokens,
+        &[],
         cancelled,
-        &mut None,
     );
     match (batch.found.pop(), batch.failed.pop()) {
         (Some((_, result)), _) => result,
@@ -347,7 +348,7 @@ pub(crate) fn local_checkout(
             // metadata, use Git's own worktree registry, never pane cwd or the
             // new-workspace directory; that directory is read only when the
             // daemon has no metadata at all, and is verified like this one.
-            let mut command = Command::new("git");
+            let mut command = herdr_client::new_command("git");
             command.args([
                 "-c",
                 "core.fsmonitor=false",
@@ -400,7 +401,7 @@ fn git(
     deadline: Instant,
     cancelled: &impl Fn() -> bool,
 ) -> crate::Result<String> {
-    let mut command = Command::new("git");
+    let mut command = herdr_client::new_command("git");
     command
         .args(["-c", "core.fsmonitor=false", "-C", checkout])
         .args(args);

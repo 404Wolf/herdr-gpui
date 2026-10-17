@@ -22,9 +22,12 @@ enum Action {
     ForwardPort,
     /// Picks `[devices.<id>] theme`, the terminal's colors on this device.
     Theme,
-    /// Opens Settings > Cloud Devices on the device's provider.
+    /// Opens Settings > Cloud devices on the device's provider.
     #[cfg(feature = "cloud")]
     ProviderSettings,
+    /// Runs the configured setup script on the cloud device again.
+    #[cfg(feature = "cloud")]
+    RunSetup,
     Remove,
 }
 
@@ -42,6 +45,7 @@ const SSH_ACTIONS: &[(Action, &str)] = &[
 const CLOUD_ACTIONS: &[(Action, &str)] = &[
     (Action::Rename, "Rename…"),
     (Action::ProviderSettings, "Cloud device settings…"),
+    (Action::RunSetup, "Run setup script"),
     (Action::Remove, "Remove device…"),
 ];
 
@@ -261,6 +265,17 @@ impl HerdrWindow {
                 }) = self.menu.host
                 {
                     self.open_provider_settings(provider, window, cx);
+                }
+                return;
+            }
+            #[cfg(feature = "cloud")]
+            Action::RunSetup => {
+                let Some(id) = self.menu.host.as_ref().map(|host| host.id.clone()) else {
+                    return;
+                };
+                self.dismiss_menu(window, cx);
+                if let Err(error) = self.rerun_cloud_setup(&id, cx) {
+                    self.show_flash(crate::window::Flash::warning(error.to_string()), cx);
                 }
                 return;
             }

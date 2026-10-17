@@ -132,6 +132,7 @@ fn open_window_placed(
             ..Default::default()
         },
         |window, cx| {
+            crate::taskbar::mark(window, cx);
             cx.new(|cx| {
                 let mut view = HerdrWindow::new(
                     target,
@@ -217,7 +218,7 @@ pub(crate) fn run() -> std::process::ExitCode {
     }
     // A control command asked for JSON gets its usage errors as JSON too.
     let json_errors = cli::control::wants_json(&args);
-    let LaunchOptions { target, mode } = match LaunchOptions::parse(args) {
+    let LaunchOptions { target, mode } = match LaunchOptions::parse(&args) {
         Ok(options) => options,
         Err(error) if json_errors => {
             println!(
@@ -355,6 +356,8 @@ pub(crate) fn run() -> std::process::ExitCode {
     } else {
         crate::dispatch::History::default()
     };
+    // Whether the launcher is installed is read once here, never while a window opens.
+    let taskbar = crate::taskbar::Taskbar::load();
     gpui_platform::application()
         .with_assets(icons::Icons)
         .run(move |cx| {
@@ -369,6 +372,7 @@ pub(crate) fn run() -> std::process::ExitCode {
             dispatch_history.install(cx);
             agent_skill.install_global(cx);
             keychain_grants.install(cx);
+            taskbar.install(cx);
             // Only the user's own app answers agents; native test modes stay private.
             if mode == LaunchMode::Normal {
                 crate::control::install(cx);

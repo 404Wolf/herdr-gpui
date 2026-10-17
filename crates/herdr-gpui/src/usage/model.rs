@@ -16,8 +16,9 @@ use std::{
 pub(crate) enum Host {
     Local,
     Ssh(String),
-    /// A WSL distribution. Nothing is read from one yet: its files are not this
-    /// machine's, and no shell is opened into it for these probes.
+    /// A WSL distribution. Its CPU and memory are sampled through a `wsl.exe`
+    /// shell; plan usage is not read from it yet, since its files are not this
+    /// machine's.
     Wsl(String),
 }
 
@@ -205,6 +206,10 @@ impl Window {
 impl Pace {
     /// `11% in reserve · Lasts until reset`, as CodexBar puts it.
     pub fn describe(&self, used: f32) -> String {
+        if used >= 100. {
+            // The header already shows when the window resets.
+            return "Ran out".into();
+        }
         let margin = self.expected - used;
         let standing = if margin >= 0.5 {
             format!("{}% in reserve", margin.round())

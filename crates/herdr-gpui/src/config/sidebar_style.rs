@@ -79,6 +79,15 @@ pub enum DeviceFooter {
 }
 
 impl DeviceFooter {
+    /// The value written to the config file; matches the serde name.
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Always => "always",
+            Self::Auto => "auto",
+            Self::Never => "never",
+        }
+    }
+
     pub(crate) fn shown(self, devices: usize, adding: usize) -> bool {
         match self {
             Self::Always => true,
@@ -99,13 +108,16 @@ pub struct SidebarStyle {
 }
 
 /// `#rgb` or `#rrggbb`, in either case.
-fn parse_hex(value: &str) -> Option<u32> {
+pub(crate) fn parse_hex(value: &str) -> Option<u32> {
     let digits = value.strip_prefix('#')?;
     let expanded: String = match digits.len() {
         3 => digits.chars().flat_map(|c| [c, c]).collect(),
         6 => digits.to_owned(),
         _ => return None,
     };
+    if !expanded.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
     u32::from_str_radix(&expanded, 16).ok()
 }
 

@@ -11,6 +11,7 @@ use std::{
 mod changes;
 mod hidden_cup;
 mod right_click;
+mod scope;
 mod toggle;
 mod until_agents;
 mod work;
@@ -41,9 +42,9 @@ impl Drop for Held {
     }
 }
 
-fn holder(log: &Log) -> impl FnMut() -> keepawake::Result<Held> + Send + 'static {
+fn holder(log: &Log) -> impl FnMut(AwakeScope) -> keepawake::Result<Held> + Send + 'static {
     let log = log.clone();
-    move || {
+    move |_| {
         log.push(Command::Hold);
         Ok(Held(log.clone()))
     }

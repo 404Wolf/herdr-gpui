@@ -46,6 +46,15 @@ MAIN = r'''
 const APP_VERSION: &str = env!("HERDR_RELEASE_VERSION");
 pub use updater::UpdateError;
 
+// The updater starts children with `herdr_client::new_command`, which sets
+// CREATE_NO_WINDOW on Windows. This harness links no herdr-client, so it
+// answers to that name itself with a plain Command for its Unix hosts.
+extern crate self as herdr_client;
+#[allow(dead_code)]
+fn new_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
+    std::process::Command::new(program)
+}
+
 fn main() -> Result<std::process::ExitCode, Box<dyn std::error::Error>> {
     use anyhow::Context as _;
     let args: Vec<_> = std::env::args_os().skip(1).collect();
