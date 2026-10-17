@@ -624,6 +624,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         sidebar_scroll: Default::default(),
         sidebar_revealed: Default::default(),
         sidebar_pin_reveal: Default::default(),
+        sidebar_nested_reveal: Default::default(),
         sidebar_folded: Default::default(),
         sidebar_search: crate::sidebar::SidebarSearch::new(cx),
         _poll: Task::ready(()),

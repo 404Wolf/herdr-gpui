@@ -28,6 +28,8 @@ mod agent_rows;
 mod device_tree;
 mod nested_agents;
 
+pub(crate) use nested_agents::NestedReveal;
+
 impl HerdrWindow {
     pub(crate) fn render_sidebar(
         &self,
@@ -96,6 +98,8 @@ impl HerdrWindow {
             String::new()
         };
         let mut agent_count = 0;
+        // The focused agent's row when agents nest under their workspaces.
+        let mut nested_focus = None;
         // A plugin view hid every agent, rather than there being none.
         let mut filtered = false;
         // Child positions of the highlighted rows, for the one-time reveal below.
@@ -525,13 +529,15 @@ impl HerdrWindow {
                 .when(carried, |row| row.cursor_grabbing());
                 let indent = layout.child_indent() * if indented { 2. } else { 1. };
                 let agent_rows = if nested_agents {
-                    self.nested_agent_rows(
+                    let (rows, focused) = self.nested_agent_rows(
                         endpoint_index,
                         snapshot,
                         &workspace.workspace_id,
                         (&row_cx, indent),
                         cx,
-                    )
+                    );
+                    nested_focus = nested_focus.or(focused);
+                    rows
                 } else {
                     Vec::new()
                 };
@@ -599,6 +605,7 @@ impl HerdrWindow {
         }
         // Rows under the pinned header are hidden, so a reveal must clear it.
         let cover = px(sticky::cover(&headers));
+        self.reveal_nested_agent(nested_focus, cover, window);
         // Folded headers slide under a pinned one, so none is pinned then,
         // nor in the frame that unfolds, whose header places are the folded
         // list's; the frame after pins from the unfolded one.

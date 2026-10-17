@@ -103,3 +103,92 @@ fn nested_agents_sit_under_their_workspace_and_drop_the_agents_section(
     assert!(cx.debug_bounds("agent-local-p0").is_none());
     assert!(cx.debug_bounds("workspace-local-w0").is_some());
 }
+
+/// `two_hosts`, with this host's agents replaced by `count` in its first
+/// workspace, none focused.
+fn crowded(
+    count: usize,
+) -> impl FnOnce(&mut Window, &mut Context<SidebarFixture>) -> SidebarFixture {
+    move |window, cx| {
+        let view = cx.new(|cx| {
+            let mut view = two_hosts(window, cx);
+            view.config.agents_placement = AgentsPlacement::Nested;
+            let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
+            let template = snapshot.agents[0].clone();
+            snapshot.agents = (0..count)
+                .map(|i| {
+                    let mut agent = template.clone();
+                    agent.pane_id = format!("p{i}");
+                    agent
+                })
+                .collect();
+            view
+        });
+        cx.observe(&view, |_, _, cx| cx.notify()).detach();
+        SidebarFixture(view)
+    }
+}
+
+fn settle(cx: &mut gpui::VisualTestContext) {
+    for _ in 0..3 {
+        cx.update(|window, cx| full_draw(window, cx).clear(cx));
+        cx.run_until_parked();
+    }
+}
+
+#[gpui::test]
+fn the_focused_nested_agent_scrolls_into_view_once(cx: &mut gpui::TestAppContext) {
+    use gpui::{ScrollDelta, ScrollWheelEvent};
+
+    let (fixture, cx) = cx.add_window_view(crowded(30));
+    let view = cx.update(|_, cx| fixture.read(cx).0.clone());
+    cx.simulate_resize(size(px(800.), px(400.)));
+    settle(cx);
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
+            snapshot.agents[29].focused = true;
+            cx.notify();
+        })
+    });
+    settle(cx);
+    let list = cx.debug_bounds("spaces-scroll").unwrap();
+    let focused = cx.debug_bounds("agent-local-p29").unwrap();
+    assert!(
+        list.top() <= focused.top() && focused.bottom() <= list.bottom(),
+        "{focused:?} in {list:?}"
+    );
+    // Scrolling away from an unchanged focus is the user's to keep.
+    cx.simulate_event(ScrollWheelEvent {
+        position: list.center(),
+        delta: ScrollDelta::Pixels(point(px(0.), px(200.))),
+        ..Default::default()
+    });
+    settle(cx);
+    let moved = cx.debug_bounds("agent-local-p29").unwrap();
+    assert!(moved.top() > focused.top(), "{moved:?} after {focused:?}");
+}
+
+#[gpui::test]
+fn nested_agents_keep_the_configured_row_gap(cx: &mut gpui::TestAppContext) {
+    let (fixture, cx) = cx.add_window_view(crowded(2));
+    let view = cx.update(|_, cx| fixture.read(cx).0.clone());
+    cx.simulate_resize(size(px(800.), px(800.)));
+    let mut spacing = Vec::new();
+    for gap in [0, 2] {
+        cx.update(|_, cx| {
+            view.update(cx, |view, cx| {
+                view.config.usage.inline = true;
+                view.config.sidebar_layout =
+                    toml::from_str(&format!("[agents]\nrows = [[\"agent\"]]\nrow_gap = {gap}"))
+                        .unwrap();
+                cx.notify();
+            })
+        });
+        settle(cx);
+        let first = cx.debug_bounds("agent-local-p0").unwrap();
+        let second = cx.debug_bounds("agent-local-p1").unwrap();
+        spacing.push(second.top() - first.bottom());
+    }
+    assert!(spacing[1] > spacing[0], "{spacing:?}");
+}

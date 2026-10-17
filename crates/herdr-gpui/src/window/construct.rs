@@ -235,6 +235,7 @@ impl HerdrWindow {
             sidebar_drag: None,
             sidebar_folded: Default::default(),
             sidebar_modified: false,
+            sidebar_nested_reveal: Default::default(),
             sidebar_pin_reveal: Default::default(),
             sidebar_preferences: None,
             sidebar_revealed: Default::default(),
