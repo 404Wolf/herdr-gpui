@@ -378,7 +378,9 @@ pub fn start(handle: WindowHandle<HerdrWindow>, cx: &mut App) {
                         // Use the full-width tab so the exact output row cannot wrap in a split.
                         window.dispatch_action(Box::new(RunCommand { command: Command::PreviousTab }), cx);
                     }
-                    8 if focused_tab == first_tab && surface.panes.len() == 1 => {
+                    // Typed only at a prompt: a shell still starting (PowerShell
+                    // under emulation on Windows on ARM) can drop typed-ahead input.
+                    8 if focused_tab == first_tab && surface.panes.len() == 1 && shell_ready(&surface.frame) => {
                         let command = format!("echo HERDR_GUI_{}\"_OK\"", std::process::id());
                         type_text(&command, &view, window, cx)?;
                         key(Key::Terminal("enter"), window, cx)?;
@@ -719,9 +721,27 @@ fn has_output(frame: &FrameData, marker: &str) -> bool {
         })
 }
 
+/// Whether the cursor sits after a shell prompt: the sandbox's `LIVE> ` for
+/// `sh`, or PowerShell's `PS C:\...> `.
+fn shell_ready(frame: &FrameData) -> bool {
+    let Some(cursor) = &frame.cursor else {
+        return false;
+    };
+    let width = usize::from(frame.width);
+    let start = usize::from(cursor.y) * width;
+    let end = start + usize::from(cursor.x).min(width);
+    frame.cells.get(start..end).is_some_and(|row| {
+        row.iter()
+            .map(|cell| cell.symbol.as_str())
+            .collect::<String>()
+            .trim_end()
+            .ends_with('>')
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::create_external_workspace;
+    use super::{create_external_workspace, shell_ready};
     use anyhow::{Context as _, Result};
     use herdr_client::{ConnectOptions, ConnectTarget, protocol::ClientSurfaceSize};
 
@@ -746,5 +766,39 @@ mod tests {
         ));
         assert!(format!("{error:#}").contains("surface dimensions must be nonzero"));
         Ok(())
+    }
+
+    #[test]
+    fn a_shell_is_ready_once_its_prompt_precedes_the_cursor() {
+        use herdr_client::protocol::{CellData, CursorState, FrameData};
+        let frame = |text: &str, x: u16| FrameData {
+            width: 12,
+            height: 1,
+            cells: format!("{text:<12}")
+                .chars()
+                .map(|ch| CellData {
+                    symbol: ch.to_string(),
+                    skip: false,
+                    fg: 0,
+                    bg: 0,
+                    modifier: 0,
+                    hyperlink: None,
+                })
+                .collect(),
+            cursor: Some(CursorState {
+                x,
+                y: 0,
+                visible: true,
+                shape: 0,
+            }),
+            hyperlinks: vec![],
+            graphics: vec![],
+        };
+        assert!(shell_ready(&frame("LIVE> ", 6)));
+        assert!(shell_ready(&frame("PS C:\\h> ", 9)));
+        assert!(!shell_ready(&frame("", 0)));
+        assert!(!shell_ready(&frame("Loading", 7)));
+        // Text after the cursor is not the prompt.
+        assert!(!shell_ready(&frame("ab LIVE>", 2)));
     }
 }
