@@ -237,8 +237,11 @@ jobs:
       # the live-daemon test runs on x64; the native fixtures run on both.
       - name: Native window, input, and live-daemon tests
         env:
-          SKIP_LIVE: ${{ matrix.runner == 'windows-11-arm' && '--skip native_gui_live' || '' }}
-        run: cargo test --locked -p herdr-gpui --features integration-test --test live_gui -- --ignored --nocapture --test-threads=1 $SKIP_LIVE
+          RUNNER: ${{ matrix.runner }}
+        run: |
+          skip=()
+          if [[ $RUNNER == windows-11-arm ]]; then skip=(--skip native_gui_live); fi
+          cargo test --locked -p herdr-gpui --features integration-test --test live_gui -- --ignored --nocapture --test-threads=1 "${skip[@]}"
       # The updater's Authenticode check against a real signature: the pinned
       # archive's Microsoft-signed OpenConsole.exe, compared with PowerShell.
       - name: Update installer signer check
