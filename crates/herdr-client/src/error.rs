@@ -53,8 +53,6 @@ pub enum Error {
     ClipboardImageCancelled,
     #[error("clipboard image write timed out; reconnect required")]
     ClipboardImageWriteTimeout,
-    #[error("clipboard image uploads require a transport with bounded writes")]
-    ClipboardImageUnsupported,
     #[error("semantic input fallback requires a pane or popup target")]
     ClipboardImageInputTarget,
     #[error("clipboard image preparation timed out; reservation skipped")]
@@ -369,9 +367,7 @@ impl Error {
             | Self::WslPathLimit
             | Self::WslPathInvalid(_) => io::ErrorKind::InvalidInput,
             Self::WslPathUnmapped(_) => io::ErrorKind::NotFound,
-            Self::SshUnsupported | Self::WslUnsupported | Self::ClipboardImageUnsupported => {
-                io::ErrorKind::Unsupported
-            }
+            Self::SshUnsupported | Self::WslUnsupported => io::ErrorKind::Unsupported,
             Self::ClipboardImageCancelled => io::ErrorKind::Interrupted,
             Self::ClipboardImageWriteTimeout | Self::ClipboardImagePreparationTimeout => {
                 io::ErrorKind::TimedOut

@@ -206,6 +206,10 @@ impl Window {
 impl Pace {
     /// `11% in reserve · Lasts until reset`, as CodexBar puts it.
     pub fn describe(&self, used: f32) -> String {
+        if used >= 100. {
+            // The header already shows when the window resets.
+            return "Ran out".into();
+        }
         let margin = self.expected - used;
         let standing = if margin >= 0.5 {
             format!("{}% in reserve", margin.round())

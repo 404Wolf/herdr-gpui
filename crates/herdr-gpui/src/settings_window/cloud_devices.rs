@@ -11,6 +11,7 @@ mod coder;
 mod daytona;
 #[cfg(feature = "railway")]
 mod railway;
+mod setup;
 
 #[cfg(feature = "boat")]
 pub(super) use boat::BoatCard;
@@ -195,6 +196,7 @@ impl SettingsWindow {
                     "{reason} Accounts can still be edited here for other systems."
                 )))
             })
+            .child(self.render_cloud_setup(cx))
             .when(CloudProvider::ALL.len() > 1, |section| {
                 section.child(self.cloud_tabs(cx))
             })

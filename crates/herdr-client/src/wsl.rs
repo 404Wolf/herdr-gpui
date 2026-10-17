@@ -237,18 +237,19 @@ pub(crate) fn connect(
     stop: &AtomicBool,
 ) -> Result<(Stream, ChildGuard)> {
     validate(distro, session)?;
+    let (mut stream, stdin, stdout) = Stream::child()?;
+    stream.set_read_timeout(Some(POLL))?;
+    stream.set_write_timeout(Some(Duration::from_secs(1)))?;
     let mut command = command(distro, &ssh::bridge_script(session));
     command
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
+        .stdin(stdin)
+        .stdout(stdout)
         // Distribution diagnostics are unbounded and may carry secrets.
         .stderr(Stdio::null());
-    let mut child = ChildGuard(command.spawn()?);
-    let (Some(stdin), Some(stdout)) = (child.0.stdin.take(), child.0.stdout.take()) else {
-        return Err(Error::WslClosed);
-    };
-    let mut stream = Stream::from_child(stdin, stdout);
-    stream.set_read_timeout(Some(POLL))?;
+    let child = ChildGuard(command.spawn()?);
+    // The command still owns the child's ends of the pipes; while it lives,
+    // a bridge that exits early never reads as closed, only as timed out.
+    drop(command);
     ssh::handshake(&mut stream, stop).map_err(wsl_error)?;
     Ok((stream, child))
 }

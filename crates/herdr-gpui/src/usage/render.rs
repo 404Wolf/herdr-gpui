@@ -300,6 +300,7 @@ pub(crate) struct Hint {
 impl Render for Hint {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         div()
+            .debug_selector(|| "hint".into())
             .px(px(8.))
             .py(px(4.))
             .rounded(px(crate::config::corners::CONTROL))

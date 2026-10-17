@@ -191,7 +191,10 @@ def shell_identity(app):
 
 def smoke(installer, signed=False):
     with tempfile.TemporaryDirectory(prefix="herdr-installer-smoke-") as temp:
-        app = Path(temp) / "Herdr UI"
+        # Runners report %TEMP% as an 8.3 short path (C:\Users\RUNNER~1\...),
+        # while the shell answers with long ones; resolving first keeps every
+        # path the checks compare in one spelling.
+        app = Path(temp).resolve() / "Herdr UI"
         subprocess.run([str(installer), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
                         "/TASKS=addtopath", f"/DIR={app}", f"/LOG={Path(temp) / 'setup.log'}"],
                        check=True, timeout=600)

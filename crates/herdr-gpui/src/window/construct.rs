@@ -139,6 +139,8 @@ impl HerdrWindow {
             checkpoints: Default::default(),
             #[cfg(feature = "cloud")]
             cloud_jobs: Default::default(),
+            #[cfg(feature = "cloud")]
+            cloud_setup: None,
             code_indexes: Default::default(),
             code_views: Default::default(),
             collapsed_repos: Default::default(),
@@ -237,6 +239,7 @@ impl HerdrWindow {
             sidebar_drag: None,
             sidebar_folded: Default::default(),
             sidebar_modified: false,
+            sidebar_nested_reveal: Default::default(),
             sidebar_pin_reveal: Default::default(),
             sidebar_preferences: None,
             sidebar_revealed: Default::default(),

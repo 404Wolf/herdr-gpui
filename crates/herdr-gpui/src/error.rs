@@ -37,7 +37,7 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[error("Could not keep the display awake: {0}")]
+    #[error("Could not keep the machine awake: {0}")]
     Caffeine(#[source] keepawake::Error),
     #[error("No agent is working, so there is nothing to stay awake for")]
     CaffeineNoWorkingAgents,
@@ -78,7 +78,7 @@ pub enum Error {
     ClipboardChanged,
     #[error("Clipboard text is not valid UTF-8.")]
     ClipboardEncoding(#[source] std::str::Utf8Error),
-    #[error("Could not read the clipboard using wl-paste or xclip.")]
+    #[error("Could not read the clipboard; on Linux, install wl-paste or xclip.")]
     ClipboardProcess(#[source] io::Error),
     #[error("Clipboard content exceeds the {limit}-byte limit.")]
     ClipboardSize { limit: usize },
@@ -89,6 +89,8 @@ pub enum Error {
     #[cfg(feature = "cloud")]
     #[error(transparent)]
     Cloud(#[from] crate::cloud::Error),
+    #[error(transparent)]
+    CloudSetup(#[from] crate::cloud_setup::Error),
     #[error(transparent)]
     Code(#[from] crate::code_server::Error),
     #[error("This file is missing, larger than 1 MiB, or not UTF-8 text")]
@@ -120,6 +122,8 @@ pub enum Error {
     ControlMessageSize { limit: usize },
     #[error("Herdr UI closed the control connection without answering")]
     ControlNoResponse,
+    #[error("{} is held by something other than this user's Herdr UI, so it is not used", path.display())]
+    ControlPipeForeign { path: PathBuf },
     #[error("{message}")]
     ControlRejected {
         code: crate::control::ErrorCode,
@@ -133,14 +137,15 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[error(
-        "Controlling a running Herdr UI needs a Unix socket, which this platform build does not provide"
-    )]
-    ControlUnsupported,
+    #[error("Could not identify the Windows user: {0}")]
+    ControlUser(#[source] io::Error),
     #[error("Missing credential directory.")]
     CredentialDirectory,
     #[error("Cannot access private credential file.")]
     CredentialIo(#[source] io::Error),
+    #[cfg(windows)]
+    #[error(transparent)]
+    CredentialManager(#[from] crate::github::CredentialManagerError),
     #[error(
         "Cannot access private credential file. Require an owned directory and regular 0600 file; symlinks are rejected."
     )]
