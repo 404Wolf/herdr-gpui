@@ -10,7 +10,7 @@ mod actions;
 mod agent_notes;
 mod agent_skill;
 mod app;
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", windows, test))]
 mod app_badge;
 mod app_icon;
 mod avatars;
@@ -127,6 +127,8 @@ mod state_file;
 mod storage_warning;
 mod system_load;
 mod tab_menu;
+#[cfg(windows)]
+mod taskbar;
 mod teleport;
 mod terminal;
 mod terminal_notes;

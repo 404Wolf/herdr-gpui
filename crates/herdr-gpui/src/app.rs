@@ -391,7 +391,7 @@ pub(crate) fn run() -> std::process::ExitCode {
             cx.set_global(appearance.select(light_appearance(cx)));
             app_icon::install();
             crate::caffeine::install(cx);
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", windows))]
             crate::app_badge::install(cx);
             cx.on_action(|_: &Quit, cx| cx.quit());
             cx.on_action(|_: &Hide, cx| cx.hide());

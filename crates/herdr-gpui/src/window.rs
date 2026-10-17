@@ -535,7 +535,9 @@ impl HerdrWindow {
         self.follow_terminal_note(window, cx);
         self.follow_selection(cx);
         self.poll_copy_mode(window, cx);
-        #[cfg(target_os = "macos")]
+        #[cfg(windows)]
+        crate::taskbar::track(window, cx);
+        #[cfg(any(target_os = "macos", windows))]
         crate::app_badge::sync(window.window_handle().window_id(), &self.endpoints, cx);
         self.observe_agent_work(window, cx);
         self.cancel_stale_image();
