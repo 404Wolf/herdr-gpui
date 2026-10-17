@@ -136,6 +136,7 @@ mod updater;
 mod usage;
 mod window;
 mod window_state;
+mod words;
 mod worktree;
 mod worktree_banner;
 mod worktree_notes;

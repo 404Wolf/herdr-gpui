@@ -10,7 +10,7 @@ use gpui::{
 
 use crate::config::{Config, FontConfig, Theme};
 use crate::fonts::StyledFont;
-use crate::{actions, input::ViewInputHandler};
+use crate::{actions, input::ViewInputHandler, words};
 
 pub struct Changed;
 
@@ -364,6 +364,33 @@ impl SearchInput {
                 }
                 _ => return,
             }
+        } else if actions::word_modifiers(modifiers)
+            && matches!(key, "backspace" | "delete" | "left" | "right")
+        {
+            // macOS sends these as commands, never text, so the native
+            // handler below would drop them. A masked secret is one word,
+            // as in a native secure field, so its words are not revealed.
+            let selection = self.edit.selection();
+            let backward = matches!(key, "backspace" | "left");
+            let from = match key {
+                "left" if !modifiers.shift && !selection.is_empty() => selection.start,
+                "right" if !modifiers.shift && !selection.is_empty() => selection.end,
+                _ => self.edit.cursor,
+            };
+            let offset = match (backward, self.masked) {
+                (true, true) => 0,
+                (false, true) => self.edit.text.len(),
+                (true, false) => words::previous_start(&self.edit.text, from),
+                (false, false) => words::next_end(&self.edit.text, from),
+            };
+            if matches!(key, "left" | "right") {
+                self.edit.select_to(offset, modifiers.shift);
+            } else {
+                if selection.is_empty() {
+                    self.edit.select_to(offset, true);
+                }
+                self.replace_text_in_range(None, "", window, cx);
+            }
         } else {
             // Option/dead-key text also goes through the native input handler.
             return;
@@ -697,6 +724,7 @@ mod tests {
     use super::*;
 
     mod completion;
+    mod word_keys;
 
     #[test]
     fn masked_offsets_count_characters_both_ways() {
