@@ -73,6 +73,28 @@ fn the_blocked_braille_cell_breathes_from_full() {
     assert!(counts[low..].windows(2).all(|pair| pair[0] < pair[1]));
 }
 
+/// Across one loop a stepped animation shows every frame in order, each for
+/// an equal slice, so the glyph or gap drawn changes as time passes.
+#[test]
+fn stepped_animations_walk_every_frame_in_order() {
+    for len in [BRAILLE.len(), BREATHE.len(), grid::FRAME.len()] {
+        let shown: Vec<usize> = (0..len * 10)
+            .map(|step| frame_index(len, step as f32 / (len * 10) as f32))
+            .collect();
+        let mut order = shown.clone();
+        order.dedup();
+        assert_eq!(order, (0..len).collect::<Vec<_>>(), "{len} frames");
+        assert_eq!(frame_index(len, 1.), len - 1);
+    }
+    // The drawn glyph differs between neighbouring slices of the loop.
+    let at = |delta: f32| BRAILLE[frame_index(BRAILLE.len(), delta)];
+    assert_ne!(at(0.), at(0.15));
+    assert_ne!(
+        BREATHE[frame_index(BREATHE.len(), 0.)],
+        BREATHE[frame_index(BREATHE.len(), 0.5)]
+    );
+}
+
 #[test]
 fn spinner_frames_are_single_braille_cells() {
     for frame in BRAILLE.iter().chain(&BREATHE).chain(&["⠿", "⠤", "⠄"]) {

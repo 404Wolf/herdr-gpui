@@ -55,7 +55,12 @@ impl SettingsWindow {
             .child(ui::section(theme, "Icons", Some(ui::Source::HerdrUi)))
             .child(
                 div()
+                    .relative()
                     .debug_selector(|| "indicators-sets".into())
+                    // Search scrolls to the cards by these bounds.
+                    .child(crate::settings_window::search::track_bounds(
+                        "indicators-sets".into(),
+                    ))
                     .flex()
                     .flex_wrap()
                     .gap(px(10.))

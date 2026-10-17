@@ -1,5 +1,6 @@
 use super::*;
 use gpui::{IntoElement, ParentElement, Render, TestAppContext, div};
+use std::{cell::Cell, rc::Rc, time::Duration};
 
 /// Every element that moves, by the selector its mark carries.
 const MOVING: [&str; 7] = [
@@ -78,6 +79,45 @@ fn every_set_moves_while_working_and_rests_when_settled(cx: &mut TestAppContext)
                         bounds.size.width <= slot && bounds.size.height <= slot,
                         "{icons:?} {status:?} {bounds:?}"
                     );
+                }
+            }
+        }
+    }
+}
+
+/// A moving mark keeps asking for its next frame as the clock runs, and a
+/// settled one never does. Under reduced motion nothing asks: GPUI holds
+/// every animation on its first frame.
+#[gpui::test]
+fn moving_marks_redraw_as_time_passes_and_rest_under_reduced_motion(cx: &mut TestAppContext) {
+    for reduced in [false, true] {
+        cx.update(|cx| cx.set_reduce_motion(reduced));
+        for &icons in StatusIcons::ALL {
+            for status in STATUSES {
+                let indicators = Indicators::new(None, icons, false, false, &Theme::default());
+                let (view, cx) = cx.add_window_view(|_, _| Slot { status, indicators });
+                let frames = Rc::new(Cell::new(0));
+                let counted = frames.clone();
+                cx.update(|_, cx| {
+                    cx.observe(&view, move |_, _| counted.set(counted.get() + 1))
+                        .detach()
+                });
+                cx.update(|window, cx| window.draw(cx).clear(cx));
+                // Long enough for the slowest mark's next frame, each time.
+                for _ in 0..4 {
+                    cx.executor().advance_clock(Duration::from_millis(150));
+                    cx.update(|window, cx| {
+                        window.simulate_next_frame(cx);
+                    });
+                    cx.run_until_parked();
+                    cx.update(|window, cx| window.draw(cx).clear(cx));
+                }
+                let moves = expected(icons, status).is_some() && !reduced;
+                let asked = frames.get();
+                if moves {
+                    assert!(asked >= 4, "{icons:?} {status:?} asked for {asked} frames");
+                } else {
+                    assert_eq!(asked, 0, "{icons:?} {status:?} reduced={reduced}");
                 }
             }
         }

@@ -48,7 +48,7 @@ pub(super) fn mark(status: AgentStatus, size: f32, color: u32) -> AnyElement {
                     .repeat_synced()
                     .with_max_fps(1000. / CHASE_STEP_MS as f32),
                 move |grid, delta| {
-                    let gap = FRAME[((delta * FRAME.len() as f32) as usize).min(FRAME.len() - 1)];
+                    let gap = FRAME[super::frame_index(FRAME.len(), delta)];
                     grid.children(cells(cell, color, |index| chase_opacity(gap, index)))
                 },
             )

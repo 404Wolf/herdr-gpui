@@ -109,3 +109,36 @@ fn the_edge_rail_switch_stays_with_any_set(cx: &mut TestAppContext) {
         ]
     );
 }
+
+/// The Icons search result opens the page at the cards, which record their
+/// bounds so search has somewhere to scroll.
+#[gpui::test]
+fn searching_for_the_icons_opens_the_cards(cx: &mut TestAppContext) {
+    use crate::settings_window::{catalog, search::RowBounds};
+    let (view, cx) = cx.add_window_view(skill_fixture);
+    cx.simulate_resize(size(px(960.), px(560.)));
+    view.update(cx, |view, cx| view.set_search_query("braille", cx));
+    cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
+    let results = view.read_with(cx, |view, _| view.search_results.clone().unwrap());
+    let index = results
+        .iter()
+        .position(|&entry| catalog::CATALOG[entry].id == "indicators-sets")
+        .unwrap();
+    let result: &'static str =
+        Box::leak(format!("settings-search-result-{index}").into_boxed_str());
+    let center = cx.debug_bounds(result).unwrap().center();
+    cx.simulate_click(center, Default::default());
+    for _ in 0..3 {
+        cx.update(|window, cx| {
+            window.simulate_next_frame(cx);
+            crate::sidebar::layout_tests::full_draw(window, cx).clear(cx);
+        });
+    }
+    cx.run_until_parked();
+    view.read_with(cx, |view, _| assert_eq!(view.section, Section::Indicators));
+    let tracked = cx.update(|_, cx| {
+        cx.try_global::<RowBounds>()
+            .is_some_and(|rows| rows.0.contains_key("indicators-sets"))
+    });
+    assert!(tracked, "the cards record no bounds for search");
+}

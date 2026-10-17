@@ -117,11 +117,14 @@ fn braille(
         Animation::new(Duration::from_millis(frame_ms * frames.len() as u64))
             .repeat_synced()
             .with_max_fps(1000. / frame_ms as f32),
-        move |cell, delta| {
-            let index = ((delta * frames.len() as f32) as usize).min(frames.len() - 1);
-            cell.child(frames[index])
-        },
+        move |cell, delta| cell.child(frames[frame_index(frames.len(), delta)]),
     )
+}
+
+/// The frame a looping animation of `len` frames shows at `delta`, its share
+/// of the loop: each frame holds for an equal slice, the last up to the end.
+pub(super) fn frame_index(len: usize, delta: f32) -> usize {
+    ((delta * len as f32) as usize).min(len.saturating_sub(1))
 }
 
 #[cfg(test)]
