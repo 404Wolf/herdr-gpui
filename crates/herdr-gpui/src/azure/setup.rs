@@ -67,18 +67,6 @@ pub(crate) fn add_device(
         Target::Saved(device) => (device.id.clone(), device.label.clone()),
     };
 
-    if matches!(&target, Target::Create(_)) {
-        report(cloud::Step::Creating);
-        // Settings shows which priority it got, on the device's row.
-        let priority = api::deploy_vm(&client, &vm_name, &public_key)?;
-        tracing::info!(
-            category = "azure_vm",
-            vm_name,
-            ?priority,
-            "Azure VM deployed"
-        );
-    }
-
     let device = SavedDevice {
         provider: CloudProvider::Azure,
         id: vm_name.clone(),
@@ -88,16 +76,69 @@ pub(crate) fn add_device(
         session: SESSION.to_owned(),
         enabled: true,
     };
-
-    report(cloud::Step::Starting);
-    let ip = api::wait_running_ip(&client, &vm_name, cancelled)?;
-
-    let gateway = Gateway::new(&settings.admin_username, &ip)?;
-    ensure_herdr(&gateway, &vm_name, install, cancelled, report)?;
+    let ready = || -> crate::Result<()> {
+        if matches!(&target, Target::Create(_)) {
+            report(cloud::Step::Creating);
+            // Settings shows which priority it got, on the device's row.
+            let priority = api::deploy_vm(&client, &vm_name, &public_key)?;
+            tracing::info!(
+                category = "azure_vm",
+                vm_name,
+                ?priority,
+                "Azure VM deployed"
+            );
+        }
+        report(cloud::Step::Starting);
+        let ip = api::wait_running_ip(&client, &vm_name, cancelled)?;
+        let gateway = Gateway::new(&settings.admin_username, &ip)?;
+        ensure_herdr(&gateway, &vm_name, install, cancelled, report)
+    };
+    let discard = || {
+        if matches!(&target, Target::Create(_)) {
+            discard_created("VM", &vm_name, || {
+                api::delete_vm(&client, &vm_name, &|| false, || {})
+            });
+        }
+    };
+    undo_on_error(ready, discard)?;
 
     cloud::save(device.clone())?;
 
     Ok(device)
+}
+
+/// Run `attempt`, and `undo` when it fails, returning the attempt's error.
+/// A create that fails or is cancelled after Azure made its machine would
+/// otherwise leave it billing with no saved device to find it by.
+pub(super) fn undo_on_error<T, E>(
+    attempt: impl FnOnce() -> std::result::Result<T, E>,
+    undo: impl FnOnce(),
+) -> std::result::Result<T, E> {
+    attempt().inspect_err(|_| undo())
+}
+
+/// Delete a machine this create made, after the create failed. The create's
+/// own error is what the user sees, so a failed delete is only logged.
+pub(super) fn discard_created<E: std::fmt::Display>(
+    kind: &str,
+    name: &str,
+    delete: impl FnOnce() -> std::result::Result<(), E>,
+) {
+    tracing::info!(
+        category = "azure_vm",
+        kind,
+        name,
+        "Deleting a failed create"
+    );
+    if let Err(error) = delete() {
+        tracing::warn!(
+            category = "azure_vm",
+            kind,
+            name,
+            %error,
+            "Could not delete a failed create; delete it in the Azure portal"
+        );
+    }
 }
 
 fn ensure_herdr(
@@ -203,3 +244,6 @@ pub(crate) fn forget_device(id: &str) -> Result<()> {
     super::cleanup::forget_activity(id);
     Ok(cloud::remove(CloudProvider::Azure, id)?)
 }
+
+#[cfg(test)]
+mod tests;

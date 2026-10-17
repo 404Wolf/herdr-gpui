@@ -95,27 +95,36 @@ pub(crate) fn add_device(
     let client = Client::for_audience(&settings, Audience::Sandboxes)?;
     let sandbox = api::create(&client, &settings, granted, cancelled)?;
 
-    report(cloud::Step::Starting);
-    api::wait_running(&client, &settings, &sandbox, cancelled)?;
+    let ready = || -> crate::Result<()> {
+        report(cloud::Step::Starting);
+        api::wait_running(&client, &settings, &sandbox, cancelled)?;
 
-    report(cloud::Step::CheckingHerdr);
-    let command = || relay_command(&settings, &sandbox);
-    if !wait_installed(&command, cancelled)? {
-        if !install {
-            return Err(cloud::Error::Install(format!(
-                "Herdr is not installed on Azure sandbox {sandbox}; enable Install Herdr and retry"
-            ))
-            .into());
+        report(cloud::Step::CheckingHerdr);
+        let command = || relay_command(&settings, &sandbox);
+        if !wait_installed(&command, cancelled)? {
+            if !install {
+                return Err(cloud::Error::Install(format!(
+                    "Herdr is not installed on Azure sandbox {sandbox}; enable Install Herdr and retry"
+                ))
+                .into());
+            }
+            report(cloud::Step::InstallingHerdr);
+            install::install(command()?, &cancelled)?;
+            if !install::installed(command()?, &cancelled)? {
+                return Err(cloud::Error::Install(
+                    "the installer finished but Herdr is not on the expected paths".into(),
+                )
+                .into());
+            }
         }
-        report(cloud::Step::InstallingHerdr);
-        install::install(command()?, &cancelled)?;
-        if !install::installed(command()?, &cancelled)? {
-            return Err(cloud::Error::Install(
-                "the installer finished but Herdr is not on the expected paths".into(),
-            )
-            .into());
-        }
-    }
+        Ok(())
+    };
+    let discard = || {
+        super::super::setup::discard_created("sandbox", &sandbox, || {
+            api::delete(&client, &settings, &sandbox, &|| false)
+        });
+    };
+    super::super::setup::undo_on_error(ready, discard)?;
 
     let device = SavedDevice {
         provider: CloudProvider::Azure,
