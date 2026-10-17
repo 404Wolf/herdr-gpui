@@ -8,7 +8,8 @@ use super::{AzureCard, SettingsWindow, VM_SIZE};
 use crate::azure::{
     settings::DEFAULT_VM_SIZE,
     sizes::{
-        Catalog, DEFAULT_SANDBOX_MILLICORES, SANDBOX_MILLICORES, SandboxSize, VM_CHOICES, is_arm,
+        Catalog, DEFAULT_SANDBOX_MILLICORES, SANDBOX_MILLICORES, SandboxSize, VM_CHOICES,
+        ephemeral_placement, is_arm,
     },
 };
 use crate::config::Config;
@@ -17,20 +18,42 @@ use gpui::{prelude::*, *};
 /// A choice's own width; choices wrap into columns as the window allows.
 const CHOICE_WIDTH: f32 = 280.;
 
-fn vm_detail(catalog: Option<&Catalog>, size: &str) -> String {
-    let Some(catalog) = catalog else {
-        return if is_arm(size) { "Arm" } else { "x64" }.to_owned();
-    };
-    let Some(spec) = catalog.vms.get(size) else {
-        return format!("Not offered in {}", catalog.location);
-    };
-    match catalog.vm_prices.get(size) {
-        Some(price) => format!("{} · {}", spec.summary(size), price.text(true)),
-        None => spec.summary(size),
-    }
+/// A VM size's lines: what it is, then what it costs as Spot, which new VMs
+/// run as where Azure offers it, with the regular price beside it.
+pub(super) fn vm_detail(catalog: Option<&Catalog>, size: &str) -> Vec<String> {
+    let disk = ephemeral_placement(size)
+        .is_none()
+        .then(|| "No local storage: a Standard SSD disk, billed until deleted".to_owned());
+    let mut lines = vm_lines(catalog, size);
+    lines.extend(disk);
+    lines
 }
 
-fn sandbox_detail(catalog: Option<&Catalog>, size: SandboxSize) -> String {
+fn vm_lines(catalog: Option<&Catalog>, size: &str) -> Vec<String> {
+    let Some(catalog) = catalog else {
+        return vec![if is_arm(size) { "Arm" } else { "x64" }.to_owned()];
+    };
+    let Some(spec) = catalog.vms.get(size) else {
+        return vec![format!("Not offered in {}", catalog.location)];
+    };
+    let price = match (catalog.spot_prices.get(size), catalog.vm_prices.get(size)) {
+        (Some(spot), Some(regular)) => Some(format!(
+            "Spot {} · regular {}",
+            spot.text(true),
+            regular.text(false)
+        )),
+        (Some(spot), None) => Some(format!("Spot {}", spot.text(true))),
+        (None, Some(regular)) => Some(format!("Regular {}", regular.text(true))),
+        (None, None) => None,
+    };
+    std::iter::once(spec.summary(size)).chain(price).collect()
+}
+
+fn sandbox_detail(catalog: Option<&Catalog>, size: SandboxSize) -> Vec<String> {
+    vec![sandbox_line(catalog, size)]
+}
+
+fn sandbox_line(catalog: Option<&Catalog>, size: SandboxSize) -> String {
     match catalog.and_then(|catalog| catalog.sandbox_rates) {
         Some(rates) => format!(
             "{} · {} while running",
@@ -92,18 +115,21 @@ impl SettingsWindow {
         &self,
         id: SharedString,
         title: String,
-        detail: String,
+        detail: Vec<String>,
         selected: bool,
         enabled: bool,
     ) -> Stateful<Div> {
+        let muted = rgb(self.theme.muted);
         self.control_choice(
             id,
-            div().min_w_0().child(div().truncate().child(title)).child(
-                div()
-                    .truncate()
-                    .text_color(rgb(self.theme.muted))
-                    .child(detail),
-            ),
+            div()
+                .min_w_0()
+                .child(div().truncate().child(title))
+                .children(
+                    detail
+                        .into_iter()
+                        .map(|line| div().truncate().text_color(muted).child(line)),
+                ),
             selected,
             enabled,
         )
@@ -123,8 +149,11 @@ impl SettingsWindow {
         let other = card.vm_other || !VM_CHOICES.contains(&vm_size.as_str());
         let note = match catalog {
             Some(catalog) => format!(
-                "Linux pay-as-you-go list prices in {}, in US dollars, before discounts. A VM is \
-                 billed while it runs; its disk is billed until it is deleted.",
+                "New VMs keep their OS disk on the VM's local storage, so there is no disk to \
+                 pay for, and auto-stop deletes an idle one: keep work in Git. They run as Spot \
+                 where Azure offers it to the subscription, and Azure may delete a Spot VM when \
+                 it needs the capacity back; otherwise they are billed at the regular price. \
+                 Linux list prices in {}, in US dollars, as of now: Spot prices move.",
                 catalog.location
             ),
             None => "Specs and prices show once the account is saved and reachable.".to_owned(),
@@ -152,7 +181,7 @@ impl SettingsWindow {
             .size_choice(
                 "cloud-azure-vm-size-other".into(),
                 "Other".into(),
-                "Any size Azure offers in the region".into(),
+                vec!["Any size the region offers".into()],
                 other,
                 ready,
             )
@@ -194,7 +223,11 @@ impl SettingsWindow {
                                     }),
                             ),
                     )
-                    .child(self.control_note(vm_detail(catalog, &vm_size)))
+                    .children(
+                        vm_detail(catalog, &vm_size)
+                            .into_iter()
+                            .map(|line| self.control_note(line)),
+                    )
             })
     }
 

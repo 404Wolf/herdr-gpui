@@ -30,6 +30,7 @@ use gpui::{prelude::*, *};
 use secrecy::SecretString;
 use std::collections::HashMap;
 
+mod destroy;
 mod sizes;
 
 /// The VM Size field's place in [`FIELDS`]; the size choices draw it.
@@ -39,10 +40,10 @@ const FIELDS: [(&str, &str); 9] = [
     ("Subscription ID", "Azure subscription UUID"),
     ("Resource Group", "Default: herdr-devices"),
     ("Location", "Default: centralus"),
-    ("VM Size", "Default: Standard_B2pts_v2"),
+    ("VM Size", "Default: Standard_D2plds_v6"),
     (
         "Auto-stop",
-        "never, or idle duration before deallocating (e.g. 30m, 1h, 2h)",
+        "never, or idle time before an idle VM is deleted (e.g. 30m, 1h, 2h)",
     ),
     ("Tenant ID", "Optional Service Principal tenant UUID"),
     ("Sandbox Group", "Default: herdr-sandboxes"),
@@ -120,6 +121,10 @@ pub(in crate::settings_window) struct AzureCard {
     setup: bool,
     message: Option<String>,
     job: Option<Worker>,
+    /// The device whose Destroy is waiting for confirmation.
+    confirm_destroy: Option<String>,
+    destroying: Option<destroy::Destroying>,
+    outcome: Option<destroy::Outcome>,
 }
 
 impl AzureCard {
@@ -156,6 +161,9 @@ impl AzureCard {
             setup: true,
             message: None,
             job: None,
+            confirm_destroy: None,
+            destroying: None,
+            outcome: None,
         }
     }
 
@@ -281,6 +289,14 @@ impl SettingsWindow {
                         match account {
                             Ok(account) => card.account = account,
                             Err(error) => card.message = Some(error.to_string()),
+                        }
+                        let devices = card.devices();
+                        let gone = card
+                            .confirm_destroy
+                            .as_ref()
+                            .is_some_and(|id| !devices.iter().any(|device| &device.id == id));
+                        if gone {
+                            card.confirm_destroy = None;
                         }
                     }
                     cx.notify();
@@ -607,6 +623,14 @@ impl SettingsWindow {
             .debug_selector(|| "cloud-azure-devices".into());
         if card.devices().is_empty() {
             devices = devices.child(self.control_note("None yet."));
+        } else {
+            devices = devices.child(self.control_note(
+                "Removing a device deletes it at Azure, with its disk and IP. Remove from Herdr \
+                 only, offered beside it, leaves it at Azure, still billing.",
+            ));
+        }
+        if let Some(outcome) = self.azure_destroy_outcome() {
+            devices = devices.child(outcome);
         }
         for (index, device) in card.devices().iter().enumerate() {
             let noun = Machine::parse(&device.id).noun();
@@ -614,14 +638,15 @@ impl SettingsWindow {
                 Some(size) => format!("{noun} · {size} in {}", device.account),
                 None => format!("{noun} in {}", device.account),
             };
-            devices = devices.child(self.cloud_device_row(
+            let actions = self.azure_destroy_actions(
                 index,
                 device,
-                detail,
-                ready,
-                |this, id, cx| this.forget_azure_device(id, cx),
+                ready && self.azure_removable(device),
                 cx,
-            ));
+            );
+            devices = devices
+                .child(self.cloud_device_row_actions(device, detail, actions))
+                .children(self.azure_destroy_detail(device));
         }
 
         div()

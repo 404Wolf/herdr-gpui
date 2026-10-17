@@ -21,7 +21,7 @@ fn a_vm_not_seen_yet_starts_its_timeout_instead_of_stopping() {
 }
 
 #[test]
-fn only_this_accounts_vms_are_checked() {
+fn only_this_accounts_devices_are_checked() {
     use crate::cloud::{CloudProvider, SavedDevice};
     let device = |account: &str, id: &str| SavedDevice {
         provider: CloudProvider::Azure,
@@ -37,8 +37,8 @@ fn only_this_accounts_vms_are_checked() {
         device("sub-b", "shared-name"),
         device("sub-a", "sandbox.box"),
     ];
-    let vms = account_vms(devices, "sub-a");
-    assert_eq!(vms.len(), 1);
-    assert_eq!(vms[0].account, "sub-a");
-    assert_eq!(vms[0].id, "shared-name");
+    let mine = account_devices(devices, "sub-a");
+    let ids: Vec<&str> = mine.iter().map(|device| device.id.as_str()).collect();
+    assert_eq!(ids, ["shared-name", "sandbox.box"]);
+    assert!(mine.iter().all(|device| device.account == "sub-a"));
 }

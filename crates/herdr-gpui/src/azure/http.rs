@@ -118,7 +118,6 @@ impl<'a> Client<'a> {
         handle_response(&mut response)
     }
 
-    #[allow(dead_code)]
     pub(crate) fn delete<T: DeserializeOwned + 'static>(&self, path: &str) -> Result<T> {
         let auth = authorization(&self.token)?;
         let mut response = agent()
@@ -155,6 +154,9 @@ fn handle_response<T: DeserializeOwned + 'static>(
         return Err(match status {
             401 => Error::Authentication(message),
             403 => Error::Forbidden(message),
+            _ if codes(&bytes).iter().any(|code| code == "SkuNotAvailable") => {
+                Error::SkuNotAvailable(message)
+            }
             _ => Error::Status(status, message),
         });
     }
@@ -271,14 +273,45 @@ fn read_body(response: &mut ureq::http::Response<ureq::Body>) -> Result<Zeroizin
     Ok(bytes)
 }
 
+/// Inner errors kept in a diagnostic; Azure lists one per failing resource.
+const DETAILS: usize = 4;
+
+/// Azure's message for an error body, followed by its inner errors' own, which
+/// say what went wrong when the outer one only says to see them.
 pub(crate) fn diagnostic(bytes: &[u8]) -> String {
-    if let Ok(value) = serde_json::from_slice::<serde_json::Value>(bytes)
-        && let Some(msg) = value
-            .pointer("/error/message")
-            .or_else(|| value.pointer("/message"))
-            .and_then(|v| v.as_str())
-    {
-        return msg.trim().to_owned();
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(bytes) else {
+        return String::from_utf8_lossy(bytes).trim().to_owned();
+    };
+    let error = value.get("error").unwrap_or(&value);
+    let Some(message) = error.get("message").and_then(|v| v.as_str()) else {
+        return String::from_utf8_lossy(bytes).trim().to_owned();
+    };
+    let mut text = message.trim().to_owned();
+    for detail in details(error).take(DETAILS) {
+        if let Some(inner) = detail.get("message").and_then(|v| v.as_str()) {
+            text.push_str(" — ");
+            text.push_str(inner.trim());
+        }
     }
-    String::from_utf8_lossy(bytes).trim().to_owned()
+    text
+}
+
+/// The `code` of an error body and of each inner error.
+pub(super) fn codes(bytes: &[u8]) -> Vec<String> {
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(bytes) else {
+        return Vec::new();
+    };
+    let error = value.get("error").unwrap_or(&value);
+    std::iter::once(error)
+        .chain(details(error))
+        .filter_map(|error| error.get("code")?.as_str().map(str::to_owned))
+        .collect()
+}
+
+fn details(error: &serde_json::Value) -> impl Iterator<Item = &serde_json::Value> {
+    error
+        .get("details")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
 }

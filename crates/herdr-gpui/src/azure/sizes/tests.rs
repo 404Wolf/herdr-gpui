@@ -14,7 +14,12 @@ fn item(sku: &str, sku_name: &str, product: &str, price: f64) -> PriceItem {
 
 #[test]
 fn arm_sizes_are_told_by_their_feature_letters() {
-    for arm in ["Standard_B2pts_v2", "Standard_D4ps_v5", "Standard_E2pds_v5"] {
+    for arm in [
+        "Standard_B2pts_v2",
+        "Standard_D2ps_v6",
+        "Standard_D4ps_v5",
+        "Standard_E2pds_v5",
+    ] {
         assert!(is_arm(arm), "{arm}");
     }
     for x64 in [
@@ -36,6 +41,10 @@ fn every_listed_size_is_a_plain_name() {
         assert!(!VM_CHOICES[..index].contains(size));
     }
     assert!(VM_CHOICES.contains(&super::super::settings::DEFAULT_VM_SIZE));
+    assert!(
+        VM_CHOICES.iter().all(|size| is_arm(size)),
+        "x64 sizes are typed in"
+    );
     assert!(!plain("Standard' or 1 eq 1"));
 }
 
@@ -113,3 +122,5 @@ fn sandbox_prices_add_cpu_and_memory_by_the_hour() {
     let price = rates.hourly(SandboxSize::standard(1000));
     assert!((price.0 - 0.108).abs() < 1e-9, "{price:?}");
 }
+
+mod spot;

@@ -4,9 +4,11 @@
 //! prices from Azure's public Retail Prices API, both read on a worker; a
 //! price that cannot be read is left out rather than guessed.
 //!
-//! Prices are Linux pay-as-you-go list prices in US dollars, before
-//! discounts or credits. A VM is billed while it runs and its disk always; a
-//! sandbox is billed for CPU and memory while it runs.
+//! Prices are Linux list prices in US dollars, before discounts or credits.
+//! A new VM runs as Spot, with its OS disk on the host's local storage, so it
+//! is billed only while it exists, at the Spot price, with no disk to pay
+//! for; its pay-as-you-go price is shown beside it. A sandbox is billed for
+//! CPU and memory while it runs.
 
 use super::{
     Result, Settings,
@@ -16,16 +18,16 @@ use crate::cloud::SavedDevice;
 use serde::Deserialize;
 use std::collections::HashMap;
 
-/// VM sizes Settings lists, small to large; Arm first, as the default is.
+/// VM sizes Settings lists, small to large: Arm v6 sizes with local NVMe,
+/// which the OS disk lives on (see [`ephemeral_placement`]). Arm undercuts
+/// x64 at every size, and v6 sizes run their full CPU rather than bursting.
+/// Sizes with under 4 GiB cannot hold an agent and Herdr together.
 pub(crate) const VM_CHOICES: &[&str] = &[
-    "Standard_B2pts_v2",
-    "Standard_B2pls_v2",
-    "Standard_B2ps_v2",
-    "Standard_B4ps_v2",
-    "Standard_D4ps_v5",
-    "Standard_D8ps_v5",
-    "Standard_B2s_v2",
-    "Standard_D4s_v5",
+    "Standard_D2plds_v6",
+    "Standard_D2pds_v6",
+    "Standard_D4plds_v6",
+    "Standard_D4pds_v6",
+    "Standard_D8pds_v6",
 ];
 
 /// Sandbox CPU in millicores. Memory is the most the service allows for it,
@@ -114,17 +116,44 @@ impl SandboxSize {
     }
 }
 
+/// The feature letters after a size's vCPU count, as `pls` in
+/// `Standard_D2pls_v5`, and its version, as 5.
+fn features(size: &str) -> (&str, u32) {
+    let name = size.strip_prefix("Standard_").unwrap_or(size);
+    let mut parts = name.split('_');
+    let family = parts.next().unwrap_or(name);
+    let version = parts
+        .find_map(|part| part.strip_prefix('v')?.parse().ok())
+        .unwrap_or(1);
+    let letters = match family.find(|c: char| c.is_ascii_digit()) {
+        Some(digits) => {
+            family[digits..].trim_start_matches(|c: char| c.is_ascii_digit() || c == '-')
+        }
+        None => "",
+    };
+    (letters, version)
+}
+
 /// Whether a VM size runs on Arm: Azure marks Arm sizes with a lowercase `p`
 /// among the feature letters after the vCPU count, as in `B2pts_v2`.
 pub(crate) fn is_arm(size: &str) -> bool {
-    let name = size.strip_prefix("Standard_").unwrap_or(size);
-    let name = name.split('_').next().unwrap_or(name);
-    let Some(digits) = name.find(|c: char| c.is_ascii_digit()) else {
-        return false;
-    };
-    name[digits..]
-        .trim_start_matches(|c: char| c.is_ascii_digit() || c == '-')
-        .contains('p')
+    features(size).0.contains('p')
+}
+
+/// Where a size keeps an ephemeral OS disk, as the template's `placement`:
+/// the local NVMe of a v6 or later size with a `d`, the temp disk of an
+/// older one. `None` for a size with no local storage, which cannot host
+/// one. Azure checks the disk fits when the VM is created.
+pub(crate) fn ephemeral_placement(size: &str) -> Option<&'static str> {
+    let (letters, version) = features(size);
+    if !letters.contains('d') {
+        return None;
+    }
+    Some(if version >= 6 {
+        "NvmeDisk"
+    } else {
+        "ResourceDisk"
+    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -195,7 +224,11 @@ pub(crate) struct Catalog {
     pub(crate) sandbox_location: String,
     /// Every size the VM region offers.
     pub(crate) vms: HashMap<String, VmSpec>,
+    /// Pay-as-you-go prices, for comparison.
     pub(crate) vm_prices: HashMap<String, Price>,
+    /// What a new VM is billed at. Spot prices move with spare capacity, so
+    /// these are as of when the catalog was read.
+    pub(crate) spot_prices: HashMap<String, Price>,
     pub(crate) sandbox_rates: Option<SandboxRates>,
 }
 
@@ -208,9 +241,9 @@ pub(crate) fn catalog(settings: &Settings) -> Result<Catalog> {
     if !sizes.contains(&settings.vm_size.as_str()) && vms.contains_key(&settings.vm_size) {
         sizes.push(&settings.vm_size);
     }
-    let vm_prices = vm_prices(&settings.location, &sizes).unwrap_or_else(|error| {
+    let (vm_prices, spot_prices) = vm_prices(&settings.location, &sizes).unwrap_or_else(|error| {
         tracing::warn!(category = "azure_prices", %error, "Could not read Azure VM prices");
-        HashMap::new()
+        (HashMap::new(), HashMap::new())
     });
     let sandbox_rates = sandbox_rates(&settings.sandbox_location).unwrap_or_else(|error| {
         tracing::warn!(category = "azure_prices", %error, "Could not read Azure sandbox prices");
@@ -221,6 +254,7 @@ pub(crate) fn catalog(settings: &Settings) -> Result<Catalog> {
         sandbox_location: settings.sandbox_location.clone(),
         vms,
         vm_prices,
+        spot_prices,
         sandbox_rates,
     })
 }
@@ -281,10 +315,13 @@ fn plain(text: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
 }
 
-fn vm_prices(location: &str, sizes: &[&str]) -> Result<HashMap<String, Price>> {
+/// Each size's pay-as-you-go and Spot prices.
+type Prices = (HashMap<String, Price>, HashMap<String, Price>);
+
+fn vm_prices(location: &str, sizes: &[&str]) -> Result<Prices> {
     let sizes: Vec<&str> = sizes.iter().copied().filter(|size| plain(size)).collect();
     if sizes.is_empty() || !plain(location) {
-        return Ok(HashMap::new());
+        return Ok((HashMap::new(), HashMap::new()));
     }
     let skus = sizes
         .iter()
@@ -295,7 +332,7 @@ fn vm_prices(location: &str, sizes: &[&str]) -> Result<HashMap<String, Price>> {
         "serviceName eq 'Virtual Machines' and priceType eq 'Consumption' and armRegionName eq '{location}' and ({skus})"
     );
     let list: PriceList = http::get_public(PRICES, &[("$filter", &filter)])?;
-    Ok(linux_prices(list.items))
+    Ok((linux_prices(list.items.clone()), spot_prices(list.items)))
 }
 
 /// The Linux pay-as-you-go price of each size: not Windows, Spot, Low
@@ -309,6 +346,20 @@ pub(crate) fn linux_prices(items: Vec<PriceItem>) -> HashMap<String, Price> {
                 && !item.product.ends_with("Windows")
                 && !item.sku_name.contains("Spot")
                 && !item.sku_name.contains("Low Priority")
+        })
+        .map(|item| (item.sku, Price(item.price)))
+        .collect()
+}
+
+/// The Linux Spot price of each size.
+pub(crate) fn spot_prices(items: Vec<PriceItem>) -> HashMap<String, Price> {
+    items
+        .into_iter()
+        .filter(|item| {
+            item.currency == "USD"
+                && item.product.starts_with("Virtual Machines")
+                && !item.product.ends_with("Windows")
+                && item.sku_name.ends_with(" Spot")
         })
         .map(|item| (item.sku, Price(item.price)))
         .collect()
@@ -354,12 +405,18 @@ pub(crate) fn device_sizes(
     {
         for device in devices {
             if let Machine::Vm(name) = Machine::parse(&device.id)
-                && let Some(size) = found.get(&name.to_ascii_lowercase())
+                && let Some(vm) = found.get(&name.to_ascii_lowercase())
             {
-                let text = match catalog.vms.get(size) {
+                let size = &vm.size;
+                let mut text = match catalog.vms.get(size) {
                     Some(spec) => format!("{size} · {}", spec.summary(size)),
                     None => size.clone(),
                 };
+                text.push_str(if vm.spot {
+                    " · Spot"
+                } else {
+                    " · regular price"
+                });
                 sizes.insert(device.id.clone(), text);
             }
         }

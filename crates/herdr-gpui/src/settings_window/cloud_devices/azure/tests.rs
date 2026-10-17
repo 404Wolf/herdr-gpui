@@ -1,5 +1,7 @@
 use super::{Account, AzureConfig, AzureFields, SignIn, sign_in};
 
+mod destroy;
+
 fn fields(subscription: &str, client: &str) -> AzureFields {
     AzureFields {
         subscription_id: subscription.into(),

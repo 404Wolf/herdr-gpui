@@ -6,7 +6,7 @@ use std::ffi::OsString;
 
 pub(crate) const DEFAULT_RESOURCE_GROUP: &str = "herdr-devices";
 pub(crate) const DEFAULT_LOCATION: &str = "centralus";
-pub(crate) const DEFAULT_VM_SIZE: &str = "Standard_B2pts_v2";
+pub(crate) const DEFAULT_VM_SIZE: &str = "Standard_D2plds_v6";
 pub(crate) const DEFAULT_ADMIN_USERNAME: &str = "herdr";
 pub(crate) const DEFAULT_SANDBOX_GROUP: &str = "herdr-sandboxes";
 pub(crate) const DEFAULT_SANDBOX_IMAGE: &str = "ubuntu";

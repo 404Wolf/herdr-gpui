@@ -43,6 +43,8 @@ pub enum Error {
     SandboxDeleted,
     #[error("The Azure sandbox did not become ready within 5 minutes.")]
     SandboxTimeout,
+    #[error("Azure did not finish deleting the machine within 10 minutes.")]
+    DeleteTimeout,
     #[error("The Azure sandbox shell stream failed.")]
     Stream(#[source] tungstenite::Error),
     #[error("Invalid Azure sandbox shell stream header.")]
@@ -85,4 +87,7 @@ pub enum Error {
     Account,
     #[error("The Azure machine is not running; connecting to it starts it.")]
     NotRunning,
+    /// Azure has none of the size to give, at that priority or in that place.
+    #[error("Azure has no capacity for this size: {0}")]
+    SkuNotAvailable(String),
 }

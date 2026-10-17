@@ -240,6 +240,15 @@ pub(super) fn running(client: &Client, settings: &Settings, id: &str) -> Result<
     Ok(matches!(state(client, settings, id)?, State::Running))
 }
 
+/// Whether the group still has the sandbox.
+pub(super) fn exists(client: &Client, settings: &Settings, id: &str) -> Result<bool> {
+    match state(client, settings, id) {
+        Ok(_) => Ok(true),
+        Err(Error::SandboxDeleted) => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
 fn state(client: &Client, settings: &Settings, id: &str) -> Result<State> {
     let path = format!("{}?api-version={API_VERSION}", sandbox_path(settings, id)?);
     match client.get::<SandboxResponse>(&path) {
@@ -259,6 +268,33 @@ fn resume(client: &Client, settings: &Settings, id: &str) -> Result<()> {
     );
     let _: serde_json::Value = client.post_empty(&path)?;
     Ok(())
+}
+
+/// Delete the sandbox, memory and disk with it, and wait until the data
+/// plane no longer has it.
+pub(super) fn delete(
+    client: &Client,
+    settings: &Settings,
+    id: &str,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<()> {
+    let path = format!("{}?api-version={API_VERSION}", sandbox_path(settings, id)?);
+    match client.delete::<serde_json::Value>(&path) {
+        Ok(_) | Err(Error::Status(404, _)) => {}
+        Err(error) => return Err(error),
+    }
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        match state(client, settings, id) {
+            Err(Error::SandboxDeleted) => return Ok(()),
+            Err(error) => return Err(error),
+            Ok(_) => {}
+        }
+        if Instant::now() >= deadline {
+            return Err(Error::DeleteTimeout);
+        }
+        wait(cancelled)?;
+    }
 }
 
 /// Resume the sandbox if it is suspended, and wait until it runs.

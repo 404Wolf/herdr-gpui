@@ -257,7 +257,6 @@ impl SettingsWindow {
     /// A saved device with its Remove button; removal leaves the machine
     /// itself untouched at the provider.
     #[cfg(any(
-        feature = "azure",
         feature = "boat",
         feature = "coder",
         feature = "daytona",
@@ -295,6 +294,34 @@ impl SettingsWindow {
     ) -> Div {
         let key = device.provider.key();
         let id = device.id.clone();
+        let remove = self
+            .cloud_button(
+                SharedString::from(format!("cloud-{key}-remove-{index}")),
+                "Remove",
+                ready,
+            )
+            .debug_selector(move || format!("cloud-{key}-remove-{index}"))
+            .when(ready, |button| {
+                button.on_click(cx.listener(move |this, _, _, cx| forget(this, id.clone(), cx)))
+            })
+            .into_any_element();
+        self.cloud_device_row_actions(device, detail, actions.into_iter().chain([remove]))
+    }
+
+    /// A saved device's label and `detail`, with `actions` at the end.
+    #[cfg(any(
+        feature = "azure",
+        feature = "boat",
+        feature = "coder",
+        feature = "daytona",
+        feature = "railway"
+    ))]
+    fn cloud_device_row_actions(
+        &self,
+        device: &crate::cloud::SavedDevice,
+        detail: String,
+        actions: impl IntoIterator<Item = AnyElement>,
+    ) -> Div {
         div()
             .flex()
             .items_center()
@@ -317,20 +344,7 @@ impl SettingsWindow {
                     .flex_none()
                     .items_center()
                     .gap(px(8.))
-                    .children(actions)
-                    .child(
-                        self.cloud_button(
-                            SharedString::from(format!("cloud-{key}-remove-{index}")),
-                            "Remove",
-                            ready,
-                        )
-                        .debug_selector(move || format!("cloud-{key}-remove-{index}"))
-                        .when(ready, |button| {
-                            button.on_click(
-                                cx.listener(move |this, _, _, cx| forget(this, id.clone(), cx)),
-                            )
-                        }),
-                    ),
+                    .children(actions),
             )
     }
 }

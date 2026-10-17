@@ -40,6 +40,21 @@ pub(crate) fn running_command(settings: &Settings, sandbox: &str) -> Result<Comm
     relay_command(settings, sandbox)
 }
 
+/// Delete the sandbox and wait until it is gone. Runs on a worker.
+pub(crate) fn delete(
+    settings: &Settings,
+    sandbox: &str,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<()> {
+    let client = Client::for_audience(settings, Audience::Sandboxes)?;
+    api::delete(&client, settings, sandbox, cancelled)
+}
+
+/// Whether the group still has the sandbox, through a sandboxes `client`.
+pub(crate) fn exists(client: &Client, settings: &Settings, sandbox: &str) -> Result<bool> {
+    api::exists(client, settings, sandbox)
+}
+
 /// The size of each sandbox in the group, by ID.
 pub(crate) fn sizes(
     settings: &Settings,

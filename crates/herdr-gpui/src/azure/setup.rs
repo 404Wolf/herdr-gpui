@@ -67,7 +67,14 @@ pub(crate) fn add_device(
 
     if matches!(&target, Target::Create(_)) {
         report(cloud::Step::Creating);
-        api::deploy_vm(&client, &vm_name, &public_key)?;
+        // Settings shows which priority it got, on the device's row.
+        let priority = api::deploy_vm(&client, &vm_name, &public_key)?;
+        tracing::info!(
+            category = "azure_vm",
+            vm_name,
+            ?priority,
+            "Azure VM deployed"
+        );
     }
 
     let device = SavedDevice {

@@ -19,7 +19,8 @@ pub struct AzureConfig {
     pub resource_group: Option<String>,
     /// Azure region / location (default "centralus").
     pub location: Option<String>,
-    /// VM SKU / size (default "Standard_B2pts_v2").
+    /// VM SKU / size (default "Standard_D2plds_v6"). A size with local storage,
+    /// a `d` in its name, keeps the OS disk there; another gets a managed disk.
     pub vm_size: Option<String>,
     /// Admin username on the VM (default "herdr").
     pub admin_username: Option<String>,
@@ -38,8 +39,9 @@ pub struct AzureConfig {
     pub client_id: Option<String>,
     /// Explicitly use the local Azure CLI (`az`) for authentication.
     pub use_azure_cli: Option<bool>,
-    /// `never` or an idle duration before deallocating the VM (e.g. `15m`, `30m`, `1h`, `2h`, or seconds like `1800`)
-    /// to avoid wasting compute credits. Default is `30m`.
+    /// `never` or how long a VM may go without a connection (e.g. `15m`, `30m`,
+    /// `1h`, `2h`, or seconds like `1800`) before it stops billing: a Spot VM
+    /// with an ephemeral disk is deleted, an older VM deallocated. Default `30m`.
     pub auto_stop: Option<String>,
     pub allow_plaintext_credentials: bool,
 }

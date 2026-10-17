@@ -1,10 +1,16 @@
-//! Idle tracking and automatic cleanup for Azure Virtual Machines.
+//! Idle tracking and automatic cleanup for Azure devices.
 //!
-//! Tracks last activity times on Azure VM devices. When an Azure device has been
-//! idle (or disconnected) for longer than the configured `auto_stop` duration,
-//! it can be deallocated to stop compute charges and preserve user credits.
+//! Tracks last activity times on Azure VM devices. A VM idle (or disconnected)
+//! for longer than the configured `auto_stop` is destroyed when it is
+//! disposable, or deallocated when it is an older VM on a managed disk, so it
+//! stops billing. A device whose machine Azure no longer has is forgotten.
 
-use super::{Result, Settings, api, http::Client};
+use super::{
+    Result, Settings, api,
+    http::{Audience, Client},
+    machine::Machine,
+};
+use crate::cloud::{CloudProvider, SavedDevice};
 use std::{
     collections::HashMap,
     sync::Mutex,
@@ -45,105 +51,142 @@ pub(crate) fn forget_activity(vm_id: &str) {
     }
 }
 
-/// Deallocate an Azure VM if it has exceeded its idle timeout.
-/// Returns `Ok(true)` if the VM was deallocated, `Ok(false)` if it was active or already stopped.
-pub(crate) fn deallocate_if_idle(
-    client: &Client,
-    vm_name: &str,
-    timeout: Duration,
-) -> Result<bool> {
-    if !is_idle(vm_name, timeout) {
+/// Deallocate a kept VM that is running. Returns whether it was running.
+fn deallocate(client: &Client, vm_name: &str) -> Result<bool> {
+    if api::get_vm_power_state(client, vm_name)? != api::PowerState::Running {
         return Ok(false);
     }
-
-    let power_state = api::get_vm_power_state(client, vm_name)?;
-    if power_state == api::PowerState::Running {
-        tracing::info!(
-            category = "azure_cleanup",
-            vm_name,
-            timeout_secs = timeout.as_secs(),
-            "Deallocating idle Azure VM to prevent ongoing compute charges"
-        );
-        api::deallocate_vm(client, vm_name)?;
-        forget_activity(vm_name);
-        return Ok(true);
-    }
-
-    Ok(false)
-}
-
-/// Clean up an Azure VM and all its associated cloud resources (NIC, disk, IP, VNet, NSG).
-#[allow(dead_code)]
-pub(crate) fn delete_device_resources(settings: &Settings, vm_name: &str) -> Result<()> {
+    tracing::info!(
+        category = "azure_cleanup",
+        vm_name,
+        "Deallocating idle Azure VM to prevent ongoing compute charges"
+    );
+    api::deallocate_vm(client, vm_name)?;
     forget_activity(vm_name);
-    let client = Client::new(settings)?;
-    api::delete_vm_and_resources(&client, vm_name)
+    Ok(true)
 }
 
-/// The saved Azure VMs of `account`. Sandboxes suspend themselves through
-/// their own lifecycle policy, and a device saved under another
-/// subscription is not this client's to check: a VM of the same name here
-/// would be stopped instead.
-fn account_vms(
-    devices: Vec<crate::cloud::SavedDevice>,
-    account: &str,
-) -> Vec<crate::cloud::SavedDevice> {
+/// The saved Azure devices of `account`. A device saved under another
+/// subscription is not this client's to check: a machine of the same name
+/// here would be stopped or forgotten instead.
+fn account_devices(devices: Vec<SavedDevice>, account: &str) -> Vec<SavedDevice> {
     devices
         .into_iter()
-        .filter(|device| {
-            device.provider == crate::cloud::CloudProvider::Azure
-                && device.account == account
-                && matches!(
-                    super::machine::Machine::parse(&device.id),
-                    super::machine::Machine::Vm(_)
-                )
-        })
+        .filter(|device| device.provider == CloudProvider::Azure && device.account == account)
         .collect()
 }
 
-/// Check all saved Azure devices and deallocate any that have been idle for longer than `auto_stop`.
+/// Forget a device whose machine Azure no longer has: a Spot VM it evicted,
+/// or a machine deleted in the portal. Its row would only fail to connect.
+fn forget_gone(device: &SavedDevice) -> crate::Result<()> {
+    tracing::info!(
+        category = "azure_cleanup",
+        id = %device.id,
+        "Forgetting an Azure device whose machine is gone"
+    );
+    forget_activity(&device.id);
+    Ok(crate::cloud::remove(CloudProvider::Azure, &device.id)?)
+}
+
+/// Each minute: forget devices whose machine is gone, and stop idle VMs once
+/// `auto_stop` has passed without a connection. A disposable VM cannot be
+/// stopped and kept, so it is destroyed with everything it bills for; an
+/// older VM on a managed disk is deallocated. Sandboxes suspend themselves.
 pub(crate) fn check_all_idle_devices() {
     let Ok(devices) = crate::cloud::load() else {
         return;
     };
     if !devices
         .iter()
-        .any(|device| device.provider == crate::cloud::CloudProvider::Azure)
+        .any(|device| device.provider == CloudProvider::Azure)
     {
         return;
     }
-
     let Ok(config) = crate::config::Config::load_startup() else {
         return;
     };
     let Ok(Some(settings)) = config.azure.settings() else {
         return;
     };
-    let Some(auto_stop) = settings.auto_stop else {
-        return;
-    };
-
-    let vms = account_vms(devices, &settings.account());
-    if vms.is_empty() {
+    let devices = account_devices(devices, &settings.account());
+    let (vms, sandboxes): (Vec<_>, Vec<_>) = devices
+        .iter()
+        .partition(|device| matches!(Machine::parse(&device.id), Machine::Vm(_)));
+    if !vms.is_empty() {
+        match Client::new(&settings) {
+            Ok(client) => {
+                for device in vms {
+                    if let Err(error) = check_vm(&settings, &client, device) {
+                        warn(device, &error);
+                    }
+                }
+            }
+            Err(error) => {
+                tracing::warn!(category = "azure_cleanup", %error, "Could not reach Azure")
+            }
+        }
+    }
+    if sandboxes.is_empty() {
         return;
     }
-    let Ok(client) = Client::new(&settings) else {
-        return;
+    let client = match Client::for_audience(&settings, Audience::Sandboxes) {
+        Ok(client) => client,
+        Err(error) => {
+            return tracing::warn!(category = "azure_cleanup", %error, "Could not reach Azure sandboxes");
+        }
     };
-
-    for device in vms {
-        if let Err(error) = deallocate_if_idle(&client, &device.id, auto_stop) {
-            tracing::warn!(
-                category = "azure_cleanup",
-                vm_name = %device.id,
-                %error,
-                "Failed checking or deallocating idle Azure VM"
-            );
+    for device in sandboxes {
+        let Machine::Sandbox(id) = Machine::parse(&device.id) else {
+            continue;
+        };
+        let checked = super::sandbox::exists(&client, &settings, id)
+            .map_err(crate::Error::from)
+            .and_then(|exists| if exists { Ok(()) } else { forget_gone(device) });
+        if let Err(error) = checked {
+            warn(device, &error);
         }
     }
 }
 
-/// Periodically check for idle Azure VMs and deallocate them in the background.
+fn check_vm(settings: &Settings, client: &Client, device: &SavedDevice) -> crate::Result<()> {
+    let Machine::Vm(name) = Machine::parse(&device.id) else {
+        return Ok(());
+    };
+    let Some(kind) = api::vm_kind(client, name)? else {
+        return forget_gone(device);
+    };
+    let Some(auto_stop) = settings.auto_stop else {
+        return Ok(());
+    };
+    if !is_idle(&device.id, auto_stop) {
+        return Ok(());
+    }
+    match kind {
+        api::VmKind::Disposable => {
+            tracing::info!(
+                category = "azure_cleanup",
+                vm_name = name,
+                "Destroying an idle disposable Azure VM"
+            );
+            super::destroy::destroy_device(settings, device, &|| false, |_| {})?;
+        }
+        api::VmKind::Kept => {
+            deallocate(client, name)?;
+        }
+    }
+    Ok(())
+}
+
+fn warn(device: &SavedDevice, error: &crate::Error) {
+    tracing::warn!(
+        category = "azure_cleanup",
+        id = %device.id,
+        %error,
+        "Failed checking an Azure device"
+    );
+}
+
+/// Check Azure devices each minute in the background; see `check_all_idle_devices`.
 pub(crate) fn install(cx: &mut gpui::App) {
     let timer = cx.background_executor().clone();
     cx.background_executor()
