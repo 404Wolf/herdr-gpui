@@ -33,6 +33,7 @@ mod prefix;
 mod reconnecting;
 mod regions;
 mod render;
+mod report_issue;
 mod selection;
 mod server_keys;
 mod sound;

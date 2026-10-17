@@ -1,9 +1,12 @@
 use super::*;
-use crate::window::status_bar::{
-    clean_cpu_brand, extract_ioreg_string, format_mac_model, report_issue_client_version,
-    report_issue_install_method, report_issue_os, report_issue_url,
+use crate::window::report_issue::{
+    Hardware, clean_cpu_brand, client_version, extract_ioreg_string, format_mac_model,
+    install_method, report_issue_url,
 };
 use gpui::TestAppContext;
+use std::path::Path;
+
+const GIB: u64 = 1 << 30;
 
 #[test]
 fn report_issue_url_prefills_all_fields() {
@@ -57,23 +60,45 @@ fn report_issue_url_bounds_large_logs() {
 }
 
 #[test]
-fn report_issue_os_returns_valid_description() {
-    let os = report_issue_os();
-    assert!(!os.is_empty());
-    assert!(os.contains(','));
-    if cfg!(target_os = "macos") {
-        assert!(os.contains("macOS"));
-        assert!(
-            os.contains("M1 Pro")
-                || os.contains("Apple Silicon")
-                || os.contains("Intel")
-                || os.contains("MacBook")
-        );
-    } else if cfg!(target_os = "linux") {
-        assert!(os.contains("Linux"));
-    } else if cfg!(target_os = "windows") {
-        assert!(os.contains("Windows"));
-    }
+fn hardware_lists_the_known_chip_memory_and_model() {
+    let mac_mini = Hardware {
+        chip: Some("Apple M2"),
+        memory_bytes: 16 * GIB,
+        model: Some("Macmini14,3"),
+        os: "macos",
+        arch: "arm64",
+    };
+    assert_eq!(mac_mini.describe(), "M2, 16GB RAM, Macmini14,3");
+    let laptop = Hardware {
+        chip: Some("Apple M1 Pro"),
+        memory_bytes: 32 * GIB,
+        model: Some("14\" MacBook Pro"),
+        os: "macos",
+        arch: "arm64",
+    };
+    assert_eq!(laptop.describe(), "M1 Pro, 32GB RAM, 14\" MacBook Pro");
+    let linux = Hardware {
+        chip: Some("AMD Ryzen 7 7800X3D"),
+        memory_bytes: 0,
+        model: None,
+        os: "linux",
+        arch: "x86_64",
+    };
+    assert_eq!(linux.describe(), "AMD Ryzen 7 7800X3D");
+}
+
+#[test]
+fn hardware_falls_back_to_the_architecture() {
+    let unknown = |os, arch| Hardware {
+        chip: Some("  "),
+        memory_bytes: 0,
+        model: None,
+        os,
+        arch,
+    };
+    assert_eq!(unknown("macos", "arm64").describe(), "Apple Silicon");
+    assert_eq!(unknown("macos", "x86_64").describe(), "Intel");
+    assert_eq!(unknown("linux", "aarch64").describe(), "aarch64");
 }
 
 #[test]
@@ -119,23 +144,31 @@ fn extract_ioreg_string_handles_quotes_and_brackets() {
 }
 
 #[test]
-fn report_issue_client_version_embeds_commit_or_release() {
-    let version = report_issue_client_version();
-    assert!(!version.is_empty());
-    if crate::RELEASE_BUILD {
-        assert_eq!(version, crate::APP_VERSION);
-    } else if let Some(commit) = crate::constants::BUILD_COMMIT.filter(|c| !c.is_empty()) {
-        assert_eq!(version, format!("dev ({commit})"));
-    } else {
-        assert_eq!(version, "dev");
-    }
+fn client_version_names_the_commit_of_source_builds_only() {
+    let app = crate::APP_VERSION;
+    assert_eq!(
+        client_version(false, Some("2f643d73")),
+        format!("{app} (2f643d73)")
+    );
+    assert_eq!(client_version(false, Some("")), app);
+    assert_eq!(client_version(false, None), app);
+    assert_eq!(client_version(true, Some("2f643d73")), app);
 }
 
 #[test]
-fn report_issue_install_method_detects_cargo_or_bundle() {
-    // Under cargo test, the current executable lives in target/debug
-    let method = report_issue_install_method();
-    assert_eq!(method, Some("cargo run / just run"));
+fn install_method_tells_source_builds_and_leaves_releases_unset() {
+    let bundle = Path::new("/Users/me/herdr-gpui/target/release/Herdr.app/Contents/MacOS/Herdr");
+    assert_eq!(
+        install_method(bundle, false),
+        Some("Locally built app bundle")
+    );
+    let cargo = Path::new("/Users/me/herdr-gpui/target/debug/herdr-gpui");
+    assert_eq!(install_method(cargo, false), Some("cargo run / just run"));
+    let installed = Path::new("/usr/local/bin/herdr-gpui");
+    assert_eq!(install_method(installed, false), None);
+    let release = Path::new("/Applications/Herdr.app/Contents/MacOS/Herdr");
+    assert_eq!(install_method(release, true), None);
+    assert_eq!(install_method(cargo, true), None);
 }
 
 #[gpui::test]
@@ -143,10 +176,13 @@ fn herdr_window_report_issue_url_integrates_state(cx: &mut TestAppContext) {
     let (view, cx) = cx.add_window_view(fixture_window);
 
     // Default window without error or daemon reports client version and OS
-    let default_url = view.read_with(cx, |this, _| this.report_issue_url());
+    let default_url = view.read_with(cx, |this, _| {
+        this.report_issue_url("macOS, Apple Silicon", None)
+    });
     assert!(default_url.contains("template=bug_report.yml"));
     assert!(default_url.contains("version="));
-    assert!(default_url.contains("os="));
+    assert!(default_url.contains("os=macOS%2C+Apple+Silicon"));
+    assert!(!default_url.contains("install_method="));
     assert!(!default_url.contains("daemon_version="));
     assert!(!default_url.contains("logs="));
 
@@ -154,7 +190,9 @@ fn herdr_window_report_issue_url_integrates_state(cx: &mut TestAppContext) {
     view.update(cx, |this, _| {
         this.live.daemon_version = Some("0.9.5".into());
     });
-    let with_daemon = view.read_with(cx, |this, _| this.report_issue_url());
+    let with_daemon = view.read_with(cx, |this, _| {
+        this.report_issue_url("macOS, Apple Silicon", None)
+    });
     assert!(with_daemon.contains("daemon_version=0.9.5"));
 
     // Missing installation reports "none (not installed)" when version is absent
@@ -162,14 +200,18 @@ fn herdr_window_report_issue_url_integrates_state(cx: &mut TestAppContext) {
         this.live.daemon_version = None;
         this.live.missing_installation = true;
     });
-    let missing = view.read_with(cx, |this, _| this.report_issue_url());
+    let missing = view.read_with(cx, |this, _| {
+        this.report_issue_url("macOS, Apple Silicon", None)
+    });
     assert!(missing.contains("daemon_version=none+%28not+installed%29"));
 
     // An error populates logs
     view.update(cx, |this, _| {
         this.local_error = Some("Connection refused".into());
     });
-    let with_error = view.read_with(cx, |this, _| this.report_issue_url());
+    let with_error = view.read_with(cx, |this, _| {
+        this.report_issue_url("macOS, Apple Silicon", None)
+    });
     assert!(with_error.contains("logs="));
     assert!(with_error.contains("Connection+refused"));
 }

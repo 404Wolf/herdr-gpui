@@ -40,11 +40,13 @@ pub(super) fn check_status_bar(
             assert!(button.bottom() <= status.bottom());
         }
         cx.simulate_click(report.center(), Default::default());
-        let expected = view.read_with(cx, |this, _| this.report_issue_url());
-        assert_eq!(cx.opened_url().as_deref(), Some(expected.as_str()));
-        assert!(expected.contains("template=bug_report.yml"));
-        assert!(expected.contains("version="));
-        assert!(expected.contains("os="));
+        // The platform is gathered in the background before the report opens.
+        cx.run_until_parked();
+        let opened = cx.opened_url().unwrap_or_default();
+        assert!(opened.starts_with(
+            "https://github.com/penso/herdr-gpui/issues/new?template=bug_report.yml&version="
+        ));
+        assert!(opened.contains("&os="));
     }
     Ok(())
 }
