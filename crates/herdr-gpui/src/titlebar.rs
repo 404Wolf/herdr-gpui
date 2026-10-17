@@ -350,7 +350,8 @@ impl HerdrWindow {
                             ),
                     ),
             )
-            .when(!cfg!(target_os = "linux"), |end| {
+            // The in-window menu bar carries the window controls instead.
+            .when(!crate::menus::IN_WINDOW, |end| {
                 end.children(controls(window, &self.theme, |window, _| {
                     window.remove_window();
                 }))

@@ -8,9 +8,11 @@ use crate::{
     keymap::{Binding, DaemonKeys, Keymap, PaneKeys},
 };
 mod accent;
+mod agents_placement;
 pub(crate) mod backdrop;
 mod bitmap_fonts;
 mod boat;
+mod cloud;
 mod coder;
 mod daytona;
 mod devices;
@@ -38,10 +40,12 @@ pub(crate) mod watch;
 mod zen;
 
 pub use accent::Accent;
+pub use agents_placement::AgentsPlacement;
 pub use backdrop::{Backdrop, Material};
 pub use boat::BoatConfig;
 #[cfg(feature = "boat")]
 pub(crate) use boat::BoatFields;
+pub use cloud::CloudConfig;
 pub use coder::CoderConfig;
 #[cfg(feature = "coder")]
 pub(crate) use coder::CoderFields;
@@ -114,6 +118,8 @@ pub struct Config {
     /// Snapshot a checkout's files each time one of its agents starts or
     /// finishes a turn, so they can be rolled back.
     pub agent_checkpoints: bool,
+    /// Where the sidebar lists agents while `show_agents` is on.
+    pub agents_placement: AgentsPlacement,
     /// What shows behind the main window's terminals and chrome.
     pub backdrop: Backdrop,
     pub bell: BellConfig,
@@ -122,6 +128,8 @@ pub struct Config {
     /// override from the Herdr value it shadows.
     pub(crate) clipboard_overrides: ClipboardToastSettings,
     pub clipboard_toast: ClipboardToast,
+    /// What a new cloud device runs the first time it connects.
+    pub cloud: CloudConfig,
     pub code: CodeConfig,
     pub coder: CoderConfig,
     pub confirm_close_pane: bool,
@@ -398,11 +406,13 @@ impl Default for Config {
             // keep-sorted start
             accent: Accent::default(),
             agent_checkpoints: true,
+            agents_placement: AgentsPlacement::default(),
             backdrop: Backdrop::default(),
             bell: BellConfig::default(),
             boat: BoatConfig::default(),
             clipboard_overrides: ClipboardToastSettings::default(),
             clipboard_toast: ClipboardToast::default(),
+            cloud: CloudConfig::default(),
             code: CodeConfig::default(),
             coder: CoderConfig::default(),
             confirm_close_pane: true,
@@ -466,10 +476,12 @@ struct Settings {
     // keep-sorted start
     accent: Accent,
     agent_checkpoints: Option<bool>,
+    agents_placement: AgentsPlacement,
     backdrop: Backdrop,
     bell: BellConfig,
     boat: BoatConfig,
     clipboard_toast: ClipboardToastSettings,
+    cloud: CloudConfig,
     code: CodeConfig,
     coder: CoderConfig,
     confirm_close_pane: Option<bool>,
@@ -813,6 +825,7 @@ impl Config {
         }
         // A newer build may keep more accounts or owners than this one.
         unknown_keys.extend(settings.github.limit_accounts());
+        unknown_keys.extend(settings.cloud.retain_known());
         unknown_keys.sort();
         unknown_keys.dedup();
         let mut config = Self {
@@ -825,6 +838,8 @@ impl Config {
         #[cfg(feature = "boat")]
         settings.boat.settings_with(|_| None)?;
         config.boat = settings.boat;
+        settings.cloud.check()?;
+        config.cloud = settings.cloud;
         // Check what the file says so a bad value is reported at load; the
         // environment may still fill or override keys when Coder is used.
         #[cfg(feature = "coder")]
@@ -895,6 +910,7 @@ impl Config {
         config.backdrop = settings.backdrop;
         config.accent = settings.accent;
         config.contrast = settings.contrast;
+        config.agents_placement = settings.agents_placement;
         config.usage = settings.usage;
         config.option_as_alt = settings.option_as_alt;
         config.open_links_in = settings.open_links_in;

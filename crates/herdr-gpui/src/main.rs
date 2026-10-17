@@ -37,6 +37,7 @@ compile_error!(
 );
 #[cfg(feature = "cloud")]
 mod cloud;
+mod cloud_setup;
 mod code_index;
 mod code_search;
 mod code_server;

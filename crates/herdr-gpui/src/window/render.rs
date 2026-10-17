@@ -824,7 +824,7 @@ impl Render for HerdrWindow {
             .text_color(rgb(self.theme.foreground))
             .text_font(&self.config.ui)
             .text_size(px(self.config.ui.size))
-            .when(cfg!(target_os = "linux") && !zen, |root| {
+            .when(crate::menus::IN_WINDOW && !zen, |root| {
                 root.child(self.render_application_bar(window, cx))
             })
             .when(!merged && !zen, |root| {
