@@ -215,8 +215,8 @@ pub(super) const CATALOG: &[Entry] = &[
     entry(
         Section::StatusBar,
         "status-keep-awake",
-        "Keep display awake",
-        "",
+        "Keep awake",
+        "The cup keeps the machine from sleeping. System only lets the display sleep and lock, like caffeinate -i. A cup already on keeps its scope until it is turned off and on again.",
     ),
     entry(Section::StatusBar, "status-theme", "Theme", ""),
     entry(Section::StatusBar, "status-shortcuts", "Shortcuts", ""),

@@ -36,6 +36,7 @@ mod sidebar_settings;
 mod sidebar_style;
 mod sound_volume;
 mod status_bar;
+mod status_bar_awake_scope;
 mod status_icons;
 mod system_themes;
 mod terminal_padding;
