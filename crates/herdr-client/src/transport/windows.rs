@@ -22,7 +22,7 @@ use std::{
     os::windows::{
         ffi::OsStrExt,
         fs::OpenOptionsExt,
-        io::{FromRawHandle, OwnedHandle},
+        io::{AsRawHandle, BorrowedHandle, FromRawHandle, OwnedHandle},
     },
     path::Path,
     process::Stdio,
@@ -36,7 +36,8 @@ use windows_sys::Win32::{
         PIPE_ACCESS_INBOUND, PIPE_ACCESS_OUTBOUND,
     },
     System::Pipes::{
-        CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT,
+        CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE,
+        PIPE_WAIT, PeekNamedPipe,
     },
 };
 
@@ -110,6 +111,42 @@ fn closed(error: &io::Error) -> bool {
             | io::ErrorKind::UnexpectedEof
             | io::ErrorKind::WriteZero
     ) || matches!(error.raw_os_error(), Some(6 | 109 | 232 | 233))
+}
+
+/// Bytes already buffered on a pipe, or `None` once the peer closed it, for
+/// callers that hold a synchronous pipe of their own (the app's control pipe).
+/// Reading an idle synchronous pipe would block with no deadline, and
+/// `PIPE_NOWAIT` reports "no data yet" as a disconnect, so peeking first is the
+/// only bounded way to read one; no safe wrapper exposes it.
+#[allow(unsafe_code)]
+pub fn available(pipe: BorrowedHandle<'_>) -> io::Result<Option<u32>> {
+    let mut ready: u32 = 0;
+    // SAFETY: the handle is borrowed from a pipe that outlives this call.
+    // `lpBuffer`/`lpBytesRead`/`lpBytesLeftThisMessage` are documented as
+    // optional and passed as null with a zero buffer size, so nothing is
+    // copied out. `ready` is a live, exclusively borrowed `u32` that the call
+    // writes only on success, and the return value is checked before it is
+    // read.
+    let peeked = unsafe {
+        PeekNamedPipe(
+            pipe.as_raw_handle(),
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null_mut(),
+            &mut ready,
+            std::ptr::null_mut(),
+        )
+    };
+    if peeked != 0 {
+        return Ok(Some(ready));
+    }
+    let error = io::Error::last_os_error();
+    if closed(&error) {
+        Ok(None)
+    } else {
+        tracing::warn!(operation = "pipe_peek", kind = ?error.kind(), raw_os_error = ?error.raw_os_error(), "Windows local transport failed");
+        Err(error)
+    }
 }
 
 fn deadline(timeout: Option<Duration>) -> Option<Instant> {

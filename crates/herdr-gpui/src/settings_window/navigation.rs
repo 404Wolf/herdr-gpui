@@ -61,19 +61,25 @@ impl SettingsWindow {
                         .overflow_y_scroll()
                         .track_scroll(&self.navigation_scroll)
                         // Flat, so `Section::nav_item` can scroll to a page.
-                        .children(Group::ALL.into_iter().flat_map(|group| {
-                            std::iter::once(self.group_label(group).into_any_element()).chain(
-                                Section::ALL
-                                    .iter()
-                                    .copied()
-                                    .enumerate()
-                                    .filter(move |(_, section)| section.group() == group)
-                                    .map(|(index, section)| {
-                                        self.navigation_row(index, section, cx).into_any_element()
-                                    })
-                                    .collect::<Vec<_>>(),
-                            )
-                        })),
+                        .children(std::iter::once(None).chain(Group::ALL.map(Some)).flat_map(
+                            |group| {
+                                group
+                                    .map(|group| self.group_label(group).into_any_element())
+                                    .into_iter()
+                                    .chain(
+                                        Section::ALL
+                                            .iter()
+                                            .copied()
+                                            .enumerate()
+                                            .filter(move |(_, section)| section.group() == group)
+                                            .map(|(index, section)| {
+                                                self.navigation_row(index, section, cx)
+                                                    .into_any_element()
+                                            })
+                                            .collect::<Vec<_>>(),
+                                    )
+                            },
+                        )),
                     cx,
                 ),
             )

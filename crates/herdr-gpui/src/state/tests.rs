@@ -7,6 +7,7 @@ mod announcements;
 mod cleanup_slot;
 mod connection_status;
 mod daemon_messages;
+mod daemon_version;
 mod focus_acks;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 mod local_peer_warning;

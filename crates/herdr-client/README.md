@@ -141,9 +141,11 @@ operation and waits for it only until the caller's deadline:
   the buffer, on the worker thread. A peer that never reads cannot hold the
   worker or the drop.
 
-These calls are the crate's only `unsafe` (`transport/overlapped.rs`), because
+These calls (`transport/overlapped.rs`) are the stream's only `unsafe`, because
 `interprocess` and the standard library block in `WriteFile` and the asynchronous
-wrappers need a runtime or a completion-port reactor. A WSL bridge's stream is
+wrappers need a runtime or a completion-port reactor. The crate also exports
+`pipe_available`, one `PeekNamedPipe` call, for the app's control pipe, which
+reads a synchronous pipe and has no other bounded way to. A WSL bridge's stream is
 the same type over two private pipes the crate creates for the child's stdin and
 stdout, overlapped on this end, with the same deadlines; the standard library's
 `Stdio::piped` ends are not documented to be overlapped.

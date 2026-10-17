@@ -102,11 +102,18 @@ rustix.workspace = true
 [target.'cfg(any(target_os = "macos", windows))'.dependencies]
 wry.workspace = true
 
-# A clipboard reader that runs on a background thread (see `window/clipboard`).
+# The control pipe: `interprocess` creates it with a DACL, and `windows-sys`
+# reads the user and the pipe owner it is checked against. `clipboard-win`
+# reads the clipboard on a background thread (see `window/clipboard`).
 [target.'cfg(windows)'.dependencies]
 clipboard-win.workspace     = true
+interprocess.workspace      = true
 raw-window-handle.workspace = true
 windows.workspace           = true
+windows-sys = { features = [
+  "Win32_Security_Authorization",
+  "Win32_System_Threading",
+], workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 fontdb.workspace       = true
