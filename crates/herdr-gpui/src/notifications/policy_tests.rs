@@ -17,6 +17,8 @@ use herdr_client::{
 };
 use std::sync::Arc;
 
+mod finished;
+
 fn endpoints() -> [Endpoint; 2] {
     ["local", "remote"].map(|id| {
         let mut endpoint = Endpoint::new(id.into(), id.into(), ConnectTarget::Local, true);
@@ -485,7 +487,8 @@ fn system_delivery_posts_once_with_a_pane_tag_instead_of_a_toast() {
             id: 0,
             tag: "herdr:remote:boot-v1:w1:p1".into(),
             title: "event".into(),
-            body: Some("Review needed".into()),
+            // The pane's task and sidebar place replace the daemon's body.
+            body: Some("Review\nmain".into()),
         }]
     );
     // Posted notices stay for click resolution, are never re-posted, and

@@ -412,6 +412,15 @@ impl Layout {
         }
     }
 
+    /// Lists `pick` in `id`'s strip without showing it, so what the group
+    /// shows stays as it is. The tab becomes the group's own. Only control
+    /// requests place tabs this way.
+    pub(crate) fn give(&mut self, id: GroupId, pick: &Pick) {
+        if self.group(id).is_some() {
+            self.claim(id, pick);
+        }
+    }
+
     /// Shows `pick` in `id` without using the group. The tab becomes the
     /// group's own.
     pub(crate) fn show(&mut self, id: GroupId, pick: Pick) {

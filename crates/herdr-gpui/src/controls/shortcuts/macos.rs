@@ -29,6 +29,7 @@ pub(super) fn defaults(command: Command) -> &'static [&'static str] {
         AnnotateSelection => &["cmd-shift-a"],
         ClosePane => &["cmd-w"],
         CloseTab => &["cmd-shift-w"],
+        ReopenClosedTab => &["cmd-shift-t"],
         TabNumber(1) => &["cmd-1"],
         TabNumber(2) => &["cmd-2"],
         TabNumber(3) => &["cmd-3"],
@@ -39,6 +40,7 @@ pub(super) fn defaults(command: Command) -> &'static [&'static str] {
         TabNumber(8) => &["cmd-8"],
         TabNumber(9) => &["cmd-9"],
         ToggleSidebar => &["cmd-b"],
+        ToggleZenMode => &["ctrl-cmd-z"],
         IncreaseFontSize => &["cmd-=", "cmd-+"],
         DecreaseFontSize => &["cmd--"],
         ResetFontSize => &["cmd-0"],
@@ -47,6 +49,7 @@ pub(super) fn defaults(command: Command) -> &'static [&'static str] {
         Sessions => &["cmd-shift-s"],
         WorkspacePicker => &["cmd-p"],
         Palette => &["cmd-shift-p"],
+        ResumePalette => &["cmd-shift-r"],
         GoToSymbol => &["cmd-shift-o"],
         GoToFile => &["cmd-o"],
         Quit => &["cmd-q"],
@@ -54,6 +57,7 @@ pub(super) fn defaults(command: Command) -> &'static [&'static str] {
         SplitEditor => &["cmd-\\"],
         ToggleFullScreen => &["ctrl-cmd-f"],
         CycleWindows => &["cmd-`"],
+        CloseWindow => &["cmd-alt-shift-w"],
         _ => &[],
     }
 }

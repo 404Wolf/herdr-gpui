@@ -5,7 +5,7 @@
 use super::{STATUS_DOT_UNKNOWN, STATUS_WIDTH, first_text, label_text, line_height};
 use crate::{
     HerdrWindow,
-    config::{FontConfig, Theme},
+    config::{FontConfig, StatusIcons, Theme},
     herdr_settings::{IndicatorStyle, Settings},
 };
 use gpui::{prelude::*, *};
@@ -195,13 +195,21 @@ pub(super) fn agent_labels<'a>(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Indicators {
     pub(super) style: IndicatorStyle,
+    /// This client's drawn icons, which replace `style` wherever a status shows.
+    pub(super) icons: Option<StatusIcons>,
     colors: [u32; 5],
 }
 
 impl Indicators {
-    pub(crate) fn new(settings: Option<&Settings>, light: bool, theme: &Theme) -> Self {
+    pub(crate) fn new(
+        settings: Option<&Settings>,
+        icons: Option<StatusIcons>,
+        light: bool,
+        theme: &Theme,
+    ) -> Self {
         Self {
             style: settings.map_or(IndicatorStyle::Dots, |settings| settings.indicators),
+            icons,
             colors: [
                 AgentStatus::Unknown,
                 AgentStatus::Idle,
@@ -229,11 +237,61 @@ impl Indicators {
     }
 
     pub(crate) fn width(self, font: &FontConfig) -> f32 {
-        match self.style {
-            IndicatorStyle::Dots => STATUS_WIDTH,
-            IndicatorStyle::Symbols => font.size.ceil().max(STATUS_WIDTH),
+        match (self.icons, self.style) {
+            (Some(StatusIcons::Tiles), _) => tile_size(font),
+            (Some(_), _) => icon_size(font),
+            (None, IndicatorStyle::Dots) => STATUS_WIDTH,
+            (None, IndicatorStyle::Symbols) => font.size.ceil().max(STATUS_WIDTH),
         }
     }
+
+    /// Whether a row centers the mark across all its lines. Drawn icons are
+    /// taller than a line and read as the row's status, not its first line's.
+    pub(crate) fn centered(self) -> bool {
+        self.icons.is_some()
+    }
+
+    /// The bar the rail style draws on a row's leading edge, for the statuses
+    /// worth noticing. Absolutely placed, so the row must be `relative`.
+    pub(super) fn rail(self, status: AgentStatus, key: &str) -> Option<Div> {
+        if self.icons != Some(StatusIcons::Rail)
+            || !matches!(
+                status,
+                AgentStatus::Working | AgentStatus::Done | AgentStatus::Blocked
+            )
+        {
+            return None;
+        }
+        Some(
+            div()
+                .debug_selector(|| format!("rail-{key}"))
+                .absolute()
+                .left_0()
+                .top(relative(RAIL_INSET))
+                .bottom(relative(RAIL_INSET))
+                .w(px(RAIL_WIDTH))
+                .rounded_r(px(RAIL_WIDTH))
+                .bg(rgb(self.color(status))),
+        )
+    }
+}
+
+const RAIL_WIDTH: f32 = 3.;
+/// The bar's inset from the row's top and bottom, as a share of its height,
+/// so even a one-line Compact row at the smallest font keeps a visible bar.
+const RAIL_INSET: f32 = 0.2;
+
+/// A drawn icon's side: as tall as a line fits, since compact rows are one
+/// line with no padding to spill into, and even so its 16-unit grid lands on
+/// whole device pixels at 1x and 2x.
+fn icon_size(font: &FontConfig) -> f32 {
+    (line_height(font) / 2.).floor().max(5.) * 2.
+}
+
+/// A tile is the same size as the other icons; its mark leaves it two pixels
+/// of tint on every side.
+fn tile_size(font: &FontConfig) -> f32 {
+    icon_size(font)
 }
 
 pub(super) fn status_symbol(status: AgentStatus) -> &'static str {
@@ -262,6 +320,9 @@ pub(super) fn status_mark(
     color: u32,
     bold: bool,
 ) -> Div {
+    if let Some(icons) = indicators.icons {
+        return status_icon(status, font, icons, color);
+    }
     // Upstream dots: working/blocked/done filled, idle hollow, unknown a small dot.
     let (diameter, filled) = match status {
         AgentStatus::Unknown => (STATUS_DOT_UNKNOWN, true),
@@ -301,6 +362,26 @@ pub(super) fn status_mark(
                     .when(filled, |dot| dot.bg(rgb(color))),
             )
         })
+}
+
+/// A drawn status icon, centered in its slot. Configured weights do not
+/// apply: the icon's strokes are fixed by its asset.
+fn status_icon(status: AgentStatus, font: &FontConfig, icons: StatusIcons, color: u32) -> Div {
+    let size = icon_size(font);
+    let mark = svg()
+        .path(crate::icons::status_icon(icons, status))
+        .flex_none()
+        .text_color(rgb(color));
+    let slot = div().flex_none().flex().items_center().justify_center();
+    if icons != StatusIcons::Tiles {
+        return slot.size(px(size)).child(mark.size(px(size)));
+    }
+    slot.size(px(tile_size(font)))
+        .rounded(px(crate::config::corners::SMALL))
+        .bg(rgba((color << 8) | 0x30))
+        .border_1()
+        .border_color(rgba((color << 8) | 0x70))
+        .child(mark.size(px(size - 4.)))
 }
 
 /// The word the daemon's `state_text` token shows for a status when its
@@ -376,8 +457,11 @@ mod tests {
                 let theme = Theme::builtin(name)
                     .context("builtin theme")?
                     .with_contrast(Contrast::High);
-                let indicators = Indicators::new(Some(&settings), light, &theme);
-                assert_eq!(indicators, Indicators::new(Some(&settings), light, &theme));
+                let indicators = Indicators::new(Some(&settings), None, light, &theme);
+                assert_eq!(
+                    indicators,
+                    Indicators::new(Some(&settings), None, light, &theme)
+                );
                 assert_eq!(indicators.style, IndicatorStyle::Symbols);
                 for status in [
                     AgentStatus::Unknown,
@@ -409,10 +493,12 @@ mod tests {
             size: 16.,
             fallbacks: None,
             line_height_multiple: None,
+            weight: gpui::FontWeight::NORMAL,
         };
         for style in [IndicatorStyle::Dots, IndicatorStyle::Symbols] {
             let indicators = Indicators {
                 style,
+                icons: None,
                 colors: [0x112233, 0x223344, 0x334455, 0x445566, 0x556677],
             };
             for (status, expected) in [

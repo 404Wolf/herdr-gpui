@@ -38,6 +38,13 @@ accepted = ["MPL-2.0"] # 0.2.0, runtime dependency
 # https://crates.io/api/v1/crates/nucleo-matcher/0.3.1/download
 [nucleo-matcher]
 accepted = ["MPL-2.0"] # 0.3.1, runtime dependency
+# Markdown HTML sanitizer (ammonia) CSS parsing, runtime dependencies.
+# https://crates.io/api/v1/crates/cssparser/0.38.0/download
+[cssparser]
+accepted = ["MPL-2.0"] # 0.38.0, runtime dependency
+# https://crates.io/api/v1/crates/dtoa-short/0.3.5/download
+[dtoa-short]
+accepted = ["MPL-2.0"] # 0.3.5, runtime dependency
 # GPUI's DirectWrite bindings, linked only into the Windows executable.
 # https://crates.io/api/v1/crates/dwrote/0.11.5/download
 [dwrote]

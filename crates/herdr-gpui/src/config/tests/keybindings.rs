@@ -41,11 +41,11 @@ fn devices_opt_into_server_keybindings_one_by_one() -> anyhow::Result<()> {
     // A non-catalog ID, or a key this build does not know, is ignored
     // and reported, as other unknown keys are.
     let ignored = Config::parse(&format!(
-        "[devices.box]\nkeybindings = 'server'\n[devices.{ID}]\nkeybindings = 'server'\ntheme = 'Nord'"
+        "[devices.box]\nkeybindings = 'server'\n[devices.{ID}]\nkeybindings = 'server'\nfont = 'Nord'"
     ))?;
     assert_eq!(
         ignored.unknown_keys,
-        [format!("devices.{ID}.theme"), "devices.box".to_owned()]
+        [format!("devices.{ID}.font"), "devices.box".to_owned()]
     );
     assert_eq!(ignored.devices.len(), 1);
     assert_eq!(
@@ -236,14 +236,17 @@ fn pane_keys_reach_the_keymap_as_written() -> anyhow::Result<()> {
     let sent = |typed| {
         keymap
             .pane_key(&gpui::Keystroke::parse(typed).unwrap_or_default())
-            .map(|sent| sent.unparse())
+            .and_then(|sent| match sent {
+                crate::keymap::PaneKey::Key(key) => Some(key.unparse()),
+                crate::keymap::PaneKey::Text(_) => None,
+            })
     };
     assert_eq!(sent("cmd-k").as_deref(), Some("ctrl-l"));
     assert_eq!(sent("cmd-.").as_deref(), Some("alt-."));
     assert_eq!(sent("cmd-left"), None);
     assert_eq!(
         keymap.primary(crate::controls::Command::ClearPane),
-        if cfg!(target_os = "linux") {
+        if crate::controls::CTRL_SHORTCUTS {
             "ctrl-shift-k"
         } else {
             ""

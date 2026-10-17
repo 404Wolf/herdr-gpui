@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
+use crate::LocalNetworkAccess;
 use std::{
     net::IpAddr,
     process::{Command, Stdio},
@@ -59,13 +60,56 @@ fn ssh_failures_are_classified_from_exit_code_and_stderr() {
         (Some(1), "Permission denied\n", SshFailure::Other),
         (None, "Host key verification failed.\n", SshFailure::Other),
     ];
+    // The app's own check confirms the refusal; see the next test for when
+    // it does not.
     for (code, stderr, expected) in cases {
         assert_eq!(
-            SshFailure::classify(code, stderr.as_bytes()),
+            SshFailure::classify_with(
+                code,
+                stderr.as_bytes(),
+                |_| Vec::new(),
+                || { LocalNetworkAccess::Denied }
+            ),
             expected,
             "{stderr}"
         );
     }
+}
+
+/// An offline device, a wrong route, or a routed private network also fail
+/// with no route to a LAN address. Unless the app's own check is refused,
+/// that is reported as what it is, not as a missing permission.
+#[test]
+fn no_route_to_a_lan_address_blames_the_permission_only_when_it_is_refused() {
+    let stderr = b"ssh: connect to host 10.0.0.250 port 22: No route to host\n";
+    for (access, expected) in [
+        (
+            LocalNetworkAccess::Denied,
+            if cfg!(target_os = "macos") {
+                SshFailure::LocalNetworkDenied
+            } else {
+                SshFailure::NoRoute
+            },
+        ),
+        (LocalNetworkAccess::Allowed, SshFailure::NoRoute),
+        (LocalNetworkAccess::Unknown, SshFailure::NoRoute),
+    ] {
+        assert_eq!(
+            SshFailure::classify_with(Some(255), stderr, |_| Vec::new(), || access),
+            expected,
+            "{access:?}"
+        );
+    }
+    // The permission is not checked for an Internet address at all.
+    assert_eq!(
+        SshFailure::classify_with(
+            Some(255),
+            b"ssh: connect to host 8.8.8.8 port 22: No route to host\n",
+            |_| Vec::new(),
+            || unreachable!("only a LAN address can be refused by the permission"),
+        ),
+        SshFailure::NoRoute
+    );
 }
 
 #[test]
@@ -109,10 +153,15 @@ fn only_local_network_addresses_count_as_local() {
 fn a_hostname_is_resolved_before_its_route_is_classified() {
     let denied = "ssh: connect to host box.local port 22: No route to host\n";
     let classify = |stderr: &str, addresses: Vec<IpAddr>| {
-        SshFailure::classify_with(Some(255), stderr.as_bytes(), |host| {
-            assert_eq!(host, "box.local");
-            addresses
-        })
+        SshFailure::classify_with(
+            Some(255),
+            stderr.as_bytes(),
+            |host| {
+                assert_eq!(host, "box.local");
+                addresses
+            },
+            || LocalNetworkAccess::Denied,
+        )
     };
     let lan = vec!["10.0.0.19".parse().unwrap()];
     assert_eq!(
@@ -134,6 +183,7 @@ fn a_hostname_is_resolved_before_its_route_is_classified() {
             Some(255),
             b"ssh: connect to host 8.8.8.8 port 22: No route to host\n",
             |_| unreachable!("an address needs no lookup"),
+            || LocalNetworkAccess::Denied,
         ),
         SshFailure::NoRoute
     );
@@ -162,11 +212,7 @@ fn the_stderr_tail_is_bounded_to_the_latest_output() {
 
 #[test]
 fn a_closed_child_is_diagnosed_from_its_real_exit_and_stderr() {
-    let mut child = Command::new("/bin/sh")
-        .args([
-            "-c",
-            "printf 'me@host: Permission denied (publickey).\\n' >&2; exit 255",
-        ])
+    let mut child = failing_child()
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
@@ -178,8 +224,7 @@ fn a_closed_child_is_diagnosed_from_its_real_exit_and_stderr() {
 
 #[test]
 fn a_child_that_will_not_exit_is_not_waited_on_past_cancellation() {
-    let mut child = Command::new("/bin/sh")
-        .args(["-c", "exec sleep 30"])
+    let mut child = idle_child()
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
@@ -204,4 +249,41 @@ fn a_refused_bridge_reports_its_class_through_the_error() {
     );
     let source = std::error::Error::source(&error).unwrap();
     assert_eq!(source.downcast_ref::<SshFailure>(), Some(&SshFailure::Auth));
+}
+
+/// A child that reports what `ssh` prints for a refused key, then exits 255.
+#[cfg(unix)]
+fn failing_child() -> Command {
+    let mut command = Command::new("/bin/sh");
+    command.args([
+        "-c",
+        "printf 'me@host: Permission denied (publickey).\n' >&2; exit 255",
+    ]);
+    command
+}
+
+#[cfg(windows)]
+fn failing_child() -> Command {
+    let mut command = Command::new("cmd.exe");
+    command.args([
+        "/d",
+        "/c",
+        "echo me@host: Permission denied (publickey).1>&2& exit 255",
+    ]);
+    command
+}
+
+/// A child that outlives the test unless it is killed.
+#[cfg(unix)]
+fn idle_child() -> Command {
+    let mut command = Command::new("/bin/sh");
+    command.args(["-c", "exec sleep 30"]);
+    command
+}
+
+#[cfg(windows)]
+fn idle_child() -> Command {
+    let mut command = Command::new("ping.exe");
+    command.args(["-n", "31", "127.0.0.1"]);
+    command
 }

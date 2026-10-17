@@ -14,27 +14,25 @@ fn a_short_window_scrolls_the_category_list(cx: &mut TestAppContext) {
     };
     draw(cx);
     let last = Section::ALL.len() - 1;
-    let id: &'static str = format!("settings-section-{last}").leak();
+    let id: &'static str = Section::ALL[last].selector().leak();
     let list = cx.debug_bounds("settings-sections").unwrap();
-    let general = cx.debug_bounds(id).unwrap();
+    let bottom = cx.debug_bounds(id).unwrap();
     assert!(list.bottom() <= px(480.), "{list:?}");
-    assert!(
-        general.bottom() > list.bottom(),
-        "the fixture must overflow"
-    );
+    assert!(bottom.bottom() > list.bottom(), "the fixture must overflow");
 
     view.update(cx, |view, cx| {
-        view.navigation_scroll.scroll_to_item(last);
+        view.navigation_scroll
+            .scroll_to_item(Section::ALL[last].nav_item());
         cx.notify();
     });
     draw(cx);
     let list = cx.debug_bounds("settings-sections").unwrap();
-    let general = cx.debug_bounds(id).unwrap();
+    let bottom = cx.debug_bounds(id).unwrap();
     assert!(
-        general.top() >= list.top() && general.bottom() <= list.bottom() + px(1.),
-        "{general:?} in {list:?}"
+        bottom.top() >= list.top() && bottom.bottom() <= list.bottom() + px(1.),
+        "{bottom:?} in {list:?}"
     );
-    cx.simulate_click(general.center(), Default::default());
+    cx.simulate_click(bottom.center(), Default::default());
     cx.run_until_parked();
     view.read_with(cx, |view, _| assert_eq!(view.section, Section::ALL[last]));
 }

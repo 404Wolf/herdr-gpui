@@ -3,10 +3,13 @@ mod links;
 mod selection;
 pub(crate) mod splits;
 pub(crate) use accessibility::Transcript;
-pub(crate) use links::{PaneLink, RowLink, RowTarget, link_at, pane_hyperlink_at, pane_link_at};
+pub(crate) use links::{
+    ExternalUrl, PaneLink, RowLink, RowTarget, escape_into, escaped_len, link_at,
+    pane_hyperlink_at, pane_link_at,
+};
 pub(crate) use selection::{MAX_SELECTION_BYTES, Selection};
 
-use crate::config::Theme;
+use crate::{config::Theme, keymap::PaneKey};
 use gpui::{
     Bounds, KeyDownEvent, Keystroke, Modifiers, Pixels, Point, ScrollDelta, ScrollWheelEvent,
     TouchPhase, point, px, size,
@@ -16,6 +19,7 @@ use herdr_client::protocol::{
     ClientMousePosition, ClientPaneInputEvent, ClientSurfaceSize, CursorState, FrameData,
     PaneSurfaceFrame, PaneSurfacePane, SurfaceRect,
 };
+use std::num::NonZeroU16;
 
 #[cfg(test)]
 pub const BACKGROUND: u32 = 0x101419;
@@ -144,6 +148,14 @@ pub(crate) fn pane_at(
         .map(|pane| pane.pane_id.as_str())
 }
 
+/// Lines GPUI already reports for one discrete wheel notch. Linux and FreeBSD
+/// use GPUI's fixed three; Windows applies the system wheel setting, assumed
+/// at its default of three; macOS reports about one, with acceleration.
+#[cfg(target_os = "macos")]
+pub(crate) const PLATFORM_NOTCH_LINES: u16 = 1;
+#[cfg(not(target_os = "macos"))]
+pub(crate) const PLATFORM_NOTCH_LINES: u16 = 3;
+
 /// Whole wheel steps on each axis, signed as GPUI reports them: positive
 /// lines scroll up and positive columns scroll left.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -192,6 +204,7 @@ impl WheelAccumulator {
         event: &ScrollWheelEvent,
         cell_width: f32,
         cell_height: f32,
+        notch_lines: NonZeroU16,
     ) -> WheelSteps {
         if self.target.as_ref() != Some(&target.target)
             || matches!(event.touch_phase, TouchPhase::Started)
@@ -202,14 +215,14 @@ impl WheelAccumulator {
             };
         }
         // Dominance compares the reported motion itself: cells are not square.
-        let (raw_x, raw_y, x, y) = match event.delta {
+        let (raw_x, raw_y, x) = match event.delta {
             ScrollDelta::Pixels(delta) => {
-                let (x, y) = (delta.x.to_f64() as f32, delta.y.to_f64() as f32);
-                (x, y, x / cell_width, y / cell_height)
+                let x = delta.x.to_f64() as f32;
+                (x, delta.y.to_f64() as f32, x / cell_width)
             }
-            ScrollDelta::Lines(delta) => (delta.x, delta.y, delta.x, delta.y),
+            ScrollDelta::Lines(delta) => (delta.x, delta.y, delta.x),
         };
-        let lines = self.lines.add(y);
+        let lines = self.lines.add(wheel_rows(event, cell_height, notch_lines));
         // Herdr turns a horizontal wheel only into a mouse report, so motion
         // over a pane that does not report the mouse would do nothing. A
         // mostly vertical swipe's sideways drift is not a column either.
@@ -231,11 +244,21 @@ impl WheelAccumulator {
     }
 }
 
-/// The rows `event` scrolls, up into history being positive.
-pub(crate) fn wheel_rows(event: &ScrollWheelEvent, cell_height: f32) -> f32 {
+/// The rows `event` scrolls, up into history being positive. A discrete wheel
+/// notch scrolls `notch_lines`, Herdr's `ui.mouse_scroll_lines`, on both the
+/// smooth and whole-line paths; precise (trackpad) pixel motion keeps
+/// following the pointer one cell height per row.
+pub(crate) fn wheel_rows(
+    event: &ScrollWheelEvent,
+    cell_height: f32,
+    notch_lines: NonZeroU16,
+) -> f32 {
     match event.delta {
         ScrollDelta::Pixels(delta) => delta.y.to_f64() as f32 / cell_height,
-        ScrollDelta::Lines(delta) => delta.y,
+        // Multiply before dividing so the common equal counts stay exact.
+        ScrollDelta::Lines(delta) => {
+            delta.y * f32::from(notch_lines.get()) / f32::from(PLATFORM_NOTCH_LINES)
+        }
     }
 }
 
@@ -461,9 +484,13 @@ pub fn key_input(event: &KeyDownEvent, alt_keys: bool) -> Option<ClientPaneInput
     keystroke_input(&event.keystroke, event.is_held, alt_keys)
 }
 
-/// A `[pane_keys]` press: the pane receives `sent`, held as `event` is.
-pub fn pane_key_input(event: &KeyDownEvent, sent: &Keystroke) -> Option<ClientPaneInputEvent> {
-    keystroke_input(sent, event.is_held, true)
+/// A `[pane_keys]` press: the pane receives `sent`, a key held as `event` is
+/// or text as typing commits it.
+pub fn pane_key_input(event: &KeyDownEvent, sent: &PaneKey) -> Option<ClientPaneInputEvent> {
+    match sent {
+        PaneKey::Key(keystroke) => keystroke_input(keystroke, event.is_held, true),
+        PaneKey::Text(text) => Some(ClientPaneInputEvent::TextCommit(text.clone())),
+    }
 }
 
 /// Whether a pane can receive `keystroke` as a key event, so `[pane_keys]`

@@ -56,7 +56,7 @@ impl HerdrWindow {
     }
 
     /// Opens a port's page in a browser tab of `workspace`, through a tunnel
-    /// when the port is only reachable on its remote host.
+    /// when the port is on a remote host.
     pub(crate) fn open_port_link(
         &mut self,
         endpoint: &str,
@@ -64,13 +64,15 @@ impl HerdrWindow {
         link: &Link,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> Option<crate::browser::PageOpened> {
         match link {
             Link::Page(url) => {
-                self.open_workspace_page(endpoint, workspace, url.clone(), window, cx);
+                Some(self.open_workspace_page(endpoint, workspace, url.clone(), window, cx))
             }
+            // Opened once the tunnel is up, later.
             Link::Tunnel(key) => {
                 self.open_tunneled_page(endpoint, workspace, key.clone(), window, cx);
+                None
             }
         }
     }
@@ -212,7 +214,7 @@ fn hint(port: &Port, link: Option<&Link>) -> String {
 }
 
 impl HerdrWindow {
-    /// Opens a remote loopback-only port through an SSH tunnel: an existing
+    /// Opens a remote port through an SSH tunnel: an existing
     /// one at once, otherwise a new one started on the background executor,
     /// since SSH may take seconds to connect. The page opens once the tunnel
     /// accepts; a window closed meanwhile drops, and so kills, the tunnel.
@@ -272,8 +274,10 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        match WebUrl::try_from(format!("http://localhost:{local}/").as_str()) {
-            Ok(url) => self.open_workspace_page(endpoint, workspace, url, window, cx),
+        match WebUrl::try_from(format!("http://127.0.0.1:{local}/").as_str()) {
+            Ok(url) => {
+                self.open_workspace_page(endpoint, workspace, url, window, cx);
+            }
             Err(error) => self.show_flash(Flash::warning(error.to_string()), cx),
         }
     }

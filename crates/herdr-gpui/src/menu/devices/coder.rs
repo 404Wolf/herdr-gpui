@@ -1,4 +1,4 @@
-//! "Add Coder Workspace": sign in to the configured deployment and pick a
+//! Add Device's Coder form: sign in to the configured deployment and pick a
 //! template and preset (or an existing workspace). Creating hands the work to
 //! a window-level job (see `cloud::Jobs`) and closes the dialog at once, so a
 //! slow build never blocks the next one. The dialog's own jobs (sign-in,
@@ -53,12 +53,27 @@ pub(in crate::menu) struct Wizard {
     /// Run Herdr's installer when the workspace lacks it. On by default: the
     /// switch is the user's approval, given before the job starts.
     install: bool,
+    /// Run the configured setup script once the device connects. Off for an
+    /// existing workspace, which may well be set up already.
+    setup: bool,
     status: Option<String>,
     /// Dropping the job cancels it, so closing the dialog stops its work.
     job: Option<worker::Worker>,
+    /// Why the last step failed, kept with this form while another source
+    /// of Add Device shows.
+    error: Option<String>,
 }
 
 impl HerdrWindow {
+    /// Set the Coder form's error. Before the form exists, the Settings
+    /// pane that stands in for it shows the shared one.
+    fn set_coder_error(&mut self, error: Option<String>) {
+        match &mut self.menu.coder {
+            Some(wizard) => wizard.error = error,
+            None => self.menu.error = error,
+        }
+    }
+
     fn coder_input(
         &self,
         placeholder: &str,
@@ -87,8 +102,10 @@ impl HerdrWindow {
             name: self.coder_input("Workspace name", &name, cx),
             label: self.coder_input("Device name (defaults to the workspace name)", "", cx),
             install: true,
+            setup: true,
             status: None,
             job: None,
+            error: None,
             settings,
         }
     }
@@ -101,13 +118,16 @@ impl HerdrWindow {
             Ok(Some(settings)) => settings,
             Ok(None) => return,
             Err(error) => {
-                self.menu.error = Some(error.to_string());
+                // No form yet: Coder's Settings pane shows why.
+                self.menu.coder = None;
+                self.menu.page = Some(Page::AddCloud(CloudProvider::Coder));
+                self.set_coder_error(Some(error.to_string()));
                 cx.notify();
                 return;
             }
         };
         window.focus(&self.menu.focus.clone(), cx);
-        self.menu.error = None;
+        self.set_coder_error(None);
         self.menu.coder = Some(self.new_wizard(settings, Phase::Checking, cx));
         self.menu.page = Some(Page::AddCoder);
         self.coder_job(cx, |settings, _, send| {
@@ -172,7 +192,7 @@ impl HerdrWindow {
             }
             Err(error) => {
                 tracing::error!(category = "coder_worker", error_kind = ?error.kind(), "Could not start Coder setup worker");
-                self.menu.error = Some(crate::coder::Error::Worker("setup").to_string());
+                self.set_coder_error(Some(crate::coder::Error::Worker("setup").to_string()));
             }
         }
     }
@@ -234,7 +254,7 @@ impl HerdrWindow {
             }
         }
         if let Some(e) = error {
-            self.menu.error = Some(e.to_string());
+            self.set_coder_error(Some(e.to_string()));
         }
     }
 
@@ -247,7 +267,7 @@ impl HerdrWindow {
         }
         wizard.phase = Phase::SigningIn;
         wizard.status = Some("Opening the Coder sign-in page…".into());
-        self.menu.error = None;
+        self.set_coder_error(None);
         self.coder_job(cx, |settings, cancelled, send| {
             let result = setup::begin_sign_in(settings).and_then(|pending| {
                 send(Update::Opened(pending.url.clone()));
@@ -262,7 +282,7 @@ impl HerdrWindow {
             return;
         };
         wizard.phase = Phase::Loading;
-        self.menu.error = None;
+        self.set_coder_error(None);
         self.coder_job(cx, |settings, _, send| {
             send(Update::SignedOut(setup::sign_out(settings)));
         });
@@ -275,7 +295,8 @@ impl HerdrWindow {
         wizard.choice = Some(Choice::Template(template.id.clone()));
         wizard.presets = None;
         wizard.preset = None;
-        self.menu.error = None;
+        wizard.setup = true;
+        self.set_coder_error(None);
         self.coder_job(cx, move |settings, _, send| {
             let id = template.id.clone();
             send(Update::Presets(id, setup::presets(settings, &template)));
@@ -290,7 +311,8 @@ impl HerdrWindow {
         wizard.choice = Some(Choice::Existing(workspace.id.clone()));
         wizard.presets = None;
         wizard.preset = None;
-        self.menu.error = None;
+        wizard.setup = false;
+        self.set_coder_error(None);
         cx.notify();
     }
 
@@ -304,7 +326,7 @@ impl HerdrWindow {
             _ => return,
         }
         let (Some(account), Some(choice)) = (&wizard.account, &wizard.choice) else {
-            self.menu.error = Some("Choose a template or an existing workspace.".into());
+            self.set_coder_error(Some("Choose a template or an existing workspace.".into()));
             cx.notify();
             return;
         };
@@ -314,7 +336,7 @@ impl HerdrWindow {
             let id = id.clone();
             wizard.phase = Phase::Loading;
             wizard.choice = None;
-            self.menu.error = None;
+            self.set_coder_error(None);
             self.coder_job(cx, move |settings, _, send| {
                 send(Update::Account(setup::forget(settings, &id)));
             });
@@ -352,7 +374,7 @@ impl HerdrWindow {
                     None
                 };
                 if let Some(problem) = problem {
-                    self.menu.error = Some(problem.into());
+                    self.set_coder_error(Some(problem.into()));
                     cx.notify();
                     return;
                 }
@@ -371,7 +393,7 @@ impl HerdrWindow {
             }
         };
         if self.cloud_jobs.contains(CloudProvider::Coder, &name) {
-            self.menu.error = Some(format!("{name} is already being added."));
+            self.set_coder_error(Some(format!("{name} is already being added.")));
             cx.notify();
             return;
         }
@@ -381,14 +403,24 @@ impl HerdrWindow {
             label: wizard.label.read(cx).text().trim().to_owned(),
             install: wizard.install,
         };
+        let script = wizard
+            .setup
+            .then(|| {
+                self.config
+                    .cloud
+                    .script(CloudProvider::Coder)
+                    .ok()
+                    .flatten()
+            })
+            .flatten();
         let work = move |cancelled: &dyn Fn() -> bool, report: &dyn Fn(crate::cloud::Step)| {
             setup::add_device(request, cancelled, report)
         };
-        match self.start_cloud_job(CloudProvider::Coder, name, work, cx) {
+        match self.start_cloud_job(CloudProvider::Coder, name, script, work, cx) {
             // The footer's count and the picker's Adding list show progress.
             Ok(()) => self.dismiss_menu(window, cx),
             Err(error) => {
-                self.menu.error = Some(error.to_string());
+                self.set_coder_error(Some(error.to_string()));
                 cx.notify();
             }
         }
@@ -546,46 +578,46 @@ impl HerdrWindow {
         section
     }
 
-    pub(in crate::menu) fn render_add_coder(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(in crate::menu) fn render_add_coder(
+        &self,
+        compact: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let theme = &self.theme;
         let Some(wizard) = &self.menu.coder else {
-            return div();
+            return self.add_device_frame(
+                "coder-setup-dialog",
+                "coder-setup-close",
+                compact,
+                div(),
+                cx,
+            );
         };
-        let header = div()
+        // The deployment, and the account once signed in, head the pane now
+        // that the dialog's title is Add Device's own.
+        let account = div()
             .flex_none()
-            .p(px(16.))
-            .border_b_1()
-            .border_color(rgb(theme.active))
             .flex()
             .items_center()
-            .gap(px(12.))
+            .gap(px(8.))
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
-                    .child(
-                        div()
-                            .text_size(px(self.config.ui.size * 1.35))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("Add Coder Workspace"),
-                    )
-                    .child(
-                        div()
-                            .truncate()
-                            .text_size(px(self.config.ui.size * 0.85))
-                            .text_color(rgb(theme.muted))
-                            .child(match &wizard.account {
-                                Some(account) => {
-                                    format!("{} · {}", account.user.username, wizard.settings.base)
-                                }
-                                None => wizard.settings.base.clone(),
-                            }),
-                    ),
+                    .truncate()
+                    .text_color(rgb(theme.muted))
+                    .child(match &wizard.account {
+                        Some(account) => {
+                            format!("{} · {}", account.user.username, wizard.settings.base)
+                        }
+                        None => wizard.settings.base.clone(),
+                    }),
             )
             .when(wizard.phase == Phase::Choose, |header| {
                 header.child(
                     div()
                         .id("coder-sign-out")
+                        .flex_none()
                         .px_2()
                         .py_1()
                         .cursor_pointer()
@@ -594,31 +626,23 @@ impl HerdrWindow {
                         .child("Sign out")
                         .on_click(cx.listener(|this, _, _, cx| this.coder_sign_out(cx))),
                 )
-            })
-            .child(
-                div()
-                    .id("coder-setup-close")
-                    .px_2()
-                    .py_1()
-                    .cursor_pointer()
-                    .rounded(px(crate::config::corners::CONTROL))
-                    .hover(|s| s.bg(rgb(theme.active)))
-                    .child("Close")
-                    .on_click(cx.listener(|this, _, window, cx| this.dismiss_menu(window, cx))),
-            );
+            });
         let mut body = div()
             .id("coder-setup-body")
+            .flex_1()
             .min_h_0()
             .overflow_y_scroll()
             .p(px(16.))
             .flex()
             .flex_col()
-            .gap(px(12.));
+            .gap(px(12.))
+            .child(account);
         let removing = matches!(
             (&wizard.choice, &wizard.account),
             (Some(Choice::Existing(id)), Some(account)) if account.saved.contains(id)
         );
         let text = |text: String| div().flex_none().text_color(rgb(theme.muted)).child(text);
+        let has_script = matches!(self.config.cloud.script(CloudProvider::Coder), Ok(Some(_)));
         body = match wizard.phase {
             Phase::Checking | Phase::Loading => {
                 body.child(text("Checking your Coder account…".into()))
@@ -654,12 +678,27 @@ impl HerdrWindow {
                             cx.notify();
                         },
                     ))
+                    .when(has_script, |body| {
+                        body.child(self.coder_row(
+                            "coder-run-setup",
+                            "Run the setup script when it connects".into(),
+                            crate::cloud_setup::summary(&self.config.cloud, CloudProvider::Coder),
+                            wizard.setup,
+                            cx,
+                            |this, cx| {
+                                if let Some(wizard) = &mut this.menu.coder {
+                                    wizard.setup = !wizard.setup;
+                                }
+                                cx.notify();
+                            },
+                        ))
+                    })
                 }),
         };
         if let Some(status) = &wizard.status {
             body = body.child(div().flex_none().child(status.clone()));
         }
-        if let Some(error) = &self.menu.error {
+        if let Some(error) = &wizard.error {
             body = body.child(
                 div()
                     .flex_none()
@@ -681,12 +720,11 @@ impl HerdrWindow {
             ),
             Phase::Checking | Phase::Loading => ("Working…", false),
         };
-        div()
-            .debug_selector(|| "coder-setup-dialog".into())
+        let pane = div()
+            .flex_1()
+            .min_h_0()
             .flex()
             .flex_col()
-            .min_h_0()
-            .child(header)
             .child(body)
             .child(
                 div()
@@ -717,7 +755,8 @@ impl HerdrWindow {
                                 }
                             })),
                     ),
-            )
+            );
+        self.add_device_frame("coder-setup-dialog", "coder-setup-close", compact, pane, cx)
     }
 
     pub(in crate::menu) fn coder_key(
@@ -751,3 +790,6 @@ impl HerdrWindow {
         true
     }
 }
+
+#[cfg(test)]
+mod tests;

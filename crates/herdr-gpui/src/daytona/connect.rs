@@ -20,12 +20,7 @@ pub(crate) fn gateway(request: &Request, sandbox: &Sandbox) -> Result<Gateway> {
     Gateway::new(&request.ssh_access(&sandbox.id)?, &gateway::known_hosts()?)
 }
 
-fn connect_sandbox(
-    settings: &Settings,
-    id: &str,
-    session: &str,
-    stop: &AtomicBool,
-) -> Result<herdr_client::Bridge> {
+fn sandbox_gateway(settings: &Settings, id: &str, stop: &AtomicBool) -> Result<Gateway> {
     let key = store::key(settings)?;
     let request = Request {
         settings,
@@ -43,22 +38,14 @@ fn connect_sandbox(
             );
         },
     )?;
-    let gateway = gateway(&request, &sandbox)?;
-    // The bridge has started once this returns, so `ssh` no longer needs the
-    // config file `gateway` removes when it drops.
-    herdr_client::connect_command(gateway.command, session, stop).map_err(Error::Bridge)
+    gateway(&request, &sandbox)
 }
 
 /// Reach the Daytona sandbox `id` in `account` for `cloud::connect`.
 /// Configuration is read here, on the worker, so an account changed in the
 /// config file applies on retry.
-pub(crate) fn connect(
-    account: &str,
-    id: &str,
-    session: &str,
-    stop: &AtomicBool,
-) -> io::Result<Transport> {
-    let result = crate::config::Config::load()
+pub(crate) fn command(account: &str, id: &str, stop: &AtomicBool) -> Result<Gateway> {
+    crate::config::Config::load()
         .map_err(|error| Error::Storage(Box::new(error)))
         .and_then(|config| {
             config
@@ -71,8 +58,21 @@ pub(crate) fn connect(
             if settings.base != account {
                 return Err(Error::Account);
             }
-            connect_sandbox(&settings, id, session, stop)
-        });
+            sandbox_gateway(&settings, id, stop)
+        })
+}
+
+pub(crate) fn connect(
+    account: &str,
+    id: &str,
+    session: &str,
+    stop: &AtomicBool,
+) -> io::Result<Transport> {
+    let result = command(account, id, stop).and_then(|gateway| {
+        gateway.with_command(|command| {
+            herdr_client::connect_command(command, session, stop).map_err(Error::Bridge)
+        })
+    });
     match result {
         Ok(bridge) => Ok(bridge.into()),
         Err(Error::Bridge(error)) => Err(io::Error::new(error.kind(), error)),

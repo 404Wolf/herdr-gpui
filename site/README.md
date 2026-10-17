@@ -23,6 +23,8 @@ npx wrangler@4.144.0 dev --config site/wrangler.jsonc
 | File | Purpose |
 | --- | --- |
 | `index.html` | The page: TUI/window comparison, film, capability rows, screenshots, install |
+| `install.sh`, `install.ps1` | The Linux and Windows installers behind the one-line commands on the page and in the README; each installs the latest stable release after checking its SHA-256 |
+| `llms.txt` | Plain-text summary and install steps for coding agents, which do not run the page's JavaScript |
 | `assets/site.css`, `assets/site.js` | Page styles and behaviour |
 | `assets/kit.css`, `assets/kit.js` | HTML renderings of the app window and the screenshot list (`HM.SHOTS`) |
 | `assets/shots/` | Screenshot captures, one `<id>.webp` per entry in `HM.SHOTS` |
@@ -33,6 +35,13 @@ npx wrangler@4.144.0 dev --config site/wrangler.jsonc
 
 Every path is relative, so the site works under any prefix, such as
 `/herdr-gpui/` behind a proxy.
+
+## Install commands
+
+The install section is plain HTML, one panel per platform, so it reads fully
+without JavaScript; `site.js` turns the panels into tabs and opens the visitor's
+platform. When an install method changes, update the page, `llms.txt`, the
+scripts, and the README's Install section together.
 
 ## Film and screenshots
 

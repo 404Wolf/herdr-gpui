@@ -1,5 +1,8 @@
 use super::*;
-use crate::scrollback::reveal_offset;
+use crate::{
+    scrollback::{refresh_from, reveal_offset},
+    terminal_painter::Tint,
+};
 use herdr_client::protocol::{PaneSurfaceScrollMetrics, SurfaceRect};
 
 mod memory;
@@ -213,10 +216,14 @@ fn changed_content_refreshes_in_place_at_a_bounded_rate() {
 }
 
 #[test]
-fn a_refresh_from_the_start_of_a_row_looks_from_the_previous_row() {
-    assert_eq!(before(point(7, 0)), point(6, u16::MAX));
-    assert_eq!(before(point(7, 5)), point(7, 4));
-    assert_eq!(before(point(0, 0)), point(0, u16::MAX));
+fn a_refresh_looks_from_just_before_the_match_or_after_it_at_the_very_start() {
+    use SearchDirection::*;
+    assert_eq!(refresh_from(range(7, 0, 2)), (Forward, point(6, u16::MAX)));
+    assert_eq!(refresh_from(range(7, 5, 6)), (Forward, point(7, 4)));
+    // Nothing comes before the first cell, so the refresh looks back from
+    // just after the match instead of skipping it.
+    assert_eq!(refresh_from(range(0, 0, 3)), (Backward, point(0, 4)));
+    assert_eq!(refresh_from(range(0, 0, u16::MAX)), (Backward, point(1, 0)));
 }
 
 #[test]

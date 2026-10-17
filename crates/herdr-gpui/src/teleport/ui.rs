@@ -50,10 +50,12 @@ enum Stage {
 const FOLLOW_FOR: Duration = Duration::from_secs(20);
 const FOLLOW_RETRY: Duration = Duration::from_millis(750);
 
-/// The workspace a finished teleport should end up focused on.
+/// The workspace a finished teleport should end up focused on, or the pane
+/// a moved pane landed in.
 pub(crate) struct Follow {
     endpoint_id: String,
     workspace_id: String,
+    pane_id: Option<String>,
     until: Instant,
     next: Option<Instant>,
 }
@@ -63,8 +65,17 @@ impl Follow {
         Self {
             endpoint_id,
             workspace_id,
+            pane_id: None,
             until: Instant::now() + FOLLOW_FOR,
             next: None,
+        }
+    }
+
+    /// Follow to `pane_id` in `workspace_id`, which need not be its active tab.
+    pub(crate) fn pane(endpoint_id: String, workspace_id: String, pane_id: String) -> Self {
+        Self {
+            pane_id: Some(pane_id),
+            ..Self::new(endpoint_id, workspace_id)
         }
     }
 }
@@ -108,6 +119,17 @@ fn spawn(
 }
 
 impl Teleport {
+    /// How far a running teleport is, for the taskbar; `None` while the
+    /// dialog waits on the user or after it failed.
+    #[cfg(any(windows, test))]
+    pub(crate) fn progress(&self) -> Option<Progress> {
+        match &self.stage {
+            Stage::Reviewing(_) => Some(Progress::Busy),
+            Stage::Moving(_, step) => Some(Progress::Working(step.map_or(0., Step::progress))),
+            Stage::Choosing | Stage::Ready(..) | Stage::Failed(_) => None,
+        }
+    }
+
     /// Opens on the host list at once: which repository a host has, if any,
     /// is only looked up for the host chosen.
     pub(crate) fn start(source: Source, label: String, hosts: Vec<HostRepositories>) -> Self {
@@ -155,6 +177,13 @@ impl Teleport {
         let (cancelled, events) = spawn(work);
         self.cancelled = cancelled;
         self.events = events;
+    }
+
+    /// Whether `endpoint_id` is among the hosts the work could move to.
+    pub(crate) fn offers(&self, endpoint_id: &str) -> bool {
+        self.hosts
+            .iter()
+            .any(|host| host.place.endpoint_id == endpoint_id)
     }
 
     /// Choose the host `endpoint_id` and start its review at once.
@@ -283,7 +312,7 @@ fn destination_text(candidate: &Candidate) -> (String, String) {
     }
 }
 
-fn describe(work: &Work, action: &Action) -> String {
+pub(super) fn describe(work: &Work, action: &Action) -> String {
     let program = work.program().unwrap_or("shell");
     match action {
         Action::Shell => "Shell".to_owned(),
@@ -385,23 +414,37 @@ impl HerdrWindow {
         }
         follow.next = Some(now + FOLLOW_RETRY);
         let (endpoint, workspace) = (follow.endpoint_id.clone(), follow.workspace_id.clone());
+        let pane = follow.pane_id.clone();
+        let target = match &pane {
+            Some(pane) => NavigationTarget::Pane(pane.as_str()),
+            None => NavigationTarget::Workspace(workspace.as_str()),
+        };
         if self.endpoints[self.selected_endpoint].id != endpoint {
-            self.navigate_endpoint(&endpoint, NavigationTarget::Workspace(&workspace), cx);
+            self.navigate_endpoint(&endpoint, target, cx);
             return;
         }
         let Some(snapshot) = &self.live.snapshot else {
             return;
         };
-        if snapshot.focused_workspace_id.as_deref() == Some(workspace.as_str()) {
+        let (focused, listed) = match &pane {
+            Some(pane) => (
+                snapshot.focused_pane_id.as_deref() == Some(pane.as_str()),
+                snapshot.panes.iter().any(|p| p.pane_id == *pane),
+            ),
+            None => (
+                snapshot.focused_workspace_id.as_deref() == Some(workspace.as_str()),
+                snapshot
+                    .workspaces
+                    .iter()
+                    .any(|w| w.workspace_id == workspace),
+            ),
+        };
+        if focused {
             self.teleport_follow = None;
             return;
         }
-        let listed = snapshot
-            .workspaces
-            .iter()
-            .any(|w| w.workspace_id == workspace);
         if listed && self.pending_navigation.is_none() {
-            self.navigate(NavigationTarget::Workspace(&workspace), cx);
+            self.navigate(target, cx);
         }
     }
 

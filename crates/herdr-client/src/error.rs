@@ -53,8 +53,6 @@ pub enum Error {
     ClipboardImageCancelled,
     #[error("clipboard image write timed out; reconnect required")]
     ClipboardImageWriteTimeout,
-    #[error("clipboard image uploads require a transport with bounded writes")]
-    ClipboardImageUnsupported,
     #[error("semantic input fallback requires a pane or popup target")]
     ClipboardImageInputTarget,
     #[error("clipboard image preparation timed out; reservation skipped")]
@@ -160,7 +158,7 @@ pub enum Error {
     ResponseId,
     #[error("{0}")]
     ServerShutdown(String),
-    #[error("SSH endpoints are not supported on this platform")]
+    #[error("SSH port forwarding is not supported on this platform")]
     SshUnsupported,
     #[error("SSH connection cancelled")]
     SshCancelled,
@@ -206,6 +204,14 @@ pub enum Error {
     WslHostExists,
     #[error("this WSL distribution is not a saved device")]
     WslHostMissing,
+    #[error("a WSL distribution takes at most 256 dropped paths at once")]
+    WslPathLimit,
+    #[error("{} is not an absolute Windows path a WSL distribution can map", .0.display())]
+    WslPathInvalid(PathBuf),
+    #[error("{} is not reachable from this WSL distribution; only its own files and mounted drives are", .0.display())]
+    WslPathUnmapped(PathBuf),
+    #[error("invalid answer from wslpath")]
+    WslPathResponse,
     #[error("remote Git directory must be an absolute path")]
     InvalidGitDir,
     #[error("remote command failed ({0})")]
@@ -246,6 +252,8 @@ pub enum Error {
     ScriptUnsupported,
     #[error("could not start host script")]
     ScriptSpawn(#[source] io::Error),
+    #[error("could not reach host for script: {0}")]
+    ScriptConnect(#[source] io::Error),
     #[error("host script I/O failed")]
     ScriptIo(#[source] io::Error),
     #[error("could not read host script input")]
@@ -336,7 +344,7 @@ impl Error {
     pub fn kind(&self) -> io::ErrorKind {
         match self {
             Self::Storage { source, .. } => source.kind(),
-            Self::Io(error) => error.kind(),
+            Self::Io(error) | Self::ScriptConnect(error) => error.kind(),
             Self::UploadIo(error) => error.kind(),
             Self::UploadCleanup { source, .. } => source.kind(),
             Self::UploadUnsupported => io::ErrorKind::Unsupported,
@@ -355,10 +363,11 @@ impl Error {
             | Self::DefaultSession
             | Self::NoLocalSocket
             | Self::InvalidSshTarget
-            | Self::InvalidWslDistro => io::ErrorKind::InvalidInput,
-            Self::SshUnsupported | Self::WslUnsupported | Self::ClipboardImageUnsupported => {
-                io::ErrorKind::Unsupported
-            }
+            | Self::InvalidWslDistro
+            | Self::WslPathLimit
+            | Self::WslPathInvalid(_) => io::ErrorKind::InvalidInput,
+            Self::WslPathUnmapped(_) => io::ErrorKind::NotFound,
+            Self::SshUnsupported | Self::WslUnsupported => io::ErrorKind::Unsupported,
             Self::ClipboardImageCancelled => io::ErrorKind::Interrupted,
             Self::ClipboardImageWriteTimeout | Self::ClipboardImagePreparationTimeout => {
                 io::ErrorKind::TimedOut

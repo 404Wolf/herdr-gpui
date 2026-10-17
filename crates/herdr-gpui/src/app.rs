@@ -88,16 +88,39 @@ pub(crate) fn open_window(
     cx: &mut App,
     #[cfg(feature = "integration-test")] fixture: bool,
 ) -> Result<WindowHandle<HerdrWindow>> {
-    // Cascade rather than stack windows exactly, so a new one is visible at once.
-    let existing = cx
-        .windows()
-        .iter()
-        .filter(|handle| handle.downcast::<HerdrWindow>().is_some())
-        .count();
-    let step = px(28. * existing.min(6) as f32);
-    let mut bounds = Bounds::centered(None, size(px(1200.), px(780.)), cx);
-    bounds.origin += point(step, step);
-    let (bounds, display_id) = crate::window_state::WindowState::placement(bounds, cx);
+    open_window_placed(
+        target,
+        updater,
+        None,
+        cx,
+        #[cfg(feature = "integration-test")]
+        fixture,
+    )
+}
+
+/// Where a window opens and the display its bounds refer to.
+pub(crate) type Placement = (Bounds<Pixels>, Option<DisplayId>);
+
+/// Opens a main window at `placement`, or where the next one goes.
+fn open_window_placed(
+    target: ConnectTarget,
+    updater: updater::Updater,
+    placement: Option<Placement>,
+    cx: &mut App,
+    #[cfg(feature = "integration-test")] fixture: bool,
+) -> Result<WindowHandle<HerdrWindow>> {
+    let (bounds, display_id) = placement.unwrap_or_else(|| {
+        // Cascade rather than stack windows exactly, so a new one is visible at once.
+        let existing = cx
+            .windows()
+            .iter()
+            .filter(|handle| handle.downcast::<HerdrWindow>().is_some())
+            .count();
+        let step = px(28. * existing.min(6) as f32);
+        let mut bounds = Bounds::centered(None, size(px(1200.), px(780.)), cx);
+        bounds.origin += point(step, step);
+        crate::window_state::WindowState::placement(bounds, cx)
+    });
     cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -109,6 +132,7 @@ pub(crate) fn open_window(
             ..Default::default()
         },
         |window, cx| {
+            crate::taskbar::mark(window, cx);
             cx.new(|cx| {
                 let mut view = HerdrWindow::new(
                     target,
@@ -143,10 +167,24 @@ fn shared_sound(cx: &mut App) -> std::rc::Rc<crate::sound::Service> {
 
 /// Opens another window from inside the focused window's own update.
 pub(crate) fn open_additional_window(target: ConnectTarget, cx: &mut App) {
+    open_additional_window_then(target, None, |_, _, _| {}, |_| {}, cx);
+}
+
+/// Opens another window at `placement` from inside a window's own update,
+/// then runs `then` on it before it is shown in front, or `failed` when it
+/// cannot be opened.
+pub(crate) fn open_additional_window_then(
+    target: ConnectTarget,
+    placement: Option<Placement>,
+    then: impl FnOnce(&mut HerdrWindow, &mut Window, &mut Context<HerdrWindow>) + 'static,
+    failed: impl FnOnce(&mut App) + 'static,
+    cx: &mut App,
+) {
     cx.defer(move |cx| {
-        let opened = open_window(
+        let opened = open_window_placed(
             target,
             updater::Updater::secondary(),
+            placement,
             cx,
             #[cfg(feature = "integration-test")]
             false,
@@ -154,33 +192,70 @@ pub(crate) fn open_additional_window(target: ConnectTarget, cx: &mut App) {
         let sound = shared_sound(cx);
         match opened {
             Ok(handle) => {
-                let _ = handle.update(cx, |view, window, _| {
-                    view.sound = sound;
+                let _ = handle.update(cx, |view, window, cx| {
+                    view.use_sound(sound);
+                    then(view, window, cx);
                     window.activate_window();
                 });
             }
-            Err(_) => tracing::error!("Unable to open an additional Herdr window"),
+            Err(_) => {
+                tracing::error!("Unable to open an additional Herdr window");
+                failed(cx);
+            }
         }
     });
 }
 
 pub(crate) fn run() -> std::process::ExitCode {
     use cli::{LaunchMode, LaunchOptions};
-    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    let mut args: Vec<_> = std::env::args_os().skip(1).collect();
     if let Some(exit) = updater::run_helper(&args) {
         return exit;
     }
-    let LaunchOptions { target, mode } = match LaunchOptions::parse(args) {
+    // Restart Manager restarts this executable itself; see `restart_manager`.
+    if let Some(exit) = crate::restart_manager::hand_off(&mut args) {
+        return exit;
+    }
+    #[cfg(unix)]
+    if let Some(exit) = crate::setup_relay::run_helper(&args) {
+        return exit;
+    }
+    // A control command asked for JSON gets its usage errors as JSON too.
+    let json_errors = cli::control::wants_json(&args);
+    let LaunchOptions { target, mut mode } = match LaunchOptions::parse(&args) {
         Ok(options) => options,
+        Err(error) if json_errors => {
+            println!(
+                "{}",
+                serde_json::json!({ "error": { "code": "usage", "message": error.to_string() } })
+            );
+            return std::process::ExitCode::from(2);
+        }
         Err(error) => {
             eprintln!(
-                "{error}\nUsage: herdr-gpui [--socket CLIENT_SOCKET | --session NAME [--dev]]\n       herdr-gpui browser open URL [--workspace ID] [--no-focus]"
+                "{error}\nUsage: herdr-gpui [--socket CLIENT_SOCKET | --session NAME [--dev]]\n       herdr-gpui browser open URL [--workspace ID] [--no-focus]\n       herdr-gpui COMMAND ... (see herdr-gpui --help)"
             );
             return std::process::ExitCode::from(2);
         }
     };
-    if let LaunchMode::Browser(command) = mode {
-        return crate::control::run(command);
+    if let LaunchMode::Control(invocation) = mode {
+        return crate::control::run(invocation);
+    }
+    // A link goes to the app already running, or starts the app with it.
+    let mut pending_link = None;
+    if let LaunchMode::Link(link) = mode {
+        match crate::control::send_link(&link) {
+            Ok(_) => return std::process::ExitCode::SUCCESS,
+            Err(crate::Error::ControlUnavailable { .. }) => {
+                pending_link = Some(link);
+                mode = LaunchMode::Normal;
+            }
+            Err(error) => {
+                tracing::warn!(%error, "The running app refused a link");
+                eprintln!("{error}");
+                return std::process::ExitCode::from(crate::control::exit_status(&error));
+            }
+        }
     }
     // A separate app of its own: no daemon, control socket, stores, or updater.
     #[cfg(feature = "mockup")]
@@ -201,6 +276,10 @@ pub(crate) fn run() -> std::process::ExitCode {
         println!(
             "  browser open URL    Show URL in a browser tab of the running app (see browser --help)"
         );
+        println!("\nCommands for the running app (each with --help):");
+        for (name, summary) in cli::control::FAMILIES {
+            println!("  {name:<18}{summary}");
+        }
         #[cfg(feature = "integration-test")]
         println!(
             "  --integration-test  Run native GUI checks (requires explicit --socket)\n  --sidebar-test      Run native sidebar fixtures without connecting to a daemon\n  --performance-test  Measure native dense-terminal hover/scroll without a daemon (macOS)"
@@ -235,9 +314,14 @@ pub(crate) fn run() -> std::process::ExitCode {
         arch = std::env::consts::ARCH,
         "GPUI client starting"
     );
+    if mode == LaunchMode::Normal {
+        crate::restart_manager::register();
+    }
     // Only read first-frame settings here. Migration, defaults refresh, and font
     // discovery run after opening; CLI and fixtures skip personal settings.
     let appearance = if mode == LaunchMode::Normal {
+        // Before anything resolves a config path or the daemon's socket.
+        crate::login_env::adopt_config_home();
         let started = std::time::Instant::now();
         let appearance = StartupAppearance::load(Config::load_startup);
         tracing::debug!(
@@ -283,6 +367,15 @@ pub(crate) fn run() -> std::process::ExitCode {
     } else {
         crate::worktree_notes::Notes::default()
     };
+    // Nor with the user's jump list, which they would replace.
+    #[cfg(windows)]
+    let jump_list = (mode == LaunchMode::Normal).then(crate::jump_list::JumpList::load);
+    // Nor with which palette rows the user chooses.
+    let palette_frecency = if mode == LaunchMode::Normal {
+        crate::palette::Frecency::load()
+    } else {
+        crate::palette::Frecency::default()
+    };
     // Nor with where the user's worktrees went.
     let dispatch_history = if mode == LaunchMode::Normal {
         crate::dispatch::History::load()
@@ -295,6 +388,8 @@ pub(crate) fn run() -> std::process::ExitCode {
     } else {
         crate::fan_out::Journal::default()
     };
+    // Whether the launcher is installed is read once here, never while a window opens.
+    let taskbar = crate::taskbar::Taskbar::load();
     gpui_platform::application()
         .with_assets(icons::Icons)
         .run(move |cx| {
@@ -305,10 +400,19 @@ pub(crate) fn run() -> std::process::ExitCode {
             browser_tabs.install(cx);
             group_layouts.install(cx);
             worktree_notes.install(cx);
+            palette_frecency.install(cx);
             dispatch_history.install(cx);
             fan_out_journal.install(cx);
             agent_skill.install_global(cx);
             keychain_grants.install(cx);
+            taskbar.install(cx);
+            #[cfg(windows)]
+            if let Some(jump_list) = jump_list {
+                jump_list.install(cx);
+            }
+            if let Some(link) = pending_link {
+                crate::link::follow::defer(link, cx);
+            }
             // Only the user's own app answers agents; native test modes stay private.
             if mode == LaunchMode::Normal {
                 crate::control::install(cx);
@@ -318,7 +422,8 @@ pub(crate) fn run() -> std::process::ExitCode {
             }
             cx.set_global(appearance.select(light_appearance(cx)));
             app_icon::install();
-            #[cfg(target_os = "macos")]
+            crate::caffeine::install(cx);
+            #[cfg(any(target_os = "macos", windows))]
             crate::app_badge::install(cx);
             cx.on_action(|_: &Quit, cx| cx.quit());
             cx.on_action(|_: &Hide, cx| cx.hide());
@@ -357,7 +462,7 @@ pub(crate) fn run() -> std::process::ExitCode {
                     if mode == LaunchMode::Normal {
                         let sound = shared_sound(cx);
                         let _ = _window.update(cx, |view, _, _| {
-                            view.sound = sound;
+                            view.use_sound(sound);
                         });
                         for _ in 1..window_count {
                             open_additional_window(target.clone(), cx);

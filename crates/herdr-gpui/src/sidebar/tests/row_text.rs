@@ -10,6 +10,7 @@ fn section_headings_use_the_configured_sidebar_font_size() {
             size,
             fallbacks: None,
             line_height_multiple: None,
+            weight: gpui::FontWeight::NORMAL,
         };
         for label in ["spaces", "agents"] {
             let mut heading = header(
@@ -156,7 +157,7 @@ fn cells_hand_their_state_and_data_to_the_layout() {
     let snapshot = layout_tests::snapshot(1);
     let (font, theme) = (crate::config::Config::default().sidebar, Theme::default());
     let cx = RowContext {
-        indicators: Indicators::new(None, false, &theme),
+        indicators: Indicators::new(None, None, false, &theme),
         font: &font,
         theme: &theme,
         look: for_mode(Default::default()),

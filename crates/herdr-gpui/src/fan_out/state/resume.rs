@@ -114,6 +114,7 @@ impl FanOut {
             next_refresh: None,
             journal,
             id: record.id,
+            wanted: Vec::new(),
         })
     }
 

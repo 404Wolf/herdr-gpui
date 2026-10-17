@@ -1,5 +1,5 @@
 use super::*;
-use crate::fan_out::{error::Error, plan::Picks};
+use crate::fan_out::plan::Picks;
 
 pub(crate) fn origin() -> Origin {
     Origin {
@@ -208,7 +208,7 @@ fn damaged_journals_are_rejected() {
     assert!(parse(&saved(vec![record(1)])).is_ok());
     assert!(matches!(
         parse(b"{\"records\": 3}"),
-        Err(crate::Error::Json(_))
+        Err(Error::JournalJson(_))
     ));
     let mut no_checkout = record(1);
     no_checkout.lanes[0].step = Checkpoint::StartingAgent;
@@ -229,10 +229,7 @@ fn damaged_journals_are_rejected() {
         vec![record(1), record(1)],
         (0..=MAX_RECORDS as u64).map(record).collect(),
     ] {
-        assert!(matches!(
-            parse(&saved(bad)),
-            Err(crate::Error::InvalidFanOutJournal)
-        ));
+        assert!(matches!(parse(&saved(bad)), Err(Error::InvalidJournal)));
     }
 }
 

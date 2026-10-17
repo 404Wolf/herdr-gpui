@@ -172,8 +172,9 @@ impl HerdrWindow {
             },
             Instant::now(),
         )
-        .with_snapshot(snapshot.as_deref())
-        .preview();
+        // Previews keep their own text rather than the pane's context.
+        .preview()
+        .with_snapshot(snapshot.as_deref());
         // Each QA action immediately presents its own card, even offline.
         for endpoint in &mut self.endpoints {
             endpoint.toasts.entries.retain(|(_, n)| !n.visible);
@@ -365,7 +366,24 @@ impl HerdrWindow {
                                             .when(!notice.is_local_feedback(), |body| {
                                                 body.max_h(px(48.)).overflow_hidden()
                                             })
-                                            .child(body),
+                                            // A long task must not wrap the
+                                            // place out of the clipped body.
+                                            .when(notice.described, |d| {
+                                                d.children(body.lines().enumerate().map(
+                                                    |(row, line)| {
+                                                    let endpoint_id = endpoint.id.clone();
+                                                    div()
+                                                        .debug_selector(move || {
+                                                            format!(
+                                                                "toast-body-row-{endpoint_id}-{id}-{row}"
+                                                            )
+                                                        })
+                                                        .truncate()
+                                                        .child(SharedString::from(line.to_owned()))
+                                                    },
+                                                ))
+                                            })
+                                            .when(!notice.described, |d| d.child(body)),
                                     )
                                 }),
                         )
@@ -443,7 +461,7 @@ impl HerdrWindow {
                         |d| d.right(px(12.)),
                     )
                     .children(cards)
-                    .child(self.overlay_probe())
+                    .children(self.overlay_probe())
                     .into_any_element(),
             )
         })
@@ -454,8 +472,8 @@ impl HerdrWindow {
 impl HerdrWindow {
     /// Whether toasts or the file-transfer card show now, as their renders
     /// decide: nothing shows over an open menu or in a window too small.
-    /// Only builds that show pages step them aside for these.
-    #[cfg(any(target_os = "macos", windows))]
+    /// Only Windows hides pages under these.
+    #[cfg(windows)]
     pub(crate) fn overlays_shown(&self) -> bool {
         if self.menu.page.is_some() {
             return false;

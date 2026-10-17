@@ -30,6 +30,13 @@ fn shell_word(path: &str) -> String {
     }
 }
 
+/// The executable agents are told to run: this one. On Windows that is the
+/// console program `herdr-gpui.exe`, which a shell waits for, never its
+/// windowed launcher. Call it off the UI thread.
+pub(crate) fn executable() -> Option<PathBuf> {
+    std::env::current_exe().ok()
+}
+
 /// How agents run `executable`. A macOS app bundle puts nothing on `PATH`,
 /// so they are told exactly which file to run.
 pub(crate) fn command(executable: Option<&Path>) -> String {
@@ -43,10 +50,13 @@ pub(crate) fn text(executable: Option<&Path>) -> String {
     if executable.and_then(Path::to_str).is_none() {
         return SKILL.to_owned();
     }
-    SKILL.replace(
-        "herdr-gpui browser",
-        &format!("{} browser", command(executable)),
-    )
+    text_naming(&command(executable))
+}
+
+/// The skill, naming `command` in its commands, as one shell word.
+pub(crate) fn text_naming(command: &str) -> String {
+    // Every command line in the skill starts with the executable's name.
+    SKILL.replace("herdr-gpui ", &format!("{command} "))
 }
 
 fn managed(contents: &str) -> bool {
@@ -125,7 +135,7 @@ fn agents_present(home: &Path) -> bool {
 }
 
 /// What the user chose when asked.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Choice {
     Installed,
@@ -190,6 +200,14 @@ impl AgentSkill {
         if refresh {
             refresh_installed(cx);
         }
+        // The notes prompt names the executable, which `executable` finds on
+        // disk; resolve it now, off the UI thread, rather than on first use.
+        #[cfg(any(target_os = "macos", windows))]
+        cx.background_executor()
+            .spawn(async {
+                crate::control::reload_command();
+            })
+            .detach();
     }
 
     pub(crate) fn choice(cx: &App) -> Option<Choice> {
@@ -227,6 +245,13 @@ impl AgentSkill {
     }
 }
 
+/// Records `choice` as the app records the user's answer, for a process
+/// without the app's global, such as the command line. Blocking.
+pub(crate) fn save_choice(choice: Choice) -> crate::Result<()> {
+    let path = AgentSkill::path().ok_or(crate::Error::MissingStateRoot)?;
+    state_file::write(&path, &Saved { choice })
+}
+
 /// Rewrites the installed skill if this app's text or location changed.
 fn refresh_installed(cx: &mut App) {
     let Ok(home) = crate::config::home() else {
@@ -234,7 +259,7 @@ fn refresh_installed(cx: &mut App) {
     };
     cx.background_executor()
         .spawn(async move {
-            let text = text(std::env::current_exe().ok().as_deref());
+            let text = text(executable().as_deref());
             if let Err(error) = install(&home, &text) {
                 tracing::warn!(%error, "Cannot refresh the agent skill");
             }
@@ -258,8 +283,51 @@ mod tests {
         )));
         assert!(bundled.contains("/Applications/Herdr.app/Contents/MacOS/Herdr browser open"));
         assert!(!bundled.contains("herdr-gpui browser"));
+        // Every command, not only the browser's, names the executable.
+        assert!(!bundled.contains("herdr-gpui "));
+        assert!(bundled.contains("/Applications/Herdr.app/Contents/MacOS/Herdr code open"));
         let spaced = text(Some(Path::new("/Users/a b/it's/Herdr")));
         assert!(spaced.contains(r"'/Users/a b/it'\''s/Herdr' browser open"));
+    }
+
+    /// The description lists commands after a colon (`daemon: show a file`),
+    /// so as a plain YAML scalar it would parse as a nested mapping and fail
+    /// every agent's frontmatter parser, hiding the skill from agents.
+    #[test]
+    fn the_skill_description_is_a_quoted_scalar() {
+        let frontmatter = SKILL
+            .strip_prefix("---\n")
+            .and_then(|rest| rest.split_once("\n---\n"))
+            .map(|(frontmatter, _)| frontmatter)
+            .unwrap();
+        let description = frontmatter
+            .lines()
+            .find_map(|line| line.strip_prefix("description: "))
+            .unwrap();
+        let value = description
+            .strip_prefix('"')
+            .and_then(|value| value.strip_suffix('"'))
+            .unwrap();
+        assert!(!value.contains('"'));
+    }
+
+    #[test]
+    fn the_skill_teaches_the_split_the_kit_and_page_results() {
+        for taught in [
+            "A local file opens in a split next to your terminal",
+            "--tab",
+            "/.herdr/kit.css",
+            "HerdrKit.scenario(",
+            "HerdrKit.variants(",
+            "herdr.send(",
+            "herdr-gpui browser example",
+        ] {
+            assert!(SKILL.contains(taught), "{taught}");
+        }
+        let bundled = text(Some(Path::new(
+            "/Applications/Herdr.app/Contents/MacOS/Herdr",
+        )));
+        assert!(bundled.contains("/Applications/Herdr.app/Contents/MacOS/Herdr browser example"));
     }
 
     #[test]

@@ -6,7 +6,7 @@
 //! every frame. ASCII, most of any grid, is found by index without hashing.
 
 use crate::terminal::{BOLD, ITALIC};
-use gpui::ShapedLine;
+use gpui::{Font, FontStyle, ShapedLine};
 use std::collections::HashMap;
 
 pub(super) const CACHE_LIMIT: usize = 4096;
@@ -37,6 +37,20 @@ pub(super) fn style(modifier: u16) -> usize {
 
 pub(super) fn style_modifier(style: usize) -> u16 {
     (if style & 1 != 0 { BOLD } else { 0 }) | if style & 2 != 0 { ITALIC } else { 0 }
+}
+
+/// The face a cached glyph `style` shapes in: bold cells draw a step heavier
+/// than the configured weight rather than at a fixed bold.
+pub(super) fn styled_font(font: &Font, style: usize) -> Font {
+    let mut font = font.clone();
+    let modifier = style_modifier(style);
+    if modifier & BOLD != 0 {
+        font.weight = crate::config::bold_font_weight(font.weight);
+    }
+    if modifier & ITALIC != 0 {
+        font.style = FontStyle::Italic;
+    }
+    font
 }
 
 fn ascii_index(style: usize, symbol: &str) -> Option<usize> {

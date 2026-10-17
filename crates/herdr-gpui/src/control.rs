@@ -1,34 +1,34 @@
-//! Lets processes on this machine, such as an agent in a Herdr pane, show
-//! the user a page and hear back what the user noted on it. Herdr itself has
-//! no way to reach a client, so the app listens on a socket of its own and
-//! `herdr-gpui browser ...` talks to it. Only this user's local processes
-//! can reach it: an agent on an SSH host has no path to this machine's socket.
+//! Lets processes on this machine, such as an agent in a Herdr pane, drive
+//! the parts of the app Herdr cannot: show the user a page and hear back
+//! what the user noted on it, open the app's own tabs, and read or change
+//! state only this client keeps. Herdr itself has no way to reach a client,
+//! so the app listens on a socket of its own and `herdr-gpui <command> ...`
+//! talks to it. Only this user's local processes can reach it: an agent on
+//! an SSH host has no path to this machine's socket.
 
+mod client;
 mod protocol;
-#[cfg(unix)]
+mod server;
 mod socket;
 
-#[cfg(unix)]
-use crate::{
-    HerdrWindow,
-    browser::{Feedback, FeedbackKey, Location, Scope},
-};
-use crate::{
-    browser::{LocalFile, WebUrl},
-    cli::BrowserCommand,
-};
+use crate::HerdrWindow;
+use crate::browser::Location;
+pub(crate) use crate::cli::control::Placement;
+#[cfg(feature = "mockup")]
+pub(crate) use client::send_notes;
+pub(crate) use client::{run, send_link, status as exit_status};
 use gpui::App;
+use protocol::Caller;
 pub use protocol::ErrorCode;
-#[cfg(any(unix, feature = "mockup"))]
-use protocol::NotesRequest;
-#[cfg(any(unix, feature = "mockup"))]
 pub(crate) use protocol::NotesTo;
-use protocol::{
-    BrowserOpen, Caller, FeedbackRequest, MAX_WAIT_SECONDS, OpenedIn, Page, Request, Response,
+pub(crate) use protocol::Response;
+pub use protocol::{
+    app::{FontSize, Size, Switch},
+    events::{Cursor, EventKind},
+    settings::Sound,
+    work::Script,
 };
-#[cfg(unix)]
-use std::path::PathBuf;
-use std::{path::Path, process::ExitCode};
+use std::path::{Path, PathBuf};
 
 #[cfg(any(target_os = "macos", windows))]
 /// The command that reloads a caller's pages, for the notes prompt.
@@ -38,62 +38,80 @@ pub(crate) fn reload_command() -> String {
         .get_or_init(|| {
             format!(
                 "{} browser reload",
-                crate::agent_skill::command(std::env::current_exe().ok().as_deref())
+                crate::agent_skill::command(crate::agent_skill::executable().as_deref())
             )
         })
         .clone()
 }
 
-/// Exit status when no app is listening, so a caller can fall back to
-/// printing the address instead.
-const EXIT_NOT_RUNNING: u8 = 3;
-/// Exit status of `browser feedback` when no notes arrived.
-const EXIT_NO_FEEDBACK: u8 = 4;
-
-#[cfg(unix)]
-fn socket_path() -> Option<PathBuf> {
-    crate::preferences::state_dir().map(|dir| dir.join("control.sock"))
+/// Where this user's app listens: a socket in its state directory, or a
+/// named pipe on Windows.
+fn socket_path() -> crate::Result<PathBuf> {
+    let state = crate::preferences::state_dir().ok_or(crate::Error::MissingStateRoot)?;
+    socket::address(&state)
 }
 
 /// What a request asks the windows to find: a workspace, optionally of one
 /// particular local daemon, and the pane asking.
-#[cfg(unix)]
 pub(crate) struct Target<'a> {
     pub daemon: Option<&'a Path>,
     pub workspace: Option<&'a str>,
     pub pane: Option<&'a str>,
 }
 
+impl Target<'_> {
+    /// How strictly a request's workspace is matched, strict first. A caller
+    /// that names its daemon is matched on that daemon only: another
+    /// session's workspace of the same ID must never be changed for it.
+    pub(crate) fn strictness(&self) -> &'static [bool] {
+        if self.daemon.is_some() {
+            &[true]
+        } else {
+            &[true, false]
+        }
+    }
+}
+
+/// The page a request asks a window to open, and how to show it.
+pub(crate) struct Opening<'a> {
+    pub location: &'a Location,
+    /// Whether the window switches to the tab.
+    pub focus: bool,
+    pub placement: Placement,
+}
+
 /// Where a window opened a requested tab.
-#[cfg(unix)]
 pub(crate) enum Placed {
-    Opened { workspace_id: String },
+    Opened {
+        workspace_id: String,
+        placement: Placement,
+    },
     Full,
 }
 
 /// Identifiers a request carries are compared, never interpreted, but they
 /// are echoed in answers, so they stay short and printable.
-#[cfg(any(unix, test))]
 fn plain(value: &str, limit: usize) -> bool {
     !value.is_empty()
         && value.len() <= limit
         && value.chars().all(|c| !c.is_control() && !c.is_whitespace())
 }
 
-#[cfg(unix)]
+/// A daemon socket path: compared and echoed like an identifier, but it may
+/// hold spaces, as a Windows profile such as `C:\Users\Jane Doe` does.
+fn plain_path(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 4096 && !value.chars().any(char::is_control)
+}
+
 fn valid_caller(caller: &Caller) -> bool {
     caller
         .workspace_id
         .as_deref()
         .is_none_or(|id| plain(id, 256))
         && caller.pane_id.as_deref().is_none_or(|id| plain(id, 256))
-        && caller
-            .daemon_socket
-            .as_deref()
-            .is_none_or(|path| plain(path, 4096))
+        && caller.daemon_socket.as_deref().is_none_or(plain_path)
 }
 
-#[cfg(unix)]
 fn main_windows(cx: &App) -> Vec<gpui::WindowHandle<HerdrWindow>> {
     let active = cx.active_window();
     let mut windows: Vec<_> = cx
@@ -106,577 +124,11 @@ fn main_windows(cx: &App) -> Vec<gpui::WindowHandle<HerdrWindow>> {
     windows
 }
 
-#[cfg(unix)]
-fn location(page: &Page) -> Result<Location, Response> {
-    match page {
-        Page::Url(url) => WebUrl::try_from(url.as_str())
-            .map(|url| Location::Web { url })
-            .map_err(|error| Response::error(ErrorCode::InvalidUrl, error.to_string())),
-        Page::File(path) => {
-            let home = crate::config::home().ok();
-            LocalFile::new(Path::new(path), home.as_deref())
-                .map(|file| Location::Local { file })
-                .map_err(|error| Response::error(ErrorCode::InvalidUrl, error.to_string()))
-        }
-    }
-}
-
-#[cfg(unix)]
-fn open_browser(request: &BrowserOpen, cx: &mut App) -> Response {
-    if !valid_caller(&request.caller) {
-        return Response::error(
-            ErrorCode::InvalidRequest,
-            "Invalid workspace, pane, or daemon",
-        );
-    }
-    let location = match location(&request.page) {
-        Ok(location) => location,
-        Err(response) => return response,
-    };
-    if !crate::browser::EMBEDDED {
-        let Location::Web { url } = &location else {
-            return Response::error(
-                ErrorCode::Unsupported,
-                "Local pages need browser tabs, which this platform's build does not have",
-            );
-        };
-        cx.open_url(url.as_str());
-        return Response::Opened {
-            opened_in: OpenedIn::SystemBrowser,
-            workspace_id: None,
-        };
-    }
-    let windows = main_windows(cx);
-    if windows.is_empty() {
-        return Response::error(ErrorCode::NoWindow, "Herdr UI has no window open");
-    }
-    let caller = &request.caller;
-    let target = Target {
-        daemon: caller.daemon_socket.as_deref().map(Path::new),
-        workspace: caller.workspace_id.as_deref(),
-        pane: caller.pane_id.as_deref(),
-    };
-    // First the window connected to the caller's own daemon; then, when the
-    // socket paths are spelled differently, any window showing its workspace.
-    for strict in [true, false] {
-        for handle in &windows {
-            let placed = handle.update(cx, |view, window, cx| {
-                view.open_requested_browser_tab(
-                    &target,
-                    strict,
-                    &location,
-                    request.focus,
-                    window,
-                    cx,
-                )
-            });
-            match placed {
-                Ok(Some(Placed::Opened { workspace_id })) => {
-                    return Response::Opened {
-                        opened_in: OpenedIn::Tab,
-                        workspace_id: Some(workspace_id),
-                    };
-                }
-                Ok(Some(Placed::Full)) => {
-                    return Response::error(ErrorCode::TabLimit, "Too many browser tabs are open");
-                }
-                Ok(None) | Err(_) => {}
-            }
-        }
-    }
-    Response::error(
-        ErrorCode::WorkspaceNotFound,
-        match &caller.workspace_id {
-            Some(id) => format!("No Herdr UI window shows workspace {id}"),
-            None => "No Herdr UI window shows a workspace".into(),
-        },
-    )
-}
-
-/// Reloads every page the calling pane opened, in every window.
-#[cfg(unix)]
-fn reload(caller: &Caller, cx: &mut App) -> Response {
-    let Some(pane) = caller.pane_id.as_deref().filter(|pane| plain(pane, 256)) else {
-        return Response::error(
-            ErrorCode::InvalidRequest,
-            "browser reload runs in the Herdr pane that opened the page",
-        );
-    };
-    let tabs: Vec<_> = cx
-        .try_global::<crate::browser::Store>()
-        .map(|store| store.opened_by(pane).map(|tab| tab.id).collect())
-        .unwrap_or_default();
-    for handle in main_windows(cx) {
-        let _ = handle.update(cx, |view, _, cx| view.reload_browser_tabs(&tabs, cx));
-    }
-    Response::Reloaded { tabs: tabs.len() }
-}
-
-/// Notes are pasted into an agent's prompt, so they keep their line breaks
-/// and lose every other control character: none can end the paste early.
-#[cfg(any(unix, test))]
-fn pastable(text: &str) -> String {
-    text.chars()
-        .filter(|c| matches!(c, '\n' | '\t') || !crate::notifications::unsafe_char(*c))
-        .collect()
-}
-
-/// Hands notes from outside a window to the agent in the caller's pane: the
-/// window showing that pane delivers them as it does page notes, and with
-/// none they are kept for `browser feedback`.
-#[cfg(unix)]
-fn notes(request: &NotesRequest, cx: &mut App) -> Response {
-    let caller = &request.caller;
-    let Some(pane) = caller.pane_id.as_deref().filter(|_| valid_caller(caller)) else {
-        return Response::error(
-            ErrorCode::InvalidRequest,
-            "Notes are sent from the Herdr pane of the agent they are for",
-        );
-    };
-    let Some(daemon) = caller.daemon_socket.as_deref() else {
-        return Response::error(
-            ErrorCode::InvalidRequest,
-            "Notes require the caller's daemon socket",
-        );
-    };
-    let recipient = FeedbackKey {
-        scope: Scope::local(Path::new(daemon)),
-        pane_id: pane.to_owned(),
-    };
-    let text = pastable(&request.text);
-    if text.trim().is_empty() {
-        return Response::error(ErrorCode::InvalidRequest, "There are no notes to send");
-    }
-    let target = Target {
-        daemon: caller.daemon_socket.as_deref().map(Path::new),
-        workspace: None,
-        pane: Some(pane),
-    };
-    for handle in main_windows(cx) {
-        let taken = handle.update(cx, |view, _, cx| {
-            view.deliver_requested_notes(&target, &text, cx)
-        });
-        if let Ok(Some(to)) = taken {
-            return Response::NotesSent { to };
-        }
-    }
-    let feedback = cx.default_global::<Feedback>();
-    let to = if feedback.is_waiting(&recipient) {
-        NotesTo::Agent
-    } else {
-        NotesTo::Kept
-    };
-    feedback.keep(
-        crate::browser::Batch {
-            target: recipient,
-            text,
-        },
-        None,
-    );
-    Response::NotesSent { to }
-}
-
-/// An agent waiting in `browser feedback --wait`.
-#[cfg(unix)]
-struct Waiter {
-    target: FeedbackKey,
-    until: std::time::Instant,
-    incoming: socket::Incoming,
-}
-
-/// At most this many agents wait at once; the socket bounds connections too.
-#[cfg(unix)]
-const MAX_WAITERS: usize = 8;
-
-#[cfg(unix)]
-fn feedback(
-    request: &FeedbackRequest,
-    incoming: socket::Incoming,
-    waiters: &mut Vec<Waiter>,
-    cx: &mut App,
-) {
-    if !plain(&request.pane_id, 256) {
-        incoming.respond(Response::error(ErrorCode::InvalidRequest, "Invalid pane"));
-        return;
-    }
-    let Some(daemon) = request
-        .daemon_socket
-        .as_deref()
-        .filter(|path| plain(path, 4096))
-    else {
-        incoming.respond(Response::error(
-            ErrorCode::InvalidRequest,
-            "Feedback requires the caller's daemon socket",
-        ));
-        return;
-    };
-    let target = FeedbackKey {
-        scope: Scope::local(Path::new(daemon)),
-        pane_id: request.pane_id.clone(),
-    };
-    let kept = cx.default_global::<Feedback>().take(&target);
-    if kept.is_some() || request.wait_seconds == 0 {
-        respond_feedback(incoming, target, kept, cx);
-        return;
-    }
-    if waiters.len() >= MAX_WAITERS {
-        incoming.respond(Response::error(
-            ErrorCode::Busy,
-            "Too many agents are waiting for notes",
-        ));
-        return;
-    }
-    // A newer wait from the same pane replaces the older one.
-    if let Some(index) = waiters.iter().position(|waiter| waiter.target == target) {
-        waiters
-            .remove(index)
-            .incoming
-            .respond(Response::Feedback { text: None });
-    }
-    waiters.push(Waiter {
-        target,
-        until: std::time::Instant::now()
-            + std::time::Duration::from_secs(request.wait_seconds.min(MAX_WAIT_SECONDS)),
-        incoming,
-    });
-}
-
-#[cfg(unix)]
-fn respond_feedback(
-    incoming: socket::Incoming,
-    target: FeedbackKey,
-    text: Option<String>,
-    cx: &mut App,
-) {
-    if let Err(Response::Feedback { text: Some(text) }) =
-        incoming.try_respond(Response::Feedback { text })
-    {
-        cx.default_global::<Feedback>()
-            .keep(crate::browser::Batch { target, text }, None);
-    }
-}
-
-/// Hands sent notes to waiting agents and releases the ones whose wait ran
-/// out, then tells the windows who is still waiting.
-#[cfg(unix)]
-fn serve_waiters(waiters: &mut Vec<Waiter>, cx: &mut App) {
-    let now = std::time::Instant::now();
-    let mut still = Vec::with_capacity(waiters.len());
-    for waiter in waiters.drain(..) {
-        if !waiter.incoming.is_live() {
-            continue;
-        }
-        let has = cx
-            .try_global::<Feedback>()
-            .is_some_and(|feedback| feedback.has(&waiter.target));
-        if has {
-            let text = cx.default_global::<Feedback>().take(&waiter.target);
-            respond_feedback(waiter.incoming, waiter.target, text, cx);
-        } else if now >= waiter.until {
-            waiter.incoming.respond(Response::Feedback { text: None });
-        } else {
-            still.push(waiter);
-        }
-    }
-    *waiters = still;
-    let panes: Vec<FeedbackKey> = waiters.iter().map(|waiter| waiter.target.clone()).collect();
-    let current = cx.try_global::<Feedback>().map(Feedback::waiting);
-    if current.is_none_or(|current| current != panes.as_slice()) {
-        cx.default_global::<Feedback>().set_waiting(panes);
-    }
-}
-
-/// Starts answering requests. A second app instance leaves the first one's
-/// socket alone and simply does not listen.
-#[cfg(unix)]
-pub(crate) fn install(cx: &mut App) {
-    let Some(path) = socket_path() else {
-        return;
-    };
-    let server = match socket::Server::bind(&path) {
-        Ok(server) => server,
-        Err(error) => {
-            tracing::warn!(%error, "Browser control socket unavailable");
-            return;
-        }
-    };
-    tracing::info!(path = %server.path().display(), "Browser control socket listening");
-    cx.on_app_quit(move |cx| {
-        let path = path.clone();
-        cx.background_executor().spawn(async move {
-            let _ = std::fs::remove_file(path);
-        })
-    })
-    .detach();
-    let timer = cx.background_executor().clone();
-    cx.spawn(async move |cx| {
-        let mut waiters = Vec::new();
-        loop {
-            timer.timer(std::time::Duration::from_millis(50)).await;
-            cx.update(|cx| {
-                serve_waiters(&mut waiters, cx);
-                for event in server.drain() {
-                    let incoming = match event {
-                        socket::Event::Request(incoming) => incoming,
-                        socket::Event::Undelivered { request, text } => {
-                            if let Some(daemon) = request.daemon_socket {
-                                cx.default_global::<Feedback>().keep(
-                                    crate::browser::Batch {
-                                        target: FeedbackKey {
-                                            scope: Scope::local(Path::new(&daemon)),
-                                            pane_id: request.pane_id,
-                                        },
-                                        text,
-                                    },
-                                    None,
-                                );
-                            }
-                            continue;
-                        }
-                    };
-                    if !incoming.is_live() {
-                        continue;
-                    }
-                    match incoming.request.clone() {
-                        Request::Open(request) => {
-                            incoming.respond(open_browser(&request, cx));
-                        }
-                        Request::Reload(caller) => incoming.respond(reload(&caller, cx)),
-                        Request::Feedback(request) => {
-                            feedback(&request, incoming, &mut waiters, cx);
-                        }
-                        Request::Notes(request) => incoming.respond(notes(&request, cx)),
-                    }
-                }
-                serve_waiters(&mut waiters, cx);
-            });
-        }
-    })
-    .detach();
-}
-
-#[cfg(not(unix))]
-pub(crate) fn install(_: &mut App) {}
-
-/// The daemon a pane's agent belongs to, from the variables Herdr sets in it.
-fn caller_daemon() -> crate::Result<Option<String>> {
-    if std::env::var_os("HERDR_SOCKET_PATH").is_none() {
-        return Ok(None);
-    }
-    let path = herdr_client::ConnectTarget::Local.socket_path()?;
-    Ok(path.to_str().map(str::to_owned))
-}
-
-/// Notes must never fall back to pane-only routing, even in the default session.
-fn notes_daemon() -> crate::Result<String> {
-    let path = herdr_client::ConnectTarget::Local.socket_path()?;
-    path.into_os_string()
-        .into_string()
-        .map_err(|_| crate::Error::ControlRejected {
-            code: ErrorCode::InvalidRequest,
-            message: "The daemon socket must be UTF-8 for control requests".into(),
-        })
-}
-
-fn env_id(name: &str) -> Option<String> {
-    std::env::var(name).ok().filter(|id| !id.is_empty())
-}
-
-fn caller(workspace: Option<String>) -> crate::Result<Caller> {
-    Ok(Caller {
-        pane_id: env_id("HERDR_PANE_ID"),
-        workspace_id: workspace.or_else(|| env_id("HERDR_WORKSPACE_ID")),
-        daemon_socket: caller_daemon()?,
-    })
-}
-
-#[cfg(unix)]
-fn send(request: &Request) -> crate::Result<Response> {
-    let path = socket_path().ok_or(crate::Error::MissingStateRoot)?;
-    socket::call(&path, request)
-}
-
-#[cfg(not(unix))]
-fn send(_: &Request) -> crate::Result<Response> {
-    Err(crate::Error::ControlUnsupported)
-}
-
-fn rejected(response: Response) -> crate::Error {
-    match response {
-        Response::Error { code, message } => crate::Error::ControlRejected { code, message },
-        _ => crate::Error::ControlNoResponse,
-    }
-}
-
-/// Sends the user's notes to the agent in this process's Herdr pane, through
-/// the running Herdr UI. Blocking: call it off the UI thread.
-#[cfg(feature = "mockup")]
-pub(crate) fn send_notes(text: String) -> crate::Result<NotesTo> {
-    let mut caller = caller(None)?;
-    if caller.pane_id.is_none() {
-        return Err(crate::Error::ControlRejected {
-            code: ErrorCode::InvalidRequest,
-            message: "Not running in a Herdr pane".into(),
-        });
-    }
-    caller.daemon_socket = Some(notes_daemon()?);
-    match send(&Request::Notes(NotesRequest { caller, text }))? {
-        Response::NotesSent { to } => Ok(to),
-        response => Err(rejected(response)),
-    }
-}
-
-/// A file that exists is shown as a local page; anything else is an address.
-fn page(target: &str) -> crate::Result<(Page, String)> {
-    let path = Path::new(target);
-    if !target.contains("://") && path.is_file() {
-        let path = path.canonicalize()?;
-        let home = crate::config::home().ok();
-        LocalFile::new(&path, home.as_deref())?;
-        let text = path
-            .to_str()
-            .ok_or(crate::Error::InvalidLocalPage)?
-            .to_owned();
-        return Ok((Page::File(text.clone()), text));
-    }
-    let url = WebUrl::from_typed(target)?;
-    Ok((Page::Url(url.as_str().to_owned()), url.as_str().to_owned()))
-}
-
-fn browser_open(target: &str, workspace: Option<String>, focus: bool) -> crate::Result<String> {
-    let (page, shown) = page(target)?;
-    let request = Request::Open(BrowserOpen {
-        page,
-        caller: caller(workspace)?,
-        focus,
-    });
-    match send(&request)? {
-        Response::Opened {
-            opened_in: OpenedIn::Tab,
-            workspace_id,
-        } => Ok(match workspace_id {
-            Some(id) => format!("Opened {shown} in a browser tab of workspace {id}"),
-            None => format!("Opened {shown} in a browser tab"),
-        }),
-        Response::Opened {
-            opened_in: OpenedIn::SystemBrowser,
-            ..
-        } => Ok(format!(
-            "Opened {shown} in the system browser; this platform's build has no browser tabs"
-        )),
-        response => Err(rejected(response)),
-    }
-}
-
-fn browser_reload() -> crate::Result<String> {
-    match send(&Request::Reload(caller(None)?))? {
-        Response::Reloaded { tabs: 0 } => Err(crate::Error::ControlRejected {
-            code: ErrorCode::InvalidRequest,
-            message: "This pane has no browser tabs open".into(),
-        }),
-        Response::Reloaded { tabs } => Ok(format!("Reloaded {tabs} browser tab(s)")),
-        response => Err(rejected(response)),
-    }
-}
-
-/// The user's notes for this pane, or `None` when none arrived in time.
-fn browser_feedback(wait: u64) -> crate::Result<Option<String>> {
-    let pane_id = env_id("HERDR_PANE_ID").ok_or(crate::Error::ControlRejected {
-        code: ErrorCode::InvalidRequest,
-        message: "browser feedback runs in the Herdr pane that opened the page".into(),
-    })?;
-    let request = Request::Feedback(FeedbackRequest {
-        pane_id,
-        daemon_socket: Some(notes_daemon()?),
-        wait_seconds: wait.min(MAX_WAIT_SECONDS),
-    });
-    match send(&request)? {
-        Response::Feedback { text } => Ok(text),
-        response => Err(rejected(response)),
-    }
-}
-
-const BROWSER_USAGE: &str = "\
-herdr-gpui browser open URL|FILE [--workspace ID] [--no-focus]
-    Show a web address, or a local HTML file, in a browser tab of the running
-    Herdr UI. The tab joins the caller's own workspace (HERDR_WORKSPACE_ID),
-    or the frontmost one outside Herdr. Showing the same page again from the
-    same pane reuses and reloads its tab. Bare hosts such as localhost:3000
-    are accepted. A file is served with the other files in its folder.
-herdr-gpui browser reload
-    Reload the pages this pane opened, for example after editing the file.
-herdr-gpui browser feedback [--wait SECONDS]
-    Print the notes the user sent about this pane's pages and have not been
-    delivered yet. With --wait, wait up to SECONDS (at most 600) for them.
-    Notes are otherwise typed into this pane as a prompt once it is idle.
-herdr-gpui browser skill
-    Print the agent skill that explains these commands.
-Exit status: 0 done, 1 refused, 2 invalid arguments, 3 Herdr UI not running,
-4 no notes (feedback).";
-
-fn report(result: crate::Result<String>) -> ExitCode {
-    match result {
-        Ok(message) => {
-            println!("{}", crate::notifications::safe_text(&message, 4096));
-            ExitCode::SUCCESS
-        }
-        Err(error) => {
-            // The running app's answer reaches the caller's terminal.
-            eprintln!(
-                "{}",
-                crate::notifications::safe_text(&error.to_string(), 4096)
-            );
-            ExitCode::from(match error {
-                crate::Error::InvalidBrowserUrl | crate::Error::InvalidLocalPage => 2,
-                crate::Error::ControlUnavailable { .. } => EXIT_NOT_RUNNING,
-                _ => 1,
-            })
-        }
-    }
-}
-
-/// Runs a control subcommand without starting GPUI.
-pub(crate) fn run(command: BrowserCommand) -> ExitCode {
-    match command {
-        BrowserCommand::Help => {
-            println!("{BROWSER_USAGE}");
-            ExitCode::SUCCESS
-        }
-        BrowserCommand::Skill => {
-            print!(
-                "{}",
-                crate::agent_skill::text(std::env::current_exe().ok().as_deref())
-            );
-            ExitCode::SUCCESS
-        }
-        BrowserCommand::Open {
-            target,
-            workspace,
-            focus,
-        } => report(browser_open(&target, workspace, focus)),
-        BrowserCommand::Reload => report(browser_reload()),
-        BrowserCommand::Feedback { wait } => match browser_feedback(wait) {
-            // Notes keep their line breaks: they are Markdown for the agent.
-            Ok(Some(text)) => {
-                print!("{text}");
-                ExitCode::SUCCESS
-            }
-            Ok(None) => {
-                eprintln!("No notes from the user yet");
-                ExitCode::from(EXIT_NO_FEEDBACK)
-            }
-            Err(error) => report(Err(error)),
-        },
-    }
-}
+pub(crate) use server::install;
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
     use super::*;
-
-    #[cfg(unix)]
-    mod scoped_notes;
 
     #[test]
     fn echoed_identifiers_are_short_and_printable() {
@@ -688,10 +140,14 @@ mod tests {
     }
 
     #[test]
-    fn pasted_notes_keep_line_breaks_and_lose_other_controls() {
-        assert_eq!(
-            pastable("Picked: B\n\t- note\u{1b}[201~ls\r\u{202e}x"),
-            "Picked: B\n\t- note[201~lsx"
-        );
+    fn daemon_paths_may_hold_spaces_but_not_control_characters() {
+        assert!(plain_path(
+            r"C:\Users\Jane Doe\AppData\Roaming\herdr\herdr-client.sock"
+        ));
+        assert!(plain_path("/home/jane/.config/herdr/herdr.sock"));
+        for invalid in ["", "/tmp/a\nb.sock", "/tmp/\u{1b}[2J"] {
+            assert!(!plain_path(invalid), "{invalid:?}");
+        }
+        assert!(!plain_path(&"a".repeat(4097)));
     }
 }

@@ -1,7 +1,5 @@
 //! Requires an active native desktop and an explicitly selected daemon executable.
-//! The daemon and its sandbox are POSIX, so the harness compiles on Unix only.
-#![cfg(unix)]
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::disallowed_methods)]
 #[path = "../../test-support/sandbox.rs"]
 mod sandbox;
 
@@ -70,6 +68,13 @@ fn native_notifications() {
     native_fixture(Fixture::Notifications);
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "requires active macOS desktop; a page beneath the window, no daemon"]
+fn native_pages() {
+    native_fixture(Fixture::Pages);
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 #[ignore = "requires active Wayland desktop; input shutdown fixtures, no daemon"]
@@ -105,6 +110,8 @@ enum Fixture {
     #[cfg(target_os = "linux")]
     ApplicationMenus,
     Notifications,
+    #[cfg(target_os = "macos")]
+    Pages,
     InvalidChildWidth,
     #[cfg(target_os = "linux")]
     InputShutdown(&'static str),
@@ -128,6 +135,10 @@ fn native_fixture(fixture: Fixture) {
         }
         Fixture::Notifications => {
             command.env("HERDR_TEST_NOTIFICATIONS_ONLY", "1");
+        }
+        #[cfg(target_os = "macos")]
+        Fixture::Pages => {
+            command.env("HERDR_TEST_PAGES_ONLY", "1");
         }
         Fixture::InvalidChildWidth => {
             command.env("HERDR_TEST_SIDEBAR_PROBE_FAILURE", "1");
@@ -174,6 +185,8 @@ fn native_fixture(fixture: Fixture) {
         #[cfg(target_os = "linux")]
         Fixture::ApplicationMenus => "APPLICATION MENUS native PASS",
         Fixture::Notifications => "NOTIFICATIONS native PASS:",
+        #[cfg(target_os = "macos")]
+        Fixture::Pages => "PAGES native PASS:",
         #[cfg(target_os = "linux")]
         Fixture::InputShutdown(_) => "INPUT shutdown ready:",
         _ => "SIDEBAR native PASS:",
@@ -183,7 +196,8 @@ fn native_fixture(fixture: Fixture) {
 impl Drop for Isolated {
     fn drop(&mut self) {
         stop_children([&mut self.gui, &mut self.daemon]);
-        for name in ["gui.log", "daemon.log"] {
+        // The daemon's own log says why it refused or failed a request.
+        for name in ["gui.log", "daemon.log", "config/herdr/herdr-server.log"] {
             if let Ok(log) = fs::read_to_string(self.sandbox.dir.join(name)) {
                 eprintln!("{name} (last 40 lines, at most 600 chars each):");
                 let lines = log.lines().rev().take(40).collect::<Vec<_>>();
@@ -310,6 +324,9 @@ fn native_gui_live() {
     );
 }
 
+// Windows has no display variables to forward; the GUI reaches the desktop
+// of the session it runs in.
+#[cfg(unix)]
 #[test]
 fn gui_desktop_environment_preserves_sandbox_isolation() {
     use std::{collections::BTreeMap, ffi::OsStr, os::unix::ffi::OsStrExt};

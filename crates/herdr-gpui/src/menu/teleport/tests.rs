@@ -2,6 +2,9 @@ use super::*;
 use crate::sidebar::layout_tests::{REPO_KEY, snapshot};
 use crate::teleport::Repository;
 
+#[cfg(feature = "cloud")]
+mod cloud;
+
 #[test]
 fn repositories_prefer_their_main_checkout_workspace() {
     // w3 is the main checkout; w4 and w5 are linked worktrees of it.

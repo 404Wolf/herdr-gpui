@@ -60,20 +60,31 @@ pub(super) fn navigate(index: usize, count: usize, columns: usize, up: bool) -> 
 }
 
 impl SettingsWindow {
-    pub(super) fn schedule_grid_palettes(&mut self, rows: Range<usize>, cx: &mut Context<Self>) {
-        let grid = &mut self.themes.grid;
-        grid.visible =
-            rows.start * grid.columns..(rows.end * grid.columns).min(self.themes.filtered.len());
-        if self
-            .themes
+    fn visible_palettes_cached(&self) -> bool {
+        let grid = &self.themes.grid;
+        self.themes
             .filtered
             .get(grid.visible.clone())
             .unwrap_or_default()
             .iter()
             .all(|name| grid.palettes.iter().any(|(cached, _)| cached == name))
-        {
+    }
+
+    /// True once no palette load is pending and every visible card has one.
+    #[cfg(all(feature = "integration-test", feature = "mockup", target_os = "macos"))]
+    pub(in crate::settings_window) fn grid_ready(&self) -> bool {
+        let grid = &self.themes.grid;
+        !grid.running && !grid.queued && self.visible_palettes_cached()
+    }
+
+    pub(super) fn schedule_grid_palettes(&mut self, rows: Range<usize>, cx: &mut Context<Self>) {
+        let columns = self.themes.grid.columns;
+        self.themes.grid.visible =
+            rows.start * columns..(rows.end * columns).min(self.themes.filtered.len());
+        if self.visible_palettes_cached() {
             return;
         }
+        let grid = &mut self.themes.grid;
         if grid.queued || grid.running {
             return;
         }
@@ -130,7 +141,7 @@ impl SettingsWindow {
                         Scope::Herdr => shared.as_ref().and_then(|shared| {
                             shared
                                 .preview_theme(&choice.name, light)
-                                .map(|theme| theme.with_contrast(config.contrast))
+                                .map(|theme| theme.styled_for(&config))
                                 .ok()
                         }),
                         Scope::App => config.theme(light).ok(),

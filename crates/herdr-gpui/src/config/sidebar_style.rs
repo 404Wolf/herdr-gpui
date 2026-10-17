@@ -1,5 +1,6 @@
 //! The `[sidebar]` table beyond its font: spacing that overrides the layout
-//! preset, a colour per host, and how a selection marks its host's group.
+//! preset, a colour per host, how a selection marks its host's group, and
+//! when the device footer is drawn.
 
 use super::fonts::FontSettings;
 use crate::{Error, Result};
@@ -64,23 +65,59 @@ pub enum SelectMode {
     GroupDim,
 }
 
+/// When the sidebar draws its device footer: the device picker, the
+/// connection mark, and the Sessions and Settings buttons.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DeviceFooter {
+    #[default]
+    Always,
+    /// Only while the picker has a choice to offer: two or more devices, or
+    /// a cloud machine still being added, whose count the footer carries.
+    Auto,
+    Never,
+}
+
+impl DeviceFooter {
+    /// The value written to the config file; matches the serde name.
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Always => "always",
+            Self::Auto => "auto",
+            Self::Never => "never",
+        }
+    }
+
+    pub(crate) fn shown(self, devices: usize, adding: usize) -> bool {
+        match self {
+            Self::Always => true,
+            Self::Auto => devices > 1 || adding > 0,
+            Self::Never => false,
+        }
+    }
+}
+
 /// Sidebar styling the config file adds to a layout preset.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SidebarStyle {
     pub overrides: SidebarOverrides,
     pub select: SelectMode,
+    pub device_footer: DeviceFooter,
     /// A colour per host, keyed by the host's display name, as `0xRRGGBB`.
     pub hosts: BTreeMap<String, u32>,
 }
 
 /// `#rgb` or `#rrggbb`, in either case.
-fn parse_hex(value: &str) -> Option<u32> {
+pub(crate) fn parse_hex(value: &str) -> Option<u32> {
     let digits = value.strip_prefix('#')?;
     let expanded: String = match digits.len() {
         3 => digits.chars().flat_map(|c| [c, c]).collect(),
         6 => digits.to_owned(),
         _ => return None,
     };
+    if !expanded.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
     u32::from_str_radix(&expanded, 16).ok()
 }
 
@@ -92,6 +129,7 @@ pub(super) struct SidebarSettings {
     pub(super) font: FontSettings,
     pub(super) overrides: SidebarOverrides,
     pub(super) select: SelectMode,
+    pub(super) device_footer: DeviceFooter,
     pub(super) hosts: BTreeMap<String, String>,
 }
 
@@ -114,6 +152,7 @@ impl SidebarSettings {
         Ok(SidebarStyle {
             overrides: self.overrides,
             select: self.select,
+            device_footer: self.device_footer,
             hosts,
         })
     }
@@ -148,6 +187,7 @@ impl<'de> Deserialize<'de> for SidebarSettings {
                         "gap" => settings.overrides.gap = Some(map.next_value()?),
                         "host_gap" => settings.overrides.host_gap = Some(map.next_value()?),
                         "select" => settings.select = map.next_value()?,
+                        "device_footer" => settings.device_footer = map.next_value()?,
                         "hosts" => settings.hosts = map.next_value()?,
                         _ => {
                             map.next_value::<serde::de::IgnoredAny>()?;

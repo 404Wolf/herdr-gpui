@@ -9,13 +9,11 @@ use super::{
 };
 use crate::{HerdrWindow, NavigationTarget, search_input::SearchInput, window::Flash};
 use gpui::{prelude::*, *};
-#[cfg(any(target_os = "macos", windows))]
-use present::Freeze;
 use std::collections::{HashMap, HashSet};
 
+mod agent_tab;
 pub(in crate::browser) mod present;
 mod render;
-#[cfg(unix)]
 mod requests;
 
 /// One window's browser state. How each workspace's view is split, and what
@@ -37,16 +35,15 @@ pub(crate) struct Browser {
     pub(super) fallback_group: GroupId,
     #[cfg(any(target_os = "macos", windows))]
     pub(super) pages: super::Pages,
-    /// Where each page drew last frame, to tell which ones a menu covers.
+    /// Each page's icon, as this window's page last reported it.
     #[cfg(any(target_os = "macos", windows))]
-    page_bounds: std::rc::Rc<std::cell::RefCell<HashMap<TabId, Bounds<Pixels>>>>,
-    /// Pages a menu covers, stood in for by a picture of themselves.
-    #[cfg(any(target_os = "macos", windows))]
-    frozen: HashMap<TabId, Freeze>,
+    pub(super) favicons: HashMap<TabId, std::sync::Arc<RenderImage>>,
     /// Groups whose shown tab closed where their strips were not at hand:
     /// in another window, or in a workspace not on screen. Each is given
     /// another of its tabs, or closed, when its workspace next settles.
     pub(super) emptied: Vec<GroupId>,
+    /// Tabs this window keeps out of its strips, as tearing one off does.
+    pub(crate) hidden: super::hidden::Hidden,
     /// Tabs being closed one after another, as Close Others closes them.
     pub(crate) closing: Option<crate::close_modal::CloseRun>,
     /// Where each group drew last frame, so a carried tab knows the group
@@ -74,23 +71,28 @@ pub(crate) struct Browser {
     /// The workspaces of the last snapshot and the boot they came from: one
     /// missing from the next snapshot of the same boot was closed.
     workspaces: Option<(Scope, String, HashSet<String>)>,
+    /// The Herdr tabs of the last snapshot, with its boot and revision: one
+    /// missing from the next snapshot of the same boot, in a workspace still
+    /// open, was closed and can be reopened.
+    pub(super) herdr_tabs: Option<(Scope, String, u64, Vec<super::ClosedHerdrTab>)>,
     #[cfg(any(target_os = "macos", windows))]
     pub(super) annotations: Annotations,
     /// The menu page open when pages were last presented, which the menu's
-    /// measured cover belongs to.
-    #[cfg(any(target_os = "macos", windows))]
+    /// measured cover belongs to. Windows pages draw above the window, so
+    /// those a menu covers hide.
+    #[cfg(windows)]
     pub(super) cover_page: Option<crate::menu::Page>,
     /// While the pointer is over the status bar, the band above it where
-    /// the bar's tooltips show. Pages draw above tooltips, so those in the
-    /// band step aside, as for a menu.
-    #[cfg(any(target_os = "macos", windows))]
+    /// the bar's tooltips show. The Windows pages in the band hide, as for a
+    /// menu.
+    #[cfg(windows)]
     pub(super) tooltip_band: Option<Bounds<Pixels>>,
     /// Where the status bar last drew, which the band sits above.
-    #[cfg(any(target_os = "macos", windows))]
+    #[cfg(windows)]
     pub(super) status_bar: std::rc::Rc<std::cell::Cell<Option<Bounds<Pixels>>>>,
-    /// Where the window's toasts and file-transfer card drew. Pages draw
-    /// above them, so those they reach step aside, as for a menu.
-    #[cfg(any(target_os = "macos", windows))]
+    /// Where the window's toasts and file-transfer card drew. The Windows
+    /// pages they reach hide, as for a menu.
+    #[cfg(windows)]
     pub(super) overlays: std::rc::Rc<std::cell::RefCell<present::Overlays>>,
 }
 
@@ -106,10 +108,9 @@ impl Browser {
             #[cfg(any(target_os = "macos", windows))]
             pages: Default::default(),
             #[cfg(any(target_os = "macos", windows))]
-            page_bounds: Default::default(),
-            #[cfg(any(target_os = "macos", windows))]
-            frozen: HashMap::new(),
+            favicons: HashMap::new(),
             emptied: Vec::new(),
+            hidden: Default::default(),
             closing: None,
             group_bounds: Default::default(),
             addresses: HashMap::new(),
@@ -121,17 +122,25 @@ impl Browser {
             failed: HashMap::new(),
             code_server: Default::default(),
             workspaces: None,
+            herdr_tabs: None,
             #[cfg(any(target_os = "macos", windows))]
             annotations: Annotations::default(),
-            #[cfg(any(target_os = "macos", windows))]
+            #[cfg(windows)]
             cover_page: None,
-            #[cfg(any(target_os = "macos", windows))]
+            #[cfg(windows)]
             tooltip_band: None,
-            #[cfg(any(target_os = "macos", windows))]
+            #[cfg(windows)]
             status_bar: Default::default(),
-            #[cfg(any(target_os = "macos", windows))]
+            #[cfg(windows)]
             overlays: Default::default(),
         }
+    }
+
+    /// Where each page drew in the frame being drawn, which the window's
+    /// backgrounds leave unpainted.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn drawn_pages(&self) -> super::page::Drawn {
+        self.pages.drawn()
     }
 }
 
@@ -156,6 +165,19 @@ pub(super) fn store(cx: &App) -> Option<&Store> {
     cx.try_global::<Store>()
 }
 
+/// What [`HerdrWindow::open_workspace_page`] did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PageOpened {
+    /// In a tab of the workspace, shown once its navigation lands.
+    Tab,
+    /// In the system browser, on a build without page tabs.
+    SystemBrowser,
+    /// Not opened: too many tabs are open.
+    Full,
+    /// Not opened: the window has no such host, or cannot go to the workspace.
+    Unreachable,
+}
+
 impl HerdrWindow {
     pub(crate) fn browser_key(&self) -> Option<(Scope, String)> {
         let workspace = self.live.snapshot.as_ref()?.focused_workspace_id.clone()?;
@@ -174,14 +196,6 @@ impl HerdrWindow {
     }
 
     pub(super) fn forget_browser_tabs(&mut self, mut gone: impl FnMut(TabId) -> bool) {
-        #[cfg(any(target_os = "macos", windows))]
-        {
-            self.browser.frozen.retain(|id, _| !gone(*id));
-            self.browser
-                .page_bounds
-                .borrow_mut()
-                .retain(|id, _| !gone(*id));
-        }
         let browser = &mut self.browser;
         for layout in browser.layouts.values_mut() {
             let closed: Vec<Pick> = layout
@@ -245,13 +259,13 @@ impl HerdrWindow {
         url: WebUrl,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> PageOpened {
         if !super::EMBEDDED {
             cx.open_url(url.as_str());
-            return;
+            return PageOpened::SystemBrowser;
         }
         let Some(index) = self.endpoints.iter().position(|e| e.id == endpoint) else {
-            return;
+            return PageOpened::Unreachable;
         };
         let scope = scope(&self.endpoints[index]);
         let location = Location::Web { url };
@@ -264,15 +278,16 @@ impl HerdrWindow {
         });
         let Some(id) = opened else {
             self.show_flash(Flash::warning("Too many browser tabs are open"), cx);
-            return;
+            return PageOpened::Full;
         };
         if !self.navigate_endpoint(endpoint, NavigationTarget::Workspace(workspace), cx) {
-            return;
+            return PageOpened::Unreachable;
         }
         // Recorded against the workspace, so the tab shows once the
         // navigation lands even if it is still in flight.
         self.show_browser_tab(id, window, cx);
         cx.notify();
+        PageOpened::Tab
     }
 
     /// Applies page reports, drops tabs other windows closed, and forgets the
@@ -280,6 +295,8 @@ impl HerdrWindow {
     pub(crate) fn poll_browser(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         #[cfg(any(target_os = "macos", windows))]
         self.apply_page_events(window, cx);
+        #[cfg(any(target_os = "macos", windows))]
+        self.forget_favicons(window, cx);
         if let Some(store) = store(cx) {
             let gone: HashSet<TabId> = self
                 .browser
@@ -307,11 +324,13 @@ impl HerdrWindow {
                 cx.notify();
             }
         }
+        self.observe_closed_herdr_tabs(cx);
         self.forget_closed_workspaces(cx);
         self.settle_groups(window, cx);
         self.advance_close_run(window, cx);
         self.ensure_code_page(window, cx);
         self.poll_deliveries(cx);
+        self.poll_reveal(window, cx);
         self.poll_reviews(cx);
         self.poll_code_views(cx);
         self.poll_orchestrators(window, cx);
@@ -362,6 +381,7 @@ impl HerdrWindow {
         self.browser
             .layouts
             .retain(|(saved, workspace), _| saved != &scope || !closed.contains(workspace));
+        self.browser.hidden.forget_workspaces(&scope, &closed);
         super::Layouts::forget_workspaces(cx, &scope, &closed);
         if !store(cx).is_some_and(|store| store.has_workspaces(&scope, &closed)) {
             return;
@@ -387,13 +407,15 @@ impl HerdrWindow {
                     if let Some(location) = visited {
                         Store::update(cx, |store| store.visited(id, Some(location), None));
                     }
-                    self.page_loaded(id, cx);
+                    self.page_loaded(id);
+                    self.browser.pages.script(id, &super::favicon::script());
                 }
-                Event::Posted(id, body) => self.page_posted(id, &body, window, cx),
+                Event::Posted(id, body, from) => match super::favicon::Favicon::parse(&body) {
+                    Some(favicon) => self.page_favicon(id, favicon, window, cx),
+                    None => self.page_posted(id, &body, from, window, cx),
+                },
                 #[cfg(target_os = "macos")]
                 Event::Captured(id, capture, tiff) => self.page_captured(id, capture, tiff, cx),
-                #[cfg(target_os = "macos")]
-                Event::Frozen(id, tiff) => self.page_frozen(id, tiff, cx),
                 Event::NewWindow(id, url) => {
                     if let Ok(url) = WebUrl::try_from(url.as_str())
                         && let Some(opened) = self.open_beside(id, url, cx)
@@ -406,13 +428,67 @@ impl HerdrWindow {
                     // Without a tab the popup is dropped, and with it the
                     // opener's link to it.
                     if let Some((group, opened)) = self.open_beside(id, url, cx) {
-                        self.browser.pages.adopt(opened, source, popup, window, cx);
+                        if let Err(error) = self.browser.pages.adopt(opened, source, popup, window)
+                        {
+                            tracing::warn!(%error, "Cannot show a popup's page");
+                            self.browser.failed.insert(opened, error.to_string().into());
+                        }
                         self.show_browser_tab_in(group, opened, window, cx);
                     }
                 }
                 #[cfg(target_os = "macos")]
                 Event::Closed(id) => self.close_browser_tab(id, window, cx),
             }
+        }
+    }
+
+    /// Shows the icon tab `id`'s page reported, or the globe again when it
+    /// has none.
+    #[cfg(any(target_os = "macos", windows))]
+    fn page_favicon(
+        &mut self,
+        id: TabId,
+        favicon: super::favicon::Favicon,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let replaced = match favicon {
+            super::favicon::Favicon::Icon(icon) => {
+                self.browser.favicons.insert(id, std::sync::Arc::new(icon))
+            }
+            super::favicon::Favicon::Missing => self.browser.favicons.remove(&id),
+        };
+        // The old icon's texture is freed rather than kept for the window's life.
+        if let Some(old) = replaced {
+            let _ = window.drop_image(old);
+        }
+        cx.notify();
+    }
+
+    /// Frees the icons of tabs the app no longer has.
+    #[cfg(any(target_os = "macos", windows))]
+    fn forget_favicons(&mut self, window: &mut Window, cx: &App) {
+        let Some(store) = store(cx) else {
+            return;
+        };
+        self.browser.favicons.retain(|id, icon| {
+            let live = store.get(*id).is_some();
+            if !live {
+                let _ = window.drop_image(icon.clone());
+            }
+            live
+        });
+    }
+
+    /// The icon to show on tab `id` in place of the globe, if its page
+    /// reported one.
+    pub(super) fn tab_favicon(&self, id: TabId) -> Option<std::sync::Arc<RenderImage>> {
+        #[cfg(any(target_os = "macos", windows))]
+        return self.browser.favicons.get(&id).cloned();
+        #[cfg(not(any(target_os = "macos", windows)))]
+        {
+            let _ = id;
+            None
         }
     }
 

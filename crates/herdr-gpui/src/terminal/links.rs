@@ -1,11 +1,18 @@
 //! Resolve user-selected links within the painted pane or popup only: web
-//! addresses, and the local file paths a pane prints, which open only on a
-//! link-modifier click on the machine that runs the pane.
+//! addresses, the local file paths a pane prints or names, which open only
+//! on the machine that runs the pane, and the other addresses with a defined
+//! scheme. Reading a row decides nothing about the disk: whether a path is
+//! there is asked once the link modifier is held over it, and every link
+//! opens only on a link-modifier click.
 use super::{HIDDEN, InputTarget, popup_origin, selection::shown, wheel_target};
 use herdr_client::protocol::{CellData, FrameData, PaneSurfaceFrame};
 use std::ops::Range;
 
+mod external;
 mod path;
+pub(crate) use path::{escape_into, escaped_len};
+
+pub(crate) use external::ExternalUrl;
 
 pub(super) const MAX_ROW_BYTES: usize = 32768;
 
@@ -15,17 +22,66 @@ fn web_url(value: &str) -> Option<String> {
         .map(String::from)
 }
 
-/// The local path a `file://` hyperlink names. A file on another host is not
-/// this machine's to open, so only an empty host or `localhost` qualifies:
-/// Windows would otherwise read any other host as a network share.
-fn file_url_path(value: &str) -> Option<String> {
-    let url = url::Url::parse(value)
-        .ok()
-        .filter(|url| url.scheme() == "file")?;
-    if url.host_str().is_some_and(|host| host != "localhost") {
-        return None;
+/// The longest hyperlink target read as a path, Linux's `PATH_MAX`.
+const MAX_PATH_BYTES: usize = 4096;
+
+/// What an explicit hyperlink points at when it is not a web address: the
+/// file a `file://` address or a target without a scheme names, or an
+/// address with another scheme. Nothing here asks whether the file exists.
+fn explicit_target(destination: &str) -> RowTarget {
+    let named = |path: String| RowTarget::Path {
+        path,
+        line: None,
+        explicit: true,
+    };
+    let url = match url::Url::parse(destination) {
+        Ok(url) => url,
+        // No scheme: a path as a program would print it, with `~/` and
+        // relative paths left for the click to resolve.
+        Err(url::ParseError::RelativeUrlWithoutBase)
+            if !destination.is_empty()
+                && destination.len() <= MAX_PATH_BYTES
+                && !destination.chars().any(char::is_control) =>
+        {
+            return named(destination.to_owned());
+        }
+        Err(_) => return RowTarget::Malformed,
+    };
+    if url.scheme() != "file" {
+        return ExternalUrl::try_from(destination)
+            .map_or(RowTarget::Malformed, RowTarget::External);
     }
-    url.to_file_path().ok()?.into_os_string().into_string().ok()
+    // A file on another host is not this machine's to open, so only an empty
+    // host or `localhost` is local: Windows would otherwise read any other
+    // host as a network share.
+    if let Some(host) = url
+        .host_str()
+        .filter(|host| !host.is_empty() && *host != "localhost")
+    {
+        return RowTarget::OtherHost(host.to_owned());
+    }
+    url.to_file_path()
+        .ok()
+        .and_then(|path| path.into_os_string().into_string().ok())
+        .map_or(RowTarget::Malformed, named)
+}
+
+/// What an address read from plain text points at. Only the defined schemes
+/// are links there: the web's, `file://` on this host, and the ones that
+/// open without asking. A printed path is one only if its file exists.
+fn plain_address(text: &str) -> Option<RowTarget> {
+    if let Some(url) = web_url(text) {
+        return Some(RowTarget::Web(url));
+    }
+    match explicit_target(text) {
+        RowTarget::External(url) if url.trusted() => Some(RowTarget::External(url)),
+        RowTarget::Path { path, .. } if text.starts_with("file://") => Some(RowTarget::Path {
+            path,
+            line: None,
+            explicit: false,
+        }),
+        _ => None,
+    }
 }
 
 /// What a row-local link points at.
@@ -34,9 +90,23 @@ pub(crate) enum RowTarget {
     /// A web address that passed `WebUrl` validation.
     Web(String),
     /// A local path as the pane printed it, with `~/` and relative paths left
-    /// for the click to resolve, or the absolute path of a `file://` link,
-    /// and the line a `:line` suffix named.
-    Path { path: String, line: Option<u32> },
+    /// for the click to resolve, or the path an explicit hyperlink names, and
+    /// the line a `:line` suffix named. An `explicit` one is a link whether
+    /// or not its file exists; printed text is one only when it does.
+    Path {
+        path: String,
+        line: Option<u32>,
+        explicit: bool,
+    },
+    /// An explicit hyperlink to a file on another host, by that host's name.
+    /// It is never opened here; a click says so.
+    OtherHost(String),
+    /// An explicit hyperlink whose target is no address or path this client
+    /// reads. It is still marked as a hyperlink; a click says what is wrong.
+    Malformed,
+    /// The address of an explicit hyperlink with any other scheme, such as
+    /// `mailto:`. Plain text is never read as one.
+    External(ExternalUrl),
 }
 
 /// A link read from one row, and the frame columns it covers.
@@ -64,7 +134,10 @@ pub(crate) fn link_at(
 ) -> Option<String> {
     match located(surface, x, y, cell_width, cell_height)?.1.target {
         RowTarget::Web(url) => Some(url),
-        RowTarget::Path { .. } => None,
+        RowTarget::Path { .. }
+        | RowTarget::External(_)
+        | RowTarget::OtherHost(_)
+        | RowTarget::Malformed => None,
     }
 }
 
@@ -197,10 +270,7 @@ fn frame_link(frame: &FrameData, column: u16, row: u16, start: u16, end: u16) ->
         let destination = frame.hyperlinks.get(index as usize)?;
         let target = match web_url(destination) {
             Some(url) => RowTarget::Web(url),
-            None => RowTarget::Path {
-                path: file_url_path(destination)?,
-                line: None,
-            },
+            None => explicit_target(destination),
         };
         let on_link = |i: &usize| cells[*i].skip || cells[*i].hyperlink == Some(index);
         let first = (0..=source)
@@ -240,8 +310,8 @@ fn frame_link(frame: &FrameData, column: u16, row: u16, start: u16, end: u16) ->
     let (range, target) = match plain_url(&text, hit) {
         Some((_, true)) => return None,
         Some((range, false)) => {
-            let url = web_url(&text[range.clone()])?;
-            (range, RowTarget::Web(url))
+            let target = plain_address(&text[range.clone()])?;
+            (range, target)
         }
         None => {
             let found = path::plain_path(&text, hit)?;
@@ -251,8 +321,9 @@ fn frame_link(frame: &FrameData, column: u16, row: u16, start: u16, end: u16) ->
                 return None;
             }
             let target = RowTarget::Path {
-                path: found.path.to_owned(),
+                path: found.path.into_owned(),
                 line: found.line,
+                explicit: false,
             };
             (found.range, target)
         }
@@ -285,19 +356,41 @@ fn row_full(frame: &FrameData, row: u16, end: u16) -> bool {
         .is_some_and(|cell| cell.skip || shown(cell) != " ")
 }
 
-/// The byte range of the plain web URL in one row's `text` that covers the
+/// The schemes read from plain text. Any other is plain text.
+const PLAIN_SCHEMES: [&str; 5] = ["http://", "https://", "file://", "mailto:", "vscode:"];
+
+/// Where an address with one of the plain schemes starts in `text`, in
+/// order. A scheme counts only at the start of a word, except the web's,
+/// which are read wherever they stand.
+fn address_starts(text: &str) -> Vec<(usize, &'static str)> {
+    let mut starts: Vec<_> = PLAIN_SCHEMES
+        .into_iter()
+        .flat_map(|scheme| {
+            text.match_indices(scheme)
+                .map(move |(start, _)| (start, scheme))
+        })
+        .filter(|(start, scheme)| {
+            scheme.starts_with("http")
+                || !text[..*start]
+                    .chars()
+                    .next_back()
+                    .is_some_and(char::is_alphanumeric)
+        })
+        .collect();
+    starts.sort_unstable();
+    starts
+}
+
+/// The byte range of the plain address in one row's `text` that covers the
 /// byte at `hit`, trimmed of the prose punctuation around it, and whether the
-/// URL runs to the end of the row, where it may continue off-screen or on the
-/// next row.
+/// address runs to the end of the row, where it may continue off-screen or on
+/// the next row.
 pub(super) fn plain_url(text: &str, hit: usize) -> Option<(Range<usize>, bool)> {
-    for (start, _) in text.match_indices("http") {
+    for (start, scheme) in address_starts(text) {
         if start > hit {
             break;
         }
         let tail = &text[start..];
-        if !tail.starts_with("http://") && !tail.starts_with("https://") {
-            continue;
-        }
         let end = tail
             .find(|c: char| {
                 c.is_whitespace() || c.is_control() || matches!(c, '<' | '>' | '"' | '\'' | '`')
@@ -318,6 +411,10 @@ pub(super) fn plain_url(text: &str, hit: usize) -> Option<(Range<usize>, bool)> 
                 };
                 candidate = trimmed;
             }
+        }
+        // A scheme with nothing after it names nothing.
+        if candidate.len() <= scheme.len() {
+            continue;
         }
         if hit < start + candidate.len() {
             return Some((start..start + candidate.len(), open));

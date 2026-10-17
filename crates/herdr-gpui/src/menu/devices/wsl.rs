@@ -14,6 +14,9 @@ pub(in crate::menu) struct WslSetup {
     session: Entity<SearchInput>,
     step: Step,
     task: Option<Task<()>>,
+    /// Why the last check failed, kept with this form while a cloud
+    /// source of Add Device shows.
+    error: Option<String>,
 }
 
 enum Distros {
@@ -36,6 +39,13 @@ enum Outcome {
 }
 
 impl HerdrWindow {
+    /// Set the WSL form's error, which stays with that form.
+    fn set_wsl_error(&mut self, error: Option<String>) {
+        if let Some(setup) = &mut self.menu.wsl_setup {
+            setup.error = error;
+        }
+    }
+
     /// Show the dialog and list the distributions in the background.
     pub(super) fn open_add_wsl(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let session = cx.new(SearchInput::new);
@@ -74,8 +84,9 @@ impl HerdrWindow {
             session,
             step: Step::Form,
             task: Some(task),
+            error: None,
         });
-        self.menu.error = None;
+        self.set_wsl_error(None);
         self.menu.page = Some(Page::AddWsl);
     }
 
@@ -144,12 +155,12 @@ impl HerdrWindow {
             return;
         }
         let Some(distro) = setup.selected.clone() else {
-            self.menu.error = Some("Pick a distribution.".into());
+            self.set_wsl_error(Some("Pick a distribution.".into()));
             cx.notify();
             return;
         };
         if saved.contains(&distro) {
-            self.menu.error = Some(format!("{distro} is already a device."));
+            self.set_wsl_error(Some(format!("{distro} is already a device.")));
             cx.notify();
             return;
         }
@@ -158,7 +169,7 @@ impl HerdrWindow {
             session => session.to_owned(),
         };
         setup.step = Step::Checking(distro.clone());
-        self.menu.error = None;
+        setup.error = None;
         let background = cx
             .background_executor()
             .spawn(async move { add(&distro, &session) });
@@ -170,11 +181,16 @@ impl HerdrWindow {
                 };
                 setup.task = None;
                 match outcome {
-                    // The catalog poll shows the device; nothing is left to say.
+                    // The catalog poll shows the device; nothing is left to
+                    // say. While a cloud source shows, only this form goes.
+                    Outcome::Saved if this.menu.page != Some(Page::AddWsl) => {
+                        this.menu.wsl_setup = None;
+                        cx.notify();
+                    }
                     Outcome::Saved => this.dismiss_menu(window, cx),
                     Outcome::Refused(message) => {
                         setup.step = Step::Form;
-                        this.menu.error = Some(message);
+                        setup.error = Some(message);
                         cx.notify();
                     }
                 }
@@ -183,46 +199,17 @@ impl HerdrWindow {
         cx.notify();
     }
 
-    pub(in crate::menu) fn render_add_wsl(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(in crate::menu) fn render_add_wsl(
+        &self,
+        compact: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let theme = &self.theme;
-        let view = div()
-            .debug_selector(|| "wsl-setup-dialog".into())
-            .flex()
-            .flex_col()
-            .min_h_0()
-            .child(
-                div()
-                    .flex_none()
-                    .p(px(16.))
-                    .border_b_1()
-                    .border_color(rgb(theme.active))
-                    .flex()
-                    .items_center()
-                    .gap(px(12.))
-                    .child(
-                        div()
-                            .flex_1()
-                            .text_size(px(self.config.ui.size * 1.35))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("Add WSL Distribution"),
-                    )
-                    .child(
-                        div()
-                            .id("wsl-setup-close")
-                            .debug_selector(|| "wsl-setup-close".into())
-                            .px_2()
-                            .py_1()
-                            .cursor_pointer()
-                            .rounded(px(crate::config::corners::CONTROL))
-                            .hover(|s| s.bg(rgb(theme.active)))
-                            .child("Close")
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.dismiss_menu(window, cx)),
-                            ),
-                    ),
-            );
+        let frame = |pane: Div, cx: &mut Context<Self>| {
+            self.add_device_frame("wsl-setup-dialog", "wsl-setup-close", compact, pane, cx)
+        };
         let Some(setup) = &self.menu.wsl_setup else {
-            return view;
+            return frame(div(), cx);
         };
         let saved = self.saved_distros();
         let mut list = div()
@@ -285,6 +272,7 @@ impl HerdrWindow {
         let mut body = div()
             .id("wsl-setup-body")
             .debug_selector(|| "wsl-setup-body".into())
+            .flex_1()
             .min_h_0()
             .overflow_y_scroll()
             .p(px(16.))
@@ -304,7 +292,7 @@ impl HerdrWindow {
                     .child("Session (optional)")
                     .child(setup.session.clone()),
             );
-        if let Some(error) = &self.menu.error {
+        if let Some(error) = &setup.error {
             body = body.child(
                 div()
                     .debug_selector(|| "wsl-setup-error".into())
@@ -349,7 +337,16 @@ impl HerdrWindow {
                     })
                     .on_click(cx.listener(|this, _, window, cx| this.submit_add_wsl(window, cx))),
             );
-        view.child(body).child(footer)
+        frame(
+            div()
+                .flex_1()
+                .min_h_0()
+                .flex()
+                .flex_col()
+                .child(body)
+                .child(footer),
+            cx,
+        )
     }
 
     /// Ask before forgetting a saved distribution.

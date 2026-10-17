@@ -2,6 +2,7 @@ use herdr_client::{Method, protocol::ClientShellSnapshot};
 use serde_json::{Value, json};
 
 mod shortcuts;
+pub(crate) use shortcuts::CTRL_SHORTCUTS;
 #[cfg(test)]
 pub(crate) use shortcuts::platform_default;
 
@@ -10,6 +11,10 @@ pub enum Command {
     NewWindow,
     Workspace,
     NewWorktree,
+    /// The focused repository's "Open worktree..." dialog.
+    OpenWorktree,
+    /// The focused linked worktree's delete confirmation.
+    RemoveWorktree,
     /// Go To, listing only the checkouts that have a note.
     WorktreeNotes,
     /// The focused checkout's note.
@@ -35,9 +40,13 @@ pub enum Command {
     EditScrollback,
     ClosePane,
     CloseTab,
+    /// Reopens the focused workspace's most recently closed tab.
+    ReopenClosedTab,
     TabNumber(u8),
     ToggleSidebar,
     ToggleStatusBar,
+    /// Hides the window's chrome and every group but the one in use.
+    ToggleZenMode,
     DevicesOverview,
     IncreaseFontSize,
     DecreaseFontSize,
@@ -48,6 +57,8 @@ pub enum Command {
     Themes,
     WorkspacePicker,
     Palette,
+    /// Reopen the palette as it was last left: query, filters, and selection.
+    ResumePalette,
     /// Go to a definition in the focused pane's checkout.
     GoToSymbol,
     /// Go to a file in the focused pane's checkout.
@@ -66,6 +77,8 @@ pub enum Command {
     OpenCode,
     ToggleFullScreen,
     CycleWindows,
+    /// Closes the window it runs in, leaving the daemon and its terminals.
+    CloseWindow,
     MoveTabPrevious,
     MoveTabNext,
     RenameTab,
@@ -83,6 +96,7 @@ pub enum Command {
     ResizeDown,
     ResizeMode,
     RenamePane,
+    MovePane,
     PreviousWorkspace,
     NextWorkspace,
     WorkspaceNumber(u8),
@@ -126,6 +140,16 @@ pub const COMMANDS: &[CommandInfo] = &[
         command: Command::NewWorktree,
         name: "new_worktree",
         label: "New Worktree",
+    },
+    CommandInfo {
+        command: Command::OpenWorktree,
+        name: "open_worktree",
+        label: "Open Worktree",
+    },
+    CommandInfo {
+        command: Command::RemoveWorktree,
+        name: "remove_worktree",
+        label: "Delete Worktree Checkout",
     },
     CommandInfo {
         command: Command::WorktreeNotes,
@@ -338,6 +362,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         label: "Rename Pane",
     },
     CommandInfo {
+        command: Command::MovePane,
+        name: "move_pane",
+        label: "Move Pane\u{2026}",
+    },
+    CommandInfo {
         command: Command::Zoom,
         name: "toggle_zoom",
         label: "Toggle Pane Zoom",
@@ -386,6 +415,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         command: Command::CloseTab,
         name: "close_tab",
         label: "Close Tab",
+    },
+    CommandInfo {
+        command: Command::ReopenClosedTab,
+        name: "reopen_closed_tab",
+        label: "Reopen Closed Tab",
     },
     CommandInfo {
         command: Command::TabNumber(1),
@@ -498,6 +532,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         label: "Toggle Status Bar",
     },
     CommandInfo {
+        command: Command::ToggleZenMode,
+        name: "toggle_zen_mode",
+        label: "Toggle Zen Mode",
+    },
+    CommandInfo {
         command: Command::DevicesOverview,
         name: "devices_overview",
         label: "Devices Overview",
@@ -551,6 +590,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         command: Command::Palette,
         name: "command_palette",
         label: "Command Palette",
+    },
+    CommandInfo {
+        command: Command::ResumePalette,
+        name: "resume_palette",
+        label: "Resume Palette",
     },
     CommandInfo {
         command: Command::GoToSymbol,
@@ -616,6 +660,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         command: Command::CycleWindows,
         name: "cycle_windows",
         label: "Cycle Through Windows",
+    },
+    CommandInfo {
+        command: Command::CloseWindow,
+        name: "close_window",
+        label: "Close Window",
     },
 ];
 
@@ -755,6 +804,8 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         }
         Command::NewWindow
         | Command::NewWorktree
+        | Command::OpenWorktree
+        | Command::RemoveWorktree
         | Command::WorktreeNotes
         | Command::EditWorktreeNote
         | Command::Find
@@ -764,6 +815,7 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         | Command::AnnotateSelection
         | Command::ToggleSidebar
         | Command::ToggleStatusBar
+        | Command::ToggleZenMode
         | Command::DevicesOverview
         | Command::IncreaseFontSize
         | Command::DecreaseFontSize
@@ -774,6 +826,7 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         | Command::Themes
         | Command::WorkspacePicker
         | Command::Palette
+        | Command::ResumePalette
         | Command::GoToSymbol
         | Command::GoToFile
         | Command::Detach
@@ -789,14 +842,17 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         | Command::OpenCode
         | Command::ToggleFullScreen
         | Command::CycleWindows
+        | Command::CloseWindow
         // These need state beyond the snapshot, such as the sidebar's order
         // or a dialog, so the window runs them.
         | Command::RenameTab
+        | Command::ReopenClosedTab
         | Command::LastPane
         | Command::Back
         | Command::Forward
         | Command::ResizeMode
         | Command::RenamePane
+        | Command::MovePane
         | Command::PreviousWorkspace
         | Command::NextWorkspace
         | Command::WorkspaceNumber(_)

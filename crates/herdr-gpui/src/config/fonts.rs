@@ -1,7 +1,10 @@
 //! Font faces, their configured overrides and sizes, and the icon-font cascade.
-use super::Config;
+use super::{
+    Config,
+    font_weight::{self, MissingWeight},
+};
 use crate::{Error, Result};
-use gpui::{Font, FontFallbacks};
+use gpui::{Font, FontFallbacks, FontWeight};
 use serde::Deserialize;
 use std::{collections::BTreeSet, ops::RangeInclusive};
 
@@ -25,15 +28,6 @@ pub(crate) enum FontFace {
 }
 
 impl FontFace {
-    pub(crate) fn set_size(self, config: &mut Config, size: f32) {
-        match self {
-            Self::Sidebar => config.sidebar.size = size,
-            Self::Tabs => config.tabs.size = size,
-            Self::Terminal => config.terminal.size = size,
-            Self::Ui => config.ui.size = size,
-        }
-    }
-
     pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Sidebar => "sidebar",
@@ -67,15 +61,32 @@ pub(super) struct FontSettings {
     /// Untyped because only the terminal takes it: elsewhere it is discarded
     /// as unknown, so its type must not fail the whole file first.
     line_height: Option<toml::Value>,
+    /// Untyped for the same reason as `line_height`.
+    weight: Option<toml::Value>,
+    /// The terminal's padding rather than part of its font, read through
+    /// [`Self::take_padding`]. Untyped for the same reason as `line_height`.
+    padding_x: Option<toml::Value>,
+    padding_y: Option<toml::Value>,
 }
 
 impl FontSettings {
-    /// Takes `line_height` out of a face that lays out no terminal rows,
-    /// returning the key to report as unknown.
-    pub(super) fn reject_line_height(&mut self, name: &str) -> Option<String> {
-        self.line_height
-            .take()
-            .map(|_| format!("{name}.line_height"))
+    /// Takes the terminal-only keys out of a face that draws no terminal
+    /// cells, returning each one present to report as unknown.
+    pub(super) fn reject_terminal_keys(&mut self, name: &str) -> Vec<String> {
+        [
+            ("line_height", self.line_height.take()),
+            ("weight", self.weight.take()),
+            ("padding_x", self.padding_x.take()),
+            ("padding_y", self.padding_y.take()),
+        ]
+        .into_iter()
+        .filter_map(|(key, value)| value.map(|_| format!("{name}.{key}")))
+        .collect()
+    }
+
+    /// Takes the horizontal and vertical padding keys of the terminal's table.
+    pub(super) fn take_padding(&mut self) -> (Option<toml::Value>, Option<toml::Value>) {
+        (self.padding_x.take(), self.padding_y.take())
     }
 
     /// Merges this face's configured keys over `font`, then validates the result.
@@ -105,6 +116,9 @@ impl FontSettings {
                 return Err(Error::InvalidLineHeight(name));
             }
             font.line_height_multiple = Some(line_height);
+        }
+        if let Some(weight) = self.weight {
+            font.weight = font_weight::parse(weight, name)?;
         }
         if font.family.trim().is_empty() {
             return Err(Error::EmptyFontFamily(name));
@@ -266,6 +280,8 @@ pub struct FontConfig {
     /// Line height as a multiple of `size`, so it follows runtime font size
     /// changes. `None` keeps the default of 20/14.
     pub line_height_multiple: Option<f32>,
+    /// Weight of regular text; bold text draws at [`font_weight::bold`] of it.
+    pub weight: FontWeight,
 }
 
 impl FontConfig {
@@ -283,6 +299,7 @@ impl FontConfig {
     /// missing-glyph box unless the cascade names an icon font explicitly.
     pub fn font(&self) -> Font {
         let mut font = gpui::font(self.family.clone());
+        font.weight = self.weight;
         font.fallbacks = self
             .fallbacks
             .as_ref()
@@ -383,6 +400,22 @@ impl Config {
         I: IntoIterator<Item = String>,
     {
         self.resolve_fonts_with(installed, resolves_platform_alias);
+        self.check_font_weight(font_weight::platform_has_weight);
+    }
+
+    /// Records whether the terminal's family lacks a face at its configured
+    /// weight. Runs after [`Self::resolve_fonts_with`], so it checks the
+    /// family that will draw, and skips one already reported missing.
+    pub(super) fn check_font_weight(&mut self, has_weight: impl Fn(&str, FontWeight) -> bool) {
+        let terminal = &self.terminal;
+        self.missing_weight = (terminal.weight != FontWeight::NORMAL
+            && !terminal.family.starts_with('.')
+            && !self.missing_fonts.contains(&terminal.family)
+            && !has_weight(&terminal.family, terminal.weight))
+        .then(|| MissingWeight {
+            family: terminal.family.clone(),
+            weight: terminal.weight,
+        });
     }
 
     pub(super) fn resolve_fonts_with<I>(

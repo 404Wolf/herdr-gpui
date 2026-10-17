@@ -2,6 +2,8 @@
 //! group lists the same tabs, as an editor's groups do; which one a group
 //! shows is its own choice.
 
+mod dividers;
+
 use super::{HerdrWindow, tab_drag::StripDrag};
 use crate::{
     TAB_HEIGHT, TAB_WIDTH,
@@ -14,6 +16,8 @@ use crate::{
 };
 use gpui::{prelude::*, *};
 use herdr_client::protocol::AgentStatus;
+
+pub(super) use dividers::{Reach, native_page};
 
 /// The gap between a Herdr tab's status indicator and its title.
 const DOT_GAP: f32 = 6.;
@@ -55,11 +59,6 @@ impl Lead {
 /// What a group without tabs says, where its tab would show.
 const NO_TABS: &str =
     "Open a terminal tab with \"+\", or another kind of tab from the \"\u{22ef}\" menu.";
-
-/// What a divider drags: the index of the group on its left. The row it
-/// resizes reads the pointer.
-#[derive(Clone, Copy)]
-struct DividerDrag(usize);
 
 impl HerdrWindow {
     /// A tab's colors. The chosen tab carries the theme's accent in the group
@@ -155,6 +154,7 @@ impl HerdrWindow {
         let pick = self.group_pick(slot.id);
         let indicators = Indicators::new(
             self.settings.shared.as_ref(),
+            self.config.status_icons,
             matches!(
                 cx.window_appearance(),
                 WindowAppearance::Light | WindowAppearance::VibrantLight
@@ -213,6 +213,7 @@ impl HerdrWindow {
         let mut built: Vec<(Pick, Stateful<Div>)> = Vec::new();
         let mut tabs = div()
             .id(SharedString::from(slot.selector("tabs")))
+            .role(Role::TabList)
             .flex()
             .flex_none()
             .h(px(self.tab_strip_height()))
@@ -240,6 +241,9 @@ impl HerdrWindow {
                             let id = id.clone();
                             move || slot.selector(&format!("tab-{id}"))
                         })
+                        .role(Role::Tab)
+                        .aria_label(tab.label.clone())
+                        .aria_selected(selected)
                         .pl(px(12.))
                         // The close button hugs the tab's inner right edge, well
                         // clear of the label it would otherwise crowd.
@@ -296,6 +300,8 @@ impl HerdrWindow {
                         .child(
                             div()
                                 .id("close-tab")
+                                .role(Role::Button)
+                                .aria_label("Close tab")
                                 .debug_selector({
                                     let id = id.clone();
                                     move || slot.selector(&format!("close-tab-{id}"))
@@ -452,6 +458,8 @@ impl HerdrWindow {
                 div()
                     .id(SharedString::from(slot.selector("new-tab")))
                     .debug_selector(move || slot.selector("new-tab"))
+                    .role(Role::Button)
+                    .aria_label("New tab")
                     .w(px(34.))
                     .min_h(px(TAB_HEIGHT))
                     .border_r_1()
@@ -480,14 +488,14 @@ impl HerdrWindow {
             .child(self.strip_room(ends, window))
             .child(self.strip_button(
                 slot,
-                "split-editor",
+                ("split-editor", "Split"),
                 "icons/split.svg",
                 cx,
                 move |this, _, window, cx| this.split_group(slot.id, window, cx),
             ))
             .child(self.strip_button(
                 slot,
-                "tab-actions",
+                ("tab-actions", "Tab actions"),
                 "icons/more.svg",
                 cx,
                 move |this, event, window, cx| {
@@ -601,13 +609,16 @@ impl HerdrWindow {
             |_, _, _| (),
             move |_, _, window, _| {
                 let moving = view.clone();
-                window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
+                window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
                     if phase == DispatchPhase::Capture {
+                        let viewport = window.viewport_size();
                         moving.update(cx, |this, cx| {
                             let held = event.pressed_button == Some(MouseButton::Left);
-                            if this.move_tab_drag(event.position, held, cx) {
+                            if this.move_tab_drag(event.position, held, viewport, cx) {
                                 cx.stop_propagation();
                             }
+                            #[cfg(target_os = "macos")]
+                            this.float_tab(window, cx);
                         });
                     }
                 });
@@ -629,7 +640,7 @@ impl HerdrWindow {
     fn strip_button(
         &self,
         slot: Slot,
-        id: &'static str,
+        (id, label): (&'static str, &'static str),
         icon: &'static str,
         cx: &mut Context<Self>,
         action: impl Fn(&mut Self, &ClickEvent, &mut Window, &mut Context<Self>) + 'static,
@@ -637,6 +648,8 @@ impl HerdrWindow {
         div()
             .id(SharedString::from(slot.selector(id)))
             .debug_selector(move || slot.selector(id))
+            .role(Role::Button)
+            .aria_label(label)
             .w(px(30.))
             .min_h(px(TAB_HEIGHT))
             .flex_none()
@@ -665,7 +678,6 @@ impl HerdrWindow {
         &self,
         slot: Slot,
         shown: &Shown,
-        gap: f32,
         keyboard: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -692,7 +704,9 @@ impl HerdrWindow {
             Shown::Page(_) | Shown::Empty => ("".into(), "Nothing to show."),
         };
         let elsewhere = matches!(shown, Shown::Elsewhere(_));
-        div()
+        self.config
+            .terminal_padding
+            .pad(div())
             .id(SharedString::from(slot.selector("stand-in")))
             .debug_selector(move || slot.selector("stand-in"))
             .flex()
@@ -700,7 +714,6 @@ impl HerdrWindow {
             .flex_1()
             .min_h_0()
             .min_w_0()
-            .pl(px(gap))
             .items_center()
             .justify_center()
             .gap(px(10.))
@@ -763,48 +776,57 @@ impl HerdrWindow {
             .unwrap_or_default()
     }
 
-    /// Whether `group`'s strip steps aside under Herdr's
+    /// Whether `group`'s strip steps aside: always in zen mode, else under Herdr's
     /// `hide_tab_bar_when_single_tab`: only when the window is not split, so
     /// every group keeps the strip that names it and takes dropped tabs, and
     /// only while the strip would list one tab at most, browser tabs counted.
     pub(crate) fn strip_hidden(&self, group: GroupId, cx: &App) -> bool {
-        self.settings
-            .shared
-            .as_ref()
-            .is_some_and(|shared| shared.hide_tab_bar_when_single_tab)
-            && !self.is_split()
-            && self.folding_groups().is_empty()
-            && !self.tab_drag_in(group)
-            && self.group_tabs(group, cx).len() <= 1
+        self.zen_layout()
+            || self
+                .settings
+                .shared
+                .as_ref()
+                .is_some_and(|shared| shared.hide_tab_bar_when_single_tab)
+                && !self.is_split()
+                && self.folding_groups().is_empty()
+                && !self.tab_drag_in(group)
+                && self.group_tabs(group, cx).len() <= 1
     }
 
     /// One group: its strip above or below what it shows, as Herdr's
     /// `tab_bar_position` places it. Pressing anywhere in it makes it the
     /// group in use. `ends` is set while the strips stand in for the header.
+    /// `reach` is how far its dividers' grips lie over it.
     pub(super) fn render_group(
         &mut self,
         slot: Slot,
         body: AnyElement,
         ends: Option<Ends>,
+        reach: Reach,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let strip = (!self.strip_hidden(slot.id, cx))
             .then(|| self.render_tab_strip(slot, ends, window, cx));
         let bottom = self.tab_bar_position() == TabBarPosition::Bottom;
-        let share = (self.is_split() || !self.folding_groups().is_empty())
+        // Zen mode draws the one group in use across the whole row, at once
+        // even while it is still opening.
+        let zen = self.zen_layout();
+        let share = (!zen && (self.is_split() || !self.folding_groups().is_empty()))
             .then(|| self.group_share(slot.id));
-        let opened = self.group_opened(slot.id);
+        let opened = self.group_opened(slot.id).filter(|_| !zen);
         // The body's ground, beside the strip rather than under it, so the
         // strip's own color is no more solid than the rest of the window.
-        let body = div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w_0()
-            .min_h_0()
-            .bg(self.fill().ground())
-            .child(body);
+        let body = self.with_ground(
+            div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_w_0()
+                .min_h_0()
+                .child(body),
+            self.fill().ground(),
+        );
         let column = div()
             .id(SharedString::from(slot.selector("group")))
             .debug_selector(move || slot.selector("group"))
@@ -855,6 +877,7 @@ impl HerdrWindow {
                 )
             });
         div()
+            .relative()
             .flex()
             .justify_end()
             .overflow_hidden()
@@ -866,6 +889,8 @@ impl HerdrWindow {
                 None => frame.flex_1(),
             })
             .child(column)
+            // Last, so the grips lie over what the group shows.
+            .children(reach.grips(slot.index))
             .into_any_element()
     }
 
@@ -893,65 +918,6 @@ impl HerdrWindow {
             )
             .child(div().flex_1().bg(self.fill().ground()))
             .into_any_element()
-    }
-
-    /// The groups in a row, with a divider between each pair that drags
-    /// the two apart.
-    pub(super) fn render_groups(
-        &mut self,
-        groups: Vec<AnyElement>,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        // Real groups keep their layout index for the dividers between them;
-        // folding ones slot in where they stood.
-        let mut children: Vec<(Option<usize>, AnyElement)> = groups
-            .into_iter()
-            .enumerate()
-            .map(|(index, group)| (Some(index), group))
-            .collect();
-        let mut folding = self.folding_groups();
-        folding.sort_by_key(|folding| folding.index);
-        for folding in folding {
-            let at = folding.index.min(children.len());
-            children.insert(at, (None, self.folding_group(&folding)));
-        }
-        let mut row = div()
-            .id("groups")
-            .flex()
-            .flex_1()
-            .min_h_0()
-            .min_w_0()
-            .on_drag_move(
-                cx.listener(|this, event: &DragMoveEvent<DividerDrag>, _, cx| {
-                    let DividerDrag(divider) = *event.drag(cx);
-                    let offset = f32::from(event.event.position.x - event.bounds.left());
-                    if this.drag_divider(divider, offset, f32::from(event.bounds.size.width)) {
-                        cx.notify();
-                    }
-                }),
-            );
-        let mut children = children.into_iter().peekable();
-        while let Some((index, group)) = children.next() {
-            row = row.child(group);
-            // A divider sits between two real groups; a folding one draws its
-            // own edge.
-            if let (Some(index), Some((Some(_), _))) = (index, children.peek()) {
-                row = row.child(
-                    div()
-                        .id(("group-divider", index))
-                        .debug_selector(move || format!("group-divider-{index}"))
-                        .flex_none()
-                        .w(px(5.))
-                        .flex()
-                        .justify_center()
-                        .bg(self.fill().ground())
-                        .cursor(CursorStyle::ResizeLeftRight)
-                        .child(div().w(px(1.)).h_full().bg(rgb(self.theme.active)))
-                        .on_drag(DividerDrag(index), |_, _, _, cx| cx.new(|_| EmptyView)),
-                );
-            }
-        }
-        row.into_any_element()
     }
 }
 

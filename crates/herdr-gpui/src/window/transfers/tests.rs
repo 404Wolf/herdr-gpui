@@ -23,9 +23,10 @@ use std::{
 
 mod cancellation;
 mod completion;
-#[cfg(any(target_os = "macos", windows))]
+#[cfg(windows)]
 mod covered_pages;
 mod progress;
+mod taskbar;
 
 const HOST: &str = "upload-test.invalid";
 const REMOTE: &str = "/tmp/herdr-upload.ABCDEF123456/it's a file";

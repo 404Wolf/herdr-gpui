@@ -1,11 +1,14 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
 
+// A loopback API for the providers that have one; Railway is reached over SSH.
+#[cfg(any(feature = "boat", feature = "coder", feature = "daytona"))]
 pub(crate) mod server;
 
 #[test]
 fn steps_read_as_short_status_words() {
     assert_eq!(Step::Creating.text(), "Creating…");
+    assert_eq!(Step::Connecting.text(), "Connecting…");
     assert_eq!(Step::Starting.text(), "Starting…");
     assert_eq!(
         Step::Building("pending".into()).text(),

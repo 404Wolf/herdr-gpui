@@ -6,6 +6,7 @@
 //! user's own configuration names, are listed.
 
 mod bonjour;
+mod complete;
 mod render;
 mod ssh_config;
 mod tailscale;
@@ -18,9 +19,11 @@ use std::{
     time::Duration,
 };
 
-/// How long Bonjour listens for announcements before the search is done:
-/// long enough for macOS to finish its Local Network check on a fresh launch.
+/// How long Bonjour listens for announcements before the search is done.
 const BROWSE_TIME: Duration = Duration::from_secs(10);
+/// How long Bonjour waits for the user to allow Herdr on the local network
+/// when macOS refuses it, before it reports the refusal.
+const PERMISSION_WAIT: Duration = Duration::from_secs(60);
 /// How often the form takes what the sources found so far.
 const POLL: Duration = Duration::from_millis(150);
 /// Machines listed at most; later reports of new machines are dropped.
@@ -111,15 +114,7 @@ impl Suggestion {
     /// host name, or address. A saved name that only shares a short name is
     /// left to `ssh -G`, which the dialog checks before saving.
     pub(super) fn saved_as(&self, target: &str) -> bool {
-        let target = target.trim();
-        let target = target.strip_prefix("ssh://").unwrap_or(target);
-        let host = target.rsplit_once('@').map_or(target, |(_, host)| host);
-        let host = match host.strip_prefix('[') {
-            Some(bracketed) => bracketed.split(']').next().unwrap_or(bracketed),
-            None if host.matches(':').count() == 1 => host.split(':').next().unwrap_or(host),
-            None => host,
-        };
-        let host = host.trim().trim_end_matches('.').to_lowercase();
+        let host = crate::endpoint::origin::host_name(target);
         !host.is_empty() && self.keys.contains(&host)
     }
 }
@@ -226,6 +221,8 @@ pub(super) fn valid_host(host: &str) -> bool {
 
 pub(super) enum Event {
     Found(Candidate),
+    /// Whether Bonjour is waiting for Local Network permission.
+    AwaitingLocalNetwork(bool),
     Done(Source, crate::Result<()>),
 }
 
@@ -248,6 +245,8 @@ pub(in crate::menu) struct Discovery {
     /// Sources still searching.
     pub(super) pending: Vec<Source>,
     pub(super) failures: Vec<(Source, crate::Error)>,
+    /// macOS refused the local network and Bonjour waits for the user.
+    pub(super) awaiting_local_network: bool,
     events: Receiver<Event>,
     _sources: Vec<Task<()>>,
     _poll: Task<()>,
@@ -263,7 +262,13 @@ impl Discovery {
         loop {
             match self.events.try_recv() {
                 Ok(Event::Found(candidate)) => merge(&mut self.suggestions, candidate),
+                Ok(Event::AwaitingLocalNetwork(waiting)) => {
+                    self.awaiting_local_network = waiting;
+                }
                 Ok(Event::Done(source, result)) => {
+                    if source == Source::Bonjour {
+                        self.awaiting_local_network = false;
+                    }
                     self.pending.retain(|pending| *pending != source);
                     if let Err(error) = result {
                         self.failures.push((source, error));
@@ -292,7 +297,12 @@ fn run_source(source: Source, sender: SyncSender<Event>) {
         Source::Tailscale => tailscale::peers().map(|peers| {
             peers.into_iter().all(&found);
         }),
-        Source::Bonjour => bonjour::browse(BROWSE_TIME, &found),
+        Source::Bonjour => bonjour::browse(
+            BROWSE_TIME,
+            PERMISSION_WAIT,
+            |waiting| sender.send(Event::AwaitingLocalNetwork(waiting)).is_ok(),
+            &found,
+        ),
     };
     let _ = sender.send(Event::Done(source, result));
 }
@@ -338,6 +348,7 @@ impl HerdrWindow {
             suggestions: Vec::new(),
             pending: Source::ALL.to_vec(),
             failures: Vec::new(),
+            awaiting_local_network: false,
             events,
             _sources: sources,
             _poll: poll,

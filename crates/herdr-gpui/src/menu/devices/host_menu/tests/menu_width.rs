@@ -1,12 +1,19 @@
 use super::*;
 use gpui::Entity;
 
-const ROWS: [&str; 4] = ["host-menu-0", "host-menu-1", "host-menu-2", "host-menu-3"];
-const LABELS: [&str; 4] = [
+const ROWS: [&str; 5] = [
+    "host-menu-0",
+    "host-menu-1",
+    "host-menu-2",
+    "host-menu-3",
+    "host-menu-4",
+];
+const LABELS: [&str; 5] = [
     "host-menu-label-0",
     "host-menu-label-1",
     "host-menu-label-2",
     "host-menu-label-3",
+    "host-menu-label-4",
 ];
 
 /// Opens the saved host's menu in a window `width` wide, with the device
@@ -32,14 +39,10 @@ fn open_menu<'a>(
 
 #[gpui::test]
 fn host_menu_shows_every_label_in_full(cx: &mut TestAppContext) {
-    // Saved SSH devices are unavailable on Windows, so there is no menu.
-    if cfg!(windows) {
-        return;
-    }
     let (view, cx) = open_menu("m5max-ms", 800., cx);
     let font_size = view.read_with(cx, |v, _| px(v.config.ui.size));
     let panel = cx.debug_bounds("menu-panel").unwrap();
-    for (index, (_, label)) in ACTIONS.into_iter().enumerate() {
+    for (index, &(_, label)) in SSH_ACTIONS.iter().enumerate() {
         let row = cx.debug_bounds(ROWS[index]).unwrap();
         let text = cx.debug_bounds(LABELS[index]).unwrap();
         let natural = cx.update(|window, _| {
@@ -70,9 +73,6 @@ fn host_menu_shows_every_label_in_full(cx: &mut TestAppContext) {
 /// menu past its actions.
 #[gpui::test]
 fn host_menu_header_does_not_widen_the_menu(cx: &mut TestAppContext) {
-    if cfg!(windows) {
-        return;
-    }
     let short = {
         let (_, cx) = open_menu("m5max-ms", 800., cx);
         cx.debug_bounds("menu-panel").unwrap().size.width

@@ -7,7 +7,7 @@ use secrecy::SecretString;
 use std::{ffi::CStr, path::Path};
 
 #[cfg(unix)]
-use super::token::{Credential, LIMIT};
+use super::token::{LIMIT, Saved};
 #[cfg(unix)]
 use rustix::fs::{AtFlags, Mode, OFlags, open, openat, renameat, unlinkat};
 #[cfg(unix)]
@@ -35,8 +35,11 @@ pub(super) fn read(_path: &Path, _name: &CStr) -> Result<Option<SecretString>> {
     Ok(None)
 }
 
-#[cfg(all(not(unix), feature = "cloud"))]
-pub(super) fn read_checked(
+#[cfg(all(
+    not(unix),
+    any(feature = "boat", feature = "coder", feature = "daytona")
+))]
+pub(crate) fn read_checked(
     _path: &Path,
     _name: &CStr,
     _validate: fn(&SecretString) -> Result<()>,
@@ -44,7 +47,10 @@ pub(super) fn read_checked(
     Ok(None)
 }
 
-#[cfg(all(not(unix), feature = "cloud"))]
+#[cfg(all(
+    not(unix),
+    any(feature = "boat", feature = "coder", feature = "daytona")
+))]
 pub(super) fn store_checked(
     path: &Path,
     name: &CStr,
@@ -117,12 +123,12 @@ pub(super) fn read(path: &Path, name: &CStr) -> Result<Option<SecretString>> {
 
 #[cfg(unix)]
 fn github_record(value: &SecretString) -> Result<()> {
-    Credential::decode(value).map(drop)
+    Saved::decode(value).map(drop)
 }
 
 /// `read` for a record another feature owns; `validate` must bound its size.
 #[cfg(unix)]
-pub(super) fn read_checked(
+pub(crate) fn read_checked(
     path: &Path,
     name: &CStr,
     validate: fn(&SecretString) -> Result<()>,
@@ -156,7 +162,10 @@ pub(super) fn store(
 }
 
 /// `store` for a record another feature owns; `validate` must bound its size.
-#[cfg(all(unix, any(test, feature = "cloud")))]
+#[cfg(all(
+    unix,
+    any(test, feature = "boat", feature = "coder", feature = "daytona")
+))]
 pub(super) fn store_checked(
     path: &Path,
     name: &CStr,

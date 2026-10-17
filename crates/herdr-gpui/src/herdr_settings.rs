@@ -21,11 +21,12 @@ mod sidebar;
 mod tests;
 
 pub(crate) use crate::config::ClipboardToastPosition as ClipboardPosition;
+use gpui::Modifiers;
 use herdr_client::protocol::AgentStatus;
 pub(crate) use herdr_client::protocol::ToastHerdrPosition as ToastPosition;
 pub(crate) use remote::RemotePaneHistory;
-use serde::Deserialize;
-use std::{env, path::PathBuf};
+use serde::{Deserialize, Deserializer};
+use std::{env, num::NonZeroU16, path::PathBuf};
 use toml_edit::{DocumentMut, Item, Value};
 
 pub(crate) const THEME_NAMES: &[&str] = &[
@@ -175,6 +176,59 @@ pub(crate) enum SidebarCollapsedMode {
     Hidden,
 }
 
+/// Herdr's default for `ui.mouse_scroll_lines`.
+pub(crate) const DEFAULT_MOUSE_SCROLL_LINES: NonZeroU16 = NonZeroU16::MIN.saturating_add(2);
+
+/// Herdr's `ui.right_click_passthrough_modifier`: the exact modifier
+/// combination that sends a right-click to a mouse-aware pane application
+/// instead of opening the pane menu. `None` disables it: unset, empty, `off`,
+/// `none`, `disabled`, or a combination naming `meta` or `hyper`, which GPUI
+/// cannot report, so such a combination could never be held.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct RightClickPassthrough(Option<Modifiers>);
+
+impl RightClickPassthrough {
+    /// Herdr's grammar: `+`-separated `ctrl`/`control`, `alt`/`option`,
+    /// `cmd`/`command`/`super`, `meta` and `hyper`, case-insensitive. `None`
+    /// for a value Herdr rejects, including any combination with `shift`.
+    fn parse(value: &str) -> Option<Self> {
+        let value = value.trim();
+        if value.is_empty()
+            || ["off", "none", "disabled"]
+                .iter()
+                .any(|off| value.eq_ignore_ascii_case(off))
+        {
+            return Some(Self(None));
+        }
+        let mut modifiers = Modifiers::default();
+        let mut unreportable = false;
+        for token in value.split('+') {
+            match token.trim().to_ascii_lowercase().as_str() {
+                "ctrl" | "control" => modifiers.control = true,
+                "alt" | "option" => modifiers.alt = true,
+                "cmd" | "command" | "super" => modifiers.platform = true,
+                "meta" | "hyper" => unreportable = true,
+                _ => return None,
+            }
+        }
+        Some(Self((!unreportable).then_some(modifiers)))
+    }
+
+    /// Whether `held` is exactly the configured combination. The application
+    /// then receives the click without it, as Herdr strips it.
+    pub(crate) fn matches(self, held: Modifiers) -> bool {
+        self.0 == Some(held)
+    }
+}
+
+impl<'de> Deserialize<'de> for RightClickPassthrough {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        Self::parse(&value)
+            .ok_or_else(|| serde::de::Error::custom("unsupported right_click_passthrough_modifier"))
+    }
+}
+
 // Playback paths and per-agent policy are parsed by the sound backend, not this editor.
 #[derive(Deserialize)]
 #[serde(default)]
@@ -208,60 +262,39 @@ pub(crate) enum Edit {
     },
 }
 
-#[derive(Clone)]
+/// Debug is derived: the original document's text, which may hold private
+/// settings this adapter does not read, is redacted by `persistence::Snapshot`.
+#[derive(Clone, Debug)]
 pub(crate) struct Settings {
-    pub path: PathBuf,
-    pub theme_name: String,
-    pub indicators: IndicatorStyle,
-    pub sound_enabled: bool,
-    pub toast_delivery: ToastDelivery,
-    pub toast_delay_seconds: u64,
-    pub toast_position: ToastPosition,
-    pub clipboard: ClipboardToast,
+    // keep-sorted start
     /// The agents panel's starting order until the user toggles it.
     pub agent_sort: crate::preferences::AgentSort,
+    pub clipboard: ClipboardToast,
     /// Whether releasing a mouse selection copies it. When off, the
     /// selection stays highlighted until Cmd-C or Ctrl-C copies it.
     pub copy_on_select: bool,
-    pub tab_bar_position: TabBarPosition,
     pub hide_tab_bar_when_single_tab: bool,
-    pub sidebar_collapsed_mode: SidebarCollapsedMode,
-    pub sidebar_start_collapsed: bool,
+    pub indicators: IndicatorStyle,
+    /// Lines one wheel notch scrolls, Herdr's `ui.mouse_scroll_lines`.
+    pub mouse_scroll_lines: NonZeroU16,
     pub name_prompts: NamePrompts,
+    original: persistence::Snapshot,
+    palettes: [palette::Palette; 2],
     /// Herdr's `experimental.pane_history`: the daemon saves pane scrollback
     /// to `session-history.json` and replays it after a full restart. The
     /// GUI never stores terminal output itself.
     pub pane_history: bool,
-    palettes: [palette::Palette; 2],
-    original: persistence::Snapshot,
-}
-
-impl std::fmt::Debug for Settings {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // The original document may contain private settings unrelated to this
-        // adapter. Diagnostics must not dump its contents or custom sound paths.
-        f.debug_struct("Settings")
-            .field("path", &self.path)
-            .field("theme_name", &self.theme_name)
-            .field("indicators", &self.indicators)
-            .field("sound_enabled", &self.sound_enabled)
-            .field("toast_delivery", &self.toast_delivery)
-            .field("toast_delay_seconds", &self.toast_delay_seconds)
-            .field("toast_position", &self.toast_position)
-            .field("clipboard", &self.clipboard)
-            .field("agent_sort", &self.agent_sort)
-            .field("copy_on_select", &self.copy_on_select)
-            .field("tab_bar_position", &self.tab_bar_position)
-            .field(
-                "hide_tab_bar_when_single_tab",
-                &self.hide_tab_bar_when_single_tab,
-            )
-            .field("sidebar_collapsed_mode", &self.sidebar_collapsed_mode)
-            .field("sidebar_start_collapsed", &self.sidebar_start_collapsed)
-            .field("name_prompts", &self.name_prompts)
-            .field("pane_history", &self.pane_history)
-            .finish_non_exhaustive()
-    }
+    pub path: PathBuf,
+    pub right_click_passthrough: RightClickPassthrough,
+    pub sidebar_collapsed_mode: SidebarCollapsedMode,
+    pub sidebar_start_collapsed: bool,
+    pub sound_enabled: bool,
+    pub tab_bar_position: TabBarPosition,
+    pub theme_name: String,
+    pub toast_delay_seconds: u64,
+    pub toast_delivery: ToastDelivery,
+    pub toast_position: ToastPosition,
+    // keep-sorted end
 }
 
 #[derive(Default, Deserialize)]
@@ -310,6 +343,11 @@ struct Ui {
     prompt_new_tab_name: Option<bool>,
     #[serde(deserialize_with = "crate::lenient::or_default")]
     prompt_new_workspace_name: Option<bool>,
+    // Zero, negative, and oversized counts keep Herdr's default.
+    #[serde(deserialize_with = "crate::lenient::or_default")]
+    mouse_scroll_lines: Option<NonZeroU16>,
+    #[serde(deserialize_with = "crate::lenient::or_default")]
+    right_click_passthrough_modifier: RightClickPassthrough,
 }
 
 #[derive(Default, Deserialize)]
@@ -334,9 +372,7 @@ struct HerdrToast {
     position: ToastPosition,
 }
 
-fn bottom_right<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<ToastPosition, D::Error> {
+fn bottom_right<'de, D: Deserializer<'de>>(deserializer: D) -> Result<ToastPosition, D::Error> {
     Ok(crate::lenient::value(deserializer)?.unwrap_or(ToastPosition::BottomRight))
 }
 
@@ -383,7 +419,7 @@ impl Settings {
 
     /// Background-only. A missing file yields defaults without creating anything.
     pub(crate) fn load() -> crate::Result<Self> {
-        let path = crate::config::daemon_config_path(|key| env::var_os(key));
+        let path = crate::config::daemon_config_path(herdr_client::local_var);
         let path = if path.is_absolute() {
             path
         } else {
@@ -432,28 +468,35 @@ impl Settings {
         let palettes =
             [false, true].map(|light| parsed.theme.resolve(theme_name, legacy_accent, light));
         Ok(Self {
-            path,
-            theme_name: theme_name.into(),
+            // keep-sorted start
+            agent_sort: parsed.ui.agent_panel_sort,
+            clipboard: toast.clipboard,
+            copy_on_select: parsed.ui.copy_on_select.unwrap_or(true),
+            hide_tab_bar_when_single_tab: parsed.ui.hide_tab_bar_when_single_tab,
             indicators: parsed.ui.status_indicators,
+            mouse_scroll_lines: parsed
+                .ui
+                .mouse_scroll_lines
+                .unwrap_or(DEFAULT_MOUSE_SCROLL_LINES),
+            name_prompts,
+            original,
+            palettes,
+            pane_history: parsed.experimental.pane_history,
+            path,
+            right_click_passthrough: parsed.ui.right_click_passthrough_modifier,
+            sidebar_collapsed_mode: parsed.ui.sidebar_collapsed_mode,
+            sidebar_start_collapsed: parsed.ui.sidebar_start_collapsed,
             sound_enabled: parsed.ui.sound.enabled,
+            tab_bar_position: parsed.ui.tab_bar_position,
+            theme_name: theme_name.into(),
+            toast_delay_seconds: delay,
             toast_delivery: toast.delivery.unwrap_or(if toast.enabled == Some(true) {
                 ToastDelivery::Herdr
             } else {
                 ToastDelivery::Off
             }),
-            toast_delay_seconds: delay,
             toast_position: toast.herdr.position,
-            clipboard: toast.clipboard,
-            agent_sort: parsed.ui.agent_panel_sort,
-            copy_on_select: parsed.ui.copy_on_select.unwrap_or(true),
-            tab_bar_position: parsed.ui.tab_bar_position,
-            hide_tab_bar_when_single_tab: parsed.ui.hide_tab_bar_when_single_tab,
-            sidebar_collapsed_mode: parsed.ui.sidebar_collapsed_mode,
-            sidebar_start_collapsed: parsed.ui.sidebar_start_collapsed,
-            name_prompts,
-            pane_history: parsed.experimental.pane_history,
-            palettes,
-            original,
+            // keep-sorted end
         })
     }
 

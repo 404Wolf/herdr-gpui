@@ -12,7 +12,7 @@ use herdr_client::{
     ClipboardImageCancellation,
     protocol::{ClientClipboardImageTarget, ClientPaneInputEvent},
 };
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PreparationKind {
@@ -95,9 +95,9 @@ impl HerdrWindow {
 
     /// The daemon stages clipboard images beside the pane's processes, so the
     /// bridge serves local endpoints too: GUI text paste cannot carry an image.
-    /// Only macOS and Linux have a bounded background clipboard reader.
+    /// Only macOS, Linux, and Windows have a bounded background clipboard reader.
     pub(crate) fn accepts_clipboard_images(&self) -> bool {
-        cfg!(any(target_os = "macos", target_os = "linux")) && self.accepts_image_input()
+        cfg!(any(target_os = "macos", target_os = "linux", windows)) && self.accepts_image_input()
     }
 
     /// Dropped files and pasted image paths need bridging only when the pane
@@ -146,9 +146,15 @@ impl HerdrWindow {
         {
             return false;
         }
+        self.input_target_shown(&image.target)
+    }
+
+    /// Whether `target` still takes input as it did: a pane the snapshot
+    /// lists with no popup over it, or the same popup still open.
+    pub(super) fn input_target_shown(&self, target: &InputTarget) -> bool {
         // Snapshot delivery can briefly invalidate the surface without changing
         // the target. Missing cells are not evidence that a pane disappeared.
-        if let InputTarget::Pane(id) = &image.target
+        if let InputTarget::Pane(id) = target
             && self
                 .live
                 .snapshot
@@ -160,7 +166,7 @@ impl HerdrWindow {
         self.live
             .surface
             .as_ref()
-            .is_none_or(|surface| match &image.target {
+            .is_none_or(|surface| match target {
                 InputTarget::Pane(id) => {
                     surface.popup.is_none() && surface.panes.iter().any(|pane| &pane.pane_id == id)
                 }
@@ -187,11 +193,25 @@ impl HerdrWindow {
         image_only: bool,
         cx: &mut Context<Self>,
     ) -> bool {
-        if self.menu.page.is_some() || !self.input_ready() || self.mouse_focus_pending() {
+        if self.menu.page.is_some() {
             return false;
         }
-        // Normal paste retains text precedence. Ctrl-V only intercepts images,
-        // leaving its ordinary terminal meaning intact when no image exists.
+        // A paste is use even before the frame is ready, so the window takes
+        // back a frame another client sized; its contents wait for that frame.
+        self.note_input();
+        if !self.input_ready() || self.mouse_focus_pending() {
+            return false;
+        }
+        // Files copied in a file manager carry their names as text too; paste
+        // them as a drop would. Otherwise normal paste retains text precedence.
+        // Ctrl-V only intercepts images, leaving its ordinary terminal meaning
+        // intact when no image exists.
+        if !image_only && let Some(paths) = external_paths(&item) {
+            if let Some(target) = self.focused_input_target() {
+                self.paste_files(target, &paths, cx);
+            }
+            return true;
+        }
         if !image_only && let Some(text) = item.text().filter(|text| !text.is_empty()) {
             if self.accepts_remote_images()
                 && let Some(source) = image_source::from_paste(&text)
@@ -260,6 +280,14 @@ impl HerdrWindow {
                 let Some(item) = item else {
                     return Ok(fallback.map_or(Prepared::Empty, Prepared::Input));
                 };
+                if !image_only && let Some(paths) = external_paths(&item) {
+                    // A local pane keeps the paste in this reserved slot; a
+                    // remote pane needs the drop's image bridge or file copy.
+                    if !bridge_paths && let Ok(text) = super::file_drop::quote_paths(&paths) {
+                        return Ok(Prepared::Input(ClientPaneInputEvent::Paste(text)));
+                    }
+                    return Ok(Prepared::Files(paths));
+                }
                 if !image_only && let Some(text) = item.text().filter(|text| !text.is_empty()) {
                     if bridge_paths && let Some(source) = image_source::from_paste(&text) {
                         return Prepared::image(source.prepare(), Some(text));
@@ -373,6 +401,11 @@ impl HerdrWindow {
             if !current {
                 return;
             }
+            // Files leave this slot and are pasted through the drop policy.
+            let (prepared, files) = match prepared {
+                Ok(Prepared::Files(paths)) => (Ok(Prepared::Empty), paths),
+                prepared => (prepared, Vec::new()),
+            };
             let result = executor
                 .spawn(async move {
                     match prepared {
@@ -380,7 +413,7 @@ impl HerdrWindow {
                             .complete(image.extension, image.bytes)
                             .map(|()| image.resized),
                         Ok(Prepared::Input(event)) => upload.complete_input(event).map(|()| false),
-                        Ok(Prepared::Empty) | Err(_) => Ok(false),
+                        Ok(Prepared::Empty | Prepared::Files(_)) | Err(_) => Ok(false),
                     }
                 })
                 .await;
@@ -393,12 +426,16 @@ impl HerdrWindow {
                     return;
                 };
                 let current = this.image_target_current(&this.pending_images[index]);
+                let target = this.pending_images[index].target.clone();
                 let pending = &mut this.pending_images[index];
                 pending.preparing = false;
                 if !current {
                     pending.cancel();
                 }
                 if current {
+                    if !files.is_empty() {
+                        this.paste_files(target, &files, cx);
+                    }
                     match result {
                         Err(error) => this.report_image_error(&Error::Client(error), cx),
                         Ok(true) => this.local_transfer_notice(
@@ -431,7 +468,20 @@ impl HerdrWindow {
 enum Prepared {
     Image(PreparedImage),
     Input(ClientPaneInputEvent),
+    /// External files, pasted on the UI thread as a drop would be.
+    Files(Vec<PathBuf>),
     Empty,
+}
+
+/// The files of a file-manager copy. Finder also publishes their names as
+/// text, which would otherwise be pasted instead of the paths.
+fn external_paths(item: &ClipboardItem) -> Option<Vec<PathBuf>> {
+    item.entries().iter().find_map(|entry| match entry {
+        ClipboardEntry::ExternalPaths(paths) if !paths.paths().is_empty() => {
+            Some(paths.paths().to_vec())
+        }
+        _ => None,
+    })
 }
 
 impl Prepared {

@@ -46,7 +46,7 @@ impl ThemePicker {
 
 impl HerdrWindow {
     pub(super) fn open_theme_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.native_settings_save_in_flight() || crate::settings_window::theme_pending(cx) {
+        if crate::settings_window::theme_pending(cx) {
             return;
         }
         if !self.open_menu(window, cx) {
@@ -54,7 +54,6 @@ impl HerdrWindow {
         }
         // A pending reload must not replace this newer interactive appearance.
         self.config_load = None;
-        self.flush_font_sizes(cx);
         self.menu.page = Some(Page::Themes);
         let mut picker = if let Some(picker) = self.menu.themes.take() {
             picker.search.update(cx, |input, cx| input.clear(cx));
@@ -235,7 +234,7 @@ impl HerdrWindow {
                 .desired
                 .as_deref()
                 .and_then(|name| Theme::builtin(name.trim()))
-                .map(|theme| theme.with_contrast(self.config.contrast))
+                .map(|theme| theme.styled_for(&self.config))
             {
                 self.theme = theme;
                 picker.loaded = picker.desired.clone();

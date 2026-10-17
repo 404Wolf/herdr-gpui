@@ -12,13 +12,18 @@ use std::{
     collections::VecDeque,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
         mpsc,
     },
     time::{Duration, Instant},
 };
 
 pub(crate) const MAX_PENDING: usize = 32;
+
+/// Whether this process plays no sound at all, as `HERDR_DISABLE_SOUND` asks.
+pub(crate) fn muted() -> bool {
+    playback::muted()
+}
 /// How close together two identical notifications from one daemon boot must be
 /// to play once. Herdr sends each event to every attached client, so windows
 /// that share a daemon all hand the same event to the one worker.
@@ -157,6 +162,8 @@ enum PlaybackRequest {
         event: SemanticNotification,
     },
     Preview,
+    /// One sound now, from the file Herdr's settings name for it.
+    Play(herdr_client::protocol::SemanticNotificationSound),
 }
 
 /// Notifications the worker recently accepted, compared as complete values.
@@ -199,11 +206,19 @@ pub(crate) struct Service {
     settings: Arc<Mutex<Option<Arc<Settings>>>>,
     reload: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
+    /// Percent of each sound's own level, read by the worker per sound.
+    volume: Arc<AtomicU8>,
 }
 
 impl Service {
     pub(crate) fn reload(&self) {
         self.reload.store(true, Ordering::Release);
+    }
+
+    /// Plays every later sound, previews included, at `percent` of its own
+    /// level; 0 plays nothing. Values above 100 play at full level.
+    pub(crate) fn set_volume(&self, percent: u8) {
+        self.volume.store(percent, Ordering::Relaxed);
     }
 
     pub(crate) fn new() -> Self {
@@ -215,7 +230,8 @@ impl Service {
     }
 
     /// Starts the worker with an injectable playback backend, called serially and
-    /// only on that worker. `play` blocks until completion or error, observing
+    /// only on that worker with the volume percent current when the sound
+    /// starts. `play` blocks until completion or error, observing
     /// boot/connection cancellation flags and service shutdown.
     /// It must release per-job audio/device resources before returning; no player
     /// or device objects cross this boundary. Return typed errors with their
@@ -225,6 +241,7 @@ impl Service {
         mut play: impl FnMut(
             herdr_client::protocol::SemanticNotificationSound,
             Option<&std::path::Path>,
+            u8,
             &[&AtomicBool],
             &AtomicBool,
         ) -> crate::Result<()>
@@ -232,8 +249,10 @@ impl Service {
         + 'static,
     ) -> Self {
         let mut service = Self::default();
+        service.set_volume(crate::config::SoundConfig::default().volume);
         let (sender, receiver) = mpsc::sync_channel::<Job>(8);
         let settings = service.settings.clone();
+        let volume = service.volume.clone();
         let reload = service.reload.clone();
         let stop = service.stop.clone();
         let result = std::thread::Builder::new()
@@ -283,10 +302,12 @@ impl Service {
                         PlaybackRequest::Preview => {
                             (herdr_client::protocol::SemanticNotificationSound::Done, None)
                         }
+                        PlaybackRequest::Play(sound) => (sound, current.path_for(sound)),
                     };
                     if let Err(error) = play(
                         sound,
                         path.as_deref(),
+                        volume.load(Ordering::Relaxed),
                         &[&job.cancel, &job.connection_cancel],
                         &stop,
                     ) {
@@ -303,14 +324,28 @@ impl Service {
 
     /// Explicit local test, independent of endpoint state and notification settings.
     pub(crate) fn preview(&self) {
-        if let Some(sender) = &self.sender {
-            let _ = sender.try_send(Job {
-                request: PlaybackRequest::Preview,
-                cancel: self.stop.clone(),
-                connection_cancel: self.stop.clone(),
-                queued: Instant::now(),
-            });
-        }
+        self.request(PlaybackRequest::Preview);
+    }
+
+    /// Plays `sound` now, from the file the local sound settings name for it
+    /// or the built-in one, whatever the notification settings say. Muted
+    /// like every sound when `HERDR_DISABLE_SOUND` is set. False when the
+    /// worker is not running or already has sounds queued.
+    pub(crate) fn play(&self, sound: herdr_client::protocol::SemanticNotificationSound) -> bool {
+        self.request(PlaybackRequest::Play(sound))
+    }
+
+    fn request(&self, request: PlaybackRequest) -> bool {
+        self.sender.as_ref().is_some_and(|sender| {
+            sender
+                .try_send(Job {
+                    request,
+                    cancel: self.stop.clone(),
+                    connection_cancel: self.stop.clone(),
+                    queued: Instant::now(),
+                })
+                .is_ok()
+        })
     }
 
     #[cfg(test)]
@@ -322,13 +357,27 @@ impl Service {
         (
             Self::start(
                 || Ok(Settings::default()),
-                move |sound, _, _, _| {
+                move |sound, _, _, _, _| {
                     let _ = sender.try_send(sound);
                     Ok(())
                 },
             ),
             receiver,
         )
+    }
+
+    /// A worker that reports the volume each sound would play at.
+    #[cfg(test)]
+    pub(crate) fn recording_volume() -> (Self, mpsc::Receiver<u8>) {
+        let (sender, receiver) = mpsc::sync_channel(8);
+        let service = Self::start(
+            || Ok(Settings::default()),
+            move |_, _, volume, _, _| {
+                let _ = sender.try_send(volume);
+                Ok(())
+            },
+        );
+        (service, receiver)
     }
 
     pub(crate) fn poll(

@@ -4,15 +4,19 @@ use crate::teleport::{AgentKind, Host};
 use herdr_client::ConnectTarget;
 use std::{os::unix::fs::PermissionsExt, path::Path, process::Command, sync::atomic::AtomicBool};
 
+mod agent_name;
 mod parent;
+mod remove;
+mod startup;
 
 /// A home whose `herdr` logs each call and answers as Herdr would. A call
 /// whose arguments contain `$FAIL` exits 1. Its snapshot is `$HOME/snapshot`
-/// when written, else one where `w1` is the repository's parent workspace.
+/// when written, else one where `w1` is the repository's parent workspace
+/// and `w9` the linked worktree a dispatch creates.
 fn fake_home(dir: &Path, fail: &str) -> Host {
     let bin = dir.join("home/.local/bin");
     std::fs::create_dir_all(&bin).unwrap();
-    let snapshot = snapshot(&[("w1", false)]);
+    let snapshot = snapshot(&[("w1", false), ("w9", true)]);
     let script = format!(
         r#"#!/bin/sh
 printf '%s\n' "$*" >> "$HOME/calls"
@@ -21,7 +25,18 @@ case "$1 $2" in
   "api snapshot")
     if [ -f "$HOME/snapshot" ]; then cat "$HOME/snapshot"; else printf '%s' '{snapshot}'; fi ;;
   "workspace create") printf '%s' '{{"result":{{"workspace":{{"workspace_id":"w0"}}}}}}' ;;
-  "worktree create") printf '%s' '{{"result":{{"workspace":{{"workspace_id":"w9"}},"tab":{{"tab_id":"t9"}},"root_pane":{{"pane_id":"p9"}},"worktree":{{"path":"/tmp/wt/377-icons"}}}}}}' ;;
+  "worktree create") printf '%s' '{{"result":{{"workspace":{{"workspace_id":"w9"}},"tab":{{"tab_id":"t9"}},"root_pane":{{"pane_id":"p9","terminal_id":"term9"}},"worktree":{{"path":"/tmp/wt/377-icons"}}}}}}' ;;
+  "pane get")
+    if [ -f "$HOME/pane" ]; then cat "$HOME/pane"; else printf '%s' '{{"result":{{"pane":{{"pane_id":"p9","terminal_id":"term9"}}}}}}'; fi ;;
+  "agent start")
+    if [ -f "$HOME/busy" ]; then
+      read -r busy < "$HOME/busy"
+      if [ "$busy" -gt 0 ]; then
+        printf '%s\n' "$((busy - 1))" > "$HOME/busy"
+        printf '%s' '{{"id":"cli:agent:start","error":{{"code":"agent_pane_busy","message":"not an available shell"}}}}' >&2
+        exit 1
+      fi
+    fi ;;
 esac
 "#
     );
@@ -137,7 +152,10 @@ fn dispatch_creates_the_worktree_starts_the_agent_and_records_the_run() {
     assert!(calls[1].starts_with("worktree create --workspace w1 --branch 377-icons --base "));
     assert!(calls[1].ends_with(" --no-focus"));
     let name = calls[2].split(' ').nth(2).unwrap();
-    assert!(name.starts_with("herdr-gpui-") && name.len() == "herdr-gpui-".len() + 23);
+    assert!(
+        name.starts_with("herdr-gpui-") && name.len() == 32,
+        "{name}"
+    );
     assert_eq!(
         calls[2],
         format!("agent start {name} --kind claude --pane p9 --timeout 90000")

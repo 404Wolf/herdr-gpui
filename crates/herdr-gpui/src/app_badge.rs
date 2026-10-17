@@ -1,4 +1,5 @@
-//! A deduplicated Dock attention count across all windows, with a QA preview.
+//! A deduplicated attention count across all windows, with a QA preview: the
+//! Dock badge on macOS and the taskbar overlay on Windows.
 
 use crate::endpoint::Endpoint;
 use gpui::{App, Global, WindowId};
@@ -39,6 +40,7 @@ struct Badge {
     windows: HashMap<WindowId, Contribution>,
     published: Option<usize>,
     preview: bool,
+    permission_requested: bool,
 }
 
 impl Global for Badge {}
@@ -72,6 +74,12 @@ impl Badge {
             .count()
             .max(if self.preview { 2 } else { 0 });
         if self.published != Some(count) {
+            // Asked on the first badge rather than at launch, so an app that
+            // never needs attention never prompts.
+            if count > 0 && !self.permission_requested {
+                self.permission_requested = true;
+                request_permission();
+            }
             set_native(count);
             self.published = Some(count);
         }
@@ -87,6 +95,8 @@ pub(super) fn install(cx: &mut App) {
     });
     cx.on_window_closed(|cx, _| {
         let open = cx.windows();
+        #[cfg(windows)]
+        crate::taskbar::button::retain(&open);
         let badge = cx.default_global::<Badge>();
         badge
             .windows
@@ -120,7 +130,7 @@ pub(super) fn sync(window: WindowId, endpoints: &[Endpoint], cx: &mut App) {
     }
 }
 
-#[cfg(not(test))]
+#[cfg(all(not(test), target_os = "macos"))]
 fn set_native(count: usize) {
     use objc2::MainThreadMarker;
     use objc2_app_kit::NSApplication;
@@ -135,9 +145,62 @@ fn set_native(count: usize) {
         .setBadgeLabel(label.as_deref());
 }
 
+#[cfg(all(not(test), windows))]
+fn set_native(count: usize) {
+    crate::taskbar::button::set_overlay(count);
+}
+
 // Headless tests must never initialize AppKit or change the test runner's Dock icon.
 #[cfg(test)]
 fn set_native(_: usize) {}
+
+/// Once an app is registered with the notification center, macOS hides its
+/// Dock badge unless the badge option was authorized. GPUI requests only alert
+/// and sound when it posts a system notification, so the badge label would be
+/// set but never drawn. This request asks for the union: whichever request
+/// macOS answers first decides the permission, and a later request with other
+/// options is not prompted for again.
+#[cfg(all(not(test), target_os = "macos"))]
+fn request_permission() {
+    use block2::RcBlock;
+    use objc2::runtime::Bool;
+    use objc2_foundation::{NSBundle, NSError};
+    use objc2_user_notifications::{UNAuthorizationOptions, UNUserNotificationCenter};
+
+    // The notification center aborts the process outside an app bundle,
+    // which is how `cargo run` builds start.
+    if NSBundle::mainBundle().bundleIdentifier().is_none() {
+        return;
+    }
+    // Runs on a notification-center queue, not the UI thread.
+    let completion = RcBlock::new(|granted: Bool, _: *mut NSError| {
+        if !granted.as_bool() {
+            tracing::info!("Dock badge permission was not granted");
+        }
+    });
+    UNUserNotificationCenter::currentNotificationCenter()
+        .requestAuthorizationWithOptions_completionHandler(
+            UNAuthorizationOptions::Alert
+                | UNAuthorizationOptions::Sound
+                | UNAuthorizationOptions::Badge,
+            &completion,
+        );
+}
+
+/// Windows asks no permission for a taskbar overlay.
+#[cfg(all(not(test), windows))]
+fn request_permission() {}
+
+#[cfg(test)]
+thread_local! {
+    static PERMISSION_REQUESTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+// Headless tests must never register the test runner with the notification center.
+#[cfg(test)]
+fn request_permission() {
+    PERMISSION_REQUESTS.set(PERMISSION_REQUESTS.get() + 1);
+}
 
 #[cfg(all(target_os = "macos", feature = "integration-test"))]
 pub(super) fn verify_native() -> anyhow::Result<()> {

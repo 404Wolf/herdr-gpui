@@ -12,6 +12,7 @@
   <a href="https://herdrui.dev"><b>herdrui.dev</b></a> ·
   <a href="https://github.com/penso/herdr-gpui/releases">Releases</a> ·
   <a href="docs/updating.md">App updates</a> ·
+  <a href="docs/cli.md">Command line</a> ·
   <a href="crates/herdr-gpui/README.md">GUI scope &amp; configuration</a> ·
   <a href="crates/herdr-gpui/PERFORMANCE.md">Performance report</a> ·
   <a href="AGENTS.md">Contributing</a> ·
@@ -85,9 +86,13 @@ running another terminal emulator or wrapping the TUI.
       <br>
       <sub><b>CPU and memory per host.</b> The status bar follows the selected host, and with several hosts each sidebar host row shows its own, read over SSH for remote machines.</sub>
       <br><br>
-      <img src="docs/screenshots/settings-themes.png" alt="Settings window on the Appearance page with a live preview and a searchable grid of theme cards">
+      <img src="docs/screenshots/settings-themes.png" alt="Settings window on the Theme page with grouped navigation and a grid of theme cards">
       <br>
-      <sub><b>Native settings.</b> A live preview and a searchable grid of every built-in and Ghostty theme, plus fonts, indicators, sounds, and notifications.</sub>
+      <sub><b>Native settings.</b> Grouped, searchable pages for themes, sidebar, fonts, tabs, notifications, and integrations; every change applies live to the open windows, and hovering a theme previews it in the app.</sub>
+      <br><br>
+      <img src="docs/screenshots/settings-sidebar.png" alt="Settings window on the Sidebar page with spacing sliders and per-host colour swatches">
+      <br>
+      <sub><b>Sidebar page.</b> Pick the layout and selection marks, tune spacing with sliders, and give each host its own colour.</sub>
     </td>
   </tr>
   <tr>
@@ -108,9 +113,27 @@ symbol, file, or printed `path:line` in your terminal editor,
 [editor groups](crates/herdr-gpui/README.md#editor-groups), and
 [system notifications](crates/herdr-gpui/README.md#system-notifications),
 [sounds](crates/herdr-gpui/README.md#notification-sounds), and a
-[Dock badge](crates/herdr-gpui/README.md#macos-dock-badge) when an agent needs you.
+[Dock badge](crates/herdr-gpui/README.md#macos-dock-badge) (on Windows, a
+[taskbar badge](crates/herdr-gpui/README.md#windows-shell)) when an agent needs you.
 
 ## Install
+
+Install the [Herdr](https://herdr.dev/) daemon first; this app is only its client.
+It starts an already-installed local `herdr server` when the target session is
+absent, but never installs or upgrades a daemon. Explicitly confirming session
+deletion stops that named session first; closing or removing the GUI leaves
+daemon sessions and shared Herdr configuration intact.
+
+Then install the latest stable release:
+
+| Platform | Command |
+| --- | --- |
+| macOS | `brew install penso/tap/herdr-gpui` |
+| Linux (APT, DNF or pacman) | `curl -fsSL https://herdrui.dev/install.sh \| sh` |
+| Windows (PowerShell, experimental) | `irm https://herdrui.dev/install.ps1 \| iex` |
+
+Details, manual downloads, and other methods follow. Coding agents can read
+[herdrui.dev/llms.txt](https://herdrui.dev/llms.txt) for the same steps.
 
 ### macOS with Homebrew
 
@@ -135,8 +158,8 @@ release workflow. A cask install updates itself through Homebrew: the in-app
 updater detects that Homebrew owns the bundle and runs `brew upgrade --cask
 herdr-gpui` for you, so Homebrew's records stay correct. If its metadata is stale,
 the updater runs `brew update` and retries once. The update panel shows progress
-throughout. macOS `.dmg`, experimental Linux packages, and experimental Windows `.zip`s
-are also published on [Releases](https://github.com/penso/herdr-gpui/releases).
+throughout. macOS `.dmg`, experimental Linux packages, and experimental Windows installers
+and `.zip`s are also published on [Releases](https://github.com/penso/herdr-gpui/releases).
 
 Betas are published as GitHub prereleases before being promoted to stable. To try
 them in a standalone install, turn on **Settings > General > Install beta releases**
@@ -148,7 +171,15 @@ always follow stable releases.
 Each release publishes x86_64 and ARM64 builds as a `.deb`, an `.rpm`, an Arch
 Linux package, and a plain tarball, all containing the same executable. They need
 glibc 2.39 or newer (Ubuntu 24.04, Debian 13, Fedora 40, current Arch, or later).
-Download the file for your architecture from
+The install script picks the package for your architecture and package manager,
+checks it against the release's published SHA-256, and installs it with `sudo`:
+
+```sh
+curl -fsSL https://herdrui.dev/install.sh | sh
+```
+
+Read it first at [`site/install.sh`](site/install.sh). To install by hand instead,
+download the file for your architecture from
 [Releases](https://github.com/penso/herdr-gpui/releases), then:
 
 ```sh
@@ -182,6 +213,28 @@ nix run github:penso/herdr-gpui
 The flake builds with the toolchain pinned in `rust-toolchain.toml` on x86_64 and
 ARM64 Linux. Like the packages, it never updates itself.
 
+### Windows (experimental)
+
+In PowerShell, on x86_64 or ARM64:
+
+```powershell
+irm https://herdrui.dev/install.ps1 | iex
+```
+
+The script ([`site/install.ps1`](site/install.ps1)) downloads the zip for your
+architecture, checks its published SHA-256, installs `herdr-gpui.exe` and
+`herdr-gpui-launcher.exe` under `%LOCALAPPDATA%\Programs\Herdr UI`, adds that
+directory to your user `PATH`, and creates a **Herdr UI** Start menu shortcut
+that opens the launcher. Prefer a regular installer? Each
+[release](https://github.com/penso/herdr-gpui/releases/latest) also has
+`Herdr-VERSION-x86_64-pc-windows-msvc-setup.exe` and
+`Herdr-VERSION-aarch64-pc-windows-msvc-setup.exe`, which install the same files
+to the same place for the current user, without administrator rights, and add
+an uninstaller under **Settings > Apps**. Either way, the app updates itself
+from **Check for Updates**: it downloads the new installer, checks it against
+the release's signed manifest and its Authenticode publisher, runs it silently,
+and reopens. See [Windows](#windows) for what works on the platform.
+
 ### From source
 
 Install Rust/rustup and, on macOS, the Xcode command-line tools. The repository
@@ -207,9 +260,10 @@ To compile and install the optimized executable on macOS, Linux, or Windows:
 just install
 ```
 
-This installs `herdr-gpui` (`herdr-gpui.exe` on Windows) into Cargo's bin
-directory, normally `~/.cargo/bin` or `%USERPROFILE%\.cargo\bin`, and replaces
-an earlier installation. Keep that directory on `PATH`; set `CARGO_INSTALL_ROOT`
+This installs `herdr-gpui` (`herdr-gpui.exe` on Windows, with
+`herdr-gpui-launcher.exe` beside it to open the app without a console window)
+into Cargo's bin directory, normally `~/.cargo/bin` or
+`%USERPROFILE%\.cargo\bin`, and replaces an earlier installation. Keep that directory on `PATH`; set `CARGO_INSTALL_ROOT`
 to use a different installation root (the executable goes in its `bin` directory).
 The build uses the pinned lockfile and default features, without the QA menu.
 On macOS this installs the standalone executable; use Homebrew above for the
@@ -221,17 +275,12 @@ Running `cargo test` or `just ci` on Unix also requires `python3` and `jq` on
 PATH: the usage-provider tests exercise each JSON parser explicitly. The Ubuntu
 dependency helper below installs both; on macOS, use `brew install python jq`.
 
-Install the Herdr daemon separately. The app starts an already-installed local
-`herdr server` when the target session is absent, but never installs or upgrades
-a daemon. Explicitly confirming session deletion stops that named session first;
-closing or removing the GUI leaves daemon sessions and shared Herdr
-configuration intact.
-
 ### Linux Builds
 
 Application shortcuts use **Ctrl+Shift** on Linux, including Ctrl+Shift+T for a
-new tab and Ctrl+Shift+C/V for copy/paste. Customize them from **Herdr > Keyboard
-Shortcuts**; see [keyboard shortcuts](crates/herdr-gpui/README.md#keyboard-shortcuts).
+new tab and Ctrl+Shift+C/V for copy/paste, and Windows uses the same profile.
+Customize them from **Herdr > Keyboard Shortcuts**; see
+[keyboard shortcuts](crates/herdr-gpui/README.md#keyboard-shortcuts).
 
 On Ubuntu 24.04 (x86_64 or ARM64), run `bash scripts/install-linux-deps.sh`
 before building. This installs GPUI's X11/Wayland/font development dependencies
@@ -244,26 +293,74 @@ audio player is required. Custom notification sounds are MP3 only. See
 
 ### Windows
 
-Windows is experimental, not a supported platform: CI checks formatting, lints
-every target and feature, and runs workspace tests with default and all features
-on `windows-2025`, including headless UI and CLI tests. The release workflow also
-builds and CLI-tests the optimized executable, but no native window, renderer,
-or live daemon has been exercised. Local
-connections use the named pipe the Windows daemon binds, and configuration and
-state follow its `%APPDATA%` / `%LOCALAPPDATA%` layout. A Herdr daemon inside a
+Windows is experimental, and now tested natively. On every change, CI checks
+formatting, lints every target and feature, and runs workspace tests with default
+and all features on `windows-2025` (x86_64) and `windows-11-arm` (ARM64). On the
+same two runners it also opens real windows in a desktop session for the native
+sidebar, notification, and paint-probe fixtures. On x86_64 it runs the live GUI
+test against a pinned, checksummed Herdr `herdr.exe` in an isolated sandbox,
+which creates tabs, splits and workspaces with the keyboard, types into a
+PowerShell pane and reads its output back, resizes the window, reconnects,
+follows a workspace another client pushes, and opens a second window. Herdr
+publishes no ARM64 Windows build, and under x64 emulation its panes do not act
+on Enter, so the live test is not run on ARM64. A release-mode run then holds the dense
+terminal's hover, scroll, and redraw frames to a p95 budget with real Win32 mouse
+and wheel messages. The release workflow installs and uninstalls both signed
+installers. Hosted runners have no GPU, so CI proves rendering on Direct3D's
+software rasterizer; IME composition, the clipboard, and taskbar pinning are
+still checked by hand ([Windows QA](docs/windows-qa.md)).
+
+Local connections use the named pipe the Windows daemon binds, and configuration and
+state follow its `%APPDATA%` / `%LOCALAPPDATA%` layout. `herdr-gpui COMMAND`
+reaches the running app over a named pipe that only
+your Windows user can open and that rejects remote clients; see
+[the command line](docs/cli.md#windows). A Herdr daemon inside a
 WSL distribution can be added as a device from **Add Device…**; see
-[WSL distributions](crates/herdr-gpui/README.md#wsl-distributions). Saved SSH
-hosts, in-app updates, saved GitHub credentials, and the avatar disk cache are
-unavailable and report that plainly; see
-[the GUI README](crates/herdr-gpui/README.md#windows).
+[WSL distributions](crates/herdr-gpui/README.md#wsl-distributions). GitHub
+sign-ins are saved in Windows Credential Manager and avatars are cached under
+`%LOCALAPPDATA%\herdr`; see
+[saved sign-ins and the avatar cache](crates/herdr-gpui/README.md#saved-sign-ins-and-the-avatar-cache).
+Saved SSH hosts are unavailable and report that plainly; see
+[the GUI README](crates/herdr-gpui/README.md#windows). Shortcuts use Ctrl, not
+the Win key, with the Linux defaults (Ctrl+Shift+T, Ctrl+Shift+P,
+Ctrl+Shift+Q); see
+[keyboard shortcuts](crates/herdr-gpui/README.md#keyboard-shortcuts). The
+taskbar button shows a badge while agents need you and progress for long
+operations, the jump list offers recent workspaces and devices, clicking a
+notification brings its pane forward, and the installer registers
+`herdr-gpui://` links that open a checkout or a device in the running app; see
+[Windows shell](crates/herdr-gpui/README.md#windows-shell).
+
+Windows keep the system title bar, so Snap Layouts, drag-to-snap, and the
+window menu are the system's own; the title bar follows the app's light or dark
+theme. On Windows 11 a translucent window can blur with acrylic or Mica, and
+`accent = "system"` takes the accent from Windows. Narrator and other screen
+readers get the terminal's text and the title bar and tab strip controls by
+name; [what is not exposed yet](crates/herdr-gpui/README.md#screen-readers-on-windows)
+is listed there.
 
 Each release publishes `Herdr-VERSION-x86_64-pc-windows-msvc.zip` and
 `Herdr-VERSION-aarch64-pc-windows-msvc.zip` (native ARM64), each containing
-`herdr-gpui.exe` and its license notices. They carry the same checksums,
-Sigstore signatures, and build provenance as the other assets, but they are not
-Authenticode-signed, so SmartScreen warns on first launch, and they never update
-themselves: download each new release manually. The executable is
-console-subsystem, so launching it from Explorer also opens a console window.
+`herdr-gpui.exe`, `herdr-gpui-launcher.exe`, and their license notices, beside
+the matching `-setup.exe` installers. They carry the same checksums, Sigstore
+signatures, and build provenance as the other assets. Once Windows signing is
+set up, both executables, the installers, and their uninstaller are
+Authenticode-signed, and a release publishes only after Windows accepts those
+signatures; until then they ship unsigned, are not submitted to winget, and do
+not update themselves (see
+[`scripts/release/README.md`](scripts/release/README.md#windows-signing)). A
+signed copy installed by the installer, winget, or the
+[install script](#windows-experimental) updates itself in the app: the
+installer it downloads must match the release's
+Ed25519-signed `windows-manifest.json` and carry a valid signature from Herdr
+UI's publisher, or it never runs (see
+[App Updates](docs/updating.md#windows-installers)). The app registers with
+Restart Manager, so an update, or a restart with **Restart apps** turned on,
+reopens it. A copy run from anywhere else does not update itself; download each
+new release manually. `herdr-gpui.exe` is a console program, because it is also the
+command line agents and scripts run. Open the app with
+`herdr-gpui-launcher.exe` (the Start menu shortcut's target), which starts
+`herdr-gpui.exe` without a console window.
 
 ## How it connects
 
@@ -293,7 +390,9 @@ running.
 Herdr has no browser panes, so web pages shown beside a workspace's terminals
 belong to the GUI alone. Agents in your panes open them with
 `herdr-gpui browser open URL`, which reaches the running app over a local
-socket of its own.
+socket of its own. The same [command line](docs/cli.md) reaches the rest of
+what only the GUI keeps: its windows and tabs, worktree notes, checkpoints,
+forwarded ports, and its settings.
 
 ## Audio Test
 

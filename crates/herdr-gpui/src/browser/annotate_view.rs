@@ -3,7 +3,7 @@
 //! notes are written in the app, never in the page, and nothing reaches an
 //! agent until the user presses Send.
 use super::{
-    TabId,
+    PostedFrom, TabId,
     annotate::{self, Anchor, MAX_NOTES, Note, Rect, Report},
 };
 use crate::{
@@ -164,28 +164,26 @@ impl HerdrWindow {
 
     /// Starts the picker in the page again, drawing the queued notes. A page
     /// loses it whenever it navigates.
-    pub(crate) fn arm_page(&mut self, id: TabId, cx: &mut Context<Self>) {
+    pub(crate) fn arm_page(&mut self, id: TabId) {
         #[cfg(any(target_os = "macos", windows))]
         {
             let tab = self.tab_notes(id);
             let script = annotate::arm_script(&tab.notes);
             let regions = tab.regions;
-            self.browser.pages.script(id, &script, cx);
+            self.browser.pages.script(id, &script);
             if regions {
-                self.browser
-                    .pages
-                    .script(id, &annotate::mode_script(true), cx);
+                self.browser.pages.script(id, &annotate::mode_script(true));
             }
         }
         #[cfg(not(any(target_os = "macos", windows)))]
-        let _ = (id, cx);
+        let _ = id;
     }
 
-    fn disarm_page(&mut self, id: TabId, cx: &mut Context<Self>) {
+    fn disarm_page(&mut self, id: TabId) {
         #[cfg(any(target_os = "macos", windows))]
-        self.browser.pages.script(id, annotate::disarm_script(), cx);
+        self.browser.pages.script(id, annotate::disarm_script());
         #[cfg(not(any(target_os = "macos", windows)))]
-        let _ = (id, cx);
+        let _ = id;
     }
 
     pub(crate) fn toggle_annotating(
@@ -197,7 +195,7 @@ impl HerdrWindow {
         let notes = self.tab_notes(id);
         notes.armed = !notes.armed;
         if notes.armed {
-            self.arm_page(id, cx);
+            self.arm_page(id);
             self.show_flash(
                 Flash::success("Click an element or select text to note it"),
                 cx,
@@ -205,7 +203,7 @@ impl HerdrWindow {
         } else {
             notes.pending = None;
             notes.editing = None;
-            self.disarm_page(id, cx);
+            self.disarm_page(id);
             window.focus(&self.focus, cx);
         }
         cx.notify();
@@ -219,15 +217,15 @@ impl HerdrWindow {
         #[cfg(any(target_os = "macos", windows))]
         self.browser
             .pages
-            .script(id, &annotate::mode_script(regions), cx);
+            .script(id, &annotate::mode_script(regions));
         let _ = regions;
         cx.notify();
     }
 
     /// The picker lost its page to a navigation; put it back.
-    pub(crate) fn page_loaded(&mut self, id: TabId, cx: &mut Context<Self>) {
+    pub(crate) fn page_loaded(&mut self, id: TabId) {
         if self.browser.annotations.armed(id) {
-            self.arm_page(id, cx);
+            self.arm_page(id);
         }
     }
 
@@ -237,13 +235,20 @@ impl HerdrWindow {
         &mut self,
         id: TabId,
         body: &str,
+        from: PostedFrom,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let report = Report::parse(body);
+        if let Some(Report::Sent { summary, data }) = report {
+            self.page_sent(id, summary, data, from, cx);
+            return;
+        }
         if !self.browser.annotations.armed(id) {
             return;
         }
-        match Report::parse(body) {
+        match report {
+            Some(Report::Sent { .. }) => {}
             Some(Report::Picked { anchor, shot }) => {
                 self.begin_note(id, anchor, shot, window, cx);
             }
@@ -257,6 +262,53 @@ impl HerdrWindow {
         }
     }
 
+    /// Queues a result a local page sent as a note, replacing the page's
+    /// earlier result the user has not sent yet, so picking again changes
+    /// the answer rather than adding another; the user's comment on it
+    /// stays. Only the local page's own frames may send: a web page it
+    /// embeds, or one it is navigating to before the tab's location catches
+    /// up, sends nothing.
+    fn page_sent(
+        &mut self,
+        id: TabId,
+        summary: String,
+        data: String,
+        from: PostedFrom,
+        cx: &mut Context<Self>,
+    ) {
+        let local = super::view::store(cx)
+            .and_then(|store| store.get(id))
+            .is_some_and(|tab| matches!(tab.location, Some(super::Location::Local { .. })));
+        if !local || from != PostedFrom::Preview {
+            tracing::debug!("Ignored a result from a page that is not local");
+            return;
+        }
+        let notes = self.tab_notes(id);
+        // A result whose comment the user is editing stays as it is, so the
+        // comment never lands on a result it was not written for.
+        let earlier = notes.notes.iter().enumerate().position(|(index, note)| {
+            !note.sent && matches!(note.anchor, Anchor::Sent { .. }) && notes.editing != Some(index)
+        });
+        let note = Note::sent(summary, data);
+        match earlier {
+            // The user's comment on the older result carries over.
+            Some(index) => notes.notes[index].anchor = note.anchor,
+            None if notes.notes.len() >= MAX_NOTES => {
+                self.show_flash(
+                    Flash::warning("Clear sent notes or remove some before adding more"),
+                    cx,
+                );
+                return;
+            }
+            None => notes.notes.push(note),
+        }
+        self.show_flash(
+            Flash::success("The page added a result; send it to the agent"),
+            cx,
+        );
+        cx.notify();
+    }
+
     pub(super) fn begin_note(
         &mut self,
         id: TabId,
@@ -266,7 +318,7 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) {
         if self.tab_notes(id).notes.len() >= MAX_NOTES {
-            self.reveal_page(id, cx);
+            self.reveal_page(id);
             self.show_flash(
                 Flash::warning("Clear sent notes or remove some before adding more"),
                 cx,
@@ -279,7 +331,7 @@ impl HerdrWindow {
             self.browser.annotations.captures += 1;
             let capture = self.browser.annotations.captures;
             #[cfg(any(target_os = "macos", windows))]
-            let asked = self.browser.pages.capture(id, rect, capture, cx);
+            let asked = self.browser.pages.capture(id, rect, capture);
             #[cfg(not(any(target_os = "macos", windows)))]
             let asked = {
                 let _ = rect;
@@ -288,7 +340,7 @@ impl HerdrWindow {
             asked.then_some(capture)
         });
         if capture.is_none() {
-            self.reveal_page(id, cx);
+            self.reveal_page(id);
         }
         let notes = self.tab_notes(id);
         notes.editing = None;
@@ -299,7 +351,7 @@ impl HerdrWindow {
         });
         // The page holds the keyboard natively; the note is typed here.
         #[cfg(any(target_os = "macos", windows))]
-        self.browser.pages.blur(id, cx);
+        self.browser.pages.blur(id);
         let input = self.browser.annotations.input(id, cx);
         input.update(cx, |input, cx| input.clear(cx));
         let focus = input.read(cx).focus.clone();
@@ -307,11 +359,11 @@ impl HerdrWindow {
         cx.notify();
     }
 
-    fn reveal_page(&mut self, id: TabId, cx: &mut Context<Self>) {
+    fn reveal_page(&mut self, id: TabId) {
         #[cfg(any(target_os = "macos", windows))]
-        self.browser.pages.script(id, annotate::reveal_script(), cx);
+        self.browser.pages.script(id, annotate::reveal_script());
         #[cfg(not(any(target_os = "macos", windows)))]
-        let _ = (id, cx);
+        let _ = id;
     }
 
     /// A screenshot arrived from WebKit: bring the overlay back, turn the
@@ -324,7 +376,7 @@ impl HerdrWindow {
         tiff: Option<Vec<u8>>,
         cx: &mut Context<Self>,
     ) {
-        self.reveal_page(id, cx);
+        self.reveal_page(id);
         let Some(tiff) = tiff else {
             return;
         };
@@ -382,7 +434,7 @@ impl HerdrWindow {
         notes.pending = None;
         notes.editing = Some(index);
         #[cfg(any(target_os = "macos", windows))]
-        self.browser.pages.blur(id, cx);
+        self.browser.pages.blur(id);
         let input = self.browser.annotations.input(id, cx);
         input.update(cx, |input, cx| input.set_text_selected(&comment, cx));
         let focus = input.read(cx).focus.clone();
@@ -438,14 +490,14 @@ impl HerdrWindow {
         let notes = self.tab_notes(id);
         notes.notes.push(note);
         input.update(cx, |input, cx| input.clear(cx));
-        self.refresh_markers(id, cx);
+        self.refresh_markers(id);
         window.focus(&self.focus, cx);
         cx.notify();
     }
 
-    fn refresh_markers(&mut self, id: TabId, cx: &mut Context<Self>) {
+    fn refresh_markers(&mut self, id: TabId) {
         if self.browser.annotations.armed(id) {
-            self.arm_page(id, cx);
+            self.arm_page(id);
         }
     }
 
@@ -455,7 +507,7 @@ impl HerdrWindow {
             notes.notes.remove(index);
             notes.editing = None;
         }
-        self.refresh_markers(id, cx);
+        self.refresh_markers(id);
         cx.notify();
     }
 
@@ -475,7 +527,7 @@ impl HerdrWindow {
         let notes = self.tab_notes(id);
         notes.notes.retain(|note| !note.sent);
         notes.editing = None;
-        self.refresh_markers(id, cx);
+        self.refresh_markers(id);
         cx.notify();
     }
 }

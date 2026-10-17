@@ -50,7 +50,6 @@ impl SettingsWindow {
         draft.active = true;
         draft.mode = Some(mode);
         draft.revision = draft.revision.wrapping_add(1);
-        self.status = Some("Layout draft; saved when Settings closes or the app quits".into());
         self.broadcast_layout(cx);
     }
 

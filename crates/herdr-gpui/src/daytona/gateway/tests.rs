@@ -1,6 +1,9 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
 
+#[cfg(unix)]
+mod teleport;
+
 fn access(command: &str, token: &str) -> SshAccess {
     serde_json::from_value(serde_json::json!({ "token": token, "sshCommand": command })).unwrap()
 }

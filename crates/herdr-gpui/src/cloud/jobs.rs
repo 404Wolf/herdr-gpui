@@ -1,7 +1,7 @@
 //! Machines being added, owned by the window rather than a dialog: a build can
 //! take minutes, so the dialog closes at once and each job runs on its own
 //! worker. The device picker lists them with their latest status; a toast
-//! reports each one ready (or not added). Closing the window drops the jobs,
+//! reports each one ready (or setup failed). Closing the window drops the jobs,
 //! which cancels them. Nothing here knows a provider's API: a job is the
 //! provider's own work, reporting the shared [`Step`]s.
 
@@ -20,6 +20,9 @@ pub(crate) struct Job {
     pub(crate) provider: CloudProvider,
     pub(crate) name: String,
     pub(crate) status: String,
+    /// The setup script the device runs once shown, fixed when it was asked
+    /// for so an edit to the config meanwhile cannot change it.
+    setup: Option<String>,
     _worker: Worker,
 }
 
@@ -46,13 +49,19 @@ impl Jobs {
     }
 
     /// Count a job as finished without running one.
-    #[cfg(test)]
+    #[cfg(all(test, any(feature = "coder", feature = "daytona")))]
     pub(crate) fn finish_for_test(&mut self) {
         self.finished += 1;
     }
 
     pub(crate) fn is_empty(&self) -> bool {
         self.jobs.is_empty()
+    }
+
+    /// Whether any job adds a machine of this provider.
+    #[cfg(feature = "railway")]
+    pub(crate) fn has(&self, provider: CloudProvider) -> bool {
+        self.jobs.iter().any(|job| job.provider == provider)
     }
 
     /// Whether a job already adds a machine of this provider with this name.
@@ -66,11 +75,13 @@ impl Jobs {
 
 impl HerdrWindow {
     /// Run `work` to add the machine `name` from `provider`; it reports
-    /// through the picker and a toast. `work` blocks on its own worker.
+    /// through the picker and a toast. `work` blocks on its own worker. A
+    /// machine added with a `setup` script runs it once a window shows it.
     pub(crate) fn start_cloud_job(
         &mut self,
         provider: CloudProvider,
         name: String,
+        setup: Option<String>,
         work: impl FnOnce(&dyn Fn() -> bool, &dyn Fn(Step)) -> crate::Result<SavedDevice>
         + Send
         + 'static,
@@ -99,6 +110,7 @@ impl HerdrWindow {
             provider,
             name,
             status: format!("Contacting {}…", super::name(provider)),
+            setup,
             _worker: worker,
         });
         cx.notify();
@@ -116,16 +128,33 @@ impl HerdrWindow {
                 self.cloud_jobs.finished += 1;
                 let (name, noun) = (super::name(job.provider), super::noun(job.provider));
                 match result {
-                    Ok(saved) => self.local_transfer_notice(
-                        &format!("{name} {noun} ready"),
-                        format!(
-                            "{} is ready. Choose it in the device picker to start working.",
-                            saved.label
-                        ),
-                        cx,
-                    ),
+                    Ok(saved) => {
+                        let then = if job.setup.is_some() {
+                            "; its setup script runs in a new tab when it connects"
+                        } else {
+                            " to start working"
+                        };
+                        self.local_transfer_notice(
+                            &format!("{name} {noun} ready"),
+                            format!(
+                                "{} is ready. Choose it in the device picker{then}.",
+                                saved.label
+                            ),
+                            cx,
+                        );
+                        if let Some(script) = job.setup {
+                            let pending = crate::cloud_setup::Pending::new(
+                                saved.endpoint_id(),
+                                saved.label,
+                                job.provider,
+                                script,
+                                std::time::Instant::now(),
+                            );
+                            self.queue_cloud_setup(pending, cx);
+                        }
+                    }
                     Err(error) => self.local_transfer_notice(
-                        &format!("{name} {noun} not added"),
+                        &format!("{name} {noun} setup failed"),
                         format!("{}: {error}", job.name),
                         cx,
                     ),

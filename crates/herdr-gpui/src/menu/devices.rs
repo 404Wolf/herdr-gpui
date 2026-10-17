@@ -9,6 +9,8 @@ pub(crate) use add_device::enter;
 mod discover;
 mod host_key;
 mod host_menu;
+mod local_network;
+pub(super) mod rail;
 mod setup;
 mod wsl;
 
@@ -20,6 +22,7 @@ use super::{Page, colors};
 use crate::{Command, HerdrWindow};
 use gpui::{prelude::*, *};
 use herdr_client::ConnectTarget;
+use rail::add_device_offer;
 
 pub(super) const MENU_GAP: f32 = 12.;
 pub(super) const MENU_WIDTH: f32 = 280.;
@@ -65,23 +68,19 @@ impl Render for SettingsHint {
     }
 }
 
-#[cfg(feature = "cloud")]
-fn capitalized(word: &str) -> String {
-    let mut chars = word.chars();
-    chars
-        .next()
-        .map(|first| first.to_uppercase().chain(chars).collect())
-        .unwrap_or_default()
-}
-
 impl HerdrWindow {
-    /// The cloud providers set up in the config or environment, in picker order.
+    /// The cloud providers set up in the config or environment, in rail order.
     #[cfg(feature = "cloud")]
-    fn cloud_providers(&self) -> Vec<crate::cloud::CloudProvider> {
+    pub(super) fn cloud_providers(&self) -> Vec<crate::cloud::CloudProvider> {
         self.cloud_providers_with_env(|name| std::env::var_os(name))
     }
 
     #[cfg(feature = "cloud")]
+    // Providers that need no setting never read the environment.
+    #[cfg_attr(
+        not(any(feature = "boat", feature = "coder", feature = "daytona")),
+        allow(unused_variables)
+    )]
     fn cloud_providers_with_env(
         &self,
         var: impl Fn(&str) -> Option<std::ffi::OsString>,
@@ -93,6 +92,10 @@ impl HerdrWindow {
             .iter()
             .copied()
             .filter(|provider| match provider {
+                #[cfg(feature = "boat")]
+                crate::cloud::CloudProvider::Boat => {
+                    self.config.boat.api_url.is_some() || var("HERDR_BOAT_API_URL").is_some()
+                }
                 #[cfg(feature = "coder")]
                 crate::cloud::CloudProvider::Coder => {
                     self.config.coder.url.is_some() || var("HERDR_CODER_URL").is_some()
@@ -101,38 +104,44 @@ impl HerdrWindow {
                 crate::cloud::CloudProvider::Daytona => {
                     self.config.daytona.api_url.is_some() || var("HERDR_DAYTONA_API_URL").is_some()
                 }
+                // Has no account to configure; it is set up in Settings.
+                #[cfg(feature = "railway")]
+                crate::cloud::CloudProvider::Railway => false,
             })
             .collect()
     }
 
-    /// How many rows the picker offers to add a cloud provider's machine.
-    fn cloud_provider_rows(&self) -> usize {
-        #[cfg(feature = "cloud")]
-        return self.cloud_providers().len();
-        #[cfg(not(feature = "cloud"))]
-        0
-    }
-
-    /// Whether the open page is a cloud provider's add dialog.
+    /// Whether the open page is a cloud provider's pane of Add Device.
     pub(in crate::menu) fn cloud_dialog_open(&self) -> bool {
         #[cfg(feature = "coder")]
         if self.menu.page == Some(Page::AddCoder) {
             return true;
         }
+        #[cfg(feature = "cloud")]
+        if matches!(self.menu.page, Some(Page::AddCloud(_))) {
+            return true;
+        }
         false
     }
 
-    /// The open cloud provider's add dialog, if one is open.
+    /// The open cloud provider's pane of Add Device, if one is open.
     pub(in crate::menu) fn render_cloud_dialog(
         &self,
+        compact: bool,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         #[cfg(feature = "coder")]
         if self.menu.page == Some(Page::AddCoder) {
-            return Some(self.render_add_coder(cx).into_any_element());
+            return Some(self.render_add_coder(compact, cx).into_any_element());
         }
-        #[cfg(not(feature = "coder"))]
-        let _ = cx;
+        #[cfg(feature = "cloud")]
+        if let Some(Page::AddCloud(provider)) = self.menu.page {
+            return Some(
+                self.render_add_cloud(provider, compact, cx)
+                    .into_any_element(),
+            );
+        }
+        let _ = (compact, cx);
         None
     }
 
@@ -162,11 +171,28 @@ impl HerdrWindow {
         }
     }
 
-    /// Why saved SSH devices cannot be added or edited here. Windows saves WSL
-    /// distributions instead; its client has no SSH bridge.
-    pub(super) fn ssh_setup_unavailable(&self) -> Option<&'static str> {
-        self.device_setup_unavailable()
-            .or_else(|| cfg!(windows).then_some("Saved SSH devices are unavailable on Windows."))
+    /// Whether the sidebar draws the device footer, per `[sidebar]
+    /// device_footer`.
+    pub(crate) fn device_footer_shown(&self) -> bool {
+        self.config
+            .sidebar_style
+            .device_footer
+            .shown(self.endpoints.len(), self.cloud_jobs_pending())
+    }
+
+    /// Where the Sessions list opens while the footer is hidden: the sidebar's
+    /// bottom-left corner, where the footer's button would sit.
+    pub(crate) fn render_sessions_anchor(&self) -> impl IntoElement {
+        let anchor = self.sessions_anchor.clone();
+        canvas(
+            |_, _, _| (),
+            move |bounds, _, _, _| {
+                anchor.set(point(bounds.left() + px(8.), bounds.bottom()));
+            },
+        )
+        .absolute()
+        .inset_0()
+        .size_full()
     }
 
     pub(crate) fn render_device_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -408,27 +434,11 @@ impl HerdrWindow {
         rows.push((
             "Add Device…".into(),
             self.device_setup_unavailable()
-                .unwrap_or(if cfg!(windows) {
-                    "Attach to Herdr in a WSL distribution"
-                } else {
-                    "Set up a remote host over SSH"
-                })
+                .unwrap_or_else(|| add_device_offer(self.cloud_offered()))
                 .into(),
             false,
             self.device_setup_unavailable().is_none(),
         ));
-        #[cfg(feature = "cloud")]
-        for provider in self.cloud_providers() {
-            let (name, noun) = (crate::cloud::name(provider), crate::cloud::noun(provider));
-            rows.push((
-                format!("Add {name} {}…", capitalized(noun)),
-                self.device_setup_unavailable()
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| crate::cloud::offer(provider).to_owned()),
-                false,
-                self.device_setup_unavailable().is_none(),
-            ));
-        }
         let mut view = div()
             .id("devices-list")
             .max_h(device_list_height(self.menu.anchor.y))
@@ -617,32 +627,29 @@ impl HerdrWindow {
             return;
         }
         tracing::info!(category = "device_setup", "Opening Add Device");
-        if cfg!(windows) {
-            self.open_add_wsl(window, cx);
-        } else {
-            self.open_add_device(window, cx);
-        }
+        self.open_add_device(window, cx);
         cx.notify();
     }
 
+    /// Opens Settings > Cloud devices on `provider`'s tab.
+    #[cfg(feature = "cloud")]
+    pub(super) fn open_provider_settings(
+        &mut self,
+        provider: crate::cloud::CloudProvider,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.dismiss_menu(window, cx);
+        #[cfg(not(test))]
+        crate::settings_window::open_cloud(cx.weak_entity(), Some(provider), cx);
+        #[cfg(test)]
+        {
+            self.menu.settings_opened = Some(provider);
+        }
+    }
+
     fn choose_device(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(offset) = index.checked_sub(self.endpoints.len() + 2) {
-            #[cfg(feature = "cloud")]
-            if self.device_setup_unavailable().is_none()
-                && let Some(provider) = self.cloud_providers().into_iter().nth(offset)
-            {
-                match provider {
-                    #[cfg(feature = "coder")]
-                    crate::cloud::CloudProvider::Coder => self.open_coder_setup(window, cx),
-                    #[cfg(feature = "daytona")]
-                    crate::cloud::CloudProvider::Daytona => {
-                        self.dismiss_menu(window, cx);
-                        crate::settings_window::open_cloud(cx.weak_entity(), provider, cx);
-                    }
-                }
-            }
-            #[cfg(not(feature = "cloud"))]
-            let _ = offset;
+        if index > self.endpoints.len() + 1 {
             return;
         }
         if index == self.endpoints.len() + 1 {
@@ -687,7 +694,7 @@ impl HerdrWindow {
             }
         } else {
             let key = event.keystroke.key.as_str();
-            let count = self.endpoints.len() + 2 + self.cloud_provider_rows();
+            let count = self.endpoints.len() + 2;
             match key {
                 "up" | "down" => {
                     let index = self.menu.selected.unwrap_or(0).min(count - 1);

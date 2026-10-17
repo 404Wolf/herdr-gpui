@@ -1,12 +1,17 @@
 use super::*;
+use crate::NavigationTarget;
 use core::prelude::v1::test;
 use gpui::TestAppContext;
 use herdr_client::protocol::ClientShellCommand;
 
+mod agent_filter;
 mod background_ranking;
+mod frecency_ranking;
 mod go_to_search;
 mod notes;
 mod plugin_selection;
+mod preview_layout;
+mod resume;
 
 fn matches_query(text: &str, query: &str) -> bool {
     let entries = [Entry::new(

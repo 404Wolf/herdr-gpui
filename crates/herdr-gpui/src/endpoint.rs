@@ -17,6 +17,8 @@ use std::{
 
 mod catalog;
 mod history;
+mod order;
+pub(crate) mod origin;
 mod polling;
 mod wake;
 
@@ -143,6 +145,8 @@ pub(super) struct Endpoint {
     pub collapsed: bool,
     pub collapsed_repos: HashSet<String>,
     pub live: LiveState,
+    /// Each tab's last frame before `live` moved on, for Go To's preview.
+    pub(crate) last_seen: crate::palette::LastSeen,
     /// Back and Forward through the panes `live` has focused.
     pub(crate) history: history::History,
     pub generation: u64,
@@ -212,6 +216,7 @@ impl Endpoint {
             collapsed: false,
             collapsed_repos: HashSet::new(),
             live: LiveState::default(),
+            last_seen: Default::default(),
             history: Default::default(),
             generation: 0,
             toasts: Default::default(),
@@ -322,6 +327,11 @@ impl Endpoint {
                     self.retry_at = self.retry_at.max(now + MAX_RETRY_DELAY);
                 }
             }
+            self.last_seen.observe(
+                (self.live.snapshot.as_deref(), self.live.surface.as_ref()),
+                (state.snapshot.as_deref(), state.surface.as_ref()),
+                crate::palette::unix_now(),
+            );
             self.live = state;
             self.sync_live();
         }

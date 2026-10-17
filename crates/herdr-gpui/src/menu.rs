@@ -10,6 +10,8 @@ mod devices;
 mod fan_out;
 mod git;
 mod github;
+mod open_checkout;
+mod open_link;
 mod page;
 mod pr;
 mod pr_actions;
@@ -27,6 +29,7 @@ mod workspace_close;
 mod worktree_note;
 mod worktree_open;
 mod worktree_render;
+mod worktree_shortcut;
 mod worktree_source;
 
 #[cfg(test)]
@@ -44,12 +47,14 @@ mod worktree_open_tests;
 #[cfg(test)]
 mod worktree_tests;
 
+#[cfg(any(windows, test, feature = "integration-test"))]
 pub(crate) use state::Cover;
 pub(crate) use {
     colors::{accent, danger, online, teleported, tint},
     page::{Page, WorkspaceAction},
     state::{MenuState, Removal},
     version_mismatch::Notice as VersionNotice,
+    worktree_shortcut::WorktreeShortcut,
     worktree_source::WorktreeSource,
 };
 
@@ -92,7 +97,7 @@ const MENU_MARGIN: f32 = 8.;
 
 /// Daemon failures arrive as an open envelope. Keep the code so callers can
 /// classify the refusal, and the message for display.
-fn endpoint_error(error: &serde_json::Value) -> (&str, &str) {
+pub(crate) fn endpoint_error(error: &serde_json::Value) -> (&str, &str) {
     (
         error["code"].as_str().unwrap_or("endpoint_error"),
         error["message"].as_str().unwrap_or("Invalid daemon error"),

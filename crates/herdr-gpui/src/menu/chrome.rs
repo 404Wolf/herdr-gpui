@@ -4,13 +4,14 @@
 
 mod keys;
 
-use super::{MENU_MARGIN, Page, WorkspaceAction};
+use super::{MENU_MARGIN, Page, WorkspaceAction, devices::rail};
 use crate::{HerdrWindow, actions, fonts::StyledFont};
 use gpui::{prelude::*, *};
 use herdr_client::Method;
 
-/// How far past its panel a popover counts as covering, for the native pages
-/// that step aside for it.
+/// How far past its panel a popover counts as covering, for the Windows
+/// pages that hide under it.
+#[cfg(any(windows, test, feature = "integration-test"))]
 const COVER_MARGIN: f32 = 8.;
 
 impl HerdrWindow {
@@ -23,7 +24,6 @@ impl HerdrWindow {
 
     pub(crate) fn open_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         self.shift_taps.cancel();
-        self.finish_font_size_edit(true, cx);
         if !self.cancel_theme_preview(cx) {
             return false;
         }
@@ -41,7 +41,6 @@ impl HerdrWindow {
     }
 
     pub(crate) fn dismiss_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.finish_font_size_edit(true, cx);
         if !self.cancel_theme_preview(cx) {
             return;
         }
@@ -280,6 +279,10 @@ impl HerdrWindow {
         let theme = &self.theme;
         let viewport = window.viewport_size();
         let session_modal = page == Page::Sessions && self.menu.session_edit.is_some();
+        // Add Device's sources share one wide dialog; a narrow window keeps
+        // the rail to icons so the form still has room.
+        let add_device = rail::Source::of(page).is_some();
+        let compact_rail = viewport.width - px(32.) < px(rail::COMPACT_BELOW * (font.size / 12.));
         let footer_anchored =
             matches!(page, Page::Menu | Page::Devices | Page::Sessions) && !session_modal;
         // A GitHub tab of the new worktree dialog is a picker, not a form.
@@ -381,9 +384,12 @@ impl HerdrWindow {
                     page,
                     Page::Tab
                         | Page::RenameTab
+                        | Page::MoveTab
                         | Page::Group
                         | Page::Pane
                         | Page::RenamePane
+                        | Page::MovePane
+                        | Page::CarryPane
                         | Page::PaneProcesses
                         | Page::KillProcesses
                         | Page::Host
@@ -408,7 +414,7 @@ impl HerdrWindow {
                         } else if page == Page::PaneProcesses {
                             // Name, command, pid, CPU and memory columns.
                             560.
-                        } else if page == Page::Group {
+                        } else if matches!(page, Page::Group | Page::MovePane | Page::MoveTab) {
                             240.
                         } else {
                             360.
@@ -423,13 +429,19 @@ impl HerdrWindow {
                     && !matches!(page, Page::Dialog(_)),
                 |panel| {
                     panel
-                        .w((viewport.width - px(32.)).max(px(0.)).min(px(
-                            if page == Page::Preferences {
-                                620. * (font.size / 12.)
+                        .w((viewport.width - px(32.))
+                            .max(px(0.))
+                            .min(px(if add_device {
+                                rail::WIDTH * (font.size / 12.)
+                            } else if page == Page::Palette && self.palette_previews(viewport) {
+                                // Room for Go To's list beside its preview.
+                                1120. * (font.size / 12.)
+                            } else if page == Page::Palette {
+                                // Wide like Raycast, so the query leads the panel.
+                                720. * (font.size / 12.)
                             } else {
                                 480.
-                            },
-                        )))
+                            })))
                         .max_h((viewport.height - px(32.)).max(px(0.)))
                 },
             )
@@ -438,10 +450,9 @@ impl HerdrWindow {
                     page,
                     Page::Keybinds
                         | Page::Themes
-                        | Page::Fonts
+                        | Page::DeviceTheme
                         | Page::Palette
                         | Page::CodeSearch
-                        | Page::Preferences
                         | Page::AppUpdate
                         | Page::GitHub
                         | Page::AddDevice
@@ -469,10 +480,9 @@ impl HerdrWindow {
                     page,
                     Page::Keybinds
                         | Page::Themes
-                        | Page::Fonts
+                        | Page::DeviceTheme
                         | Page::Palette
                         | Page::CodeSearch
-                        | Page::Preferences
                 ),
                 |panel| {
                     panel
@@ -484,6 +494,10 @@ impl HerdrWindow {
                         .shadow_lg()
                 },
             )
+            .when(add_device, |panel| {
+                panel.h(px(rail::HEIGHT * (font.size / 12.))
+                    .min((viewport.height - px(32.)).max(px(0.))))
+            })
             .when(page == Page::GitHub, |panel| {
                 panel
                     .w((viewport.width - px(32.)).max(px(0.)).min(px(400.)))
@@ -495,7 +509,11 @@ impl HerdrWindow {
             .when(
                 matches!(
                     page,
-                    Page::Install | Page::AgentSkill | Page::VersionMismatch
+                    Page::Install
+                        | Page::AgentSkill
+                        | Page::VersionMismatch
+                        | Page::OpenCheckout
+                        | Page::OpenLink
                 ),
                 |panel| {
                     panel
@@ -575,11 +593,11 @@ impl HerdrWindow {
         } else if let Page::Usage(provider) = page {
             panel = panel.child(self.render_usage_panel(provider, cx));
         } else if page == Page::AddDevice {
-            panel = panel.child(self.render_add_device(cx));
-        } else if let Some(dialog) = self.render_cloud_dialog(cx) {
+            panel = panel.child(self.render_add_device(compact_rail, cx));
+        } else if let Some(dialog) = self.render_cloud_dialog(compact_rail, cx) {
             panel = panel.child(dialog);
         } else if page == Page::AddWsl {
-            panel = panel.child(self.render_add_wsl(cx));
+            panel = panel.child(self.render_add_wsl(compact_rail, cx));
         } else if page == Page::RemoveWsl {
             panel = panel.child(self.render_remove_wsl(cx));
         } else if page == Page::GitHub {
@@ -593,6 +611,8 @@ impl HerdrWindow {
             ));
         } else if let Page::Dialog(action) = page {
             panel = panel.child(self.render_workspace_dialog(action, cx));
+        } else if page == Page::CarryPane {
+            panel = panel.child(self.render_carry(cx));
         } else if page == Page::Teleport {
             panel = panel.child(self.render_teleport(cx));
         } else if page == Page::Checkpoints {
@@ -611,13 +631,21 @@ impl HerdrWindow {
             panel = panel.child(self.render_pr_merge(cx));
         } else if matches!(
             page,
-            Page::Host | Page::RenameDevice | Page::ForwardPort | Page::RemoveDevice
+            Page::Host
+                | Page::RenameDevice
+                | Page::ForwardPort
+                | Page::DeviceTheme
+                | Page::RemoveDevice
         ) {
             panel = panel.child(self.render_host_menu(cx));
+        } else if page == Page::MoveTab {
+            panel = self.render_tab_move_picker(panel, cx);
         } else if matches!(page, Page::Tab | Page::RenameTab) {
             panel = panel.child(self.render_tab_menu(cx));
         } else if page == Page::Group {
             panel = self.render_group_menu(panel, cx);
+        } else if page == Page::MovePane {
+            panel = self.render_move_picker(panel, cx);
         } else if matches!(
             page,
             Page::Pane | Page::RenamePane | Page::PaneProcesses | Page::KillProcesses
@@ -627,16 +655,12 @@ impl HerdrWindow {
             panel = panel.child(self.render_keybinds(cx));
         } else if page == Page::Themes {
             panel = panel.child(self.render_theme_picker(cx));
-        } else if page == Page::Fonts {
-            panel = panel.child(self.render_font_picker(cx));
         } else if page == Page::Palette {
-            panel = panel.child(self.render_palette(cx));
+            panel = panel.child(self.render_palette(viewport, cx));
         } else if page == Page::CodeSearch {
             panel = panel.child(self.render_code_search(cx));
         } else if page == Page::ConfirmClose {
             panel = panel.child(self.render_close_confirmation(cx));
-        } else if page == Page::Preferences {
-            panel = panel.child(self.render_preferences(cx));
         } else if page == Page::AppUpdate {
             panel = panel.child(self.render_app_update(window, cx));
         } else if page == Page::About {
@@ -647,6 +671,10 @@ impl HerdrWindow {
             panel = panel.child(self.render_version_mismatch(cx));
         } else if page == Page::WorktreeScript {
             panel = panel.child(self.render_worktree_script(cx));
+        } else if page == Page::OpenLink {
+            panel = panel.child(self.render_open_link(cx));
+        } else if page == Page::OpenCheckout {
+            panel = panel.child(self.render_open_checkout(cx));
         } else if page == Page::Install {
             panel = panel
                 .child(div().p(px(8.)).child("Herdr must be installed"))
@@ -691,27 +719,31 @@ impl HerdrWindow {
         } else {
             panel = panel.child(self.render_release_notes(cx));
         }
-        // Pages sit above everything GPUI draws, so the menu says what it
-        // covers: a dimmed dialog covers the window, a popover its panel.
         let dims = self.menu_dims();
-        let cover = self.menu.cover.clone();
-        if dims {
-            cover.set(super::state::Cover::All);
-        }
-        let panel = panel.when(!dims, |panel| {
-            panel.child(
-                canvas(
-                    // Laid out inside the panel's border; the margin takes in
-                    // the border and the start of its shadow.
-                    move |bounds, _, _| {
-                        cover.set(super::state::Cover::Panel(bounds.dilate(px(COVER_MARGIN))))
-                    },
-                    |_, _, _, _| {},
+        // On Windows pages sit above everything GPUI draws, so the menu says
+        // what it covers: a dimmed dialog covers the window, a popover its
+        // panel. Tests and native checks read it to find the menu.
+        #[cfg(any(windows, test, feature = "integration-test"))]
+        let panel = {
+            let cover = self.menu.cover.clone();
+            if dims {
+                cover.set(super::state::Cover::All);
+            }
+            panel.when(!dims, |panel| {
+                panel.child(
+                    canvas(
+                        // Laid out inside the panel's border; the margin takes
+                        // in the border and the start of its shadow.
+                        move |bounds, _, _| {
+                            cover.set(super::state::Cover::Panel(bounds.dilate(px(COVER_MARGIN))))
+                        },
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .inset_0(),
                 )
-                .absolute()
-                .inset_0(),
-            )
-        });
+            })
+        };
         div()
             .id("menu-overlay")
             .debug_selector(|| "menu-overlay".into())

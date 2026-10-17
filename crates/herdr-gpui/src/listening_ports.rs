@@ -3,7 +3,7 @@
 //!
 //! Every host has its own worker thread scanning it every few seconds through
 //! one long-lived `sh`: a local one for this machine, the host's own over SSH
-//! for a remote one. The UI thread only starts and stops workers and takes
+//! for a remote one, and a distribution's own through `wsl.exe` for WSL. The UI thread only starts and stops workers and takes
 //! their answers on later ticks, so a slow `lsof` or an unreachable host never
 //! blocks rendering or delays another host.
 
@@ -21,6 +21,8 @@ use crate::{
 };
 use herdr_client::ConnectTarget;
 pub(crate) use render::{chips, close_button};
+#[cfg(test)]
+pub(crate) use scan::{Bind, Owner};
 pub(crate) use scan::{Link, Origin, Port, Ports, parse};
 use std::{
     collections::HashMap,
@@ -29,9 +31,9 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-pub(crate) use tunnel::Tunnels;
 #[cfg(all(test, unix))]
-pub(crate) use tunnel::{Key, Tunnel};
+pub(crate) use tunnel::Tunnel;
+pub(crate) use tunnel::{Key, Tunnels};
 
 /// Ports open and close at human pace; `lsof` is not free on a busy machine.
 const INTERVAL: Duration = Duration::from_secs(5);
@@ -113,14 +115,15 @@ fn open(host: &Host) -> Result<Shell> {
     match host {
         Host::Local => local_shell(),
         Host::Ssh(target) => Shell::connect(target),
-        Host::Wsl(_) => Err(Error::WslHostUnsupported),
+        // A distribution is scanned as a Linux host, with its own `ss`.
+        Host::Wsl(distro) => Shell::connect_wsl(distro),
     }
     .map_err(failed)
 }
 
 #[cfg(unix)]
 fn local_shell() -> Result<Shell> {
-    let mut command = std::process::Command::new("/bin/sh");
+    let mut command = herdr_client::new_command("/bin/sh");
     command
         .arg("-s")
         .stdin(std::process::Stdio::piped())
@@ -135,28 +138,6 @@ fn local_shell() -> Result<Shell> {
     Err(Error::ListeningPortsUnsupported)
 }
 
-/// Where a browser finds `host`. Resolving an SSH alias reads configuration
-/// only, but runs `ssh -G`, so it happens on the worker, once per worker.
-fn origin(host: &Host) -> Origin {
-    let resolved = match host {
-        Host::Local | Host::Wsl(_) => None,
-        Host::Ssh(target) => herdr_client::resolve_destination(target)
-            .inspect_err(|error| {
-                tracing::debug!(category = "listening-ports", %error, "could not resolve an SSH host name");
-            })
-            .ok()
-            .map(|destination| destination.host),
-    };
-    Origin::new(host, resolved.as_deref())
-}
-
-/// One scan of a host, with where its ports open.
-#[derive(Debug, PartialEq)]
-struct Scan {
-    ports: Ports,
-    origin: Origin,
-}
-
 fn scan(shell: &mut Shell) -> Result<Ports> {
     let output = shell.run(scan::COMMAND, STEP_TIMEOUT).map_err(failed)?;
     parse(&output.stdout)
@@ -168,7 +149,7 @@ fn failed(error: Error) -> Error {
 
 struct Worker {
     stop: Arc<Stop>,
-    results: mpsc::Receiver<Result<Scan>>,
+    results: mpsc::Receiver<Result<Ports>>,
 }
 
 impl Drop for Worker {
@@ -194,8 +175,7 @@ fn spawn(host: Host) -> Option<Worker> {
     }
 }
 
-fn run(host: &Host, stop: &Stop, results: &mpsc::SyncSender<Result<Scan>>) {
-    let origin = origin(host);
+fn run(host: &Host, stop: &Stop, results: &mpsc::SyncSender<Result<Ports>>) {
     let mut shell: Option<Shell> = None;
     loop {
         let opened = match shell.take() {
@@ -208,10 +188,7 @@ fn run(host: &Host, stop: &Stop, results: &mpsc::SyncSender<Result<Scan>>) {
             if !matches!(ports, Err(Error::ListeningPorts(_))) {
                 shell = Some(opened);
             }
-            ports.map(|ports| Scan {
-                ports,
-                origin: origin.clone(),
-            })
+            ports
         });
         let due = Instant::now() + if result.is_ok() { INTERVAL } else { RETRY };
         match results.try_send(result) {
@@ -229,6 +206,7 @@ fn run(host: &Host, stop: &Stop, results: &mpsc::SyncSender<Result<Scan>>) {
 #[derive(Default)]
 struct Reading {
     ports: Ports,
+    /// Where the host's ports open, which follows from the host alone.
     origin: Origin,
     /// Why the latest scan failed, as last logged; the last good ports stay
     /// shown.
@@ -237,15 +215,14 @@ struct Reading {
 
 impl Reading {
     /// Whether anything shown changed.
-    fn apply(&mut self, result: Result<Scan>) -> bool {
+    fn apply(&mut self, result: Result<Ports>) -> bool {
         match result {
-            Ok(Scan { ports, origin }) => {
+            Ok(ports) => {
                 self.error = None;
-                if ports == self.ports && origin == self.origin {
+                if ports == self.ports {
                     return false;
                 }
                 self.ports = ports;
-                self.origin = origin;
                 true
             }
             Err(error) => {
@@ -302,23 +279,27 @@ impl ListeningPorts {
         })
     }
 
-    /// Whether any workspace on `host` still listens on `port`.
-    pub fn listening(&self, host: &Host, port: u16) -> bool {
-        self.monitors.get(host).is_some_and(|monitor| {
-            monitor
-                .reading
-                .ports
-                .values()
-                .flatten()
-                .any(|listed| listed.number == port)
-        })
+    /// Whether a port listed on `key`'s host still tunnels to exactly `key`.
+    /// A server that moved to another address on the same number no longer
+    /// does, so its old tunnel goes rather than lingering without a close
+    /// button beside the new one.
+    pub fn tunnels_to(&self, key: &Key) -> bool {
+        let Some(monitor) = self.monitors.get(&Host::Ssh(key.target.clone())) else {
+            return false;
+        };
+        let reading = &monitor.reading;
+        reading
+            .ports
+            .values()
+            .flatten()
+            .any(|port| matches!(port.link(&reading.origin), Some(Link::Tunnel(listed)) if listed == *key))
     }
 
     /// Shows `ports` for `host` as if a scan had found them, with no worker.
     #[cfg(test)]
     pub(crate) fn seed(&mut self, host: Host, ports: Ports) {
         let reading = Reading {
-            origin: Origin::new(&host, None),
+            origin: Origin::new(&host),
             ports,
             error: None,
         };
@@ -356,7 +337,10 @@ impl ListeningPorts {
                 .entry(host)
                 .or_insert_with_key(|host| Monitor {
                     worker: spawn(host.clone()),
-                    reading: Reading::default(),
+                    reading: Reading {
+                        origin: Origin::new(host),
+                        ..Reading::default()
+                    },
                 });
         }
         for monitor in self.monitors.values_mut() {

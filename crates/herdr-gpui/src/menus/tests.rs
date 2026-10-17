@@ -13,7 +13,7 @@ fn badge_preview_is_available_only_in_the_macos_qa_menu() {
             MenuItem::Action { name, action, .. } if name.as_ref() == label => Some(action),
             _ => None,
         });
-        if cfg!(target_os = "macos") {
+        if cfg!(any(target_os = "macos", windows)) {
             assert!(
                 action
                     .unwrap()
@@ -230,9 +230,9 @@ fn edit_menu_items_follow_focus(cx: &mut gpui::TestAppContext) {
         cx.run_until_parked();
     };
 
-    // Without a highlighted selection, the terminal only pastes.
+    // Without a highlighted selection, the terminal pastes and selects all.
     cx.update(|window, cx| view.read(cx).focus.clone().focus(window, cx));
-    assert_eq!(available(cx), ["Paste"]);
+    assert_eq!(available(cx), ["Paste", "Select All"]);
 
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
@@ -286,9 +286,10 @@ fn edit_menu_items_follow_focus(cx: &mut gpui::TestAppContext) {
 
 /// The font size items are the only way to reach these commands from the
 /// macOS menu bar, and each must dispatch the catalog command rather than
-/// an action of its own; full screen follows them, as in other Mac apps.
+/// an action of its own; full screen follows them, as in other Mac apps,
+/// with zen mode, which also takes over the whole window, beside it.
 #[test]
-fn view_menu_carries_the_font_size_and_full_screen_commands() {
+fn view_menu_carries_the_font_size_full_screen_and_zen_commands() {
     let menus = menus(Layout::default());
     let view = menus
         .iter()
@@ -308,6 +309,7 @@ fn view_menu_carries_the_font_size_and_full_screen_commands() {
         ("Reset Font Size", Command::ResetFontSize),
         ("Devices Overview", Command::DevicesOverview),
         ("Toggle Full Screen", Command::ToggleFullScreen),
+        ("Toggle Zen Mode", Command::ToggleZenMode),
     ];
     assert_eq!(actions.len(), expected.len());
     for ((name, action), (label, command)) in actions.iter().zip(expected) {
@@ -411,6 +413,11 @@ fn hide_and_minimize_are_macos_only() {
         .unwrap();
     assert_eq!(
         action_names(window),
-        ["New Window", "Cycle Through Windows", "Logs"]
+        [
+            "New Window",
+            "Cycle Through Windows",
+            "Close Window",
+            "Logs"
+        ]
     );
 }

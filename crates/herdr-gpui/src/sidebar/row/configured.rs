@@ -306,10 +306,11 @@ mod tests {
             size: 12.,
             fallbacks: None,
             line_height_multiple: None,
+            weight: gpui::FontWeight::NORMAL,
         };
         let theme = Theme::default();
         let cx = RowContext {
-            indicators: Indicators::new(None, false, &theme),
+            indicators: Indicators::new(None, None, false, &theme),
             font: &font,
             theme: &theme,
             look: layout::for_mode(LayoutMode::default()),

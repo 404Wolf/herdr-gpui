@@ -42,9 +42,6 @@ impl HerdrWindow {
         if self.shortcut_editor_key(event, window, cx) {
             return;
         }
-        if self.settings_key(event, window, cx) {
-            return;
-        }
         if self.menu.page == Some(Page::Dialog(WorkspaceAction::OpenWorktree))
             && (self
                 .menu
@@ -104,6 +101,10 @@ impl HerdrWindow {
             self.git_key(event, window, cx);
             return;
         }
+        if self.menu.page == Some(Page::CarryPane) {
+            self.carry_key(event, window, cx);
+            return;
+        }
         if self.menu.page == Some(Page::Teleport) {
             self.teleport_key(event, window, cx);
             return;
@@ -116,6 +117,10 @@ impl HerdrWindow {
             self.fan_out_key(event, window, cx);
             return;
         }
+        if self.menu.page == Some(Page::DeviceTheme) {
+            self.device_theme_key(event, window, cx);
+            return;
+        }
         if matches!(
             self.menu.page,
             Some(Page::Host | Page::RenameDevice | Page::ForwardPort | Page::RemoveDevice)
@@ -123,7 +128,10 @@ impl HerdrWindow {
             self.host_menu_key(event, window, cx);
             return;
         }
-        if matches!(self.menu.page, Some(Page::Tab | Page::RenameTab)) {
+        if matches!(
+            self.menu.page,
+            Some(Page::Tab | Page::RenameTab | Page::MoveTab)
+        ) {
             self.tab_menu_key(event, window, cx);
             return;
         }
@@ -133,13 +141,30 @@ impl HerdrWindow {
         }
         if matches!(
             self.menu.page,
-            Some(Page::Pane | Page::RenamePane | Page::PaneProcesses | Page::KillProcesses)
+            Some(
+                Page::Pane
+                    | Page::RenamePane
+                    | Page::MovePane
+                    | Page::PaneProcesses
+                    | Page::KillProcesses
+            )
         ) {
             self.pane_menu_key(event, window, cx);
             return;
         }
         if let Some(Page::Usage(provider)) = self.menu.page
             && self.usage_key(provider, event, cx)
+        {
+            cx.stop_propagation();
+            window.prevent_default();
+            return;
+        }
+        if self
+            .menu
+            .page
+            .and_then(crate::menu::devices::rail::Source::of)
+            .is_some()
+            && self.add_device_rail_key(event, window, cx)
         {
             cx.stop_propagation();
             window.prevent_default();
@@ -155,6 +180,11 @@ impl HerdrWindow {
         }
         if matches!(self.menu.page, Some(Page::Devices | Page::AddDevice)) {
             self.devices_key(event, window, cx);
+            return;
+        }
+        #[cfg(feature = "cloud")]
+        if let Some(Page::AddCloud(provider)) = self.menu.page {
+            self.add_cloud_key(provider, event, window, cx);
             return;
         }
         #[cfg(feature = "coder")]
@@ -188,26 +218,6 @@ impl HerdrWindow {
         if self.menu.page == Some(Page::Themes) {
             self.theme_picker_key(event, window, cx);
             return;
-        }
-        if self.menu.page == Some(Page::Fonts) {
-            self.font_picker_key(event, window, cx);
-            return;
-        }
-        if self.menu.page == Some(Page::Preferences) && self.menu.font_size_editor.is_some() {
-            let editor = self.menu.font_size_editor.as_ref();
-            if editor.is_some_and(|editor| editor.input.read(cx).is_composing()) {
-                return;
-            }
-            match event.keystroke.key.as_str() {
-                "enter" | "escape" => {
-                    cx.stop_propagation();
-                    window.prevent_default();
-                    self.finish_font_size_edit(event.keystroke.key == "enter", cx);
-                    window.focus(&self.menu.focus, cx);
-                    return;
-                }
-                _ => return, // Native text editing and IME handle printable input.
-            }
         }
         if self.menu.page == Some(Page::Keybinds)
             && (self
@@ -307,14 +317,8 @@ impl HerdrWindow {
                     self.activate_workspace_menu(action, window, cx);
                 }
             }
-            "up" | "down" | "pageup" | "pagedown"
-                if matches!(self.menu.page, Some(Page::Keybinds | Page::Preferences)) =>
-            {
-                let scroll = if self.menu.page == Some(Page::Preferences) {
-                    &self.menu.preferences_scroll
-                } else {
-                    &self.menu.keybinds_scroll
-                };
+            "up" | "down" | "pageup" | "pagedown" if self.menu.page == Some(Page::Keybinds) => {
+                let scroll = &self.menu.keybinds_scroll;
                 let key = event.keystroke.key.as_str();
                 let distance = if key.starts_with("page") {
                     scroll.bounds().size.height * 0.8
@@ -327,6 +331,12 @@ impl HerdrWindow {
             }
             "enter" if self.menu.page == Some(Page::AgentSkill) => {
                 self.install_browser_skill(window, cx);
+            }
+            "enter" if self.menu.page == Some(Page::OpenLink) => {
+                self.confirm_open_link(window, cx);
+            }
+            "enter" if self.menu.page == Some(Page::OpenCheckout) => {
+                self.confirm_open_checkout(window, cx);
             }
             "enter" if self.menu.page == Some(Page::VersionMismatch) => {
                 self.act_on_version_mismatch(window, cx);

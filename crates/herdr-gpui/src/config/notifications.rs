@@ -1,4 +1,4 @@
-//! Toasts, OS notifications, and the terminal bell.
+//! Toasts, OS notifications, agent sound volume, and the terminal bell.
 use super::Config;
 use serde::Deserialize;
 
@@ -55,6 +55,36 @@ impl Default for BellConfig {
     }
 }
 
+/// How loud this app plays agent notification sounds. Herdr's `[ui.sound]`
+/// has no volume and plays at the file's own level, so this is the GUI's
+/// `[sound]` alone and leaves the daemon config untouched.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct SoundConfig {
+    /// Percent of the sound file's own loudness, inclusive 0..=100.
+    #[serde(deserialize_with = "sound_volume")]
+    pub volume: u8,
+}
+
+impl SoundConfig {
+    /// The loudest volume; a percentage above it is refused.
+    pub const MAX_VOLUME: u8 = 100;
+}
+
+impl Default for SoundConfig {
+    fn default() -> Self {
+        // The bundled sounds are mastered loud; full level startles.
+        Self { volume: 50 }
+    }
+}
+
+fn sound_volume<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u8, D::Error> {
+    u8::try_from(u64::deserialize(d)?)
+        .ok()
+        .filter(|volume| *volume <= SoundConfig::MAX_VOLUME)
+        .ok_or_else(|| serde::de::Error::custom("sound.volume must be between 0 and 100"))
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct NotificationConfig {
@@ -68,6 +98,10 @@ pub struct NotificationConfig {
     #[serde(deserialize_with = "notification_delay")]
     pub delay_seconds: u64,
     pub position: herdr_client::protocol::ToastHerdrPosition,
+    /// Present "finished" notices. A GUI-only key with no shared Herdr
+    /// counterpart: turning it off keeps "needs attention" and custom
+    /// notifications, so a hook can post its own summary in their place.
+    pub finished: bool,
 }
 
 impl Default for NotificationConfig {
@@ -77,20 +111,31 @@ impl Default for NotificationConfig {
             system: false,
             delay_seconds: 1,
             position: herdr_client::protocol::ToastHerdrPosition::BottomRight,
+            finished: true,
         }
     }
 }
 
 /// Each key overrides the daemon's answer on its own, so naming one of them
 /// here does not silently reset the other to a GUI default.
-#[derive(Default, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize)]
 #[serde(default)]
-pub(super) struct ClipboardToastSettings {
+pub(crate) struct ClipboardToastSettings {
     enabled: Option<bool>,
     position: Option<ClipboardToastPosition>,
 }
 
 impl ClipboardToastSettings {
+    /// The GUI's own `enabled` override, if one is set.
+    pub(crate) fn enabled(self) -> Option<bool> {
+        self.enabled
+    }
+
+    /// The GUI's own `position` override, if one is set.
+    pub(crate) fn position(self) -> Option<ClipboardToastPosition> {
+        self.position
+    }
+
     pub(super) fn resolve(self, base: ClipboardToast) -> ClipboardToast {
         ClipboardToast {
             enabled: self.enabled.unwrap_or(base.enabled),
@@ -107,6 +152,7 @@ pub(crate) struct NotificationSettings {
     #[serde(deserialize_with = "optional_notification_delay")]
     delay_seconds: Option<u64>,
     position: Option<herdr_client::protocol::ToastHerdrPosition>,
+    finished: Option<bool>,
 }
 
 /// Where a daemon notification that passes the shared policy is presented.
@@ -130,12 +176,25 @@ impl NotificationConfig {
 }
 
 impl NotificationSettings {
+    pub(crate) fn enabled(self) -> Option<bool> {
+        self.enabled
+    }
+
+    pub(crate) fn delay_seconds(self) -> Option<u64> {
+        self.delay_seconds
+    }
+
+    pub(crate) fn position(self) -> Option<herdr_client::protocol::ToastHerdrPosition> {
+        self.position
+    }
+
     pub(super) fn resolve(self, base: NotificationConfig) -> NotificationConfig {
         NotificationConfig {
             enabled: self.enabled.unwrap_or(base.enabled),
             system: base.system,
             delay_seconds: self.delay_seconds.unwrap_or(base.delay_seconds),
             position: self.position.unwrap_or(base.position),
+            finished: self.finished.unwrap_or(base.finished),
         }
     }
 }
@@ -166,6 +225,7 @@ impl Config {
             system: shared.toast_delivery == crate::herdr_settings::ToastDelivery::System,
             delay_seconds: shared.toast_delay_seconds,
             position: shared.toast_position,
+            ..NotificationConfig::default()
         });
     }
 }

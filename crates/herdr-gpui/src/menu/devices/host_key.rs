@@ -26,7 +26,7 @@ impl HerdrWindow {
         tracing::info!(category = "device_setup", "Fetching host key");
         form.step = Step::FetchingKey(request.clone());
         form.claim = Some(claim);
-        self.menu.error = None;
+        form.error = None;
         let background = cx
             .background_executor()
             .spawn(async move { herdr_client::scan_host_key(request.target()) });
@@ -72,7 +72,7 @@ impl HerdrWindow {
             category = "device_setup",
             "Host key not offered for approval"
         );
-        self.menu.error = Some(error);
+        self.set_device_error(Some(error));
         if let Some(form) = &mut self.menu.device_setup {
             form.step = Step::Confirm(request, Offer::Terminal);
         }
@@ -91,7 +91,7 @@ impl HerdrWindow {
         let claim = form.claim.take();
         tracing::info!(category = "device_setup", "Trusting host key");
         form.step = Step::Checking(request.clone());
-        self.menu.error = None;
+        form.error = None;
         let background = cx.background_executor().spawn(async move {
             let claim = match claim {
                 Some(claim) => claim,

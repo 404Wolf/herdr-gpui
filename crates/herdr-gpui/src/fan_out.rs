@@ -20,4 +20,5 @@ mod state;
 mod ui;
 
 pub(crate) use journal::Journal;
+pub(crate) use plan::MAX_LANES;
 pub(crate) use state::{FanOut, Origin};

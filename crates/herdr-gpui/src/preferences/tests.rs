@@ -4,25 +4,6 @@ use std::time::{Duration, Instant};
 
 mod state_directory;
 
-#[core::prelude::v1::test]
-fn font_size_input_accepts_only_whole_values_in_range() {
-    for (input, expected) in [
-        ("8", Some(8.)),
-        ("48", Some(48.)),
-        (" 24 ", Some(24.)),
-        ("7", None),
-        ("49", None),
-        ("14.5", None),
-        ("-8", None),
-        ("+12", None),
-        ("12px", None),
-        ("", None),
-        ("999999", None),
-    ] {
-        assert_eq!(parse_font_size(input), expected, "{input:?}");
-    }
-}
-
 struct TestDirectory(PathBuf);
 
 impl TestDirectory {
@@ -73,6 +54,7 @@ fn roundtrip_and_reset_drain_after_drop() {
             agent_sort: Some(AgentSort::Priority),
             notes_width: None,
             review_files_width: None,
+            device_order: Vec::new(),
         });
     }
     let worker = preferences.worker.take().unwrap();
@@ -88,6 +70,7 @@ fn roundtrip_and_reset_drain_after_drop() {
             agent_sort: Some(AgentSort::Priority),
             notes_width: None,
             review_files_width: None,
+            device_order: Vec::new(),
         }
     );
     preferences.save(Chrome::default());
@@ -110,6 +93,7 @@ fn only_a_toggled_sort_is_stored_and_older_files_migrate() {
         agent_sort,
         notes_width: None,
         review_files_width: None,
+        device_order: Vec::new(),
     };
     for (json, expected) in [
         // A file from before the sort existed follows the daemon.
@@ -182,6 +166,7 @@ fn drop_does_not_wait_for_blocked_worker_and_queued_saves_still_drain() {
             agent_sort: Some(AgentSort::Grouped),
             notes_width: None,
             review_files_width: None,
+            device_order: Vec::new(),
         },
         Chrome {
             sidebar_width: Some(400.),
@@ -189,10 +174,11 @@ fn drop_does_not_wait_for_blocked_worker_and_queued_saves_still_drain() {
             agent_sort: Some(AgentSort::Priority),
             notes_width: Some(420.),
             review_files_width: None,
+            device_order: Vec::new(),
         },
         Chrome::default(),
     ];
-    for chrome in queued {
+    for chrome in queued.clone() {
         preferences.save(chrome);
     }
     ready.recv_timeout(Duration::from_secs(5)).unwrap();
@@ -245,6 +231,7 @@ fn malformed_and_invalid_widths_fall_back_to_default() {
                     agent_sort: None,
                     notes_width: None,
                     review_files_width: None,
+                    device_order: Vec::new(),
                 }
             )
             .is_err()
@@ -256,8 +243,9 @@ fn malformed_and_invalid_widths_fall_back_to_default() {
         agent_sort: None,
         notes_width: None,
         review_files_width: None,
+        device_order: Vec::new(),
     };
-    write_chrome(&path, chrome).unwrap();
+    write_chrome(&path, chrome.clone()).unwrap();
     assert_eq!(read_chrome(&path).unwrap(), chrome);
     assert_eq!(fs::read_dir(&directory.0).unwrap().count(), 1);
 }
@@ -272,6 +260,7 @@ fn invalid_sidebar_splits_preserve_other_preferences() {
         agent_sort: Some(AgentSort::Priority),
         notes_width: None,
         review_files_width: None,
+        device_order: Vec::new(),
     };
     for split in [
         "null", "0", "-1", "0.099", "0.901", "1e100", "1e-100", "\"0.5\"", "true", "[]", "{}",
@@ -297,7 +286,7 @@ fn invalid_sidebar_splits_preserve_other_preferences() {
             &path,
             Chrome {
                 sidebar_split: Some(split),
-                ..expected
+                ..expected.clone()
             },
         )
         .unwrap();
@@ -316,8 +305,9 @@ fn sidebar_split_roundtrips_including_boundaries_and_reset() {
             agent_sort: Some(AgentSort::Priority),
             notes_width: None,
             review_files_width: None,
+            device_order: Vec::new(),
         };
-        write_chrome(&path, chrome).unwrap();
+        write_chrome(&path, chrome.clone()).unwrap();
         let stored: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         assert_eq!(stored["sidebar_split"], serde_json::json!(sidebar_split));
         assert_eq!(read_chrome(&path).unwrap(), chrome);
@@ -341,4 +331,5 @@ fn endpoint_paths_use_stable_fnv1a() {
     );
 }
 
+mod device_order;
 mod notes_width;

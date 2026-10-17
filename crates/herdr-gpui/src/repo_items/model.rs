@@ -3,15 +3,15 @@
 //! length-bounded before they can reach a label or a daemon request.
 
 use super::Origin;
-use crate::{Error, pull_request::clean};
+use crate::{
+    Error,
+    pull_request::{Remote, clean},
+};
 use serde_json::Value;
 
 /// Items per list. The tabs are a picker, not a mirror of the repository, so a
 /// query stays inside one page and one bounded response.
 pub(super) const LIMIT: usize = 50;
-/// Issue branches follow GitHub's own "create a branch" naming. The slug is
-/// bounded so a long title cannot produce an unusable checkout directory.
-const SLUG_LIMIT: usize = 60;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {
@@ -31,6 +31,17 @@ impl Kind {
         match self {
             Self::PullRequest => "No open pull requests match.",
             Self::Issue => "No open issues match.",
+        }
+    }
+
+    /// Why the tab is faded without an account. Herdr keeps its own GitHub
+    /// sign-in, so being signed in to `gh` or a browser is not enough.
+    pub(crate) fn signed_out_hint(self) -> &'static str {
+        match self {
+            Self::PullRequest => {
+                "Sign in to GitHub in Herdr (account button, top right) to list pull requests."
+            }
+            Self::Issue => "Sign in to GitHub in Herdr (account button, top right) to list issues.",
         }
     }
 
@@ -54,6 +65,9 @@ pub(crate) struct Item {
     pub head: Option<String>,
     /// Set when the head branch lives in a fork, naming its owner.
     pub fork_owner: Option<String>,
+    /// The remote the head is fetched from: the listed repository's, or
+    /// `origin` for this checkout's own fork branches in an upstream listing.
+    pub remote: Remote,
     pub draft: bool,
 }
 
@@ -68,12 +82,13 @@ impl Item {
         }
     }
 
-    /// Fork heads use GitHub's PR ref, isolated from origin's branch namespace.
+    /// Fork heads use GitHub's PR ref, isolated from the remote's branch
+    /// namespace.
     pub(crate) fn base_ref(&self) -> String {
         if self.fork_owner.is_some() {
             format!("refs/herdr/pull/{}/head", self.number)
         } else {
-            format!("refs/remotes/origin/{}", self.branch())
+            format!("refs/remotes/{}/{}", self.remote.name(), self.branch())
         }
     }
 
@@ -112,23 +127,10 @@ pub(crate) fn fork_branch_number(branch: &str) -> Option<u64> {
     digits.parse().ok()
 }
 
-/// GitHub's branch name for an issue: the number, then a slug of the title.
+/// GitHub's branch name for an issue: the number, then a slug of the title,
+/// following GitHub's own "create a branch" naming.
 pub(crate) fn issue_branch(number: u64, title: &str) -> String {
-    let mut slug = String::new();
-    let mut dash = false;
-    for ch in title.chars() {
-        if ch.is_ascii_alphanumeric() {
-            slug.push(ch.to_ascii_lowercase());
-            dash = false;
-        } else if !dash && !slug.is_empty() {
-            slug.push('-');
-            dash = true;
-        }
-        if slug.len() >= SLUG_LIMIT {
-            break;
-        }
-    }
-    let slug = slug.trim_matches('-');
+    let slug = crate::worktree::bounded_slug(title);
     if slug.is_empty() {
         number.to_string()
     } else {
@@ -157,14 +159,27 @@ fn item(node: &Value, origin: &Origin, kind: Kind) -> Option<Item> {
         Kind::PullRequest => Some(branch_name(node["headRefName"].as_str()?)?),
         Kind::Issue => None,
     };
-    let fork_owner = head.as_ref().and_then(|_| {
-        let login = clean(
+    let login = head.as_ref().map(|_| {
+        clean(
             node["headRepositoryOwner"]["login"]
                 .as_str()
                 .unwrap_or_default(),
-        );
-        (!login.eq_ignore_ascii_case(&origin.owner)).then_some(login)
+        )
     });
+    // A head on the listed repository, or on this checkout's own fork, is an
+    // ordinary branch of a configured remote; any other owner is a fork.
+    let (fork_owner, remote) = match login {
+        Some(login) if login.eq_ignore_ascii_case(&origin.owner) => (None, origin.remote),
+        Some(login)
+            if origin
+                .fork_owner
+                .as_ref()
+                .is_some_and(|fork| login.eq_ignore_ascii_case(fork)) =>
+        {
+            (None, Remote::Origin)
+        }
+        login => (login, origin.remote),
+    };
     Some(Item {
         kind,
         number,
@@ -183,6 +198,7 @@ fn item(node: &Value, origin: &Origin, kind: Kind) -> Option<Item> {
         author: clean(node["author"]["login"].as_str().unwrap_or_default()),
         head,
         fork_owner,
+        remote,
         draft: node["isDraft"] == true,
     })
 }

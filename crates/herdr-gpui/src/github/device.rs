@@ -82,6 +82,10 @@ pub(super) enum Reply {
     Token(Credential),
     SignedOut,
     Authenticated(Arc<SecretString>),
+    /// The GitHub CLI's account, after the user chose it and it was verified.
+    GitHubCli(Profile),
+    /// The account of a token the user pasted, verified and saved.
+    Pasted(Profile),
 }
 
 pub(crate) struct Profile {
@@ -89,24 +93,84 @@ pub(crate) struct Profile {
     pub avatar: Option<Arc<gpui::Image>>,
     pub token: Arc<SecretString>,
     pub(super) avatar_updates: Option<crate::avatars::AvatarUpdates>,
+    pub source: Source,
+    /// The organizations the account belongs to, read only for an additional
+    /// account: the owners it covers besides its own login. `None` until
+    /// GitHub listed them, so a failed listing is not mistaken for none.
+    pub organizations: Option<Vec<String>>,
+}
+
+#[cfg(test)]
+impl Profile {
+    /// A signed-in account without an avatar, for tests outside this module.
+    pub(crate) fn fixture(login: &str, token: Arc<SecretString>, organizations: &[&str]) -> Self {
+        Self {
+            login: login.into(),
+            avatar: None,
+            token,
+            avatar_updates: None,
+            source: Source::Token,
+            organizations: Some(
+                organizations
+                    .iter()
+                    .map(|name| (*name).to_owned())
+                    .collect(),
+            ),
+        }
+    }
+}
+
+/// Where a signed-in account's token comes from.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Source {
+    /// The environment, or a sign-in saved by this app.
+    #[default]
+    Token,
+    /// The GitHub CLI's own sign-in, read again on every load. `repo_scope`
+    /// is false when its classic scopes leave out private repositories.
+    GitHubCli { repo_scope: bool },
+}
+
+impl Source {
+    pub(crate) fn github_cli(self) -> bool {
+        matches!(self, Self::GitHubCli { .. })
+    }
 }
 
 pub(super) fn profile(token: Arc<SecretString>) -> Result<Profile> {
+    profile_from(token, false)
+}
+
+/// The account `token` belongs to. `github_cli` records the GitHub CLI as
+/// its source, with whether its scopes reach private repositories.
+pub(super) fn profile_from(token: Arc<SecretString>, github_cli: bool) -> Result<Profile> {
     #[derive(Deserialize)]
     struct User {
         login: String,
         avatar_url: String,
     }
-    let user: User = response(
-        "profile",
-        agent(Duration::from_secs(15))
-            .get("https://api.github.com/user")
-            .header("User-Agent", "Herdr-GPUI")
-            .header("Accept", "application/vnd.github+json")
-            .header("Authorization", authorization(&token)?)
-            .call()
-            .map_err(log::network("profile"))?,
-    )?;
+    let reply = agent(Duration::from_secs(15))
+        .get("https://api.github.com/user")
+        .header("User-Agent", "Herdr-GPUI")
+        .header("Accept", "application/vnd.github+json")
+        .header("Authorization", authorization(&token)?)
+        .call()
+        .map_err(log::network("profile"))?;
+    // Only classic OAuth tokens, which `gh auth login` issues, list scopes;
+    // a token without the header is not judged by it.
+    let source = if github_cli {
+        Source::GitHubCli {
+            repo_scope: repo_scope(
+                reply
+                    .headers()
+                    .get("x-oauth-scopes")
+                    .and_then(|value| value.to_str().ok()),
+            ),
+        }
+    } else {
+        Source::Token
+    };
+    let user: User = response("profile", reply)?;
     // The login is shown in the menu and logged, never persisted or placed in a
     // URL, so GitHub stays the authority on the shape of its own account names.
     // Enterprise managed users (`handle_shortcode`) are why guessing that shape
@@ -123,7 +187,64 @@ pub(super) fn profile(token: Arc<SecretString>) -> Result<Profile> {
         avatar,
         token,
         avatar_updates,
+        source,
+        organizations: None,
     })
+}
+
+impl Profile {
+    /// Keeps the organizations `old` listed when this check could not list
+    /// them, so a failed request never moves the account's repositories to
+    /// the main account. Only for the same login: another account's are not
+    /// this one's.
+    pub(super) fn keep_organizations(&mut self, old: &Self) {
+        if self.organizations.is_none() && self.login == old.login {
+            self.organizations = old.organizations.clone();
+        }
+    }
+}
+
+const ORGANIZATIONS: &str = "query { viewer { organizations(first: 100) { nodes { login } } } }";
+
+/// `profile` with the organizations its account belongs to, as far as its
+/// token may list them. A token that may not (a classic one without
+/// `read:org`, say) still covers its own login, so the failure is only logged
+/// and the organizations stay unknown: [`Profile::keep_organizations`] then
+/// keeps those an earlier check listed.
+pub(super) fn with_organizations(mut profile: Profile) -> Profile {
+    let mut cooldown = None;
+    match super::graphql(
+        "organizations",
+        &profile.token,
+        ORGANIZATIONS,
+        serde_json::json!({}),
+        Duration::from_secs(15),
+        || false,
+        &mut cooldown,
+    ) {
+        Ok(value) => profile.organizations = Some(organizations(&value)),
+        Err(error) => log::failure("organizations", &error),
+    }
+    profile
+}
+
+/// The organization logins of a viewer query, bounded and checked like the
+/// owners a config lists.
+pub(super) fn organizations(value: &serde_json::Value) -> Vec<String> {
+    value["data"]["viewer"]["organizations"]["nodes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|node| node["login"].as_str())
+        .filter(|login| crate::config::valid_owner(login))
+        .take(100)
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Whether a classic token's `X-OAuth-Scopes` reach private repositories.
+pub(super) fn repo_scope(scopes: Option<&str>) -> bool {
+    scopes.is_none_or(|scopes| scopes.split(',').any(|scope| scope.trim() == "repo"))
 }
 
 #[derive(Debug, Deserialize)]

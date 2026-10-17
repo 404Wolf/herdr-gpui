@@ -6,96 +6,77 @@
 //! name reaches the wire through `as_str` in exactly one place, and a typo is a
 //! compile error instead of an `UnsupportedMethod` rejection at runtime.
 
-/// An endpoint API method. `as_str` is the wire spelling, and the only place a
-/// method name is written out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Method {
-    ClientShellSurfaceSet,
-    CommandInvoke,
-    IntegrationList,
-    IntegrationInstall,
-    LayoutSetSplitRatio,
-    PaneClear,
-    PaneClose,
-    PaneCopyMotion,
-    PaneCopySearch,
-    PaneEditScrollback,
-    PaneFocus,
-    PaneFocusDirection,
-    PaneInputSet,
-    PaneLinkActivate,
-    PaneLinkResolve,
-    PaneRename,
-    PaneResize,
-    PaneScroll,
-    PaneSelectionRead,
-    PaneSplit,
-    PaneSwap,
-    PaneZoom,
-    ProductAnnouncementDismiss,
-    ReleaseNotesDismiss,
-    ServerReloadConfig,
-    TabClose,
-    TabCreate,
-    TabFocus,
-    TabMove,
-    TabRename,
-    WorkspaceClose,
-    WorkspaceCreate,
-    WorkspaceFocus,
-    WorkspaceMoveBlock,
-    WorkspaceRename,
-    WorktreeCreate,
-    WorktreeList,
-    WorktreeOpen,
-    WorktreeRemove,
+/// Declares each method once, with its wire spelling, so the enum, `as_str`,
+/// and the test list of every variant cannot drift apart.
+macro_rules! methods {
+    ($($variant:ident => $name:literal,)+) => {
+        /// An endpoint API method. `as_str` is the wire spelling, and the only
+        /// place a method name is written out.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub enum Method {
+            $($variant,)+
+        }
+
+        impl Method {
+            /// Every variant, for tests that check the whole set.
+            #[cfg(test)]
+            pub(crate) const ALL: &[Self] = &[$(Self::$variant,)+];
+
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $name,)+
+                }
+            }
+        }
+    };
+}
+
+methods! {
+    // keep-sorted start
+    ClientShellSurfaceSet => "client_shell.surface.set",
+    CommandInvoke => "command.invoke",
+    IntegrationInstall => "integration.install",
+    IntegrationList => "integration.list",
+    LayoutSetSplitRatio => "layout.set_split_ratio",
+    PaneClear => "pane.clear",
+    PaneClose => "pane.close",
+    PaneCopyMotion => "pane.copy_motion",
+    PaneCopySearch => "pane.copy_search",
+    PaneEditScrollback => "pane.edit_scrollback",
+    PaneFocus => "pane.focus",
+    PaneFocusDirection => "pane.focus_direction",
+    PaneInputSet => "pane.input.set",
+    PaneLinkActivate => "pane.link.activate",
+    PaneLinkResolve => "pane.link.resolve",
+    PaneRename => "pane.rename",
+    PaneResize => "pane.resize",
+    PaneScroll => "pane.scroll",
+    PaneSelectionRead => "pane.selection.read",
+    PaneSplit => "pane.split",
+    PaneSwap => "pane.swap",
+    PaneZoom => "pane.zoom",
+    ProductAnnouncementDismiss => "product_announcement.dismiss",
+    ReleaseNotesDismiss => "release_notes.dismiss",
+    ServerReloadConfig => "server.reload_config",
+    TabClose => "tab.close",
+    TabCreate => "tab.create",
+    TabFocus => "tab.focus",
+    TabMove => "tab.move",
+    TabRename => "tab.rename",
+    WorkspaceClose => "workspace.close",
+    WorkspaceCreate => "workspace.create",
+    WorkspaceFocus => "workspace.focus",
+    WorkspaceMove => "workspace.move",
+    WorkspaceMoveBlock => "workspace.move_block",
+    WorkspaceRename => "workspace.rename",
+    WorktreeCreate => "worktree.create",
+    WorktreeList => "worktree.list",
+    WorktreeOpen => "worktree.open",
+    WorktreeRemove => "worktree.remove",
+    // keep-sorted end
 }
 
 impl Method {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::ClientShellSurfaceSet => "client_shell.surface.set",
-            Self::CommandInvoke => "command.invoke",
-            Self::IntegrationList => "integration.list",
-            Self::IntegrationInstall => "integration.install",
-            Self::LayoutSetSplitRatio => "layout.set_split_ratio",
-            Self::PaneClear => "pane.clear",
-            Self::PaneClose => "pane.close",
-            Self::PaneCopyMotion => "pane.copy_motion",
-            Self::PaneCopySearch => "pane.copy_search",
-            Self::PaneEditScrollback => "pane.edit_scrollback",
-            Self::PaneFocus => "pane.focus",
-            Self::PaneFocusDirection => "pane.focus_direction",
-            Self::PaneInputSet => "pane.input.set",
-            Self::PaneLinkActivate => "pane.link.activate",
-            Self::PaneLinkResolve => "pane.link.resolve",
-            Self::PaneRename => "pane.rename",
-            Self::PaneResize => "pane.resize",
-            Self::PaneScroll => "pane.scroll",
-            Self::PaneSelectionRead => "pane.selection.read",
-            Self::PaneSplit => "pane.split",
-            Self::PaneSwap => "pane.swap",
-            Self::PaneZoom => "pane.zoom",
-            Self::ProductAnnouncementDismiss => "product_announcement.dismiss",
-            Self::ReleaseNotesDismiss => "release_notes.dismiss",
-            Self::ServerReloadConfig => "server.reload_config",
-            Self::TabClose => "tab.close",
-            Self::TabCreate => "tab.create",
-            Self::TabFocus => "tab.focus",
-            Self::TabMove => "tab.move",
-            Self::TabRename => "tab.rename",
-            Self::WorkspaceClose => "workspace.close",
-            Self::WorkspaceCreate => "workspace.create",
-            Self::WorkspaceFocus => "workspace.focus",
-            Self::WorkspaceMoveBlock => "workspace.move_block",
-            Self::WorkspaceRename => "workspace.rename",
-            Self::WorktreeCreate => "worktree.create",
-            Self::WorktreeList => "worktree.list",
-            Self::WorktreeOpen => "worktree.open",
-            Self::WorktreeRemove => "worktree.remove",
-        }
-    }
-
     /// Whether a peer's advertised method list contains this method. The list
     /// is remote data, so it is compared as text rather than parsed.
     pub fn advertised_in(self, methods: &[String]) -> bool {

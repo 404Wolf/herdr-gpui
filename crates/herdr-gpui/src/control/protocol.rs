@@ -1,10 +1,29 @@
 //! The control socket's messages: one JSON request line, one JSON response
-//! line, then the connection closes.
+//! line, then the connection closes. Browser requests keep their original
+//! flat form; every other family sends `{"method", "caller", "op"}` with a
+//! family-specific `op`, and is answered with a family-specific `reply`.
+pub(crate) mod app;
+pub(crate) mod events;
+pub(crate) mod hosts;
+pub(crate) mod settings;
+pub(crate) mod tabs;
+pub(crate) mod work;
+
+use crate::cli::control::Placement;
 use serde::{Deserialize, Serialize};
+
+/// Raised whenever a request or reply changes shape, so `status` can tell
+/// an outdated app from a refused request. 3: `browser.open` placement.
+/// 4: `link`.
+pub(crate) const PROTOCOL_VERSION: u32 = 4;
+
+/// Older apps and clients know only tabs, so a tab is left off the wire.
+fn is_tab(placement: &Placement) -> bool {
+    *placement == Placement::Tab
+}
 
 /// Bounds a request and a response alike. A response can carry a batch of
 /// notes, each with a bounded snippet of the page.
-#[cfg(unix)]
 pub(crate) const MAX_MESSAGE: usize = 256 * 1024;
 /// The longest `browser feedback --wait`, in seconds.
 pub(crate) const MAX_WAIT_SECONDS: u64 = 600;
@@ -20,6 +39,60 @@ pub(crate) enum Request {
     Feedback(FeedbackRequest),
     #[serde(rename = "notes.send")]
     Notes(NotesRequest),
+    #[serde(rename = "status")]
+    Status(Caller),
+    #[serde(rename = "app")]
+    App(Call<app::AppOp>),
+    #[serde(rename = "window")]
+    Window(Call<app::WindowOp>),
+    #[serde(rename = "ui")]
+    Ui(Call<app::UiOp>),
+    #[serde(rename = "command")]
+    Command(Call<app::CommandOp>),
+    #[serde(rename = "tab")]
+    Tab(Call<tabs::TabOp>),
+    #[serde(rename = "work")]
+    Work(Call<work::WorkOp>),
+    #[serde(rename = "host")]
+    Host(Call<hosts::HostOp>),
+    #[serde(rename = "settings")]
+    Settings(Call<settings::SettingsOp>),
+    #[serde(rename = "events")]
+    Events(Call<events::EventsOp>),
+    #[serde(rename = "link")]
+    Link(Call<LinkOp>),
+}
+
+/// A `herdr-gpui://` link the shell started a second copy of the app with.
+/// The app parses it again: any local process can send one.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct LinkOp {
+    pub url: String,
+}
+
+/// A request of a family other than the browser's: who asks, and what.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Call<T> {
+    pub caller: Caller,
+    pub op: T,
+}
+
+impl Request {
+    /// How long the app may take to answer, beyond the usual bound: some
+    /// requests wait for the user, a page, or an event on purpose.
+    pub(crate) fn wait_seconds(&self) -> u64 {
+        let wait = match self {
+            Self::Feedback(request) => request.wait_seconds,
+            Self::Events(call) => call.op.wait_seconds(),
+            Self::Tab(call) => call.op.wait_seconds(),
+            Self::Host(call) => call.op.wait_seconds(),
+            Self::Settings(call) => call.op.wait_seconds(),
+            _ => 0,
+        };
+        wait.min(MAX_WAIT_SECONDS)
+    }
 }
 
 /// What a tab shows: a web address, or a local file by absolute path, which
@@ -47,6 +120,9 @@ pub(crate) struct Caller {
     /// sessions' identical workspace IDs apart.
     #[serde(default)]
     pub daemon_socket: Option<String>,
+    /// The window to act in, by the ID `window list` reports.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,6 +132,8 @@ pub(crate) struct BrowserOpen {
     pub caller: Caller,
     /// Whether the window switches to the tab.
     pub focus: bool,
+    #[serde(default, skip_serializing_if = "is_tab")]
+    pub placement: Placement,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -110,14 +188,24 @@ pub enum ErrorCode {
     Busy,
     Timeout,
     Unsupported,
+    /// The window, tab, host, checkpoint, or other thing named is not there.
+    NotFound,
+    /// The app tried and the operation failed, for example a Git error.
+    Failed,
+    /// A dialog or menu holds the window, so it takes no commands now.
+    WindowBusy,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub(crate) enum Response {
     Opened {
         opened_in: OpenedIn,
         workspace_id: Option<String>,
+        /// Where the page went: beside the terminal only when asked and
+        /// the window could split.
+        #[serde(default, skip_serializing_if = "is_tab")]
+        placement: Placement,
     },
     Reloaded {
         tabs: usize,
@@ -129,17 +217,45 @@ pub(crate) enum Response {
     NotesSent {
         to: NotesTo,
     },
+    Status(app::Status),
+    /// Done; the message says what happened, for a person.
+    Done {
+        message: String,
+    },
+    App {
+        reply: app::Reply,
+    },
+    Tab {
+        reply: tabs::Reply,
+    },
+    Work {
+        reply: work::Reply,
+    },
+    Host {
+        reply: hosts::Reply,
+    },
+    Settings {
+        reply: settings::Reply,
+    },
+    Events {
+        reply: events::Reply,
+    },
     Error {
         code: ErrorCode,
         message: String,
     },
 }
 
-#[cfg(any(unix, test))]
 impl Response {
     pub(crate) fn error(code: ErrorCode, message: impl Into<String>) -> Self {
         Self::Error {
             code,
+            message: message.into(),
+        }
+    }
+
+    pub(crate) fn done(message: impl Into<String>) -> Self {
+        Self::Done {
             message: message.into(),
         }
     }
@@ -158,8 +274,10 @@ mod tests {
                 pane_id: Some("w_1:p1".into()),
                 workspace_id: Some("w_1".into()),
                 daemon_socket: None,
+                window: None,
             },
             focus: true,
+            placement: Placement::Tab,
         });
         let text = serde_json::to_string(&request).unwrap();
         assert_eq!(
@@ -167,6 +285,17 @@ mod tests {
             r#"{"method":"browser.open","page":{"url":"http://localhost:3000/"},"caller":{"pane_id":"w_1:p1","workspace_id":"w_1","daemon_socket":null},"focus":true}"#
         );
         assert_eq!(serde_json::from_str::<Request>(&text).unwrap(), request);
+        let beside: Request = serde_json::from_str(
+            r#"{"method":"browser.open","page":{"file":"/srv/a.html"},"caller":{},"focus":true,"placement":"beside"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            beside,
+            Request::Open(BrowserOpen {
+                placement: Placement::Beside,
+                ..
+            })
+        ));
         let minimal: Request = serde_json::from_str(
             r#"{"method":"browser.open","page":{"file":"/srv/a.html"},"caller":{},"focus":false}"#,
         )
@@ -222,6 +351,7 @@ mod tests {
             r#"{"method":"browser.eval","page":{"url":"https://a.test"},"caller":{},"focus":true}"#,
             r#"{"method":"browser.open","page":{"url":"https://a.test"},"caller":{},"focus":true,"extra":1}"#,
             r#"{"method":"browser.open","page":{"script":"x"},"caller":{},"focus":true}"#,
+            r#"{"method":"browser.open","page":{"url":"https://a.test"},"caller":{},"focus":true,"placement":"popup"}"#,
             r#"{"method":"browser.open","page":{"url":"https://a.test"},"caller":{"shell":"x"},"focus":true}"#,
             r#"{"method":"browser.open","focus":true}"#,
             r#"{"method":"browser.feedback","wait_seconds":1}"#,
@@ -242,6 +372,12 @@ mod tests {
             Response::Opened {
                 opened_in: OpenedIn::Tab,
                 workspace_id: Some("w_1".into()),
+                placement: Placement::Tab,
+            },
+            Response::Opened {
+                opened_in: OpenedIn::Tab,
+                workspace_id: Some("w_1".into()),
+                placement: Placement::Beside,
             },
             Response::error(ErrorCode::WorkspaceNotFound, "No window shows w_9"),
             Response::Reloaded { tabs: 2 },

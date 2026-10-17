@@ -1,7 +1,10 @@
-use super::{ACTIONS, Action, HostMenu};
+use super::{Action, HostMenu, SSH_ACTIONS, Saved};
 use crate::{config::KeybindingSource, menu::Page, sidebar::layout_tests::fixture_window};
 use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, point, px, size};
 
+#[cfg(feature = "cloud")]
+mod cloud;
+mod device_theme;
 mod forwards;
 mod menu_width;
 
@@ -47,16 +50,16 @@ fn right_clicking_a_saved_host_offers_removal_but_local_has_no_menu(cx: &mut Tes
     let remote = cx.debug_bounds(HOST_HEADER).unwrap();
     cx.simulate_mouse_down(remote.center(), MouseButton::Right, Modifiers::default());
     cx.simulate_mouse_up(remote.center(), MouseButton::Right, Modifiers::default());
-    // Saved SSH devices are unavailable on Windows, so there is nothing to remove.
-    if cfg!(windows) {
-        assert!(view.read_with(cx, |view, _| view.menu.page.is_none()));
-        return;
-    }
     view.read_with(cx, |view, _| {
         assert_eq!(view.menu.page, Some(Page::Host));
         assert_eq!(host(view).target, "penso@box");
         // `herdr machine remove` takes the bare catalog ID.
-        assert_eq!(host(view).profile, "0123456789abcdef0123456789abcdef");
+        assert_eq!(
+            host(view).saved,
+            Saved::Ssh {
+                profile: "0123456789abcdef0123456789abcdef".into()
+            }
+        );
     });
     cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
     let header = cx.debug_bounds("host-menu-header").unwrap();
@@ -77,9 +80,6 @@ fn right_clicking_a_saved_host_offers_removal_but_local_has_no_menu(cx: &mut Tes
 /// this only checks what the menu shows.
 #[gpui::test]
 fn the_menu_shows_the_server_keybindings_choice(cx: &mut TestAppContext) {
-    if cfg!(windows) {
-        return;
-    }
     let (view, cx) = cx.add_window_view(|window, cx| {
         let mut view = fixture_window(window, cx);
         add_host(&mut view);
@@ -97,12 +97,13 @@ fn the_menu_shows_the_server_keybindings_choice(cx: &mut TestAppContext) {
         )
     };
     assert_eq!(row(cx), (true, false));
-    assert_eq!(ACTIONS[1].0, Action::ServerKeybindings);
+    assert_eq!(SSH_ACTIONS[1].0, Action::ServerKeybindings);
     view.update(cx, |view, cx| {
         view.config.devices.insert(
             "0123456789abcdef0123456789abcdef".into(),
             crate::config::DeviceSettings {
                 keybindings: KeybindingSource::Server,
+                ..Default::default()
             },
         );
         view.selected_endpoint = 1;
@@ -139,11 +140,6 @@ fn the_menu_names_the_saved_session_after_a_session_pick(cx: &mut TestAppContext
             session: "work".into(),
         };
         view.open_host_menu(HOST, point(px(0.), px(0.)), window, cx);
-        // Saved SSH devices are unavailable on Windows, so there is no menu.
-        if cfg!(windows) {
-            assert!(view.menu.host.is_none());
-            return;
-        }
         assert_eq!(host(view).target, "penso@box");
         assert_eq!(host(view).session, "default");
     });
@@ -159,16 +155,10 @@ fn removal_offers_the_github_sign_in_and_reports_each_outcome(cx: &mut TestAppCo
                 .github_hosts
                 .insert(HOST.into(), crate::github::Auth::connected_fixture());
             view.open_host_menu(HOST, point(px(10.), px(10.)), window, cx);
-            if !cfg!(windows) {
-                view.activate_host_menu(Action::Remove, window, cx);
-            }
+            view.activate_host_menu(Action::Remove, window, cx);
         });
         crate::sidebar::layout_tests::full_draw(window, cx).clear(cx);
     });
-    if cfg!(windows) {
-        assert!(view.read_with(cx, |view, _| view.menu.page.is_none()));
-        return;
-    }
     assert!(cx.debug_bounds("remove-device-github").is_some());
     cx.simulate_keystrokes("space");
     assert!(view.read_with(cx, |view, _| !host(view).forget_github));
@@ -208,7 +198,7 @@ fn a_removal_pulses_the_host_header_until_the_device_leaves(cx: &mut TestAppCont
             assert!(view.menu.removing_devices.is_empty());
             assert_eq!(
                 view.local_error.as_deref(),
-                Some("Remove m5max-ms: This host is already being added.")
+                Some(format!("Remove m5max-ms: {}", crate::Error::DeviceAdding).as_str())
             );
             assert!(view.menu.github_hosts.contains_key(HOST));
 
@@ -252,10 +242,6 @@ fn renaming_edits_the_name_in_place_and_keeps_typing_in_the_field(cx: &mut TestA
             view.open_host_menu(HOST, point(px(10.), px(10.)), window, cx)
         });
     });
-    if cfg!(windows) {
-        assert!(view.read_with(cx, |view, _| view.menu.page.is_none()));
-        return;
-    }
     cx.simulate_keystrokes("down enter");
     let input = view.read_with(cx, |view, _| {
         assert_eq!(view.menu.page, Some(Page::RenameDevice));

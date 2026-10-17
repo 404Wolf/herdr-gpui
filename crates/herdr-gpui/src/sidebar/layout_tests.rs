@@ -19,13 +19,19 @@ use herdr_client::{ConnectOptions, ConnectTarget};
 use std::sync::Arc;
 
 #[cfg(test)]
+mod agent_menu;
+#[cfg(test)]
 mod agent_rows;
+#[cfg(test)]
+mod agents_header;
 #[cfg(all(test, feature = "coder"))]
 mod coder_dialog;
 #[cfg(test)]
 mod configured_rows;
 #[cfg(test)]
 mod device_footer;
+#[cfg(test)]
+mod device_footer_setting;
 #[cfg(test)]
 mod devices_layout;
 #[cfg(test)]
@@ -35,19 +41,27 @@ mod host_groups;
 #[cfg(test)]
 mod host_nesting;
 #[cfg(test)]
+mod host_origin;
+#[cfg(test)]
 mod host_wash;
 #[cfg(test)]
 mod layouts;
 #[cfg(test)]
 mod listening_ports;
 #[cfg(test)]
+mod nested_agents;
+#[cfg(test)]
 mod palette;
+#[cfg(test)]
+mod palette_header;
 #[cfg(test)]
 mod picker_scroll;
 #[cfg(test)]
-mod preferences_panel;
+mod probe_scale;
 #[cfg(test)]
 mod probes;
+#[cfg(test)]
+mod repository_icons;
 #[cfg(test)]
 mod row_drag;
 #[cfg(test)]
@@ -63,6 +77,8 @@ mod split_pane;
 #[cfg(test)]
 mod status_bar;
 #[cfg(test)]
+mod status_icons;
+#[cfg(test)]
 mod sticky_hosts;
 #[cfg(test)]
 mod superset_badges;
@@ -77,7 +93,11 @@ mod update_notes_scrollbar;
 #[cfg(test)]
 mod update_panel;
 #[cfg(test)]
+mod workspace_click_hover;
+#[cfg(test)]
 mod workspace_menu;
+#[cfg(test)]
+mod worktree_note_trunk;
 #[cfg(test)]
 mod worktree_notes;
 #[cfg(test)]
@@ -290,7 +310,7 @@ impl ProbeText {
             && bounds.bottom() <= mask.bottom()
             // The expected column assumes the window leaves the default
             // sidebar width alone. A frame painted mid-resize, such as the
-            // return from the 320px Preferences check, can narrow it.
+            // return from a 320px check, can narrow it.
             && super::sidebar_width(None, f32::from(window.viewport_size().width))
                 == super::SIDEBAR_WIDTH
         {
@@ -299,15 +319,26 @@ impl ProbeText {
                 .flatten()
                 .map(|view| view.read(cx).config.layout.mode)
                 .unwrap_or_default();
-            probe.verify_child(&self.0, mode)?;
+            probe.verify_child(&self.0, mode, window.scale_factor())?;
             eprintln!("SIDEBAR child verified: {}", probe.glyph_text);
         }
         Ok(probe)
     }
 }
 
+/// Whether a painted edge or width is within one device pixel of its logical
+/// value. Layout snaps edges to device pixels (`scale` per logical pixel), so
+/// at a fractional scale such as Windows' default 150% a column may land a
+/// fraction of a logical pixel from where it was laid out.
+pub(crate) fn within_device_pixel(actual: Pixels, expected: Pixels, scale: f32) -> bool {
+    (actual - expected).abs() < px(1. / scale.max(1.))
+}
+
 impl PaintedText {
-    fn verify_child(&self, input: &str, mode: crate::config::LayoutMode) -> Result<()> {
+    /// `scale` is the window's device pixels per logical pixel; see
+    /// [`within_device_pixel`].
+    fn verify_child(&self, input: &str, mode: crate::config::LayoutMode, scale: f32) -> Result<()> {
+        let near = |actual, expected| within_device_pixel(actual, expected, scale);
         let look = super::layout::for_mode(mode);
         let layout = look.density;
         // Menu labels share text keys, and retained paint probes can still
@@ -320,12 +351,12 @@ impl PaintedText {
             - layout.child_indent()
             - super::ARROW_RESERVE);
         ensure!(
-            self.bounds.left() == left,
+            near(self.bounds.left(), left),
             "child label left: actual {:?}, expected {left:?}",
             self.bounds.left()
         );
         ensure!(
-            self.bounds.size.width == width,
+            near(self.bounds.size.width, width),
             "child label width: actual {:?}, expected {width:?}",
             self.bounds.size.width
         );
@@ -355,8 +386,12 @@ impl PaintedText {
                 "long child label did not truncate correctly: {:?}",
                 self.glyph_text
             );
+            // GPUI keeps the longest prefix that fits beside the ellipsis
+            // and drops the glyph that would not, so a correct truncation
+            // can fall one glyph plus the ellipsis short. Segoe UI on Windows
+            // leaves 13px where macOS's system font left under 12.
             ensure!(
-                self.width > self.bounds.size.width - px(12.),
+                self.width > self.bounds.size.width - px(16.),
                 "child glyph width {:?} did not fill label width {:?}",
                 self.width,
                 self.bounds.size.width
@@ -456,12 +491,15 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         app_update_notes: Default::default(),
         app_update_notes_scroll: gpui::ScrollHandle::new(),
         removal: None,
+        merged_cleanup: Default::default(),
         worktree_script: None,
+        wsl_paste: None,
         editor_open: None,
         editor_panes: Vec::new(),
         teleport: None,
         teleport_marks: crate::teleport::Marks::detached(),
         teleport_follow: None,
+        pane_carry: None,
         dispatch_job: None,
         dispatch_setups: Default::default(),
         fan_out: None,
@@ -486,7 +524,6 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         theme: Default::default(),
         theme_light: crate::app::light_appearance(cx),
         config_load: None,
-        font_size_saves: Default::default(),
         config_watch: None,
         config_load_revision: 0,
         git: Default::default(),
@@ -506,16 +543,21 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         pr_actions: Default::default(),
         usage: Default::default(),
         system_load: Default::default(),
+        network_quality_seen: 0,
         devices_overview: Default::default(),
         checkpoints: Default::default(),
         port_forwards: Default::default(),
+        remote_browser: Vec::new(),
         #[cfg(feature = "cloud")]
         cloud_jobs: Default::default(),
+        #[cfg(feature = "cloud")]
+        cloud_setup: None,
         listening_ports: Default::default(),
         tunnels: Default::default(),
         sidebar_visible: true,
         sidebar_start_pending: true,
         status_bar_visible: true,
+        zen: Default::default(),
         device_filter: None,
         endpoints: vec![crate::endpoint::Endpoint::new(
             crate::endpoint::LOCAL.into(),
@@ -532,6 +574,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         sessions_anchor: Default::default(),
         activation_deadline: None,
         pending_navigation: None,
+        arrival: None,
         strip_navigation_fits: true,
         pending_toast: None,
         toasts_hidden: false,
@@ -546,6 +589,8 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         options: ConnectOptions::default(),
         last_queued_options: None,
         pending_resize: None,
+        last_input: None,
+        last_pointer: None,
         active: false,
         sent_focus: None,
         bounds: Bounds::default(),
@@ -561,6 +606,9 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         pending_images: Vec::new(),
         pending_input: Default::default(),
         held_keys: Default::default(),
+        // No AppKit event to read; a test that needs one supplies its own.
+        key_press: || None,
+        key_layout: |_| None,
         file_transfer: None,
         presentation: Default::default(),
         wake: crate::endpoint::WakeClock::new(
@@ -569,6 +617,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         ),
         painter: Default::default(),
         backdrop: Default::default(),
+        device_themes: Default::default(),
         regions: Vec::new(),
         marked: String::new(),
         marked_selection: None,
@@ -585,6 +634,8 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         sidebar_width: None,
         sidebar_drag: None,
         workspace_drag: None,
+        device_drag: None,
+        device_order: Vec::new(),
         tab_drag: None,
         sidebar_split: None,
         sidebar_split_modified: false,
@@ -598,9 +649,12 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         sidebar_scroll: Default::default(),
         sidebar_revealed: Default::default(),
         sidebar_pin_reveal: Default::default(),
+        sidebar_nested_reveal: Default::default(),
+        sidebar_folded: Default::default(),
         sidebar_search: crate::sidebar::SidebarSearch::new(cx),
         _poll: Task::ready(()),
         _activation: cx.observe_window_activation(window, |_, _, _| {}),
+        _window_closed: HerdrWindow::give_back_torn_tabs(cx),
         _appearance: cx.observe_window_appearance(window, |this, _, cx| {
             this.apply_shared_theme(cx);
             cx.notify();
@@ -610,7 +664,12 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
             cx.new(|_| {
                 crate::sidebar::SidebarView::new(
                     weak,
-                    super::agents::Indicators::new(None, false, &crate::config::Theme::default()),
+                    super::agents::Indicators::new(
+                        None,
+                        None,
+                        false,
+                        &crate::config::Theme::default(),
+                    ),
                 )
             })
         },

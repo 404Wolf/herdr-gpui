@@ -9,8 +9,10 @@ use crate::dialog_input::DialogInput;
 use gpui::{App, Entity, FocusHandle, Pixels, Point, ScrollHandle, Subscription};
 use herdr_client::protocol::ClientShellSnapshot;
 
-/// What an open menu covers, as its last frame laid it out: the window's
-/// native pages above GPUI would hide it, so the ones it covers step aside.
+/// What an open menu covers, as its last frame laid it out. Windows pages
+/// draw above GPUI and would hide it, so the ones it covers hide instead.
+/// Tests and native checks read it too, to find the menu in the window.
+#[cfg(any(windows, test, feature = "integration-test"))]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) enum Cover {
     /// Not laid out yet.
@@ -22,7 +24,7 @@ pub(crate) enum Cover {
     Panel(gpui::Bounds<Pixels>),
 }
 
-#[cfg(any(target_os = "macos", windows, test))]
+#[cfg(any(windows, test))]
 impl Cover {
     /// Whether a page drawn at `page` would hide this menu. Before the menu
     /// is laid out nothing is, so pages keep showing for that one frame.
@@ -36,7 +38,7 @@ impl Cover {
 
     /// This cover if it was measured for `open`, the page open now; one
     /// measured for another page is stale until this one is laid out.
-    #[cfg(any(target_os = "macos", windows))]
+    #[cfg(windows)]
     pub(crate) fn settled(self, measured_for: Option<Page>, open: Option<Page>) -> Self {
         if measured_for == open {
             self
@@ -50,13 +52,22 @@ pub(crate) struct MenuState {
     pub page: Option<Page>,
     pub(crate) application: Option<crate::menus::in_window::OpenMenu>,
     pub(crate) application_bar: crate::menus::in_window::Geometry,
-    /// Written by the menu's layout, read when presenting pages.
+    /// Written by the menu's layout, read when presenting Windows pages.
+    #[cfg(any(windows, test, feature = "integration-test"))]
     pub(crate) cover: std::rc::Rc<std::cell::Cell<Cover>>,
     pub(super) device_setup: Option<super::devices::Setup>,
+    /// The provider whose Settings tab Add Device last asked for. Unit tests
+    /// record it rather than open a Settings window, which reads the disk.
+    #[cfg(all(test, feature = "cloud"))]
+    pub(super) settings_opened: Option<crate::cloud::CloudProvider>,
     pub(super) wsl_setup: Option<super::devices::WslSetup>,
     /// The saved distribution the removal confirmation names.
     pub(super) wsl_remove: Option<String>,
     pub(super) session_edit: Option<super::sessions::Edit>,
+    /// The folder the open-checkout question is about.
+    pub(super) open_checkout: Option<std::path::PathBuf>,
+    /// The address the open-link question is about.
+    pub(super) open_link: Option<crate::terminal::ExternalUrl>,
     #[cfg(feature = "coder")]
     pub(super) coder: Option<super::devices::coder::Wizard>,
     pub(super) devices_scroll: ScrollHandle,
@@ -92,11 +103,12 @@ pub(crate) struct MenuState {
     pub(crate) keybinds_search: Option<Entity<crate::search_input::SearchInput>>,
     pub(super) shortcut_editor: Option<super::shortcut_editor::Editor>,
     pub(super) _keybinds_subscription: Option<Subscription>,
-    pub(crate) preferences_scroll: ScrollHandle,
-    pub(crate) font_size_editor: Option<crate::preferences::FontSizeEditor>,
     pub(crate) themes: Option<crate::theme_picker::ThemePicker>,
-    pub(crate) fonts: Option<crate::font_picker::FontPicker>,
     pub(crate) palette: Option<crate::palette::Palette>,
+    /// Whether Go To shows its preview; Alt-P toggles it for the session.
+    pub(crate) palette_preview: bool,
+    /// What the last closed palette leaves for Resume Palette.
+    pub(crate) palette_resume: Option<crate::palette::Resume>,
     pub(crate) code_search: Option<crate::code_search::CodeSearch>,
     pub(crate) close: Option<crate::close_modal::CloseConfirmation>,
     pub(crate) tab: Option<crate::tab_menu::TabMenu>,
@@ -117,6 +129,15 @@ pub(crate) struct MenuState {
     /// Saved SSH devices' own accounts, keyed by endpoint ID. A device without
     /// one signed in looks up pull requests with `github`.
     pub(crate) github_hosts: std::collections::HashMap<String, crate::github::Auth>,
+    /// One sign-in per `[github] accounts` entry, in config order.
+    pub(crate) github_accounts: Vec<github::AdditionalAccount>,
+    /// The additional account the GitHub page shows, by ID; `None` shows
+    /// the device's own account.
+    pub(super) github_account: Option<String>,
+    /// An account whose config entry is being written, shown once it loads.
+    pub(super) github_adding: Option<String>,
+    /// The pasted-token field, while the GitHub page shows it.
+    pub(super) github_token: Option<Entity<crate::search_input::SearchInput>>,
     /// Saved devices whose removal is running, by endpoint ID. Kept after
     /// success until the catalog drops the device, so its header pulses
     /// until it disappears; the confirmation closes as soon as it starts.
@@ -135,6 +156,8 @@ pub(super) struct Deletion {
     pub(super) force: bool,
     /// Whether the checkout has an archive script to run first.
     pub(super) archive: crate::worktree_scripts::ArchiveCheck,
+    /// The merged pull request that opened this dialog without being asked.
+    pub(super) merged: Option<u64>,
 }
 
 impl Deletion {
@@ -145,6 +168,7 @@ impl Deletion {
             root: None,
             force,
             archive: crate::worktree_scripts::ArchiveCheck::Unread,
+            merged: None,
         }
     }
 
@@ -172,6 +196,12 @@ pub(crate) struct Removal {
 }
 
 impl Removal {
+    /// Whether the daemon has yet to answer, rather than a refusal kept for
+    /// its force confirmation.
+    pub(crate) fn waiting(&self) -> bool {
+        self.pending.is_some()
+    }
+
     pub(crate) fn pending_for(&self, endpoint: (u64, u64), boot_id: &str, workspace: &str) -> bool {
         self.pending.is_some()
             && self.endpoint == endpoint
@@ -197,6 +227,15 @@ impl Submission {
 }
 
 impl MenuState {
+    /// Whether a menu or dialog is open on `workspace`.
+    pub(crate) fn open_on(&self, workspace: &str) -> bool {
+        self.page.is_some()
+            && self
+                .target
+                .as_ref()
+                .is_some_and(|target| target.id == workspace)
+    }
+
     /// The repository the open dialog's host picker ranks hosts for.
     pub(crate) fn dispatch_repo(&self) -> Option<String> {
         self.target
@@ -266,11 +305,16 @@ impl MenuState {
             page: None,
             application: None,
             application_bar: Default::default(),
+            #[cfg(any(windows, test, feature = "integration-test"))]
             cover: Default::default(),
             device_setup: None,
+            #[cfg(all(test, feature = "cloud"))]
+            settings_opened: None,
             wsl_setup: None,
             wsl_remove: None,
             session_edit: None,
+            open_checkout: None,
+            open_link: None,
             #[cfg(feature = "coder")]
             coder: None,
             devices_scroll: ScrollHandle::new(),
@@ -297,19 +341,27 @@ impl MenuState {
             keybinds_search: None,
             shortcut_editor: None,
             _keybinds_subscription: None,
-            preferences_scroll: ScrollHandle::new(),
-            font_size_editor: None,
             themes: None,
-            fonts: None,
             palette: None,
+            palette_resume: None,
+            palette_preview: true,
             code_search: None,
             close: None,
             pr: Default::default(),
-            pr_cache: Default::default(),
+            // Every window reads and refreshes the same answers.
+            pr_cache: cx
+                .try_global::<crate::pull_request::Shared>()
+                .map_or_else(Default::default, |shared| {
+                    crate::pull_request::Cache::shared(shared.0.clone())
+                }),
             pr_cache_connection: None,
             pr_snapshot: None,
             github: Default::default(),
             github_hosts: Default::default(),
+            github_accounts: Vec::new(),
+            github_account: None,
+            github_adding: None,
+            github_token: None,
             removing_devices: Default::default(),
             github_selected: None,
             github_scroll: ScrollHandle::new(),
@@ -326,11 +378,14 @@ impl MenuState {
 
     pub fn reset(&mut self) {
         self.application = None;
+        #[cfg(any(windows, test, feature = "integration-test"))]
         self.cover.set(Cover::Unknown);
         self.device_setup = None;
         self.wsl_setup = None;
         self.wsl_remove = None;
         self.session_edit = None;
+        self.open_checkout = None;
+        self.open_link = None;
         #[cfg(feature = "coder")]
         {
             self.coder = None;
@@ -348,11 +403,19 @@ impl MenuState {
         if self.github.busy() {
             self.github.cancel();
         }
+        for account in &mut self.github_accounts {
+            if account.auth.busy() {
+                account.auth.cancel();
+            }
+        }
+        self.github_account = None;
+        self.github_adding = None;
+        self.github_token = None;
         self.page = None;
-        self.palette = None;
+        if let Some(palette) = self.palette.take() {
+            self.palette_resume = Some(palette.resume());
+        }
         self.code_search = None;
-        self.fonts = None;
-        self.font_size_editor = None;
         self.shortcut_editor = None;
         self.selected = None;
         self.workspace_selected = None;

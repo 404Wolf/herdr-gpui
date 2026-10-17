@@ -118,6 +118,11 @@ pub(crate) struct Gateway {
 }
 
 impl Gateway {
+    /// Keep the private SSH config alive until the operation finishes.
+    pub(crate) fn with_command<T>(self, run: impl FnOnce(Command) -> T) -> T {
+        run(self.command)
+    }
+
     pub(crate) fn new(access: &SshAccess, known_hosts: &Path) -> Result<Self> {
         let endpoint = endpoint(
             access.ssh_command.expose_secret(),
@@ -132,7 +137,7 @@ impl Gateway {
             .write_all(config_text(&endpoint, &access.token, known_hosts)?.as_bytes())
             .and_then(|()| config.flush())
             .map_err(Error::GatewayFile)?;
-        let mut command = Command::new("ssh");
+        let mut command = herdr_client::new_command("ssh");
         command
             .arg("-F")
             .arg(config.path())
@@ -147,7 +152,7 @@ impl Gateway {
 /// Fail before anything is created when `ssh` cannot run: a sandbox made for
 /// a device that can never connect keeps running, and may be billed.
 pub(crate) fn check_ssh() -> Result<()> {
-    Command::new("ssh")
+    herdr_client::new_command("ssh")
         .arg("-V")
         .stdin(Stdio::null())
         .stdout(Stdio::null())

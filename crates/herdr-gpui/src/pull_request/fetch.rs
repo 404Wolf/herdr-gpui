@@ -2,7 +2,7 @@
 //! checkout, and the bounded subprocess policy they all run under. Output is
 //! size-capped and every call has a deadline, so no step can hang the worker.
 
-use super::{Input, Origin, Result, parse_graphql, parse_numbered};
+use super::{Input, Origin, Result};
 use crate::Error;
 #[cfg(unix)]
 use std::os::{fd::OwnedFd, unix::net::UnixStream};
@@ -33,20 +33,10 @@ fragment PullRequestFields on PullRequest {
 }"#
     };
 }
-const QUERY: &str = concat!(
-    r#"query($owner: String!, $repo: String!, $branch: String!, $limit: Int!) {
-  repository(owner: $owner, name: $repo) {
-    mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed
-    pullRequests(first: $limit, headRefName: $branch, orderBy: {field: UPDATED_AT, direction: DESC}) {
-      pageInfo { hasNextPage }
-      nodes { ...PullRequestFields }
-    }
-  }
-}"#,
-    fields!()
-);
+/// The fields a lookup reads of each pull request, for batched queries.
+pub(super) const FIELDS: &str = fields!();
 /// A fork's pull request, by the number its local `pr/<number>` branch names.
-const NUMBER_QUERY: &str = concat!(
+pub(super) const NUMBER_QUERY: &str = concat!(
     r#"query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
     mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed
@@ -90,9 +80,25 @@ impl Origins {
             .ok_or(Error::PrTimeout)?;
         // The daemon's branch is trusted as reported: this client cannot run
         // local Git against the host's checkout to re-verify it.
-        let remote = herdr_client::remote_origin_url(target, key, timeout, cancelled)?
-            .ok_or(Error::PrOrigin)?;
-        let repository = crate::avatars::github_repo(&remote).ok_or(Error::PrOrigin)?;
+        let repository = if let Ok(Some(upstream)) = herdr_client::remote_config_value(
+            target,
+            key,
+            "remote.upstream.url",
+            timeout,
+            cancelled,
+        ) && let Some(repo) = crate::avatars::github_repo(&upstream)
+        {
+            repo
+        } else {
+            // The upstream read may have used most of the budget; the
+            // fallback gets only what is left, never a fresh timeout.
+            let timeout = deadline
+                .checked_duration_since(Instant::now())
+                .ok_or(Error::PrTimeout)?;
+            let remote = herdr_client::remote_origin_url(target, key, timeout, cancelled)?
+                .ok_or(Error::PrOrigin)?;
+            crate::avatars::github_repo(&remote).ok_or(Error::PrOrigin)?
+        };
         if self.0.len() == ORIGIN_LIMIT {
             self.0.remove(0);
         }
@@ -108,87 +114,132 @@ pub(super) fn fetch(
     token: &secrecy::SecretString,
     cancelled: impl Fn() -> bool,
 ) -> Result {
-    fetch_with_backoff(
-        input,
+    let tokens = crate::github::Tokens::from(std::sync::Arc::new(token.clone()));
+    let mut batch = super::batch::fetch_batch(
+        vec![input.clone()],
         &Origin::Local,
         &mut Origins::default(),
-        token,
+        &tokens,
+        &[],
         cancelled,
-        &mut None,
-    )
+    );
+    match (batch.found.pop(), batch.failed.pop()) {
+        (Some((_, result)), _) => result,
+        (None, Some((_, error))) => Err(error),
+        (None, None) => Err(Error::PrCancelled),
+    }
 }
 
-pub(super) fn fetch_with_backoff(
+/// What one checkout's lookup asks GitHub: the branch, held to the upstream
+/// head it tracks when it has one, or a fork pull request's number.
+pub(super) enum Ask {
+    Branch { branch: String, head: Option<Head> },
+    Number(u64),
+}
+
+/// The repository a checkout's pull request is in, and what to ask for it.
+pub(super) struct Target {
+    pub owner: String,
+    pub repo: String,
+    pub ask: Ask,
+}
+
+/// Identifies a checkout's repository and branch with local Git or over SSH,
+/// by `deadline`, before any GitHub request is made for it.
+pub(super) fn target(
     input: &Input,
     origin: &Origin,
     origins: &mut Origins,
-    token: &secrecy::SecretString,
-    cancelled: impl Fn() -> bool,
-    cooldown: &mut Option<Duration>,
-) -> Result {
-    let deadline = Instant::now() + TIMEOUT;
+    deadline: Instant,
+    cancelled: &impl Fn() -> bool,
+) -> crate::Result<Target> {
     let ((owner, repo), head) = match origin {
         Origin::Local => {
-            let checkout = local_checkout(input, deadline, &cancelled)?;
-            let repository = origin_repository(&checkout, deadline, &cancelled)?;
+            let checkout = local_checkout(input, deadline, cancelled)?;
+            let base = super::remote::base_repository(&checkout, deadline, cancelled)?;
+            let repository = (base.owner, base.repo);
             let head = upstream_head(&input.branch, |key| {
                 let value = git(
                     &checkout,
                     &["config", "--default", "", "--get", key],
                     deadline,
-                    &cancelled,
+                    cancelled,
                 )?;
                 Ok((!value.is_empty()).then_some(value))
             })?;
+            let head = if head.is_none()
+                && crate::repo_items::fork_branch_number(&input.branch).is_none()
+            {
+                git(
+                    &checkout,
+                    &["config", "--default", "", "--get", "remote.origin.url"],
+                    deadline,
+                    cancelled,
+                )
+                .ok()
+                .as_deref()
+                .and_then(crate::avatars::github_repo)
+                .filter(|(origin_owner, origin_repo)| {
+                    origin_owner != &repository.0 || origin_repo != &repository.1
+                })
+                .map(|(owner, repo)| Head {
+                    owner,
+                    repo,
+                    branch: input.branch.clone(),
+                })
+            } else {
+                head
+            };
             (repository, head)
         }
         Origin::Ssh(target) => {
-            let repository =
-                origins.resolve(target, input, Instant::now(), deadline, &cancelled)?;
+            let repository = origins.resolve(target, input, Instant::now(), deadline, cancelled)?;
             let key = input.repo_key.as_deref().ok_or(Error::PrMetadata)?;
             let head = upstream_head(&input.branch, |name| {
                 let timeout = deadline
                     .checked_duration_since(Instant::now())
                     .ok_or(Error::PrTimeout)?;
                 Ok(herdr_client::remote_config_value(
-                    target, key, name, timeout, &cancelled,
+                    target, key, name, timeout, cancelled,
                 )?)
             })?;
+            let head = if head.is_none()
+                && crate::repo_items::fork_branch_number(&input.branch).is_none()
+            {
+                let timeout = deadline
+                    .checked_duration_since(Instant::now())
+                    .ok_or(Error::PrTimeout)?;
+                herdr_client::remote_origin_url(target, key, timeout, cancelled)
+                    .ok()
+                    .flatten()
+                    .as_deref()
+                    .and_then(crate::avatars::github_repo)
+                    .filter(|(origin_owner, origin_repo)| {
+                        origin_owner != &repository.0 || origin_repo != &repository.1
+                    })
+                    .map(|(owner, repo)| Head {
+                        owner,
+                        repo,
+                        branch: input.branch.clone(),
+                    })
+            } else {
+                head
+            };
             (repository, head)
         }
     };
-    let timeout = deadline
-        .checked_duration_since(Instant::now())
-        .ok_or(Error::PrTimeout)?;
     // A fork checkout has no upstream and a local name its PR never uses, so
     // it is found by number instead (see `repo_items::fork_branch`).
-    if head.is_none()
-        && let Some(number) = crate::repo_items::fork_branch_number(&input.branch)
-    {
-        let response = crate::github::graphql(
-            "pull_request",
-            token,
-            NUMBER_QUERY,
-            serde_json::json!({"owner":owner,"repo":repo,"number":number}),
-            timeout,
-            cancelled,
-            cooldown,
-        )?;
-        return parse_numbered(response, &owner, &repo, number);
-    }
-    let branch = head
-        .as_ref()
-        .map_or(input.branch.as_str(), |head| head.branch.as_str());
-    let response = crate::github::graphql(
-        "pull_request",
-        token,
-        QUERY,
-        serde_json::json!({"owner":owner,"repo":repo,"branch":branch,"limit":if head.is_some() { 100 } else { 2 }}),
-        timeout,
-        cancelled,
-        cooldown,
-    )?;
-    parse_graphql(response, &owner, &repo, branch, head.as_ref())
+    let ask = match crate::repo_items::fork_branch_number(&input.branch) {
+        Some(number) if head.is_none() => Ask::Number(number),
+        _ => Ask::Branch {
+            branch: head
+                .as_ref()
+                .map_or(input.branch.clone(), |head| head.branch.clone()),
+            head,
+        },
+    };
+    Ok(Target { owner, repo, ask })
 }
 
 /// Any pull request of `owner/repo` by its number, for views that list pull
@@ -249,13 +300,13 @@ pub(crate) fn local_repository(
     input: &Input,
     deadline: Instant,
     cancelled: &impl Fn() -> bool,
-) -> crate::Result<(String, String)> {
+) -> crate::Result<super::Base> {
     let checkout = local_checkout(input, deadline, cancelled)?;
-    origin_repository(&checkout, deadline, cancelled)
+    super::remote::base_repository(&checkout, deadline, cancelled)
 }
 
 /// The GitHub owner and repository behind a verified checkout's origin remote.
-pub(crate) fn origin_repository(
+pub(super) fn origin_repository(
     checkout: &str,
     deadline: Instant,
     cancelled: &impl Fn() -> bool,
@@ -359,7 +410,7 @@ pub(crate) fn local_checkout(
             // metadata, use Git's own worktree registry, never pane cwd or the
             // new-workspace directory; that directory is read only when the
             // daemon has no metadata at all, and is verified like this one.
-            let mut command = Command::new("git");
+            let mut command = herdr_client::new_command("git");
             command.args([
                 "-c",
                 "core.fsmonitor=false",
@@ -406,13 +457,13 @@ pub(crate) fn local_checkout(
 }
 
 /// Read-only Git output from a checkout, with the shared process policy.
-fn git(
+pub(super) fn git(
     checkout: &str,
     args: &[&str],
     deadline: Instant,
     cancelled: &impl Fn() -> bool,
 ) -> crate::Result<String> {
-    let mut command = Command::new("git");
+    let mut command = herdr_client::new_command("git");
     command
         .args(["-c", "core.fsmonitor=false", "-C", checkout])
         .args(args);

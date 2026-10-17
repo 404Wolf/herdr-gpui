@@ -1,9 +1,14 @@
-//! One window's native web views, one per browser tab it has shown. A view
-//! is a platform child view layered above the GPUI surface: one per side of a
-//! split is visible, and the window hides them while an overlay is open.
-use super::{Location, Tab, TabId, WebUrl, location::PREVIEW_SCHEME, preview::Preview};
-use gpui::{App, AppContext as _, Entity, Window};
-use gpui_wry::WebView;
+//! One window's native web views, one per browser tab it has shown. One per
+//! side of a split is visible. On macOS each lies beneath the window's own
+//! drawing; on Windows each lies above it, and the window hides the ones its
+//! overlays reach. See [`super::page`].
+use super::{
+    Location, Tab, TabId, WebUrl,
+    location::PREVIEW_SCHEME,
+    page::{Drawn, Page, PageElement},
+    preview::Preview,
+};
+use gpui::Window;
 use std::{
     collections::HashMap,
     rc::Rc,
@@ -41,13 +46,10 @@ pub(crate) enum Event<P = TabId> {
     /// none. Only macOS takes them.
     #[cfg(target_os = "macos")]
     Captured(P, u64, Option<Vec<u8>>),
-    /// A picture of the whole page, as TIFF bytes, shown in its place while
-    /// a menu covers it. Only macOS takes them.
-    #[cfg(target_os = "macos")]
-    Frozen(P, Option<Vec<u8>>),
-    /// A message the annotation picker posted. Any script in the page can
-    /// post one, so it is parsed as untrusted input.
-    Posted(P, String),
+    /// A message the annotation picker or the page bridge posted, and the
+    /// frame that posted it. Any script in any frame can post one, so it is
+    /// parsed as untrusted input.
+    Posted(P, String, super::PostedFrom),
 }
 
 /// The page a report came from. A popup's page exists before its tab does,
@@ -77,9 +79,7 @@ impl Event<Source> {
             Self::Closed(source) => Event::Closed(tab(source)?),
             #[cfg(target_os = "macos")]
             Self::Captured(source, capture, tiff) => Event::Captured(tab(source)?, capture, tiff),
-            #[cfg(target_os = "macos")]
-            Self::Frozen(source, tiff) => Event::Frozen(tab(source)?, tiff),
-            Self::Posted(source, body) => Event::Posted(tab(source)?, body),
+            Self::Posted(source, body, from) => Event::Posted(tab(source)?, body, from),
         })
     }
 }
@@ -88,8 +88,10 @@ impl Event<Source> {
 const MAX_POST_BYTES: usize = 64 * 1024;
 
 pub(crate) struct Pages {
-    pages: HashMap<TabId, Entity<WebView>>,
+    pages: HashMap<TabId, Rc<Page>>,
     shown: Vec<TabId>,
+    /// Where each page drew in the frame being drawn.
+    drawn: Drawn,
     outbox: Outbox,
     events: Receiver<Event<Source>>,
     /// The tab each adopted popup became.
@@ -98,8 +100,13 @@ pub(crate) struct Pages {
     /// Each adopted popup's UI delegate, which its view holds only weakly.
     #[cfg(target_os = "macos")]
     delegates: HashMap<TabId, objc2::rc::Retained<super::popup::Closer>>,
+    /// Where each hidden page was before it was moved out of the window.
+    #[cfg(target_os = "macos")]
+    parked: HashMap<TabId, super::parking::Parked>,
     /// Reads local pages' files; started with the first page.
     preview: Option<Rc<Preview>>,
+    /// The theme the kit serves local pages, and the colors it came from.
+    theme: (super::kit::ThemeKey, String),
 }
 
 impl Default for Pages {
@@ -108,6 +115,7 @@ impl Default for Pages {
         Self {
             pages: HashMap::new(),
             shown: Vec::new(),
+            drawn: Drawn::default(),
             outbox: Outbox {
                 sender,
                 #[cfg(target_os = "macos")]
@@ -118,7 +126,10 @@ impl Default for Pages {
             adopted: HashMap::new(),
             #[cfg(target_os = "macos")]
             delegates: HashMap::new(),
+            #[cfg(target_os = "macos")]
+            parked: HashMap::new(),
             preview: None,
+            theme: Default::default(),
         }
     }
 }
@@ -229,19 +240,44 @@ impl Pages {
         self.pages.contains_key(&id)
     }
 
-    pub(crate) fn page(&self, id: TabId) -> Option<&Entity<WebView>> {
+    /// Tab `id`'s page, for the control requests.
+    pub(crate) fn page(&self, id: TabId) -> Option<&Rc<Page>> {
         self.pages.get(&id)
+    }
+
+    /// The element tab `id`'s page lays out in, if the window has the page.
+    pub(crate) fn element(&self, id: TabId) -> Option<PageElement> {
+        let page = self.pages.get(&id)?;
+        Some(PageElement::new(id, page.clone(), self.drawn.clone()))
+    }
+
+    /// Where each page drew in the frame being drawn, filled as they lay out.
+    pub(crate) fn drawn(&self) -> Drawn {
+        self.drawn.clone()
+    }
+
+    /// Where tab `id`'s page drew last, if it is laid out.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn drawn_at(&self, id: TabId) -> Option<gpui::Bounds<gpui::Pixels>> {
+        self.drawn.borrow().get(&id).copied()
+    }
+
+    /// Starts the next frame's record of where pages draw. The window calls
+    /// it as it presents the pages, before they lay out.
+    pub(crate) fn next_frame(&self) {
+        self.drawn.borrow_mut().clear();
+    }
+
+    /// Whether tab `id`'s page is on screen, not hidden.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn is_shown(&self, id: TabId) -> bool {
+        self.shown.contains(&id)
     }
 
     /// Creates the page for `tab` if this window has not shown it yet and it
     /// has an address. Creating one starts the platform's web content
     /// processes, so this runs from input and ticks, never from render.
-    pub(crate) fn ensure(
-        &mut self,
-        tab: &Tab,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> crate::Result<()> {
+    pub(crate) fn ensure(&mut self, tab: &Tab, window: &mut Window) -> crate::Result<()> {
         // A review tab is drawn by the app; only pages get a web view.
         let Some(location) = tab
             .location
@@ -257,6 +293,7 @@ impl Pages {
             Some(preview) => preview.clone(),
             None => {
                 let preview = Rc::new(Preview::start()?);
+                preview.set_theme(self.theme.1.clone());
                 self.preview = Some(preview.clone());
                 preview
             }
@@ -271,7 +308,14 @@ impl Pages {
             | Location::Orchestrator { .. }
             | Location::Devices => None,
         };
+        // Only a local page, which the agent wrote, gets `herdr.send`.
+        let bridge = if root.is_some() {
+            super::annotate::BRIDGE
+        } else {
+            ""
+        };
         let builder = with_handlers(wry::WebViewBuilder::new(), Source::Tab(id), &self.outbox)
+            .with_initialization_script(bridge)
             .with_url(location.page_url())
             .with_asynchronous_custom_protocol(
                 PREVIEW_SCHEME.into(),
@@ -280,9 +324,11 @@ impl Pages {
                 },
             )
             .with_ipc_handler(move |request| {
+                // wry names the frame that posted, not the page's main frame.
+                let from = super::PostedFrom::of(&request.uri().to_string());
                 let body = request.into_body();
                 if body.len() <= MAX_POST_BYTES {
-                    report(&posted, Event::Posted(Source::Tab(id), body));
+                    report(&posted, Event::Posted(Source::Tab(id), body, from));
                 }
             });
         // Window has an inherent `window_handle` of its own.
@@ -290,19 +336,63 @@ impl Pages {
         let view = builder.build_as_child(&handle)?;
         #[cfg(target_os = "macos")]
         super::page_keys::install();
-        let page = cx.new(|cx| {
-            let mut page = WebView::new(view, window, cx);
-            // A new page appears only when the window presents it.
-            page.hide();
-            page
-        });
-        self.pages.insert(id, page);
+        self.pages.insert(id, Rc::new(Page::new(view, window)?));
+        // A new page appears only when the window presents it.
+        self.hide(id);
         Ok(())
+    }
+
+    /// Serves `theme` to local pages from now on: a page picks it up when it
+    /// next loads. Cheap when the colors did not change.
+    pub(crate) fn set_theme(&mut self, theme: &crate::config::Theme) {
+        let key = super::kit::theme_key(theme);
+        if self.theme.0 == key && !self.theme.1.is_empty() {
+            return;
+        }
+        self.theme = (key, super::kit::theme_css(theme));
+        if let Some(preview) = &self.preview {
+            preview.set_theme(self.theme.1.clone());
+        }
+    }
+
+    /// Hides tab `id`'s page. On macOS it also leaves the window's area,
+    /// where a hidden view still takes drags; see [`super::parking`].
+    fn hide(&mut self, id: TabId) {
+        let Some(page) = self.pages.get(&id) else {
+            return;
+        };
+        page.hide();
+        // A page already hidden keeps the place it left the first time.
+        #[cfg(target_os = "macos")]
+        self.parked
+            .entry(id)
+            .or_insert_with(|| super::parking::park(page.raw()));
+    }
+
+    /// Shows tab `id`'s page, back where it was.
+    fn show(&mut self, id: TabId) {
+        let Some(page) = self.pages.get(&id) else {
+            return;
+        };
+        #[cfg(target_os = "macos")]
+        if let Some(place) = self.parked.remove(&id) {
+            super::parking::unpark(page.raw(), place);
+        }
+        page.show();
+    }
+
+    /// Refuses drops on every page, as while a menu or dialog covers the
+    /// window, or takes them again.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn refuse_drops(&self, refuse: bool) {
+        for page in self.pages.values() {
+            page.refuse_drops(refuse);
+        }
     }
 
     /// Shows the pages in `ids` and hides every other one; an empty list
     /// hides them all.
-    pub(crate) fn present(&mut self, ids: &[TabId], cx: &mut App) {
+    pub(crate) fn present(&mut self, ids: &[TabId]) {
         let ids: Vec<TabId> = ids
             .iter()
             .copied()
@@ -311,15 +401,12 @@ impl Pages {
         if self.shown == ids {
             return;
         }
-        for id in self.shown.iter().filter(|id| !ids.contains(id)) {
-            if let Some(page) = self.pages.get(id) {
-                page.update(cx, |page, _| page.hide());
-            }
+        let shown = std::mem::take(&mut self.shown);
+        for id in shown.iter().filter(|id| !ids.contains(id)) {
+            self.hide(*id);
         }
-        for id in ids.iter().filter(|id| !self.shown.contains(id)) {
-            if let Some(page) = self.pages.get(id) {
-                page.update(cx, |page, _| page.show());
-            }
+        for id in ids.iter().filter(|id| !shown.contains(id)) {
+            self.show(*id);
         }
         self.shown = ids;
     }
@@ -332,19 +419,17 @@ impl Pages {
         source: Source,
         popup: super::popup::Popup,
         window: &mut Window,
-        cx: &mut App,
-    ) {
-        let Some(mtm) = objc2::MainThreadMarker::new() else {
-            return;
-        };
-        let (view, delegate) = popup.into_parts(mtm);
+    ) -> crate::Result<()> {
+        let mtm = objc2::MainThreadMarker::new().ok_or(crate::Error::PageStack)?;
+        let (view, delegate, place) = popup.into_parts(mtm);
         // It was built hidden, and appears when the window presents it.
-        let page = cx.new(|cx| WebView::new(view, window, cx));
-        self.pages.insert(id, page);
+        self.pages.insert(id, Rc::new(Page::new(view, window)?));
         self.delegates.insert(id, delegate);
+        self.parked.insert(id, place);
         if let Source::Popup(key) = source {
             self.adopted.insert(key, id);
         }
+        Ok(())
     }
 
     pub(crate) fn close(&mut self, id: TabId) {
@@ -352,9 +437,11 @@ impl Pages {
         {
             self.adopted.retain(|_, tab| *tab != id);
             self.delegates.remove(&id);
+            self.parked.remove(&id);
         }
         self.shown.retain(|shown| *shown != id);
-        // Dropping the entity hides the view; the platform releases it with
+        self.drawn.borrow_mut().remove(&id);
+        // Dropping the page hides it; the platform releases its view with
         // the last handle.
         self.pages.remove(&id);
     }
@@ -367,34 +454,36 @@ impl Pages {
         }
     }
 
-    pub(crate) fn load(&self, id: TabId, location: &Location, cx: &mut App) {
+    pub(crate) fn load(&self, id: TabId, location: &Location) {
         let url = location.page_url();
-        if let Some(page) = self.pages.get(&id) {
-            page.update(cx, |page, _| page.load_url(&url));
+        if let Some(page) = self.pages.get(&id)
+            && let Err(error) = page.raw().load_url(&url)
+        {
+            tracing::debug!(%error, "Browser navigation failed");
         }
     }
 
     /// Runs one of the app's own scripts in the page. Never page-supplied
     /// text: data goes in as JSON.
-    pub(crate) fn script(&self, id: TabId, script: &str, cx: &App) {
+    pub(crate) fn script(&self, id: TabId, script: &str) {
         if let Some(page) = self.pages.get(&id)
-            && let Err(error) = page.read(cx).raw().evaluate_script(script)
+            && let Err(error) = page.raw().evaluate_script(script)
         {
             tracing::debug!(%error, "Browser script failed");
         }
     }
 
-    pub(crate) fn back(&self, id: TabId, cx: &App) {
-        self.script(id, "history.back()", cx);
+    pub(crate) fn back(&self, id: TabId) {
+        self.script(id, "history.back()");
     }
 
-    pub(crate) fn forward(&self, id: TabId, cx: &App) {
-        self.script(id, "history.forward()", cx);
+    pub(crate) fn forward(&self, id: TabId) {
+        self.script(id, "history.forward()");
     }
 
-    pub(crate) fn reload(&self, id: TabId, cx: &App) {
+    pub(crate) fn reload(&self, id: TabId) {
         if let Some(page) = self.pages.get(&id)
-            && let Err(error) = page.read(cx).raw().reload()
+            && let Err(error) = page.raw().reload()
         {
             tracing::debug!(%error, "Browser reload failed");
         }
@@ -403,58 +492,30 @@ impl Pages {
     /// Captures `rect` of the page, reporting it as `Event::Captured` with
     /// `capture` to match it to its note. Returns whether one was asked for:
     /// only macOS can take them.
-    pub(crate) fn capture(
-        &self,
-        id: TabId,
-        rect: super::annotate::Rect,
-        capture: u64,
-        cx: &App,
-    ) -> bool {
+    pub(crate) fn capture(&self, id: TabId, rect: super::annotate::Rect, capture: u64) -> bool {
         #[cfg(target_os = "macos")]
         if let Some(page) = self.pages.get(&id) {
             let sender = self.outbox.sender.clone();
-            super::snapshot::capture(page.read(cx).raw(), rect, move |tiff| {
+            super::snapshot::capture(page.raw(), rect, move |tiff| {
                 report(&sender, Event::Captured(Source::Tab(id), capture, tiff));
             });
             return true;
         }
-        let _ = (id, rect, capture, cx);
-        false
-    }
-
-    /// Asks for a picture of the whole page, `size` in CSS pixels, reported
-    /// as `Event::Frozen`. Returns whether one was asked for: only macOS
-    /// takes them.
-    pub(crate) fn freeze(&self, id: TabId, size: gpui::Size<gpui::Pixels>, cx: &App) -> bool {
-        #[cfg(target_os = "macos")]
-        if let Some(page) = self.pages.get(&id) {
-            let sender = self.outbox.sender.clone();
-            let rect = super::annotate::Rect {
-                x: 0.,
-                y: 0.,
-                width: f64::from(f32::from(size.width)),
-                height: f64::from(f32::from(size.height)),
-            };
-            super::snapshot::capture(page.read(cx).raw(), rect, move |tiff| {
-                report(&sender, Event::Frozen(Source::Tab(id), tiff));
-            });
-            return true;
-        }
-        let _ = (id, size, cx);
+        let _ = (id, rect, capture);
         false
     }
 
     /// Hands the keyboard back from the page to the window.
-    pub(crate) fn blur(&self, id: TabId, cx: &App) {
+    pub(crate) fn blur(&self, id: TabId) {
         if let Some(page) = self.pages.get(&id) {
-            let _ = page.read(cx).raw().focus_parent();
+            page.blur();
         }
     }
 
     /// Moves keyboard input into the shown page.
-    pub(crate) fn focus(&self, id: TabId, cx: &App) {
+    pub(crate) fn focus(&self, id: TabId) {
         if let Some(page) = self.pages.get(&id) {
-            let _ = page.read(cx).raw().focus();
+            page.focus();
         }
     }
 

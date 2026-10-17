@@ -6,6 +6,11 @@ use std::{
     time::Duration,
 };
 
+mod additional;
+#[cfg(windows)]
+mod credential_manager;
+mod github_cli;
+
 #[test]
 fn host_accounts_accept_only_profile_ids_and_use_their_own_entries() {
     let id = "0123456789abcdef0123456789abcdef";
@@ -27,7 +32,7 @@ fn host_accounts_accept_only_profile_ids_and_use_their_own_entries() {
         host.file_name().to_str().unwrap(),
         format!("github-credentials-{id}")
     );
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     {
         assert_eq!(Account::Main.keyring_account(), "github.com");
         assert_eq!(host.keyring_account(), format!("github.com/host/{id}"));
@@ -62,6 +67,8 @@ fn competing_restores_load_the_rotated_credential_inside_the_transaction() {
                             avatar: None,
                             token,
                             avatar_updates: None,
+                            source: Default::default(),
+                            organizations: None,
                         })
                     },
                     |_| {
@@ -95,6 +102,8 @@ fn competing_restores_load_the_rotated_credential_inside_the_transaction() {
                             avatar: None,
                             token,
                             avatar_updates: None,
+                            source: Default::default(),
+                            organizations: None,
                         })
                     },
                     |_| panic!("the competing restore must not reuse the old refresh token"),

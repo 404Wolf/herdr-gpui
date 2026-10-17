@@ -22,6 +22,7 @@ use crate::{
     state::{ConnectionStatus, LiveState},
     terminal::{popup_origin, viewport},
     terminal_painter::{Ground, ImageTarget, PlacedImages},
+    window::reasserts,
 };
 use gpui::{prelude::*, *};
 use herdr_client::{ConnectOptions, Method};
@@ -81,8 +82,9 @@ impl Parked {
     }
 
     /// Moves this connection toward `tab` and keeps the daemon's view of it
-    /// in step. Returns whether its state changed.
-    fn steer(&mut self, tab: &str, now: Instant) {
+    /// in step. A frame another client sized is re-claimed only while the
+    /// window had user input at `last_input` recently enough.
+    fn steer(&mut self, tab: &str, now: Instant, last_input: Option<Instant>) {
         let (Some(handle), Some(snapshot)) = (&self.connection.handle, &self.live.snapshot) else {
             return;
         };
@@ -104,7 +106,8 @@ impl Parked {
             self.asked = Some((tab.to_owned(), now));
         }
         let changed = self.last_queued_options != Some(self.options);
-        if self.last_queued_options == Some(self.options) && !self.surface_size_stale() {
+        let stale = self.surface_size_stale() && reasserts(last_input, now);
+        if self.last_queued_options == Some(self.options) && !stale {
             self.pending_resize = None;
             return;
         }
@@ -266,6 +269,7 @@ impl HerdrWindow {
             .filter(|(group, tab)| Some(*group) != primary && Some(tab) != focused.as_ref())
             .collect();
         let now = Instant::now();
+        let last_input = self.last_input;
         let terminals = &mut self.browser.terminals;
         terminals.parked.retain(|parked| {
             parked.workspace == key && needed.iter().any(|(group, _)| *group == parked.group)
@@ -281,7 +285,7 @@ impl HerdrWindow {
                 .iter_mut()
                 .find(|parked| parked.group == *group);
             match existing {
-                Some(parked) => parked.steer(tab, now),
+                Some(parked) => parked.steer(tab, now, last_input),
                 None if terminals.retry.iter().any(|(waiting, _)| waiting == group) => {}
                 None => {
                     let mut connection = ConnectionBridge::new(target.clone());
@@ -501,7 +505,6 @@ impl HerdrWindow {
     pub(crate) fn render_parked_terminal(
         &mut self,
         slot: Slot,
-        gap: f32,
         font: Font,
         cell_height: f32,
         cx: &mut Context<Self>,
@@ -510,7 +513,6 @@ impl HerdrWindow {
         self.render_terminal_picture(
             slot,
             "parked-terminal",
-            gap,
             surface,
             true,
             font,
@@ -545,7 +547,6 @@ impl HerdrWindow {
     pub(crate) fn render_terminal_mirror(
         &mut self,
         slot: Slot,
-        gap: f32,
         surface: Option<Picture>,
         font: Font,
         cell_height: f32,
@@ -554,7 +555,6 @@ impl HerdrWindow {
         self.render_terminal_picture(
             slot,
             "mirror-terminal",
-            gap,
             surface,
             false,
             font,
@@ -570,7 +570,6 @@ impl HerdrWindow {
         &mut self,
         slot: Slot,
         name: &'static str,
-        gap: f32,
         surface: Option<Picture>,
         place: bool,
         font: Font,
@@ -582,15 +581,16 @@ impl HerdrWindow {
         let painter = self.painter.clone();
         let cell_width = self.cell_width;
         let ground = self.ground();
-        div()
+        self.config
+            .terminal_padding
+            .pad(div())
             .id(SharedString::from(slot.selector(name)))
             .debug_selector(move || slot.selector(name))
             .flex_1()
             .min_h_0()
             .min_w_0()
-            .pl(px(gap))
             .overflow_hidden()
-            .bg(self.fill().base(self.theme.background))
+            .bg(self.fill().base(self.terminal_theme().background))
             .child(
                 canvas(
                     move |bounds, _, cx| {

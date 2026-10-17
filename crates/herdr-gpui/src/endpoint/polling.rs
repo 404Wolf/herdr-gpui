@@ -99,6 +99,11 @@ impl HerdrWindow {
                 changed = Redraw::Window;
             }
         }
+        crate::palette::LastSeen::trim(
+            self.endpoints
+                .iter_mut()
+                .map(|endpoint| &mut endpoint.last_seen),
+        );
         if self.apply_clipboard_writes(clipboard_writes, cx) {
             changed = Redraw::Window;
         }

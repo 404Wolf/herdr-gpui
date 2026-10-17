@@ -313,6 +313,7 @@ fn service_nonblocking_queue_bound_reload_and_move_once() {
         settings: Arc::new(Mutex::new(Some(Arc::new(Settings::default())))),
         reload: Default::default(),
         stop: Default::default(),
+        volume: Default::default(),
     };
     let mut state = live(AgentStatus::Idle);
     let now = Instant::now();
@@ -344,7 +345,7 @@ fn preview_uses_builtin_on_worker_despite_notification_mute() {
             .unwrap();
             Ok(settings)
         },
-        move |sound, path, cancel, stop| {
+        move |sound, path, _, cancel, stop| {
             assert_ne!(std::thread::current().id(), caller);
             assert!(path.is_none());
             assert!(cancel.iter().all(|flag| !flag.load(Ordering::Acquire)));
@@ -387,6 +388,7 @@ fn preview_queue_is_bounded_and_uses_service_cancellation() {
         settings: Default::default(),
         reload: Default::default(),
         stop: Default::default(),
+        volume: Default::default(),
     };
     service.preview();
     service.preview();
@@ -408,7 +410,7 @@ fn worker_continues_after_backend_error_without_replaying() {
     let mut first = true;
     let service = Service::start(
         || Ok(Settings::default()),
-        move |sound, _, _, _| {
+        move |sound, _, _, _, _| {
             sender.send(sound).unwrap();
             if std::mem::take(&mut first) {
                 return Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe).into());
@@ -472,4 +474,6 @@ fn worker_drops_cancelled_and_expired_jobs_without_playing_them() {
     ));
 }
 
+mod play;
 mod repeats;
+mod volume;

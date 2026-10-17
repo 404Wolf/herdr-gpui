@@ -6,21 +6,27 @@ use super::{
 };
 use crate::{
     HerdrWindow,
+    pull_request::Remote,
     repo_items::{Branch, Item, Kind, Origin},
     sidebar,
 };
 use gpui::{Entity, VisualTestContext};
 
+mod branch_first;
+mod branch_follows_name;
 mod branch_only;
 mod dialog_entry;
 mod github_listings;
+mod github_sign_in_hint;
 mod local_listings;
 mod name_field;
+mod open_remove_shortcuts;
 
 fn origin() -> Origin {
     Origin {
         owner: "penso".into(),
         repo: "herdr-gpui".into(),
+        ..Origin::default()
     }
 }
 
@@ -34,6 +40,7 @@ fn items() -> Vec<Item> {
             author: "penso".into(),
             head: Some("worktree/rapid-forest".into()),
             fork_owner: None,
+            remote: Remote::Origin,
             draft: false,
         },
         Item {
@@ -44,6 +51,7 @@ fn items() -> Vec<Item> {
             author: "outsider".into(),
             head: Some("patch-1".into()),
             fork_owner: Some("outsider".into()),
+            remote: Remote::Origin,
             draft: true,
         },
         Item {
@@ -54,6 +62,7 @@ fn items() -> Vec<Item> {
             author: "penso".into(),
             head: None,
             fork_owner: None,
+            remote: Remote::Origin,
             draft: false,
         },
     ]
@@ -96,6 +105,12 @@ fn draw(cx: &mut VisualTestContext) {
             window.draw(cx).clear(cx);
         });
     }
+}
+
+/// Move typing to the optional name field, as a click on it does.
+fn click_name(cx: &mut VisualTestContext) {
+    let field = cx.debug_bounds("worktree-name").unwrap();
+    cx.simulate_click(field.center(), gpui::Modifiers::none());
 }
 
 fn tab(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) -> Tab {

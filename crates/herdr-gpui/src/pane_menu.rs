@@ -1,8 +1,13 @@
-use crate::{HerdrWindow, close_modal::CloseConfirmation, menu::Page, search_input::SearchInput};
+use crate::{
+    HerdrWindow, close_modal::CloseConfirmation, menu::Page, pane_move::Destination,
+    search_input::SearchInput,
+};
 use gpui::{prelude::*, *};
 use herdr_client::{Method, protocol::ClientShellSnapshot};
 use serde_json::{Value, json};
 
+pub(crate) mod carry;
+mod moves;
 mod processes;
 
 #[cfg(test)]
@@ -24,6 +29,12 @@ struct Target {
     /// Herdr routes this pane's right-clicks to its application, as seen when
     /// the menu opened; the toggle asks for the other routing.
     right_click_passthrough: bool,
+    /// Existing tabs, and new tabs in other workspaces, the pane can move to.
+    choices: Vec<crate::pane_move::Choice>,
+    /// The repository holding the pane, which another device must have open.
+    repository: Option<carry::PaneRepository>,
+    /// Other devices the pane can move to, listed after `choices`.
+    devices: Vec<carry::Device>,
 }
 
 impl Target {
@@ -50,6 +61,9 @@ impl Target {
             zoomed,
             focused: focused.cloned(),
             right_click_passthrough: pane.right_click_passthrough,
+            choices: crate::pane_move::choices(snapshot, &pane.tab_id),
+            repository: carry::PaneRepository::of(snapshot, &pane.workspace_id),
+            devices: Vec::new(),
         };
         target.validate(snapshot).ok()?;
         Some(target)
@@ -86,6 +100,10 @@ enum Action {
     SplitDown,
     Swap,
     Zoom,
+    MoveToNewTab,
+    MoveToNewWorkspace,
+    /// Opens the picker of every destination.
+    MoveTo,
     EditScrollback,
     RightClick,
     Processes,
@@ -122,7 +140,13 @@ impl Action {
                     "right_click": if target.right_click_passthrough { "herdr" } else { "pane" },
                 }),
             ),
-            Self::Rename | Self::EditScrollback | Self::Processes | Self::Close => return None,
+            Self::Rename
+            | Self::MoveToNewTab
+            | Self::MoveToNewWorkspace
+            | Self::MoveTo
+            | Self::EditScrollback
+            | Self::Processes
+            | Self::Close => return None,
         })
     }
 
@@ -134,6 +158,9 @@ impl Action {
             Self::Swap => "Swap with Focused Pane",
             Self::Zoom if target.zoomed => "Unzoom",
             Self::Zoom => "Zoom",
+            Self::MoveToNewTab => "Move to New Tab",
+            Self::MoveToNewWorkspace => "Move to New Workspace",
+            Self::MoveTo => "Move to\u{2026}",
             Self::EditScrollback => "Open Scrollback in Editor",
             Self::RightClick if target.right_click_passthrough => "Open This Menu on Right-Click",
             Self::RightClick => "Send Right-Clicks to Pane",
@@ -143,12 +170,15 @@ impl Action {
     }
 }
 
-const ACTIONS: [Action; 9] = [
+const ACTIONS: [Action; 12] = [
     Action::Rename,
     Action::SplitRight,
     Action::SplitDown,
     Action::Swap,
     Action::Zoom,
+    Action::MoveToNewTab,
+    Action::MoveToNewWorkspace,
+    Action::MoveTo,
     Action::EditScrollback,
     Action::RightClick,
     Action::Processes,
@@ -157,12 +187,19 @@ const ACTIONS: [Action; 9] = [
 
 impl PaneMenu {
     /// The rows this menu offers: a swap needs another pane to trade with,
-    /// and a process list needs the pane's processes on this machine.
+    /// moves need a host the `herdr` CLI can run on (and the tab picker
+    /// another tab or workspace), and a process list needs the pane's
+    /// processes on this machine.
     fn actions(&self) -> Vec<Action> {
         ACTIONS
             .into_iter()
             .filter(|action| match action {
                 Action::Swap => self.target.focused.is_some(),
+                Action::MoveToNewTab | Action::MoveToNewWorkspace => self.movable,
+                Action::MoveTo => {
+                    self.movable
+                        && !(self.target.choices.is_empty() && self.target.devices.is_empty())
+                }
                 Action::Processes => self.daemon.is_some(),
                 _ => true,
             })
@@ -179,6 +216,13 @@ pub(super) struct PaneMenu {
     /// The daemon to ask for the pane's processes, when they run here.
     daemon: Option<crate::processes::Daemon>,
     processes: Option<processes::PaneProcesses>,
+    /// Whether this endpoint's host can run `herdr pane move`.
+    movable: bool,
+    /// The move in flight, which keeps the menu from starting another.
+    moving: Option<u64>,
+    /// The move picker's panel scroll, so a row the keyboard selects in a
+    /// long list of destinations scrolls into view.
+    scroll: ScrollHandle,
 }
 
 impl HerdrWindow {
@@ -215,7 +259,7 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(target) = self
+        let Some(mut target) = self
             .live
             .snapshot
             .as_ref()
@@ -223,12 +267,13 @@ impl HerdrWindow {
         else {
             return;
         };
+        target.devices = self.carry_devices(target.repository.as_ref());
         if !self.open_menu(window, cx) {
             return;
         }
-        let daemon = crate::processes::Daemon::for_target(
-            &self.endpoints[self.selected_endpoint].connection.target,
-        );
+        let connect = &self.endpoints[self.selected_endpoint].connection.target;
+        let daemon = crate::processes::Daemon::for_target(connect);
+        let movable = moves::refusal(connect).is_none();
         self.menu.anchor = anchor;
         self.menu.page = Some(Page::Pane);
         self.menu.pane = Some(PaneMenu {
@@ -239,12 +284,23 @@ impl HerdrWindow {
             error: None,
             daemon,
             processes: None,
+            movable,
+            moving: None,
+            scroll: ScrollHandle::new(),
         });
     }
 
     /// Opens the focused pane's rename dialog, as its menu's "Rename" row
     /// would, at the pane's top-left corner.
     pub(super) fn rename_focused_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_focused_pane_menu(window, cx);
+        if self.menu.page == Some(Page::Pane) {
+            self.activate_pane_menu(Action::Rename, window, cx);
+        }
+    }
+
+    /// Opens the focused pane's menu at the pane's top-left corner.
+    fn open_focused_pane_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(id) = self
             .live
             .snapshot
@@ -266,9 +322,36 @@ impl HerdrWindow {
                 )
             });
         self.open_pane_menu(&id, anchor, window, cx);
-        if self.menu.page == Some(Page::Pane) {
-            self.activate_pane_menu(Action::Rename, window, cx);
+    }
+
+    /// Opens the menu of an agent's pane from its sidebar row: shows the
+    /// pane, switching to its host first, as a workspace row's menu does.
+    pub(crate) fn open_agent_menu(
+        &mut self,
+        endpoint: &str,
+        pane: &str,
+        anchor: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.navigate_endpoint(endpoint, crate::NavigationTarget::Pane(pane), cx) {
+            return;
         }
+        self.open_pane_menu(pane, anchor, window, cx);
+        if let Some(menu) = &mut self.menu.pane {
+            // Showing the pane focuses it, so there is no other pane to swap with.
+            menu.target.focused = None;
+        }
+        self.menu.opening_right_click = self.menu.page == Some(Page::Pane);
+    }
+
+    /// The pane whose menu, or one of its pages, is open.
+    pub(crate) fn pane_menu_target(&self) -> Option<&str> {
+        self.menu.page.filter(|page| page.pane_menu())?;
+        self.menu
+            .pane
+            .as_ref()
+            .map(|menu| menu.target.pane.as_str())
     }
 
     fn validate_pane_target(&self) -> crate::Result<&Target> {
@@ -298,6 +381,14 @@ impl HerdrWindow {
     }
 
     fn activate_pane_menu(&mut self, action: Action, window: &mut Window, cx: &mut Context<Self>) {
+        if self
+            .menu
+            .pane
+            .as_ref()
+            .is_some_and(|pane| pane.moving.is_some())
+        {
+            return;
+        }
         let target = match self.validate_pane_target() {
             Ok(target) => target.clone(),
             Err(error) => {
@@ -306,6 +397,15 @@ impl HerdrWindow {
             }
         };
         match action {
+            Action::MoveToNewTab => self.move_pane(
+                Destination::NewTab {
+                    workspace_id: target.workspace,
+                },
+                window,
+                cx,
+            ),
+            Action::MoveToNewWorkspace => self.move_pane(Destination::NewWorkspace, window, cx),
+            Action::MoveTo => self.open_move_picker(cx),
             Action::Rename => {
                 let input = cx.new(SearchInput::new);
                 input.update(cx, |input, cx| {
@@ -526,15 +626,27 @@ impl HerdrWindow {
             "enter" if self.menu.page == Some(Page::RenamePane) => {
                 self.submit_pane_rename(window, cx)
             }
-            "up" | "down" if self.menu.page == Some(Page::Pane) => {
-                let count = pane.actions().len();
+            "up" | "down" if matches!(self.menu.page, Some(Page::Pane | Page::MovePane)) => {
+                let count = pane.rows(self.menu.page);
+                if count == 0 {
+                    return;
+                }
                 pane.selected = Some(match (pane.selected, key) {
                     (None, "up") => count - 1,
                     (None, _) => 0,
                     (Some(i), "up") => (i + count - 1) % count,
                     (Some(i), _) => (i + 1) % count,
                 });
+                // The picker's heading is the panel's first child.
+                if self.menu.page == Some(Page::MovePane)
+                    && let Some(selected) = pane.selected
+                {
+                    pane.scroll.scroll_to_item(selected + 1);
+                }
                 cx.notify();
+            }
+            "enter" if self.menu.page == Some(Page::MovePane) => {
+                self.submit_move_picker(window, cx)
             }
             "enter" => {
                 if let Some(action) = pane
@@ -558,7 +670,9 @@ impl HerdrWindow {
             _ => {}
         }
         let mut body = div().flex().flex_col();
-        if self.menu.page == Some(Page::Pane) {
+        if pane.moving.is_some() {
+            body = self.render_pane_move_pending();
+        } else if self.menu.page == Some(Page::Pane) {
             for (index, action) in pane.actions().into_iter().enumerate() {
                 body = body.child(
                     div()

@@ -3,7 +3,7 @@
 
 use crate::{
     HerdrWindow,
-    menu::{WorkspaceAction, WorkspaceMenuAction, danger},
+    menu::{WorkspaceAction, WorkspaceMenuAction, danger, workspace_close::CHECKING},
 };
 use gpui::{prelude::*, *};
 
@@ -76,11 +76,12 @@ impl HerdrWindow {
                 }))
             && (action != WorkspaceAction::Close
                 || self.menu.close_check.as_ref().is_some_and(|check| {
-                    check.ready(
+                    check.allows(
                         self.menu
                             .input
                             .as_ref()
                             .map_or("", |input| input.text.as_str()),
+                        self.config.confirm_close_workspace,
                     )
                 }))
             && !creating
@@ -202,6 +203,11 @@ impl HerdrWindow {
                 )
             }
             WorkspaceAction::DeleteWorktree => body
+                .children(deletion.and_then(|deletion| deletion.merged).map(|number| {
+                    div()
+                        .debug_selector(|| "dialog-merged-pr".into())
+                        .child(format!("Pull request #{number} was merged."))
+                }))
                 .child(if force {
                     "This force removes the checkout folder:"
                 } else {
@@ -231,20 +237,15 @@ impl HerdrWindow {
                 })),
         };
         if action == WorkspaceAction::Close {
-            body = body.child(div().debug_selector(|| "close-git-status".into()).text_color(danger).child(
-                match self.menu.close_check.as_ref().and_then(|check| check.report.as_ref()) {
-                    None => "Checking for uncommitted files and unpushed commits...".to_owned(),
-                    Some(report) => {
-                        let mut warnings = Vec::new();
-                        if report.dirty { warnings.push("Uncommitted files are present."); }
-                        if report.unpushed { warnings.push("Unpushed commits are present."); }
-                        if report.unknown { warnings.push("Git status could not be verified for every checkout."); }
-                        if report.needs_consent() { warnings.push("Type close to consent to closing anyway, or Cancel to keep working."); }
-                        else { warnings.push("No uncommitted files or unpushed commits found (using local remote-tracking refs)."); }
-                        warnings.join(" ")
-                    }
-                }
-            ));
+            body = body.child(
+                div()
+                    .debug_selector(|| "close-git-status".into())
+                    .text_color(danger)
+                    .child(self.menu.close_check.as_ref().map_or_else(
+                        || CHECKING.to_owned(),
+                        |check| check.status(self.config.confirm_close_workspace),
+                    )),
+            );
         }
         if self.menu.input.is_some() && action != WorkspaceAction::NewWorktree {
             body = body.child(self.render_dialog_input(cx));

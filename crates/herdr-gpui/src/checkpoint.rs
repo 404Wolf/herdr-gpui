@@ -4,14 +4,17 @@
 //!
 //! Turns come from the daemon's agent status in each endpoint's snapshot,
 //! never from terminal output. Git runs in the checkout's own host (this
-//! machine or an SSH host) on one worker thread per host, so a slow host never
+//! machine, an SSH host, or a WSL distribution) on one worker thread per host, so a slow host never
 //! delays another and the UI thread only queues jobs and takes answers. Taking
 //! a checkpoint never touches the checkout's index or files; restoring one is
 //! an explicit, confirmed action that first checkpoints the current state.
 
+pub(crate) mod direct;
 mod script;
 #[cfg(test)]
 mod tests;
+
+pub(crate) use script::valid_id;
 
 use crate::{Error, Result, usage::Host};
 use herdr_client::{
@@ -41,17 +44,15 @@ const LIMITS: ScriptLimits = ScriptLimits {
 };
 
 /// The host whose checkouts an endpoint's snapshot names, when this client
-/// may run Git there: an SSH host, or this machine when the daemon is the
-/// user's own (the trust boundary local Git status uses). Host scripts need a
-/// POSIX client; see `herdr_client::run_script`.
+/// may run Git there: an SSH host, a WSL distribution, or this machine when
+/// the daemon is the user's own (the trust boundary local Git status uses).
+/// Host scripts need a POSIX client, except in a distribution, which a Windows
+/// client reaches through `wsl.exe`; see `herdr_client::run_script`.
 pub(crate) fn host_for(target: &ConnectTarget, live: &crate::LiveState) -> Option<Host> {
-    if !cfg!(any(target_os = "linux", target_os = "macos")) {
-        return None;
-    }
     match target {
+        ConnectTarget::Wsl { distro, .. } => cfg!(windows).then(|| Host::Wsl(distro.clone())),
+        _ if !cfg!(any(target_os = "linux", target_os = "macos")) => None,
         ConnectTarget::Ssh { target, .. } => Some(Host::Ssh(target.clone())),
-        // No script runs inside a distribution yet, so its checkouts are not snapshotted.
-        ConnectTarget::Wsl { .. } => None,
         ConnectTarget::Local | ConnectTarget::Session { .. } => {
             live.local_daemon_peer.then_some(Host::Local)
         }
@@ -160,10 +161,20 @@ fn execute(job: &Job, stamp: &str) -> Answer {
 /// Never cancelled: killing Git halfway through a snapshot or a restore could
 /// leave a lock or a half-moved working tree behind; the idle limit ends it.
 fn run(checkout: &Checkout, body: &str) -> Result<String> {
+    run_limited(checkout, body, LIMITS)
+}
+
+fn run_limited(checkout: &Checkout, body: &str, limits: ScriptLimits) -> Result<String> {
+    Ok(String::from_utf8_lossy(&run_bytes(checkout, body, limits)?).into_owned())
+}
+
+/// The script's output as it printed it, for a patch that must apply byte
+/// for byte.
+fn run_bytes(checkout: &Checkout, body: &str, limits: ScriptLimits) -> Result<Vec<u8>> {
     let host = match &checkout.host {
         Host::Local => ScriptHost::Local,
         Host::Ssh(target) => ScriptHost::Ssh(target),
-        Host::Wsl(_) => return Err(Error::WslHostUnsupported),
+        Host::Wsl(distro) => ScriptHost::Wsl(distro),
     };
     let mut output = Vec::new();
     run_script(
@@ -171,11 +182,11 @@ fn run(checkout: &Checkout, body: &str) -> Result<String> {
         body,
         std::io::empty(),
         &mut output,
-        LIMITS,
+        limits,
         &AtomicBool::new(false),
     )
     .map_err(script::classify)?;
-    Ok(String::from_utf8_lossy(&output).into_owned())
+    Ok(output)
 }
 
 struct Worker {
@@ -236,6 +247,9 @@ pub(crate) struct View {
     pub confirming: Option<String>,
     pub restoring: bool,
     pub error: Option<String>,
+    /// The checkpoint to select once the list arrives, as `checkpoint
+    /// restore ID` asks. Only selected: restoring still takes confirming.
+    pub wanted: Option<String>,
 }
 
 impl View {
@@ -404,8 +418,16 @@ impl Checkpoints {
             confirming: None,
             restoring: false,
             error: None,
+            wanted: None,
         });
         self.list(checkout);
+    }
+
+    /// Select checkpoint `id` in the open dialog once its list has loaded.
+    pub fn want(&mut self, id: String) {
+        if let Some(view) = &mut self.view {
+            view.wanted = Some(id);
+        }
     }
 
     /// Close the dialog. A restore already running still finishes and is
@@ -556,6 +578,16 @@ impl Checkpoints {
                     _ => 0,
                 };
                 view.selected = view.selected.filter(|index| *index < count);
+                if let (Some(wanted), Listing::Ready(list)) = (view.wanted.take(), &view.listing) {
+                    match list.iter().position(|checkpoint| checkpoint.id == wanted) {
+                        Some(index) => view.selected = Some(index),
+                        // Said in the dialog, which the command line no
+                        // longer watches: nothing was chosen for the user.
+                        None => {
+                            view.error = Some(format!("Checkpoint {wanted} is not among these."));
+                        }
+                    }
+                }
                 if view.confirming_checkpoint().is_none() && !view.restoring {
                     view.confirming = None;
                 }

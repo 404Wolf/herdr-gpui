@@ -1,11 +1,14 @@
 #![allow(clippy::unwrap_used)]
 
 use super::{
-    Cache, Input, Lookup, Origin, Result, clean,
-    fetch::{OUTPUT_LIMIT, TIMEOUT, fetch, local_repository, remote_host, worktree_checkout},
+    Base, Cache, Input, Lookup, Origin, Remote, Result, base_repository, clean,
+    fetch::{
+        Ask, OUTPUT_LIMIT, TIMEOUT, fetch, local_repository, origin_repository, remote_host,
+        target, worktree_checkout,
+    },
     fixture,
     lookup::Worker,
-    model::{MergeState, State},
+    model::{MergeState, Outcome, State},
     parse::{parse, parse_graphql},
     run,
 };
@@ -17,12 +20,15 @@ use std::{
 };
 
 mod actions;
+mod batch;
 mod by_number;
 mod cache;
 mod fetch;
 mod fork_branch;
+mod fork_remote;
 mod lookup;
 mod responses;
+mod routing;
 mod upstream;
 mod workspace_directory;
 
@@ -33,4 +39,14 @@ fn response() -> serde_json::Value {
         "additions":1, "deletions":0, "changedFiles":1, "updatedAt":"now",
         "mergeStateStatus":"UNKNOWN", "reviewDecision":"", "headRepositoryOwner":{"login":"example"}
     }])
+}
+
+/// What a checkout with only a GitHub `origin` resolves to.
+fn origin_base(owner: &str, repo: &str) -> Base {
+    Base {
+        owner: owner.into(),
+        repo: repo.into(),
+        remote: Remote::Origin,
+        fork_owner: None,
+    }
 }

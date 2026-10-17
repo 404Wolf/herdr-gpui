@@ -17,7 +17,7 @@ use super::{
     },
     parts::{self, Line, glyph_at, wash},
 };
-use crate::config::Theme;
+use crate::config::{StatusIcons, Theme};
 use gpui::{prelude::*, *};
 use herdr_client::protocol::AgentStatus;
 
@@ -98,7 +98,32 @@ fn slot(
     cx: &RowContext<'_>,
 ) -> Div {
     let theme = cx.theme;
-    let dot = dot.map(|(color, bold)| {
+    // Tiles tint the whole slot instead of badging a corner: the slot is
+    // already the tile, and the icon inside it stays readable.
+    let tile = dot
+        .filter(|_| cx.indicators.icons == Some(StatusIcons::Tiles))
+        .map(|(color, _)| color);
+    let dot = dot.filter(|_| tile.is_none()).map(|(color, bold)| {
+        if let Some(icons) = cx.indicators.icons {
+            let diameter = (m.icon * 0.55).round();
+            return div()
+                .debug_selector(|| format!("dot-{key}"))
+                .absolute()
+                .top_0()
+                .right_0()
+                .size(px(diameter + 2.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .bg(rgb(theme.sidebar_background()))
+                .child(
+                    svg()
+                        .path(crate::icons::status_icon(icons, status))
+                        .size(px(diameter))
+                        .text_color(rgb(color)),
+                );
+        }
         if cx.indicators.style == crate::herdr_settings::IndicatorStyle::Symbols {
             // A full row-status slot masks the underlying icon. Symbols here
             // are corner badges, leaving the icon's center unobscured.
@@ -143,6 +168,12 @@ fn slot(
         .flex()
         .items_center()
         .justify_center()
+        .when_some(tile, |slot, color| {
+            slot.rounded(px(crate::config::corners::SMALL))
+                .bg(rgba((color << 8) | 0x30))
+                .border_1()
+                .border_color(rgba((color << 8) | 0x70))
+        })
         .child(glyph)
         .children(dot)
 }
@@ -364,9 +395,10 @@ mod tests {
             size: 12.,
             fallbacks: None,
             line_height_multiple: None,
+            weight: gpui::FontWeight::NORMAL,
         };
         let theme = Theme::default();
-        let indicators = Indicators::new(None, false, &theme);
+        let indicators = Indicators::new(None, None, false, &theme);
         let cx = RowContext {
             indicators,
             font: &font,

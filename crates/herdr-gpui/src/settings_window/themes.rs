@@ -11,8 +11,7 @@ mod appearance;
 mod grid;
 mod system;
 
-const FOLLOW: &str = "Follow Herdr";
-const LIST_HEIGHT: f32 = 168.;
+pub(super) const FOLLOW: &str = "Follow Herdr";
 const ROW_HEIGHT: f32 = 80.;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -23,7 +22,7 @@ pub(super) enum Scope {
 }
 
 impl Scope {
-    fn editable(self) -> bool {
+    pub(super) fn editable(self) -> bool {
         self == Self::App || cfg!(unix)
     }
 }
@@ -62,7 +61,7 @@ pub(crate) fn apply_theme_draft(config: &mut Config, theme: &mut Theme, cx: &App
         .and_then(|draft| draft.appearance.as_ref())
     {
         config.theme = name.clone();
-        *theme = raw.clone().with_contrast(config.contrast);
+        *theme = raw.clone().styled_for(config);
     }
 }
 
@@ -82,7 +81,7 @@ pub(crate) fn apply_loaded_theme(config: &mut Config, theme: &mut Theme, revisio
         // This read began before the final draft was committed. Its other
         // fields remain usable, but its older theme must not replace the commit.
         config.theme = name.clone();
-        *theme = raw.clone().with_contrast(config.contrast);
+        *theme = raw.clone().styled_for(config);
     }
 }
 
@@ -118,12 +117,12 @@ pub(super) struct Choice {
 }
 
 pub(super) struct ThemeBrowser {
-    search: Entity<SearchInput>,
+    pub(super) search: Entity<SearchInput>,
     _subscription: Subscription,
     names: Vec<String>,
-    filtered: Vec<Choice>,
-    ghostty_enabled: bool,
-    herdr_enabled: bool,
+    pub(super) filtered: Vec<Choice>,
+    pub(super) ghostty_enabled: bool,
+    pub(super) herdr_enabled: bool,
     query: String,
     selected: Option<usize>,
     scroll: UniformListScrollHandle,
@@ -137,10 +136,12 @@ pub(super) struct ThemeBrowser {
     preview: Option<Theme>,
     preview_name: Option<String>,
     preview_error: Option<String>,
+    /// The card under the pointer; main windows show it until it leaves.
+    hovered: Option<Choice>,
     contrast: Contrast,
     grid: grid::Grid,
     /// Which side of a theme that follows the system the grid edits.
-    editing_light: bool,
+    pub(super) editing_light: bool,
 }
 
 impl ThemeBrowser {
@@ -175,13 +176,14 @@ impl ThemeBrowser {
             preview: None,
             preview_name: None,
             preview_error: None,
+            hovered: None,
             contrast: Contrast::Standard,
             grid: grid::Grid::default(),
             editing_light: false,
         }
     }
 
-    fn choice(&self) -> Option<Choice> {
+    pub(super) fn choice(&self) -> Option<Choice> {
         self.filtered.get(self.selected?).cloned()
     }
 
@@ -339,6 +341,8 @@ impl SettingsWindow {
                         None => herdr_settings::Settings::load()?,
                     };
                     let theme = shared.preview_theme(&config.theme, light)?;
+                    // Raw, as the other branches return it: the draft is
+                    // styled once, in `apply_theme_draft`.
                     Ok((theme.with_contrast(config.contrast), Some(shared)))
                 }
                 (Scope::App, Some(shared)) if ThemeName::side(&config.theme, light) == FOLLOW => {
@@ -360,7 +364,6 @@ impl SettingsWindow {
         }
         self.theme_load_failed = false;
         self.error = None;
-        self.status = Some("Theme draft; saved when Settings closes".into());
         self.theme_revision = self.theme_revision.wrapping_add(1);
         self.theme_light = matches!(
             cx.window_appearance(),
@@ -393,7 +396,11 @@ impl SettingsWindow {
     }
 
     pub(super) fn drive_theme_intent(&mut self, cx: &mut Context<Self>) {
-        if self.quitting || self.theme_load_failed {
+        if self.quitting {
+            return;
+        }
+        if self.theme_load_failed {
+            self.flushing = false;
             return;
         }
         let light = crate::app::light_appearance(cx);
@@ -445,6 +452,7 @@ impl SettingsWindow {
                             Err(error) => {
                                 this.theme_load_failed = true;
                                 this.closing = None;
+                                this.flushing = false;
                                 this.error = Some(format!("Load theme: {error}"));
                             }
                         }
@@ -488,16 +496,16 @@ impl SettingsWindow {
                 self.config.theme = intent.choice.name.clone();
                 cx.default_global::<ThemeDraft>().appearance =
                     Some((self.config.theme.clone(), theme.clone()));
-                self.theme = theme.with_contrast(self.config.contrast);
+                self.theme = theme.styled_for(&self.config);
                 self.broadcast_theme(cx);
             } else if self.config.theme == FOLLOW {
                 cx.default_global::<ThemeDraft>().appearance =
                     Some((self.config.theme.clone(), theme.clone()));
-                self.theme = theme.with_contrast(self.config.contrast);
+                self.theme = theme.styled_for(&self.config);
                 self.broadcast_theme(cx);
             }
         }
-        if self.closing.is_none() || self.busy() || self.theme_saving {
+        if (self.closing.is_none() && !self.flushing) || self.busy() || self.theme_saving {
             return;
         }
         let Some(intent) = self.theme_intent.as_ref() else {
@@ -659,14 +667,92 @@ impl SettingsWindow {
         cx.notify();
     }
 
-    fn toggle_theme_source(&mut self, scope: Scope, cx: &mut Context<Self>) {
-        let selected = self.themes.choice();
-        match scope {
-            Scope::App => self.themes.ghostty_enabled = !self.themes.ghostty_enabled,
-            Scope::Herdr => self.themes.herdr_enabled = !self.themes.herdr_enabled,
+    /// Chooses which theme libraries the grid lists. Neither is never valid.
+    pub(super) fn set_theme_sources(&mut self, ghostty: bool, herdr: bool, cx: &mut Context<Self>) {
+        if !ghostty && !herdr {
+            return;
         }
+        let selected = self.themes.choice();
+        self.themes.ghostty_enabled = ghostty;
+        self.themes.herdr_enabled = herdr;
         self.themes.filter(selected.as_ref());
         self.request_theme_preview(cx);
+    }
+
+    /// Resolves a card's theme on the background executor, with the
+    /// browser's contrast applied.
+    fn resolve_choice(&self, choice: &Choice, cx: &App) -> Task<crate::Result<Theme>> {
+        let contrast = self.themes.contrast;
+        let light = crate::app::light_appearance(cx);
+        let mut config = self.config.clone();
+        config.theme = choice.name.clone();
+        config.contrast = contrast;
+        let scope = choice.scope;
+        let shared = self.shared.clone();
+        cx.background_executor().spawn(async move {
+            // Config::theme already applies contrast; do not apply it twice.
+            match scope {
+                Scope::Herdr => shared
+                    .map_or_else(herdr_settings::Settings::load, Ok)?
+                    .preview_theme(&config.theme, light)
+                    .map(|theme| theme.styled_for(&config)),
+                Scope::App => config.theme(light),
+            }
+        })
+    }
+
+    pub(super) fn theme_hovered(&self) -> bool {
+        self.themes.hovered.is_some()
+    }
+
+    /// Shows the card under the pointer in every Herdr window without
+    /// drafting it; `None` puts the real appearance back at once.
+    pub(super) fn hover_theme(&mut self, index: Option<usize>, cx: &mut Context<Self>) {
+        let choice = index
+            .filter(|_| !self.quitting && self.closing.is_none())
+            .and_then(|index| self.themes.filtered.get(index).cloned());
+        if self.themes.hovered == choice {
+            return;
+        }
+        self.themes.hovered = choice.clone();
+        let Some(choice) = choice else {
+            self.broadcast_preview_theme(None, cx);
+            return;
+        };
+        let task = self.resolve_choice(&choice, cx);
+        cx.spawn(async move |this, cx| {
+            let Ok(theme) = task.await else {
+                return;
+            };
+            let _ = this.update(cx, |this, cx| {
+                if this.themes.hovered.as_ref() == Some(&choice) {
+                    this.broadcast_preview_theme(Some(&theme), cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Sets the theme every Herdr window draws. Touches neither the draft
+    /// nor the appearance new windows start with.
+    pub(super) fn broadcast_preview_theme(&self, theme: Option<&Theme>, cx: &mut Context<Self>) {
+        let theme = theme.cloned().unwrap_or_else(|| {
+            let mut config = self.config.clone();
+            let mut theme = self.theme.clone();
+            apply_theme_draft(&mut config, &mut theme, cx);
+            theme
+        });
+        for handle in cx.windows() {
+            if let Some(handle) = handle.downcast::<crate::HerdrWindow>() {
+                let _ = handle.update(cx, |view, _, cx| {
+                    if view.theme_save_in_flight() {
+                        return;
+                    }
+                    view.theme = theme.clone();
+                    cx.notify();
+                });
+            }
+        }
     }
 
     fn drive_theme_preview(&mut self, cx: &mut Context<Self>) {
@@ -679,27 +765,13 @@ impl SettingsWindow {
         };
         let revision = browser.revision;
         browser.attempted = Some(revision);
-        let contrast = browser.contrast;
-        let light = crate::app::light_appearance(cx);
         browser.running = Some(revision);
-        let mut config = self.config.clone();
-        config.theme = choice.name.clone();
-        config.contrast = contrast;
-        let shared = self.shared.clone();
-        let task = cx.background_executor().spawn(async move {
-            // Config::theme already applies contrast; do not apply it twice.
-            match choice.scope {
-                Scope::Herdr => shared
-                    .map_or_else(herdr_settings::Settings::load, Ok)?
-                    .preview_theme(&config.theme, light)
-                    .map(|theme| theme.with_contrast(contrast)),
-                Scope::App => config.theme(light),
-            }
-        });
+        let name = choice.name.clone();
+        let task = self.resolve_choice(&choice, cx);
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let _ = this.update(cx, |this, cx| {
-                this.themes.finish_preview(revision, choice.name, result);
+                this.themes.finish_preview(revision, name, result);
                 this.drive_theme_preview(cx);
                 cx.notify();
             });

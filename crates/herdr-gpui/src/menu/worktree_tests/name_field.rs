@@ -1,23 +1,24 @@
 use super::*;
 
-/// The name field is what the dialog opens on, and its typing never edits the
-/// branch draft; the branch field is still one click away.
+/// The name field is one click away from the branch the dialog opens on, and
+/// its keys never reach the branch draft, which only takes the branch proposed
+/// for the name.
 #[gpui::test]
-fn the_name_field_opens_focused_and_keeps_its_keys(cx: &mut gpui::TestAppContext) {
+fn the_name_field_keeps_its_keys(cx: &mut gpui::TestAppContext) {
     let (view, cx) = cx.add_window_view(sidebar::layout_tests::fixture_window);
     cx.simulate_resize(gpui::size(gpui::px(900.), gpui::px(700.)));
     open_dialog(&view, cx, false, Tab::New);
-    let branch = cx.update(|_, cx| view.read(cx).menu.input.as_ref().unwrap().text.clone());
     let name = |cx: &mut VisualTestContext| {
         cx.update(|_, cx| {
             let source = view.read(cx).menu.worktree.as_ref().unwrap();
             source.name.read(cx).text().to_owned()
         })
     };
-    assert!(cx.update(|window, cx| view.read(cx).worktree_name_focused(window, cx)));
-    assert!(cx.debug_bounds("worktree-name").is_some());
+    assert!(!cx.update(|window, cx| view.read(cx).worktree_name_focused(window, cx)));
     // Empty means the daemon's default label.
     assert_eq!(cx.update(|_, cx| view.read(cx).worktree_name(cx)), None);
+    click_name(cx);
+    assert!(cx.update(|window, cx| view.read(cx).worktree_name_focused(window, cx)));
 
     cx.simulate_input("Login work");
     cx.simulate_keystrokes("backspace left right");
@@ -26,10 +27,11 @@ fn the_name_field_opens_focused_and_keeps_its_keys(cx: &mut gpui::TestAppContext
         cx.update(|_, cx| view.read(cx).worktree_name(cx)),
         Some("Login wor".into())
     );
+    // A key that reached the draft would have edited or deselected it.
     cx.update(|_, cx| {
         let input = view.read(cx).menu.input.as_ref().unwrap();
-        assert_eq!(input.text, branch);
-        assert_eq!(input.selection, 0..branch.len());
+        assert_eq!(input.text, "worktree/login-wor");
+        assert_eq!(input.selection, 0..input.text.len());
     });
 
     // Clicking the branch field moves typing there, leaving the name alone.
@@ -44,12 +46,8 @@ fn the_name_field_opens_focused_and_keeps_its_keys(cx: &mut gpui::TestAppContext
     );
     assert_eq!(name(cx), "Login wor");
 
-    // Returning to the form tab puts typing back on the name.
-    cx.update(|window, cx| {
-        view.update(cx, |view, cx| {
-            view.select_worktree_tab(Tab::New, window, cx)
-        });
-    });
+    // A second click puts typing back on the name.
+    click_name(cx);
     assert!(cx.update(|window, cx| view.read(cx).worktree_name_focused(window, cx)));
 
     // Enter from the name field submits the form; the fixture has no daemon.
@@ -68,7 +66,8 @@ fn the_name_field_opens_focused_and_keeps_its_keys(cx: &mut gpui::TestAppContext
 }
 
 /// A typed name rides along on `worktree.create` as its label, so the daemon
-/// names the workspace as it creates it; an empty one leaves the label out.
+/// names the workspace as it creates it, on the branch proposed for that name;
+/// an empty one leaves the label out and the first proposal in place.
 #[gpui::test]
 fn a_typed_name_labels_the_created_worktree(cx: &mut gpui::TestAppContext) {
     use gpui::AppContext;
@@ -147,7 +146,7 @@ fn a_typed_name_labels_the_created_worktree(cx: &mut gpui::TestAppContext) {
         });
     });
     for name in ["  Login work ", "   "] {
-        let branch = cx.update(|window, cx| {
+        let proposal = cx.update(|window, cx| {
             view.update(cx, |view, cx| {
                 view.menu.reset();
                 view.open_workspace_menu("w3", Default::default(), window, cx);
@@ -156,12 +155,24 @@ fn a_typed_name_labels_the_created_worktree(cx: &mut gpui::TestAppContext) {
                 source
                     .name
                     .update(cx, |input, cx| input.set_text_selected(name, cx));
+                view.menu.input.as_ref().unwrap().text.clone()
+            })
+        });
+        // Submitted in its own update, as Enter is, so the branch has
+        // already taken the name's proposal.
+        let branch = cx.update(|window, cx| {
+            view.update(cx, |view, cx| {
                 view.menu.creation = None;
                 view.submit_workspace_dialog(window, cx);
                 assert!(view.menu.error.is_none(), "{:?}", view.menu.error);
                 view.menu.input.as_ref().unwrap().text.clone()
             })
         });
+        if name.trim().is_empty() {
+            assert_eq!(branch, proposal);
+        } else {
+            assert_eq!(branch, "worktree/login-work");
+        }
         // The dialog also asks for the repository's checkouts on opening, and
         // one request is in flight at a time, so each one is answered.
         let request = loop {

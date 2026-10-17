@@ -76,7 +76,9 @@ fn appearance_and_close_options_preserve_defaults() -> anyhow::Result<()> {
     ] {
         assert!(config.confirm_close_tab);
         assert!(config.confirm_close_pane);
+        assert!(config.confirm_close_workspace);
         assert!(config.show_agents);
+        assert!(config.smooth_scroll);
     }
     let config = Config::parse("confirm_close_tab = false\nshow_agents = false")?;
     assert!(!config.confirm_close_tab);
@@ -85,9 +87,14 @@ fn appearance_and_close_options_preserve_defaults() -> anyhow::Result<()> {
     let config = Config::parse("confirm_close_pane = false")?;
     assert!(config.confirm_close_tab);
     assert!(!config.confirm_close_pane);
+    assert!(config.confirm_close_workspace);
+    assert!(!Config::parse("confirm_close_workspace = false")?.confirm_close_workspace);
+    assert!(Config::parse("confirm_close_workspace = 1").is_err());
     assert!(Config::parse("confirm_close_tab = 'false'").is_err());
     assert!(Config::parse("confirm_close_pane = 0").is_err());
     assert!(Config::parse("show_agents = 0").is_err());
+    assert!(!Config::parse("smooth_scroll = false")?.smooth_scroll);
+    assert!(Config::parse("smooth_scroll = 0").is_err());
     Ok(())
 }
 
@@ -164,6 +171,9 @@ fn rejects_invalid_settings() {
         "[layout]\nsidebar_gap = 65",
         "[layout]\nsidebar_gap = inf",
         "[layout]\nsidebar_gap = '8'",
+        "[terminal]\npadding_x = -1",
+        "[terminal]\npadding_y = 65",
+        "[terminal]\npadding_x = '8'",
     ] {
         assert!(Config::parse(text).is_err(), "accepted {text:?}");
     }

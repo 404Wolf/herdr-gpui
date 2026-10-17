@@ -14,12 +14,14 @@ use gpui::{prelude::*, *};
 
 /// A window's root: its title bar and the view.
 pub(crate) struct OrchestratorWindow {
+    caption: crate::caption::Caption,
     view: Entity<OrchestratorView>,
 }
 
 impl Render for OrchestratorWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.view.read(cx).theme().clone();
+        self.caption.sync(window, &theme);
         let header = crate::titlebar::header(&theme, window, |window, _| window.remove_window());
         div()
             .size_full()
@@ -60,12 +62,18 @@ impl HerdrWindow {
                 app_owns_titlebar_drag: cfg!(target_os = "macos"),
                 ..Default::default()
             },
-            |_, cx| cx.new(|_| OrchestratorWindow { view: view.clone() }),
+            |window, cx| {
+                crate::taskbar::mark(window, cx);
+                cx.new(|_| OrchestratorWindow {
+                    caption: Default::default(),
+                    view: view.clone(),
+                })
+            },
         );
         match opened {
             Ok(handle) => {
                 view.update(cx, |view, cx| view.set_detached(true, cx));
-                Store::update(cx, |store| store.close(id));
+                Store::update(cx, |store| store.detach(id));
                 self.detached_orchestrators.insert(
                     id,
                     Detached {

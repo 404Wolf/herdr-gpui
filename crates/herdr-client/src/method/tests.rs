@@ -82,6 +82,15 @@ fn copy_search_wire_name_and_advertisement() {
 }
 
 #[test]
+fn workspace_move_is_not_the_block_move() {
+    assert_eq!(Method::WorkspaceMove.as_str(), "workspace.move");
+    assert!(Method::WorkspaceMove.advertised_in(&["workspace.move".into()]));
+    // A daemon offering only the block move does not offer the single one.
+    assert!(!Method::WorkspaceMove.advertised_in(&["workspace.move_block".into()]));
+    assert!(!Method::WorkspaceMoveBlock.advertised_in(&["workspace.move".into()]));
+}
+
+#[test]
 fn split_ratio_wire_name() {
     assert_eq!(
         Method::LayoutSetSplitRatio.as_str(),
@@ -93,6 +102,7 @@ fn split_ratio_wire_name() {
 /// only methods it answers on the client endpoint. Anything else is
 /// rejected, so a variant outside this list is a dead code path.
 const OFFERED: &[&str] = &[
+    // keep-sorted start
     "client_shell.surface.set",
     "command.invoke",
     "integration.install",
@@ -133,96 +143,12 @@ const OFFERED: &[&str] = &[
     "worktree.list",
     "worktree.open",
     "worktree.remove",
-];
-
-/// Every variant. The match in the test stops compiling when a variant is
-/// added, as a reminder to list it here too.
-const ALL: &[Method] = &[
-    Method::ClientShellSurfaceSet,
-    Method::CommandInvoke,
-    Method::IntegrationList,
-    Method::IntegrationInstall,
-    Method::LayoutSetSplitRatio,
-    Method::PaneClear,
-    Method::PaneClose,
-    Method::PaneCopyMotion,
-    Method::PaneCopySearch,
-    Method::PaneEditScrollback,
-    Method::PaneFocus,
-    Method::PaneFocusDirection,
-    Method::PaneInputSet,
-    Method::PaneLinkActivate,
-    Method::PaneLinkResolve,
-    Method::PaneRename,
-    Method::PaneResize,
-    Method::PaneScroll,
-    Method::PaneSelectionRead,
-    Method::PaneSplit,
-    Method::PaneSwap,
-    Method::PaneZoom,
-    Method::ProductAnnouncementDismiss,
-    Method::ReleaseNotesDismiss,
-    Method::ServerReloadConfig,
-    Method::TabClose,
-    Method::TabCreate,
-    Method::TabFocus,
-    Method::TabMove,
-    Method::TabRename,
-    Method::WorkspaceClose,
-    Method::WorkspaceCreate,
-    Method::WorkspaceFocus,
-    Method::WorkspaceMoveBlock,
-    Method::WorkspaceRename,
-    Method::WorktreeCreate,
-    Method::WorktreeList,
-    Method::WorktreeOpen,
-    Method::WorktreeRemove,
+    // keep-sorted end
 ];
 
 #[test]
 fn every_method_is_offered_to_endpoint_clients() {
-    for method in ALL {
-        match method {
-            Method::ClientShellSurfaceSet
-            | Method::CommandInvoke
-            | Method::IntegrationList
-            | Method::IntegrationInstall
-            | Method::LayoutSetSplitRatio
-            | Method::PaneClear
-            | Method::PaneClose
-            | Method::PaneCopyMotion
-            | Method::PaneCopySearch
-            | Method::PaneEditScrollback
-            | Method::PaneFocus
-            | Method::PaneFocusDirection
-            | Method::PaneInputSet
-            | Method::PaneLinkActivate
-            | Method::PaneLinkResolve
-            | Method::PaneRename
-            | Method::PaneResize
-            | Method::PaneScroll
-            | Method::PaneSelectionRead
-            | Method::PaneSplit
-            | Method::PaneSwap
-            | Method::PaneZoom
-            | Method::ProductAnnouncementDismiss
-            | Method::ReleaseNotesDismiss
-            | Method::ServerReloadConfig
-            | Method::TabClose
-            | Method::TabCreate
-            | Method::TabFocus
-            | Method::TabMove
-            | Method::TabRename
-            | Method::WorkspaceClose
-            | Method::WorkspaceCreate
-            | Method::WorkspaceFocus
-            | Method::WorkspaceMoveBlock
-            | Method::WorkspaceRename
-            | Method::WorktreeCreate
-            | Method::WorktreeList
-            | Method::WorktreeOpen
-            | Method::WorktreeRemove => {}
-        }
+    for method in Method::ALL {
         assert!(
             OFFERED.contains(&method.as_str()),
             "{method} is not offered to endpoint clients"

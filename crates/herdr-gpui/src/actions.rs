@@ -1,10 +1,10 @@
 //! GPUI actions the app registers and the keystrokes bound to them. Every
 //! shortcut comes from the config's resolved `Keymap`, so the palette, the
 //! menu bar, and the keymap cannot drift apart. The macOS Hide and Minimize
-//! items are the exception: macOS reserves those keystrokes for every app,
-//! so they stay fixed rather than user-rebindable.
+//! items are the exception: they are not catalog commands, and keep the
+//! keystrokes macOS gives every app unless the keymap binds a command to one.
 
-use crate::controls::Command;
+use crate::controls::{CTRL_SHORTCUTS, Command};
 use gpui::{Action, App, KeyBinding, KeyDownEvent, Keystroke, Modifiers, actions};
 
 actions!(
@@ -42,9 +42,9 @@ pub(crate) fn edit_key(key: &str) -> KeyDownEvent {
     KeyDownEvent {
         keystroke: Keystroke {
             modifiers: Modifiers {
-                platform: !cfg!(target_os = "linux"),
-                control: cfg!(target_os = "linux"),
-                shift: cfg!(target_os = "linux"),
+                platform: !CTRL_SHORTCUTS,
+                control: CTRL_SHORTCUTS,
+                shift: CTRL_SHORTCUTS,
                 ..Modifiers::default()
             },
             key: key.into(),
@@ -79,7 +79,7 @@ pub(crate) struct ShowToastPreview {
 #[action(no_json)]
 pub(crate) struct ShowSystemNotificationPreview;
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", windows, test))]
 #[derive(Clone, PartialEq, serde::Deserialize, Action)]
 #[action(no_json)]
 pub(crate) struct SetBadgePreview {
@@ -98,6 +98,8 @@ pub(crate) fn bind_keys(cx: &mut App) {
                 .map(|appearance| appearance.config.keybindings.clone())
         })
         .unwrap_or_default();
+    #[cfg(target_os = "macos")]
+    crate::browser::bind_page_keys(&keymap);
     cx.bind_keys(keymap.bindings().map(|(command, keystroke)| {
         if command == Command::Quit {
             KeyBinding::new(keystroke, Quit, None)
@@ -114,21 +116,29 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new(paste, Paste, Some(EDIT_MENU_LABELS)),
         KeyBinding::new(select_all, SelectAll, Some(EDIT_MENU_LABELS)),
     ]);
-    // Bound last so a config keystroke can never steal a reserved macOS
-    // shortcut: later bindings take precedence at the same context depth.
+    // Bound last, where they outrank bindings at the same context depth. One
+    // the keymap binds a command to is left out instead, so its menu item
+    // shows no shortcut it does not have.
     #[cfg(target_os = "macos")]
     {
         let [hide, hide_others, minimize] = SYSTEM_KEYS;
-        cx.bind_keys([
-            KeyBinding::new(hide, Hide, None),
-            KeyBinding::new(hide_others, HideOthers, None),
-            KeyBinding::new(minimize, Minimize, None),
-        ]);
+        let free: Vec<_> = free_system_keys(&keymap).collect();
+        cx.bind_keys(
+            [
+                KeyBinding::new(hide, Hide, None),
+                KeyBinding::new(hide_others, HideOthers, None),
+                KeyBinding::new(minimize, Minimize, None),
+            ]
+            .into_iter()
+            .zip(SYSTEM_KEYS)
+            .filter(|(_, keystroke)| free.contains(keystroke))
+            .map(|(binding, _)| binding),
+        );
     }
 }
 
 /// The Edit menu's keystrokes: cut, copy, paste, and select all.
-pub(crate) const EDIT_KEYS: [&str; 4] = if cfg!(target_os = "linux") {
+pub(crate) const EDIT_KEYS: [&str; 4] = if CTRL_SHORTCUTS {
     [
         "ctrl-shift-x",
         "ctrl-shift-c",
@@ -139,22 +149,55 @@ pub(crate) const EDIT_KEYS: [&str; 4] = if cfg!(target_os = "linux") {
     ["cmd-x", "cmd-c", "cmd-v", "cmd-a"]
 };
 
-/// Fields also accept plain Ctrl on Linux, where there is no terminal
-/// program to receive it. Keep the terminal's Ctrl-Shift aliases working in
-/// fields so Edit menu clicks and keyboard shortcuts share the same path.
+/// Fields also accept plain Ctrl on Linux and Windows, where there is no
+/// terminal program to receive it. Keep the terminal's Ctrl-Shift aliases
+/// working in fields so Edit menu clicks and keyboard shortcuts share the
+/// same path.
 pub(crate) fn edit_modifiers(modifiers: Modifiers) -> bool {
     !modifiers.alt
         && !modifiers.function
         && ((modifiers.platform && !modifiers.control && !modifiers.shift)
-            || (cfg!(target_os = "linux") && modifiers.control && !modifiers.platform))
+            || (CTRL_SHORTCUTS && modifiers.control && !modifiers.platform))
+}
+
+/// Whether a field moves or deletes by word on an arrow, Backspace, or
+/// Delete: Option on macOS, Ctrl on the other desktops. Shift extends.
+pub(crate) fn word_modifiers(modifiers: Modifiers) -> bool {
+    let (word, other) = if cfg!(target_os = "macos") {
+        (modifiers.alt, modifiers.control)
+    } else {
+        (modifiers.control, modifiers.alt)
+    };
+    word && !other && !modifiers.platform && !modifiers.function
 }
 
 /// macOS's Hide, Hide Others, and Minimize, bound there alone.
 const SYSTEM_KEYS: [&str; 3] = ["cmd-h", "cmd-alt-h", "cmd-m"];
 
-/// Keystrokes bound outside the `Keymap`. A daemon custom command's direct
-/// keystroke is matched before any binding, so one of these would otherwise
-/// take Paste or Hide away from the app.
+/// The system keystrokes the app keeps: each one `keymap` binds no command
+/// to. No default is bound to any of them, so a command that holds one was
+/// put there on purpose, in `[keybindings]` or the daemon's `[keys]`, and
+/// runs instead.
+#[cfg(any(target_os = "macos", test))]
+fn free_system_keys(keymap: &crate::keymap::Keymap) -> impl Iterator<Item = &'static str> {
+    let bound: Vec<Keystroke> = keymap
+        .bindings()
+        .filter_map(|(_, label)| Keystroke::parse(label).ok())
+        .collect();
+    SYSTEM_KEYS.into_iter().filter(move |system| {
+        Keystroke::parse(system).is_ok_and(|system| {
+            bound
+                .iter()
+                .all(|bound| (bound.modifiers, &bound.key) != (system.modifiers, &system.key))
+        })
+    })
+}
+
+/// Keystrokes a daemon custom command never takes: the Edit keys and the
+/// macOS system keys. Its direct keystroke is matched before any binding, so
+/// one of these would otherwise take Paste or Hide away from the app. A
+/// system key the keymap gave to a command is held there instead, so a custom
+/// command gets it neither way.
 pub(crate) fn reserved_keystrokes() -> impl Iterator<Item = &'static str> {
     let system: &[&str] = if cfg!(target_os = "macos") {
         &SYSTEM_KEYS
@@ -171,3 +214,7 @@ pub(crate) fn rebind_keys(cx: &mut App) {
     bind_keys(cx);
     crate::menus::install(cx);
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests;

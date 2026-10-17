@@ -11,7 +11,7 @@ fn hit(target: InputTarget, mouse_reporting: bool) -> WheelTarget {
 }
 
 fn lines(wheel: &mut WheelAccumulator, target: &WheelTarget, event: &ScrollWheelEvent) -> i16 {
-    wheel.steps(target, event, 10., CELL_HEIGHT).lines
+    wheel.steps(target, event, 10., CELL_HEIGHT, NEUTRAL).lines
 }
 
 #[test]
@@ -59,7 +59,7 @@ fn nonfinite_wheel_deltas_do_not_poison_fractional_motion() {
                         touch_phase: TouchPhase::Moved,
                         ..Default::default()
                     };
-                    let steps = wheel.steps(&pane, &event, 10., CELL_HEIGHT);
+                    let steps = wheel.steps(&pane, &event, 10., CELL_HEIGHT, NEUTRAL);
                     if vertical { steps.lines } else { steps.columns }
                 };
                 // Columns exist only for a mouse-reporting target.
@@ -87,7 +87,7 @@ fn horizontal_wheel_accumulates_columns_by_cell_width_for_mouse_reporting_target
         ..Default::default()
     };
     let mut steps = |target: &WheelTarget, event: &ScrollWheelEvent| {
-        wheel.steps(target, event, 10., CELL_HEIGHT)
+        wheel.steps(target, event, 10., CELL_HEIGHT, NEUTRAL)
     };
     // Pixel motion becomes columns by cell width, keeping the fraction.
     assert_eq!(steps(&pane, &event), WheelSteps::default());
@@ -195,8 +195,8 @@ fn wheel_uses_configured_height_only_for_pixel_deltas() {
         touch_phase: TouchPhase::Moved,
         ..Default::default()
     };
-    assert_eq!(wheel.steps(&pane, &event, 10., 30.).lines, 0);
-    assert_eq!(wheel.steps(&pane, &event, 10., 30.).lines, 1);
+    assert_eq!(wheel.steps(&pane, &event, 10., 30., NEUTRAL).lines, 0);
+    assert_eq!(wheel.steps(&pane, &event, 10., 30., NEUTRAL).lines, 1);
     event.delta = ScrollDelta::Lines(point(0., 2.));
-    assert_eq!(wheel.steps(&pane, &event, 10., 30.).lines, 2);
+    assert_eq!(wheel.steps(&pane, &event, 10., 30., NEUTRAL).lines, 2);
 }

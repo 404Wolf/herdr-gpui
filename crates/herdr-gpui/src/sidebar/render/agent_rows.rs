@@ -67,7 +67,8 @@ impl HerdrWindow {
             }
             let gap = self.agent_row_gap(count);
             count += 1;
-            list = list.child(self.agent_cell(index, agent, snapshot, &row_cx, lines, gap, cx));
+            list =
+                list.child(self.agent_cell(index, agent, snapshot, &row_cx, lines, gap, false, cx));
         }
         (list, count, focused)
     }
@@ -102,9 +103,10 @@ impl HerdrWindow {
         }
     }
 
-    /// One agent's row, for the agents list or under its device's header:
-    /// the agent of endpoint `index`, drawn in `row_cx`, that shows its pane
-    /// when clicked.
+    /// One agent's row, for the agents list, under its device's header, or
+    /// `nested` under its workspace, where the row above already names the
+    /// place: the agent of endpoint `index`, drawn in `row_cx`, that shows
+    /// its pane when clicked.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn agent_cell(
         &self,
@@ -114,6 +116,7 @@ impl HerdrWindow {
         row_cx: &RowContext,
         lines: Vec<Vec<tokens::ResolvedToken>>,
         gap: f32,
+        nested: bool,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let rows = layout_for(self.config.layout.mode);
@@ -126,6 +129,9 @@ impl HerdrWindow {
             .unwrap_or_default();
         let id = agent.pane_id.clone();
         let navigate_endpoint = endpoint_id.clone();
+        let menu_endpoint = endpoint_id.clone();
+        let menu_pane = id.clone();
+        let menu_open = selected && self.pane_menu_target() == Some(id.as_str());
         Cell::new(
             rows,
             RowData::Agent(AgentRow {
@@ -133,7 +139,7 @@ impl HerdrWindow {
                 name: agent_name(agent),
                 icon: crate::icons::AgentIcon::from_identity(agent.agent.as_deref()),
                 status: agent.agent_status,
-                place: agent_place(agent, snapshot),
+                place: (!nested).then(|| agent_place(agent, snapshot)).flatten(),
                 status_text: self
                     .config
                     .sidebar_layout
@@ -145,12 +151,20 @@ impl HerdrWindow {
             row_cx,
         )
         .selected(selected && agent.focused)
+        .highlighted(menu_open)
         .row()
         .when(gap > 0., |row| row.mt(px(gap)))
         .id(SharedString::from(format!("agent-{endpoint_id}-{id}")))
         .when(multi, |row| {
             row.debug_selector(|| format!("agent-{endpoint_id}-{id}"))
         })
+        .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                cx.stop_propagation();
+                this.open_agent_menu(&menu_endpoint, &menu_pane, event.position, window, cx);
+            }),
+        )
         .on_click(cx.listener(move |this, _, window, cx| {
             this.navigate_endpoint(&navigate_endpoint, NavigationTarget::Pane(&id), cx);
             window.focus(&this.focus, cx);

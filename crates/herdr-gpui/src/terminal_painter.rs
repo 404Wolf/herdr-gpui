@@ -1,4 +1,5 @@
 mod area;
+mod decorations;
 mod glyphs;
 mod graphics;
 mod grid;
@@ -6,6 +7,10 @@ mod images;
 
 use self::area::whole;
 pub(crate) use self::area::{Layer, Part, Span, cell_ranges, clip, covers};
+#[cfg(test)]
+use self::decorations::decoration_offsets;
+pub(crate) use self::decorations::decoration_spans;
+use self::decorations::underline_offset;
 use self::glyphs::GlyphCache;
 pub(crate) use self::graphics::CellSeparator;
 use self::graphics::Graphic;
@@ -183,15 +188,6 @@ fn link_bounds(frame: &FrameData, rows: &[(u16, std::ops::Range<u16>)]) -> Optio
     })
 }
 
-fn decoration_offsets(cell: &CellData, cell_height: f32) -> impl Iterator<Item = f32> + '_ {
-    [
-        (UNDERLINE, cell_height - 2.),
-        (STRIKETHROUGH, cell_height / 2.),
-    ]
-    .into_iter()
-    .filter_map(|(modifier, y)| (cell.modifier & modifier != 0).then_some(y))
-}
-
 /// `ShapedLine::paint` without its per-call layer, whose BoundsTree insert
 /// would otherwise run once per cell. Glyph placement matches GPUI's.
 fn paint_glyphs(
@@ -329,20 +325,12 @@ impl TerminalPainter {
     /// Glyphs for one cell symbol. Color is left to `paint_glyphs`, so one
     /// shape serves every color the symbol is drawn in.
     fn shape(&self, font: &Font, style: usize, symbol: &str, window: &Window) -> ShapedLine {
-        let mut font = font.clone();
-        let modifier = glyphs::style_modifier(style);
-        if modifier & BOLD != 0 {
-            font.weight = FontWeight::BOLD;
-        }
-        if modifier & ITALIC != 0 {
-            font.style = FontStyle::Italic;
-        }
         window.text_system().shape_line(
             SharedString::from(symbol.to_owned()),
             px(self.font_size),
             &[TextRun {
                 len: symbol.len(),
-                font,
+                font: glyphs::styled_font(font, style),
                 color: Hsla::default(),
                 background_color: None,
                 underline: None,
@@ -428,13 +416,16 @@ impl TerminalPainter {
                     let Some(data) = frame.cells.get(index) else {
                         continue;
                     };
-                    let position = origin
-                        + point(
-                            px(f32::from(column) * cell_width),
-                            px(f32::from(*row) * self.cell_height + self.cell_height - 2.),
-                        );
+                    // The same snapped corners as the dashes this line replaces.
+                    let top =
+                        f32::from(*row) * self.cell_height + underline_offset(self.cell_height);
                     window.paint_quad(fill(
-                        Bounds::new(position, size(px(cell_width), px(1.))),
+                        grid_rect(
+                            window,
+                            origin,
+                            point(px(f32::from(column) * cell_width), px(top)),
+                            point(px(f32::from(column + 1) * cell_width), px(top + 1.)),
+                        ),
                         rgb(cell_colors(data, &self.theme).0),
                     ));
                 }
@@ -689,19 +680,18 @@ impl TerminalPainter {
                             },
                         );
                     }
-                    let (column, row) = (
-                        index % usize::from(frame.width),
-                        index / usize::from(frame.width),
-                    );
-                    for y in decoration_offsets(cell, self.cell_height) {
+                    let row = index / usize::from(frame.width);
+                    for (y, left, right) in
+                        decoration_spans(frame, index, cell_width, self.cell_height)
+                    {
                         // Absolute corners keep a run of underlined cells one unbroken line.
                         let top = row as f32 * self.cell_height + y;
                         window.paint_quad(fill(
                             grid_rect(
                                 window,
                                 origin,
-                                point(px(column as f32 * cell_width), px(top)),
-                                point(px((column + 1) as f32 * cell_width), px(top + 1.)),
+                                point(px(left), px(top)),
+                                point(px(right), px(top + 1.)),
                             ),
                             rgb(cell_colors(cell, &self.theme).0),
                         ));
@@ -774,7 +764,9 @@ impl TerminalPainter {
             total.paths += counts.paths;
             total.decorations += counts.decorations;
             total.paint_errors += counts.paint_errors;
-            total.paints += 1;
+            // A region paints its three layers as three calls; count the
+            // region once, on its backgrounds, so `paints` stays a grid paint.
+            total.paints += usize::from(draws(Layer::Backgrounds));
         }
         #[cfg(not(feature = "integration-test"))]
         let _ = cx;

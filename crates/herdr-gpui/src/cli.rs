@@ -1,3 +1,6 @@
+mod args;
+pub mod control;
+
 use herdr_client::ConnectTarget;
 use std::ffi::OsString;
 
@@ -7,8 +10,12 @@ pub enum LaunchMode {
     Normal,
     Help,
     BuildInfo,
-    /// Talk to the running app, then exit without starting GPUI.
-    Browser(BrowserCommand),
+    /// Talk to the running app, or read its files, then exit without
+    /// starting GPUI.
+    Control(control::Invocation),
+    /// Hand a `herdr-gpui://` link to the running app, or start the app
+    /// and follow it there.
+    Link(crate::link::Link),
     /// Show the UI variants compiled in from `HERDR_MOCKUP_FILE`.
     #[cfg(feature = "mockup")]
     Mockup(MockupOptions),
@@ -18,24 +25,6 @@ pub enum LaunchMode {
     Sidebar,
     #[cfg(feature = "integration-test")]
     Performance,
-}
-
-/// `herdr-gpui browser ...`, answered by the running app.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum BrowserCommand {
-    Open {
-        /// A web address or a local file, told apart when it runs.
-        target: String,
-        workspace: Option<String>,
-        focus: bool,
-    },
-    Reload,
-    /// Waits up to `wait` seconds for notes; zero only checks.
-    Feedback {
-        wait: u64,
-    },
-    Skill,
-    Help,
 }
 
 /// `herdr-gpui --mockup [--feedback PATH] [--capture PATH]`: never connects
@@ -86,6 +75,33 @@ pub enum CliError {
     MissingWorkspace,
     #[error("browser arguments must be UTF-8")]
     InvalidBrowserEncoding(OsString),
+    #[error("{0} requires a value")]
+    MissingValue(&'static str),
+    #[error("{0} may only be specified once")]
+    DuplicateOption(&'static str),
+    #[error("Invalid {0}")]
+    InvalidValue(&'static str),
+    #[error("{command} requires {what}")]
+    MissingArgument {
+        command: &'static str,
+        what: &'static str,
+    },
+    #[error("{command}: unexpected {}", argument.to_string_lossy())]
+    Unexpected {
+        command: &'static str,
+        argument: OsString,
+    },
+    #[error("Unknown {family} command: {}", command.to_string_lossy())]
+    UnknownCommand {
+        family: &'static str,
+        command: OsString,
+    },
+    #[error("arguments must be UTF-8")]
+    InvalidEncoding(OsString),
+    #[error("invalid link: {0}")]
+    Link(#[from] crate::link::Error),
+    #[error("a herdr-gpui:// link must be the only argument")]
+    LinkArguments,
     #[cfg(feature = "mockup")]
     #[error("{0} requires a path")]
     MissingMockupPath(&'static str),
@@ -101,8 +117,8 @@ pub enum CliError {
     #[cfg(feature = "integration-test")]
     #[error("--integration-test requires an explicit --socket")]
     MissingIntegrationSocket,
-    #[cfg(all(feature = "integration-test", not(target_os = "macos")))]
-    #[error("--performance-test currently requires macOS native event delivery")]
+    #[cfg(all(feature = "integration-test", not(any(target_os = "macos", windows))))]
+    #[error("--performance-test currently requires macOS or Windows native event delivery")]
     UnsupportedPerformancePlatform,
 }
 
@@ -123,75 +139,6 @@ pub fn build_info() -> &'static str {
     );
     let record = std::hint::black_box(RECORD);
     &record[PREFIX_LEN..record.len() - 1]
-}
-
-fn utf8(value: OsString) -> Result<String, CliError> {
-    value
-        .into_string()
-        .map_err(CliError::InvalidBrowserEncoding)
-}
-
-fn parse_browser(mut args: impl Iterator<Item = OsString>) -> Result<BrowserCommand, CliError> {
-    let command = args.next().ok_or(CliError::MissingBrowserCommand)?;
-    match command.to_str() {
-        Some("--help" | "-h") => return Ok(BrowserCommand::Help),
-        Some(simple @ ("skill" | "reload")) => {
-            let command = if simple == "skill" {
-                BrowserCommand::Skill
-            } else {
-                BrowserCommand::Reload
-            };
-            return match args.next() {
-                None => Ok(command),
-                Some(extra) if extra == "--help" || extra == "-h" => Ok(BrowserCommand::Help),
-                Some(extra) => Err(CliError::UnexpectedArgument(extra)),
-            };
-        }
-        Some("feedback") => {
-            let mut wait = 0;
-            while let Some(arg) = args.next() {
-                match arg.to_str() {
-                    Some("--help" | "-h") => return Ok(BrowserCommand::Help),
-                    Some("--wait") => {
-                        wait = args
-                            .next()
-                            .and_then(|value| value.to_str()?.parse::<u64>().ok())
-                            .filter(|seconds| *seconds > 0)
-                            .ok_or(CliError::InvalidWait)?;
-                    }
-                    _ => return Err(CliError::UnexpectedArgument(arg)),
-                }
-            }
-            return Ok(BrowserCommand::Feedback { wait });
-        }
-        Some("open") => {}
-        _ => return Err(CliError::UnknownBrowserCommand(command)),
-    }
-    let (mut target, mut workspace, mut focus) = (None, None, true);
-    while let Some(arg) = args.next() {
-        match arg.to_str() {
-            Some("--help" | "-h") => return Ok(BrowserCommand::Help),
-            Some("--no-focus") => focus = false,
-            Some("--workspace") => {
-                let value = args
-                    .next()
-                    .filter(|value| {
-                        !value.is_empty() && !value.as_encoded_bytes().starts_with(b"-")
-                    })
-                    .ok_or(CliError::MissingWorkspace)?;
-                workspace = Some(utf8(value)?);
-            }
-            _ if target.is_none() && !arg.as_encoded_bytes().starts_with(b"-") => {
-                target = Some(utf8(arg)?);
-            }
-            _ => return Err(CliError::UnexpectedArgument(arg)),
-        }
-    }
-    Ok(BrowserCommand::Open {
-        target: target.ok_or(CliError::MissingUrl)?,
-        workspace,
-        focus,
-    })
 }
 
 /// The arguments after a leading `--mockup`. Paths stay OS strings.
@@ -219,11 +166,22 @@ fn parse_mockup(mut args: impl Iterator<Item = OsString>) -> Result<LaunchMode, 
 impl LaunchOptions {
     pub fn parse(args: impl IntoIterator<Item = impl Into<OsString>>) -> Result<Self, CliError> {
         let mut args = args.into_iter().map(Into::into).peekable();
-        if args.peek().is_some_and(|arg| arg == "browser") {
-            args.next();
+        if let Some(family) = args.next_if(control::is_family) {
             return Ok(Self {
                 target: ConnectTarget::Local,
-                mode: LaunchMode::Browser(parse_browser(args)?),
+                mode: LaunchMode::Control(control::parse(family, args)?),
+            });
+        }
+        if let Some(link) = args.next_if(|arg| crate::link::is_link(arg)) {
+            // The shell substitutes the whole link into one argument; a
+            // second one means it was split, perhaps to smuggle an option.
+            if args.next().is_some() {
+                return Err(CliError::LinkArguments);
+            }
+            let link = link.into_string().map_err(CliError::InvalidEncoding)?;
+            return Ok(Self {
+                target: ConnectTarget::Local,
+                mode: LaunchMode::Link(crate::link::Link::parse(&link)?),
             });
         }
         #[cfg(feature = "mockup")]
@@ -310,7 +268,7 @@ impl LaunchOptions {
             if mode == LaunchMode::Integration && socket.is_none() {
                 return Err(CliError::MissingIntegrationSocket);
             }
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(any(target_os = "macos", windows)))]
             if mode == LaunchMode::Performance {
                 return Err(CliError::UnsupportedPerformancePlatform);
             }

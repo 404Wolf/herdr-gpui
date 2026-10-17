@@ -9,7 +9,7 @@ use crate::{
     controls::{self, Command},
     endpoint::Step,
     log_window,
-    menu::WorkspaceAction,
+    menu::{WorkspaceAction, WorktreeShortcut},
     navigation::{NavigationTarget, OwnedNavigationTarget},
     open_additional_window, state,
 };
@@ -264,6 +264,15 @@ impl HerdrWindow {
                 self.open_browser_tab(None, window, cx);
                 return;
             }
+            Command::NextTab | Command::PreviousTab | Command::TabNumber(_)
+                if self.step_tab(command, window, cx) =>
+            {
+                return;
+            }
+            Command::ReopenClosedTab => {
+                self.reopen_closed_tab(window, cx);
+                return;
+            }
             Command::OpenOrchestrator => {
                 self.open_orchestrator(window, cx);
                 return;
@@ -292,6 +301,10 @@ impl HerdrWindow {
                 );
                 return;
             }
+            Command::ResumePalette => {
+                self.resume_palette(window, cx);
+                return;
+            }
             Command::GoToSymbol | Command::GoToFile => {
                 let mode = if command == Command::GoToFile {
                     crate::code_search::Mode::Files
@@ -303,6 +316,15 @@ impl HerdrWindow {
             }
             Command::NewWorktree => {
                 self.open_new_worktree(window, cx);
+                return;
+            }
+            Command::OpenWorktree | Command::RemoveWorktree => {
+                let shortcut = if command == Command::OpenWorktree {
+                    WorktreeShortcut::Open
+                } else {
+                    WorktreeShortcut::Remove
+                };
+                self.open_worktree_shortcut(shortcut, window, cx);
                 return;
             }
             Command::WorktreeNotes => {
@@ -367,7 +389,7 @@ impl HerdrWindow {
                 }
                 return;
             }
-            Command::ToggleFullScreen | Command::CycleWindows => {
+            Command::ToggleFullScreen | Command::CycleWindows | Command::CloseWindow => {
                 run_window_command(command, window, cx);
                 return;
             }
@@ -392,6 +414,10 @@ impl HerdrWindow {
                 self.status_bar_visible = !self.status_bar_visible;
                 window.focus(&self.focus, cx);
                 cx.notify();
+                return;
+            }
+            Command::ToggleZenMode => {
+                self.toggle_zen(window, cx);
                 return;
             }
             Command::DevicesOverview => {
@@ -432,6 +458,10 @@ impl HerdrWindow {
             }
             Command::RenamePane => {
                 self.rename_focused_pane(window, cx);
+                return;
+            }
+            Command::MovePane => {
+                self.move_focused_pane(window, cx);
                 return;
             }
             Command::RenameWorkspace | Command::CloseWorkspace => {
@@ -557,7 +587,7 @@ impl HerdrWindow {
 
     /// Installs the agent skill for browser tabs where Claude Code and other
     /// agents look for skills, and keeps it current from now on. Only on
-    /// request: the one-time offer, the palette, or Preferences.
+    /// request: the one-time offer, the palette, or Settings.
     pub(crate) fn install_browser_skill(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         use crate::agent_skill::{AgentSkill, Choice};
         let home = match crate::config::home() {
@@ -572,7 +602,7 @@ impl HerdrWindow {
             self.dismiss_menu(window, cx);
         }
         let install = cx.background_executor().spawn(async move {
-            let text = crate::agent_skill::text(std::env::current_exe().ok().as_deref());
+            let text = crate::agent_skill::text(crate::agent_skill::executable().as_deref());
             crate::agent_skill::install(&home, &text)
         });
         cx.spawn(async move |this, cx| {
@@ -586,32 +616,6 @@ impl HerdrWindow {
                     Err(error) => Flash::warning(error.to_string()),
                 };
                 this.show_flash(flash, cx);
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    /// Removes the skill files the app wrote and stops keeping them current.
-    pub(crate) fn remove_browser_skill(&mut self, cx: &mut Context<Self>) {
-        use crate::agent_skill::{AgentSkill, Choice};
-        let Ok(home) = crate::config::home() else {
-            return;
-        };
-        AgentSkill::choose(Choice::Declined, cx);
-        let remove = cx
-            .background_executor()
-            .spawn(async move { crate::agent_skill::remove(&home) });
-        cx.spawn(async move |this, cx| {
-            let result = remove.await;
-            this.update(cx, |this, cx| {
-                let flash = match result {
-                    Ok(paths) if paths.is_empty() => Flash::success("No browser skill to remove"),
-                    Ok(_) => Flash::success("Removed the browser skill"),
-                    Err(error) => Flash::warning(error.to_string()),
-                };
-                this.show_flash(flash, cx);
-                cx.notify();
             })
             .ok();
         })
@@ -652,7 +656,7 @@ impl HerdrWindow {
                 "Agents in your panes can open pages and HTML drafts in browser tabs here, and read the notes you pin on them. A skill teaches them how.",
             ))
             .child(div().p(px(8.)).text_color(rgb(theme.muted)).child(
-                "Install writes herdr-gpui-browser/SKILL.md into ~/.claude/skills and ~/.agents/skills, whichever exist, and keeps it up to date. A skill of that name you wrote yourself is left alone. Remove it any time in Preferences.",
+                "Install writes herdr-gpui-browser/SKILL.md into ~/.claude/skills and ~/.agents/skills, whichever exist, and keeps it up to date. A skill of that name you wrote yourself is left alone. Remove it any time in Settings.",
             ))
             .child(
                 div()
@@ -687,6 +691,7 @@ pub(crate) fn run_window_command(
     match command {
         Command::ToggleFullScreen => window.toggle_fullscreen(),
         Command::CycleWindows => cycle_windows(window, cx),
+        Command::CloseWindow => window.remove_window(),
         _ => return false,
     }
     true

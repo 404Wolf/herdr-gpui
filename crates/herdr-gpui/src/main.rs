@@ -1,29 +1,43 @@
 // objc 0.2's selectors expand a legacy cargo-clippy cfg in the native test adapter.
 #![cfg_attr(feature = "integration-test", allow(unexpected_cfgs))]
+// Tests start real processes; production code builds them with `new_command`.
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
 
 mod about;
 mod actions;
 mod agent_notes;
 mod agent_skill;
 mod app;
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", windows, test))]
 mod app_badge;
 mod app_icon;
 mod avatars;
 mod backdrop;
 mod bell;
+#[cfg(feature = "boat")]
+mod boat;
 mod browser;
 mod caffeine;
+mod caption;
 mod checkpoint;
 mod cli;
 mod close_modal;
 // `cloud` is the machinery every provider shares; alone it offers nothing to add.
-#[cfg(all(feature = "cloud", not(any(feature = "coder", feature = "daytona"))))]
+#[cfg(all(
+    feature = "cloud",
+    not(any(
+        feature = "boat",
+        feature = "coder",
+        feature = "daytona",
+        feature = "railway"
+    ))
+))]
 compile_error!(
-    "the `cloud` feature is enabled through a provider feature, such as `coder` or `daytona`"
+    "the `cloud` feature is enabled through a provider feature, such as `boat`, `coder`, `daytona`, or `railway`"
 );
 #[cfg(feature = "cloud")]
 mod cloud;
+mod cloud_setup;
 mod code_index;
 mod code_search;
 mod code_server;
@@ -51,7 +65,6 @@ mod error;
 mod fan_out;
 mod find;
 mod font_picker;
-mod font_sizes;
 mod fonts;
 mod git;
 mod github;
@@ -62,8 +75,11 @@ mod icon_font_notice;
 mod icons;
 mod input;
 mod integrations;
+#[cfg(windows)]
+mod jump_list;
 mod keymap;
 mod lenient;
+mod link;
 mod links;
 mod listening_ports;
 mod local_path;
@@ -71,15 +87,18 @@ mod log_window;
 mod login_env;
 mod menu;
 mod menus;
+mod merged_cleanup;
 #[cfg(feature = "mockup")]
 mod mockup;
 mod motion;
 mod navigation;
+mod network_quality;
 mod notifications;
 mod orchestrator;
 mod osc52;
 mod palette;
 mod pane_menu;
+mod pane_move;
 mod panel_resize;
 mod plugin_values;
 mod port_forward;
@@ -89,15 +108,21 @@ mod presentation;
 mod processes;
 mod progress;
 mod pull_request;
+#[cfg(feature = "railway")]
+mod railway;
 mod release_notes;
+mod remote_browser;
 mod reorder;
 mod repo_items;
+mod restart_manager;
 mod review;
 mod scrollback;
 mod search_input;
 mod sessions;
 mod settings_panel;
 mod settings_window;
+#[cfg(unix)]
+mod setup_relay;
 mod sidebar;
 mod smooth_scroll;
 mod sound;
@@ -106,6 +131,7 @@ mod state_file;
 mod storage_warning;
 mod system_load;
 mod tab_menu;
+mod taskbar;
 mod teleport;
 mod terminal;
 mod terminal_notes;
@@ -118,6 +144,7 @@ mod updater;
 mod usage;
 mod window;
 mod window_state;
+mod words;
 mod worktree;
 mod worktree_banner;
 mod worktree_notes;

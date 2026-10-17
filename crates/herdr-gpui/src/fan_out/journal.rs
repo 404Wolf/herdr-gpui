@@ -18,6 +18,7 @@
 //! is on disk before its script starts.
 
 use super::{
+    error::{Error, Result},
     job::{Checkout, Progress, Report},
     plan::{Lane, MAX_LANES},
     state::Origin,
@@ -26,7 +27,7 @@ use crate::{state_file, teleport::AgentKind};
 use gpui::{App, Global};
 use serde::{Deserialize, Serialize};
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 
@@ -273,17 +274,24 @@ struct Saved {
     records: Vec<Record>,
 }
 
-fn parse(bytes: &[u8]) -> crate::Result<Vec<Record>> {
-    let saved: Saved = serde_json::from_slice(bytes)?;
+fn parse(bytes: &[u8]) -> Result<Vec<Record>> {
+    let saved: Saved = serde_json::from_slice(bytes).map_err(Error::JournalJson)?;
     let unique = saved
         .records
         .iter()
         .enumerate()
         .all(|(index, record)| saved.records[..index].iter().all(|r| r.id != record.id));
     if saved.records.len() > MAX_RECORDS || !unique || !saved.records.iter().all(Record::valid) {
-        return Err(crate::Error::InvalidFanOutJournal);
+        return Err(Error::InvalidJournal);
     }
     Ok(saved.records)
+}
+
+/// The records saved at `path`, none when there is no file yet.
+fn read(path: &Path) -> Result<Vec<Record>> {
+    let bytes = state_file::read(path, MAX_FILE_BYTES)
+        .map_err(|error| Error::JournalRead(Box::new(error)))?;
+    bytes.as_deref().map_or(Ok(Vec::new()), parse)
 }
 
 #[derive(Default)]
@@ -350,10 +358,7 @@ impl Journal {
     pub(super) fn at(path: Option<PathBuf>) -> Self {
         let records = path
             .as_deref()
-            .map(|path| {
-                state_file::read(path, MAX_FILE_BYTES)
-                    .and_then(|bytes| bytes.as_deref().map_or(Ok(Vec::new()), parse))
-            })
+            .map(read)
             .transpose()
             .unwrap_or_else(|error| {
                 tracing::warn!(%error, "Cannot restore the fan-out journal");

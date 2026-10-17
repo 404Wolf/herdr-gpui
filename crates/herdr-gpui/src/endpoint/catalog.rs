@@ -168,6 +168,12 @@ impl Catalog {
         failure
     }
 
+    /// Whether the saved devices have been read once, so a device missing
+    /// from the window is really not saved rather than not loaded yet.
+    pub(crate) fn loaded(&self) -> bool {
+        self.initialized
+    }
+
     pub(super) fn accept(&mut self, update: &CatalogUpdate) {
         if !self.initialized {
             self.desired = update.selection.clone().flatten();
@@ -262,7 +268,6 @@ impl HerdrWindow {
         #[cfg(feature = "cloud")] cloud: Option<Vec<crate::cloud::SavedDevice>>,
         cx: &mut Context<Self>,
     ) {
-        #[cfg_attr(not(feature = "cloud"), allow(unused_mut))]
         let mut devices = devices(hosts, wsl);
         #[cfg(feature = "cloud")]
         match cloud {
@@ -289,6 +294,7 @@ impl HerdrWindow {
                     }),
             ),
         }
+        devices.sort_by_key(|device| super::order::rank(&self.device_order, &device.id));
         let selected = &self.endpoints[self.selected_endpoint];
         let selected_id = selected.id.clone();
         let selected_retired = self.selected_endpoint != 0
@@ -358,6 +364,8 @@ impl HerdrWindow {
             .iter()
             .position(|e| e.id == selected_id)
             .unwrap_or(0);
+        // A tab torn off another window may belong to a host just listed.
+        self.land_arrival(true, cx);
         cx.notify();
     }
 }

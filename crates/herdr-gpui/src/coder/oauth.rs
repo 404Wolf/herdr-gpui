@@ -90,26 +90,51 @@ pub(crate) fn begin(settings: &Settings) -> Result<Pending> {
 }
 
 impl Pending {
-    /// Wait for the redirect, then exchange its code for a credential.
-    pub(crate) fn finish(
+    /// Wait for the redirect, exchange its code for a credential, hand it to
+    /// `keep` (which saves it), and only then tell the browser how the sign-in
+    /// ended, so the tab never says signed in when the credential was not kept.
+    pub(crate) fn finish<T>(
         self,
         settings: &Settings,
         cancelled: impl Fn() -> bool,
-    ) -> Result<token::Credential> {
+        keep: impl FnOnce(token::Credential) -> Result<T>,
+    ) -> Result<T> {
         let deadline = Instant::now() + SIGN_IN_TIMEOUT;
-        let code = self.wait(&settings.redirect.path, &cancelled, deadline)?;
-        if cancelled() {
-            return Err(Error::Cancelled);
-        }
-        exchange(settings, &code, &self.pkce.verifier)
+        let (mut browser, code) = self.wait(&settings.redirect.path, &cancelled, deadline)?;
+        let result = code
+            .and_then(|code| {
+                if cancelled() {
+                    return Err(Error::Cancelled);
+                }
+                exchange(settings, &code, &self.pkce.verifier)
+            })
+            .and_then(keep);
+        let (status, text) = match &result {
+            Ok(_) => (
+                "200 OK",
+                "Signed in to Coder. You can close this tab and return to Herdr.",
+            ),
+            Err(Error::Authorization(_)) => (
+                "400 Bad Request",
+                "Coder did not authorize the sign-in. Return to Herdr and try again.",
+            ),
+            Err(_) => (
+                "500 Internal Server Error",
+                "Herdr could not finish signing in to Coder. Return to Herdr to see why.",
+            ),
+        };
+        let _ = respond(&mut browser, status, text);
+        result
     }
 
+    /// The browser's connection, kept open for the reply, and the code it
+    /// brought or why it brought none.
     fn wait(
         &self,
         path: &str,
         cancelled: &impl Fn() -> bool,
         deadline: Instant,
-    ) -> Result<SecretString> {
+    ) -> Result<(TcpStream, Result<SecretString>)> {
         loop {
             if cancelled() {
                 return Err(Error::Cancelled);
@@ -119,8 +144,8 @@ impl Pending {
             }
             match self.listener.accept() {
                 Ok((stream, _)) => {
-                    if let Some(result) = self.answer(stream, path) {
-                        return result;
+                    if let Some(reply) = self.answer(stream, path) {
+                        return Ok(reply);
                     }
                 }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
@@ -131,24 +156,21 @@ impl Pending {
         }
     }
 
-    /// Serve one browser request. `None` keeps waiting: a request for another
-    /// path, a malformed one, or one without this sign-in's `state`.
-    fn answer(&self, mut stream: TcpStream, path: &str) -> Option<Result<SecretString>> {
+    /// Read one browser request. `None` answers it and keeps waiting: a request
+    /// for another path, a malformed one, or one without this sign-in's `state`.
+    fn answer(
+        &self,
+        mut stream: TcpStream,
+        path: &str,
+    ) -> Option<(TcpStream, Result<SecretString>)> {
         let request = read_request(&mut stream).ok()?;
-        let reply = callback(&request, path, &self.state);
-        let (status, text) = match &reply {
-            Some(Ok(_)) => (
-                "200 OK",
-                "Signed in to Coder. You can close this tab and return to Herdr.",
-            ),
-            Some(Err(_)) => (
-                "400 Bad Request",
-                "Coder did not authorize the sign-in. Return to Herdr and try again.",
-            ),
-            None => ("404 Not Found", "Not found."),
-        };
-        let _ = respond(&mut stream, status, text);
-        reply
+        match callback(&request, path, &self.state) {
+            Some(reply) => Some((stream, reply)),
+            None => {
+                let _ = respond(&mut stream, "404 Not Found", "Not found.");
+                None
+            }
+        }
     }
 }
 
@@ -279,8 +301,19 @@ pub(super) fn exchange(
             ("client_secret", secret.expose_secret()),
             ("code_verifier", verifier.expose_secret()),
         ],
-    )?;
+    )
+    .map_err(client)?;
     credential(settings, reply)
+}
+
+/// The token endpoint answers 401 only for `invalid_client`: the client
+/// secret does not belong to the client ID. That is the app's configuration,
+/// not the user's sign-in, so it must neither read as nor drop a sign-in.
+fn client(error: Error) -> Error {
+    match error {
+        Error::Authentication => Error::Client,
+        error => error,
+    }
 }
 
 /// Trade the refresh token for a new pair. Coder rotates refresh tokens, so the
@@ -302,7 +335,7 @@ pub(crate) fn refresh(settings: &Settings, saved: &token::Credential) -> Result<
     .map_err(|error| match error {
         // An invalid or expired grant means signing in again, not a retry.
         Error::Status(super::Status { code: 400, .. }) => Error::Authentication,
-        error => error,
+        error => client(error),
     })?;
     credential(settings, reply)
 }

@@ -51,9 +51,10 @@ impl HerdrWindow {
     }
 
     /// Whether the modifiers keep a press here from a mouse-reporting
-    /// application. Shift keeps any gesture local; the platform link modifier
-    /// (cmd on macOS, ctrl elsewhere) claims only a press on a link, so the
-    /// application still receives it everywhere else.
+    /// application. Shift keeps any gesture local, for selecting; the platform
+    /// link modifier (cmd on macOS, ctrl elsewhere) claims only a press on a
+    /// verified link, so the application still receives it everywhere else,
+    /// a printed path still being looked for on disk included.
     pub(crate) fn link_modifier_held(
         &self,
         position: Point<Pixels>,
@@ -63,30 +64,34 @@ impl HerdrWindow {
             || (modifiers.secondary()
                 && (self.terminal_link_at(position).is_some()
                     || self.daemon_link_at(position).is_some()
-                    || self.file_link_at(position).is_some()))
+                    || self
+                        .terminal_link_press(position, modifiers)
+                        .is_some_and(|press| self.verified_press(&press))))
     }
 
-    /// Whether a left click here would open a link, which the pointer shows.
+    /// Whether the pointer shows a link here: only while the link modifier is
+    /// held, when a click would act on what is under it. That is every
+    /// explicit hyperlink, which says it is a link, and any other text once
+    /// it is verified as one.
     pub(crate) fn terminal_link_hovered(
         &self,
         position: Point<Pixels>,
         modifiers: gpui::Modifiers,
     ) -> bool {
-        let web = (self.terminal_link_at(position).is_some()
-            || self.daemon_link_at(position).is_some())
-            && (modifiers.secondary()
-                || modifiers.shift
-                || self
-                    .terminal_mouse_at(position)
-                    .is_none_or(|hit| !hit.mouse_reporting));
-        web || (modifiers.secondary() && self.file_link_at(position).is_some())
+        modifiers.secondary()
+            && (self.terminal_link_at(position).is_some()
+                || self.daemon_link_at(position).is_some()
+                || self.terminal_hyperlink_at(position)
+                || (self.hovered_local_link().is_some() && self.local_link_at(position).is_some()))
     }
 
-    /// Whether wheel scrolling may draw panes between rows. Images paint with
-    /// the whole grid, which never slides, a dragged thumb places the content
-    /// exactly where the pointer put it, and a popup stays on its rows.
+    /// Whether wheel scrolling may draw panes between rows. Off in settings,
+    /// it never does. Images paint with the whole grid, which never slides,
+    /// a dragged thumb places the content exactly where the pointer put it,
+    /// and a popup stays on its rows.
     pub(crate) fn slides_allowed(&self) -> bool {
-        self.scrollbar_drag.is_none()
+        self.config.smooth_scroll
+            && self.scrollbar_drag.is_none()
             && (self.live.surface.as_ref()).is_none_or(|surface| {
                 surface.graphics.placements.is_empty() && surface.popup.is_none()
             })
@@ -170,6 +175,15 @@ impl HerdrWindow {
         )
     }
 
+    /// Herdr's shared `ui.mouse_scroll_lines`, its default until the shared
+    /// config loads.
+    fn mouse_scroll_lines(&self) -> std::num::NonZeroU16 {
+        self.settings.shared.as_ref().map_or(
+            crate::herdr_settings::DEFAULT_MOUSE_SCROLL_LINES,
+            |shared| shared.mouse_scroll_lines,
+        )
+    }
+
     pub(crate) fn scroll_wheel(
         &mut self,
         event: &ScrollWheelEvent,
@@ -177,7 +191,13 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) {
         self.shift_taps.cancel();
-        if self.menu.page.is_some() || !self.input_ready() {
+        if self.menu.page.is_some() {
+            return;
+        }
+        // A wheel over the panes is use even before the frame is ready, so the
+        // window takes back a frame another client sized.
+        self.note_input();
+        if !self.input_ready() {
             return;
         }
         let (Some(handle), Some(snapshot), Some(surface)) = (
@@ -194,15 +214,16 @@ impl HerdrWindow {
             self.wheel = WheelAccumulator::default();
             return;
         };
+        let notch_lines = self.mouse_scroll_lines();
         let mut steps = self
             .wheel
-            .steps(&target, event, self.cell_width, cell_height);
+            .steps(&target, event, self.cell_width, cell_height, notch_lines);
         // Scrollback follows the OS's motion exactly; anything else, such as an
         // application reading the wheel, gets whole steps as they accumulate.
         let smooth = match &target.target {
-            InputTarget::Pane(id) if self.slides_allowed() => {
-                self.presentation.wheel(id, wheel_rows(event, cell_height))
-            }
+            InputTarget::Pane(id) if self.slides_allowed() => self
+                .presentation
+                .wheel(id, wheel_rows(event, cell_height, notch_lines)),
             InputTarget::Pane(_) | InputTarget::Popup(_) => None,
         };
         if let Some(lines) = smooth {
@@ -249,17 +270,31 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A remapped function key has its name from here on, so the pane key
+        // looked up, the key sent, and the key held for its release agree.
+        let named =
+            super::function_keys::named(&event.keystroke, self.key_press).map(|keystroke| {
+                KeyDownEvent {
+                    keystroke,
+                    ..event.clone()
+                }
+            });
+        let event = named.as_ref().unwrap_or(event);
         // A new press goes wherever this decides; only the pane branch at the
         // end holds it again for its release.
         self.held_keys.forget(&event.keystroke.key);
-        // A keystroke bubbling out of the find field is the field's: an
-        // unhandled one is still on its way to the field's IME.
-        if self.find_focused(window, cx) || self.terminal_note_focused(window, cx) {
+        // A keystroke bubbling out of the find field, the terminal note field,
+        // or the copy-mode search prompt is the field's: an unhandled one is
+        // still on its way to the field's IME.
+        if self.find_focused(window, cx)
+            || self.terminal_note_focused(window, cx)
+            || self.copy_search_focused(window, cx)
+        {
             return;
         }
         // Copy mode owns the keyboard: its keys run and nothing else is typed.
         if self.copy_mode_active() {
-            self.copy_mode_key(event, cx);
+            self.copy_mode_key(event, window, cx);
             if !event.keystroke.modifiers.platform {
                 cx.stop_propagation();
                 window.prevent_default();
@@ -298,9 +333,27 @@ impl HerdrWindow {
             window.prevent_default();
             return;
         }
+        // Cmd-A, or Ctrl-Shift-A on Linux and Windows, where plain Ctrl-A
+        // stays the pane's, selects the focused pane's history and screen.
+        let select_all = if modifiers.platform {
+            !modifiers.control && !modifiers.shift
+        } else {
+            crate::controls::CTRL_SHORTCUTS && modifiers.control && modifiers.shift
+        };
+        if event.keystroke.key.eq_ignore_ascii_case("a")
+            && select_all
+            && !modifiers.alt
+            && self.select_all(cx)
+        {
+            cx.stop_propagation();
+            window.prevent_default();
+            return;
+        }
         self.clear_retained_selection(cx);
         if event.keystroke.key == "escape"
-            && (self.cancel_workspace_drag(cx) | self.cancel_tab_drag(cx))
+            && (self.cancel_workspace_drag(cx)
+                | self.cancel_device_drag(cx)
+                | self.cancel_tab_drag(cx))
         {
             cx.stop_propagation();
             window.prevent_default();
@@ -342,7 +395,10 @@ impl HerdrWindow {
     /// terminal to report all keys. Text stays with the input handler, so
     /// only keys sent as key events are released.
     pub(crate) fn key_up(&mut self, event: &KeyUpEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(release) = self.held_keys.release(&event.keystroke.key) else {
+        // Held under the name `key_down` gave it.
+        let named = super::function_keys::named(&event.keystroke, self.key_press);
+        let key = &named.as_ref().unwrap_or(&event.keystroke).key;
+        let Some(release) = self.held_keys.release(key) else {
             return;
         };
         if self.live.keyboard_report_all && self.marked.is_empty() {

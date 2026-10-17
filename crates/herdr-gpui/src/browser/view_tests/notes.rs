@@ -48,11 +48,29 @@ fn noted_tab(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) -> crate::b
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
             // A page's posts are ignored until the user starts annotating.
-            view.page_posted(tab.id, PICK, window, cx);
+            view.page_posted(
+                tab.id,
+                PICK,
+                crate::browser::PostedFrom::Preview,
+                window,
+                cx,
+            );
             assert!(!view.browser.annotations.open(tab.id));
             view.toggle_annotating(tab.id, window, cx);
-            view.page_posted(tab.id, "not json", window, cx);
-            view.page_posted(tab.id, PICK, window, cx);
+            view.page_posted(
+                tab.id,
+                "not json",
+                crate::browser::PostedFrom::Preview,
+                window,
+                cx,
+            );
+            view.page_posted(
+                tab.id,
+                PICK,
+                crate::browser::PostedFrom::Preview,
+                window,
+                cx,
+            );
             let input = view.browser.annotations.input(tab.id, cx);
             input.update(cx, |input, cx| input.set_text_selected("Make it blue", cx));
             view.add_note(tab.id, window, cx);
@@ -72,17 +90,8 @@ fn recipient(view: &Entity<HerdrWindow>, cx: &VisualTestContext) -> crate::brows
 fn kept(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) -> Option<String> {
     let target = recipient(view, cx);
     cx.update(|_, cx| {
-        if cfg!(unix) {
-            cx.default_global::<crate::browser::Feedback>()
-                .take(&target)
-        } else {
-            let text = cx
-                .read_from_clipboard()
-                .and_then(|item| item.text())
-                .filter(|text| !text.is_empty());
-            cx.write_to_clipboard(gpui::ClipboardItem::new_string(String::new()));
-            text
-        }
+        cx.default_global::<crate::browser::Feedback>()
+            .take(&target)
     })
 }
 

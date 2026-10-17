@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum Error {
+pub enum Error {
     #[error("No data directory is available for orchestrator state")]
     NoDataDirectory,
     #[error("Could not prepare {}: {source}", path.display())]
@@ -70,8 +70,11 @@ pub(crate) enum Error {
     BeadsMissing,
     #[error("Bead id {0:?} is not one bd accepts")]
     BeadId(String),
-    #[error("GitHub request failed: {0}")]
+    /// Shown as GitHub's own failure, which already names GitHub and why.
+    #[error("{0}")]
     Github(#[source] Box<crate::Error>),
+    #[error(transparent)]
+    Gitlab(#[from] super::gitlab::Error),
     #[error("Cancelled")]
     Cancelled,
     #[error("Could not start the orchestrator's worker: {0}")]

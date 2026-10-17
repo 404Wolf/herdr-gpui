@@ -22,6 +22,20 @@ impl TabId {
     }
 }
 
+/// An ID a control request names, as `tab list` printed it. Only ever
+/// compared with the store's own IDs.
+impl From<u64> for TabId {
+    fn from(id: u64) -> Self {
+        Self(id)
+    }
+}
+
+impl From<TabId> for u64 {
+    fn from(id: TabId) -> Self {
+        id.0
+    }
+}
+
 impl std::fmt::Display for TabId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
@@ -43,6 +57,11 @@ impl Scope {
     /// A saved SSH host, named by its catalog ID.
     pub(crate) fn endpoint(id: &str) -> Self {
         Self(id.to_owned())
+    }
+
+    /// The scope as `tab list` reports a tab's host.
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -112,6 +131,7 @@ struct Saved {
 pub(crate) struct Store {
     tabs: Vec<Tab>,
     next: u64,
+    pub(super) closed: super::closed::ClosedTabs,
     writer: Option<state_file::Writer<Saved>>,
     quitting: bool,
 }
@@ -175,6 +195,7 @@ impl Store {
         Self {
             tabs,
             next,
+            closed: Default::default(),
             writer,
             quitting: false,
         }
@@ -213,6 +234,11 @@ impl Store {
                 tabs: self.tabs.clone(),
             });
         }
+    }
+
+    /// Every tab of every workspace, in the order they were opened.
+    pub(crate) fn tabs(&self) -> impl Iterator<Item = &Tab> {
+        self.tabs.iter()
     }
 
     pub(crate) fn get(&self, id: TabId) -> Option<&Tab> {
@@ -274,22 +300,28 @@ impl Store {
         origin: Option<String>,
         place: Place,
     ) -> Option<TabId> {
+        let title = location
+            .as_ref()
+            .map_or_else(|| "New Tab".to_owned(), Location::default_title);
+        self.restore_tab(Tab {
+            id: TabId(0),
+            scope,
+            workspace_id: workspace_id.to_owned(),
+            location,
+            title,
+            origin,
+            place,
+        })
+    }
+
+    pub(super) fn restore_tab(&mut self, mut tab: Tab) -> Option<TabId> {
         if self.tabs.len() >= MAX_TABS {
             return None;
         }
         let id = TabId(self.next);
         self.next += 1;
-        self.tabs.push(Tab {
-            id,
-            scope,
-            workspace_id: workspace_id.to_owned(),
-            title: location
-                .as_ref()
-                .map_or_else(|| "New Tab".to_owned(), Location::default_title),
-            location,
-            origin,
-            place,
-        });
+        tab.id = id;
+        self.tabs.push(tab);
         self.save();
         Some(id)
     }
@@ -317,7 +349,6 @@ impl Store {
     }
 
     /// The tabs a pane's agent opened.
-    #[cfg(any(unix, test))]
     pub(crate) fn opened_by<'a>(&'a self, pane_id: &'a str) -> impl Iterator<Item = &'a Tab> + 'a {
         self.tabs
             .iter()
@@ -353,6 +384,14 @@ impl Store {
     }
 
     pub(crate) fn close(&mut self, id: TabId) -> Option<Tab> {
+        let tab = self.detach(id)?;
+        self.closed.push_page(tab.clone());
+        Some(tab)
+    }
+
+    /// Removes a tab without recording it as closed, as when its view moves
+    /// into a detached window of its own.
+    pub(crate) fn detach(&mut self, id: TabId) -> Option<Tab> {
         let index = self.tabs.iter().position(|tab| tab.id == id)?;
         let tab = self.tabs.remove(index);
         self.save();
@@ -391,6 +430,7 @@ impl Store {
 
     /// Drops the tabs of workspaces the daemon closed.
     pub(crate) fn forget_workspaces(&mut self, scope: &Scope, closed: &[String]) -> bool {
+        self.closed.forget_workspaces(scope, closed);
         let before = self.tabs.len();
         self.tabs
             .retain(|tab| &tab.scope != scope || !closed.contains(&tab.workspace_id));
@@ -431,9 +471,11 @@ impl Store {
     /// Whether any tab belongs to one of `closed`, without claiming the
     /// store for writing, which would redraw every window.
     pub(crate) fn has_workspaces(&self, scope: &Scope, closed: &[String]) -> bool {
-        self.tabs
-            .iter()
-            .any(|tab| &tab.scope == scope && closed.contains(&tab.workspace_id))
+        self.closed.has_workspaces(scope, closed)
+            || self
+                .tabs
+                .iter()
+                .any(|tab| &tab.scope == scope && closed.contains(&tab.workspace_id))
     }
 }
 

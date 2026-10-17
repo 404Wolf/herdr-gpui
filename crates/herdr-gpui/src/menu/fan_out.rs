@@ -43,7 +43,7 @@ impl HerdrWindow {
     /// The workspace menu's fan-out row: the comparison of a launched fan-out
     /// while there is one, otherwise a new fan-out from a Git workspace on a
     /// host that can be scripted.
-    pub(super) fn fan_out_item(&self) -> Option<&'static str> {
+    pub(crate) fn fan_out_item(&self) -> Option<&'static str> {
         if self
             .fan_out
             .as_ref()
@@ -57,7 +57,7 @@ impl HerdrWindow {
         (scriptable && self.fan_out_source().is_some()).then_some("Fan out prompt...")
     }
 
-    pub(super) fn open_fan_out(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn open_fan_out(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self
             .fan_out
             .as_ref()

@@ -2,7 +2,7 @@ use gpui::{prelude::*, *};
 use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;
 
-use super::{HerdrWindow, input::ViewInputHandler};
+use super::{HerdrWindow, input::ViewInputHandler, words};
 
 // Byte offsets internally; only the platform input boundary uses UTF-16.
 #[derive(Default)]
@@ -124,6 +124,28 @@ impl DialogInput {
                     if key.key == "x" {
                         self.replace(None, "", false, None);
                     }
+                }
+            }
+            "left" | "right" | "backspace" | "delete"
+                if crate::actions::word_modifiers(key.modifiers) =>
+            {
+                let selected = !self.selection.is_empty();
+                let from = match key.key.as_str() {
+                    "left" if !key.modifiers.shift && selected => self.selection.start,
+                    "right" if !key.modifiers.shift && selected => self.selection.end,
+                    _ => cursor,
+                };
+                let offset = match key.key.as_str() {
+                    "left" | "backspace" => words::previous_start(&self.text, from),
+                    _ => words::next_end(&self.text, from),
+                };
+                if matches!(key.key.as_str(), "left" | "right") {
+                    self.move_to(offset, key.modifiers.shift);
+                } else {
+                    if !selected {
+                        self.selection = offset.min(cursor)..offset.max(cursor);
+                    }
+                    self.replace(None, "", false, None);
                 }
             }
             "left" | "right" | "home" | "end" => {
@@ -317,6 +339,8 @@ impl HerdrWindow {
 mod tests {
     use super::DialogInput;
     use gpui::Keystroke;
+
+    mod word_keys;
 
     #[test]
     fn utf16_replacement_and_composition_use_relative_selection() {

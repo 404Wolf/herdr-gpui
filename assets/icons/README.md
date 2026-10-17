@@ -65,6 +65,26 @@ gtk-update-icon-cache --force --ignore-theme-index ~/.local/share/icons/hicolor
 This user-local icon overrides the packaged icon. Remove that SVG when you want
 future artwork changes to come from package upgrades again, then refresh the cache.
 
+### Windows
+
+`Herdr.ico` holds the rounded tile at 16, 20, 24, 32, 40, 48, 64, and 256 px, each
+a PNG rendered from `herdr-ui-icon-clean.svg`. Linked-worktree builds use the red
+`Herdr-worktree.ico`, with the palette of the Linux worktree SVG. The build script
+(`crates/herdr-gpui/windows_resource.rs`) embeds it in the executable as icon
+resource 1, the one GPUI loads for its windows, so Explorer, the window, and the
+taskbar all show it. Building for Windows therefore needs a resource compiler:
+`rc.exe` from the Windows SDK for MSVC, or mingw's `windres` for the GNU target.
+
+Run `just icons-windows` to regenerate both files. It needs Python's standard
+library and `rsvg-convert` (`apt-get install librsvg2-bin` or
+`brew install librsvg`), so on Windows run it under WSL. `just icons` runs it too.
+
+The Inno Setup installer uses `Herdr.ico` as its own icon, and the same tile at
+each DPI scale for its pages: `windows/wizard-small-*.png` in every page's
+corner, and `windows/wizard-*.png` centered on the welcome and finish pages.
+`just icons-windows` regenerates those too, with
+`scripts/generate-installer-images.py` (`rsvg-convert` or `resvg`).
+
 ### macOS sizing
 
 The flattened `.icns` icons follow Apple's
@@ -120,7 +140,7 @@ workspace menu alongside the original `pencil.svg` (rename), `trash.svg`
 (delete checkout) and `chevron-up.svg` / `chevron-down.svg` (fold and unfold a
 worktree group); `git-branch.svg` is original artwork for the titlebar's Git
 actions button; `sessions.svg` is original artwork for the sidebar footer's local
-session list; `teleport.svg` is original artwork for moving a worktree to
+session list; `file.svg` is original document-outline artwork for Settings' Configuration section; `teleport.svg` is original artwork for moving a worktree to
 another host, and `teleport-back.svg` its mirror for bringing it back; `zoom.svg` is original artwork marking a zoomed tab in the tab strip; `window-minimize.svg`, `window-maximize.svg`, and `window-restore.svg` are original artwork for the window buttons drawn on Linux when the compositor provides none, beside `close.svg`; `user.svg` is an
 original generic silhouette for the future account placeholder, not a personal
 identity or GitHub logo. All of them are embedded through a
@@ -162,15 +182,15 @@ and missing identities use `agent-generic.svg`.
 | `kilo` | Lobe Icons `kilocode.svg` |
 | `qodercli` | Lobe Icons `qoder.svg` |
 | `qwen` | Lobe Icons `qwen.svg` |
+| `muse` | Lobe Icons `meta.svg` (Meta's mark; Muse Code has no redistributable mark of its own) |
 | `omp`, `droid`, `letta`, `maki` | Original lettermark (O, D, L, M) in a rounded square |
-| `muse` | Original lettermark (M) in a circle, to tell it apart from Maki |
 | generic | Original terminal artwork |
 
 Lobe Icons marks are MIT licensed; source attribution and the full license are
 in the root [NOTICE](../../NOTICE), shipped with releases. Their SVG wrappers
 were reduced to a 24px `currentColor` mask and titles removed; paths are
 unchanged. No redistributable monochrome mark was found for oh-my-pi, Factory
-Droid, Letta, Maki, or Muse, so their lettermarks and the generic mark are
+Droid, Letta, or Maki, so their lettermarks and the generic mark are
 original artwork under this project's Apache-2.0 license, drawn with the same
 2px round stroke as the generic mark. All are embedded SVG masks tinted with
 the adjacent name's theme color.
