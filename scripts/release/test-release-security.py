@@ -127,7 +127,7 @@ class ReleaseTargets(unittest.TestCase):
         self.assertEqual(re.findall(r"- runner: (\S+)\n            target: (\S+)", windows), [
             ("windows-2025", "x86_64-pc-windows-msvc"),
             ("windows-11-arm", "aarch64-pc-windows-msvc")])
-        for command in ('cargo build --locked --release -p herdr-gpui --target "$TARGET"',
+        for command in ('cargo build --locked --release -p herdr-gpui -p herdr-gpui-launcher --target "$TARGET"',
                         'cargo test --locked --release -p herdr-gpui --test cli --target "$TARGET"',
                         'cargo clippy --locked --workspace --all-targets --all-features -- -D warnings',
                         'cargo test --locked -p herdr-protocol -p herdr-client',
@@ -291,7 +291,7 @@ class WindowsTrust(unittest.TestCase):
         for setting in ("timestamp-rfc3161: http://timestamp.acs.microsoft.com", "timestamp-digest: SHA256",
                         "file-digest: SHA256", "exclude-environment-credential: true",
                         "cache-dependencies: false", "name: windows-package-${{ matrix.target }}",
-                        "}}\\herdr-gpui.exe\n", "}}\\bin\\herdr-gpui.exe\n",
+                        "}}\\herdr-gpui.exe\n", "}}\\herdr-gpui-launcher.exe\n",
                         "name: windows-signed-${{ matrix.target }}"):
             self.assertIn(setting, sign)
         # Unpack, sign, check and repack, then sign the installer, then verify.

@@ -59,12 +59,15 @@ ureq.workspace                 = true
 uuid.workspace                 = true
 zeroize.workspace              = true
 
+[build-dependencies]
+winresource.workspace = true
+
 [dev-dependencies]
 gpui = { features = ["test-support"], workspace = true }
 test-case.workspace = true
 
 [features]
-default = ["boat", "coder", "daytona", "railway", "windows-resource"]
+default = ["boat", "coder", "daytona", "railway"]
 # Machines from cloud providers as devices: the shared device list, background
 # jobs, and connector. Turned on by each provider below; not useful alone.
 cloud = ["herdr-client/cloud"]
@@ -90,9 +93,6 @@ integration-test = [
   "dep:objc",
   "dep:raw-window-handle",
 ]
-# The icon and version resource in herdr-gpui.exe (see build.rs). Does nothing
-# on other platforms.
-windows-resource = ["dep:embed-resource"]
 
 [target.'cfg(unix)'.dependencies]
 rustix.workspace = true
@@ -102,12 +102,9 @@ rustix.workspace = true
 [target.'cfg(any(target_os = "macos", windows))'.dependencies]
 wry.workspace = true
 
-[target.'cfg(windows)'.build-dependencies]
-embed-resource = { optional = true, workspace = true }
-
-# Attaching the GUI build to a calling terminal's console (see `console`).
 [target.'cfg(windows)'.dependencies]
-windows-sys = { features = ["Win32_System_Console"], workspace = true }
+raw-window-handle.workspace = true
+windows.workspace           = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 fontdb.workspace       = true

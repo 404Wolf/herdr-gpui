@@ -222,14 +222,14 @@ jobs:
         with:
           key: windows-package
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Build optimized Windows executable
-        run: cargo build --locked --release -p herdr-gpui --target "$TARGET"
+      - name: Build optimized Windows executables
+        run: cargo build --locked --release -p herdr-gpui -p herdr-gpui-launcher --target "$TARGET"
       # The release job passes generated third-party notices; any nonempty
       # file exercises the same packaging.
       - name: Package the Windows zip
         run: |
           mkdir dist
-          python scripts/release/package-windows.py "$VERSION" "$TARGET" "target/$TARGET/release/herdr-gpui.exe" dist LICENSE
+          python scripts/release/package-windows.py "$VERSION" "$TARGET" "target/$TARGET/release/herdr-gpui.exe" "target/$TARGET/release/herdr-gpui-launcher.exe" dist LICENSE
       - name: Install the pinned Inno Setup compiler
         run: python scripts/release/windows-installer.py install-iscc "$RUNNER_TEMP/inno-setup" > "$RUNNER_TEMP/iscc-path"
       - name: Build the Windows installer

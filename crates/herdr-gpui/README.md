@@ -3699,7 +3699,20 @@ and CLI tests. The release workflow builds and CLI-tests the optimized
 executable natively for each architecture and publishes
 `Herdr-VERSION-x86_64-pc-windows-msvc.zip` and
 `Herdr-VERSION-aarch64-pc-windows-msvc.zip`; native window, rendering, input, and
-live-daemon behavior remain unproven. Local connections use the named pipe the Windows
+live-daemon behavior remain unproven. Each zip also holds
+`herdr-gpui-launcher.exe` (`crates/herdr-gpui-launcher`), a windowed program
+that starts the console-subsystem `herdr-gpui.exe` from its own directory with
+`CREATE_NO_WINDOW` and exits. The GUI then shows no console window, and console
+programs it starts (git, gh, `wsl.exe`) share its hidden console instead of
+each opening one. `herdr-gpui.exe` stays a console program so the command line
+keeps its output, exit codes, and a shell that waits for it. When the GUI
+cannot be started, the launcher shows the error in a message box. When the
+launcher sits beside it, every Herdr window carries the AppUserModelID
+`so.pen.herdr-gpui` and relaunch properties naming the launcher
+(`src/taskbar.rs`), so pinning a running window to the taskbar pins
+`herdr-gpui-launcher.exe` as **Herdr UI**, and the pin and the running window
+share one taskbar button. The properties are cleared as each window closes. Local
+connections use the named pipe the Windows
 daemon binds, derived from the same socket path string upstream uses, so
 discovery and framing are the same code as on Unix. Receive deadlines are
 emulated with `PeekNamedPipe`, an `unsafe` call, because a
@@ -3756,28 +3769,30 @@ Starting a local `herdr server` looks for `herdr.exe` and uses
 `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` in place of `process_group(0)`, so
 the daemon survives the GUI and no console window appears.
 
-As Zed does, Windows ships two executables. Release builds of
-`herdr-gpui.exe` are GUI-subsystem programs (`windows_subsystem = "windows"`),
-so opening the app from Explorer or the Start menu shows no console window.
-`bin\herdr-gpui.exe` is a console-subsystem copy of the same build, made at
-packaging time by changing only the PE header's subsystem field, and it is the
-one on `PATH`: a shell waits for it and sees its exit code, which terminals,
-scripts, and agents need for `herdr-gpui COMMAND`. Run with no command, the copy
-starts the app beside it and returns, so the terminal is not held. The managed
-agent skill names the copy. Run through the GUI build instead, a command
-attaches to the caller's console so its output still shows, but the shell does
-not wait for it. Debug builds keep the console subsystem, so `cargo run` output
-stays in the terminal.
+Console children (git, ssh, `wsl.exe`, a shell) must not open a window of
+their own either: every child is built with `herdr_client::new_command`, which
+sets `CREATE_NO_WINDOW` on Windows, and clippy's `disallowed_methods`
+(`clippy.toml`) rejects `Command::new` elsewhere outside tests and the build
+script. Started by the launcher, they would share its hidden console anyway;
+run as `herdr-gpui.exe` from Explorer or another app, they still open none.
 
-With no console of its own, the app must not let a console child (git, ssh,
-`wsl.exe`, a shell) open one: every child is built with
-`herdr_client::new_command`, which sets `CREATE_NO_WINDOW` on Windows, and
-clippy's `disallowed_methods` (`clippy.toml`) rejects `Command::new` elsewhere
-outside tests and the build script.
+The build script embeds the Herdr icon as icon resource 1, which GPUI loads for
+its windows, and version information that Explorer and Task Manager show as
+**Herdr UI** with the release version, or `dev` for a local build. See
+[the icon README](../../assets/icons/README.md#windows).
+
+Each release also has a per-user Inno Setup installer,
+`Herdr-VERSION-TARGET-setup.exe` (`scripts/release/herdr-gpui.iss`), which
+installs the zip's files where `site/install.ps1` does, adds the directory to
+the user `PATH`, points the Start menu shortcut at the launcher with the app's
+AppUserModelID, and adds an uninstaller under **Settings > Apps**. See
+[`scripts/release/README.md`](../../scripts/release/README.md) for building,
+signing, and smoke-testing it.
 
 Cross type-check it from a Mac or Linux machine with `just lint-windows`, which
 targets `x86_64-pc-windows-gnu` because those hosts cannot supply the MSVC C
-toolchain; CI lints the MSVC target on a Windows runner. `just lint-linux` is
+toolchain; it needs mingw's `x86_64-w64-mingw32-windres` on `PATH` to compile
+the icon resource. CI lints the MSVC target on a Windows runner. `just lint-linux` is
 the matching check for Linux, in the Ubuntu 24.04 container CI uses, because a
 `cfg` gate that is wrong only on Linux is invisible from both macOS and the
 Windows cross-check.

@@ -1,7 +1,5 @@
 // objc 0.2's selectors expand a legacy cargo-clippy cfg in the native test adapter.
 #![cfg_attr(feature = "integration-test", allow(unexpected_cfgs))]
-// Release builds on Windows open no console; `console` explains the `bin\` copy.
-#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 // Tests start real processes; production code builds them with `new_command`.
 #![cfg_attr(test, allow(clippy::disallowed_methods))]
 
@@ -47,7 +45,6 @@ mod coder;
 mod config;
 mod config_diagnostic;
 mod connection;
-mod console;
 mod constants;
 mod contrast;
 mod control;
@@ -128,6 +125,7 @@ mod state_file;
 mod storage_warning;
 mod system_load;
 mod tab_menu;
+mod taskbar;
 mod teleport;
 mod terminal;
 mod terminal_notes;

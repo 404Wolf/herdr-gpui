@@ -67,18 +67,23 @@ future artwork changes to come from package upgrades again, then refresh the cac
 
 ### Windows
 
-Windows shows the same circular artwork. `windows/herdr.ico` and
-`windows/herdr-worktree.ico` hold PNG images at 16, 20, 24, 32, 40, 48, 64, and
-256 pixels; the build script embeds one of them in `herdr-gpui.exe` as icon
-resource 1, which Explorer, the taskbar, and GPUI's window class all use.
-Linked-worktree builds embed the red one, as on macOS. The `wizard-*.png`
-images brand the Inno Setup installer, which also uses `herdr.ico` as its own
-icon.
+`Herdr.ico` holds the rounded tile at 16, 20, 24, 32, 40, 48, 64, and 256 px, each
+a PNG rendered from `herdr-ui-icon-clean.svg`. Linked-worktree builds use the red
+`Herdr-worktree.ico`, with the palette of the Linux worktree SVG. The build script
+(`crates/herdr-gpui/windows_resource.rs`) embeds it in the executable as icon
+resource 1, the one GPUI loads for its windows, so Explorer, the window, and the
+taskbar all show it. Building for Windows therefore needs a resource compiler:
+`rc.exe` from the Windows SDK for MSVC, or mingw's `windres` for the GNU target.
 
-Run `just icons-windows` after changing the Linux SVGs. It rasterizes each size
-directly from the SVG with `rsvg-convert` (`brew install librsvg`) or `resvg`
-(`cargo install resvg`) and packs the `.ico` files with Python's standard
-library.
+Run `just icons-windows` to regenerate both files. It needs Python's standard
+library and `rsvg-convert` (`apt-get install librsvg2-bin` or
+`brew install librsvg`), so on Windows run it under WSL. `just icons` runs it too.
+
+The Inno Setup installer uses `Herdr.ico` as its own icon, and the same tile at
+each DPI scale for its pages: `windows/wizard-small-*.png` in every page's
+corner, and `windows/wizard-*.png` centered on the welcome and finish pages.
+`just icons-windows` regenerates those too, with
+`scripts/generate-installer-images.py` (`rsvg-convert` or `resvg`).
 
 ### macOS sizing
 

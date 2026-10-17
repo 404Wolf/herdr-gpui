@@ -132,6 +132,7 @@ fn open_window_placed(
             ..Default::default()
         },
         |window, cx| {
+            crate::taskbar::mark(window, cx);
             cx.new(|cx| {
                 let mut view = HerdrWindow::new(
                     target,
@@ -220,7 +221,6 @@ pub(crate) fn run() -> std::process::ExitCode {
     let LaunchOptions { target, mode } = match LaunchOptions::parse(&args) {
         Ok(options) => options,
         Err(error) if json_errors => {
-            crate::console::attach_parent();
             println!(
                 "{}",
                 serde_json::json!({ "error": { "code": "usage", "message": error.to_string() } })
@@ -228,23 +228,12 @@ pub(crate) fn run() -> std::process::ExitCode {
             return std::process::ExitCode::from(2);
         }
         Err(error) => {
-            crate::console::attach_parent();
             eprintln!(
                 "{error}\nUsage: herdr-gpui [--socket CLIENT_SOCKET | --session NAME [--dev]]\n       herdr-gpui browser open URL [--workspace ID] [--no-focus]\n       herdr-gpui COMMAND ... (see herdr-gpui --help)"
             );
             return std::process::ExitCode::from(2);
         }
     };
-    // The windowed Windows build has no console of its own; the console copy
-    // in `bin\` hands the window to it (see `console`).
-    if matches!(
-        mode,
-        LaunchMode::Help | LaunchMode::BuildInfo | LaunchMode::Control(_)
-    ) {
-        crate::console::attach_parent();
-    } else if let Some(exit) = crate::console::open_app_beside(&args) {
-        return exit;
-    }
     if let LaunchMode::Control(invocation) = mode {
         return crate::control::run(invocation);
     }
@@ -367,6 +356,8 @@ pub(crate) fn run() -> std::process::ExitCode {
     } else {
         crate::dispatch::History::default()
     };
+    // Whether the launcher is installed is read once here, never while a window opens.
+    let taskbar = crate::taskbar::Taskbar::load();
     gpui_platform::application()
         .with_assets(icons::Icons)
         .run(move |cx| {
@@ -381,6 +372,7 @@ pub(crate) fn run() -> std::process::ExitCode {
             dispatch_history.install(cx);
             agent_skill.install_global(cx);
             keychain_grants.install(cx);
+            taskbar.install(cx);
             // Only the user's own app answers agents; native test modes stay private.
             if mode == LaunchMode::Normal {
                 crate::control::install(cx);

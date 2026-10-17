@@ -159,25 +159,26 @@ validated `HERDR_RELEASE_VERSION` before packaging.
 The experimental Windows targets are `x86_64-pc-windows-msvc` and
 `aarch64-pc-windows-msvc`, built natively on `windows-2025` and
 `windows-11-arm` after clippy, the protocol/client suites and the CLI tests pass
-there. `scripts/release/package-windows.py VERSION TARGET BINARY OUTPUT_DIR
-THIRD_PARTY_NOTICES` (standard-library Python, since the runner has no zip tool)
-writes one `Herdr-VERSION-TARGET.zip` per target with a same-named root containing
-the windowed `herdr-gpui.exe`, its console-subsystem copy `bin/herdr-gpui.exe`
-(the release build must be GUI-subsystem; packaging refuses anything else), and
-`licenses/` holding the same license and notice files as the Linux tree.
-Entries carry a fixed timestamp.
+there. `scripts/release/package-windows.py VERSION TARGET BINARY LAUNCHER
+OUTPUT_DIR THIRD_PARTY_NOTICES` (standard-library Python, since the runner has no
+zip tool) writes one `Herdr-VERSION-TARGET.zip` per target with a same-named root
+containing `herdr-gpui.exe`, the windowed `herdr-gpui-launcher.exe` that the
+installer's Start menu shortcut opens, and `licenses/` holding the same license
+and notice files as the Linux tree. Entries carry a fixed timestamp.
 
 `scripts/release/windows-installer.py` then installs the pinned Inno Setup
 compiler (`install-iscc`, checked against its SHA-256), compiles
 `herdr-gpui.iss` over the extracted zip tree into
 `Herdr-VERSION-TARGET-setup.exe` (`build`), and installs and uninstalls it on
-the runner (`smoke`), checking the files, their subsystems, the console copy's
-output, and the user `PATH` entry. CI's `windows-package` job runs the same
+the runner (`smoke`), checking the files, their subsystems, `herdr-gpui.exe`'s
+output, the Start menu shortcut's target (the launcher) and AppUserModelID,
+the user `PATH` entry, and the Settings entry. CI's `windows-package` job runs the same
 optimized build, packaging, installer build, and install/uninstall check on
 `windows-2025` for any pull request that changes their inputs
 (`scripts/ci-changes.sh` lists them), and the required gate then requires it. The installer is per-user (no elevation),
 installs to `%LOCALAPPDATA%\Programs\Herdr UI` as `site/install.ps1` does, adds
-`bin` to the user `PATH`, and creates the Start menu shortcut. Both zips and both
+that directory to the user `PATH`, and creates the Start menu shortcut to the
+launcher. Both zips and both
 installers are mandatory in the asset manifest and receive checksums, Sigstore
 sidecars and provenance like every other asset, after the Authenticode signing
 below. They have no updater archive or update-manifest entry: Windows installs
@@ -193,11 +194,9 @@ gated by the protected **`release`** environment like `sign`:
 
 1. `windows-signing.py unpack` extracts the tested zip without running anything.
 2. `azure/login` signs in to Azure with the job's OIDC token, and
-   `azure/artifact-signing-action` signs `herdr-gpui.exe` and the console copy
-   `bin/herdr-gpui.exe` with SHA-256 and an RFC 3161 timestamp from
-   `http://timestamp.acs.microsoft.com`. The console copy is signed after
-   `package-windows.py` patched its subsystem; the signature covers the PE
-   header, so the patch could not come later.
+   `azure/artifact-signing-action` signs `herdr-gpui.exe` and
+   `herdr-gpui-launcher.exe` with SHA-256 and an RFC 3161 timestamp from
+   `http://timestamp.acs.microsoft.com`.
 3. `windows-signing.py repack` refuses unless the tree holds exactly the zip's
    files and each executable differs from the tested one only by its appended
    signature (checksum, certificate table entry, alignment padding), then writes
@@ -212,7 +211,7 @@ gated by the protected **`release`** environment like `sign`:
 
 `windows-smoke` then installs and uninstalls each signed installer on its own
 architecture, outside the signing environment, and checks the signatures of
-the installer and of the installed app, console copy and uninstaller. `attest`
+the installer and of the installed app, launcher and uninstaller. `attest`
 takes only the signed `windows-signed-TARGET` artifacts, so checksums, Sigstore
 and GitHub provenance (`actions/attest-build-provenance`) cover the bytes users
 download.
