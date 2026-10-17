@@ -75,3 +75,24 @@ fn a_device_being_destroyed_is_left_to_its_destroy() {
     });
     assert_eq!(account_devices(vec![device], &settings()).len(), 1);
 }
+
+#[test]
+fn a_gone_vm_finishes_its_delete_before_it_is_forgotten() {
+    let never_idle = |_| panic!("a gone VM is not checked for idleness");
+    assert_eq!(vm_action(None, None, never_idle), VmAction::FinishDelete);
+    assert_eq!(
+        vm_action(None, Some(Duration::ZERO), never_idle),
+        VmAction::FinishDelete
+    );
+}
+
+#[test]
+fn an_idle_vm_is_destroyed_or_deallocated_by_its_kind() {
+    let timeout = Some(Duration::from_secs(60));
+    let disposable = Some(api::VmKind::Disposable);
+    let kept = Some(api::VmKind::Kept);
+    assert_eq!(vm_action(disposable, timeout, |_| true), VmAction::Destroy);
+    assert_eq!(vm_action(kept, timeout, |_| true), VmAction::Deallocate);
+    assert_eq!(vm_action(disposable, timeout, |_| false), VmAction::Leave);
+    assert_eq!(vm_action(kept, None, |_| true), VmAction::Leave);
+}

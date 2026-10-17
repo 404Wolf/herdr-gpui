@@ -3,7 +3,8 @@
 //! Tracks last activity times on Azure VM devices. A VM idle (or disconnected)
 //! for longer than the configured `auto_stop` is destroyed when it is
 //! disposable, or deallocated when it is an older VM on a managed disk, so it
-//! stops billing. A device whose machine Azure no longer has is forgotten.
+//! stops billing. A device whose machine Azure no longer has is forgotten once
+//! nothing it billed for is left.
 
 use super::{
     Result, Settings, api,
@@ -80,8 +81,8 @@ fn account_devices(devices: Vec<SavedDevice>, settings: &Settings) -> Vec<SavedD
         .collect()
 }
 
-/// Forget a device whose machine Azure no longer has: a Spot VM it evicted,
-/// or a machine deleted in the portal. Its row would only fail to connect.
+/// Forget a sandbox Azure no longer has: one deleted in the portal. Its row
+/// would only fail to connect, and a sandbox leaves nothing else billing.
 fn forget_gone(device: &SavedDevice) -> crate::Result<()> {
     tracing::info!(
         category = "azure_cleanup",
@@ -152,21 +153,54 @@ pub(crate) fn check_all_idle_devices() {
     }
 }
 
+/// What the minute's check does to a saved VM.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum VmAction {
+    Leave,
+    /// The VM is gone, but its network or disk may not be: an eviction, a
+    /// portal delete, or a destroy that failed partway. Delete what is left
+    /// and forget the device only once Azure has none of it, so a failure
+    /// keeps the device for the next minute to retry.
+    FinishDelete,
+    Destroy,
+    Deallocate,
+}
+
+fn vm_action(
+    kind: Option<api::VmKind>,
+    auto_stop: Option<Duration>,
+    idle: impl FnOnce(Duration) -> bool,
+) -> VmAction {
+    let Some(kind) = kind else {
+        return VmAction::FinishDelete;
+    };
+    match auto_stop {
+        Some(auto_stop) if idle(auto_stop) => match kind {
+            api::VmKind::Disposable => VmAction::Destroy,
+            api::VmKind::Kept => VmAction::Deallocate,
+        },
+        _ => VmAction::Leave,
+    }
+}
+
 fn check_vm(settings: &Settings, client: &Client, device: &SavedDevice) -> crate::Result<()> {
     let Machine::Vm(name) = Machine::parse(&device.id) else {
         return Ok(());
     };
-    let Some(kind) = api::vm_kind(client, name)? else {
-        return forget_gone(device);
-    };
-    let Some(auto_stop) = settings.auto_stop else {
-        return Ok(());
-    };
-    if !is_idle(&device.id, auto_stop) {
-        return Ok(());
-    }
-    match kind {
-        api::VmKind::Disposable => {
+    let kind = api::vm_kind(client, name)?;
+    match vm_action(kind, settings.auto_stop, |timeout| {
+        is_idle(&device.id, timeout)
+    }) {
+        VmAction::Leave => {}
+        VmAction::FinishDelete => {
+            tracing::info!(
+                category = "azure_cleanup",
+                vm_name = name,
+                "Deleting what is left of a gone Azure VM before forgetting it"
+            );
+            super::destroy::destroy_device(settings, device, &|| false, |_| {})?;
+        }
+        VmAction::Destroy => {
             tracing::info!(
                 category = "azure_cleanup",
                 vm_name = name,
@@ -174,7 +208,7 @@ fn check_vm(settings: &Settings, client: &Client, device: &SavedDevice) -> crate
             );
             super::destroy::destroy_device(settings, device, &|| false, |_| {})?;
         }
-        api::VmKind::Kept => {
+        VmAction::Deallocate => {
             deallocate(client, name)?;
         }
     }
