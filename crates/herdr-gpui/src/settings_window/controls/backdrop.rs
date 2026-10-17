@@ -117,6 +117,15 @@ fn behind(theme: &Theme, mode: Mode) -> Div {
     }
 }
 
+/// Whether this system has more than one blur to pick: DWM's acrylic and
+/// Mica, from Windows 11 22H2.
+fn offers_materials() -> bool {
+    #[cfg(windows)]
+    return crate::caption::windows::system_backdrops();
+    #[cfg(not(windows))]
+    false
+}
+
 impl SettingsWindow {
     pub(in crate::settings_window) fn render_backdrop_controls(
         &self,
@@ -143,7 +152,7 @@ impl SettingsWindow {
                             })),
                     )
                     // Only Windows 11 has a second material to choose.
-                    .when(cfg!(windows) && blur, |details| {
+                    .when(blur && offers_materials(), |details| {
                         let mica = backdrop.material == Material::Mica;
                         let next = if mica { Material::Acrylic } else { Material::Mica };
                         details

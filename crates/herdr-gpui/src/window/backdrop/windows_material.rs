@@ -23,18 +23,29 @@ enum Route {
     None,
 }
 
-fn route(appearance: Appearance, modern: bool) -> Route {
+/// What this Windows can show for `appearance`. Before system backdrops
+/// there is no Mica, and GPUI would ask for it in vain, so a blurred window
+/// keeps the blur it has there instead: `material` only picks between the
+/// materials Windows 11 offers.
+fn available(appearance: Appearance, modern: bool) -> Appearance {
     match appearance {
+        Appearance::MicaBackdrop | Appearance::MicaAltBackdrop if !modern => Appearance::Blurred,
+        appearance => appearance,
+    }
+}
+
+fn route(appearance: Appearance, modern: bool) -> Route {
+    match available(appearance, modern) {
         Appearance::Opaque => Route::None,
         Appearance::Blurred if modern => Route::Dwm,
         Appearance::Transparent | Appearance::Blurred => Route::Accent,
-        // Mica on an older Windows is a no-op in GPUI, as here.
         _ => Route::Dwm,
     }
 }
 
 pub(super) fn apply(window: &mut Window, previous: Appearance, next: Appearance) {
     let modern = system_backdrops();
+    let next = available(next, modern);
     let (from, to) = (route(previous, modern), route(next, modern));
     if from == Route::Accent && to == Route::Dwm {
         window.set_background_appearance(Appearance::Opaque);
