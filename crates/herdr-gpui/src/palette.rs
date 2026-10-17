@@ -23,6 +23,7 @@ mod go_to;
 mod interaction_tests;
 mod keys;
 mod last_seen;
+pub(crate) use canonical::canonicalize;
 pub(crate) use last_seen::LastSeen;
 mod preview;
 mod project_create;
