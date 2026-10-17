@@ -1,7 +1,8 @@
-//! GPUI 0.3.6 retains Wayland input handlers past its entity leak check at quit.
-//! The view's UI owner keeps it alive; the platform handler must not extend that
-//! lifetime. The backend (Wayland or X11) is chosen at runtime, so every Linux
-//! build uses this handler. Other platforms use GPUI's own ElementInputHandler.
+//! GPUI 0.3.6 retains Wayland and Win32 input handlers past its entity leak
+//! check at quit. The view's UI owner keeps it alive; the platform handler must
+//! not extend that lifetime. The Linux backend (Wayland or X11) is chosen at
+//! runtime, so every Linux build uses this handler, as Windows does. macOS uses
+//! GPUI's own ElementInputHandler.
 use gpui::*;
 use std::ops::Range;
 

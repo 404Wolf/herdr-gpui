@@ -106,9 +106,23 @@ wry.workspace      = true
 [target.'cfg(windows)'.build-dependencies]
 embed-resource = { optional = true, workspace = true }
 
-# Attaching the GUI build to a calling terminal's console (see `console`).
+# Attaching the GUI build to a calling terminal's console (see `console`),
+# registering with Restart Manager (`restart`), checking an update installer's
+# Authenticode signature (`updater::windows`), and the performance fixture's
+# window messages.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { features = ["Win32_System_Console"], workspace = true }
+raw-window-handle = { optional = true, workspace = true }
+windows-sys = { features = [
+  "Win32_Graphics_Gdi",
+  "Win32_Security_Cryptography",
+  "Win32_Security_Cryptography_Catalog",
+  "Win32_Security_Cryptography_Sip",
+  "Win32_Security_WinTrust",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Console",
+  "Win32_System_Recovery",
+  "Win32_UI_WindowsAndMessaging",
+], workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 fontdb.workspace       = true

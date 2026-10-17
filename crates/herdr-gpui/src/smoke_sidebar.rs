@@ -214,8 +214,8 @@ pub fn start_sidebar(handle: WindowHandle<HerdrWindow>, cx: &mut App) {
                             || (!expected_short
                                 && (p.width < px(150.) || !p.glyph_text.ends_with('\u{2026}')))
                             || p.clipped
-                            || p.bounds.size.width != expected_width
-                            || p.mask.size.width != expected_width
+                            || !sidebar::layout_tests::within_device_pixel(p.bounds.size.width, expected_width, window.scale_factor())
+                            || p.mask.size.width != p.bounds.size.width
                             || p.width > p.bounds.size.width
                             || p.bounds.size.height != px(16.)
                         {
