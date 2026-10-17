@@ -23,6 +23,8 @@ mod opencode_auth;
 mod pace_exhausted;
 mod provider_data;
 mod provider_settings;
+#[cfg(unix)]
+mod quiet_app_data;
 mod refresh;
 #[cfg(unix)]
 mod remote_hosts;

@@ -545,7 +545,10 @@ size = 12
 # topbar = true
 # Honor the daemon's [ui.sidebar] rows and plugin tokens; false uses native layouts.
 # inline = true
-# Show these even when no sign-in was found, with what to set up.
+# Show these even when no sign-in was found, with what to set up. On the Mac
+# running Herdr, JetBrains AI, Kiro, and Windsurf are only read when listed
+# here, as macOS may ask before Herdr reads another app's data. Muse's
+# keychain sign-in, like Zed's, also waits for Allow in its usage panel.
 # show_providers = ["cursor", "openrouter"]
 # Never show these, even when signed in.
 # hide_providers = []
@@ -859,7 +862,9 @@ size = 12
 #   Support/JetBrains/IntelliJIdea2025.3" on a Mac or
 #   "~/.config/JetBrains/PyCharm2025.3" on Linux. Its
 #   options/AIAssistantQuotaManager2.xml appears once AI Assistant has been
-#   used.
+#   used. On the Mac running Herdr the IDEs are only looked for when this is set
+#   or jetbrains is in show_providers, as macOS may ask before Herdr reads
+#   another app's data.
 # ide_path = ""
 #
 # Moonshot / Kimi Open Platform (moonshot)
@@ -954,7 +959,9 @@ size = 12
 #   and devin_primary_org_id into one JSON object: {"devin_session_token":
 #   "…", "devin_auth1_token": "…", "devin_account_id": "…",
 #   "devin_primary_org_id": "…"}. Without it, the plan the Windsurf editor
-#   cached at its last launch is shown.
+#   cached at its last launch is shown; on the Mac running Herdr only when
+#   windsurf is in show_providers, as macOS may ask before Herdr reads another
+#   app's data.
 # session = ""
 #
 # Zed (zed)
@@ -1314,8 +1321,10 @@ size = 12
 # [usage.providers.muse]
 #   A Muse CLI device-code access token (it starts with dca:), used when this
 #   host has no `muse login`. It is providers.meta.access_token in
-#   ~/.config/muse/auth.json on a machine where you ran `muse login`. Dashboard
-#   LLM_ keys and LLM| inference keys are not accepted.
+#   ~/.config/muse/auth.json on a machine where you ran `muse login`. On a Mac
+#   where `muse login` kept it in the keychain instead, list muse in
+#   show_providers and press Allow in its usage panel rather than setting this.
+#   Dashboard LLM_ keys and LLM| inference keys are not accepted.
 # token = ""
 #
 # CodeRabbit (coderabbit)
