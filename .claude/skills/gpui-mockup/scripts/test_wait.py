@@ -47,7 +47,7 @@ class WaitTests(unittest.TestCase):
         app.parent.mkdir(parents=True)
         app.write_text(
             f"#!{sys.executable}\n"
-            "import json, os, pathlib, signal, sys\n"
+            "import json, os, pathlib, signal, sys, time\n"
             "root = pathlib.Path(os.environ['TEST_ROOT'])\n"
             "(root / 'called').write_text(json.dumps(sys.argv[1:]))\n"
             "mode = os.environ['TEST_MODE']\n"
@@ -56,7 +56,9 @@ class WaitTests(unittest.TestCase):
             "    sys.exit(0)\n"
             "if mode == 'waiting':\n"
             "    (root / 'pid').write_text(str(os.getpid()))\n"
-            "    signal.pause()\n"
+            # Windows has no signal.pause; sleeping keeps the request open
+            # until wait.sh stops it.
+            "    signal.pause() if hasattr(signal, 'pause') else time.sleep(60)\n"
             "if mode == 'refused':\n"
             "    sys.stderr.write('Request refused\\n')\n"
             "    sys.exit(1)\n"
