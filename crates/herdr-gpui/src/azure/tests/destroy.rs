@@ -59,7 +59,7 @@ fn destroying_refuses_a_device_of_another_account_before_any_request() {
     let elsewhere = CloudProvider::ALL
         .iter()
         .filter(|&&provider| provider != CloudProvider::Azure)
-        .map(|&provider| device(provider, &settings.account()));
+        .map(|&provider| device(provider, &settings.vm_account()));
     let others = std::iter::once(device(
         CloudProvider::Azure,
         "22222222-2222-2222-2222-222222222222",

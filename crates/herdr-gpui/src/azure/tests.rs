@@ -25,7 +25,10 @@ fn settings_resolution_with_explicit_values() {
     assert_eq!(settings.resource_group, "my-rg");
     assert_eq!(settings.location, "eastus2");
     assert_eq!(settings.vm_size, "Standard_B2pts_v2");
-    assert_eq!(settings.account(), "11111111-1111-1111-1111-111111111111");
+    assert_eq!(
+        settings.vm_account(),
+        "11111111-1111-1111-1111-111111111111/my-rg"
+    );
 }
 
 #[test]

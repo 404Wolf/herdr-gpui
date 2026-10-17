@@ -219,11 +219,6 @@ impl Settings {
         }))
     }
 
-    /// The stable account identifier used in saved devices.
-    pub(crate) fn account(&self) -> String {
-        self.subscription_id.clone()
-    }
-
     /// The `account` a VM saved now records: its subscription and resource
     /// group, so changing the group in Settings cannot redirect the device.
     pub(crate) fn vm_account(&self) -> String {

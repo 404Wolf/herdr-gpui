@@ -1,3 +1,4 @@
+#![allow(clippy::expect_used)]
 use super::*;
 
 const MINE: &str = "11111111-1111-1111-1111-111111111111";

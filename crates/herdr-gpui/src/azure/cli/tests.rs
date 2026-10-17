@@ -1,3 +1,4 @@
+#![allow(clippy::expect_used)]
 use super::*;
 
 fn make_executable(path: &Path) {
