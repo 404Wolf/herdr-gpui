@@ -114,3 +114,24 @@ fn only_a_branch_review_names_a_base(cx: &mut gpui::TestAppContext) {
     assert!(cx.debug_bounds("review-against").is_some());
     assert!(cx.debug_bounds("review-base").is_none());
 }
+
+#[gpui::test]
+fn a_long_base_truncates_inside_the_header(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = window(cx, None);
+    cx.simulate_resize(gpui::size(gpui::px(1300.), gpui::px(700.)));
+    let mut branch = changes();
+    branch.scope = Scope::Branch;
+    branch.base = Some(format!(
+        "origin/{}",
+        "a-very-long-release-branch-".repeat(8)
+    ));
+    cx.update(|window, cx| view.update(cx, |view, cx| view.seed_review(branch, window, cx)));
+    draw(cx);
+    let against = cx.debug_bounds("review-against").unwrap();
+    let base = cx.debug_bounds("review-base").unwrap();
+    assert!(base.size.width <= gpui::px(240.), "{base:?}");
+    assert!(base.right() <= against.right(), "{base:?} in {against:?}");
+    // The controls after it keep their place.
+    let search = cx.debug_bounds("review-search-open").unwrap();
+    assert!(base.right() <= search.left(), "{base:?} before {search:?}");
+}

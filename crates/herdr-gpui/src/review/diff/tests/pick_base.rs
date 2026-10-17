@@ -68,7 +68,12 @@ fn the_branch_it_was_cut_from_is_offered_first() {
         .iter()
         .map(|choice| (choice.label(), choice.behind))
         .collect();
-    // The checkout's own branch is never offered.
+    // The checkout's own branch is never offered. Git before 2.41 has no
+    // `ahead-behind`, so it lists the names alone, in name order.
+    if offered.iter().all(|(_, behind)| behind.is_none()) {
+        assert_eq!(offered, [("main", None), ("rc", None)]);
+        return;
+    }
     assert_eq!(offered, [("rc", Some(1)), ("main", Some(2))]);
     assert_eq!(choices[0].reference, "refs/heads/rc");
 }

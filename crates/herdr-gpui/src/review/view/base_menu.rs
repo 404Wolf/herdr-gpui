@@ -13,6 +13,8 @@ use gpui::{prelude::*, *};
 
 /// The first row, which drops the user's pick.
 const AUTOMATIC: &str = "Automatic";
+/// The widest the header's base button grows before its label truncates.
+const BASE_BUTTON_MAX_WIDTH: f32 = 240.;
 
 pub(super) enum BaseList {
     Loading,
@@ -213,13 +215,25 @@ impl HerdrWindow {
         div()
             .id("review-base")
             .debug_selector(|| "review-base".into())
-            .flex_none()
+            // A long branch name truncates rather than pushing the header's
+            // controls aside; the dropdown marker always stays visible.
+            .flex()
+            .items_center()
+            .gap_1()
+            .min_w_0()
+            .max_w(px(BASE_BUTTON_MAX_WIDTH))
             .px_1()
             .rounded(px(crate::config::corners::CONTROL))
             .cursor_pointer()
             .text_color(rgb(theme.foreground))
             .hover(|button| button.bg(rgb(theme.active)))
-            .child(format!("{} \u{25be}", review.base_label()))
+            .child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .child(review.base_label().to_owned()),
+            )
+            .child(div().flex_none().child("\u{25be}"))
             .on_click(cx.listener(move |this, _, window, cx| {
                 cx.stop_propagation();
                 this.open_review_bases(id, window, cx);
