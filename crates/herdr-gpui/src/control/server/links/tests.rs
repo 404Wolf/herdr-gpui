@@ -72,3 +72,32 @@ fn opening_a_checkout_needs_this_computers_herdr(cx: &mut TestAppContext) {
         );
     });
 }
+
+#[gpui::test]
+fn a_checkout_link_uses_a_window_connected_to_this_computer(cx: &mut TestAppContext) {
+    use crate::state::ConnectionStatus;
+    let status = |cx: &mut TestAppContext,
+                  handle: gpui::WindowHandle<crate::HerdrWindow>,
+                  status: ConnectionStatus| {
+        handle
+            .update(cx, |view, _, _| view.live.status = status)
+            .unwrap();
+    };
+    let detached = cx.add_window(fixture_window);
+    status(cx, detached, ConnectionStatus::Disconnected);
+    let connected = cx.add_window(fixture_window);
+    status(cx, connected, ConnectionStatus::Connected);
+    let path = if cfg!(windows) {
+        r"C:\checkout"
+    } else {
+        "/checkout"
+    };
+    let url = Link::Open { path: path.into() }.to_url();
+    // The detached window cannot open it, but the other one can.
+    let response = cx.update(|cx| serve(link(&url), cx));
+    assert!(matches!(response, Response::Done { .. }), "{response:?}");
+    // `--window` names exactly that window, even a detached one.
+    let mut call = link(&url);
+    call.caller.window = Some(detached.window_id().as_u64());
+    cx.update(|cx| assert_eq!(code(&serve(call, cx)), Some(ErrorCode::Busy)));
+}

@@ -144,6 +144,12 @@ pub(crate) fn follow(link: Link, handle: WindowHandle<HerdrWindow>, cx: &mut App
     }
 }
 
+/// Whether the window is connected to this computer's Herdr, so it can open
+/// a checkout.
+pub(crate) fn shows_local(view: &HerdrWindow) -> bool {
+    local_snapshot(view).is_some()
+}
+
 /// The snapshot of this computer's Herdr, when the window is connected to it.
 fn local_snapshot(view: &HerdrWindow) -> Option<Arc<ClientShellSnapshot>> {
     let index = view.endpoints.iter().position(|e| e.id == LOCAL)?;
