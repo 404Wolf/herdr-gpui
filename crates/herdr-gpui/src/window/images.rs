@@ -95,9 +95,9 @@ impl HerdrWindow {
 
     /// The daemon stages clipboard images beside the pane's processes, so the
     /// bridge serves local endpoints too: GUI text paste cannot carry an image.
-    /// Only macOS and Linux have a bounded background clipboard reader.
+    /// Only macOS, Linux, and Windows have a bounded background clipboard reader.
     pub(crate) fn accepts_clipboard_images(&self) -> bool {
-        cfg!(any(target_os = "macos", target_os = "linux")) && self.accepts_image_input()
+        cfg!(any(target_os = "macos", target_os = "linux", windows)) && self.accepts_image_input()
     }
 
     /// Dropped files and pasted image paths need bridging only when the pane
@@ -105,14 +105,6 @@ impl HerdrWindow {
     /// File drops do not read the clipboard, so this has no platform gate.
     pub(crate) fn accepts_remote_images(&self) -> bool {
         self.selected_is_remote() && self.accepts_image_input()
-    }
-
-    /// Whether clipboard content for a remote pane becomes an upload: Ctrl-V
-    /// reading an image, or a pasted image path. Where the client refuses
-    /// uploads (Windows), Ctrl-V stays a key and the text is pasted, as when
-    /// the clipboard holds no image.
-    pub(crate) fn bridges_clipboard_images(&self) -> bool {
-        herdr_client::CLIPBOARD_UPLOADS && self.accepts_remote_images()
     }
 
     pub(crate) fn selected_is_remote(&self) -> bool {
@@ -215,7 +207,7 @@ impl HerdrWindow {
             return true;
         }
         if !image_only && let Some(text) = item.text().filter(|text| !text.is_empty()) {
-            if self.bridges_clipboard_images()
+            if self.accepts_remote_images()
                 && let Some(source) = image_source::from_paste(&text)
                 && let Some(target) = self.focused_input_target()
             {

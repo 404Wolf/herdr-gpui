@@ -106,7 +106,10 @@ wry.workspace = true
 # reads the user and the pipe owner it is checked against. `windows-sys` also
 # keeps saved sign-ins in Credential Manager (`github::credential_manager`)
 # and opens avatar cache entries without following reparse points.
+# `clipboard-win` reads the clipboard on a background thread (see
+# `window/clipboard`).
 [target.'cfg(windows)'.dependencies]
+clipboard-win.workspace     = true
 interprocess.workspace      = true
 raw-window-handle.workspace = true
 windows.workspace           = true
