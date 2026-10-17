@@ -1,7 +1,7 @@
 //! The activity bar's Overview: one page across the window's body for what
 //! needs the user on every host this window connects to. Agents waiting on
 //! the user and failed orchestrator runs lead, in a card of their own; then
-//! working agents by host, finished ones ready for review, and idle ones.
+//! finished ones ready for review, working agents by host, and idle ones.
 //! Rows can be pinned, snoozed until a time, or settled as finished
 //! (`marks`); a column beside the list shows each host's load and ports,
 //! and folds away.
@@ -29,6 +29,10 @@ use std::{
     time::SystemTime,
 };
 
+/// Below this window width the host column starts folded, leaving the
+/// list room for its titles.
+const NARROW: f32 = 1000.;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Invalid saved overview marks")]
@@ -43,8 +47,9 @@ pub(crate) struct Page {
     since: model::Since,
     /// Hosts folded to one line in the host column, by endpoint id.
     folded: HashSet<String>,
-    /// Whether the host column is folded to a strip of load dots.
-    hosts_closed: bool,
+    /// Whether the host column was folded to a strip of load dots, or None
+    /// to fold it only while the window is narrow.
+    hosts_closed: Option<bool>,
     /// The row whose snooze menu is open.
     menu: Option<Key>,
     snoozed_open: bool,
@@ -61,7 +66,7 @@ impl Default for Page {
         Self {
             since: Default::default(),
             folded: Default::default(),
-            hosts_closed: false,
+            hosts_closed: None,
             menu: None,
             snoozed_open: false,
             settled_open: false,
@@ -206,7 +211,15 @@ impl HerdrWindow {
     /// Whether the page is shown, so every host's load is sampled for its
     /// host column.
     pub(crate) fn overview_shown(&self) -> bool {
-        self.activity_section() == Some(ActivityPanel::Overview) && !self.overview.hosts_closed
+        self.activity_section() == Some(ActivityPanel::Overview) && !self.overview_hosts_closed()
+    }
+
+    /// Whether the host column shows as a strip: as the user left it, else
+    /// while the window is too narrow for it beside the list.
+    pub(crate) fn overview_hosts_closed(&self) -> bool {
+        self.overview
+            .hosts_closed
+            .unwrap_or(self.viewport_width < NARROW)
     }
 
     /// Shows what a row stands for: an agent's pane among the terminals, or

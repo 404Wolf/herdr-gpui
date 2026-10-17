@@ -18,6 +18,10 @@ const BRANCH_WIDTH: f32 = 170.;
 const HOST_WIDTH: f32 = 110.;
 const PR_WIDTH: f32 = 64.;
 const SINCE_WIDTH: f32 = 40.;
+/// The least a title keeps when the branch and host columns give way.
+const TITLE_MIN: f32 = 140.;
+/// The least the branch and host columns shrink to.
+const COLUMN_MIN: f32 = 56.;
 
 /// Where a row is drawn, which decides its actions.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -172,6 +176,15 @@ impl HerdrWindow {
             needs = needs.child(row(waiting, Shelf::Active, cx));
         }
         list = list.child(needs);
+        // Finished work waits on the user too; working agents do not.
+        list = list.child(heading(
+            look,
+            "Ready for review",
+            Some(sections.ready.len()),
+        ));
+        for ready in &sections.ready {
+            list = list.child(row(ready, Shelf::Active, cx));
+        }
         list = list.child(heading(look, "Working", Some(sections.working.len())));
         let mut host: Option<&str> = None;
         for working in &sections.working {
@@ -201,14 +214,6 @@ impl HerdrWindow {
                 );
             }
             list = list.child(row(working, Shelf::Active, cx));
-        }
-        list = list.child(heading(
-            look,
-            "Ready for review",
-            Some(sections.ready.len()),
-        ));
-        for ready in &sections.ready {
-            list = list.child(row(ready, Shelf::Active, cx));
         }
         if !sections.idle.is_empty() {
             list = list.child(heading(look, "Idle", Some(sections.idle.len())));
@@ -334,6 +339,7 @@ impl HerdrWindow {
         };
         let actions = self.overview_actions(row, shelf, pinned, &group, menu_open, look, cx);
         let clicked = row.clone();
+        let title_selector = format!("overview-title-{}", row.key.selector());
         div()
             .id(SharedString::from(selector.clone()))
             .debug_selector(move || selector.clone())
@@ -359,8 +365,9 @@ impl HerdrWindow {
             )
             .child(
                 div()
+                    .debug_selector(move || title_selector.clone())
                     .flex_1()
-                    .min_w_0()
+                    .min_w(px(TITLE_MIN))
                     .flex()
                     .flex_col()
                     .child(
@@ -388,13 +395,15 @@ impl HerdrWindow {
             .child(
                 look.mono(row.branch.clone().unwrap_or_default())
                     .w(px(BRANCH_WIDTH))
-                    .flex_none()
+                    .min_w(px(COLUMN_MIN))
+                    .flex_shrink_1()
                     .truncate(),
             )
             .child(
                 div()
                     .w(px(HOST_WIDTH))
-                    .flex_none()
+                    .min_w(px(COLUMN_MIN))
+                    .flex_shrink_1()
                     .flex()
                     .items_center()
                     .gap_1()

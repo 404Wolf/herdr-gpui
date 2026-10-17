@@ -35,9 +35,9 @@ const TITLE_HEIGHT: f32 = 32.;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ActivityPanel {
-    Overview,
     #[default]
     Workspaces,
+    Overview,
     Orchestrator,
     PullRequests,
     Issues,
@@ -46,8 +46,8 @@ pub enum ActivityPanel {
 
 impl ActivityPanel {
     pub(crate) const ALL: &[Self] = &[
-        Self::Overview,
         Self::Workspaces,
+        Self::Overview,
         Self::Orchestrator,
         Self::PullRequests,
         Self::Issues,

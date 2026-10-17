@@ -41,10 +41,10 @@ impl HerdrWindow {
                     .text_color(rgb(theme.muted)),
             )
             .on_click(cx.listener(|this, _, _, cx| {
-                this.overview.hosts_closed = !this.overview.hosts_closed;
+                this.overview.hosts_closed = Some(!this.overview_hosts_closed());
                 cx.notify();
             }));
-        if self.overview.hosts_closed {
+        if self.overview_hosts_closed() {
             return div()
                 .debug_selector(|| "overview-hosts-strip".into())
                 .w(px(STRIP))

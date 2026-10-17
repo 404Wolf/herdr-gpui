@@ -11,7 +11,8 @@ use gpui::{AppContext as _, Bounds, Entity, Modifiers, Pixels, VisualTestContext
 use herdr_client::protocol::AgentStatus;
 use std::sync::Arc;
 
-/// A connected window with the bar, one blocked and one working agent, on
+/// A connected window with the bar, a blocked, a working, and a finished
+/// agent, on
 /// the Overview.
 fn fixture(cx: &mut gpui::TestAppContext) -> (Entity<HerdrWindow>, &mut VisualTestContext) {
     let (fixture, cx) = cx.add_window_view(|window, cx| {
@@ -23,6 +24,12 @@ fn fixture(cx: &mut gpui::TestAppContext) -> (Entity<HerdrWindow>, &mut VisualTe
             shown.focused_workspace_id = Some("w0".into());
             shown.focused_tab_id = Some("t0".into());
             shown.agents[0].agent_status = AgentStatus::Blocked;
+            let mut done = shown.agents[0].clone();
+            done.pane_id = "p2".into();
+            done.name = Some("finished".into());
+            done.display_agent = None;
+            done.agent_status = AgentStatus::Done;
+            shown.agents.push(done);
             view.live.snapshot = Some(Arc::new(shown));
             view.live.status = ConnectionStatus::Connected;
             view
@@ -85,6 +92,11 @@ fn the_overview_leads_with_what_needs_the_user(cx: &mut gpui::TestAppContext) {
         cx.debug_bounds("activity-bar").unwrap().right()
     );
     assert!(cx.debug_bounds("connection-status").unwrap().top() >= page.bottom());
+    // A worktree build's banner sits at the window's foot here too.
+    if let Some(banner) = cx.debug_bounds("worktree-banner") {
+        assert!(banner.top() >= cx.debug_bounds("connection-status").unwrap().bottom());
+        assert!(banner.top() > page.top());
+    }
     let needs = cx.debug_bounds("overview-needs").unwrap();
     let (blocked, working) = (
         row(&view, cx, State::Blocked),
@@ -95,6 +107,10 @@ fn the_overview_leads_with_what_needs_the_user(cx: &mut gpui::TestAppContext) {
     assert!(needs.contains(&blocked.center()));
     assert!(!needs.contains(&working.center()));
     assert!(working.top() > needs.bottom());
+    // Finished work, which waits on the user, comes before working agents.
+    let done = row(&view, cx, State::Done);
+    let ready = bounds(cx, format!("overview-row-{done}")).unwrap();
+    assert!(ready.top() > needs.bottom() && ready.bottom() <= working.top());
     // The host column sits beside the list.
     assert!(cx.debug_bounds("overview-hosts").unwrap().left() >= blocked.right());
     // The bar counts what needs the user.
@@ -176,4 +192,22 @@ fn opening_a_row_shows_its_agent_among_the_terminals(cx: &mut gpui::TestAppConte
         ActivityPanel::Workspaces
     );
     assert!(cx.debug_bounds("overview").is_none());
+}
+
+#[gpui::test]
+fn a_narrow_window_folds_the_hosts_and_keeps_titles_readable(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = fixture(cx);
+    cx.simulate_resize(size(px(760.), px(700.)));
+    draw(cx);
+    assert!(cx.debug_bounds("overview-hosts").is_none());
+    assert!(cx.debug_bounds("overview-hosts-strip").is_some());
+    let blocked = row(&view, cx, State::Blocked);
+    let title = bounds(cx, format!("overview-title-{blocked}")).unwrap();
+    assert!(title.size.width >= px(140.), "{title:?}");
+    // The row's last column still ends inside the list.
+    let row = bounds(cx, format!("overview-row-{blocked}")).unwrap();
+    assert!(row.right() <= cx.debug_bounds("overview-list").unwrap().right());
+    // The user can still open the column there.
+    click(cx, "overview-hosts-toggle");
+    assert!(cx.debug_bounds("overview-hosts").is_some());
 }

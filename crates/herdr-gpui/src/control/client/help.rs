@@ -56,7 +56,7 @@ fn family(name: &str) -> &'static str {
             "herdr-gpui window [list]\n    The app's windows, with IDs for --window.\nherdr-gpui window new [--session NAME]\n    Open another window: of the caller's own Herdr session, of a named\n    local session, or outside Herdr of the frontmost window's host.\nherdr-gpui window focus ID\nherdr-gpui window fullscreen [on|off|toggle]\nherdr-gpui window size [WIDTHxHEIGHT]\n    Print the window's size, or resize it. Windows cannot be moved.\nherdr-gpui window detach|reconnect\n    Detach from, or reconnect to, the window's selected host."
         }
         "ui" => {
-            "herdr-gpui ui sidebar [on|off|toggle]\nherdr-gpui ui statusbar [on|off|toggle]\nherdr-gpui ui font-size +|-|reset|POINTS\nherdr-gpui ui panel overview|workspaces|orchestrator|pull-requests|issues|usage\n    For this window and session; settings are changed with `config`."
+            "herdr-gpui ui sidebar [on|off|toggle]\nherdr-gpui ui statusbar [on|off|toggle]\nherdr-gpui ui font-size +|-|reset|POINTS\nherdr-gpui ui panel workspaces|overview|orchestrator|pull-requests|issues|usage\n    For this window and session; settings are changed with `config`."
         }
         "tab" => {
             "herdr-gpui tab [list]\n    The app's own tabs: pages, code, reviews, the orchestrator, Devices.\n    Terminal tabs belong to Herdr: use `herdr tab`.\nherdr-gpui tab focus|close ID\n    Show a tab, switching to its workspace, or close it."
