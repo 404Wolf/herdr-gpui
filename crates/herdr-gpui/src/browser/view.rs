@@ -72,6 +72,10 @@ pub(crate) struct Browser {
     /// The workspaces of the last snapshot and the boot they came from: one
     /// missing from the next snapshot of the same boot was closed.
     workspaces: Option<(Scope, String, HashSet<String>)>,
+    /// The Herdr tabs of the last snapshot, with its boot and revision: one
+    /// missing from the next snapshot of the same boot, in a workspace still
+    /// open, was closed and can be reopened.
+    pub(super) herdr_tabs: Option<(Scope, String, u64, Vec<super::ClosedHerdrTab>)>,
     #[cfg(any(target_os = "macos", windows))]
     pub(super) annotations: Annotations,
     /// The menu page open when pages were last presented, which the menu's
@@ -119,6 +123,7 @@ impl Browser {
             failed: HashMap::new(),
             code_server: Default::default(),
             workspaces: None,
+            herdr_tabs: None,
             #[cfg(any(target_os = "macos", windows))]
             annotations: Annotations::default(),
             #[cfg(windows)]
@@ -320,6 +325,7 @@ impl HerdrWindow {
                 cx.notify();
             }
         }
+        self.observe_closed_herdr_tabs(cx);
         self.forget_closed_workspaces(cx);
         self.settle_groups(window, cx);
         self.advance_close_run(window, cx);

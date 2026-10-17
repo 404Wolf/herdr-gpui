@@ -566,6 +566,8 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         options: ConnectOptions::default(),
         last_queued_options: None,
         pending_resize: None,
+        last_input: None,
+        last_pointer: None,
         active: false,
         sent_focus: None,
         bounds: Bounds::default(),

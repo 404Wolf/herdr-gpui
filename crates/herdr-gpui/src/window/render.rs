@@ -246,21 +246,7 @@ impl Render for HerdrWindow {
                 terminal.cursor(cursor)
             })
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
-                let split_cursor = this.split_cursor_at(event.position);
-                if split_cursor != this.split_cursor {
-                    this.split_cursor = split_cursor;
-                    cx.notify();
-                }
-                // A border is not the application's to hover.
-                if split_cursor.is_none() {
-                    this.terminal_mouse_hover(event, cx);
-                    this.focus_hovered_pane(event, window, cx);
-                }
-                let hovered = this.terminal_link_hovered(event.position, event.modifiers);
-                if hovered != this.hovered_terminal_link {
-                    this.hovered_terminal_link = hovered;
-                    cx.notify();
-                }
+                this.pane_pointer_moved(event, window, cx);
             }))
             // Holding the link modifier over a link in a mouse-reporting
             // application changes what a click does, so the pointer follows.
@@ -343,6 +329,7 @@ impl Render for HerdrWindow {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                    this.note_input();
                     if this.scrollbar_mouse_down(event, cx)
                         || this.split_mouse_down(event, cx)
                         || this.terminal_mouse_down(event, window, cx)
