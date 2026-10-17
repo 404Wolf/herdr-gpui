@@ -18,6 +18,17 @@ pub(crate) struct RepoSpec {
     pub(crate) request: Request,
 }
 
+/// An item as the list shows it: the repository listing it, by
+/// [`RepoSpec::key`], and the item's canonical key. An item key alone does
+/// not say which repository: one GitHub repository checked out on two
+/// hosts, or cloned twice, lists every item twice under the same key, and
+/// each copy's page and actions go to its own repository.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Listed {
+    pub(crate) repo: String,
+    pub(crate) key: String,
+}
+
 pub(crate) struct Repo {
     pub(super) key: String,
     pub(super) host: String,

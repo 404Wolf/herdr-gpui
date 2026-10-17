@@ -32,7 +32,7 @@ pub(crate) use rows::{LiveAgent, Tab as List, key_label};
 use super::{Notice, Provider, Request, Service, Snapshot, SyncState};
 use crate::search_input::{self, SearchInput};
 use gpui::{prelude::*, *};
-use repo::Repo;
+use repo::{Listed, Repo};
 use rows::{Filters, Runs, Sort, Tab};
 use std::{
     collections::HashSet,
@@ -64,10 +64,12 @@ pub(crate) enum Event {
     /// Sign in to GitHub, which the view needs to list a repository.
     SignIn,
     /// Start `request` on the host `endpoint`, which the window sets it up
-    /// for, then hands back through [`OrchestratorView::dispatch_elsewhere`].
+    /// for, then hands back through [`OrchestratorView::dispatch_elsewhere`]
+    /// to repository `repo`'s worker.
     Dispatch {
         request: Box<super::DispatchRequest>,
         endpoint: String,
+        repo: String,
     },
 }
 
@@ -83,8 +85,7 @@ const PANE_MAX_SHARE: f32 = 0.7;
 /// The detail page of one item.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Detail {
-    /// The item's canonical key.
-    pub(crate) key: String,
+    pub(crate) listed: Listed,
     pub(crate) tab: DetailTab,
 }
 
@@ -137,10 +138,9 @@ impl Render for PaneDrag {
 }
 
 pub(crate) struct OrchestratorView {
-    /// Every repository listed, and the one the open item, the selection,
-    /// and the dialogs belong to.
+    /// Every repository listed. The dialog, the open item, and the
+    /// selection name theirs; see [`Self::active`].
     repos: Vec<Repo>,
-    active: usize,
     /// What a view without a repository reads.
     blank: Snapshot,
     /// Only these backends and projects (by repository key); none picked
@@ -169,8 +169,8 @@ pub(crate) struct OrchestratorView {
     collapsed: HashSet<String>,
     search: Entity<SearchInput>,
     query: String,
-    /// The selected row's item key, or run id on the Runs tab.
-    selected: Option<String>,
+    /// The selected row.
+    selected: Option<Listed>,
     detail: Option<Detail>,
     pane_width: f32,
     focus: FocusHandle,
@@ -228,7 +228,6 @@ impl OrchestratorView {
         });
         Self {
             repos: Vec::new(),
-            active: 0,
             blank: Snapshot::default(),
             backends: HashSet::new(),
             projects: HashSet::new(),
@@ -295,7 +294,8 @@ impl OrchestratorView {
 
     #[cfg(test)]
     pub(crate) fn repo_mut(&mut self) -> &mut Repo {
-        &mut self.repos[self.active]
+        let active = self.active().unwrap_or(0);
+        &mut self.repos[active]
     }
 
     pub(crate) fn focus_handle(&self) -> &FocusHandle {
@@ -344,7 +344,7 @@ impl OrchestratorView {
         let number = self
             .detail
             .as_ref()
-            .and_then(|detail| self.item(&detail.key))
+            .and_then(|detail| self.item(&detail.listed))
             .and_then(|item| item.pull_request.as_ref())
             .map(|pr| pr.number);
         if let (Some(number), Some(service)) = (number, self.service()) {
@@ -378,8 +378,27 @@ impl OrchestratorView {
         targets
     }
 
+    /// The repository the dialog's item is in, else the open item's, else
+    /// the selected row's, else the first. Each names its repository rather
+    /// than holding a place in the list, so an item listed by two
+    /// repositories keeps to the copy the user chose. `None` when the one
+    /// named is no longer listed: another may list the same item key, and
+    /// must not take its actions.
+    fn active(&self) -> Option<usize> {
+        let named = self
+            .dialog
+            .as_ref()
+            .map(|dialog| &dialog.item)
+            .or(self.detail.as_ref().map(|detail| &detail.listed))
+            .or(self.selected.as_ref());
+        match named {
+            Some(listed) => self.repo_index(&listed.repo),
+            None => (!self.repos.is_empty()).then_some(0),
+        }
+    }
+
     fn repo(&self) -> Option<&Repo> {
-        self.repos.get(self.active)
+        self.repos.get(self.active()?)
     }
 
     /// The active repository's snapshot, or an empty one.
@@ -430,9 +449,15 @@ impl OrchestratorView {
         cx.notify();
     }
 
-    /// Starts a dispatch the window set up for another host.
-    pub(crate) fn dispatch_elsewhere(&mut self, request: super::DispatchRequest) {
-        self.act(super::Action::Dispatch(Box::new(request)));
+    /// Starts a dispatch the window set up for another host, from the
+    /// dialog of repository `repo`, which has closed since.
+    pub(crate) fn dispatch_elsewhere(&mut self, repo: &str, request: super::DispatchRequest) {
+        self.act_in(repo, super::Action::Dispatch(Box::new(request)));
+    }
+
+    /// The host repository `repo` is on, while it is listed.
+    pub(crate) fn repo_target(&self, repo: &str) -> Option<&herdr_client::ConnectTarget> {
+        Some(&self.repos[self.repo_index(repo)?].request.target)
     }
 
     pub(crate) fn set_look(&mut self, look: Look, cx: &mut Context<Self>) {
@@ -582,21 +607,19 @@ impl OrchestratorView {
             .and_then(|selected| keys.iter().position(|key| key == selected))
             .unwrap_or(0);
         let next = at.saturating_add_signed(by).min(keys.len() - 1);
-        self.selected = Some(keys[next].clone());
-        self.activate(&keys[next]);
         let line = self.line_of(&keys[next]);
+        self.selected = Some(keys[next].clone());
         self.scroll.scroll_to_item(line, ScrollStrategy::Center);
         cx.notify();
     }
 
-    fn open_detail(&mut self, key: String, cx: &mut Context<Self>) {
-        self.activate(&key);
-        let Some(item) = self.item(&key) else {
+    fn open_detail(&mut self, listed: Listed, cx: &mut Context<Self>) {
+        let Some(item) = self.item(&listed) else {
             return;
         };
         let pull_request = item.pull_request.is_some();
         self.detail = Some(Detail {
-            key,
+            listed,
             tab: if pull_request {
                 DetailTab::Conversation
             } else {
@@ -740,7 +763,7 @@ impl OrchestratorView {
             ("1" | "2" | "3" | "4" | "5", Some(detail)) => {
                 let index = event.keystroke.key.parse::<usize>().unwrap_or(1) - 1;
                 let pull_request = self
-                    .item(&detail.key)
+                    .item(&detail.listed)
                     .is_some_and(|item| item.pull_request.is_some());
                 let tabs = DetailTab::tabs(pull_request);
                 let mut detail = detail.clone();

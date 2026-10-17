@@ -29,7 +29,7 @@ impl OrchestratorView {
     /// The looked-up status of the open pull request, once it arrived.
     pub(super) fn open_pull_request(&self) -> Option<&PullRequest> {
         let number = self
-            .item(&self.detail.as_ref()?.key)?
+            .item(&self.detail.as_ref()?.listed)?
             .pull_request
             .as_ref()?
             .number;

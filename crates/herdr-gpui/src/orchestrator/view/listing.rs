@@ -4,7 +4,7 @@
 
 use super::{
     OrchestratorView, RepoSpec,
-    repo::Repo,
+    repo::{Listed, Repo},
     rows::{self, ItemRow, Runs, Tab},
 };
 use crate::orchestrator::{Item, Provider, Snapshot};
@@ -13,7 +13,8 @@ use std::{collections::HashSet, sync::Arc};
 
 impl OrchestratorView {
     /// Lists exactly `specs`: a repository no longer asked for stops its
-    /// worker, a new one starts its own. The active one stays active.
+    /// worker, a new one starts its own. The selection, the open item, and
+    /// the dialog name their repository by key, so they stay with it.
     pub(crate) fn set_repos(&mut self, specs: Vec<RepoSpec>, cx: &mut Context<Self>) {
         let same = specs.len() == self.repos.len()
             && specs
@@ -23,7 +24,6 @@ impl OrchestratorView {
         if same {
             return;
         }
-        let active = self.repo().map(|repo| repo.key.clone());
         let mut kept: Vec<Repo> = std::mem::take(&mut self.repos);
         self.repos = specs
             .into_iter()
@@ -34,9 +34,6 @@ impl OrchestratorView {
                 },
             )
             .collect();
-        self.active = active
-            .and_then(|key| self.repos.iter().position(|repo| repo.key == key))
-            .unwrap_or(0);
         self.projects
             .retain(|key| self.repos.iter().any(|repo| repo.key == *key));
         self.refresh_rows();
@@ -59,17 +56,17 @@ impl OrchestratorView {
         &self.repos[row.repo].snapshot.items[row.item]
     }
 
-    /// The repository listing `key`.
-    pub(super) fn repo_of(&self, key: &str) -> Option<usize> {
-        self.repos.iter().position(|repo| repo.item(key).is_some())
+    /// The row as the list identifies it.
+    pub(super) fn listed_row(&self, row: &ItemRow) -> Listed {
+        Listed {
+            repo: self.repos[row.repo].key.clone(),
+            key: self.row_item(row).key.canonical(),
+        }
     }
 
-    /// Makes the repository listing `key` the active one, so its page and
-    /// actions go to it.
-    pub(super) fn activate(&mut self, key: &str) {
-        if let Some(repo) = self.repo_of(key) {
-            self.active = repo;
-        }
+    /// The place of the repository `key` names.
+    pub(super) fn repo_index(&self, key: &str) -> Option<usize> {
+        self.repos.iter().position(|repo| repo.key == key)
     }
 
     pub(super) fn refresh_rows(&mut self) {
@@ -182,12 +179,12 @@ impl OrchestratorView {
         }
     }
 
-    /// The selectable keys of the shown list, in order.
-    pub(super) fn keys(&self) -> Vec<String> {
+    /// The selectable rows of the shown list, in order.
+    pub(super) fn keys(&self) -> Vec<Listed> {
         self.lines
             .iter()
             .filter_map(|line| match line {
-                rows::Line::Row(row) => Some(self.row_item(row).key.canonical()),
+                rows::Line::Row(row) => Some(self.listed_row(row)),
                 rows::Line::Heading { .. } => None,
             })
             .collect()
@@ -199,10 +196,10 @@ impl OrchestratorView {
             .is_some_and(|selected| self.keys().contains(selected))
     }
 
-    /// The item `key` names, or the stand-in of one a run works on that is
-    /// no longer listed.
-    pub(super) fn item(&self, key: &str) -> Option<&Item> {
-        self.repos.iter().find_map(|repo| repo.item(key))
+    /// The item `listed` names in its own repository, or the stand-in of
+    /// one a run works on that is no longer listed.
+    pub(super) fn item(&self, listed: &Listed) -> Option<&Item> {
+        self.repos[self.repo_index(&listed.repo)?].item(&listed.key)
     }
 
     /// Every repository's items and runs, those found from branches
@@ -226,13 +223,13 @@ impl OrchestratorView {
         })
     }
 
-    /// The list line showing `key`, counting the headings.
-    pub(super) fn line_of(&self, key: &str) -> usize {
+    /// The list line showing `listed`, counting the headings.
+    pub(super) fn line_of(&self, listed: &Listed) -> usize {
         self.lines
             .iter()
-            .position(|line| {
-                matches!(line, rows::Line::Row(row) if self.row_item(row).key.canonical() == key)
-            })
+            .position(
+                |line| matches!(line, rows::Line::Row(row) if self.listed_row(row) == *listed),
+            )
             .unwrap_or(0)
     }
 }

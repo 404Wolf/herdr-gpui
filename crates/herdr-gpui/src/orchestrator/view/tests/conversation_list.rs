@@ -3,7 +3,7 @@ use super::*;
 use crate::{
     orchestrator::{
         Request, Timing,
-        view::{Detail, DetailTab, Look, OrchestratorView},
+        view::{Detail, DetailTab, Look, OrchestratorView, repo::Listed},
     },
     pr_actions::{Comment, CommentKind},
 };
@@ -57,7 +57,10 @@ fn a_long_conversation_draws_only_the_rows_in_view(cx: &mut TestAppContext) {
             view.pr.set_comments(comments);
             view.repo_mut().snapshot.items = Arc::new(vec![pr]);
             view.detail = Some(Detail {
-                key,
+                listed: Listed {
+                    repo: "test".into(),
+                    key,
+                },
                 tab: DetailTab::Conversation,
             });
             cx.notify();

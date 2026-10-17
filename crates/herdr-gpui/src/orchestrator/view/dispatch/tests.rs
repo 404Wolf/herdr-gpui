@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used)]
 
-use super::{Dialog, OrchestratorView};
+use super::{Dialog, Listed, OrchestratorView};
 use crate::orchestrator::{Request, Timing, view::Look};
 use crate::{search_input::SearchInput, teleport::AgentKind};
 use gpui::{AppContext, TestAppContext};
@@ -28,7 +28,10 @@ fn destination_inventory_reconciles_selection_and_ignores_other_hosts(cx: &mut T
         view.update(cx, |view, cx| {
             let field = cx.new(SearchInput::new);
             view.dialog = Some(Dialog {
-                item: "issue".into(),
+                item: Listed {
+                    repo: "test".into(),
+                    key: "issue".into(),
+                },
                 profile: None,
                 kind: Some(AgentKind::Claude),
                 branch: field.clone(),

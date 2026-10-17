@@ -93,6 +93,8 @@ pub enum Error {
     HostNotShown,
     #[error("That host cannot take this repository")]
     HostCannotTake,
+    #[error("That repository is no longer listed; open the item again")]
+    RepositoryGone,
     #[error("Setting up the other host failed: {0}")]
     Teleport(#[source] crate::teleport::Error),
     #[error("The pull request changed since you confirmed; look at it again before merging")]

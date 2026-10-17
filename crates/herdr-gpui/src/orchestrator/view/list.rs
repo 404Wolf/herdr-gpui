@@ -6,6 +6,7 @@
 use super::{
     OrchestratorView,
     look::{BLUE, CYAN, GREEN, Look, MAGENTA, RED, YELLOW, age, agent_icon},
+    repo::Listed,
     rows::{Heading, ItemRow, Line, Next, Tab},
 };
 use crate::{
@@ -241,12 +242,15 @@ impl OrchestratorView {
     fn row_shell(
         &self,
         id: (&'static str, usize),
-        key: String,
+        listed: Listed,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let theme = &self.look.theme;
-        let selected = self.selected.as_deref() == Some(key.as_str());
-        let open = self.detail.as_ref().is_some_and(|detail| detail.key == key);
+        let selected = self.selected.as_ref() == Some(&listed);
+        let open = self
+            .detail
+            .as_ref()
+            .is_some_and(|detail| detail.listed == listed);
         let hover = theme.surface;
         div()
             .id(id)
@@ -264,10 +268,9 @@ impl OrchestratorView {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                    this.selected = Some(key.clone());
-                    this.activate(&key);
+                    this.selected = Some(listed.clone());
                     if event.click_count == 2 {
-                        this.open_detail(key.clone(), cx);
+                        this.open_detail(listed.clone(), cx);
                     }
                     cx.notify();
                 }),
@@ -304,15 +307,18 @@ impl OrchestratorView {
         });
         let writable = self.repos[row.repo].snapshot.access == Some(Access::ReadWrite);
         let blocked = !item.blocked_by.is_empty() || item.state == "blocked";
+        let listed = self.listed_row(&row);
         let start = (!compact && writable && row.run.is_none() && !blocked).then(|| {
-            let key = key.clone();
+            let listed = listed.clone();
+            let selector = format!("orchestrator-start-{}-{}", listed.repo, listed.key);
             compact_button(look, ("orchestrator-start", index), "Start agent")
+                .debug_selector(move || selector)
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(move |this, _, window, cx| {
-                    this.open_dispatch(key.clone(), window, cx);
+                    this.open_dispatch(listed.clone(), window, cx);
                 }))
         });
-        self.row_shell(("orchestrator-issue", index), key.clone(), cx)
+        self.row_shell(("orchestrator-issue", index), listed, cx)
             .debug_selector(move || format!("orchestrator-row-{key}"))
             .child(
                 div()
@@ -409,7 +415,7 @@ impl OrchestratorView {
             .is_some_and(|head| head != item.key.source.repository);
         let draft = item.state == "draft";
         let key = item.key.canonical();
-        self.row_shell(("orchestrator-pr", index), key.clone(), cx)
+        self.row_shell(("orchestrator-pr", index), self.listed_row(&row), cx)
             .debug_selector(move || format!("orchestrator-row-{key}"))
             .child(
                 div()

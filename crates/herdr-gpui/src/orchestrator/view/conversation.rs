@@ -227,7 +227,7 @@ impl OrchestratorView {
             let problem = self
                 .detail
                 .as_ref()
-                .and_then(|detail| self.item(&detail.key))
+                .and_then(|detail| self.item(&detail.listed))
                 .and_then(|item| self.lookup_problem(item));
             (
                 Some(problem.unwrap_or_else(|| "Reading the conversation\u{2026}".to_owned())),

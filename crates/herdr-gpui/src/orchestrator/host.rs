@@ -403,9 +403,11 @@ impl HerdrWindow {
                     }
                 }
             }
-            Event::Dispatch { request, endpoint } => {
-                self.dispatch_elsewhere(id, *request, &endpoint, cx)
-            }
+            Event::Dispatch {
+                request,
+                endpoint,
+                repo,
+            } => self.dispatch_elsewhere(id, &repo, *request, &endpoint, cx),
             Event::OpenRun {
                 endpoint, pane_id, ..
             } => {
@@ -466,10 +468,12 @@ impl HerdrWindow {
     }
 
     /// Sets `request` up for host `endpoint` as smart dispatch does, then
-    /// hands it back to view `id` to run.
+    /// hands it back to view `id` to run in repository `repo`, whose dialog
+    /// asked for it.
     fn dispatch_elsewhere(
         &mut self,
         id: ViewId,
+        repo: &str,
         mut request: super::DispatchRequest,
         endpoint: &str,
         cx: &mut Context<Self>,
@@ -477,7 +481,7 @@ impl HerdrWindow {
         let shown = &self.endpoints[self.selected_endpoint].connection.target;
         if self
             .orchestrator_view(id)
-            .is_some_and(|view| view.read(cx).target() != Some(shown))
+            .is_some_and(|view| view.read(cx).repo_target(repo) != Some(shown))
         {
             self.tell_orchestrator(id, super::Error::HostNotShown, cx);
             return;
@@ -510,7 +514,7 @@ impl HerdrWindow {
         crate::dispatch::History::update(cx, |history| history.record(&label, endpoint));
         request.elsewhere = Some(elsewhere);
         if let Some(view) = self.orchestrator_view(id).cloned() {
-            view.update(cx, |view, _| view.dispatch_elsewhere(request));
+            view.update(cx, |view, _| view.dispatch_elsewhere(repo, request));
         }
     }
 

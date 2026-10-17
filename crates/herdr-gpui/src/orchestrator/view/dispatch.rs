@@ -2,7 +2,7 @@
 //! the dispatch dialog, the confirmations for stopping an agent, removing a
 //! worktree, or deleting a bead, and the banner with each action's outcome.
 
-use super::{OrchestratorView, look::agent_icon};
+use super::{OrchestratorView, look::agent_icon, repo::Listed};
 use crate::{
     config::{corners, mix},
     orchestrator::{
@@ -21,7 +21,8 @@ mod tests;
 
 /// The dispatch dialog's choices.
 pub(crate) struct Dialog {
-    item: String,
+    /// The item, in the repository whose row or page opened the dialog.
+    pub(super) item: Listed,
     /// The prompt profile, by index into the snapshot's; `None` is built-in.
     profile: Option<usize>,
     kind: Option<AgentKind>,
@@ -123,12 +124,11 @@ impl OrchestratorView {
     }
 
     pub(super) fn select_agent_host(&mut self, cx: &mut Context<Self>) {
+        let active = self.active();
         if let Some(dialog) = &mut self.dialog {
             dialog.kind = None;
-            if let Some(repo) = self.repos.get_mut(self.active) {
+            if let Some(repo) = active.and_then(|active| self.repos.get_mut(active)) {
                 repo.snapshot.installed = None;
-            }
-            if let Some(repo) = self.repos.get_mut(self.active) {
                 repo.snapshot.installed_error = None;
             }
             cx.emit(super::Event::LoadAgents {
@@ -138,7 +138,7 @@ impl OrchestratorView {
     }
 
     pub(super) fn reconcile_agents(&mut self) {
-        let Some(repo) = self.repos.get(self.active) else {
+        let Some(repo) = self.active().and_then(|active| self.repos.get(active)) else {
             return;
         };
         let snapshot = &repo.snapshot;
@@ -151,10 +151,10 @@ impl OrchestratorView {
         }
     }
 
-    /// Opens the dispatch dialog for the item with canonical key `item`.
+    /// Opens the dispatch dialog for `item`, in its own repository.
     pub(super) fn open_dispatch(
         &mut self,
-        item: String,
+        item: Listed,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -164,7 +164,7 @@ impl OrchestratorView {
     /// Opens the dialog for a read-only review of the pull request `item`.
     pub(super) fn open_review(
         &mut self,
-        item: String,
+        item: Listed,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -173,13 +173,12 @@ impl OrchestratorView {
 
     fn open_dialog(
         &mut self,
-        item: String,
+        item: Listed,
         review: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.activate(&item);
-        let Some(found) = self.item(&item) else {
+        let (Some(repo), Some(found)) = (self.repo_index(&item.repo), self.item(&item)) else {
             return;
         };
         let branch_name = match (&found.pull_request, review) {
@@ -201,8 +200,8 @@ impl OrchestratorView {
         let branch = field("Branch name", &branch_name, cx);
         let extra = field("Extra instructions, appended verbatim (optional)", "", cx);
         let model = field("Agent default", "", cx);
-        let kind = self
-            .snapshot()
+        let kind = self.repos[repo]
+            .snapshot
             .installed
             .as_ref()
             .and_then(|installed| installed.first().copied());
@@ -232,13 +231,18 @@ impl OrchestratorView {
         open
     }
 
-    fn submit_dispatch(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // The dialog's item is in the active repository, which the dialog
-        // made active when it opened.
-        let (snapshot, workspace_id) = match self.repos.get(self.active) {
-            Some(repo) => (&repo.snapshot, repo.request.workspace_id.clone()),
-            None => (&self.blank, String::new()),
+    pub(super) fn submit_dispatch(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // An open dialog makes its item's repository the active one; once
+        // that is no longer listed, nothing is started anywhere.
+        let Some(repo) = self.active().and_then(|active| self.repos.get(active)) else {
+            if self.dialog.take().is_some() {
+                self.repository_gone();
+                window.focus(&self.focus, cx);
+                cx.notify();
+            }
+            return;
         };
+        let (snapshot, workspace_id) = (&repo.snapshot, repo.request.workspace_id.clone());
         let Some(dialog) = &mut self.dialog else {
             return;
         };
@@ -275,7 +279,7 @@ impl OrchestratorView {
         let Some(item) = snapshot
             .items
             .iter()
-            .find(|item| item.key.canonical() == dialog.item)
+            .find(|item| item.key.canonical() == dialog.item.key)
         else {
             return;
         };
@@ -292,7 +296,7 @@ impl OrchestratorView {
             _ => prompt::compose(item, profile, &extra),
         };
         let request = DispatchRequest {
-            item_key: dialog.item.clone(),
+            item_key: dialog.item.key.clone(),
             kind,
             model: (!model.is_empty()).then_some(model),
             prompt: text,
@@ -306,6 +310,7 @@ impl OrchestratorView {
             Some(endpoint) => cx.emit(super::Event::Dispatch {
                 request: Box::new(request),
                 endpoint,
+                repo: dialog.item.repo.clone(),
             }),
             None => self.act(Action::Dispatch(Box::new(request))),
         }
@@ -316,7 +321,41 @@ impl OrchestratorView {
 
     /// Hands `action` to the worker, or says why it could not take it.
     pub(super) fn act(&mut self, action: Action) {
-        let taken = self.service().is_some_and(|service| service.act(action));
+        let Some(repo) = self.repo() else {
+            self.repository_gone();
+            return;
+        };
+        let taken = repo
+            .service
+            .as_ref()
+            .is_some_and(|service| service.act(action));
+        self.taken(taken);
+    }
+
+    /// Hands `action` to repository `repo`'s worker, as [`Self::act`] does
+    /// the active one's. A repository no longer listed takes nothing, and
+    /// the action never falls to another one.
+    pub(super) fn act_in(&mut self, repo: &str, action: Action) {
+        let Some(index) = self.repo_index(repo) else {
+            self.repository_gone();
+            return;
+        };
+        let taken = self.repos[index]
+            .service
+            .as_ref()
+            .is_some_and(|service| service.act(action));
+        self.taken(taken);
+    }
+
+    fn repository_gone(&mut self) {
+        self.notice = Some(Notice {
+            outcome: Err(std::sync::Arc::new(
+                crate::orchestrator::Error::RepositoryGone,
+            )),
+        });
+    }
+
+    fn taken(&mut self, taken: bool) {
         if !taken {
             self.notice = Some(Notice {
                 outcome: Err(std::sync::Arc::new(crate::orchestrator::Error::Busy)),
@@ -333,7 +372,7 @@ impl OrchestratorView {
         let runs =
             super::rows::Runs::new(&self.snapshot().runs, &self.snapshot().sessions, &self.live);
         let Some(run) = runs
-            .of_item(&detail.key)
+            .of_item(&detail.listed.key)
             .first()
             .map(|row| runs.runs[row.run].id.clone())
         else {
@@ -472,7 +511,7 @@ impl OrchestratorView {
             .snapshot()
             .items
             .iter()
-            .find(|item| item.key.canonical() == dialog.item);
+            .find(|item| item.key.canonical() == dialog.item.key);
         let host = match self
             .target()
             .cloned()

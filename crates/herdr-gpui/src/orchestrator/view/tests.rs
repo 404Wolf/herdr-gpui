@@ -15,6 +15,7 @@ mod markdown;
 mod pills;
 mod refresh;
 mod rows;
+mod same_item;
 mod sessions;
 
 fn at(value: &str) -> DateTime<Utc> {

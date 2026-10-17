@@ -2,7 +2,7 @@
 use super::*;
 use crate::orchestrator::{
     Request, Timing,
-    view::{Look, OrchestratorView},
+    view::{Look, OrchestratorView, repo::Listed},
 };
 use gpui::{TestAppContext, px, size};
 use std::sync::Arc;
@@ -34,7 +34,14 @@ fn the_dispatch_dialog_stays_within_a_short_window(cx: &mut TestAppContext) {
         view.update(cx, |view, cx| {
             view.repo_mut().snapshot.items = Arc::new(vec![issue]);
             view.refresh_rows();
-            view.open_dispatch(key, window, cx);
+            view.open_dispatch(
+                Listed {
+                    repo: "test".into(),
+                    key,
+                },
+                window,
+                cx,
+            );
         })
     });
     cx.run_until_parked();

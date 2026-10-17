@@ -389,8 +389,13 @@ impl OrchestratorView {
             source_chip(look, ("orchestrator-source-none", 0), Provider::Github)
                 .child(div().text_color(rgb(theme.muted)).child("no GitHub remote"))
         });
-        let dispatchable =
-            self.selected.is_some() && self.snapshot().access == Some(Access::ReadWrite);
+        // The selected row's own repository, which is not the active one
+        // while another repository's item is open beside the list.
+        let dispatchable = self
+            .selected
+            .as_ref()
+            .and_then(|selected| self.repo_index(&selected.repo))
+            .is_some_and(|repo| self.repos[repo].snapshot.access == Some(Access::ReadWrite));
         div()
             .flex_none()
             .flex()

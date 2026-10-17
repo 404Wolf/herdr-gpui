@@ -59,7 +59,7 @@ fn pills_narrow_the_list_by_backend_and_by_project(cx: &mut TestAppContext) {
             view.read(cx)
                 .keys()
                 .into_iter()
-                .map(|key| key.rsplit(':').next().unwrap_or_default().to_owned())
+                .map(|listed| listed.key.rsplit(':').next().unwrap_or_default().to_owned())
                 .collect::<Vec<_>>()
         })
     };

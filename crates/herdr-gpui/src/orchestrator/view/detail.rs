@@ -6,6 +6,7 @@ use super::{
     dispatch::Confirm,
     list::source_mark,
     look::{BLUE, CYAN, age, agent_icon},
+    repo::Listed,
     rows::Tab,
     rows::{RunRow, Runs},
 };
@@ -24,12 +25,12 @@ impl OrchestratorView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let Some(item) = self.item(&detail.key).cloned() else {
+        let Some(item) = self.item(&detail.listed).cloned() else {
             self.detail = None;
             return div().into_any_element();
         };
         let runs = Runs::new(&self.snapshot().runs, &self.snapshot().sessions, &self.live);
-        let item_runs = runs.of_item(&detail.key);
+        let item_runs = runs.of_item(&detail.listed.key);
         let body = match detail.tab {
             // The pane is narrow: the overview, with its actions, leads,
             // and the description follows under it.
@@ -53,13 +54,20 @@ impl OrchestratorView {
             .min_h_0()
             .flex()
             .flex_col()
-            .child(self.render_detail_header(&item, detail.tab, item_runs.len(), cx))
+            .child(self.render_detail_header(
+                &detail.listed,
+                &item,
+                detail.tab,
+                item_runs.len(),
+                cx,
+            ))
             .child(body)
             .into_any_element()
     }
 
     fn render_detail_header(
         &self,
+        listed: &Listed,
         item: &Item,
         active: DetailTab,
         runs: usize,
@@ -78,11 +86,11 @@ impl OrchestratorView {
             .and_then(|info| info.remote.as_ref())
             .map(|remote| remote.source.repository.clone())
             .unwrap_or_else(|| item.key.source.repository.clone());
-        let key = item.key.canonical();
+        let key = listed.clone();
         let url = item.url.clone();
         let writable = self.snapshot().access == Some(Access::ReadWrite);
         let pull_request = item.pull_request.is_some();
-        let review_key = item.key.canonical();
+        let review_key = listed.clone();
         div()
             .flex_none()
             .flex()
