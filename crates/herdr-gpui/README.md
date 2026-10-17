@@ -220,12 +220,12 @@ The picker refreshes after success or
 failure, including timeouts whose result is uncertain. File, process and SSH
 work runs off the UI thread, with one deletion outstanding per window.
 Local add/delete is unavailable with explicit sockets or development catalogs;
-saved-device management is unavailable on Windows or for disabled devices.
+saved-device management is unavailable for disabled devices.
 Remote hosts need an installed Herdr supporting the session commands and
 noninteractive SSH authentication. The GUI does not install or update it.
 
 **Add Device…** opens one dialog for every kind of device. A rail on its left
-lists SSH hosts (WSL distributions on Windows) and, under **Cloud**, each cloud
+lists SSH hosts (then WSL distributions on Windows) and, under **Cloud**, each cloud
 provider the build includes, shown by its logo: a green dot marks a provider
 whose account is configured, and **Set up** one that is not. Each entry keeps
 its own form, so switching between them keeps what was typed. **Ctrl-Tab** and
@@ -353,7 +353,9 @@ setup; complete any prompts in that workspace. The saved device appears
 automatically on the next catalog refresh. No credentials are collected by the
 GUI. Closing the workspace hangs the setup up, and so does quitting the app,
 since the setup belongs to it. Explicit-socket and development-catalog windows
-do not offer setup, and saved SSH devices remain unsupported on Windows.
+do not offer setup. Windows has no terminal setup yet: there the dialog names
+what needs a terminal and asks you to run `herdr machine add TARGET` in one
+(see [Windows](#ssh-hosts)).
 
 #### Local Network access
 
@@ -924,8 +926,7 @@ machine is read in process; each connected Linux or macOS remote host is read
 every two seconds over its own SSH shell, kept open while the host is connected
 (`/proc` on Linux; `vm_stat` and a one-second `iostat` on macOS; `df -Pk
 "$HOME"` on both, with `/proc/uptime` on Linux and `kern.boottime` on macOS).
-Other remote systems, and remote hosts from a Windows client, show it as
-unavailable. Set top-level `show_system_load = false`, or turn off **Show CPU
+Other remote systems show it as unavailable. Set top-level `show_system_load = false`, or turn off **Show CPU
 and memory** in Settings, to hide it and stop sampling while no
 [Devices overview](#devices-overview) is open.
 
@@ -946,8 +947,9 @@ every pane, so system services and servers started outside Herdr never show,
 and its `HERDR_SOCKET_PATH` names the same daemon, so two sessions on one
 machine never claim each other's servers.
 Every five seconds each host runs `ss -ltnp` (Linux) or `lsof -iTCP
--sTCP:LISTEN` (macOS) in its own shell, this machine's locally and a connected
-remote host's over SSH, listing only your own processes. A remote server
+-sTCP:LISTEN` (macOS) in its own shell, this machine's locally, a connected
+remote host's over SSH, and a WSL distribution's through `wsl.exe` (see
+[WSL distributions](#wsl-distributions)), listing only your own processes. A remote server
 always opens at `http://127.0.0.1:<port>` through an SSH tunnel started on the
 first click, never at the address SSH reaches the host by (a Tailscale
 `HostName`, say): `ssh -N -L` from this machine's loopback, with the same
@@ -1031,6 +1033,12 @@ graphics) to 4.5:1 (the level for text), lifts dim labels to it too, and makes
 selected rows stand further off the surface. Terminal output is never
 adjusted; programs keep the colors they asked for.
 
+On Windows, top-level `accent = "system"` takes the app's own accent (the
+current tab, selected rows, focus marks) from **Settings > Personalization >
+Colors** instead of the theme. It is read whenever a theme loads, so a new
+accent shows at the next theme or appearance change, or the next start. Other
+platforms keep the theme's accent.
+
 **Settings > Theme > Window** offers three backdrop tiles: **Solid** (the
 default), **Translucent**, and **Picture**, each showing only its own controls.
 Translucent starts at 85%, and its **Background opacity** stepper moves in 5%
@@ -1047,6 +1055,12 @@ opaque.
 translucent window, through GPUI's public window API: macOS and Windows blur;
 on Linux only Wayland compositors with KDE's blur protocol do, and X11 needs a
 compositing window manager for any translucency at all.
+
+On Windows 11 (22H2 and later) the blur is a DWM system backdrop that also
+covers the title bar: acrylic by default, which blurs the windows behind, or
+Mica (the **Mica** switch, `material = "mica"`), which tints the window with
+the wallpaper the way Windows' own apps do. Windows 10 keeps the older blur,
+and other platforms ignore `material`.
 
 The **Picture** tile opens a file chooser and puts an image behind the window
 instead (`image`, an absolute path or one under `~/`), and starts it at 75%
@@ -1561,7 +1575,9 @@ paths containing control characters are rejected rather than altered.
 
 On an SSH endpoint, a single supported image is transferred as described below.
 Other regular files and multiple-file drops are streamed using the SSH file-copy
-path below. POSIX shell escaping is not intended for Windows command shells.
+path below. A WSL distribution is given its own paths for the files instead,
+with nothing copied; see [WSL distributions](#wsl-distributions). POSIX shell
+escaping is not intended for Windows command shells.
 
 Files copied in the file manager (Cmd-C in Finder) and pasted into the focused
 pane or popup with Cmd-V are handled the same way as a drop. Finder also puts
@@ -2017,6 +2033,8 @@ distributions are the remote endpoints there, so dropped images, pasted image
 paths, and Ctrl-V images reach a distribution's panes through the same bridge.
 A pasted Windows path keeps its backslashes as separators; only matching quotes
 around it are removed, as Explorer's "Copy as path" adds them.
+Files and images dropped or pasted on an SSH host's pane are not uploaded from
+a Windows client yet.
 Native clipboard/drop and real SSH behavior require explicit desktop/host
 verification in addition to the mock-peer and headless tests.
 
@@ -2275,7 +2293,7 @@ a window.
 
 The search field narrows the lanes and the table to devices whose name,
 address, agents, or workspaces match every word typed. Load columns wrap in
-narrow tabs. **Add Device** opens SSH setup, or WSL setup on Windows; it is
+narrow tabs. **Add Device** opens SSH setup, with WSL beside it on Windows; it is
 unavailable in explicit-socket and development-catalog windows.
 
 The window keeps the activity history from the snapshots it already receives,
@@ -2375,7 +2393,8 @@ come back after a restart; closing a workspace in Herdr removes its tabs.
   `localhost:3000` becomes `http://localhost:3000/`.
 - Close Tab and Close Pane close the browser tab being shown, without asking.
   Clicking a Herdr tab, or switching Herdr tabs in the workspace, shows its
-  terminal again.
+  terminal again. Next Tab, Previous Tab, and the tab numbers count browser
+  tabs too, after the workspace's Herdr tabs.
 - Only `http` and `https` pages open, plus local files an agent shows (below).
   Pages cannot navigate to other schemes
   (so `file:` and applications' custom URL schemes stay closed), downloads are
@@ -2496,6 +2515,12 @@ comments on a pull request.
   uncommitted work together. The base is the pull request's base branch when
   GitHub reported one, else `origin/HEAD`, then `main` or `master`, whichever
   exists locally; nothing is fetched. The choice is remembered.
+- Click the base after "against" in a branch review to compare with another
+  branch, such as an older release branch or the feature branch this one was
+  cut from. The list holds the checkout's local and remote-tracking branches,
+  those this branch left most recently first; **Automatic** goes back to the
+  base above. The pick holds while the review tab is open, and a picked
+  branch that no longer exists falls back to the automatic base.
 - The two icons in the header draw the diff **unified**, removed lines above
   the ones that replaced them, or **side by side**, the old version on the
   left and the new on the right, each run of removed lines paired with the
@@ -2703,8 +2728,7 @@ removed; a skill of the same name you wrote yourself is left alone.
   or `~/.agents`. As here, a shim or skill file without the app's marker is
   left alone. A host without a POSIX shell is skipped. Removing the skill
   takes the shim and those copies off each host again, the next time a
-  window connects to it. Windows has no saved SSH hosts, so it installs
-  nothing.
+  window connects to it.
 
 `herdr-gpui browser skill` prints the same text, for example to install it
 elsewhere:
@@ -2828,7 +2852,10 @@ the page's storage, which belongs to one address.
   browser tab's, the page's own shortcuts win, as a terminal program's do
   while its pane has focus. On macOS, Cut, Copy, and Paste act on the page,
   and the keys macOS keeps for the app (quit, hide, minimize, and cycling
-  windows) still reach the app. Click a terminal to take the keyboard back.
+  windows) still reach the app. So do the keys bound to Next Tab, Previous
+  Tab, the tab numbers, and moving to another workspace or agent, as a web
+  browser keeps its tab keys from its pages. Click a terminal to take the
+  keyboard back.
 
 ## System Notifications
 
@@ -3820,6 +3847,50 @@ Reading the user's SID and the pipe's owner takes two `unsafe` Win32 calls
 (`GetTokenInformation`, `GetSecurityInfo`), which neither the standard library
 nor `interprocess` wraps.
 
+### SSH hosts
+
+Saved SSH hosts work as they do on macOS and Linux, through OpenSSH for
+Windows: the copy Windows installs as an optional feature,
+`%SystemRoot%\System32\OpenSSH\ssh.exe`, or without it the first `ssh.exe` in
+an absolute `PATH` directory. The system copy comes first because `PATH` often
+leads with Git's MSYS `ssh`, which reads another home's config and known hosts.
+`ssh-keygen.exe` is found the same way. No console window opens for either.
+The `ssh` child's standard streams are two private pipes rather than a socket
+pair, driven with the same overlapped read and write deadlines as the daemon's
+named pipe. **Add Device** lists **SSH host** first, then **WSL**. It checks the
+host, asks before trusting an unknown host key (appended to the first user
+known hosts file `ssh -G` names, normally `%USERPROFILE%\.ssh\known_hosts`),
+and saves a host that already runs a compatible Herdr through `herdr machine
+add`. Sessions on the host can be listed, created, and deleted.
+
+Where this differs from macOS and Linux:
+
+- **No terminal setup.** A host that needs a password or passphrase prompt,
+  your key installed, or Herdr installed, updated, or restarted is set up in a
+  local workspace on macOS and Linux. On Windows the dialog says which of
+  these it needs and asks you to run `herdr machine add TARGET` in a terminal,
+  then add the device again.
+- **No connection sharing.** Windows OpenSSH has no `ControlMaster`, and with
+  any `ControlPath` set it fails every connection ("getsockname failed: Not a
+  socket"). The bridge passes `ControlPath=none`, so each connection
+  authenticates on its own: keep a key in the OpenSSH Authentication Agent
+  service (`ssh-agent`), since a master you authenticated interactively cannot
+  carry these connections.
+- **`ProxyJump` and `ProxyCommand`** come from your SSH config and run as
+  Windows OpenSSH runs them. A jump host that cannot be reached is reported as
+  an unreachable host.
+- **Forward port…** is not offered in a device's menu: each of those forwards
+  holds its listener in a private control master. A listening port found on
+  the host still opens, through its own `ssh -N -L` child.
+- **Uploads.** Files and images dropped or pasted on an SSH host's pane are
+  not uploaded yet.
+- **Steps that also run here.** Agent checkpoints, teleport, fan-out, process
+  lists, and pane moves also run this machine's `/bin/sh` and stay
+  unavailable from Windows.
+
+CPU and memory, plan usage, listening ports, and the agent skill's install run
+on the host's `/bin/sh` through `ssh`, as they do from macOS and Linux.
+
 ### WSL distributions
 
 A Herdr daemon inside a WSL distribution is reachable as a device. Choose
@@ -3845,10 +3916,90 @@ distribution's sidebar row show them. A distribution shares the machine's
 CPUs, so its CPU figure is what its processes use, and its memory is what
 WSL has given that distribution.
 
-What else runs a shell on the host is not wired into a distribution yet and
-says so: plan usage, listening ports, agent checkpoints, teleport, file
-transfers, and port forwards. WSL already forwards a distribution's
-`localhost` ports to Windows.
+Plan usage is read through its own `wsl.exe` shell in the same way, as on an
+SSH host: the distribution's own agent sign-ins, read with its `python3` or
+`jq` and sent with its `curl`, so they never leave it.
+
+Listening ports are scanned with the distribution's own `ss` (or `lsof`)
+through another `wsl.exe` shell. WSL forwards a distribution's `localhost`
+ports to Windows, so a port opens at `http://localhost:<port>` on this machine
+with no tunnel.
+
+Agent checkpoints run Git inside the distribution, one `wsl.exe --exec
+/bin/sh -c SCRIPT` per step under the same output and idle limits as on an SSH
+host, so its checkouts are snapshotted and restored as an SSH host's are.
+Stopping a step kills its `wsl.exe`, which ends the shell it started.
+
+Files dropped onto a distribution's pane, or copied in Explorer and pasted
+there, paste as the distribution's own paths for them, as its `wslpath -u`
+maps them: `C:\Users\me\a.txt` becomes `/mnt/c/Users/me/a.txt` (or wherever
+`wsl.conf` mounts drives), and a file from inside the distribution
+(`\\wsl.localhost\NAME\home\me\a.txt`) becomes `/home/me/a.txt`. Nothing is
+copied: a distribution already reads this machine's drives, so a file of any
+size is ready at once, an image is pasted as its path rather than through the
+image bridge, and nothing is left in a temporary directory. The paths travel
+on `wsl.exe`'s standard input, at most 256 per drop. Keys typed while they
+are mapped are held and sent after the paths, so Enter cannot run a command
+ahead of them, and one drop maps at a time. The paths are not pasted if the
+pane is covered by a popup or the window moves to another device meanwhile;
+paths that arrive while the terminal waits for its next frame wait with the
+held keys and are pasted once it arrives.
+A file the distribution
+cannot reach, such as another distribution's or one on a network share, is
+named in the error and nothing is pasted.
+
+Ports need no forwarding: a distribution's device menu offers none, and
+`herdr-gpui ports forward` refuses with that reason, since WSL already forwards
+its `localhost` ports to Windows. Teleport is not offered. It runs only on
+Linux and macOS clients, which cannot reach a distribution, and a Windows
+client cannot script its own checkouts, so the only move left would be between
+two distributions on the same machine.
+
+### Window chrome on Windows
+
+Every window keeps the title bar Windows draws, so its buttons, double-click,
+drag-to-snap, and the window menu are the system's own, and hovering the
+maximize button opens the Snap Layouts flyout. The title bar is light or dark
+with the window's theme rather than with the system's app mode, so a dark
+theme under light Windows no longer sits under a white bar. A translucent
+window's blur is DWM acrylic or Mica on Windows 11 (see
+**Settings > Theme > Window** under
+[Configuration](#configuration)), and `accent = "system"` takes the app's
+accent from Windows.
+
+### Screen readers on Windows
+
+GPUI reports the window to UI Automation through AccessKit, which is what
+Narrator and NVDA read. Checked against the UI Automation tree of a running
+window, the main window exposes:
+
+- the terminal as a document named **Terminal**, whose text pattern holds the
+  rows on screen and the selection (see `terminal/accessibility.rs`), so
+  Narrator's reading commands and selection tools work on it;
+- the title bar's **Sidebar** (expanded or collapsed), **Back**, **Forward**,
+  and **GitHub account** buttons;
+- the tab strip as a tab list: each tab by its label, with the current one
+  selected, its **Close tab** button, **New tab**, **Split**, and **Tab
+  actions**.
+
+Each button can be invoked from the screen reader. With a Windows contrast
+theme on (Settings > Accessibility > Contrast themes), the app's own marks and
+labels use the **High contrast** level whatever `contrast` says; terminal
+colors and the theme itself are unchanged, since GPUI does not paint with the
+system's contrast colors.
+
+Still missing, and not faked with labels that do nothing:
+
+- the sidebar's spaces, agents, and device rows, the status bar, menus,
+  popups, dialogs, and the Settings, Logs, and Orchestrator windows have no
+  roles yet, so a screen reader sees only their window;
+- Tab and Shift-Tab belong to the terminal, so keyboard focus never moves to
+  the chrome; its commands are in the command palette and the keyboard
+  shortcuts instead;
+- when the app starts in the background (from a script rather than the Start
+  menu), AccessKit can miss the first activation and report the window rather
+  than the terminal as focused until the window is activated again. This is
+  in GPUI's Windows adapter setup, not in this app.
 
 ### Saved sign-ins and the avatar cache
 
@@ -3888,9 +4039,6 @@ could would already be able to replace the app itself.
 
 These features are unavailable on Windows and say so rather than failing quietly:
 
-- **Saved SSH hosts.** The bridge gives the `ssh` child a socket pair as its
-  standard streams, which requires `OwnedFd`. Connecting to an SSH endpoint
-  reports `SSH endpoints are not supported on this platform`.
 - **In-app updates.** `release::target()` has no Windows updater asset (the
   release zip is for manual download only), so the updater
   stays disabled and reports that no standalone updater exists for this platform.

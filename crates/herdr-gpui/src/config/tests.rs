@@ -2,6 +2,7 @@ use super::*;
 use anyhow::Context as _;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+mod accent;
 mod agents_placement;
 mod backdrop;
 mod bitmap_fonts;
@@ -30,6 +31,7 @@ mod line_height;
 mod loading;
 mod missing_fonts;
 mod notification_settings;
+mod omarchy_theme;
 mod preferences;
 mod repository_icons;
 mod sidebar_scope;

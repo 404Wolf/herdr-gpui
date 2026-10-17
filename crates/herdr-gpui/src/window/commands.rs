@@ -264,6 +264,11 @@ impl HerdrWindow {
                 self.open_browser_tab(None, window, cx);
                 return;
             }
+            Command::NextTab | Command::PreviousTab | Command::TabNumber(_)
+                if self.step_tab(command, window, cx) =>
+            {
+                return;
+            }
             Command::ReopenClosedTab => {
                 self.reopen_closed_tab(window, cx);
                 return;

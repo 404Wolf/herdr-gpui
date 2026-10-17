@@ -49,6 +49,7 @@ mod tab_strip;
 mod tab_tear;
 mod toasts;
 mod transfers;
+mod wsl_drop;
 mod zen;
 #[cfg(test)]
 pub(crate) use transfers::tests::Peer as MockPeer;
@@ -359,6 +360,9 @@ pub(crate) struct HerdrWindow {
     pub(crate) workspace_drag: Option<sidebar::WorkspaceDrag>,
     /// The worktree script being located, read, trusted, or opened.
     pub(crate) worktree_script: Option<crate::worktree_scripts::Job>,
+    /// Files dropped on a WSL pane whose paths are still being mapped; input
+    /// typed meanwhile is held so it lands after them.
+    pub(crate) wsl_paste: Option<wsl_drop::WslPaste>,
     /// Hides the chrome over the status bar and sidebar flags; see `zen`.
     pub(crate) zen: zen::ZenState,
     // keep-sorted end

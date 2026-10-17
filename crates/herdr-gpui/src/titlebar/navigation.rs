@@ -92,6 +92,8 @@ impl HerdrWindow {
             div()
                 .id(id)
                 .debug_selector(move || id.into())
+                .role(Role::Button)
+                .aria_label(label)
                 .flex()
                 .flex_none()
                 .items_center()
