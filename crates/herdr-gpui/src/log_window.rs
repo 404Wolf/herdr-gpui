@@ -106,6 +106,7 @@ fn open_deferred(cx: &mut App) {
 
 struct LogWindow {
     appearance: Appearance,
+    caption: crate::caption::Caption,
     _appearance: Subscription,
     focus: FocusHandle,
     search: Entity<SearchInput>,
@@ -319,6 +320,7 @@ impl LogWindow {
         });
         Self {
             appearance,
+            caption: Default::default(),
             _appearance: appearance_subscription,
             focus: cx.focus_handle(),
             search,
@@ -486,6 +488,7 @@ impl Render for LogWindow {
                 offset_in_item: px(0.),
             });
         }
+        self.caption.sync(window, &self.appearance.theme);
         let header = crate::titlebar::header(&self.appearance.theme, window, |window, _| {
             window.remove_window();
         });

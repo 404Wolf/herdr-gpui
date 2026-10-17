@@ -74,9 +74,7 @@ pub use sessions::{
     LocalSession, RemoteSession, SessionState, delete_local_session, delete_remote_session,
     list_local_sessions, list_remote_sessions,
 };
-#[cfg(unix)]
-pub use ssh::script_command;
-pub use ssh::{Bridge, connect_command};
+pub use ssh::{Bridge, connect_command, script_command};
 pub use ssh::{
     Destination, FORWARD_READY, HostKeyFingerprint, HostKeyScan, HostProbe, NewHostKey, SshFailure,
     forward_command, probe_host, remote_config_value, remote_origin_url, resolve_destination,

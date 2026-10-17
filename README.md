@@ -313,6 +313,14 @@ the Win key, with the Linux defaults (Ctrl+Shift+T, Ctrl+Shift+P,
 Ctrl+Shift+Q); see
 [keyboard shortcuts](crates/herdr-gpui/README.md#keyboard-shortcuts).
 
+Windows keep the system title bar, so Snap Layouts, drag-to-snap, and the
+window menu are the system's own; the title bar follows the app's light or dark
+theme. On Windows 11 a translucent window can blur with acrylic or Mica, and
+`accent = "system"` takes the accent from Windows. Narrator and other screen
+readers get the terminal's text and the title bar and tab strip controls by
+name; [what is not exposed yet](crates/herdr-gpui/README.md#screen-readers-on-windows)
+is listed there.
+
 Each release publishes `Herdr-VERSION-x86_64-pc-windows-msvc.zip` and
 `Herdr-VERSION-aarch64-pc-windows-msvc.zip` (native ARM64), each containing
 `herdr-gpui.exe`, `herdr-gpui-launcher.exe`, and their license notices, beside

@@ -32,6 +32,10 @@ theme = "Default"
 # "high" raises them and dim labels to 4.5:1 and makes selected rows stand out
 # more. Terminal output always keeps its program's colors.
 contrast = "standard"
+# The app's own accent (the current tab, selected rows): "theme" takes it from
+# the theme, "system" from Windows Settings > Personalization > Colors.
+# Other platforms keep the theme's. Terminal colors never change with it.
+accent = "theme"
 
 # Ask before closing a tab (closing terminates its terminal processes).
 confirm_close_tab = true
@@ -491,6 +495,9 @@ size = 12
 # Blur the desktop behind a translucent window: macOS, Windows, and Wayland
 # compositors with KDE's blur protocol.
 # blur = false
+# What blur paints on Windows 11: "acrylic" (the windows behind, blurred) or
+# "mica" (the wallpaper). Ignored elsewhere.
+# material = "acrylic"
 # A picture behind the window, absolute or under ~/. The window stays opaque
 # over it; lower opacity shows more of it.
 # image = "~/Pictures/wallpaper.jpg"
