@@ -75,6 +75,8 @@ fn nested_agents_sit_under_their_workspace_and_drop_the_agents_section(
         assert!(first.bottom() <= under_first.top(), "{host}");
         assert!(under_first.bottom() <= second.top(), "{host}");
         assert!(second.bottom() <= under_second.top(), "{host}");
+        // The workspace row names the place, so the agent takes one line.
+        assert!(under_first.size.height < first.size.height, "{host}");
         // A step in from the workspace, and inside the sidebar.
         assert!(under_first.left() >= first.left(), "{host}");
         assert!(under_first.right() <= cx.debug_bounds("sidebar").unwrap().right());
