@@ -233,3 +233,33 @@ fn search_results_hold_the_nested_reveal_until_the_list_returns(cx: &mut gpui::T
         "{focused:?} in {list:?}"
     );
 }
+
+/// A middle worktree's trunk runs on past the agents nested under it to the
+/// next sibling, a selected one included: it is drawn after them, so their
+/// fill cannot cover it.
+#[gpui::test]
+fn a_childs_trunk_runs_past_its_nested_agents(cx: &mut gpui::TestAppContext) {
+    let (_view, cx) = cx.add_window_view(|window, cx| {
+        let mut view = fixture_window(window, cx);
+        view.config.agents_placement = AgentsPlacement::Nested;
+        let mut listing = snapshot(6);
+        // w4 is the group's middle child; its agent is the focused one.
+        listing.agents[0].workspace_id = "w4".into();
+        listing.agents[0].focused = true;
+        view.live.snapshot = Some(Arc::new(listing));
+        view.live.status = ConnectionStatus::Connected;
+        view.live.supports_surface = true;
+        view.endpoints[0].live = view.live.clone();
+        view
+    });
+    cx.simulate_resize(size(px(800.), px(900.)));
+    cx.run_until_parked();
+    cx.update(|window, cx| full_draw(window, cx).clear(cx));
+    let agent = cx.debug_bounds("row-agent-p0").unwrap();
+    let trunk = cx.debug_bounds("trunk-local-w4").unwrap();
+    let next = cx
+        .debug_bounds("row-sidebar-child-with-a-long-readable-branch-name")
+        .unwrap();
+    assert!(trunk.top() <= agent.top() && agent.bottom() <= trunk.bottom());
+    assert_eq!(trunk.bottom(), next.top());
+}

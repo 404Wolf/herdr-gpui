@@ -565,10 +565,13 @@ impl HerdrWindow {
                                 .flex_col()
                                 .w_full()
                                 .relative()
-                                .children(trunk)
                                 .children(note_line)
                                 .children(ports)
-                                .children(agent_rows),
+                                .children(agent_rows)
+                                // Last, so a selected nested agent's fill does
+                                // not hide it, as a row draws its guide over
+                                // its own fill.
+                                .children(trunk),
                         )
                         .into_any_element()
                 };
