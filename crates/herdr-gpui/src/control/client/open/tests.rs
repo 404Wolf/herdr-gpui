@@ -127,3 +127,13 @@ fn a_refusal_is_not_retried_and_the_wait_is_bounded() {
     assert!(clock.get() >= start + START_WAIT);
     assert!(clock.get() < start + START_WAIT + RETRY * 2);
 }
+
+#[cfg(windows)]
+#[test]
+fn a_drive_root_explorer_quoted_opens_the_root() {
+    // `"C:\"` on Explorer's command line arrives as `C:"`.
+    let drive = std::env::var("SystemDrive").unwrap();
+    let sent = directory(Path::new(&format!("{drive}\""))).unwrap();
+    assert_eq!(sent, format!("{drive}\\"));
+    assert_eq!(unquoted(Path::new(r"C:\work")), Path::new(r"C:\work"));
+}

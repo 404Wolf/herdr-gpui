@@ -119,6 +119,7 @@ fn starting(error: &crate::Error) -> bool {
 /// checked here where the caller's directory is known and again in the app.
 pub(crate) fn directory(path: &Path) -> crate::Result<String> {
     let refused = |code, message: String| crate::Error::ControlRejected { code, message };
+    let path = &unquoted(path);
     let resolved: PathBuf = crate::palette::canonicalize(path).map_err(|error| {
         refused(
             ErrorCode::NotFound,
@@ -143,6 +144,23 @@ pub(crate) fn directory(path: &Path) -> crate::Result<String> {
             "The folder's path must be UTF-8".into(),
         )
     })
+}
+
+/// The path with the backslash Windows' argument rules took back. Explorer
+/// quotes the folder (`"%V"`), and for a drive root that is `"C:\"`, which
+/// reaches the program as `C:"`: a backslash before a quote escapes it. No
+/// Windows path can hold a quote, so a trailing one can only be that.
+#[cfg(windows)]
+fn unquoted(path: &Path) -> PathBuf {
+    match path.to_str().and_then(|text| text.strip_suffix('"')) {
+        Some(text) => PathBuf::from(format!("{text}\\")),
+        None => path.to_owned(),
+    }
+}
+
+#[cfg(not(windows))]
+fn unquoted(path: &Path) -> PathBuf {
+    path.to_owned()
 }
 
 /// A path in a device namespace: `\\.\`, or `\\?\` other than a drive or
