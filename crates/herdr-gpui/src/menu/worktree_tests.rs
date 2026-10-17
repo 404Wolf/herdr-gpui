@@ -17,6 +17,7 @@ mod branch_follows_name;
 mod branch_only;
 mod dialog_entry;
 mod github_listings;
+mod github_sign_in_hint;
 mod local_listings;
 mod name_field;
 mod open_remove_shortcuts;

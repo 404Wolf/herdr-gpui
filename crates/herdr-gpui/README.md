@@ -2991,6 +2991,10 @@ Ctrl+Shift+U is left unbound for
   cancels; dialog input never reaches terminals or native creation actions.
   Context menus and dialogs anchor to the pointer and clamp to the viewport.
   Rename trims surrounding whitespace and rejects blank labels inline.
+  The PR and issues tabs need a GitHub account signed in to Herdr itself; until
+  then they are faded, and hovering one says to sign in from the account
+  button. A `gh` or browser login is not picked up by itself, and a development build
+  (`just run`) keeps its sign-in apart from the installed app's Keychain entry.
   The PR tab supports fork pull requests: it fetches GitHub's PR head ref from
   the listed repository's remote and creates a local `pr/<number>` branch.
   Existing local branches are preserved; repository trust is not granted. In a

@@ -34,6 +34,17 @@ impl Kind {
         }
     }
 
+    /// Why the tab is faded without an account. Herdr keeps its own GitHub
+    /// sign-in, so being signed in to `gh` or a browser is not enough.
+    pub(crate) fn signed_out_hint(self) -> &'static str {
+        match self {
+            Self::PullRequest => {
+                "Sign in to GitHub in Herdr (account button, top right) to list pull requests."
+            }
+            Self::Issue => "Sign in to GitHub in Herdr (account button, top right) to list issues.",
+        }
+    }
+
     fn field(self) -> &'static str {
         match self {
             Self::PullRequest => "pullRequests",
