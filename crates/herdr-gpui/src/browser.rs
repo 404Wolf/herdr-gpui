@@ -59,7 +59,6 @@ mod view_tests;
 pub(crate) use annotate_view::Annotations;
 pub(crate) use closed::ClosedHerdrTab;
 pub(crate) use feedback::{Batch, Feedback, FeedbackKey};
-#[cfg(unix)]
 pub(crate) use feedback::{TAKE_BUDGET, json_size};
 pub(crate) use group_motion::Fold;
 #[cfg(test)]
