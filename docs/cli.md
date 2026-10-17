@@ -86,7 +86,8 @@ When no Herdr UI is running and no `--window` is given, `open` starts the app,
 as a plain `herdr-gpui` would, then asks again every quarter second until the
 window has connected to the local Herdr and accepts the folder. It waits at
 most 20 seconds after starting the app, then exits 7. Explorer's **Open in
-Herdr UI** entry, which the Windows installer can add, runs this command.
+Herdr UI** entry, which both Windows installers add, runs this command through
+`herdr-gpui-launcher.exe`, so no console window appears.
 
 ### The app's own tabs
 
