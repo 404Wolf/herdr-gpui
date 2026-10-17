@@ -128,8 +128,15 @@ def generate(root, temporary):
                 definition[key] = value
         dependencies[name] = definition
         references.append(reference)
+    # The updater starts every child through herdr_client::new_command, so it
+    # builds against the workspace's own client crate, already in the lock.
+    if "herdr-client" not in member["dependencies"]:
+        raise ValueError("herdr-gpui no longer depends on herdr-client")
+    dependencies["herdr-client"] = {"path": str(root / "crates/herdr-client")}
+    reference, = [ref for ref in locked_root["dependencies"] if ref.split()[0] == "herdr-client"]
+    references.append(reference)
 
-    manifest = "[workspace]\nresolver = " + toml_value(workspace["resolver"]) + "\n"
+    manifest ="[workspace]\nresolver = " + toml_value(workspace["resolver"]) + "\n"
     for section, values in [("package", package), ("dependencies", dependencies)]:
         manifest += f"\n[{section}]\n"
         manifest += "".join(f"{json.dumps(key)} = {toml_value(value)}\n"
