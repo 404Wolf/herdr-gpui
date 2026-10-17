@@ -7,6 +7,7 @@ mod info;
 mod ports;
 mod pr;
 mod strict;
+mod wsl_forwards;
 
 fn caller(workspace: Option<&str>) -> Caller {
     Caller {

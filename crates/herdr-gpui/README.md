@@ -3775,8 +3775,12 @@ on `wsl.exe`'s standard input, at most 256 per drop. A file the distribution
 cannot reach, such as another distribution's or one on a network share, is
 named in the error and nothing is pasted.
 
-What else runs a shell on the host is not wired into a distribution yet and
-says so: teleport and port forwards.
+Ports need no forwarding: a distribution's device menu offers none, and
+`herdr-gpui ports forward` refuses with that reason, since WSL already forwards
+its `localhost` ports to Windows. Teleport is not offered. It runs only on
+Linux and macOS clients, which cannot reach a distribution, and a Windows
+client cannot script its own checkouts, so the only move left would be between
+two distributions on the same machine.
 
 These features are unavailable on Windows and say so rather than failing quietly:
 
