@@ -3756,8 +3756,13 @@ through another `wsl.exe` shell. WSL forwards a distribution's `localhost`
 ports to Windows, so a port opens at `http://localhost:<port>` on this machine
 with no tunnel.
 
+Agent checkpoints run Git inside the distribution, one `wsl.exe --exec
+/bin/sh -c SCRIPT` per step under the same output and idle limits as on an SSH
+host, so its checkouts are snapshotted and restored as an SSH host's are.
+Stopping a step kills its `wsl.exe`, which ends the shell it started.
+
 What else runs a shell on the host is not wired into a distribution yet and
-says so: agent checkpoints, teleport, file transfers, and port forwards.
+says so: teleport, file transfers, and port forwards.
 
 These features are unavailable on Windows and say so rather than failing quietly:
 

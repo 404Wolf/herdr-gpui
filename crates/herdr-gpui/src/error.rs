@@ -963,9 +963,9 @@ pub enum Error {
     WorktreeScriptsUnsupportedHost,
     #[error("Select a checkout from the daemon's worktree list.")]
     WorktreeSelection,
-    /// Probes that open a shell on the host (usage, ports, checkpoints) have
-    /// no route into a WSL distribution yet; CPU and memory do.
-    #[error("This is not available for WSL distributions yet.")]
+    /// A shell into a WSL distribution starts through `wsl.exe`, which only a
+    /// Windows client has.
+    #[error("WSL distributions can only be reached from Windows.")]
     WslHostUnsupported,
     // keep-sorted end
 }
