@@ -230,8 +230,9 @@ fn known_hosts(target: &str) -> Result<KnownHosts> {
     parse_known_hosts(&output).ok_or(Error::KnownHostsUnavailable)
 }
 
-/// `None` unless every user file is an absolute path without quotes, which
-/// also rejects a path with spaces, since `ssh -G` prints those unquoted.
+/// `None` unless every user file is an absolute path without quotes, and any
+/// space in one is accounted for (see [`split_paths`]), since `ssh -G` prints
+/// paths unquoted.
 fn parse_known_hosts(output: &[u8]) -> Option<KnownHosts> {
     let text = std::str::from_utf8(output).ok()?;
     let value = |key: &str| {
@@ -247,7 +248,11 @@ fn parse_known_hosts(output: &[u8]) -> Option<KnownHosts> {
             .collect();
         files
             .iter()
-            .all(|file| file.is_absolute() && !file.to_string_lossy().contains(['"', '\'']))
+            .all(|file| {
+                file.is_absolute()
+                    && !file.to_string_lossy().contains(['"', '\''])
+                    && spaces_in_directories(file, Path::is_dir)
+            })
             .then_some(files)
     };
     let user = paths(value("userknownhostsfile")).filter(|files| !files.is_empty())?;
@@ -272,7 +277,9 @@ fn parse_known_hosts(output: &[u8]) -> Option<KnownHosts> {
 /// it stays split and the caller rejects the fragment. On Windows every
 /// absolute path starts with a drive or `\\` and no file name holds a `:`,
 /// so a word that starts neither continues the path before it, as in a
-/// profile such as `C:\Users\Jane Doe`.
+/// profile such as `C:\Users\Jane Doe`. A relative file listed after an
+/// absolute one joins it the same way; [`spaces_in_directories`] refuses that
+/// join rather than let it name a file `ssh` never reads.
 fn split_paths(list: &str) -> Vec<String> {
     if !cfg!(windows) {
         return list.split_whitespace().map(str::to_owned).collect();
@@ -289,6 +296,23 @@ fn split_paths(list: &str) -> Vec<String> {
         }
     }
     files
+}
+
+/// Whether every space in `file` lies in a directory that exists. A space
+/// in the file name itself, or in a directory that `is_dir` does not find,
+/// may as well separate two listed files, so such a path is refused: trusting
+/// a key there would write it where `ssh` does not look.
+fn spaces_in_directories(file: &Path, is_dir: impl Fn(&Path) -> bool) -> bool {
+    let components: Vec<_> = file.components().collect();
+    let mut prefix = PathBuf::new();
+    for (index, component) in components.iter().enumerate() {
+        prefix.push(component);
+        let spaced = component.as_os_str().to_string_lossy().contains(' ');
+        if spaced && (index + 1 == components.len() || !is_dir(&prefix)) {
+            return false;
+        }
+    }
+    true
 }
 
 /// A path as `ssh -G` prints it. Windows OpenSSH prints its system-wide

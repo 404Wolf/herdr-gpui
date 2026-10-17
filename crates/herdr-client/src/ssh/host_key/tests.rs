@@ -101,34 +101,66 @@ globalknownhostsfile __PROGRAMDATA__\ssh/ssh_known_hosts __PROGRAMDATA__\ssh/ssh
 }
 
 /// A profile whose name has spaces reaches `ssh -G` unquoted. On Windows each
-/// listed file still starts with a drive, so the words rejoin into one path,
-/// and the scan quotes it whole.
+/// listed file still starts with a drive, so the words rejoin into one path
+/// when the spaced directory exists, and the scan quotes it whole.
 #[cfg(windows)]
 #[test]
 fn windows_profile_paths_with_spaces_stay_whole() {
-    let output = br"hostname box
-port 22
-userknownhostsfile C:\Users\Jane Doe/.ssh/known_hosts C:\Users\Jane  Q Doe/.ssh/known_hosts2
-globalknownhostsfile __PROGRAMDATA__\ssh/ssh_known_hosts
-";
-    let known = parse_known_hosts(output).unwrap();
+    let root = tempfile::tempdir().unwrap();
+    for profile in ["Jane Doe", "Jane  Q Doe"] {
+        std::fs::create_dir(root.path().join(profile)).unwrap();
+    }
+    let base = root.path().display();
+    let output = format!(
+        "hostname box\nport 22\nuserknownhostsfile {base}\\Jane Doe/.ssh/known_hosts {base}\\Jane  Q Doe/.ssh/known_hosts2\nglobalknownhostsfile __PROGRAMDATA__\\ssh/ssh_known_hosts\n"
+    );
+    let known = parse_known_hosts(output.as_bytes()).unwrap();
     assert_eq!(
         known.user,
         [
-            PathBuf::from(r"C:\Users\Jane Doe/.ssh/known_hosts"),
-            PathBuf::from(r"C:\Users\Jane  Q Doe/.ssh/known_hosts2"),
+            PathBuf::from(format!("{base}\\Jane Doe/.ssh/known_hosts")),
+            PathBuf::from(format!("{base}\\Jane  Q Doe/.ssh/known_hosts2")),
         ]
     );
     assert_eq!(known.global.len(), 1);
     let options = scan_options(Path::new(r"C:\Temp\known_hosts"), &known.user[..1]);
+    let expected = format!("{base}/Jane Doe/.ssh/known_hosts").replace('\\', "/");
     assert_eq!(
         options[1],
-        r#"UserKnownHostsFile="C:/Temp/known_hosts" "C:/Users/Jane Doe/.ssh/known_hosts""#
+        format!(r#"UserKnownHostsFile="C:/Temp/known_hosts" "{expected}""#)
     );
     // A word that starts no path still cannot begin the list.
     assert!(
         parse_known_hosts(b"hostname box\nport 22\nuserknownhostsfile Doe/known_hosts\n").is_none()
     );
+    // A relative file after an absolute one would join its name: refused,
+    // so approval never writes to a file `ssh` does not read.
+    std::fs::create_dir(root.path().join(".ssh")).unwrap();
+    let ambiguous = format!(
+        "hostname box\nport 22\nuserknownhostsfile {base}\\.ssh/known_hosts known_hosts.extra\n"
+    );
+    assert!(parse_known_hosts(ambiguous.as_bytes()).is_none());
+    // So is a spaced directory that does not exist.
+    let missing = format!("hostname box\nport 22\nuserknownhostsfile {base}\\No One/known_hosts\n");
+    assert!(parse_known_hosts(missing.as_bytes()).is_none());
+}
+
+#[cfg(windows)]
+#[test]
+fn spaces_count_only_inside_existing_directories() {
+    let is = |dir: &'static str| move |path: &Path| path == Path::new(dir);
+    let file = Path::new(r"C:\Users\Jane Doe\.ssh\known_hosts");
+    assert!(spaces_in_directories(file, is(r"C:\Users\Jane Doe")));
+    assert!(!spaces_in_directories(file, |_| false));
+    // A space in the file name itself is never resolved.
+    assert!(!spaces_in_directories(
+        Path::new(r"C:\Users\me\.ssh\known_hosts known_hosts.extra"),
+        |_| true
+    ));
+    assert!(spaces_in_directories(
+        Path::new(r"C:\Users\me\.ssh\known_hosts"),
+        |_| false
+    ));
 }
 
 #[test]
