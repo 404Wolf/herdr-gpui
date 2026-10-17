@@ -1,5 +1,7 @@
 // objc 0.2's selectors expand a legacy cargo-clippy cfg in the native test adapter.
 #![cfg_attr(feature = "integration-test", allow(unexpected_cfgs))]
+// Tests start real processes; production code builds them with `new_command`.
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
 
 mod about;
 mod actions;
@@ -12,6 +14,8 @@ mod app_icon;
 mod avatars;
 mod backdrop;
 mod bell;
+#[cfg(feature = "boat")]
+mod boat;
 mod browser;
 mod caffeine;
 mod checkpoint;
@@ -20,13 +24,19 @@ mod close_modal;
 // `cloud` is the machinery every provider shares; alone it offers nothing to add.
 #[cfg(all(
     feature = "cloud",
-    not(any(feature = "coder", feature = "daytona", feature = "railway"))
+    not(any(
+        feature = "boat",
+        feature = "coder",
+        feature = "daytona",
+        feature = "railway"
+    ))
 ))]
 compile_error!(
-    "the `cloud` feature is enabled through a provider feature, such as `coder`, `daytona`, or `railway`"
+    "the `cloud` feature is enabled through a provider feature, such as `boat`, `coder`, `daytona`, or `railway`"
 );
 #[cfg(feature = "cloud")]
 mod cloud;
+mod cloud_setup;
 mod code_index;
 mod code_search;
 mod code_server;
@@ -78,6 +88,7 @@ mod merged_cleanup;
 mod mockup;
 mod motion;
 mod navigation;
+mod network_quality;
 mod notifications;
 mod orchestrator;
 mod osc52;
@@ -115,6 +126,7 @@ mod state_file;
 mod storage_warning;
 mod system_load;
 mod tab_menu;
+mod taskbar;
 mod teleport;
 mod terminal;
 mod terminal_notes;

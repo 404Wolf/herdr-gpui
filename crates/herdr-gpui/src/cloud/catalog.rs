@@ -76,8 +76,7 @@ impl Entry {
     }
 }
 
-/// Provider IDs and machine names become endpoint IDs and command arguments,
-/// so only plain identifier characters are accepted.
+/// IDs and names used as command arguments must stay plain identifiers.
 fn plain(value: &str, limit: usize) -> bool {
     !value.is_empty()
         && value.len() <= limit
@@ -85,6 +84,10 @@ fn plain(value: &str, limit: usize) -> bool {
         && value
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+}
+
+fn display_name(value: &str, limit: usize) -> bool {
+    !value.trim().is_empty() && value.len() <= limit && !value.chars().any(char::is_control)
 }
 
 impl SavedDevice {
@@ -104,14 +107,22 @@ impl SavedDevice {
 
     fn valid(&self) -> bool {
         plain(&self.id, NAME_LIMIT)
-            && plain(&self.machine, NAME_LIMIT)
-            && !self.label.trim().is_empty()
-            && self.label.len() <= LABEL_LIMIT
-            && !self.label.chars().any(char::is_control)
+            && self.valid_machine()
+            && display_name(&self.label, LABEL_LIMIT)
             && !self.account.is_empty()
             && self.account.len() <= 2048
             && !self.account.chars().any(char::is_control)
             && herdr_client::session_socket(Path::new(""), &self.session).is_ok()
+    }
+
+    fn valid_machine(&self) -> bool {
+        // Boat names are display text, including its timestamped default name.
+        // Its connector passes only the stable sandbox ID to the API.
+        #[cfg(feature = "boat")]
+        if self.provider == CloudProvider::Boat {
+            return display_name(&self.machine, NAME_LIMIT);
+        }
+        plain(&self.machine, NAME_LIMIT)
     }
 
     fn same(&self, other: &Self) -> bool {

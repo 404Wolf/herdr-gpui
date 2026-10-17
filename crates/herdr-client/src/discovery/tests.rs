@@ -1,4 +1,6 @@
 use super::*;
+
+mod login_config_home;
 // Non-UTF-8 configuration roots only exist on POSIX; Windows paths are UTF-16.
 #[cfg(unix)]
 #[test]

@@ -55,6 +55,7 @@ jobs:
     needs: zizmor
     outputs:
       code: ${{ steps.changes.outputs.code }}
+      windows_package: ${{ steps.changes.outputs.windows_package }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -132,6 +133,10 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Check source file sizes
         run: bash scripts/check-file-size.sh
+      - name: Check keep-sorted regions
+        run: |
+          python3 scripts/test_check_sorted.py
+          python3 scripts/check-sorted.py
       - name: Test mockup feedback receiver
         run: python3 .claude/skills/gpui-mockup/scripts/test_wait.py
       - name: Lint every target and feature
@@ -185,10 +190,61 @@ jobs:
       - name: Test integration-feature build and executable CLI
         run: cargo test --locked --workspace --all-features
 
+  # The optimized Windows build, its zip, and its installer, made and installed
+  # as the release workflow does, so a packaging or installer mistake fails the
+  # pull request rather than a release. A release build is too slow for every
+  # change, so this runs only when what those artifacts are made from changes.
+  windows-package:
+    if: >-
+      needs.commits.outputs.windows_package == 'true' &&
+      github.repository == 'penso/herdr-gpui' &&
+      (github.event_name == 'pull_request' ||
+       ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+        github.actor == 'penso' && github.triggering_actor == 'penso' &&
+        github.ref == 'refs/heads/main'))
+    name: Windows package and installer
+    needs: [zizmor, commits]
+    runs-on: windows-2025
+    timeout-minutes: 60
+    # The steps read "$TARGET" and friends, as the release workflow's do.
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      contents: read
+    env:
+      # Packaging names files after a release version; any valid one will do.
+      VERSION: '20000101.1'
+      TARGET: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: rustup show
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: windows-package
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build optimized Windows executables
+        run: cargo build --locked --release -p herdr-gpui -p herdr-gpui-launcher --target "$TARGET"
+      # The release job passes generated third-party notices; any nonempty
+      # file exercises the same packaging.
+      - name: Package the Windows zip
+        run: |
+          mkdir dist
+          python scripts/release/package-windows.py "$VERSION" "$TARGET" "target/$TARGET/release/herdr-gpui.exe" "target/$TARGET/release/herdr-gpui-launcher.exe" dist LICENSE
+      - name: Install the pinned Inno Setup compiler
+        run: python scripts/release/windows-installer.py install-iscc "$RUNNER_TEMP/inno-setup" > "$RUNNER_TEMP/iscc-path"
+      - name: Build the Windows installer
+        run: python scripts/release/windows-installer.py build "$VERSION" "$TARGET" "dist/Herdr-$VERSION-$TARGET.zip" dist "$(cat "$RUNNER_TEMP/iscc-path")"
+      - name: Install and uninstall the Windows installer
+        run: python scripts/release/windows-installer.py smoke "dist/Herdr-$VERSION-$TARGET-setup.exe"
+
   # Keep the branch-protection context stable while requiring every platform.
   checks-passed:
     name: Format, lint, and test
-    needs: [checks, windows, commits]
+    needs: [checks, windows, windows-package, commits]
     if: >-
       always() &&
       github.repository == 'penso/herdr-gpui' &&
@@ -204,14 +260,21 @@ jobs:
         env:
           RESULT: ${{ needs.checks.result }}
           WINDOWS: ${{ needs.windows.result }}
+          PACKAGE: ${{ needs.windows-package.result }}
           COMMITS: ${{ needs.commits.result }}
           CODE: ${{ needs.commits.outputs.code }}
+          PACKAGE_INPUTS: ${{ needs.commits.outputs.windows_package }}
         run: |
           test "$COMMITS" = success || exit 1
           if [ "$CODE" = true ]; then
-            test "$RESULT" = success && test "$WINDOWS" = success
+            test "$RESULT" = success && test "$WINDOWS" = success || exit 1
           else
-            test "$CODE" = false && test "$RESULT" = skipped && test "$WINDOWS" = skipped
+            test "$CODE" = false && test "$RESULT" = skipped && test "$WINDOWS" = skipped || exit 1
+          fi
+          if [ "$PACKAGE_INPUTS" = true ]; then
+            test "$PACKAGE" = success
+          else
+            test "$PACKAGE_INPUTS" = false && test "$PACKAGE" = skipped
           fi
 
   build:

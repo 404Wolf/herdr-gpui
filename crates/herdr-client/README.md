@@ -471,7 +471,7 @@ WSL distribution. The worker runs `%SystemRoot%\System32\wsl.exe --distribution
 compatibility checks, output-ready marker, and `remote-client-bridge` handshake
 an SSH host uses, over the child's standard streams. `--exec` keeps `wsl.exe`
 from expanding `$VARIABLES` in the script. The child has no console window
-(`CREATE_NO_WINDOW`), starts in the system directory so a vanished WSL share
+(`CREATE_NO_WINDOW`, as for every child built with `new_command`), starts in the system directory so a vanished WSL share
 cannot be its working directory, and has its stderr discarded; the worker kills
 and reaps it on every exit. As over SSH, the bridge starts the session's server
 when it is down, and disconnecting never stops it.
@@ -586,6 +586,9 @@ replacement races by that account.
 `Local` checks `HERDR_SOCKET_PATH` (derive `-client.sock` from its file stem),
 then `HERDR_CLIENT_SOCKET_PATH`, then `HERDR_SESSION` (default: `default`).
 Release config lives at `$XDG_CONFIG_HOME/herdr` or `$HOME/.config/herdr`.
+An application launched without `XDG_CONFIG_HOME` can supply its login shell's
+value with `set_login_config_home`; `local_var` reads the environment with that
+fallback, and local discovery uses it.
 An explicit `Session` bypasses socket overrides; `development: true` selects
 `herdr-dev` regardless of this client's compilation profile. Named sessions use
 `sessions/<name>/herdr-client.sock`; `default` uses `herdr-client.sock` directly.

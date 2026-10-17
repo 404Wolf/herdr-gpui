@@ -9,7 +9,7 @@ struct NativeBounds(std::collections::HashMap<String, Bounds<Pixels>>);
 impl Global for NativeBounds {}
 
 #[cfg(all(feature = "integration-test", target_os = "macos"))]
-fn native_probe(id: impl Into<String>) -> impl IntoElement {
+pub(in crate::settings_window) fn native_probe(id: impl Into<String>) -> impl IntoElement {
     let id = id.into();
     canvas(
         |_, _, _| (),
@@ -63,7 +63,7 @@ impl SettingsWindow {
         &self,
         cx: &App,
     ) -> Option<(FocusHandle, String)> {
-        let input = self.controls.size_editor.as_ref()?.input.read(cx);
+        let input = self.number_edit.as_ref()?.input.read(cx);
         Some((input.focus.clone(), input.text().to_owned()))
     }
 
@@ -82,7 +82,7 @@ pub(super) struct FamilyIo {
     load: std::sync::Arc<dyn Fn() -> crate::Result<super::super::Loaded> + Send + Sync>,
 }
 
-fn face_font(config: &Config, face: FontFace) -> &FontConfig {
+pub(in crate::settings_window) fn face_font(config: &Config, face: FontFace) -> &FontConfig {
     match face {
         FontFace::Terminal => &config.terminal,
         FontFace::Sidebar => &config.sidebar,
@@ -91,7 +91,7 @@ fn face_font(config: &Config, face: FontFace) -> &FontConfig {
     }
 }
 
-fn family_label(family: &str) -> &str {
+pub(in crate::settings_window) fn family_label(family: &str) -> &str {
     if family == ".SystemUIFont" {
         "System font"
     } else {
@@ -115,8 +115,8 @@ impl SettingsWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.finish_control_size_edit(true, cx) {
-            self.finish_control_size_edit(false, cx);
+        if !self.finish_number_edit(true, cx) {
+            self.finish_number_edit(false, cx);
         }
         if let FontTarget::Face(face) = target {
             self.controls.active_face = face;
@@ -216,7 +216,11 @@ impl SettingsWindow {
         }
     }
 
-    fn font_button(&self, id: String, label: impl Into<SharedString>) -> Stateful<Div> {
+    pub(in crate::settings_window) fn font_button(
+        &self,
+        id: String,
+        label: impl Into<SharedString>,
+    ) -> Stateful<Div> {
         let selector = id.clone();
         #[cfg(all(feature = "integration-test", target_os = "macos"))]
         let probe = native_probe(id.clone());
@@ -240,155 +244,30 @@ impl SettingsWindow {
             })
     }
 
-    fn render_font_stepper(&self, face: FontFace, cx: &Context<Self>) -> Div {
-        let size = self.controls.size(face, &self.config);
-        let mut buttons = div()
-            .flex()
-            .items_center()
-            .flex_none()
-            .w(px(104.))
-            .h(px(32.))
-            .border_1()
-            .border_color(rgb(self.theme.active))
-            .rounded(px(corners::CONTROL));
-        for (symbol, step, enabled) in [("-", -1., size > 8.), ("+", 1., size < 48.)] {
-            if step > 0. {
-                buttons = buttons.child(match &self.controls.size_editor {
-                    Some(editor) if editor.face == face => div()
-                        .flex_1()
-                        .min_w_0()
-                        .on_key_down(cx.listener(Self::control_size_key))
-                        .when(editor.invalid, |field| {
-                            field.border_b_1().border_color(rgb(self.theme.primary()))
-                        })
-                        .child(editor.input.clone())
-                        .into_any_element(),
-                    _ => div()
-                        .id(format!("settings-size-value-{}", face.name()))
-                        .debug_selector(move || format!("settings-size-value-{}", face.name()))
-                        .flex_1()
-                        .min_w_0()
-                        .text_center()
-                        .cursor_pointer()
-                        .child(size.to_string())
-                        .map(|value| {
-                            #[cfg(all(feature = "integration-test", target_os = "macos"))]
-                            let value = value.child(native_probe(format!(
-                                "settings-size-value-{}",
-                                face.name()
-                            )));
-                            value
-                        })
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            cx.stop_propagation();
-                            this.begin_control_size_edit(face, window, cx);
-                        }))
-                        .into_any_element(),
-                });
-            }
-            buttons = buttons.child(
-                self.font_button(format!("settings-size-{}-{symbol}", face.name()), symbol)
-                    .w(px(28.))
-                    .px_0()
-                    .flex_none()
-                    .when(!enabled, |button| button.opacity(0.5))
-                    .when(enabled, |button| {
-                        button.on_click(cx.listener(move |this, _, window, cx| {
-                            cx.stop_propagation();
-                            if !this.finish_control_size_edit(true, cx) {
-                                this.finish_control_size_edit(false, cx);
-                            }
-                            window.focus(&this.focus, cx);
-                            this.step_control_size(face, step, cx);
-                        }))
-                    }),
-            );
-        }
-        #[cfg(all(feature = "integration-test", target_os = "macos"))]
-        let buttons = buttons.child(native_probe(format!("settings-size-{}", face.name())));
-        buttons
-    }
-
-    fn control_specimen_font(&self) -> FontConfig {
+    pub(in crate::settings_window) fn control_specimen_font(&self) -> FontConfig {
         let face = self.controls.active_face;
         let mut font = face_font(&self.config, face).clone();
         font.size = self.controls.size(face, &self.config);
         font
     }
 
-    pub(super) fn render_font_controls(&self, cx: &mut Context<Self>) -> Div {
-        #[cfg(all(feature = "integration-test", target_os = "macos"))]
+    /// The size shown for a face: a queued or saving edit wins over the file.
+    pub(in crate::settings_window) fn control_face_size(&self, face: FontFace) -> f32 {
+        self.controls.size(face, &self.config)
+    }
+
+    pub(in crate::settings_window) fn active_font_face(&self) -> FontFace {
+        self.controls.active_face
+    }
+
+    /// Forgets last frame's painted bounds so the native checks read fresh ones.
+    #[cfg(all(feature = "integration-test", target_os = "macos"))]
+    pub(in crate::settings_window) fn reset_native_font_bounds(&self, cx: &mut Context<Self>) {
         cx.default_global::<NativeBounds>().0.clear();
-        let mut rows = div()
-            .debug_selector(|| "settings-font-rows".into())
-            .flex()
-            .flex_col()
-            .min_w_0()
-            .gap(px(8.))
-            .child(
-                div().flex().justify_end().child(
-                    self.font_button("settings-font-all".into(), "Set all fonts...")
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.open_control_font_picker(FontTarget::All, window, cx)
-                        })),
-                ),
-            );
-        for (face, label) in FACES {
-            rows = rows.child(
-                div()
-                    .id(format!("settings-font-row-{}", face.name()))
-                    .map(|row| {
-                        #[cfg(all(feature = "integration-test", target_os = "macos"))]
-                        let row =
-                            row.child(native_probe(format!("settings-font-row-{}", face.name())));
-                        row
-                    })
-                    .debug_selector(move || format!("settings-font-row-{}", face.name()))
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .h(px(52.))
-                    .flex_none()
-                    .px(px(8.))
-                    .min_w_0()
-                    .rounded(px(corners::CONTROL))
-                    .border_1()
-                    .border_color(rgb(if face == self.controls.active_face {
-                        self.theme.primary()
-                    } else {
-                        self.theme.active
-                    }))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.controls.active_face = face;
-                        cx.notify();
-                    }))
-                    .child(div().w(px(64.)).flex_none().child(label))
-                    .child(
-                        self.font_button(format!("settings-font-family-{}", face.name()), "")
-                            .flex_1()
-                            .justify_between()
-                            .gap(px(6.))
-                            .border_1()
-                            .border_color(rgb(self.theme.active))
-                            .bg(rgb(self.theme.background))
-                            .child(div().min_w_0().flex_1().truncate().child(
-                                family_label(&face_font(&self.config, face).family).to_owned(),
-                            ))
-                            .child(
-                                svg()
-                                    .path("icons/chevron-down.svg")
-                                    .size(px(12.))
-                                    .flex_none()
-                                    .text_color(rgb(self.theme.muted)),
-                            )
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                cx.stop_propagation();
-                                this.open_control_font_picker(FontTarget::Face(face), window, cx);
-                            })),
-                    )
-                    .child(self.render_font_stepper(face, cx)),
-            );
-        }
+    }
+
+    /// The live sample for the active face, set in its own font and size.
+    pub(in crate::settings_window) fn render_font_specimen(&self) -> Div {
         let font = self.control_specimen_font();
         let sample = match self.controls.active_face {
             FontFace::Terminal => "let answer = 42;\nif answer != 0 {\n    println!(\"ready\");\n}",
@@ -398,43 +277,37 @@ impl SettingsWindow {
             FontFace::Tabs => "main.rs   agent / review\nChanges   Terminal   Preview",
             FontFace::Ui => "Make room for focused work.\nYour preferences, your workspace.",
         };
-        rows.child(
-            div()
-                .debug_selector(|| "settings-font-specimen".into())
-                .map(|specimen| {
-                    #[cfg(all(feature = "integration-test", target_os = "macos"))]
-                    let specimen = specimen.child(native_probe("settings-font-specimen"));
-                    specimen
-                })
-                .mt(px(16.))
-                .flex()
-                .flex_col()
-                .min_w_0()
-                .overflow_hidden()
-                .gap(px(20.))
-                .p(px(20.))
-                .rounded(px(corners::CONTROL))
-                .bg(rgb(self.theme.surface))
-                .child(self.control_note(format!(
-                    "{} / {} px",
-                    role_label(self.controls.active_face),
-                    font.size
-                )))
-                .child(
-                    div()
-                        .text_font(&font)
-                        .text_size(px(font.size))
-                        .line_height(px(font.line_height()))
-                        .child(sample),
-                )
-                .child(
-                    div()
-                        .text_font(&font)
-                        .text_size(px(font.size))
-                        .line_height(px(font.line_height()))
-                        .child("0O 1lI {} [] != <="),
-                ),
-        )
+        div()
+            .debug_selector(|| "settings-font-specimen".into())
+            .map(|specimen| {
+                #[cfg(all(feature = "integration-test", target_os = "macos"))]
+                let specimen = specimen.child(native_probe("settings-font-specimen"));
+                specimen
+            })
+            .mt(px(12.))
+            .flex()
+            .flex_col()
+            .min_w_0()
+            .overflow_hidden()
+            .gap(px(20.))
+            .p(px(20.))
+            .rounded(px(corners::CONTROL))
+            .bg(rgb(self.theme.surface))
+            .child(self.control_note(format!("{} px", font.size)))
+            .child(
+                div()
+                    .text_font(&font)
+                    .text_size(px(font.size))
+                    .line_height(px(font.line_height()))
+                    .child(sample),
+            )
+            .child(
+                div()
+                    .text_font(&font)
+                    .text_size(px(font.size))
+                    .line_height(px(font.line_height()))
+                    .child("0O 1lI {} [] != <="),
+            )
     }
 
     pub(in crate::settings_window) fn render_control_font_picker(

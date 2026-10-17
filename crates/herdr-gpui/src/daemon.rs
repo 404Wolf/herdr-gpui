@@ -46,12 +46,13 @@ pub fn connect(
         Duration::from_secs(20),
         || {
             on_start();
-            let mut command = Command::new(executable());
+            let mut command = herdr_client::new_command(executable());
             if let ConnectTarget::Session { name, .. } = target {
                 command.args(["--session", name]);
             }
             command.arg("server");
             crate::login_env::apply(&mut command);
+            pin_config_home(&mut command, herdr_client::local_var("XDG_CONFIG_HOME"));
             command
         },
         matches!(
@@ -65,6 +66,17 @@ pub fn connect(
     )?;
     let local = local_peer(&stream, target, &socket);
     Ok((stream, local))
+}
+
+/// Start the daemon under the configuration root `socket` was resolved
+/// from, so the wait for it polls where it listens. The login environment can
+/// carry an `XDG_CONFIG_HOME` this app did not adopt, such as when a daemon
+/// answered at the default root at startup and has exited since.
+fn pin_config_home(command: &mut Command, root: Option<std::ffi::OsString>) {
+    match root {
+        Some(root) => command.env("XDG_CONFIG_HOME", root),
+        None => command.env_remove("XDG_CONFIG_HOME"),
+    };
 }
 
 /// Windows resolves a bare command name to `herdr.exe`; an explicit probe has to
@@ -236,9 +248,8 @@ fn detach(command: &mut Command) {
 fn detach(command: &mut Command) {
     use std::os::windows::process::CommandExt;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    // The server is a console program; launched from the GUI it must not flash one.
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    command.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
+    // Replaces the flags `new_command` set, so keep the one that opens no window.
+    command.creation_flags(CREATE_NEW_PROCESS_GROUP | herdr_client::CREATE_NO_WINDOW);
 }
 
 fn connect_or_start(

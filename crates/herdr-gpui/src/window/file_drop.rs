@@ -5,13 +5,13 @@ use super::HerdrWindow;
 use crate::{
     Error, Result,
     connection::ConnectionBridge,
-    terminal::{InputTarget, wheel_target},
+    terminal::{InputTarget, escape_into, escaped_len, wheel_target},
 };
 use gpui::{Context, ExternalPaths, Pixels, Point, Window};
 use herdr_client::protocol::ClientPaneInputEvent;
 use std::path::PathBuf;
 
-const MAX_PATHS: usize = 256;
+pub(super) const MAX_PATHS: usize = 256;
 const MAX_PASTE_BYTES: usize = 64 * 1024;
 
 impl HerdrWindow {
@@ -23,12 +23,34 @@ impl HerdrWindow {
     ) {
         // GPUI translates the platform Submit position into window mouse state
         // before invoking on_drop; the payload itself carries no coordinates.
-        let Some(target) = self.file_drop_target(window.mouse_position()) else {
+        let position = window.mouse_position();
+        // A drop over the panes is use even before the frame is ready, so the
+        // window takes back a frame another client sized; its files are not
+        // pasted until then.
+        if self.menu.page.is_none() && self.bounds.contains(&position) {
+            self.note_input();
+        }
+        let Some(target) = self.file_drop_target(position) else {
             return;
         };
         cx.stop_propagation();
-        if paths.paths().is_empty() {
-            return;
+        if self.paste_files(target, paths.paths(), cx) {
+            window.focus(&self.focus, cx);
+        }
+    }
+
+    /// Paste external files into `target` the way a drop does: quoted local
+    /// paths on a local pane, the image bridge for one image on a remote pane,
+    /// and a file copy for anything else there. Files copied in Finder and
+    /// pasted with Cmd-V take this path too. False when nothing was sent.
+    pub(super) fn paste_files(
+        &mut self,
+        target: InputTarget,
+        paths: &[PathBuf],
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if paths.is_empty() {
+            return false;
         }
         // Local paths mean nothing on a cloud machine, and file copies
         // there would need the provider's own transfer; refuse rather than paste dead paths.
@@ -40,18 +62,25 @@ impl HerdrWindow {
             self.local_error =
                 Some("Files not pasted: file drops are not supported on cloud devices yet.".into());
             cx.notify();
-            return;
+            return false;
         }
-        let result = quote_paths(paths.paths()).and_then(|text| {
-            if self.accepts_remote_images()
-                && let [path] = paths.paths()
-                && let Some(source) = super::image_source::from_path(path)
-            {
-                self.start_remote_image(target.clone(), source, Some(text), cx);
-                return Ok(());
-            }
-            if self.accepts_remote_images() {
-                self.start_file_transfer(target.clone(), paths.paths().to_vec(), cx);
+        // Where the pane runs decides local paths versus bridging, never its
+        // readiness: a local path names nothing on another host. Readiness can
+        // lapse while Cmd-V reads the clipboard (a resize, say), so a remote
+        // pane that is not ready refuses the files instead.
+        let remote = self.selected_is_remote();
+        let result = quote_paths(paths).and_then(|text| {
+            if remote {
+                if !self.accepts_remote_images() {
+                    return Err(Error::ConnectionNotReady);
+                }
+                if let [path] = paths
+                    && let Some(source) = super::image_source::from_path(path)
+                {
+                    self.start_remote_image(target.clone(), source, Some(text), cx);
+                } else {
+                    self.start_file_transfer(target.clone(), paths.to_vec(), cx);
+                }
                 return Ok(());
             }
             let endpoint = &self.endpoints[self.selected_endpoint];
@@ -70,10 +99,14 @@ impl HerdrWindow {
             Ok(())
         });
         match result {
-            Ok(()) => window.focus(&self.focus, cx),
+            Ok(()) => {
+                self.note_input();
+                true
+            }
             Err(error) => {
                 self.local_error = Some(format!("Files not pasted: {error}"));
                 cx.notify();
+                false
             }
         }
     }
@@ -97,15 +130,17 @@ impl HerdrWindow {
     }
 }
 
-/// POSIX shell words, separated by spaces without a trailing newline. Validate
-/// the whole drop before allocating its output so failures never paste a prefix.
+/// POSIX shell words, separated by spaces without a trailing newline. Like
+/// native macOS terminals, a path stays bare and readable, with a backslash
+/// before each character the shell would otherwise interpret. Validate the
+/// whole drop before allocating its output so failures never paste a prefix.
 pub(super) fn quote_paths(paths: &[PathBuf]) -> Result<String> {
     if paths.len() > MAX_PATHS {
         return Err(Error::FileDropSize);
     }
     let mut bytes = paths.len().saturating_sub(1);
     for path in paths {
-        // Bound UTF-8 validation and quote counting as well as output allocation.
+        // Bound UTF-8 validation and escape counting as well as output allocation.
         if path.as_os_str().len() > MAX_PASTE_BYTES {
             return Err(Error::FileDropSize);
         }
@@ -116,7 +151,7 @@ pub(super) fn quote_paths(paths: &[PathBuf]) -> Result<String> {
         if text.chars().any(char::is_control) {
             return Err(Error::FileDropControl);
         }
-        bytes += text.len() + 2 + text.bytes().filter(|byte| *byte == b'\'').count() * 3;
+        bytes += escaped_len(text);
         if bytes > MAX_PASTE_BYTES {
             return Err(Error::FileDropSize);
         }
@@ -126,15 +161,7 @@ pub(super) fn quote_paths(paths: &[PathBuf]) -> Result<String> {
         if !quoted.is_empty() {
             quoted.push(' ');
         }
-        quoted.push('\'');
-        for ch in path.to_str().ok_or(Error::FileDropEncoding)?.chars() {
-            if ch == '\'' {
-                quoted.push_str("'\\''");
-            } else {
-                quoted.push(ch);
-            }
-        }
-        quoted.push('\'');
+        escape_into(path.to_str().ok_or(Error::FileDropEncoding)?, &mut quoted);
     }
     Ok(quoted)
 }

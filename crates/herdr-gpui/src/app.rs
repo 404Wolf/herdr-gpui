@@ -132,6 +132,7 @@ fn open_window_placed(
             ..Default::default()
         },
         |window, cx| {
+            crate::taskbar::mark(window, cx);
             cx.new(|cx| {
                 let mut view = HerdrWindow::new(
                     target,
@@ -166,15 +167,17 @@ fn shared_sound(cx: &mut App) -> std::rc::Rc<crate::sound::Service> {
 
 /// Opens another window from inside the focused window's own update.
 pub(crate) fn open_additional_window(target: ConnectTarget, cx: &mut App) {
-    open_additional_window_then(target, None, |_, _, _| {}, cx);
+    open_additional_window_then(target, None, |_, _, _| {}, |_| {}, cx);
 }
 
 /// Opens another window at `placement` from inside a window's own update,
-/// then runs `then` on it before it is shown in front.
+/// then runs `then` on it before it is shown in front, or `failed` when it
+/// cannot be opened.
 pub(crate) fn open_additional_window_then(
     target: ConnectTarget,
     placement: Option<Placement>,
     then: impl FnOnce(&mut HerdrWindow, &mut Window, &mut Context<HerdrWindow>) + 'static,
+    failed: impl FnOnce(&mut App) + 'static,
     cx: &mut App,
 ) {
     cx.defer(move |cx| {
@@ -195,7 +198,10 @@ pub(crate) fn open_additional_window_then(
                     window.activate_window();
                 });
             }
-            Err(_) => tracing::error!("Unable to open an additional Herdr window"),
+            Err(_) => {
+                tracing::error!("Unable to open an additional Herdr window");
+                failed(cx);
+            }
         }
     });
 }
@@ -212,7 +218,7 @@ pub(crate) fn run() -> std::process::ExitCode {
     }
     // A control command asked for JSON gets its usage errors as JSON too.
     let json_errors = cli::control::wants_json(&args);
-    let LaunchOptions { target, mode } = match LaunchOptions::parse(args) {
+    let LaunchOptions { target, mode } = match LaunchOptions::parse(&args) {
         Ok(options) => options,
         Err(error) if json_errors => {
             println!(
@@ -291,6 +297,8 @@ pub(crate) fn run() -> std::process::ExitCode {
     // Only read first-frame settings here. Migration, defaults refresh, and font
     // discovery run after opening; CLI and fixtures skip personal settings.
     let appearance = if mode == LaunchMode::Normal {
+        // Before anything resolves a config path or the daemon's socket.
+        crate::login_env::adopt_config_home();
         let started = std::time::Instant::now();
         let appearance = StartupAppearance::load(Config::load_startup);
         tracing::debug!(
@@ -348,6 +356,8 @@ pub(crate) fn run() -> std::process::ExitCode {
     } else {
         crate::dispatch::History::default()
     };
+    // Whether the launcher is installed is read once here, never while a window opens.
+    let taskbar = crate::taskbar::Taskbar::load();
     gpui_platform::application()
         .with_assets(icons::Icons)
         .run(move |cx| {
@@ -362,6 +372,7 @@ pub(crate) fn run() -> std::process::ExitCode {
             dispatch_history.install(cx);
             agent_skill.install_global(cx);
             keychain_grants.install(cx);
+            taskbar.install(cx);
             // Only the user's own app answers agents; native test modes stay private.
             if mode == LaunchMode::Normal {
                 crate::control::install(cx);

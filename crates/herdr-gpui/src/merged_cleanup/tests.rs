@@ -44,7 +44,7 @@ fn only_linked_worktrees_with_a_merged_pull_request_are_candidates() {
         let pr = merged(state);
         assert_eq!(candidates(&snapshot, |_| Some(&pr)).count(), 0, "{state:?}");
     }
-    assert_eq!(candidates(&snapshot, |_| None).count(), 0);
+    assert_eq!(candidates(&snapshot, |_| None::<&PullRequest>).count(), 0);
 }
 
 #[test]

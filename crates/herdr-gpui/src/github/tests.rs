@@ -6,6 +6,7 @@ use super::{
     device::TokenResponse,
     http::{
         LIMIT, authorization, graphql, pause_until, pr_cooldown, query_error, rejection, response,
+        split_aliases,
     },
     log::{header, kind, public_sso, token_kind},
     store,
@@ -21,6 +22,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod additional;
+mod aliases;
 mod device_auth;
 mod github_cli;
 mod limits;

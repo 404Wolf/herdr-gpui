@@ -341,7 +341,7 @@ pub(crate) fn run(invocation: Invocation) -> ExitCode {
         ControlCommand::Skill | ControlCommand::Browser(BrowserCommand::Skill) => {
             print!(
                 "{}",
-                crate::agent_skill::text(std::env::current_exe().ok().as_deref())
+                crate::agent_skill::text(crate::agent_skill::executable().as_deref())
             );
             return ExitCode::SUCCESS;
         }

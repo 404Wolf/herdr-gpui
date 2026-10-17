@@ -12,7 +12,7 @@ use herdr_client::{
     ClipboardImageCancellation,
     protocol::{ClientClipboardImageTarget, ClientPaneInputEvent},
 };
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PreparationKind {
@@ -107,6 +107,14 @@ impl HerdrWindow {
         self.selected_is_remote() && self.accepts_image_input()
     }
 
+    /// Whether clipboard content for a remote pane becomes an upload: Ctrl-V
+    /// reading an image, or a pasted image path. Where the client refuses
+    /// uploads (Windows), Ctrl-V stays a key and the text is pasted, as when
+    /// the clipboard holds no image.
+    pub(crate) fn bridges_clipboard_images(&self) -> bool {
+        herdr_client::CLIPBOARD_UPLOADS && self.accepts_remote_images()
+    }
+
     pub(crate) fn selected_is_remote(&self) -> bool {
         self.endpoints[self.selected_endpoint]
             .connection
@@ -187,13 +195,27 @@ impl HerdrWindow {
         image_only: bool,
         cx: &mut Context<Self>,
     ) -> bool {
-        if self.menu.page.is_some() || !self.input_ready() || self.mouse_focus_pending() {
+        if self.menu.page.is_some() {
             return false;
         }
-        // Normal paste retains text precedence. Ctrl-V only intercepts images,
-        // leaving its ordinary terminal meaning intact when no image exists.
+        // A paste is use even before the frame is ready, so the window takes
+        // back a frame another client sized; its contents wait for that frame.
+        self.note_input();
+        if !self.input_ready() || self.mouse_focus_pending() {
+            return false;
+        }
+        // Files copied in a file manager carry their names as text too; paste
+        // them as a drop would. Otherwise normal paste retains text precedence.
+        // Ctrl-V only intercepts images, leaving its ordinary terminal meaning
+        // intact when no image exists.
+        if !image_only && let Some(paths) = external_paths(&item) {
+            if let Some(target) = self.focused_input_target() {
+                self.paste_files(target, &paths, cx);
+            }
+            return true;
+        }
         if !image_only && let Some(text) = item.text().filter(|text| !text.is_empty()) {
-            if self.accepts_remote_images()
+            if self.bridges_clipboard_images()
                 && let Some(source) = image_source::from_paste(&text)
                 && let Some(target) = self.focused_input_target()
             {
@@ -260,6 +282,14 @@ impl HerdrWindow {
                 let Some(item) = item else {
                     return Ok(fallback.map_or(Prepared::Empty, Prepared::Input));
                 };
+                if !image_only && let Some(paths) = external_paths(&item) {
+                    // A local pane keeps the paste in this reserved slot; a
+                    // remote pane needs the drop's image bridge or file copy.
+                    if !bridge_paths && let Ok(text) = super::file_drop::quote_paths(&paths) {
+                        return Ok(Prepared::Input(ClientPaneInputEvent::Paste(text)));
+                    }
+                    return Ok(Prepared::Files(paths));
+                }
                 if !image_only && let Some(text) = item.text().filter(|text| !text.is_empty()) {
                     if bridge_paths && let Some(source) = image_source::from_paste(&text) {
                         return Prepared::image(source.prepare(), Some(text));
@@ -373,6 +403,11 @@ impl HerdrWindow {
             if !current {
                 return;
             }
+            // Files leave this slot and are pasted through the drop policy.
+            let (prepared, files) = match prepared {
+                Ok(Prepared::Files(paths)) => (Ok(Prepared::Empty), paths),
+                prepared => (prepared, Vec::new()),
+            };
             let result = executor
                 .spawn(async move {
                     match prepared {
@@ -380,7 +415,7 @@ impl HerdrWindow {
                             .complete(image.extension, image.bytes)
                             .map(|()| image.resized),
                         Ok(Prepared::Input(event)) => upload.complete_input(event).map(|()| false),
-                        Ok(Prepared::Empty) | Err(_) => Ok(false),
+                        Ok(Prepared::Empty | Prepared::Files(_)) | Err(_) => Ok(false),
                     }
                 })
                 .await;
@@ -393,12 +428,16 @@ impl HerdrWindow {
                     return;
                 };
                 let current = this.image_target_current(&this.pending_images[index]);
+                let target = this.pending_images[index].target.clone();
                 let pending = &mut this.pending_images[index];
                 pending.preparing = false;
                 if !current {
                     pending.cancel();
                 }
                 if current {
+                    if !files.is_empty() {
+                        this.paste_files(target, &files, cx);
+                    }
                     match result {
                         Err(error) => this.report_image_error(&Error::Client(error), cx),
                         Ok(true) => this.local_transfer_notice(
@@ -431,7 +470,20 @@ impl HerdrWindow {
 enum Prepared {
     Image(PreparedImage),
     Input(ClientPaneInputEvent),
+    /// External files, pasted on the UI thread as a drop would be.
+    Files(Vec<PathBuf>),
     Empty,
+}
+
+/// The files of a file-manager copy. Finder also publishes their names as
+/// text, which would otherwise be pasted instead of the paths.
+fn external_paths(item: &ClipboardItem) -> Option<Vec<PathBuf>> {
+    item.entries().iter().find_map(|entry| match entry {
+        ClipboardEntry::ExternalPaths(paths) if !paths.paths().is_empty() => {
+            Some(paths.paths().to_vec())
+        }
+        _ => None,
+    })
 }
 
 impl Prepared {

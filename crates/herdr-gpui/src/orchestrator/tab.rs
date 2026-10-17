@@ -179,7 +179,7 @@ impl HerdrWindow {
     pub(super) fn github_account(
         &self,
         target: &ConnectTarget,
-    ) -> (Option<Arc<secrecy::SecretString>>, Option<String>) {
+    ) -> (Option<crate::github::Tokens>, Option<String>) {
         let host = self
             .endpoints
             .iter()
@@ -190,7 +190,7 @@ impl HerdrWindow {
             host.and_then(|auth| auth.profile.as_ref())
                 .or(self.menu.github.profile.as_ref());
         match profile {
-            Some(profile) => (Some(profile.token.clone()), Some(profile.login.clone())),
+            Some(profile) => (Some(self.tokens_over(profile)), Some(profile.login.clone())),
             None => (None, None),
         }
     }

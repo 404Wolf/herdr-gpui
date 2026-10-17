@@ -143,14 +143,26 @@ impl HerdrWindow {
             })
             // Hosts mark selection only; they do not join the rows'
             // hover group.
-            .child(look.highlight(
-                &format!("{prefix}host-{endpoint_id}"),
-                RowState {
-                    selected,
-                    ..RowState::default()
+            // A carried header is a card lifted over the headers it passes.
+            .child(
+                if !pinned
+                    && self
+                        .device_drag
+                        .as_ref()
+                        .is_some_and(|drag| drag.carries(&endpoint.id))
+                {
+                    look.lifted(&format!("host-{endpoint_id}"), selected, theme)
+                } else {
+                    look.highlight(
+                        &format!("{prefix}host-{endpoint_id}"),
+                        RowState {
+                            selected,
+                            ..RowState::default()
+                        },
+                        theme,
+                    )
                 },
-                theme,
-            ))
+            )
             .text_color(rgb(if endpoint.enabled {
                 theme.foreground
             } else {

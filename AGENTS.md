@@ -25,7 +25,9 @@ Closing or detaching the GUI must leave the daemon and its terminals running.
 | `crates/herdr-protocol` | Generation-1 wire types, framing, validation, and atomic surface patches |
 | `crates/herdr-client` | Discovery, socket worker, session transitions, ordered commands, and client-local activity projection |
 | `crates/herdr-gpui` | Native UI, connection bridge, presentation state, semantic input, geometry, and painting |
+| `crates/herdr-gpui-launcher` | Windows-only windowed launcher that starts `herdr-gpui.exe` without a console window; std plus `MessageBoxW` for start failures |
 | `crates/test-support/sandbox.rs` | Shared isolated process setup for opt-in integration tests; not a production crate |
+| `crates/test-support/pe.rs` | Windows executable (PE) reader for tests that check subsystem and resources; not a production crate |
 
 - Keep dependency direction from UI to client to protocol. Protocol/client code must not depend on GPUI.
 - Keep session transitions separate from socket scheduling, and connection ownership separate from window rendering.
@@ -38,6 +40,48 @@ Closing or detaching the GUI must leave the daemon and its terminals running.
 - Keep APIs narrow. Use private items by default and `pub(super)` or `pub(crate)` only where needed; do not expose every field merely to ease extraction.
 - Define shared types once in the lowest appropriate layer and re-export them. Do not create mirror enums or convert between them through strings.
 - Do not add a crate, runtime, service container, or speculative transport abstraction without a concrete need. Sibling checkouts are references, not build dependencies.
+
+## Parallel Pull Requests
+
+Many pull requests are open at once, so code that every feature appends to is
+a merge-conflict hotspot. Most past conflicts were two branches adding lines
+at the same spot, or both bumping one hard-coded count.
+
+- Do not assert hard-coded totals such as `assert_eq!(list.len(), 55)` or
+  fixed array lengths like `[T; 98]` for lists features grow. Compare against
+  the source list, assert uniqueness or membership, or use a slice.
+- Declare each item of a growing list once. Prefer one table, or a
+  `macro_rules!` table, that generates the matching `match` arms and `ALL`
+  lists over parallel lists edited in several places.
+- Keep lists whose order carries no meaning (enum variants without derived
+  ordering, asset tables, registries) sorted between `// keep-sorted start`
+  and `// keep-sorted end` markers. Additions then land on different lines.
+  `just check-sorted` (part of `just ci`) enforces the markers and `just sort`
+  fixes them. Never mark a list whose order is shown to users or is a wire
+  contract, such as menu rows or the vendored bincode types.
+- Give a new feature's failures their own `thiserror` enum in its module and
+  add one `#[error(transparent)] Feature(#[from] feature::Error)` variant to
+  the crate's root `Error`, as `teleport`, `pane_move`, and `backdrop` do,
+  rather than a run of variants in `error.rs`. The root enum stays sorted.
+- Shared state structs (`HerdrWindow`, `Config`, `herdr_settings::Settings`)
+  and their constructors keep their fields sorted. Run an initializer that has
+  an effect or depends on another (registering a subscription, creating an
+  entity, reading a value before it moves) in a `let` before the struct
+  literal, so the literal itself has no order to preserve. Derive `Debug`
+  rather than listing fields by hand; redact a private field through its own
+  type's `Debug`.
+- `just hooks` also enables `rerere`, so a resolution is reused when the same
+  conflict returns on another branch, and a `Cargo.lock` merge driver that
+  keeps one side and has Cargo rebuild it before the commit. After a clean
+  merge whose only conflict was the lockfile, the merge stops with the rebuilt
+  lockfile staged: run `git commit --no-edit` to finish it. The rebuild
+  refuses while a `Cargo.toml` or `Cargo.lock` change is unstaged, and an
+  aborted merge's pending rebuild is dropped with a warning. Squash merges
+  rebuild like merges. Cherry-picks, reverts, and rebases commit without
+  these hooks, so they stop with `Cargo.lock` conflicted: run
+  `cargo metadata`, `git add Cargo.lock`, and continue. GitHub's Update
+  branch button runs no hooks; there, run `cargo metadata` and commit
+  `Cargo.lock` by hand.
 
 ## Command Line
 
@@ -90,6 +134,7 @@ agents in Herdr panes can use what only this client shows or keeps
 
 - Treat app, window, and entity contexts as UI-thread execution. A foreground `spawn` future does not make blocking work safe.
 - Never perform blocking socket/disk I/O, process waits, sleeps, or expensive background computation on the UI thread. Use the existing worker threads or GPUI background executor, then apply results through the appropriate context update.
+- Start child processes with `herdr_client::new_command`, never `Command::new` (clippy rejects it outside tests). On Windows a console child built any other way can open a window of its own.
 - Keep render and input paths thin. Render from prepared state and bounded caches; do not query the daemon, scan files, or launch processes while rendering.
 - Preserve continuously drained ordered events and the coalesced latest-state mailbox. Do not replace them with an unbounded UI event queue.
 - Route connection/startup failures through the authoritative inbox. Reconnect and detach must isolate old inboxes so delayed events and paint acknowledgements cannot affect the new connection.
@@ -211,6 +256,15 @@ just test-perf
   guidance from the agent harness; add such lines only when the user asks for
   them in the current request.
 - Before creating a PR, review every included commit and the full diff from its base. Include a summary, exact validation commands/results, and remaining manual/native QA.
+- Run `just ci` on the exact commit before creating a PR or pushing to one, so
+  failures surface locally instead of minutes later in CI. `just setup-ci`
+  installs the tools it and the other CI-equivalent recipes need. Fix every
+  failure first; do not open or update a PR on a red or skipped run.
+- After a green run, create or update a single PR comment saying `just ci`
+  ran locally and passed: the commit SHA, the platform (for example macOS
+  arm64), and any extra recipes run (`just release-check`, `just lint-linux`,
+  `just lint-windows`). Edit that comment on later pushes rather than adding
+  a new one, and never post it for a run that failed or did not happen.
 - Include screenshots in any PR that changes something visible: before and
   after images of the real native window, showing the changed area. Add light
   and dark variants when colors or theming change, and a narrow window when

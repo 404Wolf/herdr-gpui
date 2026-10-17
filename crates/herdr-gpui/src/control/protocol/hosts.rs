@@ -42,6 +42,11 @@ pub(crate) enum HostOp {
     System,
     /// Open the settings that add cloud machines.
     Cloud,
+    /// Run the configured setup script again on the cloud device `id`, in a
+    /// new tab, showing the device first.
+    CloudSetup {
+        id: String,
+    },
 }
 
 impl HostOp {

@@ -1,4 +1,4 @@
-//! Settings > Appearance > Window backdrop: Solid, Translucent, or Picture,
+//! Settings > Theme > Window backdrop: Solid, Translucent, or Picture,
 //! each with only its own controls below. Settings and dialogs stay opaque
 //! whatever is chosen.
 use super::*;
@@ -6,6 +6,7 @@ use crate::config::{
     Backdrop, Theme,
     backdrop::{Edit, IMAGE_OPACITY},
 };
+use crate::settings_window::ui;
 
 mod ruler;
 
@@ -128,13 +129,12 @@ impl SettingsWindow {
             tiles = tiles.child(self.backdrop_tile(mode, current == mode, cx));
         }
         let details = match current {
-            Mode::Solid => div().child(self.control_note("The window paints as it always has.")),
+            Mode::Solid => div(),
             Mode::Translucent => {
                 let blur = backdrop.blur;
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(4.))
                     .child(self.backdrop_ruler(cx))
                     .child(
                         self.control_switch("settings-backdrop-blur", "Blur behind", blur, true)
@@ -146,19 +146,22 @@ impl SettingsWindow {
             Mode::Picture => div()
                 .flex()
                 .flex_col()
-                .gap(px(4.))
                 .child(self.backdrop_picture_row(cx))
-                .child(self.backdrop_ruler(cx))
-                .child(self.control_note(
-                    "The window stays opaque over the picture; lower opacity shows more of it.",
-                )),
+                .child(self.backdrop_ruler(cx)),
         };
-        self.control_card("Window backdrop")
+        let description = match current {
+            Mode::Solid => "The window paints as it always has.",
+            Mode::Translucent => "Colors a program chooses, popups, and dialogs stay opaque.",
+            Mode::Picture => {
+                "The window stays opaque over the picture; lower opacity shows more of it."
+            }
+        };
+        div()
             .debug_selector(|| "settings-backdrop".into())
-            .child(self.control_note(
-                "What shows behind the main window. Colors a program chooses, popups, and dialogs stay opaque.",
-            ))
-            .child(tiles)
+            .flex()
+            .flex_col()
+            .child(ui::row(&self.theme, "theme-backdrop", "Backdrop").description(description))
+            .child(tiles.py(px(10.)))
             .child(details)
     }
 

@@ -30,6 +30,31 @@ pub(crate) fn path() -> Option<OsString> {
     std::env::var_os("PATH")
 }
 
+/// Adopts the login shell's `XDG_CONFIG_HOME` for a launch without one, such
+/// as from Finder or a desktop launcher, so the daemon a shell started, and
+/// the settings beside it, are found where the shell keeps them. Probing the
+/// shell blocks, so this runs once before the app starts, and only when no
+/// daemon answers at the default endpoint: a daemon there needs nothing
+/// adopted, and without one the probe would run anyway to start it.
+pub(crate) fn adopt_config_home() {
+    #[cfg(unix)]
+    {
+        if std::env::var_os("XDG_CONFIG_HOME").is_some()
+            || herdr_client::ConnectTarget::Local
+                .socket_path()
+                .is_ok_and(|path| unix::answers(&path))
+        {
+            return;
+        }
+        let Some(home) = unix::resolve().and_then(unix::config_home) else {
+            return;
+        };
+        if herdr_client::set_login_config_home(home.into()) {
+            tracing::info!("Using the login shell's XDG_CONFIG_HOME");
+        }
+    }
+}
+
 #[cfg(unix)]
 mod unix {
     use std::{
@@ -39,7 +64,7 @@ mod unix {
             fd::OwnedFd,
             unix::{ffi::OsStringExt, net::UnixStream, process::CommandExt},
         },
-        process::{Command, Stdio},
+        process::Stdio,
         sync::{
             OnceLock,
             atomic::{AtomicU64, Ordering},
@@ -78,6 +103,22 @@ mod unix {
             .as_ref()
     }
 
+    /// Whether a daemon accepts connections at `socket`. A socket file an
+    /// exited daemon left behind refuses them, so it does not count. A local
+    /// connect is answered or refused at once, and dropping it unanswered is
+    /// the same check upstream's session list makes; the daemon only logs a
+    /// client that handshakes.
+    pub(super) fn answers(socket: &std::path::Path) -> bool {
+        herdr_client::Stream::connect(socket).is_ok()
+    }
+
+    pub(super) fn config_home(environment: &Environment) -> Option<OsString> {
+        environment
+            .iter()
+            .find(|(key, value)| key == "XDG_CONFIG_HOME" && !value.is_empty())
+            .map(|(_, value)| value.clone())
+    }
+
     fn probe(shell: &OsStr, tty: bool, term: bool, timeout: Duration) -> Option<Environment> {
         if tty || term {
             return None;
@@ -102,7 +143,7 @@ mod unix {
         let script = format!("printf '{start}\\0'; /usr/bin/env -0; printf '{end}\\0'");
         let (mut reader, writer) = UnixStream::pair()?;
         reader.set_nonblocking(true)?;
-        let mut child = Command::new(shell)
+        let mut child = herdr_client::new_command(shell)
             .args(["-l", "-i", "-c"])
             .arg(script)
             .stdin(Stdio::null())
@@ -244,6 +285,56 @@ mod unix {
         }
 
         #[test]
+        fn config_home_is_the_login_shells_nonempty_value() {
+            let environment = |value: &str| -> Environment {
+                vec![
+                    ("HOME".into(), "/home/me".into()),
+                    ("XDG_CONFIG_HOME".into(), value.into()),
+                ]
+            };
+            assert_eq!(
+                config_home(&environment("/home/me/dotfiles/etc")),
+                Some("/home/me/dotfiles/etc".into())
+            );
+            assert_eq!(config_home(&environment("")), None);
+            assert_eq!(config_home(&vec![("HOME".into(), "/home/me".into())]), None);
+        }
+
+        /// A socket an exited daemon left behind is not a daemon, so a launch
+        /// still adopts the login shell's root; a listening one, or a file
+        /// that is not a socket at all, is told apart the same way.
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        #[test]
+        fn only_a_listening_socket_answers() {
+            use nix::sys::socket::{AddressFamily, SockFlag, SockType, UnixAddr, bind, socket};
+            use std::os::fd::AsRawFd;
+            let dir = tempfile::tempdir().unwrap();
+            let socket_path = dir.path().join("herdr-client.sock");
+            assert!(!answers(&socket_path));
+            let listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+            assert!(answers(&socket_path));
+            drop(listener);
+            // A dropped listener can keep answering on macOS: a child another
+            // test thread spawns before it is marked close-on-exec inherits it.
+            // A socket that is bound but never listens refuses even if leaked.
+            let stale = dir.path().join("stale.sock");
+            let fd = socket(
+                AddressFamily::Unix,
+                SockType::Stream,
+                SockFlag::empty(),
+                None,
+            )
+            .unwrap();
+            bind(fd.as_raw_fd(), &UnixAddr::new(&stale).unwrap()).unwrap();
+            drop(fd);
+            assert!(stale.exists(), "a closed socket leaves its file");
+            assert!(!answers(&stale));
+            let plain = dir.path().join("plain.sock");
+            std::fs::write(&plain, b"").unwrap();
+            assert!(!answers(&plain));
+        }
+
+        #[test]
         fn markers_and_records_must_be_complete() {
             assert_eq!(
                 parse(b"noiseSTART\0A=x=y\0B=\xff\0END\0noise", b"START", b"END"),
@@ -342,7 +433,7 @@ mod unix {
             for pid in pids.split_whitespace() {
                 let deadline = Instant::now() + Duration::from_secs(2);
                 loop {
-                    let output = Command::new("/bin/ps")
+                    let output = std::process::Command::new("/bin/ps")
                         .args(["-o", "stat=", "-p", pid])
                         .output()
                         .unwrap();

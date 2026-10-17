@@ -53,11 +53,19 @@ fn image_writer_preserves_offsets_through_short_writes_and_timeouts() {
 #[cfg(windows)]
 #[test]
 fn images_refuse_unbounded_pipe_writes() {
+    // Callers read this to keep Ctrl-V a key rather than offer an upload.
+    const { assert!(!CLIPBOARD_UPLOADS) };
     let (client, _server, worker) = test_client();
     assert!(matches!(
         client
             .handle
             .reserve_clipboard_image("boot", ClientClipboardImageTarget::DirectTerminal),
+        Err(Error::ClipboardImageUnsupported)
+    ));
+    assert!(matches!(
+        client
+            .handle
+            .reserve_clipboard_input("boot", ClientClipboardImageTarget::DirectTerminal),
         Err(Error::ClipboardImageUnsupported)
     ));
     client.handle.disconnect();

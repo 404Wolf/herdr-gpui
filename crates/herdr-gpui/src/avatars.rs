@@ -2,7 +2,6 @@ use gpui::{Image, ImageFormat};
 mod cache;
 use std::{
     collections::HashMap,
-    process::Command,
     sync::{Arc, mpsc},
     thread,
     time::{Duration, SystemTime},
@@ -95,7 +94,7 @@ impl Avatars {
 }
 
 fn repo_owner(cwd: &str) -> Option<String> {
-    let output = Command::new("git")
+    let output = herdr_client::new_command("git")
         .args(["-C", cwd, "config", "--get", "remote.origin.url"])
         .output()
         .ok()?;

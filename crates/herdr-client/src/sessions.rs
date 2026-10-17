@@ -35,7 +35,7 @@ const DEFAULT: &str = "default";
 pub fn delete_local_session(executable: &Path, name: &str) -> Result<()> {
     validate_delete(name)?;
     let command = |operation| {
-        let mut command = std::process::Command::new(executable);
+        let mut command = crate::new_command(executable);
         command.args(["session", operation, "--json", "--", name]);
         command
     };

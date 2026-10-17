@@ -9,8 +9,9 @@ use crate::{HerdrWindow, actions, fonts::StyledFont};
 use gpui::{prelude::*, *};
 use herdr_client::Method;
 
-/// How far past its panel a popover counts as covering, for the native pages
-/// that step aside for it.
+/// How far past its panel a popover counts as covering, for the Windows
+/// pages that hide under it.
+#[cfg(any(windows, test, feature = "integration-test"))]
 const COVER_MARGIN: f32 = 8.;
 
 impl HerdrWindow {
@@ -383,6 +384,7 @@ impl HerdrWindow {
                     page,
                     Page::Tab
                         | Page::RenameTab
+                        | Page::MoveTab
                         | Page::Group
                         | Page::Pane
                         | Page::RenamePane
@@ -412,7 +414,7 @@ impl HerdrWindow {
                         } else if page == Page::PaneProcesses {
                             // Name, command, pid, CPU and memory columns.
                             560.
-                        } else if matches!(page, Page::Group | Page::MovePane) {
+                        } else if matches!(page, Page::Group | Page::MovePane | Page::MoveTab) {
                             240.
                         } else {
                             360.
@@ -507,7 +509,7 @@ impl HerdrWindow {
             .when(
                 matches!(
                     page,
-                    Page::Install | Page::AgentSkill | Page::VersionMismatch
+                    Page::Install | Page::AgentSkill | Page::VersionMismatch | Page::OpenLink
                 ),
                 |panel| {
                     panel
@@ -632,6 +634,8 @@ impl HerdrWindow {
                 | Page::RemoveDevice
         ) {
             panel = panel.child(self.render_host_menu(cx));
+        } else if page == Page::MoveTab {
+            panel = self.render_tab_move_picker(panel, cx);
         } else if matches!(page, Page::Tab | Page::RenameTab) {
             panel = panel.child(self.render_tab_menu(cx));
         } else if page == Page::Group {
@@ -663,6 +667,8 @@ impl HerdrWindow {
             panel = panel.child(self.render_version_mismatch(cx));
         } else if page == Page::WorktreeScript {
             panel = panel.child(self.render_worktree_script(cx));
+        } else if page == Page::OpenLink {
+            panel = panel.child(self.render_open_link(cx));
         } else if page == Page::Install {
             panel = panel
                 .child(div().p(px(8.)).child("Herdr must be installed"))
@@ -707,27 +713,31 @@ impl HerdrWindow {
         } else {
             panel = panel.child(self.render_release_notes(cx));
         }
-        // Pages sit above everything GPUI draws, so the menu says what it
-        // covers: a dimmed dialog covers the window, a popover its panel.
         let dims = self.menu_dims();
-        let cover = self.menu.cover.clone();
-        if dims {
-            cover.set(super::state::Cover::All);
-        }
-        let panel = panel.when(!dims, |panel| {
-            panel.child(
-                canvas(
-                    // Laid out inside the panel's border; the margin takes in
-                    // the border and the start of its shadow.
-                    move |bounds, _, _| {
-                        cover.set(super::state::Cover::Panel(bounds.dilate(px(COVER_MARGIN))))
-                    },
-                    |_, _, _, _| {},
+        // On Windows pages sit above everything GPUI draws, so the menu says
+        // what it covers: a dimmed dialog covers the window, a popover its
+        // panel. Tests and native checks read it to find the menu.
+        #[cfg(any(windows, test, feature = "integration-test"))]
+        let panel = {
+            let cover = self.menu.cover.clone();
+            if dims {
+                cover.set(super::state::Cover::All);
+            }
+            panel.when(!dims, |panel| {
+                panel.child(
+                    canvas(
+                        // Laid out inside the panel's border; the margin takes
+                        // in the border and the start of its shadow.
+                        move |bounds, _, _| {
+                            cover.set(super::state::Cover::Panel(bounds.dilate(px(COVER_MARGIN))))
+                        },
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .inset_0(),
                 )
-                .absolute()
-                .inset_0(),
-            )
-        });
+            })
+        };
         div()
             .id("menu-overlay")
             .debug_selector(|| "menu-overlay".into())

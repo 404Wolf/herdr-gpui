@@ -448,6 +448,8 @@ const LIFT_INSET: f32 = 6.;
 /// The least rounding a lifted card gets, even from square rows.
 const LIFT_RADIUS: f32 = 4.;
 
+/// A preset's look without overrides, for fixtures.
+#[cfg(any(test, feature = "integration-test"))]
 pub(super) fn for_mode(mode: LayoutMode) -> SidebarLook {
     SidebarLook {
         density: SidebarMetrics::for_mode(mode),

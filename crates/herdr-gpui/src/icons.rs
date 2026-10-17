@@ -71,6 +71,51 @@ agent_icons! {
     Muse => "muse",
 }
 
+/// Embeds each `status_icons` set, one asset per status, in the order
+/// `status_icon` indexes: sets as `StatusIcons` declares them, then statuses.
+macro_rules! status_icons {
+    ($($set:literal),+) => {
+        const STATUS_ICONS: [(&str, &[u8]); 15] = [$(
+            status_icons!(@one $set, "idle"),
+            status_icons!(@one $set, "working"),
+            status_icons!(@one $set, "done"),
+            status_icons!(@one $set, "blocked"),
+            status_icons!(@one $set, "unknown"),
+        )+];
+    };
+    (@one $set:literal, $status:literal) => {
+        (
+            concat!("icons/status-", $set, "-", $status, ".svg"),
+            include_bytes!(concat!("../../../assets/icons/status-", $set, "-", $status, ".svg")),
+        )
+    };
+}
+
+// Solid, then tiles' inner mark, then the rail's outline.
+status_icons!("solid", "mark", "outline");
+
+/// The asset that draws `status` in a `status_icons` set.
+pub(crate) fn status_icon(
+    icons: crate::config::StatusIcons,
+    status: herdr_client::protocol::AgentStatus,
+) -> &'static str {
+    use crate::config::StatusIcons;
+    use herdr_client::protocol::AgentStatus;
+    let set = match icons {
+        StatusIcons::Solid => 0,
+        StatusIcons::Tiles => 1,
+        StatusIcons::Rail => 2,
+    };
+    let status = match status {
+        AgentStatus::Idle => 0,
+        AgentStatus::Working => 1,
+        AgentStatus::Done => 2,
+        AgentStatus::Blocked => 3,
+        AgentStatus::Unknown => 4,
+    };
+    STATUS_ICONS[set * 5 + status].0
+}
+
 /// Shared working-tree marker, distinct from the daemon's activity dots.
 pub(super) fn uncommitted(theme: &crate::config::Theme, size: f32) -> gpui::Div {
     use gpui::{div, prelude::*, px, rgb, rgba, svg};
@@ -137,154 +182,107 @@ pub(super) fn teleported(theme: &crate::config::Theme, size: f32) -> gpui::Div {
         )
 }
 
+/// Declares each embedded UI icon once, so loading and listing cannot drift.
+macro_rules! embedded_icons {
+    ($($path:literal,)+) => {
+        const EMBEDDED: &[(&str, &[u8])] = &[$((
+            concat!("icons/", $path),
+            include_bytes!(concat!("../../../assets/icons/", $path)),
+        ),)+];
+    };
+}
+
+// Embedded UI icons under assets/icons, one per line; agent marks and usage
+// providers declare their own. Keep the list sorted so parallel additions land
+// on different lines.
+embedded_icons! {
+    // keep-sorted start
+    "arrow-left.svg",
+    "arrow-right.svg",
+    "bell.svg",
+    "chart.svg",
+    "check.svg",
+    "chevron-down.svg",
+    "chevron-right.svg",
+    "chevron-up.svg",
+    "close.svg",
+    "cloud/coder.svg",
+    "cloud/daytona.svg",
+    "cloud/railway.svg",
+    "code.svg",
+    "coffee-full.svg",
+    "coffee.svg",
+    "computer.svg",
+    "copy.svg",
+    "devices.svg",
+    "diff-split.svg",
+    "diff-unified.svg",
+    "error.svg",
+    "external.svg",
+    "fan-out.svg",
+    "file.svg",
+    "git-branch.svg",
+    "github.svg",
+    "globe.svg",
+    "keyboard.svg",
+    "lock.svg",
+    "more.svg",
+    "network/tailscale.svg",
+    "note.svg",
+    "panel-left.svg",
+    "panel-right.svg",
+    "pass.svg",
+    "pencil.svg",
+    "play.svg",
+    "plug.svg",
+    "plus.svg",
+    "pulse.svg",
+    "refresh.svg",
+    "search.svg",
+    "sessions.svg",
+    "settings.svg",
+    "split.svg",
+    "status-bar.svg",
+    "teleport-back.svg",
+    "teleport.svg",
+    "terminal.svg",
+    "theme.svg",
+    "trash.svg",
+    "user.svg",
+    "vscode.svg",
+    "whitespace.svg",
+    "window-maximize.svg",
+    "window-minimize.svg",
+    "window-restore.svg",
+    "x.svg",
+    "zoom.svg",
+    // keep-sorted end
+}
+
 impl AssetSource for Icons {
     fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
         if let Some(icon) = AgentIcon::ALL.iter().find(|icon| icon.path() == path) {
             return Ok(Some(Cow::Borrowed(icon.bytes())));
         }
-        let bytes: &'static [u8] = match path {
-            "icons/devices.svg" => include_bytes!("../../../assets/icons/devices.svg"),
-            "icons/sessions.svg" => include_bytes!("../../../assets/icons/sessions.svg"),
-            "icons/settings.svg" => include_bytes!("../../../assets/icons/settings.svg"),
-            "icons/bell.svg" => include_bytes!("../../../assets/icons/bell.svg"),
-            "icons/plus.svg" => include_bytes!("../../../assets/icons/plus.svg"),
-            "icons/close.svg" => include_bytes!("../../../assets/icons/close.svg"),
-            "icons/user.svg" => include_bytes!("../../../assets/icons/user.svg"),
-            "icons/x.svg" => include_bytes!("../../../assets/icons/x.svg"),
-            "icons/pencil.svg" => include_bytes!("../../../assets/icons/pencil.svg"),
-            "icons/note.svg" => include_bytes!("../../../assets/icons/note.svg"),
-            "icons/code.svg" => include_bytes!("../../../assets/icons/code.svg"),
-            "icons/trash.svg" => include_bytes!("../../../assets/icons/trash.svg"),
-            "icons/chevron-up.svg" => include_bytes!("../../../assets/icons/chevron-up.svg"),
-            "icons/chevron-down.svg" => include_bytes!("../../../assets/icons/chevron-down.svg"),
-            "icons/git-branch.svg" => include_bytes!("../../../assets/icons/git-branch.svg"),
-            "icons/github.svg" => include_bytes!("../../../assets/icons/github.svg"),
-            "icons/theme.svg" => include_bytes!("../../../assets/icons/theme.svg"),
-            "icons/keyboard.svg" => include_bytes!("../../../assets/icons/keyboard.svg"),
-            "icons/coffee.svg" => include_bytes!("../../../assets/icons/coffee.svg"),
-            "icons/coffee-full.svg" => include_bytes!("../../../assets/icons/coffee-full.svg"),
-            "icons/teleport.svg" => include_bytes!("../../../assets/icons/teleport.svg"),
-            "icons/teleport-back.svg" => {
-                include_bytes!("../../../assets/icons/teleport-back.svg")
-            }
-            "icons/refresh.svg" => include_bytes!("../../../assets/icons/refresh.svg"),
-            "icons/play.svg" => include_bytes!("../../../assets/icons/play.svg"),
-            "icons/chart.svg" => include_bytes!("../../../assets/icons/chart.svg"),
-            "icons/pulse.svg" => include_bytes!("../../../assets/icons/pulse.svg"),
-            "icons/plug.svg" => include_bytes!("../../../assets/icons/plug.svg"),
-            "icons/lock.svg" => include_bytes!("../../../assets/icons/lock.svg"),
-            "icons/globe.svg" => include_bytes!("../../../assets/icons/globe.svg"),
-            "icons/vscode.svg" => include_bytes!("../../../assets/icons/vscode.svg"),
-            "icons/error.svg" => include_bytes!("../../../assets/icons/error.svg"),
-            "icons/pass.svg" => include_bytes!("../../../assets/icons/pass.svg"),
-            "icons/terminal.svg" => include_bytes!("../../../assets/icons/terminal.svg"),
-            "icons/computer.svg" => include_bytes!("../../../assets/icons/computer.svg"),
-            "icons/network/tailscale.svg" => {
-                include_bytes!("../../../assets/icons/network/tailscale.svg")
-            }
-            "icons/arrow-left.svg" => include_bytes!("../../../assets/icons/arrow-left.svg"),
-            "icons/arrow-right.svg" => include_bytes!("../../../assets/icons/arrow-right.svg"),
-            "icons/external.svg" => include_bytes!("../../../assets/icons/external.svg"),
-            "icons/split.svg" => include_bytes!("../../../assets/icons/split.svg"),
-            "icons/fan-out.svg" => include_bytes!("../../../assets/icons/fan-out.svg"),
-            "icons/more.svg" => include_bytes!("../../../assets/icons/more.svg"),
-            "icons/zoom.svg" => include_bytes!("../../../assets/icons/zoom.svg"),
-            "icons/diff-unified.svg" => include_bytes!("../../../assets/icons/diff-unified.svg"),
-            "icons/diff-split.svg" => include_bytes!("../../../assets/icons/diff-split.svg"),
-            "icons/chevron-right.svg" => {
-                include_bytes!("../../../assets/icons/chevron-right.svg")
-            }
-            "icons/whitespace.svg" => include_bytes!("../../../assets/icons/whitespace.svg"),
-            "icons/search.svg" => include_bytes!("../../../assets/icons/search.svg"),
-            "icons/check.svg" => include_bytes!("../../../assets/icons/check.svg"),
-            "icons/copy.svg" => include_bytes!("../../../assets/icons/copy.svg"),
-            "icons/panel-left.svg" => include_bytes!("../../../assets/icons/panel-left.svg"),
-            "icons/panel-right.svg" => include_bytes!("../../../assets/icons/panel-right.svg"),
-            "icons/status-bar.svg" => include_bytes!("../../../assets/icons/status-bar.svg"),
-            "icons/window-minimize.svg" => {
-                include_bytes!("../../../assets/icons/window-minimize.svg")
-            }
-            "icons/window-maximize.svg" => {
-                include_bytes!("../../../assets/icons/window-maximize.svg")
-            }
-            "icons/window-restore.svg" => {
-                include_bytes!("../../../assets/icons/window-restore.svg")
-            }
-            "icons/cloud/coder.svg" => include_bytes!("../../../assets/icons/cloud/coder.svg"),
-            "icons/cloud/daytona.svg" => include_bytes!("../../../assets/icons/cloud/daytona.svg"),
-            "icons/cloud/railway.svg" => include_bytes!("../../../assets/icons/cloud/railway.svg"),
-            _ => match crate::usage::icon(path) {
-                Some(bytes) => bytes,
-                None => return Ok(None),
-            },
-        };
-        Ok(Some(Cow::Borrowed(bytes)))
+        let bytes = EMBEDDED
+            .iter()
+            .chain(&STATUS_ICONS)
+            .find(|(name, _)| *name == path)
+            .map(|(_, bytes)| *bytes)
+            .or_else(|| crate::usage::icon(path));
+        Ok(bytes.map(Cow::Borrowed))
     }
 
     fn list(&self, path: &str) -> gpui::Result<Vec<SharedString>> {
-        Ok([
-            "icons/devices.svg",
-            "icons/sessions.svg",
-            "icons/settings.svg",
-            "icons/bell.svg",
-            "icons/plus.svg",
-            "icons/close.svg",
-            "icons/user.svg",
-            "icons/x.svg",
-            "icons/pencil.svg",
-            "icons/trash.svg",
-            "icons/chevron-up.svg",
-            "icons/chevron-down.svg",
-            "icons/git-branch.svg",
-            "icons/github.svg",
-            "icons/theme.svg",
-            "icons/keyboard.svg",
-            "icons/coffee.svg",
-            "icons/coffee-full.svg",
-            "icons/teleport.svg",
-            "icons/teleport-back.svg",
-            "icons/refresh.svg",
-            "icons/play.svg",
-            "icons/chart.svg",
-            "icons/pulse.svg",
-            "icons/plug.svg",
-            "icons/lock.svg",
-            "icons/globe.svg",
-            "icons/vscode.svg",
-            "icons/error.svg",
-            "icons/pass.svg",
-            "icons/terminal.svg",
-            "icons/computer.svg",
-            "icons/network/tailscale.svg",
-            "icons/arrow-left.svg",
-            "icons/arrow-right.svg",
-            "icons/external.svg",
-            "icons/split.svg",
-            "icons/fan-out.svg",
-            "icons/more.svg",
-            "icons/zoom.svg",
-            "icons/diff-unified.svg",
-            "icons/diff-split.svg",
-            "icons/chevron-right.svg",
-            "icons/whitespace.svg",
-            "icons/cloud/coder.svg",
-            "icons/cloud/daytona.svg",
-            "icons/cloud/railway.svg",
-            "icons/search.svg",
-            "icons/check.svg",
-            "icons/panel-left.svg",
-            "icons/panel-right.svg",
-            "icons/status-bar.svg",
-            "icons/window-minimize.svg",
-            "icons/window-maximize.svg",
-            "icons/window-restore.svg",
-        ]
-        .into_iter()
-        .chain(AgentIcon::ALL.iter().map(|icon| icon.path()))
-        .chain(crate::usage::icon_paths())
-        .filter(|name| name.starts_with(path))
-        .map(Into::into)
-        .collect())
+        Ok(EMBEDDED
+            .iter()
+            .map(|(name, _)| *name)
+            .chain(AgentIcon::ALL.iter().map(|icon| icon.path()))
+            .chain(STATUS_ICONS.iter().map(|(name, _)| *name))
+            .chain(crate::usage::icon_paths())
+            .filter(|name| name.starts_with(path))
+            .map(Into::into)
+            .collect())
     }
 }
 
@@ -313,10 +311,13 @@ mod tests {
             assert!(pixels.chunks_exact(4).any(|pixel| pixel[3] == 0));
         }
         assert!(Icons.load("unknown.svg").unwrap().is_none());
-        assert_eq!(
-            Icons.list("icons/").unwrap().len(),
-            55 + AgentIcon::ALL.len() + crate::usage::icon_paths().count()
-        );
+        // Every asset is listed once, whichever table declares it.
+        let listed = Icons.list("icons/").unwrap();
+        let unique: std::collections::HashSet<_> = listed.iter().collect();
+        assert_eq!(unique.len(), listed.len());
+        for (name, _) in STATUS_ICONS {
+            assert!(listed.iter().any(|path| path.as_ref() == name), "{name}");
+        }
     }
 
     /// Herdr's `agent_label` values, copied from `src/detect/mod.rs` at

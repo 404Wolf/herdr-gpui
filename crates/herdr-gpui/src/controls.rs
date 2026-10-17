@@ -2,6 +2,7 @@ use herdr_client::{Method, protocol::ClientShellSnapshot};
 use serde_json::{Value, json};
 
 mod shortcuts;
+pub(crate) use shortcuts::CTRL_SHORTCUTS;
 #[cfg(test)]
 pub(crate) use shortcuts::platform_default;
 
@@ -39,9 +40,13 @@ pub enum Command {
     EditScrollback,
     ClosePane,
     CloseTab,
+    /// Reopens the focused workspace's most recently closed tab.
+    ReopenClosedTab,
     TabNumber(u8),
     ToggleSidebar,
     ToggleStatusBar,
+    /// Hides the window's chrome and every group but the one in use.
+    ToggleZenMode,
     DevicesOverview,
     IncreaseFontSize,
     DecreaseFontSize,
@@ -412,6 +417,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         label: "Close Tab",
     },
     CommandInfo {
+        command: Command::ReopenClosedTab,
+        name: "reopen_closed_tab",
+        label: "Reopen Closed Tab",
+    },
+    CommandInfo {
         command: Command::TabNumber(1),
         name: "focus_tab_1",
         label: "Focus Tab 1",
@@ -520,6 +530,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         command: Command::ToggleStatusBar,
         name: "toggle_status_bar",
         label: "Toggle Status Bar",
+    },
+    CommandInfo {
+        command: Command::ToggleZenMode,
+        name: "toggle_zen_mode",
+        label: "Toggle Zen Mode",
     },
     CommandInfo {
         command: Command::DevicesOverview,
@@ -800,6 +815,7 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         | Command::AnnotateSelection
         | Command::ToggleSidebar
         | Command::ToggleStatusBar
+        | Command::ToggleZenMode
         | Command::DevicesOverview
         | Command::IncreaseFontSize
         | Command::DecreaseFontSize
@@ -830,6 +846,7 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         // These need state beyond the snapshot, such as the sidebar's order
         // or a dialog, so the window runs them.
         | Command::RenameTab
+        | Command::ReopenClosedTab
         | Command::LastPane
         | Command::Back
         | Command::Forward

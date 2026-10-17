@@ -69,20 +69,24 @@ impl HerdrWindow {
             .as_ref()
             .and_then(std::sync::Weak::upgrade)
             .is_some_and(|old| Arc::ptr_eq(&old, &endpoint.connection.inbox));
+        // Another connection's lookups stop, but what they found stays shown
+        // until this one refreshes it.
         if !same_connection {
-            self.menu.pr_cache.clear();
+            self.menu.pr_cache.suspend();
             self.menu.pr_cache_connection = Some(Arc::downgrade(&endpoint.connection.inbox));
         }
-        if let (Some(snapshot), Some(profile), Some(origin)) =
-            (&self.live.snapshot, self.pr_profile(), self.pr_origin())
+        if let (Some(snapshot), Some(tokens), Some(origin)) =
+            (&self.live.snapshot, self.pr_tokens(), self.pr_origin())
         {
             let scope = (
                 self.selection_epoch,
                 self.endpoints[self.selected_endpoint].generation,
                 snapshot.boot_id.clone(),
             );
-            let token = profile.token.clone();
-            self.menu.pr_cache.scope(scope, token, origin);
+            // Answers belong to the whole account set: adding or signing in
+            // an account may change which one reads a repository.
+            let key = tokens.key();
+            self.menu.pr_cache.scope(scope, tokens, &key, origin);
         }
     }
 
@@ -132,6 +136,7 @@ impl HerdrWindow {
             .filter(|_| self.live.status.is_connected() && self.live.snapshot.is_some());
         if let Some(origin) = origin {
             self.sync_pr_scope();
+            self.menu.pr_cache.idle = !self.active;
             let now = std::time::Instant::now();
             if let Some(snapshot) = &self.live.snapshot {
                 if self
@@ -163,7 +168,7 @@ impl HerdrWindow {
                         .find(|workspace| Some(workspace.workspace_id.as_str()) == priority)
                         && let Ok(input) = workspace_input(workspace, &origin)
                     {
-                        self.menu.pr_cache.expire_missing(&input, now);
+                        self.menu.pr_cache.expire_viewed(&input, now);
                     }
                     let inputs =
                         workspace_pr_inputs(snapshot, &origin, priority, self.menu.pr_cache.cursor);
@@ -172,7 +177,8 @@ impl HerdrWindow {
             }
             changed |= self.menu.pr_cache.poll(now);
         } else {
-            self.menu.pr_cache.clear();
+            // A dropped connection keeps the last answers for its return.
+            self.menu.pr_cache.suspend();
         }
         if self.menu.page == Some(Page::Workspace) && !self.workspace_pr_target_current() {
             if self.menu.pr.message.as_deref()

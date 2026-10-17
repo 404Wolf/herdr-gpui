@@ -96,9 +96,14 @@ pub(crate) fn install(cx: &mut App) {
     });
 }
 
+/// The host leads the body's last line, which names the agent's place, so
+/// the task above it stays visible in a two-line banner.
 fn body(label: Option<&str>, body: Option<&str>) -> SharedString {
     match (label, body) {
-        (Some(label), Some(body)) => format!("{label}\n{body}").into(),
+        (Some(label), Some(body)) => match body.rsplit_once('\n') {
+            Some((task, place)) => format!("{task}\n{label} · {place}").into(),
+            None => format!("{label} · {body}").into(),
+        },
         (Some(text), None) | (None, Some(text)) => SharedString::from(text.to_owned()),
         (None, None) => SharedString::default(),
     }
@@ -220,8 +225,9 @@ impl HerdrWindow {
             },
             Instant::now(),
         )
-        .with_snapshot(snapshot.as_deref())
-        .preview();
+        // Previews keep their own text rather than the pane's context.
+        .preview()
+        .with_snapshot(snapshot.as_deref());
         // Retained like a real post, so a click resolves through the same path.
         notice.posted = true;
         let post = SystemPost {
@@ -307,10 +313,17 @@ mod tests {
     }
 
     #[test]
-    fn host_label_leads_the_body_only_when_given() {
+    fn host_label_leads_the_place_line_only_when_given() {
         assert_eq!(body(None, None), "");
         assert_eq!(body(None, Some("Review")), "Review");
         assert_eq!(body(Some("build box"), None), "build box");
-        assert_eq!(body(Some("build box"), Some("Review")), "build box\nReview");
+        assert_eq!(
+            body(Some("build box"), Some("Review")),
+            "build box · Review"
+        );
+        assert_eq!(
+            body(Some("build box"), Some("Fix login\nherdr · tests")),
+            "Fix login\nbuild box · herdr · tests"
+        );
     }
 }

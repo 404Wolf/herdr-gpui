@@ -2,6 +2,8 @@
 //! No reconnect/replay: commands carry the boot ID of the snapshot they act on.
 //! Drain `Client::events` on a GUI background task, never block the UI thread.
 #![doc = include_str!("../README.md")]
+// Tests start real processes; production code builds them with `new_command`.
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
 
 mod catalog;
 mod clipboard;
@@ -19,6 +21,7 @@ mod limits;
 mod local_network;
 mod method;
 mod options;
+mod process;
 mod queue;
 mod remote_host;
 mod script;
@@ -50,18 +53,21 @@ pub use compat::{MIN_HERDR_VERSION, VersionMismatch};
 pub use connect::{Transport, connect, connect_with_connector, connect_with_surface_active};
 #[cfg(feature = "cloud")]
 pub use discovery::CloudProvider;
-pub use discovery::{ConnectTarget, session_socket};
+pub use discovery::{ConnectTarget, local_var, session_socket, set_login_config_home};
 pub use environment::set_command_environment;
 /// Error returned when queueing commands; also available as the crate's `Error`.
 pub use error::Error as SendError;
 pub use error::{Error, Result, StorageOperation};
 pub use event::ClientEvent;
 pub use forward::{ForwardEvent, PortForward, preferred_local_port};
-pub use handle::{Client, ClientHandle};
+pub use handle::{CLIPBOARD_UPLOADS, Client, ClientHandle};
 pub use host_theme::HostTheme;
 pub use local_network::{LocalNetworkAccess, local_network_access, wait_for_local_network};
 pub use method::Method;
 pub use options::ConnectOptions;
+#[cfg(windows)]
+pub use process::CREATE_NO_WINDOW;
+pub use process::new_command;
 pub use remote_host::RemoteHost;
 pub use script::{ScriptHost, ScriptLimits, run_script, run_script_command, shell_quote};
 pub use sessions::{
@@ -85,4 +91,5 @@ pub use upload::{remove_uploaded_files, upload_files};
 pub use wsl::{
     WslHost, WslHosts, add_wsl_host, delete_distro_session, list_distro_sessions, list_distros,
     load_wsl_hosts, probe_distro, remove_wsl_host, store_wsl_selection, valid_distro,
+    wsl_shell_command,
 };

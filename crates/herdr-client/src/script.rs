@@ -55,7 +55,7 @@ pub fn run_script(
     {
         let command = match host {
             ScriptHost::Local => {
-                let mut command = Command::new("/bin/sh");
+                let mut command = crate::new_command("/bin/sh");
                 command.args(["-c", script]);
                 command
             }

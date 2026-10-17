@@ -8,10 +8,14 @@ mod credentials;
 mod device;
 mod http;
 mod log;
+mod routing;
 #[cfg(target_os = "linux")]
 mod secret_service;
 mod store;
 mod token;
+
+#[cfg(all(unix, feature = "boat"))]
+pub(crate) use credentials::read_checked as read_private_entry;
 
 #[cfg(test)]
 mod tests;
@@ -19,11 +23,12 @@ mod tests;
 pub(crate) use {
     auth::Auth,
     device::{Profile, Source, VERIFY_URL},
-    http::{graphql, hidden_hint, mutation},
+    http::{graphql, graphql_aliases, hidden_hint, mutation},
+    routing::Tokens,
     store::{Account, Note, Store},
 };
 // Cloud providers keep their own secrets in the same store.
-#[cfg(any(feature = "coder", feature = "daytona"))]
+#[cfg(any(feature = "boat", feature = "coder", feature = "daytona"))]
 pub(crate) use store::{Entry, read_entry, save_entry};
 
 use crate::Result;

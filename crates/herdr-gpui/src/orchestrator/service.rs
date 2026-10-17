@@ -6,12 +6,13 @@
 use super::{
     Access, Error, HerdrSession, Item, Provider, Result, Run, SourceKey, Store,
     actions::{Action, Site},
-    beads, database_path, github,
+    beads, database_path, github, gitlab,
     location::database_path_in,
     naming,
     prompt::{self, Profile},
     repo::{self, RepoInfo},
 };
+use crate::github::Tokens;
 use crate::teleport::{AgentKind, Host};
 use chrono::{DateTime, Utc};
 use herdr_client::ConnectTarget;
@@ -55,16 +56,18 @@ const HIDDEN_BACKOFF: Duration = Duration::from_secs(1800);
 const COMMANDS: usize = 8;
 
 /// How long a failed source waits. A rate limit or refused token pauses as
-/// long as GitHub asked; a repository the sign-in cannot see waits for a user
-/// action. GitHub's `cooldown` applies only to GitHub's own failures, so a
-/// Beads failure never inherits a pause a GitHub request left behind.
+/// long as the provider asked; a repository the sign-in cannot see waits for
+/// a user action. The `cooldown` applies only to a provider's own failures,
+/// so a Beads failure never inherits a pause a GitHub request left behind.
 pub(super) fn retry_wait(error: &Error, cooldown: Option<Duration>) -> Duration {
-    let Error::Github(source) = error else {
-        return BACKOFF;
-    };
-    let floor = match **source {
-        crate::Error::GitHubRepositoryHidden { .. } => HIDDEN_BACKOFF,
-        _ => BACKOFF,
+    let floor = match error {
+        Error::Github(source) => match **source {
+            crate::Error::GitHubRepositoryHidden { .. } => HIDDEN_BACKOFF,
+            _ => BACKOFF,
+        },
+        Error::Gitlab(source) if source.needs_user() => HIDDEN_BACKOFF,
+        Error::Gitlab(_) => BACKOFF,
+        _ => return BACKOFF,
     };
     cooldown.map_or(floor, |wait| wait.max(floor))
 }
@@ -82,7 +85,9 @@ pub(crate) struct Request {
     /// The Herdr workspace the view was opened from, whose repository new
     /// worktrees are created in.
     pub(crate) workspace_id: String,
-    pub(crate) token: Option<Arc<SecretString>>,
+    /// The accounts GitHub is read with; each source uses the one that
+    /// reads its repository's owner.
+    pub(crate) token: Option<Tokens>,
     /// agent-launcher's data directory parent; `None` for the platform's.
     pub(crate) data_root: Option<PathBuf>,
     pub(crate) timing: Timing,
@@ -90,7 +95,7 @@ pub(crate) struct Request {
 
 enum Command {
     /// Sync every source now, reading GitHub as `token`.
-    Refresh(Option<Arc<SecretString>>),
+    Refresh(Option<Tokens>),
     /// Do what the user asked, on a thread of its own.
     Act(Action),
     /// An action finished: read the database again, and sync when it changed
@@ -131,7 +136,7 @@ pub(crate) enum SyncState {
     },
     /// GitHub needs a signed-in account.
     SignIn,
-    /// A provider or host this build cannot read yet, such as GitLab.
+    /// A provider or host this build cannot read yet, such as GitHub Enterprise.
     Unsupported,
     Failed(Arc<Error>),
 }
@@ -197,6 +202,8 @@ impl Service {
             data_version: None,
             retry: Vec::new(),
             uncached: HashMap::new(),
+            resume: HashMap::new(),
+            gitlab_token: None,
             cooldown: None,
         };
         std::thread::Builder::new()
@@ -230,7 +237,7 @@ impl Service {
     }
 
     /// Asks for a sync now. A full queue already holds one, so it is dropped.
-    pub(crate) fn refresh(&self, token: Option<Arc<SecretString>>) {
+    pub(crate) fn refresh(&self, token: Option<Tokens>) {
         match self.commands.try_send(Command::Refresh(token)) {
             Ok(()) | Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) => {}
         }
@@ -269,6 +276,11 @@ struct Worker {
     retry: Vec<(SourceKey, Instant)>,
     /// Listings shown but not written: capped, or the database is newer.
     uncached: HashMap<SourceKey, Vec<Item>>,
+    /// Where each GitHub source's next incremental sync continues.
+    resume: HashMap<SourceKey, github::Resume>,
+    /// The GitLab token, once looked up; Refresh looks again, so a new
+    /// `glab auth login` is picked up without reopening the view.
+    gitlab_token: Option<Option<SecretString>>,
     cooldown: Option<Duration>,
 }
 
@@ -280,7 +292,7 @@ impl Worker {
             return;
         }
         let token = self.request.token.clone();
-        self.sync(token.as_deref());
+        self.sync(token.as_ref());
         let Timing { reload, sync } = self.request.timing;
         let mut next_sync = Instant::now() + sync;
         while !self.cancelled() {
@@ -288,9 +300,10 @@ impl Worker {
             match commands.recv_timeout(wait) {
                 Ok(Command::Refresh(token)) => {
                     self.request.token = token;
+                    self.gitlab_token = None;
                     self.retry.clear();
                     let token = self.request.token.clone();
-                    self.sync(token.as_deref());
+                    self.sync(token.as_ref());
                     next_sync = Instant::now() + sync;
                 }
                 Ok(Command::Act(action)) => self.act(action),
@@ -312,14 +325,14 @@ impl Worker {
                 Ok(Command::Acted { resync }) => {
                     if resync {
                         let token = self.request.token.clone();
-                        self.sync(token.as_deref());
+                        self.sync(token.as_ref());
                     } else {
                         self.reload_if_changed();
                     }
                 }
                 Err(RecvTimeoutError::Timeout) if Instant::now() >= next_sync => {
                     let token = self.request.token.clone();
-                    self.sync(token.as_deref());
+                    self.sync(token.as_ref());
                     next_sync = Instant::now() + sync;
                 }
                 Err(RecvTimeoutError::Timeout) => self.reload_if_changed(),
@@ -386,7 +399,7 @@ impl Worker {
             owner,
             repo,
             number,
-            &token,
+            token.for_owner(owner),
             || cancelled.load(Ordering::Relaxed),
             &mut self.cooldown,
         );
@@ -492,7 +505,7 @@ impl Worker {
         }
     }
 
-    fn sync(&mut self, token: Option<&SecretString>) {
+    fn sync(&mut self, token: Option<&Tokens>) {
         let Some(info) = self.snapshot.repo.clone() else {
             return;
         };
@@ -541,7 +554,7 @@ impl Worker {
         }
     }
 
-    fn sync_source(&mut self, key: &SourceKey, token: Option<&SecretString>) -> Result<SyncState> {
+    fn sync_source(&mut self, key: &SourceKey, token: Option<&Tokens>) -> Result<SyncState> {
         let (Some(store), Some(host)) = (self.store.as_mut(), self.host.as_ref()) else {
             return Ok(SyncState::Unsupported);
         };
@@ -562,14 +575,85 @@ impl Worker {
                 })
             }
             Provider::Github => {
-                let Some(token) = token else {
+                let Some(tokens) = token else {
                     return Ok(SyncState::SignIn);
                 };
+                let owner = key
+                    .repository
+                    .split_once('/')
+                    .map_or(key.repository.as_str(), |(owner, _)| owner);
+                let token = tokens.for_owner(owner);
                 let previous = store.checkpoint(key)?;
+                // What the last complete sync stored, for reading only the
+                // changes since; a read-only store keeps none.
+                let cached = match (&previous, writable) {
+                    (Some(_), true) => Some(
+                        store
+                            .items()?
+                            .into_iter()
+                            .filter(|item| item.key.source == *key)
+                            .collect(),
+                    ),
+                    _ => None,
+                };
+                // Only while the stored checkpoint is still the one this
+                // worker wrote: agent-launcher shares the database and may
+                // have stored an older listing since.
+                let resume = self.resume.get(key).copied().filter(|resume| {
+                    previous
+                        .as_ref()
+                        .and_then(|checkpoint| checkpoint.updated_at)
+                        == Some(resume.oldest())
+                });
                 let cancelled = &self.cancelled;
                 let listing = github::sync(
                     key,
                     token,
+                    previous.as_ref(),
+                    (cached, resume),
+                    &|| cancelled.load(Ordering::Relaxed),
+                    &mut self.cooldown,
+                )?;
+                let count = listing.items.len();
+                // A listing that is not stored is no place to resume from.
+                self.resume.remove(key);
+                if !listing.complete || !writable {
+                    self.uncached.insert(key.clone(), listing.items);
+                    return Ok(if listing.complete {
+                        SyncState::Synced {
+                            at: Utc::now(),
+                            count,
+                        }
+                    } else {
+                        SyncState::Capped { count }
+                    });
+                }
+                store.replace_items(key, &listing.items, &listing.checkpoint)?;
+                self.resume.insert(key.clone(), listing.resume);
+                self.uncached.remove(key);
+                Ok(SyncState::Synced {
+                    at: Utc::now(),
+                    count,
+                })
+            }
+            Provider::Gitlab => {
+                let token = self
+                    .gitlab_token
+                    .get_or_insert_with(|| gitlab::token(&key.host));
+                let scheme = self
+                    .snapshot
+                    .repo
+                    .as_ref()
+                    .and_then(|info| info.remote.as_ref())
+                    .filter(|remote| remote.source == *key)
+                    .map_or(gitlab::Scheme::Https, |remote| {
+                        gitlab::Scheme::of_remote(&remote.url)
+                    });
+                let previous = store.checkpoint(key)?;
+                let cancelled = &self.cancelled;
+                let listing = gitlab::sync(
+                    (key, scheme),
+                    token.as_ref(),
                     previous.as_ref(),
                     &|| cancelled.load(Ordering::Relaxed),
                     &mut self.cooldown,
@@ -593,7 +677,6 @@ impl Worker {
                     count,
                 })
             }
-            Provider::Gitlab => Ok(SyncState::Unsupported),
         }
     }
 
@@ -642,8 +725,11 @@ fn installed(host: Option<&Host>, cancelled: &AtomicBool) -> Result<Vec<AgentKin
 /// The sources a repository has, and whether this build can read each.
 pub(super) fn sources(info: &RepoInfo) -> Vec<(SourceKey, bool)> {
     let remote = info.remote.as_ref().map(|remote| {
-        let supported =
-            remote.source.provider == Provider::Github && remote.source.host == "github.com";
+        let supported = match remote.source.provider {
+            Provider::Github => remote.source.host == "github.com",
+            Provider::Gitlab => true,
+            Provider::Beads => false,
+        };
         (remote.source.clone(), supported)
     });
     remote

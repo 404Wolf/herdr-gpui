@@ -345,7 +345,8 @@ impl HerdrWindow {
                             ),
                     ),
             )
-            .when(!cfg!(target_os = "linux"), |end| {
+            // The in-window menu bar carries the window controls instead.
+            .when(!crate::menus::IN_WINDOW, |end| {
                 end.children(controls(window, &self.theme, |window, _| {
                     window.remove_window();
                 }))
@@ -420,6 +421,29 @@ pub(crate) fn header(
     (cfg!(target_os = "macos") || decorations::client(window)).then(|| {
         let buttons = controls(window, theme, close);
         render(bar(theme.surface), None, window).children(buttons)
+    })
+}
+
+/// Tall enough to clear the traffic lights at `options`' position.
+const ZEN_INSET: f32 = 28.;
+
+/// What zen mode keeps of the header: a blank band in the terminal's color
+/// that still moves the window, where macOS draws the traffic lights over it
+/// and a client-decorated window has nothing else to move it by. Full
+/// screen, and a server-drawn frame, need none.
+pub(crate) fn zen_inset(ground: Hsla, window: &Window) -> Option<Stateful<Div>> {
+    let needed = cfg!(target_os = "macos") || decorations::client(window);
+    (needed && !window.is_fullscreen()).then(|| {
+        movable(
+            div()
+                .id("zen-inset")
+                .debug_selector(|| "zen-inset".into())
+                .flex_none()
+                .w_full()
+                .h(px(ZEN_INSET))
+                .bg(ground),
+            window,
+        )
     })
 }
 
