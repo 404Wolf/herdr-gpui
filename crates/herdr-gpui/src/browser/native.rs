@@ -3,7 +3,7 @@
 //! drawing; on Windows each lies above it, and the window hides the ones its
 //! overlays reach. See [`super::page`].
 use super::{
-    Location, Tab, TabId, WebUrl,
+    Location, Tab, TabId, WebUrl, Zoom,
     location::PREVIEW_SCHEME,
     page::{Drawn, Page, PageElement},
     preview::Preview,
@@ -577,6 +577,23 @@ impl Pages {
         }
         let _ = (id, rect, capture);
         false
+    }
+
+    /// The tab whose shown page holds the window's keyboard, if one does.
+    pub(crate) fn keyboard_page(&self) -> Option<TabId> {
+        self.shown
+            .iter()
+            .copied()
+            .find(|id| self.pages.get(id).is_some_and(|page| page.holds_keyboard()))
+    }
+
+    /// Draws each page of `ids` at the zoom `zoom` gives its tab.
+    pub(crate) fn follow_zoom(&self, ids: &[TabId], zoom: impl Fn(TabId) -> Option<Zoom>) {
+        for id in ids {
+            if let (Some(page), Some(zoom)) = (self.pages.get(id), zoom(*id)) {
+                page.zoom(zoom);
+            }
+        }
     }
 
     /// Hands the keyboard back from the page to the window.
