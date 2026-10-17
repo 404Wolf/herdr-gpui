@@ -149,9 +149,6 @@ pub(crate) struct HerdrWindow {
     pub(crate) daemon_text: crate::release_notes::DaemonText,
     /// Notes waiting for their agents to be ready for them.
     pub(crate) deliveries: crate::agent_notes::Deliveries,
-    /// Orchestrator views moved into windows of their own, by their old tab.
-    pub(crate) detached_orchestrators:
-        std::collections::HashMap<crate::browser::TabId, crate::orchestrator::Detached>,
     /// A press on a device's header that may lift it for reordering.
     pub(crate) device_drag: Option<sidebar::DeviceDrag>,
     pub(crate) device_filter: Option<String>,
@@ -220,16 +217,18 @@ pub(crate) struct HerdrWindow {
     /// The notes panel beside a review or an annotated page; both share it.
     /// The revision of the app-wide network reading this window last drew.
     pub(crate) network_quality_seen: u64,
+    /// The last orchestrator view id handed out.
+    pub(crate) next_orchestrator: u64,
     pub(crate) notes_width: crate::panel_resize::PanelWidth,
     pub(crate) options: ConnectOptions,
     /// Orchestrator views' requests, acted on at the next tick.
-    pub(crate) orchestrator_events: Vec<(crate::browser::TabId, crate::orchestrator::Event)>,
+    pub(crate) orchestrator_events: Vec<(crate::orchestrator::ViewId, crate::orchestrator::Event)>,
     pub(crate) orchestrator_live: crate::orchestrator::LiveCache,
     /// Whether an orchestrator's dispatch dialog ranks hosts by their load.
     pub(crate) orchestrator_sampling: bool,
-    /// Each orchestrator tab's view, by its tab.
+    /// The orchestrator views the sections made, by id.
     pub(crate) orchestrators:
-        std::collections::HashMap<crate::browser::TabId, crate::orchestrator::Orchestrator>,
+        std::collections::HashMap<crate::orchestrator::ViewId, crate::orchestrator::Orchestrator>,
     /// The activity bar's Overview page.
     pub(crate) overview: crate::overview::Page,
     pub(crate) painter: std::rc::Rc<std::cell::RefCell<terminal_painter::TerminalPainter>>,

@@ -14,20 +14,21 @@ mod beads;
 mod error;
 mod github;
 mod gitlab;
+mod host;
 mod location;
 mod model;
 mod naming;
 mod prompt;
 mod repo;
+mod review;
 mod section;
 mod service;
 mod store;
-mod tab;
 mod view;
-mod window;
 
 pub(crate) use actions::{Action, DispatchRequest};
 pub(crate) use error::{Error, Result};
+pub(crate) use host::{LiveCache, Orchestrator, ViewId};
 pub(crate) use location::{Repository, database_path};
 pub(crate) use model::Backend;
 #[cfg(test)]
@@ -37,13 +38,12 @@ pub(crate) use model::{
     SourceKey,
 };
 pub(crate) use naming::LiveBranch;
+pub(crate) use review::{CheckState, PrStatus, Review};
 #[cfg(all(test, unix))]
 pub(crate) use service::SourceStatus;
 pub(crate) use service::{Notice, Request, Service, Snapshot, SyncState, Timing};
 pub(crate) use store::{Access, SCHEMA_VERSION, Store};
-pub(crate) use tab::{LiveCache, Orchestrator};
-pub(crate) use view::{Event, List, LiveAgent, Look, OrchestratorView, RunStatus};
-pub(crate) use window::Detached;
+pub(crate) use view::{Event, List, LiveAgent, Look, OrchestratorView, key_label};
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

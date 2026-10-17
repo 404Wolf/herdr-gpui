@@ -14,7 +14,6 @@ mod inbox;
 mod list;
 mod look;
 mod markdown;
-mod preview;
 mod pull;
 mod rows;
 
@@ -23,12 +22,12 @@ mod rows;
 mod tests;
 
 pub(crate) use look::Look;
-pub(crate) use rows::{LiveAgent, Status as RunStatus, Tab as List};
+pub(crate) use rows::{LiveAgent, Tab as List, key_label};
 
 use super::{Item, Notice, Request, Service, Snapshot};
 use crate::search_input::{self, SearchInput};
 use gpui::{prelude::*, *};
-use rows::{Filters, ItemRow, RunLine, Runs, Sort, Tab};
+use rows::{Filters, ItemRow, Runs, Sort, Tab};
 use std::{collections::HashSet, sync::Arc};
 
 /// What the view asks its host to do.
@@ -54,8 +53,6 @@ pub(crate) enum Event {
     OpenUrl(String),
     /// Sign in to GitHub, which the view needs to list a repository.
     SignIn,
-    /// Move the view into a window of its own.
-    OpenWindow,
     /// Start `request` on the host `endpoint`, which the window sets it up
     /// for, then hands back through [`OrchestratorView::dispatch_elsewhere`].
     Dispatch {
@@ -66,10 +63,10 @@ pub(crate) enum Event {
 
 impl EventEmitter<Event> for OrchestratorView {}
 
-/// The preview's width bounds, in pixels.
-const PREVIEW_MIN: f32 = 280.;
-const PREVIEW_DEFAULT: f32 = 380.;
-const PREVIEW_MAX_SHARE: f32 = 0.6;
+/// The details pane's width bounds, in pixels, and its share of the view.
+const PANE_MIN: f32 = 360.;
+const PANE_DEFAULT: f32 = 520.;
+const PANE_MAX_SHARE: f32 = 0.7;
 
 /// The detail page of one item.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -117,11 +114,11 @@ impl DetailTab {
     }
 }
 
-/// The preview's drag handle, as a drag payload.
+/// The details pane's drag handle, as a drag payload.
 #[derive(Clone, Copy)]
-pub(crate) struct PreviewDrag;
+pub(crate) struct PaneDrag;
 
-impl Render for PreviewDrag {
+impl Render for PaneDrag {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         Empty
     }
@@ -145,27 +142,28 @@ pub(crate) struct OrchestratorView {
     sort_open: bool,
     filters: Filters,
     mine: bool,
-    active_runs: bool,
+    /// Whether the Issues filters' column is unfolded.
+    filters_open: bool,
+    /// Only issues with this label.
+    label: Option<String>,
     collapsed: HashSet<String>,
     search: Entity<SearchInput>,
     query: String,
     /// The selected row's item key, or run id on the Runs tab.
     selected: Option<String>,
     detail: Option<Detail>,
-    preview_open: bool,
-    preview_width: f32,
+    pane_width: f32,
     focus: FocusHandle,
     scroll: UniformListScrollHandle,
     issue_rows: Vec<ItemRow>,
     pull_request_rows: Vec<ItemRow>,
-    run_lines: Vec<RunLine>,
+    /// The shown list's lines: headings and rows.
+    lines: Vec<rows::Line>,
     /// Items runs work on that are no longer listed, so those runs still
     /// open a page with their controls.
     stand_ins: Vec<Item>,
     /// The open item's description, parsed once per change of its text.
     description: markdown::Markdown,
-    /// The previewed item's description, likewise.
-    preview_markdown: markdown::Markdown,
     dialog: Option<dispatch::Dialog>,
     confirm: Option<dispatch::Confirm>,
     /// The newest action's outcome, until dismissed or replaced.
@@ -182,8 +180,6 @@ pub(crate) struct OrchestratorView {
     merge_open: bool,
     /// Hosts a dispatch could go to, while the dialog is open.
     hosts: Arc<Vec<crate::dispatch::Candidate>>,
-    /// Hosted by a window of its own rather than a tab.
-    detached: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -235,22 +231,21 @@ impl OrchestratorView {
             sort_open: false,
             filters: Filters::default(),
             mine: false,
-            active_runs: false,
+            filters_open: false,
+            label: None,
             collapsed: HashSet::new(),
             search,
             query: String::new(),
             selected: None,
             detail: None,
-            preview_open: true,
-            preview_width: PREVIEW_DEFAULT,
+            pane_width: PANE_DEFAULT,
             focus: cx.focus_handle(),
             scroll: UniformListScrollHandle::new(),
             issue_rows: Vec::new(),
             pull_request_rows: Vec::new(),
-            run_lines: Vec::new(),
+            lines: Vec::new(),
             stand_ins: Vec::new(),
             description: markdown::Markdown::default(),
-            preview_markdown: markdown::Markdown::default(),
             dialog: None,
             confirm: None,
             notice: None,
@@ -261,7 +256,6 @@ impl OrchestratorView {
             avatars: conversation::Avatars::default(),
             merge_open: false,
             hosts: Arc::default(),
-            detached: false,
             _subscriptions: vec![subscription],
         }
     }
@@ -323,15 +317,6 @@ impl OrchestratorView {
     /// The host the repository is on.
     pub(crate) fn target(&self) -> &herdr_client::ConnectTarget {
         &self.request.target
-    }
-
-    pub(crate) fn theme(&self) -> &crate::config::Theme {
-        &self.look.theme
-    }
-
-    pub(crate) fn set_detached(&mut self, detached: bool, cx: &mut Context<Self>) {
-        self.detached = detached;
-        cx.notify();
     }
 
     /// The Herdr workspace the view was opened from.
@@ -500,42 +485,41 @@ impl OrchestratorView {
             self.mine,
             self.sort,
         );
-        let listed: Vec<Item>;
-        let titled = if self.stand_ins.is_empty() {
-            items.as_slice()
-        } else {
-            listed = items.iter().chain(&self.stand_ins).cloned().collect();
-            listed.as_slice()
+        if let Some(label) = &self.label {
+            let items = &self.snapshot.items;
+            self.issue_rows
+                .retain(|row| items[row.item].labels.iter().any(|has| has == label));
+            // A child kept without its parent stands on its own.
+            for row in &mut self.issue_rows {
+                row.depth = 0;
+                row.children = None;
+            }
+        }
+        let lines = match self.tab {
+            Tab::Issues => rows::issue_lines(&self.issue_rows, &self.snapshot.items),
+            Tab::PullRequests => rows::pull_request_lines(
+                &self.pull_request_rows,
+                &self.snapshot.items,
+                &self.snapshot.pr_status,
+                self.reading_login(),
+            ),
         };
-        self.run_lines = rows::run_lines(&runs, titled, &self.query, self.active_runs);
+        self.lines = lines;
         if self.selected.is_none() || !self.selection_listed() {
             self.selected = self.keys().into_iter().next();
         }
     }
 
-    /// The selectable keys of the current tab, in order.
+    /// The selectable keys of the shown list, in order.
     fn keys(&self) -> Vec<String> {
         let items = &self.snapshot.items;
-        match self.tab {
-            Tab::Issues => self
-                .issue_rows
-                .iter()
-                .map(|row| items[row.item].key.canonical())
-                .collect(),
-            Tab::PullRequests => self
-                .pull_request_rows
-                .iter()
-                .map(|row| items[row.item].key.canonical())
-                .collect(),
-            Tab::Runs => self
-                .run_lines
-                .iter()
-                .filter_map(|line| match line {
-                    RunLine::Run(row) => Some(self.snapshot.runs[row.run].id.clone()),
-                    RunLine::Group { .. } => None,
-                })
-                .collect(),
-        }
+        self.lines
+            .iter()
+            .filter_map(|line| match line {
+                rows::Line::Row(row) => Some(items[row.item].key.canonical()),
+                rows::Line::Heading { .. } => None,
+            })
+            .collect()
     }
 
     fn selection_listed(&self) -> bool {
@@ -562,15 +546,6 @@ impl OrchestratorView {
     /// The runs the list shows, those found from branches included.
     pub(crate) fn runs(&self) -> &Arc<Vec<super::Run>> {
         &self.snapshot.runs
-    }
-
-    /// Each run's status as the Runs tab shows it: its live agent's when a
-    /// connected host shows one, else the state its owner stored.
-    pub(crate) fn run_statuses(&self) -> Vec<RunStatus> {
-        let runs = Runs::new(&self.snapshot.runs, &self.snapshot.sessions, &self.live);
-        (0..self.snapshot.runs.len())
-            .filter_map(|run| runs.status(run))
-            .collect()
     }
 
     /// The live agents last handed in, which change run statuses.
@@ -617,44 +592,28 @@ impl OrchestratorView {
         cx.notify();
     }
 
-    /// The list line showing `key`, counting the Runs tab's headings.
+    /// The list line showing `key`, counting the headings.
     fn line_of(&self, key: &str) -> usize {
         let items = &self.snapshot.items;
-        match self.tab {
-            Tab::Issues => self
-                .issue_rows
-                .iter()
-                .position(|row| items[row.item].key.canonical() == key),
-            Tab::PullRequests => self
-                .pull_request_rows
-                .iter()
-                .position(|row| items[row.item].key.canonical() == key),
-            Tab::Runs => self.run_lines.iter().position(
-                |line| matches!(line, RunLine::Run(row) if self.snapshot.runs[row.run].id == key),
-            ),
-        }
-        .unwrap_or(0)
+        self.lines
+            .iter()
+            .position(|line| {
+                matches!(line, rows::Line::Row(row) if items[row.item].key.canonical() == key)
+            })
+            .unwrap_or(0)
     }
 
     fn open_detail(&mut self, key: String, cx: &mut Context<Self>) {
-        // A run opens the item it works on.
-        let key = match self.tab {
-            Tab::Runs => match self.snapshot.runs.iter().find(|run| run.id == key) {
-                Some(run) => run.item_key.clone(),
-                None => return,
-            },
-            _ => key,
-        };
         let Some(item) = self.item(&key) else {
             return;
         };
         let pull_request = item.pull_request.is_some();
         self.detail = Some(Detail {
             key,
-            tab: match (self.tab, pull_request) {
-                (Tab::Runs, _) => DetailTab::Agent,
-                (_, true) => DetailTab::Conversation,
-                (_, false) => DetailTab::Description,
+            tab: if pull_request {
+                DetailTab::Conversation
+            } else {
+                DetailTab::Description
             },
         });
         self.merge_open = false;
@@ -787,19 +746,6 @@ impl OrchestratorView {
                 }
                 true
             }
-            ("tab", None) => {
-                let at = Tab::ALL
-                    .iter()
-                    .position(|tab| *tab == self.tab)
-                    .unwrap_or(0);
-                let next = if modifiers.shift {
-                    at + Tab::ALL.len() - 1
-                } else {
-                    at + 1
-                } % Tab::ALL.len();
-                self.select_tab(Tab::ALL[next], cx);
-                true
-            }
             ("r", _) => {
                 self.refresh();
                 true
@@ -833,10 +779,7 @@ impl Focusable for OrchestratorView {
 
 impl Render for OrchestratorView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let body = match self.detail.clone() {
-            Some(detail) => self.render_detail(detail, window, cx),
-            None => self.render_inbox(window, cx),
-        };
+        let body = self.render_inbox(window, cx);
         let notice = self.render_notice(cx);
         let overlay = self.render_overlay(cx);
         let merge_menu = self.render_merge_menu(cx);

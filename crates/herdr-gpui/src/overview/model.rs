@@ -4,7 +4,7 @@
 //! sections once the user's marks sort them.
 
 use super::marks::{Hold, Marks};
-use crate::{browser::TabId, endpoint::Endpoint, state::LiveState};
+use crate::{endpoint::Endpoint, orchestrator::ViewId, state::LiveState};
 use herdr_client::protocol::{AgentStatus, ClientShellAgent, ClientShellSnapshot};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::SystemTime};
@@ -100,8 +100,8 @@ pub(crate) enum Open {
         tab: String,
         workspace: String,
     },
-    /// The orchestrator tab whose view lists the run.
-    Run(TabId),
+    /// The orchestrator view that lists the run.
+    Run(ViewId),
 }
 
 /// A checkout's pull request as the prefetch last saw it.

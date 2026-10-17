@@ -115,7 +115,7 @@ impl HerdrWindow {
                     .iter()
                     .find(|item| item.key.canonical() == run.item_key);
                 let title = item.map_or_else(
-                    || run.item_key.clone(),
+                    || crate::orchestrator::key_label(&run.item_key),
                     |item| format!("{} {}", item.identifier, item.title),
                 );
                 rows.push(Row {
@@ -223,7 +223,7 @@ impl HerdrWindow {
     }
 
     /// Shows what a row stands for: an agent's pane among the terminals, or
-    /// a run in the Orchestrator section.
+    /// a run's item in the Issues section.
     fn open_overview_row(&mut self, row: &Row, window: &mut Window, cx: &mut Context<Self>) {
         self.overview.menu = None;
         Marks::update(cx, |marks| marks.seen(&row.key));
@@ -248,7 +248,7 @@ impl HerdrWindow {
                 }
                 window.focus(&self.focus, cx);
             }
-            Open::Run(_) => self.show_activity_panel(ActivityPanel::Orchestrator, window, cx),
+            Open::Run(_) => self.show_activity_panel(ActivityPanel::Issues, window, cx),
         }
         cx.notify();
     }

@@ -10,7 +10,7 @@ mod clicks;
 mod conversation;
 mod conversation_list;
 mod dialog;
-mod host_badges;
+mod groups;
 mod markdown;
 mod rows;
 mod sessions;

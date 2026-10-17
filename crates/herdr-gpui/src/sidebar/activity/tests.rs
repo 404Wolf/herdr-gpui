@@ -3,7 +3,7 @@
 use super::{ActivityPanel, BAR_WIDTH};
 use crate::{
     HerdrWindow,
-    orchestrator::{Item, ItemKey, Owner, Provider, Run, RunState, SourceKey},
+    orchestrator::{Item, ItemKey, Provider, SourceKey},
 };
 
 mod counts;
@@ -34,22 +34,6 @@ fn item(native_id: &str, title: &str) -> Item {
         updated_at: None,
         pull_request: None,
         activity: None,
-    }
-}
-
-fn run(id: &str, item: &Item, state: RunState) -> Run {
-    Run {
-        id: id.into(),
-        item_key: item.key.canonical(),
-        workspace: None,
-        agent: "claude".into(),
-        model: None,
-        state,
-        message: None,
-        session_id: None,
-        started_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
-        owner: Owner::HerdrGpui,
     }
 }
 

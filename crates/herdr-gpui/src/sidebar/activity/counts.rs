@@ -1,38 +1,23 @@
 //! The bar's count bubbles: what needs the user, as the Overview counted it
-//! on the last tick, and from the orchestrator views the window holds, runs
-//! an agent is on or that wait on the user, open pull requests, and open
-//! issues. An item or run two views list, such as one repository open in two
-//! workspaces, counts once.
+//! on the last tick, and from the orchestrator views the window holds, open
+//! pull requests and open issues. An item two views list, such as one
+//! repository open in two workspaces, counts once.
 
 use super::ActivityPanel;
-use crate::{
-    HerdrWindow,
-    orchestrator::{Item, Run, RunStatus},
-};
+use crate::{HerdrWindow, orchestrator::Item};
 use gpui::App;
 use std::collections::HashSet;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct Counts {
     needs: usize,
-    runs: usize,
     pull_requests: usize,
     issues: usize,
 }
 
 impl Counts {
-    /// One view's lists added to the counts, skipping what `seen` holds.
-    pub(super) fn add<'a>(
-        &mut self,
-        seen: &mut HashSet<String>,
-        items: &'a [Item],
-        runs: impl IntoIterator<Item = (&'a Run, RunStatus)>,
-    ) {
-        for (run, status) in runs {
-            if active(status) && seen.insert(format!("run:{}", run.id)) {
-                self.runs += 1;
-            }
-        }
+    /// One view's items added to the counts, skipping what `seen` holds.
+    pub(super) fn add(&mut self, seen: &mut HashSet<String>, items: &[Item]) {
         for item in items {
             if !open(item) || !seen.insert(item.key.canonical()) {
                 continue;
@@ -50,19 +35,10 @@ impl Counts {
         match panel {
             ActivityPanel::Overview => Some(self.needs),
             ActivityPanel::Workspaces | ActivityPanel::Usage => None,
-            ActivityPanel::Orchestrator => Some(self.runs),
             ActivityPanel::PullRequests => Some(self.pull_requests),
             ActivityPanel::Issues => Some(self.issues),
         }
     }
-}
-
-/// Whether an agent is on the run or it waits on the user.
-fn active(status: RunStatus) -> bool {
-    matches!(
-        status,
-        RunStatus::Starting | RunStatus::Working | RunStatus::NeedsInput | RunStatus::Failed
-    )
 }
 
 /// Whether the provider still counts the item as open. Beads' own word for
@@ -73,17 +49,13 @@ fn open(item: &Item) -> bool {
 
 impl HerdrWindow {
     pub(super) fn activity_counts(&self, cx: &App) -> Counts {
-        let mut views = self.orchestrator_views();
-        views.sort_unstable_by_key(|(tab, _)| *tab);
         let mut counts = Counts {
             needs: self.overview_needing(),
             ..Counts::default()
         };
         let mut seen = HashSet::new();
-        for (_, view) in &views {
-            let view = view.read(cx);
-            let statuses = view.run_statuses();
-            counts.add(&mut seen, view.items(), view.runs().iter().zip(statuses));
+        for (_, view) in self.orchestrator_views() {
+            counts.add(&mut seen, view.read(cx).items());
         }
         counts
     }

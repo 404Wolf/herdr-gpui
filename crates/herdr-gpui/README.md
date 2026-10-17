@@ -1108,7 +1108,7 @@ padding_y = [4, 8]   # top, then bottom
 
 - One number pads both sides of the axis. A pair of numbers pads each side: left then right for `padding_x`, top then bottom for `padding_y`.
 - Each side is a finite number of logical pixels from 0 to 64. The default is `0`, which keeps the cells against the edges.
-- Every terminal takes the padding, in every tab group, whether the sidebar shows or not. A browser, VS Code, review, or orchestrator tab pads its own content and takes none.
+- Every terminal takes the padding, in every tab group, whether the sidebar shows or not. A browser, VS Code, or review tab pads its own content and takes none.
 - The terminal keeps the remaining size, so the daemon is resized to the columns and rows it actually has.
 - The padding shows the theme background.
 - **Settings > Theme > Terminal padding** sets each of the four sides with a slider, a typed value, or one-pixel steps. It writes one number when the two sides of an axis agree, and a pair when they differ.
@@ -1837,27 +1837,62 @@ Where new checkouts went is kept in `dispatch-history.json` in the state
 directory, by repository name and host. Like Teleport, dispatch needs a Linux
 or macOS client and the local session or a saved SSH host on both ends.
 
+## Activity bar
+
+An icon column at the window's left edge picks what the window shows. Every
+section but Workspaces takes the window's body, keeping the title bar and the
+status bar; zen mode keeps the terminals. `[sidebar] activity_bar = false`
+turns it off, and `herdr-gpui ui panel NAME` shows a section.
+
+- **Workspaces** is the sidebar beside the terminals. Clicking it while shown
+  folds the sidebar to its rail.
+- **Overview** shows what needs you on every connected host: agents waiting on
+  you and failed runs first, in a card of their own, then finished agents
+  ready for review, working agents by host, and idle ones. Hovering a row
+  offers **Snooze** (until a preset time), **Settle**, **Pin**, and **Open**;
+  snoozed and settled rows fold away at the bottom and come back once their
+  time comes or the agent works or asks again. These marks are this client's
+  own. A column beside the list shows each host's CPU, memory, agents, and
+  ports; each host folds, and the column folds to a strip of load dots. The
+  icon counts what needs you.
+- **Pull requests** and **Issues** list the focused workspace's repository
+  (see [Orchestrator](#orchestrator)).
+- **Usage** shows every host's plan limits, one card per signed-in agent. Only
+  the selected host is read; another host shows what was read while it was
+  selected.
+
 ## Orchestrator
 
-The Orchestrator row of a group's "…" menu, the Open Orchestrator command, or
-the Orchestrator row of a workspace's popover opens a tab listing that
-workspace's repository: its GitHub issues and pull requests or GitLab issues, its
-[Beads](https://github.com/steveyegge/beads) issues when the main checkout has
-a `.beads` folder, and the agent runs dispatched for them. It works for the
-local session and saved SSH hosts.
+The activity bar's **Pull requests** and **Issues** sections list the focused
+workspace's repository across the window: its GitHub issues and pull requests
+or GitLab issues, its [Beads](https://github.com/steveyegge/beads) issues when
+the main checkout has a `.beads` folder, and the agent runs dispatched for
+them. The Issues row of a group's "…" menu or of a workspace's popover, the
+Show Issues command, and `herdr-gpui orchestrator` open the Issues section. It
+works for the local session and saved SSH hosts.
 
-- **Issues** lists open GitHub or GitLab issues and beads together. A bead's children sit
-  under it; filters narrow to Beads, items with a run, or blocked ones; five
-  sorts are offered. Search matches every word you type across title, id,
-  author, labels, state, and body, case-insensitively unless a word has a
-  capital, and keeps a match's parents in view.
-- **Pull requests** lists open ones and the 50 most recently closed or merged,
-  with their diff size and activity.
-- **Runs** lists every run, grouped by what needs you first. Its status comes
-  from Herdr's live view of each connected host.
+- **Issues** lists open GitHub or GitLab issues and beads together, grouped by
+  priority. A bead's children sit under it. The **Filters** button unfolds a
+  column narrowing to items with a run, blocked ones, one source, or one
+  label; folded, the filters in use show as chips that clear them. Five sorts
+  are offered. Search matches every word you type across title, id, author,
+  labels, state, and body, case-insensitively unless a word has a capital, and
+  keeps a match's parents in view. **Start agent** on a row opens the dispatch
+  dialog.
+- **Pull requests** is a table grouped by what each waits on: a review asked
+  of you, your own to fix (changes requested or failing checks), those ready to
+  merge, the rest, and recently closed or merged ones. Each row shows its
+  branch, author, review state, its checks as colored pills, diff size, its
+  run, and age. Review state, review requests, and checks are read from GitHub
+  after every sync and kept in memory only, never in the shared database.
 
-Selecting a row shows it in the preview, whose left edge drags to resize or
-close it; Enter or a double-click opens its page. An issue's page shows its
+Runs have no list of their own: the [Overview](#activity-bar) shows the agents and
+failed runs that need you, and an item's **Agent** page shows its runs. Their
+status comes from Herdr's live view of each connected host.
+
+A click selects a row; Enter or a double-click opens its page in a pane beside
+the list, which keeps only the columns that fit. The pane's left edge drags to
+resize or close it, and × closes it. An issue's page shows its
 description as plain text with Markdown structure, its runs, and its details. A
 pull request's page also has its conversation, read as on GitHub: authors'
 avatars, Markdown comments, each review holding its inline threads with
@@ -1879,8 +1914,8 @@ request's **Review with agent** does the same on an `agent/review-…` branch wi
 read-only prompt: the agent verifies the pull request, reads its diff, and
 reports findings without writing to GitHub. A run's card sends it messages, stops
 it, or removes its worktree; a bead's details can delete it with `bd`. Each of
-those asks first. Closing the Orchestrator tab or its detached window leaves
-an already-started dispatch running; it does not remove the new worktree.
+those asks first. Leaving the section leaves an already-started dispatch
+running; it does not remove the new worktree.
 
 The hash at the end of a branch name is the item's own, so the Orchestrator
 finds work without its database, such as on another machine: a Herdr workspace

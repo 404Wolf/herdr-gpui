@@ -12,8 +12,7 @@ use super::{agents::Indicators, line_height};
 use crate::fonts::StyledFont;
 use crate::{
     Command, HerdrWindow,
-    browser::TabId,
-    orchestrator::{List, OrchestratorView},
+    orchestrator::{List, OrchestratorView, ViewId},
 };
 use gpui::{prelude::*, *};
 use serde::{Deserialize, Serialize};
@@ -38,7 +37,6 @@ pub enum ActivityPanel {
     #[default]
     Workspaces,
     Overview,
-    Orchestrator,
     PullRequests,
     Issues,
     Usage,
@@ -48,7 +46,6 @@ impl ActivityPanel {
     pub(crate) const ALL: &[Self] = &[
         Self::Workspaces,
         Self::Overview,
-        Self::Orchestrator,
         Self::PullRequests,
         Self::Issues,
         Self::Usage,
@@ -59,7 +56,6 @@ impl ActivityPanel {
         match self {
             Self::Overview => "overview",
             Self::Workspaces => "workspaces",
-            Self::Orchestrator => "orchestrator",
             Self::PullRequests => "pull-requests",
             Self::Issues => "issues",
             Self::Usage => "usage",
@@ -74,7 +70,6 @@ impl ActivityPanel {
         match self {
             Self::Overview => "Overview",
             Self::Workspaces => "Workspaces",
-            Self::Orchestrator => "Orchestrator",
             Self::PullRequests => "Pull requests",
             Self::Issues => "Issues",
             Self::Usage => "Usage",
@@ -85,7 +80,6 @@ impl ActivityPanel {
         match self {
             Self::Overview => "icons/pulse.svg",
             Self::Workspaces => "icons/terminal.svg",
-            Self::Orchestrator => "icons/fan-out.svg",
             Self::PullRequests => "icons/pull-request.svg",
             Self::Issues => "icons/issue.svg",
             Self::Usage => "icons/chart.svg",
@@ -93,15 +87,18 @@ impl ActivityPanel {
     }
 }
 
-/// The window's bar: the section it shows, and the orchestrator tab a
+/// The window's bar: the section it shows, and the orchestrator view a
 /// section shows.
 #[derive(Debug, Default)]
 pub(crate) struct Activity {
     pub(crate) panel: ActivityPanel,
     /// Picked in this window, so a stored section arriving later yields to it.
     picked: bool,
-    /// The orchestrator tab the shown section draws.
-    pub(crate) section_tab: Option<TabId>,
+    /// The orchestrator view the shown section draws.
+    pub(crate) section_view: Option<ViewId>,
+    /// A repository asked for by name for a workspace, which its sections
+    /// list instead of the one its focused pane is in.
+    pub(crate) section_repo: Option<(String, crate::browser::OrchestratorRepo)>,
     /// The list last picked on that tab's view, so the user's own choice of
     /// list there stands until another section is picked.
     pub(crate) section_list: Option<List>,
@@ -111,7 +108,7 @@ pub(crate) struct Activity {
     /// Each orchestrator view's lists and live agents as last counted, by
     /// identity, so a new snapshot or a live status change redraws the bar
     /// and nothing else does.
-    sources: Vec<(TabId, [usize; 3])>,
+    sources: Vec<(ViewId, [usize; 3])>,
 }
 
 impl Activity {
@@ -142,7 +139,7 @@ impl Activity {
     /// Records the views' lists; whether they changed since last time.
     pub(crate) fn observe_sources(
         &mut self,
-        views: &[(TabId, Entity<OrchestratorView>)],
+        views: &[(ViewId, Entity<OrchestratorView>)],
         cx: &App,
     ) -> bool {
         let mut sources: Vec<_> = views
@@ -250,7 +247,7 @@ impl HerdrWindow {
             ActivityPanel::Workspaces => return None,
             ActivityPanel::Overview => self.render_overview(cx),
             ActivityPanel::Usage => self.render_usage_section(cx),
-            ActivityPanel::Orchestrator | ActivityPanel::PullRequests | ActivityPanel::Issues => {
+            ActivityPanel::PullRequests | ActivityPanel::Issues => {
                 return self.render_orchestrator_section();
             }
         };
@@ -479,7 +476,6 @@ fn panel_selector(panel: ActivityPanel) -> &'static str {
     match panel {
         ActivityPanel::Overview => "activity-overview",
         ActivityPanel::Workspaces => "activity-workspaces",
-        ActivityPanel::Orchestrator => "activity-orchestrator",
         ActivityPanel::PullRequests => "activity-pull-requests",
         ActivityPanel::Issues => "activity-issues",
         ActivityPanel::Usage => "activity-usage",

@@ -25,7 +25,7 @@ fn ui_panel_takes_every_panel_by_name() {
 
 #[test]
 fn ui_panel_refuses_a_missing_or_unknown_panel() {
-    let names = "workspaces|overview|orchestrator|pull-requests|issues|usage";
+    let names = "workspaces|overview|pull-requests|issues|usage";
     assert_eq!(
         parse(&["ui", "panel", "dashboard"]).unwrap_err(),
         CliError::InvalidValue(names)

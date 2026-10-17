@@ -1,9 +1,8 @@
-//! A section shows the focused workspace's orchestrator tab, opening one as
-//! the workspace menu would when there is none.
+//! The Pull requests and Issues sections show an orchestrator view of the
+//! focused workspace's repository, which the window makes and keeps.
 use super::*;
 use crate::{
-    browser::{Location, Store},
-    orchestrator::List,
+    orchestrator::{List, ViewId},
     sidebar::layout_tests::{SidebarFixture, fixture_window, full_draw, snapshot},
     state::ConnectionStatus,
 };
@@ -39,38 +38,35 @@ fn show(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, panel: ActivityP
     });
 }
 
-fn orchestrator_tabs(cx: &mut VisualTestContext) -> usize {
-    cx.update(|_, cx| {
-        cx.try_global::<Store>().map_or(0, |store| {
-            store
-                .tabs()
-                .filter(|tab| matches!(tab.location, Some(Location::Orchestrator { .. })))
-                .count()
-        })
-    })
+fn views(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) -> usize {
+    cx.update(|_, cx| view.read(cx).orchestrators.len())
 }
 
 fn shown_list(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) -> List {
     cx.update(|_, cx| {
         let view = view.read(cx);
-        let id = view.activity.section_tab.unwrap();
+        let id = view.activity.section_view.unwrap();
         view.orchestrators[&id].view().read(cx).list()
     })
 }
 
+fn tick(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) {
+    cx.update(|window, cx| view.update(cx, |view, cx| view.poll_orchestrators(window, cx)));
+}
+
 #[gpui::test]
-fn a_section_opens_the_orchestrator_once_and_picks_its_list(cx: &mut gpui::TestAppContext) {
+fn a_section_makes_its_view_once_and_picks_its_list(cx: &mut gpui::TestAppContext) {
     let (view, cx) = local(cx);
-    assert_eq!(orchestrator_tabs(cx), 0);
+    assert_eq!(views(&view, cx), 0);
     show(&view, cx, ActivityPanel::Issues);
-    assert_eq!(orchestrator_tabs(cx), 1);
+    assert_eq!(views(&view, cx), 1);
     assert_eq!(shown_list(&view, cx), List::Issues);
-    // The tab's view fills the section, holding the keyboard.
+    // The view fills the section, holding the keyboard.
     assert!(cx.debug_bounds("activity-section").is_some());
     assert!(cx.debug_bounds("activity-section-empty").is_none());
     cx.update(|window, cx| {
         let view = view.read(cx);
-        let id = view.activity.section_tab.unwrap();
+        let id = view.activity.section_view.unwrap();
         let focus = view.orchestrators[&id]
             .view()
             .read(cx)
@@ -78,22 +74,20 @@ fn a_section_opens_the_orchestrator_once_and_picks_its_list(cx: &mut gpui::TestA
             .clone();
         assert!(focus.contains_focused(window, cx));
     });
-    // Another section reuses the tab, on its own list.
+    // The other section reuses the view, on its own list.
     show(&view, cx, ActivityPanel::PullRequests);
-    assert_eq!(orchestrator_tabs(cx), 1);
+    assert_eq!(views(&view, cx), 1);
     assert_eq!(shown_list(&view, cx), List::PullRequests);
-    show(&view, cx, ActivityPanel::Orchestrator);
-    assert_eq!(shown_list(&view, cx), List::Runs);
     // The tick keeps the section where it is.
-    cx.update(|window, cx| view.update(cx, |view, cx| view.poll_orchestrators(window, cx)));
-    assert_eq!(orchestrator_tabs(cx), 1);
+    tick(&view, cx);
+    assert_eq!(views(&view, cx), 1);
 }
 
 #[gpui::test]
-fn a_section_follows_the_focused_workspace(cx: &mut gpui::TestAppContext) {
+fn a_section_follows_the_focused_workspace_and_forgets_closed_ones(cx: &mut gpui::TestAppContext) {
     let (view, cx) = local(cx);
-    show(&view, cx, ActivityPanel::Orchestrator);
-    let first = cx.update(|_, cx| view.read(cx).activity.section_tab);
+    show(&view, cx, ActivityPanel::Issues);
+    let first = cx.update(|_, cx| view.read(cx).activity.section_view);
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
             if let Some(snapshot) = view.live.snapshot.as_mut() {
@@ -102,49 +96,43 @@ fn a_section_follows_the_focused_workspace(cx: &mut gpui::TestAppContext) {
             view.poll_orchestrators(window, cx);
         })
     });
-    let second = cx.update(|_, cx| view.read(cx).activity.section_tab);
+    let second = cx.update(|_, cx| view.read(cx).activity.section_view);
     assert_ne!(first, second);
-    assert_eq!(orchestrator_tabs(cx), 2);
+    assert_eq!(views(&view, cx), 2);
     let workspace = cx.update(|_, cx| {
-        cx.try_global::<Store>()
-            .and_then(|store| store.get(second?))
-            .map(|tab| tab.workspace_id.clone())
+        view.read(cx).orchestrators[&second.unwrap()]
+            .workspace()
+            .to_owned()
     });
-    assert_eq!(workspace.as_deref(), Some("w1"));
+    assert_eq!(workspace, "w1");
+    // Closing w0 drops its view; the shown one stays.
+    cx.update(|_, cx| {
+        view.update(cx, |view, _| {
+            if let Some(snapshot) = view.live.snapshot.as_mut() {
+                Arc::make_mut(snapshot)
+                    .workspaces
+                    .retain(|workspace| workspace.workspace_id != "w0");
+            }
+        })
+    });
+    tick(&view, cx);
+    assert_eq!(views(&view, cx), 1);
+    assert_eq!(
+        cx.update(|_, cx| view.read(cx).activity.section_view),
+        second
+    );
 }
 
 #[gpui::test]
-fn a_detached_orchestrator_stays_the_sections_without_a_second_tab(cx: &mut gpui::TestAppContext) {
+fn only_the_sections_view_opening_something_leaves_the_section(cx: &mut gpui::TestAppContext) {
     let (view, cx) = local(cx);
     show(&view, cx, ActivityPanel::Issues);
-    let id = cx.update(|_, cx| view.read(cx).activity.section_tab.unwrap());
-    cx.update(|_, cx| view.update(cx, |view, cx| view.detach_orchestrator(id, cx)));
-    assert_eq!(orchestrator_tabs(cx), 0);
-    cx.update(|window, cx| {
-        view.update(cx, |view, cx| view.poll_orchestrators(window, cx));
-        full_draw(window, cx).clear(cx);
-    });
-    // No new tab: the section offers the window the orchestrator moved to.
-    assert_eq!(orchestrator_tabs(cx), 0);
-    assert_eq!(
-        cx.update(|_, cx| view.read(cx).activity.section_tab),
-        Some(id)
-    );
-    assert!(cx.debug_bounds("activity-section-window").is_some());
-}
-
-#[gpui::test]
-fn only_the_sections_orchestrator_opening_something_leaves_the_section(
-    cx: &mut gpui::TestAppContext,
-) {
-    let (view, cx) = local(cx);
-    show(&view, cx, ActivityPanel::Orchestrator);
     cx.update(|_, cx| {
         view.update(cx, |view, cx| {
-            let id = view.activity.section_tab.unwrap();
-            // Another orchestrator's run opening leaves this section alone.
-            view.leave_activity_section(crate::browser::TabId::test(u64::MAX), cx);
-            assert_eq!(view.activity.panel, ActivityPanel::Orchestrator);
+            let id = view.activity.section_view.unwrap();
+            // Another view's run opening leaves this section alone.
+            view.leave_activity_section(ViewId::test(u64::MAX), cx);
+            assert_eq!(view.activity.panel, ActivityPanel::Issues);
             // The section's own, once it showed a pane, gives way to it.
             view.leave_activity_section(id, cx);
             assert_eq!(view.activity.panel, ActivityPanel::Workspaces);
@@ -158,7 +146,7 @@ fn a_link_leaves_the_section_only_for_a_page_tab(cx: &mut gpui::TestAppContext) 
     let (view, cx) = local(cx);
     show(&view, cx, ActivityPanel::Issues);
     let mut event = |url: &str| {
-        let id = view.read_with(cx, |view, _| view.activity.section_tab.unwrap());
+        let id = view.read_with(cx, |view, _| view.activity.section_view.unwrap());
         cx.update(|window, cx| {
             view.update(cx, |view, cx| {
                 view.orchestrator_events

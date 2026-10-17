@@ -67,7 +67,7 @@ fn ui_panel_shows_the_overview_and_usage_across_the_window(cx: &mut gpui::TestAp
             assert_eq!(view.activity.panel, panel);
             assert_eq!(view.activity_section(), Some(panel));
             // Neither shows an orchestrator, so none is opened for it.
-            assert!(view.activity.section_tab.is_none());
+            assert!(view.activity.section_view.is_none());
         });
     }
 }

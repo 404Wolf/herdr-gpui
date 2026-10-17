@@ -151,7 +151,6 @@ impl HerdrWindow {
             copy_mode: None,
             daemon_text: Default::default(),
             deliveries: Default::default(),
-            detached_orchestrators: Default::default(),
             device_drag: None,
             device_filter: None,
             device_order: Vec::new(),
@@ -198,6 +197,7 @@ impl HerdrWindow {
             menu,
             merged_cleanup: Default::default(),
             network_quality_seen: 0,
+            next_orchestrator: 0,
             notes_width: crate::panel_resize::NOTES,
             options: ConnectOptions::default(),
             orchestrator_events: Vec::new(),
@@ -289,7 +289,6 @@ impl HerdrWindow {
             async {}
         })
         .detach();
-        Self::close_orchestrator_windows_on_release(cx);
         #[cfg(feature = "integration-test")]
         if sidebar_test {
             this._poll = Task::ready(());

@@ -1,85 +1,105 @@
-//! The activity bar's Orchestrator, Pull requests, and Issues sections: the
-//! focused workspace's orchestrator tab, drawn across the window in place of
-//! its terminals, on the list the section names. The tab is opened as the
-//! workspace menu opens it when the workspace has none, so its events,
-//! restore, and detaching work as they do for any orchestrator tab.
+//! The activity bar's Pull requests and Issues sections: the focused
+//! workspace's repository, as an orchestrator view the window owns, drawn
+//! across the window in place of its terminals on the list the section
+//! names. A view is made the first time a workspace is shown and kept while
+//! that workspace exists, so switching back finds it as it was left.
 
-use super::{List, OrchestratorView};
-use crate::{
-    HerdrWindow,
-    browser::{Location, OrchestratorRepo, Store, TabId},
-    sidebar::ActivityPanel,
-};
+use super::{List, OrchestratorView, ViewId};
+use crate::{HerdrWindow, browser::OrchestratorRepo, sidebar::ActivityPanel};
 use gpui::{prelude::*, *};
 
 impl HerdrWindow {
-    /// Keeps the shown section on the focused workspace's orchestrator tab,
-    /// opening one when the workspace has none and the shown host can run
-    /// the orchestrator's scripts. Called from the tick and when a section
-    /// is picked; a new tab, or a new section, gets its list picked here.
+    /// Keeps the shown section on the focused workspace's view, making it
+    /// when the workspace has none and the shown host can run the
+    /// orchestrator's scripts. Called from the tick and when a section is
+    /// picked; a new view, or a new section, gets its list picked here.
     pub(crate) fn sync_activity_section(&mut self, cx: &mut Context<Self>) {
         let Some(list) = self.activity_section().and_then(list_of) else {
             return;
         };
-        let Some((scope, workspace)) = self.browser_key() else {
-            self.activity.section_tab = None;
-            return;
-        };
-        // A tab moved into a window of its own leaves the store but stays the
-        // workspace's orchestrator, so the section offers that window rather
-        // than opening a second one.
-        let target = &self.endpoints[self.selected_endpoint].connection.target;
-        let current = self.activity.section_tab.filter(|id| {
-            cx.try_global::<Store>()
-                .and_then(|store| store.get(*id))
-                .is_some_and(|tab| tab.scope == scope && tab.workspace_id == workspace)
-                || self.detached_orchestrators.get(id).is_some_and(|detached| {
-                    let view = detached.orchestrator.view.read(cx);
-                    view.workspace_id() == workspace && view.target() == target
-                })
-        });
-        let id = current.or_else(|| {
-            let existing = cx.try_global::<Store>().and_then(|store| {
-                store
-                    .in_workspace(&scope, &workspace)
-                    .find(|tab| matches!(tab.location, Some(Location::Orchestrator { .. })))
-                    .map(|tab| tab.id)
-            });
-            existing.or_else(|| {
-                let repo = self
-                    .focused_checkout()
-                    .filter(|_| self.orchestrator_host())
-                    .and_then(|path| OrchestratorRepo::new(path).ok())?;
-                Store::update(cx, |store| {
-                    store.open(
-                        scope,
-                        &workspace,
-                        Some(Location::Orchestrator { repo }),
-                        None,
-                    )
-                })
+        let workspace = self.browser_key().map(|(_, workspace)| workspace);
+        let asked = self
+            .activity
+            .section_repo
+            .clone()
+            .filter(|(of, _)| workspace.as_ref() == Some(of))
+            .map(|(_, repo)| repo);
+        let repo = asked
+            .or_else(|| {
+                self.focused_checkout()
+                    .and_then(|path| OrchestratorRepo::new(path).ok())
             })
-        });
-        let changed = id != self.activity.section_tab || self.activity.section_list != Some(list);
-        self.activity.section_tab = id;
+            .filter(|_| self.orchestrator_host());
+        let id = workspace
+            .zip(repo)
+            .map(|(workspace, repo)| self.orchestrator_for(&workspace, repo, cx));
+        let changed = id != self.activity.section_view || self.activity.section_list != Some(list);
+        self.activity.section_view = id;
         let Some(id) = id else {
             return;
         };
-        self.ensure_orchestrator(id, cx);
-        if changed && let Some(view) = self.section_view(id) {
+        if changed && let Some(view) = self.orchestrator_view(id).cloned() {
             view.update(cx, |view, cx| view.show_list(list, cx));
             self.activity.section_list = Some(list);
             cx.notify();
         }
     }
 
-    /// Back to Workspaces after the section's orchestrator opened something
-    /// that shows there, such as a run's pane or a page, so it is not left
-    /// hidden behind the section. Another orchestrator's events leave the
-    /// section alone.
-    pub(crate) fn leave_activity_section(&mut self, id: TabId, cx: &mut Context<Self>) {
+    /// Shows the focused workspace's issues.
+    pub(crate) fn open_orchestrator(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((_, workspace)) = self.browser_key() else {
+            self.show_flash(crate::window::Flash::warning("Open a workspace first"), cx);
+            return;
+        };
+        self.open_orchestrator_in(workspace, None, window, cx);
+    }
+
+    /// Shows the issues of workspace `workspace`, listing the repository of
+    /// `checkout` when given, else of its focused pane. Another workspace
+    /// than the focused one is switched to first.
+    pub(crate) fn open_orchestrator_in(
+        &mut self,
+        workspace: String,
+        checkout: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // The sections are the bar's: without it there is nowhere to show them.
+        if !self.activity_bar_shown() {
+            self.show_flash(
+                crate::window::Flash::warning(
+                    "Pull requests and issues show in the activity bar, which is turned off",
+                ),
+                cx,
+            );
+            return;
+        }
+        if !self.orchestrator_host() {
+            self.show_flash(
+                crate::window::Flash::warning("Pull requests and issues need a local or SSH host"),
+                cx,
+            );
+            return;
+        }
+        if let Some(repo) = checkout.and_then(|path| OrchestratorRepo::new(path).ok()) {
+            self.activity.section_repo = Some((workspace.clone(), repo));
+        }
+        self.dismiss_menu(window, cx);
+        if self
+            .browser_key()
+            .is_none_or(|(_, focused)| focused != workspace)
+        {
+            self.navigate(crate::NavigationTarget::Workspace(&workspace), cx);
+        }
+        self.show_activity_panel(ActivityPanel::Issues, window, cx);
+    }
+
+    /// Back to Workspaces after the section's view opened something that
+    /// shows there, such as a run's pane or a page, so it is not left hidden
+    /// behind the section. Another view's events leave the section alone.
+    pub(crate) fn leave_activity_section(&mut self, id: ViewId, cx: &mut Context<Self>) {
         if self.activity_section().and_then(list_of).is_none()
-            || self.activity.section_tab != Some(id)
+            || self.activity.section_view != Some(id)
         {
             return;
         }
@@ -88,33 +108,20 @@ impl HerdrWindow {
         cx.notify();
     }
 
-    /// The view of tab `id`, in the window or one of its own.
-    fn section_view(&self, id: TabId) -> Option<Entity<OrchestratorView>> {
-        self.orchestrators
-            .get(&id)
-            .map(|orchestrator| orchestrator.view.clone())
-            .or_else(|| {
-                self.detached_orchestrators
-                    .get(&id)
-                    .map(|detached| detached.orchestrator.view.clone())
-            })
+    fn section_view(&self) -> Option<Entity<OrchestratorView>> {
+        self.orchestrator_view(self.activity.section_view?).cloned()
     }
 
-    /// Gives the section's view the keyboard, as opening its tab would.
+    /// Gives the section's view the keyboard.
     pub(crate) fn focus_activity_section(&self, window: &mut Window, cx: &mut App) {
-        let Some(view) = self
-            .activity
-            .section_tab
-            .and_then(|id| self.orchestrators.get(&id))
-            .map(|orchestrator| orchestrator.view.clone())
-        else {
+        let Some(view) = self.section_view() else {
             return;
         };
         let focus = view.read(cx).focus_handle().clone();
         window.focus(&focus, cx);
     }
 
-    /// The shown orchestrator section across the window's body.
+    /// The shown Pull requests or Issues section across the window's body.
     pub(crate) fn render_orchestrator_section(&self) -> Option<AnyElement> {
         let section = div()
             .id("activity-section")
@@ -124,59 +131,29 @@ impl HerdrWindow {
             .size_full()
             .min_h_0()
             .min_w_0();
-        let id = self.activity.section_tab;
-        if let Some(orchestrator) = id.and_then(|id| self.orchestrators.get(&id)) {
-            return Some(section.child(orchestrator.view.clone()).into_any_element());
+        if let Some(view) = self.section_view() {
+            return Some(section.child(view).into_any_element());
         }
         let theme = &self.theme;
-        let (text, window) = match id.and_then(|id| self.detached_orchestrators.get(&id)) {
-            Some(detached) => (
-                "The orchestrator is in a window of its own",
-                Some(detached.window),
-            ),
-            None => (self.orchestrator_unavailable(), None),
-        };
-        let hover = theme.active;
         Some(
             section
                 .flex_col()
                 .items_center()
                 .justify_center()
-                .gap(px(10.))
                 .text_color(rgb(theme.muted))
                 .child(
                     div()
                         .debug_selector(|| "activity-section-empty".into())
-                        .child(text),
+                        .child(self.orchestrator_unavailable()),
                 )
-                .when_some(window, |section, window| {
-                    section.child(
-                        div()
-                            .id("activity-section-window")
-                            .debug_selector(|| "activity-section-window".into())
-                            .px(px(10.))
-                            .py(px(4.))
-                            .rounded(px(crate::config::corners::CONTROL))
-                            .border_1()
-                            .border_color(rgb(theme.active))
-                            .text_color(rgb(theme.foreground))
-                            .cursor_pointer()
-                            .hover(move |style| style.bg(rgb(hover)))
-                            .child("Show its window")
-                            .on_click(move |_, _, cx| {
-                                let _ = window.update(cx, |_, window, _| window.activate_window());
-                            }),
-                    )
-                })
                 .into_any_element(),
         )
     }
 
-    /// Why a section has no orchestrator to show, in the words opening one
-    /// from a workspace uses; while one is being opened, that it is.
+    /// Why a section has no view to show; while one is being made, that it is.
     fn orchestrator_unavailable(&self) -> &'static str {
         if !self.orchestrator_host() {
-            "The orchestrator needs a local or SSH host"
+            "Pull requests and issues need a local or SSH host"
         } else if self.browser_key().is_none() {
             "Open a workspace first"
         } else if self
@@ -186,17 +163,16 @@ impl HerdrWindow {
         {
             "This workspace has no folder to read"
         } else {
-            "Opening the orchestrator…"
+            "Opening the repository…"
         }
     }
 }
 
-/// The orchestrator's list a section shows, for the sections that show one.
-fn list_of(section: ActivityPanel) -> Option<List> {
+/// The list a section shows, for the sections that show one.
+pub(crate) fn list_of(section: ActivityPanel) -> Option<List> {
     match section {
         ActivityPanel::Issues => Some(List::Issues),
         ActivityPanel::PullRequests => Some(List::PullRequests),
-        ActivityPanel::Orchestrator => Some(List::Runs),
         ActivityPanel::Overview | ActivityPanel::Workspaces | ActivityPanel::Usage => None,
     }
 }
