@@ -5,7 +5,7 @@ use crate::{
     HerdrWindow, NavigationTarget,
     sidebar::{
         Indicators, agent_name,
-        agents::{agent_place, state_label, status_text},
+        agents::{agent_place, pane_beside, pane_caption, state_label, status_text},
         cell::{AgentRow, Cell, RowContext, RowData, layout_for},
         layout::SidebarLook,
         line_height, tokens, wash,
@@ -138,14 +138,16 @@ impl HerdrWindow {
             (!nested).then(|| agent_place(agent, snapshot)).flatten(),
             row_cx.host,
         );
+        let name = agent_name(agent);
         Cell::new(
             rows,
             RowData::Agent(AgentRow {
                 key: format!("agent-{id}"),
-                name: agent_name(agent),
                 icon: crate::icons::AgentIcon::from_identity(agent.agent.as_deref()),
                 status: agent.agent_status,
                 place: (!nested).then(|| agent_place(agent, snapshot)).flatten(),
+                pane: pane_beside(name, pane_caption(agent, snapshot)),
+                name,
                 status_text: self
                     .config
                     .sidebar_layout

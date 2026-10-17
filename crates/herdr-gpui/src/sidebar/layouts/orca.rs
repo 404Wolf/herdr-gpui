@@ -315,14 +315,17 @@ impl RowLayout for Orca {
                     .text_color(rgb(color)),
                 agent.name,
             )
-            .when_some(parts::agent_place(agent.place, cx.host), |line, place| {
-                line.label(
-                    div().text_color(rgb(theme.muted)),
-                    place,
-                    glyph_at(font, font.size),
-                    0.5,
-                )
-            })
+            .when_some(
+                parts::agent_place(agent.place, cx.host, agent.pane),
+                |line, place| {
+                    line.label(
+                        div().text_color(rgb(theme.muted)),
+                        place,
+                        glyph_at(font, font.size),
+                        0.5,
+                    )
+                },
+            )
             .when_some(agent.status_text.as_deref(), |line, text| {
                 line.label(
                     div()

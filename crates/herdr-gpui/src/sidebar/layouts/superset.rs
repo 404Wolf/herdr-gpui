@@ -349,17 +349,20 @@ impl RowLayout for Superset {
                     .text_color(rgb(color)),
                 agent.name,
             )
-            .when_some(parts::agent_place(agent.place, cx.host), |line, place| {
-                line.label(
-                    div()
-                        .debug_selector(|| format!("detail-{key}"))
-                        .text_size(px(m.small))
-                        .text_color(rgb(theme.muted)),
-                    place,
-                    m.glyph,
-                    0.5,
-                )
-            })
+            .when_some(
+                parts::agent_place(agent.place, cx.host, agent.pane),
+                |line, place| {
+                    line.label(
+                        div()
+                            .debug_selector(|| format!("detail-{key}"))
+                            .text_size(px(m.small))
+                            .text_color(rgb(theme.muted)),
+                        place,
+                        m.glyph,
+                        0.5,
+                    )
+                },
+            )
             .when_some(agent.status_text.as_deref(), |line, text| {
                 line.label(
                     div()

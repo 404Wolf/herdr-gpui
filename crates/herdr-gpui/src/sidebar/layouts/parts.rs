@@ -340,18 +340,24 @@ pub(super) fn pr_number(key: &str, pr: &PrBadge, size: f32, glyph: f32) -> (f32,
     (width, element)
 }
 
-/// Where an agent runs, as one muted label: host, workspace, and tab.
+/// Where an agent runs, as one muted label: host, workspace, tab, and pane.
+/// A pane name with no place of its own is the whole label.
 pub(super) fn agent_place<'a>(
     place: Option<(&'a str, Option<&'a str>)>,
     host: Option<&'a str>,
+    pane: Option<&'a str>,
 ) -> Option<Cow<'a, str>> {
-    let (workspace, tab) = place?;
-    Some(match (host, tab) {
-        (None, None) => Cow::Borrowed(workspace),
-        (host, tab) => Cow::Owned(
-            [host, Some(workspace), tab]
+    let pane = pane.map(str::trim).filter(|text| !text.is_empty());
+    let Some((workspace, tab)) = place else {
+        return pane.map(Cow::Borrowed);
+    };
+    Some(match (host, tab, pane) {
+        (None, None, None) => Cow::Borrowed(workspace),
+        (host, tab, pane) => Cow::Owned(
+            [host, Some(workspace), tab, pane]
                 .into_iter()
                 .flatten()
+                .filter(|text| !text.is_empty())
                 .collect::<Vec<_>>()
                 .join(" \u{b7} "),
         ),
@@ -400,14 +406,22 @@ mod tests {
 
     #[test]
     fn agents_join_their_place_only_when_there_is_more_than_a_workspace() {
-        assert_eq!(agent_place(None, Some("remote")), None);
+        assert_eq!(agent_place(None, Some("remote"), None), None);
         assert!(matches!(
-            agent_place(Some(("herdr", None)), None),
+            agent_place(Some(("herdr", None)), None, None),
             Some(Cow::Borrowed("herdr"))
         ));
         assert_eq!(
-            agent_place(Some(("herdr", Some("tab 2"))), Some("remote")).as_deref(),
+            agent_place(Some(("herdr", Some("tab 2"))), Some("remote"), None).as_deref(),
             Some("remote \u{b7} herdr \u{b7} tab 2")
+        );
+        assert_eq!(
+            agent_place(Some(("herdr", None)), None, Some("api")).as_deref(),
+            Some("herdr \u{b7} api")
+        );
+        assert_eq!(
+            agent_place(None, None, Some(" api ")).as_deref(),
+            Some("api")
         );
     }
 }

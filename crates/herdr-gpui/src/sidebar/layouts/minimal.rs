@@ -177,6 +177,16 @@ impl RowLayout for Minimal {
             )
             .fixed(icon, parts::icon(agent.icon.path(), icon, color))
             .fill(name(&agent.key, kind, state, false, theme), agent.name)
+            .when_some(agent.pane, |line, pane| {
+                line.label(
+                    div()
+                        .debug_selector(|| format!("pane-{}", agent.key))
+                        .text_color(rgb(theme.muted)),
+                    pane,
+                    parts::glyph_at(font, font.size),
+                    0.5,
+                )
+            })
             .when_some(agent.status_text.as_deref(), |line, text| {
                 line.label(
                     div()

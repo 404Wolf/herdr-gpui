@@ -57,6 +57,8 @@ mod palette;
 #[cfg(test)]
 mod palette_header;
 #[cfg(test)]
+mod pane_names;
+#[cfg(test)]
 mod picker_scroll;
 #[cfg(test)]
 mod probe_bar;

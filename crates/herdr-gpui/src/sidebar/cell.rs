@@ -113,6 +113,9 @@ pub(super) struct AgentRow<'a> {
     /// Its workspace and, when that earns a place, its tab. Missing once the
     /// workspace has gone.
     pub(super) place: Option<(&'a str, Option<&'a str>)>,
+    /// Rename's label, or the title an unnamed pane already carries, when that
+    /// text is not already the agent name.
+    pub(super) pane: Option<&'a str>,
     /// The daemon's `state_text` word when its sidebar config asks for it, so
     /// the GUI and the TUI name the status the same way: the agent's own
     /// state label when its integration set one.
