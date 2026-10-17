@@ -47,6 +47,8 @@ mod layouts;
 #[cfg(test)]
 mod listening_ports;
 #[cfg(test)]
+mod nested_agents;
+#[cfg(test)]
 mod palette;
 #[cfg(test)]
 mod palette_header;

@@ -7,6 +7,7 @@ use crate::{
     contrast::Contrast,
     keymap::{Binding, DaemonKeys, Keymap, PaneKeys},
 };
+mod agents_placement;
 pub(crate) mod backdrop;
 mod bitmap_fonts;
 mod boat;
@@ -36,6 +37,7 @@ mod updates;
 pub(crate) mod watch;
 mod zen;
 
+pub use agents_placement::AgentsPlacement;
 pub use backdrop::Backdrop;
 pub use boat::BoatConfig;
 #[cfg(feature = "boat")]
@@ -110,6 +112,8 @@ pub struct Config {
     /// Snapshot a checkout's files each time one of its agents starts or
     /// finishes a turn, so they can be rolled back.
     pub agent_checkpoints: bool,
+    /// Where the sidebar lists agents while `show_agents` is on.
+    pub agents_placement: AgentsPlacement,
     /// What shows behind the main window's terminals and chrome.
     pub backdrop: Backdrop,
     pub bell: BellConfig,
@@ -393,6 +397,7 @@ impl Default for Config {
         Self {
             // keep-sorted start
             agent_checkpoints: true,
+            agents_placement: AgentsPlacement::default(),
             backdrop: Backdrop::default(),
             bell: BellConfig::default(),
             boat: BoatConfig::default(),
@@ -460,6 +465,7 @@ impl Default for Config {
 struct Settings {
     // keep-sorted start
     agent_checkpoints: Option<bool>,
+    agents_placement: AgentsPlacement,
     backdrop: Backdrop,
     bell: BellConfig,
     boat: BoatConfig,
@@ -888,6 +894,7 @@ impl Config {
         settings.backdrop.validate()?;
         config.backdrop = settings.backdrop;
         config.contrast = settings.contrast;
+        config.agents_placement = settings.agents_placement;
         config.usage = settings.usage;
         config.option_as_alt = settings.option_as_alt;
         config.open_links_in = settings.open_links_in;

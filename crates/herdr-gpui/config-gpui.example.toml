@@ -47,6 +47,10 @@ confirm_close_workspace = true
 remove_merged_worktrees = false
 # Show the Agents section below Spaces in the sidebar.
 show_agents = true
+# Where the sidebar lists agents while show_agents is on: "panel", their own
+# section below Spaces, or "nested", under the workspace each one runs in.
+# Also under Settings > Sidebar.
+agents_placement = "panel"
 # Show the search field at the top of the sidebar, which finds devices,
 # worktrees, and branches. Also under Settings > Sidebar.
 show_sidebar_search = true

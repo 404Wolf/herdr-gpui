@@ -19,13 +19,14 @@ use super::{
 };
 use crate::{
     Command, HerdrWindow, NavigationTarget,
-    config::{FontConfig, Theme},
+    config::{AgentsPlacement, FontConfig, Theme},
     fonts::StyledFont,
 };
 use gpui::{prelude::*, *};
 
 mod agent_rows;
 mod device_tree;
+mod nested_agents;
 
 impl HerdrWindow {
     pub(crate) fn render_sidebar(
@@ -83,7 +84,12 @@ impl HerdrWindow {
         agents = agents.track_scroll(&self.sidebar_scroll[1]);
         let multi = self.endpoints.len() > 1;
         let headed = multi || devices;
-        let agents_panel = self.config.show_agents && !devices;
+        let placement = self
+            .config
+            .show_agents
+            .then_some(self.config.agents_placement);
+        let agents_panel = placement == Some(AgentsPlacement::Panel) && !devices;
+        let nested_agents = placement == Some(AgentsPlacement::Nested) && !devices;
         let query = if tree_search {
             self.device_tree_query(cx)
         } else {
@@ -517,9 +523,22 @@ impl HerdrWindow {
                     )
                 })
                 .when(carried, |row| row.cursor_grabbing());
-                // The note and ports ride under their row as one list item, so
-                // the drop preview still measures one height per workspace.
-                let element = if note_line.is_none() && ports.is_none() {
+                let indent = layout.child_indent() * if indented { 2. } else { 1. };
+                let agent_rows = if nested_agents {
+                    self.nested_agent_rows(
+                        endpoint_index,
+                        snapshot,
+                        &workspace.workspace_id,
+                        (&row_cx, indent),
+                        cx,
+                    )
+                } else {
+                    Vec::new()
+                };
+                // The note, ports and nested agents ride under their row as one
+                // list item, so the drop preview still measures one height per
+                // workspace.
+                let element = if note_line.is_none() && ports.is_none() && agent_rows.is_empty() {
                     element
                         .when(gap > 0., |row| row.mt(px(gap)))
                         .when(shift != px(0.), |row| row.top(shift))
@@ -542,7 +561,8 @@ impl HerdrWindow {
                                 .relative()
                                 .children(trunk)
                                 .children(note_line)
-                                .children(ports),
+                                .children(ports)
+                                .children(agent_rows),
                         )
                         .into_any_element()
                 };

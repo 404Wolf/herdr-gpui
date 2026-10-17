@@ -139,7 +139,13 @@ pub(super) const CATALOG: &[Entry] = &[
         Section::Sidebar,
         "sidebar-show-agents",
         "Show agents",
-        "List running agents under their workspace.",
+        "List running agents in the sidebar.",
+    ),
+    entry(
+        Section::Sidebar,
+        "sidebar-agents-placement",
+        "Agents placement",
+        "Their own section below the workspaces, or under the workspace each one runs in.",
     ),
     entry(
         Section::Sidebar,
