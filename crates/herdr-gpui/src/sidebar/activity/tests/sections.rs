@@ -112,3 +112,43 @@ fn a_section_follows_the_focused_workspace(cx: &mut gpui::TestAppContext) {
     });
     assert_eq!(workspace.as_deref(), Some("w1"));
 }
+
+#[gpui::test]
+fn a_detached_orchestrator_stays_the_sections_without_a_second_tab(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = local(cx);
+    show(&view, cx, ActivityPanel::Issues);
+    let id = cx.update(|_, cx| view.read(cx).activity.section_tab.unwrap());
+    cx.update(|_, cx| view.update(cx, |view, cx| view.detach_orchestrator(id, cx)));
+    assert_eq!(orchestrator_tabs(cx), 0);
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| view.poll_orchestrators(window, cx));
+        full_draw(window, cx).clear(cx);
+    });
+    // No new tab: the section offers the window the orchestrator moved to.
+    assert_eq!(orchestrator_tabs(cx), 0);
+    assert_eq!(
+        cx.update(|_, cx| view.read(cx).activity.section_tab),
+        Some(id)
+    );
+    assert!(cx.debug_bounds("activity-section-window").is_some());
+}
+
+#[gpui::test]
+fn only_the_sections_orchestrator_opening_something_leaves_the_section(
+    cx: &mut gpui::TestAppContext,
+) {
+    let (view, cx) = local(cx);
+    show(&view, cx, ActivityPanel::Orchestrator);
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            let id = view.activity.section_tab.unwrap();
+            // Another orchestrator's run opening leaves this section alone.
+            view.leave_activity_section(crate::browser::TabId::test(u64::MAX), cx);
+            assert_eq!(view.activity.panel, ActivityPanel::Orchestrator);
+            // The section's own, once it showed a pane, gives way to it.
+            view.leave_activity_section(id, cx);
+            assert_eq!(view.activity.panel, ActivityPanel::Workspaces);
+            assert!(view.activity_section().is_none());
+        })
+    });
+}

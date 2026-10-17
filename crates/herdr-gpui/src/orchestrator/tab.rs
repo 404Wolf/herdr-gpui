@@ -430,7 +430,9 @@ impl HerdrWindow {
                     self.tell_orchestrator(id, super::Error::WorkspaceClosed, cx);
                     return;
                 };
-                if !self.navigate_endpoint(&endpoint, NavigationTarget::Pane(&pane_id), cx) {
+                if self.navigate_endpoint(&endpoint, NavigationTarget::Pane(&pane_id), cx) {
+                    self.leave_activity_section(id, cx);
+                } else {
                     self.tell_orchestrator(id, super::Error::MenuOpen, cx);
                 }
             }
@@ -446,6 +448,7 @@ impl HerdrWindow {
                     if let Some((_, workspace)) = self.browser_key() {
                         let endpoint = self.endpoints[self.selected_endpoint].id.clone();
                         self.open_workspace_page(&endpoint, &workspace, url, window, cx);
+                        self.leave_activity_section(id, cx);
                     }
                 }
                 Err(_) => self.tell_orchestrator(id, super::Error::NotWebAddress, cx),
@@ -558,7 +561,9 @@ impl HerdrWindow {
             return;
         };
         let id = self.endpoints[index].id.clone();
-        if !self.navigate_endpoint(&id, NavigationTarget::Workspace(workspace_id), cx) {
+        if self.navigate_endpoint(&id, NavigationTarget::Workspace(workspace_id), cx) {
+            self.leave_activity_section(view, cx);
+        } else {
             self.tell_orchestrator(view, super::Error::MenuOpen, cx);
         }
     }

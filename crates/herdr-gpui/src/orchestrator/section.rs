@@ -25,10 +25,18 @@ impl HerdrWindow {
             self.activity.section_tab = None;
             return;
         };
+        // A tab moved into a window of its own leaves the store but stays the
+        // workspace's orchestrator, so the section offers that window rather
+        // than opening a second one.
+        let target = &self.endpoints[self.selected_endpoint].connection.target;
         let current = self.activity.section_tab.filter(|id| {
             cx.try_global::<Store>()
                 .and_then(|store| store.get(*id))
                 .is_some_and(|tab| tab.scope == scope && tab.workspace_id == workspace)
+                || self.detached_orchestrators.get(id).is_some_and(|detached| {
+                    let view = detached.orchestrator.view.read(cx);
+                    view.workspace_id() == workspace && view.target() == target
+                })
         });
         let id = current.or_else(|| {
             let existing = cx.try_global::<Store>().and_then(|store| {
@@ -63,6 +71,19 @@ impl HerdrWindow {
             self.activity.section_list = Some(list);
             cx.notify();
         }
+    }
+
+    /// Back to Workspaces after the section's orchestrator opened something
+    /// that shows there, such as a run's pane or a page, so it is not left
+    /// hidden behind the section. Another orchestrator's events leave the
+    /// section alone.
+    pub(crate) fn leave_activity_section(&mut self, id: TabId, cx: &mut Context<Self>) {
+        if self.activity_section().is_none() || self.activity.section_tab != Some(id) {
+            return;
+        }
+        self.activity.pick(ActivityPanel::Workspaces);
+        self.save_chrome();
+        cx.notify();
     }
 
     /// The view of tab `id`, in the window or one of its own.
@@ -131,6 +152,7 @@ impl HerdrWindow {
                     section.child(
                         div()
                             .id("activity-section-window")
+                            .debug_selector(|| "activity-section-window".into())
                             .px(px(10.))
                             .py(px(4.))
                             .rounded(px(crate::config::corners::CONTROL))

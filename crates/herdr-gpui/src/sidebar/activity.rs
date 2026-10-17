@@ -100,6 +100,17 @@ pub(crate) struct Activity {
 }
 
 impl Activity {
+    /// Shows `panel`, as picked by the user; whether it changed.
+    pub(crate) fn pick(&mut self, panel: ActivityPanel) -> bool {
+        if panel == self.panel {
+            return false;
+        }
+        self.panel = panel;
+        self.picked = true;
+        self.section_list = None;
+        true
+    }
+
     /// The section to store: only one the user picked.
     pub(crate) fn chosen(&self) -> Option<ActivityPanel> {
         self.picked.then_some(self.panel)
@@ -199,10 +210,7 @@ impl HerdrWindow {
         if panel == ActivityPanel::Workspaces && !self.sidebar_visible {
             self.toggle_sidebar();
         }
-        if panel != self.activity.panel {
-            self.activity.panel = panel;
-            self.activity.picked = true;
-            self.activity.section_list = None;
+        if self.activity.pick(panel) {
             self.save_chrome();
         }
         self.sync_activity_section(cx);
