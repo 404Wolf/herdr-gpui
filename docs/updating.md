@@ -357,9 +357,10 @@ new version is confirmed working; cleanup is manual.
 
 ## Windows Installers
 
-A Windows release build embeds the update key and, from the release workflow's
-`WINDOWS_SIGNING_SUBJECT`, the exact Authenticode subject its installers are signed
-by (`HERDR_WINDOWS_SIGNER`). A build without either never checks. Updates are
+A Windows release build embeds the update key and, from the
+`WINDOWS_SIGNING_SUBJECT` repository variable, the exact Authenticode subject its
+installers are signed by (`HERDR_WINDOWS_SIGNER`). The release's `windows` job
+refuses to build without it; any other build without either never checks. Updates are
 offered only to the copy installed in `%LOCALAPPDATA%\Programs\Herdr UI`, where
 both the installer and `install.ps1` put it; a copy run from anywhere else says so
 and points to the release page.

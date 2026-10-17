@@ -180,8 +180,10 @@ installs to `%LOCALAPPDATA%\Programs\Herdr UI` as `site/install.ps1` does, adds
 `bin` to the user `PATH`, and creates the Start menu shortcut. Both zips and both
 installers are mandatory in the asset manifest and receive checksums, Sigstore
 sidecars and provenance like every other asset, after the Authenticode signing
-below. They have no updater archive or update-manifest entry: Windows installs
-update by manual download, or through winget.
+below. The signed installers are also listed in their own Ed25519-signed
+`windows-manifest.json`, so a copy in the standard install location updates
+itself in the app (see [App Updates](../../docs/updating.md#windows-installers));
+other copies update by manual download, or through winget.
 
 ## Windows Signing
 
@@ -228,7 +230,7 @@ Signing needs this one-time Azure setup, which only the maintainer can do:
    else. No client secret: only an OIDC token from a job in the protected
    `release` environment can use it.
 3. These variables on the `release` environment (not the repository), none
-   secret:
+   secret, except `WINDOWS_SIGNING_SUBJECT`, below:
 
    | Variable | Value |
    | --- | --- |
@@ -238,13 +240,17 @@ Signing needs this one-time Azure setup, which only the maintainer can do:
    | `ARTIFACT_SIGNING_ENDPOINT` | the account's regional endpoint, such as `https://eus.codesigning.azure.net/` |
    | `ARTIFACT_SIGNING_ACCOUNT` | the signing account name |
    | `ARTIFACT_SIGNING_PROFILE` | the certificate profile name |
-   | `WINDOWS_SIGNING_SUBJECT` | the certificate subject Windows reports, such as `CN=..., O=..., L=..., S=..., C=...` |
 
-   The subject is the validated identity, so read it from a first signed file
-   (`(Get-AuthenticodeSignature file.exe).SignerCertificate.Subject`). Until it
-   is set, `windows-sign` stops at its verify step, before anything is
-   published. Artifact Signing certificates last days, so pin the subject,
-   never a thumbprint.
+4. `WINDOWS_SIGNING_SUBJECT` as a **repository** variable: the certificate
+   subject Windows reports, such as `CN=..., O=..., L=..., S=..., C=...`. The
+   unsigned `windows` build job, which runs outside the `release` environment,
+   embeds it as the publisher the in-app updater requires
+   (`HERDR_WINDOWS_SIGNER`), and `windows-sign` verifies against the same
+   value. The subject is the validated identity, so read it from a first signed
+   file (`(Get-AuthenticodeSignature file.exe).SignerCertificate.Subject`).
+   Until it is set, the `windows` job stops before building, so no release can
+   ship a Windows app that cannot update. Artifact Signing certificates last
+   days, so pin the subject, never a thumbprint.
 
 ## Winget
 
