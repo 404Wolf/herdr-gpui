@@ -39,10 +39,10 @@ impl Hwnd {
     }
 }
 
-// The ID comes first: the shell ignores a window's relaunch properties unless
-// the window has an explicit AppUserModelID.
+// The ID goes last: the shell ignores a window's relaunch properties unless
+// the window has an explicit AppUserModelID, and setting the ID regroups the
+// window, so the relaunch properties must already exist when it does.
 const KEYS: [(PROPERTYKEY, &str); 4] = [
-    (PKEY_AppUserModel_ID, "System.AppUserModel.ID"),
     (
         PKEY_AppUserModel_RelaunchCommand,
         "System.AppUserModel.RelaunchCommand",
@@ -55,6 +55,7 @@ const KEYS: [(PROPERTYKEY, &str); 4] = [
         PKEY_AppUserModel_RelaunchIconResource,
         "System.AppUserModel.RelaunchIconResource",
     ),
+    (PKEY_AppUserModel_ID, "System.AppUserModel.ID"),
 ];
 
 #[derive(Debug, thiserror::Error)]
@@ -138,10 +139,10 @@ fn hwnd(window: &Window) -> Result<Hwnd, Error> {
 fn set(hwnd: Hwnd, relaunch: &Relaunch) -> Result<(), Error> {
     let store = open(hwnd)?;
     let values = [
-        OsStr::new(relaunch.id),
         relaunch.command.as_os_str(),
         OsStr::new(relaunch.display_name),
         relaunch.icon.as_os_str(),
+        OsStr::new(relaunch.id),
     ];
     for ((key, property), value) in KEYS.iter().zip(values) {
         let failed = |source| Error::Property { property, source };
