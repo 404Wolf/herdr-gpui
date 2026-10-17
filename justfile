@@ -113,7 +113,8 @@ install:
 [extension(".cmd")]
 install:
     #!cmd.exe /c
-    cargo install --locked --force --path crates/herdr-gpui --bin herdr-gpui
+    cargo install --locked --force --path crates/herdr-gpui --bin herdr-gpui || exit /b 1
+    cargo install --locked --force --path crates/herdr-gpui-launcher
 
 # Regenerate circular Linux artwork on any platform (Python standard library).
 icons-linux:

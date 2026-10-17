@@ -3699,10 +3699,18 @@ and CLI tests. The release workflow builds and CLI-tests the optimized
 executable natively for each architecture and publishes
 `Herdr-VERSION-x86_64-pc-windows-msvc.zip` and
 `Herdr-VERSION-aarch64-pc-windows-msvc.zip`; native window, rendering, input, and
-live-daemon behavior remain unproven. Local connections use the named pipe the Windows
+live-daemon behavior remain unproven. Each zip also holds
+`herdr-gpui-launcher.exe` (`crates/herdr-gpui-launcher`), a windowed program
+that starts the console-subsystem `herdr-gpui.exe` from its own directory with
+`CREATE_NO_WINDOW` and exits. The GUI then shows no console window, and console
+programs it starts (git, gh, `wsl.exe`) share its hidden console instead of
+each opening one. `herdr-gpui.exe` stays a console program so the command line
+keeps its output, exit codes, and a shell that waits for it. When the GUI
+cannot be started, the launcher shows the error in a message box. Local
+connections use the named pipe the Windows
 daemon binds, derived from the same socket path string upstream uses, so
 discovery and framing are the same code as on Unix. Receive deadlines are
-emulated with `PeekNamedPipe`, the one `unsafe` call in the workspace, because a
+emulated with `PeekNamedPipe`, an `unsafe` call, because a
 named pipe has no receive timeout; send timeouts cannot be enforced at all
 there. Configuration and state
 follow upstream's Windows layout: `%APPDATA%\herdr` and `%LOCALAPPDATA%\herdr`,
