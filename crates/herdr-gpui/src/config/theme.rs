@@ -97,10 +97,17 @@ fn theme_directories() -> Result<Vec<PathBuf>> {
     } else if let Ok(home) = home() {
         directories.push(home.join(".local/share/ghostty/themes"));
     }
-    let data_dirs = env::var_os("XDG_DATA_DIRS")
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "/usr/local/share:/usr/share".into());
-    directories.extend(env::split_paths(&data_dirs).map(|dir| dir.join("ghostty/themes")));
+    match env::var_os("XDG_DATA_DIRS").filter(|value| !value.is_empty()) {
+        Some(data_dirs) => {
+            directories.extend(env::split_paths(&data_dirs).map(|dir| dir.join("ghostty/themes")))
+        }
+        // The XDG default names Unix folders. Joined as one `:` list, Windows
+        // would split it on `;` into a single invalid path.
+        None if cfg!(unix) => directories.extend(
+            ["/usr/local/share", "/usr/share"].map(|dir| Path::new(dir).join("ghostty/themes")),
+        ),
+        None => {}
+    }
     Ok(directories)
 }
 
@@ -127,7 +134,7 @@ impl Config {
         for directory in directories {
             let entries = match fs::read_dir(directory) {
                 Ok(entries) => entries,
-                Err(error) if error.kind() == ErrorKind::NotFound => continue,
+                Err(error) if missing(&error) => continue,
                 Err(error) => return Err(Error::from(error).at_path(directory)),
             };
             for entry in entries {
@@ -284,7 +291,7 @@ fn theme_file(name: &str, directories: impl FnOnce() -> Result<Vec<PathBuf>>) ->
         match fs::metadata(&candidate) {
             Ok(metadata) if metadata.is_file() => return Ok(candidate),
             Ok(_) => {}
-            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) if missing(&error) => {}
             Err(error) => return Err(Error::from(error).at_path(&candidate)),
         }
     }
@@ -644,4 +651,14 @@ impl Theme {
         theme.derive_chrome();
         Ok(theme)
     }
+}
+
+/// A theme directory that cannot exist here: absent, or a name this platform
+/// rejects, such as a Unix `XDG_DATA_DIRS` list inherited by a Windows process.
+/// Neither hides the other directories' themes.
+fn missing(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        ErrorKind::NotFound | ErrorKind::InvalidFilename
+    )
 }

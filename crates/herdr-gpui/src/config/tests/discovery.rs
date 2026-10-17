@@ -119,6 +119,35 @@ fn installed_ghostty_copies_of_builtins_are_listed_once() -> anyhow::Result<()> 
 }
 
 #[test]
+fn an_impossible_theme_directory_does_not_hide_the_others() -> anyhow::Result<()> {
+    let temp = TempDirectory::new()?;
+    fs::write(temp.0.join("Mine"), "background=112233")?;
+    // A Unix `XDG_DATA_DIRS` list read as one Windows path, which Windows
+    // rejects as a name rather than reporting it missing.
+    let directories = [
+        PathBuf::from("/usr/local/share:/usr/share").join("ghostty/themes"),
+        temp.0.join("bad|name"),
+        temp.0.clone(),
+    ];
+    let config = Config {
+        theme: "Mine".into(),
+        ..Config::default()
+    };
+    assert!(
+        config
+            .available_themes_in(&directories)?
+            .contains(&"Mine".to_owned())
+    );
+    assert_eq!(
+        config
+            .theme_with_directories(false, || Ok(directories.to_vec()))?
+            .background,
+        0x112233
+    );
+    Ok(())
+}
+
+#[test]
 fn bundled_themes_are_distinct_and_carry_their_own_colors() {
     let keys: HashSet<_> = Theme::BUILTIN_NAMES
         .iter()
