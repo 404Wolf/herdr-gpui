@@ -358,7 +358,7 @@ impl SettingsWindow {
             return;
         }
         if !choice.scope.editable() {
-            self.status = Some("Shared Herdr themes are read-only on this platform. Choose This app or Follow Herdr instead.".into());
+            self.status = Some("Herdr's themes are read-only on this platform. Choose This app or Follow Herdr instead.".into());
             cx.notify();
             return;
         }

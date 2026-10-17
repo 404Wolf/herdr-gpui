@@ -386,6 +386,7 @@ impl HerdrWindow {
             let indicators = sidebar::Indicators::new(
                 this.settings.shared.as_ref(),
                 this.config.status_icons,
+                this.config.edge_rail,
                 matches!(
                     cx.window_appearance(),
                     WindowAppearance::Light | WindowAppearance::VibrantLight

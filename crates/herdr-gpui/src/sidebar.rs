@@ -2,6 +2,7 @@
 //! menu a resting pointer opens.
 
 mod agents;
+mod animated;
 mod cell;
 mod device_drag;
 mod host_row;

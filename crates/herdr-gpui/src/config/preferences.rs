@@ -15,8 +15,10 @@ pub(crate) enum Preference {
     ShowListeningPorts(bool),
     ShowSidebarSearch(bool),
     ShowRepositoryIcons(bool),
-    /// `status_icons`; `None` removes it, following Herdr's indicator style.
-    StatusIcons(Option<StatusIcons>),
+    /// `status_icons`: the set agent status is drawn with.
+    StatusIcons(StatusIcons),
+    /// `edge_rail`: the bar on busy and finished rows.
+    EdgeRail(bool),
     ShowDeviceIcons(bool),
     SmoothScroll(bool),
     FocusFollowsMouse(bool),
@@ -124,11 +126,10 @@ impl Config {
                     (None, "show_device_icons", Some(value.into()))
                 }
                 Preference::SmoothScroll(value) => (None, "smooth_scroll", Some(value.into())),
-                Preference::StatusIcons(value) => (
-                    None,
-                    "status_icons",
-                    value.map(|icons| icons.as_str().into()),
-                ),
+                Preference::StatusIcons(value) => {
+                    (None, "status_icons", Some(value.as_str().into()))
+                }
+                Preference::EdgeRail(value) => (None, "edge_rail", Some(value.into())),
                 Preference::FocusFollowsMouse(value) => {
                     (None, "focus_follows_mouse", Some(value.into()))
                 }

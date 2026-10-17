@@ -648,7 +648,8 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
                     weak,
                     super::agents::Indicators::new(
                         None,
-                        None,
+                        crate::config::StatusIcons::default(),
+                        false,
                         false,
                         &crate::config::Theme::default(),
                     ),

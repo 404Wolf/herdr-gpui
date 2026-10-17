@@ -85,7 +85,7 @@ impl SettingsWindow {
             .child(
                 self.gate_shared(
                     ui::row(theme, "general-copy-on-select", "Copy on select")
-                        .tag(ui::Source::Shared)
+                        .tag(ui::Source::Herdr)
                         .description("Off: \u{2318}C / Ctrl-C copies the highlighted selection."),
                 )
                 .control(
@@ -101,7 +101,7 @@ impl SettingsWindow {
             )
             .child(
                 ui::row(theme, "general-copied-toast", "Copied notification")
-                    .tag(ui::Source::Local)
+                    .tag(ui::Source::HerdrUi)
                     .control(self.override_dropdown(
                         DropdownField::ClipboardEnabled,
                         on_off(base.0),
@@ -112,7 +112,7 @@ impl SettingsWindow {
             )
             .child(
                 ui::row(theme, "general-clipboard-position", "Notification position")
-                    .tag(ui::Source::Local)
+                    .tag(ui::Source::HerdrUi)
                     .control(self.override_dropdown(
                         DropdownField::ClipboardPosition,
                         base_position,

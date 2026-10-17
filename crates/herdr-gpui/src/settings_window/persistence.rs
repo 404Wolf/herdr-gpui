@@ -224,7 +224,7 @@ impl SettingsWindow {
                 Err(error) if config.theme == "Follow Herdr" => return Err(error),
                 Err(error) => (
                     None,
-                    Some(format!("Load shared settings: {error}")),
+                    Some(format!("Load Herdr settings: {error}")),
                     config.theme(light)?,
                 ),
             };

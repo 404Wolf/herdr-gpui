@@ -155,6 +155,7 @@ impl HerdrWindow {
         let indicators = Indicators::new(
             self.settings.shared.as_ref(),
             self.config.status_icons,
+            self.config.edge_rail,
             matches!(
                 cx.window_appearance(),
                 WindowAppearance::Light | WindowAppearance::VibrantLight
