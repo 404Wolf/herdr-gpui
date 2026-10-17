@@ -835,11 +835,6 @@ impl Render for HerdrWindow {
             .when(zen, |root| {
                 root.children(crate::titlebar::zen_inset(fill.ground(), window))
             })
-            // Under the traffic lights a banner would hide them, so with no
-            // header it moves to the window's foot.
-            .when(!merged && !zen, |root| {
-                root.children(self.render_worktree_banner())
-            })
             .child(
                 div()
                     .debug_selector(|| "window-body".into())
@@ -867,9 +862,9 @@ impl Render for HerdrWindow {
                             .children(self.zen_status_bar(cx)),
                     ),
             )
-            .when(merged && !zen, |root| {
-                root.children(self.render_worktree_banner())
-            })
+            // At the window's foot in every layout: under the traffic lights
+            // it would hide them, and one place is easier to find.
+            .when(!zen, |root| root.children(self.render_worktree_banner()))
             .children(self.render_tab_ghost(cx))
             .children(self.render_toasts(window, cx))
             .children(self.render_file_transfer(window, cx))

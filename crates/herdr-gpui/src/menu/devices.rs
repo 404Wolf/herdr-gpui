@@ -43,8 +43,7 @@ fn device_list_height(anchor_y: Pixels) -> Pixels {
 }
 
 fn room_above(anchor_y: Pixels) -> Pixels {
-    let chrome = crate::titlebar::HEIGHT
-        + crate::worktree_banner::reserved(env!("HERDR_BUILD_WORKTREE") == "1");
+    let chrome = crate::titlebar::HEIGHT;
     anchor_y - px(chrome + MENU_GAP + super::MENU_MARGIN + 12.)
 }
 
