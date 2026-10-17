@@ -6,11 +6,27 @@
 //!
 //! The daemon's custom command shortcuts are matched here too, after the
 //! keymap's own, and Herdr's resize mode claims every key until it ends.
+//! A shifted key is also tried with the Shift GPUI dropped restored, after
+//! every lookup has missed the key as GPUI named it.
 
 use super::HerdrWindow;
 use crate::controls::Command;
 use gpui::{Context, Keystroke, Subscription, Window};
 use herdr_client::protocol::ClientShellCommandAction;
+
+mod shifted_keys;
+
+pub(crate) use shifted_keys::KeyChars;
+use shifted_keys::Typed;
+pub(super) use shifted_keys::current_layout;
+
+/// What a keystroke is bound to here.
+enum Bound {
+    Prefix,
+    /// Only after the prefix.
+    Chord(Command),
+    Custom(String, ClientShellCommandAction),
+}
 
 impl HerdrWindow {
     /// GPUI calls interceptors before any binding or key handler sees the
@@ -30,62 +46,92 @@ impl HerdrWindow {
                 ) {
                     this.shift_taps.cancel();
                 }
-                // Everything matched here sees the function key's name: the
-                // prefix, its chords, custom commands, and resize mode.
-                // GPUI's own bindings still see the unnamed key.
+                // Everything matched here sees the function key's name, and
+                // a shifted key's restored Shift: the prefix, its chords,
+                // custom commands, and resize mode. GPUI's own bindings
+                // still see the key as GPUI named it.
                 let named = super::function_keys::named(&event.keystroke, this.key_press);
-                this.prefix_keystroke(named.as_ref().unwrap_or(&event.keystroke), window, cx);
+                let keystroke = named.as_ref().unwrap_or(&event.keystroke);
+                let restored = shifted_keys::restore(keystroke, this.key_press, this.key_layout);
+                let typed = Typed::new(keystroke, restored);
+                this.prefix_keystroke(&typed, window, cx);
             });
         })
     }
 
-    fn prefix_keystroke(
-        &mut self,
-        keystroke: &Keystroke,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn prefix_keystroke(&mut self, typed: &Typed<'_>, window: &mut Window, cx: &mut Context<Self>) {
         if self.resize_mode {
-            self.resize_keystroke(keystroke, window, cx);
+            self.resize_keystroke(typed, window, cx);
             return;
         }
-        let keymap = self.keymap();
-        let is_prefix = keymap.is_prefix(keystroke);
-        if !self.prefix_armed {
-            if is_prefix {
-                self.prefix_armed = true;
-                cx.stop_propagation();
-                cx.notify();
-            } else if self.menu.page.is_none()
-                && let Some((id, action)) = self.custom_command(keystroke, false)
-            {
-                cx.stop_propagation();
-                self.invoke_custom_command(&id, action, cx);
+        // Every binding is tried on the key as GPUI named it before any is
+        // tried on the restored key, so a binding on the symbol itself, such
+        // as a custom command on `prefix+!`, still wins over one on
+        // `prefix+shift+1`, and over a prefix on the restored key.
+        let armed = self.prefix_armed;
+        let bound = if armed {
+            typed.find(|keystroke| self.bound(keystroke, true))
+        } else {
+            // Without the prefix, a key GPUI's bindings or a pane key hold
+            // as GPUI named it is theirs; restoring its Shift must not take
+            // it from them for the prefix or a custom command.
+            let held = |keystroke: &Keystroke| self.keymap().holds_directly(keystroke);
+            typed.find_unheld(|keystroke| self.bound(keystroke, false), held)
+        };
+        if !armed {
+            match bound {
+                Some(Bound::Prefix) => {
+                    self.prefix_armed = true;
+                    cx.stop_propagation();
+                    cx.notify();
+                }
+                Some(Bound::Custom(id, action)) => {
+                    cx.stop_propagation();
+                    self.invoke_custom_command(&id, action, cx);
+                }
+                Some(Bound::Chord(_)) | None => {}
             }
             return;
         }
-        let chord = keymap.chord(keystroke);
         self.prefix_armed = false;
         cx.notify();
-        if is_prefix {
+        let Some(bound) = bound else {
+            cx.stop_propagation();
+            return;
+        };
+        // Typed twice, the prefix goes on as ordinary input.
+        if matches!(bound, Bound::Prefix) {
             return;
         }
         cx.stop_propagation();
-        let Some(command) = chord else {
-            if let Some((id, action)) = self.custom_command(keystroke, true) {
-                if self.menu.page.is_some() {
-                    self.dismiss_menu(window, cx);
-                }
-                self.invoke_custom_command(&id, action, cx);
-            }
-            return;
-        };
         // Commands wait while a menu page holds input, so the chord ends it
         // first. Run directly rather than through focus, which the menu held.
         if self.menu.page.is_some() {
             self.dismiss_menu(window, cx);
         }
-        self.command(command, window, cx);
+        match bound {
+            Bound::Chord(command) => self.command(command, window, cx),
+            Bound::Custom(id, action) => self.invoke_custom_command(&id, action, cx),
+            Bound::Prefix => {}
+        }
+    }
+
+    /// What `keystroke` is bound to: the prefix, then, after the prefix, the
+    /// keymap's chord, then a custom command. Without the prefix, a custom
+    /// command runs only while no menu page holds input.
+    fn bound(&self, keystroke: &Keystroke, armed: bool) -> Option<Bound> {
+        let keymap = self.keymap();
+        if keymap.is_prefix(keystroke) {
+            return Some(Bound::Prefix);
+        }
+        if armed && let Some(command) = keymap.chord(keystroke) {
+            return Some(Bound::Chord(command));
+        }
+        if !armed && self.menu.page.is_some() {
+            return None;
+        }
+        self.custom_command(keystroke, armed)
+            .map(|(id, action)| Bound::Custom(id, action))
     }
 
     /// The selected daemon's custom command `keystroke` runs.
@@ -110,12 +156,8 @@ impl HerdrWindow {
     /// Escape, Enter, or the mode's own shortcut ends it, and anything else
     /// is swallowed. Platform shortcuts such as quitting still work, and a
     /// menu, which takes keys of its own, ends the mode.
-    fn resize_keystroke(
-        &mut self,
-        keystroke: &Keystroke,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn resize_keystroke(&mut self, typed: &Typed<'_>, window: &mut Window, cx: &mut Context<Self>) {
+        let keystroke = typed.keystroke();
         if self.menu.page.is_some() {
             self.resize_mode = false;
             cx.notify();
@@ -127,8 +169,10 @@ impl HerdrWindow {
         cx.stop_propagation();
         let keymap = self.keymap();
         if matches!(keystroke.key.as_str(), "escape" | "enter")
-            || keymap.triggers(Command::ResizeMode, keystroke, true)
-            || keymap.triggers(Command::ResizeMode, keystroke, false)
+            || typed.matches(|keystroke| {
+                keymap.triggers(Command::ResizeMode, keystroke, true)
+                    || keymap.triggers(Command::ResizeMode, keystroke, false)
+            })
         {
             self.resize_mode = false;
             cx.notify();

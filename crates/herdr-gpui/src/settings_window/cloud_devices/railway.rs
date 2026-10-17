@@ -1,4 +1,4 @@
-//! The Railway tab of Settings > Cloud Devices. There is no account: the tab is
+//! The Railway tab of Settings > Cloud devices. There is no account: the tab is
 //! about the SSH key. Choose one the user already has or generate a named one
 //! (which fills the path), then set up the VM (installing Herdr after
 //! approval) and save the device with that key. Setup runs as a job in the main window, which shows progress in the
@@ -448,7 +448,7 @@ impl SettingsWindow {
         div()
             .flex()
             .flex_col()
-            .gap(px(24.))
+            .gap(px(4.))
             .min_w_0()
             .child(about)
             .child(key)

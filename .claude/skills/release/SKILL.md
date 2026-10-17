@@ -1,14 +1,15 @@
 ---
 name: release
-description: Publish a herdr-gpui release. Use when the user asks to cut, push, ship, or publish a release, or to approve, verify, or GPG-sign one that is already running. Covers `just release`, the protected environments the run stops at, and the local verification and signing steps that are not part of CI.
+description: Publish a herdr-gpui release. Use when the user asks to cut, push, ship, or publish a release, or to approve or verify one that is already running. Covers `just release`, the protected environments the run stops at, and the local verification step that is not part of CI.
 ---
 
 # Releasing herdr-gpui
 
 The owner has given standing authorization to approve the release run's protected
 environments when they ask for a release. Do not wait to be asked again per run.
-Everything else on this page still applies: the preconditions are hard gates, and
-the local GPG step needs a physical YubiKey tap that only the owner can give.
+Everything else on this page still applies: the preconditions are hard gates.
+Rerun a job that fails on a transient outside error, such as Apple's stapler
+reporting "The network connection was lost"; stop for anything that needs a fix.
 
 Releases go out to real users through the in-app updater and Homebrew. Never
 dispatch one that was not asked for.
@@ -152,7 +153,7 @@ attested. Both files are uploaded as the run's `release-notes` workflow artifact
 
 ## After it publishes
 
-Both of these are local and deliberately **not** CI steps.
+This is local and deliberately **not** a CI step.
 
 Verify the published artifacts — the exact asset set, both checksums, Sigstore,
 and GitHub provenance. Pin the commit with `--sha`; it is recommended:
@@ -161,22 +162,15 @@ and GitHub provenance. Pin the commit with `--sha`; it is recommended:
 just verify-release --version vYYYYMMDD.COUNTER --sha <release-commit-sha>
 ```
 
-Supplemental detached GPG signatures, which the release does not otherwise carry:
+That completes a release. Do **not** run `just sign-release` as part of one:
+the owner skips supplemental GPG signatures. The immutable release cannot carry
+them (its asset set is exact), nothing publishes them elsewhere, and GitHub
+provenance plus Sigstore already tie every binary to its workflow and commit.
 
-```sh
-just sign-release vYYYYMMDD.COUNTER <output-dir> <full-signing-fingerprint>
-```
-
-Four things to get right here:
-
-- The output directory **must not already exist**; the script creates it `700`.
-- The fingerprint must be the **full** 40- or 64-hex signing subkey fingerprint,
-  not a short key ID. It is not recorded in this repo — ask the owner, or read it
-  from their GPG config. Never guess it.
-- Signing touches the YubiKey, so **the owner must tap it**. Say so before
-  starting rather than leaving them staring at a stalled command.
-- Nothing is uploaded. The signatures land in `<output-dir>/gpg/` and the release
-  on GitHub is untouched, so this cannot damage a published release.
+Run it only when the owner asks. Then the output directory must not already
+exist, the fingerprint must be the **full** signing subkey fingerprint (ask, or
+read it from their GPG config; never guess), the owner must tap the YubiKey, and
+nothing is uploaded: the signatures land in `<output-dir>/gpg/`.
 
 ## Before touching release machinery itself
 
@@ -194,6 +188,6 @@ universal DMG and also publishes nothing.
 - Dispatch a release the owner did not ask for.
 - Invent, pass, or locally create a version tag.
 - Report success from a queue state, or failure from a dead watcher.
-- Run `just sign-release` expecting to complete it without the owner's tap.
+- Run `just sign-release` unless the owner asked for it.
 - Edit the vendored protocol crate, the workflow pins, or `NOTICE.md` as
   incidental release cleanup.

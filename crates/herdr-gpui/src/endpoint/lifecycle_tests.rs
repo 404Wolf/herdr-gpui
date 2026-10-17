@@ -45,6 +45,7 @@ mod reconnect_backoff;
 mod remote_drop;
 mod resize_reassert;
 mod scrollbar_drag;
+mod shifted_keys;
 mod smooth_scroll_off;
 mod sounds;
 mod split_drag;

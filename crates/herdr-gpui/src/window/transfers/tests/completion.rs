@@ -29,7 +29,7 @@ fn success_pastes_quoted_paths_to_captured_pane_or_popup(cx: &mut TestAppContext
         });
         cx.run_until_parked();
         let events = vec![ClientPaneInputEvent::Paste(
-            "'/tmp/herdr-upload.ABCDEF123456/it'\\''s a file'".into(),
+            "/tmp/herdr-upload.ABCDEF123456/it\\'s\\ a\\ file".into(),
         )];
         assert_eq!(
             peer.receive(),

@@ -45,10 +45,26 @@ pub(super) struct Job {
     pub cancel: Arc<AtomicBool>,
 }
 
-#[derive(Default)]
+/// Reads one host's switch; tests swap in a reader that never opens SSH.
+pub(super) type RemoteRead =
+    Arc<dyn Fn(&str, &AtomicBool) -> crate::Result<RemotePaneHistory> + Send + Sync>;
+
 pub(super) struct RemoteHistory {
     hosts: Vec<Host>,
     generation: u64,
+    pub read: RemoteRead,
+}
+
+impl Default for RemoteHistory {
+    fn default() -> Self {
+        Self {
+            hosts: Vec::new(),
+            generation: 0,
+            read: Arc::new(|target, cancel| {
+                RemotePaneHistory::load(ScriptHost::Ssh(target), cancel)
+            }),
+        }
+    }
 }
 
 impl RemoteHistory {
@@ -180,8 +196,9 @@ impl SettingsWindow {
             return;
         }
         for job in self.remote_history.sync(hosts, reload) {
+            let read = self.remote_history.read.clone();
             let task = cx.background_executor().spawn(async move {
-                let result = RemotePaneHistory::load(ScriptHost::Ssh(&job.target), &job.cancel);
+                let result = read(&job.target, &job.cancel);
                 (job, result)
             });
             cx.spawn(async move |this, cx| {

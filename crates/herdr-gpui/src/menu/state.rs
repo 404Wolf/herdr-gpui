@@ -9,8 +9,10 @@ use crate::dialog_input::DialogInput;
 use gpui::{App, Entity, FocusHandle, Pixels, Point, ScrollHandle, Subscription};
 use herdr_client::protocol::ClientShellSnapshot;
 
-/// What an open menu covers, as its last frame laid it out: the window's
-/// native pages above GPUI would hide it, so the ones it covers step aside.
+/// What an open menu covers, as its last frame laid it out. Windows pages
+/// draw above GPUI and would hide it, so the ones it covers hide instead.
+/// Tests and native checks read it too, to find the menu in the window.
+#[cfg(any(windows, test, feature = "integration-test"))]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) enum Cover {
     /// Not laid out yet.
@@ -22,7 +24,7 @@ pub(crate) enum Cover {
     Panel(gpui::Bounds<Pixels>),
 }
 
-#[cfg(any(target_os = "macos", windows, test))]
+#[cfg(any(windows, test))]
 impl Cover {
     /// Whether a page drawn at `page` would hide this menu. Before the menu
     /// is laid out nothing is, so pages keep showing for that one frame.
@@ -36,7 +38,7 @@ impl Cover {
 
     /// This cover if it was measured for `open`, the page open now; one
     /// measured for another page is stale until this one is laid out.
-    #[cfg(any(target_os = "macos", windows))]
+    #[cfg(windows)]
     pub(crate) fn settled(self, measured_for: Option<Page>, open: Option<Page>) -> Self {
         if measured_for == open {
             self
@@ -50,7 +52,8 @@ pub(crate) struct MenuState {
     pub page: Option<Page>,
     pub(crate) application: Option<crate::menus::in_window::OpenMenu>,
     pub(crate) application_bar: crate::menus::in_window::Geometry,
-    /// Written by the menu's layout, read when presenting pages.
+    /// Written by the menu's layout, read when presenting Windows pages.
+    #[cfg(any(windows, test, feature = "integration-test"))]
     pub(crate) cover: std::rc::Rc<std::cell::Cell<Cover>>,
     pub(super) device_setup: Option<super::devices::Setup>,
     /// The provider whose Settings tab Add Device last asked for. Unit tests
@@ -124,6 +127,15 @@ pub(crate) struct MenuState {
     /// Saved SSH devices' own accounts, keyed by endpoint ID. A device without
     /// one signed in looks up pull requests with `github`.
     pub(crate) github_hosts: std::collections::HashMap<String, crate::github::Auth>,
+    /// One sign-in per `[github] accounts` entry, in config order.
+    pub(crate) github_accounts: Vec<github::AdditionalAccount>,
+    /// The additional account the GitHub page shows, by ID; `None` shows
+    /// the device's own account.
+    pub(super) github_account: Option<String>,
+    /// An account whose config entry is being written, shown once it loads.
+    pub(super) github_adding: Option<String>,
+    /// The pasted-token field, while the GitHub page shows it.
+    pub(super) github_token: Option<Entity<crate::search_input::SearchInput>>,
     /// Saved devices whose removal is running, by endpoint ID. Kept after
     /// success until the catalog drops the device, so its header pulses
     /// until it disappears; the confirmation closes as soon as it starts.
@@ -291,6 +303,7 @@ impl MenuState {
             page: None,
             application: None,
             application_bar: Default::default(),
+            #[cfg(any(windows, test, feature = "integration-test"))]
             cover: Default::default(),
             device_setup: None,
             #[cfg(all(test, feature = "cloud"))]
@@ -342,6 +355,10 @@ impl MenuState {
             pr_snapshot: None,
             github: Default::default(),
             github_hosts: Default::default(),
+            github_accounts: Vec::new(),
+            github_account: None,
+            github_adding: None,
+            github_token: None,
             removing_devices: Default::default(),
             github_selected: None,
             github_scroll: ScrollHandle::new(),
@@ -358,6 +375,7 @@ impl MenuState {
 
     pub fn reset(&mut self) {
         self.application = None;
+        #[cfg(any(windows, test, feature = "integration-test"))]
         self.cover.set(Cover::Unknown);
         self.device_setup = None;
         self.wsl_setup = None;
@@ -381,6 +399,14 @@ impl MenuState {
         if self.github.busy() {
             self.github.cancel();
         }
+        for account in &mut self.github_accounts {
+            if account.auth.busy() {
+                account.auth.cancel();
+            }
+        }
+        self.github_account = None;
+        self.github_adding = None;
+        self.github_token = None;
         self.page = None;
         if let Some(palette) = self.palette.take() {
             self.palette_resume = Some(palette.resume());

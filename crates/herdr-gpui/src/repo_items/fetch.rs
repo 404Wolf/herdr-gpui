@@ -28,19 +28,21 @@ const QUERY: &str = r#"query($owner: String!, $repo: String!, $count: Int!) {
 /// The repository's open pull requests and issues, most recently updated first.
 pub(super) fn list(
     input: &Input,
-    token: &secrecy::SecretString,
+    tokens: &crate::github::Tokens,
     cancelled: impl Fn() -> bool,
     cooldown: &mut Option<Duration>,
 ) -> crate::Result<(Origin, Vec<Item>)> {
     let deadline = Instant::now() + TIMEOUT;
     let (owner, repo) = local_repository(input, deadline, &cancelled)?;
+    // The account that reads this owner's repositories.
+    let token = tokens.for_owner(&owner).clone();
     let origin = Origin { owner, repo };
     let timeout = deadline
         .checked_duration_since(Instant::now())
         .ok_or(Error::PrTimeout)?;
     let response = crate::github::graphql(
         "repo_items",
-        token,
+        &token,
         QUERY,
         serde_json::json!({"owner": origin.owner, "repo": origin.repo, "count": LIMIT}),
         timeout,

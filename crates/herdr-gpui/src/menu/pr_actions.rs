@@ -32,8 +32,13 @@ impl HerdrWindow {
         changed
     }
 
+    /// The token that reads the followed pull request's repository.
     pub(crate) fn pr_token(&self) -> Option<std::sync::Arc<secrecy::SecretString>> {
-        self.pr_profile().map(|profile| profile.token.clone())
+        let tokens = self.pr_tokens()?;
+        Some(match self.pr_actions.target() {
+            Some(target) => tokens.for_owner(&target.owner).clone(),
+            None => tokens.main().clone(),
+        })
     }
 
     pub(super) fn open_pr_review(&mut self) {
@@ -385,7 +390,7 @@ impl HerdrWindow {
             if comments.is_empty() {
                 body = body.child(div().text_color(rgb(theme.muted)).child("No comments yet"));
             }
-            for comment in comments {
+            for comment in comments.iter() {
                 body = body.child(
                     div()
                         .debug_selector(|| "pr-review-comment".into())

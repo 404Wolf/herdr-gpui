@@ -135,7 +135,7 @@ workspace menu alongside the original `pencil.svg` (rename), `trash.svg`
 (delete checkout) and `chevron-up.svg` / `chevron-down.svg` (fold and unfold a
 worktree group); `git-branch.svg` is original artwork for the titlebar's Git
 actions button; `sessions.svg` is original artwork for the sidebar footer's local
-session list; `teleport.svg` is original artwork for moving a worktree to
+session list; `file.svg` is original document-outline artwork for Settings' Configuration section; `teleport.svg` is original artwork for moving a worktree to
 another host, and `teleport-back.svg` its mirror for bringing it back; `zoom.svg` is original artwork marking a zoomed tab in the tab strip; `window-minimize.svg`, `window-maximize.svg`, and `window-restore.svg` are original artwork for the window buttons drawn on Linux when the compositor provides none, beside `close.svg`; `user.svg` is an
 original generic silhouette for the future account placeholder, not a personal
 identity or GitHub logo. All of them are embedded through a

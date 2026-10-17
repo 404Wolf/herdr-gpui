@@ -141,18 +141,7 @@ pub(crate) fn perform(
             // A run with no session, such as one that failed before its
             // worktree was made, has nothing on a host to remove.
             if let (Some(workspace), Some(session)) = (&found.workspace, &session) {
-                herdr(
-                    &host_of(site, session)?,
-                    &[
-                        "worktree",
-                        "remove",
-                        "--workspace",
-                        &workspace.id,
-                        "--force",
-                    ],
-                    "Removing the worktree",
-                    cancelled,
-                )?;
+                remove_worktree(site, session, workspace, cancelled)?;
             }
             store.delete_run(&found.id)?;
         }
@@ -220,6 +209,54 @@ fn herdr(
 ) -> Result<Vec<u8>> {
     host.capture(&Host::herdr_line(args), cancelled)
         .map_err(script(operation))
+}
+
+/// A run's worktree, removed on the host its session lives on. Herdr's
+/// `worktree remove` addresses the workspace the worktree was made for, and
+/// Herdr forgets a workspace whose last pane has exited, so the workspace id
+/// recorded at dispatch goes stale once the run's pane is gone. A workspace
+/// the snapshot still lists goes through Herdr, which also closes its panes;
+/// a gone one has its recorded checkout removed with git, which only the
+/// workspace could have asked Herdr to do.
+fn remove_worktree(
+    site: &Site,
+    session: &HerdrSession,
+    workspace: &Workspace,
+    cancelled: &AtomicBool,
+) -> Result<()> {
+    const READING: &str = "Reading the workspaces";
+    const REMOVING: &str = "Removing the worktree";
+    let host = host_of(site, session)?;
+    let alive = host_snapshot(&host, READING, cancelled)?;
+    if alive.workspace(&workspace.id).is_some() {
+        herdr(
+            &host,
+            &[
+                "worktree",
+                "remove",
+                "--workspace",
+                &workspace.id,
+                "--force",
+            ],
+            REMOVING,
+            cancelled,
+        )?;
+        return Ok(());
+    }
+    // Without the workspace only its checkout could remain; a run without
+    // a recorded one has nothing on the host to remove.
+    let Some(path) = workspace.path.as_deref() else {
+        return Ok(());
+    };
+    let body = format!(
+        "path={path}\n\
+         [ -d \"$path\" ] || exit 0\n\
+         common=$(git -C \"$path\" rev-parse --git-common-dir 2>/dev/null) || exit 1\n\
+         git --git-dir=\"$common\" worktree remove --force \"$path\"\n",
+        path = shell_quote(&path.to_string_lossy()),
+    );
+    host.capture(&body, cancelled).map_err(script(REMOVING))?;
+    Ok(())
 }
 
 /// The SSH destination and Herdr session a target names, as sessions record.
@@ -370,6 +407,19 @@ fn destination(
     })
 }
 
+/// The host's workspaces, tabs, and panes, as `herdr api snapshot` reports
+/// them.
+fn host_snapshot(
+    host: &Host,
+    operation: &'static str,
+    cancelled: &AtomicBool,
+) -> Result<HostSnapshot> {
+    let output = herdr(host, &["api", "snapshot"], operation, cancelled)?;
+    serde_json::from_slice::<Envelope<SnapshotResult>>(&output)
+        .map(|envelope| envelope.result.snapshot)
+        .map_err(|source| Error::OutputJson { operation, source })
+}
+
 /// The workspace new worktrees of `workspace_id`'s repository are created
 /// from. Herdr creates them only from a repository's parent workspace, so a
 /// view opened in a linked worktree goes through its parent, opening one on
@@ -377,14 +427,7 @@ fn destination(
 fn parent_workspace(site: &Site, workspace_id: &str, cancelled: &AtomicBool) -> Result<String> {
     const READING: &str = "Reading the workspaces";
     const OPENING: &str = "Opening the repository";
-    let output = herdr(&site.host, &["api", "snapshot"], READING, cancelled)?;
-    let snapshot = serde_json::from_slice::<Envelope<SnapshotResult>>(&output)
-        .map_err(|source| Error::OutputJson {
-            operation: READING,
-            source,
-        })?
-        .result
-        .snapshot;
+    let snapshot = host_snapshot(&site.host, READING, cancelled)?;
     if let Some(parent) = parent_of(&snapshot, workspace_id) {
         return Ok(parent.to_owned());
     }

@@ -393,11 +393,13 @@ impl OrchestratorView {
         let run = &self.snapshot.runs[row.run];
         let item = self.item(&run.item_key);
         let color = look.status_hue(row.status);
-        let host = run
+        let host: SharedString = run
             .workspace
             .as_ref()
             .and_then(|workspace| workspace.host.clone())
-            .unwrap_or_else(|| "local".into());
+            .unwrap_or_else(|| "local".into())
+            .into();
+        let (foreground, surface) = (theme.foreground, theme.surface);
         let run_index = row.run;
         self.row_shell(
             ("orchestrator-run", index),
@@ -426,7 +428,29 @@ impl OrchestratorView {
                     |item| item.title.clone(),
                 )),
         )
-        .child(div().flex_none().w(px(100.)).flex().child(look.chip(host)))
+        .child(
+            div()
+                .debug_selector(move || format!("orchestrator-run-host-column-{index}"))
+                .flex_none()
+                .w(px(100.))
+                .flex()
+                .child(
+                    look.chip(host.clone())
+                        .id(("orchestrator-run-host", index))
+                        .debug_selector(move || format!("orchestrator-run-host-{index}"))
+                        .max_w_full()
+                        .min_w_0()
+                        .truncate()
+                        .tooltip(move |_, cx| {
+                            cx.new(|_| crate::usage::Hint {
+                                text: host.clone(),
+                                foreground,
+                                surface,
+                            })
+                            .into()
+                        }),
+                ),
+        )
         .child(
             look.mono(
                 run.workspace
@@ -434,6 +458,7 @@ impl OrchestratorView {
                     .map(|workspace| workspace.branch.clone())
                     .unwrap_or_default(),
             )
+            .debug_selector(move || format!("orchestrator-run-branch-{index}"))
             .flex_none()
             .w(px(220.))
             .truncate()
