@@ -109,7 +109,8 @@ symbol, file, or printed `path:line` in your terminal editor,
 [editor groups](crates/herdr-gpui/README.md#editor-groups), and
 [system notifications](crates/herdr-gpui/README.md#system-notifications),
 [sounds](crates/herdr-gpui/README.md#notification-sounds), and a
-[Dock badge](crates/herdr-gpui/README.md#macos-dock-badge) when an agent needs you.
+[Dock badge](crates/herdr-gpui/README.md#macos-dock-badge) (on Windows, a
+[taskbar badge](crates/herdr-gpui/README.md#windows-shell)) when an agent needs you.
 
 ## Install
 
@@ -301,7 +302,12 @@ WSL distribution can be added as a device from **Add Device…**; see
 [WSL distributions](crates/herdr-gpui/README.md#wsl-distributions). Saved SSH
 hosts, in-app updates, saved GitHub credentials, and the avatar disk cache are
 unavailable and report that plainly; see
-[the GUI README](crates/herdr-gpui/README.md#windows).
+[the GUI README](crates/herdr-gpui/README.md#windows). The taskbar button shows
+a badge while agents need you and progress for long operations, the jump list
+offers recent workspaces and devices, clicking a notification brings its pane
+forward, and the installer registers `herdr-gpui://` links that open a checkout
+or a device in the running app; see
+[Windows shell](crates/herdr-gpui/README.md#windows-shell).
 
 Each release publishes `Herdr-VERSION-x86_64-pc-windows-msvc.zip` and
 `Herdr-VERSION-aarch64-pc-windows-msvc.zip` (native ARM64), each containing
