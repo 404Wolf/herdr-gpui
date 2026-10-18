@@ -139,7 +139,8 @@ impl OrchestratorView {
             .min_w_0()
             .flex()
             .flex_col()
-            .child(column_head(look, &head))
+            // Column heads over nothing to line up are clutter.
+            .when(count > 0, |el| el.child(column_head(look, &head)))
             .child(list)
             .into_any_element()
     }
@@ -159,26 +160,67 @@ impl OrchestratorView {
                         .iter()
                         .any(|status| matches!(status.state, SyncState::Syncing)))
         });
-        let text = if self.repos.is_empty() {
-            "No repositories: open a workspace in a Git checkout on this machine or an SSH host"
-                .to_owned()
-        } else if loading && self.query.trim().is_empty() {
-            "Loading\u{2026}".to_owned()
-        } else if self.query.trim().is_empty() {
-            format!("No {what} yet")
+        let query = self.query.trim();
+        let filtered = self.tab == Tab::Issues && self.active_filters() > 0;
+        // With nothing listed at all, the section says what it is for.
+        let (icon, text, about) = if self.repos.is_empty() {
+            (
+                "icons/git-branch.svg",
+                "No repositories".to_owned(),
+                Some(
+                    "Pull requests and issues come from the Git checkouts your workspaces \
+                     are in, on this machine or an SSH host. Open a workspace in one to list \
+                     them here.",
+                ),
+            )
+        } else if loading && query.is_empty() {
+            ("icons/refresh.svg", "Loading\u{2026}".to_owned(), None)
+        } else if !query.is_empty() {
+            (
+                "icons/search.svg",
+                format!("No {what} match \u{201c}{query}\u{201d}"),
+                None,
+            )
+        } else if filtered {
+            (
+                "icons/search.svg",
+                format!("No {what} match the filters"),
+                None,
+            )
         } else {
-            format!("No {what} match \u{201c}{}\u{201d}", self.query.trim())
+            let about = match self.tab {
+                Tab::Issues => {
+                    "This lists the open issues of every repository your workspaces hold, \
+                     from GitHub, GitLab, and Beads. Pick one to read it or to start an \
+                     agent on it."
+                }
+                Tab::PullRequests => {
+                    "This lists the pull requests of every repository your workspaces hold, \
+                     with their reviews and checks. Pick one to read it or to start an \
+                     agent on it."
+                }
+            };
+            ("icons/check.svg", format!("No {what}"), Some(about))
         };
         div()
+            .debug_selector(|| "orchestrator-empty".into())
             .flex_1()
+            .px_6()
             .flex()
             .flex_col()
             .items_center()
             .justify_center()
             .gap_2()
-            .child(look.icon("icons/search.svg", 22., look.theme.muted))
-            .child(text)
-            .when(!self.query.trim().is_empty(), |el| {
+            .child(look.icon(icon, 22., look.theme.muted))
+            .child(div().font_weight(FontWeight::SEMIBOLD).child(text))
+            .children(about.map(|about| {
+                div()
+                    .max_w(px(460.))
+                    .text_center()
+                    .text_color(rgb(look.theme.muted))
+                    .child(about)
+            }))
+            .when(!query.is_empty(), |el| {
                 el.child(
                     look.button("orchestrator-clear", "Clear filter", false)
                         .on_click(cx.listener(|this, _, _, cx| {

@@ -10,6 +10,7 @@ mod clicks;
 mod conversation;
 mod conversation_list;
 mod dialog;
+mod empty;
 mod groups;
 mod markdown;
 mod pills;
