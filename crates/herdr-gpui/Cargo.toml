@@ -121,7 +121,7 @@ wry.workspace = true
 # `clipboard-win` reads the clipboard on a background thread (see
 # `window/clipboard`). `windows` has the shell's COM and WinRT interfaces (the
 # taskbar, the jump list, and toasts); `windows-registry` reads the link
-# handler.
+# handler and the startup entry, failing with `windows-result` errors.
 [target.'cfg(windows)'.dependencies]
 clipboard-win.workspace     = true
 interprocess.workspace      = true
@@ -134,6 +134,7 @@ windows = { features = [
   "Win32_UI_WindowsAndMessaging",
 ], workspace = true }
 windows-registry.workspace = true
+windows-result.workspace   = true
 windows-sys = { features = [
   "Wdk_System_SystemServices",
   "Win32_Graphics_Dwm",

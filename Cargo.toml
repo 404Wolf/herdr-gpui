@@ -123,7 +123,9 @@ uuid                 = { features = ["serde", "v4", "v5"], version = "1" }
 # Window shell properties behind the taskbar relaunch identity; the version
 # GPUI's Windows platform already links.
 windows              = { features = ["Win32_Foundation", "Win32_Storage_EnhancedStorage", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_UI_Shell", "Win32_UI_Shell_PropertiesSystem"], version = "0.62.2" }
-windows-registry     = "0.6.1"
+windows-registry     = "0.100.0"
+# The error type `windows-registry` returns; its own version, not `windows`'s.
+windows-result       = "0.100.0"
 windows-sys          = { features = ["Win32_Foundation", "Win32_System_Pipes"], version = "0.61.2" }
 # Embeds the Windows executable's icon and version information; a build
 # dependency, so it runs on the host.
