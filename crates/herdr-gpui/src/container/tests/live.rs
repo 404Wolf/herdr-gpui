@@ -42,6 +42,8 @@ fn a_container_is_made_reached_and_deleted() {
             &never,
         )?;
         assert_eq!(owner, machine::USER);
+        // The container is found as this app's, for one left unsaved.
+        assert!(machine::labelled(engine, &never)?.contains(&id));
         assert!(!crate::cloud::install::installed(
             machine::exec(engine, &id)?,
             &never
@@ -148,6 +150,7 @@ fn a_container_this_app_did_not_make_is_never_reused_or_deleted() {
         )
         .unwrap();
     let created = machine::create(engine, &id, &settings, &never, &|| {});
+    let listed = machine::labelled(engine, &never).unwrap();
     let deleted = machine::delete(engine, &id, &never);
     let state = machine::state(engine, &id, &never);
     let _ = engine.output(
@@ -157,6 +160,10 @@ fn a_container_this_app_did_not_make_is_never_reused_or_deleted() {
         &never,
     );
     assert!(matches!(created, Err(Error::NameTaken(_))), "{created:?}");
+    assert!(
+        !listed.contains(&id),
+        "the user's own container is not ours"
+    );
     assert!(matches!(deleted, Err(Error::NotOurs(_))), "{deleted:?}");
     assert_eq!(state.unwrap(), machine::State::Running, "it was left alone");
 }

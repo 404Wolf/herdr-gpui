@@ -264,6 +264,34 @@ fn owner(engine: Engine, kind: Kind, id: &str, cancelled: &dyn Fn() -> bool) -> 
     })
 }
 
+/// The containers on the engine this app made, by device ID: each labelled
+/// with its own name. At most a page of them, which is far past the cap.
+pub(crate) fn labelled(engine: Engine, cancelled: &dyn Fn() -> bool) -> Result<Vec<String>> {
+    const PAGE: usize = 128;
+    let names = engine.run(
+        "ps",
+        [
+            "ps",
+            "--all",
+            "--filter",
+            &format!("label={LABEL}"),
+            "--format",
+            "{{.Names}}",
+        ],
+        QUICK,
+        cancelled,
+    )?;
+    let mut ours = Vec::new();
+    for name in names.lines().map(str::trim).take(PAGE) {
+        if crate::cloud::names::image_reference(name)
+            && owner(engine, Kind::Container, name, cancelled)? == Owner::Ours
+        {
+            ours.push(name.to_owned());
+        }
+    }
+    Ok(ours)
+}
+
 /// Remove the container `id` and its home volume, when they are this app's
 /// for that device. Either one already gone is not an error; one of the same
 /// name that this app did not make is refused and left alone.

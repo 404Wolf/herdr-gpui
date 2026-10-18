@@ -101,8 +101,11 @@ Sources: [OpenSandbox execd PTY sessions](https://github.com/opensandbox-group/O
   agent check. Doing this safely means choosing what may be copied into a
   sandbox (API keys, not session files) and per-device trust, which the `gh`
   token handling would follow too.
-- **Orphans.** A crash between a provider creating a machine and the device
-  being saved leaves the machine unlisted. Containers carry the
-  `dev.herdr-gpui.device` label and sprites a `herdr-` name, so a reconcile
-  pass can find them; nothing offers that yet.
+- **Orphans beyond containers.** A crash between a provider creating a
+  machine and the device being saved leaves the machine unlisted. The
+  Container card finds such containers by their `dev.herdr-gpui.device` label
+  and offers to add them back. OpenSandbox sandboxes carry a
+  `herdr-gpui-device` metadata key and could get the same; sprites only have
+  a `herdr-` name prefix, which the user's own sprites may share, so they are
+  left alone.
 - **Ports** for containers and sprites: forwarding needs an SSH host.

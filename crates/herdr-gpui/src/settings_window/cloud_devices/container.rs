@@ -221,6 +221,21 @@ impl SettingsWindow {
         });
     }
 
+    /// Save a container this app made, but that is not a device, as one.
+    fn adopt_container(&mut self, id: String, cx: &mut Context<Self>) {
+        let Some(Ok((engine, _))) = self
+            .container_card
+            .as_ref()
+            .and_then(|card| card.overview.as_ref())
+            .map(|overview| overview.engine.clone())
+        else {
+            return;
+        };
+        self.container_job(cx, move |_, send| {
+            send(Update::Done(setup::adopt(engine, &id).map(drop)));
+        });
+    }
+
     fn stop_container(&mut self, id: String, cx: &mut Context<Self>) {
         self.container_job(cx, move |_, send| {
             send(Update::Done(setup::stop_saved(&id)));
@@ -395,6 +410,43 @@ impl SettingsWindow {
                 cx,
             ));
         }
+        let unsaved = card
+            .overview
+            .as_ref()
+            .map_or(&[][..], |overview| &overview.unsaved);
+        let unsaved = (!unsaved.is_empty()).then(|| {
+            let mut list = self
+                .control_card("Not saved here")
+                .debug_selector(|| "cloud-container-unsaved".into())
+                .child(self.control_note(
+                    "Herdr UI made these containers but has no device for them, such as after quitting while one was made. Add one to use it, or delete it afterwards from its sidebar menu.",
+                ));
+            for (index, name) in unsaved.iter().enumerate() {
+                let id = name.clone();
+                list = list.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap(px(12.))
+                        .child(div().min_w_0().truncate().child(name.clone()))
+                        .child(
+                            self.cloud_button(
+                                SharedString::from(format!("cloud-container-adopt-{index}")),
+                                "Add",
+                                ready,
+                            )
+                            .debug_selector(move || format!("cloud-container-adopt-{index}"))
+                            .when(ready, |button| {
+                                button.on_click(cx.listener(move |this, _, _, cx| {
+                                    this.adopt_container(id.clone(), cx)
+                                }))
+                            }),
+                        ),
+                );
+            }
+            list
+        });
         div()
             .flex()
             .flex_col()
@@ -403,6 +455,7 @@ impl SettingsWindow {
             .child(engine)
             .child(new)
             .child(devices)
+            .children(unsaved)
     }
 }
 

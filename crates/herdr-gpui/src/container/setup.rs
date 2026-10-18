@@ -168,6 +168,9 @@ pub(crate) struct Overview {
     /// none to use.
     pub(crate) engine: std::result::Result<(Engine, String), String>,
     pub(crate) devices: Vec<Device>,
+    /// Containers this app made that are not saved as devices, such as one
+    /// whose app quit while it was being made.
+    pub(crate) unsaved: Vec<String>,
 }
 
 pub(crate) fn overview(settings: &Settings, cancelled: &dyn Fn() -> bool) -> Result<Overview> {
@@ -183,7 +186,7 @@ pub(crate) fn overview(settings: &Settings, cancelled: &dyn Fn() -> bool) -> Res
             Ok((engine, version))
         })
         .map_err(|error| error.to_string());
-    let devices = cloud::load()?
+    let devices: Vec<Device> = cloud::load()?
         .into_iter()
         .filter(|saved| saved.provider == CloudProvider::Container)
         .map(|saved| {
@@ -192,7 +195,40 @@ pub(crate) fn overview(settings: &Settings, cancelled: &dyn Fn() -> bool) -> Res
             Device { saved, state }
         })
         .collect();
-    Ok(Overview { engine, devices })
+    let unsaved = match &engine {
+        Ok((engine, _)) => machine::labelled(*engine, cancelled)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|name| !devices.iter().any(|device| &device.saved.id == name))
+            // One being made now saves itself when it is ready.
+            .filter(|_| *CREATING.lock().unwrap_or_else(|error| error.into_inner()) == 0)
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    Ok(Overview {
+        engine,
+        devices,
+        unsaved,
+    })
+}
+
+/// Save the container `id`, which this app made on `engine`, as a device
+/// again. Its files and Herdr are as they were; a connection starts it.
+pub(crate) fn adopt(engine: Engine, id: &str) -> crate::Result<SavedDevice> {
+    if machine::state(engine, id, &|| false)? == State::Missing {
+        return Err(super::Error::Gone(id.to_owned()).into());
+    }
+    let device = SavedDevice {
+        provider: CloudProvider::Container,
+        id: id.to_owned(),
+        label: id.to_owned(),
+        account: engine.key().to_owned(),
+        machine: id.to_owned(),
+        session: SESSION.to_owned(),
+        enabled: true,
+    };
+    cloud::save(device.clone())?;
+    Ok(device)
 }
 
 /// Delete the saved container `id` with its home volume, then forget it. A

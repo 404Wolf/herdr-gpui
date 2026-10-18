@@ -90,19 +90,26 @@ fn a_running_container_can_be_stopped_and_a_missing_engine_is_explained(cx: &mut
                     state: Some(State::Stopped),
                 },
             ],
+            unsaved: vec!["herdr-lost-fern-3c".into()],
         },
     );
     draw(cx);
     assert!(cx.debug_bounds("cloud-container-stop-0").is_some());
     assert!(cx.debug_bounds("cloud-container-remove-1").is_some());
+    assert!(
+        cx.debug_bounds("cloud-container-adopt-0").is_some(),
+        "an unsaved container can be added back"
+    );
     set_overview(
         &view,
         cx,
         Overview {
             engine: Err("Neither docker nor podman was found.".into()),
             devices: Vec::new(),
+            unsaved: Vec::new(),
         },
     );
     draw(cx);
     assert!(cx.debug_bounds("cloud-container-stop-0").is_none());
+    assert!(cx.debug_bounds("cloud-container-unsaved").is_none());
 }

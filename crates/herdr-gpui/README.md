@@ -539,7 +539,9 @@ so leave `auto_stop` unset where those matter. Its files stay in its volume and 
 connection starts it. `[container] max_containers` (8 unless set) refuses a
 new container, from Settings or a dispatch, once that many are saved or being
 made. A container is never created over, or deleted from, a name the app did
-not label as that device's.
+not label as that device's. A container the app made but has no device for,
+such as one left when the app quit while making it, is listed under **Not
+saved here** with **Add**, which saves it as a device again.
 
 The image needs `curl` to install Herdr and `git` for checkouts; the default,
 `buildpack-deps:bookworm`, has both and common build tools. Containers share
