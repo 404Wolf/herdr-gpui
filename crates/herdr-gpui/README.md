@@ -4078,11 +4078,37 @@ window, the main window exposes:
 - the terminal as a document named **Terminal**, whose text pattern holds the
   rows on screen and the selection (see `terminal/accessibility.rs`), so
   Narrator's reading commands and selection tools work on it;
-- the title bar's **Sidebar** (expanded or collapsed), **Back**, **Forward**,
-  and **GitHub account** buttons;
-- the tab strip as a tab list: each tab by its label, with the current one
-  selected, its **Close tab** button, **New tab**, **Split**, and **Tab
-  actions**.
+- the in-window menu bar as a menu bar whose headings expand and collapse, and
+  an open menu as a menu: each item by its name and shortcut, a checked item
+  as a checked menu item, an unavailable one as unavailable, and the
+  highlighted one reported as focused as the arrows move;
+- the title bar's **Sidebar** (expanded or collapsed), **Back**, **Forward**
+  (unavailable without history), and **GitHub account** buttons;
+- the tab strip as a tab list named **Tabs**: each tab by its label, with the
+  current one selected, its **Close tab** button, **New tab**, **Split**, and
+  **Tab actions**;
+- the activity bar as a tab list of its sections, each named with its count,
+  and **Settings**;
+- the sidebar as a navigation group: its search field, the **Workspaces** (or
+  **Devices**) list and the **Agents** list, whose rows are list items named
+  by what they show (a workspace's label and status, an agent's name, state,
+  and place, a device's name and connection), selected when focused, and
+  expandable when they fold others, which Expand and Collapse do; **New
+  workspace**, **Menu**, the agents' sort, the device picker, and **Sessions**;
+- the status bar as a status bar: the connection message, the model, usage,
+  CPU and memory, and network readings by what they say, and its buttons
+  (**Keep the display awake** as a switch);
+- every popup as a menu (context menus) or a dialog named by its title, with
+  its menu rows, its text field, and the workspace dialogs' **Cancel** and
+  submit buttons.
+
+The other windows are named the same way: Settings as a navigation list of
+sections (a tab list, the open page a tab panel named for it), each setting a
+group named by its title with its description as help text, and its switches,
+choices, buttons, and fields by name and state; Logs as its search field,
+buttons, a list of entries, the level menu, and its status line; Orchestrator
+as its buttons, filters (switches), and its rows by identifier, title, and
+state.
 
 Each button can be invoked from the screen reader. With a Windows contrast
 theme on (Settings > Accessibility > Contrast themes), the app's own marks and
@@ -4090,14 +4116,38 @@ labels use the **High contrast** level whatever `contrast` says; terminal
 colors and the theme itself are unchanged, since GPUI does not paint with the
 system's contrast colors.
 
+#### The keyboard in the chrome
+
+Tab belongs to the terminal, so the chrome is reached a region at a time, as
+in other Windows apps. **F6** (Focus Next Region) moves the keyboard from the
+terminal to the title bar, the sidebar (from its activity bar), and the status
+bar, then back to the terminal; **Shift+F6** (Focus Previous Region) goes the
+other way. Inside a region, Tab and Shift+Tab move between its controls and
+wrap, the arrows also move in the sidebar, Enter or Space uses the control, and
+Escape returns to the terminal. The focused control has an accent ring.
+**F10** opens the menu bar. Both region commands can be rebound in Keyboard
+Shortcuts (Cmd+F6 and Cmd+Shift+F6 on macOS). A region's controls are tab
+stops only while it holds the keyboard, so clicking a chrome button never pulls
+typing away from the terminal.
+
+`tests/accessibility_windows.rs` reads a running window's tree and checks
+these names and where F6 and Tab move focus:
+
+```bash
+HERDR_TEST_BINARY=C:/path/to/herdr.exe cargo test -p herdr-gpui --test accessibility_windows -- --ignored --nocapture
+```
+
 Still missing, and not faked with labels that do nothing:
 
-- the sidebar's spaces, agents, and device rows, the status bar, menus,
-  popups, dialogs, and the Settings, Logs, and Orchestrator windows have no
-  roles yet, so a screen reader sees only their window;
-- Tab and Shift-Tab belong to the terminal, so keyboard focus never moves to
-  the chrome; its commands are in the command palette and the keyboard
-  shortcuts instead;
+- inside the larger dialogs and pickers (Add Device, the command palette's
+  results, themes, checkpoints, fan-out, teleport, pull requests), most rows
+  and buttons other than the shared field have no role yet, so a screen reader
+  hears the dialog's name and its field but not every choice in it;
+- the Orchestrator's detail pane, conversation, and dispatch dialogs, and the
+  Settings controls built from arbitrary elements (font and color pickers)
+  are not named yet;
+- Settings, Logs, and Orchestrator have no region keys: there Tab follows
+  GPUI's own order only where a control registers a tab stop;
 - when the app starts in the background (from a script rather than the Start
   menu), AccessKit can miss the first activation and report the window rather
   than the terminal as focused until the window is activated again. This is

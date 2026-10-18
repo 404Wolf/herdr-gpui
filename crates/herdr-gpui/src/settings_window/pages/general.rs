@@ -53,7 +53,7 @@ impl SettingsWindow {
             .child(
                 ui::row(theme, "general-ports", "Show listening ports")
                     .description("Port chips on workspaces with a dev server.")
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         "general-ports-toggle",
                         self.config.show_listening_ports,
                         Preference::ShowListeningPorts(!self.config.show_listening_ports),
@@ -63,7 +63,7 @@ impl SettingsWindow {
             .child(
                 ui::row(theme, "general-checkpoints", "Checkpoint agent turns")
                     .description("Snapshot the worktree after each agent turn.")
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         "general-checkpoints-toggle",
                         self.config.agent_checkpoints,
                         Preference::AgentCheckpoints(!self.config.agent_checkpoints),
@@ -73,7 +73,7 @@ impl SettingsWindow {
             .child(
                 ui::row(theme, "general-smooth-scroll", "Smooth scrolling")
                     .description("Scroll terminal history between rows; off steps whole rows.")
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         "general-smooth-scroll-toggle",
                         self.config.smooth_scroll,
                         Preference::SmoothScroll(!self.config.smooth_scroll),
@@ -89,7 +89,7 @@ impl SettingsWindow {
                         .tag(ui::Source::Herdr)
                         .description("Off: \u{2318}C / Ctrl-C copies the highlighted selection."),
                 )
-                .control(
+                .switch(
                     ui::toggle(theme, "general-copy-on-select-toggle", copy, ready).when(
                         ready,
                         |toggle| {
@@ -133,7 +133,7 @@ impl SettingsWindow {
                     "Deletes a clean linked worktree and closes its workspace once its PR is \
                      merged. The focused workspace asks first.",
                 )
-                .control(self.preference_toggle(
+                .switch(self.preference_toggle(
                     "general-merged-worktrees-toggle",
                     merged,
                     Preference::RemoveMergedWorktrees(!merged),
@@ -165,7 +165,7 @@ impl SettingsWindow {
                         "Betas ship before they are promoted to stable. Turning this off never \
                          downgrades; Homebrew installations always follow stable.",
                     )
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         "general-update-beta-toggle",
                         beta,
                         Preference::UpdateChannel(if beta {
@@ -200,7 +200,7 @@ impl SettingsWindow {
                 let on = features.enabled(feature);
                 ui::row(&self.theme, id, feature.label())
                     .description(feature.description())
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         format!("{id}-toggle"),
                         on,
                         Preference::Feature(feature, !on),

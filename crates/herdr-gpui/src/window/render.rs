@@ -729,6 +729,7 @@ impl Render for HerdrWindow {
         let zen = self.zen_layout();
         let root = div()
             .capture_key_down(cx.listener(Self::application_menu_shortcut))
+            .capture_key_down(cx.listener(Self::chrome_focus_key))
             .on_modifiers_changed(cx.listener(Self::double_shift_modifiers))
             .capture_any_mouse_down(cx.listener(|this, _, _, _| this.shift_taps.cancel()))
             .child({

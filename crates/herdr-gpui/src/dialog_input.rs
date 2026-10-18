@@ -220,6 +220,14 @@ impl HerdrWindow {
         div()
             .id("dialog-input")
             .debug_selector(|| "dialog-input".into())
+            .role(Role::TextInput)
+            .aria_value(
+                self.menu
+                    .input
+                    .as_ref()
+                    .map(|input| SharedString::from(input.text.clone()))
+                    .unwrap_or_default(),
+            )
             .w_full()
             .h(px(self.config.ui.line_height() + 10.))
             .px(px(6.))

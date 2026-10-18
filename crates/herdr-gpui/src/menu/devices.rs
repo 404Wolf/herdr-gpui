@@ -251,6 +251,18 @@ impl HerdrWindow {
             .child(
                 div()
                     .id("device-picker")
+                    .role(Role::Button)
+                    .aria_label(format!(
+                        "Devices: {label}, {}",
+                        if connected {
+                            "connected"
+                        } else {
+                            "disconnected"
+                        }
+                    ))
+                    .map(|picker| {
+                        self.chrome_stop(crate::window::chrome_focus::Region::Sidebar, picker)
+                    })
                     .relative()
                     .debug_selector(|| "device-picker".into())
                     .flex_1()
@@ -365,6 +377,11 @@ impl HerdrWindow {
             .child(
                 div()
                     .id("device-sessions")
+                    .role(Role::Button)
+                    .aria_label("Sessions")
+                    .map(|button| {
+                        self.chrome_stop(crate::window::chrome_focus::Region::Sidebar, button)
+                    })
                     .relative()
                     .debug_selector(|| "device-sessions".into())
                     .size(px(28.))

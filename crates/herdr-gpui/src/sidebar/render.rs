@@ -69,6 +69,8 @@ impl HerdrWindow {
         let mut spaces = div()
             .id("spaces-scroll")
             .debug_selector(|| "spaces-scroll".into())
+            .role(Role::List)
+            .aria_label(if devices { "Devices" } else { "Workspaces" })
             .flex()
             .flex_col()
             .flex_1()
@@ -77,6 +79,8 @@ impl HerdrWindow {
         let mut agents = div()
             .id("agents-scroll")
             .debug_selector(|| "agents-scroll".into())
+            .role(Role::List)
+            .aria_label("Agents")
             .flex()
             .flex_col()
             .flex_1()
@@ -261,28 +265,16 @@ impl HerdrWindow {
                     (true, false) => RowTree::Child,
                     (true, true) => RowTree::LastChild,
                 };
+                let fold_toggle = group.clone().map(|key| (endpoint_id.clone(), key));
                 let fold = group.map(|key| Fold {
                     id: SharedString::from(format!("collapse-{endpoint_id}-{id}")).into(),
                     index,
                     collapsed: collapsed_repos.contains(&key),
                     toggle: Box::new(cx.listener(move |this, _, _, cx| {
-                        let collapsed = if collapse_endpoint == crate::endpoint::LOCAL {
-                            &mut this.collapsed_repos
-                        } else if let Some(endpoint) = this
-                            .endpoints
-                            .iter_mut()
-                            .find(|e| e.id == collapse_endpoint)
-                        {
-                            &mut endpoint.collapsed_repos
-                        } else {
-                            return;
-                        };
-                        if !collapsed.remove(&key) {
-                            collapsed.insert(key.clone());
-                        }
-                        cx.notify();
+                        this.toggle_repository(&collapse_endpoint, &key, cx);
                     })),
                 });
+                let folds = fold.as_ref().map(|fold| fold.collapsed).zip(fold_toggle);
                 let label = workspace_label(workspace, indented);
                 let shown_status = if self.config.usage.inline {
                     displayed_workspace_status(&snapshot.workspaces, workspace, collapsed_repos)
@@ -494,6 +486,11 @@ impl HerdrWindow {
                     },
                 )
                 .id(SharedString::from(format!("workspace-{endpoint_id}-{id}")))
+                .map(|row| {
+                    let name =
+                        super::accessibility::workspace_name(label, shown_status, row_cx.host);
+                    self.workspace_item(row, name, selected && workspace.focused, folds, cx)
+                })
                 .when(multi, |row| {
                     row.debug_selector(|| format!("workspace-{endpoint_id}-{id}"))
                 })
@@ -671,6 +668,8 @@ impl HerdrWindow {
         div()
             .id("sidebar")
             .debug_selector(|| "sidebar".into())
+            .role(Role::Navigation)
+            .aria_label("Sidebar")
             .relative()
             .w(px(width))
             .flex_none()
@@ -745,6 +744,7 @@ impl HerdrWindow {
                             .child(
                                 div()
                                     .id("new-workspace")
+                                    .map(|button| self.sidebar_button(button, "New workspace"))
                                     .cursor_pointer()
                                     .hover(|s| s.text_color(rgb(theme.foreground)))
                                     .child("new")
@@ -756,6 +756,7 @@ impl HerdrWindow {
                                 div()
                                     .id("sidebar-menu")
                                     .debug_selector(|| "sidebar-menu".into())
+                                    .map(|button| self.sidebar_button(button, "Menu"))
                                     .cursor_pointer()
                                     .hover(|s| s.text_color(rgb(theme.foreground)))
                                     .child(label_text("menu"))

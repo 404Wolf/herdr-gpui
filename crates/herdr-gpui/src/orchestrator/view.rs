@@ -773,6 +773,8 @@ impl Render for OrchestratorView {
         let look = &self.look;
         div()
             .id("orchestrator")
+            .role(Role::Group)
+            .aria_label("Orchestrator")
             .relative()
             .key_context("Orchestrator")
             .track_focus(&self.focus)

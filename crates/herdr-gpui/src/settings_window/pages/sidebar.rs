@@ -205,7 +205,7 @@ impl SettingsWindow {
             .child(
                 ui::row(theme, "sidebar-show-agents", "Show agents")
                     .description("List running agents in the sidebar.")
-                    .control(
+                    .switch(
                         ui::toggle(
                             theme,
                             "sidebar-show-agents-toggle",
@@ -223,7 +223,7 @@ impl SettingsWindow {
                     .description(
                         "The Agents title row with the sort toggle. Hidden, the order follows Herdr's ui.agent_panel_sort unless a plugin sets the agent view, which keeps the row.",
                     )
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         "sidebar-show-agents-header-toggle",
                         self.config.show_agents_header,
                         Preference::ShowAgentsHeader(!self.config.show_agents_header),
@@ -253,7 +253,7 @@ impl SettingsWindow {
             .child(
                 ui::row(theme, "sidebar-show-search", "Show search")
                     .description("The search field above the workspaces.")
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         "sidebar-show-search-toggle",
                         self.config.show_sidebar_search,
                         Preference::ShowSidebarSearch(!self.config.show_sidebar_search),
@@ -265,7 +265,7 @@ impl SettingsWindow {
                     .description(
                         "The repository owner's avatar at the start of each workspace row.",
                     )
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         "sidebar-repository-icons-toggle",
                         self.config.show_repository_icons,
                         Preference::ShowRepositoryIcons(!self.config.show_repository_icons),
@@ -277,7 +277,7 @@ impl SettingsWindow {
                     .description(
                         "A mark before each device's name: this machine, a cloud provider or SSH.",
                     )
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         "sidebar-device-icons-toggle",
                         self.config.show_device_icons,
                         Preference::ShowDeviceIcons(!self.config.show_device_icons),

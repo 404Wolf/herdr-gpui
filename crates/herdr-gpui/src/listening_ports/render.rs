@@ -23,6 +23,8 @@ impl HerdrWindow {
             div()
                 .id("listening-ports")
                 .debug_selector(|| "listening-ports".into())
+                .role(Role::Group)
+                .aria_label("Listening ports")
                 .flex_none()
                 .h_full()
                 .px(px(6.))

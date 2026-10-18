@@ -50,7 +50,7 @@ Window '9950x3d: ~'
   Document ''        (text pattern: the rows on screen)
 ```
 
-After:
+After the first pass (title bar and tabs):
 
 ```text
 Window '9950x3d: ~'
@@ -67,8 +67,106 @@ Window '9950x3d: ~'
   Document 'Terminal'        (text pattern: the rows on screen)
 ```
 
-Back and Forward show no invoke pattern here because there was no history to
-go to, so both were disabled.
+Now, with the menu bar, activity bar, sidebar, and status bar, read by
+`crates/herdr-gpui/tests/support/uia_tree.ps1` from a window on an isolated
+daemon with three workspaces (patterns and states in brackets):
+
+```text
+Window '9950X3D: ~' [Window, Transform]
+  MenuBar 'Menu bar' [Invoke, Selection]
+    MenuItem 'Herdr' [Collapsed]
+    MenuItem 'File' [Collapsed]
+    MenuItem 'Edit' [Collapsed]
+    MenuItem 'View' [Collapsed]
+    MenuItem 'Terminal' [Collapsed]
+    MenuItem 'Window' [Collapsed]
+  Button 'Sidebar' [Expanded]
+  Button 'Back' [disabled]
+  Button 'Forward' [disabled]
+  Tab 'Activity' [Selection]
+    TabItem 'Workspaces' [selected=True]
+    TabItem 'Overview' [selected=False]
+    TabItem 'Pull requests' [selected=False]
+    TabItem 'Issues' [selected=False]
+    TabItem 'Usage' [selected=False]
+    Button 'Settings' [Invoke]
+  Group 'Sidebar' []
+    Edit 'Spaces' [Value]
+    List 'Workspaces' []
+      ListItem '~' [selected=True]
+      ListItem 'proj-a' [selected=False]
+      ListItem 'proj-b' [selected=False]
+    Button 'New workspace' [Invoke]
+    Button 'Menu' [Invoke]
+    Button 'Sort agents: grouped' [Invoke]
+    List 'Agents' []
+    Button 'Devices: All Devices, connected' [Invoke]
+    Button 'Sessions' [Invoke]
+  Tab 'Tabs' [Selection]
+    TabItem '1' [selected=True]
+      Button 'Close tab' [Invoke]
+  Button 'New tab' [Invoke]
+  Button 'Split' [Invoke]
+  Button 'Tab actions' [Invoke]
+  Button 'GitHub account' [Invoke]
+  Document 'Terminal' [Value, Text]
+  StatusBar 'Status bar' []
+    Text 'This machine / CPU 25% of 32 cores / Memory 36.1 GB of 93.7 GB (39%) / ...' []
+    Button 'Keep the display awake' [toggle=Off]
+    Button 'Theme' [Invoke]
+    Button 'Shortcuts' [Invoke]
+    Button 'Report issue' [Invoke]
+    Button 'Version dev' [Invoke]
+```
+
+Where the keyboard goes, read from UI Automation's focused element after each
+key sent to the window:
+
+```text
+F6        -> Button 'Sidebar'
+Tab       -> TabItem '1'               (Back and Forward are unavailable)
+F6        -> TabItem 'Workspaces'      (the sidebar starts at its activity bar)
+Tab x5    -> TabItem 'Overview', 'Pull requests', 'Issues', 'Usage', Button 'Settings'
+Tab       -> ListItem '~'
+Tab       -> ListItem 'proj-a'
+Down      -> ListItem 'proj-b'
+F6        -> Button 'Keep the display awake'
+Shift+Tab -> Button 'Version dev'
+Escape    -> Document 'Terminal'
+F10       -> MenuItem 'About Herdr'
+Down      -> MenuItem 'Command Palette, ctrl-shift-p'
+```
+
+The focused control carries an accent ring:
+
+![The sidebar with proj-a focused from the keyboard](focus-ring.png)
+
+The Settings window:
+
+```text
+Window 'Settings' [Window, Transform]
+  Group 'Settings sections' []
+    Edit 'Search settings' [Value]
+    Tab 'Sections' [Selection]
+      TabItem 'General' [selected=False]
+      TabItem 'Theme' [selected=True]
+      ...
+  Pane 'Theme' []
+    Group 'Appearance' []
+      RadioButton 'Light' [selected=False]
+      RadioButton 'Dark' [selected=True]
+      RadioButton 'System' [selected=False]
+    Group 'Follow Herdr's theme' []
+      Button 'Follow Herdr's theme' [toggle=Off]
+    Group 'High contrast' []
+      Button 'High contrast' [toggle=Off]
+    ...
+  StatusBar 'All changes saved.' []
+  Button 'Reload' [Invoke]
+```
+
+Narrator itself was not run for these captures: the tree above is what it
+reads, through the same UI Automation provider.
 
 ## Shell integration
 
