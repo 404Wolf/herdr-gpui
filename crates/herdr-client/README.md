@@ -357,10 +357,19 @@ them atomically, then emits a complete immutable `Surface`, not a GUI patch.
 Only surfaces matching the latest snapshot's projection revision are emitted.
 Future surfaces (including subsequent patches) are retained and emitted after
 their matching snapshot arrives.
-When handling a new snapshot, the GUI should invalidate any displayed surface
-whose `(boot_id, projection_revision)` differs from `(boot_id, revision)` and
-wait for matching content. Snapshot metadata and cells must not be mixed across
-focus changes. Full surfaces can skip surface revisions; patches cannot.
+The GUI keeps a matching snapshot/surface pair on screen while staging one newer
+metadata-only snapshot. Input still targets that displayed pane or popup. A
+matching surface commits the new pair and its image catalog together. Changes
+to boot, focus, displayed pane topology, zoom, keybindings or commands invalidate
+the pair immediately; navigation and activation retain their ordered barriers.
+Snapshot metadata and cells are never mixed across revisions. Full surfaces can
+skip surface revisions; patches cannot.
+
+Popup ownership and geometry are carried by surfaces, not snapshot revisions.
+As in the native TUI, an externally opened popup can therefore precede its
+presentation: the daemon silently drops blocked pane input and input for retired
+popup IDs. The GUI never redirects or replays that input into a new target.
+GUI-initiated commands retain the surface barrier before accepting more input.
 
 Herdr sends an image's bytes only in the first surface that places it, so the
 worker, which sees every surface, keeps them: each received surface's
