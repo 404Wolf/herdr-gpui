@@ -19,7 +19,8 @@ use super::*;
 use std::{
     os::windows::io::AsRawHandle as _,
     ptr,
-    sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, AtomicUsize, Ordering},
+    sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, AtomicU64, AtomicUsize, Ordering},
+    time::Instant,
 };
 use windows_sys::Win32::{
     Foundation::HANDLE,
@@ -39,7 +40,7 @@ use windows_sys::Win32::{
 /// Lets Windows' own error reporting run after ours.
 const EXCEPTION_CONTINUE_SEARCH: i32 = 0;
 /// A dump that takes longer than this is abandoned, and the process ends.
-const DUMP_WAIT_MS: u32 = 30_000;
+const DUMP_WAIT: Duration = Duration::from_secs(30);
 
 /// The dump thread's events, as `usize` because a `HANDLE` is a pointer;
 /// zero until it runs. Never closed: they live as long as the process.
@@ -48,7 +49,14 @@ static DONE: AtomicUsize = AtomicUsize::new(0);
 /// The request: an exception, or null for a dump with none (a panic).
 static EXCEPTION: AtomicPtr<EXCEPTION_POINTERS> = AtomicPtr::new(ptr::null_mut());
 static THREAD: AtomicU32 = AtomicU32::new(0);
-/// One dump at a time; a second crashing thread is in the first one's dump.
+/// Requests made, and the last one the dump thread finished. A requester
+/// waits for its own number, so a late answer to an abandoned request never
+/// releases it early.
+static REQUESTS: AtomicU64 = AtomicU64::new(0);
+static FINISHED: AtomicU64 = AtomicU64::new(0);
+/// One dump at a time, from request until the dump thread finishes it,
+/// even if its requester stopped waiting: a second crashing thread is in the
+/// first one's dump.
 static BUSY: AtomicBool = AtomicBool::new(false);
 
 pub(super) fn install(dir: PathBuf) {
@@ -110,14 +118,26 @@ fn request(exception: *mut EXCEPTION_POINTERS, thread: u32) {
     }
     EXCEPTION.store(exception, Ordering::Release);
     THREAD.store(thread, Ordering::Release);
+    let ticket = REQUESTS.fetch_add(1, Ordering::AcqRel) + 1;
     // SAFETY: both handles are events created at install and never closed.
     #[allow(unsafe_code)]
-    unsafe {
-        if SetEvent(requested as HANDLE) != 0 {
-            WaitForSingleObject(done as HANDLE, DUMP_WAIT_MS);
+    if unsafe { SetEvent(requested as HANDLE) } == 0 {
+        BUSY.store(false, Ordering::Release);
+        return;
+    }
+    let deadline = Instant::now() + DUMP_WAIT;
+    while FINISHED.load(Ordering::Acquire) < ticket {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return;
+        }
+        let millis = u32::try_from(left.as_millis()).unwrap_or(u32::MAX).max(1);
+        // SAFETY: as above.
+        #[allow(unsafe_code)]
+        unsafe {
+            WaitForSingleObject(done as HANDLE, millis);
         }
     }
-    BUSY.store(false, Ordering::Release);
 }
 
 fn serve(dir: &Path, requested: usize, done: usize) {
@@ -127,6 +147,7 @@ fn serve(dir: &Path, requested: usize, done: usize) {
         unsafe {
             WaitForSingleObject(requested as HANDLE, INFINITE);
         }
+        let ticket = REQUESTS.load(Ordering::Acquire);
         let exception = EXCEPTION.load(Ordering::Acquire);
         let thread = THREAD.load(Ordering::Acquire);
         let pointers = (!exception.is_null()).then_some((thread, exception));
@@ -145,6 +166,8 @@ fn serve(dir: &Path, requested: usize, done: usize) {
             };
             report_exception(dir, code, address as usize);
         }
+        FINISHED.store(ticket, Ordering::Release);
+        BUSY.store(false, Ordering::Release);
         // SAFETY: as above.
         #[allow(unsafe_code)]
         unsafe {
@@ -165,7 +188,7 @@ fn report_exception(dir: &Path, code: i32, address: usize) {
         &location,
         "(none; open the crash dump of the same time)",
     );
-    let name = file_name(now, std::process::id(), REPORT_EXTENSION);
+    let name = file_name(now.to_utc(), std::process::id(), REPORT_EXTENSION);
     if let Err(error) = write_new(&dir.join(&name), &text) {
         tracing::error!(%error, "Could not write a crash report");
     }
@@ -186,7 +209,7 @@ pub(super) fn write_dump(
     exception: Option<(u32, *mut EXCEPTION_POINTERS)>,
 ) -> io::Result<PathBuf> {
     let path = dir.join(file_name(
-        chrono::Local::now(),
+        chrono::Utc::now(),
         std::process::id(),
         DUMP_EXTENSION,
     ));

@@ -4,8 +4,8 @@ use chrono::TimeZone as _;
 
 mod end_to_end;
 
-fn at(seconds: i64, millis: u32) -> chrono::DateTime<chrono::Local> {
-    chrono::Local
+fn at(seconds: i64, millis: u32) -> chrono::DateTime<chrono::Utc> {
+    chrono::Utc
         .timestamp_opt(1_790_000_000 + seconds, millis * 1_000_000)
         .unwrap()
 }
@@ -98,4 +98,47 @@ fn this_process_can_write_a_minidump() {
     let bytes = fs::read(&path).unwrap();
     // Every minidump starts with this signature.
     assert_eq!(&bytes[..4], b"MDMP");
+}
+
+#[test]
+fn names_are_utc_so_a_clock_moving_back_keeps_their_order() {
+    // 2026-10-25 01:30 UTC is 02:30 CET, after Central Europe's clocks went
+    // back from 03:00 CEST; local time would sort it before 02:45 CEST.
+    let before = chrono::Utc
+        .with_ymd_and_hms(2026, 10, 25, 0, 45, 0)
+        .unwrap();
+    let after = chrono::Utc
+        .with_ymd_and_hms(2026, 10, 25, 1, 30, 0)
+        .unwrap();
+    assert_eq!(
+        file_name(before, 9, REPORT_EXTENSION),
+        "crash-20261025-004500.000-9.txt"
+    );
+    assert!(file_name(before, 9, REPORT_EXTENSION) < file_name(after, 9, REPORT_EXTENSION));
+}
+
+#[test]
+fn only_names_the_app_writes_count_as_crash_files() {
+    let ours = file_name(at(0, 42), 4242, REPORT_EXTENSION);
+    assert!(is_crash_name(&ours, REPORT_EXTENSION));
+    assert!(!is_crash_name(&ours, "dmp"));
+    for name in [
+        "crash-20200101-notes.txt",
+        "crash-notes.txt",
+        "crash-20261017-210512.042-.txt",
+        "crash-20261017-210512.042-12a.txt",
+        "crash-20261317-210512.042-1.txt",
+        "crash-2026117-210512.042-1.txt",
+        "crash-20261017-210512-1.txt",
+        "crash-20261017-210512.042-1.txt.bak",
+    ] {
+        assert!(!is_crash_name(name, REPORT_EXTENSION), "{name}");
+    }
+    let dir = tempfile::tempdir().unwrap();
+    for name in [ours.as_str(), "crash-20200101-notes.txt"] {
+        fs::write(dir.path().join(name), "x").unwrap();
+    }
+    prune(dir.path(), REPORT_EXTENSION, 0);
+    assert!(!dir.path().join(&ours).exists());
+    assert!(dir.path().join("crash-20200101-notes.txt").is_file());
 }

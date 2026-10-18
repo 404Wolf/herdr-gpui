@@ -103,6 +103,22 @@ fn gather() -> String {
     text
 }
 
+/// A report's text, read through a cap: one still being written may grow
+/// after any size check, so reading one byte past the cap decides.
+fn bounded_report(path: &Path) -> String {
+    use std::io::Read as _;
+    let mut bytes = Vec::new();
+    let read = std::fs::File::open(path)
+        .and_then(|file| file.take(MAX_CRASH_REPORT + 1).read_to_end(&mut bytes));
+    match read {
+        Ok(_) if bytes.len() as u64 > MAX_CRASH_REPORT => {
+            format!("(omitted: larger than {MAX_CRASH_REPORT} bytes)\n")
+        }
+        Ok(_) => String::from_utf8_lossy(&bytes).into_owned(),
+        Err(_) => "(unreadable)\n".into(),
+    }
+}
+
 /// The newest crash reports in full, then the names of any minidumps, which
 /// stay out: they hold memory the redactor cannot read.
 fn crash_reports(dir: &Path) -> String {
@@ -114,13 +130,7 @@ fn crash_reports(dir: &Path) -> String {
     for path in reports.iter().take(CRASH_REPORTS) {
         let name = path.file_name().unwrap_or_default().to_string_lossy();
         let _ = writeln!(text, "-- {name} --");
-        let report = match std::fs::metadata(path) {
-            Ok(metadata) if metadata.len() > MAX_CRASH_REPORT => {
-                format!("(omitted: larger than {MAX_CRASH_REPORT} bytes)\n")
-            }
-            Ok(_) => std::fs::read_to_string(path).unwrap_or_else(|_| "(unreadable)\n".into()),
-            Err(_) => "(unreadable)\n".into(),
-        };
+        let report = bounded_report(path);
         text.push_str(&report);
         if !report.ends_with('\n') {
             text.push('\n');

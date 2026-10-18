@@ -70,7 +70,7 @@ fn record(dir: &Path, info: &PanicHookInfo<'_>) {
         &location,
         &backtrace.to_string(),
     );
-    let name = file_name(now, std::process::id(), REPORT_EXTENSION);
+    let name = file_name(now.to_utc(), std::process::id(), REPORT_EXTENSION);
     let written = write_new(&dir.join(&name), &text);
     prune(dir, REPORT_EXTENSION, KEEP_REPORTS);
     match &written {
@@ -125,13 +125,35 @@ fn report(time: &str, thread: &str, message: &str, location: &str, backtrace: &s
     text
 }
 
-/// `crash-20261017-230512.042-4242.txt`: names sort by time, and two
+/// The time in a crash file's name: UTC, so names keep sorting in the order
+/// they were written when daylight saving time ends. Reports show local time.
+const NAME_TIME_FORMAT: &str = "%Y%m%d-%H%M%S%.3f";
+
+/// `crash-20261017-210512.042-4242.txt`: names sort by time, and two
 /// processes crashing in the same millisecond still differ.
-fn file_name(now: chrono::DateTime<chrono::Local>, pid: u32, extension: &str) -> String {
-    format!(
-        "{PREFIX}{}-{pid}.{extension}",
-        now.format("%Y%m%d-%H%M%S%.3f")
-    )
+fn file_name(now: chrono::DateTime<chrono::Utc>, pid: u32, extension: &str) -> String {
+    format!("{PREFIX}{}-{pid}.{extension}", now.format(NAME_TIME_FORMAT))
+}
+
+/// Whether `name` is one [`file_name`] gives, so that retention never
+/// deletes a file someone else named `crash-something.txt`.
+fn is_crash_name(name: &str, extension: &str) -> bool {
+    let Some(rest) = name
+        .strip_prefix(PREFIX)
+        .and_then(|rest| rest.strip_suffix(extension))
+        .and_then(|rest| rest.strip_suffix('.'))
+    else {
+        return false;
+    };
+    let Some((time, pid)) = rest.rsplit_once('-') else {
+        return false;
+    };
+    // The time is fixed width; `parse_from_str` alone would accept
+    // unpadded fields.
+    time.len() == "20261017-210512.042".len()
+        && chrono::NaiveDateTime::parse_from_str(time, NAME_TIME_FORMAT).is_ok()
+        && !pid.is_empty()
+        && pid.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 /// Writes a new file, never replacing one.
@@ -157,11 +179,7 @@ pub(crate) fn files(dir: &Path, extension: &str) -> Vec<PathBuf> {
             let entry = entry.ok()?;
             let name = entry.file_name();
             let name = name.to_str()?;
-            let is_ours = name.starts_with(PREFIX)
-                && Path::new(name)
-                    .extension()
-                    .is_some_and(|ext| ext == extension)
-                && entry.file_type().ok()?.is_file();
+            let is_ours = is_crash_name(name, extension) && entry.file_type().ok()?.is_file();
             is_ours.then(|| entry.path())
         })
         .collect();

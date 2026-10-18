@@ -3028,7 +3028,7 @@ available, nothing is saved and the window says so.
 
 ### Crash reports
 
-If the app panics, it writes `crash-YYYYMMDD-HHMMSS.mmm-PID.txt` beside the log
+If the app panics, it writes `crash-YYYYMMDD-HHMMSS.mmm-PID.txt` (the time in UTC) beside the log
 before it exits. The report has the version, platform, thread, panic message,
 source location, and a backtrace. The app also writes a `Herdr UI panicked`
 error record to the log, naming the report, and waits up to two seconds for the
