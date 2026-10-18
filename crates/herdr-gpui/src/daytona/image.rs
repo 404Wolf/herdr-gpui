@@ -4,6 +4,11 @@
 //! uploaded to Daytona's object storage first, which this app does not do
 //! yet, so recipes with `COPY` or `ADD` from their context are refused
 //! before anything is sent.
+//!
+//! Snapshot names are predictable and shared by everyone in the Daytona
+//! organization, so a snapshot is only used when Daytona built it from this
+//! recipe's exact Dockerfile; one of the same name made any other way is
+//! replaced rather than trusted.
 
 use super::{Error, Result, Settings, http::Request, store};
 use crate::cloud::image::{Project, Recipe, Support, key};
@@ -29,6 +34,15 @@ struct Snapshot {
     state: String,
     #[serde(default)]
     error_reason: Option<String>,
+    #[serde(default)]
+    build_info: Option<BuildInfo>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BuildInfo {
+    #[serde(default)]
+    dockerfile_content: String,
 }
 
 /// What a snapshot's state means for a build.
@@ -41,6 +55,14 @@ pub(super) enum Readiness {
 }
 
 impl Snapshot {
+    /// Whether Daytona built this snapshot from `recipe`'s Dockerfile, and
+    /// nothing else: with no build context, that is all a build reads.
+    fn built_from(&self, recipe: &Recipe) -> bool {
+        self.build_info
+            .as_ref()
+            .is_some_and(|info| info.dockerfile_content == recipe.dockerfile)
+    }
+
     fn readiness(&self) -> Readiness {
         match self.state.as_str() {
             "active" => Readiness::Ready,
@@ -92,15 +114,17 @@ fn name(project: &Project, key: &str) -> String {
     format!("herdr-{}-{}", project.slug(), key::short(key))
 }
 
-fn find(name: &str, _: &dyn Fn() -> bool) -> crate::Result<Option<String>> {
+fn find(name: &str, recipe: &Recipe, _: &dyn Fn() -> bool) -> crate::Result<Option<String>> {
     let settings = settings()?;
     let key = store::key(&settings)?;
     let request = Request {
         settings: &settings,
         key: &key,
     };
-    let ready = snapshot(&request, name)?.map(|snapshot| snapshot.readiness());
-    Ok((ready == Some(Readiness::Ready)).then(|| name.to_owned()))
+    let ready = snapshot(&request, name)?.is_some_and(|snapshot| {
+        snapshot.built_from(recipe) && snapshot.readiness() == Readiness::Ready
+    });
+    Ok(ready.then(|| name.to_owned()))
 }
 
 fn build(
@@ -115,14 +139,17 @@ fn build(
         settings: &settings,
         key: &key,
     };
-    match snapshot(&request, name)?.map(|snapshot| snapshot.readiness()) {
-        Some(Readiness::Ready) => return Ok(name.to_owned()),
-        // A failed build of the same recipe is tried again.
-        Some(Readiness::Failed(_)) => {
+    let found = snapshot(&request, name)?
+        .map(|snapshot| (snapshot.built_from(recipe), snapshot.readiness()));
+    match found {
+        Some((true, Readiness::Ready)) => return Ok(name.to_owned()),
+        Some((true, Readiness::Pending(_))) => {}
+        // A failed build of the same recipe is tried again, and a snapshot
+        // of this name built from anything else is not trusted.
+        Some((true, Readiness::Failed(_)) | (false, _)) => {
             request.delete("delete_snapshot", &format!("/snapshots/{}", segment(name)?))?;
             create(&request, name, recipe)?;
         }
-        Some(Readiness::Pending(_)) => {}
         None => create(&request, name, recipe)?,
     }
     line("Daytona is building the snapshot");

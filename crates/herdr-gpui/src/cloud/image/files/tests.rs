@@ -80,3 +80,39 @@ fn only_files_git_would_commit_leave_the_host() {
         None
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn a_linked_folder_cannot_reach_outside_the_project() {
+    use std::process::Command;
+    let dir = tempfile::tempdir().unwrap();
+    let git = |repo: &std::path::Path, args: &[&str]| {
+        let status = Command::new("git")
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap())
+            .env("HOME", dir.path())
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .arg("-C")
+            .arg(repo)
+            .args(args)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    };
+    let project = dir.path().join("project");
+    let other = dir.path().join("other");
+    for repo in [&project, &other] {
+        std::fs::create_dir_all(repo).unwrap();
+        git(repo, &["init", "-q"]);
+    }
+    std::fs::write(other.join("private.txt"), "not yours").unwrap();
+    std::os::unix::fs::symlink(&other, project.join("context")).unwrap();
+    let host = crate::teleport::Host::new(&herdr_client::ConnectTarget::Local).unwrap();
+    let cancelled = AtomicBool::new(false);
+    let root = project.to_str().unwrap();
+    assert!(matches!(
+        read(&host, root, "context", &[".".into()], &cancelled),
+        Err(Error::Host(_))
+    ));
+    assert!(read_one(&host, root, "context/private.txt", &cancelled).is_err());
+}

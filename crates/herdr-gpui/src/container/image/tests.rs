@@ -146,7 +146,7 @@ fn a_recipe_builds_once_with_herdr_and_its_files() {
     let project = recipe.project.id.clone();
     builds::reset(CloudProvider::Container, &SUPPORT, &project).unwrap();
     assert_eq!(
-        find(&reference, &|| false).unwrap(),
+        find(&reference, &recipe, &|| false).unwrap(),
         None,
         "reset deleted it"
     );

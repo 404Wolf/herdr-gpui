@@ -26,7 +26,7 @@ const FAKE: Support = Support {
             crate::cloud::image::key::short(key)
         )
     },
-    find: |name, _| {
+    find: |name, _, _| {
         Ok(lock(&HELD)
             .get_or_insert_with(HashSet::new)
             .contains(name)

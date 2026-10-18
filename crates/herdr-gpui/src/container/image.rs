@@ -50,7 +50,7 @@ fn name(project: &Project, key: &str) -> String {
     format!("herdr-{}:{}", project.slug(), key::short(key))
 }
 
-fn find(name: &str, cancelled: &dyn Fn() -> bool) -> crate::Result<Option<String>> {
+fn find(name: &str, _: &Recipe, cancelled: &dyn Fn() -> bool) -> crate::Result<Option<String>> {
     let engine = engine()?;
     let (code, ..) = engine.output(
         "image inspect",

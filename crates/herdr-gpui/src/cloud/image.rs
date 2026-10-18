@@ -74,6 +74,8 @@ pub(crate) struct Recipe {
     pub(crate) files: Vec<files::File>,
 }
 
+/// Look up the image `name` built from a recipe.
+pub(crate) type Find = fn(&str, &Recipe, &dyn Fn() -> bool) -> crate::Result<Option<String>>;
 /// Build `recipe` as the image `name`, passing each line of the build's
 /// output to the last argument; returns what new machines start from.
 pub(crate) type Build =
@@ -87,8 +89,9 @@ pub(crate) struct Support {
     pub(crate) platform: fn(&dyn Fn() -> bool) -> crate::Result<String>,
     /// The provider's name for `project`'s image with `key`.
     pub(crate) name: fn(&Project, &str) -> String,
-    /// What new machines start from, when the provider holds the image `name`.
-    pub(crate) find: fn(&str, &dyn Fn() -> bool) -> crate::Result<Option<String>>,
+    /// What new machines start from, when the provider holds the image `name`
+    /// built from `recipe`.
+    pub(crate) find: Find,
     pub(crate) build: Build,
     /// Delete what a build returned.
     pub(crate) delete: fn(&str, &dyn Fn() -> bool) -> crate::Result<()>,

@@ -261,7 +261,7 @@ fn reusable(
     ) {
         return Ok(None);
     }
-    (support.find)(name, cancelled)
+    (support.find)(name, recipe, cancelled)
 }
 
 /// Delete `project_id`'s image on `provider` and forget it, so the next

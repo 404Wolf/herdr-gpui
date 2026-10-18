@@ -1,9 +1,11 @@
+#![allow(clippy::unwrap_used)]
 use super::*;
 
 fn snapshot(state: &str, reason: Option<&str>) -> Snapshot {
     Snapshot {
         state: state.into(),
         error_reason: reason.map(Into::into),
+        build_info: None,
     }
 }
 
@@ -36,4 +38,33 @@ fn snapshot_names_are_safe_in_paths() {
     assert!(segment("../x").is_err());
     assert!(segment("a/b").is_err());
     assert!(segment("").is_err());
+}
+
+#[test]
+fn only_a_snapshot_built_from_the_recipe_is_trusted() {
+    let recipe = Recipe {
+        project: Project {
+            id: "0123456789abcdef".into(),
+            label: "app".into(),
+        },
+        origin: crate::cloud::image::catalog::Origin {
+            endpoint_id: "local".into(),
+            path: "/app".into(),
+        },
+        dockerfile: "FROM debian\n".into(),
+        files: Vec::new(),
+    };
+    let parsed = |json: &str| serde_json::from_str::<Snapshot>(json).unwrap();
+    assert!(
+        parsed(r#"{"state":"active","buildInfo":{"dockerfileContent":"FROM debian\n"}}"#)
+            .built_from(&recipe)
+    );
+    // Same name, other content: someone else's snapshot.
+    assert!(
+        !parsed(r#"{"state":"active","buildInfo":{"dockerfileContent":"FROM evil\n"}}"#)
+            .built_from(&recipe)
+    );
+    // Made from an image rather than built.
+    assert!(!parsed(r#"{"state":"active","imageName":"evil:latest"}"#).built_from(&recipe));
+    assert!(!parsed(r#"{"state":"active","buildInfo":null}"#).built_from(&recipe));
 }

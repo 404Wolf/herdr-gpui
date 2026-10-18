@@ -2,7 +2,8 @@
 //! script runner Teleport uses, so a project on an SSH host or a cloud
 //! machine builds as one on this computer does. Only files Git would commit
 //! are read (tracked, or untracked and not ignored), never a symbolic link,
-//! so a link or an ignored secret beside the recipe cannot leave the host.
+//! and never from a folder that resolves outside the project, so a link or
+//! an ignored secret beside the recipe cannot leave the host.
 
 use super::{Error, Result};
 use herdr_client::shell_quote;
@@ -22,6 +23,8 @@ pub(crate) struct File {
 /// The script printing every file under `dir` (from the project root
 /// `root`) that a Git pathspec in `pathspecs` matches, framed as
 /// `path NUL mode NUL size NUL bytes`.
+/// A `dir` whose physical path leaves the project, through a linked folder,
+/// fails rather than listing another tree's files.
 pub(crate) fn script(root: &str, dir: &str, pathspecs: &[String]) -> String {
     let pathspecs = pathspecs
         .iter()
@@ -30,7 +33,9 @@ pub(crate) fn script(root: &str, dir: &str, pathspecs: &[String]) -> String {
         .join(" ");
     format!(
         r#"cd {root} || exit 3
+top=$(pwd -P)
 cd {dir} || exit 0
+case $(pwd -P) in "$top" | "$top"/*) ;; *) exit 4 ;; esac
 git ls-files -z --cached --others --exclude-standard -- {pathspecs} | xargs -0 sh -c '
 for f; do
   [ -f "$f" ] && [ ! -L "$f" ] || continue
