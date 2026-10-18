@@ -12,9 +12,11 @@ on:
 # keep pull_request, hosted runners, and secret-free/read-only PR jobs.
 permissions: {}
 
+# A newer push cancels a pull request's run, but every main run finishes:
+# a release requires a complete CI run for its exact commit.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   # Audits the workflows themselves for injection, over-broad permissions,
@@ -99,9 +101,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macOS 14, the oldest supported release, runs on main only: every
-        # macOS job shares one account-wide runner limit with the release.
-        runner: ${{ fromJSON(github.event_name == 'pull_request' && '["macos-15", "ubuntu-24.04", "ubuntu-24.04-arm"]' || '["macos-14", "macos-15", "ubuntu-24.04", "ubuntu-24.04-arm"]') }}
+        # macOS 14, the oldest supported release, is off: every macOS job
+        # shares one account-wide runner limit with the release. Add it back
+        # if a macOS 14 regression shows up:
+        # runner: [macos-14, macos-15, ubuntu-24.04, ubuntu-24.04-arm]
+        runner: [macos-15, ubuntu-24.04, ubuntu-24.04-arm]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:

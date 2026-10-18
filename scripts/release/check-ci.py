@@ -13,7 +13,7 @@ REPO = "penso/herdr-gpui"
 REQUIRED_JOBS = frozenset({
     "Workflow Security", "Commit messages", "Format, lint, and test",
     *(f"Format, lint, and test ({runner})" for runner in
-      ("macos-14", "macos-15", "ubuntu-24.04", "ubuntu-24.04-arm")),
+      ("macos-15", "ubuntu-24.04", "ubuntu-24.04-arm")),
     *(f"{job} ({runner})" for job in ("Windows check", "Windows native GUI")
       for runner in ("windows-2025", "windows-11-arm")),
     *(f"Release ({target})" for target in
@@ -67,7 +67,9 @@ def require_ci(sha, wait=False):
         pending = next((run for run in candidates if run["status"] != "completed"), None)
         if pending:
             print(f"Waiting for CI: https://github.com/{REPO}/actions/runs/{pending['id']}", flush=True)
-            gh("run", "watch", str(pending["id"]), "--repo", REPO, "--exit-status",
+            # The release's ci-gate job can watch for over an hour on the
+            # workflow token's hourly API budget; poll every 30s, not 3s.
+            gh("run", "watch", str(pending["id"]), "--repo", REPO, "--exit-status", "--interval", "30",
                check=False, stdout=subprocess.DEVNULL)
             # Re-query jobs even when watch succeeds: the run may have skipped them.
             return require_ci(sha)

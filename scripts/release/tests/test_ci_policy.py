@@ -166,7 +166,7 @@ class CiPolicy(unittest.TestCase):
             "ubuntu-24.04", "${{ matrix.runner }}",
         ])
         self.assertEqual(re.findall(r"^        runner: (.+)$", WORKFLOW, re.M), [
-            """${{ fromJSON(github.event_name == 'pull_request' && '["macos-15", "ubuntu-24.04", "ubuntu-24.04-arm"]' || '["macos-14", "macos-15", "ubuntu-24.04", "ubuntu-24.04-arm"]') }}""",
+            "[macos-15, ubuntu-24.04, ubuntu-24.04-arm]",
             "[windows-2025, windows-11-arm]",
             "[windows-2025, windows-11-arm]",
         ])

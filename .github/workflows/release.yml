@@ -65,7 +65,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
-      actions: read
       contents: read
     outputs:
       sha: ${{ steps.validate.outputs.sha }}
@@ -98,14 +97,6 @@ jobs:
           [[ "$version" =~ ^[1-9][0-9]{7}\.[1-9][0-9]*$ ]]
           printf 'version=%s\nsha=%s\nchannel=%s\n' "$version" "$EXPECTED_SHA" "$CHANNEL" >> "$GITHUB_OUTPUT"
           printf 'Publishing %s v%s\n' "$CHANNEL" "$version"
-      # The release jobs build and package; formatting, lints and the test
-      # suites are CI's, on every platform, for this same commit. A release of
-      # a commit CI has not passed is refused rather than retested here.
-      - name: Require CI to have passed on this commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EXPECTED_SHA: ${{ inputs.expected_sha }}
-        run: python3 scripts/release/check-ci.py "$EXPECTED_SHA"
       - name: Validate embedded updater public key
         env:
           HERDR_UPDATE_PUBLIC_KEY: ${{ vars.HERDR_UPDATE_PUBLIC_KEY }}
@@ -125,6 +116,32 @@ jobs:
             echo "signed=false" >> "$GITHUB_OUTPUT"
             echo "::warning::WINDOWS_SIGNING_SUBJECT is not set: Windows ships unsigned, without winget or in-app updates"
           fi
+
+  # The release jobs build and package; formatting, lints and the test suites
+  # are CI's, on every platform, for this same commit. Building overlaps CI so
+  # the two macOS queues do not add up, but nothing is signed, attested or
+  # published until this job has seen CI pass; a failed or cancelled CI run
+  # stops the release here instead of being retested.
+  ci-gate:
+    needs: validate
+    if: >-
+      github.repository == 'penso/herdr-gpui' && github.ref == 'refs/heads/main' &&
+      github.actor == 'penso' && github.triggering_actor == 'penso'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - name: Require CI to have passed on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ needs.validate.outputs.sha }}
+        run: python3 scripts/release/check-ci.py "$EXPECTED_SHA" --wait
 
   # Both macOS targets build on Apple Silicon: Intel runners are scarce and
   # slow, and x86_64 cross-compiles there and runs under Rosetta. Formatting,
@@ -318,7 +335,7 @@ jobs:
   # identity and account below are useless anywhere else.
   windows-sign:
     name: Windows signing (${{ matrix.target }})
-    needs: [validate, windows]
+    needs: [validate, windows, ci-gate]
     if: >-
       github.repository == 'penso/herdr-gpui' && github.ref == 'refs/heads/main' &&
       github.actor == 'penso' && github.triggering_actor == 'penso' &&
@@ -504,15 +521,15 @@ jobs:
           retention-days: 7
 
   sign:
-    needs: [validate, macos-build, linux, windows, windows-sign]
+    needs: [validate, ci-gate, macos-build, linux, windows, windows-sign]
     # windows-sign is skipped while Windows signing is not set up, and a
     # skipped need skips this job unless its condition checks results itself.
     if: >-
       !cancelled() &&
       github.repository == 'penso/herdr-gpui' && github.ref == 'refs/heads/main' &&
       github.actor == 'penso' && github.triggering_actor == 'penso' &&
-      needs.validate.result == 'success' && needs.macos-build.result == 'success' &&
-      needs.linux.result == 'success' &&
+      needs.validate.result == 'success' && needs.ci-gate.result == 'success' &&
+      needs.macos-build.result == 'success' && needs.linux.result == 'success' &&
       needs.windows.result == 'success' &&
       (needs.windows-sign.result == 'success' ||
        (needs.validate.outputs.windows_signed == 'false' && needs.windows-sign.result == 'skipped'))

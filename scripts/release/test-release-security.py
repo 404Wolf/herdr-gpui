@@ -55,7 +55,7 @@ class ReleaseTargets(unittest.TestCase):
         self.assertIn("WINDOWS: ${{ needs.windows.result }}", jobs["checks-passed"])
         self.assertIn("          fetch-depth: 0\n", jobs["commits"])
         self.assertIn("python3 scripts/release/check-commit-messages.py range", jobs["commits"])
-        self.assertIn("""runner: ${{ fromJSON(github.event_name == 'pull_request' && '["macos-15", "ubuntu-24.04", "ubuntu-24.04-arm"]' || '["macos-14", "macos-15", "ubuntu-24.04", "ubuntu-24.04-arm"]') }}""", jobs["checks"])
+        self.assertIn("runner: [macos-15, ubuntu-24.04, ubuntu-24.04-arm]\n", jobs["checks"])
         self.assertIn("    name: Format, lint, and test\n", jobs["checks-passed"])
         self.assertIn("always()", jobs["checks-passed"])
         self.assertIn('test "$RESULT" = success', jobs["checks-passed"])
@@ -168,11 +168,17 @@ class ReleaseTargets(unittest.TestCase):
             self.assertIn("tool: cargo-about@0.9.2\n", jobs[name], name)
             self.assertIn("fallback: none\n", jobs[name], name)
         self.assertNotIn("macos-checks", workflow)
-        validate = jobs["validate"]
-        self.assertIn('python3 scripts/release/check-ci.py "$EXPECTED_SHA"', validate)
-        dispatch = (ROOT / "scripts/release/dispatch.sh").read_text()
-        self.assertIn('python3 scripts/release/check-ci.py "$sha" --wait', dispatch)
-        self.assertIn("      actions: read\n", validate)
+        # CI gates signing, not building: the builds overlap CI, and every
+        # job that signs or publishes waits behind ci-gate.
+        gate = jobs["ci-gate"]
+        self.assertIn('python3 scripts/release/check-ci.py "$EXPECTED_SHA" --wait', gate)
+        self.assertIn("EXPECTED_SHA: ${{ needs.validate.outputs.sha }}", gate)
+        self.assertIn("      actions: read\n", gate)
+        self.assertNotIn("check-ci.py", jobs["validate"])
+        self.assertNotIn("actions: read", jobs["validate"])
+        self.assertNotIn("check-ci.py", (ROOT / "scripts/release/dispatch.sh").read_text())
+        self.assertIn("    needs: [validate, ci-gate, macos-build, linux, windows, windows-sign]\n", jobs["sign"])
+        self.assertIn("needs.ci-gate.result == 'success'", jobs["sign"])
         for target in ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"):
             # The Authenticode-signed builds are attested and published once
             # signing is set up; the tested unsigned ones only until then.
@@ -207,7 +213,7 @@ class ReleaseTargets(unittest.TestCase):
             ref = "github.sha" if name in ("audit", "validate") else "needs.validate.outputs.sha"
             self.assertIn("ref: ${{ " + ref + " }}", job)
             self.assertIn("persist-credentials: false", job)
-        for name in ("audit", "validate", "sign", "windows-sign", "attest", "publish", "homebrew", "winget"):
+        for name in ("audit", "validate", "ci-gate", "sign", "windows-sign", "attest", "publish", "homebrew", "winget"):
             for condition in ("github.repository == 'penso/herdr-gpui'", "github.ref == 'refs/heads/main'",
                               "github.actor == 'penso'", "github.triggering_actor == 'penso'"):
                 self.assertIn(condition, jobs[name])
@@ -322,7 +328,7 @@ class WindowsTrust(unittest.TestCase):
     def test_only_the_protected_signing_job_can_sign(self):
         jobs = self.jobs
         sign = jobs["windows-sign"]
-        self.assertIn("    needs: [validate, windows]\n", sign)
+        self.assertIn("    needs: [validate, windows, ci-gate]\n", sign)
         self.assertIn("      id-token: write\n", sign)
         self.assertIn("uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0", sign)
         self.assertIn("uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0", sign)
