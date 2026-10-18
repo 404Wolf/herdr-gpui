@@ -2,9 +2,9 @@ use super::*;
 
 #[test]
 fn feedback_holds_a_pending_send_until_taken_or_evicted() {
-    let mut sending = PendingSend::<()>::default();
+    let mut sending = PendingSend::default();
     let mut feedback = Feedback::default();
-    let pending = sending.start(Vec::new());
+    let pending = sending.start().map(|(_, pending)| pending);
     assert!(pending.is_some());
     feedback.keep(
         crate::browser::Batch {
@@ -13,11 +13,11 @@ fn feedback_holds_a_pending_send_until_taken_or_evicted() {
         },
         pending,
     );
-    assert!(sending.start(Vec::new()).is_none());
+    assert!(sending.start().is_none());
     assert_eq!(feedback.take(&key("p2")), None);
-    assert!(sending.start(Vec::new()).is_none());
+    assert!(sending.start().is_none());
     assert_eq!(feedback.take(&key("p1")).as_deref(), Some("one"));
-    let pending = sending.start(Vec::new());
+    let pending = sending.start().map(|(_, pending)| pending);
     assert!(pending.is_some());
     feedback.keep(
         crate::browser::Batch {
@@ -36,5 +36,5 @@ fn feedback_holds_a_pending_send_until_taken_or_evicted() {
             None,
         );
     }
-    assert!(sending.start(Vec::new()).is_some());
+    assert!(sending.start().is_some());
 }

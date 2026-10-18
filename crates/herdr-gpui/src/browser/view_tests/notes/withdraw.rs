@@ -36,3 +36,23 @@ fn page_notes_queued_for_a_busy_agent_can_be_withdrawn(cx: &mut gpui::TestAppCon
         1
     );
 }
+
+/// Clear sent empties the list while a batch still waits, yet the panel
+/// stays open so the batch can be withdrawn.
+#[gpui::test]
+fn the_notes_panel_stays_open_while_a_cleared_batch_waits(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = window(cx);
+    with_agent(&view, cx, "working");
+    let tab = noted_tab(&view, cx);
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            view.send_notes(&tab, cx);
+            view.clear_sent_notes(tab.id, cx);
+            assert!(view.browser.annotations.listed(tab.id).is_empty());
+            assert!(view.browser.annotations.open(tab.id));
+            view.withdraw_notes(tab.id, cx);
+            assert_eq!(view.deliveries.len(), 0);
+            assert_eq!(view.queued_notes(tab.id, cx), None);
+        });
+    });
+}

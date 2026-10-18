@@ -52,22 +52,18 @@ fn collect_copy(collected: &mut Vec<Copies>, group: Option<Copies>, text: Option
     }
 }
 
-/// A tab cannot resend while its previous batch is saving, waiting for an
-/// agent, or still held for feedback. The delivery owns the strong reference;
-/// the tab keeps the notes the batch carries, so withdrawing it can mark
-/// them unsent again.
-pub(crate) struct PendingSend<N> {
-    live: Weak<()>,
-    round: Vec<N>,
-}
+/// One Send from a tab. A note records the send that delivered it, so
+/// withdrawing that send marks exactly its notes unsent again, not an equal
+/// note an earlier send delivered.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SendId(u64);
 
-impl<N> Default for PendingSend<N> {
-    fn default() -> Self {
-        Self {
-            live: Weak::new(),
-            round: Vec::new(),
-        }
-    }
+/// A tab cannot resend while its previous batch is saving, waiting for an
+/// agent, or still held for feedback. The delivery owns the strong reference.
+#[derive(Default)]
+pub(crate) struct PendingSend {
+    live: Weak<()>,
+    last: SendId,
 }
 
 /// Where a tab's batch waits while it can still be withdrawn.
@@ -94,16 +90,22 @@ pub(crate) fn carries(pending: Option<&Arc<()>>, live: &Weak<()>) -> bool {
     pending.is_some_and(|pending| std::ptr::eq(Arc::as_ptr(pending), live.as_ptr()))
 }
 
-impl<N> PendingSend<N> {
-    /// Starts sending `round`, unless the previous batch is still pending.
-    pub(crate) fn start(&mut self, round: Vec<N>) -> Option<Arc<()>> {
-        if self.live.strong_count() > 0 {
+impl PendingSend {
+    /// Starts a send, unless the previous batch is still pending, naming it
+    /// for the notes it carries.
+    pub(crate) fn start(&mut self) -> Option<(SendId, Arc<()>)> {
+        if self.is_pending() {
             return None;
         }
         let pending = Arc::new(());
         self.live = Arc::downgrade(&pending);
-        self.round = round;
-        Some(pending)
+        self.last = SendId(self.last.0 + 1);
+        Some((self.last, pending))
+    }
+
+    /// Whether the last batch is still saving, queued, or on its way.
+    pub(crate) fn is_pending(&self) -> bool {
+        self.live.strong_count() > 0
     }
 
     /// Where the batch waits, while no agent has it yet.
@@ -126,20 +128,20 @@ impl<N> PendingSend<N> {
     }
 
     /// Takes the batch back before any agent has it, leaving every other
-    /// batch queued in its order, and returns the notes it carried. `None`
-    /// once it was pasted, fetched, or dropped.
+    /// batch queued in its order, and returns the send whose notes it
+    /// carried. `None` once it was pasted, fetched, or dropped.
     pub(crate) fn withdraw(
         &mut self,
         deliveries: &mut Deliveries,
         feedback: Option<&mut Feedback>,
-    ) -> Option<Vec<N>> {
+    ) -> Option<SendId> {
         let queued = deliveries.queue.len();
         deliveries
             .queue
             .retain(|delivery| !carries(delivery.pending.as_ref(), &self.live));
         let withdrawn = deliveries.queue.len() < queued
             || feedback.is_some_and(|feedback| feedback.withdraw(&self.live));
-        withdrawn.then(|| std::mem::take(&mut self.round))
+        withdrawn.then_some(self.last)
     }
 }
 

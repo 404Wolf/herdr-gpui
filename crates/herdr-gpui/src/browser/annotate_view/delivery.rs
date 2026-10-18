@@ -14,7 +14,7 @@ impl HerdrWindow {
     /// sent yet, or all of them again.
     fn notes_round(&mut self, tab: &Tab) -> (Vec<usize>, Vec<annotate::Note>) {
         let notes = &self.tab_notes(tab.id).notes;
-        let indexes = crate::agent_notes::round(notes.iter().map(|note| note.sent));
+        let indexes = crate::agent_notes::round(notes.iter().map(|note| note.sent.is_some()));
         let round = indexes.iter().map(|&index| notes[index].clone()).collect();
         (indexes, round)
     }
@@ -81,7 +81,7 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) {
         let (indexes, notes) = self.notes_round(tab);
-        let Some(pending) = self.tab_notes(tab.id).sending.start(notes.clone()) else {
+        let Some((send, pending)) = self.tab_notes(tab.id).sending.start() else {
             self.show_flash(
                 Flash::warning("The previous notes are still pending delivery"),
                 cx,
@@ -102,7 +102,7 @@ impl HerdrWindow {
                 cx.write_to_clipboard(ClipboardItem::new_string(text));
             }
         });
-        self.mark_notes_sent(tab.id, &indexes, cx);
+        self.mark_notes_sent(tab.id, &indexes, send, cx);
     }
 
     /// Takes back the batch still waiting for the agent, marking its notes
@@ -112,16 +112,13 @@ impl HerdrWindow {
             return;
         };
         let feedback = cx.default_global::<crate::browser::Feedback>();
-        let Some(round) = notes.sending.withdraw(&mut self.deliveries, Some(feedback)) else {
+        let Some(send) = notes.sending.withdraw(&mut self.deliveries, Some(feedback)) else {
             self.show_flash(Flash::warning("The agent already has those notes"), cx);
             return;
         };
         for note in &mut notes.notes {
-            if round
-                .iter()
-                .any(|sent| sent.anchor == note.anchor && sent.comment == note.comment)
-            {
-                note.sent = false;
+            if note.sent == Some(send) {
+                note.sent = None;
             }
         }
         self.show_flash(Flash::success("Notes withdrawn"), cx);

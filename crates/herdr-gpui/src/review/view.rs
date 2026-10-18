@@ -171,7 +171,7 @@ pub(crate) struct Review {
     selection: Option<selection::Selection>,
     selecting: bool,
     notes: Vec<Note>,
-    sending: crate::agent_notes::PendingSend<Note>,
+    sending: crate::agent_notes::PendingSend,
     /// Each noted row and its note's number, recomputed when either changes.
     marks: HashMap<RowId, usize>,
     input: Entity<SearchInput>,
@@ -518,7 +518,7 @@ impl HerdrWindow {
             if let Some(review) = self.reviews.get_mut(&id) {
                 if let Some(note) = review.notes.get_mut(index) {
                     note.comment = edited.comment;
-                    note.sent = false;
+                    note.sent = None;
                 }
                 review.editing = None;
                 review.input.update(cx, |input, cx| input.clear(cx));
@@ -595,7 +595,7 @@ impl HerdrWindow {
     /// Removes the notes the agent already has, ending that round.
     fn clear_sent_review_notes(&mut self, id: TabId, cx: &mut Context<Self>) {
         if let Some(review) = self.reviews.get_mut(&id) {
-            review.notes.retain(|note| !note.sent);
+            review.notes.retain(|note| note.sent.is_none());
             review.editing = None;
             review.refresh_marks();
         }
@@ -610,7 +610,8 @@ impl HerdrWindow {
         if review.notes.is_empty() {
             return None;
         }
-        let indexes = crate::agent_notes::round(review.notes.iter().map(|note| note.sent));
+        let indexes =
+            crate::agent_notes::round(review.notes.iter().map(|note| note.sent.is_some()));
         let round: Vec<Note> = indexes
             .iter()
             .map(|&index| review.notes[index].clone())
@@ -627,13 +628,11 @@ impl HerdrWindow {
         let Some((text, indexes, pane)) = self.review_prompt(id) else {
             return;
         };
-        let Some(pending) = self.reviews.get_mut(&id).and_then(|review| {
-            let round = indexes
-                .iter()
-                .filter_map(|&index| review.notes.get(index).cloned())
-                .collect();
-            review.sending.start(round)
-        }) else {
+        let Some((send, pending)) = self
+            .reviews
+            .get_mut(&id)
+            .and_then(|review| review.sending.start())
+        else {
             self.show_flash(
                 Flash::warning("The previous notes are still pending delivery"),
                 cx,
@@ -643,7 +642,7 @@ impl HerdrWindow {
         if let Some(review) = self.reviews.get_mut(&id) {
             for index in indexes {
                 if let Some(note) = review.notes.get_mut(index) {
-                    note.sent = true;
+                    note.sent = Some(send);
                 }
             }
         }
@@ -667,7 +666,7 @@ impl HerdrWindow {
             return;
         };
         let feedback = cx.default_global::<crate::browser::Feedback>();
-        let Some(round) = review
+        let Some(send) = review
             .sending
             .withdraw(&mut self.deliveries, Some(feedback))
         else {
@@ -675,11 +674,8 @@ impl HerdrWindow {
             return;
         };
         for note in &mut review.notes {
-            if round
-                .iter()
-                .any(|sent| sent.anchor == note.anchor && sent.comment == note.comment)
-            {
-                note.sent = false;
+            if note.sent == Some(send) {
+                note.sent = None;
             }
         }
         self.show_flash(Flash::success("Notes withdrawn"), cx);

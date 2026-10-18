@@ -16,7 +16,7 @@ fn sent(view: &Entity<HerdrWindow>, cx: &mut gpui::VisualTestContext) -> Vec<(St
         view.reviews[&the(view)]
             .notes
             .iter()
-            .map(|note| (note.comment.clone(), note.sent))
+            .map(|note| (note.comment.clone(), note.sent.is_some()))
             .collect()
     })
 }
@@ -71,4 +71,50 @@ fn a_queued_batch_is_withdrawn_and_its_notes_sent_again(cx: &mut gpui::TestAppCo
     let text = kept(&view, cx).unwrap();
     assert!(text.contains("Note: Withdrawn"), "{text}");
     assert!(!text.contains("Note: Delivered"), "{text}");
+}
+
+/// Withdrawing a send unmarks only its own notes, not an equal note an
+/// earlier send delivered, which a later Send would otherwise repeat.
+#[gpui::test]
+fn withdrawing_leaves_an_equal_delivered_note_sent(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = window(cx, Some("working"));
+    cx.update(|window, cx| view.update(cx, |view, cx| view.seed_review(changes(), window, cx)));
+    note(&view, cx, line(3), "Same");
+    cx.update(|_, cx| view.update(cx, |view, cx| view.send_review(the(view), cx)));
+    set_status(&view, cx, AgentStatus::Idle);
+    cx.update(|_, cx| view.update(cx, |view, cx| view.poll_deliveries(cx)));
+    assert!(kept(&view, cx).is_some());
+
+    set_status(&view, cx, AgentStatus::Working);
+    note(&view, cx, line(3), "Same");
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            view.send_review(the(view), cx);
+            view.withdraw_review(the(view), cx);
+        });
+    });
+    assert_eq!(
+        sent(&view, cx),
+        [("Same".into(), true), ("Same".into(), false)]
+    );
+}
+
+/// Clear sent empties the list while a batch still waits; Withdraw stays.
+#[gpui::test]
+fn a_queued_batch_stays_withdrawable_after_clear_sent(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = window(cx, Some("working"));
+    cx.update(|window, cx| view.update(cx, |view, cx| view.seed_review(changes(), window, cx)));
+    note(&view, cx, line(3), "Queued");
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            view.send_review(the(view), cx);
+            view.clear_sent_review_notes(the(view), cx);
+        });
+    });
+    assert!(sent(&view, cx).is_empty());
+    assert!(shown(cx, "review-withdraw"));
+    assert!(!shown(cx, "review-copy"), "nothing is listed to copy");
+    cx.update(|_, cx| view.update(cx, |view, cx| view.withdraw_review(the(view), cx)));
+    view.read_with(cx, |view, _| assert_eq!(view.deliveries.len(), 0));
+    assert!(!shown(cx, "review-withdraw"));
 }

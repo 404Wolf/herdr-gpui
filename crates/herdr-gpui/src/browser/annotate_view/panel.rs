@@ -33,7 +33,7 @@ impl HerdrWindow {
                 Some((note.anchor.summary(), note.image.clone(), false))
             });
         let list: Vec<(usize, Note)> = notes.notes.iter().cloned().enumerate().collect();
-        let unsent = list.iter().filter(|(_, note)| !note.sent).count();
+        let unsent = list.iter().filter(|(_, note)| note.sent.is_none()).count();
         let send_label = crate::agent_notes::send_label(list.len(), unsent);
         let any_sent = unsent < list.len();
         let queued = self.queued_notes(id, cx);
@@ -120,7 +120,7 @@ impl HerdrWindow {
             .map(|index| self.browser.annotations.note_growth(id, index, now))
             .collect();
         let rows = list.into_iter().map(|(index, note)| {
-            let sent = note.sent;
+            let sent = note.sent.is_some();
             div()
                 .id(("annotation-note", index))
                 // A new note opens into the list and fades in.
@@ -257,7 +257,9 @@ impl HerdrWindow {
                         )
                     }),
             )
-            .when(has_notes, |panel| {
+            // A queued batch stays withdrawable after Clear sent empties the
+            // list.
+            .when(has_notes || queued.is_some(), |panel| {
                 panel.child(
                     div()
                         .flex()
@@ -284,9 +286,11 @@ impl HerdrWindow {
                                 cx.listener(move |this, _, _, cx| this.send_notes(&tab_for_send, cx)),
                             ))
                         })
-                        .child(button("annotation-copy", "Copy".into(), !origin).on_click(
-                            cx.listener(move |this, _, _, cx| this.copy_notes(&tab_for_copy, cx)),
-                        ))
+                        .when(has_notes, |row| {
+                            row.child(button("annotation-copy", "Copy".into(), !origin).on_click(
+                                cx.listener(move |this, _, _, cx| this.copy_notes(&tab_for_copy, cx)),
+                            ))
+                        })
                         .when(any_sent, |row| {
                             row.child(
                                 button("annotation-clear-sent", "Clear sent".into(), false).on_click(
