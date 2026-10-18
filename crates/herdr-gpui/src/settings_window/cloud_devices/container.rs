@@ -367,6 +367,7 @@ impl SettingsWindow {
                     "Stop",
                     ready && running,
                 )
+                .debug_selector(move || format!("cloud-container-stop-{index}"))
                 .when(ready && running, |button| {
                     button.on_click(
                         cx.listener(move |this, _, _, cx| this.stop_container(id.clone(), cx)),
@@ -393,3 +394,6 @@ impl SettingsWindow {
             .child(devices)
     }
 }
+
+#[cfg(test)]
+mod tests;
