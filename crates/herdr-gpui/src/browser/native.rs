@@ -11,7 +11,10 @@ use super::{
 use crate::HerdrWindow;
 use gpui::{Context, Window};
 #[cfg(target_os = "macos")]
-use std::sync::{Arc, Mutex, PoisonError};
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex, PoisonError},
+};
 use std::{
     collections::HashMap,
     rc::Rc,
