@@ -4165,6 +4165,14 @@ an `install.ps1` copy has no uninstaller, so turn the setting off before
 deleting its folder. macOS and Linux have no launch-at-login setting yet
 (`src/launch_at_login.rs`).
 
+The app runs once per user. A plain second launch, such as the Start menu
+entry or the launcher with no link, sends `app focus` over the control pipe,
+so the running app's window comes forward and the new process exits. The
+launcher and the new process pass on the shell's foreground right, so the
+window comes forward instead of flashing in the taskbar. A launch with
+`--socket` or `--session` still starts a separate app. So does a plain launch
+when the running app cannot answer, for example one that hangs.
+
 Starting a local `herdr server` looks for `herdr.exe` and uses
 `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` in place of `process_group(0)`, so
 the daemon survives the GUI and no console window appears.
