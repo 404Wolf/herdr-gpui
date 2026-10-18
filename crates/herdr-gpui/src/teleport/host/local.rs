@@ -6,10 +6,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// `program` in the user's tool directories under `home`, then on `path`,
-/// the order the script prelude puts them in. On Windows a bare name also
-/// matches its `.exe`, `.cmd`, or `.bat`.
-pub(super) fn find(program: &str, home: Option<&Path>, path: Option<&OsStr>) -> Option<PathBuf> {
+/// The user's tool directories under `home`, then `path`, in the order the
+/// script prelude puts them on `PATH`. A program started directly gets them
+/// as its `PATH` too, so a wrapper finds its interpreter where the program was.
+pub(super) fn search_path(home: Option<&Path>, path: Option<&OsStr>) -> Vec<PathBuf> {
     let tools = home.into_iter().flat_map(|home| {
         [
             ".local/bin",
@@ -28,6 +28,17 @@ pub(super) fn find(program: &str, home: Option<&Path>, path: Option<&OsStr>) -> 
     .filter(|_| cfg!(unix))
     .map(PathBuf::from);
     let nix = home.map(|home| home.join(".nix-profile/bin"));
+    tools
+        .chain(system)
+        .chain(nix)
+        .chain(path.into_iter().flat_map(std::env::split_paths))
+        .filter(|dir| dir.is_absolute())
+        .collect()
+}
+
+/// `program` in the first of `dirs` that has it. On Windows a bare name
+/// also matches its `.exe`, `.cmd`, or `.bat`.
+pub(super) fn find(program: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
     let names: Vec<String> = if cfg!(windows) && Path::new(program).extension().is_none() {
         [".exe", ".cmd", ".bat"]
             .map(|extension| format!("{program}{extension}"))
@@ -35,11 +46,7 @@ pub(super) fn find(program: &str, home: Option<&Path>, path: Option<&OsStr>) -> 
     } else {
         vec![program.to_owned()]
     };
-    tools
-        .chain(system)
-        .chain(nix)
-        .chain(path.into_iter().flat_map(std::env::split_paths))
-        .filter(|dir| dir.is_absolute())
+    dirs.iter()
         .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
         .find(|candidate| runnable(candidate))
 }
@@ -61,6 +68,10 @@ fn runnable(path: &Path) -> bool {
 mod tests {
     use super::*;
 
+    fn lookup(program: &str, home: Option<&Path>, path: &OsStr) -> Option<PathBuf> {
+        find(program, &search_path(home, Some(path)))
+    }
+
     fn tool(dir: &Path, name: &str) {
         std::fs::create_dir_all(dir).unwrap();
         let file = dir.join(name);
@@ -81,10 +92,10 @@ mod tests {
         tool(&home.join(".local/bin"), name);
         tool(&bin, name);
         let path = std::env::join_paths([&bin]).unwrap();
-        let found = find("bd", Some(&home), Some(&path)).unwrap();
+        let found = lookup("bd", Some(&home), &path).unwrap();
         assert!(found.starts_with(&home), "{found:?}");
-        assert_eq!(find("bd", None, Some(&path)).unwrap(), bin.join(name));
-        assert_eq!(find("absent", Some(&home), Some(&path)), None);
+        assert_eq!(lookup("bd", None, &path).unwrap(), bin.join(name));
+        assert_eq!(lookup("absent", Some(&home), &path), None);
     }
 
     #[cfg(unix)]
@@ -93,7 +104,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("bd"), "").unwrap();
         let path = std::env::join_paths([dir.path()]).unwrap();
-        assert_eq!(find("bd", None, Some(&path)), None);
+        assert_eq!(lookup("bd", None, &path), None);
     }
 
     #[cfg(windows)]
@@ -103,7 +114,7 @@ mod tests {
         tool(dir.path(), "claude.cmd");
         let path = std::env::join_paths([dir.path()]).unwrap();
         assert_eq!(
-            find("claude", None, Some(&path)).unwrap(),
+            lookup("claude", None, &path).unwrap(),
             dir.path().join("claude.cmd")
         );
     }

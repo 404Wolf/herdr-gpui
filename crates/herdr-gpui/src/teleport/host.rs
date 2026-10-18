@@ -262,13 +262,17 @@ export PATH
     /// `program` on this machine, found as [`Host::exec`] finds it, with the
     /// user's login environment. Only meaningful when [`Host::is_local`].
     pub(crate) fn local_command(&self, program: &str) -> std::process::Command {
-        let program = self
-            .local_program(program)
-            .unwrap_or_else(|| PathBuf::from(program));
+        let dirs = self.local_search_path();
+        let program = local::find(program, &dirs).unwrap_or_else(|| PathBuf::from(program));
         let mut command = herdr_client::new_command(program);
         crate::login_env::apply(&mut command);
         #[cfg(test)]
         command.envs(self.env.iter().map(|(key, value)| (key, value)));
+        // What the program was found on, as the prelude exports it, so a
+        // wrapper's interpreter or helper resolves there too.
+        if let Ok(path) = std::env::join_paths(&dirs) {
+            command.env("PATH", path);
+        }
         command
     }
 
@@ -325,6 +329,11 @@ export PATH
 
     /// Where `program` is on this machine, looked up as [`Host::exec`] does.
     fn local_program(&self, program: &str) -> Option<PathBuf> {
+        local::find(program, &self.local_search_path())
+    }
+
+    /// Where this machine's programs are looked up, and the `PATH` they get.
+    fn local_search_path(&self) -> Vec<PathBuf> {
         // Tests point a "remote" host's home and `PATH` at their fixtures.
         #[cfg(test)]
         let var = |name: &str| {
@@ -341,7 +350,7 @@ export PATH
         let path = var("PATH")
             .map(std::ffi::OsString::from)
             .or_else(crate::login_env::path);
-        local::find(program, home.as_deref(), path.as_deref())
+        local::search_path(home.as_deref(), path.as_deref())
     }
 
     /// The script line running `herdr_cli` with `args`, each quoted.
@@ -559,5 +568,34 @@ mod tests {
             .unwrap(),
             ["sh"]
         );
+    }
+
+    /// A local program gets the directories it was looked up in as its
+    /// `PATH`, tool directories first, as the script prelude exports them.
+    #[test]
+    fn local_programs_get_the_path_they_were_found_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        let bin = dir.path().join("bin");
+        let mut host = Host::new(&ConnectTarget::Local).unwrap();
+        host.env = vec![
+            ("HOME".into(), home.to_string_lossy().into_owned()),
+            (
+                "PATH".into(),
+                std::env::join_paths([&bin])
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+        ];
+        let command = host.local_command("git");
+        let path = command
+            .get_envs()
+            .find(|(key, _)| *key == "PATH")
+            .and_then(|(_, value)| value)
+            .unwrap();
+        let dirs: Vec<_> = std::env::split_paths(path).collect();
+        assert_eq!(dirs.first(), Some(&home.join(".local/bin")));
+        assert_eq!(dirs.last(), Some(&bin));
     }
 }
