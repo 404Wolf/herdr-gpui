@@ -1,13 +1,13 @@
 //! The collapsed sidebar's compact rail, as Herdr's default
 //! `ui.sidebar_collapsed_mode = "compact"` draws it: per host a small header
 //! box, then a status mark per workspace and per agent. The header box stays
-//! its own shape. The host that holds the selected workspace uses the same
-//! colors as a selected row: the active fill, with the foreground for its
-//! stroke and letter. The others are dimmed. Workspace badges and agent rows
-//! share one borderless grid, centered on that box, and the selection
-//! highlight is the only other box: one width, wrapped around the glyph, the
-//! icon, and the dot. Every mark navigates where its expanded row would, and
-//! its tooltip names what the narrow column cannot.
+//! its own shape and wears the workspace badge's chrome: the same fill,
+//! stroke, and corner as the selected workspace number, one step quieter on
+//! every other host. Workspace badges and agent rows share one borderless
+//! grid, centered on that box, and the selection highlight is the only other
+//! box: one width, wrapped around the glyph, the icon, and the dot. Every
+//! mark navigates where its expanded row would, and its tooltip names what
+//! the narrow column cannot.
 
 use super::{
     agent_name,
@@ -168,7 +168,7 @@ impl HerdrWindow {
                     endpoint.label.clone()
                 };
                 let box_id = endpoint_id.clone();
-                let chrome = host_chrome(selected, theme);
+                let chrome = host_chrome(selected, look, theme);
                 spaces = spaces.child(
                     // No row highlight here. The letter's own box is the
                     // header; the selection highlight belongs to the rows
@@ -183,12 +183,11 @@ impl HerdrWindow {
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .rounded(px(crate::config::corners::SMALL))
+                                .rounded(px(chrome.radius))
                                 .border_1()
                                 .border_color(chrome.border)
                                 .bg(chrome.fill)
                                 .text_color(chrome.letter)
-                                .when(chrome.dimmed, |header| header.opacity(REST_OPACITY))
                                 .child(label_text(&initial))
                                 .child(host_status(
                                     format!("rail-host-status-{endpoint_id}"),
@@ -653,8 +652,8 @@ fn host_status_right(rail_width: f32, ring_size: f32) -> f32 {
 }
 
 /// A host header: the letter box, centered on the same line as the row grid
-/// below it. Smaller than the selection highlight, and always bordered, so a
-/// selected workspace never wears the same box.
+/// below it. Smaller than the selection highlight, and painted with the
+/// workspace badge's chrome rather than a second copy of that highlight.
 fn host_header(font: &FontConfig, look: SidebarLook) -> Div {
     div()
         .relative()
@@ -667,40 +666,28 @@ fn host_header(font: &FontConfig, look: SidebarLook) -> Div {
         .overflow_hidden()
 }
 
-/// How far an inactive host header fades. Low enough to read as dim next to
-/// the selected host, high enough that the box and its status dot remain.
-const REST_OPACITY: f32 = 0.4;
-
-/// Paint for one host header. `active` is the host that holds the selected
-/// workspace. Its fill is [`Theme::active`] and its stroke and letter are the
-/// foreground: the colors a selected sidebar row already uses, not the theme
-/// primary. The row highlight is that fill on its own, so the foreground
-/// stroke is what keeps the header from wearing the same box. Every other
-/// host keeps a muted stroke and letter, dimmed by [`REST_OPACITY`]. The
-/// stroke is the same token as the letter, so the box stays visible once
-/// the header fades.
+/// Paint for one host header. The box is [`SidebarLook::badge_chrome`]: the
+/// selected workspace's badge when this host holds that workspace, and the
+/// same washes one step quieter otherwise. The letter stays the foreground
+/// on the active host and the muted token on the others.
 struct HostChrome {
     border: Rgba,
     fill: Rgba,
     letter: Rgba,
-    dimmed: bool,
+    radius: f32,
 }
 
-fn host_chrome(active: bool, theme: &Theme) -> HostChrome {
-    if active {
-        HostChrome {
-            border: rgb(theme.foreground),
-            fill: rgb(theme.active),
-            letter: rgb(theme.foreground),
-            dimmed: false,
-        }
-    } else {
-        HostChrome {
-            border: rgb(theme.muted),
-            fill: rgba(0),
-            letter: rgb(theme.muted),
-            dimmed: true,
-        }
+fn host_chrome(active: bool, look: SidebarLook, theme: &Theme) -> HostChrome {
+    let badge = look.badge_chrome(active, theme);
+    HostChrome {
+        border: badge.border,
+        fill: badge.fill,
+        letter: rgb(if active {
+            theme.foreground
+        } else {
+            theme.muted
+        }),
+        radius: badge.radius,
     }
 }
 

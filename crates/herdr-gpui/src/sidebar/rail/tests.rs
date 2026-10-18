@@ -10,7 +10,7 @@ use crate::{
 use core::prelude::v1::test;
 use gpui::{
     Bounds, Hsla, Modifiers, Pixels, Rgba, ScaledPixels, TestAppContext, VisualTestContext, rgb,
-    rgba, size,
+    size,
 };
 use herdr_client::ConnectTarget;
 use std::sync::Arc;
@@ -275,13 +275,14 @@ fn center_x(bounds: Bounds<Pixels>) -> Pixels {
     bounds.left() + bounds.size.width / 2.
 }
 
-/// The host that holds the selected workspace uses the sidebar's selection
-/// colors. The other hosts stay an empty, dimmed box. The header's stroke is
-/// not the workspace row's highlight, and the colors follow the workspace
-/// when the selection moves. Checked on every bundled theme.
+/// The host that holds the selected workspace wears that workspace badge's
+/// chrome. The other hosts wear the same washes one step quieter, and the
+/// chrome follows the workspace when the selection moves. Checked on every
+/// bundled theme.
 #[gpui::test]
 fn the_selected_workspaces_host_stands_apart(cx: &mut TestAppContext) {
     let (view, cx) = rail_window(cx, 2);
+    let look = view.read_with(cx, |view, _| layout::for_config(&view.config, view.fill()));
     for name in Theme::BUILTIN_NAMES {
         let theme = Theme::builtin(name).unwrap_or_else(|| panic!("missing theme {name}"));
         view.update(cx, |view, cx| {
@@ -292,7 +293,7 @@ fn the_selected_workspaces_host_stands_apart(cx: &mut TestAppContext) {
         let local = host_paint(cx, "rail-host-box-local");
         let remote = host_paint(cx, "rail-host-box-ssh:host1");
         let highlight = host_paint(cx, "highlight-rail-workspace-local-w0");
-        assert_header_apart(name, &theme, local, remote, highlight);
+        assert_header_apart(name, &theme, look, local, Some(remote), highlight);
     }
 
     let workspace = placed(cx, "rail-workspace-ssh:host1-w0");
@@ -305,7 +306,40 @@ fn the_selected_workspaces_host_stands_apart(cx: &mut TestAppContext) {
     let local = host_paint(cx, "rail-host-box-local");
     let remote = host_paint(cx, "rail-host-box-ssh:host1");
     let highlight = host_paint(cx, "highlight-rail-workspace-ssh:host1-w0");
-    assert_header_apart("Catppuccin Latte", &theme, remote, local, highlight);
+    assert_header_apart(
+        "Catppuccin Latte",
+        &theme,
+        look,
+        remote,
+        Some(local),
+        highlight,
+    );
+}
+
+/// Every layout's host box uses [`SidebarLook::badge_chrome`], the helper
+/// that paints the selected workspace number, and the active host stays
+/// stronger than a resting one.
+#[gpui::test]
+fn host_box_wears_the_workspace_badge(cx: &mut TestAppContext) {
+    let (view, cx) = rail_window(cx, 2);
+    for mode in LayoutMode::ALL {
+        view.update(cx, |view, cx| {
+            view.config.layout.mode = mode;
+            cx.notify();
+        });
+        cx.update(|window, cx| full_draw(window, cx).clear(cx));
+        let (look, theme) = view.read_with(cx, |view, _| {
+            (
+                layout::for_config(&view.config, view.fill()),
+                view.theme.clone(),
+            )
+        });
+        let local = host_paint(cx, "rail-host-box-local");
+        let highlight = host_paint(cx, "highlight-rail-workspace-local-w0");
+        // The resting host can sit below the spaces pane once rows grow.
+        // The theme check paints it; here its chrome is the shared helper.
+        assert_header_apart(&format!("{mode:?}"), &theme, look, local, None, highlight);
+    }
 }
 
 /// The letter box, its status dot, and the sidebar-colored ring around that
@@ -466,84 +500,93 @@ struct HeaderPaint {
 
 /// `active` is the header of the host that holds the selected workspace,
 /// `rest` is another host, and `highlight` is that workspace's selection box.
+/// Both headers take their box from [`SidebarLook::badge_chrome`], and the
+/// active one is that badge rather than a second palette.
 fn assert_header_apart(
     name: &str,
     theme: &Theme,
+    look: SidebarLook,
     active: HeaderPaint,
-    rest: HeaderPaint,
+    rest: Option<HeaderPaint>,
     highlight: HeaderPaint,
 ) {
-    let chrome = host_chrome(true, theme);
+    let raised = look.badge_chrome(true, theme);
+    let quiet = look.badge_chrome(false, theme);
+    let chrome = host_chrome(true, look, theme);
     assert!(
-        chrome.fill == rgb(theme.active)
-            && chrome.border == rgb(theme.foreground)
-            && chrome.letter == rgb(theme.foreground)
-            && !chrome.dimmed,
-        "{name}: active header does not use the selection tokens"
+        chrome.fill == raised.fill
+            && chrome.border == raised.border
+            && chrome.radius == raised.radius
+            && chrome.letter == rgb(theme.foreground),
+        "{name}: active host does not wear the workspace badge"
     );
-    let dimmed = host_chrome(false, theme);
+    let dimmed = host_chrome(false, look, theme);
     assert!(
-        dimmed.dimmed
-            && dimmed.fill == rgba(0)
-            && dimmed.letter == rgb(theme.muted)
-            && dimmed.border == rgb(theme.muted),
-        "{name}: resting header is not the muted box"
+        dimmed.fill == quiet.fill
+            && dimmed.border == quiet.border
+            && dimmed.radius == quiet.radius
+            && dimmed.letter == rgb(theme.muted),
+        "{name}: resting host does not wear the quiet badge"
     );
-    // The letter has to read on the fill, and the stroke on the sidebar.
+    assert!(
+        raised.fill != quiet.fill || raised.border != quiet.border,
+        "{name}: active and resting badges are the same"
+    );
+    // The letter has to read on a solid active fill, and on the sidebar
+    // under a wash.
     assert!(
         ratio(theme.foreground, theme.active) >= theme.contrast.mark_ratio(),
         "{name}: letter lacks contrast on the active fill"
     );
     assert!(
         ratio(theme.foreground, theme.sidebar_background()) >= theme.contrast.mark_ratio(),
-        "{name}: header stroke lacks contrast on the sidebar"
+        "{name}: letter lacks contrast on the sidebar"
     );
 
     let fill = active
         .fill
         .unwrap_or_else(|| panic!("{name}: active header has no fill"));
     assert!(
-        matches_color(fill, Hsla::from(rgb(theme.active))),
-        "{name}: active fill is not theme.active: {fill:?}"
-    );
-    let border = active
-        .border
-        .unwrap_or_else(|| panic!("{name}: active header has no border"));
-    assert!(
-        matches_color(border, Hsla::from(rgb(theme.foreground))),
-        "{name}: active border is not the foreground: {border:?}"
-    );
-    assert!(
-        rest.fill.is_none_or(|color| color.a < 0.05),
-        "{name}: resting header is filled: {rest:?}"
-    );
-    let rest_border = rest
-        .border
-        .unwrap_or_else(|| panic!("{name}: resting header lost its box"));
-    assert!(
-        matches_color(
-            rest_border,
-            Hsla::from(rgb(theme.muted)).opacity(REST_OPACITY),
-        ),
-        "{name}: resting border is not the dimmed muted stroke: {rest_border:?}"
-    );
-    assert!(
-        border.a > rest_border.a + 0.5,
-        "{name}: active header is not clearly stronger than the dimmed one"
+        matches_color(fill, Hsla::from(raised.fill)),
+        "{name}: active fill is not the badge: {fill:?}"
     );
     let mark_fill = highlight
         .fill
-        .unwrap_or_else(|| panic!("{name}: selected workspace has no highlight"));
+        .unwrap_or_else(|| panic!("{name}: selected workspace has no badge"));
     assert!(
-        matches_color(mark_fill, Hsla::from(rgb(theme.active))),
-        "{name}: row highlight is not theme.active: {mark_fill:?}"
+        matches_color(mark_fill, Hsla::from(raised.fill)),
+        "{name}: workspace badge fill drifted from the host: {mark_fill:?}"
     );
     assert!(
-        highlight
-            .border
-            .is_none_or(|color| !matches_color(color, Hsla::from(rgb(theme.foreground)))),
-        "{name}: row highlight wears the header stroke"
+        same_edge(active.border, highlight.border),
+        "{name}: host stroke {active:?} is not the workspace badge {highlight:?}"
     );
+    if let Some(rest) = rest {
+        let rest_fill = rest
+            .fill
+            .unwrap_or_else(|| panic!("{name}: resting header has no fill"));
+        assert!(
+            matches_color(rest_fill, Hsla::from(quiet.fill)),
+            "{name}: resting fill is not the quiet badge: {rest_fill:?}"
+        );
+        assert!(
+            same_edge(rest.border, Some(Hsla::from(quiet.border))),
+            "{name}: resting stroke is not the quiet badge: {rest:?}"
+        );
+    }
+}
+
+/// A missing edge and a transparent one are the same stroke. The fill
+/// highlight draws no border; the host keeps a transparent one so its box
+/// does not change size between layouts.
+fn same_edge(host: Option<Hsla>, badge: Option<Hsla>) -> bool {
+    match (host, badge) {
+        (Some(host), Some(badge)) => {
+            matches_color(host, badge) || (host.a < 0.05 && badge.a < 0.05)
+        }
+        (Some(host), None) | (None, Some(host)) => host.a < 0.05,
+        (None, None) => true,
+    }
 }
 
 /// Painted `color` is `want`, within a couple of 8-bit steps. Hue is a poor
