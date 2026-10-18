@@ -296,6 +296,14 @@ fn the_selected_workspaces_host_stands_apart(cx: &mut TestAppContext) {
         assert_header_apart(name, &theme, look, local, Some(remote), highlight);
     }
 
+    // The loop leaves the last bundled theme on the view; the checks below
+    // read Latte, so put Latte back before moving the selection.
+    let latte = Theme::builtin("Catppuccin Latte").unwrap_or_else(|| panic!("missing Latte"));
+    view.update(cx, |view, cx| {
+        view.theme = latte;
+        cx.notify();
+    });
+    cx.update(|window, cx| full_draw(window, cx).clear(cx));
     let workspace = placed(cx, "rail-workspace-ssh:host1-w0");
     cx.simulate_click(workspace.center(), Modifiers::default());
     cx.update(|window, cx| full_draw(window, cx).clear(cx));
