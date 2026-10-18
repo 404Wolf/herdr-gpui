@@ -120,7 +120,9 @@ jobs:
   macos-checks:
     needs: validate
     runs-on: macos-15
-    timeout-minutes: 45
+    # Two full test passes took 35-39 minutes on healthy runners; a slow
+    # arm64 runner hit 45 mid-run on 2026-10-18.
+    timeout-minutes: 60
     permissions:
       contents: read
     env:
