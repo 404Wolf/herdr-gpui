@@ -35,6 +35,7 @@ fn rail_window(
                     true,
                 );
                 remote.live.snapshot = Some(Arc::new(snapshot(2)));
+                remote.never_connect();
                 view.endpoints.push(remote);
             }
             view.sidebar_visible = false;
@@ -304,8 +305,15 @@ fn the_selected_workspaces_host_stands_apart(cx: &mut TestAppContext) {
         cx.notify();
     });
     cx.update(|window, cx| full_draw(window, cx).clear(cx));
-    let workspace = placed(cx, "rail-workspace-ssh:host1-w0");
-    cx.simulate_click(workspace.center(), Modifiers::default());
+    // Select the host directly. A click on its workspace row depends on that
+    // row being visible in the spaces pane, which the platform's font metrics
+    // decide, and this test is about the chrome, not about hit testing.
+    view.update(cx, |view, cx| {
+        assert!(view.select_endpoint("ssh:host1", cx));
+    });
+    // The made-up host never answers; its activation timer must not send the
+    // window back to Local while the test looks at the host boxes.
+    view.update(cx, |view, _| view.activation_deadline = None);
     cx.update(|window, cx| full_draw(window, cx).clear(cx));
     view.read_with(cx, |view, _| {
         assert_eq!(view.endpoints[view.selected_endpoint].id, "ssh:host1");
@@ -423,10 +431,54 @@ fn host_box_dot_and_ring_stay_inside_the_rail(cx: &mut TestAppContext) {
             contains(rail, header) && contains(rail, dot) && contains(rail, ring),
             "{box_name} box {header:?} dot {dot:?} ring {ring:?} outside squeezed rail {rail:?}"
         );
+        let radius = host_radius(&view, box_name == "rail-host-box-local", cx);
         assert!(
-            clears_rounded_border(dot, header),
+            clears_rounded_border(dot, header, radius),
             "{dot_name} {dot:?} meets the border of {header:?}"
         );
+    }
+}
+
+/// With several hosts, a large sidebar font and symbol status icons, the
+/// shared columns used to need more than the 64 px rail, so every row's
+/// grid hung past its edges and the row clipped the status icon. The rail
+/// steps the font down until the grid fits, in every layout.
+#[gpui::test]
+fn wide_marks_in_a_big_font_still_fit_the_rail(cx: &mut TestAppContext) {
+    let (view, cx) = rail_window(cx, 2);
+    view.update(cx, |view, cx| {
+        view.config.sidebar.size = 20.;
+        view.config.status_icons = crate::config::StatusIcons::Solid;
+        cx.notify();
+    });
+    for mode in LayoutMode::ALL {
+        view.update(cx, |view, cx| {
+            view.config.layout.mode = mode;
+            cx.notify();
+        });
+        cx.update(|window, cx| full_draw(window, cx).clear(cx));
+        let rail = placed(cx, "sidebar-rail");
+        assert_eq!(rail.size.width, px(RAIL_WIDTH), "{mode:?}");
+        for key in [
+            "rail-workspace-local-w0",
+            "rail-workspace-ssh:host1-w0",
+            "rail-agent-local-p0",
+            "rail-agent-ssh:host1-p0",
+        ] {
+            let row = placed(cx, key);
+            let mark = placed(cx, Box::leak(format!("rail-mark-{key}").into_boxed_str()));
+            let dot = placed(cx, Box::leak(format!("rail-dot-{key}").into_boxed_str()));
+            // Across only: how many rows fit the pane's height is up to the
+            // platform's font metrics.
+            assert!(
+                row.left() >= rail.left() - px(0.5) && row.right() <= rail.right() + px(0.5),
+                "{mode:?} {key} row {row:?} past {rail:?}"
+            );
+            assert!(
+                contains(row, mark) && contains(row, dot) && mark.right() <= dot.left(),
+                "{mode:?} {key}: mark {mark:?} and status {dot:?} are not inside the row {row:?}"
+            );
+        }
     }
 }
 
@@ -434,15 +486,16 @@ fn host_box_dot_and_ring_stay_inside_the_rail(cx: &mut TestAppContext) {
 /// dimmed one. The stroke is the box's 1px rounded border.
 #[gpui::test]
 fn host_status_dots_clear_the_header_border(cx: &mut TestAppContext) {
-    let (_view, cx) = rail_window(cx, 2);
+    let (view, cx) = rail_window(cx, 2);
     for (dot_name, box_name) in [
         ("rail-host-status-local", "rail-host-box-local"),
         ("rail-host-status-ssh:host1", "rail-host-box-ssh:host1"),
     ] {
         let dot = placed(cx, dot_name);
         let header = placed(cx, box_name);
+        let radius = host_radius(&view, box_name == "rail-host-box-local", cx);
         assert!(
-            clears_rounded_border(dot, header),
+            clears_rounded_border(dot, header, radius),
             "{dot_name} {dot:?} meets the border of {header:?}"
         );
     }
@@ -450,10 +503,10 @@ fn host_status_dots_clear_the_header_border(cx: &mut TestAppContext) {
 
 /// `dot` stays off the header stroke. That holds when it sits fully inside
 /// the rounded border, with a pixel of fill between them, and when it sits
-/// fully outside the box with a gap. The border is a 1px stroke on a
-/// `corners::SMALL` radius.
-fn clears_rounded_border(dot: Bounds<Pixels>, header: Bounds<Pixels>) -> bool {
-    beside_the_box(dot, header) || inside_the_stroke(dot, header)
+/// fully outside the box with a gap. The border is a 1px stroke on the
+/// badge chrome's radius.
+fn clears_rounded_border(dot: Bounds<Pixels>, header: Bounds<Pixels>, radius: f32) -> bool {
+    beside_the_box(dot, header) || inside_the_stroke(dot, header, radius)
 }
 
 /// The whole dot is to the right of the box and stays within its height, so
@@ -464,9 +517,11 @@ fn beside_the_box(dot: Bounds<Pixels>, header: Bounds<Pixels>) -> bool {
         && dot.bottom() <= header.bottom() + px(0.5)
 }
 
-fn inside_the_stroke(dot: Bounds<Pixels>, header: Bounds<Pixels>) -> bool {
+/// `radius` is the box's own corner radius, [`SidebarLook::badge_chrome`]'s:
+/// `corners::CONTROL` in rounded layouts and zero in flat ones.
+fn inside_the_stroke(dot: Bounds<Pixels>, header: Bounds<Pixels>, radius: f32) -> bool {
     let inset = 1. + 1.;
-    let radius = (crate::config::corners::SMALL - inset).max(0.);
+    let radius = (radius - inset).max(0.);
     let left = f32::from(header.left()) + inset;
     let top = f32::from(header.top()) + inset;
     let right = f32::from(header.right()) - inset;
@@ -496,6 +551,16 @@ fn inside_rounded(
     let dx = x - cx;
     let dy = y - cy;
     dx * dx + dy * dy <= radius * radius + 0.01
+}
+
+/// The corner radius the host box of the active (`true`) or a resting host
+/// is drawn with in the view's current layout.
+fn host_radius(view: &Entity<HerdrWindow>, active: bool, cx: &mut VisualTestContext) -> f32 {
+    view.read_with(cx, |view, _| {
+        layout::for_config(&view.config, view.fill())
+            .badge_chrome(active, &view.theme)
+            .radius
+    })
 }
 
 /// Fill and border painted for one box. A border is its own quad, and a

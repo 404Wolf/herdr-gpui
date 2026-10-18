@@ -129,10 +129,13 @@ impl HerdrWindow {
             .width(None, f32::from(window.viewport_size().width))
             .unwrap_or(0.);
         let look = layout::for_config(&self.config, self.fill());
-        let font = &self.config.sidebar;
         let theme = &self.theme;
         let hint = Hint::new(theme);
         let multi = self.endpoints.len() > 1;
+        // A large sidebar font would make the columns wider than the rail and
+        // clip the status icons, so the rail steps the font down until they fit.
+        let fitted = rail_font(&self.config.sidebar, indicators, multi);
+        let font = &fitted;
         let columns = rail_columns(font, indicators, multi);
         let split = self.sidebar_split.unwrap_or(0.5).clamp(0.1, 0.9);
         let mut spaces = div()
@@ -521,6 +524,25 @@ fn rail_columns(font: &FontConfig, indicators: Indicators, multi: bool) -> Colum
         height: line_height(font).max(icon),
         icon: multi.then_some(icon),
     }
+}
+
+/// The widest the column grid may be: the rail less an outline's pixel on
+/// each side.
+const RAIL_GRID: f32 = RAIL_WIDTH - 2.;
+
+/// The smallest font the rail steps down to.
+const RAIL_FONT_MIN: f32 = 8.;
+
+/// `font`, stepped down in half pixels until the column grid fits the rail.
+/// A font that already fits is returned as is.
+fn rail_font(font: &FontConfig, indicators: Indicators, multi: bool) -> FontConfig {
+    let mut fitted = font.clone();
+    while rail_columns(&fitted, indicators, multi).width() > RAIL_GRID
+        && fitted.size > RAIL_FONT_MIN
+    {
+        fitted.size = (fitted.size - 0.5).max(RAIL_FONT_MIN);
+    }
+    fitted
 }
 
 /// How much room the highlight can give the grid on every side and still sit
