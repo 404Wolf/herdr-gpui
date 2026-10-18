@@ -1942,6 +1942,16 @@ Setups of several such worktrees wait their turn; one whose host is not shown
 within two minutes is given up on, with a warning. A
 new workspace opens the repository's main checkout on that host.
 
+Once you have a container device (see [Containers](#containers-docker-or-podman)),
+the dialogs also offer a **New container** tile, even with one host connected.
+Creating with it makes a container with the `[container]` settings and Herdr
+installed, starts Herdr's server in it, saves it as a device, then creates the
+checkout there as above, cloning the repository first; the dialog shows each
+step. The container stays a device if a later step fails, so you can retry on
+it or remove it. It runs the cloud setup script once it is shown, like one made
+in Settings. Fan-out lanes are not offered new containers yet: a new container
+has no signed-in agent to start.
+
 The fan-out dialog offers Spread agents across hosts. Each lane then goes to
 the host with the most room left, a lane counting as a core, and its host chip
 opens every host, best first, to move that lane. Each other host is set up once

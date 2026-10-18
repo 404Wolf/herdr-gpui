@@ -293,8 +293,8 @@ impl HerdrWindow {
             return;
         }
         let name = self.worktree_name(cx);
-        if let Some(endpoint) = self.dispatch_choice(action) {
-            match self.submit_dispatch(action, &endpoint, name) {
+        if let Some(target) = self.dispatch_choice(action) {
+            match self.submit_dispatch(action, &target, name) {
                 Ok(()) => self.local_error = None,
                 Err(error) => self.menu.error = Some(error.to_string()),
             }

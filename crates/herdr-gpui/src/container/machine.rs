@@ -230,6 +230,46 @@ pub(crate) fn delete(engine: Engine, id: &str, cancelled: &dyn Fn() -> bool) -> 
     Ok(())
 }
 
+/// Start Herdr's headless server in the container `id` and wait until it
+/// answers, so `herdr` commands work before any window has connected; a
+/// bridge would start it too, but only once a window attaches.
+pub(crate) fn start_server(engine: Engine, id: &str, cancelled: &dyn Fn() -> bool) -> Result<()> {
+    let env = [format!("HOME={HOME}"), format!("USER={USER}")];
+    let mut detached = vec!["exec", "--detach", "--user", USER, "--workdir", HOME];
+    for pair in &env {
+        detached.extend(["--env", pair]);
+    }
+    detached.extend([id, "/bin/sh", "-c", SERVER]);
+    engine.run("exec", detached, QUICK, cancelled)?;
+    let deadline = std::time::Instant::now() + QUICK;
+    loop {
+        let mut status = vec!["exec", "--user", USER];
+        for pair in &env {
+            status.extend(["--env", pair]);
+        }
+        status.extend([id, "/bin/sh", "-c", STATUS]);
+        let (code, ..) = engine.output("exec", status, QUICK, cancelled)?;
+        if code == Some(0) {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(Error::Timeout {
+                engine: engine.key(),
+                action: "starting Herdr's server",
+            });
+        }
+        if cancelled() {
+            return Err(Error::Cancelled);
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+}
+
+/// Run Herdr's server where the installer put it, replacing the shell.
+const SERVER: &str = r#"PATH="$HOME/.local/bin:$PATH"; exec herdr server >/dev/null 2>&1"#;
+/// Succeed once that server answers.
+const STATUS: &str = r#"PATH="$HOME/.local/bin:$PATH"; herdr status server 2>/dev/null | grep -q '^status: running'"#;
+
 /// A command that runs, as the `herdr` user in its home, the one shell string
 /// appended to it, as `ssh` runs its remote command: the bridge, Herdr's
 /// installer, and Teleport's scripts all append theirs.

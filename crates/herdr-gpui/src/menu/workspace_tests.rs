@@ -12,6 +12,8 @@ mod issues;
 mod merged_removal;
 mod naming;
 mod pull_requests;
+#[cfg(all(feature = "container", any(target_os = "linux", target_os = "macos")))]
+mod sandbox_dispatch;
 mod scripts;
 mod targets;
 mod tiles;

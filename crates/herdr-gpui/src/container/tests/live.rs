@@ -51,6 +51,25 @@ fn a_container_is_made_reached_and_deleted() {
             machine::exec(engine, &id)?,
             &never
         )?);
+        // Dispatch runs `herdr` commands before any window has connected.
+        machine::start_server(engine, &id, &never)?;
+        let listed = engine.run(
+            "exec",
+            [
+                "exec",
+                "--user",
+                machine::USER,
+                "--env",
+                "HOME=/home/herdr",
+                &id,
+                "/bin/sh",
+                "-c",
+                "$HOME/.local/bin/herdr workspace list",
+            ],
+            std::time::Duration::from_secs(30),
+            &never,
+        )?;
+        assert!(listed.contains("workspace_list"), "{listed}");
         // The bridge answers discovery, so a connection would work.
         let bridge = herdr_client::connect_command(
             machine::exec(engine, &id)?,

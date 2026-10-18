@@ -654,6 +654,7 @@ impl HerdrWindow {
             crate::dispatch::Picker::opened(
                 &self.endpoints[self.selected_endpoint].id,
                 self.dispatch_candidates(&repo, cx),
+                self.dispatch_sandboxes(),
             )
         });
         self.menu.pr.clear();

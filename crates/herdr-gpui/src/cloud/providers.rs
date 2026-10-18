@@ -22,6 +22,11 @@ pub(crate) struct Deletion {
     pub(crate) run: fn(&str) -> crate::Result<()>,
 }
 
+/// Make a new, ready machine for work that needs one of its own, such as a
+/// worktree dispatched to a new sandbox. Blocks: run it on a worker.
+pub(crate) type Provision =
+    fn(&dyn Fn() -> bool, &dyn Fn(super::Step)) -> crate::Result<super::SavedDevice>;
+
 macro_rules! providers {
     ($(
         $feature:literal $variant:ident => {
@@ -31,7 +36,8 @@ macro_rules! providers {
             offer: $offer:literal,
             noun: $noun:literal,
             command: $command:ident,
-            deletion: $deletion:expr $(,)?
+            deletion: $deletion:expr,
+            provision: $provision:expr $(,)?
         }
     ),* $(,)?) => {
         /// The provider's name, as the UI shows it.
@@ -67,6 +73,14 @@ macro_rules! providers {
         pub(crate) fn deletion(provider: CloudProvider) -> Option<Deletion> {
             match provider {
                 $(#[cfg(feature = $feature)] CloudProvider::$variant => $deletion,)*
+            }
+        }
+
+        /// How the provider makes a new machine on demand, without a
+        /// dialog, if it can.
+        pub(crate) fn provision(provider: CloudProvider) -> Option<Provision> {
+            match provider {
+                $(#[cfg(feature = $feature)] CloudProvider::$variant => $provision,)*
             }
         }
 
@@ -133,6 +147,7 @@ providers! {
             leftovers: ", with its disk and IP,",
             run: crate::azure::destroy::destroy_saved,
         }),
+        provision: None,
     },
     "boat" Boat => {
         module: boat,
@@ -142,6 +157,7 @@ providers! {
         noun: "sandbox",
         command: gateway,
         deletion: None,
+        provision: None,
     },
     "coder" Coder => {
         module: coder,
@@ -151,6 +167,7 @@ providers! {
         noun: "workspace",
         command: plain,
         deletion: None,
+        provision: None,
     },
     "container" Container => {
         module: container,
@@ -164,6 +181,7 @@ providers! {
             leftovers: ", with its home volume,",
             run: crate::container::destroy_saved,
         }),
+        provision: Some(crate::container::setup::provision),
     },
     // Sandboxes are created in Settings; existing ones cannot be attached yet.
     "daytona" Daytona => {
@@ -174,6 +192,7 @@ providers! {
         noun: "sandbox",
         command: gateway,
         deletion: None,
+        provision: None,
     },
     "railway" Railway => {
         module: railway,
@@ -183,6 +202,7 @@ providers! {
         noun: "VM",
         command: plain,
         deletion: None,
+        provision: None,
     },
     // keep-sorted end
 }

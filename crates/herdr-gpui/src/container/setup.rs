@@ -52,6 +52,11 @@ pub(crate) fn add_device(
         }
         return Err(error);
     }
+    // Commands such as Teleport's need a running server before any window
+    // connects; a failure here still leaves a device a connection can start.
+    if let Err(error) = machine::start_server(engine, &name, cancelled) {
+        tracing::warn!(category = "container", id = name, %error, "Herdr's server did not start");
+    }
     let device = SavedDevice {
         provider: CloudProvider::Container,
         id: name.clone(),
@@ -92,6 +97,25 @@ fn install_herdr(
         .into());
     }
     Ok(())
+}
+
+/// Make a ready container with the configured settings and a generated
+/// name, installing Herdr, for work that needs a new machine of its own, such
+/// as a worktree dispatched to a new container. Blocks: run it on a worker.
+pub(crate) fn provision(
+    cancelled: &dyn Fn() -> bool,
+    report: &dyn Fn(cloud::Step),
+) -> crate::Result<SavedDevice> {
+    let settings = crate::config::Config::load()?.container.settings()?;
+    add_device(
+        AddRequest {
+            settings,
+            name: random_name(),
+            install: true,
+        },
+        cancelled,
+        report,
+    )
 }
 
 /// A saved container and what its engine says about it now.
