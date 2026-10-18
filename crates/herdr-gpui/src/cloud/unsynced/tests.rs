@@ -36,8 +36,21 @@ fn the_search_finds_only_checkouts_with_work_found_nowhere_else() {
     use std::process::Command;
     let home = tempfile::tempdir().unwrap();
     let git = |dir: &std::path::Path, args: &[&str]| {
+        // The user's own Git config, such as commit signing, stays out.
         let status = Command::new("git")
-            .args(["-c", "user.name=t", "-c", "user.email=t@t", "-C"])
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap())
+            .env("HOME", home.path())
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .args([
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "commit.gpgsign=false",
+                "-C",
+            ])
             .arg(dir)
             .args(args)
             .output()
