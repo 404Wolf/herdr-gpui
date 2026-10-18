@@ -4181,6 +4181,14 @@ its windows, and version information that Explorer and Task Manager show as
 **Herdr UI** with the release version, or `dev` for a local build. See
 [the icon README](../../assets/icons/README.md#windows).
 
+Both executables also carry one application manifest,
+[`windows.manifest`](windows.manifest): per-monitor DPI awareness, long paths
+(once Windows allows them), the UTF-8 code page for ANSI APIs, Windows 10 and
+11 as supported systems, and no elevation. It replaces GPUI's own manifest,
+which GPUI's platform crate always asks for and an executable cannot hold
+beside a second one, so the workspace patches GPUI's `embed-resource` build
+dependency with the no-op in `crates/embed-resource`.
+
 Each release also has a per-user Inno Setup installer,
 `Herdr-VERSION-TARGET-setup.exe` (`scripts/release/herdr-gpui.iss`), which
 installs the zip's files where `site/install.ps1` does, adds the directory to
