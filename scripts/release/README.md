@@ -54,16 +54,17 @@ for reproducible builds and matching cross-architecture PR metadata.
 
 ## Packaging Commands
 
-The release workflow's `ci-gate` job runs `scripts/release/check-ci.py`
-against the exact release SHA, waiting for a CI run that is still going. A
-successful CI workflow alone is insufficient: every platform check, native
-Windows test job, and optimized build must have completed successfully in the
-same owner-triggered push or manual run on `main`. Skipped or missing jobs fail
-the gate. `just release` dispatches without waiting, so the release builds
-overlap CI; `sign`, `windows-sign`, and everything after them wait behind
-`ci-gate`, so nothing is signed or published before CI passes. CI never cancels
-a run on `main`, so a later merge cannot strand a release commit without one.
-For documentation-only commits, start a full run with
+The release workflow's `ci-gate` job runs `scripts/release/check-ci.py` against
+the exact release SHA, waiting for a CI run that is still going. A successful
+CI workflow alone is insufficient: every platform check (both its
+default-features and all-features legs), native Windows test job, and optimized
+build must have completed successfully in the same owner-triggered push or
+manual run on `main`. Skipped or missing jobs fail the gate. `just release`
+dispatches without waiting, so the release builds overlap CI; `sign`,
+`windows-sign`, and everything after them wait behind `ci-gate`, so nothing is
+signed or published before CI passes. CI never cancels a run on `main`, so a
+later merge cannot strand a release commit without one. For documentation-only
+commits, start a full run with
 `gh workflow run ci.yml --repo penso/herdr-gpui --ref main` before releasing.
 
 ```sh

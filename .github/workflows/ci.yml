@@ -96,7 +96,7 @@ jobs:
        ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
         github.actor == 'penso' && github.triggering_actor == 'penso' &&
         github.ref == 'refs/heads/main'))
-    name: Format, lint, and test (${{ matrix.runner }})
+    name: Format, lint, and test (${{ matrix.runner }}, ${{ matrix.features }})
     needs: [zizmor, commits]
     strategy:
       fail-fast: false
@@ -106,6 +106,10 @@ jobs:
         # if a macOS 14 regression shows up:
         # runner: [macos-14, macos-15, ubuntu-24.04, ubuntu-24.04-arm]
         runner: [macos-15, ubuntu-24.04, ubuntu-24.04-arm]
+        # The two test passes each take most of the job, so they run side by
+        # side, each with one of the lints; the script checks ride with the
+        # default-features pass.
+        features: [default, all]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
@@ -119,9 +123,10 @@ jobs:
         run: bash scripts/install-linux-deps.sh
       # Lets the release script tests build real .deb, .rpm and Arch packages.
       - name: Install the pinned Linux package builder
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.features == 'default'
         run: echo "HERDR_TEST_NFPM=$(bash scripts/release/install-nfpm.sh "$RUNNER_TEMP/nfpm")" >> "$GITHUB_ENV"
       - name: Test release scripts and security contracts without credentials
+        if: matrix.features == 'default'
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: |
@@ -132,6 +137,7 @@ jobs:
       # The signed update manifests' contract. Releases require this job, so
       # a manifest regression stops a release, not only the Updater workflow.
       - name: Test update manifest contracts
+        if: matrix.features == 'default'
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: |
@@ -147,25 +153,33 @@ jobs:
         run: rustup show
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
-          key: checks
+          key: checks-${{ matrix.features }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Check formatting
+        if: matrix.features == 'default'
         run: cargo fmt --all -- --check
       - name: Check source file sizes
+        if: matrix.features == 'default'
         run: bash scripts/check-file-size.sh
       - name: Check keep-sorted regions
+        if: matrix.features == 'default'
         run: |
           python3 scripts/test_check_sorted.py
           python3 scripts/check-sorted.py
       - name: Test mockup feedback receiver
+        if: matrix.features == 'default'
         run: python3 .claude/skills/gpui-mockup/scripts/test_wait.py
       - name: Lint every target and feature
+        if: matrix.features == 'all'
         run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: Lint without default features
+        if: matrix.features == 'default'
         run: cargo clippy --locked --workspace --all-targets --no-default-features -- -D warnings
       - name: Test default features and executable CLI
+        if: matrix.features == 'default'
         run: cargo test --locked --workspace
       - name: Test integration-feature build and executable CLI
+        if: matrix.features == 'all'
         run: cargo test --locked --workspace --all-features
 
   # Match the other platforms' Rust checks without an extra optimized build.
@@ -179,12 +193,14 @@ jobs:
        ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
         github.actor == 'penso' && github.triggering_actor == 'penso' &&
         github.ref == 'refs/heads/main'))
-    name: Windows check (${{ matrix.runner }})
+    name: Windows check (${{ matrix.runner }}, ${{ matrix.features }})
     needs: [zizmor, commits]
     strategy:
       fail-fast: false
       matrix:
         runner: [windows-2025, windows-11-arm]
+        # Split as in the checks job: each test pass with one of the lints.
+        features: [default, all]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
@@ -197,17 +213,22 @@ jobs:
         run: rustup show
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
-          key: ${{ matrix.runner }}
+          key: ${{ matrix.runner }}-${{ matrix.features }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Check formatting
+        if: matrix.features == 'default'
         run: cargo fmt --all -- --check
       - name: Lint every target and feature
+        if: matrix.features == 'all'
         run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: Lint without default features
+        if: matrix.features == 'default'
         run: cargo clippy --locked --workspace --all-targets --no-default-features -- -D warnings
       - name: Test default features and executable CLI
+        if: matrix.features == 'default'
         run: cargo test --locked --workspace
       - name: Test integration-feature build and executable CLI
+        if: matrix.features == 'all'
         run: cargo test --locked --workspace --all-features
 
   # The native GUI tests (`just test-gui`, `just test-sidebar`) on a real

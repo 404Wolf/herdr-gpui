@@ -70,12 +70,23 @@ class ReleaseTargets(unittest.TestCase):
         windows = jobs["windows"]
         self.assertIn("        runner: [windows-2025, windows-11-arm]\n", windows)
         self.assertIn("    runs-on: ${{ matrix.runner }}\n", windows)
+        # Each platform splits into a default-features and an all-features
+        # leg that run side by side; every check runs in exactly one of them.
+        legs = {"cargo fmt --all -- --check": "default",
+                "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings": "all",
+                "cargo clippy --locked --workspace --all-targets --no-default-features -- -D warnings": "default",
+                "cargo test --locked --workspace": "default",
+                "cargo test --locked --workspace --all-features": "all"}
         for name in ("checks", "windows"):
-            for command in ("cargo fmt --all -- --check",
-                            "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
-                            "cargo test --locked --workspace",
-                            "cargo test --locked --workspace --all-features"):
-                self.assertIn(f"run: {command}\n", jobs[name])
+            self.assertIn("        features: [default, all]\n", jobs[name])
+            self.assertIn("${{ matrix.features }})\n", re.search(r"^    name: .+\n", jobs[name], re.M)[0])
+            self.assertIn("${{ matrix.features }}\n          save-if:", jobs[name])
+            for command, leg in legs.items():
+                self.assertIn(f"        if: matrix.features == '{leg}'\n        run: {command}\n", jobs[name])
+        for command in ("python3 -m unittest discover -s scripts/release/tests -v",
+                        "bash scripts/check-file-size.sh", "python3 scripts/check-sorted.py",
+                        "python3 .claude/skills/gpui-mockup/scripts/test_wait.py"):
+            self.assertEqual(jobs["checks"].count(command), 1, command)
         self.assertNotIn("--release", windows)
         self.assertNotIn("cargo build", windows)
         # The installer check runs only for its inputs, and the gate requires

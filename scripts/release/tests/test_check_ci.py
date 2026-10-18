@@ -2,7 +2,6 @@
 import contextlib
 import importlib.util
 import io
-import json
 from pathlib import Path
 import re
 import unittest
@@ -108,16 +107,15 @@ class CheckCi(unittest.TestCase):
         expected = set()
         for key in ("zizmor", "commits", "checks-passed", "checks", "windows", "windows-native", "build"):
             definition = definitions[key]
-            name = re.search(r"^    name: (.+)$", definition, re.M)[1]
-            if "${{ matrix.runner }}" in name:
-                matrix = re.search(r"^        runner: (.+)$", definition, re.M)[1]
-                # The last fromJSON alternative is main's matrix; PRs omit macOS 14.
-                runners = (json.loads(re.findall(r"'(\[.*?\])'", matrix)[-1])
-                           if "fromJSON" in matrix else matrix.strip("[]").split(", "))
-                expected.update(name.replace("${{ matrix.runner }}", runner) for runner in runners)
-            elif "${{ matrix.target }}" in name:
-                expected.update(name.replace("${{ matrix.target }}", target)
-                                for target in re.findall(r"^            target: (.+)$", definition, re.M))
-            else:
-                expected.add(name)
+            names = [re.search(r"^    name: (.+)$", definition, re.M)[1]]
+            for dimension in ("runner", "features"):
+                placeholder = f"${{{{ matrix.{dimension} }}}}"
+                if placeholder in names[0]:
+                    values = re.search(rf"^        {dimension}: \[(.+)\]$", definition, re.M)[1].split(", ")
+                    names = [name.replace(placeholder, value) for name in names for value in values]
+            if "${{ matrix.target }}" in names[0]:
+                names = [names[0].replace("${{ matrix.target }}", target)
+                         for target in re.findall(r"^            target: (.+)$", definition, re.M)]
+            expected.update(names)
         self.assertEqual(CI.REQUIRED_JOBS, expected)
+

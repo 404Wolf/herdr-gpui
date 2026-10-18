@@ -209,9 +209,10 @@ just ci
 - For linking, startup, or packaging changes, also use `just test-build` to build the release executable and exercise its CLI without a desktop.
 - The `windows` CI job checks formatting, lints every target and feature, and
   runs workspace tests with default and all features, including headless UI and
-  CLI tests. The `windows-native` job runs `live_gui` (the `test-gui` and
-  `test-sidebar` equivalents) against a pinned `herdr.exe`, and the release-mode
-  performance budget, on both Windows runners, except the live-daemon test on
+  CLI tests, split like `checks` into parallel `default` and `all` legs. The
+  `windows-native` job runs `live_gui` (the `test-gui` and `test-sidebar`
+  equivalents) against a pinned `herdr.exe`, and the release-mode performance
+  budget, on both Windows runners, except the live-daemon test on
   ARM64, where the emulated daemon ignores Enter; the optimized Windows build
   and its installer run in `windows-package` when their inputs change, and in
   the release workflow, which only smoke-tests the CLI of the bytes it ships
