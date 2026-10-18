@@ -83,6 +83,12 @@ pub(crate) fn resume(target: &ConnectTarget) {
     }
 }
 
+/// Release the stop intent on the container `id`, as a reconnect does, for a
+/// device the user adds back.
+pub(super) fn resume_device(engine: Engine, id: &str) {
+    device(engine.key(), id).resume();
+}
+
 pub(super) fn start(engine: Engine, id: &str, start: impl FnOnce() -> Result<()>) -> Result<()> {
     device(engine.key(), id).start(id, start)
 }

@@ -244,7 +244,12 @@ pub(crate) fn adopt(
     {
         return Err(super::Error::Gone(id.to_owned()).into());
     }
-    machine::ensure_running(engine, id, cancelled)?;
+    // Adding it back is the user's explicit start, as a reconnect is; it
+    // still waits for a stop already under way.
+    super::lifecycle::resume_device(engine, id);
+    super::lifecycle::start(engine, id, || {
+        machine::ensure_running(engine, id, cancelled)
+    })?;
     make_ready(engine, id, install, cancelled, &|_| {})
 }
 
