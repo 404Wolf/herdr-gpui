@@ -369,7 +369,11 @@ pub fn start(handle: WindowHandle<HerdrWindow>, cx: &mut App) {
                         || (!uncached && counts.shapes != 0)
                         || counts.sidebar_renders != usize::from(full)
                     {
-                        bail!("terminal redraw (full={full}): {counts:?}");
+                        // The pointer shows whether a hover moved the sidebar.
+                        bail!(
+                            "terminal redraw step={step} (full={full}): {counts:?} mouse={:?}",
+                            window.mouse_position()
+                        );
                     }
                     Ok(elapsed)
                 });
