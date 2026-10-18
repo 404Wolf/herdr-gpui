@@ -306,10 +306,13 @@ fn terminal(
     });
 
     let stream = std::net::TcpStream::connect(address).unwrap();
-    stream
+    let (socket, _) = tungstenite::client(format!("ws://{address}/"), stream).unwrap();
+    // Only the relay's reads poll; a short timeout during the handshake
+    // fails it on a busy machine.
+    socket
+        .get_ref()
         .set_read_timeout(Some(Duration::from_millis(20)))
         .unwrap();
-    let (socket, _) = tungstenite::client(format!("ws://{address}/"), stream).unwrap();
     (socket, service)
 }
 
@@ -365,10 +368,11 @@ fn a_shell_that_never_starts_is_a_failed_connection() {
     });
 
     let stream = std::net::TcpStream::connect(address).unwrap();
-    stream
+    let (mut socket, _) = tungstenite::client(format!("ws://{address}/"), stream).unwrap();
+    socket
+        .get_ref()
         .set_read_timeout(Some(Duration::from_millis(20)))
         .unwrap();
-    let (mut socket, _) = tungstenite::client(format!("ws://{address}/"), stream).unwrap();
     let (_send, input) = mpsc::sync_channel(1);
     let mut stdout = Vec::new();
     let error = relay::relay(&mut socket, b"true", input, &mut stdout).unwrap_err();
