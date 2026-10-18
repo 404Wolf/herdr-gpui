@@ -683,10 +683,9 @@ impl LiveState {
                     // A dropped event may have invalidated an already displayed pane.
                     self.notifications_lost = true;
                 }
-                self.notifications.push_back(
-                    crate::notifications::Notice::new(notification, received)
-                        .with_snapshot(self.snapshot.as_deref()),
-                );
+                let notice = crate::notifications::Notice::new(notification, received)
+                    .with_snapshot(self.latest_snapshot().map(Arc::as_ref));
+                self.notifications.push_back(notice);
             }
             ClientEvent::Message(ServerMessage::ReloadSoundConfig) => {
                 self.reload_sound = true;

@@ -3852,7 +3852,9 @@ ordered events into a bounded latest-state cache. The UI samples changed state
 at most once per 16 ms without blocking. A metadata-only snapshot is staged
 while the displayed snapshot and surface stay coherent, so input keeps flowing;
 a boot, focus, pane-layout, zoom, keybinding, or command change invalidates the
-surface, and input waits for a coherent one. Reconnect replaces the cache, so
+surface, and input waits for a coherent one. Notices, sounds, and agent
+checkpoints judge agent status from the staged metadata, so a status change
+that arrives before its surface still counts. Reconnect replaces the cache, so
 late events from an old connection cannot affect the UI.
 
 ### Scrolling Semantics

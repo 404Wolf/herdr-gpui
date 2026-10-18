@@ -71,6 +71,13 @@ fn input_panes(
 }
 
 impl LiveState {
+    /// The newest received metadata, which may be ahead of the displayed pair.
+    /// Notices, sounds, and checkpoints judge agent status from it; rendering,
+    /// hit testing, and input stay on `snapshot`.
+    pub(crate) fn latest_snapshot(&self) -> Option<&Arc<ClientShellSnapshot>> {
+        self.pending_snapshot.as_ref().or(self.snapshot.as_ref())
+    }
+
     pub(crate) fn invalidate_surface(&mut self) {
         self.surface = None;
         if let Some(snapshot) = self.pending_snapshot.take() {
@@ -80,8 +87,7 @@ impl LiveState {
     }
 
     pub(super) fn receive_snapshot(&mut self, snapshot: Arc<ClientShellSnapshot>) {
-        let latest = self.pending_snapshot.as_ref().or(self.snapshot.as_ref());
-        if latest.is_some_and(|latest| {
+        if self.latest_snapshot().is_some_and(|latest| {
             latest.boot_id == snapshot.boot_id && latest.revision > snapshot.revision
         }) {
             return;

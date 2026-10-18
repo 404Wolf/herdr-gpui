@@ -145,8 +145,9 @@ fn wire_completion_waits_for_evidence_then_command_uses_original_pane(
                     .as_ref()
                     .is_some_and(|s| s.revision == projection.revision)
             });
+            // Staged metadata is evidence before its surface arrives.
             view.tick_toasts(false, now + Duration::from_millis(50));
-            assert!(!view.endpoints[1].toasts.entries[0].1.visible);
+            assert!(view.endpoints[1].toasts.entries[0].1.visible);
             view.endpoints[1]
                 .connection
                 .inbox
