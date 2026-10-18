@@ -71,3 +71,36 @@ fn agent_rows_keep_a_pane_name_that_is_not_the_agent() {
     assert_eq!(pane_beside("grok", Some("  api ")), Some("api"));
     assert_eq!(pane_beside("grok", Some("   ")), None);
 }
+
+/// Two agents of one name, state, workspace and tab sound the same unless
+/// the spoken label carries the pane name.
+#[test]
+fn spoken_labels_tell_same_named_agents_apart_by_pane() {
+    let mut snapshot = layout_tests::snapshot(2);
+    for (agent, title) in snapshot.agents.iter_mut().zip(["api", "docs"]) {
+        agent.workspace_id = "w0".into();
+        agent.tab_id = "t0".into();
+        agent.display_agent = Some("grok".into());
+        agent.name = Some("grok".into());
+        agent.title = Some(title.into());
+    }
+    let spoken = |snapshot: &ClientShellSnapshot, index: usize, nested| {
+        crate::sidebar::agents::spoken_agent(&snapshot.agents[index], snapshot, nested, None)
+    };
+    for nested in [false, true] {
+        assert!(
+            spoken(&snapshot, 0, nested).contains("grok, api"),
+            "{}",
+            spoken(&snapshot, 0, nested)
+        );
+        assert!(
+            spoken(&snapshot, 1, nested).contains("grok, docs"),
+            "{}",
+            spoken(&snapshot, 1, nested)
+        );
+        assert_ne!(spoken(&snapshot, 0, nested), spoken(&snapshot, 1, nested));
+    }
+    // A name that only repeats the agent adds nothing to say.
+    snapshot.agents[0].title = Some("grok".into());
+    assert!(!spoken(&snapshot, 0, false).contains("grok, grok"));
+}

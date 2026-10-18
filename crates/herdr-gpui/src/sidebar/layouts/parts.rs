@@ -53,6 +53,8 @@ struct Piece<'a> {
 pub(super) struct Line<'a> {
     width: f32,
     gap: f32,
+    /// Width the filling pieces keep before shrinking pieces take theirs.
+    keep: f32,
     pieces: Vec<Piece<'a>>,
 }
 
@@ -63,8 +65,16 @@ impl<'a> Line<'a> {
         Self {
             width: width.max(0.),
             gap,
+            keep: 0.,
             pieces: Vec::new(),
         }
+    }
+
+    /// Reserves `width` for the filling pieces: shrinking pieces give way to
+    /// it, so a long label cannot squeeze the text that fills out of the line.
+    pub(super) fn keep(mut self, width: f32) -> Self {
+        self.keep = width.max(0.);
+        self
     }
 
     fn push(mut self, shell: Div, content: Content<'a>, natural: f32, fit: Fit) -> Self {
@@ -151,7 +161,8 @@ impl<'a> Line<'a> {
             .map(|piece| match piece.fit {
                 Fit::Fixed => piece.natural,
                 Fit::Shrink(share) => {
-                    let width = piece.natural.min(share * self.width).min(free);
+                    let room = (free - self.keep).max(0.);
+                    let width = piece.natural.min(share * self.width).min(room);
                     free -= width;
                     width
                 }

@@ -163,9 +163,15 @@ fn long_names_truncate_inside_the_row_at_narrow_widths(cx: &mut gpui::TestAppCon
                     edge.size.width <= px(width) + px(1.),
                     "{mode:?} {width} row {index} {edge:?}"
                 );
-                for (text, (bounds, rendered, glyphs)) in
-                    probes.iter().filter(|(text, _)| text.contains(needle))
-                {
+                let captions: Vec<_> = probes
+                    .iter()
+                    .filter(|(text, _)| text.contains(needle))
+                    .collect();
+                assert!(
+                    !captions.is_empty(),
+                    "{mode:?} {width}: row {index} painted no caption"
+                );
+                for (text, (bounds, rendered, glyphs)) in captions {
                     assert!(
                         bounds.right() <= edge.right() + px(0.5),
                         "{mode:?} {width} {bounds:?} past {edge:?}"
@@ -183,5 +189,43 @@ fn long_names_truncate_inside_the_row_at_narrow_widths(cx: &mut gpui::TestAppCon
                 }
             }
         }
+    }
+}
+
+/// A long pane caption beside a long status must not take the agent's name:
+/// Minimal gives the secondary labels only what the name leaves.
+#[gpui::test]
+fn minimal_keeps_the_agent_name_beside_a_long_caption_and_status(cx: &mut gpui::TestAppContext) {
+    let caption = "c".repeat(100);
+    let status = "s".repeat(60);
+    let mut snapshot = crowded(1, |_| Some(caption.clone()));
+    let agent = &mut snapshot.agents[0];
+    let key = crate::sidebar::agents::status_text(agent.agent_status).to_owned();
+    agent.state_labels.push((key, status.clone()));
+    let (view, cx) = window(cx, snapshot);
+    // Minimal shows the status text only when the agent rows ask for it.
+    view.update(cx, |view, _| {
+        view.config.sidebar_layout.agents.rows =
+            vec![vec![crate::config::sidebar::ConfiguredToken::plain(
+                crate::config::AgentToken::StateText,
+            )]];
+    });
+    for width in [140., 160., 200., SIDEBAR] {
+        show(&view, crate::config::LayoutMode::Minimal, width, cx);
+        let probes = cx.update(|window, cx| {
+            cx.default_global::<TextProbes>().0.clear();
+            full_draw(window, cx).clear(cx);
+            cx.global::<TextProbes>().0.clone()
+        });
+        let find = |needle: &str| probes.iter().find(|(text, _)| text.contains(needle));
+        assert!(find(&caption).is_some(), "{width}: no caption");
+        assert!(find(&status).is_some(), "{width}: no status text");
+        let (_, (bounds, rendered, _)) =
+            find("grok").unwrap_or_else(|| panic!("{width}: the agent name vanished"));
+        assert!(bounds.size.width > px(0.), "{width}: name has no room");
+        assert!(
+            rendered.starts_with("grok"),
+            "{width}: name was cut to {rendered:?}"
+        );
     }
 }

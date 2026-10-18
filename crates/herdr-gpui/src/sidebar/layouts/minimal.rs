@@ -170,7 +170,13 @@ impl RowLayout for Minimal {
             );
             return shell(&agent.key, state, 0., (line, Some(lines)), cx);
         }
+        // The name keeps room however long the pane caption and status are: up
+        // to two fifths of the line, or all of it when it is shorter than that.
+        let keep = (agent.name.chars().count() as f32 * parts::glyph_at(font, font.size))
+            .ceil()
+            .min(cx.look.content_width(cx.width) * 0.4);
         let line = line
+            .keep(keep)
             .fixed(
                 cx.indicators.width(font),
                 parts::status(agent.status, false, cx),

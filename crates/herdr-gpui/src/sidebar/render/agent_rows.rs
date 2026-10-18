@@ -5,7 +5,7 @@ use crate::{
     HerdrWindow, NavigationTarget,
     sidebar::{
         Indicators, agent_name,
-        agents::{agent_place, pane_beside, pane_caption, state_label, status_text},
+        agents::{agent_place, pane_beside, pane_caption, spoken_agent, state_label, status_text},
         cell::{AgentRow, Cell, RowContext, RowData, layout_for},
         layout::SidebarLook,
         line_height, tokens, wash,
@@ -132,12 +132,7 @@ impl HerdrWindow {
         let menu_endpoint = endpoint_id.clone();
         let menu_pane = id.clone();
         let menu_open = selected && self.pane_menu_target() == Some(id.as_str());
-        let spoken = crate::sidebar::accessibility::agent_name(
-            agent_name(agent),
-            &state_label(agent, status_text(agent.agent_status)),
-            (!nested).then(|| agent_place(agent, snapshot)).flatten(),
-            row_cx.host,
-        );
+        let spoken = spoken_agent(agent, snapshot, nested, row_cx.host);
         let name = agent_name(agent);
         Cell::new(
             rows,

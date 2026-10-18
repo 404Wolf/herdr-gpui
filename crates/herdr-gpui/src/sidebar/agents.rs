@@ -178,6 +178,24 @@ pub(super) fn pane_beside<'a>(agent: &str, pane: Option<&'a str>) -> Option<&'a 
     (pane != agent.trim()).then_some(pane)
 }
 
+/// What a screen reader says for an agent's row: the same parts the row
+/// paints, so agents of one name stay apart by their pane names.
+pub(super) fn spoken_agent(
+    agent: &ClientShellAgent,
+    snapshot: &ClientShellSnapshot,
+    nested: bool,
+    host: Option<&str>,
+) -> String {
+    let name = agent_name(agent);
+    super::accessibility::agent_name(
+        name,
+        pane_beside(name, pane_caption(agent, snapshot)),
+        &state_label(agent, status_text(agent.agent_status)),
+        (!nested).then(|| agent_place(agent, snapshot)).flatten(),
+        host,
+    )
+}
+
 /// Where an agent runs: its workspace, and its tab when that earns a place,
 /// which upstream decides by the workspace having several tabs or the user
 /// naming it. `None` once the agent's workspace has gone.
