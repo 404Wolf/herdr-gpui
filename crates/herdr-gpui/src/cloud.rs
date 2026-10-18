@@ -8,6 +8,9 @@
 
 mod catalog;
 mod command;
+// Only containers and Daytona hold images so far.
+#[cfg_attr(not(any(feature = "container", feature = "daytona")), allow(dead_code))]
+pub(crate) mod image;
 pub(crate) mod install;
 mod jobs;
 pub(crate) mod names;
@@ -22,7 +25,9 @@ pub(crate) use command::with_command;
 pub(crate) use herdr_client::CloudProvider;
 pub(crate) use jobs::Jobs;
 pub use providers::ProviderError;
-pub(crate) use providers::{Deletion, connect, deletion, icon, name, noun, offer, provision};
+pub(crate) use providers::{
+    Deletion, connect, deletion, icon, image as image_support, name, noun, offer, provision,
+};
 
 use std::{io, path::PathBuf};
 
@@ -88,6 +93,8 @@ pub(crate) enum Step {
     /// The provider's own word for where the build is, e.g. `pending`.
     Building(String),
     CheckingHerdr,
+    /// Building the project's sandbox image first.
+    Image(image::Progress),
     InstallingHerdr,
 }
 
@@ -100,6 +107,8 @@ impl Step {
             Self::Connecting => 0.25,
             Self::Starting | Self::Building(_) => 0.4,
             Self::CheckingHerdr => 0.7,
+            // The build is most of a dispatch that needs one.
+            Self::Image(progress) => 0.05 + 0.5 * progress.fraction().unwrap_or(0.0),
             Self::InstallingHerdr => 0.85,
         }
     }
@@ -111,6 +120,7 @@ impl Step {
             Self::Starting => "Starting…".into(),
             Self::Building(status) => format!("Building ({status})…"),
             Self::CheckingHerdr => "Checking for Herdr…".into(),
+            Self::Image(progress) => format!("Building the image: {}", progress.text()),
             Self::InstallingHerdr => "Installing Herdr…".into(),
         }
     }

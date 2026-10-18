@@ -645,6 +645,8 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         pressed_terminal_link: None,
         links: Default::default(),
         terminal_mouse: None,
+        #[cfg(feature = "cloud")]
+        sandbox_image_builds: Default::default(),
         scrollbar_drag: None,
         split_drag: None,
         split_cursor: None,

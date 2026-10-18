@@ -96,6 +96,33 @@ pub(crate) fn add_device(
     Ok(device)
 }
 
+/// Make a ready sandbox with the configured account and a generated name, for
+/// work that needs a new machine of its own, such as a worktree dispatched to
+/// a new sandbox. It starts from `image`, a project's snapshot, when there is
+/// one; Herdr is in it already. Blocks: run it on a worker.
+pub(crate) fn provision(
+    image: Option<&str>,
+    cancelled: &dyn Fn() -> bool,
+    report: &dyn Fn(cloud::Step),
+) -> crate::Result<SavedDevice> {
+    let mut settings = crate::config::Config::load()?
+        .daytona
+        .settings()?
+        .ok_or(super::Error::Account)?;
+    if let Some(image) = image {
+        settings.snapshot = Some(image.to_owned());
+    }
+    add_device(
+        AddRequest {
+            settings,
+            name: random_name(),
+            install: true,
+        },
+        cancelled,
+        report,
+    )
+}
+
 /// Where the API key in use comes from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Key {

@@ -6,6 +6,8 @@ mod dispatch;
 pub(super) mod popover;
 mod render;
 mod requests;
+#[cfg(feature = "cloud")]
+mod sandbox_images;
 mod scripts;
 
 use super::{Page, WorkspaceAction, WorkspaceMenuAction, state::Deletion};
@@ -515,6 +517,10 @@ impl HerdrWindow {
         if target.can_create() {
             items.push((Dialog(WorkspaceAction::OpenWorktree), "Open worktree..."));
         }
+        #[cfg(feature = "cloud")]
+        if target.worktree.is_some() && !self.sandbox_image_providers().is_empty() {
+            items.push((WorkspaceMenuAction::SandboxImages, "Build sandbox images"));
+        }
         // Whether the checkout defines scripts is only known once its file is
         // read, so every Git checkout offers them and an absent one says so.
         if target.worktree.is_some() {
@@ -731,6 +737,8 @@ impl HerdrWindow {
             WorkspaceMenuAction::Checkpoints => self.open_checkpoints(window, cx),
             WorkspaceMenuAction::FanOut => self.open_fan_out(window, cx),
             WorkspaceMenuAction::Script(kind) => self.run_workspace_script(kind, window, cx),
+            #[cfg(feature = "cloud")]
+            WorkspaceMenuAction::SandboxImages => self.build_workspace_sandbox_images(window, cx),
             WorkspaceMenuAction::Orchestrator => {
                 if let Some(target) = &self.menu.target {
                     let workspace = target.id.clone();

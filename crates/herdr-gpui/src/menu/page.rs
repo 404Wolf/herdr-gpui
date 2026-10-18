@@ -128,6 +128,9 @@ pub(crate) enum WorkspaceMenuAction {
     Script(crate::worktree_scripts::ScriptKind),
     /// Show the repository's issues in the activity bar.
     Orchestrator,
+    /// Build the repository's sandbox images ahead of a dispatch.
+    #[cfg(feature = "cloud")]
+    SandboxImages,
 }
 
 impl Page {
@@ -194,6 +197,8 @@ impl WorkspaceMenuAction {
             Self::Checkpoints => "icons/refresh.svg",
             Self::FanOut => "icons/fan-out.svg",
             Self::Orchestrator => "icons/github.svg",
+            #[cfg(feature = "cloud")]
+            Self::SandboxImages => "icons/cloud/container.svg",
             Self::Script(crate::worktree_scripts::ScriptKind::Setup) => "icons/refresh.svg",
             Self::Script(_) => "icons/play.svg",
             Self::PullRequest => return None,

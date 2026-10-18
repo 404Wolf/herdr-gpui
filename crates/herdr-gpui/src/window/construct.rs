@@ -236,6 +236,8 @@ impl HerdrWindow {
             resize_mode: false,
             review_files_width: crate::panel_resize::REVIEW_FILES,
             reviews: Default::default(),
+            #[cfg(feature = "cloud")]
+            sandbox_image_builds: Default::default(),
             scrollbar_drag: None,
             selected_endpoint: 0,
             selected_generation: 0,

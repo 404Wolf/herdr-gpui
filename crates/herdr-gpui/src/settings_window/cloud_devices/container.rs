@@ -163,6 +163,7 @@ impl SettingsWindow {
     }
 
     fn refresh_container(&mut self, cx: &mut Context<Self>) {
+        self.watch_sandbox_images(cx);
         #[cfg(test)]
         if self
             .container_card
@@ -457,6 +458,7 @@ impl SettingsWindow {
             .child(new)
             .child(devices)
             .children(unsaved)
+            .child(self.render_sandbox_images(CloudProvider::Container, cx))
     }
 }
 

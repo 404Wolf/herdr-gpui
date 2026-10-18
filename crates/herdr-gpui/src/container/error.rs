@@ -40,6 +40,10 @@ pub enum Error {
     Limit(usize),
     #[error("Cancelled.")]
     Cancelled,
+    #[error("Could not write the image's build context.")]
+    BuildContext(#[source] io::Error),
+    #[error("The image {0} was not built by Herdr UI, so it was left alone.")]
+    ImageNotOurs(String),
     #[error("{0}")]
     Bridge(#[source] herdr_client::Error),
     #[error(transparent)]

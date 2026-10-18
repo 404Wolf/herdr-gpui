@@ -23,9 +23,10 @@ pub(crate) struct Deletion {
 }
 
 /// Make a new, ready machine for work that needs one of its own, such as a
-/// worktree dispatched to a new sandbox. Blocks: run it on a worker.
+/// worktree dispatched to a new sandbox, starting from the given sandbox
+/// image when there is one. Blocks: run it on a worker.
 pub(crate) type Provision =
-    fn(&dyn Fn() -> bool, &dyn Fn(super::Step)) -> crate::Result<super::SavedDevice>;
+    fn(Option<&str>, &dyn Fn() -> bool, &dyn Fn(super::Step)) -> crate::Result<super::SavedDevice>;
 
 macro_rules! providers {
     ($(
@@ -37,6 +38,7 @@ macro_rules! providers {
             noun: $noun:literal,
             command: $command:ident,
             deletion: $deletion:expr,
+            image: $image:expr,
             provision: $provision:expr $(,)?
         }
     ),* $(,)?) => {
@@ -89,6 +91,14 @@ macro_rules! providers {
         pub(crate) fn deletion(provider: CloudProvider) -> Option<Deletion> {
             match provider {
                 $(#[cfg(feature = $feature)] CloudProvider::$variant => $deletion,)*
+            }
+        }
+
+        /// How the provider holds sandbox images built from a project's
+        /// recipe, if it can.
+        pub(crate) fn image(provider: CloudProvider) -> Option<&'static super::image::Support> {
+            match provider {
+                $(#[cfg(feature = $feature)] CloudProvider::$variant => $image,)*
             }
         }
 
@@ -163,6 +173,7 @@ providers! {
             leftovers: ", with its disk and IP,",
             run: crate::azure::destroy::destroy_saved,
         }),
+        image: None,
         provision: None,
     },
     "boat" Boat => {
@@ -173,6 +184,7 @@ providers! {
         noun: "sandbox",
         command: gateway,
         deletion: None,
+        image: None,
         provision: None,
     },
     "coder" Coder => {
@@ -183,6 +195,7 @@ providers! {
         noun: "workspace",
         command: plain,
         deletion: None,
+        image: None,
         provision: None,
     },
     "container" Container => {
@@ -197,6 +210,7 @@ providers! {
             leftovers: ", with its home volume,",
             run: crate::container::destroy_saved,
         }),
+        image: Some(&crate::container::image::SUPPORT),
         provision: Some(crate::container::setup::provision),
     },
     // Sandboxes are created in Settings; existing ones cannot be attached yet.
@@ -208,7 +222,8 @@ providers! {
         noun: "sandbox",
         command: gateway,
         deletion: None,
-        provision: None,
+        image: Some(&crate::daytona::image::SUPPORT),
+        provision: Some(crate::daytona::setup::provision),
     },
     "opensandbox" OpenSandbox => {
         module: opensandbox,
@@ -222,6 +237,7 @@ providers! {
             leftovers: "",
             run: crate::opensandbox::destroy_saved,
         }),
+        image: None,
         provision: Some(crate::opensandbox::setup::provision),
     },
     "railway" Railway => {
@@ -232,6 +248,7 @@ providers! {
         noun: "VM",
         command: plain,
         deletion: None,
+        image: None,
         provision: None,
     },
     "sprites" Sprites => {
@@ -246,6 +263,7 @@ providers! {
             leftovers: ", with its files and checkpoints,",
             run: crate::sprites::destroy_saved,
         }),
+        image: None,
         provision: Some(crate::sprites::setup::provision),
     },
     // keep-sorted end

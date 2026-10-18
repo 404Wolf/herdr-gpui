@@ -10,6 +10,7 @@ mod connect;
 mod engine;
 mod error;
 pub(crate) mod idle;
+pub(crate) mod image;
 pub(crate) mod lifecycle;
 mod machine;
 mod settings;

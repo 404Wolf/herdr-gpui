@@ -136,6 +136,8 @@ Herdr UI** entry, which both Windows installers add, runs this command through
 | `usage`, `system` | Plan usage and load of the selected host |
 | `cloud [list]` | Saved cloud machines (no app needed) |
 | `cloud add` | Open the settings that add one |
+| `cloud images [list]` | Sandbox images built from projects' recipes (no app needed) |
+| `cloud images build [PROVIDER]` | Build the current repository's sandbox images ahead of a dispatch |
 | `cloud setup ID` | Run the `[cloud]` setup script on a saved machine again, in a new tab once the window shows it. `ID` is the machine ID from `cloud list`, its host ID, or its label |
 | `processes [--pane ID]` | The processes under a pane, with CPU and memory (no app needed) |
 | `search symbol\|file QUERY` | Go to Symbol or Go to File over the current checkout (no app needed) |

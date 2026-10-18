@@ -497,7 +497,8 @@ creates one with a generated name and, when the **Install Herdr** switch is on
 (the default), installs Herdr in it if it is missing; the device picker shows
 its progress and a toast says when it is ready. **Daytona** in **Add Device…**
 opens this tab. Removing a device leaves
-its sandbox in Daytona.
+its sandbox in Daytona. A dispatch can also make a sandbox, from the
+repository's [sandbox image](#sandbox-images) when it has one.
 
 Each connection starts a stopped sandbox, asks the API for a 10-minute SSH
 token for it, and runs Herdr's remote bridge through Daytona's SSH gateway.
@@ -614,6 +615,53 @@ file. Removing a device keeps its key files. Connections run
 host key on first use (`railway_known_hosts`). The VM is temporary: Railway
 limits its lifetime and how many a network can create. Needs
 `ssh` and `ssh-keygen` on the PATH; unavailable on Windows.
+
+### Sandbox images
+
+A project can describe the machine its agents need, so a new container or
+Daytona sandbox for it starts with its tools and Herdr already installed.
+Commit a Dockerfile as `.herdr/sandbox/Dockerfile`, with that folder as its
+build context:
+
+```dockerfile
+FROM rust:1.90-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends ripgrep
+COPY setup.sh /usr/local/bin/project-setup
+```
+
+Without one, a dev container is used: `.devcontainer/devcontainer.json` (or
+`.devcontainer.json`) and the Dockerfile and context its `build` names, or the
+`image` it names. Only the image is built: dev container features, lifecycle
+scripts, and Docker Compose definitions are not.
+
+Herdr UI adds a last layer that installs Herdr in `/usr/local/bin` (the image
+needs `curl`), then gives the image back the user its last stage chose. Each
+image is filed by project, so clones and worktrees of one repository share
+it, and by provider, under a key hashed from everything the build reads: the
+Dockerfile, the files its `COPY` and `ADD` lines name, `.dockerignore`, and
+the platform. Files are read from the checkout's host with Git, so ignored
+files and symbolic links never leave it. While the key matches, new machines
+reuse the image; any change builds a new one, which replaces the old. A base
+image tag that moves upstream does not change the key: pin a digest, or use
+**Reset**.
+
+A dispatch to a new container or sandbox builds the image first when it is
+missing, and the dialog shows the build's steps. **Build sandbox images** in a
+workspace's menu builds ahead, for every provider you have a device from that
+holds images. Settings > **Cloud devices** > **Container** or **Daytona** lists
+each project's image there with its progress while it builds, **Log**,
+**Build now**, and **Reset**, which deletes the image so the next machine
+builds it afresh. Builds keep running when Settings closes.
+
+- **Containers** build with `docker build` or `podman build` on this
+  computer, tagged `herdr-<project>:<key>` and labelled
+  `dev.herdr-gpui.image`; only labelled images are ever deleted.
+- **Daytona** builds a snapshot named `herdr-<project>-<key>` on its own
+  runners. Uploading build context files is not supported yet, so a Daytona
+  image's Dockerfile cannot `COPY` or `ADD` files from the project.
+
+`herdr-gpui cloud images` lists the images, and `herdr-gpui cloud images
+build [PROVIDER]` builds the current repository's.
 
 ### Setup scripts for new cloud devices
 
@@ -2012,9 +2060,11 @@ within two minutes is given up on, with a warning. A
 new workspace opens the repository's main checkout on that host.
 
 Once you have a container device (see [Containers](#containers-docker-or-podman)),
-a sprite, or an OpenSandbox sandbox, the dialogs also offer a **New
-container**, **New sprite**, or **New sandbox** tile, even with one host
-connected.
+a Daytona sandbox, a sprite, or an OpenSandbox sandbox, the dialogs also offer
+a **New container**, **New sprite**, or **New sandbox** tile, even with one
+host connected. A container or Daytona sandbox starts from the repository's
+[sandbox image](#sandbox-images) when it has a recipe, building it first if
+needed.
 Creating with it makes a container with the `[container]` settings and Herdr
 installed, starts Herdr's server in it, saves it as a device, then creates the
 checkout there as above, cloning the repository first; the dialog shows each

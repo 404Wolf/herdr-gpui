@@ -178,6 +178,125 @@ impl Engine {
     }
 }
 
+impl Engine {
+    /// Run the engine with `args`, passing each line it prints, from either
+    /// stream, to `line` as it comes, such as a build's progress. Fails with
+    /// its last line when it exits unsuccessfully.
+    pub(crate) fn stream<I, S>(
+        self,
+        action: &'static str,
+        args: I,
+        timeout: Duration,
+        cancelled: &dyn Fn() -> bool,
+        line: &dyn Fn(&str),
+    ) -> Result<()>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<std::ffi::OsStr>,
+    {
+        let mut child = self
+            .command(args)?
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|source| Error::Spawn {
+                engine: self.key(),
+                source,
+            })?;
+        let (sender, lines) = std::sync::mpsc::channel::<String>();
+        let readers = [
+            child
+                .stdout
+                .take()
+                .map(|pipe| lines_of(pipe, sender.clone())),
+            child.stderr.take().map(|pipe| lines_of(pipe, sender)),
+        ];
+        let deadline = Instant::now() + timeout;
+        let mut last = String::new();
+        let status = loop {
+            while let Ok(text) = lines.try_recv() {
+                line(&text);
+                if !text.trim().is_empty() {
+                    last = text;
+                }
+            }
+            match child.try_wait() {
+                Ok(Some(status)) => break Ok(status),
+                Ok(None) => {}
+                Err(source) => {
+                    break Err(Error::Spawn {
+                        engine: self.key(),
+                        source,
+                    });
+                }
+            }
+            if cancelled() {
+                break Err(Error::Cancelled);
+            }
+            if Instant::now() >= deadline {
+                break Err(Error::Timeout {
+                    engine: self.key(),
+                    action,
+                });
+            }
+            thread::sleep(Duration::from_millis(50));
+        };
+        let status = match status {
+            Ok(status) => status,
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error);
+            }
+        };
+        for reader in readers.into_iter().flatten() {
+            let _ = reader.join();
+        }
+        for text in lines.try_iter() {
+            line(&text);
+            if !text.trim().is_empty() {
+                last = text;
+            }
+        }
+        if status.code() != Some(0) {
+            return Err(Error::Failed {
+                engine: self.key(),
+                action,
+                detail: detail(last.as_bytes()),
+            });
+        }
+        Ok(())
+    }
+}
+
+/// Send each line of a pipe, bounded, until it ends.
+fn lines_of(
+    pipe: impl Read + Send + 'static,
+    sender: std::sync::mpsc::Sender<String>,
+) -> thread::JoinHandle<()> {
+    const LINE_LIMIT: u64 = 16 * 1024;
+    thread::spawn(move || {
+        let mut reader = std::io::BufReader::new(pipe);
+        loop {
+            let mut bytes = Vec::new();
+            match std::io::BufRead::read_until(
+                &mut (&mut reader).take(LINE_LIMIT),
+                b'\n',
+                &mut bytes,
+            ) {
+                Ok(0) | Err(_) => return,
+                Ok(_) => {
+                    let text = String::from_utf8_lossy(&bytes).trim_end().to_owned();
+                    if sender.send(text).is_err() {
+                        return;
+                    }
+                }
+            }
+        }
+    })
+}
+
 /// Keep the first `OUTPUT_LIMIT` bytes of a pipe, draining it to the end so
 /// the child never blocks on a full pipe.
 fn drain(

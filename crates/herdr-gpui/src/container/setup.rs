@@ -151,12 +151,18 @@ fn install_herdr(
 
 /// Make a ready container with the configured settings and a generated
 /// name, installing Herdr, for work that needs a new machine of its own, such
-/// as a worktree dispatched to a new container. Blocks: run it on a worker.
+/// as a worktree dispatched to a new container. It starts from `image`, a
+/// project's sandbox image, when there is one; Herdr is in it already.
+/// Blocks: run it on a worker.
 pub(crate) fn provision(
+    image: Option<&str>,
     cancelled: &dyn Fn() -> bool,
     report: &dyn Fn(cloud::Step),
 ) -> crate::Result<SavedDevice> {
-    let settings = crate::config::Config::load()?.container.settings()?;
+    let mut settings = crate::config::Config::load()?.container.settings()?;
+    if let Some(image) = image {
+        image.clone_into(&mut settings.image);
+    }
     add_device(
         AddRequest {
             settings,

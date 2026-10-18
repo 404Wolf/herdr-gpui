@@ -13,6 +13,8 @@ mod coder;
 mod container;
 #[cfg(feature = "daytona")]
 mod daytona;
+#[cfg(any(feature = "container", feature = "daytona"))]
+mod images;
 #[cfg(feature = "opensandbox")]
 mod opensandbox;
 #[cfg(feature = "railway")]
@@ -31,6 +33,8 @@ pub(super) use coder::CoderCard;
 pub(super) use container::ContainerCard;
 #[cfg(feature = "daytona")]
 pub(super) use daytona::DaytonaCard;
+#[cfg(any(feature = "container", feature = "daytona"))]
+pub(super) use images::SandboxImages;
 #[cfg(feature = "opensandbox")]
 pub(super) use opensandbox::OpenSandboxCard;
 #[cfg(feature = "railway")]

@@ -113,8 +113,10 @@ fn prepare(
 }
 
 /// Make a ready sprite with the configured account and a generated name, for
-/// work that needs a new machine of its own. Blocks: run it on a worker.
+/// work that needs a new machine of its own. Sprites hold no images, so
+/// `_image` is never given. Blocks: run it on a worker.
 pub(crate) fn provision(
+    _image: Option<&str>,
     cancelled: &dyn Fn() -> bool,
     report: &dyn Fn(cloud::Step),
 ) -> crate::Result<SavedDevice> {

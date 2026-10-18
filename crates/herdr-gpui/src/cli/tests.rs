@@ -1,6 +1,7 @@
 use super::*;
 use control::BrowserCommand;
 
+mod cloud_images;
 mod cloud_setup;
 mod control_commands;
 mod links;

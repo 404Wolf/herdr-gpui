@@ -728,6 +728,9 @@ pub enum Error {
     ReviewNoBase,
     #[error("These changes are too large to review here, even leaving out the largest files.")]
     ReviewTooLarge,
+    #[cfg(feature = "cloud")]
+    #[error(transparent)]
+    SandboxImage(#[from] crate::cloud::image::Error),
     #[error("The page's picture could not be turned into a PNG")]
     ScreenshotImage,
     #[error("Could not write the screenshot to {}: {source}", path.display())]

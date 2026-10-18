@@ -154,7 +154,26 @@ impl Job {
             origin.repo_label.clone(),
             move |events, cancelled| {
                 let stopped = || cancelled.load(Ordering::Acquire);
-                let saved = provision(&stopped, &|step| {
+                // The project's own image, when it has a recipe and the
+                // provider holds images, built first if it is not there.
+                let image = match crate::cloud::image::checkout_of(&origin.repo_key) {
+                    Some(path) => crate::cloud::image::for_new_machine(
+                        provider,
+                        &crate::cloud::image::Checkout {
+                            host: &origin.place.host,
+                            endpoint_id: &origin.place.endpoint_id,
+                            path,
+                            label: &origin.repo_label,
+                        },
+                        cancelled,
+                        &|progress| {
+                            let step = crate::cloud::Step::Image(progress.clone());
+                            let _ = events.send(Event::Provision(step));
+                        },
+                    )?,
+                    None => None,
+                };
+                let saved = provision(image.as_deref(), &stopped, &|step| {
                     let _ = events.send(Event::Provision(step));
                 })?;
                 let _ = events.send(Event::Provisioned(saved.clone()));

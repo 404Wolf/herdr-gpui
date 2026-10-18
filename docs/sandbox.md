@@ -35,6 +35,7 @@ getting Herdr onto it, and moving Git state in and out with Teleport.
 | Workspace lifecycle | `cloud/jobs.rs` (create with progress), `cloud/catalog.rs` (saved devices), provider `setup.rs` (create, delete, roll back a failed create). |
 | Dirty-state warning before delete | `cloud/unsynced.rs`, shown by the sidebar's Remove dialog. |
 | Lane-to-sandbox | `dispatch/`: the **New container** / **New sprite** tile; `dispatch/job.rs` provisions, then dispatches. |
+| Prebuilt environments | `cloud/image/`: a project's recipe (`.herdr/sandbox/Dockerfile`, else a dev container) read from its host, a key hashed from what the build reads, a catalog of built images, and one shared build registry; containers and Daytona hold images (`container/image.rs`, `daytona/image.rs`). |
 | Idle timers, quotas | `container/idle.rs`, `[container] max_containers`; Azure's `cleanup.rs`; sprites sleep on their own. |
 | Credential broker | `teleport/credentials.rs` sends the `gh` token to a host that cannot reach GitHub. No scoping or trust tiers yet (see below). |
 | Port proxy | `port_forward/`, SSH hosts only. |
@@ -47,7 +48,8 @@ getting Herdr onto it, and moving Git state in and out with Teleport.
    shell string to, as `ssh` does), and an `Error`.
 3. A row in `cloud/providers.rs`. `deletion` makes Remove delete the machine
    after the unpushed-work check; `provision` makes the machine available to
-   dispatch.
+   dispatch; `image` (a `cloud::image::Support`) lets it start from a
+   project's sandbox image, which `provision` then receives.
 4. A Settings card, a config table, and the per-provider `match` arms the
    compiler asks for (Settings tabs, Add Device). Keep the setup job's
    failure path deleting what it made.
@@ -77,6 +79,29 @@ Sources: [OpenSandbox execd PTY sessions](https://github.com/opensandbox-group/O
 [E2B CLI exec](https://docs.e2b.dev/cli/exec-command.md),
 [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox),
 [podman exec](https://docs.podman.io/en/v5.0.3/markdown/podman-exec.1.html).
+
+## Sandbox images
+
+A project's recipe is read through Teleport's script runner from the host
+its checkout is on, so a project on an SSH host or cloud machine builds like
+a local one. Only what Git would commit is read (`git ls-files` with ignored
+files excluded), never a symbolic link, and only the files the Dockerfile's
+`COPY` and `ADD` lines name, plus `.dockerignore`: a recipe whose dev
+container uses the whole repository as its context still rebuilds only when
+what it copies changes. The key is a SHA-256 over a format version, the
+platform, the composed Dockerfile (the app's Herdr layer included), and each
+file's path, mode, and bytes, length-prefixed.
+
+`cloud/image/builds.rs` runs at most one build per project and provider, on
+the worker that asked; another asking waits for it, then reuses the result.
+Builds started from Settings or a workspace's menu belong to the main window,
+so closing Settings does not cancel them. The catalog (`sandbox-images.json`)
+is a record for display and for Rebuild, never the truth: before reuse the
+provider is asked whether it still holds the image.
+
+The Herdr layer installs the latest release when the image is built, and the
+key does not include Herdr's version, so an image keeps the Herdr it was built
+with until its recipe changes or it is reset.
 
 ## Threat model
 
@@ -109,3 +134,7 @@ Sources: [OpenSandbox execd PTY sessions](https://github.com/opensandbox-group/O
   a `herdr-` name prefix, which the user's own sprites may share, so they are
   left alone.
 - **Ports** for containers and sprites: forwarding needs an SSH host.
+- **Images elsewhere.** Azure sandboxes and OpenSandbox start from registry
+  images, so each needs a registry setting (one per provider) to push to.
+  Daytona builds cannot copy files in yet: its SDK uploads the context to
+  Daytona's object storage with signed S3 requests first.

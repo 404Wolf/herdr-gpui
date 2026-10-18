@@ -246,6 +246,9 @@ struct SettingsWindow {
     opensandbox_card: Option<cloud_devices::OpenSandboxCard>,
     #[cfg(feature = "railway")]
     railway_card: Option<cloud_devices::RailwayCard>,
+    /// Sandbox images, for the cards of providers that hold them.
+    #[cfg(any(feature = "container", feature = "daytona"))]
+    sandbox_images: cloud_devices::SandboxImages,
     #[cfg(feature = "sprites")]
     sprites_card: Option<cloud_devices::SpritesCard>,
     theme_loading: bool,
@@ -381,6 +384,8 @@ impl SettingsWindow {
             opensandbox_card: None,
             #[cfg(feature = "railway")]
             railway_card: None,
+            #[cfg(any(feature = "container", feature = "daytona"))]
+            sandbox_images: Default::default(),
             #[cfg(feature = "sprites")]
             sprites_card: None,
             theme_loading: false,

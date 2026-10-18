@@ -171,17 +171,31 @@ impl Request<'_> {
 
     /// A POST whose reply body is not needed, such as starting a sandbox.
     pub(crate) fn post_empty(&self, context: &'static str, path: &str) -> Result<()> {
-        let mut reply = self
+        let reply = self
             .call(agent().post(self.url(path)))?
             .send_empty()
             .map_err(network(context))?;
-        let status = reply.status().as_u16();
-        if (200..=299).contains(&status) {
-            return Ok(());
-        }
-        let bytes = body(&mut reply)?;
-        Err(failure(context, status, &bytes))
+        empty(context, reply)
     }
+
+    /// A DELETE whose reply body is not needed.
+    pub(crate) fn delete(&self, context: &'static str, path: &str) -> Result<()> {
+        let reply = self
+            .call(agent().delete(self.url(path)))?
+            .call()
+            .map_err(network(context))?;
+        empty(context, reply)
+    }
+}
+
+/// A reply that only needs to succeed.
+fn empty(context: &'static str, mut reply: ureq::http::Response<ureq::Body>) -> Result<()> {
+    let status = reply.status().as_u16();
+    if (200..=299).contains(&status) {
+        return Ok(());
+    }
+    let bytes = body(&mut reply)?;
+    Err(failure(context, status, &bytes))
 }
 
 #[cfg(test)]
