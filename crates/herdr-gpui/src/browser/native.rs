@@ -8,16 +8,14 @@ use super::{
     page::{Drawn, Page, PageElement},
     preview::Preview,
 };
-use gpui::Window;
+use crate::HerdrWindow;
+use gpui::{Context, Window};
+#[cfg(target_os = "macos")]
+use std::sync::{Arc, Mutex, PoisonError};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     rc::Rc,
     sync::mpsc::{self, Receiver, SyncSender, TrySendError},
-};
-#[cfg(target_os = "macos")]
-use std::{
-    collections::HashSet,
-    sync::{Arc, Mutex, PoisonError},
 };
 use wry::raw_window_handle::HasWindowHandle;
 
@@ -89,6 +87,9 @@ const MAX_POST_BYTES: usize = 64 * 1024;
 
 pub(crate) struct Pages {
     pages: HashMap<TabId, Rc<Page>>,
+    /// Tabs whose page is being built, outside the App's borrow. Only
+    /// Windows builds pages that way; see `super::building`.
+    building: HashSet<TabId>,
     shown: Vec<TabId>,
     /// Where each page drew in the frame being drawn.
     drawn: Drawn,
@@ -114,6 +115,7 @@ impl Default for Pages {
         let (sender, events) = mpsc::sync_channel(EVENT_CAPACITY);
         Self {
             pages: HashMap::new(),
+            building: HashSet::new(),
             shown: Vec::new(),
             drawn: Drawn::default(),
             outbox: Outbox {
@@ -232,8 +234,9 @@ fn navigable(url: &str) -> bool {
 }
 
 impl Pages {
+    /// The tabs this window has a page for, or is building one for.
     pub(crate) fn ids(&self) -> impl Iterator<Item = TabId> + '_ {
-        self.pages.keys().copied()
+        self.pages.keys().chain(self.building.iter()).copied()
     }
 
     pub(crate) fn contains(&self, id: TabId) -> bool {
@@ -268,6 +271,11 @@ impl Pages {
         self.drawn.borrow_mut().clear();
     }
 
+    /// Whether tab `id`'s page is being built.
+    pub(crate) fn is_building(&self, id: TabId) -> bool {
+        self.building.contains(&id)
+    }
+
     /// Whether tab `id`'s page is on screen, not hidden.
     #[cfg(target_os = "macos")]
     pub(crate) fn is_shown(&self, id: TabId) -> bool {
@@ -276,14 +284,21 @@ impl Pages {
 
     /// Creates the page for `tab` if this window has not shown it yet and it
     /// has an address. Creating one starts the platform's web content
-    /// processes, so this runs from input and ticks, never from render.
-    pub(crate) fn ensure(&mut self, tab: &Tab, window: &mut Window) -> crate::Result<()> {
+    /// processes, so this runs from input and ticks, never from render. On
+    /// Windows the page is built afterwards, outside the App's borrow, and
+    /// arrives when built; see `super::building`.
+    pub(crate) fn ensure(
+        &mut self,
+        tab: &Tab,
+        window: &mut Window,
+        cx: &mut Context<HerdrWindow>,
+    ) -> crate::Result<()> {
         // A review tab is drawn by the app; only pages get a web view.
         let Some(location) = tab
             .location
             .as_ref()
             .filter(|location| location.is_page())
-            .filter(|_| !self.pages.contains_key(&tab.id))
+            .filter(|_| !self.pages.contains_key(&tab.id) && !self.is_building(tab.id))
         else {
             return Ok(());
         };
@@ -333,13 +348,39 @@ impl Pages {
             });
         // Window has an inherent `window_handle` of its own.
         let handle = HasWindowHandle::window_handle(window)?;
-        let view = builder.build_as_child(&handle)?;
         #[cfg(target_os = "macos")]
-        super::page_keys::install();
+        {
+            let _ = cx;
+            let view = builder.build_as_child(&handle)?;
+            super::page_keys::install();
+            self.add(id, view, window)
+        }
+        #[cfg(windows)]
+        {
+            let _ = handle;
+            self.building.insert(id);
+            super::building::start(id, builder, window, cx);
+            Ok(())
+        }
+    }
+
+    /// Makes `view` tab `id`'s page, hidden until the window presents it.
+    pub(super) fn add(
+        &mut self,
+        id: TabId,
+        view: wry::WebView,
+        window: &Window,
+    ) -> crate::Result<()> {
         self.pages.insert(id, Rc::new(Page::new(view, window)?));
-        // A new page appears only when the window presents it.
         self.hide(id);
         Ok(())
+    }
+
+    /// Ends tab `id`'s build, returning whether its page is still wanted:
+    /// a tab closed while its page was built wants none.
+    #[cfg(windows)]
+    pub(super) fn finish_building(&mut self, id: TabId) -> bool {
+        self.building.remove(&id)
     }
 
     /// Serves `theme` to local pages from now on: a page picks it up when it
@@ -439,6 +480,7 @@ impl Pages {
             self.delegates.remove(&id);
             self.parked.remove(&id);
         }
+        self.building.remove(&id);
         self.shown.retain(|shown| *shown != id);
         self.drawn.borrow_mut().remove(&id);
         // Dropping the page hides it; the platform releases its view with
@@ -448,7 +490,7 @@ impl Pages {
 
     /// Drops the pages of tabs the app no longer has.
     pub(crate) fn retain(&mut self, mut live: impl FnMut(TabId) -> bool) {
-        let gone: Vec<_> = self.pages.keys().copied().filter(|id| !live(*id)).collect();
+        let gone: Vec<_> = self.ids().filter(|id| !live(*id)).collect();
         for id in gone {
             self.close(id);
         }
@@ -597,6 +639,27 @@ mod tests {
             EVENT_CAPACITY
         );
         assert!(pages.next_event().is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_page_closed_while_built_is_not_kept() {
+        let mut pages = Pages::default();
+        let (kept, closed, gone) = (TabId::test(1), TabId::test(2), TabId::test(3));
+        pages.building.extend([kept, closed, gone]);
+        assert!(pages.is_building(kept));
+        // A tab being built is one the window has, so closing or dropping
+        // it reaches the build.
+        assert_eq!(pages.ids().count(), 3);
+        pages.close(closed);
+        pages.retain(|id| id != gone);
+        assert!(!pages.is_building(closed) && !pages.is_building(gone));
+        assert!(pages.finish_building(kept));
+        assert!(!pages.finish_building(closed));
+        assert!(!pages.finish_building(gone));
+        // A build finishes once.
+        assert!(!pages.finish_building(kept));
+        assert!(!pages.is_building(kept));
     }
 
     #[cfg(target_os = "macos")]
