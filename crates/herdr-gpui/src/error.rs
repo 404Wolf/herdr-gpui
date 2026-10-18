@@ -122,6 +122,9 @@ pub enum Error {
     ConnectionBusy,
     #[error("The connection is not ready. Try again.")]
     ConnectionNotReady,
+    #[cfg(feature = "container")]
+    #[error(transparent)]
+    Container(#[from] crate::container::Error),
     #[error("Control request or response exceeds {limit} bytes")]
     ControlMessageSize { limit: usize },
     #[error("Herdr UI closed the control connection without answering")]

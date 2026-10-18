@@ -62,6 +62,8 @@ fn every_provider_sits_beside_ssh_and_says_whether_it_is_set_up(cx: &mut gpui::T
             CloudProvider::Boat => "add-device-source-boat",
             #[cfg(feature = "coder")]
             CloudProvider::Coder => "add-device-source-coder",
+            #[cfg(feature = "container")]
+            CloudProvider::Container => "add-device-source-container",
             #[cfg(feature = "daytona")]
             CloudProvider::Daytona => "add-device-source-daytona",
             #[cfg(feature = "railway")]
@@ -128,6 +130,8 @@ fn settings_only() -> Vec<(CloudProvider, &'static str)> {
             CloudProvider::Boat => Some((provider, "add-device-source-boat")),
             #[cfg(feature = "coder")]
             CloudProvider::Coder => None,
+            #[cfg(feature = "container")]
+            CloudProvider::Container => Some((provider, "add-device-source-container")),
             #[cfg(feature = "daytona")]
             CloudProvider::Daytona => Some((provider, "add-device-source-daytona")),
             #[cfg(feature = "railway")]
@@ -308,6 +312,8 @@ fn switching_sources_never_resizes_the_dialog(cx: &mut gpui::TestAppContext) {
             CloudProvider::Boat => "add-device-source-boat",
             #[cfg(feature = "coder")]
             CloudProvider::Coder => "add-device-source-coder",
+            #[cfg(feature = "container")]
+            CloudProvider::Container => "add-device-source-container",
             #[cfg(feature = "daytona")]
             CloudProvider::Daytona => "add-device-source-daytona",
             #[cfg(feature = "railway")]

@@ -294,13 +294,19 @@ edits only the local catalog: the host's own Herdr keeps running. When the
 device has its own GitHub sign-in, the confirmation also offers to delete it,
 since its account panel goes away with the device. Local has no such menu.
 
-A cloud device's header (Coder, Daytona, or Railway) has a menu too:
+A cloud device's header (Azure, Boat, Coder, Container, Daytona, or Railway)
+has a menu too:
 **Rename…** changes the name the sidebar shows, falling back to the machine's
 name when left empty; **Cloud device settings…** opens its provider under
 Settings > Cloud devices; and **Remove device…** forgets it on this computer,
-leaving the workspace, sandbox, or VM as it is at the provider. Port forwards
-and server keybindings need a saved SSH host, so a cloud device does not offer
-them.
+leaving the workspace, sandbox, or VM as it is at the provider. For an Azure
+machine or a container, **Remove device…** deletes it at the provider by
+default, with **Remove from Herdr only** beside it. Before deleting, the dialog
+searches the machine's home directory for Git checkouts with changed or
+untracked files or commits on no remote; when it finds some, it names them and
+the button becomes **Delete anyway**, and a machine it cannot reach is said to
+be unchecked. Port forwards and server keybindings need a saved SSH host, so a
+cloud device does not offer them.
 
 **Forward port…** in the same menu forwards one of the host's ports, such as a
 dev server an agent started there, to this computer. Each forward has its own
@@ -388,8 +394,8 @@ the app.
 ### Coder workspaces
 
 Settings > **Cloud devices** holds accounts with providers that create machines
-to use as devices: Coder, Daytona, and Railway. Coder's card edits the `[coder]`
-keys (see `config-gpui.example.toml`), saves the OAuth client secret to the
+to use as devices: Azure, Boat, Coder, Container, Daytona, and Railway.
+Coder's card edits the `[coder]` keys (see `config-gpui.example.toml`), saves the OAuth client secret to the
 credential store rather than the config file, signs in and out, and lists the
 saved Coder devices with a Remove action. A secret set in the config file or
 `HERDR_CODER_OAUTH_CLIENT_SECRET` takes precedence over the saved one.
@@ -501,6 +507,31 @@ directory and a changed key is refused. Daytona devices need `ssh` on the PATH
 and are unavailable on Windows. This provider is a proof of concept: the API
 path is covered by tests against a scripted server, but not yet exercised
 against a live Daytona account.
+
+### Containers (Docker or Podman)
+
+Settings > **Cloud devices** > **Container** makes containers on this
+computer's Docker or Podman engine and uses each as a device: a private Linux
+machine with its own Herdr daemon, so agents in it work on their own checkout
+(Teleport, Fan-out, and dispatch reach it like any other device) without seeing
+this computer's files or each other's. The card edits `[container]` (engine,
+image, CPUs, memory) and shows which engine is running. **Create container**
+pulls the image if needed, pins it to its digest, and creates a container with
+a generated name, its own `<name>-home` volume, an init process,
+`no-new-privileges`, and CPU, memory, and process limits; agents run as an
+unprivileged `herdr` user. It then installs Herdr when the **Install Herdr**
+switch is on (the default) and saves the device; a failure removes whatever
+was made. A connection starts a stopped container and runs Herdr's bridge
+through `docker exec` or `podman exec`. **Stop** in the card stops a container
+and keeps its files. **Remove** there only forgets a device; deleting a
+container with its volume is **Remove device…** in its sidebar menu, which
+checks it for unpushed work first.
+
+The image needs `curl` to install Herdr and `git` for checkouts; the default,
+`buildpack-deps:bookworm`, has both and common build tools. Containers share
+this computer's kernel: they keep honest agents apart, not hostile code, for
+which a VM provider such as Azure is the better choice. Containers are
+unavailable on Windows, like every cloud device.
 
 ### Railway free VMs (experimental)
 

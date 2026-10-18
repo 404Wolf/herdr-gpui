@@ -10,6 +10,8 @@ fn setting(view: &mut HerdrWindow, provider: CloudProvider) -> Option<&mut Optio
         CloudProvider::Boat => Some(&mut view.config.boat.api_url),
         #[cfg(feature = "coder")]
         CloudProvider::Coder => Some(&mut view.config.coder.url),
+        #[cfg(feature = "container")]
+        CloudProvider::Container => None,
         #[cfg(feature = "daytona")]
         CloudProvider::Daytona => Some(&mut view.config.daytona.api_url),
         #[cfg(feature = "railway")]
@@ -32,6 +34,8 @@ fn account(provider: CloudProvider) -> Option<(&'static str, &'static str)> {
         CloudProvider::Boat => Some(("HERDR_BOAT_API_URL", "https://boat.dev/api/v1")),
         #[cfg(feature = "coder")]
         CloudProvider::Coder => Some(("HERDR_CODER_URL", "https://coder.example.com")),
+        #[cfg(feature = "container")]
+        CloudProvider::Container => None,
         #[cfg(feature = "daytona")]
         CloudProvider::Daytona => Some(("HERDR_DAYTONA_API_URL", "https://app.daytona.io/api")),
         #[cfg(feature = "railway")]

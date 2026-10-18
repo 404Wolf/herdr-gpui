@@ -21,6 +21,7 @@ pub struct CloudConfig {
     pub azure: CloudSetup,
     pub boat: CloudSetup,
     pub coder: CloudSetup,
+    pub container: CloudSetup,
     pub daytona: CloudSetup,
     pub railway: CloudSetup,
     /// Shell lines run after the agents, with `sh -e`.
@@ -56,14 +57,16 @@ impl CloudConfig {
         Ok(cloud_setup::compose(known(agents), setup)?)
     }
 
-    fn tables(&self) -> [(&'static str, &CloudSetup); 5] {
+    fn tables(&self) -> impl Iterator<Item = (&'static str, &CloudSetup)> {
         [
             ("azure", &self.azure),
             ("boat", &self.boat),
             ("coder", &self.coder),
+            ("container", &self.container),
             ("daytona", &self.daytona),
             ("railway", &self.railway),
         ]
+        .into_iter()
     }
 
     /// Drops agent names this build does not know, so a name a newer build
@@ -85,6 +88,7 @@ impl CloudConfig {
         retain("cloud.azure.", &mut self.azure.agents);
         retain("cloud.boat.", &mut self.boat.agents);
         retain("cloud.coder.", &mut self.coder.agents);
+        retain("cloud.container.", &mut self.container.agents);
         retain("cloud.daytona.", &mut self.daytona.agents);
         retain("cloud.railway.", &mut self.railway.agents);
         unknown
@@ -94,7 +98,6 @@ impl CloudConfig {
     /// it, is reported when the file loads rather than when a device is made.
     pub(super) fn check(&self) -> Result<()> {
         self.tables()
-            .into_iter()
             .try_for_each(|(_, table)| self.script_with(table).map(drop))
     }
 }
@@ -131,7 +134,6 @@ impl CloudConfig {
             setup: None,
         };
         self.tables()
-            .into_iter()
             .find_map(|(key, table)| (key == provider.key()).then_some(table))
             .unwrap_or(NONE)
     }

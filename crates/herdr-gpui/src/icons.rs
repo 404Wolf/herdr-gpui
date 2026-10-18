@@ -211,6 +211,7 @@ embedded_icons! {
     "close.svg",
     "cloud/azure.svg",
     "cloud/coder.svg",
+    "cloud/container.svg",
     "cloud/daytona.svg",
     "cloud/railway.svg",
     "code.svg",

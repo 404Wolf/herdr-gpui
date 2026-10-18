@@ -16,6 +16,7 @@ cloud = []
 azure = ["cloud"]
 boat = ["cloud"]
 coder = ["cloud"]
+container = ["cloud"]
 daytona = ["cloud"]
 railway = ["cloud"]
 

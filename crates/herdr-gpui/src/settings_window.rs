@@ -238,6 +238,8 @@ struct SettingsWindow {
     boat_card: Option<cloud_devices::BoatCard>,
     #[cfg(feature = "coder")]
     coder_card: Option<cloud_devices::CoderCard>,
+    #[cfg(feature = "container")]
+    container_card: Option<cloud_devices::ContainerCard>,
     #[cfg(feature = "daytona")]
     daytona_card: Option<cloud_devices::DaytonaCard>,
     #[cfg(feature = "railway")]
@@ -367,6 +369,8 @@ impl SettingsWindow {
             boat_card: None,
             #[cfg(feature = "coder")]
             coder_card: None,
+            #[cfg(feature = "container")]
+            container_card: None,
             #[cfg(feature = "daytona")]
             daytona_card: None,
             #[cfg(feature = "railway")]

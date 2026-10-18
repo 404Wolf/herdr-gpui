@@ -481,6 +481,21 @@ size = 12
 # is saved in its own 0600 daytona-api-key file. Default is false.
 # allow_plaintext_credentials = false
 
+# Containers on this computer's Docker or Podman engine as devices. Settings >
+# Cloud devices > Container edits this table. Each container gets its own home
+# volume and runs agents as an unprivileged "herdr" user, with the limits below,
+# no-new-privileges, and no access to this computer's files. Containers share
+# this computer's kernel, so prefer a VM provider for code you do not trust.
+# [container]
+# docker or podman; the first one installed when unset.
+# engine = "docker"
+# The image new containers start from, pinned to its digest when created. It
+# needs curl to install Herdr and git for checkouts.
+# image = "buildpack-deps:bookworm"
+# cpus = 4
+# memory = "8g"
+# pids_limit = 4096
+
 # What a new cloud device runs the first time it connects, in a "setup" tab:
 # the agents listed (claude, codex, gemini, opencode), each skipped when already
 # installed, then these lines with sh -e. Settings > Cloud devices > New device

@@ -152,6 +152,19 @@ providers! {
         command: plain,
         deletion: None,
     },
+    "container" Container => {
+        module: container,
+        name: "Container",
+        icon: "icons/cloud/container.svg",
+        offer: "Create a Docker or Podman container in Settings",
+        noun: "container",
+        command: plain,
+        deletion: Some(Deletion {
+            noun: |_| "container",
+            leftovers: ", with its home volume,",
+            run: crate::container::destroy_saved,
+        }),
+    },
     // Sandboxes are created in Settings; existing ones cannot be attached yet.
     "daytona" Daytona => {
         module: daytona,

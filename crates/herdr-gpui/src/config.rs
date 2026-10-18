@@ -15,6 +15,7 @@ mod bitmap_fonts;
 mod boat;
 mod cloud;
 mod coder;
+mod container;
 mod daytona;
 mod devices;
 mod edit;
@@ -37,6 +38,7 @@ mod status_icons;
     feature = "azure",
     feature = "boat",
     feature = "coder",
+    feature = "container",
     feature = "daytona"
 ))]
 mod table;
@@ -59,6 +61,9 @@ pub use cloud::CloudConfig;
 pub use coder::CoderConfig;
 #[cfg(feature = "coder")]
 pub(crate) use coder::CoderFields;
+pub use container::ContainerConfig;
+#[cfg(feature = "container")]
+pub(crate) use container::ContainerFields;
 pub use daytona::DaytonaConfig;
 #[cfg(feature = "daytona")]
 pub(crate) use daytona::DaytonaFields;
@@ -148,6 +153,8 @@ pub struct Config {
     /// Whether a workspace close shows its dialog when the check finds no
     /// unpublished work. Uncommitted or unpushed work always asks.
     pub confirm_close_workspace: bool,
+    /// How new containers on this computer's Docker or Podman engine are made.
+    pub container: ContainerConfig,
     /// How far the app's own marks and labels stand off its chrome.
     pub contrast: Contrast,
     pub daytona: DaytonaConfig,
@@ -439,6 +446,7 @@ impl Default for Config {
             confirm_close_pane: true,
             confirm_close_tab: true,
             confirm_close_workspace: true,
+            container: ContainerConfig::default(),
             contrast: Contrast::default(),
             daytona: DaytonaConfig::default(),
             devices: BTreeMap::new(),
@@ -511,6 +519,7 @@ struct Settings {
     confirm_close_pane: Option<bool>,
     confirm_close_tab: Option<bool>,
     confirm_close_workspace: Option<bool>,
+    container: ContainerConfig,
     contrast: Contrast,
     daytona: DaytonaConfig,
     devices: BTreeMap<String, DeviceSettings>,
@@ -886,6 +895,9 @@ impl Config {
         #[cfg(feature = "coder")]
         settings.coder.check()?;
         config.coder = settings.coder;
+        #[cfg(feature = "container")]
+        settings.container.settings()?;
+        config.container = settings.container;
         #[cfg(feature = "daytona")]
         settings.daytona.settings_with(|_| None)?;
         config.daytona = settings.daytona;

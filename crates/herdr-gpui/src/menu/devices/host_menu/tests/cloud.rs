@@ -45,6 +45,8 @@ fn right_clicking_a_cloud_device_offers_rename_settings_setup_and_removal(cx: &m
         CloudProvider::Boat => "host-boat:w1",
         #[cfg(feature = "coder")]
         CloudProvider::Coder => "host-coder:w1",
+        #[cfg(feature = "container")]
+        CloudProvider::Container => "host-container:w1",
         #[cfg(feature = "daytona")]
         CloudProvider::Daytona => "host-daytona:w1",
         #[cfg(feature = "railway")]

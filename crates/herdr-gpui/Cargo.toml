@@ -70,7 +70,7 @@ gpui = { features = ["test-support"], workspace = true }
 test-case.workspace = true
 
 [features]
-default = ["azure", "boat", "coder", "daytona", "railway"]
+default = ["azure", "boat", "coder", "container", "daytona", "railway"]
 # Machines from cloud providers as devices: the shared device list, background
 # jobs, and connector. Turned on by each provider below; not useful alone.
 cloud = ["herdr-client/cloud"]
@@ -81,6 +81,8 @@ azure = ["cloud", "herdr-client/azure", "dep:base64", "dep:rustls", "dep:tungste
 boat = ["cloud", "herdr-client/boat"]
 # Coder workspaces as devices, with OAuth2 sign-in.
 coder = ["cloud", "herdr-client/coder", "dep:base64"]
+# Containers on this computer's Docker or Podman engine as devices.
+container = ["cloud", "herdr-client/container"]
 # Daytona sandboxes as devices, with an API key and its SSH gateway.
 daytona = ["cloud", "herdr-client/daytona"]
 # Railway free VMs as devices, reached over SSH with a saved key identity.
