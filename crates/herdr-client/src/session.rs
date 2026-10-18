@@ -34,6 +34,9 @@ pub(crate) struct Pending {
     pub(crate) bytes: Vec<u8>,
     pub(crate) started: Instant,
 }
+
+// Keep ordinary blocking writes small while the inbound surface is unfinished.
+pub(super) const MAX_INTERLEAVED_INPUT_BYTES: usize = 4 * 1024;
 fn supports_surface_interest(welcome: &EndpointServerWelcome) -> bool {
     ["surface_interest", "presentation_effects_fence"]
         .iter()
@@ -195,6 +198,41 @@ impl Session {
             None
         }
     }
+
+    pub(crate) fn permits_partial_input(&self, command: &Command, reader: &FrameReader) -> bool {
+        if cfg!(windows)
+            || self.pending.is_some()
+            || command.request.is_some()
+            || command.image.is_some()
+            || command.bytes.len() > MAX_INTERLEAVED_INPUT_BYTES
+        {
+            return false;
+        }
+        let (Some(snapshot), Some(surface), Some(pane_id)) = (
+            self.snapshot.as_deref(),
+            self.surface.as_deref(),
+            command.input_pane.as_ref(),
+        ) else {
+            return false;
+        };
+        if command.boot_id != snapshot.boot_id
+            || surface.popup.is_some()
+            || snapshot.focused_pane_id.as_deref() != Some(pane_id.as_str())
+            || !reader.has_current_surface_prefix(snapshot, surface)
+        {
+            return false;
+        }
+        let (Some(tab_id), Some(workspace_id)) = (
+            snapshot.focused_tab_id.as_deref(),
+            snapshot.focused_workspace_id.as_deref(),
+        ) else {
+            return false;
+        };
+        // Use the captured destination, never state inferred from an unfinished body.
+        snapshot.panes.iter().any(|pane| {
+            pane.pane_id == *pane_id && pane.tab_id == tab_id && pane.workspace_id == workspace_id
+        }) && surface.panes.iter().any(|pane| pane.pane_id == *pane_id)
+    }
 }
 
 /// The worker's own waits. Tests shorten or lengthen them to exercise a
@@ -319,16 +357,20 @@ pub(crate) fn run_connection(
         }
         // Bound the batch so continuous input cannot starve reads.
         for _ in 0..16 {
-            // Fence new commands on inbound state, but continue a frame already
-            // started: the peer may be waiting to read it before finishing its own.
-            if reader.started.is_some() && !partial_image {
-                break;
-            }
             let Some(mut command) = queued.take().or_else(|| commands.try_recv().ok()) else {
                 break;
             };
             if stop.load(Ordering::Acquire) {
                 return Ok(());
+            }
+            if reader.started.is_some()
+                && !partial_image
+                && (!session.permits_partial_input(&command, &reader)
+                    || commands.wait(&stream, false, Duration::ZERO)?)
+            {
+                // Retain FIFO and drain readable bytes before permitting another write.
+                queued = Some(command);
+                break;
             }
             if let Some(reason) = session.rejection_reason(&command) {
                 tracing::debug!(category = "session_policy", "command rejected");
@@ -409,8 +451,10 @@ pub(crate) fn run_connection(
         let writable = image.is_some_and(|(_, published)| published);
         // Commands left behind by the batch bound must not wait, nor a liveness
         // request a partial image deferred; anything else fenced by a request,
-        // an image, or a partial frame waits for what unfences it.
-        let timeout = if (queued.is_none() && reader.started.is_none() && !commands.is_empty())
+        // an image, or a partial frame waits for what unfences it. A fenced
+        // command is always `queued`, so input permitted during a partial frame
+        // and cut off by the bound does not wait for the frame's tail.
+        let timeout = if (queued.is_none() && !commands.is_empty())
             || (!partial_image && session.health.is_some() && liveness.load(Ordering::Acquire))
         {
             Duration::ZERO

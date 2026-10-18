@@ -258,8 +258,15 @@ Each read turn drains one progressing frame for at most 128 reads (1 MiB) or
 10 ms, stopping immediately on a read without progress. This avoids retrying a
 blocked write before every 8 KiB of a large inbound frame, without starving
 outbound progress or cancellation when a peer sends slowly or stops mid-frame.
-An inbound partial frame fences new outbound commands, but an already-started
-outbound frame continues in bounded chunks to avoid a full-duplex stall. No command
+An inbound partial frame fences state-dependent outbound commands. On Unix,
+explicit input to the latest focused pane can proceed after a complete, bounded
+raw surface identity header matches the authoritative snapshot and a validated
+retained surface. This exception is limited to 4 KiB encoded commands, preserves
+FIFO, and excludes popups, API requests, images, unknown headers, and changed
+boot/projection identities. Already-readable body bytes are drained first;
+strict full-body validation still controls surface publication and disconnection.
+Windows retains the full inbound barrier. An already-started outbound frame
+continues in bounded chunks to avoid a full-duplex stall. No command
 or health frame can interleave with a partial image. Health probes are deferred
 during partial writes; the image has an absolute 60-second write deadline.
 Dropping a pending permit or cancelling before any bytes are written skips the

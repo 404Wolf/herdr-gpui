@@ -49,6 +49,8 @@ impl Drop for HandleInner {
 pub(crate) struct Command {
     pub(crate) boot_id: String,
     pub(crate) bytes: Vec<u8>,
+    /// Pane named by the original semantic input message; popups never interleave.
+    pub(crate) input_pane: Option<String>,
     /// Set when this command is an API request awaiting a correlated response.
     pub(crate) request: Option<PendingRequest>,
     pub(crate) image: Option<ImageSlot>,
@@ -110,6 +112,7 @@ impl ClientHandle {
         self.queue(Command {
             boot_id: boot_id.into(),
             bytes: Vec::new(),
+            input_pane: None,
             request: None,
             image: Some(ImageSlot {
                 receiver,
@@ -156,9 +159,14 @@ impl ClientHandle {
             return Err(Error::MissingBootId);
         }
         let bytes = encode_message(&message, MAX_FRAME_SIZE)?;
+        let input_pane = match message {
+            ClientMessage::ClientShellPaneInput { pane_id, .. } => Some(pane_id),
+            _ => None,
+        };
         self.queue(Command {
             boot_id: boot_id.into(),
             bytes,
+            input_pane,
             request,
             image: None,
         })
