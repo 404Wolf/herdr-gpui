@@ -10,15 +10,15 @@ use super::{
 };
 use crate::HerdrWindow;
 use gpui::{Context, Window};
-#[cfg(target_os = "macos")]
-use std::{
-    collections::HashSet,
-    sync::{Arc, Mutex, PoisonError},
-};
 use std::{
     collections::HashMap,
     rc::Rc,
     sync::mpsc::{self, Receiver, SyncSender, TrySendError},
+};
+#[cfg(target_os = "macos")]
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex, PoisonError},
 };
 use wry::raw_window_handle::HasWindowHandle;
 
