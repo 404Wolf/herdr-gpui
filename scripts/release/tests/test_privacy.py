@@ -12,7 +12,9 @@ import unittest
 ROOT = Path(__file__).resolve().parents[3]
 
 # Each hardened-runtime resource entitlement and the usage descriptions that
-# macOS requires before it prompts for that resource.
+# macOS requires before it prompts for that resource. These seven are every
+# resource entitlement the hardened runtime has, and each grants read and write
+# access; the write-only and add-only keys cover narrower requests.
 ENTITLED = {
     "com.apple.security.automation.apple-events": ["NSAppleEventsUsageDescription"],
     "com.apple.security.device.audio-input": ["NSMicrophoneUsageDescription"],
@@ -26,6 +28,7 @@ ENTITLED = {
         "NSRemindersUsageDescription",
     ],
     "com.apple.security.personal-information.location": [
+        "NSLocationAlwaysAndWhenInUseUsageDescription",
         "NSLocationUsageDescription",
         "NSLocationWhenInUseUsageDescription",
     ],
@@ -35,11 +38,26 @@ ENTITLED = {
     ],
 }
 
-# Resources that need only a usage description, with no entitlement.
+# Resources that need only a usage description, with no entitlement. Some
+# prompt without one, such as the Desktop folder, but their prompt then cannot
+# say why; every macOS usage key is declared so none depends on that.
 UNENTITLED = [
+    "NSAppDataUsageDescription",
+    "NSAppleMusicUsageDescription",
     "NSBluetoothAlwaysUsageDescription",
+    "NSDesktopFolderUsageDescription",
+    "NSDocumentsFolderUsageDescription",
+    "NSDownloadsFolderUsageDescription",
+    "NSFileProviderDomainUsageDescription",
+    "NSGKFriendListUsageDescription",
     "NSLocalNetworkUsageDescription",
+    "NSNetworkVolumesUsageDescription",
+    "NSRemovableVolumesUsageDescription",
     "NSSpeechRecognitionUsageDescription",
+    "NSSystemAdministrationUsageDescription",
+    "NSSystemExtensionUsageDescription",
+    "NSUserTrackingUsageDescription",
+    "NSVideoSubscriberAccountUsageDescription",
 ]
 
 
