@@ -78,3 +78,47 @@ fn a_thumbnail_that_cannot_be_read_still_pastes_its_path(cx: &mut gpui::TestAppC
     );
     view.read_with(cx, |view, _| assert!(view.local_error.is_none()));
 }
+
+#[gpui::test]
+fn a_pasted_thumbnail_reaches_the_pane_before_enter_typed_after_it(cx: &mut gpui::TestAppContext) {
+    let (fixture, cx) = cx.add_window_view(|window, cx| {
+        Fixture(cx.new(|cx| crate::sidebar::layout_tests::fixture_window(window, cx)))
+    });
+    let view = fixture.update(cx, |fixture, _| fixture.0.clone());
+    let root = tempfile::tempdir().unwrap();
+    let image = thumbnail(root.path());
+    std::fs::write(&image, [4, 5, 6]).unwrap();
+    let enter = gpui::KeyDownEvent {
+        keystroke: gpui::Keystroke::parse("enter").unwrap(),
+        is_held: false,
+        prefer_character_input: false,
+    };
+    let (endpoint, mut server) = connected_endpoint("image");
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            prepare_mouse(view, endpoint, cx);
+            cx.write_to_clipboard(file_copy(std::slice::from_ref(&image), "Screenshot.png"));
+            view.key_down(&cmd_v(), window, cx);
+            // Enter while the clipboard is still being read queues behind it.
+            view.key_down(&enter, window, cx);
+        });
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        server.receive(),
+        ClientMessage::ClipboardImage {
+            target: ClientClipboardImageTarget::Pane("w1:p1".into()),
+            extension: "png".into(),
+            data: vec![4, 5, 6],
+        }
+    );
+    assert_eq!(
+        server.receive(),
+        ClientMessage::ClientShellPaneInput {
+            pane_id: "w1:p1".into(),
+            events: vec![crate::terminal::key_input(&enter, true).unwrap()],
+        }
+    );
+    wait_image_finished(&view, cx);
+    view.read_with(cx, |view, _| assert!(view.local_error.is_none()));
+}
