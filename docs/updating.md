@@ -148,8 +148,11 @@ General > Install beta releases) it instead reads the ten newest releases from
 highest calendar version among published releases of either kind, ignoring drafts
 and non-calendar tags; that listing is bounded at 4 MiB. A beta carries the same
 signed manifest as any release, so the channel changes which release is offered,
-never how it is authenticated. A Homebrew-managed installation always checks the
-stable channel, since the tap only receives stable releases. Switching channels
+never how it is authenticated. The tap only receives stable releases, so a
+Homebrew-managed installation upgrades through Homebrew on the stable channel
+only; on the beta channel it downloads and installs the signed release in place
+like a standalone installation, and Homebrew takes the bundle back at its next
+upgrade. Switching channels
 rechecks at once and never downgrades. That recheck also covers a beta that is
 already downloaded or still downloading: leaving the beta channel discards it
 unless stable now offers the same release. Manifest, signature,
