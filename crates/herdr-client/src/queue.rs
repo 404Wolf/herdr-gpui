@@ -224,6 +224,8 @@ mod tests {
         Command {
             boot_id: "boot".into(),
             bytes: vec![1],
+            input_pane: None,
+            written: Default::default(),
             request: None,
             image: None,
         }

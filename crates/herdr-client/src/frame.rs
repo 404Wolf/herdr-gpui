@@ -32,6 +32,11 @@ impl ImageWriter {
 
     pub(crate) fn poll(&mut self, stream: &mut impl Write, bytes: &[u8]) -> Result<bool> {
         self.check_timeout()?;
+        self.write_some(stream, bytes)
+    }
+
+    /// One bounded write attempt resuming at `offset`; the caller owns the deadline.
+    pub(crate) fn write_some(&mut self, stream: &mut impl Write, bytes: &[u8]) -> Result<bool> {
         self.started.get_or_insert_with(Instant::now);
         let end = bytes.len().min(self.offset + 64 * 1024);
         match stream.write(&bytes[self.offset..end]) {
@@ -72,6 +77,21 @@ impl FrameReader {
             started: None,
             timeout,
         }
+    }
+
+    /// Identity only; the unfinished body remains unvalidated and unpublished.
+    pub(crate) fn has_current_surface_prefix(
+        &self,
+        snapshot: &ClientShellSnapshot,
+        surface: &PaneSurfaceFrame,
+    ) -> bool {
+        self.deadline().is_some_and(|due| Instant::now() < due)
+            && self.target > 4
+            && self.bytes.len() < self.target
+            && self
+                .bytes
+                .get(4..)
+                .is_some_and(|payload| has_current_surface_prefix(payload, snapshot, surface))
     }
 
     /// Drain a progressing frame before retrying a backpressured write. Stop at

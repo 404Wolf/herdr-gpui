@@ -219,15 +219,21 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        // The toggle leads the bar so it stays put whether or not the sidebar
-        // below it is showing, and can always bring the sidebar back. Back
-        // and Forward follow it, as in Finder and Files.
+        // Without the activity bar, the toggle leads the bar so it stays put
+        // whether or not the sidebar below it is showing, and can always
+        // bring the sidebar back. The bar keeps it in the left column instead,
+        // which never leaves the screen. Back and Forward follow, as in
+        // Finder and Files.
+        let toggle = !self.activity_bar_leads();
         let leading = div()
             .flex()
             .flex_none()
             .items_center()
             .h_full()
-            .child(self.sidebar_toggle(cx))
+            .when(toggle, |leading| leading.child(self.sidebar_toggle(cx)))
+            // No toggle precedes Back here, so its inset is not there to
+            // complete the room before it.
+            .when(!toggle, |leading| leading.pl(px(SIDEBAR_TOGGLE_INSET)))
             .when(
                 f32::from(window.viewport_size().width) >= NAVIGATION_MIN_WIDTH,
                 |leading| leading.child(self.navigation(cx)),
@@ -251,7 +257,7 @@ impl HerdrWindow {
         .child(self.titlebar_end(window, cx))
     }
 
-    fn sidebar_toggle(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn sidebar_toggle(&self, cx: &mut Context<Self>) -> AnyElement {
         div()
             .id("toggle-sidebar")
             .debug_selector(|| "toggle-sidebar".into())

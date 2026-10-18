@@ -110,7 +110,7 @@ impl HerdrWindow {
                 enabled,
                 endpoint.enabled && live.status.is_connected(),
                 crate::checkpoint::host_for(&endpoint.connection.target, live),
-                live.snapshot.as_ref(),
+                live.latest_snapshot(),
             ) else {
                 continue;
             };

@@ -390,8 +390,9 @@ impl HerdrWindow {
             .bg(self.fill().panel(theme.sidebar_background()))
             .border_r_1()
             .border_color(rgb(theme.active))
-            // No expand control of its own: the title bar's sidebar toggle,
-            // in the header or leading the tab row, is always on screen.
+            // No expand control of its own: the sidebar toggle is always on
+            // screen, over the rail beside the activity bar, else in the
+            // header or leading the tab row.
             .child(
                 div()
                     .debug_selector(|| "rail-spaces-section".into())
