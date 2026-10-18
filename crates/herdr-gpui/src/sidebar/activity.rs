@@ -5,10 +5,11 @@
 //! (`crate::overview`), Orchestrator, Pull requests, and Issues the focused
 //! workspace's orchestrator on that list (see `orchestrator::section`), and
 //! Usage the plan limits of every host (`crate::usage::section`).
-//! `[sidebar] activity_bar = false` turns the bar off, and the collapsed
-//! rail of the Workspaces section never shows it.
+//! `[sidebar] activity_bar = false` turns the bar off. With the bar on, the
+//! sidebar toggle sits at the end of the Workspaces title, and collapsing the
+//! sidebar keeps the bar, with the compact rail and the toggle beside it.
 
-use super::{agents::Indicators, line_height};
+use super::{SidebarMode, agents::Indicators, line_height};
 use crate::fonts::StyledFont;
 use crate::{
     Command, HerdrWindow,
@@ -28,6 +29,9 @@ pub(crate) const BAR_WIDTH: f32 = 44.;
 const BUTTON: f32 = 32.;
 const ICON: f32 = 17.;
 const TITLE_HEIGHT: f32 = 32.;
+/// Room after the toggle at the title's end, so its glyph lines up with the
+/// rows' trailing badges below.
+const TITLE_END: f32 = 4.;
 /// One breath of a busy icon's pulse.
 const BUSY_PULSE: std::time::Duration = std::time::Duration::from_millis(1600);
 
@@ -176,6 +180,13 @@ impl HerdrWindow {
         self.config.sidebar_style.activity_bar
     }
 
+    /// Whether the bar leads the left column, whatever the sidebar's state:
+    /// on, and not set aside by zen mode. The sidebar toggle then lives in
+    /// the column rather than the title bar.
+    pub(crate) fn activity_bar_leads(&self) -> bool {
+        self.activity_bar_shown() && !self.zen_layout()
+    }
+
     /// The height the Workspaces title takes over the sidebar, or 0 with
     /// no bar.
     pub(crate) fn activity_title_height(&self) -> f32 {
@@ -189,22 +200,23 @@ impl HerdrWindow {
     /// The section that takes the window's body, if one other than
     /// Workspaces is shown. Zen mode keeps the terminals.
     pub(crate) fn activity_section(&self) -> Option<ActivityPanel> {
-        (self.activity_bar_shown() && !self.zen_layout())
+        self.activity_bar_leads()
             .then_some(self.activity.panel)
             .filter(|panel| *panel != ActivityPanel::Workspaces)
     }
 
     /// The left column's width: the bar alone beside a section, else the
-    /// sidebar as its mode lays it out with the bar's room added beside an
-    /// expanded one.
+    /// sidebar as its mode lays it out, with the bar's room added whenever
+    /// the bar leads, even beside a hidden sidebar.
     pub(crate) fn sidebar_column_width(&self, window_width: f32) -> Option<f32> {
         if self.activity_section().is_some() {
             return Some(BAR_WIDTH);
         }
-        let mode = self.sidebar_mode();
-        let width = mode.width(self.sidebar_width, window_width)?;
-        let bar = mode == super::SidebarMode::Expanded && self.activity_bar_shown();
-        Some(if bar { width + BAR_WIDTH } else { width })
+        let width = self.sidebar_mode().width(self.sidebar_width, window_width);
+        if !self.activity_bar_leads() {
+            return width;
+        }
+        Some(width.unwrap_or(0.) + BAR_WIDTH)
     }
 
     /// Shows `panel`. Picking Workspaces while it is shown collapses the
@@ -283,7 +295,8 @@ impl HerdrWindow {
     }
 
     /// The left column with the bar: beside a section, the bar alone; in
-    /// Workspaces, the bar and the sidebar under the section's name.
+    /// Workspaces, the bar and the sidebar as its mode shows it, under a
+    /// title row that holds the sidebar toggle.
     pub(crate) fn render_activity(
         &self,
         indicators: Indicators,
@@ -301,20 +314,27 @@ impl HerdrWindow {
         if self.activity_section().is_some() {
             return column;
         }
+        let sidebar = match self.sidebar_mode() {
+            SidebarMode::Expanded => self.render_sidebar(indicators, window, cx),
+            // A window too narrow for the rail keeps the bar alone, which
+            // still brings the sidebar back.
+            SidebarMode::Rail
+                if SidebarMode::Rail
+                    .width(None, f32::from(window.viewport_size().width))
+                    .is_some() =>
+            {
+                self.render_rail(indicators, window, cx)
+            }
+            SidebarMode::Rail | SidebarMode::Hidden => return column,
+        };
         column.child(
             div()
                 .flex()
                 .flex_col()
                 .h_full()
                 .min_h_0()
-                .child(self.panel_title(ActivityPanel::Workspaces))
-                .child(
-                    div()
-                        .flex()
-                        .flex_1()
-                        .min_h_0()
-                        .child(self.render_sidebar(indicators, window, cx)),
-                ),
+                .child(self.panel_title(ActivityPanel::Workspaces, cx))
+                .child(div().flex().flex_1().min_h_0().child(sidebar)),
         )
     }
 
@@ -488,17 +508,21 @@ impl HerdrWindow {
             .child(text)
     }
 
-    /// The section's name over the sidebar, across its width.
-    fn panel_title(&self, panel: ActivityPanel) -> Div {
+    /// The section's name over the sidebar, across its width, ended by the
+    /// sidebar toggle. Over the rail, too narrow for the name, the toggle
+    /// stands alone.
+    fn panel_title(&self, panel: ActivityPanel, cx: &mut Context<Self>) -> Div {
+        let expanded = self.sidebar_visible;
         let theme = &self.theme;
         let font = &self.config.sidebar;
         div()
             .debug_selector(|| "activity-title".into())
             .flex_none()
             .h(px(self.activity_title_height()))
-            .px(px(12.))
             .flex()
             .items_center()
+            .when(expanded, |title| title.pl(px(12.)).pr(px(TITLE_END)))
+            .when(!expanded, |title| title.justify_center())
             .text_font(font)
             .text_size(px(font.size - 1.))
             .font_weight(FontWeight::SEMIBOLD)
@@ -506,7 +530,16 @@ impl HerdrWindow {
             .bg(self.fill().panel(theme.sidebar_background()))
             .border_r_1()
             .border_color(rgb(theme.active))
-            .child(panel.label().to_uppercase())
+            .when(expanded, |title| {
+                title.child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .child(panel.label().to_uppercase()),
+                )
+            })
+            .child(self.sidebar_toggle(cx))
     }
 }
 
