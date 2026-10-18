@@ -34,6 +34,12 @@ on:
 
 permissions: {}
 
+# Its macOS jobs share runners with CI and Release. Without this, every push
+# left another run queued, and stale ones delayed release builds for hours.
+concurrency:
+  group: updater-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rust-harness:
     name: Rust Updater (${{ matrix.os }})
