@@ -39,6 +39,12 @@ pub(super) enum Unsynced {
 #[derive(Debug)]
 pub(super) struct Cancel(Arc<AtomicBool>);
 
+impl Unsynced {
+    fn is_search(&self, cancelled: &Arc<AtomicBool>) -> bool {
+        matches!(self, Self::Checking { _cancel } if Arc::ptr_eq(&_cancel.0, cancelled))
+    }
+}
+
 #[cfg(test)]
 impl Cancel {
     pub(super) fn for_test() -> Self {
@@ -156,13 +162,19 @@ impl HerdrWindow {
             _cancel: Cancel(cancelled.clone()),
         };
         let id = host.id.clone();
+        let search_cancelled = cancelled.clone();
         let search = cx
             .background_executor()
-            .spawn(async move { crate::cloud::unsynced::find(&target, &cancelled) });
+            .spawn(async move { crate::cloud::unsynced::find(&target, &search_cancelled) });
         cx.spawn(async move |this, cx| {
             let found = search.await;
             let _ = this.update(cx, |this, cx| {
-                let Some(host) = this.menu.host.as_mut().filter(|host| host.id == id) else {
+                let Some(host) = this
+                    .menu
+                    .host
+                    .as_mut()
+                    .filter(|host| host.id == id && host.unsynced.is_search(&cancelled))
+                else {
                     return;
                 };
                 host.unsynced = match found {
@@ -225,3 +237,6 @@ impl HerdrWindow {
         )
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -18,7 +18,9 @@ fn engine(account: &str) -> Result<Engine> {
 /// The `exec` command for the container `id`, started first if it stopped.
 pub(crate) fn command(account: &str, id: &str, stop: &AtomicBool) -> Result<Command> {
     let engine = engine(account)?;
-    machine::ensure_running(engine, id, &|| stop.load(Ordering::Acquire))?;
+    super::lifecycle::start(engine, id, || {
+        machine::ensure_running(engine, id, &|| stop.load(Ordering::Acquire))
+    })?;
     machine::exec(engine, id)
 }
 

@@ -88,11 +88,12 @@ pub(crate) fn auto_stop(text: &str) -> Option<Option<Duration>> {
     if text.eq_ignore_ascii_case("never") {
         return Some(None);
     }
-    let (number, unit) = text.split_at(text.len().checked_sub(1)?);
-    let seconds = match unit {
-        "m" => 60,
-        "h" => 60 * 60,
-        _ => return None,
+    let (number, seconds) = if let Some(number) = text.strip_suffix('m') {
+        (number, 60)
+    } else if let Some(number) = text.strip_suffix('h') {
+        (number, 60 * 60)
+    } else {
+        return None;
     };
     let number: u64 = number.parse().ok()?;
     let duration = Duration::from_secs(number.checked_mul(seconds)?);

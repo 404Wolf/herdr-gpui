@@ -21,7 +21,7 @@ pub(crate) struct Checkout {
     pub(crate) path: String,
     /// Changed, staged, and untracked (not ignored) files.
     pub(crate) changed: u32,
-    /// Commits reachable from HEAD but from no remote-tracking branch.
+    /// Commits reachable from local refs or HEAD but from no remote-tracking branch.
     pub(crate) unpushed: u32,
 }
 
@@ -54,12 +54,16 @@ fn script() -> String {
         .collect::<Vec<_>>()
         .join(" -o ");
     format!(
-        r#"cd "$HOME" || exit 0
+        r#"cd "$HOME" || exit 1
 find . -maxdepth 6 \( {skipped} \) -prune -o -name .git -print 2>/dev/null | head -n {MAX_CHECKOUTS} |
 while IFS= read -r git; do
   dir=${{git%/.git}}
-  changed=$(git -C "$dir" status --porcelain=v1 --untracked-files=all 2>/dev/null | wc -l | tr -d ' ')
-  unpushed=$(git -C "$dir" rev-list --count HEAD --not --remotes 2>/dev/null || echo 0)
+  status=$(git -C "$dir" status --porcelain=v1 --untracked-files=all) || exit 1
+  changed=0
+  if [ -n "$status" ]; then
+    changed=$(printf '%s\n' "$status" | wc -l | tr -d ' ')
+  fi
+  unpushed=$(git -C "$dir" rev-list --count --all --not --remotes) || exit 1
   if [ "$changed" != 0 ] || [ "$unpushed" != 0 ]; then
     printf '%s\t%s\t%s\n' "$changed" "$unpushed" "$dir"
   fi

@@ -4,6 +4,7 @@ use crate::config::ContainerConfig;
 
 mod idle;
 mod live;
+mod settings;
 
 fn config(pairs: &[(&str, &str)]) -> ContainerConfig {
     let text = pairs

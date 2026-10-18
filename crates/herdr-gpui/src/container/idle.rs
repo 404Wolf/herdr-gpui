@@ -129,7 +129,9 @@ fn check(devices: &[SavedDevice], auto_stop: Duration) {
                 id = device.id,
                 "Stopping a container with no agent at work"
             );
-            if let Err(error) = machine::stop(engine, &device.id, &|| false) {
+            if let Err(error) = super::lifecycle::stop(engine, &device.id, || {
+                machine::stop(engine, &device.id, &|| false)
+            }) {
                 tracing::warn!(category = "container_idle", id = device.id, %error, "Could not stop an idle container");
             }
         }

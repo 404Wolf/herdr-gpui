@@ -2,6 +2,9 @@
 use super::*;
 use std::{collections::HashMap, sync::Mutex};
 
+#[cfg(unix)]
+mod inspection;
+
 /// What `find` reports for each cloud machine ID in window tests; a machine
 /// missing here cannot be searched.
 pub(crate) static FAKE: Mutex<Option<HashMap<String, Vec<Checkout>>>> = Mutex::new(None);

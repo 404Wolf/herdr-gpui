@@ -28,6 +28,8 @@ pub enum Error {
     },
     #[error("The container {0} no longer exists.")]
     Gone(String),
+    #[error("The container {0} is stopped. Reconnect to start it again.")]
+    Suspended(String),
     #[error("A container or volume named {0} already exists; try again for another name.")]
     NameTaken(String),
     #[error("{0} on the engine was not made by Herdr UI for this device, so it was left alone.")]

@@ -256,5 +256,7 @@ pub(crate) fn stop_saved(id: &str) -> crate::Result<()> {
     };
     let engine =
         Engine::from_key(&device.account).ok_or(super::Error::Field("container engine"))?;
-    Ok(machine::stop(engine, id, &|| false)?)
+    Ok(super::lifecycle::stop(engine, id, || {
+        machine::stop(engine, id, &|| false)
+    })?)
 }
