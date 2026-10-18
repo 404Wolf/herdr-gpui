@@ -37,11 +37,15 @@ failure is not a surprise:
 | `origin` is `penso/herdr-gpui` | `git remote get-url origin` |
 | `gh` authenticated as `penso` | `gh api user --jq .login` |
 | Local HEAD == `origin/main` on GitHub | compare `git rev-parse HEAD` with `gh api repos/penso/herdr-gpui/git/ref/heads/main --jq .object.sha` |
-| CI passed on that commit (a release only) | `gh run list --workflow ci.yml --commit "$(git rev-parse HEAD)" --event push` |
+| Full CI passed on that commit (a release only) | `python3 scripts/release/check-ci.py "$(git rev-parse HEAD)"` |
 
 The release workflow runs no test suites of its own: its `validate` job
-refuses a commit without a successful push-to-main CI run. While that run is
-still going, `dispatch.sh` waits for it before dispatching.
+requires a successful owner-triggered push or manual CI run on main with every
+platform check and optimized build completed successfully. A green run with
+skipped checks does not qualify. While a run is still going, `dispatch.sh` waits
+for it before checking its jobs. For a documentation-only commit whose push CI
+skipped the suites, run `gh workflow run ci.yml --repo penso/herdr-gpui --ref main`
+to test the full commit before retrying the release.
 
 The script never fetches or checks out for you: if HEAD does not match, stop and
 tell the owner rather than pulling on their behalf.

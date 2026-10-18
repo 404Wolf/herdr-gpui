@@ -166,8 +166,9 @@ class ReleaseTargets(unittest.TestCase):
             self.assertIn("fallback: none\n", jobs[name], name)
         self.assertNotIn("macos-checks", workflow)
         validate = jobs["validate"]
-        self.assertIn("actions/workflows/ci.yml/runs?head_sha=$EXPECTED_SHA&event=push&branch=main", validate)
-        self.assertIn('.head_sha == env.EXPECTED_SHA and .conclusion == "success"', validate)
+        self.assertIn('python3 scripts/release/check-ci.py "$EXPECTED_SHA"', validate)
+        dispatch = (ROOT / "scripts/release/dispatch.sh").read_text()
+        self.assertIn('python3 scripts/release/check-ci.py "$sha" --wait', dispatch)
         self.assertIn("      actions: read\n", validate)
         for target in ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"):
             # The Authenticode-signed builds are attested and published once

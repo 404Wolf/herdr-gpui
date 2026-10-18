@@ -20,7 +20,7 @@ case "$*" in
         ;;
     *) fail "$usage" ;;
 esac
-for command in git gh jq openssl; do
+for command in git gh jq openssl python3; do
     command -v "$command" >/dev/null || fail "Required command: $command"
 done
 
@@ -41,20 +41,8 @@ sha=$(git rev-parse HEAD)
 # The release workflow builds and packages but leaves the test suites to CI,
 # and its validate job refuses a commit CI has not passed. Wait for that here
 # rather than dispatching a run that is bound to stop.
-ci_runs() {
-    gh api "repos/$repo/actions/workflows/ci.yml/runs?head_sha=$sha&event=push&branch=main&per_page=20" \
-        --jq "[.workflow_runs[] | select(.head_sha == \"$sha\")]"
-}
 if [[ $workflow == release.yml ]]; then
-    runs=$(ci_runs)
-    if [[ "$(jq '[.[] | select(.conclusion == "success")] | length' <<< "$runs")" == 0 ]]; then
-        pending=$(jq -r '[.[] | select(.status != "completed")][0].id // empty' <<< "$runs")
-        [[ -n "$pending" ]] || fail "CI has not passed on $sha; fix main or rerun CI before releasing"
-        printf 'Waiting for CI on %s: https://github.com/%s/actions/runs/%s\n' "$sha" "$repo" "$pending"
-        gh run watch "$pending" --repo "$repo" --exit-status >/dev/null || true
-        [[ "$(ci_runs | jq '[.[] | select(.conclusion == "success")] | length')" != 0 ]] ||
-            fail "CI did not pass on $sha; nothing was dispatched"
-    fi
+    python3 scripts/release/check-ci.py "$sha" --wait
 fi
 
 # A nonce avoids confusing this dispatch with another run for the same SHA.
