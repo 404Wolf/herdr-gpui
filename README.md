@@ -235,6 +235,21 @@ from **Check for Updates**: it downloads the new installer, checks it against
 the release's signed manifest and its Authenticode publisher, runs it silently,
 and reopens. See [Windows](#windows) for what works on the platform.
 
+Both add **Open in Herdr UI** to folders in File Explorer, and to the empty
+space inside one, for your user only. It runs `herdr-gpui open` on the folder
+through the launcher, so no console window appears: the running app focuses
+the folder's workspace or starts one there, and the app is started first when
+it is not running. On Windows 11 the entry is under **Show more options**,
+because the compact menu only lists commands of packaged apps. To remove
+everything `install.ps1` added, run it with `-Uninstall`:
+
+```powershell
+& ([scriptblock]::Create((irm https://herdrui.dev/install.ps1))) -Uninstall
+```
+
+Uninstalling the regular installer from **Settings > Apps** removes the entry
+too.
+
 ### From source
 
 Install Rust/rustup and, on macOS, the Xcode command-line tools. The repository
@@ -356,7 +371,10 @@ Ed25519-signed `windows-manifest.json` and carry a valid signature from Herdr
 UI's publisher, or it never runs (see
 [App Updates](docs/updating.md#windows-installers)). The app registers with
 Restart Manager, so an update, or a restart with **Restart apps** turned on,
-reopens it. A copy run from anywhere else does not update itself; download each
+reopens it. **Settings > General > Launch at login** (off by default) opens it
+when you sign in; see [launch at login](crates/herdr-gpui/README.md#launch-at-login).
+A crash leaves a minidump and a text report beside the log, never uploaded; see
+[crash reports](crates/herdr-gpui/README.md#crash-reports). A copy run from anywhere else does not update itself; download each
 new release manually. `herdr-gpui.exe` is a console program, because it is also the
 command line agents and scripts run. Open the app with
 `herdr-gpui-launcher.exe` (the Start menu shortcut's target), which starts

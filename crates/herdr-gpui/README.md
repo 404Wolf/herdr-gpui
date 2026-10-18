@@ -681,7 +681,12 @@ preserves these drafts. Theme, font, and layout writes from Settings are seriali
 **Ghostty** and **Herdr** are independent library filters, both enabled initially.
 Turn either off to show only the other; search text is preserved, and changing a
 filter does not change the live theme or pending draft. Ghostty includes native
-built-ins and theme files. Every card identifies its source, including themes
+built-ins and theme files. The built-ins bundle popular Ghostty themes from
+iTerm2-Color-Schemes under their Ghostty names, so a platform without Ghostty
+still lists them; when Ghostty is installed, its copy of a built-in, including
+an older spelling such as `tokyonight` or `catppuccin-mocha`, is listed once,
+as the built-in. A theme saved under such a spelling stays listed and loads
+from its file. Every card identifies its source, including themes
 with the same name in both libraries. Herdr selections edit the shared theme,
 which changes the GUI only when it follows Herdr rather than a native override.
 Follow Herdr and high contrast remain available independently.
@@ -3033,6 +3038,27 @@ waits on the disk; lines that cannot be queued or written are counted as dropped
 in the window's status bar. If none of these state-directory variables is
 available, nothing is saved and the window says so.
 
+### Crash reports
+
+If the app panics, it writes `crash-YYYYMMDD-HHMMSS.mmm-PID.txt` (the time in UTC) beside the log
+before it exits. The report has the version, platform, thread, panic message,
+source location, and a backtrace. The app also writes a `Herdr UI panicked`
+error record to the log, naming the report, and waits up to two seconds for the
+log writer to save it. Release builds ship without debug symbols, so their
+backtraces are mostly addresses; the message and location are exact. On Windows
+it also writes a minidump, `crash-….dmp`, for a panic and for a crash Rust never
+sees, such as an access violation or a stack overflow (an unhandled-exception
+filter; `src/crash/windows.rs`). Such a crash gets a short `.txt` report with the
+exception code and address, and a `Herdr UI crashed` record. A dump holds every
+thread's stack and registers but not the heap. A thread started at launch writes
+it, because the crashing thread may have no stack left. Windows Error Reporting
+still runs afterwards. Only the five newest reports and three newest dumps are
+kept. On macOS and Linux a signal such as `SIGSEGV` leaves no report here. Crash
+files never leave the machine. `herdr-gpui diagnostics bundle PATH` includes the
+three newest reports, redacted like the log records, and lists dumps by name and
+size without including them: they hold the app's memory, so attach one only
+when asked.
+
 Local Windows connections are supported through the daemon's named pipe; pass
 the binary client socket path to `--socket`, not the JSON API socket. No debug
 build or `RUST_LOG` setting is needed: client debug records are captured in
@@ -4127,7 +4153,24 @@ silently; Setup restarts the app (see
 [App Updates](../../docs/updating.md#windows-installers)). Only the copy in
 `%LOCALAPPDATA%\Programs\Herdr UI` updates itself. The app registers with Restart
 Manager, never after a crash or hang; the `herdr-gpui.exe --restart-manager`
-Windows starts hands off to the launcher (`src/restart_manager.rs`).
+Windows starts hands off to the launcher (`src/restart_manager.rs`). A crash
+leaves a minidump and a report beside the log; see [crash reports](#crash-reports).
+
+#### Launch at login
+
+**Settings > General > Launch at login**, off by default, writes
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Herdr UI`, naming the
+`herdr-gpui-launcher.exe` beside the running app, so it opens without a console
+window when you sign in; turning it off removes the value. The registry is the
+setting, so nothing goes in the config file, and the switch shows what Windows
+will do: it is read when Settings opens and each time it comes to the front. A copy with no launcher beside it
+cannot turn it on and says so. Task Manager's **Startup apps** and **Settings >
+Apps > Startup** can switch the entry off without removing it (a mark under
+`Explorer\StartupApproved\Run`). The app never overrides that: the row then
+says where to turn it back on. The installer's uninstaller removes both values;
+an `install.ps1` copy has no uninstaller, so turn the setting off before
+deleting its folder. macOS and Linux have no launch-at-login setting yet
+(`src/launch_at_login.rs`).
 
 Starting a local `herdr server` looks for `herdr.exe` and uses
 `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` in place of `process_group(0)`, so

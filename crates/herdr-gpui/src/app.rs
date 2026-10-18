@@ -220,6 +220,10 @@ pub(crate) fn run() -> std::process::ExitCode {
     if let Some(exit) = crate::setup_relay::run_helper(&args) {
         return exit;
     }
+    #[cfg(feature = "azure")]
+    if let Some(exit) = crate::azure::sandbox::relay::run_helper(&args) {
+        return exit;
+    }
     // A control command asked for JSON gets its usage errors as JSON too.
     let json_errors = cli::control::wants_json(&args);
     let LaunchOptions { target, mut mode } = match LaunchOptions::parse(&args) {
@@ -305,6 +309,8 @@ pub(crate) fn run() -> std::process::ExitCode {
         eprintln!("Unable to initialize diagnostics: {error}");
         return std::process::ExitCode::FAILURE;
     }
+    // After the log, which a panic's record goes to.
+    crate::crash::install();
     // SSH children use the login shell's `ssh` and agent, as the daemon does:
     // launchd's would miss keys such as a security key held by another agent.
     herdr_client::set_command_environment(crate::login_env::apply);
@@ -419,6 +425,8 @@ pub(crate) fn run() -> std::process::ExitCode {
                 crate::window::system_notifications::install(cx);
                 // Nor do they start VS Code.
                 crate::code_server::Launcher::install(cx);
+                #[cfg(feature = "azure")]
+                crate::azure::install(cx);
             }
             cx.set_global(appearance.select(light_appearance(cx)));
             app_icon::install();

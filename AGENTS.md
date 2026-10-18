@@ -211,8 +211,10 @@ just ci
   CLI tests. The `windows-native` job runs `live_gui` (the `test-gui` and
   `test-sidebar` equivalents) against a pinned `herdr.exe`, and the release-mode
   performance budget, on both Windows runners, except the live-daemon test on
-  ARM64, where the emulated daemon ignores Enter; optimized builds and CLI tests
-  run in the release workflow. Keep the `cfg(unix)`/`cfg(windows)`
+  ARM64, where the emulated daemon ignores Enter; the optimized Windows build
+  and its installer run in `windows-package` when their inputs change, and in
+  the release workflow, which only smoke-tests the CLI of the bytes it ships
+  and requires CI to have passed on the commit. Keep the `cfg(unix)`/`cfg(windows)`
   split honest and say plainly what a platform cannot do instead of stubbing
   behavior that appears to work.
 - A `cfg` gate is only proven on the platform it names. Before handing off a
