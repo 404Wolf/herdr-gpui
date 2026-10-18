@@ -3,7 +3,10 @@
 //! Removing a worktree still runs `git`, which owns that mutation.
 
 use super::{Error, Result};
-use std::path::{Path, PathBuf};
+use std::{
+    ffi::OsString,
+    path::{Path, PathBuf},
+};
 
 /// What `repo::detect`'s script prints for a checkout.
 pub(super) struct Checkout {
@@ -20,8 +23,95 @@ fn git(operation: &'static str) -> impl FnOnce(Box<dyn std::error::Error + Send 
     move |source| Error::Git { operation, source }
 }
 
+/// The configuration sources outside the repository, in Git's order.
+const GLOBALS: [gix::config::Source; 4] = [
+    gix::config::Source::GitInstallation,
+    gix::config::Source::System,
+    gix::config::Source::Git,
+    gix::config::Source::User,
+];
+
+/// The repository holding `path`, opened without the configuration outside
+/// it: gix would find that through this process's environment, which a
+/// desktop launch may lack. [`with_globals`] adds it back.
+fn discover(path: &Path) -> gix::Result<gix::Repository> {
+    let mut trust = gix::sec::trust::Mapping::<gix::open::Options>::default();
+    for options in [&mut trust.full, &mut trust.reduced] {
+        let config = &mut options.permissions.config;
+        config.git_binary = false;
+        config.system = false;
+        config.git = false;
+        config.user = false;
+    }
+    gix::ThreadSafeRepository::discover_opts(path, Default::default(), trust).map(Into::into)
+}
+
+/// Puts the installation, system, and global configuration before `repo`'s
+/// own, found and expanded through `env`, the user's login environment as
+/// the `git` this replaced saw it, so `includeIf` and `url.insteadOf` there
+/// apply.
+fn with_globals(
+    repo: &mut gix::Repository,
+    env: &mut dyn FnMut(&str) -> Option<OsString>,
+) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use gix::config::{File, file};
+    let home = env("HOME")
+        .map(PathBuf::from)
+        .or_else(gix::path::env::home_dir);
+    let mut metas = GLOBALS.into_iter().filter_map(|source| {
+        source.storage_location(&mut *env).map(|path| {
+            file::Metadata::from(source)
+                .at(path)
+                .with(gix::sec::Trust::Full)
+        })
+    });
+    let git_dir = repo.git_dir().to_owned();
+    let branch = repo.head_name().ok().flatten();
+    let options = file::init::Options {
+        includes: file::includes::Options::follow(
+            gix::config::path::interpolate::Context {
+                git_install_dir: None,
+                home_dir: home.as_deref(),
+                home_for_user: Some(gix::config::path::interpolate::home_for_user),
+            },
+            file::includes::conditional::Context {
+                git_dir: Some(&git_dir),
+                branch_name: branch.as_ref().map(AsRef::as_ref),
+            },
+        ),
+        ..Default::default()
+    };
+    let mut buf = Vec::new();
+    let no_includes = file::init::Options {
+        includes: file::includes::Options::no_follow(),
+        ..Default::default()
+    };
+    let Some(mut globals) =
+        File::from_paths_metadata_buf(&mut metas, &mut buf, false, no_includes)?
+    else {
+        return Ok(());
+    };
+    globals.resolve_includes(options)?;
+    let mut config = repo.config_snapshot_mut();
+    let local = std::mem::take(&mut *config);
+    let meta = local.meta_owned();
+    globals.append(local)?;
+    globals.set_meta(meta);
+    *config = globals;
+    config.commit()?;
+    Ok(())
+}
+
 /// The repository holding `checkout`, or `None` when it is not in one.
 pub(super) fn checkout(checkout: &Path) -> Result<Option<Checkout>> {
+    checkout_in(checkout, &mut |name| crate::login_env::var(name))
+}
+
+/// [`checkout`] with Git's configuration found through `env`.
+pub(super) fn checkout_in(
+    checkout: &Path,
+    env: &mut dyn FnMut(&str) -> Option<OsString>,
+) -> Result<Option<Checkout>> {
     const READING: &str = "Reading the repository";
     use gix::discover::upwards::Error as Upwards;
     // A missing folder or one outside Git is "not a repository", as `git
@@ -29,7 +119,7 @@ pub(super) fn checkout(checkout: &Path) -> Result<Option<Checkout>> {
     if !checkout.is_dir() {
         return Ok(None);
     }
-    let repo = match gix::discover(checkout) {
+    let mut repo = match discover(checkout) {
         Ok(repo) => repo,
         Err(error)
             if matches!(
@@ -45,6 +135,7 @@ pub(super) fn checkout(checkout: &Path) -> Result<Option<Checkout>> {
         }
         Err(error) => return Err(git(READING)(error.into())),
     };
+    with_globals(&mut repo, env).map_err(git(READING))?;
     let Some(root) = repo.workdir().map(Path::to_path_buf) else {
         // A bare repository has no checkout to list issues for.
         return Ok(None);
@@ -58,11 +149,12 @@ pub(super) fn checkout(checkout: &Path) -> Result<Option<Checkout>> {
         .main_repo()
         .map_err(|error| git(READING)(error.into()))?;
     let main = main_repo.workdir().map_or(root, Path::to_path_buf);
-    let remotes = main_repo
+    // Remotes live in the shared config, which a linked worktree reads too.
+    let remotes = repo
         .remote_names()
         .into_iter()
         .map(|name| {
-            let url = main_repo
+            let url = repo
                 .find_remote(name.as_slice())
                 .ok()
                 .and_then(|remote| {
@@ -90,14 +182,18 @@ pub(super) fn branches(main_root: &Path, prefix: &str, max: usize) -> Result<Vec
         .references()
         .map_err(|error| git(READING)(error.into()))?;
     let full = format!("refs/heads/{prefix}");
-    let branches = references
+    // A branch that cannot be read fails the listing, as `git for-each-ref`
+    // would, rather than vanishing from a list that looks complete.
+    references
         .prefixed(full.as_str())
         .map_err(|error| git(READING)(error.into()))?
-        .filter_map(Result::ok)
-        .map(|reference| reference.name().shorten().to_string())
         .take(max)
-        .collect();
-    Ok(branches)
+        .map(|reference| {
+            reference
+                .map(|reference| reference.name().shorten().to_string())
+                .map_err(|error| git(READING)(error.into()))
+        })
+        .collect()
 }
 
 /// The full commit id `base` names in `main_root`: a reference such as

@@ -117,3 +117,65 @@ fn agent_branches_and_base_commits_match_git() {
     assert_eq!(git::commit(&main, &head).unwrap(), head);
     assert!(git::commit(&main, "no-such-branch").is_err());
 }
+
+/// Git's global configuration is found through the login environment, not
+/// this process's: its `url.insteadOf` and an `includeIf` it names apply, and
+/// the repository's own configuration still overrides it.
+#[test]
+fn global_configuration_comes_from_the_login_environment() {
+    let dir = tempfile::tempdir().unwrap();
+    let main = repository(dir.path());
+    run(&main, &["remote", "add", "origin", "corp:penso/app.git"]);
+    run(&main, &["remote", "add", "work", "work:team/app.git"]);
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let included = home.join("included.gitconfig");
+    std::fs::write(
+        &included,
+        "[url \"git@gitlab.com:\"]\n\tinsteadOf = work:\n",
+    )
+    .unwrap();
+    let global = home.join("global.gitconfig");
+    let gitdir = main.join(".git").canonicalize().unwrap();
+    let gitdir = gitdir.to_string_lossy().replace('\\', "/");
+    let gitdir = gitdir.strip_prefix("//?/").unwrap_or(&gitdir).to_owned();
+    std::fs::write(
+        &global,
+        format!(
+            "[url \"git@github.com:\"]\n\tinsteadOf = corp:\n\
+             [includeIf \"gitdir:{gitdir}\"]\n\tpath = {}\n",
+            included.to_string_lossy().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+    let mut env = |name: &str| match name {
+        "HOME" => Some(home.clone().into_os_string()),
+        "GIT_CONFIG_GLOBAL" => Some(global.clone().into_os_string()),
+        "GIT_CONFIG_NOSYSTEM" => Some("1".into()),
+        _ => None,
+    };
+    let found = git::checkout_in(&main, &mut env).unwrap().unwrap();
+    let url = |name: &str| {
+        found
+            .remotes
+            .iter()
+            .find(|(remote, _)| remote == name)
+            .map(|(_, url)| url.clone())
+            .unwrap()
+    };
+    assert_eq!(url("origin"), "git@github.com:penso/app.git");
+    assert_eq!(url("work"), "git@gitlab.com:team/app.git");
+
+    // Without that environment the rewrites are not seen.
+    let mut bare = |name: &str| match name {
+        "HOME" => Some(dir.path().join("elsewhere").into_os_string()),
+        "GIT_CONFIG_NOSYSTEM" => Some("1".into()),
+        _ => None,
+    };
+    let found = git::checkout_in(&main, &mut bare).unwrap().unwrap();
+    assert!(
+        found
+            .remotes
+            .contains(&("origin".into(), "corp:penso/app.git".into()))
+    );
+}
