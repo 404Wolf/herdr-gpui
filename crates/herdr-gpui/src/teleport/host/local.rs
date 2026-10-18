@@ -68,6 +68,10 @@ fn runnable(path: &Path) -> bool {
 mod tests {
     use super::*;
 
+    /// A program no machine has, so the fixed system directories the
+    /// search adds cannot supply it instead of the test's own.
+    const TOOL: &str = "herdr-gpui-test-tool";
+
     fn lookup(program: &str, home: Option<&Path>, path: &OsStr) -> Option<PathBuf> {
         find(program, &search_path(home, Some(path)))
     }
@@ -88,13 +92,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().join("home");
         let bin = dir.path().join("bin");
-        let name = if cfg!(windows) { "bd.exe" } else { "bd" };
+        let name = &if cfg!(windows) {
+            format!("{TOOL}.exe")
+        } else {
+            TOOL.to_owned()
+        };
         tool(&home.join(".local/bin"), name);
         tool(&bin, name);
         let path = std::env::join_paths([&bin]).unwrap();
-        let found = lookup("bd", Some(&home), &path).unwrap();
+        let found = lookup(TOOL, Some(&home), &path).unwrap();
         assert!(found.starts_with(&home), "{found:?}");
-        assert_eq!(lookup("bd", None, &path).unwrap(), bin.join(name));
+        assert_eq!(lookup(TOOL, None, &path).unwrap(), bin.join(name));
         assert_eq!(lookup("absent", Some(&home), &path), None);
     }
 
@@ -102,9 +110,9 @@ mod tests {
     #[test]
     fn a_file_that_is_not_executable_is_skipped() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("bd"), "").unwrap();
+        std::fs::write(dir.path().join(TOOL), "").unwrap();
         let path = std::env::join_paths([dir.path()]).unwrap();
-        assert_eq!(lookup("bd", None, &path), None);
+        assert_eq!(lookup(TOOL, None, &path), None);
     }
 
     #[cfg(windows)]
