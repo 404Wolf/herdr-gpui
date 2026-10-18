@@ -297,6 +297,60 @@ fn the_selected_workspaces_host_stands_apart(cx: &mut TestAppContext) {
     assert_header_apart(remote, local, highlight);
 }
 
+/// The corner dot stays off the header stroke, on the accented host and on a
+/// dimmed one. The stroke is the box's 1px rounded border.
+#[gpui::test]
+fn host_status_dots_clear_the_header_border(cx: &mut TestAppContext) {
+    let (_view, cx) = rail_window(cx, 2);
+    for (dot_name, box_name) in [
+        ("rail-host-status-local", "rail-host-box-local"),
+        ("rail-host-status-ssh:host1", "rail-host-box-ssh:host1"),
+    ] {
+        let dot = placed(cx, dot_name);
+        let header = placed(cx, box_name);
+        assert!(
+            clears_rounded_border(dot, header),
+            "{dot_name} {dot:?} meets the border of {header:?}"
+        );
+    }
+}
+
+/// `dot` lies fully inside `header`'s rounded border, with a pixel of the
+/// interior between them. The border is a 1px stroke on a `corners::SMALL` radius.
+fn clears_rounded_border(dot: Bounds<Pixels>, header: Bounds<Pixels>) -> bool {
+    let inset = 1. + 1.;
+    let radius = (crate::config::corners::SMALL - inset).max(0.);
+    let left = f32::from(header.left()) + inset;
+    let top = f32::from(header.top()) + inset;
+    let right = f32::from(header.right()) - inset;
+    let bottom = f32::from(header.bottom()) - inset;
+    [
+        (f32::from(dot.left()), f32::from(dot.top())),
+        (f32::from(dot.right()), f32::from(dot.top())),
+        (f32::from(dot.left()), f32::from(dot.bottom())),
+        (f32::from(dot.right()), f32::from(dot.bottom())),
+    ]
+    .into_iter()
+    .all(|(x, y)| inside_rounded(x, y, left, top, right, bottom, radius))
+}
+
+fn inside_rounded(
+    x: f32,
+    y: f32,
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+    radius: f32,
+) -> bool {
+    let radius = radius.min((right - left) / 2.).min((bottom - top) / 2.);
+    let cx = x.clamp(left + radius, right - radius);
+    let cy = y.clamp(top + radius, bottom - radius);
+    let dx = x - cx;
+    let dy = y - cy;
+    dx * dx + dy * dy <= radius * radius + 0.01
+}
+
 /// Fill and border painted for one box. A border is its own quad, and a
 /// transparent fill paints nothing.
 #[derive(Debug)]

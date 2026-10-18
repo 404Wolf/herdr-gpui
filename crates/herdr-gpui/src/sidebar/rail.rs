@@ -31,6 +31,11 @@ use std::borrow::Cow;
 /// agent icon, and a drawn status icon, plus even padding inside the highlight.
 pub(crate) const RAIL_WIDTH: f32 = 64.;
 const HOST_MARK: f32 = 22.;
+const HOST_BORDER: f32 = 1.;
+const HOST_DOT: f32 = 6.;
+/// Sidebar-colored ring between the status dot and the header stroke, so the
+/// rounded border cannot cut through the dot.
+const HOST_DOT_RING: f32 = 2.;
 const AGENT_ICON: f32 = 14.;
 const MARK_GAP: f32 = 4.;
 /// Padding the mark highlight keeps around the shared column grid.
@@ -181,22 +186,15 @@ impl HerdrWindow {
                                 .text_color(chrome.letter)
                                 .when(chrome.dimmed, |header| header.opacity(REST_OPACITY))
                                 .child(label_text(&initial))
-                                .child(
-                                    div()
-                                        .debug_selector(|| {
-                                            format!("rail-host-status-{endpoint_id}")
-                                        })
-                                        .absolute()
-                                        .right(px(-2.))
-                                        .bottom(px(-2.))
-                                        .size(px(6.))
-                                        .rounded_full()
-                                        .bg(rgb(if connected {
-                                            crate::menu::online(theme)
-                                        } else {
-                                            theme.muted
-                                        })),
-                                ),
+                                .child(host_status(
+                                    format!("rail-host-status-{endpoint_id}"),
+                                    if connected {
+                                        crate::menu::online(theme)
+                                    } else {
+                                        theme.muted
+                                    },
+                                    theme.sidebar_background(),
+                                )),
                         )
                         .id(SharedString::from(format!("rail-host-{endpoint_id}")))
                         .debug_selector(|| format!("rail-host-{endpoint_id}"))
@@ -605,6 +603,31 @@ fn dot_slot(selector: String, width: f32, height: f32, mark: Div) -> Div {
         .items_center()
         .justify_center()
         .child(mark)
+}
+
+/// The status dot in the header's bottom-right corner. It sits fully inside
+/// the box: a sidebar-colored ring, then the dot, inset past the 1px stroke
+/// and the rounded corner. The same inset is used for the accented host and
+/// the dimmed ones.
+fn host_status(selector: String, color: u32, ring: u32) -> Div {
+    div()
+        .absolute()
+        .right(px(HOST_BORDER))
+        .bottom(px(HOST_BORDER))
+        .size(px(HOST_DOT + 2. * HOST_DOT_RING))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded_full()
+        .bg(rgb(ring))
+        .child(
+            div()
+                .debug_selector(move || selector)
+                .size(px(HOST_DOT))
+                .flex_none()
+                .rounded_full()
+                .bg(rgb(color)),
+        )
 }
 
 /// A host header: the letter box, centered on the same line as the row grid
