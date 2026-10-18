@@ -1,4 +1,4 @@
-"""site/install.ps1 gives its Start menu shortcut the app's AppUserModelID."""
+"""site/install.ps1: its Start menu shortcut, taskbar identity and Explorer entry."""
 from pathlib import Path
 import os
 import re
@@ -25,7 +25,48 @@ def snippet():
     return source[start:end]
 
 
+def shortcut_snippet():
+    """The script's choice of shortcut target and the shortcut it saves."""
+    source = INSTALL.read_text(encoding="utf-8")
+    start = source.index("  $hasLauncher = Test-Path")
+    end = source.index("\n", source.index("  $link.Save()", start))
+    return source[start:end]
+
+
 class InstallScriptTests(unittest.TestCase):
+    def test_explorer_entry_and_launcher_text_need_the_launcher(self):
+        install = INSTALL.read_text(encoding="utf-8")
+        verbs = install[install.index("  foreach ($verb in $verbs) {\n    if (-not $hasLauncher)"):]
+        self.assertLess(verbs.index("continue"), verbs.index("$launcher`\" open"))
+
+    @unittest.skipUnless(sys.platform == "win32" and shutil.which("powershell.exe"), "needs Windows PowerShell")
+    def test_shortcut_targets_the_launcher_only_when_the_release_has_one(self):
+        # Releases up to 20261016.1 ship herdr-gpui.exe alone (#632).
+        for files, expected in ((["herdr-gpui.exe"], "herdr-gpui.exe"),
+                                (["herdr-gpui.exe", "herdr-gpui-launcher.exe"], "herdr-gpui-launcher.exe")):
+            with self.subTest(files=files), tempfile.TemporaryDirectory(prefix="herdr-install-ps1-") as temp:
+                dest = Path(temp) / "Herdr UI"
+                dest.mkdir()
+                for name in files:
+                    (dest / name).write_bytes(b"")
+                script = Path(temp) / "check.ps1"
+                script.write_text(
+                    "$ErrorActionPreference = 'Stop'\n"
+                    "$dest = $env:HERDR_TEST_DEST\n"
+                    "$exe = Join-Path $dest 'herdr-gpui.exe'\n"
+                    "$launcher = Join-Path $dest 'herdr-gpui-launcher.exe'\n"
+                    + shortcut_snippet().replace(
+                        "[Environment]::GetFolderPath('Programs')", "$env:HERDR_TEST_DIR") + "\n"
+                    "(New-Object -ComObject WScript.Shell).CreateShortcut($shortcut).TargetPath\n",
+                    encoding="utf-8")
+                result = subprocess.run(
+                    ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                     "-File", str(script)],
+                    capture_output=True, text=True, timeout=120,
+                    env={**os.environ, "HERDR_TEST_DIR": temp, "HERDR_TEST_DEST": str(dest)})
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(Path(result.stdout.strip()), dest / expected)
+
     def test_shortcut_gets_the_apps_and_installers_user_model_id(self):
         install = INSTALL.read_text(encoding="utf-8")
         self.assertIn(f"[HerdrShortcut]::SetAppUserModelId($shortcut, '{app_id()}')", install)
