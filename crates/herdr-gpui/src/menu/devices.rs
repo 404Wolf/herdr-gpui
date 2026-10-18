@@ -110,6 +110,10 @@ impl HerdrWindow {
                 crate::cloud::CloudProvider::Daytona => {
                     self.config.daytona.api_url.is_some() || var("HERDR_DAYTONA_API_URL").is_some()
                 }
+                #[cfg(feature = "sprites")]
+                crate::cloud::CloudProvider::Sprites => {
+                    self.config.sprites.api_url.is_some() || var("HERDR_SPRITES_API_URL").is_some()
+                }
                 // A local engine has no account; it is set up in Settings.
                 #[cfg(feature = "container")]
                 crate::cloud::CloudProvider::Container => false,

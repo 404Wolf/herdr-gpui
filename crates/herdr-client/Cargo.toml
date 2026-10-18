@@ -19,6 +19,7 @@ coder = ["cloud"]
 container = ["cloud"]
 daytona = ["cloud"]
 railway = ["cloud"]
+sprites = ["cloud"]
 
 [dependencies]
 base64.workspace            = true

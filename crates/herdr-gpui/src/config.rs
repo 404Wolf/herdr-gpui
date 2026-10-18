@@ -28,10 +28,12 @@ mod keybindings;
 mod layout;
 mod notifications;
 mod omarchy;
+mod option_as_alt;
 mod padding;
 pub(crate) mod preferences;
 pub(crate) mod sidebar;
 mod sidebar_style;
+mod sprites;
 pub(crate) mod status_bar;
 mod status_icons;
 #[cfg(any(
@@ -39,7 +41,8 @@ mod status_icons;
     feature = "boat",
     feature = "coder",
     feature = "container",
-    feature = "daytona"
+    feature = "daytona",
+    feature = "sprites"
 ))]
 mod table;
 pub(crate) use sidebar_style::parse_hex;
@@ -86,6 +89,7 @@ pub use notifications::{
     BellConfig, ClipboardToast, ClipboardToastPosition, NotificationConfig, SoundConfig,
 };
 use notifications::{ClipboardToastSettings, NotificationSettings};
+pub use option_as_alt::{OptionAsAlt, OptionKeys};
 pub use padding::Padding;
 pub(crate) use padding::{Axis, MAX_PADDING, Side, Sides};
 use serde::Deserialize;
@@ -95,6 +99,9 @@ pub(crate) use sidebar::{
 };
 pub(crate) use sidebar_style::DeviceFooter;
 pub use sidebar_style::{SelectMode, SidebarOverrides, SidebarStyle};
+pub use sprites::SpritesConfig;
+#[cfg(feature = "sprites")]
+pub(crate) use sprites::SpritesFields;
 pub use status_bar::StatusBar;
 pub use status_icons::StatusIcons;
 use std::{
@@ -228,6 +235,8 @@ pub struct Config {
     pub smooth_scroll: bool,
     /// How loud agent notification sounds play.
     pub sound: SoundConfig,
+    /// The Fly Sprites account whose sprites are devices.
+    pub sprites: SpritesConfig,
     /// Which status bar items show, and how compactly.
     pub status_bar: StatusBar,
     /// The set agent status is drawn with.
@@ -315,102 +324,6 @@ pub enum FileTarget {
     System,
 }
 
-/// Whether macOS Option sends Alt shortcuts to a pane or types the character
-/// the keyboard layout puts on it. Other platforms have no Option layer, so
-/// Alt always reaches the pane there.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum OptionAsAlt {
-    /// The left Option sends Alt on the U.S. and ABC layouts, whose Option
-    /// layer only holds symbols like `π` and dead keys like `´`; the right
-    /// Option still types them. Both type elsewhere, where Option holds `@`,
-    /// `[`, or letters.
-    #[default]
-    Auto,
-    Always,
-    Never,
-    /// Only the left Option sends Alt; the right one types.
-    Left,
-    /// Only the right Option sends Alt; the left one types.
-    Right,
-}
-
-/// Which Option keys a keystroke was made with, as macOS reports them.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct OptionKeys {
-    pub left: bool,
-    pub right: bool,
-}
-
-impl OptionKeys {
-    /// What a keystroke whose side is unknown counts as: the left key,
-    /// which is where Alt has always been.
-    pub const LEFT: Self = Self {
-        left: true,
-        right: false,
-    };
-
-    /// The side from an `NSEvent`'s modifier flags, whose device-dependent
-    /// bits tell the two keys apart. Flags naming neither count as the left.
-    #[cfg(any(target_os = "macos", test))]
-    pub fn from_device_flags(flags: usize) -> Self {
-        const LEFT: usize = 0x20;
-        const RIGHT: usize = 0x40;
-        let keys = Self {
-            left: flags & LEFT != 0,
-            right: flags & RIGHT != 0,
-        };
-        if keys.left || keys.right {
-            keys
-        } else {
-            Self::LEFT
-        }
-    }
-}
-
-impl OptionAsAlt {
-    /// macOS layouts whose Option characters a terminal user rarely types.
-    const ALT_LAYOUTS: [&'static str; 2] = ["com.apple.keylayout.US", "com.apple.keylayout.ABC"];
-
-    /// Whether Option-modified keys made with `keys` go to the pane as Alt
-    /// under `layout`, the platform keyboard layout ID.
-    pub fn sends_alt(self, layout: &str, keys: OptionKeys) -> bool {
-        if !cfg!(target_os = "macos") {
-            return true;
-        }
-        match self {
-            Self::Auto => Self::ALT_LAYOUTS.contains(&layout) && keys.left,
-            Self::Always => true,
-            Self::Never => false,
-            Self::Left => keys.left,
-            Self::Right => keys.right,
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for OptionAsAlt {
-    fn deserialize<D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> std::result::Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Value {
-            Bool(bool),
-            Name(String),
-        }
-        const NAMES: &[&str] = &["auto", "left", "right"];
-        match Value::deserialize(deserializer)? {
-            Value::Bool(true) => Ok(Self::Always),
-            Value::Bool(false) => Ok(Self::Never),
-            Value::Name(name) => match name.as_str() {
-                "auto" => Ok(Self::Auto),
-                "left" => Ok(Self::Left),
-                "right" => Ok(Self::Right),
-                _ => Err(serde::de::Error::unknown_variant(&name, NAMES)),
-            },
-        }
-    }
-}
-
 /// The daemon's config is read for a handful of keys, so a file far larger
 /// than any hand-written config is skipped rather than parsed on every load.
 const MAX_DAEMON_CONFIG_BYTES: u64 = 1 << 20;
@@ -483,6 +396,7 @@ impl Default for Config {
             sidebar_style: SidebarStyle::default(),
             smooth_scroll: true,
             sound: SoundConfig::default(),
+            sprites: SpritesConfig::default(),
             status_bar: StatusBar::default(),
             status_icons: StatusIcons::default(),
             // Tabs are terminal chrome, so they read in the monospace face the
@@ -549,6 +463,7 @@ struct Settings {
     sidebar: sidebar_style::SidebarSettings,
     smooth_scroll: Option<bool>,
     sound: SoundConfig,
+    sprites: SpritesConfig,
     status_bar: StatusBar,
     status_icons: Option<status_icons::SavedIcons>,
     tabs: FontSettings,
@@ -901,6 +816,9 @@ impl Config {
         #[cfg(feature = "daytona")]
         settings.daytona.settings_with(|_| None)?;
         config.daytona = settings.daytona;
+        #[cfg(feature = "sprites")]
+        settings.sprites.settings_with(|_| None)?;
+        config.sprites = settings.sprites;
         config.features = settings.features;
         config.notification_overrides = settings.notifications;
         config.notifications = settings

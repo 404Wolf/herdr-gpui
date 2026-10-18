@@ -68,6 +68,8 @@ fn every_provider_sits_beside_ssh_and_says_whether_it_is_set_up(cx: &mut gpui::T
             CloudProvider::Daytona => "add-device-source-daytona",
             #[cfg(feature = "railway")]
             CloudProvider::Railway => "add-device-source-railway",
+            #[cfg(feature = "sprites")]
+            CloudProvider::Sprites => "add-device-source-sprites",
         };
         assert!(cx.debug_bounds(id).is_some(), "{provider:?} is listed");
     }
@@ -136,6 +138,8 @@ fn settings_only() -> Vec<(CloudProvider, &'static str)> {
             CloudProvider::Daytona => Some((provider, "add-device-source-daytona")),
             #[cfg(feature = "railway")]
             CloudProvider::Railway => Some((provider, "add-device-source-railway")),
+            #[cfg(feature = "sprites")]
+            CloudProvider::Sprites => Some((provider, "add-device-source-sprites")),
         })
         .collect()
 }
@@ -318,6 +322,8 @@ fn switching_sources_never_resizes_the_dialog(cx: &mut gpui::TestAppContext) {
             CloudProvider::Daytona => "add-device-source-daytona",
             #[cfg(feature = "railway")]
             CloudProvider::Railway => "add-device-source-railway",
+            #[cfg(feature = "sprites")]
+            CloudProvider::Sprites => "add-device-source-sprites",
         };
         click(cx, id);
         assert_eq!(cx.debug_bounds("menu-panel").unwrap(), ssh, "{provider:?}");

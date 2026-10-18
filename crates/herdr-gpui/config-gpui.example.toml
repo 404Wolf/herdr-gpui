@@ -496,6 +496,16 @@ size = 12
 # memory = "8g"
 # pids_limit = 4096
 
+# Fly Sprites as devices (experimental). Settings > Cloud devices > Sprites
+# edits this table and saves the API token to the credential store; the token
+# is never read from this file. HERDR_SPRITES_TOKEN overrides the saved token
+# and HERDR_SPRITES_API_URL overrides api_url.
+# [sprites]
+# api_url = "https://api.sprites.dev"
+# Same meaning as [github] allow_plaintext_credentials, for the token, which is
+# saved in its own 0600 sprites-api-token file. Default is false.
+# allow_plaintext_credentials = false
+
 # What a new cloud device runs the first time it connects, in a "setup" tab:
 # the agents listed (claude, codex, gemini, opencode), each skipped when already
 # installed, then these lines with sh -e. Settings > Cloud devices > New device

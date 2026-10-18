@@ -16,6 +16,8 @@ mod daytona;
 #[cfg(feature = "railway")]
 mod railway;
 mod setup;
+#[cfg(feature = "sprites")]
+mod sprites;
 
 #[cfg(feature = "azure")]
 pub(super) use azure::AzureCard;
@@ -29,6 +31,8 @@ pub(super) use container::ContainerCard;
 pub(super) use daytona::DaytonaCard;
 #[cfg(feature = "railway")]
 pub(super) use railway::RailwayCard;
+#[cfg(feature = "sprites")]
+pub(super) use sprites::SpritesCard;
 
 use super::SettingsWindow;
 use crate::{
@@ -95,7 +99,8 @@ fn input(
     feature = "boat",
     feature = "coder",
     feature = "container",
-    feature = "daytona"
+    feature = "daytona",
+    feature = "sprites"
 ))]
 fn follow_config<const N: usize>(
     inputs: &[Entity<SearchInput>; N],
@@ -149,6 +154,8 @@ impl SettingsWindow {
                 CloudProvider::Daytona => self.open_daytona_card(cx),
                 #[cfg(feature = "railway")]
                 CloudProvider::Railway => self.open_railway_card(cx),
+                #[cfg(feature = "sprites")]
+                CloudProvider::Sprites => self.open_sprites_card(cx),
             }
         }
     }
@@ -170,6 +177,8 @@ impl SettingsWindow {
                 CloudProvider::Daytona => self.daytona_config_changed(cx),
                 #[cfg(feature = "railway")]
                 CloudProvider::Railway => self.railway_config_changed(cx),
+                #[cfg(feature = "sprites")]
+                CloudProvider::Sprites => self.sprites_config_changed(cx),
             }
         }
     }
@@ -237,6 +246,8 @@ impl SettingsWindow {
             CloudProvider::Daytona => self.render_daytona_card(cx),
             #[cfg(feature = "railway")]
             CloudProvider::Railway => self.render_railway_card(cx),
+            #[cfg(feature = "sprites")]
+            CloudProvider::Sprites => self.render_sprites_card(cx),
         };
         div()
             .relative()
@@ -301,7 +312,8 @@ impl SettingsWindow {
         feature = "coder",
         feature = "container",
         feature = "daytona",
-        feature = "railway"
+        feature = "railway",
+        feature = "sprites"
     ))]
     fn cloud_device_row(
         &self,
@@ -321,7 +333,8 @@ impl SettingsWindow {
         feature = "coder",
         feature = "container",
         feature = "daytona",
-        feature = "railway"
+        feature = "railway",
+        feature = "sprites"
     ))]
     #[allow(clippy::too_many_arguments)]
     fn cloud_device_row_with(
@@ -357,7 +370,8 @@ impl SettingsWindow {
         feature = "coder",
         feature = "container",
         feature = "daytona",
-        feature = "railway"
+        feature = "railway",
+        feature = "sprites"
     ))]
     fn cloud_device_row_actions(
         &self,

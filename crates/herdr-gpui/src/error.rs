@@ -19,14 +19,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[cfg(feature = "azure")]
-    #[error(transparent)]
-    Azure(#[from] crate::azure::Error),
     #[error(transparent)]
     Backdrop(#[from] crate::backdrop::Error),
-    #[cfg(feature = "boat")]
-    #[error(transparent)]
-    Boat(#[from] crate::boat::Error),
     #[error("Searching the local network failed: {0}")]
     Bonjour(#[from] mdns_sd::Error),
     #[error("{} already exists; choose a new file name", path.display())]
@@ -103,9 +97,6 @@ pub enum Error {
     CodeIndexCancelled,
     #[error("Only a local Git checkout can be searched for files and symbols")]
     CodeIndexRoot,
-    #[cfg(feature = "coder")]
-    #[error(transparent)]
-    Coder(#[from] crate::coder::Error),
     #[error("{0}")]
     Config(#[source] config_loader::ConfigError),
     #[error("{source}")]
@@ -122,9 +113,6 @@ pub enum Error {
     ConnectionBusy,
     #[error("The connection is not ready. Try again.")]
     ConnectionNotReady,
-    #[cfg(feature = "container")]
-    #[error(transparent)]
-    Container(#[from] crate::container::Error),
     #[error("Control request or response exceeds {limit} bytes")]
     ControlMessageSize { limit: usize },
     #[error("Herdr UI closed the control connection without answering")]
@@ -178,9 +166,6 @@ pub enum Error {
     },
     #[error("Timed out waiting for herdr server at {}. Check the Herdr server log and use Terminal > Reconnect.", .0.display())]
     DaemonTimeout(PathBuf),
-    #[cfg(feature = "daytona")]
-    #[error(transparent)]
-    Daytona(#[from] crate::daytona::Error),
     #[error("Checkout lookup failed. Dismiss and reopen the menu.")]
     DeletionLookup,
     #[error("HEAD is detached. Check a branch out first.")]
@@ -701,6 +686,10 @@ pub enum Error {
     ProcessesWorker(#[source] io::Error),
     #[error("PR lookup supports GitHub.com origins only.")]
     PrOrigin,
+    /// A cloud provider's own failure; see `cloud::ProviderError`.
+    #[cfg(feature = "cloud")]
+    #[error(transparent)]
+    Provider(#[from] crate::cloud::ProviderError),
     #[error("Could not {operation} for Git PR lookup.")]
     PrProcess {
         operation: &'static str,
@@ -723,9 +712,6 @@ pub enum Error {
     PrWorkspaceRepository,
     #[error("Local repository unavailable for worktree lookup.")]
     PrWorktreeLookup,
-    #[cfg(feature = "railway")]
-    #[error(transparent)]
-    Railway(#[from] crate::railway::Error),
     #[error("XDG_CONFIG_HOME must be an absolute path")]
     RelativeConfigRoot,
     #[error("Could not install the agent tools on the SSH host: {0}")]

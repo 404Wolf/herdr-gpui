@@ -244,6 +244,8 @@ struct SettingsWindow {
     daytona_card: Option<cloud_devices::DaytonaCard>,
     #[cfg(feature = "railway")]
     railway_card: Option<cloud_devices::RailwayCard>,
+    #[cfg(feature = "sprites")]
+    sprites_card: Option<cloud_devices::SpritesCard>,
     theme_loading: bool,
     theme_waiting: bool,
     theme_light: bool,
@@ -375,6 +377,8 @@ impl SettingsWindow {
             daytona_card: None,
             #[cfg(feature = "railway")]
             railway_card: None,
+            #[cfg(feature = "sprites")]
+            sprites_card: None,
             theme_loading: false,
             theme_waiting: false,
             theme_light: false,

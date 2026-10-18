@@ -214,6 +214,7 @@ embedded_icons! {
     "cloud/container.svg",
     "cloud/daytona.svg",
     "cloud/railway.svg",
+    "cloud/sprites.svg",
     "code.svg",
     "coffee-full.svg",
     "coffee.svg",

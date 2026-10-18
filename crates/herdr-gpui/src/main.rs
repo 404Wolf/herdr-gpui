@@ -33,11 +33,12 @@ mod close_modal;
         feature = "coder",
         feature = "container",
         feature = "daytona",
-        feature = "railway"
+        feature = "railway",
+        feature = "sprites"
     ))
 ))]
 compile_error!(
-    "the `cloud` feature is enabled through a provider feature, such as `azure`, `boat`, `coder`, `container`, `daytona`, or `railway`"
+    "the `cloud` feature is enabled through a provider feature, such as `azure`, `boat`, `coder`, `container`, `daytona`, `railway`, or `sprites`"
 );
 #[cfg(feature = "cloud")]
 mod cloud;
@@ -137,6 +138,8 @@ mod setup_relay;
 mod sidebar;
 mod smooth_scroll;
 mod sound;
+#[cfg(feature = "sprites")]
+mod sprites;
 mod state;
 mod state_file;
 mod storage_warning;

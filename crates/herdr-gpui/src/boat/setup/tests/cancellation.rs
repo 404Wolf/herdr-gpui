@@ -1,4 +1,5 @@
 use super::*;
+use crate::cloud::ProviderError;
 
 #[test]
 fn already_cancelled_jobs_exit_before_preparing_ssh_or_credentials() {
@@ -12,6 +13,8 @@ fn already_cancelled_jobs_exit_before_preparing_ssh_or_credentials() {
     });
     assert!(matches!(
         result,
-        Err(crate::Error::Boat(crate::boat::Error::Cancelled))
+        Err(crate::Error::Provider(ProviderError::Boat(
+            crate::boat::Error::Cancelled
+        )))
     ));
 }

@@ -26,6 +26,7 @@ pub struct CloudConfig {
     pub railway: CloudSetup,
     /// Shell lines run after the agents, with `sh -e`.
     pub setup: Option<String>,
+    pub sprites: CloudSetup,
     // keep-sorted end
 }
 
@@ -65,6 +66,7 @@ impl CloudConfig {
             ("container", &self.container),
             ("daytona", &self.daytona),
             ("railway", &self.railway),
+            ("sprites", &self.sprites),
         ]
         .into_iter()
     }
@@ -91,6 +93,7 @@ impl CloudConfig {
         retain("cloud.container.", &mut self.container.agents);
         retain("cloud.daytona.", &mut self.daytona.agents);
         retain("cloud.railway.", &mut self.railway.agents);
+        retain("cloud.sprites.", &mut self.sprites.agents);
         unknown
     }
 

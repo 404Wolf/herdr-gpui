@@ -40,6 +40,22 @@ macro_rules! providers {
             provision: $provision:expr $(,)?
         }
     ),* $(,)?) => {
+        /// A provider's own failure, as one variant of the app's root error,
+        /// so supporting a provider never edits that enum.
+        #[derive(Debug, thiserror::Error)]
+        pub enum ProviderError {
+            $(#[cfg(feature = $feature)]
+            #[error(transparent)]
+            $variant(#[from] crate::$module::Error),)*
+        }
+
+        $(#[cfg(feature = $feature)]
+        impl From<crate::$module::Error> for crate::Error {
+            fn from(error: crate::$module::Error) -> Self {
+                Self::Provider(ProviderError::$variant(error))
+            }
+        })*
+
         /// The provider's name, as the UI shows it.
         pub(crate) fn name(provider: CloudProvider) -> &'static str {
             match provider {
@@ -203,6 +219,20 @@ providers! {
         command: plain,
         deletion: None,
         provision: None,
+    },
+    "sprites" Sprites => {
+        module: sprites,
+        name: "Sprites",
+        icon: "icons/cloud/sprites.svg",
+        offer: "Create a Fly sprite in Settings",
+        noun: "sprite",
+        command: plain,
+        deletion: Some(Deletion {
+            noun: |_| "sprite",
+            leftovers: ", with its files and checkpoints,",
+            run: crate::sprites::destroy_saved,
+        }),
+        provision: Some(crate::sprites::setup::provision),
     },
     // keep-sorted end
 }

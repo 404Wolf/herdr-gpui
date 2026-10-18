@@ -294,14 +294,14 @@ edits only the local catalog: the host's own Herdr keeps running. When the
 device has its own GitHub sign-in, the confirmation also offers to delete it,
 since its account panel goes away with the device. Local has no such menu.
 
-A cloud device's header (Azure, Boat, Coder, Container, Daytona, or Railway)
-has a menu too:
+A cloud device's header (Azure, Boat, Coder, Container, Daytona, Railway, or
+Sprites) has a menu too:
 **Rename…** changes the name the sidebar shows, falling back to the machine's
 name when left empty; **Cloud device settings…** opens its provider under
 Settings > Cloud devices; and **Remove device…** forgets it on this computer,
 leaving the workspace, sandbox, or VM as it is at the provider. For an Azure
-machine or a container, **Remove device…** deletes it at the provider by
-default, with **Remove from Herdr only** beside it. Before deleting, the dialog
+machine, a container, or a sprite, **Remove device…** deletes it at the
+provider by default, with **Remove from Herdr only** beside it. Before deleting, the dialog
 searches the machine's home directory for Git checkouts with changed or
 untracked files or commits on no remote; when it finds some, it names them and
 the button becomes **Delete anyway**, and a machine it cannot reach is said to
@@ -394,7 +394,8 @@ the app.
 ### Coder workspaces
 
 Settings > **Cloud devices** holds accounts with providers that create machines
-to use as devices: Azure, Boat, Coder, Container, Daytona, and Railway.
+to use as devices: Azure, Boat, Coder, Container, Daytona, Railway, and
+Sprites.
 Coder's card edits the `[coder]` keys (see `config-gpui.example.toml`), saves the OAuth client secret to the
 credential store rather than the config file, signs in and out, and lists the
 saved Coder devices with a Remove action. A secret set in the config file or
@@ -532,6 +533,26 @@ The image needs `curl` to install Herdr and `git` for checkouts; the default,
 this computer's kernel: they keep honest agents apart, not hostile code, for
 which a VM provider such as Azure is the better choice. Containers are
 unavailable on Windows, like every cloud device.
+
+### Fly Sprites (experimental)
+
+Settings > **Cloud devices** > **Sprites** holds a Fly Sprites account: the API
+URL (`https://api.sprites.dev` for Fly's service), saved to `[sprites]`, and an
+API token saved to the credential store (`HERDR_SPRITES_TOKEN` takes
+precedence, and `HERDR_SPRITES_API_URL` replaces the URL). **Create sprite**
+makes a sprite with a generated name, installs Herdr in it when the **Install
+Herdr** switch is on (the default), registers `herdr server` as the sprite's
+service so it is running again whenever the sprite wakes, and saves the device;
+a failure deletes the sprite again. Sprites sleep when idle and wake on the
+next command, keeping their files. Once a sprite device exists, Smart
+Dispatch's dialogs offer **New sprite** like **New container**.
+
+A sprite has no SSH server, so the app runs itself as a relay
+(`herdr-gpui __sprites-exec`) between Herdr's bridge and the API's exec stream,
+a WebSocket whose binary frames carry stdin, stdout, stderr, and the exit code
+unchanged. The token stays on this computer. Sprites are unavailable on
+Windows, like every cloud device. This provider is tested against a scripted
+exec stream and API replies, but not yet against a live Sprites account.
 
 ### Railway free VMs (experimental)
 
@@ -1942,8 +1963,9 @@ Setups of several such worktrees wait their turn; one whose host is not shown
 within two minutes is given up on, with a warning. A
 new workspace opens the repository's main checkout on that host.
 
-Once you have a container device (see [Containers](#containers-docker-or-podman)),
-the dialogs also offer a **New container** tile, even with one host connected.
+Once you have a container device (see [Containers](#containers-docker-or-podman))
+or a sprite, the dialogs also offer a **New container** or **New sprite** tile,
+even with one host connected.
 Creating with it makes a container with the `[container]` settings and Herdr
 installed, starts Herdr's server in it, saves it as a device, then creates the
 checkout there as above, cloning the repository first; the dialog shows each
