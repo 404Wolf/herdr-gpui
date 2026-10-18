@@ -1932,10 +1932,13 @@ warning, and each lane says where it stopped: while creating its worktree (the
 branch may exist), before its agent started, while the agent was starting, or
 while the prompt was being sent. Nothing runs by itself. Start agent or Send
 prompt finishes a lane only when clicked, and Send prompt never starts a second
-agent. Keep removes the other worktrees after its usual confirmation, and
-Forget lets the fan-out go and leaves every worktree as it is. The four most
-recent fan-outs are kept, and a prompt over 32 KiB is not saved, so its lanes
-cannot be finished from the comparison.
+agent. A lane that fails, finishing included, offers the same button again.
+Keep removes the other worktrees after its usual confirmation; a lane whose
+worktree may exist or sits on a host no longer set up stays saved until Forget,
+which lets the fan-out go and leaves every worktree as it is. The four most
+recent fan-outs are kept, a damaged one is dropped without the others, and a
+prompt over 32 KiB is not saved, so its lanes cannot be finished from the
+comparison.
 
 Where new checkouts went is kept in `dispatch-history.json` in the state
 directory, by repository name and host. Like Teleport, dispatch needs a Linux

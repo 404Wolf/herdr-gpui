@@ -34,7 +34,8 @@ use std::{
 const FILE: &str = "fan-outs.json";
 /// Fan-outs kept; the oldest is dropped beyond this.
 const MAX_RECORDS: usize = 4;
-/// Bytes in one identifier, label, branch, or path. Longer ones are not kept.
+/// Bytes in one identifier, label, branch, or path. A fan-out with a longer
+/// one is not journaled, and a longer checkout or commit is not recorded.
 const MAX_FIELD_BYTES: usize = 1024;
 /// Bytes of a prompt kept for resuming; a longer prompt is not kept.
 pub(super) const MAX_PROMPT_BYTES: usize = 32 * 1024;
@@ -122,6 +123,19 @@ pub(crate) struct SavedCheckout {
     pub(crate) pane_id: String,
 }
 
+impl SavedCheckout {
+    fn fits(&self) -> bool {
+        [
+            &self.endpoint_id,
+            &self.workspace_id,
+            &self.path,
+            &self.pane_id,
+        ]
+        .into_iter()
+        .all(|field| fits(field))
+    }
+}
+
 impl From<&Checkout> for SavedCheckout {
     fn from(checkout: &Checkout) -> Self {
         Self {
@@ -190,6 +204,9 @@ impl Record {
     pub(crate) fn advance(&mut self, report: &Report) -> bool {
         let (index, progress) = match report {
             Report::Base(commit) => {
+                if !fits(commit) {
+                    return false;
+                }
                 let changed = self.commit.as_ref() != Some(commit);
                 self.commit = Some(commit.clone());
                 return changed;
@@ -202,7 +219,13 @@ impl Record {
         let step = match progress {
             Progress::CreatingWorktree => Checkpoint::CreatingWorktree,
             Progress::Created(checkout) => {
-                lane.checkout = Some(checkout.into());
+                // Too long to keep: the lane stays at creating its worktree,
+                // which says as much as can be kept, that one may exist.
+                let saved = SavedCheckout::from(checkout);
+                if !saved.fits() || lane.checkout.is_some() {
+                    return false;
+                }
+                lane.checkout = Some(saved);
                 Checkpoint::Created
             }
             Progress::StartingAgent => Checkpoint::StartingAgent,
@@ -217,7 +240,7 @@ impl Record {
         if step.has_checkout() != lane.checkout.is_some() {
             return false;
         }
-        let changed = lane.step != step || matches!(progress, Progress::Created(_));
+        let changed = lane.step != step;
         lane.step = step;
         changed
     }
@@ -231,7 +254,7 @@ impl Record {
     }
 
     fn valid(&self) -> bool {
-        let short = |field: &String| field.len() <= MAX_FIELD_BYTES;
+        let short = |field: &String| fits(field);
         let origin = &self.origin;
         [
             &origin.endpoint_id,
@@ -255,18 +278,13 @@ impl Record {
                     && short(&lane.branch)
                     && short(&lane.agent)
                     && lane.step.has_checkout() == lane.checkout.is_some()
-                    && lane.checkout.as_ref().is_none_or(|checkout| {
-                        [
-                            &checkout.endpoint_id,
-                            &checkout.workspace_id,
-                            &checkout.path,
-                            &checkout.pane_id,
-                        ]
-                        .into_iter()
-                        .all(short)
-                    })
+                    && lane.checkout.as_ref().is_none_or(SavedCheckout::fits)
             })
     }
+}
+
+fn fits(field: &str) -> bool {
+    field.len() <= MAX_FIELD_BYTES
 }
 
 #[derive(Serialize, Deserialize)]
@@ -274,17 +292,27 @@ struct Saved {
     records: Vec<Record>,
 }
 
+/// The saved records. One that is damaged, repeats an ID, or is beyond the
+/// newest [`MAX_RECORDS`] is dropped on its own, so it never costs the others.
 fn parse(bytes: &[u8]) -> Result<Vec<Record>> {
     let saved: Saved = serde_json::from_slice(bytes).map_err(Error::JournalJson)?;
-    let unique = saved
-        .records
-        .iter()
-        .enumerate()
-        .all(|(index, record)| saved.records[..index].iter().all(|r| r.id != record.id));
-    if saved.records.len() > MAX_RECORDS || !unique || !saved.records.iter().all(Record::valid) {
-        return Err(Error::InvalidJournal);
+    let mut records: Vec<Record> = Vec::new();
+    for record in saved.records {
+        if !record.valid() || records.iter().any(|known| known.id == record.id) {
+            tracing::warn!(
+                lanes = record.lanes.len(),
+                "Dropping a damaged saved fan-out"
+            );
+            continue;
+        }
+        records.push(record);
     }
-    Ok(saved.records)
+    let excess = records.len().saturating_sub(MAX_RECORDS);
+    if excess > 0 {
+        tracing::warn!(excess, "Too many saved fan-outs; dropping the oldest");
+        records.drain(..excess);
+    }
+    Ok(records)
 }
 
 /// The records saved at `path`, none when there is no file yet.
@@ -400,8 +428,13 @@ impl Journal {
         })
     }
 
-    /// Start journaling a launched fan-out, claimed by its window.
+    /// Start journaling a launched fan-out, claimed by its window. One with
+    /// a field too long to keep is not journaled.
     pub(crate) fn begin(&self, record: Record) -> Option<Pending> {
+        if !record.valid() {
+            tracing::warn!("A fan-out field is too long to save; it will not be restored");
+            return None;
+        }
         self.update(|state| {
             state.records.retain(|known| known.id != record.id);
             state.claimed.push(record.id);
@@ -429,18 +462,31 @@ impl Journal {
         })
     }
 
-    /// Drop the lanes at `indices`, whose worktrees are gone.
-    pub(crate) fn drop_lanes(&self, id: u64, indices: &[usize]) -> Option<Pending> {
+    /// The step lane `index` of fan-out `id` last reached.
+    pub(crate) fn step(&self, id: u64, index: usize) -> Option<Checkpoint> {
+        let state = self.0.state.lock().ok()?;
+        let record = state.records.iter().find(|record| record.id == id)?;
+        Some(record.lanes.get(index)?.step)
+    }
+
+    /// Drop the lanes at `indices`, which nothing needs to come back to, then
+    /// the whole fan-out once no lane is left that has or may have a
+    /// worktree.
+    pub(crate) fn settle(&self, id: u64, indices: &[usize]) -> Option<Pending> {
         self.update(|state| {
-            let Some(record) = state.records.iter_mut().find(|record| record.id == id) else {
+            let Some(at) = state.records.iter().position(|record| record.id == id) else {
                 return false;
             };
+            let record = &mut state.records[at];
             let mut index = 0;
             record.lanes.retain(|_| {
                 let keep = !indices.contains(&index);
                 index += 1;
                 keep
             });
+            if !record.worth_keeping() {
+                state.records.remove(at);
+            }
             true
         })
     }

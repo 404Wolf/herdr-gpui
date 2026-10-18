@@ -533,19 +533,18 @@ impl FanOut {
                 .into_iter()
                 .map(|(index, host, workspace)| (index, job::remove(&host, &workspace, &cancelled)))
                 .collect();
-            // The journal follows the removals: done once all are gone,
-            // else without the lanes that went.
-            let gone: Vec<usize> = removed
+            // The journal follows the removals. Once all are gone the kept
+            // lane is an ordinary workspace too, but a lane whose worktree
+            // could not be scripted or may exist stays for the user.
+            let mut gone: Vec<usize> = removed
                 .iter()
                 .filter(|(_, result)| result.is_ok())
                 .map(|(index, _)| *index)
                 .collect();
-            let pending = if gone.len() == removed.len() {
-                journal.forget(id)
-            } else {
-                journal.drop_lanes(id, &gone)
-            };
-            if let Some(pending) = pending {
+            if gone.len() == removed.len() {
+                gone.push(winner);
+            }
+            if let Some(pending) = journal.settle(id, &gone) {
                 pending.write();
             }
             let _ = sender.send(Event::Removed(removed));
@@ -611,9 +610,10 @@ impl FanOut {
                         }
                     }
                     // Lanes that all failed before creating anything leave
-                    // nothing to come back to.
+                    // nothing to come back to. One whose creation was cut
+                    // off may have a worktree, so the journal decides.
                     if self.lanes.iter().all(|lane| lane.checkout.is_none()) {
-                        write_later(self.journal.forget(self.id));
+                        write_later(self.journal.settle(self.id, &[]));
                     }
                     self.stage = Stage::Compare;
                     self.next_refresh = None;

@@ -171,14 +171,66 @@ fn the_oldest_fan_out_goes_beyond_the_limit() {
 }
 
 #[test]
-fn removed_lanes_and_finished_fan_outs_are_dropped() {
+fn settled_lanes_are_dropped_and_the_fan_out_once_nothing_may_be_left() {
     let journal = Journal::default();
     let _ = journal.begin(record(1));
-    let _ = journal.drop_lanes(1, &[0]);
+    let _ = journal.advance(1, &lane(0, Progress::CreatingWorktree));
+    let _ = journal.advance(1, &lane(1, Progress::CreatingWorktree));
+    let _ = journal.settle(1, &[0]);
     let records = journal.records();
     assert_eq!(records[0].lanes.len(), 1);
     assert_eq!(records[0].lanes[0].kind, "codex");
-    let _ = journal.forget(1);
+    let _ = journal.settle(1, &[0]);
+    assert!(journal.records().is_empty());
+    let _ = journal.begin(record(2));
+    let _ = journal.forget(2);
+    assert!(journal.records().is_empty());
+}
+
+#[test]
+fn settling_keeps_a_fan_out_whose_creation_may_have_happened() {
+    let journal = Journal::default();
+    let _ = journal.begin(record(1));
+    let _ = journal.settle(1, &[]);
+    assert!(journal.records().is_empty());
+    let _ = journal.begin(record(2));
+    let _ = journal.advance(2, &lane(1, Progress::CreatingWorktree));
+    let _ = journal.settle(2, &[]);
+    assert_eq!(journal.records()[0].lanes.len(), 2);
+}
+
+#[test]
+fn a_lane_step_is_read_back_by_index() {
+    let journal = Journal::default();
+    let _ = journal.begin(record(1));
+    let _ = journal.advance(1, &lane(1, Progress::CreatingWorktree));
+    assert_eq!(journal.step(1, 0), Some(Checkpoint::Planned));
+    assert_eq!(journal.step(1, 1), Some(Checkpoint::CreatingWorktree));
+    assert_eq!(journal.step(1, 2), None);
+    assert_eq!(journal.step(2, 0), None);
+}
+
+#[test]
+fn a_checkout_or_commit_too_long_to_keep_is_not_recorded() {
+    let mut record = record(1);
+    record.advance(&lane(0, Progress::CreatingWorktree));
+    let mut long = checkout(1);
+    long.path = "p".repeat(MAX_FIELD_BYTES + 1);
+    assert!(!record.advance(&lane(0, Progress::Created(long))));
+    assert_eq!(record.lanes[0].step, Checkpoint::CreatingWorktree);
+    assert_eq!(record.lanes[0].checkout, None);
+    assert!(!record.advance(&Report::Base("c".repeat(MAX_FIELD_BYTES + 1))));
+    assert_eq!(record.commit, None);
+    assert!(record.valid());
+}
+
+#[test]
+fn a_fan_out_with_a_field_too_long_to_keep_is_not_journaled() {
+    let dir = tempfile::tempdir().unwrap();
+    let journal = Journal::at(Some(dir.path().join(FILE)));
+    let mut long = record(1);
+    long.lanes[0].branch = "b".repeat(MAX_FIELD_BYTES + 1);
+    assert!(journal.begin(long).is_none());
     assert!(journal.records().is_empty());
 }
 
@@ -204,8 +256,8 @@ fn saved(records: Vec<Record>) -> Vec<u8> {
 }
 
 #[test]
-fn damaged_journals_are_rejected() {
-    assert!(parse(&saved(vec![record(1)])).is_ok());
+fn damaged_records_are_dropped_without_the_others() {
+    assert_eq!(parse(&saved(vec![record(1)])).unwrap(), vec![record(1)]);
     assert!(matches!(
         parse(b"{\"records\": 3}"),
         Err(Error::JournalJson(_))
@@ -220,17 +272,29 @@ fn damaged_journals_are_rejected() {
     long_branch.lanes[0].branch = "b".repeat(MAX_FIELD_BYTES + 1);
     let mut no_lanes = record(1);
     no_lanes.lanes.clear();
-    for bad in [
-        vec![no_checkout],
-        vec![stray_checkout],
-        vec![unknown_agent],
-        vec![long_branch],
-        vec![no_lanes],
-        vec![record(1), record(1)],
-        (0..=MAX_RECORDS as u64).map(record).collect(),
+    for mut bad in [
+        no_checkout,
+        stray_checkout,
+        unknown_agent,
+        long_branch,
+        no_lanes,
     ] {
-        assert!(matches!(parse(&saved(bad)), Err(Error::InvalidJournal)));
+        bad.id = 9;
+        let parsed = parse(&saved(vec![record(1), bad, record(2)])).unwrap();
+        assert_eq!(parsed, vec![record(1), record(2)]);
     }
+    let mut repeated = record(1);
+    repeated.commit = Some("abc".into());
+    assert_eq!(
+        parse(&saved(vec![record(1), repeated])).unwrap(),
+        vec![record(1)]
+    );
+    let newest: Vec<u64> = parse(&saved((0..=MAX_RECORDS as u64).map(record).collect()))
+        .unwrap()
+        .iter()
+        .map(|record| record.id)
+        .collect();
+    assert_eq!(newest, (1..=MAX_RECORDS as u64).collect::<Vec<_>>());
 }
 
 #[test]

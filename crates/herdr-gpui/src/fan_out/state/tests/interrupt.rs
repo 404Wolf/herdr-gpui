@@ -219,3 +219,86 @@ fn a_launch_that_created_nothing_is_not_journaled_further() {
     fan_out.poll();
     assert!(fan_out.journal.records().is_empty());
 }
+
+#[test]
+fn a_launch_cut_off_creating_a_worktree_stays_journaled() {
+    let mut fan_out = launched();
+    let lanes: Vec<Lane> = fan_out.lanes.iter().map(|view| view.lane.clone()).collect();
+    let _ = fan_out
+        .journal
+        .begin(Record::new(0, &origin(), "go", &lanes));
+    // The worktree may exist though its reply never arrived.
+    let _ = fan_out
+        .journal
+        .advance(0, &lane(Progress::CreatingWorktree));
+    send(&fan_out, Event::Launched);
+    fan_out.poll();
+    assert_eq!(fan_out.journal.records().len(), 1);
+}
+
+#[test]
+fn a_failed_resume_is_offered_again_without_a_second_agent() {
+    let mut fan_out = interrupted_after(2);
+    assert_eq!(fan_out.resumable(0), Some(Resume::Start));
+    // The agent start was journaled before the connection dropped.
+    let _ = fan_out.journal.advance(ID, &lane(Progress::StartingAgent));
+    fan_out.lanes[0].state = LaneState::Failed("connection lost".into());
+    assert_eq!(fan_out.resumable(0), Some(Resume::Prompt));
+    let mut fan_out = interrupted_after(4);
+    fan_out.lanes[0].state = LaneState::Failed("connection lost".into());
+    assert_eq!(fan_out.resumable(0), Some(Resume::Prompt));
+}
+
+#[test]
+fn keeping_a_lane_keeps_the_record_of_a_worktree_no_host_can_remove() {
+    let journal = Journal::default();
+    let lanes = plan::lanes(&launched().picks, 7)[..2].to_vec();
+    let mut record = Record::new(ID, &origin(), "go", &lanes);
+    record.advance(&Report::Lane(0, Progress::Created(checkout(0))));
+    record.advance(&Report::Lane(1, Progress::Created(checkout(1))));
+    record.lanes[0].checkout.as_mut().unwrap().endpoint_id = "gone".into();
+    let _ = journal.begin(record.clone());
+    let host = |endpoint: &str| (endpoint == "local").then(|| origin().host);
+    let mut fan_out = FanOut::restore(record, journal.clone(), host).unwrap();
+    assert!(fan_out.doomed(1).is_empty(), "lane 0 cannot be scripted");
+    fan_out.stage = Stage::Confirm(1);
+    assert!(fan_out.keep(1));
+    let event = fan_out
+        .events
+        .recv_timeout(Duration::from_secs(10))
+        .unwrap();
+    send(&fan_out, event);
+    assert_eq!(
+        fan_out.poll(),
+        (true, Some(("local".to_owned(), "w1".to_owned())))
+    );
+    let records = journal.records();
+    assert_eq!(records.len(), 1, "the unreachable worktree is remembered");
+    assert_eq!(records[0].lanes.len(), 1, "the kept lane is let go");
+    assert_eq!(
+        records[0].lanes[0].checkout.as_ref().unwrap().endpoint_id,
+        "gone"
+    );
+}
+
+#[test]
+fn keeping_a_lane_once_every_other_is_removed_forgets_the_fan_out() {
+    let journal = Journal::default();
+    let lanes = plan::lanes(&launched().picks, 7)[..1].to_vec();
+    let mut record = Record::new(ID, &origin(), "go", &lanes);
+    record.advance(&Report::Lane(0, Progress::Created(checkout(0))));
+    let _ = journal.begin(record.clone());
+    let mut fan_out = FanOut::restore(record, journal.clone(), |_| Some(origin().host)).unwrap();
+    fan_out.stage = Stage::Confirm(0);
+    assert!(fan_out.keep(0));
+    let event = fan_out
+        .events
+        .recv_timeout(Duration::from_secs(10))
+        .unwrap();
+    send(&fan_out, event);
+    assert_eq!(
+        fan_out.poll().1,
+        Some(("local".to_owned(), "w0".to_owned()))
+    );
+    assert!(journal.records().is_empty());
+}

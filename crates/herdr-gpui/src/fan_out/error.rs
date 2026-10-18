@@ -52,8 +52,6 @@ pub(crate) enum Error {
     JournalRead(#[source] Box<crate::Error>),
     #[error("The saved fan-outs are not valid JSON")]
     JournalJson(#[source] serde_json::Error),
-    #[error("The saved fan-outs exceed their limits or contradict themselves")]
-    InvalidJournal,
 }
 
 pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;

@@ -126,7 +126,9 @@ impl FanOut {
             .count()
     }
 
-    /// How lane `index` can be finished, if it can.
+    /// How lane `index` can be finished, if it can. A lane that failed,
+    /// resuming included, is offered again from the last step the journal
+    /// saw it reach, so a second try never starts a second agent.
     pub(in crate::fan_out) fn resumable(&self, index: usize) -> Option<Resume> {
         if !matches!(self.stage, Stage::Compare) || self.prompt.is_empty() {
             return None;
@@ -134,7 +136,9 @@ impl FanOut {
         let lane = self.lanes.get(index)?;
         lane.checkout.as_ref()?;
         match lane.state {
-            LaneState::Interrupted(step) => step.resume(),
+            LaneState::Interrupted(_) | LaneState::Failed(_) => {
+                self.journal.step(self.id, index)?.resume()
+            }
             _ => None,
         }
     }
