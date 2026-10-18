@@ -342,6 +342,12 @@ pub fn start(handle: WindowHandle<HerdrWindow>, cx: &mut App) {
                     let view = root
                         .downcast::<HerdrWindow>()
                         .map_err(|_| anyhow!("unexpected root"))?;
+                    // Draw whatever else is pending first, unmeasured: the
+                    // platform's own frame need not have run since the last
+                    // step, and whatever invalidated the sidebar meanwhile
+                    // must not count against the surface update. The ARM
+                    // runner re-rendered it so on the first step.
+                    window.draw(cx).clear(cx);
                     view.update(cx, |view, cx| -> Result<()> {
                         let surface = Arc::make_mut(
                             view.live
@@ -369,11 +375,7 @@ pub fn start(handle: WindowHandle<HerdrWindow>, cx: &mut App) {
                         || (!uncached && counts.shapes != 0)
                         || counts.sidebar_renders != usize::from(full)
                     {
-                        // The pointer shows whether a hover moved the sidebar.
-                        bail!(
-                            "terminal redraw step={step} (full={full}): {counts:?} mouse={:?}",
-                            window.mouse_position()
-                        );
+                        bail!("terminal redraw step={step} (full={full}): {counts:?}");
                     }
                     Ok(elapsed)
                 });

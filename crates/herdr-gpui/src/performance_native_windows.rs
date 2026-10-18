@@ -1,18 +1,12 @@
 //! Win32 adapter for the performance fixture: hover and wheel messages sent to
 //! the fixture's own window, never posted to the desktop or another process.
-//! The system cursor is kept on the hovered point: Windows sends a window
-//! moves of its own at the real cursor, and one resting elsewhere over the
-//! window, as on a CI desktop, would hover another row during a measured
-//! redraw.
 #![allow(unsafe_code)]
 use anyhow::{Context as _, Result, bail};
 use std::{marker::PhantomData, rc::Rc};
 use windows_sys::Win32::{
     Foundation::{HWND, POINT},
     Graphics::Gdi::ClientToScreen,
-    UI::WindowsAndMessaging::{
-        IsWindow, SendMessageW, SetCursorPos, WHEEL_DELTA, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-    },
+    UI::WindowsAndMessaging::{IsWindow, SendMessageW, WHEEL_DELTA, WM_MOUSEMOVE, WM_MOUSEWHEEL},
 };
 
 // raw-window-handle does not implement Error without its optional std feature.
@@ -57,21 +51,18 @@ impl Target {
         // IsWindow only reads it. SendMessageW runs that window's procedure
         // synchronously on this thread; the caller holds no GPUI borrow, so
         // the procedure may reenter GPUI. Both messages carry values, never
-        // pointers. SetCursorPos moves only the cursor; it clicks nothing.
+        // pointers.
         unsafe {
             if IsWindow(self.hwnd) == 0 {
                 bail!("fixture window was destroyed");
             }
-            let mut screen = client;
-            if ClientToScreen(self.hwnd, &mut screen) == 0 {
-                bail!("cannot map the fixture point to the screen");
-            }
-            if SetCursorPos(screen.x, screen.y) == 0 {
-                bail!("cannot move the cursor to the hovered point");
-            }
             SendMessageW(self.hwnd, WM_MOUSEMOVE, 0, pack(client));
             if let Some(delta) = scroll {
                 // WM_MOUSEWHEEL carries screen coordinates.
+                let mut screen = client;
+                if ClientToScreen(self.hwnd, &mut screen) == 0 {
+                    bail!("cannot map the fixture point to the screen");
+                }
                 let notch = WHEEL_DELTA as i32 * delta.signum();
                 let wparam = ((notch as u32 & 0xffff) << 16) as usize;
                 SendMessageW(self.hwnd, WM_MOUSEWHEEL, wparam, pack(screen));
