@@ -238,18 +238,27 @@ impl OrchestratorView {
     }
 
     /// A row's shell: selection, click to select, double-click to open.
+    /// `item` names the row for a screen reader by its identifier, title, and
+    /// state.
     fn row_shell(
         &self,
         id: (&'static str, usize),
-        key: String,
+        item: &crate::orchestrator::model::Item,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
+        let key = item.key.canonical();
         let theme = &self.look.theme;
         let selected = self.selected.as_deref() == Some(key.as_str());
         let open = self.detail.as_ref().is_some_and(|detail| detail.key == key);
         let hover = theme.surface;
         div()
             .id(id)
+            .role(Role::ListItem)
+            .aria_label(format!(
+                "{} {}, {}",
+                item.identifier, item.title, item.state
+            ))
+            .aria_selected(selected)
             .w_full()
             .h(px(self.row_height()))
             .flex()
@@ -312,7 +321,7 @@ impl OrchestratorView {
                     this.open_dispatch(key.clone(), window, cx);
                 }))
         });
-        self.row_shell(("orchestrator-issue", index), key.clone(), cx)
+        self.row_shell(("orchestrator-issue", index), item, cx)
             .debug_selector(move || format!("orchestrator-row-{key}"))
             .child(
                 div()
@@ -409,7 +418,7 @@ impl OrchestratorView {
             .is_some_and(|head| head != item.key.source.repository);
         let draft = item.state == "draft";
         let key = item.key.canonical();
-        self.row_shell(("orchestrator-pr", index), key.clone(), cx)
+        self.row_shell(("orchestrator-pr", index), item, cx)
             .debug_selector(move || format!("orchestrator-row-{key}"))
             .child(
                 div()
@@ -548,6 +557,8 @@ fn compact_button(look: &Look, id: impl Into<ElementId>, label: &'static str) ->
     let hover = theme.active;
     div()
         .id(id)
+        .role(Role::Button)
+        .aria_label(label)
         .flex_none()
         .px_2()
         .py(px(1.))

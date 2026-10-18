@@ -1,6 +1,7 @@
 //! The sidebar: spaces and agents, the rows that show them, and the hover
 //! menu a resting pointer opens.
 
+mod accessibility;
 mod activity;
 mod agents;
 mod animated;

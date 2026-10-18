@@ -557,6 +557,11 @@ impl HerdrWindow {
                     div()
                         .id(item)
                         .debug_selector(move || format!("menu-{item}"))
+                        .role(Role::MenuItem)
+                        .aria_label(item)
+                        .when(Some(index) == self.menu.selected, |row| {
+                            row.aria_active_descendant()
+                        })
                         .min_h(px(font.line_height() + 12.))
                         .px(px(8.))
                         .flex()
@@ -741,6 +746,10 @@ impl HerdrWindow {
         div()
             .id("menu-overlay")
             .debug_selector(|| "menu-overlay".into())
+            // Focus stays here while the popup is open, so this is the menu
+            // or dialog a screen reader announces.
+            .role(page.accessible_role())
+            .aria_label(page.accessible_name())
             .absolute()
             .top_0()
             .left_0()

@@ -6,6 +6,7 @@
 mod annotate;
 mod announcement;
 mod backdrop;
+pub(crate) mod chrome_focus;
 mod clipboard;
 mod commands;
 mod config_diagnostic;
@@ -128,6 +129,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) cell_width: f32,
     /// Snapshots of checkouts taken at agent turns, and the dialog listing them.
     pub(crate) checkpoints: crate::checkpoint::Checkpoints,
+    /// The chrome region whose controls take Tab; see `chrome_focus`.
+    pub(crate) chrome_region: Option<chrome_focus::Region>,
     /// Cloud machines being added; see `cloud::Jobs`.
     #[cfg(feature = "cloud")]
     pub(crate) cloud_jobs: crate::cloud::Jobs,

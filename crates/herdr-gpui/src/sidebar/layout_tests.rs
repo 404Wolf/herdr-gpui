@@ -520,6 +520,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
     let hosts = vec![cx.entity_id(), sidebar_view.entity_id()];
     let mark_layer = cx.new(|cx| crate::mark_layer::MarkLayer::new(window, hosts, cx));
     HerdrWindow {
+        chrome_region: None,
         sound: Default::default(),
         bell: Default::default(),
         updater: crate::updater::Updater::default(),

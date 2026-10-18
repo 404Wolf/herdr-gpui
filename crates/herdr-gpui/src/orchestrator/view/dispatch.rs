@@ -375,7 +375,7 @@ impl OrchestratorView {
                 .child(look.dot(look.hue(hue), 7.))
                 .child(div().flex_1().min_w_0().text_size(look.small()).child(text))
                 .child(
-                    look.icon_button("orchestrator-notice-close", "icons/close.svg")
+                    look.icon_button("orchestrator-notice-close", "icons/close.svg", "Dismiss")
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.notice = None;
                             cx.notify();
@@ -608,7 +608,7 @@ impl OrchestratorView {
                     )
                     .child(look.chip(format!("on {host}")))
                     .child(
-                        look.icon_button("orchestrator-dialog-close", "icons/close.svg")
+                        look.icon_button("orchestrator-dialog-close", "icons/close.svg", "Close")
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.close_overlays(window, cx);
                             })),

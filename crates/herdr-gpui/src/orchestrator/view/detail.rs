@@ -145,20 +145,30 @@ impl OrchestratorView {
                     })
                     .when_some(url, |el, url| {
                         el.child(
-                            look.icon_button("orchestrator-detail-web", "icons/external.svg")
-                                .on_click(cx.listener(move |_, _, _, cx| {
+                            look.icon_button(
+                                "orchestrator-detail-web",
+                                "icons/external.svg",
+                                "Open in browser",
+                            )
+                            .on_click(cx.listener(
+                                move |_, _, _, cx| {
                                     cx.emit(Event::OpenUrl(url.clone()));
-                                })),
+                                },
+                            )),
                         )
                     })
                     .child(
-                        look.icon_button("orchestrator-detail-close", "icons/close.svg")
-                            .debug_selector(|| "orchestrator-detail-close".into())
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.detail = None;
-                                this.merge_open = false;
-                                cx.notify();
-                            })),
+                        look.icon_button(
+                            "orchestrator-detail-close",
+                            "icons/close.svg",
+                            "Close details",
+                        )
+                        .debug_selector(|| "orchestrator-detail-close".into())
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.detail = None;
+                            this.merge_open = false;
+                            cx.notify();
+                        })),
                     ),
             )
             .child(
@@ -254,7 +264,7 @@ impl OrchestratorView {
             .min_w_0()
             .text_size(look.size())
             .child(
-                look.icon_button("orchestrator-back", "icons/arrow-left.svg")
+                look.icon_button("orchestrator-back", "icons/arrow-left.svg", "Back")
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.detail = None;
                         cx.notify();
@@ -750,16 +760,20 @@ impl OrchestratorView {
             })
             .when(own && writable && removable, |el| {
                 el.child(
-                    look.icon_button(("orchestrator-card-remove", index), "icons/trash.svg")
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.ask(
-                                Confirm::Remove {
-                                    run: remove_run.clone(),
-                                    branch: branch.clone(),
-                                },
-                                cx,
-                            );
-                        })),
+                    look.icon_button(
+                        ("orchestrator-card-remove", index),
+                        "icons/trash.svg",
+                        "Remove",
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.ask(
+                            Confirm::Remove {
+                                run: remove_run.clone(),
+                                branch: branch.clone(),
+                            },
+                            cx,
+                        );
+                    })),
                 )
             })
     }

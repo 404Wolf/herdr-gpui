@@ -45,7 +45,7 @@ impl SettingsWindow {
                         "A bar on the leading edge of each working, blocked, or done row, \
                          whichever icons you pick.",
                     )
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         "indicators-edge-rail-toggle",
                         rail,
                         Preference::EdgeRail(!rail),

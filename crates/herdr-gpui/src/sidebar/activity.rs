@@ -318,11 +318,16 @@ impl HerdrWindow {
         )
     }
 
-    fn render_activity_bar(&self, cx: &mut Context<Self>) -> Div {
+    fn render_activity_bar(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let theme = &self.theme;
         let counts = self.activity_counts(cx);
         let mut bar = div()
+            .id("activity-bar")
             .debug_selector(|| "activity-bar".into())
+            // Each panel replaces the column beside the bar, as a tab does.
+            .role(Role::TabList)
+            .aria_label("Activity")
+            .aria_orientation(Orientation::Vertical)
             .w(px(BAR_WIDTH))
             .flex_none()
             .h_full()
@@ -351,6 +356,8 @@ impl HerdrWindow {
                     (state, busy),
                     counts.of(panel),
                 )
+                .role(Role::Tab)
+                .aria_selected(state == BarState::Selected)
                 .on_click(cx.listener(move |this, _, window, cx| {
                     this.select_activity_panel(panel, window, cx);
                 }));
@@ -364,6 +371,7 @@ impl HerdrWindow {
                 (BarState::Idle, false),
                 None,
             )
+            .role(Role::Button)
             .on_click(cx.listener(|this, _, window, cx| {
                 this.command(Command::Settings, window, cx);
             })),
@@ -412,9 +420,15 @@ impl HerdrWindow {
                         .child(self.count_bubble(count)),
                 )
             });
+        let spoken = match count.filter(|count| *count > 0) {
+            Some(count) => SharedString::from(format!("{label}, {count}")),
+            None => SharedString::from(label),
+        };
         div()
             .id(id)
             .debug_selector(move || id.into())
+            .aria_label(spoken)
+            .map(|button| self.chrome_stop(crate::window::chrome_focus::Region::Sidebar, button))
             .relative()
             .size(px(BUTTON))
             .flex_none()

@@ -37,6 +37,9 @@ impl HerdrWindow {
         let segment = div()
             .id("system-load")
             .debug_selector(|| "system-load".into())
+            // The tooltip's text, which a screen reader cannot hover for.
+            .role(Role::Label)
+            .aria_value(details(reading, &host))
             .flex()
             .flex_none()
             .items_center()

@@ -94,6 +94,11 @@ impl HerdrWindow {
                 .debug_selector(move || id.into())
                 .role(Role::Button)
                 .aria_label(label)
+                // With no history that way it is unavailable, and Tab skips it.
+                .map(|control| crate::accessibility::disabled(control, !enabled))
+                .when(enabled, |control| {
+                    self.chrome_stop(crate::window::chrome_focus::Region::TitleBar, control)
+                })
                 .flex()
                 .flex_none()
                 .items_center()
