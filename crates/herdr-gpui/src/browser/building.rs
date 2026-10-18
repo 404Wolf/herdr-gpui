@@ -16,9 +16,11 @@ use wry::raw_window_handle::{
 };
 
 /// Builds tab `id`'s page from `builder` as a child of `window`, then hands
-/// it to the window, which keeps it unless the tab closed meanwhile.
+/// it to the window, which keeps it if this is still the tab's latest build,
+/// `number`.
 pub(super) fn start(
     id: TabId,
+    number: u64,
     builder: wry::WebViewBuilder<'static>,
     window: &mut Window,
     cx: &mut Context<HerdrWindow>,
@@ -37,7 +39,7 @@ pub(super) fn start(
             Err(error) => Err(error),
         };
         let _ = this.update_in(cx, |this, window, cx| {
-            this.page_built(id, built, window, cx)
+            this.page_built(id, number, built, window, cx)
         });
     })
     .detach();
@@ -68,21 +70,26 @@ impl HasWindowHandle for Parent {
 }
 
 impl HerdrWindow {
-    /// Keeps tab `id`'s page once built, or notes why it could not be. A
-    /// tab closed meanwhile drops it.
+    /// Keeps tab `id`'s page from build `number` and sends it where it was
+    /// last asked to go, or notes why it could not be built. A tab closed or
+    /// built again meanwhile drops it.
     fn page_built(
         &mut self,
         id: TabId,
+        number: u64,
         built: crate::Result<wry::WebView>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.browser.pages.finish_building(id) {
+        let Some(build) = self.browser.pages.finish_building(id, number) else {
             return;
-        }
+        };
         match built.and_then(|view| self.browser.pages.add(id, view, window)) {
             Ok(()) => {
                 self.browser.failed.remove(&id);
+                if let Some(location) = build.location {
+                    self.browser.pages.load(id, &location);
+                }
             }
             Err(error) => {
                 tracing::warn!(%error, "Cannot create a browser page");
