@@ -16,9 +16,44 @@ use std::{
 const CHECK: Duration = Duration::from_secs(60);
 const PROBE: Duration = Duration::from_secs(20);
 
-/// Succeeds when an agent there is working or waiting for input. With no
-/// server running there is no agent, which the probe reports as idle.
-pub(super) const BUSY: &str = r#"PATH="$HOME/.local/bin:$PATH"; herdr agent list 2>/dev/null | grep -Eq '"(working|blocked)"'"#;
+/// Prints the container's agents as Herdr's API describes them.
+pub(super) const AGENTS: &str = r#"PATH="$HOME/.local/bin:$PATH"; exec herdr agent list"#;
+
+/// Whether `herdr agent list` printed `output` for a container with an agent
+/// at work. Only a reply that names every agent's status can say no: an
+/// agent working, waiting for input, or whose state Herdr cannot tell keeps
+/// the container, and so does a reply this build cannot read. A server that
+/// is not running has no agents.
+pub(super) fn busy_reply(output: &[u8]) -> bool {
+    #[derive(serde::Deserialize)]
+    struct Reply {
+        result: Option<List>,
+        error: Option<Failure>,
+    }
+    #[derive(serde::Deserialize)]
+    struct List {
+        agents: Vec<Agent>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Agent {
+        agent_status: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct Failure {
+        code: String,
+    }
+    let Ok(reply) = serde_json::from_slice::<Reply>(output) else {
+        return true;
+    };
+    match (reply.result, reply.error) {
+        (Some(list), _) => list
+            .agents
+            .iter()
+            .any(|agent| !matches!(agent.agent_status.as_str(), "idle" | "done")),
+        (None, Some(failure)) => failure.code != "server_not_running",
+        (None, None) => true,
+    }
+}
 
 /// When each container last had an agent at work, or was first seen running.
 static BUSY_AT: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
@@ -62,13 +97,13 @@ fn busy(engine: Engine, id: &str) -> bool {
         id,
         "/bin/sh",
         "-c",
-        BUSY,
+        AGENTS,
     ];
     // A probe that cannot run says nothing; keeping the container is safe.
-    !matches!(
-        engine.output("exec", probe, PROBE, &|| false),
-        Ok((Some(1), ..))
-    )
+    match engine.output("exec", probe, PROBE, &|| false) {
+        Ok((_, stdout, _)) => busy_reply(&stdout),
+        Err(_) => true,
+    }
 }
 
 fn check(devices: &[SavedDevice], auto_stop: Duration) {

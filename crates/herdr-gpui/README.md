@@ -531,10 +531,15 @@ checks it for unpushed work first.
 `[container] auto_stop`, such as `30m`, stops a running container once none
 of its agents has worked or waited for input that long. A closed window does
 not count: agents keep working without one, so each minute the container's own
-Herdr is asked, and a container the app has not watched since launch starts
-its timeout rather than stopping. Its files stay in its volume and the next
+Herdr lists its agents, and one working, waiting for input, or in a state
+Herdr cannot tell keeps the container, as does a list that cannot be read. A
+container the app has not watched since launch starts its timeout rather than
+stopping. Other processes, such as a dev server in a plain shell, do not count,
+so leave `auto_stop` unset where those matter. Its files stay in its volume and the next
 connection starts it. `[container] max_containers` (8 unless set) refuses a
-new container, from Settings or a dispatch, once that many are saved.
+new container, from Settings or a dispatch, once that many are saved or being
+made. A container is never created over, or deleted from, a name the app did
+not label as that device's.
 
 The image needs `curl` to install Herdr and `git` for checkouts; the default,
 `buildpack-deps:bookworm`, has both and common build tools. Containers share
