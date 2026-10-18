@@ -72,8 +72,8 @@ fn input_panes(
 
 impl LiveState {
     /// The newest received metadata, which may be ahead of the displayed pair.
-    /// Notices, sounds, and checkpoints judge agent status from it; rendering,
-    /// hit testing, and input stay on `snapshot`.
+    /// Notices, sounds, checkpoints, and notice clicks read it; terminal
+    /// rendering, hit testing, and input stay on `snapshot`.
     pub(crate) fn latest_snapshot(&self) -> Option<&Arc<ClientShellSnapshot>> {
         self.pending_snapshot.as_ref().or(self.snapshot.as_ref())
     }
