@@ -15,7 +15,7 @@ use super::Registry;
 use futures_lite::StreamExt;
 use gpui::{App, SystemNotification};
 use oo7::zbus::{self, MatchRule, Message, MessageStream, message::Type, zvariant::Value};
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
 const NAME: &str = "org.freedesktop.Notifications";
 const PATH: &str = "/org/freedesktop/Notifications";
@@ -39,7 +39,16 @@ pub(crate) enum Bus {
     Gpui,
     /// Connecting, or the session bus could not be reached: nothing posts.
     Unavailable,
-    Connected(zbus::Connection),
+    Connected(Session),
+}
+
+/// The shared connection and what the notification server does with it.
+#[derive(Clone)]
+pub(crate) struct Session {
+    connection: zbus::Connection,
+    /// Whether the server reads bodies as markup, where `<a href>` and
+    /// `<img src>` would let terminal text reach links and local files.
+    markup: bool,
 }
 
 /// Opens the shared connection and routes clicks for as long as it lives.
@@ -47,8 +56,8 @@ pub(super) fn connect(cx: &mut App) {
     cx.global_mut::<Registry>().bus = Bus::Unavailable;
     cx.spawn(async move |cx| {
         let mut clicks = match listen().await {
-            Ok((connection, clicks)) => {
-                cx.update(|cx| cx.global_mut::<Registry>().bus = Bus::Connected(connection));
+            Ok((session, clicks)) => {
+                cx.update(|cx| cx.global_mut::<Registry>().bus = Bus::Connected(session));
                 clicks
             }
             Err(error) => {
@@ -74,7 +83,7 @@ pub(super) fn connect(cx: &mut App) {
     .detach();
 }
 
-async fn listen() -> Result<(zbus::Connection, MessageStream), Error> {
+async fn listen() -> Result<(Session, MessageStream), Error> {
     let connection = zbus::Connection::session().await?;
     let rule = MatchRule::builder()
         .msg_type(Type::Signal)
@@ -84,7 +93,35 @@ async fn listen() -> Result<(zbus::Connection, MessageStream), Error> {
         .build();
     // Returns once the bus has added the rule.
     let clicks = MessageStream::for_match_rule(rule, &connection, Some(QUEUED_CLICKS)).await?;
-    Ok((connection, clicks))
+    let markup = markup(&connection).await;
+    Ok((Session { connection, markup }, clicks))
+}
+
+/// Assumes markup when the server will not say, so text is escaped rather
+/// than interpreted.
+async fn markup(connection: &zbus::Connection) -> bool {
+    let reply = connection
+        .call_method(Some(NAME), PATH, Some(NAME), "GetCapabilities", &())
+        .await;
+    match reply.and_then(|reply| reply.body().deserialize::<Vec<String>>()) {
+        Ok(capabilities) => capabilities.iter().any(|c| c == "body-markup"),
+        Err(error) => {
+            tracing::debug!(error = ?error, "Escaping notification bodies: no capabilities");
+            true
+        }
+    }
+}
+
+/// The body as plain text for a server that reads it as markup.
+fn plain(body: &str, markup: bool) -> Cow<'_, str> {
+    if !markup || !body.contains(['&', '<', '>']) {
+        return Cow::Borrowed(body);
+    }
+    Cow::Owned(
+        body.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;"),
+    )
 }
 
 /// The daemon's id of the notification whose body was clicked.
@@ -96,13 +133,15 @@ fn clicked(message: &Message) -> Option<u32> {
 /// Posts `notification`, replacing the daemon's `replaces` (0 for none), and
 /// returns the daemon's id for it.
 pub(super) async fn show(
-    connection: &zbus::Connection,
+    session: &Session,
     notification: &SystemNotification,
     replaces: u32,
 ) -> Result<u32, Error> {
     // Silent: sounds stay with the sound service.
     let hints = HashMap::from([("suppress-sound", Value::from(true))]);
-    let reply = connection
+    let body = plain(&notification.body, session.markup);
+    let reply = session
+        .connection
         .call_method(
             Some(NAME),
             PATH,
@@ -112,8 +151,9 @@ pub(super) async fn show(
                 crate::constants::WINDOW_TITLE,
                 replaces,
                 "",
+                // The spec keeps the summary plain text.
                 notification.title.as_ref(),
-                notification.body.as_ref(),
+                body.as_ref(),
                 [DEFAULT_ACTION, DEFAULT_ACTION].as_slice(),
                 hints,
                 -1_i32,

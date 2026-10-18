@@ -252,10 +252,10 @@ impl HerdrWindow {
                 tracing::debug!("Skipping a system notification: no session bus");
                 return;
             }
-            freedesktop::Bus::Connected(connection) => {
-                let connection = connection.clone();
+            freedesktop::Bus::Connected(session) => {
+                let session = session.clone();
                 cx.spawn(async move |_, cx| {
-                    match freedesktop::show(&connection, &notification, replaces).await {
+                    match freedesktop::show(&session, &notification, replaces).await {
                         Ok(bus_id) => cx.update(|cx| {
                             cx.global_mut::<Registry>()
                                 .set_bus_id(&notification.tag, bus_id);

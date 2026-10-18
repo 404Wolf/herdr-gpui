@@ -66,3 +66,15 @@ fn only_a_body_click_counts() {
     assert_eq!(clicked(&signal(&(7_u32, "reply"))), None);
     assert_eq!(clicked(&signal(&(7_u32,))), None);
 }
+
+#[test]
+fn markup_servers_get_the_body_as_plain_text() {
+    let body = "<img src=\"file:///etc/passwd\"> & <a href=\"x\">y</a>";
+    assert_eq!(
+        plain(body, true),
+        "&lt;img src=\"file:///etc/passwd\"&gt; &amp; &lt;a href=\"x\"&gt;y&lt;/a&gt;"
+    );
+    assert_eq!(plain("&lt;", true), "&amp;lt;");
+    assert_eq!(plain(body, false), body);
+    assert!(matches!(plain("plain text", true), Cow::Borrowed(_)));
+}
