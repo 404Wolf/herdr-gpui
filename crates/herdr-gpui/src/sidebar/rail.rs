@@ -34,9 +34,12 @@ pub(crate) const RAIL_WIDTH: f32 = 64.;
 const HOST_MARK: f32 = 22.;
 const HOST_BORDER: f32 = 1.;
 const HOST_DOT: f32 = 6.;
-/// Sidebar-colored ring between the status dot and the header stroke, so the
-/// rounded border cannot cut through the dot.
+/// Sidebar-colored ring around the status dot, so the header stroke cannot
+/// cut through it.
 const HOST_DOT_RING: f32 = 2.;
+/// Room between the header stroke and that ring. The ring hangs outside the
+/// box; the gap is the sidebar, and the stroke never meets the dot.
+const HOST_DOT_GAP: f32 = 2.;
 const AGENT_ICON: f32 = 14.;
 const MARK_GAP: f32 = 4.;
 /// Padding the mark highlight keeps around the shared column grid.
@@ -195,6 +198,7 @@ impl HerdrWindow {
                                         theme.muted
                                     },
                                     theme.sidebar_background(),
+                                    width,
                                 )),
                         )
                         .id(SharedString::from(format!("rail-host-{endpoint_id}")))
@@ -606,16 +610,20 @@ fn dot_slot(selector: String, width: f32, height: f32, mark: Div) -> Div {
         .child(mark)
 }
 
-/// The status dot in the header's bottom-right corner. It sits fully inside
-/// the box: a sidebar-colored ring, then the dot, inset past the 1px stroke
-/// and the rounded corner. The same inset is used for the accented host and
-/// the dimmed ones.
-fn host_status(selector: String, color: u32, ring: u32) -> Div {
+/// The status dot beside the header's bottom-right corner. A sidebar-colored
+/// ring, then the dot, hangs outside the box and within its height, so the
+/// stroke does not cross the dot and a compact row does not clip it. A rail
+/// too narrow for that gap keeps the ring inside the box instead. The same
+/// place is used for the accented host and the dimmed ones.
+fn host_status(selector: String, color: u32, ring: u32, rail_width: f32) -> Div {
+    let ring_selector = selector.replacen("rail-host-status-", "rail-host-ring-", 1);
+    let ring_size = HOST_DOT + 2. * HOST_DOT_RING;
     div()
+        .debug_selector(move || ring_selector)
         .absolute()
-        .right(px(HOST_BORDER))
+        .right(px(host_status_right(rail_width, ring_size)))
         .bottom(px(HOST_BORDER))
-        .size(px(HOST_DOT + 2. * HOST_DOT_RING))
+        .size(px(ring_size))
         .flex()
         .items_center()
         .justify_center()
@@ -629,6 +637,19 @@ fn host_status(selector: String, color: u32, ring: u32) -> Div {
                 .rounded_full()
                 .bg(rgb(color)),
         )
+}
+
+/// `right` inset of the status ring. Negative when the ring hangs past the
+/// box. Absolute `right` is the distance from the padding edge, and the
+/// border is subtracted again: `left = mark - border - size - right`.
+fn host_status_right(rail_width: f32, ring_size: f32) -> f32 {
+    let content = (rail_width - HOST_BORDER).max(HOST_MARK);
+    let side = (content - HOST_MARK) / 2.;
+    if side + 0.5 >= HOST_DOT_GAP + ring_size {
+        return -(HOST_BORDER + ring_size + HOST_DOT_GAP);
+    }
+    // The column cannot hold the box and a dot beside it. Sit inside.
+    HOST_BORDER
 }
 
 /// A host header: the letter box, centered on the same line as the row grid
@@ -655,7 +676,9 @@ const REST_OPACITY: f32 = 0.4;
 /// foreground: the colors a selected sidebar row already uses, not the theme
 /// primary. The row highlight is that fill on its own, so the foreground
 /// stroke is what keeps the header from wearing the same box. Every other
-/// host keeps a faint muted ring, a muted letter, and [`REST_OPACITY`].
+/// host keeps a muted stroke and letter, dimmed by [`REST_OPACITY`]. The
+/// stroke is the same token as the letter, so the box stays visible once
+/// the header fades.
 struct HostChrome {
     border: Rgba,
     fill: Rgba,
@@ -673,7 +696,7 @@ fn host_chrome(active: bool, theme: &Theme) -> HostChrome {
         }
     } else {
         HostChrome {
-            border: rgba((theme.muted << 8) | 0x40),
+            border: rgb(theme.muted),
             fill: rgba(0),
             letter: rgb(theme.muted),
             dimmed: true,

@@ -308,6 +308,86 @@ fn the_selected_workspaces_host_stands_apart(cx: &mut TestAppContext) {
     assert_header_apart("Catppuccin Latte", &theme, remote, local, highlight);
 }
 
+/// The letter box, its status dot, and the sidebar-colored ring around that
+/// dot stay inside the rail for both hosts, at the real collapsed width.
+/// The ring hangs just outside the box: tucked into the corner it is the
+/// same color as the sidebar, so it reads as the box and the letter being
+/// cut off. Every layout is checked because a compact row is only as tall
+/// as the box and clips anything that drops below it.
+#[gpui::test]
+fn host_box_dot_and_ring_stay_inside_the_rail(cx: &mut TestAppContext) {
+    let (view, cx) = rail_window(cx, 2);
+    for mode in LayoutMode::ALL {
+        view.update(cx, |view, cx| {
+            view.config.layout.mode = mode;
+            cx.notify();
+        });
+        cx.update(|window, cx| full_draw(window, cx).clear(cx));
+        let rail = placed(cx, "sidebar-rail");
+        assert_eq!(rail.size.width, px(RAIL_WIDTH), "{mode:?}");
+        for (box_name, dot_name, ring_name) in [
+            (
+                "rail-host-box-local",
+                "rail-host-status-local",
+                "rail-host-ring-local",
+            ),
+            (
+                "rail-host-box-ssh:host1",
+                "rail-host-status-ssh:host1",
+                "rail-host-ring-ssh:host1",
+            ),
+        ] {
+            let header = placed(cx, box_name);
+            let dot = placed(cx, dot_name);
+            let ring = placed(cx, ring_name);
+            assert!(
+                contains(rail, header) && contains(rail, dot) && contains(rail, ring),
+                "{mode:?} {box_name} box {header:?} dot {dot:?} ring {ring:?} outside rail {rail:?}"
+            );
+            assert!(
+                contains(ring, dot),
+                "{mode:?} {box_name} dot {dot:?} leaves its ring {ring:?}"
+            );
+            assert!(
+                ring.left() + px(0.5) >= header.right() + px(HOST_DOT_GAP)
+                    && ring.top() >= header.top() - px(0.5)
+                    && ring.bottom() <= header.bottom() + px(0.5),
+                "{mode:?} {box_name} ring {ring:?} bites the box {header:?}"
+            );
+        }
+    }
+    // A window that squeezes the rail below the box-plus-dot cannot hang the
+    // mark outside. It still has to stay inside the column, off the stroke.
+    cx.simulate_resize(size(px(270.), px(600.)));
+    cx.update(|window, cx| full_draw(window, cx).clear(cx));
+    let rail = placed(cx, "sidebar-rail");
+    assert_eq!(rail.size.width, px(30.));
+    for (box_name, dot_name, ring_name) in [
+        (
+            "rail-host-box-local",
+            "rail-host-status-local",
+            "rail-host-ring-local",
+        ),
+        (
+            "rail-host-box-ssh:host1",
+            "rail-host-status-ssh:host1",
+            "rail-host-ring-ssh:host1",
+        ),
+    ] {
+        let header = placed(cx, box_name);
+        let dot = placed(cx, dot_name);
+        let ring = placed(cx, ring_name);
+        assert!(
+            contains(rail, header) && contains(rail, dot) && contains(rail, ring),
+            "{box_name} box {header:?} dot {dot:?} ring {ring:?} outside squeezed rail {rail:?}"
+        );
+        assert!(
+            clears_rounded_border(dot, header),
+            "{dot_name} {dot:?} meets the border of {header:?}"
+        );
+    }
+}
+
 /// The corner dot stays off the header stroke, on the accented host and on a
 /// dimmed one. The stroke is the box's 1px rounded border.
 #[gpui::test]
@@ -326,9 +406,23 @@ fn host_status_dots_clear_the_header_border(cx: &mut TestAppContext) {
     }
 }
 
-/// `dot` lies fully inside `header`'s rounded border, with a pixel of the
-/// interior between them. The border is a 1px stroke on a `corners::SMALL` radius.
+/// `dot` stays off the header stroke. That holds when it sits fully inside
+/// the rounded border, with a pixel of fill between them, and when it sits
+/// fully outside the box with a gap. The border is a 1px stroke on a
+/// `corners::SMALL` radius.
 fn clears_rounded_border(dot: Bounds<Pixels>, header: Bounds<Pixels>) -> bool {
+    beside_the_box(dot, header) || inside_the_stroke(dot, header)
+}
+
+/// The whole dot is to the right of the box and stays within its height, so
+/// the stroke cannot cross it and the row cannot clip it.
+fn beside_the_box(dot: Bounds<Pixels>, header: Bounds<Pixels>) -> bool {
+    dot.left() >= header.right() + px(1.)
+        && dot.top() >= header.top() - px(0.5)
+        && dot.bottom() <= header.bottom() + px(0.5)
+}
+
+fn inside_the_stroke(dot: Bounds<Pixels>, header: Bounds<Pixels>) -> bool {
     let inset = 1. + 1.;
     let radius = (crate::config::corners::SMALL - inset).max(0.);
     let left = f32::from(header.left()) + inset;
@@ -392,7 +486,7 @@ fn assert_header_apart(
         dimmed.dimmed
             && dimmed.fill == rgba(0)
             && dimmed.letter == rgb(theme.muted)
-            && dimmed.border == rgba((theme.muted << 8) | 0x40),
+            && dimmed.border == rgb(theme.muted),
         "{name}: resting header is not the muted box"
     );
     // The letter has to read on the fill, and the stroke on the sidebar.
@@ -429,7 +523,7 @@ fn assert_header_apart(
     assert!(
         matches_color(
             rest_border,
-            Hsla::from(rgba((theme.muted << 8) | 0x40)).opacity(REST_OPACITY),
+            Hsla::from(rgb(theme.muted)).opacity(REST_OPACITY),
         ),
         "{name}: resting border is not the dimmed muted stroke: {rest_border:?}"
     );
