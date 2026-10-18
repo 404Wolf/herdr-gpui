@@ -1,10 +1,12 @@
 use super::*;
 use chrono::{DateTime, Utc};
 
-#[cfg(unix)]
 mod actions;
 mod beads;
+mod e2e;
+mod fake_github;
 mod full_listing;
+mod git;
 mod github;
 mod gitlab;
 mod incremental;

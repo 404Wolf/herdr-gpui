@@ -205,6 +205,16 @@ pub(crate) fn local_branches(
     main_root: &str,
     cancelled: &AtomicBool,
 ) -> Option<Vec<String>> {
+    if host.is_local() {
+        let branches = super::git::branches(std::path::Path::new(main_root), PREFIX, MAX_BRANCHES);
+        return Some(
+            branches
+                .ok()?
+                .into_iter()
+                .filter(|branch| branch_hash(branch).is_some())
+                .collect(),
+        );
+    }
     let output = host
         .exec(
             "git",

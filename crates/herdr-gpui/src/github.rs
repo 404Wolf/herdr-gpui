@@ -9,6 +9,8 @@ mod credential_manager;
 mod credentials;
 mod device;
 mod http;
+#[cfg(test)]
+pub(crate) use http::fake_graphql;
 mod log;
 mod routing;
 #[cfg(target_os = "linux")]

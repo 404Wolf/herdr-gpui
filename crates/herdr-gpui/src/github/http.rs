@@ -272,6 +272,36 @@ pub(super) fn query_error(
     rejection(errors).map_or(Error::GitHubQuery, Error::GitHubRejected)
 }
 
+/// GraphQL endpoints that tests stand in for GitHub, by the token that reads
+/// them, so a test's fake never answers another test's calls.
+#[cfg(test)]
+static FAKE_GRAPHQL: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
+
+/// Sends GraphQL calls made with `token` to `url` instead of GitHub, for
+/// the rest of the test process.
+#[cfg(test)]
+pub(crate) fn fake_graphql(token: &str, url: String) {
+    if let Ok(mut fakes) = FAKE_GRAPHQL.lock() {
+        fakes.retain(|(fake, _)| fake != token);
+        fakes.push((token.to_owned(), url));
+    }
+}
+
+fn graphql_url(token: &SecretString) -> String {
+    #[cfg(test)]
+    if let Some((_, url)) = FAKE_GRAPHQL.lock().ok().and_then(|fakes| {
+        fakes
+            .iter()
+            .find(|(fake, _)| fake == token.expose_secret())
+            .cloned()
+    }) {
+        return url;
+    }
+    #[cfg(not(test))]
+    let _ = token;
+    "https://api.github.com/graphql".to_owned()
+}
+
 /// One GraphQL POST, its bounded JSON body, and the headers that explain a
 /// failure GraphQL reports with a 200.
 fn post(
@@ -286,7 +316,7 @@ fn post(
         .checked_duration_since(Instant::now())
         .ok_or(Error::PrTimeout)?;
     let reply = agent(timeout)
-        .post("https://api.github.com/graphql")
+        .post(graphql_url(token))
         .header("User-Agent", "Herdr-GPUI")
         .header("Accept", "application/vnd.github+json")
         .header("Content-Type", "application/json")
