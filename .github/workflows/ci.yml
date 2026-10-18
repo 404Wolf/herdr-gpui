@@ -18,6 +18,14 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# Every rust-cache entry shares the repository's 10 GB budget. With full
+# debug info the entries overflowed it, and GitHub evicted the Windows
+# checks' caches between main runs, so they compiled from scratch. Without
+# debug info dependencies cache about 40% smaller and build faster; panics
+# still report file and line. Release profiles keep their own settings.
+env:
+  CARGO_PROFILE_DEV_DEBUG: '0'
+
 jobs:
   # Audits the workflows themselves for injection, over-broad permissions,
   # unpinned actions, and credential persistence. Gates the application

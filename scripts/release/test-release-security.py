@@ -45,6 +45,8 @@ class ReleaseTargets(unittest.TestCase):
         jobs = dict(zip(sections[1::2], sections[2::2]))
         for job in jobs.values():
             self.assertIn("github.repository == 'penso/herdr-gpui'", job)
+        # Keeps every main cache inside the repository's 10 GB cache budget.
+        self.assertIn("\nenv:\n  CARGO_PROFILE_DEV_DEBUG: '0'\n\njobs:\n", workflow)
         self.assertIn("    needs: [checks, windows, windows-native, windows-package, build-macos, commits]\n",
                       jobs["checks-passed"])
         self.assertIn('test "$COMMITS" = success || exit 1', jobs["checks-passed"])
