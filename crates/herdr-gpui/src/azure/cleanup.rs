@@ -13,7 +13,7 @@ use super::{
 };
 use crate::cloud::{CloudProvider, SavedDevice};
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     sync::Mutex,
     time::{Duration, Instant},
 };
@@ -114,14 +114,45 @@ pub(crate) fn check_all_idle_devices() {
         return;
     };
     let devices = account_devices(devices, &settings);
+    check_accounts(&settings, devices, check_account);
+}
+
+/// Share authentication within each saved account, but never use the current
+/// group's absence as evidence that a machine in a different group is gone.
+fn check_accounts(
+    settings: &Settings,
+    devices: impl IntoIterator<Item = SavedDevice>,
+    mut check: impl FnMut(&Settings, &[SavedDevice]),
+) {
+    let mut accounts = BTreeMap::<String, Vec<SavedDevice>>::new();
+    for device in devices {
+        accounts
+            .entry(device.account.clone())
+            .or_default()
+            .push(device);
+    }
+    for (account, devices) in accounts {
+        match settings.for_device(&account) {
+            Ok(scoped) => check(&scoped, &devices),
+            Err(error) => {
+                let error = crate::Error::from(error);
+                for device in &devices {
+                    warn(device, &error);
+                }
+            }
+        }
+    }
+}
+
+fn check_account(settings: &Settings, devices: &[SavedDevice]) {
     let (vms, sandboxes): (Vec<_>, Vec<_>) = devices
         .iter()
         .partition(|device| matches!(Machine::parse(&device.id), Machine::Vm(_)));
     if !vms.is_empty() {
-        match Client::new(&settings) {
+        match Client::new(settings) {
             Ok(client) => {
                 for device in vms {
-                    if let Err(error) = check_vm(&settings, &client, device) {
+                    if let Err(error) = check_vm(settings, &client, device) {
                         warn(device, &error);
                     }
                 }
@@ -134,7 +165,7 @@ pub(crate) fn check_all_idle_devices() {
     if sandboxes.is_empty() {
         return;
     }
-    let client = match Client::for_audience(&settings, Audience::Sandboxes) {
+    let client = match Client::for_audience(settings, Audience::Sandboxes) {
         Ok(client) => client,
         Err(error) => {
             return tracing::warn!(category = "azure_cleanup", %error, "Could not reach Azure sandboxes");
@@ -144,7 +175,7 @@ pub(crate) fn check_all_idle_devices() {
         let Machine::Sandbox(id) = Machine::parse(&device.id) else {
             continue;
         };
-        let checked = super::sandbox::exists(&client, &settings, id)
+        let checked = super::sandbox::exists(&client, settings, id)
             .map_err(crate::Error::from)
             .and_then(|exists| if exists { Ok(()) } else { forget_gone(device) });
         if let Err(error) = checked {
