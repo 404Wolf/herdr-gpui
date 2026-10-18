@@ -4129,7 +4129,7 @@ Windows starts hands off to the launcher (`src/restart_manager.rs`).
 `herdr-gpui-launcher.exe` beside the running app, so it opens without a console
 window when you sign in; turning it off removes the value. The registry is the
 setting, so nothing goes in the config file, and the switch shows what Windows
-will do: it is read when Settings opens. A copy with no launcher beside it
+will do: it is read when Settings opens and each time it comes to the front. A copy with no launcher beside it
 cannot turn it on and says so. Task Manager's **Startup apps** and **Settings >
 Apps > Startup** can switch the entry off without removing it (a mark under
 `Explorer\StartupApproved\Run`). The app never overrides that: the row then

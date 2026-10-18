@@ -123,6 +123,8 @@ fn open_with(
             });
             model.update(cx, |view, cx| {
                 view.retarget_source(source, cx);
+                #[cfg(windows)]
+                view.watch_launch_at_login(window, cx);
                 view._appearance = Some(cx.observe_window_appearance(window, |view, _, cx| {
                     view.apply_window_appearance(cx);
                 }));
@@ -170,9 +172,8 @@ struct SettingsWindow {
     number_preview: Option<inputs::NumberPreview>,
     /// The host colour being typed as hex, if any.
     hex_edit: Option<sidebar::HexEdit>,
-    /// The startup entry as last read; `None` while reading or writing it.
     #[cfg(windows)]
-    launch_at_login: Option<crate::launch_at_login::State>,
+    launch_at_login: launch_at_login::LaunchAtLogin,
     error: Option<String>,
     status: Option<String>,
     focus: FocusHandle,
@@ -308,7 +309,7 @@ impl SettingsWindow {
             number_preview: None,
             hex_edit: None,
             #[cfg(windows)]
-            launch_at_login: None,
+            launch_at_login: Default::default(),
             error: appearance.error,
             status: None,
             focus: cx.focus_handle(),
