@@ -163,7 +163,7 @@ impl SettingsWindow {
                 ui::row(theme, "general-update-beta", "Install beta releases")
                     .description(
                         "Betas ship before they are promoted to stable. Turning this off never \
-                         downgrades; Homebrew installations always follow stable.",
+                         downgrades; Homebrew installations update in place while it is on.",
                     )
                     .control(self.preference_toggle(
                         "general-update-beta-toggle",
