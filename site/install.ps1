@@ -50,7 +50,13 @@
     # including its entry in Settings.
     $uninstaller = Join-Path $dest 'unins000.exe'
     if (Test-Path -LiteralPath $uninstaller) {
-      Start-Process -Wait -FilePath $uninstaller -ArgumentList '/SILENT'
+      $process = Start-Process -Wait -PassThru -FilePath $uninstaller -ArgumentList '/SILENT'
+      if ($process.ExitCode -ne 0) { throw "The Herdr UI uninstaller exited with code $($process.ExitCode); Herdr UI may still be installed in $dest." }
+      # The uninstaller hands off to a copy of itself and returns early, so
+      # wait for it to remove the app.
+      $deadline = (Get-Date).AddMinutes(2)
+      while ((Test-Path -LiteralPath $exe) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
+      if (Test-Path -LiteralPath $exe) { throw "The Herdr UI uninstaller left $exe in place." }
       Write-Host 'Uninstalled Herdr UI.'
       return
     }
@@ -62,6 +68,7 @@
       [Environment]::SetEnvironmentVariable('Path', $kept -join ';', 'User')
     }
     if (Test-Path -LiteralPath $dest) { Remove-Item -Recurse -Force -LiteralPath $dest }
+    if (Test-Path -LiteralPath $dest) { throw "Could not remove $dest." }
     Write-Host "Uninstalled Herdr UI from $dest. Settings and Herdr sessions were kept."
     return
   }

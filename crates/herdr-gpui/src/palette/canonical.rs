@@ -17,6 +17,15 @@ pub(crate) fn canonicalize(path: &Path) -> io::Result<PathBuf> {
     fs::canonicalize(path).map(plain)
 }
 
+/// The form [`canonicalize`] gives `path`, which must already be canonical
+/// in `fs::canonicalize`'s own form, verbatim prefix included. Discovery
+/// lists a root's children under the root's verbatim path and passes each
+/// through this, so a child too long for the plain form, or whose name ends
+/// in a dot or space, keeps the prefix just as validating it later does.
+pub(crate) fn plain_form(path: PathBuf) -> PathBuf {
+    plain(path)
+}
+
 /// The longest path Win32 accepts without the verbatim prefix.
 #[cfg(windows)]
 const MAX_PATH: usize = 260;

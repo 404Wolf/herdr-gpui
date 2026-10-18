@@ -116,8 +116,11 @@ pub(super) fn collect(roots: &[String], cancelled: &AtomicBool) -> Collection {
         }
         let result = (|| -> Result<()> {
             let root = expand(root, |name| std::env::var_os(name), home.as_deref())?;
-            let root = super::canonical::canonicalize(&root)
-                .map_err(|error| Error::from(error).at_path(&root))?;
+            // Children are listed under the verbatim root and each brought
+            // to plain form on its own: a short root can hold a child too
+            // long for the plain form, which `validate` keeps verbatim.
+            let root =
+                fs::canonicalize(&root).map_err(|error| Error::from(error).at_path(&root))?;
             for entry in fs::read_dir(&root).map_err(|error| Error::from(error).at_path(&root))? {
                 if cancelled.load(Ordering::Relaxed) {
                     break;
@@ -140,7 +143,7 @@ pub(super) fn collect(roots: &[String], cancelled: &AtomicBool) -> Collection {
                 {
                     continue;
                 }
-                let path = entry.path();
+                let path = super::canonical::plain_form(entry.path());
                 valid_path(&path)?;
                 if seen.insert(path.clone()) {
                     collection.projects.push(Project {
@@ -280,6 +283,34 @@ mod tests {
             &AtomicBool::new(true),
         );
         assert!(cancelled.projects.is_empty());
+        Ok(())
+    }
+
+    /// A root short enough for a plain path can hold children that are not:
+    /// one too long for it, and one whose name ends in a dot. Discovery lists
+    /// both in the form `validate` computes, so neither reads as removed.
+    #[cfg(windows)]
+    #[test]
+    fn discovered_children_validate_when_only_the_root_is_plain() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let long = "a".repeat(255);
+        let verbatim = fs::canonicalize(root.path())?;
+        fs::create_dir(verbatim.join(&long))?;
+        fs::create_dir(verbatim.join("dot."))?;
+        let result = collect(
+            &[root.path().to_string_lossy().into_owned()],
+            &AtomicBool::new(false),
+        );
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert_eq!(result.projects.len(), 2);
+        for project in &result.projects {
+            assert!(
+                project.path.to_string_lossy().starts_with(r"\\?\"),
+                "{}",
+                project.path.display()
+            );
+            validate(project)?;
+        }
         Ok(())
     }
 
