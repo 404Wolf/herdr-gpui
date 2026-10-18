@@ -52,6 +52,7 @@ mod contrast;
 mod control;
 mod controls;
 mod copy_mode;
+mod crash;
 mod daemon;
 #[cfg(feature = "daytona")]
 mod daytona;
@@ -78,6 +79,8 @@ mod integrations;
 #[cfg(windows)]
 mod jump_list;
 mod keymap;
+#[cfg(windows)]
+mod launch_at_login;
 mod lenient;
 mod link;
 mod links;
@@ -85,6 +88,7 @@ mod listening_ports;
 mod local_path;
 mod log_window;
 mod login_env;
+mod mark_layer;
 mod menu;
 mod menus;
 mod merged_cleanup;
