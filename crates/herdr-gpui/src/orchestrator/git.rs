@@ -65,7 +65,14 @@ fn with_globals(
                 .with(gix::sec::Trust::Full)
         })
     });
-    let git_dir = repo.git_dir().to_owned();
+    // `includeIf "gitdir:"` matches Git's real path. gix resolves symlinks
+    // but not Windows 8.3 short names, such as a runner's `RUNNER~1` temp
+    // folder, so it gets the canonical path `git` would compare.
+    let git_dir = repo
+        .git_dir()
+        .canonicalize()
+        .map(super::repo::plain)
+        .unwrap_or_else(|_| repo.git_dir().to_owned());
     let branch = repo.head_name().ok().flatten();
     let options = file::init::Options {
         includes: file::includes::Options::follow(
