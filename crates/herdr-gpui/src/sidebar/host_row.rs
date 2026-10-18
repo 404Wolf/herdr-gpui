@@ -154,39 +154,42 @@ impl HerdrWindow {
                 row.bg(rgb(theme.sidebar_background()))
                     .block_mouse_except_scroll()
             })
-            // The host's colour wash sits under its highlight, on the pinned
+            // The host's colour wash goes with its highlight, on the pinned
             // copy too, so the header keeps its colour while it scrolls.
+            // Hosts mark selection only; they do not join the rows'
+            // hover group.
+            // A carried header is a card lifted over the headers it passes.
             .map(|row| {
-                wash::HostMark::resolve(
+                let mark = wash::HostMark::resolve(
                     &self.config.sidebar_style,
                     &endpoint.label,
                     selected,
                     theme,
-                )
-                .apply(row, &format!("{prefix}host-{endpoint_id}"), &look)
-            })
-            // Hosts mark selection only; they do not join the rows'
-            // hover group.
-            // A carried header is a card lifted over the headers it passes.
-            .child(
+                );
+                let key = format!("{prefix}host-{endpoint_id}");
                 if !pinned
                     && self
                         .device_drag
                         .as_ref()
                         .is_some_and(|drag| drag.carries(&endpoint.id))
                 {
-                    look.lifted(&format!("host-{endpoint_id}"), selected, theme)
+                    mark.apply(row, &key, &look).child(look.lifted(
+                        &format!("host-{endpoint_id}"),
+                        selected,
+                        theme,
+                    ))
                 } else {
-                    look.highlight(
-                        &format!("{prefix}host-{endpoint_id}"),
+                    let layer = look.highlight(
+                        &key,
                         RowState {
                             selected,
                             ..RowState::default()
                         },
                         theme,
-                    )
-                },
-            )
+                    );
+                    look.washed(row, &key, mark, layer)
+                }
+            })
             .text_color(rgb(if endpoint.enabled {
                 theme.foreground
             } else {

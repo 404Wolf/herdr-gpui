@@ -531,6 +531,14 @@ fn cask() -> Option<brew::Cask> {
     brew::detect(&bundle, install::effective_uid().ok()?)
 }
 
+/// The tap only ever carries stable releases, so only the stable channel
+/// updates a Homebrew installation through Homebrew. On the beta channel it
+/// installs the signed release in place like a standalone one; Homebrew takes
+/// the bundle back at its next upgrade.
+fn through_homebrew<T>(channel: UpdateChannel, cask: impl FnOnce() -> Option<T>) -> bool {
+    channel == UpdateChannel::Stable && cask().is_some()
+}
+
 fn version(offer: Option<&release::Offer>) -> Option<&str> {
     offer.map(|offer| offer.manifest.version.as_str())
 }
@@ -576,14 +584,7 @@ fn worker(
                     );
                     continue;
                 }
-                // The tap only ever carries stable releases, so a Homebrew
-                // installation never chases a beta it could not upgrade to.
-                let homebrew = cask().is_some();
-                let channel = if homebrew {
-                    UpdateChannel::Stable
-                } else {
-                    channel
-                };
+                let homebrew = through_homebrew(channel, cask);
                 installation_format(&cancelled)
                     .and_then(|format| {
                         release::check(crate::APP_VERSION, key, channel, format, &cancelled)

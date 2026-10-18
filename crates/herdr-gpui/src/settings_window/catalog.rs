@@ -315,7 +315,7 @@ pub(super) const CATALOG: &[Entry] = &[
         Section::General,
         "general-update-beta",
         "Install beta releases",
-        "Betas ship before they are promoted to stable. Turning this off never downgrades; Homebrew installations always follow stable.",
+        "Betas ship before they are promoted to stable. Turning this off never downgrades; Homebrew installations update in place while it is on.",
     ),
     entry(Section::Tabs, "tabs-position", "Position", ""),
     entry(

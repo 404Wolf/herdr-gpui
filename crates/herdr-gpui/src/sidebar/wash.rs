@@ -75,9 +75,9 @@ impl HostMark {
         }
     }
 
-    /// The row's wash layer and dimming. The layer is absolutely positioned,
-    /// inset like the highlight, and added before it, so the highlight and
-    /// the row's content paint over the colour.
+    /// The row's wash layer and dimming. The layer is absolutely positioned
+    /// and inset like the highlight; [`SidebarLook::washed`] decides which
+    /// of the two paints on top. The row's content paints over both.
     pub(super) fn apply<E: ParentElement + Styled>(
         &self,
         row: E,
