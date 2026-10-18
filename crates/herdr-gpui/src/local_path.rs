@@ -9,7 +9,14 @@ pub(crate) fn local_path() -> OsString {
         );
     }
     if cfg!(unix) {
-        dirs.extend(["/opt/homebrew/bin", "/usr/local/bin"].map(PathBuf::from));
+        dirs.extend(
+            [
+                "/home/linuxbrew/.linuxbrew/bin",
+                "/opt/homebrew/bin",
+                "/usr/local/bin",
+            ]
+            .map(PathBuf::from),
+        );
     }
     let inherited = std::env::var_os("PATH").unwrap_or_default();
     dirs.extend(std::env::split_paths(&inherited));
@@ -29,9 +36,16 @@ pub(crate) fn local_path() -> OsString {
 mod tests {
     #[test]
     fn fallback_includes_homebrew() {
+        let paths: Vec<_> = std::env::split_paths(&super::local_path()).collect();
         assert!(
-            std::env::split_paths(&super::local_path())
+            paths
+                .iter()
                 .any(|path| path == std::path::Path::new("/opt/homebrew/bin"))
+        );
+        assert!(
+            paths
+                .iter()
+                .any(|path| path == std::path::Path::new("/home/linuxbrew/.linuxbrew/bin"))
         );
     }
 

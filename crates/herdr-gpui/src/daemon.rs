@@ -102,6 +102,7 @@ pub(crate) fn executable() -> PathBuf {
         )
         .chain(
             [
+                PathBuf::from("/home/linuxbrew/.linuxbrew/bin/herdr"),
                 PathBuf::from("/opt/homebrew/bin/herdr"),
                 PathBuf::from("/usr/local/bin/herdr"),
             ]
