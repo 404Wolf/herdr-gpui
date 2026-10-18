@@ -48,6 +48,18 @@ fn a_container_is_made_reached_and_deleted() {
             machine::exec(engine, &id)?,
             &never
         )?);
+        // One left before Herdr was installed is not saved as a device that
+        // cannot connect: adding it again needs the install approved.
+        machine::stop(engine, &id, &never)?;
+        assert!(matches!(
+            setup::adopt(engine, &id, false, &never),
+            Err(crate::Error::Cloud(crate::cloud::Error::Install(_)))
+        ));
+        assert_eq!(
+            machine::state(engine, &id, &never)?,
+            machine::State::Running,
+            "adding it started it"
+        );
         crate::cloud::install::install(machine::exec(engine, &id)?, &never)?;
         assert!(crate::cloud::install::installed(
             machine::exec(engine, &id)?,

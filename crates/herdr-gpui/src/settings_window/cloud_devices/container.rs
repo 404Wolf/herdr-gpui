@@ -223,16 +223,17 @@ impl SettingsWindow {
 
     /// Save a container this app made, but that is not a device, as one.
     fn adopt_container(&mut self, id: String, cx: &mut Context<Self>) {
-        let Some(Ok((engine, _))) = self
-            .container_card
-            .as_ref()
-            .and_then(|card| card.overview.as_ref())
-            .map(|overview| overview.engine.clone())
-        else {
+        let Some((Ok((engine, _)), install)) = self.container_card.as_ref().and_then(|card| {
+            card.overview
+                .as_ref()
+                .map(|overview| (overview.engine.clone(), card.install))
+        }) else {
             return;
         };
-        self.container_job(cx, move |_, send| {
-            send(Update::Done(setup::adopt(engine, &id).map(drop)));
+        self.container_job(cx, move |cancelled, send| {
+            send(Update::Done(
+                setup::adopt(engine, &id, install, cancelled).map(drop),
+            ));
         });
     }
 

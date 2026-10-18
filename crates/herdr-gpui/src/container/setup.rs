@@ -30,14 +30,24 @@ static CREATING: std::sync::Mutex<usize> = std::sync::Mutex::new(0);
 struct Slot;
 
 impl Slot {
-    /// Take a place if `saved` containers and those being made leave one.
-    fn take(saved: usize, max: usize) -> Option<Self> {
+    /// Take a place if the saved containers and those being made leave one.
+    /// `saved` is counted under the lock: a creation saves its device before
+    /// it gives its place back, so it is always counted once.
+    fn take(saved: impl FnOnce() -> crate::Result<usize>, max: usize) -> crate::Result<Self> {
         let mut creating = CREATING.lock().unwrap_or_else(|error| error.into_inner());
-        (saved + *creating < max).then(|| {
-            *creating += 1;
-            Self
-        })
+        if saved()? + *creating >= max {
+            return Err(super::Error::Limit(max).into());
+        }
+        *creating += 1;
+        Ok(Self)
     }
+}
+
+fn saved_containers() -> crate::Result<usize> {
+    Ok(cloud::load()?
+        .iter()
+        .filter(|device| device.provider == CloudProvider::Container)
+        .count())
 }
 
 impl Drop for Slot {
@@ -65,37 +75,14 @@ pub(crate) fn add_device(
         name,
         install,
     } = request;
-    let saved = cloud::load()?
-        .iter()
-        .filter(|device| device.provider == CloudProvider::Container)
-        .count();
-    let Some(_slot) = Slot::take(saved, settings.max) else {
-        return Err(super::Error::Limit(settings.max).into());
-    };
+    let _slot = Slot::take(saved_containers, settings.max)?;
     let engine = Engine::pick(settings.engine)?;
     report(cloud::Step::Creating);
     machine::create(engine, &name, &settings, cancelled, &|| {
         report(cloud::Step::Building("pulling image".into()));
     })?;
-    let ready = install_herdr(engine, &name, install, cancelled, report).and_then(|()| {
-        // Commands such as Teleport's need a running server before any window
-        // connects; a failure here still leaves a device a connection can start.
-        if let Err(error) = machine::start_server(engine, &name, cancelled) {
-            tracing::warn!(category = "container", id = name, %error, "Herdr's server did not start");
-        }
-        let device = SavedDevice {
-            provider: CloudProvider::Container,
-            id: name.clone(),
-            label: name.clone(),
-            account: engine.key().to_owned(),
-            machine: name.clone(),
-            session: SESSION.to_owned(),
-            enabled: true,
-        };
-        // An unsaved container would run unlisted, so it goes too.
-        cloud::save(device.clone())?;
-        Ok(device)
-    });
+    // An unsaved container would run unlisted, so a failure deletes it too.
+    let ready = make_ready(engine, &name, install, cancelled, report);
     if let Err(error) = &ready {
         if let Err(cleanup) = machine::delete(engine, &name, &|| false) {
             tracing::warn!(category = "container", id = name, error = %cleanup, "Could not remove a failed container");
@@ -103,6 +90,34 @@ pub(crate) fn add_device(
         tracing::warn!(category = "container", id = name, %error, "Creating a container failed");
     }
     ready
+}
+
+/// Install Herdr in the running container `id` if needed and approved, start
+/// its server, and save it as a device.
+fn make_ready(
+    engine: Engine,
+    id: &str,
+    install: bool,
+    cancelled: &dyn Fn() -> bool,
+    report: &dyn Fn(cloud::Step),
+) -> crate::Result<SavedDevice> {
+    install_herdr(engine, id, install, cancelled, report)?;
+    // Commands such as Teleport's need a running server before any window
+    // connects; a failure here still leaves a device a connection can start.
+    if let Err(error) = machine::start_server(engine, id, cancelled) {
+        tracing::warn!(category = "container", id, %error, "Herdr's server did not start");
+    }
+    let device = SavedDevice {
+        provider: CloudProvider::Container,
+        id: id.to_owned(),
+        label: id.to_owned(),
+        account: engine.key().to_owned(),
+        machine: id.to_owned(),
+        session: SESSION.to_owned(),
+        enabled: true,
+    };
+    cloud::save(device.clone())?;
+    Ok(device)
 }
 
 fn install_herdr(
@@ -213,22 +228,24 @@ pub(crate) fn overview(settings: &Settings, cancelled: &dyn Fn() -> bool) -> Res
 }
 
 /// Save the container `id`, which this app made on `engine`, as a device
-/// again. Its files and Herdr are as they were; a connection starts it.
-pub(crate) fn adopt(engine: Engine, id: &str) -> crate::Result<SavedDevice> {
-    if machine::state(engine, id, &|| false)? == State::Missing {
+/// again, its files as they were. The app may have quit before Herdr was
+/// installed, so the container is started and set up as a new one is: with
+/// `install` approved, Herdr is installed if it is missing. Unlike a new
+/// container, a failure leaves it as it was. Blocks: run it on a worker.
+pub(crate) fn adopt(
+    engine: Engine,
+    id: &str,
+    install: bool,
+    cancelled: &dyn Fn() -> bool,
+) -> crate::Result<SavedDevice> {
+    if !machine::labelled(engine, cancelled)?
+        .iter()
+        .any(|name| name == id)
+    {
         return Err(super::Error::Gone(id.to_owned()).into());
     }
-    let device = SavedDevice {
-        provider: CloudProvider::Container,
-        id: id.to_owned(),
-        label: id.to_owned(),
-        account: engine.key().to_owned(),
-        machine: id.to_owned(),
-        session: SESSION.to_owned(),
-        enabled: true,
-    };
-    cloud::save(device.clone())?;
-    Ok(device)
+    machine::ensure_running(engine, id, cancelled)?;
+    make_ready(engine, id, install, cancelled, &|_| {})
 }
 
 /// Delete the saved container `id` with its home volume, then forget it. A
@@ -260,3 +277,6 @@ pub(crate) fn stop_saved(id: &str) -> crate::Result<()> {
         machine::stop(engine, id, &|| false)
     })?)
 }
+
+#[cfg(test)]
+mod tests;
