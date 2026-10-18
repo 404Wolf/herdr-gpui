@@ -2,13 +2,15 @@
 
 use super::*;
 use crate::{
-    config::LayoutMode,
+    config::{LayoutMode, Theme},
+    contrast::ratio,
     herdr_settings::Settings,
     sidebar::layout_tests::{SidebarFixture, fixture_window, full_draw, snapshot},
 };
 use core::prelude::v1::test;
 use gpui::{
-    Bounds, Hsla, Modifiers, Pixels, ScaledPixels, TestAppContext, VisualTestContext, size,
+    Bounds, Hsla, Modifiers, Pixels, Rgba, ScaledPixels, TestAppContext, VisualTestContext, rgb,
+    rgba, size,
 };
 use herdr_client::ConnectTarget;
 use std::sync::Arc;
@@ -273,17 +275,25 @@ fn center_x(bounds: Bounds<Pixels>) -> Pixels {
     bounds.left() + bounds.size.width / 2.
 }
 
-/// The host that holds the selected workspace is a saturated accent fill.
-/// The other hosts stay an empty, dimmed box. Neither look is the workspace
-/// row's selection highlight, and the accent follows the workspace when the
-/// selection moves.
+/// The host that holds the selected workspace uses the sidebar's selection
+/// colors. The other hosts stay an empty, dimmed box. The header's stroke is
+/// not the workspace row's highlight, and the colors follow the workspace
+/// when the selection moves. Checked on every bundled theme.
 #[gpui::test]
 fn the_selected_workspaces_host_stands_apart(cx: &mut TestAppContext) {
     let (view, cx) = rail_window(cx, 2);
-    let local = host_paint(cx, "rail-host-box-local");
-    let remote = host_paint(cx, "rail-host-box-ssh:host1");
-    let highlight = host_paint(cx, "highlight-rail-workspace-local-w0");
-    assert_header_apart(local, remote, highlight);
+    for name in Theme::BUILTIN_NAMES {
+        let theme = Theme::builtin(name).unwrap_or_else(|| panic!("missing theme {name}"));
+        view.update(cx, |view, cx| {
+            view.theme = theme.clone();
+            cx.notify();
+        });
+        cx.update(|window, cx| full_draw(window, cx).clear(cx));
+        let local = host_paint(cx, "rail-host-box-local");
+        let remote = host_paint(cx, "rail-host-box-ssh:host1");
+        let highlight = host_paint(cx, "highlight-rail-workspace-local-w0");
+        assert_header_apart(name, &theme, local, remote, highlight);
+    }
 
     let workspace = placed(cx, "rail-workspace-ssh:host1-w0");
     cx.simulate_click(workspace.center(), Modifiers::default());
@@ -291,10 +301,11 @@ fn the_selected_workspaces_host_stands_apart(cx: &mut TestAppContext) {
     view.read_with(cx, |view, _| {
         assert_eq!(view.endpoints[view.selected_endpoint].id, "ssh:host1");
     });
+    let theme = Theme::builtin("Catppuccin Latte").unwrap_or_else(|| panic!("missing Latte"));
     let local = host_paint(cx, "rail-host-box-local");
     let remote = host_paint(cx, "rail-host-box-ssh:host1");
     let highlight = host_paint(cx, "highlight-rail-workspace-ssh:host1-w0");
-    assert_header_apart(remote, local, highlight);
+    assert_header_apart("Catppuccin Latte", &theme, remote, local, highlight);
 }
 
 /// The corner dot stays off the header stroke, on the accented host and on a
@@ -361,44 +372,96 @@ struct HeaderPaint {
 
 /// `active` is the header of the host that holds the selected workspace,
 /// `rest` is another host, and `highlight` is that workspace's selection box.
-fn assert_header_apart(active: HeaderPaint, rest: HeaderPaint, highlight: HeaderPaint) {
-    let fill = active
-        .fill
-        .unwrap_or_else(|| panic!("active header has no fill"));
+fn assert_header_apart(
+    name: &str,
+    theme: &Theme,
+    active: HeaderPaint,
+    rest: HeaderPaint,
+    highlight: HeaderPaint,
+) {
+    let chrome = host_chrome(true, theme);
     assert!(
-        fill.a > 0.5 && fill.s > 0.7,
-        "active header fill is not a strong accent: {fill:?}"
+        chrome.fill == rgb(theme.active)
+            && chrome.border == rgb(theme.foreground)
+            && chrome.letter == rgb(theme.foreground)
+            && !chrome.dimmed,
+        "{name}: active header does not use the selection tokens"
+    );
+    let dimmed = host_chrome(false, theme);
+    assert!(
+        dimmed.dimmed
+            && dimmed.fill == rgba(0)
+            && dimmed.letter == rgb(theme.muted)
+            && dimmed.border == rgba((theme.muted << 8) | 0x40),
+        "{name}: resting header is not the muted box"
+    );
+    // The letter has to read on the fill, and the stroke on the sidebar.
+    assert!(
+        ratio(theme.foreground, theme.active) >= theme.contrast.mark_ratio(),
+        "{name}: letter lacks contrast on the active fill"
     );
     assert!(
-        rest.fill.is_none_or(|color| color.a < 0.05),
-        "resting header is filled: {rest:?}"
+        ratio(theme.foreground, theme.sidebar_background()) >= theme.contrast.mark_ratio(),
+        "{name}: header stroke lacks contrast on the sidebar"
+    );
+
+    let fill = active
+        .fill
+        .unwrap_or_else(|| panic!("{name}: active header has no fill"));
+    assert!(
+        matches_color(fill, Hsla::from(rgb(theme.active))),
+        "{name}: active fill is not theme.active: {fill:?}"
     );
     let border = active
         .border
-        .unwrap_or_else(|| panic!("active header has no border"));
+        .unwrap_or_else(|| panic!("{name}: active header has no border"));
     assert!(
-        border.a > 0.9,
-        "active border is not a solid accent: {border:?}"
+        matches_color(border, Hsla::from(rgb(theme.foreground))),
+        "{name}: active border is not the foreground: {border:?}"
+    );
+    assert!(
+        rest.fill.is_none_or(|color| color.a < 0.05),
+        "{name}: resting header is filled: {rest:?}"
     );
     let rest_border = rest
         .border
-        .unwrap_or_else(|| panic!("resting header lost its box"));
+        .unwrap_or_else(|| panic!("{name}: resting header lost its box"));
     assert!(
-        rest_border.a < 0.15,
-        "resting header is not dimmed: {rest_border:?}"
+        matches_color(
+            rest_border,
+            Hsla::from(rgba((theme.muted << 8) | 0x40)).opacity(REST_OPACITY),
+        ),
+        "{name}: resting border is not the dimmed muted stroke: {rest_border:?}"
+    );
+    assert!(
+        border.a > rest_border.a + 0.5,
+        "{name}: active header is not clearly stronger than the dimmed one"
     );
     let mark_fill = highlight
         .fill
-        .unwrap_or_else(|| panic!("selected workspace has no highlight"));
+        .unwrap_or_else(|| panic!("{name}: selected workspace has no highlight"));
     assert!(
-        fill.s > mark_fill.s + 0.35,
-        "header fill is too close to the row highlight: {fill:?} vs {mark_fill:?}"
+        matches_color(mark_fill, Hsla::from(rgb(theme.active))),
+        "{name}: row highlight is not theme.active: {mark_fill:?}"
     );
-    assert_ne!(
-        Some(border),
-        highlight.border,
-        "header border matches the row highlight"
+    assert!(
+        highlight
+            .border
+            .is_none_or(|color| !matches_color(color, Hsla::from(rgb(theme.foreground)))),
+        "{name}: row highlight wears the header stroke"
     );
+}
+
+/// Painted `color` is `want`, within a couple of 8-bit steps. Hue is a poor
+/// comparison: the selection colors are close to gray.
+fn matches_color(color: Hsla, want: Hsla) -> bool {
+    let got = Rgba::from(color);
+    let expected = Rgba::from(want);
+    let near = |left: f32, right: f32| (left - right).abs() <= 2. / 255.;
+    near(got.r, expected.r)
+        && near(got.g, expected.g)
+        && near(got.b, expected.b)
+        && near(got.a, expected.a)
 }
 
 /// The background and border painted for `selector`.

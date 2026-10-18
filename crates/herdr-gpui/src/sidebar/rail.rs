@@ -1,9 +1,10 @@
 //! The collapsed sidebar's compact rail, as Herdr's default
 //! `ui.sidebar_collapsed_mode = "compact"` draws it: per host a small header
 //! box, then a status mark per workspace and per agent. The header box stays
-//! its own shape. The host that holds the selected workspace is filled with
-//! the accent; the others are dimmed. Workspace badges and agent
-//! rows share one borderless grid, centered on that box, and the selection
+//! its own shape. The host that holds the selected workspace uses the same
+//! colors as a selected row: the active fill, with the foreground for its
+//! stroke and letter. The others are dimmed. Workspace badges and agent rows
+//! share one borderless grid, centered on that box, and the selection
 //! highlight is the only other box: one width, wrapped around the glyph, the
 //! icon, and the dot. Every mark navigates where its expanded row would, and
 //! its tooltip names what the narrow column cannot.
@@ -631,8 +632,8 @@ fn host_status(selector: String, color: u32, ring: u32) -> Div {
 }
 
 /// A host header: the letter box, centered on the same line as the row grid
-/// below it. Lighter and smaller than the selection highlight, and always
-/// bordered, so a selected workspace never wears the same box.
+/// below it. Smaller than the selection highlight, and always bordered, so a
+/// selected workspace never wears the same box.
 fn host_header(font: &FontConfig, look: SidebarLook) -> Div {
     div()
         .relative()
@@ -646,14 +647,15 @@ fn host_header(font: &FontConfig, look: SidebarLook) -> Div {
 }
 
 /// How far an inactive host header fades. Low enough to read as dim next to
-/// the filled accent, high enough that the box and its status dot remain.
+/// the selected host, high enough that the box and its status dot remain.
 const REST_OPACITY: f32 = 0.4;
 
 /// Paint for one host header. `active` is the host that holds the selected
-/// workspace: the box is filled with the theme accent and the letter is the
-/// brighter of the two text colors on that fill. Every other host keeps a
-/// faint ring, a muted letter, and [`REST_OPACITY`]. The accent is the theme
-/// primary, not the row highlight's `active` fill or its foreground outline.
+/// workspace. Its fill is [`Theme::active`] and its stroke and letter are the
+/// foreground: the colors a selected sidebar row already uses, not the theme
+/// primary. The row highlight is that fill on its own, so the foreground
+/// stroke is what keeps the header from wearing the same box. Every other
+/// host keeps a faint muted ring, a muted letter, and [`REST_OPACITY`].
 struct HostChrome {
     border: Rgba,
     fill: Rgba,
@@ -663,11 +665,10 @@ struct HostChrome {
 
 fn host_chrome(active: bool, theme: &Theme) -> HostChrome {
     if active {
-        let fill = theme.primary();
         HostChrome {
-            border: rgb(fill),
-            fill: rgb(fill),
-            letter: rgb(theme.text_on(fill)),
+            border: rgb(theme.foreground),
+            fill: rgb(theme.active),
+            letter: rgb(theme.foreground),
             dimmed: false,
         }
     } else {
