@@ -332,7 +332,7 @@ fn segments<T: Copy + PartialEq + 'static>(
                     .role(Role::RadioButton)
                     .when_some(name, |segment, name| segment.aria_label(name))
                     .aria_toggled(if on { Toggled::True } else { Toggled::False });
-                crate::accessibility::disabled(segment, !segment_live && !on)
+                crate::accessibility::disabled(segment, !segment_live)
                     .debug_selector(move || format!("{id}-{index}"))
                     .px(px(10.))
                     .py(px(3.))

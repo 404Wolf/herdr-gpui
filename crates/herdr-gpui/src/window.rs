@@ -98,6 +98,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) _poll: Task<()>,
     pub(crate) _prefix_interceptor: Subscription,
     pub(crate) _sidebar_invalidation: Subscription,
+    /// Clears `chrome_region` when the terminal takes focus back.
+    pub(crate) _terminal_focus: Subscription,
     /// Lists again the tabs carried off to a window that closed.
     pub(crate) _window_closed: Subscription,
     /// Another window may edit a note this one shows.

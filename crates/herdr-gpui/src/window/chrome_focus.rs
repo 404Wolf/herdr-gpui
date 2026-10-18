@@ -32,6 +32,21 @@ fn step(regions: &[Region], current: Option<Region>, forward: bool) -> Option<Re
 }
 
 impl HerdrWindow {
+    /// Leaves the region whenever the terminal takes focus back, by a click
+    /// or otherwise, so the region's controls stop being tab stops and a
+    /// later click on one cannot take typing from the terminal.
+    pub(crate) fn leave_region_with_terminal(
+        focus: &FocusHandle,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Subscription {
+        cx.on_focus(focus, window, |this, _, cx| {
+            if this.chrome_region.take().is_some() {
+                cx.notify();
+            }
+        })
+    }
+
     /// The regions on screen, in reading order.
     fn regions(&self) -> Vec<Region> {
         let zen = self.zen_layout();
@@ -139,6 +154,32 @@ impl HerdrWindow {
 #[cfg(test)]
 mod tests {
     use super::{Region, step};
+    use crate::sidebar::layout_tests::{fixture_window, full_draw};
+
+    #[gpui::test]
+    fn clicking_back_into_the_terminal_leaves_the_region(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = cx.add_window_view(fixture_window);
+        // Focus events reach listeners only in the active window.
+        cx.update(|window, _| window.activate_window());
+        cx.update(|window, cx| {
+            view.update(cx, |view, cx| {
+                window.focus(&view.sidebar_search.focus(cx), cx);
+                view.chrome_region = Some(Region::Sidebar);
+            });
+            full_draw(window, cx).clear(cx);
+        });
+        assert_eq!(
+            view.read_with(cx, |view, _| view.chrome_region),
+            Some(Region::Sidebar)
+        );
+        cx.update(|window, cx| {
+            let terminal = view.read(cx).focus.clone();
+            window.focus(&terminal, cx);
+            full_draw(window, cx).clear(cx);
+        });
+        cx.run_until_parked();
+        assert_eq!(view.read_with(cx, |view, _| view.chrome_region), None);
+    }
 
     #[test]
     fn regions_cycle_through_the_terminal_both_ways() {

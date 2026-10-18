@@ -519,7 +519,10 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
     };
     let hosts = vec![cx.entity_id(), sidebar_view.entity_id()];
     let mark_layer = cx.new(|cx| crate::mark_layer::MarkLayer::new(window, hosts, cx));
+    let focus = cx.focus_handle();
+    let terminal_focus = HerdrWindow::leave_region_with_terminal(&focus, window, cx);
     HerdrWindow {
+        _terminal_focus: terminal_focus,
         chrome_region: None,
         sound: Default::default(),
         bell: Default::default(),
@@ -630,7 +633,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
             live.snapshot = Some(Arc::new(snapshot(40)));
             live
         },
-        focus: cx.focus_handle(),
+        focus,
         options: ConnectOptions::default(),
         last_queued_options: None,
         pending_resize: None,

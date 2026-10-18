@@ -120,6 +120,7 @@ impl HerdrWindow {
             cx.notify();
         });
         let window_closed = Self::give_back_torn_tabs(cx);
+        let terminal_focus = Self::leave_region_with_terminal(&focus, window, cx);
         let mut this = Self {
             // keep-sorted start
             _activation: activation,
@@ -129,6 +130,7 @@ impl HerdrWindow {
             _poll: poll,
             _prefix_interceptor: prefix_interceptor,
             _sidebar_invalidation: sidebar_invalidation,
+            _terminal_focus: terminal_focus,
             _window_closed: window_closed,
             _worktree_notes: worktree_notes,
             activation_deadline: None,
