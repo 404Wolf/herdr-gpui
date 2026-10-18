@@ -43,6 +43,8 @@ struct Snapshot {
 struct BuildInfo {
     #[serde(default)]
     dockerfile_content: String,
+    #[serde(default)]
+    context_hashes: Vec<String>,
 }
 
 /// What a snapshot's state means for a build.
@@ -55,12 +57,12 @@ pub(super) enum Readiness {
 }
 
 impl Snapshot {
-    /// Whether Daytona built this snapshot from `recipe`'s Dockerfile, and
-    /// nothing else: with no build context, that is all a build reads.
+    /// Whether Daytona built this snapshot from `recipe`'s Dockerfile and no
+    /// build context, as this app does, so nothing else went into it.
     fn built_from(&self, recipe: &Recipe) -> bool {
-        self.build_info
-            .as_ref()
-            .is_some_and(|info| info.dockerfile_content == recipe.dockerfile)
+        self.build_info.as_ref().is_some_and(|info| {
+            info.dockerfile_content == recipe.dockerfile && info.context_hashes.is_empty()
+        })
     }
 
     fn readiness(&self) -> Readiness {

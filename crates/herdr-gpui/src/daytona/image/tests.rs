@@ -64,6 +64,11 @@ fn only_a_snapshot_built_from_the_recipe_is_trusted() {
         !parsed(r#"{"state":"active","buildInfo":{"dockerfileContent":"FROM evil\n"}}"#)
             .built_from(&recipe)
     );
+    // Same Dockerfile, but with files a bind mount could read.
+    assert!(!parsed(
+        r#"{"state":"active","buildInfo":{"dockerfileContent":"FROM debian\n","contextHashes":["abc"]}}"#
+    )
+    .built_from(&recipe));
     // Made from an image rather than built.
     assert!(!parsed(r#"{"state":"active","imageName":"evil:latest"}"#).built_from(&recipe));
     assert!(!parsed(r#"{"state":"active","buildInfo":null}"#).built_from(&recipe));
