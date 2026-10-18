@@ -100,3 +100,73 @@ fn explicit_resume_during_stop_waits_for_stop_to_finish_before_starting() {
     start.join().unwrap().unwrap();
     assert!(!device.is_suspended());
 }
+
+#[test]
+fn a_failed_stop_cannot_undo_one_that_succeeded() {
+    let device = Lifecycle::default();
+    device.stop(|| Ok(())).unwrap();
+    assert!(matches!(
+        device.stop(|| Err(Error::Cancelled)),
+        Err(Error::Cancelled)
+    ));
+    assert!(device.is_suspended());
+    assert!(matches!(
+        device.start("test", || panic!("must not restart")),
+        Err(Error::Suspended(_))
+    ));
+}
+
+#[test]
+fn a_reconnect_waits_for_a_stop_queued_behind_an_earlier_start() {
+    let device = Arc::new(Lifecycle::default());
+    let (started, starting) = mpsc::channel();
+    let (release, released) = mpsc::channel();
+    let (events, observed) = mpsc::channel();
+    let earlier = {
+        let device = device.clone();
+        let events = events.clone();
+        std::thread::spawn(move || {
+            device.start("test", || {
+                started.send(()).unwrap();
+                released.recv_timeout(WAIT).unwrap();
+                events.send("earlier start").unwrap();
+                Ok(())
+            })
+        })
+    };
+    starting.recv_timeout(WAIT).unwrap();
+    let stop = {
+        let device = device.clone();
+        let events = events.clone();
+        std::thread::spawn(move || {
+            device.stop(|| {
+                events.send("stop").unwrap();
+                Ok(())
+            })
+        })
+    };
+    // The stop has asked, and waits behind the earlier start.
+    let deadline = std::time::Instant::now() + WAIT;
+    while !device.is_suspended() {
+        assert!(std::time::Instant::now() < deadline, "the stop never asked");
+        std::thread::yield_now();
+    }
+    device.resume();
+    let reconnect = {
+        let device = device.clone();
+        std::thread::spawn(move || {
+            device.start("test", || {
+                events.send("reconnect").unwrap();
+                Ok(())
+            })
+        })
+    };
+    release.send(()).unwrap();
+    assert_eq!(observed.recv_timeout(WAIT).unwrap(), "earlier start");
+    assert_eq!(observed.recv_timeout(WAIT).unwrap(), "stop");
+    assert_eq!(observed.recv_timeout(WAIT).unwrap(), "reconnect");
+    earlier.join().unwrap().unwrap();
+    stop.join().unwrap().unwrap();
+    reconnect.join().unwrap().unwrap();
+    assert!(!device.is_suspended(), "the reconnect came after the stop");
+}
