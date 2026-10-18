@@ -4234,8 +4234,9 @@ Windows cross-check.
   is on; with it off, only the devices are listed. An entry you remove from the
   list is forgotten. The recent checkouts are kept in `jump-list.json` in the
   state directory.
-- **`herdr-gpui://` links.** The installer registers the scheme for the current
-  user (`HKCU\Software\Classes\herdr-gpui`) and removes it on uninstall.
+- **`herdr-gpui://` links.** The installer and `site/install.ps1` register the
+  scheme for the current user (`HKCU\Software\Classes\herdr-gpui`) and remove
+  it on uninstall.
   `herdr-gpui://open?path=C:\src\repo` shows a local Git checkout or worktree:
   the workspace already open there, or, after you agree in the window, a new
   one (the repository's scripts are not trusted). `herdr-gpui://device?id=ID`
