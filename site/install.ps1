@@ -121,9 +121,14 @@
     Write-Host "Added $dest to your user PATH; open a new terminal to use herdr-gpui."
   }
 
+  # Releases up to 20261016.1 ship no launcher, and this script is served
+  # ahead of the release it describes. Point the shortcut at herdr-gpui.exe
+  # then, which opens a console window beside the app, rather than at nothing.
+  $hasLauncher = Test-Path -LiteralPath $launcher
+  $target = if ($hasLauncher) { $launcher } else { $exe }
   $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Herdr UI.lnk'
   $link = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut)
-  $link.TargetPath = $launcher
+  $link.TargetPath = $target
   $link.WorkingDirectory = $dest
   $link.Save()
   # Each Herdr window carries this AppUserModelID (constants::APP_ID, see
@@ -176,21 +181,37 @@ public static class HerdrShortcut {
     Write-Warning "Could not give the Start menu shortcut Herdr UI's taskbar identity: $_"
   }
 
+  # A release without the launcher has no `herdr-gpui open` either, so it
+  # gets no Explorer entry.
   foreach ($verb in $verbs) {
+    if (-not $hasLauncher) {
+      Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $verb
+      continue
+    }
     New-Item -Force -Path "$verb\command" | Out-Null
     Set-Item -LiteralPath $verb -Value 'Open in Herdr UI'
     Set-ItemProperty -LiteralPath $verb -Name 'Icon' -Value "`"$exe`",0"
     Set-Item -LiteralPath "$verb\command" -Value "`"$launcher`" open `"%V`""
   }
 
-  New-Item -Force -Path "$scheme\shell\open\command" | Out-Null
-  New-Item -Force -Path "$scheme\DefaultIcon" | Out-Null
-  Set-Item -LiteralPath $scheme -Value 'URL:Herdr UI link'
-  Set-ItemProperty -LiteralPath $scheme -Name 'URL Protocol' -Value ''
-  Set-Item -LiteralPath "$scheme\DefaultIcon" -Value "`"$exe`",0"
-  Set-Item -LiteralPath "$scheme\shell\open\command" -Value "`"$launcher`" `"%1`""
+  # Links open through the launcher as well, so a release without it
+  # registers none, and loses one an earlier install left.
+  if ($hasLauncher) {
+    New-Item -Force -Path "$scheme\shell\open\command" | Out-Null
+    New-Item -Force -Path "$scheme\DefaultIcon" | Out-Null
+    Set-Item -LiteralPath $scheme -Value 'URL:Herdr UI link'
+    Set-ItemProperty -LiteralPath $scheme -Name 'URL Protocol' -Value ''
+    Set-Item -LiteralPath "$scheme\DefaultIcon" -Value "`"$exe`",0"
+    Set-Item -LiteralPath "$scheme\shell\open\command" -Value "`"$launcher`" `"%1`""
+  } else {
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $scheme
+  }
 
-  Write-Host "Installed Herdr UI $version to $dest. Start it from the Start menu (Herdr UI), by running herdr-gpui-launcher.exe, or from Open in Herdr UI on a folder in File Explorer; use herdr-gpui for the command line."
+  if ($hasLauncher) {
+    Write-Host "Installed Herdr UI $version to $dest. Start it from the Start menu (Herdr UI), by running herdr-gpui-launcher.exe, or from Open in Herdr UI on a folder in File Explorer; use herdr-gpui for the command line."
+  } else {
+    Write-Host "Installed Herdr UI $version to $dest. Start it from the Start menu (Herdr UI) or with herdr-gpui."
+  }
   if (-not (Get-Command herdr -ErrorAction SilentlyContinue)) {
     Write-Host 'Herdr UI needs the Herdr daemon, which is not on PATH. Install it from https://herdr.dev/'
   }
