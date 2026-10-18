@@ -3,17 +3,20 @@
 //! the user and failed orchestrator runs lead, in a card of their own; then
 //! finished ones ready for review, working agents by host, and idle ones.
 //! Rows can be pinned, snoozed until a time, or settled as finished
-//! (`marks`); a column beside the list shows each host's load and ports,
-//! and folds away.
+//! (`marks`); agents that closed wait under Closed to be started again
+//! (`closed`, `reopen`); a column beside the list shows each host's load
+//! and ports, and folds away.
 //!
 //! Everything it shows is already in the window: the endpoints' snapshots,
 //! the orchestrator views' runs, the pull request prefetch, and the system
 //! load and port monitors. Drawing reads that prepared state only.
 
+mod closed;
 mod hosts;
 mod marks;
 mod model;
 mod presets;
+mod reopen;
 mod view;
 
 #[cfg(test)]
@@ -39,6 +42,10 @@ pub enum Error {
     InvalidMarks,
     #[error("Cannot read saved overview marks: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("{0}")]
+    ReopenRequest(#[source] std::sync::Arc<crate::Error>),
+    #[error("Unexpected daemon response while opening the agent's tab")]
+    ReopenResponse,
 }
 
 /// The page's own state in a window.
@@ -54,11 +61,15 @@ pub(crate) struct Page {
     menu: Option<Key>,
     snoozed_open: bool,
     settled_open: bool,
+    closed: closed::Closed,
+    closed_open: bool,
+    reopen: Option<reopen::Job>,
     scroll: ScrollHandle,
     /// What the page last drew from: the minute its elapsed times were
-    /// counted in, the marks' revision, and how many rows needed the user,
-    /// so the tick redraws only when one of them moves.
-    drawn: (u64, u64, usize, usize),
+    /// counted in, the marks' revision, how many rows needed the user and
+    /// worked, and the closed agents' revision, so the tick redraws only
+    /// when one of them moves.
+    drawn: (u64, u64, usize, usize, u64),
 }
 
 impl Default for Page {
@@ -70,8 +81,11 @@ impl Default for Page {
             menu: None,
             snoozed_open: false,
             settled_open: false,
+            closed: Default::default(),
+            closed_open: false,
+            reopen: None,
             scroll: ScrollHandle::new(),
-            drawn: (0, 0, 0, 0),
+            drawn: (0, 0, 0, 0, 0),
         }
     }
 }
@@ -154,9 +168,9 @@ impl HerdrWindow {
         Sections::of(self.overview_rows(cx), Marks::of(cx), SystemTime::now())
     }
 
-    /// Runs every window tick: notes when agents changed state, wakes
-    /// snoozes whose time came, and redraws the page or the bar's count when
-    /// what they show moved.
+    /// Runs every window tick: notes when agents changed state or closed,
+    /// wakes snoozes whose time came, advances a reopen, and redraws the
+    /// page or the bar's count when what they show moved.
     pub(crate) fn poll_overview(&mut self, cx: &mut Context<Self>) {
         let now = SystemTime::now();
         let mut live: HashMap<&str, Vec<&str>> = HashMap::new();
@@ -187,6 +201,27 @@ impl HerdrWindow {
         }
         self.overview.since.retain(&live);
         let rows = self.overview_rows(cx);
+        for (index, endpoint) in self.endpoints.iter().enumerate() {
+            let state = if index == self.selected_endpoint {
+                &self.live
+            } else {
+                &endpoint.live
+            };
+            if let Some(snapshot) = state
+                .snapshot
+                .as_deref()
+                .filter(|_| endpoint.enabled && state.status.is_connected())
+            {
+                self.overview
+                    .closed
+                    .observe(&endpoint.id, snapshot, &rows, now);
+            }
+        }
+        let endpoints = &self.endpoints;
+        self.overview
+            .closed
+            .retain_hosts(|id| endpoints.iter().any(|endpoint| endpoint.id == id));
+        self.poll_overview_reopen(cx);
         Marks::update(cx, |marks| {
             marks.wake(rows.iter().map(|row| (&row.key, row.state)), now)
         });
@@ -197,7 +232,13 @@ impl HerdrWindow {
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_or(0, |elapsed| elapsed.as_secs() / 60);
         let shown = self.activity_section() == Some(ActivityPanel::Overview);
-        let drawn = (if shown { minute } else { 0 }, revision, needing, working);
+        let drawn = (
+            if shown { minute } else { 0 },
+            revision,
+            needing,
+            working,
+            self.overview.closed.revision(),
+        );
         if drawn != self.overview.drawn {
             self.overview.drawn = drawn;
             cx.notify();
@@ -259,6 +300,30 @@ impl HerdrWindow {
             Open::Run(_) => self.show_activity_panel(ActivityPanel::Issues, window, cx),
         }
         cx.notify();
+    }
+
+    /// Shows the workspace a closed agent ran in.
+    fn open_closed_agent(&mut self, row: &Row, window: &mut Window, cx: &mut Context<Self>) {
+        self.overview.menu = None;
+        let Open::Pane {
+            endpoint,
+            workspace,
+            ..
+        } = &row.open
+        else {
+            return;
+        };
+        self.show_activity_panel(ActivityPanel::Workspaces, window, cx);
+        self.activity.return_to = Some(ActivityPanel::Overview);
+        self.navigate_endpoint(endpoint, crate::NavigationTarget::Workspace(workspace), cx);
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
+    /// Whether a closed agent is being started again, which holds the
+    /// connection's script slot.
+    pub(crate) fn overview_reopening(&self) -> bool {
+        self.overview.reopen.is_some()
     }
 
     fn mark_overview_row(&mut self, cx: &mut Context<Self>, f: impl FnOnce(&mut Marks) -> bool) {

@@ -1948,9 +1948,16 @@ turns it off, and `herdr-gpui ui panel NAME` shows a section.
   offers **Snooze** (until a preset time), **Settle**, **Pin**, and **Open**;
   snoozed and settled rows fold away at the bottom and come back once their
   time comes or the agent works or asks again. These marks are this client's
-  own. A column beside the list shows each host's CPU, memory, agents, and
-  ports; each host folds, and the column folds to a strip of load dots. The
-  icon counts what needs you.
+  own. An agent whose pane closes or that exits, while its host stays up,
+  waits under **Closed** at the bottom: **Reopen** starts it again in a new
+  tab of its workspace, in the folder it ran in, continuing its last
+  conversation there where the agent offers that (`claude --continue`,
+  `codex resume --last`, `opencode --continue`), and **Forget** drops it.
+  The window keeps closed agents while it is open. A shelf shows only when it
+  holds something, and with nothing to list the page says what it is for. A
+  column beside the list shows each host's CPU, memory, agents, and ports;
+  each host folds, and the column folds to a strip of load dots. The icon
+  counts what needs you.
 - **Pull requests** and **Issues** list every repository the connected hosts'
   workspaces hold (see [Orchestrator](#orchestrator)). Refresh spins while a
   sync runs.

@@ -1,5 +1,7 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
+mod closed;
+mod closed_page;
 mod marks;
 mod page;
 mod presets;
