@@ -38,3 +38,34 @@ fn two_open_pull_requests_stay_ambiguous() {
     let strangers = serde_json::json!([with(1, "OPEN", "fork"), with(2, "OPEN", "other")]);
     assert!(matches!(number(strangers), Err(Error::PrAmbiguous)));
 }
+
+#[test]
+fn a_crowded_reused_branch_name_picks_its_open_pull_request() {
+    use crate::pull_request::{batch::matching_number, fetch::Head};
+    let head = Head {
+        owner: "example".into(),
+        repo: "project".into(),
+        branch: "feature".into(),
+    };
+    let node = |number: u64, state: &str, owner: &str| {
+        serde_json::json!({
+            "number": number,
+            "state": state,
+            "headRepositoryOwner": {"login": owner},
+            "headRepository": {"name": "project"},
+        })
+    };
+    let heads = |nodes: serde_json::Value| {
+        serde_json::json!({"data": {"repository": {"pullRequests": {
+            "pageInfo": {"hasNextPage": false}, "nodes": nodes,
+        }}}})
+    };
+    let mut nodes: Vec<_> = (10..14).map(|n| node(n, "OPEN", "fork")).collect();
+    nodes.extend([node(661, "MERGED", "example"), node(678, "OPEN", "example")]);
+    assert_eq!(
+        matching_number(&heads(nodes.into()), &head).unwrap(),
+        Some(678)
+    );
+    let closed = serde_json::json!([node(9, "MERGED", "example"), node(4, "CLOSED", "example")]);
+    assert_eq!(matching_number(&heads(closed), &head).unwrap(), Some(9));
+}

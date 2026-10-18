@@ -118,8 +118,20 @@ fn parse_with_owner(text: &str, owner: &str, repo: &str, branch: &str, head_owne
     if text.len() > OUTPUT_LIMIT {
         return Err(Error::PrSize);
     }
-    let values: Vec<PullRequest> = serde_json::from_str(text).map_err(Error::github_json)?;
-    let Some(mut pr) = current(values, head_owner)? else {
+    let mut values: Vec<PullRequest> = serde_json::from_str(text).map_err(Error::github_json)?;
+    // A lone pull request from another head owner is held to the identity
+    // check below; among several, other owners' ones are not this branch's.
+    if values.len() > 1 {
+        values.retain(|pr| {
+            pr.head_repository_owner
+                .login
+                .eq_ignore_ascii_case(head_owner)
+        });
+        if values.is_empty() {
+            return Err(Error::PrAmbiguous);
+        }
+    }
+    let Some(mut pr) = current(values, |pr| pr.state == State::Open)? else {
         return Ok(None);
     };
     let expected = format!("https://github.com/{owner}/{repo}/pull/{}", pr.number);
@@ -154,25 +166,22 @@ fn parse_with_owner(text: &str, owner: &str, repo: &str, branch: &str, head_owne
     Ok(Some(pr))
 }
 
-/// The one pull request a branch stands for. A branch name reused after its
-/// first pull request merged or closed lists both, so among those from the
-/// expected head owner the single open one wins, or, with none open, the most
-/// recently updated, which GitHub lists first. Two open ones stay ambiguous.
-fn current(mut values: Vec<PullRequest>, head_owner: &str) -> crate::Result<Option<PullRequest>> {
-    if values.len() <= 1 {
-        return Ok(values.pop());
-    }
-    values.retain(|pr| {
-        pr.head_repository_owner
-            .login
-            .eq_ignore_ascii_case(head_owner)
-    });
+/// The one pull request a branch stands for, among those already narrowed to
+/// its head. A branch name reused after its first pull request merged or
+/// closed lists both, so the single open one wins, or, with none open, the
+/// most recently updated, which GitHub lists first. Two open ones stay
+/// ambiguous.
+pub(super) fn current<T>(
+    mut values: Vec<T>,
+    open: impl Fn(&T) -> bool,
+) -> crate::Result<Option<T>> {
     let open: Vec<usize> = (0..values.len())
-        .filter(|&index| values[index].state == State::Open)
+        .filter(|&index| open(&values[index]))
         .collect();
     match open.as_slice() {
         [index] => Ok(Some(values.swap_remove(*index))),
-        [] if !values.is_empty() => Ok(Some(values.swap_remove(0))),
+        [] if values.is_empty() => Ok(None),
+        [] => Ok(Some(values.swap_remove(0))),
         _ => Err(Error::PrAmbiguous),
     }
 }
