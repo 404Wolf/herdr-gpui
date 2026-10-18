@@ -91,7 +91,7 @@ pub(crate) fn quantity(value: &str) -> bool {
         && ["", "m", "k", "M", "G", "T", "Ki", "Mi", "Gi", "Ti"].contains(&unit)
 }
 
-fn loopback(url: &Url) -> bool {
+pub(super) fn loopback(url: &Url) -> bool {
     match url.host() {
         Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
         Some(url::Host::Ipv4(ip)) => ip.is_loopback(),

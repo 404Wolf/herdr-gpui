@@ -95,6 +95,12 @@ pub(crate) struct Header<'a> {
 /// Open the WebSocket at `url` with `headers`, its reads timing out after
 /// [`POLL`] so input keeps flowing while the command is quiet.
 pub(crate) fn open(url: &Url, headers: &[Header]) -> Result<WebSocket<Stream>, Error> {
+    // Headers may carry credentials; unencrypted only on this computer.
+    let encrypted = match url.scheme() {
+        "wss" => true,
+        "ws" if loopback(url) => false,
+        _ => return Err(Error::Url),
+    };
     let host = url.host_str().ok_or(Error::Url)?.to_owned();
     let port = url.port_or_known_default().ok_or(Error::Url)?;
     let mut request = url.as_str().into_client_request().map_err(Error::Stream)?;
@@ -116,25 +122,22 @@ pub(crate) fn open(url: &Url, headers: &[Header]) -> Result<WebSocket<Stream>, E
     tcp.set_write_timeout(Some(HANDSHAKE_TIMEOUT))
         .map_err(Error::Connect)?;
     tcp.set_nodelay(true).map_err(Error::Connect)?;
-    let stream = match url.scheme() {
-        "wss" => {
-            let roots = rustls::RootCertStore {
-                roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
-            };
-            let tls = rustls::ClientConfig::builder_with_provider(Arc::new(
-                rustls::crypto::ring::default_provider(),
-            ))
-            .with_safe_default_protocol_versions()
-            .map_err(Error::Tls)?
-            .with_root_certificates(roots)
-            .with_no_client_auth();
-            let name = rustls::pki_types::ServerName::try_from(host).map_err(|_| Error::Url)?;
-            let connection =
-                rustls::ClientConnection::new(Arc::new(tls), name).map_err(Error::Tls)?;
-            Stream::Tls(Box::new(rustls::StreamOwned::new(connection, tcp)))
-        }
-        "ws" => Stream::Plain(tcp),
-        _ => return Err(Error::Url),
+    let stream = if encrypted {
+        let roots = rustls::RootCertStore {
+            roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+        };
+        let tls = rustls::ClientConfig::builder_with_provider(Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .map_err(Error::Tls)?
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+        let name = rustls::pki_types::ServerName::try_from(host).map_err(|_| Error::Url)?;
+        let connection = rustls::ClientConnection::new(Arc::new(tls), name).map_err(Error::Tls)?;
+        Stream::Tls(Box::new(rustls::StreamOwned::new(connection, tcp)))
+    } else {
+        Stream::Plain(tcp)
     };
     let config = WebSocketConfig::default()
         .max_message_size(Some(MESSAGE_LIMIT))
@@ -178,6 +181,15 @@ pub(crate) fn input(mut source: impl Read + Send + 'static) -> Receiver<Option<V
         tracing::warn!(%error, "could not start a relay's input reader");
     }
     receiver
+}
+
+fn loopback(url: &Url) -> bool {
+    match url.host() {
+        Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        None => false,
+    }
 }
 
 /// A read or write that timed out with nothing to do, not a failure.

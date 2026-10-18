@@ -85,3 +85,31 @@ fn error_replies_keep_one_short_line() {
         Error::Authentication
     ));
 }
+
+#[test]
+fn an_execd_endpoint_the_server_names_is_held_to_the_api_roots_rule() {
+    use super::api::execd_root;
+    assert!(execd_root("http://127.0.0.1:46128/proxy/44772"));
+    assert!(execd_root(
+        "https://gateway.example.com/sandboxes/abc/port/44772"
+    ));
+    for bad in [
+        "http://10.0.0.7:44772",
+        "http://attacker.example.com/proxy",
+        "https://user:pass@gateway.example.com",
+        "https://gateway.example.com/?x=1",
+        "https://gateway.example.com/#x",
+        "file:///etc/passwd",
+    ] {
+        assert!(!execd_root(bad), "{bad}");
+    }
+}
+
+#[test]
+fn an_unencrypted_exec_stream_only_reaches_this_computer() {
+    let url = url::Url::parse("ws://192.0.2.1:9/pty/s/ws").unwrap();
+    assert!(matches!(
+        crate::cloud::socket::open(&url, &[]),
+        Err(crate::cloud::socket::Error::Url)
+    ));
+}

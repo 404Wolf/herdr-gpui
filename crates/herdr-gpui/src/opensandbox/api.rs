@@ -185,8 +185,7 @@ impl Api<'_> {
             self.settings.endpoint_scheme(),
             endpoint.endpoint.trim_end_matches('/')
         );
-        let parsed = url::Url::parse(&root).map_err(|_| Error::Field("execd endpoint"))?;
-        if parsed.host().is_none() || parsed.query().is_some() || !parsed.username().is_empty() {
+        if !execd_root(&root) {
             return Err(Error::Field("execd endpoint"));
         }
         Ok(Execd {
@@ -194,6 +193,23 @@ impl Api<'_> {
             headers: endpoint.headers,
         })
     }
+}
+
+/// Whether `root`, an execd endpoint the server named, may be sent requests
+/// and its headers. The server picks it, so it is held to the API root's own
+/// rule: plain HTTP only on this computer, and no credentials, query, or
+/// fragment. A path, such as a proxy's, is fine.
+pub(super) fn execd_root(root: &str) -> bool {
+    let Ok(url) = url::Url::parse(root) else {
+        return false;
+    };
+    let plain = url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && url.host().is_some();
+    plain
+        && (url.scheme() == "https" || (url.scheme() == "http" && super::settings::loopback(&url)))
 }
 
 /// A sandbox's execd: its URL root and the headers each request carries.
