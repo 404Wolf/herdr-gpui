@@ -7,7 +7,7 @@ const WEB: &str = "web";
 const TITLE: &str = "from-title";
 const LONG: &str = "api-service-with-a-deliberately-long-pane-name";
 
-fn modes() -> impl IntoIterator<Item = LayoutMode> {
+pub(super) fn modes() -> impl IntoIterator<Item = LayoutMode> {
     [
         LayoutMode::from(Density::Comfortable),
         LayoutMode::Superset,
@@ -18,7 +18,11 @@ fn modes() -> impl IntoIterator<Item = LayoutMode> {
 
 /// Point both fixture agents at one workspace and one agent name, then give
 /// each the pane label and title under test.
-fn prepare(snapshot: &mut ClientShellSnapshot, labels: &[Option<&str>], titles: &[Option<&str>]) {
+pub(super) fn prepare(
+    snapshot: &mut ClientShellSnapshot,
+    labels: &[Option<&str>],
+    titles: &[Option<&str>],
+) {
     for agent in &mut snapshot.agents {
         agent.workspace_id = "w0".into();
         agent.tab_id = "t0".into();
@@ -51,7 +55,7 @@ fn prepare(snapshot: &mut ClientShellSnapshot, labels: &[Option<&str>], titles: 
         .collect();
 }
 
-fn show(
+pub(super) fn show(
     view: &Entity<HerdrWindow>,
     mode: LayoutMode,
     width: f32,
@@ -68,7 +72,7 @@ fn show(
     });
 }
 
-fn painted(cx: &mut gpui::VisualTestContext) -> Vec<String> {
+pub(super) fn painted(cx: &mut gpui::VisualTestContext) -> Vec<String> {
     cx.update(|window, cx| {
         cx.default_global::<TextProbes>().0.clear();
         full_draw(window, cx).clear(cx);
@@ -76,7 +80,7 @@ fn painted(cx: &mut gpui::VisualTestContext) -> Vec<String> {
     })
 }
 
-fn mentions(painted: &[String], text: &str) -> bool {
+pub(super) fn mentions(painted: &[String], text: &str) -> bool {
     painted.iter().any(|label| label.contains(text))
 }
 
