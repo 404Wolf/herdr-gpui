@@ -15,12 +15,19 @@ use std::path::Path;
 #[serde(default, deny_unknown_fields)]
 pub struct ContainerConfig {
     // keep-sorted start
+    /// Stop a running container once none of its agents has worked or
+    /// waited for input for this long, such as `30m` or `2h`; `never` by
+    /// default. Its files stay, and the next connection starts it again.
+    pub auto_stop: Option<String>,
     #[serde(deserialize_with = "text")]
     pub cpus: Option<String>,
     /// `docker` or `podman`; the first one installed when unset.
     pub engine: Option<String>,
     /// The image new containers start from, such as `ubuntu:24.04`.
     pub image: Option<String>,
+    /// The most containers kept as devices at once; 8 by default.
+    #[serde(deserialize_with = "text")]
+    pub max_containers: Option<String>,
     #[serde(deserialize_with = "text")]
     pub memory: Option<String>,
     #[serde(deserialize_with = "text")]
@@ -61,6 +68,7 @@ pub(crate) struct ContainerFields {
     pub(crate) image: String,
     pub(crate) cpus: String,
     pub(crate) memory: String,
+    pub(crate) auto_stop: String,
 }
 
 #[cfg(feature = "container")]
@@ -72,15 +80,17 @@ impl ContainerFields {
             image: text(&config.image),
             cpus: text(&config.cpus),
             memory: text(&config.memory),
+            auto_stop: text(&config.auto_stop),
         }
     }
 
-    fn entries(&self) -> [(&'static str, &str); 4] {
+    fn entries(&self) -> [(&'static str, &str); 5] {
         [
             ("engine", &self.engine),
             ("image", &self.image),
             ("cpus", &self.cpus),
             ("memory", &self.memory),
+            ("auto_stop", &self.auto_stop),
         ]
     }
 
@@ -96,6 +106,7 @@ impl ContainerFields {
             image: value(&self.image),
             cpus: value(&self.cpus),
             memory: value(&self.memory),
+            auto_stop: value(&self.auto_stop),
             ..existing.clone()
         }
         .settings()

@@ -2,6 +2,7 @@
 use super::*;
 use crate::config::ContainerConfig;
 
+mod idle;
 mod live;
 
 fn config(pairs: &[(&str, &str)]) -> ContainerConfig {
@@ -20,6 +21,11 @@ fn an_empty_table_makes_hardened_defaults() {
     assert_eq!(settings.cpus, "4");
     assert_eq!(settings.memory, "8g");
     assert_eq!(settings.pids, 4096);
+    assert_eq!(
+        settings.auto_stop, None,
+        "containers keep running unless asked"
+    );
+    assert_eq!(settings.max, 8);
 }
 
 #[test]
@@ -48,6 +54,9 @@ fn values_the_engine_could_misread_are_refused() {
         ("memory", "\"8gb\""),
         ("memory", "\"-1g\""),
         ("pids_limit", "1"),
+        ("auto_stop", "\"1m\""),
+        ("max_containers", "0"),
+        ("max_containers", "65"),
     ] {
         let error = Settings::resolve(&config(&[(key, value)])).unwrap_err();
         assert!(matches!(error, Error::Field(_)), "{key} = {value}: {error}");

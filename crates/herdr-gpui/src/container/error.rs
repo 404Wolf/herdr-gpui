@@ -28,6 +28,10 @@ pub enum Error {
     },
     #[error("The container {0} no longer exists.")]
     Gone(String),
+    #[error(
+        "There are already {0} containers, the most [container] max_containers allows. Remove one first."
+    )]
+    Limit(usize),
     #[error("Cancelled.")]
     Cancelled,
     #[error("{0}")]

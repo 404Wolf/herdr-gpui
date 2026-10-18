@@ -431,6 +431,8 @@ pub(crate) fn run() -> std::process::ExitCode {
                 crate::code_server::Launcher::install(cx);
                 #[cfg(feature = "azure")]
                 crate::azure::install(cx);
+                #[cfg(feature = "container")]
+                crate::container::idle::install(cx);
             }
             cx.set_global(appearance.select(light_appearance(cx)));
             app_icon::install();

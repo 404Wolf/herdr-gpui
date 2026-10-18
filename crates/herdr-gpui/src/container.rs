@@ -9,6 +9,7 @@
 mod connect;
 mod engine;
 mod error;
+pub(crate) mod idle;
 mod machine;
 mod settings;
 pub(crate) mod setup;

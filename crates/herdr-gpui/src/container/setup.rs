@@ -40,6 +40,13 @@ pub(crate) fn add_device(
         name,
         install,
     } = request;
+    let saved = cloud::load()?
+        .iter()
+        .filter(|device| device.provider == CloudProvider::Container)
+        .count();
+    if saved >= settings.max {
+        return Err(super::Error::Limit(settings.max).into());
+    }
     let engine = Engine::pick(settings.engine)?;
     report(cloud::Step::Creating);
     machine::create(engine, &name, &settings, cancelled, &|| {

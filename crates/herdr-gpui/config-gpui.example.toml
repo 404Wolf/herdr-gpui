@@ -495,6 +495,12 @@ size = 12
 # cpus = 4
 # memory = "8g"
 # pids_limit = 4096
+# Stop a running container once none of its agents has worked or waited for
+# input for this long (at least 5m); its files stay and the next connection
+# starts it. Default is never.
+# auto_stop = "30m"
+# The most containers kept as devices at once, up to 64. Default is 8.
+# max_containers = 8
 
 # Fly Sprites as devices (experimental). Settings > Cloud devices > Sprites
 # edits this table and saves the API token to the credential store; the token

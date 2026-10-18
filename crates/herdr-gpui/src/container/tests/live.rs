@@ -70,6 +70,24 @@ fn a_container_is_made_reached_and_deleted() {
             &never,
         )?;
         assert!(listed.contains("workspace_list"), "{listed}");
+        // With no agent there, the auto-stop probe reads the container as idle.
+        let (code, ..) = engine.output(
+            "exec",
+            [
+                "exec",
+                "--user",
+                machine::USER,
+                "--env",
+                "HOME=/home/herdr",
+                &id,
+                "/bin/sh",
+                "-c",
+                super::super::idle::BUSY,
+            ],
+            std::time::Duration::from_secs(30),
+            &never,
+        )?;
+        assert_eq!(code, Some(1));
         // The bridge answers discovery, so a connection would work.
         let bridge = herdr_client::connect_command(
             machine::exec(engine, &id)?,

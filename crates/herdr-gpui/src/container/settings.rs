@@ -3,6 +3,7 @@
 
 use super::{Engine, Error, Result};
 use crate::config::ContainerConfig;
+use std::time::Duration;
 
 /// The image a new container starts from when none is set: Debian with Git,
 /// curl, and build tools, so Herdr installs and repositories build as they
@@ -11,6 +12,9 @@ pub(crate) const DEFAULT_IMAGE: &str = "buildpack-deps:bookworm";
 pub(crate) const DEFAULT_CPUS: &str = "4";
 pub(crate) const DEFAULT_MEMORY: &str = "8g";
 pub(crate) const DEFAULT_PIDS: u32 = 4096;
+pub(crate) const DEFAULT_MAX: usize = 8;
+/// A shorter auto-stop would stop a container between an agent's turns.
+const MIN_AUTO_STOP: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Settings {
@@ -20,6 +24,11 @@ pub(crate) struct Settings {
     pub(crate) cpus: String,
     pub(crate) memory: String,
     pub(crate) pids: u32,
+    /// How long a container may sit with no agent at work before it is
+    /// stopped; `None` keeps it running.
+    pub(crate) auto_stop: Option<Duration>,
+    /// The most containers kept as devices at once.
+    pub(crate) max: usize,
 }
 
 impl Settings {
@@ -51,14 +60,43 @@ impl Settings {
                 .filter(|pids| (64..=1 << 20).contains(pids))
                 .ok_or(Error::Field("[container] pids_limit"))?,
         };
+        let auto_stop = auto_stop(text(&config.auto_stop).unwrap_or("never"))
+            .ok_or(Error::Field("[container] auto_stop"))?;
+        let max = match text(&config.max_containers) {
+            None => DEFAULT_MAX,
+            Some(text) => text
+                .parse()
+                .ok()
+                .filter(|max| (1..=64).contains(max))
+                .ok_or(Error::Field("[container] max_containers"))?,
+        };
         Ok(Self {
             engine,
             image,
             cpus,
             memory,
             pids,
+            auto_stop,
+            max,
         })
     }
+}
+
+/// `never`, or a number of minutes or hours such as `30m` or `2h`, at
+/// least five minutes. `None` when it is neither.
+pub(crate) fn auto_stop(text: &str) -> Option<Option<Duration>> {
+    if text.eq_ignore_ascii_case("never") {
+        return Some(None);
+    }
+    let (number, unit) = text.split_at(text.len().checked_sub(1)?);
+    let seconds = match unit {
+        "m" => 60,
+        "h" => 60 * 60,
+        _ => return None,
+    };
+    let number: u64 = number.parse().ok()?;
+    let duration = Duration::from_secs(number.checked_mul(seconds)?);
+    (duration >= MIN_AUTO_STOP).then_some(Some(duration))
 }
 
 fn text(value: &Option<String>) -> Option<&str> {

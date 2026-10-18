@@ -23,7 +23,7 @@ use crate::{
 use gpui::{prelude::*, *};
 
 /// The editable `[container]` keys, in display order, with labels and hints.
-const FIELDS: [(&str, &str); 4] = [
+const FIELDS: [(&str, &str); 5] = [
     (
         "Engine",
         "docker or podman; the first one installed if empty",
@@ -31,6 +31,10 @@ const FIELDS: [(&str, &str); 4] = [
     ("Image", setup::DEFAULT_IMAGE),
     ("CPUs", setup::DEFAULT_CPUS),
     ("Memory", setup::DEFAULT_MEMORY),
+    (
+        "Auto-stop",
+        "never; or 30m, 2h: stop once no agent has worked that long",
+    ),
 ];
 
 enum Update {
@@ -39,7 +43,7 @@ enum Update {
 }
 
 pub(in crate::settings_window) struct ContainerCard {
-    fields: [Entity<SearchInput>; 4],
+    fields: [Entity<SearchInput>; 5],
     /// The config values the fields last loaded; see `follow_config`.
     loaded: ContainerFields,
     /// `None` until the first read finishes.
@@ -85,6 +89,7 @@ impl ContainerCard {
             image: text(1),
             cpus: text(2),
             memory: text(3),
+            auto_stop: text(4),
         }
     }
 
@@ -96,8 +101,14 @@ impl ContainerCard {
 }
 
 /// The editable values in `FIELDS` order.
-fn texts(values: &ContainerFields) -> [&str; 4] {
-    [&values.engine, &values.image, &values.cpus, &values.memory]
+fn texts(values: &ContainerFields) -> [&str; 5] {
+    [
+        &values.engine,
+        &values.image,
+        &values.cpus,
+        &values.memory,
+        &values.auto_stop,
+    ]
 }
 
 /// What the row says about a container's state.

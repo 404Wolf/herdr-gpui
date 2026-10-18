@@ -528,6 +528,14 @@ and keeps its files. **Remove** there only forgets a device; deleting a
 container with its volume is **Remove device…** in its sidebar menu, which
 checks it for unpushed work first.
 
+`[container] auto_stop`, such as `30m`, stops a running container once none
+of its agents has worked or waited for input that long. A closed window does
+not count: agents keep working without one, so each minute the container's own
+Herdr is asked, and a container the app has not watched since launch starts
+its timeout rather than stopping. Its files stay in its volume and the next
+connection starts it. `[container] max_containers` (8 unless set) refuses a
+new container, from Settings or a dispatch, once that many are saved.
+
 The image needs `curl` to install Herdr and `git` for checkouts; the default,
 `buildpack-deps:bookworm`, has both and common build tools. Containers share
 this computer's kernel: they keep honest agents apart, not hostile code, for
