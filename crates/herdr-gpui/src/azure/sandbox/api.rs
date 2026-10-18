@@ -174,21 +174,45 @@ pub(super) fn create(
 ) -> Result<String> {
     let deadline = Instant::now() + ACCESS_TIMEOUT;
     let retry = |refused| granted && refused && Instant::now() < deadline;
-    let id = loop {
-        let result = create_once(client, settings);
-        if !retry(matches!(result, Err(Error::Forbidden(_)))) {
-            break result?;
-        }
-        wait(cancelled)?;
-    };
-    loop {
-        let result = state(client, settings, &id);
-        if !retry(matches!(result, Err(Error::Forbidden(_)))) {
-            result?;
-            return Ok(id);
-        }
-        wait(cancelled)?;
-    }
+    create_and_check(
+        || loop {
+            if cancelled() {
+                return Err(Error::Cancelled);
+            }
+            let result = create_once(client, settings);
+            if !retry(matches!(result, Err(Error::Forbidden(_)))) {
+                return result;
+            }
+            wait(cancelled)?;
+        },
+        |id| loop {
+            if cancelled() {
+                return Err(Error::Cancelled);
+            }
+            let result = state(client, settings, id);
+            if !retry(matches!(result, Err(Error::Forbidden(_)))) {
+                return result.map(drop);
+            }
+            wait(cancelled)?;
+        },
+        // Cancellation ends the create, but must not cancel its rollback.
+        |id| delete(client, settings, id, &|| false),
+    )
+}
+
+/// Once Azure returns an ID, even failure of the first read owns a machine
+/// to delete. Only a checked ID transfers that responsibility to setup.
+pub(super) fn create_and_check(
+    create: impl FnOnce() -> Result<String>,
+    check: impl FnOnce(&str) -> Result<()>,
+    discard: impl FnOnce(&str) -> Result<()>,
+) -> Result<String> {
+    let id = create()?;
+    super::super::setup::undo_on_error(
+        || check(&id),
+        || super::super::setup::discard_created("sandbox", &id, || discard(&id)),
+    )?;
+    Ok(id)
 }
 
 fn create_once(client: &Client, settings: &Settings) -> Result<String> {

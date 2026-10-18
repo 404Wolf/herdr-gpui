@@ -384,5 +384,6 @@ fn a_shell_that_never_starts_is_a_failed_connection() {
     service.join().unwrap();
 }
 
+mod creation;
 mod errors;
 mod input;

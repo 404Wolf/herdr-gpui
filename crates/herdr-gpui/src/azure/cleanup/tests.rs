@@ -1,6 +1,8 @@
 #![allow(clippy::expect_used)]
 use super::*;
 
+mod scope;
+
 const MINE: &str = "11111111-1111-1111-1111-111111111111";
 const OTHER: &str = "22222222-2222-2222-2222-222222222222";
 

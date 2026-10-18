@@ -7,6 +7,8 @@ use std::time::{Duration, Instant};
 const API_VERSION_RESOURCES: &str = "2021-04-01";
 /// 2024-03-01 or later, for an ephemeral OS disk on local NVMe.
 const API_VERSION_COMPUTE: &str = "2024-07-01";
+// Managed disks have their own version set, separate from virtual machines.
+const API_VERSION_DISKS: &str = "2024-03-02";
 const API_VERSION_NETWORK: &str = "2023-09-01";
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
 const TIMEOUT: Duration = Duration::from_secs(10 * 60);
@@ -483,9 +485,7 @@ pub(crate) fn leftover_paths(settings: &Settings, vm_name: &str) -> Vec<String> 
         format!(
             "{group}/Microsoft.Network/networkInterfaces/{vm_name}-nic?api-version={API_VERSION_NETWORK}"
         ),
-        format!(
-            "{group}/Microsoft.Compute/disks/{vm_name}-osdisk?api-version={API_VERSION_COMPUTE}"
-        ),
+        format!("{group}/Microsoft.Compute/disks/{vm_name}-osdisk?api-version={API_VERSION_DISKS}"),
         format!(
             "{group}/Microsoft.Network/publicIPAddresses/{vm_name}-ip?api-version={API_VERSION_NETWORK}"
         ),
