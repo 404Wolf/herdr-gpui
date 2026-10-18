@@ -3613,6 +3613,7 @@ dependencies = [
  "webpki-roots",
  "windows 0.62.2",
  "windows-registry 0.100.0",
+ "windows-result 0.100.0",
  "windows-sys 0.61.2",
  "winresource",
  "zed-font-kit",
