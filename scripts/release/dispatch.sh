@@ -38,6 +38,25 @@ repo=penso/herdr-gpui
 sha=$(git rev-parse HEAD)
 [[ "$(gh api "repos/$repo/git/ref/heads/main" --jq .object.sha)" == "$sha" ]] || fail 'HEAD does not match origin main on GitHub; no fetch or checkout was performed'
 
+# The release workflow builds and packages but leaves the test suites to CI,
+# and its validate job refuses a commit CI has not passed. Wait for that here
+# rather than dispatching a run that is bound to stop.
+ci_runs() {
+    gh api "repos/$repo/actions/workflows/ci.yml/runs?head_sha=$sha&event=push&branch=main&per_page=20" \
+        --jq "[.workflow_runs[] | select(.head_sha == \"$sha\")]"
+}
+if [[ $workflow == release.yml ]]; then
+    runs=$(ci_runs)
+    if [[ "$(jq '[.[] | select(.conclusion == "success")] | length' <<< "$runs")" == 0 ]]; then
+        pending=$(jq -r '[.[] | select(.status != "completed")][0].id // empty' <<< "$runs")
+        [[ -n "$pending" ]] || fail "CI has not passed on $sha; fix main or rerun CI before releasing"
+        printf 'Waiting for CI on %s: https://github.com/%s/actions/runs/%s\n' "$sha" "$repo" "$pending"
+        gh run watch "$pending" --repo "$repo" --exit-status >/dev/null || true
+        [[ "$(ci_runs | jq '[.[] | select(.conclusion == "success")] | length')" != 0 ]] ||
+            fail "CI did not pass on $sha; nothing was dispatched"
+    fi
+fi
+
 # A nonce avoids confusing this dispatch with another run for the same SHA.
 request_id=$(openssl rand -hex 16)
 if [[ $workflow == promote.yml ]]; then

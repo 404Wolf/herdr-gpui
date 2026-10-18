@@ -125,9 +125,7 @@ class ReleaseTargets(unittest.TestCase):
             ("ubuntu-24.04", "x86_64-unknown-linux-gnu"),
             ("ubuntu-24.04-arm", "aarch64-unknown-linux-gnu")])
         for command in ('cargo build --locked --release -p herdr-gpui --target "$TARGET"',
-                        'cargo test --locked --release -p herdr-gpui --test cli --target "$TARGET"',
-                        'cargo clippy --locked --workspace --all-targets --all-features -- -D warnings',
-                        'cargo test --locked --workspace --all-features',
+                        'python3 scripts/release/smoke-cli.py "target/$TARGET/release/herdr-gpui"',
                         'test "$(rustc -vV | sed -n \'s/^host: //p\')" = "$TARGET"',
                         'name: linux-package-${{ matrix.target }}',
                         'bash scripts/release/package-linux.sh "$VERSION" "$TARGET"',
@@ -144,9 +142,7 @@ class ReleaseTargets(unittest.TestCase):
             ("windows-2025", "x86_64-pc-windows-msvc"),
             ("windows-11-arm", "aarch64-pc-windows-msvc")])
         for command in ('cargo build --locked --release -p herdr-gpui -p herdr-gpui-launcher --target "$TARGET"',
-                        'cargo test --locked --release -p herdr-gpui --test cli --target "$TARGET"',
-                        'cargo clippy --locked --workspace --all-targets --all-features -- -D warnings',
-                        'cargo test --locked -p herdr-protocol -p herdr-client',
+                        'python scripts/release/smoke-cli.py "target/$TARGET/release/herdr-gpui.exe"',
                         'test "$(rustc -vV | sed -n \'s/^host: //p\')" = "$TARGET"',
                         'python scripts/release/generate-notices.py',
                         'python scripts/release/package-windows.py "$VERSION" "$TARGET"',
@@ -155,6 +151,24 @@ class ReleaseTargets(unittest.TestCase):
                         'python scripts/release/windows-installer.py smoke',
                         'name: windows-package-${{ matrix.target }}'):
             self.assertIn(command, windows)
+        macos = jobs["macos-build"]
+        self.assertIn("    runs-on: macos-15\n", macos)
+        self.assertNotIn("intel", workflow)
+        self.assertIn('python3 scripts/release/smoke-cli.py "target/$TARGET/release/herdr-gpui"', macos)
+        for name in ("macos-build", "linux", "windows"):
+            # `cargo test` rebuilds the binary with dev-dependency features and
+            # overwrites the one built for release; the shipped bytes are
+            # smoke-tested instead, and CI runs the suites on this commit.
+            self.assertNotIn("cargo test", jobs[name], name)
+            self.assertNotIn("cargo install", jobs[name], name)
+            self.assertIn("uses: taiki-e/install-action@", jobs[name], name)
+            self.assertIn("tool: cargo-about@0.9.2\n", jobs[name], name)
+            self.assertIn("fallback: none\n", jobs[name], name)
+        self.assertNotIn("macos-checks", workflow)
+        validate = jobs["validate"]
+        self.assertIn("actions/workflows/ci.yml/runs?head_sha=$EXPECTED_SHA&event=push&branch=main", validate)
+        self.assertIn('.head_sha == env.EXPECTED_SHA and .conclusion == "success"', validate)
+        self.assertIn("      actions: read\n", validate)
         for target in ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"):
             # The Authenticode-signed builds are attested and published once
             # signing is set up; the tested unsigned ones only until then.
@@ -181,7 +195,7 @@ class ReleaseTargets(unittest.TestCase):
         self.assertEqual(workflow.count('artifact-manifest.py create "$VERSION" dist'), 1)
         self.assertNotIn("scripts/package-linux.sh", workflow)
         self.assertNotIn("uses: actions/cache", workflow)
-        for name in ("macos-checks", "macos-build", "linux", "windows", "metadata", "changelog"):
+        for name in ("macos-build", "linux", "windows", "metadata", "changelog"):
             self.assertIn("    needs: validate\n", jobs[name])
             self.assertNotIn("secrets.", jobs[name])
             self.assertNotIn("environment:", jobs[name])

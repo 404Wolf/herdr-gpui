@@ -171,4 +171,4 @@ class CiPolicy(unittest.TestCase):
             "[windows-2025, windows-11-arm]",
         ])
         self.assertEqual(re.findall(r"^          - runner: (.+)$", WORKFLOW, re.M),
-                         ["macos-15", "macos-15-intel", "ubuntu-24.04", "ubuntu-24.04-arm"])
+                         ["macos-15", "macos-15", "ubuntu-24.04", "ubuntu-24.04-arm"])
