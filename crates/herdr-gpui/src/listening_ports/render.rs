@@ -25,7 +25,9 @@ impl HerdrWindow {
                 .debug_selector(|| "listening-ports".into())
                 .role(Role::Group)
                 .aria_label("Listening ports")
+                .flex()
                 .flex_none()
+                .items_center()
                 .h_full()
                 .px(px(6.))
                 .child(chips(
