@@ -207,6 +207,7 @@ for what only Herdr UI shows or keeps.
 | --- | --- |
 | Show a file at a line, read-only | `herdr-gpui code open src/main.rs:42` |
 | Open the review of your uncommitted changes | `herdr-gpui review` |
+| Open px0 to browse, edit, or review your local checkout (macOS/Windows) | `herdr-gpui px0 open` |
 | Get notes the user sent this pane (pages, reviews, terminals) | `herdr-gpui feedback --wait 600` |
 | Keep a note on this worktree (repository and branch) | `herdr-gpui notes set waiting on CI` |
 | Save the working tree before a risky change, and compare later | `herdr-gpui checkpoint create before refactor`, `herdr-gpui checkpoint diff ID` |

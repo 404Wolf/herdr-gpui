@@ -2930,6 +2930,48 @@ the page's storage, which belongs to one address.
   browser keeps its tab keys from its pages. Click a terminal to take the
   keyboard back.
 
+## px0
+
+**Open px0** in the Terminal menu or command palette, or **px0** in an editor
+group's **…** menu, opens [px0](https://px0.ai/) on the local workspace's
+starting directory. Each workspace has one px0 tab; opening it again moves it
+to the group in use. Split it beside terminals to browse, edit, and review code.
+The tab shows px0's own web UI without the browser toolbar, and keeps its page
+alive when another tab is selected. `open_px0` is available in keybindings with
+no default shortcut.
+
+Install a px0 build with the review workbench (`/api/wb/ping` and `?open=`).
+Herdr UI discovers a running workbench from px0's `workbench.lock`, or looks
+for `px0` (`px0.exe` on Windows) on the login shell's PATH and starts it when
+a tab first needs it. It passes `-no-open -no-update -no-color -host 127.0.0.1
+-port 0 -base-path /` with no target, then reads the actual assigned address.
+It never installs or updates px0. An owned workbench keeps its registry and
+workspace sessions under `<Herdr UI state>/px0-state/px0`; px0's normal settings
+still apply. A discovered workbench keeps its existing state.
+
+**Settings > Code > px0** accepts the address of a workbench you run yourself;
+leave it empty for automatic discovery/start and press **Apply px0 address**.
+The same setting can be written in `config-gpui.local.toml`:
+
+```toml
+[px0]
+url = "http://127.0.0.1:7777/"
+```
+
+Only loopback HTTP addresses are accepted, including a base path when needed.
+The app checks that the address answers as a workbench before loading a page.
+Startup failures appear in the tab with **Retry**. Quitting stops the workbench
+the app started and its children; attaching to an existing workbench never gives
+Herdr UI ownership of it. Closing a tab leaves the workbench available for other
+tabs. px0 manages its own per-checkout children and idle cleanup.
+
+Agents can use `herdr-gpui px0 open --json` to open or focus their workspace's
+tab. Success reports the tab ID and workspace; it means the tab opened, while
+server startup continues in the tab. The existing `--window` targeting applies.
+This integration currently supports local workspaces on macOS and Windows;
+remote workspaces and Linux embedded pages report unsupported. px0's own agent
+harnesses are separate from Herdr's running terminal agents.
+
 ## System Notifications
 
 With shared `[ui.toast] delivery = "system"`, daemon notifications (agent

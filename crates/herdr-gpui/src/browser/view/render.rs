@@ -44,12 +44,12 @@ impl HerdrWindow {
                 let (background, text) = self.tab_colors(shown == Some(id), slot.id);
                 // The VS Code tab bears its mark; a review tab shows a diff,
                 // a code tab a file, and the overview devices, not a page.
-                let icon = match tab.location {
-                    _ if tab.place.is_code() => "icons/vscode.svg",
-                    Some(Location::Review { .. }) => "icons/diff-unified.svg",
-                    Some(Location::Code { .. }) => "icons/code.svg",
-                    Some(Location::Orchestrator { .. }) => "icons/pulse.svg",
-                    Some(Location::Devices) => "icons/devices.svg",
+                let icon = match (tab.place.editor(), &tab.location) {
+                    (Some(editor), _) => editor.icon(),
+                    (_, Some(Location::Review { .. })) => "icons/diff-unified.svg",
+                    (_, Some(Location::Code { .. })) => "icons/code.svg",
+                    (_, Some(Location::Orchestrator { .. })) => "icons/pulse.svg",
+                    (_, Some(Location::Devices)) => "icons/devices.svg",
                     _ => GLOBE,
                 };
                 let tab = div()
@@ -161,7 +161,7 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let id = tab.id;
-        let code = tab.place.is_code();
+        let code = tab.place.is_editor();
         let loaded = tab.location.is_some();
         let external = match &tab.location {
             Some(Location::Web { url }) => Some(url.clone()),
@@ -341,10 +341,9 @@ impl HerdrWindow {
                     }
                 },
             ));
-        let content = match (page, &failure) {
-            (Some(page), None) => self.page_area(page).into_any_element(),
-            // The VS Code tab says why its page is not there yet.
-            _ if tab.place.is_code() => self.render_code_status(failure.clone(), cx),
+        let content = match (page, &failure, tab.place.editor()) {
+            (Some(page), None, _) => self.page_area(page).into_any_element(),
+            (_, _, Some(editor)) => self.render_editor_status(editor, failure.clone(), cx),
             _ => div()
                 .flex_1()
                 .min_h_0()

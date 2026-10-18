@@ -63,6 +63,7 @@ pub(crate) enum TabOp {
     },
     /// The review of the caller's workspace's uncommitted changes.
     Review,
+    Px0,
 }
 
 impl TabOp {
@@ -73,7 +74,8 @@ impl TabOp {
             | Self::Edit { .. }
             | Self::Devices
             | Self::Orchestrator { .. }
-            | Self::Review => ARRIVE_WAIT_SECONDS,
+            | Self::Review
+            | Self::Px0 => ARRIVE_WAIT_SECONDS,
             Self::List { .. }
             | Self::Focus { .. }
             | Self::Close { .. }

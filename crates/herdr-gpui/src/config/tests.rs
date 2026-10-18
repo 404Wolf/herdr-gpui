@@ -35,6 +35,7 @@ mod missing_fonts;
 mod notification_settings;
 mod omarchy_theme;
 mod preferences;
+mod px0;
 mod repository_icons;
 mod sidebar_scope;
 mod sidebar_search;
