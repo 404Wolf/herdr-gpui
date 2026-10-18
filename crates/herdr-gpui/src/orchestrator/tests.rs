@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 mod actions;
 mod beads;
 mod full_listing;
+mod git;
 mod github;
 mod gitlab;
 mod incremental;

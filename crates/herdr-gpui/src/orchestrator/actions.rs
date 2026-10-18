@@ -404,23 +404,27 @@ fn destination(
             prepared: Some(prepared),
         });
     }
-    let commit = site
-        .host
-        .exec(
-            "git",
-            &[
-                "-C",
-                &site.main_root,
-                "rev-parse",
-                "--verify",
-                "--quiet",
-                &format!("{base}^{{commit}}"),
-            ],
-            Host::QUERY_IDLE,
-            cancelled,
-        )
-        .map_err(script("Reading the base commit"))?;
-    let commit = String::from_utf8_lossy(&commit).trim().to_owned();
+    let commit = if site.host.is_local() {
+        super::git::commit(std::path::Path::new(&site.main_root), base)?
+    } else {
+        let output = site
+            .host
+            .exec(
+                "git",
+                &[
+                    "-C",
+                    &site.main_root,
+                    "rev-parse",
+                    "--verify",
+                    "--quiet",
+                    &format!("{base}^{{commit}}"),
+                ],
+                Host::QUERY_IDLE,
+                cancelled,
+            )
+            .map_err(script("Reading the base commit"))?;
+        String::from_utf8_lossy(&output).trim().to_owned()
+    };
     if commit.len() < 40 || !commit.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(Error::Output {
             operation: "Reading the base commit",

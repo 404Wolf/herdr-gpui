@@ -49,7 +49,7 @@ pub(crate) fn detect(
     cancelled: &AtomicBool,
 ) -> Result<RepoInfo> {
     if host.is_local() {
-        return detect_local(target, host, checkout, cancelled);
+        return detect_local(target, checkout);
     }
     let body = format!(
         r#"cd -- {checkout} 2>/dev/null || exit 0
@@ -97,70 +97,26 @@ pub(super) fn parse(target: &ConnectTarget, output: &str) -> Result<RepoInfo> {
     Ok(assemble(target, common, main_root, beads, &remotes))
 }
 
-/// What [`detect`]'s script reads, with `git` run directly: this machine
-/// needs no shell, so every client platform reads its own checkouts.
-fn detect_local(
-    target: &ConnectTarget,
-    host: &Host,
-    checkout: &str,
-    cancelled: &AtomicBool,
-) -> Result<RepoInfo> {
-    const READING: &str = "Reading the repository";
-    if !Path::new(checkout).is_dir() {
+/// What [`detect`]'s script reads, read with gix: this machine starts no
+/// shell or `git`, so every client platform reads its own checkouts.
+fn detect_local(target: &ConnectTarget, checkout: &str) -> Result<RepoInfo> {
+    let Some(found) = super::git::checkout(Path::new(checkout))? else {
         return Err(Error::NotARepository);
-    }
-    let git = |dir: &str, args: &[&str]| -> Result<String> {
-        let mut full = vec!["-C", dir];
-        full.extend_from_slice(args);
-        let output = host
-            .exec("git", &full, Host::QUERY_IDLE, cancelled)
-            .map_err(script(READING))?;
-        String::from_utf8(output).map_err(|_| Error::Output { operation: READING })
     };
-    let root = match git(checkout, &["rev-parse", "--show-toplevel"]) {
-        Ok(root) => line(&root).to_owned(),
-        Err(Error::Script {
-            source: herdr_client::Error::ScriptExit { .. },
-            ..
-        }) => return Err(Error::NotARepository),
-        Err(error) => return Err(error),
-    };
-    let common = git(&root, &["rev-parse", "--git-common-dir"])?;
-    let common = Path::new(&root).join(line(&common));
-    let common = plain(
-        common
-            .canonicalize()
-            .map_err(|_| Error::Output { operation: READING })?,
-    );
-    let main = git(&root, &["worktree", "list", "--porcelain"])?
-        .lines()
-        .next()
-        .and_then(|line| line.strip_prefix("worktree "))
-        .map(str::to_owned)
-        .unwrap_or(root);
-    let beads = Path::new(&main).join(".beads").is_dir();
-    let names = git(&main, &["remote"])?;
-    let mut remotes = Vec::new();
-    for name in names.lines().filter(|name| !name.is_empty()) {
-        let url = git(&main, &["remote", "get-url", name]).unwrap_or_default();
-        remotes.push((name.to_owned(), line(&url).to_owned()));
-    }
-    let remotes: Vec<_> = remotes
+    let main = found.main.to_string_lossy().into_owned();
+    let beads = found.main.join(".beads").is_dir();
+    let remotes: Vec<_> = found
+        .remotes
         .iter()
         .map(|(name, url)| (name.as_str(), url.as_str()))
         .collect();
     Ok(assemble(
         target,
-        common.to_string_lossy().into_owned(),
+        found.common.to_string_lossy().into_owned(),
         main,
         beads,
         &remotes,
     ))
-}
-
-/// One line of output without its line ending; a path may end in a space.
-fn line(output: &str) -> &str {
-    output.trim_end_matches(['\r', '\n'])
 }
 
 /// `path` without Windows' `\\?\` prefix, which `canonicalize` adds and Git
