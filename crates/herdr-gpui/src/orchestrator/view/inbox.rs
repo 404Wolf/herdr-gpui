@@ -422,7 +422,7 @@ impl OrchestratorView {
         let look = &self.look;
         if !self.refreshing() {
             return look
-                .icon_button("orchestrator-refresh", "icons/refresh.svg")
+                .icon_button("orchestrator-refresh", "icons/refresh.svg", "Refresh")
                 .debug_selector(|| "orchestrator-refresh".into())
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.ask_refresh();
@@ -593,11 +593,15 @@ impl OrchestratorView {
             .child(div().flex_1().min_w_0().child(self.search.clone()))
             .when(!self.query.is_empty(), |field| {
                 field.child(
-                    look.icon_button("orchestrator-search-clear", "icons/close.svg")
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.search.update(cx, |search, cx| search.clear(cx));
-                            window.focus(&this.search.read(cx).focus.clone(), cx);
-                        })),
+                    look.icon_button(
+                        "orchestrator-search-clear",
+                        "icons/close.svg",
+                        "Clear search",
+                    )
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.search.update(cx, |search, cx| search.clear(cx));
+                        window.focus(&this.search.read(cx).focus.clone(), cx);
+                    })),
                 )
             })
     }

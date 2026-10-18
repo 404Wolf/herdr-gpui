@@ -767,6 +767,12 @@ impl Render for SettingsWindow {
                         div()
                             .id("settings-body")
                             .debug_selector(|| "settings-body".into())
+                            .role(Role::TabPanel)
+                            .aria_label(if searching.is_some() {
+                                "Results"
+                            } else {
+                                self.section.label()
+                            })
                             .flex_1()
                             .min_w_0()
                             .min_h_0()

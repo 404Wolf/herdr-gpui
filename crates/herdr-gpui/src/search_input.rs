@@ -3,9 +3,9 @@ use std::ops::Range;
 
 use gpui::{
     App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, EntityInputHandler,
-    EventEmitter, FocusHandle, Focusable, KeyDownEvent, MouseButton, Pixels, Point, ShapedLine,
-    TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window, canvas, div, fill, point,
-    prelude::*, px, rgb, size,
+    EventEmitter, FocusHandle, Focusable, KeyDownEvent, MouseButton, Pixels, Point, Role,
+    ShapedLine, SharedString, TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window, canvas,
+    div, fill, point, prelude::*, px, rgb, size,
 };
 
 use crate::config::{Config, FontConfig, Theme};
@@ -513,6 +513,21 @@ impl Render for SearchInput {
         let height = px(self.font.line_height());
         div()
             .debug_selector(|| "theme-search".into())
+            .id("search-input")
+            .map(|field| {
+                // A masked field is a secret: its role says so and it reports
+                // no value, so a screen reader never reads it out.
+                let field = if self.masked {
+                    field.role(Role::PasswordInput)
+                } else {
+                    field
+                        .role(Role::TextInput)
+                        .aria_value(SharedString::from(self.edit.text.clone()))
+                };
+                field.when(!self.placeholder.is_empty(), |field| {
+                    field.aria_label(SharedString::from(self.placeholder.clone()))
+                })
+            })
             .w_full()
             .when(self.framed, |field| {
                 field
@@ -587,7 +602,7 @@ impl Render for SearchInput {
                         let completion = input
                             .shown_completion()
                             .filter(|_| !placeholder && input.focus.is_focused(window));
-                        let text: gpui::SharedString = if placeholder {
+                        let text: SharedString = if placeholder {
                             input.placeholder.clone().into()
                         } else if input.masked {
                             "*".repeat(input.text().chars().count()).into()

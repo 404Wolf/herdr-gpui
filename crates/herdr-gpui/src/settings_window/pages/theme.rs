@@ -151,7 +151,7 @@ impl SettingsWindow {
         ui::row(&self.theme, "theme-follow", "Follow Herdr's theme")
             .tag(ui::Source::Herdr)
             .description("Use the theme set in Herdr's own config instead of a GUI choice.")
-            .control(
+            .switch(
                 ui::toggle(&self.theme, "theme-follow-toggle", following, true).on_click(
                     cx.listener(move |this, _, _, cx| {
                         let name = if following {
@@ -178,7 +178,7 @@ impl SettingsWindow {
         let high = self.config.contrast == Contrast::High;
         ui::row(&self.theme, "theme-contrast", "High contrast")
             .description("Raise text and marker contrast on every theme.")
-            .control(
+            .switch(
                 ui::toggle(&self.theme, "theme-contrast-toggle", high, true).on_click(cx.listener(
                     move |this, _, _, cx| {
                         let contrast = if high {

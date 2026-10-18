@@ -3,6 +3,7 @@
 use super::*;
 use herdr_client::protocol::ClientShellWorktree;
 
+mod staged_metadata;
 mod wanted;
 mod wsl_hosts;
 

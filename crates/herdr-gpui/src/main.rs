@@ -4,6 +4,7 @@
 #![cfg_attr(test, allow(clippy::disallowed_methods))]
 
 mod about;
+mod accessibility;
 mod actions;
 mod agent_notes;
 mod agent_skill;

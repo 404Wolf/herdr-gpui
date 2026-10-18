@@ -12,6 +12,7 @@
 mod actions;
 mod beads;
 mod error;
+mod git;
 mod github;
 mod gitlab;
 mod host;

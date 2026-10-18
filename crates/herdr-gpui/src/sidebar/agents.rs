@@ -24,6 +24,15 @@ pub(super) fn agents_sort(window: &HerdrWindow, cx: &mut Context<HerdrWindow>) -
     div()
         .id("agents-sort")
         .debug_selector(|| "agents-sort".into())
+        // A plugin's view only names itself; the sort is a button.
+        .map(|sort| match &view {
+            Some(view) => sort.role(Role::Label).aria_value(format!("Agents: {view}")),
+            None => window.chrome_stop(
+                crate::window::chrome_focus::Region::Sidebar,
+                sort.role(Role::Button)
+                    .aria_label(format!("Sort agents: {}", window.agent_sort)),
+            ),
+        })
         .flex_none()
         .min_w_0()
         .truncate()

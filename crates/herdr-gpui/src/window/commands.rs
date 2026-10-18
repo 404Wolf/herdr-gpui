@@ -180,7 +180,7 @@ impl HerdrWindow {
                 focus,
                 active: true,
             });
-            state.surface = None;
+            state.invalidate_surface();
             state.dirty = true;
             self.live = state.clone();
             self.activation_deadline = Some(
@@ -423,6 +423,8 @@ impl HerdrWindow {
                 return;
             }
             Command::ToggleSidebar => self.toggle_sidebar(),
+            Command::FocusNextRegion => return self.cycle_region(true, window, cx),
+            Command::FocusPreviousRegion => return self.cycle_region(false, window, cx),
             // Window chrome only, so it runs while the daemon is still away.
             Command::ToggleStatusBar => {
                 self.status_bar_visible = !self.status_bar_visible;
@@ -436,6 +438,13 @@ impl HerdrWindow {
             }
             Command::DevicesOverview => {
                 self.open_devices_overview(window, cx);
+                return;
+            }
+            // A focused page zooms instead of the terminal font, and keeps
+            // the keyboard if it held it.
+            Command::IncreaseFontSize | Command::DecreaseFontSize | Command::ResetFontSize
+                if self.zoom_focused_page(command, cx) =>
+            {
                 return;
             }
             Command::IncreaseFontSize | Command::DecreaseFontSize => {

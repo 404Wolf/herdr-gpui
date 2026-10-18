@@ -1024,7 +1024,9 @@ install command is never run.
 The terminal face can also be resized for the current session from the View menu,
 the in-app menu, the command palette, or `cmd-=` / `cmd--` / `cmd-0`. Adjustments
 are clamped to the same 8..48 range, apply to the terminal only, and are never
-written to disk, so a reload or a restart returns to the configured size.
+written to disk, so a reload or a restart returns to the configured size. While
+a browser tab is focused, the same commands zoom its page instead (see
+[Browser Tabs](#browser-tabs)).
 
 A tab asks before closing only while one of its agents is working or blocked
 on a prompt; tabs whose agents are idle or done, or that have none, close at
@@ -1743,7 +1745,10 @@ macOS terminals do, with a backslash before each space, quote, bracket, comma,
 colon, or other character a shell would interpret (`/tmp/Shot\ 1.png`), and
 before a final period, separated by spaces; the drop never presses Enter. The
 escapes keep a dropped path one Cmd-clickable link. Local drops only paste paths; SSH drops
-read and transfer the selected files.
+read and transfer the selected files. The exception is a live macOS screenshot
+thumbnail, dragged before it saves: macOS lets only Herdr UI read its temporary
+file, not the pane's processes, so its image goes through the
+[image bridge](#images), as a pasted clipboard image does.
 Drops are limited to 256 paths and 64 KiB of escaped text. Non-UTF-8 paths and
 paths containing control characters are rejected rather than altered.
 
@@ -2211,7 +2216,8 @@ including the backslash-escaped paths used by terminal file drops.
 Local endpoints on macOS, Linux, and Windows use the same bridge for Cmd-V
 clipboard images (Ctrl-Shift-V or Shift-Insert on Windows), because a GUI text
 paste cannot carry image data. Local drops and pasted
-paths stay ordinary path pastes, and local Ctrl-V is sent to the terminal
+paths stay ordinary path pastes, except a live screenshot thumbnail (see
+[File Drops](#file-drops)), and local Ctrl-V is sent to the terminal
 unchanged so agents can read the shared clipboard themselves.
 
 The daemon writes a temporary file and pastes its path into the
@@ -2624,6 +2630,15 @@ come back after a restart; closing a workspace in Herdr removes its tabs.
 - The toolbar has back, forward, reload, the address field, and a button that
   opens the page in the system browser. The address field accepts bare hosts:
   `localhost:3000` becomes `http://localhost:3000/`.
+- While a browser tab is focused, Increase and Decrease Font Size
+  (`cmd-=` / `cmd--`) zoom its page a step, from 50% to 300%, and Reset Font
+  Size (`cmd-0`) returns it to 100%. The tab is the one whose page has the
+  keyboard, or else the one the group in use shows. On macOS the keys bound
+  to those commands zoom a page that has the keyboard too, as Safari's do,
+  so the page cannot take them for itself. Each tab keeps its own zoom, saved with it, and every window's
+  page for the tab follows it. A zoomed page's toolbar shows its zoom;
+  clicking it returns to 100%. An agent zooms a tab with
+  `herdr-gpui browser zoom`.
 - Close Tab and Close Pane close the browser tab being shown, without asking.
   Clicking a Herdr tab, or switching Herdr tabs in the workspace, shows its
   terminal again. Next Tab, Previous Tab, and the tab numbers count browser
@@ -2693,6 +2708,12 @@ them to the agent that opened it, so it can change the page.
   copies the same ones. **Clear sent** removes the sent notes, ending the
   round. Another Send waits while screenshots are saving, delivery is pending,
   or the previous batch is still waiting to be collected through `browser feedback`.
+  While a batch waits for a busy agent or for `browser feedback`, the panel
+  says so and offers **Withdraw** in place of Send: it takes the batch back
+  before the agent has it and marks its notes unsent, so you can edit them and
+  send again. A batch already typed into the pane cannot be withdrawn, and
+  nothing joins an agent's running turn: Herdr offers this client no way to
+  prompt an agent mid-run, so busy agents get notes once they are idle.
 - The prompt goes to the agent one way only. An agent waiting in
   `browser feedback --wait` receives it there. Otherwise it is typed into the
   agent's pane and submitted once Herdr reports the agent idle (or still
@@ -2835,7 +2856,8 @@ comments on a pull request.
   As with page notes, sent notes stay listed until **Clear sent**: click one
   to edit it, and Send delivers only new or edited notes, or all of them
   again once every one was sent. Another Send waits until the previous batch
-  has been delivered or collected through `browser feedback`. The notes icon
+  has been delivered or collected through `browser feedback`, or until you
+  **Withdraw** it. The notes icon
   counts the unsent ones.
 - Git runs in the background, never on the UI thread, with explicit `a/`/`b/`
   prefixes and no external diff tools or text conversion. Diff text is
@@ -3087,8 +3109,9 @@ the page's storage, which belongs to one address.
   and the keys macOS keeps for the app (quit, hide, minimize, and cycling
   windows) still reach the app. So do the keys bound to Next Tab, Previous
   Tab, the tab numbers, and moving to another workspace or agent, as a web
-  browser keeps its tab keys from its pages. Click a terminal to take the
-  keyboard back.
+  browser keeps its tab keys from its pages, and the keys bound to the font
+  size commands, which zoom the page. Click a terminal to take the keyboard
+  back.
 
 ## System Notifications
 
@@ -3858,7 +3881,10 @@ Ctrl+Shift+U is left unbound for
   `[[keys.command]]` shortcuts, prefix chords or direct keys, run their
   command through `command.invoke` on the focused pane, and the palette lists
   them with these keys; like Herdr, a keystroke one of its actions already
-  holds keeps that action. Daemon keys add to the catalog
+  holds keeps that action, as does one listed in `[keybindings]`. A GUI
+  catalog default is no Herdr action, so it yields: a custom command on
+  `ctrl+shift+t` runs instead of New Tab's Linux default, without unbinding
+  `new_tab`. Daemon keys add to the catalog
   defaults and take a keystroke from its default command. A command named in
   `[keybindings]` keeps exactly the keystrokes listed there, daemon chords
   included, and a keystroke listed there outranks the daemon's, even the
@@ -4009,9 +4035,13 @@ Ctrl+Shift+U is left unbound for
 
 Socket I/O belongs to `herdr-client`'s worker. A separate event thread drains all
 ordered events into a bounded latest-state cache. The UI samples changed state
-at most once per 16 ms without blocking. Snapshots invalidate surfaces with a
-different boot/projection revision; input waits for a coherent surface. Reconnect
-replaces the cache, so late events from an old connection cannot affect the UI.
+at most once per 16 ms without blocking. A metadata-only snapshot is staged
+while the displayed snapshot and surface stay coherent, so input keeps flowing;
+a boot, focus, pane-layout, zoom, keybinding, or command change invalidates the
+surface, and input waits for a coherent one. Notices, sounds, and agent
+checkpoints judge agent status from the staged metadata, so a status change
+that arrives before its surface still counts. Reconnect replaces the cache, so
+late events from an old connection cannot affect the UI.
 
 ### Scrolling Semantics
 
@@ -4238,11 +4268,37 @@ window, the main window exposes:
 - the terminal as a document named **Terminal**, whose text pattern holds the
   rows on screen and the selection (see `terminal/accessibility.rs`), so
   Narrator's reading commands and selection tools work on it;
-- the title bar's **Sidebar** (expanded or collapsed), **Back**, **Forward**,
-  and **GitHub account** buttons;
-- the tab strip as a tab list: each tab by its label, with the current one
-  selected, its **Close tab** button, **New tab**, **Split**, and **Tab
-  actions**.
+- the in-window menu bar as a menu bar whose headings expand and collapse, and
+  an open menu as a menu: each item by its name and shortcut, a checked item
+  as a checked menu item, an unavailable one as unavailable, and the
+  highlighted one reported as focused as the arrows move;
+- the title bar's **Sidebar** (expanded or collapsed), **Back**, **Forward**
+  (unavailable without history), and **GitHub account** buttons;
+- the tab strip as a tab list named **Tabs**: each tab by its label, with the
+  current one selected, its **Close tab** button, **New tab**, **Split**, and
+  **Tab actions**;
+- the activity bar as a tab list of its sections, each named with its count,
+  and **Settings**;
+- the sidebar as a navigation group: its search field, the **Workspaces** (or
+  **Devices**) list and the **Agents** list, whose rows are list items named
+  by what they show (a workspace's label and status, an agent's name, state,
+  and place, a device's name and connection), selected when focused, and
+  expandable when they fold others, which Expand and Collapse do; **New
+  workspace**, **Menu**, the agents' sort, the device picker, and **Sessions**;
+- the status bar as a status bar: the connection message, the model, usage,
+  CPU and memory, and network readings by what they say, and its buttons
+  (**Keep the display awake** as a switch);
+- every popup as a menu (context menus) or a dialog named by its title, with
+  its menu rows, its text field, and the workspace dialogs' **Cancel** and
+  submit buttons.
+
+The other windows are named the same way: Settings as a navigation list of
+sections (a tab list, the open page a tab panel named for it), each setting a
+group named by its title with its description as help text, and its switches,
+choices, buttons, and fields by name and state; Logs as its search field,
+buttons, a list of entries, the level menu, and its status line; Orchestrator
+as its buttons, filters (switches), and its rows by identifier, title, and
+state.
 
 Each button can be invoked from the screen reader. With a Windows contrast
 theme on (Settings > Accessibility > Contrast themes), the app's own marks and
@@ -4250,14 +4306,38 @@ labels use the **High contrast** level whatever `contrast` says; terminal
 colors and the theme itself are unchanged, since GPUI does not paint with the
 system's contrast colors.
 
+#### The keyboard in the chrome
+
+Tab belongs to the terminal, so the chrome is reached a region at a time, as
+in other Windows apps. **F6** (Focus Next Region) moves the keyboard from the
+terminal to the title bar, the sidebar (from its activity bar), and the status
+bar, then back to the terminal; **Shift+F6** (Focus Previous Region) goes the
+other way. Inside a region, Tab and Shift+Tab move between its controls and
+wrap, the arrows also move in the sidebar, Enter or Space uses the control, and
+Escape returns to the terminal. The focused control has an accent ring.
+**F10** opens the menu bar. Both region commands can be rebound in Keyboard
+Shortcuts (Cmd+F6 and Cmd+Shift+F6 on macOS). A region's controls are tab
+stops only while it holds the keyboard, so clicking a chrome button never pulls
+typing away from the terminal.
+
+`tests/accessibility_windows.rs` reads a running window's tree and checks
+these names and where F6 and Tab move focus:
+
+```bash
+HERDR_TEST_BINARY=C:/path/to/herdr.exe cargo test -p herdr-gpui --test accessibility_windows -- --ignored --nocapture
+```
+
 Still missing, and not faked with labels that do nothing:
 
-- the sidebar's spaces, agents, and device rows, the status bar, menus,
-  popups, dialogs, and the Settings, Logs, and Orchestrator windows have no
-  roles yet, so a screen reader sees only their window;
-- Tab and Shift-Tab belong to the terminal, so keyboard focus never moves to
-  the chrome; its commands are in the command palette and the keyboard
-  shortcuts instead;
+- inside the larger dialogs and pickers (Add Device, the command palette's
+  results, themes, checkpoints, fan-out, teleport, pull requests), most rows
+  and buttons other than the shared field have no role yet, so a screen reader
+  hears the dialog's name and its field but not every choice in it;
+- the Orchestrator's detail pane, conversation, and dispatch dialogs, and the
+  Settings controls built from arbitrary elements (font and color pickers)
+  are not named yet;
+- Settings, Logs, and Orchestrator have no region keys: there Tab follows
+  GPUI's own order only where a control registers a tab stop;
 - when the app starts in the background (from a script rather than the Start
   menu), AccessKit can miss the first activation and report the window rather
   than the terminal as focused until the window is activated again. This is
@@ -4325,6 +4405,14 @@ an `install.ps1` copy has no uninstaller, so turn the setting off before
 deleting its folder. macOS and Linux have no launch-at-login setting yet
 (`src/launch_at_login.rs`).
 
+The app runs once per user. A plain second launch, such as the Start menu
+entry or the launcher with no link, sends `app focus` over the control pipe,
+so the running app's window comes forward and the new process exits. The
+launcher and the new process pass on the shell's foreground right, so the
+window comes forward instead of flashing in the taskbar. A launch with
+`--socket` or `--session` still starts a separate app. So does a plain launch
+when the running app cannot answer, for example one that hangs.
+
 Starting a local `herdr server` looks for `herdr.exe` and uses
 `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` in place of `process_group(0)`, so
 the daemon survives the GUI and no console window appears.
@@ -4340,6 +4428,14 @@ The build script embeds the Herdr icon as icon resource 1, which GPUI loads for
 its windows, and version information that Explorer and Task Manager show as
 **Herdr UI** with the release version, or `dev` for a local build. See
 [the icon README](../../assets/icons/README.md#windows).
+
+Both executables also carry one application manifest,
+[`windows.manifest`](windows.manifest): per-monitor DPI awareness, long paths
+(once Windows allows them), the UTF-8 code page for ANSI APIs, Windows 10 and
+11 as supported systems, and no elevation. It replaces GPUI's own manifest,
+which GPUI's platform crate always asks for and an executable cannot hold
+beside a second one, so the workspace patches GPUI's `embed-resource` build
+dependency with the no-op in `crates/embed-resource`.
 
 Each release also has a per-user Inno Setup installer,
 `Herdr-VERSION-TARGET-setup.exe` (`scripts/release/herdr-gpui.iss`), which
@@ -4378,8 +4474,9 @@ Windows cross-check.
   is on; with it off, only the devices are listed. An entry you remove from the
   list is forgotten. The recent checkouts are kept in `jump-list.json` in the
   state directory.
-- **`herdr-gpui://` links.** The installer registers the scheme for the current
-  user (`HKCU\Software\Classes\herdr-gpui`) and removes it on uninstall.
+- **`herdr-gpui://` links.** The installer and `site/install.ps1` register the
+  scheme for the current user (`HKCU\Software\Classes\herdr-gpui`) and remove
+  it on uninstall.
   `herdr-gpui://open?path=C:\src\repo` shows a local Git checkout or worktree:
   the workspace already open there, or, after you agree in the window, a new
   one (the repository's scripts are not trusted). `herdr-gpui://device?id=ID`

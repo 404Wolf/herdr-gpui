@@ -63,7 +63,7 @@ impl SettingsWindow {
                         "Off drops the notice at the end of each agent turn, in-app and from \
                          the system; \u{201c}needs attention\u{201d} still shows.",
                     )
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         "notif-finished-toggle",
                         finished,
                         Preference::NotificationFinished(!finished),
@@ -125,7 +125,7 @@ impl SettingsWindow {
                         },
                     ),
                 )
-                .control(
+                .switch(
                     ui::toggle(theme, "notif-sound-toggle", sound, ready).when(ready, |toggle| {
                         toggle.on_click(cx.listener(move |this, _, _, cx| {
                             this.save_shared(Edit::Sound(!sound), cx)

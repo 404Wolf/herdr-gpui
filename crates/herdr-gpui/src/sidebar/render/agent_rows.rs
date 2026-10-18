@@ -132,6 +132,12 @@ impl HerdrWindow {
         let menu_endpoint = endpoint_id.clone();
         let menu_pane = id.clone();
         let menu_open = selected && self.pane_menu_target() == Some(id.as_str());
+        let spoken = crate::sidebar::accessibility::agent_name(
+            agent_name(agent),
+            &state_label(agent, status_text(agent.agent_status)),
+            (!nested).then(|| agent_place(agent, snapshot)).flatten(),
+            row_cx.host,
+        );
         Cell::new(
             rows,
             RowData::Agent(AgentRow {
@@ -155,6 +161,10 @@ impl HerdrWindow {
         .row()
         .when(gap > 0., |row| row.mt(px(gap)))
         .id(SharedString::from(format!("agent-{endpoint_id}-{id}")))
+        .role(Role::ListItem)
+        .aria_label(spoken)
+        .aria_selected(selected && agent.focused)
+        .map(|control| self.chrome_stop(crate::window::chrome_focus::Region::Sidebar, control))
         .when(multi, |row| {
             row.debug_selector(|| format!("agent-{endpoint_id}-{id}"))
         })

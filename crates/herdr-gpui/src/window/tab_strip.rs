@@ -215,6 +215,7 @@ impl HerdrWindow {
         let mut tabs = div()
             .id(SharedString::from(slot.selector("tabs")))
             .role(Role::TabList)
+            .aria_label("Tabs")
             .flex()
             .flex_none()
             .h(px(self.tab_strip_height()))
@@ -245,6 +246,9 @@ impl HerdrWindow {
                         .role(Role::Tab)
                         .aria_label(tab.label.clone())
                         .aria_selected(selected)
+                        .map(|control| {
+                            self.chrome_stop(crate::window::chrome_focus::Region::TitleBar, control)
+                        })
                         .pl(px(12.))
                         // The close button hugs the tab's inner right edge, well
                         // clear of the label it would otherwise crowd.
@@ -303,6 +307,12 @@ impl HerdrWindow {
                                 .id("close-tab")
                                 .role(Role::Button)
                                 .aria_label("Close tab")
+                                .map(|control| {
+                                    self.chrome_stop(
+                                        crate::window::chrome_focus::Region::TitleBar,
+                                        control,
+                                    )
+                                })
                                 .debug_selector({
                                     let id = id.clone();
                                     move || slot.selector(&format!("close-tab-{id}"))
@@ -461,6 +471,9 @@ impl HerdrWindow {
                     .debug_selector(move || slot.selector("new-tab"))
                     .role(Role::Button)
                     .aria_label("New tab")
+                    .map(|control| {
+                        self.chrome_stop(crate::window::chrome_focus::Region::TitleBar, control)
+                    })
                     .w(px(34.))
                     .min_h(px(TAB_HEIGHT))
                     .border_r_1()
@@ -651,6 +664,7 @@ impl HerdrWindow {
             .debug_selector(move || slot.selector(id))
             .role(Role::Button)
             .aria_label(label)
+            .map(|control| self.chrome_stop(crate::window::chrome_focus::Region::TitleBar, control))
             .w(px(30.))
             .min_h(px(TAB_HEIGHT))
             .flex_none()

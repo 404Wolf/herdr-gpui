@@ -62,14 +62,11 @@ impl Render for SidebarView {
         // A closed window leaves nothing to draw.
         self.window
             .update(cx, |view, cx| match view.sidebar_mode() {
-                _ if view.activity_section().is_some() => view
+                _ if view.activity_bar_leads() => view
                     .render_activity(self.indicators, window, cx)
                     .into_any_element(),
                 SidebarMode::Rail => view
                     .render_rail(self.indicators, window, cx)
-                    .into_any_element(),
-                _ if view.activity_bar_shown() => view
-                    .render_activity(self.indicators, window, cx)
                     .into_any_element(),
                 _ => view
                     .render_sidebar(self.indicators, window, cx)

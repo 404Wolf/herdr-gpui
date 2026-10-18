@@ -6,6 +6,7 @@ use crate::{
     Error, Result, SendError,
     clipboard::{ClipboardImageUpload, ImageLease, ImageSlot, WakeOnDrop},
     event::ClientEvent,
+    frame::ImageWriter,
     host_theme::HostTheme,
     method::Method,
     options::{ConnectOptions, validate_options},
@@ -49,9 +50,26 @@ impl Drop for HandleInner {
 pub(crate) struct Command {
     pub(crate) boot_id: String,
     pub(crate) bytes: Vec<u8>,
+    /// Pane named by the original semantic input message; popups never interleave.
+    pub(crate) input_pane: Option<String>,
     /// Set when this command is an API request awaiting a correlated response.
     pub(crate) request: Option<PendingRequest>,
     pub(crate) image: Option<ImageSlot>,
+    /// Progress of input written beside a partial inbound frame. Once attempted
+    /// it is only written in bounded steps; once on the wire it finishes first.
+    pub(crate) written: ImageWriter,
+}
+
+impl Command {
+    /// Whether some of this command's frame is already on the wire.
+    pub(crate) fn started(&self) -> bool {
+        self.written.offset > 0 || self.image.as_ref().is_some_and(|i| i.writer.offset > 0)
+    }
+
+    /// Input whose bounded write began, even if the socket took nothing yet.
+    pub(crate) fn input_attempted(&self) -> bool {
+        self.image.is_none() && self.written.started.is_some()
+    }
 }
 
 /// A queued API request, waiting on the single in-flight lease.
@@ -110,7 +128,9 @@ impl ClientHandle {
         self.queue(Command {
             boot_id: boot_id.into(),
             bytes: Vec::new(),
+            input_pane: None,
             request: None,
+            written: ImageWriter::default(),
             image: Some(ImageSlot {
                 receiver,
                 lease: lease.clone(),
@@ -156,11 +176,17 @@ impl ClientHandle {
             return Err(Error::MissingBootId);
         }
         let bytes = encode_message(&message, MAX_FRAME_SIZE)?;
+        let input_pane = match message {
+            ClientMessage::ClientShellPaneInput { pane_id, .. } => Some(pane_id),
+            _ => None,
+        };
         self.queue(Command {
             boot_id: boot_id.into(),
             bytes,
+            input_pane,
             request,
             image: None,
+            written: ImageWriter::default(),
         })
     }
 

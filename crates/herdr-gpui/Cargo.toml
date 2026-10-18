@@ -25,6 +25,7 @@ gpui.workspace                 = true
 # Unlike gpui 0.2.2, the platform crate enables nothing by default: without
 # font-kit (macOS) or a Linux backend, text silently goes to a no-op system.
 gpui_platform                  = { features = ["font-kit", "runtime_shaders", "wayland", "x11"], workspace = true }
+gix.workspace                  = true
 herdr-client.workspace         = true
 if-addrs.workspace             = true
 image                          = { features = ["bmp", "tiff"], workspace = true }
@@ -126,7 +127,7 @@ wry.workspace = true
 # `clipboard-win` reads the clipboard on a background thread (see
 # `window/clipboard`). `windows` has the shell's COM and WinRT interfaces (the
 # taskbar, the jump list, and toasts); `windows-registry` reads the link
-# handler.
+# handler and the startup entry, failing with `windows-result` errors.
 [target.'cfg(windows)'.dependencies]
 clipboard-win.workspace     = true
 interprocess.workspace      = true
@@ -139,6 +140,7 @@ windows = { features = [
   "Win32_UI_WindowsAndMessaging",
 ], workspace = true }
 windows-registry.workspace = true
+windows-result.workspace   = true
 windows-sys = { features = [
   "Wdk_System_SystemServices",
   "Win32_Graphics_Dwm",

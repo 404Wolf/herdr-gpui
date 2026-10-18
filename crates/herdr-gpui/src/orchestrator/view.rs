@@ -33,7 +33,8 @@ use super::{Notice, Provider, Request, Service, Snapshot, SyncState};
 use crate::search_input::{self, SearchInput};
 use gpui::{prelude::*, *};
 use repo::Repo;
-use rows::{Filters, Runs, Sort, Tab};
+pub(crate) use rows::Tab;
+use rows::{Filters, Runs, Sort};
 use std::{
     collections::HashSet,
     sync::Arc,
@@ -291,6 +292,12 @@ impl OrchestratorView {
     #[cfg(test)]
     pub(crate) fn picked_projects(&self) -> Vec<String> {
         self.projects.iter().cloned().collect()
+    }
+
+    /// The shown repository's last worker snapshot, for tests.
+    #[cfg(test)]
+    pub(crate) fn repo_snapshot_for_tests(&self) -> Snapshot {
+        self.repos[self.active].snapshot.clone()
     }
 
     #[cfg(test)]
@@ -773,6 +780,8 @@ impl Render for OrchestratorView {
         let look = &self.look;
         div()
             .id("orchestrator")
+            .role(Role::Group)
+            .aria_label("Orchestrator")
             .relative()
             .key_context("Orchestrator")
             .track_focus(&self.focus)

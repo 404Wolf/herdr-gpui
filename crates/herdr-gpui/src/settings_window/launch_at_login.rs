@@ -85,7 +85,7 @@ impl SettingsWindow {
             });
         vec![
             ui::section(theme, "Startup", None).into_any_element(),
-            row.control(toggle).into_any_element(),
+            row.switch(toggle).into_any_element(),
         ]
     }
 }
