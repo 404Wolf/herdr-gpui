@@ -540,7 +540,8 @@ The image needs `curl` to install Herdr and `git` for checkouts; the default,
 `buildpack-deps:bookworm`, has both and common build tools. Containers share
 this computer's kernel: they keep honest agents apart, not hostile code, for
 which a VM provider such as Azure is the better choice. Containers are
-unavailable on Windows, like every cloud device.
+unavailable on Windows, like every cloud device. How sandboxes fit together, and which
+providers were evaluated, is in [docs/sandbox.md](../../docs/sandbox.md).
 
 ### Fly Sprites (experimental)
 
