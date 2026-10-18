@@ -187,6 +187,11 @@ impl HerdrWindow {
             self.add_cloud_key(provider, event, window, cx);
             return;
         }
+        #[cfg(feature = "cloud")]
+        if self.menu.page == Some(Page::AddProvider) {
+            self.add_provider_key(event, window, cx);
+            return;
+        }
         #[cfg(feature = "coder")]
         if self.menu.page == Some(Page::AddCoder) {
             if self.coder_key(event, window, cx) {

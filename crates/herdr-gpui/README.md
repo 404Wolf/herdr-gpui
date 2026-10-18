@@ -225,9 +225,12 @@ Remote hosts need an installed Herdr supporting the session commands and
 noninteractive SSH authentication. The GUI does not install or update it.
 
 **Add Device…** opens one dialog for every kind of device. A rail on its left
-lists SSH hosts (then WSL distributions on Windows) and, under **Cloud**, each cloud
-provider the build includes, shown by its logo: a green dot marks a provider
-whose account is configured, and **Set up** one that is not. Each entry keeps
+lists SSH hosts (then WSL distributions on Windows) and, under **Cloud**, the
+cloud providers in use here, shown by their logos with a green dot: those whose
+account is configured, and those with a saved device. **Add provider** follows
+while any provider is left out; its pane shows the rest as tiles, each opening
+that provider's Settings tab, and **Open Settings…** opens Cloud devices. Once
+set up, a provider joins the rail. Each entry keeps
 its own form, so switching between them keeps what was typed. **Ctrl-Tab** and
 **Ctrl-Shift-Tab** move through the rail from any field. In a narrow window the
 rail shows only the logos.
@@ -402,7 +405,7 @@ saved Coder devices with a Remove action. A secret set in the config file or
 `HERDR_CODER_OAUTH_CLIENT_SECRET` takes precedence over the saved one.
 
 Once Coder is configured, **Coder** in **Add Device…** shows its form; before
-that, it points to this Settings card. The form signs in with Coder's
+that, its **Add provider** tile opens this Settings card. The form signs in with Coder's
 OAuth2 provider (authorization code with PKCE; the browser returns to the
 configured loopback redirect), then lists the account's templates, their presets,
 and existing workspaces. It opens with the first template, its default preset,
@@ -496,7 +499,7 @@ credential store (`HERDR_DAYTONA_API_KEY` takes precedence). **Create sandbox**
 creates one with a generated name and, when the **Install Herdr** switch is on
 (the default), installs Herdr in it if it is missing; the device picker shows
 its progress and a toast says when it is ready. **Daytona** in **Add Device…**
-opens this tab. Removing a device leaves
+(its **Add provider** tile until configured) opens this tab. Removing a device leaves
 its sandbox in Daytona. A dispatch can also make a sandbox, from the
 repository's [sandbox image](#sandbox-images) when it has one.
 
@@ -601,7 +604,7 @@ local `opensandbox-server` on Docker; not against a Kubernetes deployment.
 ### Railway free VMs (experimental)
 
 Settings > **Cloud devices** > **Railway**, which **Railway** in **Add Device…**
-also opens, sets up the temporary Linux VM that
+(under **Add provider** until it has a device) also opens, sets up the temporary Linux VM that
 `ssh railway.new` gives out without an account. The SSH key is its identity, so
 pick an existing private key or generate one by name (an ed25519 key without a
 passphrase, in `~/.ssh` when that exists, otherwise in Herdr's state directory;

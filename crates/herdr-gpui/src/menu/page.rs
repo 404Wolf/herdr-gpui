@@ -13,6 +13,9 @@ pub(crate) enum Page {
     #[cfg(feature = "coder")]
     AddCoder,
     AddDevice,
+    /// Add Device's tiles of the cloud providers its rail leaves out.
+    #[cfg(feature = "cloud")]
+    AddProvider,
     /// Picking a WSL distribution to save as a device.
     AddWsl,
     /// The one-time offer to install the agent skill for browser tabs.

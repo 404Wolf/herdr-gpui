@@ -3,6 +3,8 @@
 //! state; connection ownership stays in `endpoint`.
 mod activity_card;
 mod add_device;
+#[cfg(feature = "cloud")]
+mod catalog;
 #[cfg(feature = "coder")]
 pub(super) mod coder;
 pub(crate) use add_device::enter;
@@ -136,7 +138,7 @@ impl HerdrWindow {
             return true;
         }
         #[cfg(feature = "cloud")]
-        if matches!(self.menu.page, Some(Page::AddCloud(_))) {
+        if matches!(self.menu.page, Some(Page::AddCloud(_) | Page::AddProvider)) {
             return true;
         }
         false
@@ -151,6 +153,10 @@ impl HerdrWindow {
         #[cfg(feature = "coder")]
         if self.menu.page == Some(Page::AddCoder) {
             return Some(self.render_add_coder(compact, cx).into_any_element());
+        }
+        #[cfg(feature = "cloud")]
+        if self.menu.page == Some(Page::AddProvider) {
+            return Some(self.render_add_provider(compact, cx).into_any_element());
         }
         #[cfg(feature = "cloud")]
         if let Some(Page::AddCloud(provider)) = self.menu.page {

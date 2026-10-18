@@ -60,6 +60,9 @@ pub(crate) struct MenuState {
     /// record it rather than open a Settings window, which reads the disk.
     #[cfg(all(test, feature = "cloud"))]
     pub(super) settings_opened: Option<crate::cloud::CloudProvider>,
+    /// Whether Add provider asked for Settings > Cloud devices itself.
+    #[cfg(all(test, feature = "cloud"))]
+    pub(super) cloud_settings_opened: bool,
     pub(super) wsl_setup: Option<super::devices::WslSetup>,
     /// The saved distribution the removal confirmation names.
     pub(super) wsl_remove: Option<String>,
@@ -310,6 +313,8 @@ impl MenuState {
             device_setup: None,
             #[cfg(all(test, feature = "cloud"))]
             settings_opened: None,
+            #[cfg(all(test, feature = "cloud"))]
+            cloud_settings_opened: false,
             wsl_setup: None,
             wsl_remove: None,
             session_edit: None,
