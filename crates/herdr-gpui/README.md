@@ -1597,7 +1597,10 @@ macOS terminals do, with a backslash before each space, quote, bracket, comma,
 colon, or other character a shell would interpret (`/tmp/Shot\ 1.png`), and
 before a final period, separated by spaces; the drop never presses Enter. The
 escapes keep a dropped path one Cmd-clickable link. Local drops only paste paths; SSH drops
-read and transfer the selected files.
+read and transfer the selected files. The exception is a live macOS screenshot
+thumbnail, dragged before it saves: macOS lets only Herdr UI read its temporary
+file, not the pane's processes, so its image goes through the
+[image bridge](#images), as a pasted clipboard image does.
 Drops are limited to 256 paths and 64 KiB of escaped text. Non-UTF-8 paths and
 paths containing control characters are rejected rather than altered.
 
@@ -2051,7 +2054,8 @@ including the backslash-escaped paths used by terminal file drops.
 Local endpoints on macOS, Linux, and Windows use the same bridge for Cmd-V
 clipboard images (Ctrl-Shift-V or Shift-Insert on Windows), because a GUI text
 paste cannot carry image data. Local drops and pasted
-paths stay ordinary path pastes, and local Ctrl-V is sent to the terminal
+paths stay ordinary path pastes, except a live screenshot thumbnail (see
+[File Drops](#file-drops)), and local Ctrl-V is sent to the terminal
 unchanged so agents can read the shared clipboard themselves.
 
 The daemon writes a temporary file and pastes its path into the
