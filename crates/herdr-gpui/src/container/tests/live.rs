@@ -50,7 +50,7 @@ fn a_container_is_made_reached_and_deleted() {
         )?);
         // One left before Herdr was installed is not saved as a device that
         // cannot connect: adding it again needs the install approved.
-        machine::stop(engine, &id, &never)?;
+        lifecycle::stop(engine, &id, || machine::stop(engine, &id, &never))?;
         assert!(matches!(
             setup::adopt(engine, &id, false, &never),
             Err(crate::Error::Cloud(crate::cloud::Error::Install(_)))
@@ -59,6 +59,17 @@ fn a_container_is_made_reached_and_deleted() {
             machine::state(engine, &id, &never)?,
             machine::State::Running,
             "adding it started it"
+        );
+        let target = herdr_client::ConnectTarget::Cloud {
+            provider: herdr_client::CloudProvider::Container,
+            account: engine.key().into(),
+            id: id.clone(),
+            machine: id.clone(),
+            session: "default".into(),
+        };
+        assert!(
+            !lifecycle::suspended(&target),
+            "adding it back cleared the earlier Stop"
         );
         crate::cloud::install::install(machine::exec(engine, &id)?, &never)?;
         assert!(crate::cloud::install::installed(
@@ -121,6 +132,14 @@ fn a_container_is_made_reached_and_deleted() {
             machine::state(engine, &id, &never)?,
             machine::State::Running
         );
+        // Podman hands the home volume back to root on each start.
+        let owner = engine.run(
+            "exec",
+            ["exec", &id, "stat", "-c", "%U", machine::HOME],
+            std::time::Duration::from_secs(30),
+            &never,
+        )?;
+        assert_eq!(owner, machine::USER, "the restarted container's home");
         Ok(())
     })();
     machine::delete(engine, &id, &never).unwrap();

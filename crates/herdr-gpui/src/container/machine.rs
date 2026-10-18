@@ -21,7 +21,8 @@ const QUICK: Duration = Duration::from_secs(30);
 const PULL: Duration = Duration::from_secs(15 * 60);
 
 /// Make the `herdr` user own its home, whatever the image ships: Debian and
-/// Ubuntu have `useradd`, Alpine and BusyBox images `adduser`.
+/// Ubuntu have `useradd`, Alpine and BusyBox images `adduser`. Run again on
+/// every start, so it must stay idempotent.
 const PREPARE: &str = r#"set -e
 if ! id herdr >/dev/null 2>&1; then
   if command -v useradd >/dev/null 2>&1; then
@@ -144,14 +145,7 @@ pub(crate) fn create(
             cancelled,
         )
         .and_then(|_| engine.run("run", run_args(id, &image, settings), QUICK, cancelled))
-        .and_then(|_| {
-            engine.run(
-                "exec",
-                ["exec", "--user", "root", id, "/bin/sh", "-c", PREPARE],
-                QUICK,
-                cancelled,
-            )
-        });
+        .and_then(|_| prepare(engine, id, cancelled));
     if let Err(error) = made {
         // Never cancelled: a half-made container must not outlive the job.
         if let Err(cleanup) = delete(engine, id, &|| false) {
@@ -160,6 +154,17 @@ pub(crate) fn create(
         return Err(error);
     }
     Ok(())
+}
+
+fn prepare(engine: Engine, id: &str, cancelled: &dyn Fn() -> bool) -> Result<()> {
+    engine
+        .run(
+            "exec",
+            ["exec", "--user", "root", id, "/bin/sh", "-c", PREPARE],
+            QUICK,
+            cancelled,
+        )
+        .map(drop)
 }
 
 pub(crate) fn state(engine: Engine, id: &str, cancelled: &dyn Fn() -> bool) -> Result<State> {
@@ -195,9 +200,10 @@ pub(crate) fn ensure_running(engine: Engine, id: &str, cancelled: &dyn Fn() -> b
         State::Stopped => {
             // A paused container refuses `start`; `unpause` is harmless otherwise.
             let _ = engine.output("unpause", ["unpause", id], QUICK, cancelled);
-            engine
-                .run("start", ["start", id], QUICK, cancelled)
-                .map(drop)
+            engine.run("start", ["start", id], QUICK, cancelled)?;
+            // Podman gives the volume's mount point back to root on each
+            // start, which would leave the agents' user without its home.
+            prepare(engine, id, cancelled)
         }
     }
 }
