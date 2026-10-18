@@ -61,6 +61,17 @@ impl HerdrWindow {
                 .is_some_and(|width| width >= LEADING + SIDEBAR_TOGGLE_SIZE)
     }
 
+    /// What the expanded header puts between the clearance and Back: the
+    /// toggle, or with the toggle in the activity bar's column, the inset it
+    /// would have left, so Back keeps the same visible room either way.
+    fn header_lead(&self) -> f32 {
+        if self.activity_bar_leads() {
+            SIDEBAR_TOGGLE_INSET
+        } else {
+            SIDEBAR_TOGGLE_SIZE
+        }
+    }
+
     /// Whether Back and Forward fit in the expanded sidebar's header after
     /// the traffic lights and the toggle. A sidebar dragged narrower than
     /// that hands them to the leftmost strip instead.
@@ -70,7 +81,7 @@ impl HerdrWindow {
             .sidebar_column_width(f32::from(window.viewport_size().width))
             .unwrap_or(0.);
         mode == SidebarMode::Expanded
-            && column >= LEADING + SIDEBAR_TOGGLE_SIZE + Style::NATIVE.width() + SIDEBAR_END
+            && column >= LEADING + self.header_lead() + Style::NATIVE.width() + SIDEBAR_END
     }
 
     /// The sidebar column's first row, level with the strips beside it. It
@@ -91,7 +102,11 @@ impl HerdrWindow {
                 header.child(self.sidebar_toggle(cx))
             })
             .when(self.navigation_in_sidebar(window), |header| {
-                header.child(self.navigation(cx))
+                header
+                    .when(self.activity_bar_leads(), |header| {
+                        header.child(div().flex_none().w(px(self.header_lead())))
+                    })
+                    .child(self.navigation(cx))
             });
         movable(header, window)
     }
