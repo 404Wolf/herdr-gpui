@@ -125,6 +125,20 @@ jobs:
           jq --version
           python3 -m unittest discover -s scripts/release/tests -v
           python3 scripts/release/test-release-security.py
+      # The signed update manifests' contract. Releases require this job, so
+      # a manifest regression stops a release, not only the Updater workflow.
+      - name: Test update manifest contracts
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            OPENSSL="$(brew --prefix openssl@3)/bin/openssl"
+          else
+            OPENSSL=/usr/bin/openssl
+          fi
+          export OPENSSL
+          "$OPENSSL" version | grep -q '^OpenSSL 3\.'
+          python3 -m unittest discover -s scripts -p 'test_*manifest.py' -v
       - name: Install pinned Rust toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2

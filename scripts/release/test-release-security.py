@@ -64,6 +64,9 @@ class ReleaseTargets(unittest.TestCase):
         for name in ("checks", "build"):
             self.assertIn("bash scripts/install-linux-deps.sh", jobs[name])
         self.assertIn('HERDR_TEST_NFPM=$(bash scripts/release/install-nfpm.sh "$RUNNER_TEMP/nfpm")', jobs["checks"])
+        # The release gate requires this job, and the release workflow no
+        # longer runs the update manifest contract itself.
+        self.assertIn("python3 -m unittest discover -s scripts -p 'test_*manifest.py' -v", jobs["checks"])
         windows = jobs["windows"]
         self.assertIn("        runner: [windows-2025, windows-11-arm]\n", windows)
         self.assertIn("    runs-on: ${{ matrix.runner }}\n", windows)
