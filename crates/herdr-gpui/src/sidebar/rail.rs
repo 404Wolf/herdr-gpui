@@ -10,6 +10,7 @@ use super::{
     label_text,
     layout::{self, SidebarLook},
     line_height, visible_workspace_entries,
+    wash::HostMark,
     workspaces::workspace_label,
 };
 use crate::{
@@ -456,7 +457,7 @@ fn rail_row(
             .justify_center()
             .overflow_hidden(),
         key,
-        state,
+        (state, HostMark::default()),
         theme,
     )
 }
