@@ -1,0 +1,74 @@
+#![allow(clippy::unwrap_used)]
+use super::*;
+use std::{collections::HashMap, sync::Mutex};
+
+/// What `find` reports for each cloud machine ID in window tests; a machine
+/// missing here cannot be searched.
+pub(crate) static FAKE: Mutex<Option<HashMap<String, Vec<Checkout>>>> = Mutex::new(None);
+
+#[test]
+fn checkouts_are_read_with_their_counts_under_the_home_directory() {
+    let output = "3\t0\t./code/app\n0\t2\t./.herdr/worktrees/app/lane\tx\nbad line\n1\t1\t/abs\n";
+    assert_eq!(
+        parse(output),
+        vec![
+            Checkout {
+                path: "~/code/app".into(),
+                changed: 3,
+                unpushed: 0,
+            },
+            // A tab in the name stays part of it.
+            Checkout {
+                path: "~/.herdr/worktrees/app/lane\tx".into(),
+                changed: 0,
+                unpushed: 2,
+            },
+        ]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn the_search_finds_only_checkouts_with_work_found_nowhere_else() {
+    use std::process::Command;
+    let home = tempfile::tempdir().unwrap();
+    let git = |dir: &std::path::Path, args: &[&str]| {
+        let status = Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@t", "-C"])
+            .arg(dir)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(status.status.success(), "{status:?}");
+    };
+    // Dirty: an untracked file.
+    let dirty = home.path().join("code/dirty");
+    std::fs::create_dir_all(&dirty).unwrap();
+    git(&dirty, &["init", "-q"]);
+    std::fs::write(dirty.join("notes.txt"), "x").unwrap();
+    // Clean, with no commits.
+    let clean = home.path().join("code/clean");
+    std::fs::create_dir_all(&clean).unwrap();
+    git(&clean, &["init", "-q"]);
+    // A dependency checkout under a skipped directory.
+    let dependency = home.path().join(".cargo/git/checkouts/dep");
+    std::fs::create_dir_all(&dependency).unwrap();
+    git(&dependency, &["init", "-q"]);
+    git(&dependency, &["commit", "-q", "--allow-empty", "-m", "dep"]);
+
+    let output = Command::new("/bin/sh")
+        .arg("-c")
+        .arg(script())
+        .env("HOME", home.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        parse(&String::from_utf8_lossy(&output.stdout)),
+        vec![Checkout {
+            path: "~/code/dirty".into(),
+            changed: 1,
+            unpushed: 0,
+        }]
+    );
+}

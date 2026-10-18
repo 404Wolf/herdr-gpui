@@ -12,6 +12,7 @@ pub(crate) mod install;
 mod jobs;
 pub(crate) mod names;
 mod providers;
+pub(crate) mod unsynced;
 pub(crate) mod worker;
 
 pub(crate) use catalog::{SavedDevice, load, remove, rename, save};
