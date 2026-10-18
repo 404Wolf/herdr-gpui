@@ -49,24 +49,27 @@ pub(crate) fn add_device(
     };
     report(cloud::Step::Creating);
     let sprite = api.create(&name)?;
-    let ready = prepare(&api, &settings, &sprite.name, install, cancelled, report);
-    if let Err(error) = ready {
+    let ready = prepare(&api, &settings, &sprite.name, install, cancelled, report).and_then(|()| {
+        let device = SavedDevice {
+            provider: CloudProvider::Sprites,
+            id: sprite.name.clone(),
+            label: sprite.name.clone(),
+            account: settings.base.clone(),
+            machine: sprite.name.clone(),
+            session: SESSION.to_owned(),
+            enabled: true,
+        };
+        // An unsaved sprite would bill unlisted, so it goes too.
+        cloud::save(device.clone())?;
+        Ok(device)
+    });
+    if let Err(error) = &ready {
         if let Err(cleanup) = api.delete_sprite(&sprite.name) {
             tracing::warn!(category = "sprites", sprite = sprite.name, error = %cleanup, "Could not delete a failed sprite");
         }
-        return Err(error);
+        tracing::warn!(category = "sprites", sprite = sprite.name, %error, "Creating a sprite failed");
     }
-    let device = SavedDevice {
-        provider: CloudProvider::Sprites,
-        id: sprite.name.clone(),
-        label: sprite.name.clone(),
-        account: settings.base.clone(),
-        machine: sprite.name,
-        session: SESSION.to_owned(),
-        enabled: true,
-    };
-    cloud::save(device.clone())?;
-    Ok(device)
+    ready
 }
 
 fn prepare(

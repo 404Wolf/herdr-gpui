@@ -41,6 +41,9 @@ const POLL: Duration = Duration::from_millis(20);
 const CHUNK: usize = 32 * 1024;
 const MESSAGE_LIMIT: usize = 4 * 1024 * 1024;
 const QUEUED_CHUNKS: usize = 64;
+/// Input chunks sent before the relay reads again, so steady input, such as
+/// a Git bundle, never keeps the command's output waiting.
+const CHUNKS_PER_PASS: usize = 4;
 
 const STDIN: u8 = 0x00;
 const STDOUT: u8 = 0x01;
@@ -245,24 +248,33 @@ pub(super) fn relay<S: Read + Write>(
 ) -> Result<u8> {
     let mut input = Some(input);
     loop {
-        while let Some(receiver) = &input {
-            match receiver.try_recv() {
+        for _ in 0..CHUNKS_PER_PASS {
+            let Some(receiver) = &input else {
+                break;
+            };
+            let frame = match receiver.try_recv() {
                 Ok(Some(chunk)) => {
                     let mut frame = Vec::with_capacity(chunk.len() + 1);
                     frame.push(STDIN);
                     frame.extend_from_slice(&chunk);
-                    socket
-                        .write(Message::Binary(frame.into()))
-                        .map_err(Error::Stream)?;
+                    frame
                 }
                 Ok(None) => {
-                    socket
-                        .write(Message::Binary(vec![STDIN_EOF].into()))
-                        .map_err(Error::Stream)?;
                     input = None;
+                    vec![STDIN_EOF]
                 }
                 Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => input = None,
+                Err(TryRecvError::Disconnected) => {
+                    input = None;
+                    break;
+                }
+            };
+            // A write that times out has queued its frame; flushing goes on
+            // below, between reads.
+            match socket.write(Message::Binary(frame.into())) {
+                Ok(()) => {}
+                Err(tungstenite::Error::Io(error)) if pending(&error) => {}
+                Err(error) => return Err(Error::Stream(error)),
             }
         }
         match socket.flush() {
