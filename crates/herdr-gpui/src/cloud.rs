@@ -3,22 +3,24 @@
 //! add machines (with their progress and toasts), and the connector that hands
 //! a cloud target to its provider. Each provider module owns its API, sign-in,
 //! readiness rules, and the command that reaches a machine; supporting a
-//! provider adds a `CloudProvider` variant and a module.
+//! provider adds a `CloudProvider` variant, a module, and a row in
+//! [`providers`].
 
 mod catalog;
 mod command;
 pub(crate) mod install;
 mod jobs;
 pub(crate) mod names;
+mod providers;
 pub(crate) mod worker;
 
 pub(crate) use catalog::{SavedDevice, load, remove, rename, save};
 pub(crate) use command::with_command;
 pub(crate) use herdr_client::CloudProvider;
 pub(crate) use jobs::Jobs;
+pub(crate) use providers::{Deletion, connect, deletion, icon, name, noun, offer};
 
-use herdr_client::{ConnectTarget, Transport};
-use std::{io, path::PathBuf, sync::atomic::AtomicBool};
+use std::{io, path::PathBuf};
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -107,99 +109,6 @@ impl Step {
             Self::CheckingHerdr => "Checking for Herdr…".into(),
             Self::InstallingHerdr => "Installing Herdr…".into(),
         }
-    }
-}
-
-/// The provider's name, as the UI shows it.
-pub(crate) fn name(provider: CloudProvider) -> &'static str {
-    match provider {
-        #[cfg(feature = "azure")]
-        CloudProvider::Azure => "Azure",
-        #[cfg(feature = "boat")]
-        CloudProvider::Boat => "Boat",
-        #[cfg(feature = "coder")]
-        CloudProvider::Coder => "Coder",
-        #[cfg(feature = "daytona")]
-        CloudProvider::Daytona => "Daytona",
-        #[cfg(feature = "railway")]
-        CloudProvider::Railway => "Railway",
-    }
-}
-
-/// The provider's logo, an embedded asset path.
-pub(crate) fn icon(provider: CloudProvider) -> &'static str {
-    match provider {
-        #[cfg(feature = "azure")]
-        CloudProvider::Azure => "icons/cloud/azure.svg",
-        #[cfg(feature = "boat")]
-        CloudProvider::Boat => "icons/terminal.svg",
-        #[cfg(feature = "coder")]
-        CloudProvider::Coder => "icons/cloud/coder.svg",
-        #[cfg(feature = "daytona")]
-        CloudProvider::Daytona => "icons/cloud/daytona.svg",
-        #[cfg(feature = "railway")]
-        CloudProvider::Railway => "icons/cloud/railway.svg",
-    }
-}
-
-/// What adding a device from the provider does, as Add Device says it.
-pub(crate) fn offer(provider: CloudProvider) -> &'static str {
-    match provider {
-        #[cfg(feature = "azure")]
-        CloudProvider::Azure => "Create an Azure VM or sandbox in Settings",
-        #[cfg(feature = "boat")]
-        CloudProvider::Boat => "Create a Boat sandbox in Settings",
-        #[cfg(feature = "coder")]
-        CloudProvider::Coder => "Create or attach a Coder workspace",
-        // Sandboxes are created in Settings; existing ones cannot be
-        // attached yet.
-        #[cfg(feature = "daytona")]
-        CloudProvider::Daytona => "Create a Daytona sandbox in Settings",
-        #[cfg(feature = "railway")]
-        CloudProvider::Railway => "Set up a Railway VM in Settings",
-    }
-}
-
-/// What the provider calls one machine.
-pub(crate) fn noun(provider: CloudProvider) -> &'static str {
-    match provider {
-        #[cfg(feature = "azure")]
-        CloudProvider::Azure => "machine",
-        #[cfg(feature = "boat")]
-        CloudProvider::Boat => "sandbox",
-        #[cfg(feature = "coder")]
-        CloudProvider::Coder => "workspace",
-        #[cfg(feature = "daytona")]
-        CloudProvider::Daytona => "sandbox",
-        #[cfg(feature = "railway")]
-        CloudProvider::Railway => "VM",
-    }
-}
-
-/// The connector for `ConnectTarget::Cloud`: the provider makes the machine
-/// ready and spawns the bridge command. Runs on the connection worker.
-pub(crate) fn connect(target: &ConnectTarget, stop: &AtomicBool) -> io::Result<Transport> {
-    let ConnectTarget::Cloud {
-        provider,
-        account,
-        id,
-        session,
-        ..
-    } = target
-    else {
-        return Err(io::Error::other(Error::Invalid("cloud target")));
-    };
-    match provider {
-        #[cfg(feature = "azure")]
-        CloudProvider::Azure => crate::azure::connect(account, id, session, stop),
-        #[cfg(feature = "boat")]
-        CloudProvider::Boat => crate::boat::connect(account, id, session, stop),
-        #[cfg(feature = "coder")]
-        CloudProvider::Coder => crate::coder::connect(account, id, session, stop),
-        #[cfg(feature = "daytona")]
-        CloudProvider::Daytona => crate::daytona::connect(account, id, session, stop),
-        #[cfg(feature = "railway")]
-        CloudProvider::Railway => crate::railway::connect(account, id, session, stop),
     }
 }
 
