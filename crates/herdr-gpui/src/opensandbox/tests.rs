@@ -4,6 +4,8 @@ use crate::config::OpenSandboxConfig;
 
 mod live;
 mod relay;
+#[cfg(unix)]
+mod wrapper;
 
 fn settings(url: &str) -> Settings {
     Settings::resolve(
