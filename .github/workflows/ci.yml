@@ -356,7 +356,7 @@ jobs:
   # Keep the branch-protection context stable while requiring every platform.
   checks-passed:
     name: Format, lint, and test
-    needs: [checks, windows, windows-native, windows-package, commits]
+    needs: [checks, windows, windows-native, windows-package, build-macos, commits]
     if: >-
       always() &&
       github.repository == 'penso/herdr-gpui' &&
@@ -374,6 +374,8 @@ jobs:
           WINDOWS: ${{ needs.windows.result }}
           NATIVE: ${{ needs.windows-native.result }}
           PACKAGE: ${{ needs.windows-package.result }}
+          MACOS_RELEASE: ${{ needs.build-macos.result }}
+          EVENT: ${{ github.event_name }}
           COMMITS: ${{ needs.commits.result }}
           CODE: ${{ needs.commits.outputs.code }}
           PACKAGE_INPUTS: ${{ needs.commits.outputs.windows_package }}
@@ -384,12 +386,20 @@ jobs:
           else
             test "$CODE" = false && test "$RESULT" = skipped && test "$WINDOWS" = skipped && test "$NATIVE" = skipped || exit 1
           fi
+          # The macOS release builds run on pull requests only.
+          if [ "$CODE" = true ] && [ "$EVENT" = pull_request ]; then
+            test "$MACOS_RELEASE" = success || exit 1
+          else
+            test "$MACOS_RELEASE" = skipped || exit 1
+          fi
           if [ "$PACKAGE_INPUTS" = true ]; then
             test "$PACKAGE" = success
           else
             test "$PACKAGE_INPUTS" = false && test "$PACKAGE" = skipped
           fi
 
+  # Linux release builds on main, which the release gate requires. The release
+  # workflow builds the same targets but only smoke-tests what it ships.
   build:
     if: >-
       needs.commits.outputs.code == 'true' &&
@@ -402,13 +412,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # x86_64 macOS cross-compiles on Apple Silicon and runs under Rosetta,
-        # as the release workflow builds it; Intel runners are scarce.
         include:
-          - runner: macos-15
-            target: aarch64-apple-darwin
-          - runner: macos-15
-            target: x86_64-apple-darwin
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
           - runner: ubuntu-24.04-arm
@@ -422,7 +426,6 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Linux build dependencies
-        if: runner.os == 'Linux'
         run: bash scripts/install-linux-deps.sh
       - name: Install pinned Rust toolchain
         env:
@@ -430,9 +433,6 @@ jobs:
         run: |
           rustup show
           rustup target add "$TARGET"
-      - name: Require Rosetta for the x86_64 macOS executable
-        if: matrix.target == 'x86_64-apple-darwin'
-        run: arch -x86_64 /usr/bin/true || sudo softwareupdate --install-rosetta --agree-to-license
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: release-${{ matrix.target }}
@@ -444,6 +444,49 @@ jobs:
       # The full CLI suite in release mode, for this commit; the release
       # workflow only smoke-tests the bytes it ships, since `cargo test`
       # rebuilds the executable with dev-dependency features.
+      - name: Exercise release executable without opening a window
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo test --locked --release -p herdr-gpui --test cli --target "$TARGET"
+
+  # The macOS release builds and their release-mode CLI suite, on pull
+  # requests only. On main they would hold two of the account-wide macOS
+  # runners the release workflow's own macOS builds wait for. With no main
+  # run to save a cache, there is nothing to restore, so they build cold.
+  build-macos:
+    if: >-
+      needs.commits.outputs.code == 'true' &&
+      github.repository == 'penso/herdr-gpui' &&
+      github.event_name == 'pull_request'
+    name: Release (${{ matrix.target }})
+    needs: [zizmor, commits]
+    strategy:
+      fail-fast: false
+      matrix:
+        # x86_64 macOS cross-compiles on Apple Silicon and runs under Rosetta,
+        # as the release workflow builds it; Intel runners are scarce.
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          rustup show
+          rustup target add "$TARGET"
+      - name: Require Rosetta for the x86_64 macOS executable
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: arch -x86_64 /usr/bin/true || sudo softwareupdate --install-rosetta --agree-to-license
+      - name: Build optimized executable
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo build --locked --release -p herdr-gpui --target "$TARGET"
       - name: Exercise release executable without opening a window
         env:
           TARGET: ${{ matrix.target }}

@@ -105,6 +105,7 @@ class CheckCi(unittest.TestCase):
         sections = re.split(r"^  ([a-z-]+):\n", workflow.split("\njobs:\n", 1)[1], flags=re.M)
         definitions = dict(zip(sections[1::2], sections[2::2]))
         expected = set()
+        # build-macos runs on pull requests only, so main's runs never have it.
         for key in ("zizmor", "commits", "checks-passed", "checks", "windows", "windows-native", "build"):
             definition = definitions[key]
             names = [re.search(r"^    name: (.+)$", definition, re.M)[1]]
@@ -119,3 +120,7 @@ class CheckCi(unittest.TestCase):
             expected.update(names)
         self.assertEqual(CI.REQUIRED_JOBS, expected)
 
+    def test_main_runs_no_macos_release_build(self):
+        # The release workflow's macOS builds share the account's macOS
+        # runners; CI on main must not hold them, nor may the gate wait for it.
+        self.assertFalse(any("apple-darwin" in name for name in CI.REQUIRED_JOBS))

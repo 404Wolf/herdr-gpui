@@ -45,11 +45,12 @@ class ReleaseTargets(unittest.TestCase):
         jobs = dict(zip(sections[1::2], sections[2::2]))
         for job in jobs.values():
             self.assertIn("github.repository == 'penso/herdr-gpui'", job)
-        self.assertIn("    needs: [checks, windows, windows-native, windows-package, commits]\n", jobs["checks-passed"])
+        self.assertIn("    needs: [checks, windows, windows-native, windows-package, build-macos, commits]\n",
+                      jobs["checks-passed"])
         self.assertIn('test "$COMMITS" = success || exit 1', jobs["checks-passed"])
         self.assertIn('test "$RESULT" = success && test "$WINDOWS" = success', jobs["checks-passed"])
         self.assertIn('test "$CODE" = false && test "$RESULT" = skipped && test "$WINDOWS" = skipped', jobs["checks-passed"])
-        for name in ("checks", "windows", "build"):
+        for name in ("checks", "windows", "build", "build-macos"):
             self.assertIn("needs.commits.outputs.code == 'true'", jobs[name])
             self.assertIn("needs: [zizmor, commits]", jobs[name])
         self.assertIn("WINDOWS: ${{ needs.windows.result }}", jobs["checks-passed"])
@@ -61,6 +62,20 @@ class ReleaseTargets(unittest.TestCase):
         self.assertIn('test "$RESULT" = success', jobs["checks-passed"])
         self.assertIn("github.ref == 'refs/heads/main'", jobs["build"])
         self.assertNotIn("github.event_name == 'pull_request'", jobs["build"])
+        self.assertNotIn("apple-darwin", jobs["build"])
+        # The macOS release builds hold no runner on main, where the release
+        # workflow's macOS builds wait for the account-wide macOS limit; pull
+        # requests keep their release-mode CLI suite, and the gate requires it.
+        macos = jobs["build-macos"]
+        self.assertIn("github.event_name == 'pull_request'", macos)
+        self.assertNotIn("refs/heads/main", macos)
+        self.assertIn("target: [aarch64-apple-darwin, x86_64-apple-darwin]\n", macos)
+        for command in ('cargo build --locked --release -p herdr-gpui --target "$TARGET"',
+                        'cargo test --locked --release -p herdr-gpui --test cli --target "$TARGET"'):
+            self.assertIn(command, macos)
+            self.assertIn(command, jobs["build"])
+        self.assertIn("MACOS_RELEASE: ${{ needs.build-macos.result }}", jobs["checks-passed"])
+        self.assertIn('test "$MACOS_RELEASE" = success', jobs["checks-passed"])
         for name in ("checks", "build"):
             self.assertIn("bash scripts/install-linux-deps.sh", jobs[name])
         self.assertIn('HERDR_TEST_NFPM=$(bash scripts/release/install-nfpm.sh "$RUNNER_TEMP/nfpm")', jobs["checks"])
