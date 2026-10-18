@@ -72,7 +72,7 @@ fn pinned(engine: Engine, image: &str, cancelled: &dyn Fn() -> bool) -> Result<S
     Ok(serde_json::from_str::<Vec<String>>(&digests)
         .ok()
         .and_then(|digests| digests.into_iter().next())
-        .filter(|digest| super::settings::image_reference(digest))
+        .filter(|digest| crate::cloud::names::image_reference(digest))
         // A locally built image has no registry digest; its tag is all there is.
         .unwrap_or_else(|| image.to_owned()))
 }

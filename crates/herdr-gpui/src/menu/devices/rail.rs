@@ -75,6 +75,10 @@ impl Source {
             Self::Cloud(crate::cloud::CloudProvider::Daytona) => "add-device-source-daytona",
             #[cfg(feature = "railway")]
             Self::Cloud(crate::cloud::CloudProvider::Railway) => "add-device-source-railway",
+            #[cfg(feature = "opensandbox")]
+            Self::Cloud(crate::cloud::CloudProvider::OpenSandbox) => {
+                "add-device-source-opensandbox"
+            }
             #[cfg(feature = "sprites")]
             Self::Cloud(crate::cloud::CloudProvider::Sprites) => "add-device-source-sprites",
         }

@@ -504,6 +504,19 @@ size = 12
 # The most containers kept as devices at once, up to 64. Default is 8.
 # max_containers = 8
 
+# Sandboxes on a self-hosted OpenSandbox server as devices (experimental).
+# Settings > Cloud devices > OpenSandbox edits this table and saves the API key
+# to the credential store; the key is never read from this file.
+# HERDR_OPENSANDBOX_API_KEY overrides the saved key and
+# HERDR_OPENSANDBOX_API_URL overrides api_url.
+# [opensandbox]
+# https, or http on this computer.
+# api_url = "http://127.0.0.1:8080"
+# image = "buildpack-deps:bookworm"
+# cpu = "2"
+# memory = "4Gi"
+# allow_plaintext_credentials = false
+
 # Fly Sprites as devices (experimental). Settings > Cloud devices > Sprites
 # edits this table and saves the API token to the credential store; the token
 # is never read from this file. HERDR_SPRITES_TOKEN overrides the saved token

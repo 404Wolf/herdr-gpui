@@ -28,6 +28,7 @@ mod keybindings;
 mod layout;
 mod notifications;
 mod omarchy;
+mod opensandbox;
 mod option_as_alt;
 mod padding;
 pub(crate) mod preferences;
@@ -42,6 +43,7 @@ mod status_icons;
     feature = "coder",
     feature = "container",
     feature = "daytona",
+    feature = "opensandbox",
     feature = "sprites"
 ))]
 mod table;
@@ -89,6 +91,9 @@ pub use notifications::{
     BellConfig, ClipboardToast, ClipboardToastPosition, NotificationConfig, SoundConfig,
 };
 use notifications::{ClipboardToastSettings, NotificationSettings};
+pub use opensandbox::OpenSandboxConfig;
+#[cfg(feature = "opensandbox")]
+pub(crate) use opensandbox::OpenSandboxFields;
 pub use option_as_alt::{OptionAsAlt, OptionKeys};
 pub use padding::Padding;
 pub(crate) use padding::{Axis, MAX_PADDING, Side, Sides};
@@ -198,6 +203,8 @@ pub struct Config {
     /// Where a link-modifier click on a printed file path opens it.
     pub open_files_in: FileTarget,
     pub open_links_in: LinkTarget,
+    /// The self-hosted OpenSandbox server whose sandboxes are devices.
+    pub opensandbox: OpenSandboxConfig,
     pub option_as_alt: OptionAsAlt,
     pub palette: crate::palette::PaletteConfig,
     /// The `[pane_keys]` table `keybindings` was built from, for the same
@@ -379,6 +386,7 @@ impl Default for Config {
             notifications: NotificationConfig::default(),
             open_files_in: FileTarget::default(),
             open_links_in: LinkTarget::default(),
+            opensandbox: OpenSandboxConfig::default(),
             option_as_alt: OptionAsAlt::default(),
             palette: crate::palette::PaletteConfig::default(),
             pane_keys: PaneKeys::new(),
@@ -448,6 +456,7 @@ struct Settings {
     notifications: NotificationSettings,
     open_files_in: FileTarget,
     open_links_in: LinkTarget,
+    opensandbox: OpenSandboxConfig,
     option_as_alt: OptionAsAlt,
     palette: crate::palette::PaletteConfig,
     pane_keys: PaneKeys,
@@ -816,6 +825,9 @@ impl Config {
         #[cfg(feature = "daytona")]
         settings.daytona.settings_with(|_| None)?;
         config.daytona = settings.daytona;
+        #[cfg(feature = "opensandbox")]
+        settings.opensandbox.settings_with(|_| None)?;
+        config.opensandbox = settings.opensandbox;
         #[cfg(feature = "sprites")]
         settings.sprites.settings_with(|_| None)?;
         config.sprites = settings.sprites;

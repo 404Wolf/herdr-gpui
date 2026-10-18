@@ -5,7 +5,8 @@ use std::{io::Cursor, net::TcpListener, sync::mpsc, thread, time::Duration};
 use tungstenite::Message;
 
 pub(super) use super::super::relay::{HELPER, run_helper};
-use super::super::relay::{input, open, relay};
+use super::super::relay::{open, relay};
+use crate::cloud::socket::{Stream, input};
 
 /// Serve one exec stream: record what the client sends until its stdin
 /// ends, then send `replies`.
@@ -35,16 +36,9 @@ fn serve(replies: Vec<Message>) -> (String, mpsc::Receiver<Vec<Vec<u8>>>) {
     (format!("ws://{address}/v1/sprites/s/exec"), received)
 }
 
-fn connect(url: &str) -> tungstenite::WebSocket<super::super::relay::Stream> {
+fn connect(url: &str) -> tungstenite::WebSocket<Stream> {
     let url = url::Url::parse(url).unwrap();
-    let socket = open(&url, &"token".to_owned().into()).unwrap();
-    match socket.get_ref() {
-        super::super::relay::Stream::Plain(tcp) => tcp
-            .set_read_timeout(Some(Duration::from_millis(20)))
-            .unwrap(),
-        super::super::relay::Stream::Tls(_) => unreachable!("loopback is plain"),
-    }
-    socket
+    open(&url, &"token".to_owned().into()).unwrap()
 }
 
 #[test]
@@ -110,5 +104,8 @@ fn a_stream_that_closes_without_an_exit_is_a_failed_connection() {
         &mut Vec::new(),
     )
     .unwrap_err();
-    assert!(matches!(error, Error::Closed));
+    assert!(matches!(
+        error,
+        Error::Socket(crate::cloud::socket::Error::Closed)
+    ));
 }

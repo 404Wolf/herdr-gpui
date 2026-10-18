@@ -213,6 +213,7 @@ embedded_icons! {
     "cloud/coder.svg",
     "cloud/container.svg",
     "cloud/daytona.svg",
+    "cloud/opensandbox.svg",
     "cloud/railway.svg",
     "cloud/sprites.svg",
     "code.svg",

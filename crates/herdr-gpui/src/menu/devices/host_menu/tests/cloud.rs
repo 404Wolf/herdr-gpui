@@ -47,6 +47,8 @@ fn right_clicking_a_cloud_device_offers_rename_settings_setup_and_removal(cx: &m
         CloudProvider::Coder => "host-coder:w1",
         #[cfg(feature = "container")]
         CloudProvider::Container => "host-container:w1",
+        #[cfg(feature = "opensandbox")]
+        CloudProvider::OpenSandbox => "host-opensandbox:w1",
         #[cfg(feature = "sprites")]
         CloudProvider::Sprites => "host-sprites:w1",
         #[cfg(feature = "daytona")]

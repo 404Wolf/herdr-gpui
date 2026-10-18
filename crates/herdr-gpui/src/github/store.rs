@@ -244,6 +244,7 @@ fn keyring_save(_: Option<&SecretString>, _: &Account) -> Result<()> {
     feature = "boat",
     feature = "coder",
     feature = "daytona",
+    feature = "opensandbox",
     feature = "sprites"
 ))]
 pub(crate) struct Entry {
@@ -271,6 +272,7 @@ pub(crate) struct Entry {
     feature = "boat",
     feature = "coder",
     feature = "daytona",
+    feature = "opensandbox",
     feature = "sprites"
 ))]
 impl Store {
@@ -309,6 +311,7 @@ fn keychain_save(service: &str, account: &str, token: Option<&SecretString>) -> 
     feature = "boat",
     feature = "coder",
     feature = "daytona",
+    feature = "opensandbox",
     feature = "sprites"
 ))]
 pub(crate) fn read_entry(store: Store, entry: &Entry) -> Result<Option<SecretString>> {
@@ -334,6 +337,7 @@ pub(crate) fn read_entry(store: Store, entry: &Entry) -> Result<Option<SecretStr
     feature = "boat",
     feature = "coder",
     feature = "daytona",
+    feature = "opensandbox",
     feature = "sprites"
 ))]
 pub(crate) fn save_entry(store: Store, entry: &Entry, token: Option<&SecretString>) -> Result<()> {

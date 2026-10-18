@@ -242,6 +242,8 @@ struct SettingsWindow {
     container_card: Option<cloud_devices::ContainerCard>,
     #[cfg(feature = "daytona")]
     daytona_card: Option<cloud_devices::DaytonaCard>,
+    #[cfg(feature = "opensandbox")]
+    opensandbox_card: Option<cloud_devices::OpenSandboxCard>,
     #[cfg(feature = "railway")]
     railway_card: Option<cloud_devices::RailwayCard>,
     #[cfg(feature = "sprites")]
@@ -375,6 +377,8 @@ impl SettingsWindow {
             container_card: None,
             #[cfg(feature = "daytona")]
             daytona_card: None,
+            #[cfg(feature = "opensandbox")]
+            opensandbox_card: None,
             #[cfg(feature = "railway")]
             railway_card: None,
             #[cfg(feature = "sprites")]

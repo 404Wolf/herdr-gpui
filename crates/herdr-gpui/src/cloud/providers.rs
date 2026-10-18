@@ -210,6 +210,20 @@ providers! {
         deletion: None,
         provision: None,
     },
+    "opensandbox" OpenSandbox => {
+        module: opensandbox,
+        name: "OpenSandbox",
+        icon: "icons/cloud/opensandbox.svg",
+        offer: "Create a sandbox on an OpenSandbox server in Settings",
+        noun: "sandbox",
+        command: plain,
+        deletion: Some(Deletion {
+            noun: |_| "sandbox",
+            leftovers: "",
+            run: crate::opensandbox::destroy_saved,
+        }),
+        provision: Some(crate::opensandbox::setup::provision),
+    },
     "railway" Railway => {
         module: railway,
         name: "Railway",

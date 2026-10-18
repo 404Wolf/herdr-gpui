@@ -110,6 +110,11 @@ impl HerdrWindow {
                 crate::cloud::CloudProvider::Daytona => {
                     self.config.daytona.api_url.is_some() || var("HERDR_DAYTONA_API_URL").is_some()
                 }
+                #[cfg(feature = "opensandbox")]
+                crate::cloud::CloudProvider::OpenSandbox => {
+                    self.config.opensandbox.api_url.is_some()
+                        || var("HERDR_OPENSANDBOX_API_URL").is_some()
+                }
                 #[cfg(feature = "sprites")]
                 crate::cloud::CloudProvider::Sprites => {
                     self.config.sprites.api_url.is_some() || var("HERDR_SPRITES_API_URL").is_some()

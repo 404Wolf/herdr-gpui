@@ -13,6 +13,8 @@ mod coder;
 mod container;
 #[cfg(feature = "daytona")]
 mod daytona;
+#[cfg(feature = "opensandbox")]
+mod opensandbox;
 #[cfg(feature = "railway")]
 mod railway;
 mod setup;
@@ -29,6 +31,8 @@ pub(super) use coder::CoderCard;
 pub(super) use container::ContainerCard;
 #[cfg(feature = "daytona")]
 pub(super) use daytona::DaytonaCard;
+#[cfg(feature = "opensandbox")]
+pub(super) use opensandbox::OpenSandboxCard;
 #[cfg(feature = "railway")]
 pub(super) use railway::RailwayCard;
 #[cfg(feature = "sprites")]
@@ -100,6 +104,7 @@ fn input(
     feature = "coder",
     feature = "container",
     feature = "daytona",
+    feature = "opensandbox",
     feature = "sprites"
 ))]
 fn follow_config<const N: usize>(
@@ -154,6 +159,8 @@ impl SettingsWindow {
                 CloudProvider::Daytona => self.open_daytona_card(cx),
                 #[cfg(feature = "railway")]
                 CloudProvider::Railway => self.open_railway_card(cx),
+                #[cfg(feature = "opensandbox")]
+                CloudProvider::OpenSandbox => self.open_opensandbox_card(cx),
                 #[cfg(feature = "sprites")]
                 CloudProvider::Sprites => self.open_sprites_card(cx),
             }
@@ -177,6 +184,8 @@ impl SettingsWindow {
                 CloudProvider::Daytona => self.daytona_config_changed(cx),
                 #[cfg(feature = "railway")]
                 CloudProvider::Railway => self.railway_config_changed(cx),
+                #[cfg(feature = "opensandbox")]
+                CloudProvider::OpenSandbox => self.opensandbox_config_changed(cx),
                 #[cfg(feature = "sprites")]
                 CloudProvider::Sprites => self.sprites_config_changed(cx),
             }
@@ -246,6 +255,8 @@ impl SettingsWindow {
             CloudProvider::Daytona => self.render_daytona_card(cx),
             #[cfg(feature = "railway")]
             CloudProvider::Railway => self.render_railway_card(cx),
+            #[cfg(feature = "opensandbox")]
+            CloudProvider::OpenSandbox => self.render_opensandbox_card(cx),
             #[cfg(feature = "sprites")]
             CloudProvider::Sprites => self.render_sprites_card(cx),
         };
@@ -312,6 +323,7 @@ impl SettingsWindow {
         feature = "coder",
         feature = "container",
         feature = "daytona",
+        feature = "opensandbox",
         feature = "railway",
         feature = "sprites"
     ))]
@@ -333,6 +345,7 @@ impl SettingsWindow {
         feature = "coder",
         feature = "container",
         feature = "daytona",
+        feature = "opensandbox",
         feature = "railway",
         feature = "sprites"
     ))]
@@ -370,6 +383,7 @@ impl SettingsWindow {
         feature = "coder",
         feature = "container",
         feature = "daytona",
+        feature = "opensandbox",
         feature = "railway",
         feature = "sprites"
     ))]

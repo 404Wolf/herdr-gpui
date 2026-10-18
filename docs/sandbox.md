@@ -1,9 +1,10 @@
 # Sandboxes
 
 How herdr-gpui gives agents isolated machines: containers on this computer,
-Fly Sprites, and the existing cloud providers. User-facing behavior is in the
-crate README's "Containers (Docker or Podman)", "Fly Sprites", and "Smart
-Dispatch" sections; this page records the design and is for working on it.
+Fly Sprites, a self-hosted OpenSandbox server, and the existing cloud
+providers. User-facing behavior is in the
+crate README's "Containers (Docker or Podman)", "OpenSandbox", "Fly Sprites",
+and "Smart Dispatch" sections; this page records the design and is for working on it.
 
 ## Decision: a sandbox is a device
 
@@ -29,7 +30,7 @@ getting Herdr onto it, and moving Git state in and out with Teleport.
 | --- | --- |
 | Provider registry, `SandboxProvider` | `cloud/providers.rs`: one `providers!` row per provider generates the name, logo, connector, background command, deletion, on-demand provisioning, and `cloud::ProviderError`. No async trait: everything blocks on workers. |
 | Session manager (PTY, reconnect) | The sandbox's own Herdr daemon, through `herdr_client::connect_command`. |
-| Exec / attach | The provider's command: `docker exec -i`, `ssh`, or this app as a relay (`azure/sandbox/relay.rs`, `sprites/relay.rs`). |
+| Exec / attach | The provider's command: `docker exec -i`, `ssh`, or this app as a relay (`azure/sandbox/relay.rs`, `sprites/relay.rs`, `opensandbox/relay.rs`, sharing `cloud/socket.rs`). |
 | Git sync | `teleport/`: `fresh.rs` (new worktree from a base commit, cloned or bundled), `carry.rs`, and Teleport itself, untracked files included. |
 | Workspace lifecycle | `cloud/jobs.rs` (create with progress), `cloud/catalog.rs` (saved devices), provider `setup.rs` (create, delete, roll back a failed create). |
 | Dirty-state warning before delete | `cloud/unsynced.rs`, shown by the sidebar's Remove dialog. |
@@ -66,10 +67,11 @@ stream to an arbitrary command exists.
 | Docker / Podman | Yes: `exec -i` without a TTY | Shipped. Live-tested with Docker (OrbStack). Podman follows the same CLI; not live-tested. |
 | Fly Sprites | Yes: exec WebSocket, one tag byte per frame, explicit stdin EOF | Shipped as experimental. Tested against a scripted stream; no live account. |
 | E2B | Only through envd's Connect RPC (base64 JSON, one POST per stdin chunk); its CLI decodes output as text, which breaks binary data | Not built: costlier than Sprites for the same result. |
-| OpenSandbox | Its published execd API streams output but takes no stdin; a PTY WebSocket appears only in a design note, with no stdin EOF | Not built: needs a self-hosted server to verify, and the missing EOF breaks Teleport's bundle transfer. |
+| OpenSandbox | Yes: execd's PTY session runs a command, and its WebSocket in pipe mode carries stdin, stdout, and stderr unchanged; it has no stdin EOF, so the relay frames input for a wrapper that ends it | Shipped as experimental. Live-tested against `opensandbox-server` (execd v1.1.0) on Docker: binary input with EOF, exit codes, install, entrypoint server, delete. |
 | Azure Container Apps sandboxes | Exec WebSocket on a terminal only | Already shipped, with a relay that works around the terminal. |
 
-Sources: [Sprites exec WebSocket](https://docs.fly.io/sprites/api/websockets/execute-command.md),
+Sources: [OpenSandbox execd PTY sessions](https://github.com/opensandbox-group/OpenSandbox/blob/main/components/execd/PTY.md),
+[Sprites exec WebSocket](https://docs.fly.io/sprites/api/websockets/execute-command.md),
 [Sprites lifecycle](https://docs.fly.io/sprites/concepts/lifecycle.md),
 [E2B process API](https://github.com/e2b-dev/infra/blob/main/packages/envd/spec/process/process.proto),
 [E2B CLI exec](https://docs.e2b.dev/cli/exec-command.md),
@@ -99,7 +101,6 @@ Sources: [Sprites exec WebSocket](https://docs.fly.io/sprites/api/websockets/exe
   agent check. Doing this safely means choosing what may be copied into a
   sandbox (API keys, not session files) and per-device trust, which the `gh`
   token handling would follow too.
-- **OpenSandbox**, until it can be run and its stdin end of file verified.
 - **Orphans.** A crash between a provider creating a machine and the device
   being saved leaves the machine unlisted. Containers carry the
   `dev.herdr-gpui.device` label and sprites a `herdr-` name, so a reconcile

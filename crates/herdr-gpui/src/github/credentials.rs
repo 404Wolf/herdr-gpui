@@ -42,6 +42,7 @@ pub(super) fn read(_path: &Path, _name: &CStr) -> Result<Option<SecretString>> {
         feature = "boat",
         feature = "coder",
         feature = "daytona",
+        feature = "opensandbox",
         feature = "sprites"
     )
 ))]
@@ -60,6 +61,7 @@ pub(crate) fn read_checked(
         feature = "boat",
         feature = "coder",
         feature = "daytona",
+        feature = "opensandbox",
         feature = "sprites"
     )
 ))]
@@ -182,6 +184,7 @@ pub(super) fn store(
         feature = "boat",
         feature = "coder",
         feature = "daytona",
+        feature = "opensandbox",
         feature = "sprites"
     )
 ))]

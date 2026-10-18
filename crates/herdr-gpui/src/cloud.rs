@@ -12,6 +12,8 @@ pub(crate) mod install;
 mod jobs;
 pub(crate) mod names;
 mod providers;
+#[cfg(any(feature = "opensandbox", feature = "sprites"))]
+pub(crate) mod socket;
 pub(crate) mod unsynced;
 pub(crate) mod worker;
 

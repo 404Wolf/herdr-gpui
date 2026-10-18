@@ -38,7 +38,7 @@ impl Settings {
             Some(key) => Some(Engine::from_key(key).ok_or(Error::Field("[container] engine"))?),
         };
         let image = text(&config.image).unwrap_or(DEFAULT_IMAGE).to_owned();
-        if !image_reference(&image) {
+        if !crate::cloud::names::image_reference(&image) {
             return Err(Error::Field("[container] image"));
         }
         let cpus = text(&config.cpus).unwrap_or(DEFAULT_CPUS).to_owned();
@@ -104,17 +104,6 @@ fn text(value: &Option<String>) -> Option<&str> {
         .as_deref()
         .map(str::trim)
         .filter(|text| !text.is_empty())
-}
-
-/// A reference such as `ubuntu:24.04`, `ghcr.io/org/image@sha256:…`: passed
-/// as one argument, and never one the engine could read as an option.
-pub(crate) fn image_reference(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 255
-        && !value.starts_with('-')
-        && value.bytes().all(|b| {
-            b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'/' | b':' | b'@')
-        })
 }
 
 /// A size such as `512m` or `8g`, in the units both engines accept.

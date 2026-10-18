@@ -31,16 +31,10 @@ pub enum Error {
     Json(#[source] serde_json::Error),
     #[error("Invalid Sprites authorization header.")]
     Header(#[source] ureq::http::header::InvalidHeaderValue),
-    #[error("The sprite's exec stream failed.")]
-    Stream(#[source] tungstenite::Error),
-    #[error("Invalid exec stream authorization header.")]
-    StreamHeader(#[source] tungstenite::http::header::InvalidHeaderValue),
-    #[error("Could not reach the Sprites API.")]
-    Connect(#[source] io::Error),
-    #[error("TLS setup for the Sprites API failed.")]
-    Tls(#[source] rustls::Error),
-    #[error("The exec stream closed before the command finished.")]
-    Closed,
+    #[error(transparent)]
+    Socket(#[from] crate::cloud::socket::Error),
+    #[error("Could not write the command's output.")]
+    Output(#[source] io::Error),
     #[error("Could not find this app's executable to relay through.")]
     Executable(#[source] io::Error),
     #[error("Cancelled.")]
