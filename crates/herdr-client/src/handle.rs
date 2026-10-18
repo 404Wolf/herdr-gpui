@@ -6,6 +6,7 @@ use crate::{
     Error, Result, SendError,
     clipboard::{ClipboardImageUpload, ImageLease, ImageSlot, WakeOnDrop},
     event::ClientEvent,
+    frame::ImageWriter,
     host_theme::HostTheme,
     method::Method,
     options::{ConnectOptions, validate_options},
@@ -54,6 +55,21 @@ pub(crate) struct Command {
     /// Set when this command is an API request awaiting a correlated response.
     pub(crate) request: Option<PendingRequest>,
     pub(crate) image: Option<ImageSlot>,
+    /// Progress of input written beside a partial inbound frame. Once attempted
+    /// it is only written in bounded steps; once on the wire it finishes first.
+    pub(crate) written: ImageWriter,
+}
+
+impl Command {
+    /// Whether some of this command's frame is already on the wire.
+    pub(crate) fn started(&self) -> bool {
+        self.written.offset > 0 || self.image.as_ref().is_some_and(|i| i.writer.offset > 0)
+    }
+
+    /// Input whose bounded write began, even if the socket took nothing yet.
+    pub(crate) fn input_attempted(&self) -> bool {
+        self.image.is_none() && self.written.started.is_some()
+    }
 }
 
 /// A queued API request, waiting on the single in-flight lease.
@@ -114,6 +130,7 @@ impl ClientHandle {
             bytes: Vec::new(),
             input_pane: None,
             request: None,
+            written: ImageWriter::default(),
             image: Some(ImageSlot {
                 receiver,
                 lease: lease.clone(),
@@ -169,6 +186,7 @@ impl ClientHandle {
             input_pane,
             request,
             image: None,
+            written: ImageWriter::default(),
         })
     }
 

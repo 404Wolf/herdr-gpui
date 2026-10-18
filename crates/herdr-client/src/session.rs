@@ -37,6 +37,16 @@ pub(crate) struct Pending {
 
 // Keep ordinary blocking writes small while the inbound surface is unfinished.
 pub(super) const MAX_INTERLEAVED_INPUT_BYTES: usize = 4 * 1024;
+
+/// One bounded write of `command`'s input, resuming where the last one stopped.
+/// Returns whether the whole frame is written.
+fn write_input(stream: &mut Stream, command: &mut Command) -> Result<bool> {
+    stream.set_write_timeout(Some(POLL))?;
+    let finished = command.written.write_some(stream, &command.bytes)?;
+    stream.set_write_timeout(Some(Duration::from_secs(1)))?;
+    Ok(finished)
+}
+
 fn supports_surface_interest(welcome: &EndpointServerWelcome) -> bool {
     ["surface_interest", "presentation_effects_fence"]
         .iter()
@@ -199,6 +209,13 @@ impl Session {
         }
     }
 
+    /// Whether room in the socket lets the batch write this attempted input: it
+    /// is on the wire, no inbound frame fences it, or it is still permitted. A
+    /// fenced attempt must wait for reads, or writability would spin the worker.
+    pub(crate) fn input_writable(&self, command: &Command, reader: &FrameReader) -> bool {
+        command.started() || reader.started.is_none() || self.permits_partial_input(command, reader)
+    }
+
     pub(crate) fn permits_partial_input(&self, command: &Command, reader: &FrameReader) -> bool {
         if cfg!(windows)
             || self.pending.is_some()
@@ -332,16 +349,28 @@ pub(crate) fn run_connection(
             .as_ref()
             .and_then(|c| c.image.as_ref())
             .is_some_and(|image| image.writer.offset > 0);
+        // A started image or attempted input: no probe may block behind it.
+        let partial_out = queued
+            .as_ref()
+            .is_some_and(|c| c.started() || c.input_attempted());
+        if let Some(command) = queued.as_ref().filter(|c| c.input_attempted())
+            && command
+                .written
+                .deadline()
+                .is_some_and(|due| Instant::now() >= due)
+        {
+            return Err(Error::InputWriteTimeout);
+        }
         if let Some(image) = queued.as_ref().and_then(|c| c.image.as_ref()) {
             image.writer.check_timeout()?;
             if partial_image && image.lease.cancelled.load(Ordering::Acquire) {
                 return Err(Error::ClipboardImageCancelled);
             }
         }
-        // A probe is a frame too: never insert one into a partial image frame.
+        // A probe is a frame too: never insert one into a partial outbound frame.
         // Preparation does not suppress probes; actual writes have their own deadline.
         // A liveness request waits for the same boundary rather than being lost.
-        if !partial_image && let Some(health) = &mut session.health {
+        if !partial_out && let Some(health) = &mut session.health {
             let now = Instant::now();
             let probe = liveness.swap(false, Ordering::AcqRel) && health.probe(now, pace.liveness);
             if health.tick(now)? || probe {
@@ -363,8 +392,15 @@ pub(crate) fn run_connection(
             if stop.load(Ordering::Acquire) {
                 return Ok(());
             }
+            if command.image.is_none() && command.started() {
+                if !write_input(&mut stream, &mut command)? {
+                    queued = Some(command);
+                    break;
+                }
+                continue;
+            }
             if reader.started.is_some()
-                && !partial_image
+                && !command.started()
                 && (!session.permits_partial_input(&command, &reader)
                     || commands.wait(&stream, false, Duration::ZERO)?)
             {
@@ -428,6 +464,15 @@ pub(crate) fn run_connection(
                 // Even a successful bounded write yields to the inbound reader.
                 break;
             }
+            // Input beside a partial inbound frame must not block on a peer that
+            // is still sending: write what the socket takes and keep the rest.
+            if reader.started.is_some() || command.input_attempted() {
+                if !write_input(&mut stream, &mut command)? {
+                    queued = Some(command);
+                    break;
+                }
+                continue;
+            }
             stream.write_all(&command.bytes)?;
             if let Some(request) = command.request {
                 tracing::trace!(category = "api", "request sent");
@@ -446,16 +491,19 @@ pub(crate) fn run_connection(
         // the batch can neither write it nor expire it, so neither its socket
         // room nor its deadline may end the wait.
         let image = image.filter(|_| reader.started.is_none() || partial_image);
-        // A published image waits for room in the socket; one still being
-        // prepared is woken on publication.
-        let writable = image.is_some_and(|(_, published)| published);
+        let input = queued.as_ref().filter(|c| c.input_attempted());
+        let partial_out = partial_image || input.is_some();
+        let input_ready = input.is_some_and(|c| session.input_writable(c, &reader));
+        // A published image or ready input waits for room in the socket; an
+        // image still being prepared is woken on publication.
+        let writable = image.is_some_and(|(_, published)| published) || input_ready;
         // Commands left behind by the batch bound must not wait, nor a liveness
         // request a partial image deferred; anything else fenced by a request,
         // an image, or a partial frame waits for what unfences it. A fenced
         // command is always `queued`, so input permitted during a partial frame
         // and cut off by the bound does not wait for the frame's tail.
         let timeout = if (queued.is_none() && !commands.is_empty())
-            || (!partial_image && session.health.is_some() && liveness.load(Ordering::Acquire))
+            || (!partial_out && session.health.is_some() && liveness.load(Ordering::Acquire))
         {
             Duration::ZERO
         } else {
@@ -465,14 +513,15 @@ pub(crate) fn run_connection(
                 [
                     session.deadline(),
                     reader.deadline(),
-                    // A partial image defers health checks, so their deadline
-                    // cannot end the wait either; the image's own deadline does.
+                    // A partial outbound frame defers health checks, so their
+                    // deadline cannot end the wait either; the frame's own does.
                     session
                         .health
                         .as_ref()
-                        .filter(|_| !partial_image)
+                        .filter(|_| !partial_out)
                         .map(Health::deadline),
                     image.and_then(|(image, published)| image.deadline(published)),
+                    input.and_then(|c| c.written.deadline()),
                 ],
             )
         };

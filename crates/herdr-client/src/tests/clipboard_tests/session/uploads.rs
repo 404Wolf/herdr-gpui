@@ -85,6 +85,7 @@ fn expired_preparation_skips_retained_permit_but_not_published_data() {
                 boot_id: "boot-v1".into(),
                 bytes: Vec::new(),
                 input_pane: None,
+                written: Default::default(),
                 request: None,
                 image: Some(ImageSlot {
                     receiver,

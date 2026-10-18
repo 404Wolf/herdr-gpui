@@ -5,6 +5,8 @@ use crate::{
 };
 use std::io::Cursor;
 
+mod attempted;
+
 fn pane_surface() -> PaneSurfaceFrame {
     let mut surface = baseline();
     let rect = SurfaceRect {
@@ -47,6 +49,7 @@ fn command(message: ClientMessage) -> Command {
         boot_id: "boot-v1".into(),
         bytes: encode_message(&message, MAX_FRAME_SIZE).unwrap(),
         input_pane,
+        written: Default::default(),
         request: None,
         image: None,
     }
@@ -250,6 +253,7 @@ mod socket {
     use super::*;
     use std::path::PathBuf;
 
+    mod backpressure;
     mod batch_bound;
     mod geometry;
 

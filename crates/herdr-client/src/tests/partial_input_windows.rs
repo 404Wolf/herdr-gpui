@@ -46,6 +46,7 @@ fn named_pipe_keeps_current_pane_input_behind_a_partial_surface() {
         boot_id: "boot-v1".into(),
         bytes: encode_message(&input, MAX_FRAME_SIZE).unwrap(),
         input_pane: Some("w1:p1".into()),
+        written: Default::default(),
         request: None,
         image: None,
     };

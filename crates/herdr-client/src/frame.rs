@@ -32,6 +32,11 @@ impl ImageWriter {
 
     pub(crate) fn poll(&mut self, stream: &mut impl Write, bytes: &[u8]) -> Result<bool> {
         self.check_timeout()?;
+        self.write_some(stream, bytes)
+    }
+
+    /// One bounded write attempt resuming at `offset`; the caller owns the deadline.
+    pub(crate) fn write_some(&mut self, stream: &mut impl Write, bytes: &[u8]) -> Result<bool> {
         self.started.get_or_insert_with(Instant::now);
         let end = bytes.len().min(self.offset + 64 * 1024);
         match stream.write(&bytes[self.offset..end]) {

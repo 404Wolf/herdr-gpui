@@ -265,6 +265,10 @@ retained surface. This exception is limited to 4 KiB encoded commands, preserves
 FIFO, and excludes popups, API requests, images, unknown headers, and changed
 boot/projection identities. Already-readable body bytes are drained first;
 strict full-body validation still controls surface publication and disconnection.
+Such input is written in bounded steps, so a peer still sending its frame cannot
+stall the worker: once attempted, it waits as the one held command for room in
+the socket (60-second deadline), reads continue, and once on the wire it
+finishes before any other bytes, including health probes.
 Windows retains the full inbound barrier. An already-started outbound frame
 continues in bounded chunks to avoid a full-duplex stall. No command
 or health frame can interleave with a partial image. Health probes are deferred
