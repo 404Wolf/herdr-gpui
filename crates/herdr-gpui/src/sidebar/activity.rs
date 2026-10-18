@@ -187,6 +187,16 @@ impl HerdrWindow {
         self.activity_bar_shown() && !self.zen_layout()
     }
 
+    /// The height the Workspaces title takes over the sidebar, or 0 with
+    /// no bar.
+    pub(crate) fn activity_title_height(&self) -> f32 {
+        if self.activity_bar_shown() {
+            TITLE_HEIGHT.max(line_height(&self.config.sidebar) + 8.)
+        } else {
+            0.
+        }
+    }
+
     /// The section that takes the window's body, if one other than
     /// Workspaces is shown. Zen mode keeps the terminals.
     pub(crate) fn activity_section(&self) -> Option<ActivityPanel> {
@@ -494,7 +504,7 @@ impl HerdrWindow {
         div()
             .debug_selector(|| "activity-title".into())
             .flex_none()
-            .h(px(TITLE_HEIGHT.max(line_height(font) + 8.)))
+            .h(px(self.activity_title_height()))
             .flex()
             .items_center()
             .when(expanded, |title| title.pl(px(12.)).pr(px(TITLE_END)))
