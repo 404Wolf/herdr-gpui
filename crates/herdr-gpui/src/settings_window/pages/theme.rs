@@ -149,7 +149,7 @@ impl SettingsWindow {
     fn theme_follow_row(&self, cx: &mut Context<Self>) -> ui::Row {
         let following = self.config.theme == FOLLOW;
         ui::row(&self.theme, "theme-follow", "Follow Herdr's theme")
-            .tag(ui::Source::Shared)
+            .tag(ui::Source::Herdr)
             .description("Use the theme set in Herdr's own config instead of a GUI choice.")
             .control(
                 ui::toggle(&self.theme, "theme-follow-toggle", following, true).on_click(
@@ -201,7 +201,7 @@ impl SettingsWindow {
         let note = if Scope::Herdr.editable() {
             "Ghostty themes apply to this app; Herdr themes are shared."
         } else {
-            "Shared Herdr themes are read-only on this platform."
+            "Herdr's themes are read-only on this platform."
         };
         ui::row(&self.theme, "theme-source", "Source")
             .description(note)

@@ -32,6 +32,8 @@ mod configured_rows;
 mod device_footer;
 #[cfg(test)]
 mod device_footer_setting;
+#[cfg(all(test, feature = "azure"))]
+mod device_removing;
 #[cfg(test)]
 mod devices_layout;
 #[cfg(test)]
@@ -56,6 +58,8 @@ mod palette;
 mod palette_header;
 #[cfg(test)]
 mod picker_scroll;
+#[cfg(test)]
+mod probe_bar;
 #[cfg(test)]
 mod probe_scale;
 #[cfg(test)]
@@ -314,12 +318,21 @@ impl ProbeText {
             && super::sidebar_width(None, f32::from(window.viewport_size().width))
                 == super::SIDEBAR_WIDTH
         {
-            let mode = window
+            // The activity bar, when shown, puts the sidebar beside it.
+            let (mode, bar) = window
                 .root::<HerdrWindow>()
                 .flatten()
-                .map(|view| view.read(cx).config.layout.mode)
+                .map(|view| {
+                    let view = view.read(cx);
+                    let bar = if view.activity_bar_shown() {
+                        super::activity::BAR_WIDTH
+                    } else {
+                        0.
+                    };
+                    (view.config.layout.mode, bar)
+                })
                 .unwrap_or_default();
-            probe.verify_child(&self.0, mode, window.scale_factor())?;
+            probe.verify_child(&self.0, mode, bar, window.scale_factor())?;
             eprintln!("SIDEBAR child verified: {}", probe.glyph_text);
         }
         Ok(probe)
@@ -335,16 +348,23 @@ pub(crate) fn within_device_pixel(actual: Pixels, expected: Pixels, scale: f32) 
 }
 
 impl PaintedText {
+    /// `bar` is the width of the activity bar left of the sidebar, if any;
     /// `scale` is the window's device pixels per logical pixel; see
     /// [`within_device_pixel`].
-    fn verify_child(&self, input: &str, mode: crate::config::LayoutMode, scale: f32) -> Result<()> {
+    fn verify_child(
+        &self,
+        input: &str,
+        mode: crate::config::LayoutMode,
+        bar: f32,
+        scale: f32,
+    ) -> Result<()> {
         let near = |actual, expected| within_device_pixel(actual, expected, scale);
         let look = super::layout::for_mode(mode);
         let layout = look.density;
         // Menu labels share text keys, and retained paint probes can still
         // describe the previous layout. Compute the sidebar column directly.
         let left =
-            px(look.content_x() + layout.child_indent() + super::STATUS_WIDTH + layout.gap());
+            px(bar + look.content_x() + layout.child_indent() + super::STATUS_WIDTH + layout.gap());
         let width = px(look.content_width(super::SIDEBAR_WIDTH)
             - super::STATUS_WIDTH
             - layout.gap()
@@ -482,6 +502,23 @@ pub(crate) fn full_draw(window: &mut Window, cx: &mut App) -> ArenaClearNeeded {
 
 #[cfg(test)]
 pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>) -> HerdrWindow {
+    let sidebar_view = {
+        let weak = cx.weak_entity();
+        cx.new(|_| {
+            crate::sidebar::SidebarView::new(
+                weak,
+                super::agents::Indicators::new(
+                    None,
+                    crate::config::StatusIcons::default(),
+                    false,
+                    false,
+                    &crate::config::Theme::default(),
+                ),
+            )
+        })
+    };
+    let hosts = vec![cx.entity_id(), sidebar_view.entity_id()];
+    let mark_layer = cx.new(|cx| crate::mark_layer::MarkLayer::new(window, hosts, cx));
     HerdrWindow {
         sound: Default::default(),
         bell: Default::default(),
@@ -519,6 +556,12 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
                 mode: crate::config::LayoutMode::from(crate::config::Density::Comfortable),
                 ..Default::default()
             },
+            // The plain sidebar, at the window's edge; the activity bar's
+            // tests turn the bar on.
+            sidebar_style: crate::config::SidebarStyle {
+                activity_bar: false,
+                ..Default::default()
+            },
             ..Default::default()
         },
         theme: Default::default(),
@@ -536,9 +579,10 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         code_indexes: Default::default(),
         orchestrators: Default::default(),
         orchestrator_live: Default::default(),
-        detached_orchestrators: Default::default(),
+        next_orchestrator: 0,
         orchestrator_events: Vec::new(),
         orchestrator_sampling: false,
+        overview: Default::default(),
         viewport_width: 0.,
         pr_actions: Default::default(),
         usage: Default::default(),
@@ -592,6 +636,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         last_input: None,
         last_pointer: None,
         active: false,
+        activity: Default::default(),
         sent_focus: None,
         bounds: Bounds::default(),
         title: crate::WINDOW_TITLE.to_owned(),
@@ -619,6 +664,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         backdrop: Default::default(),
         device_themes: Default::default(),
         regions: Vec::new(),
+        mark_layer,
         marked: String::new(),
         marked_selection: None,
         hover: None,
@@ -659,20 +705,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
             this.apply_shared_theme(cx);
             cx.notify();
         }),
-        sidebar_view: {
-            let weak = cx.weak_entity();
-            cx.new(|_| {
-                crate::sidebar::SidebarView::new(
-                    weak,
-                    super::agents::Indicators::new(
-                        None,
-                        None,
-                        false,
-                        &crate::config::Theme::default(),
-                    ),
-                )
-            })
-        },
+        sidebar_view,
         surface_signal: cx.new(|_| crate::window::SurfaceSignal),
         _sidebar_invalidation: HerdrWindow::invalidate_sidebar(cx),
         _host_theme: HerdrWindow::observe_host_theme(cx),

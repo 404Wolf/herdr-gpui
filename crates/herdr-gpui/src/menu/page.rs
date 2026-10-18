@@ -126,7 +126,7 @@ pub(crate) enum WorkspaceMenuAction {
     FanOut,
     /// Run one of the repository's worktree scripts in a new tab.
     Script(crate::worktree_scripts::ScriptKind),
-    /// Open the repository's orchestrator tab.
+    /// Show the repository's issues in the activity bar.
     Orchestrator,
 }
 

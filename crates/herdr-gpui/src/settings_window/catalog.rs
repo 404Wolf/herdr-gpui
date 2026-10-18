@@ -19,6 +19,8 @@ pub(super) enum Availability {
     Always,
     /// Only while the drafted theme follows the system as a light/dark pair.
     FollowingSystemTheme,
+    /// Only on Windows, which has the only platform code for it.
+    Windows,
 }
 
 impl Entry {
@@ -201,6 +203,18 @@ pub(super) const CATALOG: &[Entry] = &[
         "Host colours",
         "Tint a host's header, workspaces, worktrees and agents.",
     ),
+    entry(
+        Section::Indicators,
+        "indicators-edge-rail",
+        "Edge rail",
+        "A bar on the leading edge of each working, blocked, or done row, whichever icons you pick.",
+    ),
+    entry(
+        Section::Indicators,
+        "indicators-sets",
+        "Icons",
+        "Dots, Solid, Outline, Tiles, Wave, Braille or Orca status icons. Working always moves.",
+    ),
     entry(Section::Fonts, "fonts-terminal", "Terminal", ""),
     entry(Section::Fonts, "fonts-sidebar", "Sidebar", ""),
     entry(Section::Fonts, "fonts-tabs", "Tabs", ""),
@@ -292,6 +306,13 @@ pub(super) const CATALOG: &[Entry] = &[
     ),
     entry(
         Section::General,
+        "general-launch-at-login",
+        "Launch at login",
+        "Open Herdr UI when you sign in to Windows.",
+    )
+    .only(Availability::Windows),
+    entry(
+        Section::General,
         "general-update-beta",
         "Install beta releases",
         "Betas ship before they are promoted to stable. Turning this off never downgrades; Homebrew installations always follow stable.",
@@ -363,25 +384,13 @@ pub(super) const CATALOG: &[Entry] = &[
         Section::Notifications,
         "notif-sound",
         "Play agent sounds",
-        "Uses shared sound paths and per-agent overrides.",
+        "Uses Herdr's sound paths and per-agent overrides.",
     ),
     entry(
         Section::Notifications,
         "notif-volume",
         "Volume",
         "Sounds and Test play at this level, even when sounds are off.",
-    ),
-    entry(
-        Section::Notifications,
-        "notif-indicators",
-        "Style",
-        "How agent status shows in the sidebar.",
-    ),
-    entry(
-        Section::Notifications,
-        "notif-icons",
-        "Icons",
-        "Solid, Tiles and Edge rail are drawn by Herdr UI only; Herdr's terminal client keeps its dots or symbols.",
     ),
     entry(
         Section::Integrations,
@@ -412,14 +421,14 @@ pub(super) const CATALOG: &[Entry] = &[
     entry(
         Section::Configuration,
         "config-local",
-        "GUI overrides",
-        "The file holding this machine's GUI settings.",
+        "Herdr UI settings",
+        "The file holding Herdr UI's own settings on this machine.",
     ),
     entry(
         Section::Configuration,
         "config-shared",
         "Herdr configuration",
-        "Herdr's shared configuration file.",
+        "Herdr's configuration file, which its terminal client reads too.",
     ),
     entry(
         Section::Configuration,

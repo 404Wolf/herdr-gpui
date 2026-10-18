@@ -218,6 +218,9 @@ fn a_closed_child_is_diagnosed_from_its_real_exit_and_stderr() {
         .spawn()
         .unwrap();
     let stderr = drain(child.stderr.take().unwrap()).unwrap();
+    // A loaded runner can take longer than `DIAGNOSE_TIMEOUT` to start the
+    // shell; the exit is what is diagnosed, not how soon it came.
+    child.wait().unwrap();
     let stop = AtomicBool::new(false);
     assert_eq!(diagnose(&mut child, &stderr, &stop).1, SshFailure::Auth);
 }

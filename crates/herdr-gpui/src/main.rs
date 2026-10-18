@@ -12,6 +12,8 @@ mod app;
 mod app_badge;
 mod app_icon;
 mod avatars;
+#[cfg(feature = "azure")]
+mod azure;
 mod backdrop;
 mod bell;
 #[cfg(feature = "boat")]
@@ -26,6 +28,7 @@ mod close_modal;
 #[cfg(all(
     feature = "cloud",
     not(any(
+        feature = "azure",
         feature = "boat",
         feature = "coder",
         feature = "daytona",
@@ -33,7 +36,7 @@ mod close_modal;
     ))
 ))]
 compile_error!(
-    "the `cloud` feature is enabled through a provider feature, such as `boat`, `coder`, `daytona`, or `railway`"
+    "the `cloud` feature is enabled through a provider feature, such as `azure`, `boat`, `coder`, `daytona`, or `railway`"
 );
 #[cfg(feature = "cloud")]
 mod cloud;
@@ -52,6 +55,7 @@ mod contrast;
 mod control;
 mod controls;
 mod copy_mode;
+mod crash;
 mod daemon;
 #[cfg(feature = "daytona")]
 mod daytona;
@@ -78,6 +82,8 @@ mod integrations;
 #[cfg(windows)]
 mod jump_list;
 mod keymap;
+#[cfg(windows)]
+mod launch_at_login;
 mod lenient;
 mod link;
 mod links;
@@ -85,6 +91,7 @@ mod listening_ports;
 mod local_path;
 mod log_window;
 mod login_env;
+mod mark_layer;
 mod menu;
 mod menus;
 mod merged_cleanup;
@@ -96,6 +103,7 @@ mod network_quality;
 mod notifications;
 mod orchestrator;
 mod osc52;
+mod overview;
 mod palette;
 mod pane_menu;
 mod pane_move;

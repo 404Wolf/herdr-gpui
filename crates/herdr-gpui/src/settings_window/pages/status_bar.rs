@@ -63,7 +63,7 @@ impl SettingsWindow {
         div()
             .flex()
             .flex_col()
-            .child(ui::section(theme, "Items", Some(ui::Source::Local)))
+            .child(ui::section(theme, "Items", Some(ui::Source::HerdrUi)))
             .child(
                 ui::row(theme, "status-usage", "Usage")
                     .description(

@@ -40,10 +40,20 @@ pub use sidebar_fixture::start_sidebar;
 mod notifications;
 use notifications::start_notifications;
 
+#[cfg(any(target_os = "macos", windows))]
+#[path = "smoke_page_fixture.rs"]
+mod page_fixture;
+
 #[cfg(target_os = "macos")]
 #[path = "smoke_pages.rs"]
 mod pages;
 #[cfg(target_os = "macos")]
+use pages::start_pages;
+
+#[cfg(windows)]
+#[path = "smoke_pages_windows.rs"]
+mod pages;
+#[cfg(windows)]
 use pages::start_pages;
 
 #[cfg(target_os = "macos")]
@@ -274,12 +284,16 @@ pub fn start(handle: WindowHandle<HerdrWindow>, cx: &mut App) {
                 let active = window.is_window_active();
                 let actions_ready = window.is_action_available(&RunCommand { command: Command::Tab }, cx);
                 let probe = view.read(cx).input_probe;
+                // A command sent while a focus change is fenced is dropped,
+                // as a user's would be, so each step waits for the fence.
+                let fenced = view.read(cx).activation_deadline.is_some();
+                let ready = view.read(cx).navigation_ready();
                 let (live, local_error, options, last_queued_options, bounds) = {
                     let view = view.read(cx);
                     (view.live.clone(), view.local_error.clone(), view.options, view.last_queued_options, view.bounds)
                 };
                 let diagnostic = || format!(
-                    "step={step} ({}) elapsed={:?} frames={frames} focus={focused} actions_ready={actions_ready} active={} probe={probe:?} status={:.160} local_error={:.240} live.error={:.240} connected={} snapshot={:?} surface={:?} size={:?} last_queued_options={last_queued_options:?}",
+                    "step={step} ({}) elapsed={:?} frames={frames} focus={focused} actions_ready={actions_ready} fenced={fenced} ready={ready} active={} probe={probe:?} status={:.160} local_error={:.240} live.error={:.240} connected={} snapshot={:?} surface={:?} size={:?} last_queued_options={last_queued_options:?}",
                     STEPS[step], since.elapsed(), active, live.status,
                     local_error.as_deref().unwrap_or("none"), live.error.as_deref().unwrap_or("none"), live.status.is_connected(),
                     live.snapshot.as_ref().map(|s| (s.revision, s.workspaces.len(), s.tabs.len())),
@@ -294,7 +308,7 @@ pub fn start(handle: WindowHandle<HerdrWindow>, cx: &mut App) {
                     let screen = live.surface.as_ref().map(|s| screen_text(&s.frame)).unwrap_or_default();
                     bail!("timeout: {}; screen:\n{screen}", diagnostic());
                 }
-                if !focused || !actions_ready { return Ok(false); }
+                if !focused || !actions_ready || fenced || !ready { return Ok(false); }
                 let (Some(snapshot), Some(surface)) = (&live.snapshot, &live.surface) else { return Ok(false) };
                 if !live.status.is_connected() || snapshot.boot_id != surface.boot_id || snapshot.revision != surface.projection_revision {
                     return Ok(false);

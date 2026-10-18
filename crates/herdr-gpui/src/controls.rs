@@ -634,7 +634,7 @@ pub const COMMANDS: &[CommandInfo] = &[
     CommandInfo {
         command: Command::OpenOrchestrator,
         name: "open_orchestrator",
-        label: "Open Orchestrator",
+        label: "Show Issues",
     },
     CommandInfo {
         command: Command::InstallBrowserSkill,

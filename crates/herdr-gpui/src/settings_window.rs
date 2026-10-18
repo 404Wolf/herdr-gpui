@@ -8,6 +8,8 @@ mod cloud_devices;
 pub(crate) use cloud_devices::open as open_cloud;
 mod controls;
 mod inputs;
+#[cfg(windows)]
+mod launch_at_login;
 mod layouts;
 mod navigation;
 mod pages;
@@ -71,6 +73,8 @@ pub(crate) fn open(source: WeakEntity<HerdrWindow>, cx: &mut App) {
         open_with(source, cx, |view, window, cx| {
             view.initialize_theme_browser(window, cx);
             view.initialize_controls(cx);
+            #[cfg(windows)]
+            view.refresh_launch_at_login(None, cx);
             view.reload(cx);
             view.watch_config(cx);
         })
@@ -119,6 +123,8 @@ fn open_with(
             });
             model.update(cx, |view, cx| {
                 view.retarget_source(source, cx);
+                #[cfg(windows)]
+                view.watch_launch_at_login(window, cx);
                 view._appearance = Some(cx.observe_window_appearance(window, |view, _, cx| {
                     view.apply_window_appearance(cx);
                 }));
@@ -166,6 +172,8 @@ struct SettingsWindow {
     number_preview: Option<inputs::NumberPreview>,
     /// The host colour being typed as hex, if any.
     hex_edit: Option<sidebar::HexEdit>,
+    #[cfg(windows)]
+    launch_at_login: launch_at_login::LaunchAtLogin,
     error: Option<String>,
     status: Option<String>,
     focus: FocusHandle,
@@ -216,6 +224,16 @@ struct SettingsWindow {
     /// The main window's finished cloud jobs when the cards last read them.
     #[cfg(feature = "cloud")]
     cloud_jobs_seen: u64,
+    /// The cloud jobs' revision last drawn, so a job's progress redraws
+    /// Cloud devices without every change to the main window doing so.
+    #[cfg(feature = "cloud")]
+    cloud_jobs_drawn: u64,
+    /// The main window's cloud devices when the cards last read them, so a
+    /// device removed from the sidebar leaves Settings too.
+    #[cfg(feature = "cloud")]
+    cloud_devices_seen: u64,
+    #[cfg(feature = "azure")]
+    azure_card: Option<cloud_devices::AzureCard>,
     #[cfg(feature = "boat")]
     boat_card: Option<cloud_devices::BoatCard>,
     #[cfg(feature = "coder")]
@@ -300,6 +318,8 @@ impl SettingsWindow {
             number_edit: None,
             number_preview: None,
             hex_edit: None,
+            #[cfg(windows)]
+            launch_at_login: Default::default(),
             error: appearance.error,
             status: None,
             focus: cx.focus_handle(),
@@ -337,6 +357,12 @@ impl SettingsWindow {
             cloud_tab: cloud_devices::first_tab(),
             #[cfg(feature = "cloud")]
             cloud_jobs_seen: 0,
+            #[cfg(feature = "cloud")]
+            cloud_jobs_drawn: 0,
+            #[cfg(feature = "cloud")]
+            cloud_devices_seen: 0,
+            #[cfg(feature = "azure")]
+            azure_card: None,
             #[cfg(feature = "boat")]
             boat_card: None,
             #[cfg(feature = "coder")]

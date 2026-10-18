@@ -18,12 +18,12 @@ fn child_probe_allows_less_than_one_device_pixel_of_snapping() {
     };
     probe.bounds.size.width = px(241. / 1.5);
     probe.mask = probe.bounds;
-    probe.verify_child("sidebar-child", mode, 1.5).unwrap();
+    probe.verify_child("sidebar-child", mode, 0., 1.5).unwrap();
     probe.bounds.size.width = px(160.);
     probe.mask = probe.bounds;
     assert!(
         probe
-            .verify_child("sidebar-child", mode, 1.5)
+            .verify_child("sidebar-child", mode, 0., 1.5)
             .unwrap_err()
             .to_string()
             .contains("child label width: actual")

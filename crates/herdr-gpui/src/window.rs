@@ -103,6 +103,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) _worktree_notes: Subscription,
     pub(crate) activation_deadline: Option<std::time::Instant>,
     pub(crate) active: bool,
+    /// The activity bar's panel and filter.
+    pub(crate) activity: sidebar::Activity,
     pub(crate) agent_sort: preferences::AgentSort,
     /// Whether the user chose the sort with the panel toggle, now or in a
     /// stored session. Until then the daemon's `ui.agent_panel_sort` decides,
@@ -152,9 +154,6 @@ pub(crate) struct HerdrWindow {
     pub(crate) daemon_text: crate::release_notes::DaemonText,
     /// Notes waiting for their agents to be ready for them.
     pub(crate) deliveries: crate::agent_notes::Deliveries,
-    /// Orchestrator views moved into windows of their own, by their old tab.
-    pub(crate) detached_orchestrators:
-        std::collections::HashMap<crate::browser::TabId, crate::orchestrator::Detached>,
     /// A press on a device's header that may lift it for reordering.
     pub(crate) device_drag: Option<sidebar::DeviceDrag>,
     pub(crate) device_filter: Option<String>,
@@ -213,6 +212,9 @@ pub(crate) struct HerdrWindow {
     pub(crate) listening_ports: crate::listening_ports::ListeningPorts,
     pub(crate) live: LiveState,
     pub(crate) local_error: Option<String>,
+    /// Draws the moving status marks the sidebar and the tab strip reserve
+    /// room for; see `mark_layer`.
+    pub(crate) mark_layer: Entity<crate::mark_layer::MarkLayer>,
     pub(crate) marked: String,
     /// Where the IME's caret or converted clause is within `marked`, in
     /// UTF-16; `None` puts the caret after it.
@@ -223,16 +225,20 @@ pub(crate) struct HerdrWindow {
     /// The notes panel beside a review or an annotated page; both share it.
     /// The revision of the app-wide network reading this window last drew.
     pub(crate) network_quality_seen: u64,
+    /// The last orchestrator view id handed out.
+    pub(crate) next_orchestrator: u64,
     pub(crate) notes_width: crate::panel_resize::PanelWidth,
     pub(crate) options: ConnectOptions,
     /// Orchestrator views' requests, acted on at the next tick.
-    pub(crate) orchestrator_events: Vec<(crate::browser::TabId, crate::orchestrator::Event)>,
+    pub(crate) orchestrator_events: Vec<(crate::orchestrator::ViewId, crate::orchestrator::Event)>,
     pub(crate) orchestrator_live: crate::orchestrator::LiveCache,
     /// Whether an orchestrator's dispatch dialog ranks hosts by their load.
     pub(crate) orchestrator_sampling: bool,
-    /// Each orchestrator tab's view, by its tab.
+    /// The orchestrator views the sections made, by id.
     pub(crate) orchestrators:
-        std::collections::HashMap<crate::browser::TabId, crate::orchestrator::Orchestrator>,
+        std::collections::HashMap<crate::orchestrator::ViewId, crate::orchestrator::Orchestrator>,
+    /// The activity bar's Overview page.
+    pub(crate) overview: crate::overview::Page,
     pub(crate) painter: std::rc::Rc<std::cell::RefCell<terminal_painter::TerminalPainter>>,
     /// A pane moving to another device; a move outlives its menu.
     pub(crate) pane_carry: Option<crate::pane_menu::carry::Carry>,
@@ -386,6 +392,7 @@ impl HerdrWindow {
             let indicators = sidebar::Indicators::new(
                 this.settings.shared.as_ref(),
                 this.config.status_icons,
+                this.config.edge_rail,
                 matches!(
                     cx.window_appearance(),
                     WindowAppearance::Light | WindowAppearance::VibrantLight
@@ -447,6 +454,7 @@ impl HerdrWindow {
     /// Stored chrome yields to anything changed before it arrived. A stored
     /// sort is a past toggle, so it overrides the daemon's from then on.
     pub(crate) fn apply_stored_chrome(&mut self, chrome: preferences::Chrome) {
+        self.activity.restore(chrome.activity_panel);
         if !self.sidebar_modified {
             self.sidebar_width = chrome.sidebar_width;
         }
@@ -611,6 +619,7 @@ impl HerdrWindow {
             cx.notify();
         }
         self.poll_devices_overview(cx);
+        self.poll_overview(cx);
         if self.update_system_load() {
             cx.notify();
         }
@@ -624,6 +633,8 @@ impl HerdrWindow {
         if self.update_listening_ports() {
             cx.notify();
         }
+        #[cfg(feature = "azure")]
+        self.update_cloud_activity();
         if self.live.missing_installation && !self.install_warning_shown {
             self.install_warning_shown = true;
             self.show_install_modal(window, cx);

@@ -3,9 +3,9 @@
 `herdr-gpui` is also a command line for the running Herdr UI. Herdr's own
 `herdr` CLI drives the daemon: workspaces, terminal tabs, panes, agents,
 worktrees, and notifications. `herdr-gpui COMMAND` covers what only this
-client knows or draws: its windows, its own tabs (pages, code, reviews, the
-orchestrator, Devices), worktree notes, checkpoints, forwarded ports, and its
-settings.
+client knows or draws: its windows, its own tabs (pages, code, reviews,
+Devices), the activity bar's sections, worktree notes, checkpoints, forwarded
+ports, and its settings.
 
 Commands reach the app over a socket of its own,
 `$XDG_STATE_HOME/herdr/gpui/control.sock` (default `~/.local/state/`), which
@@ -68,14 +68,32 @@ Every command accepts:
 | `window detach\|reconnect` | Detach from, or reconnect to, the selected host |
 | `ui sidebar\|statusbar [on\|off\|toggle]` | For this window and session |
 | `ui font-size +\|-\|reset\|POINTS` | The terminal font size for this session |
+| `ui panel workspaces\|overview\|pull-requests\|issues\|usage` | Show an activity bar section: Workspaces with the sidebar expanded, Overview of what needs you on every host, the focused workspace's pull requests or issues across the window, or every host's plan usage |
 | `run COMMAND` | Any app command by its `[keybindings]` name, as the palette runs it |
 | `commands` | The names `run` accepts (no app needed) |
+| `open DIR` | Open a folder as **Open Project** in the palette does, starting the app if needed (below) |
+
+`open DIR` checks the folder where you run it and resolves it to an absolute,
+canonical path. A path that does not exist exits 5; a file, or a folder in a
+device namespace (`\\.\…`, `\\?\GLOBALROOT\…`, and on Unix `/dev`, `/proc`,
+`/sys`), exits 1. The app then opens the command palette on
+its projects and opens the folder there, which focuses the workspace already
+rooted in it or starts one, on the window's local Herdr, and brings the window
+forward. A dialog open in the window refuses it (exit 6); the palette shows
+anything that goes wrong after that, such as the folder disappearing.
+
+When no Herdr UI is running and no `--window` is given, `open` starts the app,
+as a plain `herdr-gpui` would, then asks again every quarter second until the
+window has connected to the local Herdr and accepts the folder. It waits at
+most 20 seconds after starting the app, then exits 7. Explorer's **Open in
+Herdr UI** entry, which both Windows installers add, runs this command through
+`herdr-gpui-launcher.exe`, so no console window appears.
 
 ### The app's own tabs
 
 | Command | What it does |
 | --- | --- |
-| `tab [list]` | Pages, code, reviews, the orchestrator, and Devices tabs with IDs |
+| `tab [list]` | Pages, code, reviews, and Devices tabs with IDs |
 | `tab focus\|close ID` | |
 | `browser open\|reload\|feedback` | See [browser tabs](../crates/herdr-gpui/README.md#browser-tabs) |
 | `browser list` | Page tabs only |
@@ -86,7 +104,7 @@ Every command accepts:
 | `code open FILE[:LINE]` | A read-only code tab at a line |
 | `code edit FILE[:LINE]` | Your terminal editor, in a new pane beside yours |
 | `devices` | The Devices overview |
-| `orchestrator [--repo PATH]` | The orchestrator of your checkout, or of PATH |
+| `orchestrator [--repo PATH]` | Show the Issues section narrowed to your checkout's project, or PATH's |
 | `orchestrator items\|issues\|prs` | What it last synced, from its local database (no app needed) |
 | `review` | The review of your workspace's uncommitted changes |
 
@@ -139,7 +157,7 @@ Every command accepts:
 | `integrations [list]` | What Herdr offers the selected host |
 | `integrations install-skill` | Install the agent skill (no app needed) |
 | `logs [--lines N] [--path]` | The app's log (no app needed) |
-| `diagnostics bundle PATH` | A redacted report for a bug (no app needed) |
+| `diagnostics bundle PATH` | A redacted report for a bug, with the newest crash reports (no app needed) |
 
 Boat's sandbox lifetime uses the existing config commands:
 

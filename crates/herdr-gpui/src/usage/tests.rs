@@ -15,6 +15,8 @@ mod antigravity_consent;
 mod browser_cookies;
 #[cfg(unix)]
 mod claude_keychain;
+#[cfg(feature = "azure")]
+mod cloud_load;
 mod footer_fit;
 mod keychain_access;
 mod labels;
@@ -28,6 +30,7 @@ mod quiet_app_data;
 mod refresh;
 #[cfg(unix)]
 mod remote_hosts;
+mod section;
 mod shown_providers;
 mod status_bar_room;
 mod wsl_hosts;

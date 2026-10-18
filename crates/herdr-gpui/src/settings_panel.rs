@@ -39,7 +39,7 @@ impl HerdrWindow {
                         this.reload_notification_config(cx);
                     }
                     Err(error) => {
-                        this.settings.error = Some(format!("Load shared settings: {error}"));
+                        this.settings.error = Some(format!("Load Herdr settings: {error}"));
                     }
                 }
                 cx.notify();

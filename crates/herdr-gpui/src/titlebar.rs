@@ -603,14 +603,10 @@ mod tests {
                     size(px(28.), px(28.))
                 )
             );
-            let banner_height = if env!("HERDR_BUILD_WORKTREE") == "1" {
-                22.
-            } else {
-                0.
-            };
+            // A worktree build's banner sits at the window's foot, not here.
             assert_eq!(
                 cx.debug_bounds("window-body").unwrap().top(),
-                menu_bottom + px(34. + banner_height)
+                menu_bottom + px(34.)
             );
         }
         let bounds = cx.debug_bounds("titlebar-avatar").unwrap();
@@ -727,12 +723,8 @@ mod native_chrome_tests {
                     )
                 );
                 let body = cx.debug_bounds("window-body").unwrap();
-                let banner_height = if env!("HERDR_BUILD_WORKTREE") == "1" {
-                    22.
-                } else {
-                    0.
-                };
-                assert_eq!(body.top(), px(34. + banner_height));
+                // A worktree build's banner sits at the window's foot.
+                assert_eq!(body.top(), px(34.));
                 assert_eq!(body.size.width, px(width));
                 assert!(body.bottom() <= px(height));
             }
