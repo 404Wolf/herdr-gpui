@@ -11,14 +11,16 @@
 # starts herdr-gpui.exe without a console window. It never installs, starts or
 # upgrades the Herdr daemon. Windows builds are experimental and never update
 # themselves: run this again to update. It also adds "Open in Herdr UI" to
-# folders in File Explorer, for the current user only.
+# folders in File Explorer and registers herdr-gpui:// links, for the current
+# user only.
 #
 # To uninstall, run it with -Uninstall:
 #
 #   & ([scriptblock]::Create((irm https://herdrui.dev/install.ps1))) -Uninstall
 #
 # That removes what this script added: the files, the PATH entry, the Start
-# menu shortcut, and the Explorer entry. Settings and Herdr sessions are kept.
+# menu shortcut, the Explorer entry, and the link registration. Settings and
+# Herdr sessions are kept.
 & {
   param([switch]$Uninstall)
   $ErrorActionPreference = 'Stop'
@@ -44,6 +46,10 @@
   # does and starts the app first when it is not running. Windows 11 lists it
   # under "Show more options". The Setup.exe installer writes the same keys.
   $verbs = 'HKCU:\Software\Classes\Directory\shell\HerdrUI', 'HKCU:\Software\Classes\Directory\Background\shell\HerdrUI'
+  # herdr-gpui:// links (jump list entries, notification clicks, links from
+  # other apps) start the launcher with the link as its only argument, and
+  # herdr-gpui.exe hands it to the running app. Setup.exe writes the same keys.
+  $scheme = 'HKCU:\Software\Classes\herdr-gpui'
 
   if ($Uninstall) {
     # Over a Setup.exe installation its own uninstaller removes everything,
@@ -61,6 +67,7 @@
       return
     }
     foreach ($verb in $verbs) { Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $verb }
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $scheme
     Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath (Join-Path ([Environment]::GetFolderPath('Programs')) 'Herdr UI.lnk')
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     $kept = @($userPath -split ';' | Where-Object { $_ -and $_.TrimEnd([char]92) -ne $dest })
@@ -175,6 +182,13 @@ public static class HerdrShortcut {
     Set-ItemProperty -LiteralPath $verb -Name 'Icon' -Value "`"$exe`",0"
     Set-Item -LiteralPath "$verb\command" -Value "`"$launcher`" open `"%V`""
   }
+
+  New-Item -Force -Path "$scheme\shell\open\command" | Out-Null
+  New-Item -Force -Path "$scheme\DefaultIcon" | Out-Null
+  Set-Item -LiteralPath $scheme -Value 'URL:Herdr UI link'
+  Set-ItemProperty -LiteralPath $scheme -Name 'URL Protocol' -Value ''
+  Set-Item -LiteralPath "$scheme\DefaultIcon" -Value "`"$exe`",0"
+  Set-Item -LiteralPath "$scheme\shell\open\command" -Value "`"$launcher`" `"%1`""
 
   Write-Host "Installed Herdr UI $version to $dest. Start it from the Start menu (Herdr UI), by running herdr-gpui-launcher.exe, or from Open in Herdr UI on a folder in File Explorer; use herdr-gpui for the command line."
   if (-not (Get-Command herdr -ErrorAction SilentlyContinue)) {
