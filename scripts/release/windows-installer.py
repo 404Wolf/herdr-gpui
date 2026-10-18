@@ -16,7 +16,8 @@
       app's name, the Start menu shortcut's AppUserModelID and target (the
       launcher), the user PATH, and the entry Settings lists under Installed
       apps; run it again as the in-app update does and check it starts the
-      app; then uninstall and check all of it is gone again. With --signed,
+      app; write the startup entry Launch at login would, marked off in
+      Startup apps; then uninstall and check all of it is gone again. With --signed,
       also require valid timestamped signatures from one signer on the
       installer and on everything it installed that runs, the uninstaller
       included. Changes this user's PATH and Start menu shortcut, and opens
@@ -190,6 +191,37 @@ def folder_verbs():
     return commands
 
 
+# Where Settings > General > Launch at login, and Task Manager's Startup apps
+# switch, name the app; the installer creates neither and removes both.
+STARTUP_KEYS = (r"Software\Microsoft\Windows\CurrentVersion\Run",
+                r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run")
+
+
+def startup_entries():
+    """Which of STARTUP_KEYS have a Herdr UI value."""
+    import winreg
+    found = []
+    for name in STARTUP_KEYS:
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, name) as key:
+                winreg.QueryValueEx(key, "Herdr UI")
+            found.append(name)
+        except FileNotFoundError:
+            pass
+    return found
+
+
+def enable_startup(launcher):
+    """Write the entry as Launch at login does, then mark it off as Task
+    Manager does (an odd first byte), for the uninstaller to remove."""
+    import winreg
+    run, approved = STARTUP_KEYS
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, run) as key:
+        winreg.SetValueEx(key, "Herdr UI", 0, winreg.REG_SZ, f'"{launcher}"')
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, approved) as key:
+        winreg.SetValueEx(key, "Herdr UI", 0, winreg.REG_BINARY, bytes([3]) + bytes(11))
+
+
 def check_signed(paths):
     spec = importlib.util.spec_from_file_location("windows_signing", ROOT / "scripts/release/windows-signing.py")
     signing = importlib.util.module_from_spec(spec)
@@ -236,6 +268,7 @@ def smoke(installer, signed=False):
         try:
             check_installation(app, installer if signed else None)
             check_update_relaunches(installer, app)
+            enable_startup(app / "herdr-gpui-launcher.exe")
         finally:
             uninstall(app)
 
@@ -270,6 +303,9 @@ def check_installation(app, signed_installer):
     verbs = folder_verbs()
     if verbs != [f'"{launcher}" open "%V"'] * len(FOLDER_VERBS):
         raise ValueError(f"Installer registered Open in Herdr UI wrongly: {verbs}")
+    # Launch at login is off until the user turns it on.
+    if startup_entries():
+        raise ValueError(f"Installer wrote a startup entry: {startup_entries()}")
 
 
 def processes_at(path):
@@ -314,10 +350,11 @@ def uninstall(app):
     deadline = time.monotonic() + 120
     while (app.exists() or shortcut.exists() or entry in user_path_entries()
            or uninstall_entry() is not None or link_handler() is not None
-           or folder_verbs()):
+           or folder_verbs() or startup_entries()):
         if time.monotonic() > deadline:
             raise ValueError("Uninstaller left the app directory, its shortcut, its PATH entry, "
-                             "its Uninstall entry, its link handler, or Open in Herdr UI behind")
+                             "its Uninstall entry, its link handler, Open in Herdr UI, "
+                             "or its startup entry behind")
         time.sleep(1)
 
 
