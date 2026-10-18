@@ -237,8 +237,11 @@ jobs:
       # the live-daemon test runs on x64; the native fixtures run on both.
       - name: Native window, input, and live-daemon tests
         env:
-          SKIP_LIVE: ${{ matrix.runner == 'windows-11-arm' && '--skip native_gui_live' || '' }}
-        run: cargo test --locked -p herdr-gpui --features integration-test --test live_gui -- --ignored --nocapture --test-threads=1 $SKIP_LIVE
+          RUNNER: ${{ matrix.runner }}
+        run: |
+          skip=()
+          if [[ $RUNNER == windows-11-arm ]]; then skip=(--skip native_gui_live); fi
+          cargo test --locked -p herdr-gpui --features integration-test --test live_gui -- --ignored --nocapture --test-threads=1 "${skip[@]}"
       # The updater's Authenticode check against a real signature: the pinned
       # archive's Microsoft-signed OpenConsole.exe, compared with PowerShell.
       - name: Update installer signer check
@@ -282,6 +285,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The other jobs that run scripts/release/tests are macOS and Linux,
+      # where the shortcut test skips; run it here, before the slow build.
+      - name: Test the install script's Start menu shortcut
+        run: python scripts/release/tests/test_install_ps1.py -v
       - name: Install pinned Rust toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
