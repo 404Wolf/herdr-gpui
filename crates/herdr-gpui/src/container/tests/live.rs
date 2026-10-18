@@ -71,7 +71,7 @@ fn a_container_is_made_reached_and_deleted() {
         )?;
         assert!(listed.contains("workspace_list"), "{listed}");
         // With no agent there, the auto-stop probe reads the container as idle.
-        let (code, ..) = engine.output(
+        let (_, agents, _) = engine.output(
             "exec",
             [
                 "exec",
@@ -82,12 +82,12 @@ fn a_container_is_made_reached_and_deleted() {
                 &id,
                 "/bin/sh",
                 "-c",
-                super::super::idle::BUSY,
+                super::super::idle::AGENTS,
             ],
             std::time::Duration::from_secs(30),
             &never,
         )?;
-        assert_eq!(code, Some(1));
+        assert!(!super::super::idle::busy_reply(&agents), "{agents:?}");
         // The bridge answers discovery, so a connection would work.
         let bridge = herdr_client::connect_command(
             machine::exec(engine, &id)?,
@@ -115,4 +115,48 @@ fn a_container_is_made_reached_and_deleted() {
         machine::State::Missing
     );
     result.unwrap();
+}
+
+#[test]
+#[ignore = "needs a running Docker or Podman engine"]
+fn a_container_this_app_did_not_make_is_never_reused_or_deleted() {
+    let engine = std::env::var("HERDR_TEST_CONTAINER_ENGINE")
+        .ok()
+        .and_then(|key| Engine::from_key(&key))
+        .unwrap_or_else(|| panic!("set HERDR_TEST_CONTAINER_ENGINE to docker or podman"));
+    let settings = Settings {
+        engine: Some(engine),
+        ..Settings::resolve(&ContainerConfig::default()).unwrap()
+    };
+    let never = || false;
+    let id = setup::random_name();
+    // The user's own container, which happens to have a generated name.
+    engine
+        .run(
+            "run",
+            [
+                "run",
+                "--detach",
+                "--name",
+                &id,
+                &settings.image,
+                "sleep",
+                "120",
+            ],
+            std::time::Duration::from_secs(60),
+            &never,
+        )
+        .unwrap();
+    let created = machine::create(engine, &id, &settings, &never, &|| {});
+    let deleted = machine::delete(engine, &id, &never);
+    let state = machine::state(engine, &id, &never);
+    let _ = engine.output(
+        "rm",
+        ["rm", "--force", &id],
+        std::time::Duration::from_secs(30),
+        &never,
+    );
+    assert!(matches!(created, Err(Error::NameTaken(_))), "{created:?}");
+    assert!(matches!(deleted, Err(Error::NotOurs(_))), "{deleted:?}");
+    assert_eq!(state.unwrap(), machine::State::Running, "it was left alone");
 }

@@ -22,6 +22,31 @@ pub(crate) struct AddRequest {
     pub(crate) install: bool,
 }
 
+/// Containers being made now, which count against the cap until saved:
+/// creations run side by side, and each saves only when it finishes.
+static CREATING: std::sync::Mutex<usize> = std::sync::Mutex::new(0);
+
+/// A place under `[container] max_containers`, held while one is made.
+struct Slot;
+
+impl Slot {
+    /// Take a place if `saved` containers and those being made leave one.
+    fn take(saved: usize, max: usize) -> Option<Self> {
+        let mut creating = CREATING.lock().unwrap_or_else(|error| error.into_inner());
+        (saved + *creating < max).then(|| {
+            *creating += 1;
+            Self
+        })
+    }
+}
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        let mut creating = CREATING.lock().unwrap_or_else(|error| error.into_inner());
+        *creating = creating.saturating_sub(1);
+    }
+}
+
 /// A default name for a new container, which is also its device ID.
 pub(crate) fn random_name() -> String {
     cloud::names::random("herdr", NAME_LIMIT)
@@ -44,37 +69,40 @@ pub(crate) fn add_device(
         .iter()
         .filter(|device| device.provider == CloudProvider::Container)
         .count();
-    if saved >= settings.max {
+    let Some(_slot) = Slot::take(saved, settings.max) else {
         return Err(super::Error::Limit(settings.max).into());
-    }
+    };
     let engine = Engine::pick(settings.engine)?;
     report(cloud::Step::Creating);
     machine::create(engine, &name, &settings, cancelled, &|| {
         report(cloud::Step::Building("pulling image".into()));
     })?;
-    let installed = install_herdr(engine, &name, install, cancelled, report);
-    if let Err(error) = installed {
+    let ready = install_herdr(engine, &name, install, cancelled, report).and_then(|()| {
+        // Commands such as Teleport's need a running server before any window
+        // connects; a failure here still leaves a device a connection can start.
+        if let Err(error) = machine::start_server(engine, &name, cancelled) {
+            tracing::warn!(category = "container", id = name, %error, "Herdr's server did not start");
+        }
+        let device = SavedDevice {
+            provider: CloudProvider::Container,
+            id: name.clone(),
+            label: name.clone(),
+            account: engine.key().to_owned(),
+            machine: name.clone(),
+            session: SESSION.to_owned(),
+            enabled: true,
+        };
+        // An unsaved container would run unlisted, so it goes too.
+        cloud::save(device.clone())?;
+        Ok(device)
+    });
+    if let Err(error) = &ready {
         if let Err(cleanup) = machine::delete(engine, &name, &|| false) {
             tracing::warn!(category = "container", id = name, error = %cleanup, "Could not remove a failed container");
         }
-        return Err(error);
+        tracing::warn!(category = "container", id = name, %error, "Creating a container failed");
     }
-    // Commands such as Teleport's need a running server before any window
-    // connects; a failure here still leaves a device a connection can start.
-    if let Err(error) = machine::start_server(engine, &name, cancelled) {
-        tracing::warn!(category = "container", id = name, %error, "Herdr's server did not start");
-    }
-    let device = SavedDevice {
-        provider: CloudProvider::Container,
-        id: name.clone(),
-        label: name.clone(),
-        account: engine.key().to_owned(),
-        machine: name,
-        session: SESSION.to_owned(),
-        enabled: true,
-    };
-    cloud::save(device.clone())?;
-    Ok(device)
+    ready
 }
 
 fn install_herdr(

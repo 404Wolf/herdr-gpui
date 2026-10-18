@@ -28,6 +28,10 @@ pub enum Error {
     },
     #[error("The container {0} no longer exists.")]
     Gone(String),
+    #[error("A container or volume named {0} already exists; try again for another name.")]
+    NameTaken(String),
+    #[error("{0} on the engine was not made by Herdr UI for this device, so it was left alone.")]
+    NotOurs(String),
     #[error(
         "There are already {0} containers, the most [container] max_containers allows. Remove one first."
     )]

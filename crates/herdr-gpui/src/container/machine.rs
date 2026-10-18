@@ -127,16 +127,23 @@ pub(crate) fn create(
     )?;
     pulling();
     let image = pinned(engine, &settings.image, cancelled)?;
+    // `volume create` reuses a volume of the same name, and a failed `run`
+    // would then delete whatever else holds the name: refuse a name in use.
+    for kind in [Kind::Container, Kind::Volume] {
+        if owner(engine, kind, id, cancelled)? != Owner::Missing {
+            return Err(Error::NameTaken(id.to_owned()));
+        }
+    }
     tracing::info!(category = "container", id, image, "Creating container");
     let label = format!("{LABEL}={id}");
-    engine.run(
-        "volume create",
-        ["volume", "create", "--label", &label, &volume(id)],
-        QUICK,
-        cancelled,
-    )?;
     let made = engine
-        .run("run", run_args(id, &image, settings), QUICK, cancelled)
+        .run(
+            "volume create",
+            ["volume", "create", "--label", &label, &volume(id)],
+            QUICK,
+            cancelled,
+        )
+        .and_then(|_| engine.run("run", run_args(id, &image, settings), QUICK, cancelled))
         .and_then(|_| {
             engine.run(
                 "exec",
@@ -202,30 +209,90 @@ pub(crate) fn stop(engine: Engine, id: &str, cancelled: &dyn Fn() -> bool) -> Re
         .map(drop)
 }
 
-/// Remove the container `id` and its home volume. Either one already gone is
-/// not an error.
-pub(crate) fn delete(engine: Engine, id: &str, cancelled: &dyn Fn() -> bool) -> Result<()> {
-    let (code, _, stderr) = engine.output("rm", ["rm", "--force", id], QUICK, cancelled)?;
-    let removed = detail(&stderr);
-    if code != Some(0) && !removed.to_ascii_lowercase().contains("no such") {
-        return Err(Error::Failed {
-            engine: engine.key(),
-            action: "rm",
-            detail: removed,
-        });
-    }
-    let (code, _, stderr) = engine.output(
-        "volume rm",
-        ["volume", "rm", "--force", &volume(id)],
+/// A container or a volume, for [`owner`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    Container,
+    Volume,
+}
+
+/// Who holds a name on the engine.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Owner {
+    Missing,
+    /// Labelled as the device of the same ID: this app made it for that device.
+    Ours,
+    /// Anything else, such as the user's own container of that name.
+    Other,
+}
+
+/// Who holds the container `id`, or its home volume.
+fn owner(engine: Engine, kind: Kind, id: &str, cancelled: &dyn Fn() -> bool) -> Result<Owner> {
+    let (name, format) = match kind {
+        Kind::Container => (
+            id.to_owned(),
+            format!("{{{{index .Config.Labels \"{LABEL}\"}}}}"),
+        ),
+        Kind::Volume => (volume(id), format!("{{{{index .Labels \"{LABEL}\"}}}}")),
+    };
+    let noun = match kind {
+        Kind::Container => "container",
+        Kind::Volume => "volume",
+    };
+    let (code, stdout, stderr) = engine.output(
+        "inspect",
+        [noun, "inspect", "--format", &format, &name],
         QUICK,
         cancelled,
     )?;
     if code != Some(0) {
+        let detail = detail(&stderr);
+        // Docker says "No such container/volume", Podman "no such ...".
+        if detail.to_ascii_lowercase().contains("no such") {
+            return Ok(Owner::Missing);
+        }
         return Err(Error::Failed {
             engine: engine.key(),
-            action: "volume rm",
-            detail: detail(&stderr),
+            action: "inspect",
+            detail,
         });
+    }
+    Ok(if String::from_utf8_lossy(&stdout).trim() == id {
+        Owner::Ours
+    } else {
+        Owner::Other
+    })
+}
+
+/// Remove the container `id` and its home volume, when they are this app's
+/// for that device. Either one already gone is not an error; one of the same
+/// name that this app did not make is refused and left alone.
+pub(crate) fn delete(engine: Engine, id: &str, cancelled: &dyn Fn() -> bool) -> Result<()> {
+    for kind in [Kind::Container, Kind::Volume] {
+        match owner(engine, kind, id, cancelled)? {
+            Owner::Missing => continue,
+            Owner::Other => return Err(Error::NotOurs(id.to_owned())),
+            Owner::Ours => {}
+        }
+        let (action, args) = match kind {
+            Kind::Container => (
+                "rm",
+                vec!["rm".to_owned(), "--force".to_owned(), id.to_owned()],
+            ),
+            Kind::Volume => (
+                "volume rm",
+                vec!["volume".to_owned(), "rm".to_owned(), volume(id)],
+            ),
+        };
+        let (code, _, stderr) = engine.output(action, args, QUICK, cancelled)?;
+        let detail = detail(&stderr);
+        if code != Some(0) && !detail.to_ascii_lowercase().contains("no such") {
+            return Err(Error::Failed {
+                engine: engine.key(),
+                action,
+                detail,
+            });
+        }
     }
     Ok(())
 }
