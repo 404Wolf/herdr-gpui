@@ -41,6 +41,10 @@ use windows_sys::Win32::{
 const EXCEPTION_CONTINUE_SEARCH: i32 = 0;
 /// A dump that takes longer than this is abandoned, and the process ends.
 const DUMP_WAIT: Duration = Duration::from_secs(30);
+/// A requester rechecks [`FINISHED`] at least this often. `DONE` is one
+/// auto-reset event shared by every requester, so the signal for a finished
+/// dump can wake a different waiter; a short sleep bounds that miss.
+const RECHECK: Duration = Duration::from_millis(50);
 
 /// The dump thread's events, as `usize` because a `HANDLE` is a pointer;
 /// zero until it runs. Never closed: they live as long as the process.
@@ -131,7 +135,8 @@ fn request(exception: *mut EXCEPTION_POINTERS, thread: u32) {
         if left.is_zero() {
             return;
         }
-        let millis = u32::try_from(left.as_millis()).unwrap_or(u32::MAX).max(1);
+        // At most RECHECK, so it fits in a u32 and is at least 1 ms.
+        let millis = left.min(RECHECK).as_millis().max(1) as u32;
         // SAFETY: as above.
         #[allow(unsafe_code)]
         unsafe {
