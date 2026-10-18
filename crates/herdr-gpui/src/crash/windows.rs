@@ -59,9 +59,9 @@ static THREAD: AtomicU32 = AtomicU32::new(0);
 static REQUESTS: AtomicU64 = AtomicU64::new(0);
 static FINISHED: AtomicU64 = AtomicU64::new(0);
 /// One dump at a time, from request until the dump thread finishes it,
-/// even if its requester stopped waiting: a second crashing thread is in the
-/// first one's dump.
-static BUSY: AtomicBool = AtomicBool::new(false);
+/// even if its requester stopped waiting. A second request waits for it,
+/// then makes its own, so each crash gets a dump and a report.
+pub(super) static BUSY: AtomicBool = AtomicBool::new(false);
 
 pub(super) fn install(dir: PathBuf) {
     let (Some(requested), Some(done)) = (event(), event()) else {
@@ -110,15 +110,23 @@ unsafe extern "system" fn filter(info: *const EXCEPTION_POINTERS) -> i32 {
     EXCEPTION_CONTINUE_SEARCH
 }
 
-/// Hands the dump thread a request and waits for it. Atomics and two system
-/// calls only: this may run on a thread with no stack or a corrupt heap.
+/// Hands the dump thread a request and waits for it, first waiting out
+/// another thread's dump: returning early would let Windows end the process
+/// mid-dump. Atomics and system calls only: this may run on a thread with no
+/// stack or a corrupt heap. One deadline covers both waits.
 fn request(exception: *mut EXCEPTION_POINTERS, thread: u32) {
     let (requested, done) = (
         REQUESTED.load(Ordering::Acquire),
         DONE.load(Ordering::Acquire),
     );
-    if requested == 0 || done == 0 || BUSY.swap(true, Ordering::AcqRel) {
+    if requested == 0 || done == 0 {
         return;
+    }
+    let deadline = Instant::now() + DUMP_WAIT;
+    while BUSY.swap(true, Ordering::AcqRel) {
+        if !pause(done, deadline) {
+            return;
+        }
     }
     EXCEPTION.store(exception, Ordering::Release);
     THREAD.store(thread, Ordering::Release);
@@ -129,20 +137,28 @@ fn request(exception: *mut EXCEPTION_POINTERS, thread: u32) {
         BUSY.store(false, Ordering::Release);
         return;
     }
-    let deadline = Instant::now() + DUMP_WAIT;
     while FINISHED.load(Ordering::Acquire) < ticket {
-        let left = deadline.saturating_duration_since(Instant::now());
-        if left.is_zero() {
+        if !pause(done, deadline) {
             return;
         }
-        // At most RECHECK, so it fits in a u32 and is at least 1 ms.
-        let millis = left.min(RECHECK).as_millis().max(1) as u32;
-        // SAFETY: as above.
-        #[allow(unsafe_code)]
-        unsafe {
-            WaitForSingleObject(done as HANDLE, millis);
-        }
     }
+}
+
+/// Sleeps until `done` is signalled or [`RECHECK`] passes; false once
+/// `deadline` has.
+fn pause(done: usize, deadline: Instant) -> bool {
+    let left = deadline.saturating_duration_since(Instant::now());
+    if left.is_zero() {
+        return false;
+    }
+    // At most RECHECK, so it fits in a u32 and is at least 1 ms.
+    let millis = left.min(RECHECK).as_millis().max(1) as u32;
+    // SAFETY: an event created at install and never closed.
+    #[allow(unsafe_code)]
+    unsafe {
+        WaitForSingleObject(done as HANDLE, millis);
+    }
+    true
 }
 
 fn serve(dir: &Path, requested: usize, done: usize) {

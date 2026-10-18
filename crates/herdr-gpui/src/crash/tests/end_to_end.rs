@@ -20,26 +20,42 @@ fn crashing_child() {
     match kind.to_str() {
         Some("panic") => panic!("deliberate test panic"),
         #[cfg(windows)]
-        Some("exception") => {
-            quiet_error_reporting();
-            // SAFETY: no arguments; the exception is never handled, which
-            // is the point: the process ends in the unhandled-exception filter.
-            #[allow(unsafe_code)]
-            unsafe {
-                windows_sys::Win32::System::Diagnostics::Debug::RaiseException(
-                    TEST_EXCEPTION,
-                    0,
-                    0,
-                    std::ptr::null(),
-                );
-            }
+        Some("overlap") => {
+            // Another thread's dump is still being written when this crash
+            // arrives; it ends 300 ms later.
+            windows::BUSY.store(true, std::sync::atomic::Ordering::Release);
+            std::thread::spawn(|| {
+                std::thread::sleep(Duration::from_millis(300));
+                windows::BUSY.store(false, std::sync::atomic::Ordering::Release);
+            });
+            raise();
         }
+        #[cfg(windows)]
+        Some("exception") => raise(),
         #[cfg(windows)]
         Some("overflow") => {
             quiet_error_reporting();
             println!("{}", deeper(0));
         }
         _ => {}
+    }
+}
+
+/// Raises an exception nothing handles, so the process ends in the
+/// unhandled-exception filter.
+#[cfg(windows)]
+fn raise() {
+    quiet_error_reporting();
+    // SAFETY: no arguments; the exception is never handled, which
+    // is the point: the process ends in the unhandled-exception filter.
+    #[allow(unsafe_code)]
+    unsafe {
+        windows_sys::Win32::System::Diagnostics::Debug::RaiseException(
+            TEST_EXCEPTION,
+            0,
+            0,
+            std::ptr::null(),
+        );
     }
 }
 
@@ -148,6 +164,22 @@ fn a_stack_overflow_still_leaves_a_dump() {
     // STATUS_STACK_OVERFLOW
     assert!(
         report.contains("unhandled exception 0xc00000fd"),
+        "{report}"
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn a_crash_during_another_dump_still_gets_its_own() {
+    let state = tempfile::tempdir().unwrap();
+    let logs = crash("overlap", state.path());
+    assert_eq!(
+        &fs::read(only(&logs, DUMP_EXTENSION)).unwrap()[..4],
+        b"MDMP"
+    );
+    let report = fs::read_to_string(only(&logs, REPORT_EXTENSION)).unwrap();
+    assert!(
+        report.contains(&format!("unhandled exception {TEST_EXCEPTION:#010x}")),
         "{report}"
     );
 }
