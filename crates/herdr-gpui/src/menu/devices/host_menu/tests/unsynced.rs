@@ -91,3 +91,20 @@ fn a_machine_that_cannot_be_searched_is_said_to_be_unchecked(cx: &mut TestAppCon
         assert_eq!(super::super::remove_label(host), "Delete VM");
     });
 }
+
+#[gpui::test]
+fn delete_waits_for_the_search_to_answer(cx: &mut TestAppContext) {
+    let (view, cx) = open_remove(cx, "herdr-slow", "host-azure:herdr-slow");
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            let host = view.menu.host.as_mut().unwrap();
+            host.unsynced = super::super::destroy::Unsynced::Checking {
+                _cancel: super::super::destroy::Cancel::for_test(),
+            };
+            assert_eq!(super::super::remove_label(host), "Checking…");
+            view.confirm_remove_device(window, cx);
+            assert!(view.menu.host.is_some(), "nothing is removed yet");
+            assert!(view.menu.removing_devices.is_empty());
+        })
+    });
+}

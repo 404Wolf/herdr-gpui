@@ -39,6 +39,13 @@ pub(super) enum Unsynced {
 #[derive(Debug)]
 pub(super) struct Cancel(Arc<AtomicBool>);
 
+#[cfg(test)]
+impl Cancel {
+    pub(super) fn for_test() -> Self {
+        Self(Arc::new(AtomicBool::new(false)))
+    }
+}
+
 impl Drop for Cancel {
     fn drop(&mut self) {
         self.0.store(true, Ordering::Release);
@@ -54,6 +61,14 @@ impl HostMenu {
         }
     }
 
+    /// Whether Remove would delete the machine before the search for its
+    /// unpushed work has answered; it waits rather than delete unseen work.
+    pub(super) fn awaiting_check(&self) -> bool {
+        self.destroy
+            && self.deletion().is_some()
+            && matches!(self.unsynced, Unsynced::Checking { .. })
+    }
+
     fn machine_noun(&self) -> Option<&'static str> {
         match &self.saved {
             Saved::Cloud { id, .. } => Some((self.deletion()?.noun)(id)),
@@ -66,6 +81,7 @@ impl HostMenu {
 /// Delete anyway once it is known to hold work pushed nowhere.
 pub(super) fn remove_label(host: &HostMenu) -> String {
     match host.machine_noun() {
+        Some(_) if host.awaiting_check() => "Checking…".to_owned(),
         Some(_) if matches!(host.unsynced, Unsynced::Found(_)) => "Delete anyway".to_owned(),
         Some(noun) => format!("Delete {noun}"),
         None => "Remove".to_owned(),

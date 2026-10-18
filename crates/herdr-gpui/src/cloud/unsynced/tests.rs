@@ -50,6 +50,16 @@ fn the_search_finds_only_checkouts_with_work_found_nowhere_else() {
     let clean = home.path().join("code/clean");
     std::fs::create_dir_all(&clean).unwrap();
     git(&clean, &["init", "-q"]);
+    // A checkout in Go's source tree is the user's own.
+    let gopath = home.path().join("go/src/example.com/tool");
+    std::fs::create_dir_all(&gopath).unwrap();
+    git(&gopath, &["init", "-q"]);
+    std::fs::write(gopath.join("main.go"), "package main").unwrap();
+    // Go's module cache is not.
+    let module = home.path().join("go/pkg/mod/example.com/dep");
+    std::fs::create_dir_all(&module).unwrap();
+    git(&module, &["init", "-q"]);
+    std::fs::write(module.join("dep.go"), "package dep").unwrap();
     // A dependency checkout under a skipped directory.
     let dependency = home.path().join(".cargo/git/checkouts/dep");
     std::fs::create_dir_all(&dependency).unwrap();
@@ -63,12 +73,21 @@ fn the_search_finds_only_checkouts_with_work_found_nowhere_else() {
         .output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
+    let mut found = parse(&String::from_utf8_lossy(&output.stdout));
+    found.sort_by(|a, b| a.path.cmp(&b.path));
     assert_eq!(
-        parse(&String::from_utf8_lossy(&output.stdout)),
-        vec![Checkout {
-            path: "~/code/dirty".into(),
-            changed: 1,
-            unpushed: 0,
-        }]
+        found,
+        vec![
+            Checkout {
+                path: "~/code/dirty".into(),
+                changed: 1,
+                unpushed: 0,
+            },
+            Checkout {
+                path: "~/go/src/example.com/tool".into(),
+                changed: 1,
+                unpushed: 0,
+            },
+        ]
     );
 }

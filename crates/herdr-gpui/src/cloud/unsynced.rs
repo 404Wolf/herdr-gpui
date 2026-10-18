@@ -38,7 +38,6 @@ const SKIPPED: &[&str] = &[
     ".npm",
     ".nvm",
     ".rustup",
-    "go",
     "node_modules",
     "target",
 ];
@@ -47,6 +46,11 @@ fn script() -> String {
     let skipped = SKIPPED
         .iter()
         .map(|name| format!("-name {name}"))
+        .chain(
+            // Go's module cache, not its source tree: `~/go/src` holds the
+            // user's own checkouts.
+            ["-path ./go/pkg".to_owned()],
+        )
         .collect::<Vec<_>>()
         .join(" -o ");
     format!(

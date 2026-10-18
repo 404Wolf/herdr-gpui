@@ -400,6 +400,15 @@ impl HerdrWindow {
     /// catalog drops the device, its sidebar header pulses the way a worktree
     /// row does while it is removed; a failure is reported in the status bar.
     fn confirm_remove_device(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        #[cfg(feature = "cloud")]
+        if self
+            .menu
+            .host
+            .as_ref()
+            .is_some_and(HostMenu::awaiting_check)
+        {
+            return;
+        }
         let Some(host) = self.menu.host.take() else {
             tracing::warn!(
                 category = "device_remove",
