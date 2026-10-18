@@ -53,9 +53,12 @@ impl HerdrWindow {
 
     /// Keep the toggle anchored in the sidebar whenever it fits. The rail has
     /// room on Linux/Windows, but not beside macOS's traffic-light clearance.
+    /// The activity bar's column holds the toggle in its own title instead.
     fn sidebar_header_has_toggle(&self, window: &Window) -> bool {
-        self.sidebar_column_width(f32::from(window.viewport_size().width))
-            .is_some_and(|width| width >= LEADING + SIDEBAR_TOGGLE_SIZE)
+        !self.activity_bar_leads()
+            && self
+                .sidebar_column_width(f32::from(window.viewport_size().width))
+                .is_some_and(|width| width >= LEADING + SIDEBAR_TOGGLE_SIZE)
     }
 
     /// Whether Back and Forward fit in the expanded sidebar's header after
@@ -167,7 +170,13 @@ impl HerdrWindow {
                         .w(px((LEADING - column).max(0.))),
                     window,
                 ))
-                .child(self.sidebar_toggle(cx))
+                .map(|leading| {
+                    if self.activity_bar_leads() {
+                        leading.pl(px(SIDEBAR_TOGGLE_INSET))
+                    } else {
+                        leading.child(self.sidebar_toggle(cx))
+                    }
+                })
                 .child(self.strip_navigation(cx)),
         )
     }

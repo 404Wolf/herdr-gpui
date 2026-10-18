@@ -101,10 +101,14 @@ fn a_section_takes_the_body_beside_the_bar_and_workspaces_brings_it_back(
         cx.debug_bounds("sidebar").unwrap().left(),
         cx.debug_bounds("activity-bar").unwrap().right()
     );
-    // Workspaces picked again collapses the sidebar to the rail, with no bar.
+    // Workspaces picked again collapses the sidebar to the rail, which the
+    // bar keeps leading.
     click(cx, "activity-workspaces");
     cx.update(|_, cx| assert!(!view.read(cx).sidebar_visible));
-    assert!(cx.debug_bounds("activity-bar").is_none());
+    assert_eq!(
+        cx.debug_bounds("sidebar-rail").unwrap().left(),
+        cx.debug_bounds("activity-bar").unwrap().right()
+    );
 }
 
 #[gpui::test]
