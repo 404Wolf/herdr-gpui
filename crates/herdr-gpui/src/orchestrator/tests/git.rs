@@ -179,3 +179,43 @@ fn global_configuration_comes_from_the_login_environment() {
             .contains(&("origin".into(), "corp:penso/app.git".into()))
     );
 }
+
+/// A desktop launch: this process has none of the shell profile's Git
+/// settings, and the login shell probed as the app probes it exports
+/// `GIT_CONFIG_GLOBAL`. Its rewrite applies with nothing but what that shell
+/// exported, as `git` started through `login_env::apply` saw it.
+#[cfg(unix)]
+#[test]
+fn a_desktop_launch_reads_git_config_the_login_shell_exports() {
+    let dir = tempfile::tempdir().unwrap();
+    let main = repository(dir.path());
+    run(&main, &["remote", "add", "origin", "corp:penso/app.git"]);
+    let global = dir.path().join("global.gitconfig");
+    std::fs::write(&global, "[url \"git@github.com:\"]\n\tinsteadOf = corp:\n").unwrap();
+    let shell = dir.path().join("shell");
+    crate::test_executable::write(
+        &shell,
+        format!(
+            "#!/bin/sh\n[ \"$1 $2 $3\" = '-l -i -c' ] || exit 9\n\
+             export GIT_CONFIG_GLOBAL='{}'\nexport GIT_CONFIG_NOSYSTEM=1\neval \"$4\"\n",
+            global.display()
+        ),
+        0o700,
+    )
+    .unwrap();
+    let login = crate::login_env::probe_for_tests(&shell).unwrap();
+    let mut env = |name: &str| {
+        login
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.clone())
+    };
+    let found = git::checkout_in(&main, &mut env).unwrap().unwrap();
+    assert!(
+        found
+            .remotes
+            .contains(&("origin".into(), "git@github.com:penso/app.git".into())),
+        "{:?}",
+        found.remotes
+    );
+}
