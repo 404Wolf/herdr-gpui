@@ -13,7 +13,7 @@ shift 2
 # validate job finds the signing publisher set. No default, so a preview can
 # never promise a signature the release will not have.
 case ${WINDOWS_SIGNED:-} in
-    true) windows='experimental, Authenticode-signed Windows x86_64 and ARM64 installers and zips; installed copies update in the app' ;;
+    true) windows='Authenticode-signed Windows x86_64 and ARM64 installers and zips; installed copies update in the app' ;;
     false) windows='experimental, unsigned Windows x86_64 and ARM64 installers and zips; installed copies update in the app, except on Windows' ;;
     *) fail 'WINDOWS_SIGNED must be true or false' ;;
 esac
