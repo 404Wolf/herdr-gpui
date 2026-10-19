@@ -127,9 +127,11 @@ pub(crate) fn client(window: &Window) -> bool {
 }
 
 /// Whether the app draws its own window control buttons (minimize, maximize,
-/// close) in the menu bar. True when the user has enabled window controls in
-/// settings (default on Linux) or on client-decorated windows (Wayland
-/// without SSD) where the buttons are always needed.
+/// close) in the menu bar. True for client-decorated windows where the buttons
+/// are needed, or when the user explicitly enables them. With server-side
+/// decorations minimize/maximize may not work on some compositors (GNOME
+/// Wayland ignores client requests), but close and the user's choice to show
+/// them are respected.
 pub(crate) fn show_controls(enabled: bool, window: &Window) -> bool {
     enabled || client(window)
 }

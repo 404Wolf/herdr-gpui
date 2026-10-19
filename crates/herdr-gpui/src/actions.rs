@@ -15,6 +15,7 @@ actions!(
         HideOthers,
         ShowAll,
         Minimize,
+        ZoomWindow,
         PlaySound,
         RingBellPreview,
         ShowHerdrNotDetected,

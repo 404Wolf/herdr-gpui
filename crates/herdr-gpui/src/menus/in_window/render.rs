@@ -210,7 +210,9 @@ impl HerdrWindow {
                     window.remove_window();
                 },
             ));
-        crate::titlebar::movable(bar, window)
+        // Pass controls_enabled so users who hide the WM's title bar can still
+        // drag the window from the menu bar.
+        crate::titlebar::movable_with_controls(bar, window, self.config.show_window_controls)
     }
 
     /// A menu item's shortcut in keymap spelling, the way the palette and the

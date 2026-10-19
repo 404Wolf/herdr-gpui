@@ -404,10 +404,21 @@ pub(super) fn render(
 /// macOS windows own titlebar dragging (`app_owns_titlebar_drag`), so AppKit
 /// never moves the window from under a tab, and a client-decorated window has
 /// nothing else to move it. A server-drawn frame moves the window from its own
-/// title bar, so there `area` is left alone.
+/// title bar, so there `area` is left alone—unless the user has enabled window
+/// controls, which implies they may hide the WM's title bar.
 pub(crate) fn movable<E: InteractiveElement>(area: E, window: &Window) -> E {
+    movable_with_controls(area, window, false)
+}
+
+/// Like `movable`, but `controls_enabled` forces dragging even with SSD,
+/// for users who hide the WM's title bar and need the menu bar to move.
+pub(crate) fn movable_with_controls<E: InteractiveElement>(
+    area: E,
+    window: &Window,
+    controls_enabled: bool,
+) -> E {
     let client = decorations::client(window);
-    if !cfg!(target_os = "macos") && !client {
+    if !cfg!(target_os = "macos") && !client && !controls_enabled {
         return area;
     }
     // The move starts on the press: pointer motion during a press is claimed
