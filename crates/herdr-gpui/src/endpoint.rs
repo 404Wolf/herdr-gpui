@@ -232,6 +232,14 @@ impl Endpoint {
         }
     }
 
+    /// Keeps a test fixture's endpoint from dialing its made-up target, whose
+    /// failure would otherwise drop the window back to Local at a moment that
+    /// depends on the machine's speed.
+    #[cfg(test)]
+    pub(crate) fn never_connect(&mut self) {
+        self.retry_at = Instant::now() + Duration::from_secs(3600);
+    }
+
     fn stop(&mut self) {
         self.toasts.entries.clear();
         self.connection.detach(false);
