@@ -49,6 +49,8 @@ pub(crate) enum Preference {
     SidebarSelect(SelectMode),
     /// `[sidebar] device_footer`: when the sidebar draws its device footer.
     SidebarDeviceFooter(DeviceFooter),
+    /// `[sidebar] change_counts`: whose line counts a worktree row shows.
+    SidebarChangeCounts(ChangeCounts),
     /// `None` removes the host's colour.
     HostColor {
         host: String,
@@ -199,6 +201,11 @@ impl Config {
                     Some("sidebar"),
                     "device_footer",
                     Some(toml_edit::Value::from(footer.as_str())),
+                ),
+                Preference::SidebarChangeCounts(counts) => (
+                    Some("sidebar"),
+                    "change_counts",
+                    Some(toml_edit::Value::from(counts.as_str())),
                 ),
                 Preference::HostColor { host, color } => {
                     if let Some(color) = color.filter(|color| *color > 0xFF_FFFF) {

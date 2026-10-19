@@ -21,7 +21,7 @@ mod badge;
 mod configured;
 
 pub(crate) use badge::compact;
-pub(super) use badge::{PrBadge, RowBadge, Upstream};
+pub(super) use badge::{Counts, PrBadge, RowBadge, Upstream};
 use configured::configured_lines;
 pub(crate) use configured::styled;
 pub(super) use configured::{

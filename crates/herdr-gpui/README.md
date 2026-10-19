@@ -3167,7 +3167,13 @@ Ctrl+Shift+U is left unbound for
   linked worktrees is open), branch details, and daemon-driven
   filled/hollow activity indicators taken from the daemon's own status, so the
   GUI and the terminal client always show the same dot. Each worktree row also
-  carries its cached pull request number and diff counts, and a branch that has
+  carries its cached pull request number and diff counts. Set
+  `change_counts = "local"` under `[sidebar]` (or Settings > Sidebar > Change
+  counts) to show the checkout's uncommitted `+added/-deleted` lines against
+  HEAD instead; only one set is ever shown. Local counts cover checkouts on this
+  machine only, and every one but the focused checkout is counted on the slow,
+  rate-limited schedule of the uncommitted-work probe (one checkout at a time,
+  each at most every 30 seconds while the window is active). A branch that has
   drifted from its upstream shows the daemon's counts as in the terminal
   client: a green `↑` for commits to push and a red `↓` for commits to pull.
   They follow the branch on two-line rows (`main ↓18`) and sit at the row's

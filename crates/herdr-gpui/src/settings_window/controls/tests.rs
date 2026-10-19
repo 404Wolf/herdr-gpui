@@ -5,6 +5,7 @@ use core::prelude::v1::test;
 
 mod agents_placement;
 mod backdrop;
+mod change_counts;
 mod device_icons;
 mod features;
 mod focus_follows_mouse;

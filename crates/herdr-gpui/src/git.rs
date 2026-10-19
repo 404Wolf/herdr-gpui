@@ -4,7 +4,8 @@
 //! request and reads the result on a later tick. The focused checkout gets a
 //! counted status; every other listed workspace gets a cheaper dirty probe,
 //! round-robin and rate limited, so the sidebar can mark uncommitted work
-//! without a process per row per frame. Commit, push and pull request creation
+//! without a process per row per frame. When the sidebar shows local change
+//! counts, the probe counts lines instead, on the same schedule. Commit, push and pull request creation
 //! are explicit user actions and are never retried or replayed automatically.
 use crate::{
     Error,
@@ -97,20 +98,40 @@ enum Job {
     /// Is there anything to commit? Cheaper than counting lines, and all a
     /// sidebar row needs to show its dot.
     Dirty,
+    /// A listed checkout's line counts, for a sidebar that shows them.
+    Counts,
     Run(Action, Option<Tokens>),
 }
 
 enum Completion {
     Status(crate::Result<Status>),
     Dirty(crate::Result<bool>),
+    Counts(crate::Result<Status>),
     Action(crate::Result<Outcome>),
+}
+
+/// What a listed checkout's probe found: only whether it is dirty, or its
+/// counted status.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Answer {
+    Dirty(bool),
+    Counted(Status),
+}
+
+impl Answer {
+    fn dirty(self) -> bool {
+        match self {
+            Self::Dirty(dirty) => dirty,
+            Self::Counted(status) => status.dirty(),
+        }
+    }
 }
 
 /// One listed checkout's probe. A failure is remembered as "unknown" rather
 /// than "clean", so a broken repository shows no dot instead of a wrong one.
 struct Probe {
     input: Input,
-    dirty: Option<bool>,
+    answer: Option<Answer>,
     due: Instant,
     used: Instant,
 }
@@ -135,6 +156,8 @@ pub(super) struct Git {
     error: Option<String>,
     outcome: Option<Outcome>,
     probes: Vec<Probe>,
+    /// Listed checkouts are counted rather than only probed for dirt.
+    counted: bool,
     queue: VecDeque<Input>,
     next_scan: Option<Instant>,
 }
@@ -160,7 +183,13 @@ impl Git {
     /// and therefore no scheduled Git work.
     #[cfg(test)]
     pub fn seed_probe(&mut self, input: Input, dirty: bool, now: Instant) {
-        self.record_probe(input, Some(dirty), now);
+        self.record_probe(input, Some(Answer::Dirty(dirty)), now);
+    }
+
+    /// Chrome fixture: a counted answer for a listed checkout.
+    #[cfg(test)]
+    pub fn seed_counts(&mut self, input: Input, status: Status, now: Instant) {
+        self.record_probe(input, Some(Answer::Counted(status)), now);
     }
 
     pub fn tracked(&self) -> Option<&Input> {
@@ -224,7 +253,35 @@ impl Git {
             .find(|probe| {
                 probe.input.repo_key.as_deref() == Some(repo_key) && probe.input.branch == branch
             })
-            .and_then(|probe| probe.dirty)
+            .and_then(|probe| probe.answer)
+            .map(Answer::dirty)
+    }
+
+    /// This checkout's counted status, if the focused refresh or a counted
+    /// probe has one. Pure cache read, like [`Self::dirty`].
+    pub fn counts(&self, repo_key: &str, branch: &str) -> Option<Status> {
+        if self.input.as_ref().is_some_and(|input| {
+            input.repo_key.as_deref() == Some(repo_key) && input.branch == branch
+        }) && let Some(status) = self.status
+        {
+            return Some(status);
+        }
+        self.probes
+            .iter()
+            .find(|probe| {
+                probe.input.repo_key.as_deref() == Some(repo_key) && probe.input.branch == branch
+            })
+            .and_then(|probe| match probe.answer {
+                Some(Answer::Counted(status)) => Some(status),
+                _ => None,
+            })
+    }
+
+    /// Count listed checkouts' lines, or only probe whether they are dirty.
+    /// Turning counting on re-probes, on the usual schedule, every checkout
+    /// whose answer has no counts yet.
+    pub fn set_counted(&mut self, counted: bool) {
+        self.counted = counted;
     }
 
     /// Follow the listed checkouts: drop probes for workspaces that are gone
@@ -252,26 +309,31 @@ impl Git {
             if self.input.as_ref() == Some(&input) || self.queue.contains(&input) {
                 continue;
             }
+            // A dirty-only answer is stale once counts are wanted; a failure
+            // still waits out its backoff.
             if self
                 .probes
                 .iter()
                 .find(|probe| probe.input == input)
-                .is_none_or(|probe| now >= probe.due)
+                .is_none_or(|probe| {
+                    now >= probe.due
+                        || self.counted && matches!(probe.answer, Some(Answer::Dirty(_)))
+                })
             {
                 self.queue.push_back(input);
             }
         }
     }
 
-    fn record_probe(&mut self, input: Input, dirty: Option<bool>, now: Instant) {
+    fn record_probe(&mut self, input: Input, answer: Option<Answer>, now: Instant) {
         let due = now
-            + if dirty.is_some() {
+            + if answer.is_some() {
                 PROBE_REFRESH
             } else {
                 PROBE_BACKOFF
             };
         if let Some(probe) = self.probes.iter_mut().find(|probe| probe.input == input) {
-            probe.dirty = dirty;
+            probe.answer = answer;
             probe.due = due;
             probe.used = now;
             return;
@@ -287,7 +349,7 @@ impl Git {
         }
         self.probes.push(Probe {
             input,
-            dirty,
+            answer,
             due,
             used: now,
         });
@@ -338,7 +400,10 @@ impl Git {
                             self.due = Some(now + ERROR_BACKOFF);
                         }
                         Completion::Dirty(result) => {
-                            self.record_probe(input, result.ok(), now);
+                            self.record_probe(input, result.ok().map(Answer::Dirty), now);
+                        }
+                        Completion::Counts(result) => {
+                            self.record_probe(input, result.ok().map(Answer::Counted), now);
                         }
                         Completion::Action(result) => {
                             self.running = None;
@@ -369,7 +434,12 @@ impl Git {
             && self.waiting.is_none()
             && let Some(input) = self.queue.pop_front()
         {
-            self.waiting = Some((input, Job::Dirty));
+            let job = if self.counted {
+                Job::Counts
+            } else {
+                Job::Dirty
+            };
+            self.waiting = Some((input, job));
         }
         if !self.busy
             && let Some((input, job)) = self.waiting.take()
@@ -431,6 +501,9 @@ fn execute(input: &Input, job: Job, cancelled: &impl Fn() -> bool) -> Completion
             Completion::Status(status(input, Instant::now() + STATUS_TIMEOUT, cancelled))
         }
         Job::Dirty => Completion::Dirty(dirty(input, Instant::now() + STATUS_TIMEOUT, cancelled)),
+        Job::Counts => {
+            Completion::Counts(status(input, Instant::now() + STATUS_TIMEOUT, cancelled))
+        }
         // Writes are never cancelled: killing `git commit` or `git push`
         // halfway through can leave an index lock or a half-written ref behind,
         // so only their own deadline ends them.

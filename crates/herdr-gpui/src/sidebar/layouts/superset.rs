@@ -228,6 +228,7 @@ impl RowLayout for Superset {
                 cx.look.density.card_indent()
             };
         let pr = badge.as_ref().and_then(|badge| badge.pr.as_ref());
+        let changes = badge.as_ref().and_then(|badge| badge.counts.as_ref());
         let dirty = badge.as_ref().is_some_and(|badge| badge.dirty);
         let teleported = badge.as_ref().is_some_and(|badge| badge.teleported);
         let dirty_size = (line_height(cx.font) * 0.75).round().min(15.);
@@ -304,8 +305,8 @@ impl RowLayout for Superset {
             .when(dirty, |line| {
                 line.fixed(dirty_size, parts::dirty(label, dirty_size, theme))
             })
-            .when_some(pr, |line, pr| {
-                let (width, counts) = parts::pr_counts(label, pr, m.glyph, counts);
+            .when_some(changes, |line, changes| {
+                let (width, counts) = parts::counts(label, changes, m.glyph, counts);
                 line.shrink(width, counts.text_size(px(m.small)))
             })
             .when_some(fold, |line, fold| {

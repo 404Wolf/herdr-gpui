@@ -1,5 +1,5 @@
-//! The trailing badges a row reserves room for: its pull request, dirty,
-//! note, and teleported marks, and the upstream drift counts.
+//! The trailing badges a row reserves room for: its pull request, change
+//! counts, dirty, note, and teleported marks, and the upstream drift counts.
 
 use super::label_text;
 use crate::{
@@ -8,10 +8,12 @@ use crate::{
 };
 use gpui::{prelude::*, *};
 
-/// What a row shows on its right edge: the cached pull request, and whether
-/// the checkout has work that is not committed yet.
+/// What a row shows on its right edge: the cached pull request, the line
+/// counts `[sidebar] change_counts` picks, and whether the checkout has work
+/// that is not committed yet.
 pub(in crate::sidebar) struct RowBadge {
     pub(in crate::sidebar) pr: Option<PrBadge>,
+    pub(in crate::sidebar) counts: Option<Counts>,
     pub(in crate::sidebar) dirty: bool,
     /// The work moved to another host; this checkout stays behind.
     pub(in crate::sidebar) teleported: bool,
@@ -23,19 +25,21 @@ pub(in crate::sidebar) struct RowBadge {
 
 impl RowBadge {
     pub(in crate::sidebar) fn lines(&self, layout: &SidebarMetrics) -> usize {
-        1 + usize::from(self.pr.is_some() && layout.pr_counts())
+        1 + usize::from(self.counts.is_some() && layout.pr_counts())
     }
 
     /// Nothing to draw is nothing to reserve, so a row with none keeps its
     /// full label width.
     pub(in crate::sidebar) fn new(
         pr: Option<PrBadge>,
+        counts: Option<Counts>,
         dirty: bool,
         teleported: bool,
         noted: bool,
     ) -> Option<Self> {
-        (pr.is_some() || dirty || teleported || noted).then_some(Self {
+        (pr.is_some() || counts.is_some() || dirty || teleported || noted).then_some(Self {
             pr,
+            counts,
             dirty,
             teleported,
             noted,
@@ -43,7 +47,14 @@ impl RowBadge {
     }
 
     pub(in crate::sidebar) fn width(&self, font: &FontConfig, layout: &SidebarMetrics) -> f32 {
-        let pr = self.pr.as_ref().map_or(0., |pr| pr.width(font, layout));
+        // The number and the counts under it share one column.
+        let number = self.pr.as_ref().map_or(0, |pr| pr.number.chars().count());
+        let counts = self
+            .counts
+            .as_ref()
+            .filter(|_| layout.pr_counts())
+            .map_or(0, Counts::glyphs);
+        let pr = (glyph_width(font) * number.max(counts) as f32).ceil();
         // Reserve the icon and the gap before the PR number, even at small fonts.
         let mark = line_height(font).min(18.) + glyph_width(font);
         let marks = [self.dirty, self.teleported, self.noted]
@@ -65,6 +76,7 @@ impl RowBadge {
     ) -> Div {
         let Self {
             pr,
+            counts,
             dirty,
             teleported,
             noted,
@@ -86,8 +98,7 @@ impl RowBadge {
                     .gap(px(glyph_width(font)))
                     .overflow_hidden()
                     // Uncommitted work, marked the way the titlebar
-                    // button marks it: the counts beside it are the
-                    // pull request's, not the working tree's.
+                    // button marks it.
                     .when(teleported, |line| {
                         line.child(
                             crate::icons::teleported(
@@ -124,7 +135,7 @@ impl RowBadge {
                         )
                     }),
             )
-            .when_some(pr.filter(|_| layout.pr_counts()), |column, badge| {
+            .when_some(counts.filter(|_| layout.pr_counts()), |column, badge| {
                 column.child(
                     div()
                         .flex()
@@ -154,12 +165,10 @@ impl RowBadge {
 }
 
 /// Cached pull request state for a worktree row: the number carries the
-/// lifecycle/readiness color, the counts sit under it.
+/// lifecycle/readiness color.
 pub(in crate::sidebar) struct PrBadge {
     pub(in crate::sidebar) number: String,
     pub(in crate::sidebar) color: u32,
-    pub(in crate::sidebar) additions: String,
-    pub(in crate::sidebar) deletions: String,
 }
 
 impl PrBadge {
@@ -167,21 +176,31 @@ impl PrBadge {
         Self {
             number: format!("#{}", pr.number),
             color: pr.color(theme),
-            additions: format!("+{}", compact(pr.additions)),
-            deletions: format!("-{}", compact(pr.deletions)),
+        }
+    }
+}
+
+/// `+additions` and `-deletions` under a row's badge: the pull request's or
+/// the working tree's, whichever `[sidebar] change_counts` picks.
+pub(in crate::sidebar) struct Counts {
+    pub(in crate::sidebar) additions: String,
+    pub(in crate::sidebar) deletions: String,
+}
+
+impl Counts {
+    pub(in crate::sidebar) fn new(additions: u64, deletions: u64) -> Self {
+        Self {
+            additions: format!("+{}", compact(additions)),
+            deletions: format!("-{}", compact(deletions)),
         }
     }
 
-    /// Reserved width. Sidebar labels are monospace by default and digits are
-    /// near-uniform elsewhere, so an em-fraction per glyph bounds both lines;
-    /// a wider face truncates the counts rather than eating the label.
-    pub(in crate::sidebar) fn width(&self, font: &FontConfig, layout: &SidebarMetrics) -> f32 {
-        let mut glyphs = self.number.chars().count();
-        if layout.pr_counts() {
-            glyphs =
-                glyphs.max(self.additions.chars().count() + self.deletions.chars().count() + 1);
-        }
-        (glyph_width(font) * glyphs as f32).ceil()
+    /// Both counts and the separator between them. Sidebar labels are
+    /// monospace by default and digits are near-uniform elsewhere, so an
+    /// em-fraction per glyph bounds the line; a wider face truncates the
+    /// counts rather than eating the label.
+    pub(in crate::sidebar) fn glyphs(&self) -> usize {
+        self.additions.chars().count() + self.deletions.chars().count() + 1
     }
 }
 
