@@ -7,7 +7,8 @@ mise trust
 # simultaneously from different worktrees. The control socket lives here,
 # and only one app per state directory can run.
 worktree_name=$(basename "$PWD")
-export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/herdr-gpui-$worktree_name"
+state_base="${XDG_STATE_HOME:-$HOME/.local/state}"
+export XDG_STATE_HOME="$state_base/herdr-gpui-$worktree_name"
 mkdir -p "$XDG_STATE_HOME"
 
 echo "State directory: $XDG_STATE_HOME"
