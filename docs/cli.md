@@ -136,6 +136,7 @@ Herdr UI** entry, which both Windows installers add, runs this command through
 | `ports open PORT` | `localhost:PORT` in a tab, forwarded first when remote |
 | `usage`, `system` | Plan usage and load of the selected host |
 | `security` | Private vulnerability reports in triage (titles and metadata only, never their descriptions) and open Dependabot alerts of the github.com repositories the window's workspaces hold, most severe first, as the Security section last read them. Exits 4 when there are none |
+| `security open REPOSITORY ALERT\|GHSA` | Show alert `ALERT` (its number) or private report `GHSA` (its GHSA ID) of `REPOSITORY` (`owner/name`) in the Security section, beside its list: the fix, the advisory, and the dependency for an alert; the report, its advisory draft, and its conversation for a report. Only items the section lists open; nothing on GitHub changes |
 | `cloud [list]` | Saved cloud machines (no app needed) |
 | `cloud add` | Open the settings that add one |
 | `cloud setup ID` | Run the `[cloud]` setup script on a saved machine again, in a new tab once the window shows it. `ID` is the machine ID from `cloud list`, its host ID, or its label |

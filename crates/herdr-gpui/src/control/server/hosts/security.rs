@@ -5,11 +5,13 @@
 use crate::{
     HerdrWindow,
     control::protocol::{
-        MAX_MESSAGE, Response,
+        ErrorCode, MAX_MESSAGE, Response,
         hosts::{Reply, SecurityAlertInfo, SecurityRepoInfo, SecurityReportInfo},
     },
-    security::{Alert, Alerts, Repo, Report, Reports},
+    security::{Alert, Alerts, Item, Repo, Report, Reports},
+    sidebar::ActivityPanel,
 };
+use gpui::{Context, Window};
 
 /// The most alerts one answer carries, so it stays well inside the control
 /// socket's message bound; each repository's `total` still counts them all.
@@ -39,6 +41,58 @@ pub(super) fn alerts(view: &HerdrWindow) -> Response {
     Response::Host {
         reply: Reply::Security { repositories, note },
     }
+}
+
+/// `security open`: shows an alert's or report's page in the section, as
+/// the section last read it. A name the listing does not hold is refused
+/// rather than read: the page belongs to the listing's account.
+pub(super) fn open(
+    view: &mut HerdrWindow,
+    repository: &str,
+    item: &str,
+    window: &mut Window,
+    cx: &mut Context<HerdrWindow>,
+) -> Response {
+    let Some(named) = Item::named(repository, item) else {
+        return Response::error(
+            ErrorCode::InvalidRequest,
+            "Name a repository as owner/name, and an alert by its number or a report by its GHSA ID",
+        );
+    };
+    // GitHub's names ignore case; the listing keeps the remote's spelling.
+    let listed = view
+        .security
+        .repos()
+        .iter()
+        .find(|repo| repo.name.eq_ignore_ascii_case(repository))
+        .map(|repo| repo.name.clone());
+    let item = match (listed, named) {
+        (Some(repo), Item::Alert { number, .. }) => Item::Alert { repo, number },
+        (Some(repo), Item::Report { advisory, .. }) => Item::Report { repo, advisory },
+        (None, _) => {
+            return Response::error(
+                ErrorCode::NotFound,
+                format!("The Security section lists no repository {repository}"),
+            );
+        }
+    };
+    if view.security.find(&item).is_none() {
+        let what = match &item {
+            Item::Alert { number, .. } => format!("open alert #{number}"),
+            Item::Report { advisory, .. } => format!("report {advisory} in triage"),
+        };
+        return Response::error(
+            ErrorCode::NotFound,
+            format!("The Security section lists no {what} in {}", item.repo()),
+        );
+    }
+    let message = match &item {
+        Item::Alert { repo, number } => format!("Showing alert #{number} of {repo}"),
+        Item::Report { repo, advisory } => format!("Showing report {advisory} of {repo}"),
+    };
+    view.show_activity_panel(ActivityPanel::Security, window, cx);
+    view.open_security_item(item, cx);
+    Response::done(message)
 }
 
 /// Each repository with its reports and alerts, up to [`MAX_REPORTS`] and

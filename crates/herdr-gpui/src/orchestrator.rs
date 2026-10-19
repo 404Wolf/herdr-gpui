@@ -39,13 +39,16 @@ pub(crate) use model::{
     SourceKey,
 };
 pub(crate) use naming::LiveBranch;
+pub(crate) use prompt::nonce;
 pub(crate) use repo::github_repository;
 pub(crate) use review::{CheckState, PrStatus, Review};
 #[cfg(test)]
 pub(crate) use service::SourceStatus;
 pub(crate) use service::{Notice, Request, Service, Snapshot, SyncState, Timing};
 pub(crate) use store::{Access, SCHEMA_VERSION, Store};
-pub(crate) use view::{Event, List, LiveAgent, Look, OrchestratorView, RepoSpec, key_label};
+pub(crate) use view::{
+    Event, List, LiveAgent, Look, OrchestratorView, RepoSpec, key_label, without_html,
+};
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

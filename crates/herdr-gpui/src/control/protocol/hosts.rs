@@ -40,6 +40,12 @@ pub(crate) enum HostOp {
     System,
     /// The Dependabot alerts the Security section last read.
     Security,
+    /// Show an alert's (`item` a number) or a private report's (`item` a
+    /// GHSA ID) page in the Security section.
+    SecurityOpen {
+        repository: String,
+        item: String,
+    },
     /// Open the settings that add cloud machines.
     Cloud,
     /// Run the configured setup script again on the cloud device `id`, in a
