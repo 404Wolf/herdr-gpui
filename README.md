@@ -158,7 +158,7 @@ release workflow. A cask install updates itself through Homebrew: the in-app
 updater detects that Homebrew owns the bundle and runs `brew upgrade --cask
 herdr-gpui` for you, so Homebrew's records stay correct. If its metadata is stale,
 the updater runs `brew update` and retries once. The update panel shows progress
-throughout. macOS `.dmg`, experimental Linux packages, and Windows installers
+throughout. macOS `.dmg`, Linux packages, and Windows installers
 and `.zip`s are also published on [Releases](https://github.com/penso/herdr-gpui/releases).
 
 Betas are published as GitHub prereleases before being promoted to stable. To try

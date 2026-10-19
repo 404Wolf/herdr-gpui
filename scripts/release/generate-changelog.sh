@@ -57,7 +57,7 @@ git-cliff --config cliff.toml --tag "$tag" ${ignore[@]+"${ignore[@]}"} --output 
 # The release body keeps the platform and daemon facts every release states,
 # then lists what actually changed since the previous tag.
 cat > "$out/RELEASE_NOTES.md" <<NOTES
-GUI-only release. macOS 14.2+ universal signed/notarized DMG; experimental x86_64 and ARM64 Linux .deb, .rpm, Arch packages and tarballs (glibc 2.39+); $windows. Requires an existing Herdr daemon. Source: $source_sha.
+GUI-only release. macOS 14.2+ universal signed/notarized DMG; x86_64 and ARM64 Linux .deb, .rpm, Arch packages and tarballs (glibc 2.39+); $windows. Requires an existing Herdr daemon. Source: $source_sha.
 
 NOTES
 if (( ${#ignore[@]} )); then
