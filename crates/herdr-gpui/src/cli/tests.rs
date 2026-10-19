@@ -6,6 +6,7 @@ mod cloud_setup;
 mod control_commands;
 mod links;
 mod open_command;
+mod security;
 mod ui_panel;
 
 #[test]

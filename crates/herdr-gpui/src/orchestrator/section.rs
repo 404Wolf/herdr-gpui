@@ -176,6 +176,9 @@ pub(crate) fn list_of(section: ActivityPanel) -> Option<List> {
     match section {
         ActivityPanel::Issues => Some(List::Issues),
         ActivityPanel::PullRequests => Some(List::PullRequests),
-        ActivityPanel::Overview | ActivityPanel::Workspaces | ActivityPanel::Usage => None,
+        ActivityPanel::Overview
+        | ActivityPanel::Security
+        | ActivityPanel::Workspaces
+        | ActivityPanel::Usage => None,
     }
 }

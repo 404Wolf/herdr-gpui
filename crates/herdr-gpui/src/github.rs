@@ -29,7 +29,7 @@ mod tests;
 pub(crate) use {
     auth::Auth,
     device::{Profile, Source, VERIFY_URL},
-    http::{graphql, graphql_aliases, hidden_hint, mutation},
+    http::{graphql, graphql_aliases, hidden_hint, mutation, rest},
     routing::Tokens,
     store::{Account, Note, Store},
 };

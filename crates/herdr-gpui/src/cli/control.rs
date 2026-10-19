@@ -78,6 +78,7 @@ pub enum ControlCommand {
     },
     Usage,
     System,
+    Security,
     Search {
         files: bool,
         query: String,
@@ -177,6 +178,10 @@ pub const FAMILIES: &[(&str, &str)] = &[
     ("processes", "The processes running under a pane"),
     ("usage", "AI plan usage on the selected host"),
     ("system", "The selected host's load"),
+    (
+        "security",
+        "Vulnerability reports and Dependabot alerts of your repositories",
+    ),
     ("search", "Find a symbol or a file in the focused checkout"),
     ("config", "Herdr UI settings: path, get, set, reload, check"),
     ("theme", "List or choose a color theme"),
@@ -318,6 +323,7 @@ fn command(family: &'static str, args: &mut Args) -> Result<ControlCommand, CliE
         },
         "usage" => ControlCommand::Usage,
         "system" => ControlCommand::System,
+        "security" => ControlCommand::Security,
         "search" => {
             let files = match args.verb().as_ref().and_then(|verb| verb.to_str()) {
                 Some("symbol" | "symbols") => false,

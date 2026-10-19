@@ -222,6 +222,34 @@ pub(crate) fn mutation(
     Ok(result)
 }
 
+/// A REST read of `path` under `https://api.github.com`, such as
+/// `/repos/OWNER/REPO/security-advisories`, through the same bounded reader
+/// and typed refusals as GraphQL. Callers build `path` from names they have
+/// validated; nothing here escapes it.
+pub(crate) fn rest(
+    context: &'static str,
+    token: &SecretString,
+    path: &str,
+    timeout: Duration,
+    cancelled: impl Fn() -> bool,
+) -> Result<Value> {
+    if cancelled() {
+        return Err(Error::PrCancelled);
+    }
+    let reply = agent(timeout)
+        .get(format!("https://api.github.com{path}"))
+        .header("User-Agent", "Herdr-GPUI")
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("Authorization", authorization(token)?)
+        .call()
+        .map_err(log::network(context))?;
+    if cancelled() {
+        return Err(Error::PrCancelled);
+    }
+    response(context, reply)
+}
+
 /// The `owner/repo` a request names, so a refusal can say which repository
 /// GitHub would not show. Every repository query here uses these variables.
 fn requested_repository(variables: &Value) -> Option<String> {

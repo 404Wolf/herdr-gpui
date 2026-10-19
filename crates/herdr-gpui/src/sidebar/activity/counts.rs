@@ -1,7 +1,8 @@
 //! The bar's count bubbles: what needs the user, as the Overview counted it
 //! on the last tick, and from the orchestrator views the window holds, open
-//! pull requests and open issues. An item two views list, such as one
-//! repository open in two workspaces, counts once.
+//! pull requests and open issues, and the open critical and high Dependabot
+//! alerts. An item two views list, such as one repository open in two
+//! workspaces, counts once.
 
 use super::ActivityPanel;
 use crate::{HerdrWindow, orchestrator::Item};
@@ -13,6 +14,7 @@ pub(super) struct Counts {
     needs: usize,
     pull_requests: usize,
     issues: usize,
+    security: usize,
 }
 
 impl Counts {
@@ -37,6 +39,7 @@ impl Counts {
             ActivityPanel::Workspaces | ActivityPanel::Usage => None,
             ActivityPanel::PullRequests => Some(self.pull_requests),
             ActivityPanel::Issues => Some(self.issues),
+            ActivityPanel::Security => Some(self.security),
         }
     }
 }
@@ -51,6 +54,7 @@ impl HerdrWindow {
     pub(super) fn activity_counts(&self, cx: &App) -> Counts {
         let mut counts = Counts {
             needs: self.overview_needing(),
+            security: self.security.urgent(),
             ..Counts::default()
         };
         let mut seen = HashSet::new();

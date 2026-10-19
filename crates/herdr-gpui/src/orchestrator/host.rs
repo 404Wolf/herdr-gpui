@@ -148,7 +148,7 @@ impl HerdrWindow {
     /// Every distinct repository the workspaces of the connected hosts that
     /// can run the orchestrator's scripts hold, in sidebar order. Worktrees
     /// of one repository are one: they share its database.
-    pub(super) fn repo_specs(&self) -> Vec<RepoSpec> {
+    pub(crate) fn repo_specs(&self) -> Vec<RepoSpec> {
         let mut specs: Vec<RepoSpec> = Vec::new();
         for (index, endpoint) in self.endpoints.iter().enumerate() {
             let target = &endpoint.connection.target;

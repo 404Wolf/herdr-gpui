@@ -68,7 +68,7 @@ Every command accepts:
 | `window detach\|reconnect` | Detach from, or reconnect to, the selected host |
 | `ui sidebar\|statusbar [on\|off\|toggle]` | For this window and session |
 | `ui font-size +\|-\|reset\|POINTS` | The terminal font size for this session |
-| `ui panel workspaces\|overview\|pull-requests\|issues\|usage` | Show an activity bar section: Workspaces with the sidebar expanded, Overview of what needs you on every host, the focused workspace's pull requests or issues across the window, or every host's plan usage |
+| `ui panel workspaces\|overview\|pull-requests\|issues\|security\|usage` | Show an activity bar section: Workspaces with the sidebar expanded, Overview of what needs you on every host, the focused workspace's pull requests or issues across the window, the vulnerability reports and Dependabot alerts of your repositories, or every host's plan usage |
 | `run COMMAND` | Any app command by its `[keybindings]` name, as the palette runs it |
 | `commands` | The names `run` accepts (no app needed) |
 | `open DIR` | Open a folder as **Open Project** in the palette does, starting the app if needed (below) |
@@ -135,6 +135,7 @@ Herdr UI** entry, which both Windows installers add, runs this command through
 | `ports forward\|unforward PORT` | Forward a port of the SSH host to this machine |
 | `ports open PORT` | `localhost:PORT` in a tab, forwarded first when remote |
 | `usage`, `system` | Plan usage and load of the selected host |
+| `security` | Private vulnerability reports in triage (titles and metadata only, never their descriptions) and open Dependabot alerts of the github.com repositories the window's workspaces hold, most severe first, as the Security section last read them. Exits 4 when there are none |
 | `cloud [list]` | Saved cloud machines (no app needed) |
 | `cloud add` | Open the settings that add one |
 | `cloud setup ID` | Run the `[cloud]` setup script on a saved machine again, in a new tab once the window shows it. `ID` is the machine ID from `cloud list`, its host ID, or its label |

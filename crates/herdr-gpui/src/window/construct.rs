@@ -240,6 +240,7 @@ impl HerdrWindow {
             review_files_width: crate::panel_resize::REVIEW_FILES,
             reviews: Default::default(),
             scrollbar_drag: None,
+            security: Default::default(),
             selected_endpoint: 0,
             selected_generation: 0,
             selection: None,

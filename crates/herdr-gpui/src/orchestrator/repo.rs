@@ -76,6 +76,23 @@ done
     parse(target, &output)
 }
 
+/// The GitHub.com repository, as `owner/name`, whose issues the orchestrator
+/// would list for `checkout` on `target`, or `None` for another provider.
+/// Blocks on Git or SSH: call it off the UI thread.
+pub(crate) fn github_repository(
+    target: &ConnectTarget,
+    checkout: &str,
+    cancelled: &AtomicBool,
+) -> Result<Option<String>> {
+    let host = Host::new(target).map_err(|_| Error::UnsupportedHost)?;
+    let info = detect(target, &host, checkout, cancelled)?;
+    Ok(info
+        .remote
+        .map(|remote| remote.source)
+        .filter(|source| source.provider == Provider::Github && source.host == "github.com")
+        .map(|source| source.repository))
+}
+
 pub(super) fn parse(target: &ConnectTarget, output: &str) -> Result<RepoInfo> {
     let mut common = None;
     let mut main = None;
