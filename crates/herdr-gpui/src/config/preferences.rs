@@ -47,6 +47,8 @@ pub(crate) enum Preference {
     SidebarRowGap(Option<f32>),
     SidebarHostGap(Option<f32>),
     SidebarSelect(SelectMode),
+    /// `[sidebar] activity_bar`: whether the icon column leads the window.
+    SidebarActivityBar(bool),
     /// `[sidebar] device_footer`: when the sidebar draws its device footer.
     SidebarDeviceFooter(DeviceFooter),
     /// `None` removes the host's colour.
@@ -195,6 +197,9 @@ impl Config {
                         SelectMode::GroupDim => "group-dim",
                     })),
                 ),
+                Preference::SidebarActivityBar(value) => {
+                    (Some("sidebar"), "activity_bar", Some(value.into()))
+                }
                 Preference::SidebarDeviceFooter(footer) => (
                     Some("sidebar"),
                     "device_footer",
