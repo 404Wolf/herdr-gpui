@@ -1734,7 +1734,8 @@ Right-click a pane, or an agent's row in the sidebar, for **Move to New Tab**
 (in the pane's own workspace), **Move to New Workspace**, or **Move to…**, which
 lists the other tabs of every workspace, a new tab in each other workspace, and
 then, for each other device that has the pane's repository open, a new worktree
-and that device's spaces of the repository. The command palette's **Move Pane…**
+and that device's spaces of the repository. Outside a Git repository, it lists
+connected devices for an agent session move instead. The command palette's **Move Pane…**
 (`move_pane`, unbound by default) opens the same list for the focused pane, with
 the new tab and new workspace first. Moving into an existing tab splits that
 tab's focused pane and puts the moved pane on its right. The terminal keeps
@@ -1775,11 +1776,29 @@ copied, so the checkout here keeps its changes, and the other panes in its
 workspace keep running. The pane here closes only once it runs on the other
 device, and the window then follows it there.
 
+Outside a Git repository, **DEVICE › Agent Session Only** moves a supported
+agent's transferable session into a new workspace on that device. Its cwd maps
+relative to home: `~/notes` here becomes `~/notes` there, and the home directory
+itself maps to the destination's home. The destination directory must already
+exist; the move never creates it. A directory outside home is refused. Only the
+agent session is transferred, with its cwd rewritten, then resumed with its kept
+flags: no directory files, worktree, Git bundle, or GitHub credentials move, and
+no Git commands run. The same agent must be installed there; a session transfer
+failure leaves the source pane open. Plain shells and agents without a
+transferable session still show connected devices as muted rows; choosing one
+explains why it cannot move. The review makes clear that no files are copied.
+
 A working agent is still writing its session, so it moves only once it is idle
 or waiting; this is checked again on Enter. A commit made here after the review
-stops the move before anything lands, so it can be reviewed again. A pane
-outside a Git repository can move only within this device, and one whose
-directory has left its space's checkout must change back into it first. If the move fails
+stops a repository move before anything lands, so it can be reviewed again.
+A pane whose directory has left its repository space's checkout must change
+back into it first. A session-only move rechecks the session, cwd, destination
+directory, and whether the agent is working, on its host, on confirmation. The
+pane here closes only once the agent is the running program there; if it does not
+start within 20 seconds, or the launch fails, its new workspace closes again, and
+an unsuccessful cleanup reports the workspace left behind. A refused
+**Agent Session Only** row is checked again when chosen if the pane's agent has
+changed since, for example after it reports its session. If a repository move fails
 before the pane runs there, a new worktree is removed again, and if it cannot
 be, the error says where it was left; in a space, the tab made for the pane
 closes and the copied changes stay in its checkout. Closing the menu abandons a
