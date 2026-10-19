@@ -878,7 +878,9 @@ install command is never run.
 The terminal face can also be resized for the current session from the View menu,
 the in-app menu, the command palette, or `cmd-=` / `cmd--` / `cmd-0`. Adjustments
 are clamped to the same 8..48 range, apply to the terminal only, and are never
-written to disk, so a reload or a restart returns to the configured size.
+written to disk, so a reload or a restart returns to the configured size. While
+a browser tab is focused, the same commands zoom its page instead (see
+[Browser Tabs](#browser-tabs)).
 
 A tab asks before closing only while one of its agents is working or blocked
 on a prompt; tabs whose agents are idle or done, or that have none, close at
@@ -1597,7 +1599,10 @@ macOS terminals do, with a backslash before each space, quote, bracket, comma,
 colon, or other character a shell would interpret (`/tmp/Shot\ 1.png`), and
 before a final period, separated by spaces; the drop never presses Enter. The
 escapes keep a dropped path one Cmd-clickable link. Local drops only paste paths; SSH drops
-read and transfer the selected files.
+read and transfer the selected files. The exception is a live macOS screenshot
+thumbnail, dragged before it saves: macOS lets only Herdr UI read its temporary
+file, not the pane's processes, so its image goes through the
+[image bridge](#images), as a pasted clipboard image does.
 Drops are limited to 256 paths and 64 KiB of escaped text. Non-UTF-8 paths and
 paths containing control characters are rejected rather than altered.
 
@@ -1943,9 +1948,18 @@ turns it off, and `herdr-gpui ui panel NAME` shows a section.
   offers **Snooze** (until a preset time), **Settle**, **Pin**, and **Open**;
   snoozed and settled rows fold away at the bottom and come back once their
   time comes or the agent works or asks again. These marks are this client's
-  own. A column beside the list shows each host's CPU, memory, agents, and
-  ports; each host folds, and the column folds to a strip of load dots. The
-  icon counts what needs you.
+  own. An agent whose pane closes or that exits, while its host stays up,
+  waits under **Closed** at the bottom: **Reopen** starts it again in a new
+  tab of its workspace, in the folder it ran in, continuing its last
+  conversation there where the agent offers that (`claude --continue`,
+  `codex resume --last`, `opencode --continue`), and **Forget** drops it.
+  The window keeps closed agents while it is open. Reopen and workspace
+  navigation require their original daemon session; after a restart or a
+  session switch, stale workspace IDs are not reused. A shelf shows only when it
+  holds something, and with nothing to list the page says what it is for. A
+  column beside the list shows each host's CPU, memory, agents, and ports;
+  each host folds, and the column folds to a strip of load dots. The icon
+  counts what needs you.
 - **Pull requests** and **Issues** list every repository the connected hosts'
   workspaces hold (see [Orchestrator](#orchestrator)). Refresh spins while a
   sync runs.
@@ -2051,7 +2065,8 @@ including the backslash-escaped paths used by terminal file drops.
 Local endpoints on macOS, Linux, and Windows use the same bridge for Cmd-V
 clipboard images (Ctrl-Shift-V or Shift-Insert on Windows), because a GUI text
 paste cannot carry image data. Local drops and pasted
-paths stay ordinary path pastes, and local Ctrl-V is sent to the terminal
+paths stay ordinary path pastes, except a live screenshot thumbnail (see
+[File Drops](#file-drops)), and local Ctrl-V is sent to the terminal
 unchanged so agents can read the shared clipboard themselves.
 
 The daemon writes a temporary file and pastes its path into the
@@ -2464,6 +2479,15 @@ come back after a restart; closing a workspace in Herdr removes its tabs.
 - The toolbar has back, forward, reload, the address field, and a button that
   opens the page in the system browser. The address field accepts bare hosts:
   `localhost:3000` becomes `http://localhost:3000/`.
+- While a browser tab is focused, Increase and Decrease Font Size
+  (`cmd-=` / `cmd--`) zoom its page a step, from 50% to 300%, and Reset Font
+  Size (`cmd-0`) returns it to 100%. The tab is the one whose page has the
+  keyboard, or else the one the group in use shows. On macOS the keys bound
+  to those commands zoom a page that has the keyboard too, as Safari's do,
+  so the page cannot take them for itself. Each tab keeps its own zoom, saved with it, and every window's
+  page for the tab follows it. A zoomed page's toolbar shows its zoom;
+  clicking it returns to 100%. An agent zooms a tab with
+  `herdr-gpui browser zoom`.
 - Close Tab and Close Pane close the browser tab being shown, without asking.
   Clicking a Herdr tab, or switching Herdr tabs in the workspace, shows its
   terminal again. Next Tab, Previous Tab, and the tab numbers count browser
@@ -2533,6 +2557,12 @@ them to the agent that opened it, so it can change the page.
   copies the same ones. **Clear sent** removes the sent notes, ending the
   round. Another Send waits while screenshots are saving, delivery is pending,
   or the previous batch is still waiting to be collected through `browser feedback`.
+  While a batch waits for a busy agent or for `browser feedback`, the panel
+  says so and offers **Withdraw** in place of Send: it takes the batch back
+  before the agent has it and marks its notes unsent, so you can edit them and
+  send again. A batch already typed into the pane cannot be withdrawn, and
+  nothing joins an agent's running turn: Herdr offers this client no way to
+  prompt an agent mid-run, so busy agents get notes once they are idle.
 - The prompt goes to the agent one way only. An agent waiting in
   `browser feedback --wait` receives it there. Otherwise it is typed into the
   agent's pane and submitted once Herdr reports the agent idle (or still
@@ -2675,7 +2705,8 @@ comments on a pull request.
   As with page notes, sent notes stay listed until **Clear sent**: click one
   to edit it, and Send delivers only new or edited notes, or all of them
   again once every one was sent. Another Send waits until the previous batch
-  has been delivered or collected through `browser feedback`. The notes icon
+  has been delivered or collected through `browser feedback`, or until you
+  **Withdraw** it. The notes icon
   counts the unsent ones.
 - Git runs in the background, never on the UI thread, with explicit `a/`/`b/`
   prefixes and no external diff tools or text conversion. Diff text is
@@ -2927,8 +2958,9 @@ the page's storage, which belongs to one address.
   and the keys macOS keeps for the app (quit, hide, minimize, and cycling
   windows) still reach the app. So do the keys bound to Next Tab, Previous
   Tab, the tab numbers, and moving to another workspace or agent, as a web
-  browser keeps its tab keys from its pages. Click a terminal to take the
-  keyboard back.
+  browser keeps its tab keys from its pages, and the keys bound to the font
+  size commands, which zoom the page. Click a terminal to take the keyboard
+  back.
 
 ## px0
 
@@ -3740,7 +3772,10 @@ Ctrl+Shift+U is left unbound for
   `[[keys.command]]` shortcuts, prefix chords or direct keys, run their
   command through `command.invoke` on the focused pane, and the palette lists
   them with these keys; like Herdr, a keystroke one of its actions already
-  holds keeps that action. Daemon keys add to the catalog
+  holds keeps that action, as does one listed in `[keybindings]`. A GUI
+  catalog default is no Herdr action, so it yields: a custom command on
+  `ctrl+shift+t` runs instead of New Tab's Linux default, without unbinding
+  `new_tab`. Daemon keys add to the catalog
   defaults and take a keystroke from its default command. A command named in
   `[keybindings]` keeps exactly the keystrokes listed there, daemon chords
   included, and a keystroke listed there outranks the daemon's, even the

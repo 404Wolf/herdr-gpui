@@ -1,4 +1,4 @@
-//! `pr`, `host`, `cloud`, `ports`, `usage`, and `system`.
+//! `pr`, `host`, `cloud`, `ports`, `usage`, `system`, and `security`.
 mod cloud;
 mod text;
 
@@ -106,6 +106,20 @@ pub(super) fn usage(context: &Context) -> crate::Result<Output> {
         } => {
             let empty = matches!(&reply, Reply::Usage { usage, .. } if usage.is_empty());
             let output = Output::data(text::usage(&reply), &reply)?;
+            Ok(if empty { output.nothing() } else { output })
+        }
+        response => Err(unexpected(response)),
+    }
+}
+
+pub(super) fn security(context: &Context) -> crate::Result<Output> {
+    match context.call(Request::Host, HostOp::Security)? {
+        Response::Host {
+            reply: reply @ Reply::Security { .. },
+        } => {
+            let empty = matches!(&reply, Reply::Security { repositories, .. }
+                if repositories.iter().all(|repo| repo.alerts.is_empty() && repo.reports.is_empty()));
+            let output = Output::data(text::security(&reply), &reply)?;
             Ok(if empty { output.nothing() } else { output })
         }
         response => Err(unexpected(response)),

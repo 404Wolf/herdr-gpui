@@ -39,8 +39,9 @@ failure is not a surprise:
 | Local HEAD == `origin/main` on GitHub | compare `git rev-parse HEAD` with `gh api repos/penso/herdr-gpui/git/ref/heads/main --jq .object.sha` |
 The release workflow runs no test suites of its own: its `ci-gate` job
 requires a successful owner-triggered push or manual CI run on main with every
-platform check and optimized build completed successfully. A green run with
-skipped checks does not qualify. `dispatch.sh` does not wait for CI: the
+platform check and Linux optimized build completed successfully. A green run
+with skipped checks does not qualify. CI builds macOS release binaries on pull
+requests only, so the release's macOS builds get the macOS runners. `dispatch.sh` does not wait for CI: the
 release builds while CI runs, and `ci-gate` holds `sign` and `windows-sign`
 until CI passes, so a failed or cancelled CI run fails the release at `ci-gate`.
 If a CI job fails on a known flake, rerun it (`gh run rerun <id> --failed`)

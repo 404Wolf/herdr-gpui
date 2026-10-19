@@ -162,9 +162,10 @@ throughout. macOS `.dmg`, experimental Linux packages, and experimental Windows 
 and `.zip`s are also published on [Releases](https://github.com/penso/herdr-gpui/releases).
 
 Betas are published as GitHub prereleases before being promoted to stable. To try
-them in a standalone install, turn on **Settings > General > Install beta releases**
-(`[updates] channel = "beta"`); turning it off never downgrades. Homebrew installs
-always follow stable releases.
+them, turn on **Settings > General > Install beta releases**
+(`[updates] channel = "beta"`); turning it off never downgrades. Betas never reach
+the Homebrew tap, so a Homebrew install updates in place while the setting is on,
+and Homebrew takes it back at its next upgrade.
 
 ### Linux packages
 

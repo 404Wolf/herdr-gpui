@@ -52,6 +52,7 @@ mod smooth_scroll_off;
 mod sounds;
 mod split_drag;
 mod staged_release;
+mod temporary_drop;
 mod toast_handoff;
 mod toast_navigation;
 mod wheel_slides;

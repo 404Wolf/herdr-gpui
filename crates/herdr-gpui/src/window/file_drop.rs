@@ -93,6 +93,15 @@ impl HerdrWindow {
                 }
                 return Ok(());
             }
+            // The pane's processes cannot open a live screenshot thumbnail,
+            // so its bytes go through the image bridge as a clipboard image's
+            // do; the path is still pasted if the file cannot be read.
+            if self.accepts_image_input()
+                && let Some(source) = super::image_source::temporary_drag_image(paths)
+            {
+                self.start_remote_image(target.clone(), source, Some(text), cx);
+                return Ok(());
+            }
             let endpoint = &self.endpoints[self.selected_endpoint];
             let handle = endpoint
                 .connection

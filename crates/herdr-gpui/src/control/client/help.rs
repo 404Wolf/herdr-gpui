@@ -32,6 +32,9 @@ herdr-gpui browser close|back|forward|text TAB
     Close a page tab, go back or forward in it, or print its visible text.
 herdr-gpui browser navigate TAB URL
     Load another web address in a page tab.
+herdr-gpui browser zoom TAB +|-|reset|PERCENT
+    Zoom a page tab in or out a step, back to 100%, or to PERCENT (50-300),
+    as the font size keys do while it is focused. The tab keeps its zoom.
 herdr-gpui browser screenshot TAB PATH
     Save a PNG of the page (macOS).
 herdr-gpui browser skill
@@ -59,7 +62,7 @@ fn family(name: &str) -> &'static str {
             "herdr-gpui window [list]\n    The app's windows, with IDs for --window.\nherdr-gpui window new [--session NAME]\n    Open another window: of the caller's own Herdr session, of a named\n    local session, or outside Herdr of the frontmost window's host.\nherdr-gpui window focus ID\nherdr-gpui window fullscreen [on|off|toggle]\nherdr-gpui window size [WIDTHxHEIGHT]\n    Print the window's size, or resize it. Windows cannot be moved.\nherdr-gpui window detach|reconnect\n    Detach from, or reconnect to, the window's selected host."
         }
         "ui" => {
-            "herdr-gpui ui sidebar [on|off|toggle]\nherdr-gpui ui statusbar [on|off|toggle]\nherdr-gpui ui font-size +|-|reset|POINTS\nherdr-gpui ui panel workspaces|overview|pull-requests|issues|usage\n    For this window and session; settings are changed with `config`."
+            "herdr-gpui ui sidebar [on|off|toggle]\nherdr-gpui ui statusbar [on|off|toggle]\nherdr-gpui ui font-size +|-|reset|POINTS\nherdr-gpui ui panel workspaces|overview|pull-requests|issues|security|usage\n    For this window and session; settings are changed with `config`."
         }
         "tab" => {
             "herdr-gpui tab [list]\n    The app's own tabs: pages, code, reviews, Devices.\n    Terminal tabs belong to Herdr: use `herdr tab`.\nherdr-gpui tab focus|close ID\n    Show a tab, switching to its workspace, or close it."
@@ -113,6 +116,9 @@ fn family(name: &str) -> &'static str {
             "herdr-gpui processes [--pane ID]\n    The processes under a pane (default HERDR_PANE_ID), with CPU and\n    memory. Runs here; Herdr UI need not run."
         }
         "usage" => "herdr-gpui usage\n    AI plan usage on the window's selected host.",
+        "security" => {
+            "herdr-gpui security\n    Private vulnerability reports in triage (titles only) and open\n    Dependabot alerts of the github.com repositories the window's\n    workspaces hold, most severe first, as the Security section last read\n    them (sign in to GitHub first). Exits 4 when there are none.\n    `ui panel security` shows the section."
+        }
         "system" => {
             "herdr-gpui system\n    The window's selected host's load, when Herdr UI samples it."
         }

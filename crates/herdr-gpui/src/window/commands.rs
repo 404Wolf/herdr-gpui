@@ -51,6 +51,7 @@ impl HerdrWindow {
         .detach();
     }
 
+    #[track_caller]
     pub(crate) fn navigate(
         &mut self,
         target: NavigationTarget<&str>,
@@ -104,6 +105,7 @@ impl HerdrWindow {
     }
 
     /// Complete an accepted navigation even if its context menu has since opened.
+    #[track_caller]
     pub(crate) fn dispatch_navigation(
         &mut self,
         target: NavigationTarget<&str>,
@@ -127,6 +129,7 @@ impl HerdrWindow {
 
     /// `label` is what a failure is reported as, not a method name: navigation
     /// picks its method from the target, so it reports itself by name.
+    #[track_caller]
     pub(crate) fn request_focus_change(
         &mut self,
         label: &str,
@@ -143,6 +146,9 @@ impl HerdrWindow {
             if let Err(error) = enqueue(handle, &snapshot.boot_id) {
                 self.local_error = Some(format!("{label}: {error}"));
             } else {
+                #[cfg(feature = "integration-test")]
+                self.navigations
+                    .record(label, focus.as_ref(), std::panic::Location::caller());
                 self.fence_focus_change(focus);
                 return true;
             }
@@ -442,6 +448,13 @@ impl HerdrWindow {
             }
             Command::DevicesOverview => {
                 self.open_devices_overview(window, cx);
+                return;
+            }
+            // A focused page zooms instead of the terminal font, and keeps
+            // the keyboard if it held it.
+            Command::IncreaseFontSize | Command::DecreaseFontSize | Command::ResetFontSize
+                if self.zoom_focused_page(command, cx) =>
+            {
                 return;
             }
             Command::IncreaseFontSize | Command::DecreaseFontSize => {

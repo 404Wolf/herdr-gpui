@@ -10,6 +10,7 @@ mod back;
 mod counts;
 mod layout;
 mod sections;
+mod startup_counts;
 mod toggle;
 
 fn item(native_id: &str, title: &str) -> Item {

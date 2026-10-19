@@ -86,7 +86,7 @@ impl HerdrWindow {
         cx.notify();
     }
 
-    fn accepts_image_input(&self) -> bool {
+    pub(super) fn accepts_image_input(&self) -> bool {
         self.menu.page.is_none()
             && self.live.status.is_connected()
             && self.input_ready()
@@ -281,9 +281,14 @@ impl HerdrWindow {
                     return Ok(fallback.map_or(Prepared::Empty, Prepared::Input));
                 };
                 if !image_only && let Some(paths) = external_paths(&item) {
-                    // A local pane keeps the paste in this reserved slot; a
-                    // remote pane needs the drop's image bridge or file copy.
+                    // A local pane keeps the paste in this reserved slot, as an
+                    // image when it is a temporary drag item the pane cannot
+                    // open, so input typed meanwhile still follows it. A remote
+                    // pane needs the drop's image bridge or file copy.
                     if !bridge_paths && let Ok(text) = super::file_drop::quote_paths(&paths) {
+                        if let Some(source) = image_source::temporary_drag_image(&paths) {
+                            return Prepared::image(source.prepare(), Some(text));
+                        }
                         return Ok(Prepared::Input(ClientPaneInputEvent::Paste(text)));
                     }
                     return Ok(Prepared::Files(paths));
