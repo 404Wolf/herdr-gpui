@@ -111,7 +111,7 @@ impl OrchestratorView {
     }
 
     /// How many of the Issues filters narrow the list.
-    fn active_filters(&self) -> usize {
+    pub(super) fn active_filters(&self) -> usize {
         usize::from(self.filters.provider.is_some())
             + usize::from(self.filters.has_run)
             + usize::from(self.filters.blocked)
@@ -204,7 +204,7 @@ impl OrchestratorView {
                 option(
                     "orchestrator-facet-run".into(),
                     "Has agent".into(),
-                    Some(has_run),
+                    Some(has_run).filter(|count| *count > 0),
                     self.filters.has_run,
                 )
                 .on_click(cx.listener(|this, _, _, cx| {
@@ -217,7 +217,7 @@ impl OrchestratorView {
                 option(
                     "orchestrator-facet-blocked".into(),
                     "Blocked".into(),
-                    Some(blocked),
+                    Some(blocked).filter(|count| *count > 0),
                     self.filters.blocked,
                 )
                 .on_click(cx.listener(|this, _, _, cx| {
@@ -367,6 +367,8 @@ impl OrchestratorView {
                         })
                         .max();
                     match at {
+                        // A count of nothing synced says no more than the time.
+                        Some(at) if count == 0 => (synced(at), look.hue(GREEN), false),
                         Some(at) => (
                             format!("{count} \u{00b7} {}", synced(at)),
                             look.hue(GREEN),
