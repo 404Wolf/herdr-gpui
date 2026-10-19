@@ -145,6 +145,15 @@ fn only_checked_stable_releases_pipeline_activation() {
         ("0.9.5-preview.1a2b", false),
         ("1.0.0", false),
         ("0.9", false),
+        // Only the exact release strings that were checked.
+        ("00.9.5", false),
+        ("0.09.5", false),
+        ("0.9.05", false),
+        ("0.+9.5", false),
+        ("+0.9.5", false),
+        ("v0.9.3", false),
+        (" 0.9.3", false),
+        ("0.9.3.0", false),
     ] {
         let (client, mut server, worker) = connected_reporting(version);
         let focus = client.handle.focus_pane("boot-v1", "w1:p2").unwrap();

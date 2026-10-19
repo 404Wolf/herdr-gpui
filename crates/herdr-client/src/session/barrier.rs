@@ -22,12 +22,12 @@ impl Barrier {
     }
 }
 
-/// Checked stable releases only; previews and later versions stay serialized.
+/// The exact stable releases whose sources were checked; any other string,
+/// including previews, later versions, and other spellings, stays serialized.
 pub(super) fn verified_ordering(server_version: &str) -> bool {
-    let mut parts = server_version.split('.').map(str::parse::<u64>);
     matches!(
-        (parts.next(), parts.next(), parts.next(), parts.next()),
-        (Some(Ok(0)), Some(Ok(9)), Some(Ok(0..=5)), None)
+        server_version,
+        "0.9.0" | "0.9.1" | "0.9.2" | "0.9.3" | "0.9.4" | "0.9.5"
     )
 }
 
