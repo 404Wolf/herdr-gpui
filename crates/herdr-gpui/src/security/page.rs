@@ -12,7 +12,7 @@
 mod read;
 
 #[cfg(test)]
-pub(crate) use read::{AdvisoryNode, CommentNode, comments, parse_alert};
+pub(crate) use read::{AdvisoryNode, CommentNode, body, comments, parse_alert};
 pub(crate) use read::{AlertPage, Comments, MAX_COMMENTS, Relationship, ReportPage, Scope};
 
 use super::{Alert, Error, Repo, Report, Security};

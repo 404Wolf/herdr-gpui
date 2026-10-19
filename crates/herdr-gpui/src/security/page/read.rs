@@ -276,9 +276,15 @@ pub(crate) fn comments(nodes: Vec<CommentNode>) -> Comments {
 }
 
 /// Untrusted Markdown as bounded lines, without the HTML GitHub bodies hold.
-fn body(text: Option<&str>) -> Vec<Line> {
-    text.map(|text| release_notes::parse(&crate::orchestrator::without_html(text)))
-        .unwrap_or_default()
+/// A link that is not `https` stays as text but is not clickable.
+pub(crate) fn body(text: Option<&str>) -> Vec<Line> {
+    let mut lines = text
+        .map(|text| release_notes::parse(&crate::orchestrator::without_html(text)))
+        .unwrap_or_default();
+    for line in &mut lines {
+        line.links.retain(|link| link.url.starts_with("https://"));
+    }
+    lines
 }
 
 fn clean(text: &str) -> String {
