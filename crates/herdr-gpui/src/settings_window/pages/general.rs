@@ -80,6 +80,21 @@ impl SettingsWindow {
                         cx,
                     )),
             )
+            .when(cfg!(target_os = "linux"), |page| {
+                page.child(
+                    ui::row(theme, "general-window-controls", "Show window controls")
+                        .description(
+                            "Draw minimize, maximize, and close buttons in the menu bar. Disable \
+                             server-side decorations in your window manager to avoid a double bar.",
+                        )
+                        .switch(self.preference_toggle(
+                            "general-window-controls-toggle",
+                            self.config.show_window_controls,
+                            Preference::ShowWindowControls(!self.config.show_window_controls),
+                            cx,
+                        )),
+                )
+            })
             .child(ui::section(theme, "Features", None))
             .children(self.feature_rows(cx))
             .child(ui::section(theme, "Clipboard", None))

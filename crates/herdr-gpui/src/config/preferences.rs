@@ -16,6 +16,7 @@ pub(crate) enum Preference {
     ShowAgentsHeader(bool),
     ShowSidebarSearch(bool),
     ShowRepositoryIcons(bool),
+    ShowWindowControls(bool),
     /// `status_icons`: the set agent status is drawn with.
     StatusIcons(StatusIcons),
     /// `edge_rail`: the bar on busy and finished rows.
@@ -128,6 +129,9 @@ impl Config {
                 }
                 Preference::ShowDeviceIcons(value) => {
                     (None, "show_device_icons", Some(value.into()))
+                }
+                Preference::ShowWindowControls(value) => {
+                    (None, "show_window_controls", Some(value.into()))
                 }
                 Preference::SmoothScroll(value) => (None, "smooth_scroll", Some(value.into())),
                 Preference::StatusIcons(value) => {

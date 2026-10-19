@@ -126,6 +126,14 @@ pub(crate) fn client(window: &Window) -> bool {
     matches!(window.window_decorations(), Decorations::Client { .. })
 }
 
+/// Whether the app draws its own window control buttons (minimize, maximize,
+/// close) in the menu bar. True when the user has enabled window controls in
+/// settings (default on Linux) or on client-decorated windows (Wayland
+/// without SSD) where the buttons are always needed.
+pub(crate) fn show_controls(enabled: bool, window: &Window) -> bool {
+    enabled || client(window)
+}
+
 /// Which buttons to draw, from what the compositor says it supports. Close
 /// is always offered, since nothing else on screen can close the window.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -136,11 +144,15 @@ struct Buttons {
 }
 
 impl Buttons {
-    fn of(window: &Window) -> Option<Self> {
+    fn of(enabled: bool, window: &Window) -> Option<Self> {
         let controls = window.window_controls();
-        client(window).then(|| Self {
-            minimize: controls.minimize,
-            maximize: controls.maximize,
+        // When the user explicitly enables window controls, show all three
+        // buttons regardless of what the WM reports. The WM-reported controls
+        // only matter for client-decorated windows where the compositor decides.
+        let force_all = enabled;
+        show_controls(enabled, window).then(|| Self {
+            minimize: force_all || controls.minimize,
+            maximize: force_all || controls.maximize,
             maximized: window.is_maximized(),
         })
     }
@@ -150,11 +162,12 @@ impl Buttons {
 /// bar of a client-decorated window. `close` runs the window's own close
 /// path, so a window that asks before closing still asks.
 pub(crate) fn controls(
+    enabled: bool,
     window: &Window,
     theme: &crate::config::Theme,
     close: impl Fn(&mut Window, &mut App) + 'static,
 ) -> Option<AnyElement> {
-    Buttons::of(window).map(|buttons| render_controls(buttons, theme, close))
+    Buttons::of(enabled, window).map(|buttons| render_controls(buttons, theme, close))
 }
 
 fn render_controls(

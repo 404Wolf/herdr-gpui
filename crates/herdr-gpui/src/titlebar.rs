@@ -8,6 +8,7 @@ pub(crate) use tabs::{Ends, strip_height};
 
 pub(crate) use decorations::controls;
 pub(crate) use decorations::frame;
+pub(crate) use decorations::show_controls;
 
 use crate::{HerdrWindow, fonts::StyledFont, menu::Page};
 use gpui::{prelude::*, *};
@@ -365,7 +366,7 @@ impl HerdrWindow {
             )
             // The in-window menu bar carries the window controls instead.
             .when(!crate::menus::IN_WINDOW, |end| {
-                end.children(controls(window, &self.theme, |window, _| {
+                end.children(controls(false, window, &self.theme, |window, _| {
                     window.remove_window();
                 }))
             })
@@ -437,7 +438,7 @@ pub(crate) fn header(
     close: impl Fn(&mut Window, &mut App) + 'static,
 ) -> Option<Stateful<Div>> {
     (cfg!(target_os = "macos") || decorations::client(window)).then(|| {
-        let buttons = controls(window, theme, close);
+        let buttons = controls(false, window, theme, close);
         render(bar(theme.surface), None, window).children(buttons)
     })
 }

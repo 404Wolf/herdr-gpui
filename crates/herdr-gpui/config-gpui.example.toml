@@ -108,6 +108,12 @@ show_network_quality = false
 # and momentum; false scrolls by whole rows. Applications reading the mouse
 # always get whole rows. Also under Settings > General.
 smooth_scroll = true
+# Linux only: draw minimize, maximize, and close buttons at the right end of the
+# menu bar. When true the window needs no title bar from the window manager;
+# disable server-side decorations in your compositor or window manager settings.
+# On Wayland without server-side decorations (GNOME), buttons are always shown
+# regardless of this setting.
+# show_window_controls = true
 
 # Focus split terminal panes on hover in the active window, without clicking.
 focus_follows_mouse = true
