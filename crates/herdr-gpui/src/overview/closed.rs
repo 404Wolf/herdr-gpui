@@ -14,6 +14,9 @@ const MAX_CLOSED: usize = 32;
 /// An agent that closed, as it last showed.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Agent {
+    /// Tells apart agents that share a key, such as two of one kind in one
+    /// checkout, for Reopen and Forget.
+    pub id: u64,
     pub row: Row,
     /// The folder its pane last ran in, for the tab that reopens it.
     pub cwd: Option<String>,
@@ -35,6 +38,11 @@ pub(crate) struct Closed {
     agents: Vec<Agent>,
     /// Counts changes, so the page redraws when one closes or goes.
     revision: u64,
+    /// The next agent's `id`.
+    next: u64,
+    /// Reopened agents not yet listed again, by endpoint and key: when one
+    /// turns up, it is the agent reopened, not a closed twin coming back.
+    reopened: Vec<(String, Key)>,
 }
 
 /// The pane an agent row stands in.
@@ -90,27 +98,56 @@ impl Closed {
             return;
         };
         let before = self.agents.len();
-        // Two agents of one name in one checkout share a key, so only a key
-        // new on this report brings a closed agent back.
-        self.agents.retain(|agent| {
-            agent.row.endpoint != endpoint
-                || !current.iter().any(|(row, _)| row.key == agent.row.key)
-                || previous.iter().any(|(row, _)| row.key == agent.row.key)
-        });
+        // Two agents of one name in one checkout share a key, so each agent
+        // of a key new on this report brings back one closed agent of it,
+        // the latest closed.
+        let mut counted: Vec<&Key> = Vec::new();
+        for (row, _) in current {
+            if counted.contains(&&row.key) {
+                continue;
+            }
+            counted.push(&row.key);
+            let count = |agents: &[(Row, Option<String>)]| {
+                agents
+                    .iter()
+                    .filter(|(shown, _)| shown.key == row.key)
+                    .count()
+            };
+            let mut back = count(current).saturating_sub(count(&previous));
+            while back > 0
+                && let Some(index) = self
+                    .reopened
+                    .iter()
+                    .position(|(host, key)| host == endpoint && *key == row.key)
+            {
+                self.reopened.remove(index);
+                back -= 1;
+            }
+            while back > 0
+                && let Some(index) = self
+                    .agents
+                    .iter()
+                    .rposition(|agent| agent.row.endpoint == endpoint && agent.row.key == row.key)
+            {
+                self.agents.remove(index);
+                back -= 1;
+            }
+        }
         let mut changed = self.agents.len() != before;
         for (row, cwd) in previous {
             if current.iter().any(|(shown, _)| pane(shown) == pane(&row)) {
                 continue;
             }
-            self.agents.retain(|agent| agent.row.key != row.key);
             if self.agents.len() >= MAX_CLOSED {
                 self.agents.remove(0);
             }
             self.agents.push(Agent {
+                id: self.next,
                 row,
                 cwd,
                 closed: now,
             });
+            self.next += 1;
             changed = true;
         }
         if changed {
@@ -121,6 +158,7 @@ impl Closed {
     /// Forgets hosts the window no longer has, and their closed agents.
     pub(crate) fn retain_hosts(&mut self, mut kept: impl FnMut(&str) -> bool) {
         self.seen.retain(|endpoint, _| kept(endpoint));
+        self.reopened.retain(|(endpoint, _)| kept(endpoint));
         let before = self.agents.len();
         self.agents.retain(|agent| kept(&agent.row.endpoint));
         if self.agents.len() != before {
@@ -141,16 +179,32 @@ impl Closed {
         self.agents.is_empty()
     }
 
-    pub(crate) fn get(&self, key: &Key) -> Option<&Agent> {
-        self.agents.iter().find(|agent| agent.row.key == *key)
+    pub(crate) fn get(&self, id: u64) -> Option<&Agent> {
+        self.agents.iter().find(|agent| agent.id == id)
     }
 
-    pub(crate) fn forget(&mut self, key: &Key) {
+    pub(crate) fn forget(&mut self, id: u64) {
         let before = self.agents.len();
-        self.agents.retain(|agent| agent.row.key != *key);
+        self.agents.retain(|agent| agent.id != id);
         if self.agents.len() != before {
             self.revision += 1;
         }
+    }
+
+    /// Forgets the closed agent `id`, started again, so that its return
+    /// does not take a twin closed beside it off the list.
+    pub(crate) fn reopened(&mut self, id: u64) {
+        let Some(reopened) = self
+            .get(id)
+            .map(|agent| (agent.row.endpoint.clone(), agent.row.key.clone()))
+        else {
+            return;
+        };
+        if self.reopened.len() >= MAX_CLOSED {
+            self.reopened.remove(0);
+        }
+        self.reopened.push(reopened);
+        self.forget(id);
     }
 
     pub(crate) fn revision(&self) -> u64 {

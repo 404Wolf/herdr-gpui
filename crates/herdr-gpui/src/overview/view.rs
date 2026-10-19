@@ -30,8 +30,8 @@ enum Shelf {
     Active,
     Snoozed(SystemTime),
     Settled,
-    /// With when it closed.
-    Closed(SystemTime),
+    /// With the closed agent's id and when it closed.
+    Closed(u64, SystemTime),
 }
 
 /// What every row of one frame draws with.
@@ -260,7 +260,7 @@ impl HerdrWindow {
         }
         if self.overview.closed_open {
             for agent in self.overview.closed.agents() {
-                list = list.child(row(&agent.row, Shelf::Closed(agent.closed), cx));
+                list = list.child(row(&agent.row, Shelf::Closed(agent.id, agent.closed), cx));
             }
         }
         list
@@ -326,13 +326,11 @@ impl HerdrWindow {
     ) -> AnyElement {
         let look = &frame.look;
         let theme = look.theme;
-        // A closed agent may share its key with one still running.
-        let kind = if matches!(shelf, Shelf::Closed(_)) {
-            "closed"
-        } else {
-            "row"
+        // A closed agent may share its key with others, closed or running.
+        let selector = match shelf {
+            Shelf::Closed(id, _) => format!("overview-closed-{id}"),
+            _ => format!("overview-row-{}", row.key.selector()),
         };
-        let selector = format!("overview-{kind}-{}", row.key.selector());
         let group = SharedString::from(selector.clone());
         let woke = Marks::of(cx)
             .and_then(|marks| marks.get(&row.key))
@@ -363,11 +361,11 @@ impl HerdrWindow {
         let actions = self.overview_actions(row, shelf, pinned, &group, menu_open, look, cx);
         let clicked = row.clone();
         let title_selector = match shelf {
-            Shelf::Closed(_) => format!("overview-closed-title-{}", row.key.selector()),
+            Shelf::Closed(id, _) => format!("overview-closed-title-{id}"),
             _ => format!("overview-title-{}", row.key.selector()),
         };
         let since = match shelf {
-            Shelf::Closed(closed) => Some(closed),
+            Shelf::Closed(_, closed) => Some(closed),
             _ => row.since,
         };
         div()
@@ -470,7 +468,7 @@ impl HerdrWindow {
             )
             .child(actions)
             .on_click(cx.listener(move |this, _, window, cx| {
-                if matches!(shelf, Shelf::Closed(_)) {
+                if matches!(shelf, Shelf::Closed(..)) {
                     this.open_closed_agent(&clicked, window, cx);
                 } else {
                     this.open_overview_row(&clicked, window, cx);
@@ -491,7 +489,10 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) -> Div {
         let theme = look.theme;
-        let key = row.key.selector();
+        let key = match shelf {
+            Shelf::Closed(id, _) => id.to_string(),
+            _ => row.key.selector(),
+        };
         let action = |name: &'static str, icon: &'static str, label: &'static str| {
             div()
                 .id(SharedString::from(format!("overview-{name}-{key}")))
@@ -540,14 +541,13 @@ impl HerdrWindow {
                     .opacity(0.)
                     .group_hover(group.clone(), |style| style.opacity(1.))
             });
-        if matches!(shelf, Shelf::Closed(_)) {
+        if let Shelf::Closed(id, _) = shelf {
             let reopenable = self
                 .overview
                 .closed
-                .get(&row.key)
+                .get(id)
                 .and_then(super::reopen::kind)
                 .is_some();
-            let (reopen, forget) = (row.key.clone(), row.key.clone());
             if reopenable {
                 actions = actions.child(action("reopen", "icons/play.svg", "Reopen").on_click(
                     cx.listener(move |this, _, window, cx| {
@@ -558,7 +558,7 @@ impl HerdrWindow {
                             cx,
                         );
                         this.activity.return_to = Some(crate::sidebar::ActivityPanel::Overview);
-                        this.reopen_closed_agent(&reopen, cx);
+                        this.reopen_closed_agent(id, cx);
                         window.focus(&this.focus, cx);
                     }),
                 ));
@@ -567,7 +567,7 @@ impl HerdrWindow {
                 action("forget", "icons/x.svg", "Forget").on_click(cx.listener(
                     move |this, _, _, cx| {
                         cx.stop_propagation();
-                        this.overview.closed.forget(&forget);
+                        this.overview.closed.forget(id);
                         cx.notify();
                     },
                 )),

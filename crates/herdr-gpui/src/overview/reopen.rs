@@ -5,7 +5,7 @@
 //! one line typed into the pane it made. The line comes from the agent kinds
 //! this client knows, never from the daemon's text.
 
-use super::{Key, closed};
+use super::closed;
 use crate::{HerdrWindow, NavigationTarget, teleport::AgentKind, window::Flash};
 use gpui::Context;
 use herdr_client::Method;
@@ -37,7 +37,8 @@ pub(crate) fn kind(agent: &closed::Agent) -> Option<AgentKind> {
 /// A reopen on its way.
 #[derive(Debug)]
 pub(crate) struct Job {
-    key: Key,
+    /// The closed agent's id.
+    closed: u64,
     endpoint: String,
     workspace: String,
     cwd: Option<String>,
@@ -53,7 +54,7 @@ impl Job {
             return None;
         };
         Some(Self {
-            key: agent.row.key.clone(),
+            closed: agent.id,
             endpoint: agent.row.endpoint.clone(),
             workspace: workspace.clone(),
             cwd: agent.cwd.clone(),
@@ -73,9 +74,9 @@ impl Job {
 }
 
 impl HerdrWindow {
-    /// Starts the closed agent `key` again, switching to its host first.
-    pub(crate) fn reopen_closed_agent(&mut self, key: &Key, cx: &mut Context<Self>) {
-        let Some(agent) = self.overview.closed.get(key) else {
+    /// Starts the closed agent `id` again, switching to its host first.
+    pub(crate) fn reopen_closed_agent(&mut self, id: u64, cx: &mut Context<Self>) {
+        let Some(agent) = self.overview.closed.get(id) else {
             return;
         };
         let Some(job) = kind(agent).and_then(|kind| Job::new(agent, kind, Instant::now())) else {
@@ -170,7 +171,7 @@ impl HerdrWindow {
         });
         match typed {
             Ok(tab) => {
-                self.overview.closed.forget(&job.key);
+                self.overview.closed.reopened(job.closed);
                 self.navigate_endpoint(&job.endpoint, NavigationTarget::Tab(&tab), cx);
                 cx.notify();
             }

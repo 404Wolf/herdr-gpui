@@ -1,6 +1,9 @@
 use super::*;
 use crate::{
-    overview::{closed::Closed, reopen},
+    overview::{
+        closed::{self, Closed},
+        reopen,
+    },
     sidebar::layout_tests::snapshot,
     teleport::AgentKind,
 };
@@ -35,6 +38,14 @@ fn observe(closed: &mut Closed, boot: &str, agents: &[&str], now: u64) {
     closed.observe("local", &shown, &rows, at(now));
 }
 
+/// The closed agent shown as `name`.
+fn named<'a>(closed: &'a Closed, name: &str) -> &'a closed::Agent {
+    closed
+        .agents()
+        .find(|agent| agent.row.detail == name)
+        .unwrap()
+}
+
 fn names(closed: &Closed) -> Vec<String> {
     closed
         .agents()
@@ -52,7 +63,7 @@ fn an_agent_gone_from_its_host_is_closed_with_its_folder() {
     observe(&mut closed, "b1", &["b"], 20);
     assert_eq!(names(&closed), ["a"]);
     assert!(closed.revision() > revision);
-    let agent = closed.get(&key("a")).unwrap();
+    let agent = named(&closed, "a");
     assert_eq!(agent.closed, at(20));
     assert_eq!(agent.cwd.as_deref(), Some("/src/herdr/a"));
     // Newest first.
@@ -93,12 +104,71 @@ fn a_twin_still_running_keeps_its_closed_namesake_listed() {
     assert_eq!(names(&closed), ["a"]);
 }
 
+/// Two agents sharing `a`'s key, in their own panes and folders.
+fn twins() -> (ClientShellSnapshot, Vec<Row>) {
+    let (mut shown, mut rows) = report("b1", &["a"]);
+    let mut pane = shown.panes[0].clone();
+    pane.pane_id = "pane-twin".into();
+    pane.foreground_cwd = Some("/src/herdr/twin".into());
+    shown.panes.push(pane);
+    let mut twin = rows[0].clone();
+    if let Open::Pane { pane, .. } = &mut twin.open {
+        *pane = "pane-twin".into();
+    }
+    rows.push(twin);
+    (shown, rows)
+}
+
+#[test]
+fn twins_that_both_close_are_both_listed() {
+    let mut closed = Closed::default();
+    let (shown, rows) = twins();
+    closed.observe("local", &shown, &rows, at(10));
+    closed.observe("local", &shown, [&rows[1]], at(20));
+    closed.observe("local", &shown, &[], at(30));
+    let cwds: Vec<_> = closed
+        .agents()
+        .map(|agent| agent.cwd.as_deref().unwrap())
+        .collect();
+    assert_eq!(cwds, ["/src/herdr/twin", "/src/herdr/a"]);
+    let twin = closed.agents().next().unwrap().id;
+    assert_ne!(twin, closed.agents().nth(1).unwrap().id);
+    closed.forget(twin);
+    assert_eq!(names(&closed), ["a"]);
+    assert_eq!(closed.get(twin), None);
+    // Each agent of the key coming back takes back one closed agent.
+    let (shown, rows) = twins();
+    closed.observe("local", &shown, &rows, at(40));
+    assert!(closed.is_empty());
+    closed.observe("local", &shown, &[], at(50));
+    assert_eq!(closed.len(), 2);
+    closed.observe("local", &shown, [&rows[0]], at(60));
+    assert_eq!(closed.len(), 1);
+}
+
+#[test]
+fn reopening_one_twin_keeps_the_other_closed() {
+    let mut closed = Closed::default();
+    let (shown, rows) = twins();
+    closed.observe("local", &shown, &rows, at(10));
+    closed.observe("local", &shown, &[], at(20));
+    let first = closed.agents().nth(1).unwrap().id;
+    closed.reopened(first);
+    assert_eq!(closed.len(), 1);
+    // The reopened agent turns up: the other twin stays closed.
+    closed.observe("local", &shown, [&rows[0]], at(30));
+    assert_eq!(closed.len(), 1);
+    // A second one of the key is a twin back.
+    closed.observe("local", &shown, &rows, at(40));
+    assert!(closed.is_empty());
+}
+
 #[test]
 fn forgetting_and_dropped_hosts_clear_closed_agents() {
     let mut closed = Closed::default();
     observe(&mut closed, "b1", &["a", "b"], 10);
     observe(&mut closed, "b1", &[], 20);
-    closed.forget(&key("a"));
+    closed.forget(named(&closed, "a").id);
     assert_eq!(names(&closed), ["b"]);
     closed.retain_hosts(|id| id != "local");
     assert!(closed.is_empty());
@@ -135,7 +205,7 @@ fn only_known_agents_can_be_reopened() {
     let mut closed = Closed::default();
     observe(&mut closed, "b1", &["a"], 10);
     observe(&mut closed, "b1", &[], 20);
-    let agent = closed.get(&key("a")).unwrap().clone();
+    let agent = named(&closed, "a").clone();
     assert_eq!(reopen::kind(&agent), Some(AgentKind::Claude));
     let mut unknown = agent;
     unknown.row.identity = Some("make".into());

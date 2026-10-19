@@ -4,20 +4,21 @@ use gpui::{Entity, VisualTestContext};
 use std::sync::Arc;
 
 /// Takes the working agent off the host, as closing its pane does, and
-/// returns its row's selector part.
-fn close_working(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) -> String {
+/// returns its active row's selector part and its closed id.
+fn close_working(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) -> (String, u64) {
     let working = row(view, cx, State::Working);
-    cx.update(|_, cx| {
+    let id = cx.update(|_, cx| {
         view.update(cx, |view, cx| {
             let mut shown = view.live.snapshot.as_deref().unwrap().clone();
             shown.agents.retain(|agent| agent.pane_id != "p1");
             shown.revision += 1;
             view.live.snapshot = Some(Arc::new(shown));
             view.poll_overview(cx);
+            view.overview.closed.agents().next().unwrap().id
         })
     });
     draw(cx);
-    working
+    (working, id)
 }
 
 #[gpui::test]
@@ -27,26 +28,26 @@ fn a_closed_agent_waits_under_closed(cx: &mut gpui::TestAppContext) {
     assert!(cx.debug_bounds("overview-closed").is_none());
     assert!(cx.debug_bounds("overview-snoozed").is_none());
     assert!(cx.debug_bounds("overview-settled").is_none());
-    let working = close_working(&view, cx);
+    let (working, id) = close_working(&view, cx);
     assert!(bounds(cx, format!("overview-row-{working}")).is_none());
     assert!(cx.debug_bounds("overview-closed").is_some());
     // Folded until asked for.
-    assert!(bounds(cx, format!("overview-closed-{working}")).is_none());
+    assert!(bounds(cx, format!("overview-closed-{id}")).is_none());
     click(cx, "overview-closed");
-    assert!(bounds(cx, format!("overview-closed-{working}")).is_some());
-    assert!(bounds(cx, format!("overview-reopen-{working}")).is_some());
+    assert!(bounds(cx, format!("overview-closed-{id}")).is_some());
+    assert!(bounds(cx, format!("overview-reopen-{id}")).is_some());
 
-    click(cx, format!("overview-forget-{working}"));
-    assert!(bounds(cx, format!("overview-closed-{working}")).is_none());
+    click(cx, format!("overview-forget-{id}"));
+    assert!(bounds(cx, format!("overview-closed-{id}")).is_none());
     assert!(cx.debug_bounds("overview-closed").is_none());
 }
 
 #[gpui::test]
 fn reopening_shows_the_terminals_and_says_when_it_cannot(cx: &mut gpui::TestAppContext) {
     let (view, cx) = fixture(cx);
-    let working = close_working(&view, cx);
+    let (_, id) = close_working(&view, cx);
     click(cx, "overview-closed");
-    click(cx, format!("overview-reopen-{working}"));
+    click(cx, format!("overview-reopen-{id}"));
     assert_eq!(
         cx.update(|_, cx| view.read(cx).activity.panel),
         ActivityPanel::Workspaces
