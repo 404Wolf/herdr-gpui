@@ -550,6 +550,10 @@ impl HerdrWindow {
                 window.focus(&self.focus, cx);
                 return;
             }
+            // A browser tab moves without the daemon, so before its check.
+            Command::MoveTabPrevious | Command::MoveTabNext if self.move_page_tab(command, cx) => {
+                return;
+            }
             Command::MoveTabPrevious | Command::MoveTabNext if !self.live.supports_tab_move => {
                 self.local_error = Some("Moving tabs needs a newer Herdr daemon.".into());
                 cx.notify();

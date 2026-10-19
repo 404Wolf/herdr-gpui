@@ -50,6 +50,7 @@ mod snapshot;
 mod stacking;
 mod store;
 mod tab_appear;
+mod tab_move;
 mod tab_scroll;
 #[cfg(target_os = "macos")]
 mod underlay;
