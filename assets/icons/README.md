@@ -41,6 +41,17 @@ rsvg-convert -w 1024 -h 1024 assets/icons/herdr-github-app.svg \
   -o assets/icons/herdr-github-app.png
 ```
 
+`herdr-github-app-200.png` is an alternative 200x200 upload, rendered directly
+from the vector source rather than resized from the larger PNG:
+
+```sh
+rsvg-convert -w 200 -h 200 assets/icons/herdr-github-app.svg \
+  -o assets/icons/herdr-github-app-200.png
+```
+
+GitHub controls thumbnail sizing; a crisp source does not guarantee that its
+badge preview will remain sharp when enlarged or viewed at browser zoom.
+
 ### Linux desktops
 
 The tarball, Debian, RPM, Arch, and Nix packages install the circular SVG at
