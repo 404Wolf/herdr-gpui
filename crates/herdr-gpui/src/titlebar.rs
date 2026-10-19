@@ -15,6 +15,8 @@ use gpui::{prelude::*, *};
 /// Avatar or signed-out GitHub icon. Smaller than the hit target, which stays a
 /// comfortable size for the pointer.
 const AVATAR: f32 = 20.;
+/// The dot an account waiting on GitHub App approval puts on the avatar.
+const ATTENTION_DOT: f32 = 10.;
 
 const SIDEBAR_TOGGLE_SIZE: f32 = 28.;
 const SIDEBAR_GLYPH_WIDTH: f32 = 18.;
@@ -287,6 +289,7 @@ impl HerdrWindow {
     /// a client-decorated window draws.
     fn titlebar_end(&self, window: &Window, cx: &mut Context<Self>) -> Div {
         let image = self.pr_profile().and_then(|p| p.avatar.clone());
+        let attention = self.github_needs_attention();
         div()
             .flex()
             .flex_none()
@@ -305,7 +308,11 @@ impl HerdrWindow {
                         div()
                             .id("titlebar-avatar")
                             .role(Role::Button)
-                            .aria_label("GitHub account")
+                            .aria_label(if attention {
+                                "GitHub account, needs attention"
+                            } else {
+                                "GitHub account"
+                            })
                             .map(|control| {
                                 self.chrome_stop(
                                     crate::window::chrome_focus::Region::TitleBar,
@@ -317,6 +324,7 @@ impl HerdrWindow {
                             .flex()
                             .items_center()
                             .justify_center()
+                            .relative()
                             .size(px(28.))
                             .rounded_full()
                             .cursor_pointer()
@@ -360,7 +368,24 @@ impl HerdrWindow {
                                                 .text_color(rgb(self.theme.foreground)),
                                         ),
                                     }),
-                            ),
+                            )
+                            // On the avatar's upper right, inside the hit
+                            // target, ringed in the bar's color to stand off
+                            // any avatar.
+                            .when(attention, |control| {
+                                control.child(
+                                    div()
+                                        .debug_selector(|| "titlebar-avatar-attention".into())
+                                        .absolute()
+                                        .top(px(3.))
+                                        .right(px(3.))
+                                        .size(px(ATTENTION_DOT))
+                                        .rounded_full()
+                                        .border_2()
+                                        .border_color(bar(self.theme.surface))
+                                        .bg(rgb(self.theme.ink(self.theme.palette[1]))),
+                                )
+                            }),
                     ),
             )
             // The in-window menu bar carries the window controls instead.

@@ -3387,7 +3387,18 @@ Ctrl+Shift+U is left unbound for
   hover glow; authentication errors appear in the account panel, not a red border.
   It uses Herdr GPUI's public client ID `Iv23liurUcwxPjrdIFYT`, overridden by
   `[github].oauth_client_id`, then `HERDR_GITHUB_OAUTH_CLIENT_ID`. No client secret
-  or private key is needed or shipped. The compact native macOS titlebar design
+  or private key is needed or shipped.
+  A GitHub App sign-in reads only the repositories the App is installed on,
+  with the permissions each owner approved. After the profile loads, and at
+  every five-minute session check, the app compares the App's requested
+  permissions (`GET /apps/<slug>`) with each installation the account can see
+  (`GET /user/installations`). If no installation exists, or one still has
+  fewer permissions than the App now requests, the avatar shows a red dot, a
+  toast says so once per window, and the account panel links each owner's
+  approval page (or the install page, for Herdr GPUI's own App). With the
+  panel open, the check runs again within 30 seconds. Tokens from the GitHub
+  CLI, `GH_TOKEN`, an OAuth App, or a personal access token are not checked.
+  The compact native macOS titlebar design
   is integrated from main commit `3909f21`, without unrelated tab changes.
   Signed macOS release builds keep tokens in this app's Keychain entry; unsigned
   development and worktree builds use the private file store instead, so a new
