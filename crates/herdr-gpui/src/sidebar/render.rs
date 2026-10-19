@@ -122,6 +122,7 @@ impl HerdrWindow {
         // A lifted device folds the list to its headers.
         let device_plan = headed.then(|| self.device_plan(devices, &query)).flatten();
         let mut sliding = device_plan.as_ref().is_some_and(|plan| plan.sliding);
+        let worktree_marks = self.config.worktrees.sidebar_marks(theme);
         for (endpoint_index, endpoint) in self.displayed_devices() {
             if !self.device_visible(&endpoint.id)
                 || (devices && !self.device_listed(endpoint_index, &query))
@@ -230,6 +231,8 @@ impl HerdrWindow {
                     break;
                 }
                 let workspace = &snapshot.workspaces[index];
+                let linked = crate::worktree_identity::is_linked(workspace);
+                let worktree = worktree_marks.filter(|_| linked);
                 if selected && workspace.focused {
                     highlighted[0] = Some(space_rows);
                 }
@@ -388,7 +391,12 @@ impl HerdrWindow {
                         workspace,
                         label,
                         tree,
-                        icon: if indented || !self.config.show_repository_icons {
+                        // A child already reads as a linked worktree by its
+                        // place under the main checkout; one standing alone
+                        // takes the branch glyph where the owner's avatar sat.
+                        icon: if let Some(marks) = worktree.filter(|_| !indented) {
+                            RowIcon::Worktree(marks.glyph)
+                        } else if indented || !self.config.show_repository_icons {
                             RowIcon::None
                         } else if workspace.branch.is_none() {
                             // Not a Git checkout, so no mark that reads as one.
@@ -417,7 +425,12 @@ impl HerdrWindow {
                         status: shown_status,
                         lines,
                     }),
-                    &row_cx,
+                    &RowContext {
+                        mark: row_cx
+                            .mark
+                            .with_worktree(worktree.and_then(|marks| marks.wash)),
+                        ..row_cx
+                    },
                 )
                 .selected(selected && workspace.focused)
                 .highlighted(selected && menu_target == Some(id.as_str()))
@@ -493,8 +506,12 @@ impl HerdrWindow {
                 )
                 .id(SharedString::from(format!("workspace-{endpoint_id}-{id}")))
                 .map(|row| {
-                    let name =
-                        super::accessibility::workspace_name(label, shown_status, row_cx.host);
+                    let name = super::accessibility::workspace_name(
+                        label,
+                        linked,
+                        shown_status,
+                        row_cx.host,
+                    );
                     self.workspace_item(row, name, selected && workspace.focused, folds, cx)
                 })
                 .when(multi, |row| {

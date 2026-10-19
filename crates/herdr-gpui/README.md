@@ -1737,6 +1737,40 @@ repository, and every window shows the same ones. Like teleport marks they
 belong to a host, repository and branch, so a note survives a daemon restart
 and follows its branch, and it does not travel with a teleported worktree.
 
+## Telling Worktrees Apart
+
+A linked worktree looks different from its repository's main checkout, which
+keeps the theme as drawn, so you can see at a glance which copy you are about
+to type into. The daemon already says which checkouts are linked worktrees;
+the app reads no Git of its own for this.
+
+- In the sidebar, a linked worktree's row carries a faint wash in the theme's
+  blue, the hue its notes use, in every layout. The wash turns the row's hue
+  without changing its lightness, so names keep their contrast, and selected,
+  hovered, and agent status marks read as before. Nested under its
+  main checkout, the row's place in the tree also marks it; standing alone,
+  it shows the branch glyph where a repository row shows its owner's avatar,
+  so colour is never the only cue. Screen readers hear "linked worktree"
+  after its name.
+- In the workspace, a 2-pixel rule in the same hue lies along the tab strip's
+  edge that meets the terminals, or along the top while the strip is hidden.
+  It sits in the chrome, so no terminal cell is covered or recoloured.
+
+Under `contrast = "high"` the wash steps aside so every label keeps its full
+contrast; the glyph and the rule stay. The `[worktrees]` table changes the hue
+or where it shows:
+
+```toml
+[worktrees]
+# Any #rgb or #rrggbb; it only gets lighter or darker as far as it must to
+# stand out from the chrome. Unset, the theme's blue.
+tint = "#7aa2f7"
+# Where the marks show; [] turns them off.
+apply_to = ["sidebar", "terminal"]
+```
+
+`herdr-gpui config set worktrees.apply_to '[]'` sets it from a script.
+
 ## Moving Panes
 
 Right-click a pane, or an agent's row in the sidebar, for **Move to New Tab**

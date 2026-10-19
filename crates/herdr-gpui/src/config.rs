@@ -44,6 +44,7 @@ pub(crate) use sidebar_style::parse_hex;
 mod theme;
 mod updates;
 pub(crate) mod watch;
+mod worktrees;
 mod zen;
 
 pub use accent::Accent;
@@ -242,6 +243,8 @@ pub struct Config {
     /// Which releases the in-app updater offers.
     pub updates: UpdatesConfig,
     pub usage: crate::usage::UsageConfig,
+    /// How linked worktrees are marked apart from their main checkout.
+    pub worktrees: crate::worktree_identity::Worktrees,
     /// What Toggle Zen Mode does beyond hiding the chrome.
     pub zen: Zen,
     // keep-sorted end
@@ -493,6 +496,7 @@ impl Default for Config {
             unknown_keys: Vec::new(),
             updates: UpdatesConfig::default(),
             usage: crate::usage::UsageConfig::default(),
+            worktrees: crate::worktree_identity::Worktrees::default(),
             zen: Zen::default(),
             // keep-sorted end
         }
@@ -556,6 +560,7 @@ struct Settings {
     ui: FontSettings,
     updates: UpdatesConfig,
     usage: crate::usage::UsageConfig,
+    worktrees: worktrees::WorktreeSettings,
     zen: zen::ZenSettings,
     // keep-sorted end
 }
@@ -961,6 +966,7 @@ impl Config {
         config.status_icons = status_icons;
         config.edge_rail = settings.edge_rail.unwrap_or(legacy_rail);
         config.zen = settings.zen.try_into()?;
+        config.worktrees = settings.worktrees.resolve()?;
         settings.backdrop.validate()?;
         config.backdrop = settings.backdrop;
         config.accent = settings.accent;

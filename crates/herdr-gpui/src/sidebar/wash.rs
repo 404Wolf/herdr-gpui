@@ -3,6 +3,10 @@
 //! agents' rows, it lets a long list read by colour. Selecting a workspace
 //! can raise its host's wash and quiet the other hosts, so the active
 //! machine stands out from the ones it shares the sidebar with.
+//!
+//! A linked worktree's row adds a second wash, in the worktree hue,
+//! over its host's, so the two compose: the host (and later a project) says
+//! whose row it is, the worktree wash says which checkout.
 
 use super::layout::SidebarLook;
 use crate::config::{SelectMode, SidebarStyle, Theme};
@@ -23,14 +27,25 @@ pub(super) struct Wash {
     pub(super) alpha: u32,
 }
 
-/// What one host's rows get: a wash, a dimming, both, or neither.
+/// What one host's rows get: a wash, a dimming, both, or neither, and for
+/// a linked worktree's row, its own wash over them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct HostMark {
     pub(super) wash: Option<Wash>,
     pub(super) dim: bool,
+    pub(super) worktree: Option<Wash>,
 }
 
 impl HostMark {
+    /// The host's mark on one row, with a linked worktree's wash, as a
+    /// colour and an alpha, when the row is one the sidebar marks.
+    pub(super) fn with_worktree(self, worktree: Option<(u32, u32)>) -> Self {
+        Self {
+            worktree: worktree.map(|(color, alpha)| Wash { color, alpha }),
+            ..self
+        }
+    }
+
     /// The opacity of the host's rows.
     pub(super) fn opacity(self) -> f32 {
         if self.dim { DIM_OPACITY } else { 1. }
@@ -55,22 +70,23 @@ impl HostMark {
         match style.select {
             SelectMode::Row => Self {
                 wash: rest,
-                dim: false,
+                ..Self::default()
             },
             SelectMode::Group | SelectMode::GroupDim if selected => Self {
                 wash: Some(Wash {
                     color: configured.unwrap_or(theme.active),
                     alpha: SELECTED_ALPHA,
                 }),
-                dim: false,
+                ..Self::default()
             },
             SelectMode::Group => Self {
                 wash: rest,
-                dim: false,
+                ..Self::default()
             },
             SelectMode::GroupDim => Self {
                 wash: rest,
                 dim: true,
+                ..Self::default()
             },
         }
     }
@@ -89,14 +105,8 @@ impl HostMark {
         } else {
             row
         };
-        match self.wash {
-            Some(wash) => row.child(layer(
-                key,
-                wash,
-                (look.inset(), look.spacing() / 2., look.density.radius),
-            )),
-            None => row,
-        }
+        let shape = (look.inset(), look.spacing() / 2., look.density.radius);
+        self.layers(row, key, shape)
     }
 
     /// As [`Self::apply`] for a row that is already its own card, such as
@@ -107,18 +117,24 @@ impl HostMark {
         } else {
             card
         };
-        match self.wash {
-            Some(wash) => card.child(layer(key, wash, (0., 0., radius))),
-            None => card,
-        }
+        self.layers(card, key, (0., 0., radius))
+    }
+
+    /// The host's wash, then the worktree's over it, in one `shape`.
+    fn layers<E: ParentElement>(&self, row: E, key: &str, shape: (f32, f32, f32)) -> E {
+        let host = self.wash.map(|wash| layer(("wash", key), wash, shape));
+        let worktree = self
+            .worktree
+            .map(|wash| layer(("worktree-wash", key), wash, shape));
+        row.children(host).children(worktree)
     }
 }
 
 /// The wash as a layer `inset` from the row's sides, `edge` from its top and
-/// bottom, with `radius` corners.
-fn layer(key: &str, wash: Wash, (inset, edge, radius): (f32, f32, f32)) -> Div {
+/// bottom, with `radius` corners, probed as `{name}-{key}`.
+fn layer((name, key): (&str, &str), wash: Wash, (inset, edge, radius): (f32, f32, f32)) -> Div {
     div()
-        .debug_selector(|| format!("wash-{key}"))
+        .debug_selector(|| format!("{name}-{key}"))
         .absolute()
         .left(px(inset))
         .right(px(inset))

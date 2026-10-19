@@ -950,6 +950,8 @@ pub enum Error {
     WorkspaceGroupChanged,
     #[error("Repository changed. Dismiss and reopen the menu.")]
     WorkspaceRepositoryChanged,
+    #[error(transparent)]
+    WorktreeIdentity(#[from] crate::worktree_identity::Error),
     #[error("Invalid or oversized worktree list. Dismiss and reopen the menu.")]
     WorktreeList,
     #[error("Malformed worktree list. Dismiss and reopen the menu.")]

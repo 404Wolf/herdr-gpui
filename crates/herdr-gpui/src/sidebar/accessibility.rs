@@ -63,10 +63,22 @@ impl HerdrWindow {
     }
 }
 
-/// A workspace row: its label, then its status. A row on another device
-/// names that device too, since the list is flat.
-pub(super) fn workspace_name(label: &str, status: AgentStatus, host: Option<&str>) -> String {
-    join([Some(label), status_word(status), host])
+/// A workspace row: its label, whether it is a linked worktree, then its
+/// status. A row on another device names that device too, since the list is
+/// flat. The worktree is named whatever the sidebar draws, since its hue and
+/// glyph reach no screen reader.
+pub(super) fn workspace_name(
+    label: &str,
+    linked: bool,
+    status: AgentStatus,
+    host: Option<&str>,
+) -> String {
+    join([
+        Some(label),
+        linked.then_some("linked worktree"),
+        status_word(status),
+        host,
+    ])
 }
 
 /// An agent row: the agent, the name of its pane (what tells two agents of
@@ -127,12 +139,16 @@ mod tests {
     #[test]
     fn a_workspace_names_its_status_and_a_remote_device() {
         assert_eq!(
-            workspace_name("herdr", AgentStatus::Blocked, None),
+            workspace_name("herdr", false, AgentStatus::Blocked, None),
             "herdr, blocked"
         );
         assert_eq!(
-            workspace_name("herdr", AgentStatus::Unknown, Some("devbox")),
+            workspace_name("herdr", false, AgentStatus::Unknown, Some("devbox")),
             "herdr, devbox"
+        );
+        assert_eq!(
+            workspace_name("fix/rounding", true, AgentStatus::Working, None),
+            "fix/rounding, linked worktree, working"
         );
     }
 

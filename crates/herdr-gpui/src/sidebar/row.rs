@@ -32,18 +32,25 @@ pub(super) use configured::{
 /// one is cached, the GitHub mark while it is not, an empty slot for a folder
 /// that is not a Git checkout, so its name lines up with the rows around it,
 /// and nothing for a row that reserves no slot at all: a child row, or any
-/// row while the repository icons are turned off.
+/// row while the repository icons are turned off. A linked worktree that is
+/// not nested under its main checkout shows the branch glyph in its own hue
+/// instead, so it never relies on colour alone.
 pub(super) enum RowIcon {
     None,
     Blank,
     Mark,
     Avatar(Arc<Image>),
+    Worktree(u32),
 }
 
 impl RowIcon {
     fn slot(self, key: &str, font: &FontConfig, color: u32) -> Div {
+        let probe = match self {
+            Self::Worktree(_) => "worktree-icon",
+            _ => "github",
+        };
         div()
-            .debug_selector(|| format!("github-{key}"))
+            .debug_selector(|| format!("{probe}-{key}"))
             .absolute()
             .left_0()
             .top(px((line_height(font) - 12.) / 2.))
@@ -59,6 +66,11 @@ impl RowIcon {
         match self {
             Self::None | Self::Blank => Empty.into_any_element(),
             Self::Mark => github_mark(color).size_full().into_any_element(),
+            Self::Worktree(hue) => svg()
+                .path("icons/git-branch.svg")
+                .size_full()
+                .text_color(rgb(hue))
+                .into_any_element(),
             Self::Avatar(image) => img(image)
                 .size_full()
                 .rounded_full()

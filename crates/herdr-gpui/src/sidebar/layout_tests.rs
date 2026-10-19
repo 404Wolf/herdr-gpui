@@ -111,6 +111,8 @@ mod workspace_menu;
 #[cfg(test)]
 mod workspace_menu_name;
 #[cfg(test)]
+mod worktree_identity;
+#[cfg(test)]
 mod worktree_note_trunk;
 #[cfg(test)]
 mod worktree_notes;
