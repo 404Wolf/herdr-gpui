@@ -7,7 +7,11 @@ use super::HerdrWindow;
 use crate::{
     connection::ConnectionBridge,
     navigation::NavigationTarget,
-    terminal::{InputTarget, Scrollbar, WheelTarget, splits, wheel_target},
+    terminal::{
+        InputTarget, Scrollbar, WheelTarget,
+        splits::{self, SplitTarget},
+        wheel_target,
+    },
 };
 use gpui::{
     Context, CursorStyle, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
@@ -41,18 +45,35 @@ pub(crate) struct ScrollbarDrag {
 }
 
 /// A drag of the border between panes. The split is kept as pressed: its
-/// area, which the ratio divides, does not move with its own border. `grab`
-/// keeps the pointer's place on the border; `want` is the latest ratio not yet
-/// sent to the daemon.
+/// area, which the ratio divides, does not move with its own border.
 pub(crate) struct SplitDrag {
     split: PaneSurfaceSplit,
     boot: String,
     tab: String,
     topology: u64,
-    grab: f32,
     held: bool,
-    want: Option<f32>,
-    sent: Option<f32>,
+    motion: SplitMotion,
+}
+
+enum SplitMotion {
+    /// The border follows the pointer. `grab` keeps the pointer's place on
+    /// the border; `want` is the latest ratio not yet sent to the daemon.
+    Drag {
+        grab: f32,
+        want: Option<f32>,
+        sent: Option<f32>,
+    },
+    /// A double-click: the ratios still to send, one per split in the tab.
+    /// The pointer does not move a border.
+    Even(Vec<SplitTarget>),
+}
+
+impl SplitDrag {
+    /// An even drag with ratios still to send, which a further click on a
+    /// border must not cut short.
+    fn evening(&self) -> bool {
+        matches!(&self.motion, SplitMotion::Even(pending) if !pending.is_empty())
+    }
 }
 
 /// `held` without the modifiers in `strip`.
@@ -666,8 +687,10 @@ impl HerdrWindow {
         )
     }
 
-    /// Picks up the border under the pointer. Nothing is sent until it moves,
-    /// so a click on a border leaves the layout as it was.
+    /// Picks up the border under the pointer. A click sends nothing until it
+    /// moves. A double-click evens every split in the tab, unless that tab is
+    /// zoomed, which leaves the layout alone. A press while the double-click
+    /// is still sending its ratios, such as a triple-click, leaves it to finish.
     pub(crate) fn split_mouse_down(
         &mut self,
         event: &MouseDownEvent,
@@ -683,24 +706,44 @@ impl HerdrWindow {
         let Some(tab) = snapshot.focused_tab_id.clone() else {
             return false;
         };
-        let local = event.position - self.bounds.origin;
-        let pointer = splits::along(split.direction, f32::from(local.x), f32::from(local.y));
-        let grab =
-            splits::edge(&split, self.cell_width, self.config.terminal.line_height()) - pointer;
-        self.split_drag = Some(SplitDrag {
-            boot: snapshot.boot_id.clone(),
-            tab,
-            topology: splits::topology(surface),
-            split,
-            grab,
-            held: true,
-            want: None,
-            sent: None,
-        });
+        let even = event.click_count == 2;
+        let zoomed = even
+            && snapshot
+                .tabs
+                .iter()
+                .any(|item| item.tab_id == tab && item.zoomed);
+        let busy = zoomed || self.split_drag.as_ref().is_some_and(SplitDrag::evening);
+        if !busy {
+            let motion = if even {
+                SplitMotion::Even(splits::even_targets(&surface.splits))
+            } else {
+                let local = event.position - self.bounds.origin;
+                let pointer =
+                    splits::along(split.direction, f32::from(local.x), f32::from(local.y));
+                let edge =
+                    splits::edge(&split, self.cell_width, self.config.terminal.line_height());
+                SplitMotion::Drag {
+                    grab: edge - pointer,
+                    want: None,
+                    sent: None,
+                }
+            };
+            self.split_drag = Some(SplitDrag {
+                boot: snapshot.boot_id.clone(),
+                tab,
+                topology: splits::topology(surface),
+                split,
+                held: true,
+                motion,
+            });
+        }
         self.cancel_terminal_mouse(cx);
         self.selection = None;
         self.pressed_terminal_link = None;
         cx.stop_propagation();
+        if even && !busy {
+            self.flush_split(cx);
+        }
         cx.notify();
         true
     }
@@ -719,16 +762,14 @@ impl HerdrWindow {
             cx.notify();
             return false;
         }
+        let SplitMotion::Drag { grab, want, sent } = &mut drag.motion else {
+            return true;
+        };
         let local = event.position - self.bounds.origin;
         let pointer = splits::along(drag.split.direction, f32::from(local.x), f32::from(local.y));
-        let ratio = splits::ratio(
-            &drag.split,
-            pointer + drag.grab,
-            self.cell_width,
-            cell_height,
-        );
-        if let Some(ratio) = ratio.filter(|ratio| drag.sent != Some(*ratio)) {
-            drag.want = Some(ratio);
+        let ratio = splits::ratio(&drag.split, pointer + *grab, self.cell_width, cell_height);
+        if let Some(ratio) = ratio.filter(|ratio| *sent != Some(*ratio)) {
+            *want = Some(ratio);
         }
         self.flush_split(cx);
         true
@@ -759,7 +800,14 @@ impl HerdrWindow {
         if self.live.drag_request.is_some() {
             return;
         }
-        let Some(ratio) = drag.want else {
+        let next = match &drag.motion {
+            SplitMotion::Drag { want, .. } => want.map(|ratio| SplitTarget {
+                path: drag.split.path.clone(),
+                ratio,
+            }),
+            SplitMotion::Even(pending) => pending.last().cloned(),
+        };
+        let Some(SplitTarget { path, ratio }) = next else {
             if !drag.held {
                 self.split_drag = None;
             }
@@ -796,11 +844,18 @@ impl HerdrWindow {
         match handle.request(
             &drag.boot,
             Method::LayoutSetSplitRatio,
-            json!({"tab_id": drag.tab, "path": drag.split.path, "ratio": ratio}),
+            json!({"tab_id": drag.tab, "path": path, "ratio": ratio}),
         ) {
             Ok(request) => {
-                drag.want = None;
-                drag.sent = Some(ratio);
+                match &mut drag.motion {
+                    SplitMotion::Drag { want, sent, .. } => {
+                        *want = None;
+                        *sent = Some(ratio);
+                    }
+                    SplitMotion::Even(pending) => {
+                        pending.pop();
+                    }
+                }
                 state.drag_request = Some(request.clone());
                 self.live.drag_request = Some(request);
             }

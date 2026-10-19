@@ -51,6 +51,7 @@ mod shifted_keys;
 mod smooth_scroll_off;
 mod sounds;
 mod split_drag;
+mod split_equalize;
 mod staged_release;
 mod temporary_drop;
 mod toast_handoff;
