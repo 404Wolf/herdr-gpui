@@ -26,26 +26,24 @@ struct Count {
     latest: Option<DateTime<Utc>>,
 }
 
-impl Count {
-    fn add(&mut self, at: Option<DateTime<Utc>>) {
-        self.items += 1;
-        self.latest = self.latest.max(at);
-    }
-}
-
 impl Counts {
     /// One view's items added to the counts, skipping what `seen` holds.
+    /// A copy already counted still offers its time, since views sync on
+    /// their own and a later one may hold the newer copy.
     pub(super) fn add(&mut self, seen: &mut HashSet<String>, items: &[Item]) {
         for item in items {
-            if !open(item) || !seen.insert(item.key.canonical()) {
+            if !open(item) {
                 continue;
             }
-            let at = item.updated_at.or(item.created_at);
-            if item.pull_request.is_some() {
-                self.pull_requests.add(at);
+            let count = if item.pull_request.is_some() {
+                &mut self.pull_requests
             } else {
-                self.issues.add(at);
+                &mut self.issues
+            };
+            if seen.insert(item.key.canonical()) {
+                count.items += 1;
             }
+            count.latest = count.latest.max(item.updated_at.or(item.created_at));
         }
     }
 

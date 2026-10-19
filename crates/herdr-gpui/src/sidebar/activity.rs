@@ -181,12 +181,14 @@ impl Activity {
     }
 
     /// Applies the stored section unless one was picked before it loaded,
-    /// and the stored visits, keeping any later one made since.
+    /// and the stored visits, keeping any later one made since. Whether the
+    /// visits now differ from the stored ones: a save queued before they
+    /// loaded wrote this run's alone, so the merge must be saved again.
     pub(crate) fn restore(
         &mut self,
         stored: Option<ActivityPanel>,
         last_opened: &HashMap<ActivityPanel, DateTime<Utc>>,
-    ) {
+    ) -> bool {
         if let Some(panel) = stored.filter(|_| !self.picked) {
             self.panel = panel;
             self.picked = true;
@@ -194,6 +196,7 @@ impl Activity {
         for (&panel, &at) in last_opened {
             self.opened(panel, at);
         }
+        self.last_opened != *last_opened
     }
 
     /// Records the views' lists; whether they changed since last time.

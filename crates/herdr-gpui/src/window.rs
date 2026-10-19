@@ -464,7 +464,8 @@ impl HerdrWindow {
     /// Stored chrome yields to anything changed before it arrived. A stored
     /// sort is a past toggle, so it overrides the daemon's from then on.
     pub(crate) fn apply_stored_chrome(&mut self, chrome: preferences::Chrome) {
-        self.activity
+        let resave = self
+            .activity
             .restore(chrome.activity_panel, &chrome.activity_last_opened);
         if !self.sidebar_modified {
             self.sidebar_width = chrome.sidebar_width;
@@ -488,6 +489,10 @@ impl HerdrWindow {
         {
             self.agent_sort = sort;
             self.agent_sort_modified = true;
+        }
+        // Saved once the whole chrome is merged, so the save keeps it all.
+        if resave {
+            self.save_chrome();
         }
     }
 

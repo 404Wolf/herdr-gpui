@@ -114,7 +114,9 @@ fn stored_stamps_merge_without_moving_a_later_visit_back() {
         (ActivityPanel::Security, stale),
     ]
     .into();
-    activity.restore(None, &stored);
+    // This run's visits are newer than the stored ones, so the merge differs
+    // from the file and must be saved.
+    assert!(activity.restore(None, &stored));
     assert_eq!(activity.last_opened()[&ActivityPanel::Issues], visited);
     assert_eq!(activity.last_opened()[&ActivityPanel::Security], stale);
     assert!(!activity.unseen(ActivityPanel::Security, Some(stale)));
@@ -142,6 +144,21 @@ fn counts_keep_their_newest_item_time() {
     assert_eq!(counts.of(ActivityPanel::PullRequests), Some(1));
     assert_eq!(counts.latest(ActivityPanel::PullRequests), None);
     assert_eq!(counts.latest(ActivityPanel::Usage), None);
+}
+
+#[test]
+fn a_newer_copy_in_a_later_view_still_lights_the_count() {
+    let at = |hour: i64| DateTime::<Utc>::from_timestamp(hour * 3600, 0).unwrap();
+    let mut stale = item("1", "Synced earlier");
+    stale.updated_at = Some(at(1));
+    let mut fresh = stale.clone();
+    fresh.updated_at = Some(at(4));
+    let mut seen = HashSet::new();
+    let mut counts = Counts::default();
+    counts.add(&mut seen, &[stale]);
+    counts.add(&mut seen, &[fresh]);
+    assert_eq!(counts.of(ActivityPanel::Issues), Some(1));
+    assert_eq!(counts.latest(ActivityPanel::Issues), Some(at(4)));
 }
 
 #[gpui::test]
