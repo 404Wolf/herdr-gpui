@@ -1,7 +1,7 @@
 # Herdr Native Shell
 
 A GPUI 0.3.6 (`gpui-pre`) client for a Local daemon and saved SSH hosts, with macOS
-support, experimental Linux x86_64/ARM64 builds, and an experimental Windows build with
+support, Linux x86_64/ARM64 builds, and a Windows build with
 native CI coverage. See [Windows](#windows) for what is unavailable there.
 It starts an installed local `herdr server` when absent; explicit socket and
 development targets remain attach-only. On Unix, GUI launches resolve the login-shell
@@ -3952,7 +3952,7 @@ GPUI native action/menu/keybinding patterns.
 
 ## Windows
 
-Windows is experimental. CI checks formatting, lints every target and feature,
+CI checks formatting, lints every target and feature,
 and runs workspace tests with default and all features on `windows-2025` (x86_64)
 and `windows-11-arm` (ARM64), including headless UI and CLI tests. Its
 `windows-native` job then runs the native tests in both runners' desktop

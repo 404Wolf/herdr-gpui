@@ -7,7 +7,7 @@ approval. Updating the GUI must not stop or upgrade the daemon or its terminals.
 
 The protected release pipeline builds macOS on Apple Silicon and Intel, combining
 both executables into a universal app, and Linux on native Ubuntu 24.04 x86_64 and
-ARM64 runners. Linux remains experimental. Package-managed installs are updated
+ARM64 runners. Package-managed installs are updated
 through their package manager, never by overwriting managed files: a macOS
 Homebrew cask is upgraded by running Homebrew (see [Homebrew Casks](#homebrew-casks)),
 and Linux `.deb`, `.rpm`, and Arch installations use their owning package manager
