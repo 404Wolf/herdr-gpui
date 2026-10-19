@@ -10,7 +10,6 @@ use crate::{
 };
 use gpui::{prelude::*, *};
 use herdr_client::protocol::{AgentStatus, ClientShellAgent, ClientShellSnapshot};
-use std::borrow::Cow;
 
 pub(super) fn agents_sort(window: &HerdrWindow, cx: &mut Context<HerdrWindow>) -> Stateful<Div> {
     let theme = &window.theme;
@@ -155,69 +154,33 @@ pub(super) fn agent_names(agent: &ClientShellAgent) -> [Option<&str>; 4] {
     ]
 }
 
-/// The pane's own name: the label set with Rename, otherwise the title an
-/// unnamed pane already carries. Both are untrusted daemon and terminal text,
-/// so the caption is safe, bounded text; blank text is no name.
-pub(super) fn pane_caption<'a>(
-    agent: &'a ClientShellAgent,
-    snapshot: &'a ClientShellSnapshot,
-) -> Option<Cow<'a, str>> {
+/// The name an agent's row shows for its pane: the label set with Rename,
+/// otherwise the title an unnamed pane already carries. Both are untrusted
+/// daemon and terminal text, so the name is safe, bounded text, and none when
+/// it is blank or only repeats the agent's `name`.
+pub(super) fn pane_name(
+    agent: &ClientShellAgent,
+    snapshot: &ClientShellSnapshot,
+    name: &str,
+) -> Option<String> {
     let renamed = snapshot
         .panes
         .iter()
         .find(|pane| pane.pane_id == agent.pane_id)
         .and_then(|pane| safe_caption(pane.label.as_deref()));
-    renamed.or_else(|| safe_caption(agent.title.as_deref()))
+    renamed
+        .or_else(|| safe_caption(agent.title.as_deref()))
+        .filter(|pane| pane != name.trim())
 }
 
 /// Pane names stay far longer than any row can show, so the bound only stops
 /// a runaway title from being scanned and laid out in full.
-const PANE_CAPTION_LIMIT: usize = 160;
+pub(super) const PANE_CAPTION_LIMIT: usize = 160;
 
-/// Trimmed text without controls or direction overrides, borrowed when the
-/// text already has none.
-fn safe_caption(text: Option<&str>) -> Option<Cow<'_, str>> {
-    let text = text?;
-    let mut chars = text.chars();
-    let clean = chars
-        .by_ref()
-        .take(PANE_CAPTION_LIMIT)
-        .all(|c| !crate::notifications::unsafe_char(c))
-        && chars.next().is_none();
-    let text = if clean {
-        Cow::Borrowed(text.trim())
-    } else {
-        let safe = crate::notifications::safe_text(text, PANE_CAPTION_LIMIT);
-        Cow::Owned(safe.trim().to_owned())
-    };
-    (!text.is_empty()).then_some(text)
-}
-
-/// Drops a pane name that is blank or only repeats the agent name already on
-/// the row.
-pub(super) fn pane_beside<P: AsRef<str>>(agent: &str, pane: Option<P>) -> Option<P> {
-    pane.filter(|pane| {
-        let pane = pane.as_ref().trim();
-        !pane.is_empty() && pane != agent.trim()
-    })
-}
-
-/// What a screen reader says for an agent's row: the same parts the row
-/// paints, so agents of one name stay apart by their pane names.
-pub(super) fn spoken_agent(
-    agent: &ClientShellAgent,
-    snapshot: &ClientShellSnapshot,
-    nested: bool,
-    host: Option<&str>,
-) -> String {
-    let name = agent_name(agent);
-    super::accessibility::agent_name(
-        name,
-        pane_beside(name, pane_caption(agent, snapshot)).as_deref(),
-        &state_label(agent, status_text(agent.agent_status)),
-        (!nested).then(|| agent_place(agent, snapshot)).flatten(),
-        host,
-    )
+fn safe_caption(text: Option<&str>) -> Option<String> {
+    let text = crate::notifications::safe_text(text?, PANE_CAPTION_LIMIT);
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_owned())
 }
 
 /// Where an agent runs: its workspace, and its tab when that earns a place,
@@ -246,22 +209,17 @@ pub(super) fn agent_place<'a>(
 }
 
 /// Upstream's default agent rows: host, workspace, tab, and pane name on the
-/// first line, the agent itself on the second. The pane stays muted, like the
-/// host and tab. A pane whose workspace has gone leaves the agent to name the
-/// row, with the pane name beside it when that name is not the agent's own.
+/// first line, the agent itself on the second. A pane whose workspace has gone
+/// leaves the agent to name the row, with the pane name beside it.
 pub(super) fn agent_labels<'a>(
     name: &'a str,
     place: Option<(&'a str, Option<&'a str>)>,
     host: Option<&'a str>,
     pane: Option<&'a str>,
 ) -> (Vec<(&'a str, bool)>, &'a str) {
-    let pane = pane_beside(name, pane.map(str::trim));
     let Some((workspace, tab)) = place else {
-        let mut segments = vec![(name, true)];
-        if let Some(pane) = pane {
-            segments.push((pane, false));
-        }
-        return (segments, "");
+        let segments = [Some((name, true)), pane.map(|pane| (pane, false))];
+        return (segments.into_iter().flatten().collect(), "");
     };
     // Only the workspace carries the row's weight: upstream paints the host and
     // tab around it in its secondary color. The pane name joins them there.
@@ -576,7 +534,10 @@ const STATE_LABEL_LIMIT: usize = 80;
 /// The words an agent's integration chose for its current status, as Herdr's
 /// `state_labels` metadata, else `fallback`. Labels are untrusted display
 /// text: bounded and stripped of controls and bidi overrides.
-pub(crate) fn state_label<'a>(agent: &ClientShellAgent, fallback: &'a str) -> Cow<'a, str> {
+pub(crate) fn state_label<'a>(
+    agent: &ClientShellAgent,
+    fallback: &'a str,
+) -> std::borrow::Cow<'a, str> {
     let key = status_text(agent.agent_status);
     agent
         .state_labels
@@ -585,7 +546,10 @@ pub(crate) fn state_label<'a>(agent: &ClientShellAgent, fallback: &'a str) -> Co
         .map(|(_, label)| crate::notifications::safe_text(label, STATE_LABEL_LIMIT))
         .map(|label| label.trim().to_owned())
         .filter(|label| !label.is_empty())
-        .map_or(Cow::Borrowed(fallback), Cow::Owned)
+        .map_or(
+            std::borrow::Cow::Borrowed(fallback),
+            std::borrow::Cow::Owned,
+        )
 }
 
 /// Upstream draws status from its own palette, defaulting to Catppuccin Mocha,

@@ -27,7 +27,8 @@ enum Fit {
     /// Its natural width, capped at this share of the line and at what is
     /// left once fixed pieces are placed.
     Shrink(f32),
-    /// An equal part of whatever the other pieces leave.
+    /// Its natural width, kept ahead of shrinking pieces, then an equal part
+    /// of whatever the other pieces leave.
     Fill,
 }
 
@@ -53,8 +54,6 @@ struct Piece<'a> {
 pub(super) struct Line<'a> {
     width: f32,
     gap: f32,
-    /// Width the filling pieces keep before shrinking pieces take theirs.
-    keep: f32,
     pieces: Vec<Piece<'a>>,
 }
 
@@ -65,16 +64,8 @@ impl<'a> Line<'a> {
         Self {
             width: width.max(0.),
             gap,
-            keep: 0.,
             pieces: Vec::new(),
         }
-    }
-
-    /// Reserves `width` for the filling pieces: shrinking pieces give way to
-    /// it, so a long label cannot squeeze the text that fills out of the line.
-    pub(super) fn keep(mut self, width: f32) -> Self {
-        self.keep = width.max(0.);
-        self
     }
 
     fn push(mut self, shell: Div, content: Content<'a>, natural: f32, fit: Fit) -> Self {
@@ -136,6 +127,22 @@ impl<'a> Line<'a> {
         self.push(shell, Content::Text(text.into(), 0.), 0., Fit::Fill)
     }
 
+    /// Text that fills the room the others leave, but first keeps its natural
+    /// width, up to `share` of the line, ahead of every label.
+    pub(super) fn lead(
+        self,
+        shell: Div,
+        text: impl Into<Cow<'a, str>>,
+        glyph: f32,
+        share: f32,
+    ) -> Self {
+        let text = text.into();
+        let natural = (text.chars().count() as f32 * glyph)
+            .ceil()
+            .min(share * self.width);
+        self.push(shell, Content::Text(text, 0.), natural, Fit::Fill)
+    }
+
     /// Content that takes the room the other pieces leave, built at that width.
     pub(super) fn fill_with(self, build: impl FnOnce(f32) -> Div + 'a) -> Self {
         self.push(div(), Content::Build(Box::new(build)), 0., Fit::Fill)
@@ -155,13 +162,19 @@ impl<'a> Line<'a> {
             .map(|piece| piece.natural)
             .sum();
         let mut free = (self.width - gaps - fixed).max(0.);
+        let reserve: f32 = self
+            .pieces
+            .iter()
+            .filter(|piece| matches!(piece.fit, Fit::Fill))
+            .map(|piece| piece.natural)
+            .sum();
         let mut widths: Vec<f32> = self
             .pieces
             .iter()
             .map(|piece| match piece.fit {
                 Fit::Fixed => piece.natural,
                 Fit::Shrink(share) => {
-                    let room = (free - self.keep).max(0.);
+                    let room = (free - reserve).max(0.);
                     let width = piece.natural.min(share * self.width).min(room);
                     free -= width;
                     width
@@ -175,10 +188,14 @@ impl<'a> Line<'a> {
             .filter(|piece| matches!(piece.fit, Fit::Fill))
             .count();
         if fills > 0 {
-            let share = free / fills as f32;
+            // Filling pieces take back what they reserved, as far as the line
+            // holds it, then split the rest evenly.
+            let share = (free - reserve).max(0.) / fills as f32;
             for (width, piece) in widths.iter_mut().zip(&self.pieces) {
                 if matches!(piece.fit, Fit::Fill) {
-                    *width = share;
+                    let kept = piece.natural.min(free);
+                    free -= kept;
+                    *width = kept + share;
                 }
             }
         }
@@ -407,6 +424,21 @@ mod tests {
             .fill(div(), "a")
             .spacer();
         assert_eq!(widths(line), vec![50., 25., 25.]);
+    }
+
+    #[test]
+    fn a_lead_keeps_its_width_ahead_of_labels_that_a_plain_fill_gives_up() {
+        let long = || "x".repeat(80);
+        let line = Line::new(100., 0.)
+            .lead(div(), "grok", 10., 0.4)
+            .label(div(), long(), 1., 0.5)
+            .label(div(), long(), 1., 0.5);
+        assert_eq!(widths(line), vec![40., 50., 10.]);
+        let line = Line::new(100., 0.)
+            .fill(div(), "grok")
+            .label(div(), long(), 1., 0.5)
+            .label(div(), long(), 1., 0.5);
+        assert_eq!(widths(line), vec![0., 50., 50.]);
     }
 
     #[test]

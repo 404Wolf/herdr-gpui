@@ -308,13 +308,14 @@ impl RowLayout for Orca {
                 .child(column);
         }
         // The agent leads, then its pane, then where it runs, all on one line.
-        // The pane comes before the place so a long workspace cannot cut it.
         let text = Line::new(inner(cx, 0.) - icon - GAP, GAP)
-            .fill(
+            .lead(
                 div()
                     .debug_selector(|| format!("name-{key}"))
                     .text_color(rgb(color)),
                 agent.name,
+                glyph_at(font, font.size),
+                0.4,
             )
             .when_some(agent.pane, |line, pane| {
                 line.label(

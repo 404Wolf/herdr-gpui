@@ -160,10 +160,6 @@ mod tests {
             agent_name("grok", Some("api"), "working", Some(("herdr", None)), None),
             "grok, api, working, herdr"
         );
-        assert_ne!(
-            agent_name("grok", Some("api"), "working", None, None),
-            agent_name("grok", Some("docs"), "working", None, None)
-        );
     }
 
     #[test]

@@ -3,7 +3,7 @@
 use super::{
     STATUS_DOT_UNKNOWN, STATUS_WIDTH, agent_name,
     agents::{
-        Indicators, agent_labels, agent_place, pane_beside, pane_caption, status_indicator,
+        Indicators, PANE_CAPTION_LIMIT, agent_labels, agent_place, pane_name, status_indicator,
         status_style,
     },
     layout_tests,

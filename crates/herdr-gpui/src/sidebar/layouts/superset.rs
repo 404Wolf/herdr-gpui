@@ -342,13 +342,15 @@ impl RowLayout for Superset {
             return shell(key, state, 0., line, cx);
         }
         // The agent's pane, then where it runs, trail its name, each never over
-        // half the row. The pane comes first so a long workspace cannot cut it.
+        // half the row.
         let line = line
-            .fill(
+            .lead(
                 div()
                     .debug_selector(|| format!("name-{key}"))
                     .text_color(rgb(color)),
                 agent.name,
+                glyph_at(cx.font, cx.font.size),
+                0.4,
             )
             .when_some(agent.pane, |line, pane| {
                 line.label(

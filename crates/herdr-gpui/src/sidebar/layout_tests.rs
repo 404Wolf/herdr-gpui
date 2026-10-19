@@ -59,8 +59,6 @@ mod palette_header;
 #[cfg(test)]
 mod pane_names;
 #[cfg(test)]
-mod pane_names_layouts;
-#[cfg(test)]
 mod picker_scroll;
 #[cfg(test)]
 mod probe_bar;
