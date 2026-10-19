@@ -98,14 +98,15 @@ pub(super) fn visible_workspace_entries(
 /// Cached pull request, change counts, dirty, note, and teleported marks for a worktree row, if
 /// the prefetch and the Git probe already have them. Rendering only reads: a missing entry
 /// simply shows nothing, never a stale or guessed state. `git` carries which counts to show:
-/// the pull request's, or the checkout's uncommitted lines, never both.
+/// the pull request's, or the checkout's uncommitted lines, never both. Its cache is `None`
+/// for a row on another device: it only ever probes this machine's checkouts.
 /// `cache` is `None` for a row on a device other than the selected one: the
 /// cache holds only that device's lookups, and the same path and branch can
 /// exist on another host.
 pub(super) fn workspace_badge(
     workspace: &ClientShellWorkspace,
     cache: Option<&crate::pull_request::Cache>,
-    git: (&crate::git::Git, ChangeCounts),
+    git: (Option<&crate::git::Git>, ChangeCounts),
     marks: (&crate::teleport::Marks, &str),
     note: Option<&str>,
     theme: &Theme,
@@ -120,14 +121,14 @@ pub(super) fn workspace_badge(
             .map(|pr| Counts::new(pr.additions, pr.deletions)),
         // Untracked files have no line counts; the dirty mark still shows them.
         ChangeCounts::Local => git
-            .counts(key, branch)
+            .and_then(|git| git.counts(key, branch))
             .filter(|status| status.additions > 0 || status.deletions > 0)
             .map(|status| Counts::new(status.additions, status.deletions)),
     };
     RowBadge::new(
         pr.map(|pr| PrBadge::new(&pr, theme)),
         counts,
-        git.dirty(key, branch).unwrap_or(false),
+        git.and_then(|git| git.dirty(key, branch)).unwrap_or(false),
         marks.find(endpoint, key, branch).is_some(),
         note.is_some(),
     )

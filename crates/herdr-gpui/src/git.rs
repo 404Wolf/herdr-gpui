@@ -106,23 +106,31 @@ enum Job {
 enum Completion {
     Status(crate::Result<Status>),
     Dirty(crate::Result<bool>),
-    Counts(crate::Result<Status>),
+    Counts(crate::Result<Counted>),
     Action(crate::Result<Outcome>),
 }
 
-/// What a listed checkout's probe found: only whether it is dirty, or its
-/// counted status.
+/// A listed checkout's line counts against HEAD, and whether it has anything
+/// to commit at all. The two are kept apart because a binary, mode-only, or
+/// submodule change is dirty without changing a countable line.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct Counted {
+    pub lines: Status,
+    pub dirty: bool,
+}
+
+/// What a listed checkout's probe found: only whether it is dirty, or that
+/// and its line counts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Answer {
     Dirty(bool),
-    Counted(Status),
+    Counted(Counted),
 }
 
 impl Answer {
     fn dirty(self) -> bool {
         match self {
-            Self::Dirty(dirty) => dirty,
-            Self::Counted(status) => status.dirty(),
+            Self::Dirty(dirty) | Self::Counted(Counted { dirty, .. }) => dirty,
         }
     }
 }
@@ -188,8 +196,8 @@ impl Git {
 
     /// Chrome fixture: a counted answer for a listed checkout.
     #[cfg(test)]
-    pub fn seed_counts(&mut self, input: Input, status: Status, now: Instant) {
-        self.record_probe(input, Some(Answer::Counted(status)), now);
+    pub fn seed_counts(&mut self, input: Input, counted: Counted, now: Instant) {
+        self.record_probe(input, Some(Answer::Counted(counted)), now);
     }
 
     pub fn tracked(&self) -> Option<&Input> {
@@ -257,8 +265,8 @@ impl Git {
             .map(Answer::dirty)
     }
 
-    /// This checkout's counted status, if the focused refresh or a counted
-    /// probe has one. Pure cache read, like [`Self::dirty`].
+    /// This checkout's line counts against HEAD, if the focused refresh or a
+    /// counted probe has them. Pure cache read, like [`Self::dirty`].
     pub fn counts(&self, repo_key: &str, branch: &str) -> Option<Status> {
         if self.input.as_ref().is_some_and(|input| {
             input.repo_key.as_deref() == Some(repo_key) && input.branch == branch
@@ -272,7 +280,7 @@ impl Git {
                 probe.input.repo_key.as_deref() == Some(repo_key) && probe.input.branch == branch
             })
             .and_then(|probe| match probe.answer {
-                Some(Answer::Counted(status)) => Some(status),
+                Some(Answer::Counted(counted)) => Some(counted.lines),
                 _ => None,
             })
     }
@@ -502,7 +510,7 @@ fn execute(input: &Input, job: Job, cancelled: &impl Fn() -> bool) -> Completion
         }
         Job::Dirty => Completion::Dirty(dirty(input, Instant::now() + STATUS_TIMEOUT, cancelled)),
         Job::Counts => {
-            Completion::Counts(status(input, Instant::now() + STATUS_TIMEOUT, cancelled))
+            Completion::Counts(counted(input, Instant::now() + STATUS_TIMEOUT, cancelled))
         }
         // Writes are never cancelled: killing `git commit` or `git push`
         // halfway through can leave an index lock or a half-written ref behind,
@@ -524,8 +532,41 @@ fn status(
 /// so an unignored build directory stays one entry rather than thousands.
 fn dirty(input: &Input, deadline: Instant, cancelled: &impl Fn() -> bool) -> crate::Result<bool> {
     let checkout = local_checkout(input, deadline, cancelled)?;
-    let status = git(
+    checkout_dirty(&checkout, deadline, cancelled)
+}
+
+/// The dirty probe plus the line counts: still two processes, as the
+/// focused status is, and the porcelain check keeps the mark on changes
+/// numstat cannot count. A repository without a commit has no HEAD to count
+/// against; it keeps its mark and shows no counts rather than losing both.
+fn counted(
+    input: &Input,
+    deadline: Instant,
+    cancelled: &impl Fn() -> bool,
+) -> crate::Result<Counted> {
+    let checkout = local_checkout(input, deadline, cancelled)?;
+    let dirty = checkout_dirty(&checkout, deadline, cancelled)?;
+    let lines = match git(
         &checkout,
+        &["diff", "--numstat", "HEAD"],
+        "read working tree changes",
+        deadline,
+        cancelled,
+    ) {
+        Ok(numstat) => parse_numstat(&numstat),
+        Err(Error::GitFailed { .. }) => Status::default(),
+        Err(error) => return Err(error),
+    };
+    Ok(Counted { lines, dirty })
+}
+
+fn checkout_dirty(
+    checkout: &str,
+    deadline: Instant,
+    cancelled: &impl Fn() -> bool,
+) -> crate::Result<bool> {
+    let status = git(
+        checkout,
         &["status", "--porcelain", "--untracked-files=normal", "-z"],
         "read working tree state",
         deadline,

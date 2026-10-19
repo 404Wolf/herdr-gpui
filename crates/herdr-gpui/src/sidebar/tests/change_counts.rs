@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     config::ChangeCounts,
-    git::{Git, Status},
+    git::{Counted, Git, Status},
     sidebar::workspaces::workspace_badge,
 };
 use std::time::Instant;
@@ -25,7 +25,7 @@ fn counts(
     workspace_badge(
         workspace,
         Some(cache),
-        (git, mode),
+        (Some(git), mode),
         (&marks, crate::endpoint::LOCAL),
         None,
         &Theme::default(),
@@ -45,20 +45,18 @@ fn a_row_shows_only_the_change_counts_the_setting_picks() {
     pr.deletions = 31;
     cache.seed(input("worktree/sidebar-child"), pr, now);
     let mut git = Git::default();
-    let local = Status {
-        additions: 42,
-        deletions: 7,
-        untracked: 0,
+    let counted = |additions, deletions| Counted {
+        lines: Status {
+            additions,
+            deletions,
+            untracked: 0,
+        },
+        dirty: true,
     };
-    git.seed_counts(input("worktree/sidebar-child"), local, now);
-    // Untracked entries alone have no lines to count: the dirty mark shows
-    // them, and no `+0/-0` is drawn.
-    let untracked = Status {
-        additions: 0,
-        deletions: 0,
-        untracked: 3,
-    };
-    git.seed_counts(input("develop"), untracked, now);
+    git.seed_counts(input("worktree/sidebar-child"), counted(42, 7), now);
+    // Untracked or binary changes alone have no lines to count: the dirty
+    // mark shows them, and no `+0/-0` is drawn.
+    git.seed_counts(input("develop"), counted(0, 0), now);
 
     let pull_request = Some(("+1730".to_owned(), "-31".to_owned()));
     let uncommitted = Some(("+42".to_owned(), "-7".to_owned()));
@@ -73,16 +71,21 @@ fn a_row_shows_only_the_change_counts_the_setting_picks() {
     assert_eq!(counts(head, &cache, &git, ChangeCounts::PullRequest), None);
     assert_eq!(counts(head, &cache, &git, ChangeCounts::Local), None);
     let marks = crate::teleport::Marks::detached();
-    let badge = workspace_badge(
-        head,
-        Some(&cache),
-        (&git, ChangeCounts::Local),
-        (&marks, crate::endpoint::LOCAL),
-        None,
-        &Theme::default(),
-    )
-    .unwrap();
-    assert!(badge.dirty);
+    let badge = |workspace, git| {
+        workspace_badge(
+            workspace,
+            None,
+            (git, ChangeCounts::Local),
+            (&marks, crate::endpoint::LOCAL),
+            None,
+            &Theme::default(),
+        )
+    };
+    assert!(badge(head, Some(&git)).unwrap().dirty);
+    // A row on another device never reads this machine's Git answers, even
+    // where its path and branch match a local checkout.
+    assert!(badge(child, None).is_none());
+    assert!(badge(head, None).is_none());
     // A checkout whose probe only knows it is dirty shows no local counts,
     // never the pull request's in their place.
     let mut git = Git::default();

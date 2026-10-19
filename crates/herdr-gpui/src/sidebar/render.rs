@@ -402,7 +402,10 @@ impl HerdrWindow {
                             workspace,
                             (endpoint_index == self.selected_endpoint)
                                 .then_some(&self.menu.pr_cache),
-                            (&self.git, self.config.sidebar_style.change_counts),
+                            (
+                                (endpoint_index == 0).then_some(&self.git),
+                                self.config.sidebar_style.change_counts,
+                            ),
                             (&self.teleport_marks, &endpoint.id),
                             note.as_deref(),
                             theme,
