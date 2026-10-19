@@ -21,33 +21,52 @@ fn pane_caption_prefers_a_rename_over_the_title() {
     agent.pane_id = "p0".into();
     agent.title = Some("reported".into());
     snapshot.panes = vec![pane("p0", Some("  renamed  "))];
-    assert_eq!(
-        pane_caption(&snapshot.agents[0], &snapshot),
-        Some("renamed")
-    );
+    assert_eq!(caption(&snapshot).as_deref(), Some("renamed"));
 
     snapshot.panes[0].label = Some(" \t ".into());
-    assert_eq!(
-        pane_caption(&snapshot.agents[0], &snapshot),
-        Some("reported")
-    );
+    assert_eq!(caption(&snapshot).as_deref(), Some("reported"));
 
     snapshot.agents[0].title = Some("  ".into());
     snapshot.panes[0].label = None;
-    assert_eq!(pane_caption(&snapshot.agents[0], &snapshot), None);
+    assert_eq!(caption(&snapshot), None);
 
     snapshot.panes.clear();
     snapshot.agents[0].title = Some("from-title".into());
-    assert_eq!(
-        pane_caption(&snapshot.agents[0], &snapshot),
-        Some("from-title")
-    );
+    assert_eq!(caption(&snapshot).as_deref(), Some("from-title"));
 
     snapshot.panes = vec![pane("other", Some("elsewhere"))];
-    assert_eq!(
-        pane_caption(&snapshot.agents[0], &snapshot),
-        Some("from-title")
+    assert_eq!(caption(&snapshot).as_deref(), Some("from-title"));
+}
+
+fn caption(snapshot: &ClientShellSnapshot) -> Option<std::borrow::Cow<'_, str>> {
+    pane_caption(&snapshot.agents[0], snapshot)
+}
+
+/// Pane names are untrusted text: controls and direction overrides are
+/// dropped before the row paints or speaks them, and a name made only of
+/// them is no name.
+#[test]
+fn pane_captions_drop_controls_and_direction_overrides() {
+    let mut snapshot = layout_tests::snapshot(1);
+    let agent = &mut snapshot.agents[0];
+    agent.pane_id = "p0".into();
+    agent.display_agent = Some("grok".into());
+    agent.name = Some("grok".into());
+    agent.title = Some("fallback".into());
+    snapshot.panes = vec![pane("p0", Some(" ap\u{7}i\u{202e}bew "))];
+    assert_eq!(caption(&snapshot).as_deref(), Some("apibew"));
+    let spoken = crate::sidebar::agents::spoken_agent(&snapshot.agents[0], &snapshot, true, None);
+    assert!(spoken.starts_with("grok, apibew, "), "{spoken}");
+    assert!(
+        !spoken.contains(['\u{7}', '\u{202e}']),
+        "{spoken:?} kept unsafe text"
     );
+
+    snapshot.panes[0].label = Some("\u{202e}\u{1b} ".into());
+    assert_eq!(caption(&snapshot).as_deref(), Some("fallback"));
+
+    snapshot.panes[0].label = Some("x".repeat(10_000));
+    assert!(caption(&snapshot).is_some_and(|text| text.chars().count() < 10_000));
 }
 
 /// Different pane names stay different on the row, including one that matches
@@ -68,7 +87,8 @@ fn agent_rows_keep_a_pane_name_that_is_not_the_agent() {
         agent_labels("grok", None, None, Some("api")),
         (vec![("grok", true), ("api", false)], "")
     );
-    assert_eq!(pane_beside("grok", Some("  api ")), Some("api"));
+    assert_eq!(pane_beside("grok", Some("api")), Some("api"));
+    assert_eq!(pane_beside("grok", Some(" grok ")), None);
     assert_eq!(pane_beside("grok", Some("   ")), None);
 }
 

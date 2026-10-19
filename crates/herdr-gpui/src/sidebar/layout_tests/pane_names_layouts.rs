@@ -100,7 +100,9 @@ fn blank_and_whitespace_names_add_nothing_in_every_layout(cx: &mut gpui::TestApp
     // Blank names must paint exactly what no names paint: no empty label, no
     // extra separator.
     assert_eq!(blank, none);
-    for (mode, painted) in modes().into_iter().zip(&blank) {
+    for mode in modes() {
+        show(&view, mode, SIDEBAR, cx);
+        let painted = painted(cx);
         assert!(
             row_bounds(cx, 0).is_some() && row_bounds(cx, 1).is_some(),
             "{mode:?}"
@@ -114,22 +116,85 @@ fn blank_and_whitespace_names_add_nothing_in_every_layout(cx: &mut gpui::TestApp
     }
 }
 
+/// Every painted text with where it landed and what it rendered.
+fn probes(
+    cx: &mut gpui::VisualTestContext,
+) -> std::collections::BTreeMap<String, (Bounds<Pixels>, String, Pixels)> {
+    cx.update(|window, cx| {
+        cx.default_global::<TextProbes>().0.clear();
+        full_draw(window, cx).clear(cx);
+        cx.global::<TextProbes>().0.clone()
+    })
+}
+
 #[gpui::test]
 fn a_name_that_repeats_the_agent_is_painted_once_in_every_layout(cx: &mut gpui::TestAppContext) {
     let (view, cx) = window(cx, snapshot(1));
-    view.update(cx, |view, cx| {
-        let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
-        prepare(snapshot, &[Some("grok"), Some(" grok ")], &[None, None]);
-        cx.notify();
-    });
-    for mode in modes() {
+    let paint_with = |view: &Entity<HerdrWindow>,
+                      cx: &mut gpui::VisualTestContext,
+                      labels: [Option<&str>; 2]| {
+        view.update(cx, |view, cx| {
+            let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
+            prepare(snapshot, &labels, &[None, None]);
+            cx.notify();
+        });
+        modes()
+            .into_iter()
+            .map(|mode| {
+                show(view, mode, SIDEBAR, cx);
+                let probes = probes(cx);
+                let panes = [
+                    cx.debug_bounds("pane-agent-p0"),
+                    cx.debug_bounds("pane-agent-p1"),
+                ];
+                (mode, probes, panes)
+            })
+            .collect::<Vec<_>>()
+    };
+    let unnamed = paint_with(&view, cx, [None, None]);
+    let repeated = paint_with(&view, cx, [Some("grok"), Some(" grok ")]);
+    for ((mode, probes, panes), (_, baseline, _)) in repeated.iter().zip(&unnamed) {
+        assert!(
+            panes.iter().all(Option::is_none),
+            "{mode:?} painted a pane label: {panes:?}"
+        );
+        assert!(probes.contains_key("grok"), "{mode:?} lost the agent name");
+        // Painted text is keyed by string, so a second "grok" would hide behind
+        // the agent name. Herdr has no pane label of its own: a pane segment on
+        // its first line would add a separator and move the segments around it,
+        // so the repeated name must paint exactly what no name paints.
+        assert_eq!(probes, baseline, "{mode:?} painted the agent name again");
+    }
+}
+
+/// Orca and Superset paint the pane as its own label ahead of the place, so a
+/// long workspace label is cut before the name that tells two agents apart.
+#[gpui::test]
+fn a_long_workspace_cannot_cut_the_pane_name(cx: &mut gpui::TestAppContext) {
+    let workspace = "w".repeat(60);
+    let mut snapshot = crowded(2, |index| Some(["api", "web"][index].into()));
+    snapshot.workspaces[0].label = workspace.clone();
+    let (view, cx) = window(cx, snapshot);
+    for mode in [
+        crate::config::LayoutMode::Orca,
+        crate::config::LayoutMode::Superset,
+    ] {
         show(&view, mode, SIDEBAR, cx);
-        let painted = painted(cx);
-        let places: Vec<_> = painted
-            .iter()
-            .filter(|text| text.contains("grok") && text.contains('\u{b7}'))
-            .collect();
-        assert!(places.is_empty(), "{mode:?} repeats the agent: {places:?}");
+        let probes = probes(cx);
+        for (index, pane) in ["api", "web"].into_iter().enumerate() {
+            let (_, rendered, _) = probes
+                .get(pane)
+                .unwrap_or_else(|| panic!("{mode:?} painted no {pane}: {probes:?}"));
+            assert_eq!(rendered, pane, "{mode:?} cut {pane}");
+            let selector: &'static str = Box::leak(format!("pane-agent-p{index}").into_boxed_str());
+            assert!(cx.debug_bounds(selector).is_some(), "{mode:?} {selector}");
+        }
+        // The place is still there, and it is what gave way.
+        let place = format!("{workspace} \u{b7} tab 1");
+        let (_, rendered, _) = probes
+            .get(&place)
+            .unwrap_or_else(|| panic!("{mode:?} painted no place: {probes:?}"));
+        assert_ne!(rendered, &place, "{mode:?} left the place uncut");
     }
 }
 

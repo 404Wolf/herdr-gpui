@@ -114,8 +114,8 @@ pub(super) struct AgentRow<'a> {
     /// workspace has gone.
     pub(super) place: Option<(&'a str, Option<&'a str>)>,
     /// Rename's label, or the title an unnamed pane already carries, when that
-    /// text is not already the agent name.
-    pub(super) pane: Option<&'a str>,
+    /// text is not already the agent name. Safe, bounded text.
+    pub(super) pane: Option<Cow<'a, str>>,
     /// The daemon's `state_text` word when its sidebar config asks for it, so
     /// the GUI and the TUI name the status the same way: the agent's own
     /// state label when its integration set one.

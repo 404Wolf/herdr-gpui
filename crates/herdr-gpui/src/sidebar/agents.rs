@@ -10,6 +10,7 @@ use crate::{
 };
 use gpui::{prelude::*, *};
 use herdr_client::protocol::{AgentStatus, ClientShellAgent, ClientShellSnapshot};
+use std::borrow::Cow;
 
 pub(super) fn agents_sort(window: &HerdrWindow, cx: &mut Context<HerdrWindow>) -> Stateful<Div> {
     let theme = &window.theme;
@@ -155,27 +156,50 @@ pub(super) fn agent_names(agent: &ClientShellAgent) -> [Option<&str>; 4] {
 }
 
 /// The pane's own name: the label set with Rename, otherwise the title an
-/// unnamed pane already carries. Blank text is no name.
+/// unnamed pane already carries. Both are untrusted daemon and terminal text,
+/// so the caption is safe, bounded text; blank text is no name.
 pub(super) fn pane_caption<'a>(
     agent: &'a ClientShellAgent,
     snapshot: &'a ClientShellSnapshot,
-) -> Option<&'a str> {
+) -> Option<Cow<'a, str>> {
     let renamed = snapshot
         .panes
         .iter()
         .find(|pane| pane.pane_id == agent.pane_id)
-        .and_then(|pane| nonempty(pane.label.as_deref()));
-    renamed.or_else(|| nonempty(agent.title.as_deref()))
+        .and_then(|pane| safe_caption(pane.label.as_deref()));
+    renamed.or_else(|| safe_caption(agent.title.as_deref()))
 }
 
-fn nonempty(value: Option<&str>) -> Option<&str> {
-    value.map(str::trim).filter(|text| !text.is_empty())
+/// Pane names stay far longer than any row can show, so the bound only stops
+/// a runaway title from being scanned and laid out in full.
+const PANE_CAPTION_LIMIT: usize = 160;
+
+/// Trimmed text without controls or direction overrides, borrowed when the
+/// text already has none.
+fn safe_caption(text: Option<&str>) -> Option<Cow<'_, str>> {
+    let text = text?;
+    let mut chars = text.chars();
+    let clean = chars
+        .by_ref()
+        .take(PANE_CAPTION_LIMIT)
+        .all(|c| !crate::notifications::unsafe_char(c))
+        && chars.next().is_none();
+    let text = if clean {
+        Cow::Borrowed(text.trim())
+    } else {
+        let safe = crate::notifications::safe_text(text, PANE_CAPTION_LIMIT);
+        Cow::Owned(safe.trim().to_owned())
+    };
+    (!text.is_empty()).then_some(text)
 }
 
-/// Drops a pane name that only repeats the agent name already on the row.
-pub(super) fn pane_beside<'a>(agent: &str, pane: Option<&'a str>) -> Option<&'a str> {
-    let pane = nonempty(pane)?;
-    (pane != agent.trim()).then_some(pane)
+/// Drops a pane name that is blank or only repeats the agent name already on
+/// the row.
+pub(super) fn pane_beside<P: AsRef<str>>(agent: &str, pane: Option<P>) -> Option<P> {
+    pane.filter(|pane| {
+        let pane = pane.as_ref().trim();
+        !pane.is_empty() && pane != agent.trim()
+    })
 }
 
 /// What a screen reader says for an agent's row: the same parts the row
@@ -189,7 +213,7 @@ pub(super) fn spoken_agent(
     let name = agent_name(agent);
     super::accessibility::agent_name(
         name,
-        pane_beside(name, pane_caption(agent, snapshot)),
+        pane_beside(name, pane_caption(agent, snapshot)).as_deref(),
         &state_label(agent, status_text(agent.agent_status)),
         (!nested).then(|| agent_place(agent, snapshot)).flatten(),
         host,
@@ -231,7 +255,7 @@ pub(super) fn agent_labels<'a>(
     host: Option<&'a str>,
     pane: Option<&'a str>,
 ) -> (Vec<(&'a str, bool)>, &'a str) {
-    let pane = pane_beside(name, pane);
+    let pane = pane_beside(name, pane.map(str::trim));
     let Some((workspace, tab)) = place else {
         let mut segments = vec![(name, true)];
         if let Some(pane) = pane {
@@ -552,10 +576,7 @@ const STATE_LABEL_LIMIT: usize = 80;
 /// The words an agent's integration chose for its current status, as Herdr's
 /// `state_labels` metadata, else `fallback`. Labels are untrusted display
 /// text: bounded and stripped of controls and bidi overrides.
-pub(crate) fn state_label<'a>(
-    agent: &ClientShellAgent,
-    fallback: &'a str,
-) -> std::borrow::Cow<'a, str> {
+pub(crate) fn state_label<'a>(agent: &ClientShellAgent, fallback: &'a str) -> Cow<'a, str> {
     let key = status_text(agent.agent_status);
     agent
         .state_labels
@@ -564,10 +585,7 @@ pub(crate) fn state_label<'a>(
         .map(|(_, label)| crate::notifications::safe_text(label, STATE_LABEL_LIMIT))
         .map(|label| label.trim().to_owned())
         .filter(|label| !label.is_empty())
-        .map_or(
-            std::borrow::Cow::Borrowed(fallback),
-            std::borrow::Cow::Owned,
-        )
+        .map_or(Cow::Borrowed(fallback), Cow::Owned)
 }
 
 /// Upstream draws status from its own palette, defaulting to Catppuccin Mocha,

@@ -341,7 +341,8 @@ impl RowLayout for Superset {
             });
             return shell(key, state, 0., line, cx);
         }
-        // Where the agent runs trails its name, never over half the row.
+        // The agent's pane, then where it runs, trail its name, each never over
+        // half the row. The pane comes first so a long workspace cannot cut it.
         let line = line
             .fill(
                 div()
@@ -349,20 +350,28 @@ impl RowLayout for Superset {
                     .text_color(rgb(color)),
                 agent.name,
             )
-            .when_some(
-                parts::agent_place(agent.place, cx.host, agent.pane),
-                |line, place| {
-                    line.label(
-                        div()
-                            .debug_selector(|| format!("detail-{key}"))
-                            .text_size(px(m.small))
-                            .text_color(rgb(theme.muted)),
-                        place,
-                        m.glyph,
-                        0.5,
-                    )
-                },
-            )
+            .when_some(agent.pane, |line, pane| {
+                line.label(
+                    div()
+                        .debug_selector(|| format!("pane-{key}"))
+                        .text_size(px(m.small))
+                        .text_color(rgb(theme.muted)),
+                    pane,
+                    m.glyph,
+                    0.5,
+                )
+            })
+            .when_some(parts::agent_place(agent.place, cx.host), |line, place| {
+                line.label(
+                    div()
+                        .debug_selector(|| format!("detail-{key}"))
+                        .text_size(px(m.small))
+                        .text_color(rgb(theme.muted)),
+                    place,
+                    m.glyph,
+                    0.5,
+                )
+            })
             .when_some(agent.status_text.as_deref(), |line, text| {
                 line.label(
                     div()
