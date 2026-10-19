@@ -227,6 +227,9 @@ pub(crate) struct HerdrWindow {
     pub(crate) menu: menu::MenuState,
     /// Removing worktrees whose pull request is merged, when enabled.
     pub(crate) merged_cleanup: crate::merged_cleanup::Cleanup,
+    /// The focus changes asked of the daemon, for the native GUI harness.
+    #[cfg(feature = "integration-test")]
+    pub(crate) navigations: smoke::Navigations,
     /// The notes panel beside a review or an annotated page; both share it.
     /// The revision of the app-wide network reading this window last drew.
     pub(crate) network_quality_seen: u64,
