@@ -211,6 +211,8 @@ impl HerdrWindow {
             marked_selection: None,
             menu,
             merged_cleanup: Default::default(),
+            #[cfg(feature = "integration-test")]
+            navigations: Default::default(),
             network_quality_seen: 0,
             next_orchestrator: 0,
             notes_width: crate::panel_resize::NOTES,
@@ -240,6 +242,7 @@ impl HerdrWindow {
             review_files_width: crate::panel_resize::REVIEW_FILES,
             reviews: Default::default(),
             scrollbar_drag: None,
+            security: Default::default(),
             selected_endpoint: 0,
             selected_generation: 0,
             selection: None,

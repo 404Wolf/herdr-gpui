@@ -533,6 +533,8 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         app_update_notes_scroll: gpui::ScrollHandle::new(),
         removal: None,
         merged_cleanup: Default::default(),
+        #[cfg(feature = "integration-test")]
+        navigations: Default::default(),
         worktree_script: None,
         wsl_paste: None,
         editor_open: None,
@@ -650,6 +652,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         links: Default::default(),
         terminal_mouse: None,
         scrollbar_drag: None,
+        security: Default::default(),
         split_drag: None,
         split_cursor: None,
         pending_images: Vec::new(),

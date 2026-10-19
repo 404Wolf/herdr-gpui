@@ -3,8 +3,10 @@
 //! it was; every other section takes the window's body, keeping the bar,
 //! title bar, and status bar: Overview what needs the user on every host
 //! (`crate::overview`), Orchestrator, Pull requests, and Issues the focused
-//! workspace's orchestrator on that list (see `orchestrator::section`), and
-//! Usage the plan limits of every host (`crate::usage::section`).
+//! workspace's orchestrator on that list (see `orchestrator::section`),
+//! Security the Dependabot alerts of every repository (`crate::security`),
+//! listed only once GitHub reports them on for one, and Usage the plan
+//! limits of every host (`crate::usage::section`).
 //! `[sidebar] activity_bar = false` turns the bar off. With the bar on, the
 //! sidebar toggle sits at the end of the Workspaces title, and collapsing the
 //! sidebar keeps the bar, with the compact rail and the toggle beside it.
@@ -45,6 +47,7 @@ pub enum ActivityPanel {
     Overview,
     PullRequests,
     Issues,
+    Security,
     Usage,
 }
 
@@ -54,6 +57,7 @@ impl ActivityPanel {
         Self::Overview,
         Self::PullRequests,
         Self::Issues,
+        Self::Security,
         Self::Usage,
     ];
 
@@ -64,6 +68,7 @@ impl ActivityPanel {
             Self::Workspaces => "workspaces",
             Self::PullRequests => "pull-requests",
             Self::Issues => "issues",
+            Self::Security => "security",
             Self::Usage => "usage",
         }
     }
@@ -78,6 +83,7 @@ impl ActivityPanel {
             Self::Workspaces => "Workspaces",
             Self::PullRequests => "Pull requests",
             Self::Issues => "Issues",
+            Self::Security => "Security",
             Self::Usage => "Usage",
         }
     }
@@ -88,6 +94,7 @@ impl ActivityPanel {
             Self::Workspaces => "icons/terminal.svg",
             Self::PullRequests => "icons/pull-request.svg",
             Self::Issues => "icons/issue.svg",
+            Self::Security => "icons/shield.svg",
             Self::Usage => "icons/chart.svg",
         }
     }
@@ -256,7 +263,7 @@ impl HerdrWindow {
         }
         self.sync_activity_section(cx);
         match self.activity_section() {
-            Some(ActivityPanel::Overview | ActivityPanel::Usage) => {
+            Some(ActivityPanel::Overview | ActivityPanel::Security | ActivityPanel::Usage) => {
                 let focus = self
                     .activity
                     .section_focus
@@ -275,6 +282,7 @@ impl HerdrWindow {
         let section = match self.activity_section()? {
             ActivityPanel::Workspaces => return None,
             ActivityPanel::Overview => self.render_overview(cx),
+            ActivityPanel::Security => self.render_security_section(cx),
             ActivityPanel::Usage => self.render_usage_section(cx),
             ActivityPanel::PullRequests | ActivityPanel::Issues => {
                 return self.render_orchestrator_section();
@@ -360,6 +368,9 @@ impl HerdrWindow {
             .border_r_1()
             .border_color(rgb(theme.active));
         for &panel in ActivityPanel::ALL {
+            if panel == ActivityPanel::Security && !self.security_listed() {
+                continue;
+            }
             let state = if panel == self.activity.panel {
                 BarState::Selected
             } else {
@@ -555,6 +566,7 @@ fn panel_selector(panel: ActivityPanel) -> &'static str {
         ActivityPanel::Workspaces => "activity-workspaces",
         ActivityPanel::PullRequests => "activity-pull-requests",
         ActivityPanel::Issues => "activity-issues",
+        ActivityPanel::Security => "activity-security",
         ActivityPanel::Usage => "activity-usage",
     }
 }

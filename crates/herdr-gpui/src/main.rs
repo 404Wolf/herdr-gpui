@@ -127,6 +127,7 @@ mod restart_manager;
 mod review;
 mod scrollback;
 mod search_input;
+mod security;
 mod sessions;
 mod settings_panel;
 mod settings_window;

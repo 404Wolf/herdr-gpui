@@ -227,6 +227,9 @@ pub(crate) struct HerdrWindow {
     pub(crate) menu: menu::MenuState,
     /// Removing worktrees whose pull request is merged, when enabled.
     pub(crate) merged_cleanup: crate::merged_cleanup::Cleanup,
+    /// The focus changes asked of the daemon, for the native GUI harness.
+    #[cfg(feature = "integration-test")]
+    pub(crate) navigations: smoke::Navigations,
     /// The notes panel beside a review or an annotated page; both share it.
     /// The revision of the app-wide network reading this window last drew.
     pub(crate) network_quality_seen: u64,
@@ -276,6 +279,8 @@ pub(crate) struct HerdrWindow {
     /// Each review tab's state, by its tab.
     pub(crate) reviews: std::collections::HashMap<crate::browser::TabId, crate::review::Review>,
     pub(crate) scrollbar_drag: Option<mouse::ScrollbarDrag>,
+    /// The activity bar's Security section: Dependabot alerts.
+    pub(crate) security: crate::security::Security,
     pub(crate) selected_endpoint: usize,
     pub(crate) selected_generation: u64,
     /// The terminal cells the pointer is choosing. A release copies them and
@@ -625,6 +630,7 @@ impl HerdrWindow {
         }
         self.poll_devices_overview(cx);
         self.poll_overview(cx);
+        self.poll_security(cx);
         if self.update_system_load() {
             cx.notify();
         }
