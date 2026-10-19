@@ -5,17 +5,17 @@
 //!
 //! A report describes a vulnerability that is not fixed yet, so only its
 //! title and metadata are read. The description and any proof of concept are
-//! never deserialized, and reach neither the section nor the CLI.
+//! skipped while parsing, never deserialized, and reach neither the section
+//! nor the CLI.
 
 use super::{Error, Severity, model::ghsa};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use serde_json::Value;
 use std::time::Duration;
 
 const TIMEOUT: Duration = Duration::from_secs(20);
 /// Reports per repository: a queue this long is already a fire.
-const PAGE: usize = 50;
+pub(super) const PAGE: usize = 50;
 
 /// One report in triage.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -39,8 +39,8 @@ pub(crate) enum Reports {
     /// advisories permission.
     Hidden,
     /// The reports in triage this account can see, most severe then newest
-    /// first.
-    Open(Vec<Report>),
+    /// first, and whether GitHub holds more than the [`PAGE`] read.
+    Open { reports: Vec<Report>, more: bool },
 }
 
 /// The reports of `owner/repo`, a name [`super::model::valid_name`] checked.
@@ -51,19 +51,32 @@ pub(super) fn read(
 ) -> Result<Reports, Error> {
     let (owner, _) = name.split_once('/').ok_or(Error::Output)?;
     let token = tokens.for_owner(owner);
-    let get = |path: String| crate::github::rest("security", token, &path, TIMEOUT, &cancelled);
-    let enabled = match get(format!("/repos/{name}/private-vulnerability-reporting")) {
-        Ok(response) => parse_enabled(&response)?,
+    let enabled = match crate::github::rest::<Reporting>(
+        "security",
+        token,
+        &format!("/repos/{name}/private-vulnerability-reporting"),
+        TIMEOUT,
+        &cancelled,
+    ) {
+        Ok(reporting) => reporting.enabled,
         Err(error) if hidden(&error) => return Ok(Reports::Hidden),
         Err(error) => return Err(Error::Github(Box::new(error))),
     };
     if !enabled {
         return Ok(Reports::Off);
     }
-    match get(format!(
-        "/repos/{name}/security-advisories?state=triage&per_page={PAGE}"
-    )) {
-        Ok(response) => parse(&response),
+    // One more than the page, so a longer queue says it was cut.
+    match crate::github::rest::<Vec<AdvisoryNode>>(
+        "security",
+        token,
+        &format!(
+            "/repos/{name}/security-advisories?state=triage&per_page={}",
+            PAGE + 1
+        ),
+        TIMEOUT,
+        &cancelled,
+    ) {
+        Ok(nodes) => Ok(parse(nodes)),
         Err(error) if hidden(&error) => Ok(Reports::Hidden),
         Err(error) => Err(Error::Github(Box::new(error))),
     }
@@ -79,20 +92,16 @@ pub(super) fn hidden(error: &crate::Error) -> bool {
 }
 
 /// `{"enabled": bool}`.
-pub(super) fn parse_enabled(response: &Value) -> Result<bool, Error> {
-    #[derive(Deserialize)]
-    struct Reporting {
-        enabled: bool,
-    }
-    Ok(Reporting::deserialize(response)?.enabled)
+#[derive(Deserialize)]
+pub(super) struct Reporting {
+    pub(super) enabled: bool,
 }
 
-/// A page of repository advisories in triage.
-pub(super) fn parse(response: &Value) -> Result<Reports, Error> {
-    let nodes = Vec::<AdvisoryNode>::deserialize(response)?;
+/// A page of repository advisories in triage, of up to one more than
+/// [`PAGE`]: the extra one only says the queue goes on.
+pub(super) fn parse(nodes: Vec<AdvisoryNode>) -> Reports {
     let mut reports: Vec<Report> = nodes
         .into_iter()
-        .take(PAGE)
         .filter(|node| node.state == "triage")
         .map(AdvisoryNode::into_report)
         .collect();
@@ -102,7 +111,9 @@ pub(super) fn parse(response: &Value) -> Result<Reports, Error> {
             .cmp(&(b.severity.is_none(), b.severity))
             .then_with(|| b.created_at.cmp(&a.created_at))
     });
-    Ok(Reports::Open(reports))
+    let more = reports.len() > PAGE;
+    reports.truncate(PAGE);
+    Reports::Open { reports, more }
 }
 
 /// The report's page in the repository's Security tab, when its identifier
@@ -117,9 +128,9 @@ pub(super) fn report_url(repository: &str, report: &Report) -> Option<String> {
 }
 
 /// Only what the list shows: no `description`, `vulnerabilities`, or
-/// `cvss`, so the report's substance is never held.
+/// `cvss`, which serde skips unread, so the report's substance is never held.
 #[derive(Deserialize)]
-struct AdvisoryNode {
+pub(super) struct AdvisoryNode {
     ghsa_id: String,
     summary: String,
     state: String,

@@ -1,5 +1,14 @@
 use super::*;
-use crate::security::reports::{hidden, parse, parse_enabled, report_url};
+use crate::security::reports::{AdvisoryNode, Reporting, hidden, parse, report_url};
+
+/// Reads `value` as the REST listing is read: straight into the typed nodes.
+pub(super) fn parse_json(value: Value) -> Reports {
+    parse(serde_json::from_value(value).unwrap())
+}
+
+pub(super) fn advisory_json(id: &str, state: &str, severity: Value, created: &str) -> Value {
+    advisory(id, state, severity, created)
+}
 
 fn advisory(id: &str, state: &str, severity: Value, created: &str) -> Value {
     json!({
@@ -16,7 +25,7 @@ fn advisory(id: &str, state: &str, severity: Value, created: &str) -> Value {
 
 #[test]
 fn reads_reports_in_triage_rated_first_then_newest() {
-    let reports = parse(&json!([
+    let reports = parse_json(json!([
         advisory(
             "GHSA-aaaa-aaaa-aaaa",
             "triage",
@@ -41,9 +50,8 @@ fn reads_reports_in_triage_rated_first_then_newest() {
             json!("critical"),
             "2026-10-03T00:00:00Z"
         ),
-    ]))
-    .unwrap();
-    let Reports::Open(reports) = reports else {
+    ]));
+    let Reports::Open { reports, more } = reports else {
         panic!("expected open reports");
     };
     let order: Vec<&str> = reports
@@ -62,17 +70,17 @@ fn reads_reports_in_triage_rated_first_then_newest() {
     assert_eq!(reports[1].severity, Some(Severity::Moderate));
     assert_eq!(reports[2].severity, None);
     assert_eq!(reports[0].reporter.as_deref(), Some("finder"));
+    assert!(!more);
 }
 
 #[test]
 fn a_report_keeps_no_description() {
-    let Reports::Open(reports) = parse(&json!([advisory(
+    let Reports::Open { reports, .. } = parse_json(json!([advisory(
         "GHSA-aaaa-aaaa-aaaa",
         "triage",
         json!("high"),
         "2026-10-05T00:00:00Z"
-    )]))
-    .unwrap() else {
+    )])) else {
         panic!("expected open reports");
     };
     let held = format!("{reports:?}");
@@ -81,13 +89,11 @@ fn a_report_keeps_no_description() {
 
 #[test]
 fn reporting_switch_and_malformed_answers() {
-    assert!(parse_enabled(&json!({"enabled": true})).unwrap());
-    assert!(!parse_enabled(&json!({"enabled": false})).unwrap());
-    assert!(matches!(parse_enabled(&json!({})), Err(Error::Json(_))));
-    assert!(matches!(
-        parse(&json!({"message": "x"})),
-        Err(Error::Json(_))
-    ));
+    let enabled = |value| serde_json::from_value::<Reporting>(value).map(|r| r.enabled);
+    assert!(enabled(json!({"enabled": true})).unwrap());
+    assert!(!enabled(json!({"enabled": false})).unwrap());
+    assert!(enabled(json!({})).is_err());
+    assert!(serde_json::from_value::<Vec<AdvisoryNode>>(json!({"message": "x"})).is_err());
 }
 
 #[test]

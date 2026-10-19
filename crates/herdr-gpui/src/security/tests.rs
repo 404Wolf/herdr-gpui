@@ -8,7 +8,9 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
+mod accounts;
 mod parse;
+mod partial;
 mod reports;
 mod section;
 mod state;
@@ -72,7 +74,10 @@ fn report(advisory: &str, severity: Option<Severity>, created: &str) -> Report {
 
 fn reported(name: &str, reports: Vec<Report>) -> Repo {
     Repo {
-        reports: Ok(Reports::Open(reports)),
+        reports: Ok(Reports::Open {
+            reports,
+            more: false,
+        }),
         ..repo(name, Ok(Alerts::Off))
     }
 }

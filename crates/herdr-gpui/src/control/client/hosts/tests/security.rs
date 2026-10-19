@@ -12,6 +12,7 @@ fn repo(name: &str, state: &str, alerts: Vec<SecurityAlertInfo>) -> SecurityRepo
         error: (state == "error").then(|| "GitHub refused".into()),
         reporting: "off".into(),
         reports: Vec::new(),
+        more_reports: false,
         reports_error: None,
     }
 }
@@ -73,5 +74,21 @@ fn reports_read_before_the_alerts_of_their_repository() {
         "a/one (Local): no open alerts\n\
          \x20 reported Path traversal in uploads [unrated]\n\
          \x20          GHSA-aaaa-bbbb-cccc · by finder · https://github.com/a/one/security/advisories/GHSA-aaaa-bbbb-cccc"
+    );
+}
+
+#[test]
+fn a_queue_cut_short_says_github_holds_more() {
+    let mut repository = repo("a/one", "open", Vec::new());
+    repository.reporting = "on".into();
+    repository.more_reports = true;
+    let reply = Reply::Security {
+        repositories: vec![repository],
+        note: None,
+    };
+    assert_eq!(
+        text::security(&reply),
+        "a/one (Local): no open alerts\n\
+         \x20 more reports in triage on GitHub"
     );
 }

@@ -8,8 +8,8 @@ use super::{
     model::{Alerts, Repo, parse, valid_name},
 };
 use crate::{github::Tokens, orchestrator::RepoSpec};
+use secrecy::ExposeSecret;
 use std::{
-    collections::HashSet,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -42,14 +42,15 @@ pub(super) const QUERY: &str = r#"query($owner: String!, $repo: String!) {
 /// The alerts of each distinct github.com repository `specs` hold, in their
 /// order. A checkout on another provider, or one whose remote cannot be
 /// read, is left out; the orchestrator's own sections report those.
+///
+/// One repository open on several hosts is one card, but each host may sign
+/// in to GitHub as someone else: when an account cannot read its alerts or
+/// reports, the next one is tried, and the most readable answer is kept.
 pub(super) fn read(specs: &[RepoSpec], cancelled: &AtomicBool) -> Vec<Repo> {
-    let mut seen = HashSet::new();
-    let mut repos = Vec::new();
-    // Once the quota is spent, the rest would only be refused too.
-    let mut limited: Option<Arc<Error>> = None;
+    let mut found: Vec<Found<'_>> = Vec::new();
     for spec in specs {
         if cancelled.load(Ordering::Relaxed) {
-            break;
+            return Vec::new();
         }
         let Some(tokens) = &spec.request.token else {
             continue;
@@ -66,28 +67,95 @@ pub(super) fn read(specs: &[RepoSpec], cancelled: &AtomicBool) -> Vec<Repo> {
                 continue;
             }
         };
-        if !seen.insert(name.to_ascii_lowercase()) {
-            continue;
+        let account = (spec.host.as_str(), tokens);
+        match found
+            .iter_mut()
+            .find(|repo| repo.name.eq_ignore_ascii_case(&name))
+        {
+            Some(repo) => repo.add(account),
+            None => found.push(Found {
+                name,
+                accounts: vec![account],
+            }),
         }
-        let alerts = match &limited {
-            Some(error) => Err(error.clone()),
-            None => alerts(&name, tokens, cancelled).map_err(Arc::new),
-        };
-        note_limit(&alerts, &mut limited);
-        let reports = match &limited {
-            Some(error) => Err(error.clone()),
-            None => super::reports::read(&name, tokens, || cancelled.load(Ordering::Relaxed))
-                .map_err(Arc::new),
-        };
-        note_limit(&reports, &mut limited);
-        repos.push(Repo {
-            name,
-            host: spec.host.clone(),
-            alerts,
-            reports,
-        });
+    }
+    let mut repos = Vec::new();
+    // Once the quota is spent, the rest would only be refused too.
+    let mut limited: Option<Arc<Error>> = None;
+    for repo in found {
+        if cancelled.load(Ordering::Relaxed) {
+            break;
+        }
+        let mut best: Option<(u8, Repo)> = None;
+        for (host, tokens) in repo.accounts {
+            let alerts = match &limited {
+                Some(error) => Err(error.clone()),
+                None => alerts(&repo.name, tokens, cancelled).map_err(Arc::new),
+            };
+            note_limit(&alerts, &mut limited);
+            let reports = match &limited {
+                Some(error) => Err(error.clone()),
+                None => {
+                    super::reports::read(&repo.name, tokens, || cancelled.load(Ordering::Relaxed))
+                        .map_err(Arc::new)
+                }
+            };
+            note_limit(&reports, &mut limited);
+            let read = Repo {
+                name: repo.name.clone(),
+                host: host.to_owned(),
+                alerts,
+                reports,
+            };
+            let score = readable(&read);
+            if best.as_ref().is_none_or(|(kept, _)| score > *kept) {
+                best = Some((score, read));
+            }
+            if score == FULLY_READ || limited.is_some() || cancelled.load(Ordering::Relaxed) {
+                break;
+            }
+        }
+        repos.extend(best.map(|(_, read)| read));
     }
     repos
+}
+
+/// A repository and the accounts its hosts read GitHub with, each with the
+/// host it came from.
+pub(super) struct Found<'a> {
+    pub(super) name: String,
+    pub(super) accounts: Vec<(&'a str, &'a Tokens)>,
+}
+
+impl<'a> Found<'a> {
+    /// Adds another host's account, unless it reads this repository with a
+    /// token already listed: asking again would only repeat the answer.
+    pub(super) fn add(&mut self, account: (&'a str, &'a Tokens)) {
+        let Some((owner, _)) = self.name.split_once('/') else {
+            return;
+        };
+        let token = account.1.for_owner(owner).expose_secret();
+        if self
+            .accounts
+            .iter()
+            .all(|(_, tokens)| tokens.for_owner(owner).expose_secret() != token)
+        {
+            self.accounts.push(account);
+        }
+    }
+}
+
+/// A read whose alerts and reports both came back.
+pub(super) const FULLY_READ: u8 = 2;
+
+/// How much of a repository one account could read: its alerts listing,
+/// and its private reporting, whether on or off.
+pub(super) fn readable(repo: &Repo) -> u8 {
+    u8::from(repo.alerts.is_ok())
+        + u8::from(matches!(
+            repo.reports,
+            Ok(super::Reports::Open { .. } | super::Reports::Off)
+        ))
 }
 
 /// Remembers a spent quota, so the round's remaining reads are skipped.

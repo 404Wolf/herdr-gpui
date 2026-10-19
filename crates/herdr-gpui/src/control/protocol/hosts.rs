@@ -208,6 +208,9 @@ pub(crate) struct SecurityRepoInfo {
     pub reporting: String,
     /// Reports outsiders filed, in triage: titles and metadata only.
     pub reports: Vec<SecurityReportInfo>,
+    /// Whether GitHub holds more reports in triage than the section read.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub more_reports: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reports_error: Option<String>,
 }

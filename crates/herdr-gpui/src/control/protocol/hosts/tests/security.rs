@@ -35,6 +35,7 @@ fn a_security_reply_keeps_its_shape_on_the_wire() {
                         .into(),
                 ),
             }],
+            more_reports: false,
             reports_error: None,
         }],
         note: None,
@@ -45,5 +46,7 @@ fn a_security_reply_keeps_its_shape_on_the_wire() {
     // No error and no note are left out rather than sent as null.
     assert!(!text.contains(r#""error""#), "{text}");
     assert!(!text.contains(r#""note""#), "{text}");
+    // Nor is a complete queue's `more_reports`, which older clients lack.
+    assert!(!text.contains(r#""more_reports""#), "{text}");
     assert_eq!(serde_json::from_str::<Response>(&text).unwrap(), response);
 }

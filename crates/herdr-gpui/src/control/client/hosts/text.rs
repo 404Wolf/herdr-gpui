@@ -290,6 +290,9 @@ pub(super) fn security(reply: &Reply) -> String {
             parts.extend(report.url.clone());
             let _ = writeln!(text, "           {}", parts.join(" · "));
         }
+        if repo.more_reports {
+            let _ = writeln!(text, "  more reports in triage on GitHub");
+        }
         if let Some(error) = &repo.reports_error {
             let _ = writeln!(text, "  private reports: {error}");
         }

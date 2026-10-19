@@ -67,6 +67,10 @@ pub(crate) struct Security {
     /// Whether any repository had Dependabot alerts or private reporting
     /// on, this session.
     available: bool,
+    /// The GitHub logins `repos` was read as. Private reports are only for
+    /// the accounts that may see them, so what one sign-in read is dropped
+    /// once the window reads GitHub as anyone else.
+    accounts: Vec<String>,
     /// Tells a read in flight to stop when the window goes.
     cancelled: Arc<AtomicBool>,
     scroll: ScrollHandle,
@@ -80,6 +84,7 @@ impl Default for Security {
             next: None,
             task: None,
             available: false,
+            accounts: Vec::new(),
             cancelled: Arc::default(),
             scroll: ScrollHandle::new(),
         }
@@ -137,6 +142,15 @@ impl Security {
         self.task.is_none() && self.next.is_none_or(|next| now >= next)
     }
 
+    /// Drops what was read, and the answer of a read in flight with it:
+    /// dropping its task drops the update that would install it.
+    fn forget(&mut self) {
+        self.repos.clear();
+        self.read_at = None;
+        self.next = None;
+        self.task = None;
+    }
+
     /// What a read found, replacing the last one.
     fn install(&mut self, repos: Vec<Repo>, now: Instant, at: SystemTime) {
         self.available |= repos.iter().any(Repo::enabled);
@@ -152,6 +166,12 @@ impl HerdrWindow {
     /// repository to read with an account to read it.
     pub(crate) fn poll_security(&mut self, cx: &mut Context<Self>) {
         let now = Instant::now();
+        let accounts = self.github_logins();
+        if accounts != self.security.accounts {
+            self.security.forget();
+            self.security.accounts = accounts;
+            cx.notify();
+        }
         if !self.activity_bar_shown() || !self.security.due(now) {
             return;
         }
@@ -161,6 +181,12 @@ impl HerdrWindow {
             .filter(|spec| spec.request.token.is_some())
             .collect();
         if specs.is_empty() {
+            // Nothing left to read: the last read's repositories are no
+            // longer open, or no longer readable with any sign-in.
+            if !self.security.repos.is_empty() {
+                self.security.install(Vec::new(), now, SystemTime::now());
+                cx.notify();
+            }
             self.security.next = Some(now + WAIT);
             return;
         }
@@ -177,6 +203,25 @@ impl HerdrWindow {
             });
         }));
         cx.notify();
+    }
+
+    /// Every login the window reads GitHub as, on this device and on its
+    /// hosts, sorted.
+    fn github_logins(&self) -> Vec<String> {
+        let mut logins: Vec<String> = std::iter::once(&self.menu.github)
+            .chain(self.menu.github_hosts.values())
+            .chain(
+                self.menu
+                    .github_accounts
+                    .iter()
+                    .map(|account| &account.auth),
+            )
+            .filter_map(|auth| auth.profile.as_ref())
+            .map(|profile| profile.login.clone())
+            .collect();
+        logins.sort_unstable();
+        logins.dedup();
+        logins
     }
 
     /// Whether the bar lists the section: once alerts are on somewhere, or

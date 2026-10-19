@@ -105,16 +105,21 @@ impl Repo {
     /// The private vulnerability reports in triage this account can see.
     pub(crate) fn reported(&self) -> &[Report] {
         match &self.reports {
-            Ok(Reports::Open(reports)) => reports,
+            Ok(Reports::Open { reports, .. }) => reports,
             _ => &[],
         }
+    }
+
+    /// Whether GitHub holds more reports in triage than were read.
+    pub(crate) fn more_reports(&self) -> bool {
+        matches!(self.reports, Ok(Reports::Open { more: true, .. }))
     }
 
     /// Whether GitHub reported Dependabot alerts or private vulnerability
     /// reporting on for the repository.
     pub(crate) fn enabled(&self) -> bool {
         matches!(self.alerts, Ok(Alerts::Open { .. }))
-            || matches!(self.reports, Ok(Reports::Open(_)))
+            || matches!(self.reports, Ok(Reports::Open { .. }))
     }
 
     /// The report's page in the repository's Security tab.

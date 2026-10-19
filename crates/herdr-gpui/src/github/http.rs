@@ -225,14 +225,15 @@ pub(crate) fn mutation(
 /// A REST read of `path` under `https://api.github.com`, such as
 /// `/repos/OWNER/REPO/security-advisories`, through the same bounded reader
 /// and typed refusals as GraphQL. Callers build `path` from names they have
-/// validated; nothing here escapes it.
-pub(crate) fn rest(
+/// validated; nothing here escapes it. The answer is read straight into
+/// `T`, so fields `T` leaves out are skipped rather than held.
+pub(crate) fn rest<T: DeserializeOwned>(
     context: &'static str,
     token: &SecretString,
     path: &str,
     timeout: Duration,
     cancelled: impl Fn() -> bool,
-) -> Result<Value> {
+) -> Result<T> {
     if cancelled() {
         return Err(Error::PrCancelled);
     }

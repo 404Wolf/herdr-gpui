@@ -135,7 +135,9 @@ impl HerdrWindow {
             })
             .collect();
         if !reported.is_empty() {
-            body = body.child(self.security_reported(&reported, cx));
+            // A queue longer than one page reads as "50+", not as 50.
+            let more = repos.iter().any(Repo::more_reports);
+            body = body.child(self.security_reported(&reported, more, cx));
         }
         let mut quiet = Vec::new();
         let mut off = Vec::new();
@@ -147,7 +149,7 @@ impl HerdrWindow {
                 Err(error) => {
                     failed.push((repo.name.as_str(), format!("private reports: {error}")))
                 }
-                Ok(Reports::Off | Reports::Open(_)) => {}
+                Ok(Reports::Off | Reports::Open { .. }) => {}
             }
         }
         for (index, repo) in repos.iter().enumerate() {
@@ -198,6 +200,7 @@ impl HerdrWindow {
     fn security_reported(
         &self,
         reported: &[(usize, &Repo, &Report)],
+        more: bool,
         cx: &mut Context<Self>,
     ) -> Div {
         let theme = &self.theme;
@@ -312,9 +315,14 @@ impl HerdrWindow {
                             .text_size(small)
                             .text_color(rgb(theme.muted))
                             .child(format!(
-                                "{} private vulnerability report{} in triage",
+                                "{}{} private vulnerability report{} in triage",
                                 reported.len(),
-                                if reported.len() == 1 { "" } else { "s" }
+                                if more { "+" } else { "" },
+                                if reported.len() == 1 && !more {
+                                    ""
+                                } else {
+                                    "s"
+                                }
                             )),
                     ),
             )

@@ -4,7 +4,9 @@ use super::*;
 use crate::sidebar::layout_tests::{SidebarFixture, fixture_window, full_draw};
 use gpui::{AppContext as _, Entity, VisualTestContext, px, size};
 
-fn window(cx: &mut gpui::TestAppContext) -> (Entity<HerdrWindow>, &mut VisualTestContext) {
+pub(super) fn window(
+    cx: &mut gpui::TestAppContext,
+) -> (Entity<HerdrWindow>, &mut VisualTestContext) {
     let (fixture, cx) = cx.add_window_view(|window, cx| {
         let view = cx.new(|cx| {
             let mut view = fixture_window(window, cx);
