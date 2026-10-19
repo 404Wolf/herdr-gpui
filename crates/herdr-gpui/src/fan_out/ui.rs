@@ -261,13 +261,8 @@ impl HerdrWindow {
                                     .items_center()
                                     .gap(px(10.))
                                     .child(
-                                        svg()
-                                            .path(
-                                                AgentIcon::from_identity(Some(kind.name())).path(),
-                                            )
-                                            .size(px(14.))
-                                            .flex_none()
-                                            .text_color(rgb(theme.foreground)),
+                                        AgentIcon::from_identity(Some(kind.name()))
+                                            .element(14., theme.foreground),
                                     )
                                     .child(div().flex_1().min_w_0().truncate().child(kind.name()))
                                     .when(count > 0, |row| {
@@ -387,14 +382,8 @@ impl HerdrWindow {
                             .items_center()
                             .gap(px(10.))
                             .child(
-                                svg()
-                                    .path(
-                                        AgentIcon::from_identity(Some(lane.lane.kind.name()))
-                                            .path(),
-                                    )
-                                    .size(px(16.))
-                                    .flex_none()
-                                    .text_color(rgb(theme.foreground)),
+                                AgentIcon::from_identity(Some(lane.lane.kind.name()))
+                                    .element(16., theme.foreground),
                             )
                             .child(
                                 div()

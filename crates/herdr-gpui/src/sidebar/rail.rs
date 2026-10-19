@@ -345,16 +345,20 @@ impl HerdrWindow {
                     )
                 })
                 .child(
-                    svg()
+                    div()
                         .debug_selector(|| format!("rail-agent-icon-{id}"))
-                        .path(crate::icons::AgentIcon::from_identity(agent.agent.as_deref()).path())
                         .size(px(AGENT_ICON.min(font.size + 1.)))
                         .flex_none()
-                        .text_color(rgb(if focused {
-                            theme.foreground
-                        } else {
-                            theme.muted
-                        })),
+                        .child(
+                            crate::icons::AgentIcon::from_identity(agent.agent.as_deref()).element(
+                                AGENT_ICON.min(font.size + 1.),
+                                if focused {
+                                    theme.foreground
+                                } else {
+                                    theme.muted
+                                },
+                            ),
+                        ),
                 )
                 .child(indicator(agent.agent_status, font, indicators))
                 .id(SharedString::from(key.clone()))
