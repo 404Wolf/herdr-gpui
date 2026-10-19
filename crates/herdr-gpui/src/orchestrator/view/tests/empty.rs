@@ -7,7 +7,7 @@ use gpui::{Entity, TestAppContext, VisualTestContext};
 use std::sync::Arc;
 
 /// The view, and the folder its repository's data lives in while it is open.
-fn open(
+pub(super) fn open(
     cx: &mut TestAppContext,
 ) -> (
     tempfile::TempDir,

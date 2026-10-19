@@ -14,6 +14,7 @@ mod empty;
 mod groups;
 mod markdown;
 mod pills;
+mod pr_empty;
 mod refresh;
 mod rows;
 mod sessions;

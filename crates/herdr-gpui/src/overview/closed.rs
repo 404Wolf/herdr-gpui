@@ -14,6 +14,8 @@ const MAX_CLOSED: usize = 32;
 /// An agent that closed, as it last showed.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Agent {
+    /// The daemon boot that owns the saved workspace and pane IDs.
+    pub boot: String,
     /// Tells apart agents that share a key, such as two of one kind in one
     /// checkout, for Reopen and Forget.
     pub id: u64,
@@ -88,9 +90,14 @@ impl Closed {
             boot: snapshot.boot_id.clone(),
             agents: current,
         };
-        let previous = self
-            .seen
-            .insert(endpoint.to_owned(), seen)
+        let previous = self.seen.insert(endpoint.to_owned(), seen);
+        if previous
+            .as_ref()
+            .is_some_and(|previous| previous.boot != snapshot.boot_id)
+        {
+            self.reopened.retain(|(host, _)| host != endpoint);
+        }
+        let previous = previous
             .filter(|previous| previous.boot == snapshot.boot_id)
             .map(|previous| previous.agents)
             .unwrap_or_default();
@@ -124,10 +131,11 @@ impl Closed {
                 back -= 1;
             }
             while back > 0
-                && let Some(index) = self
-                    .agents
-                    .iter()
-                    .rposition(|agent| agent.row.endpoint == endpoint && agent.row.key == row.key)
+                && let Some(index) = self.agents.iter().rposition(|agent| {
+                    agent.boot == snapshot.boot_id
+                        && agent.row.endpoint == endpoint
+                        && agent.row.key == row.key
+                })
             {
                 self.agents.remove(index);
                 back -= 1;
@@ -147,6 +155,7 @@ impl Closed {
                 self.agents.remove(0);
             }
             self.agents.push(Agent {
+                boot: snapshot.boot_id.clone(),
                 id: self.next,
                 row,
                 cwd,

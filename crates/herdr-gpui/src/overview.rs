@@ -303,16 +303,42 @@ impl HerdrWindow {
     }
 
     /// Shows the workspace a closed agent ran in.
-    fn open_closed_agent(&mut self, row: &Row, window: &mut Window, cx: &mut Context<Self>) {
+    fn open_closed_agent(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         self.overview.menu = None;
+        let Some(agent) = self.overview.closed.get(id).cloned() else {
+            return;
+        };
         let Open::Pane {
             endpoint,
             workspace,
             ..
-        } = &row.open
+        } = &agent.row.open
         else {
             return;
         };
+        let current = self.endpoints.iter().enumerate().any(|(index, host)| {
+            let live = if index == self.selected_endpoint {
+                &self.live
+            } else {
+                &host.live
+            };
+            host.id == *endpoint
+                && host.enabled
+                && live.status.is_connected()
+                && live
+                    .snapshot
+                    .as_ref()
+                    .is_some_and(|snapshot| snapshot.boot_id == agent.boot)
+        });
+        if !current {
+            self.show_flash(
+                crate::window::Flash::warning(
+                    "The agent's original session is no longer connected",
+                ),
+                cx,
+            );
+            return;
+        }
         self.show_activity_panel(ActivityPanel::Workspaces, window, cx);
         self.activity.return_to = Some(ActivityPanel::Overview);
         self.navigate_endpoint(endpoint, crate::NavigationTarget::Workspace(workspace), cx);

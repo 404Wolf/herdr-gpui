@@ -5,7 +5,10 @@ use std::sync::Arc;
 
 /// Takes the working agent off the host, as closing its pane does, and
 /// returns its active row's selector part and its closed id.
-fn close_working(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) -> (String, u64) {
+pub(super) fn close_working(
+    view: &Entity<HerdrWindow>,
+    cx: &mut VisualTestContext,
+) -> (String, u64) {
     let working = row(view, cx, State::Working);
     let id = cx.update(|_, cx| {
         view.update(cx, |view, cx| {

@@ -468,8 +468,8 @@ impl HerdrWindow {
             )
             .child(actions)
             .on_click(cx.listener(move |this, _, window, cx| {
-                if matches!(shelf, Shelf::Closed(..)) {
-                    this.open_closed_agent(&clicked, window, cx);
+                if let Shelf::Closed(id, _) = shelf {
+                    this.open_closed_agent(id, window, cx);
                 } else {
                     this.open_overview_row(&clicked, window, cx);
                 }

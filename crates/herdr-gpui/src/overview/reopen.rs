@@ -37,6 +37,8 @@ pub(crate) fn kind(agent: &closed::Agent) -> Option<AgentKind> {
 /// A reopen on its way.
 #[derive(Debug)]
 pub(crate) struct Job {
+    /// The boot that owns the closed agent's saved workspace ID.
+    boot: String,
     /// The closed agent's id.
     closed: u64,
     endpoint: String,
@@ -44,8 +46,8 @@ pub(crate) struct Job {
     cwd: Option<String>,
     line: String,
     deadline: Instant,
-    /// The boot the `tab.create` went to, and its request id.
-    sent: Option<(String, String)>,
+    /// The `tab.create` request id.
+    sent: Option<String>,
 }
 
 impl Job {
@@ -54,6 +56,7 @@ impl Job {
             return None;
         };
         Some(Self {
+            boot: agent.boot.clone(),
             closed: agent.id,
             endpoint: agent.row.endpoint.clone(),
             workspace: workspace.clone(),
@@ -87,11 +90,7 @@ impl HerdrWindow {
             return;
         }
         if self.endpoints[self.selected_endpoint].id != job.endpoint
-            && !self.navigate_endpoint(
-                &job.endpoint,
-                NavigationTarget::Workspace(&job.workspace),
-                cx,
-            )
+            && (self.menu.page.is_some() || !self.select_endpoint(&job.endpoint, cx))
         {
             self.show_flash(Flash::warning("Cannot switch to the agent's host"), cx);
             return;
@@ -121,7 +120,10 @@ impl HerdrWindow {
         else {
             return;
         };
-        let Some((sent_boot, request)) = job.sent.clone() else {
+        if job.boot != boot {
+            return self.fail_overview_reopen(crate::Error::StaleConnection, cx);
+        }
+        let Some(request) = job.sent.clone() else {
             let open = self.live.snapshot.as_deref().is_some_and(|snapshot| {
                 snapshot
                     .workspaces
@@ -141,16 +143,13 @@ impl HerdrWindow {
             match sent {
                 Ok(request) => {
                     if let Some(job) = &mut self.overview.reopen {
-                        job.sent = Some((boot, request));
+                        job.sent = Some(request);
                     }
                 }
                 Err(error) => self.fail_overview_reopen(error, cx),
             }
             return;
         };
-        if sent_boot != boot {
-            return self.fail_overview_reopen(crate::Error::StaleConnection, cx);
-        }
         let Some(result) = self.take_script_response(&request) else {
             return;
         };

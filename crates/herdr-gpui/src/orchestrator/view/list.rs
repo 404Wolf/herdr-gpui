@@ -168,10 +168,13 @@ impl OrchestratorView {
                         .any(|status| matches!(status.state, SyncState::Syncing)))
         });
         let searching = !self.query.trim().is_empty();
-        // The pills narrow both tabs; the facets only Issues.
+        // The pills narrow both tabs; each tab also has its own filters.
         let filtered = !self.projects.is_empty()
             || !self.backends.is_empty()
-            || (self.tab == Tab::Issues && self.active_filters() > 0);
+            || match self.tab {
+                Tab::Issues => self.active_filters() > 0,
+                Tab::PullRequests => self.mine || self.filters.has_run,
+            };
         if self.repos.is_empty() {
             Empty::NoRepositories
         } else if loading && !searching {

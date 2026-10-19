@@ -1953,7 +1953,9 @@ turns it off, and `herdr-gpui ui panel NAME` shows a section.
   tab of its workspace, in the folder it ran in, continuing its last
   conversation there where the agent offers that (`claude --continue`,
   `codex resume --last`, `opencode --continue`), and **Forget** drops it.
-  The window keeps closed agents while it is open. A shelf shows only when it
+  The window keeps closed agents while it is open. Reopen and workspace
+  navigation require their original daemon session; after a restart or a
+  session switch, stale workspace IDs are not reused. A shelf shows only when it
   holds something, and with nothing to list the page says what it is for. A
   column beside the list shows each host's CPU, memory, agents, and ports;
   each host folds, and the column folds to a strip of load dots. The icon
