@@ -121,7 +121,7 @@ fn only_a_github_app_user_token_is_checked() {
 
 #[test]
 fn a_failed_check_keeps_what_the_last_one_found() {
-    let token = Arc::new(SecretString::from("token"));
+    let token = Arc::new(SecretString::from("ghu_token"));
     let mut old = Profile::fixture("me", token.clone(), &[]);
     old.access = Access::NotInstalled;
     let mut new = Profile::fixture("me", token.clone(), &[]);
@@ -135,6 +135,11 @@ fn a_failed_check_keeps_what_the_last_one_found() {
     let mut other = Profile::fixture("someone", token, &[]);
     other.keep_access(&old);
     assert_eq!(other.access, Access::Unknown);
+    // A token that replaced the App's is never checked, so the App's old
+    // warning does not follow it.
+    let mut pat = Profile::fixture("me", Arc::new(SecretString::from("ghp_classic")), &[]);
+    pat.keep_access(&old);
+    assert_eq!(pat.access, Access::Unknown);
 }
 
 #[test]

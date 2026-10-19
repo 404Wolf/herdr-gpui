@@ -139,3 +139,24 @@ fn a_waiting_account_is_toasted_once_per_window(cx: &mut TestAppContext) {
         });
     });
 }
+
+#[gpui::test]
+fn one_login_in_several_account_slots_is_toasted_once(cx: &mut TestAppContext) {
+    let (view, cx) = cx.add_window_view(crate::sidebar::layout_tests::fixture_window);
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            let toasts = |view: &crate::HerdrWindow| {
+                view.endpoints[view.selected_endpoint].toasts.entries.len()
+            };
+            let before = toasts(view);
+            // The device's account and a saved SSH device's, same login,
+            // both found waiting by one poll.
+            view.menu.github = waiting(Access::NotInstalled);
+            view.menu
+                .github_hosts
+                .insert("devbox".into(), waiting(pending(1)));
+            view.toast_github_attention(cx);
+            assert_eq!(toasts(view), before + 1);
+        });
+    });
+}

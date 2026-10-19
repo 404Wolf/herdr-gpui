@@ -208,9 +208,14 @@ impl Profile {
     }
 
     /// Keeps the access `old` found when this check could not tell, so a
-    /// failed request neither raises nor clears the attention dot.
+    /// failed request neither raises nor clears the attention dot. Only for
+    /// an App token: any other is never checked, so its `Unknown` is final
+    /// and an App's old warning does not apply to it.
     pub(super) fn keep_access(&mut self, old: &Self) {
-        if self.access == super::installation::Access::Unknown && self.login == old.login {
+        if self.access == super::installation::Access::Unknown
+            && self.login == old.login
+            && super::installation::app_token(&self.token)
+        {
             self.access = old.access.clone();
         }
     }

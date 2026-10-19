@@ -103,7 +103,7 @@ pub(super) struct App {
 /// The access of a GitHub App user token (`ghu_`). Any other token reaches
 /// repositories by its own grants, so it is [`Access::Unknown`] unchecked.
 pub(super) fn check(token: &SecretString) -> Result<Access> {
-    if !token.expose_secret().starts_with("ghu_") {
+    if !app_token(token) {
         return Ok(Access::Unknown);
     }
     let listing: Listing = get(
@@ -124,6 +124,11 @@ pub(super) fn check(token: &SecretString) -> Result<Access> {
     }
     let app: App = get("app", token, &format!("https://api.github.com/apps/{slug}"))?;
     Ok(assess(&listing, &app))
+}
+
+/// Whether `token` is a GitHub App user token, the only kind checked.
+pub(super) fn app_token(token: &SecretString) -> bool {
+    token.expose_secret().starts_with("ghu_")
 }
 
 /// Compares each installation with what the App asks for. Pure, so the

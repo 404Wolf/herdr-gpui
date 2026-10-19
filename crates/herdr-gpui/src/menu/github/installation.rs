@@ -119,21 +119,18 @@ impl HerdrWindow {
     /// repositories fail. Accounts are told apart by login.
     pub(crate) fn toast_github_attention(&mut self, cx: &mut Context<Self>) {
         let install = self.config.github.app_install_url();
-        let fresh: Vec<Attention> = self
+        let waiting: Vec<(String, Attention)> = self
             .github_profiles()
-            .filter(|profile| !self.menu.github_toasted.contains(&profile.login))
-            .filter_map(|profile| attention(&profile.login, &profile.access, install))
+            .filter_map(|profile| {
+                let attention = attention(&profile.login, &profile.access, install)?;
+                Some((profile.login.clone(), attention))
+            })
             .collect();
-        if fresh.is_empty() {
-            return;
-        }
-        let logins: Vec<String> = self
-            .github_profiles()
-            .filter(|profile| profile.access.needs_attention())
-            .map(|profile| profile.login.clone())
-            .collect();
-        self.menu.github_toasted.extend(logins);
-        for attention in fresh {
+        // Several account slots can hold one login; only the first is told.
+        for (login, attention) in waiting {
+            if !self.menu.github_toasted.insert(login) {
+                continue;
+            }
             self.local_transfer_notice(
                 attention.title,
                 format!(
