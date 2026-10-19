@@ -232,7 +232,7 @@ impl HerdrWindow {
             return false;
         };
         #[cfg(any(target_os = "macos", windows))]
-        if self.browser.pages.contains(id) {
+        if self.browser.pages.contains(id) || self.browser.pages.is_building(id) {
             return true;
         }
         self.browser.failed.contains_key(&id)

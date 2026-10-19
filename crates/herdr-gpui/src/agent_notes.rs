@@ -3,6 +3,9 @@
 //! goes one way only: to the agent when it waits in `browser feedback
 //! --wait`, otherwise pasted into its pane once it is idle, and kept for
 //! `browser feedback` when its pane is gone or must not be typed into.
+//! Until a pane or `browser feedback` takes a tab's batch, the tab can
+//! withdraw it. Nothing joins a running turn: the daemon offers this client
+//! no method to prompt an agent mid-run, only the pane input it types into.
 use crate::{
     HerdrWindow,
     browser::{Feedback, FeedbackKey},
@@ -49,19 +52,96 @@ fn collect_copy(collected: &mut Vec<Copies>, group: Option<Copies>, text: Option
     }
 }
 
+/// One Send from a tab. A note records the send that delivered it, so
+/// withdrawing that send marks exactly its notes unsent again, not an equal
+/// note an earlier send delivered.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SendId(u64);
+
 /// A tab cannot resend while its previous batch is saving, waiting for an
 /// agent, or still held for feedback. The delivery owns the strong reference.
 #[derive(Default)]
-pub(crate) struct PendingSend(Weak<()>);
+pub(crate) struct PendingSend {
+    live: Weak<()>,
+    last: SendId,
+}
+
+/// Where a tab's batch waits while it can still be withdrawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Queued {
+    /// In this window, for its agent to stop working.
+    UntilIdle,
+    /// For the agent to fetch with `browser feedback`.
+    ForFeedback,
+}
+
+impl Queued {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::UntilIdle => "Queued until the agent is idle",
+            Self::ForFeedback => "Kept for `browser feedback`",
+        }
+    }
+}
+
+/// Whether `pending` is the batch `live` follows. The weak reference keeps
+/// the allocation, so another batch cannot reuse its address.
+pub(crate) fn carries(pending: Option<&Arc<()>>, live: &Weak<()>) -> bool {
+    pending.is_some_and(|pending| std::ptr::eq(Arc::as_ptr(pending), live.as_ptr()))
+}
 
 impl PendingSend {
-    pub(crate) fn start(&mut self) -> Option<Arc<()>> {
-        if self.0.strong_count() > 0 {
+    /// Starts a send, unless the previous batch is still pending, naming it
+    /// for the notes it carries.
+    pub(crate) fn start(&mut self) -> Option<(SendId, Arc<()>)> {
+        if self.is_pending() {
             return None;
         }
         let pending = Arc::new(());
-        self.0 = Arc::downgrade(&pending);
-        Some(pending)
+        self.live = Arc::downgrade(&pending);
+        self.last = SendId(self.last.0 + 1);
+        Some((self.last, pending))
+    }
+
+    /// Whether the last batch is still saving, queued, or on its way.
+    pub(crate) fn is_pending(&self) -> bool {
+        self.live.strong_count() > 0
+    }
+
+    /// Where the batch waits, while no agent has it yet.
+    pub(crate) fn queued(
+        &self,
+        deliveries: &Deliveries,
+        feedback: Option<&Feedback>,
+    ) -> Option<Queued> {
+        if deliveries
+            .queue
+            .iter()
+            .any(|delivery| carries(delivery.pending.as_ref(), &self.live))
+        {
+            Some(Queued::UntilIdle)
+        } else if feedback.is_some_and(|feedback| feedback.holds(&self.live)) {
+            Some(Queued::ForFeedback)
+        } else {
+            None
+        }
+    }
+
+    /// Takes the batch back before any agent has it, leaving every other
+    /// batch queued in its order, and returns the send whose notes it
+    /// carried. `None` once it was pasted, fetched, or dropped.
+    pub(crate) fn withdraw(
+        &mut self,
+        deliveries: &mut Deliveries,
+        feedback: Option<&mut Feedback>,
+    ) -> Option<SendId> {
+        let queued = deliveries.queue.len();
+        deliveries
+            .queue
+            .retain(|delivery| !carries(delivery.pending.as_ref(), &self.live));
+        let withdrawn = deliveries.queue.len() < queued
+            || feedback.is_some_and(|feedback| feedback.withdraw(&self.live));
+        withdrawn.then_some(self.last)
     }
 }
 
@@ -204,28 +284,18 @@ fn enter() -> ClientPaneInputEvent {
     }
 }
 
-/// Only Unix has a control listener that can collect feedback. Elsewhere,
-/// return the text for the caller to copy together with other fallback batches.
-fn keep_or_copy(
+/// Keeps notes no agent took for the agent to collect with `browser feedback`.
+fn keep_for_feedback(
     batch: crate::browser::Batch,
     pending: Option<Arc<()>>,
     reason: &str,
     cx: &mut App,
 ) -> (Flash, Delivered) {
-    if cfg!(unix) {
-        cx.default_global::<Feedback>().keep(batch, pending);
-        (
-            Flash::warning(format!("{reason}; notes kept for `browser feedback`")),
-            Delivered::Kept,
-        )
-    } else {
-        (
-            Flash::warning(format!(
-                "{reason}; notes copied (browser feedback is unavailable)"
-            )),
-            Delivered::Copy(batch.text),
-        )
-    }
+    cx.default_global::<Feedback>().keep(batch, pending);
+    (
+        Flash::warning(format!("{reason}; notes kept for `browser feedback`")),
+        Delivered::Kept,
+    )
 }
 
 impl HerdrWindow {
@@ -249,10 +319,9 @@ impl HerdrWindow {
             );
             return Delivered::Copy(text);
         };
-        let waiting = cfg!(unix)
-            && cx
-                .try_global::<Feedback>()
-                .is_some_and(|feedback| feedback.is_waiting(&target));
+        let waiting = cx
+            .try_global::<Feedback>()
+            .is_some_and(|feedback| feedback.is_waiting(&target));
         let here = crate::browser::scope(&self.endpoints[self.selected_endpoint]) == target.scope;
         let snapshot = self.live.snapshot.clone();
         let shown = snapshot.as_deref().filter(|snapshot| {
@@ -297,7 +366,7 @@ impl HerdrWindow {
             (flash, Delivered::Agent)
         } else if shown.is_some() {
             // A shell, not an agent: Enter there would run the notes.
-            keep_or_copy(
+            keep_for_feedback(
                 crate::browser::Batch { target, text },
                 pending,
                 "No agent runs in that pane",
@@ -306,7 +375,7 @@ impl HerdrWindow {
         } else {
             // Kept notes are keyed by their daemon, so they wait for the
             // agent there even when this window shows another one.
-            keep_or_copy(
+            keep_for_feedback(
                 crate::browser::Batch { target, text },
                 pending,
                 "The agent's pane is not here",
@@ -351,7 +420,6 @@ impl HerdrWindow {
     /// Delivers notes a control request sent, if this window shows the
     /// caller's pane on its selected endpoint, the only one it types into.
     /// `None` leaves them to another window, or to the request to keep.
-    #[cfg(unix)]
     pub(crate) fn deliver_requested_notes(
         &mut self,
         target: &crate::control::Target<'_>,
@@ -396,6 +464,7 @@ impl HerdrWindow {
         }
         let now = Instant::now();
         let deliveries = std::mem::take(&mut self.deliveries.queue);
+        let queued = deliveries.len();
         let mut copied = Vec::new();
         let mut stale = false;
         for delivery in deliveries {
@@ -407,10 +476,9 @@ impl HerdrWindow {
                 stale = true;
                 continue;
             }
-            let waiting = cfg!(unix)
-                && cx
-                    .try_global::<Feedback>()
-                    .is_some_and(|feedback| feedback.is_waiting(&delivery.target));
+            let waiting = cx
+                .try_global::<Feedback>()
+                .is_some_and(|feedback| feedback.is_waiting(&delivery.target));
             let snapshot = self.live.snapshot.clone();
             let present = snapshot.as_deref().filter(|snapshot| {
                 snapshot.boot_id == delivery.origin.boot_id
@@ -440,7 +508,7 @@ impl HerdrWindow {
                 if waiting && present.is_some() {
                     self.request_reveal(delivery.origin.clone(), &delivery.target.pane_id);
                 }
-                let (flash, delivered) = keep_or_copy(
+                let (flash, delivered) = keep_for_feedback(
                     crate::browser::Batch {
                         target: delivery.target,
                         text: delivery.text,
@@ -472,6 +540,10 @@ impl HerdrWindow {
                 cx,
             );
         }
+        // A tab shows its batch as queued until it leaves.
+        if self.deliveries.queue.len() < queued {
+            cx.notify();
+        }
     }
 
     fn paste_into_pane(&mut self, delivery: Delivery, cx: &mut Context<Self>) -> Option<String> {
@@ -492,7 +564,7 @@ impl HerdrWindow {
             });
         if let Err(error) = pasted {
             tracing::warn!(%error, "Could not paste notes into the agent's pane");
-            let (flash, delivered) = keep_or_copy(
+            let (flash, delivered) = keep_for_feedback(
                 crate::browser::Batch {
                     target: delivery.target,
                     text: delivery.text,

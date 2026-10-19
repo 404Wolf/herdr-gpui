@@ -29,6 +29,7 @@ pub(super) fn defaults(command: Command) -> &'static [&'static str] {
         AnnotateSelection => &["cmd-shift-a"],
         ClosePane => &["cmd-w"],
         CloseTab => &["cmd-shift-w"],
+        ReopenClosedTab => &["cmd-shift-t"],
         TabNumber(1) => &["cmd-1"],
         TabNumber(2) => &["cmd-2"],
         TabNumber(3) => &["cmd-3"],
@@ -39,6 +40,9 @@ pub(super) fn defaults(command: Command) -> &'static [&'static str] {
         TabNumber(8) => &["cmd-8"],
         TabNumber(9) => &["cmd-9"],
         ToggleSidebar => &["cmd-b"],
+        // F6 alone is Windows' region key; on a Mac it stays the app's.
+        FocusNextRegion => &["cmd-f6"],
+        FocusPreviousRegion => &["cmd-shift-f6"],
         ToggleZenMode => &["ctrl-cmd-z"],
         IncreaseFontSize => &["cmd-=", "cmd-+"],
         DecreaseFontSize => &["cmd--"],

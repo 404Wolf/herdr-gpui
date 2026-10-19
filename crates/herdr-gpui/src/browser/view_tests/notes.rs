@@ -3,6 +3,7 @@ use super::*;
 mod page_editing;
 mod pending_send;
 mod resend;
+mod withdraw;
 
 const PICK: &str = r##"{"kind":"pick","target":{"kind":"element","selector":"#save","tag":"button","text":"Save","html":"<button id=\"save\">Save</button>"}}"##;
 
@@ -90,17 +91,8 @@ fn recipient(view: &Entity<HerdrWindow>, cx: &VisualTestContext) -> crate::brows
 fn kept(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) -> Option<String> {
     let target = recipient(view, cx);
     cx.update(|_, cx| {
-        if cfg!(unix) {
-            cx.default_global::<crate::browser::Feedback>()
-                .take(&target)
-        } else {
-            let text = cx
-                .read_from_clipboard()
-                .and_then(|item| item.text())
-                .filter(|text| !text.is_empty());
-            cx.write_to_clipboard(gpui::ClipboardItem::new_string(String::new()));
-            text
-        }
+        cx.default_global::<crate::browser::Feedback>()
+            .take(&target)
     })
 }
 

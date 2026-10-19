@@ -1,13 +1,14 @@
 # Orchestrator
 
-The Orchestrator tab (`crates/herdr-gpui/src/orchestrator/`) lists a
-repository's issues, pull requests, and the agent runs dispatched for them,
-and dispatches new ones through the Herdr CLI. User-facing behavior is in the
-crate README's "Orchestrator" section; this page is for working on it.
+The orchestrator (`crates/herdr-gpui/src/orchestrator/`) lists a repository's
+issues, pull requests, and the agent runs dispatched for them in the activity
+bar's Pull requests and Issues sections, and dispatches new ones through the
+Herdr CLI. User-facing behavior is in the crate README's "Orchestrator"
+section; this page is for working on it.
 
 ## Shared state with agent-launcher
 
-The tab reads and writes agent-launcher's per-repository SQLite database, so
+The orchestrator reads and writes agent-launcher's per-repository SQLite database, so
 both applications can run against one repository at once. agent-launcher's
 `docs/shared-state.md` is the contract: the file's location, the schema
 version (`PRAGMA user_version`, currently 1), key formats, JSON column shapes,
@@ -34,18 +35,19 @@ agent-launcher wrote it and check that migration keeps its rows.
 | --- | --- |
 | `model.rs`, `location.rs`, `store.rs` | Records in the database's shapes, its path, and SQLite access. |
 | `repo.rs` | Finding a checkout's repository, main checkout, Beads, and remote on its host. |
-| `github.rs`, `beads.rs` | The sources: a full listing each. GitHub reads only what changed since the last sync, with a full listing again every 30 minutes. |
+| `github.rs`, `gitlab.rs`, `beads.rs` | The sources: a full listing each. GitHub reads only what changed since the last sync, with a full listing again every 30 minutes; GitLab lists its open issues in full on every sync. |
+| `review.rs` | Each open pull request's review decision, review requests, and checks, read after every GitHub sync and kept in the snapshot only: they change with every CI run, and the database's rows are agent-launcher's contract. |
 | `service.rs` | The worker thread per open view: sync, reload, and the action queue. |
 | `actions.rs` | Dispatch, stop, send, remove, delete: each on its own thread. |
 | `prompt.rs` | Prompt profiles, agent-launcher's built-in and review prompts. |
 | `naming.rs` | agent-launcher's branch names, and runs found from branches. |
-| `view/` | The view entity: inbox, preview, item pages, dialogs. Pure row logic is in `view/rows.rs`. |
-| `tab.rs` | Hosting the view in a tab: opening, restoring, the tick, and events. |
-| `window.rs` | Hosting the same view in a window of its own, still fed from the main window's tick. |
+| `view/` | The view entity: the list of every repository (`view/repo.rs` keeps each one's worker, snapshot, and rows; an item's page and actions go to its own), the backend and project pills, filters, the item pane, dialogs. Pure row, merge, and grouping logic is in `view/rows.rs`. |
+| `host.rs` | The window's one view and the repositories it lists, one per Git common directory per host across every connected host's workspaces: the tick that feeds it, and its events. |
+| `section.rs` | The Pull requests and Issues sections, and the commands that open them narrowed to a project. |
 
 The view is a GPUI entity that talks to its host only through `Event`s and
-setters (`set_look`, `set_live`, `set_github`, `set_hosts`), so a tab or a
-window of its own can host it. Nothing in it blocks: the worker does every disk, network, and host
+setters (`set_look`, `set_live`, `set_github`, `set_hosts`). Tabs hosted it
+before the activity bar; tabs saved by those builds are dropped on load. Nothing in it blocks: the worker does every disk, network, and host
 script call, and the UI reads the newest `Snapshot` from a coalescing mailbox.
 
 Live agent status comes from each connected host's Herdr snapshot, matched to
@@ -74,17 +76,29 @@ Each becomes a run owned by `branch`, shown like any other but never written,
 and only when no recorded run already has that branch. It opens its workspace;
 it has no Stop, Send, or Remove, since no application owns it.
 
-## Adding GitLab
+## GitLab
 
-`Provider::Gitlab` already exists, so agent-launcher's GitLab rows decode, and
-`repo::parse_remote_url` recognizes GitLab remotes. To list them:
+`gitlab.rs` lists a GitLab project's open issues through the REST API
+(`/api/v4/projects/<escaped path>/issues`), on gitlab.com or a self-managed
+host, in agent-launcher's GitLab row format: `native_id` is the issue's
+project `iid`. The API is reached over HTTPS, or over HTTP when the remote's
+own URL is `http://`; the shared source key names only the host, so the scheme
+is read from the remote each time. A token is sent only over HTTPS: over HTTP
+the read is anonymous, and a project that is not public asks for an
+`https://` remote. Pages follow a cursor on creation time
+(`order_by=created_at`, `created_after`), which edits and closes cannot shift. Each sync is a complete listing of at most 2,000 issues, so it
+may replace the cache; a larger project is shown and not written, as GitHub's
+is.
 
-1. Add `gitlab.rs` returning a complete listing in agent-launcher's GitLab row
-   format (its `crates/issues/src/gitlab.rs` is the reference for fields and
-   `native_id`).
-2. Handle `Provider::Gitlab` in `service::Worker::sync_source`, and mark it
-   supported in `service::sources`.
-3. Decide where its token comes from; herdr-gpui has no GitLab sign-in yet.
+Its token is looked up once per view on the worker, and again on Refresh:
 
-Merge requests would also need `PullRequest`-like metadata in the shared
-schema, which is a contract change for both applications.
+1. `GITLAB_TOKEN`, then `GITLAB_ACCESS_TOKEN`, only for the host `GITLAB_HOST`
+   names (gitlab.com when unset), so a gitlab.com token never reaches another
+   host;
+2. else `glab config get token --host <host>`, the GitLab CLI's own sign-in,
+   with its environment tokens removed and the shared bounded process policy;
+3. else none: public projects still list, and a private one asks for a token.
+
+Merge requests are not listed yet. They would need `PullRequest`-like
+metadata in the shared schema, which is a contract change for both
+applications, and herdr-gpui has no native GitLab sign-in.

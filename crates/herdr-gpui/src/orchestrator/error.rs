@@ -50,6 +50,13 @@ pub enum Error {
         #[source]
         source: herdr_client::Error,
     },
+    /// Reading a local repository with gix.
+    #[error("{operation} failed: {source}")]
+    Git {
+        operation: &'static str,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
     #[error("{operation} returned unexpected output")]
     Output { operation: &'static str },
     #[error("{operation} returned invalid JSON: {source}")]
@@ -73,6 +80,8 @@ pub enum Error {
     /// Shown as GitHub's own failure, which already names GitHub and why.
     #[error("{0}")]
     Github(#[source] Box<crate::Error>),
+    #[error(transparent)]
+    Gitlab(#[from] super::gitlab::Error),
     #[error("Cancelled")]
     Cancelled,
     #[error("Could not start the orchestrator's worker: {0}")]

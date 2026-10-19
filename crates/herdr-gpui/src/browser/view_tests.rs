@@ -55,15 +55,18 @@ mod page_results;
 mod middle_click;
 
 /// Pages a control request opens, only in a workspace the window shows.
-#[cfg(unix)]
 mod requests;
 
 /// Notes a control request sends, only to a pane the window shows.
-#[cfg(unix)]
 mod requested_notes;
 
 /// Browser tabs in a group's strip: reordering and growing in.
 mod tab_strip;
+
+/// Next Tab, Previous Tab, and tabs by number step through pages too. Needs
+/// a build that shows pages: elsewhere a new tab opens nothing.
+#[cfg(any(target_os = "macos", windows))]
+mod tab_steps;
 
 /// The VS Code tab's server checks. No native page is created, so this
 /// runs on every platform, except the checks only builds that show pages
@@ -88,18 +91,23 @@ mod code_folder;
 #[cfg(any(target_os = "macos", windows))]
 mod code_start;
 
-/// Pages step aside under the status bar's tooltips; only builds that show
-/// pages have any.
-#[cfg(any(target_os = "macos", windows))]
+/// Pages hide under the status bar's tooltips where they draw above the
+/// window, which only Windows does.
+#[cfg(windows)]
 mod status_tooltip;
 
-/// Pages step aside for toasts and the file-transfer card, which they
-/// would hide; only builds that show pages have any.
-#[cfg(any(target_os = "macos", windows))]
+/// Pages hide under toasts and the file-transfer card where they draw above
+/// the window, which only Windows does.
+#[cfg(windows)]
 mod overlays;
 
 /// What closing a workspace does to its browser tabs.
 mod workspace_close;
+
+/// The font size keys zoom a browser tab's page. Only builds that show
+/// pages open a browser tab.
+#[cfg(any(target_os = "macos", windows))]
+mod zoom;
 
 /// Terminal padding beside a page; only builds that show pages open one.
 #[cfg(any(target_os = "macos", windows))]

@@ -191,7 +191,13 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) {
         self.shift_taps.cancel();
-        if self.menu.page.is_some() || !self.input_ready() {
+        if self.menu.page.is_some() {
+            return;
+        }
+        // A wheel over the panes is use even before the frame is ready, so the
+        // window takes back a frame another client sized.
+        self.note_input();
+        if !self.input_ready() {
             return;
         }
         let (Some(handle), Some(snapshot), Some(surface)) = (
@@ -327,12 +333,12 @@ impl HerdrWindow {
             window.prevent_default();
             return;
         }
-        // Cmd-A, or Ctrl-Shift-A on Linux, where plain Ctrl-A stays the
-        // pane's, selects the focused pane's history and screen.
+        // Cmd-A, or Ctrl-Shift-A on Linux and Windows, where plain Ctrl-A
+        // stays the pane's, selects the focused pane's history and screen.
         let select_all = if modifiers.platform {
             !modifiers.control && !modifiers.shift
         } else {
-            cfg!(target_os = "linux") && modifiers.control && modifiers.shift
+            crate::controls::CTRL_SHORTCUTS && modifiers.control && modifiers.shift
         };
         if event.keystroke.key.eq_ignore_ascii_case("a")
             && select_all

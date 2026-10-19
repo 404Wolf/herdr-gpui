@@ -60,15 +60,16 @@ fn theme_grid_scroll_does_not_move_settings_page(cx: &mut TestAppContext) {
         assert_eq!(back[0], before[0]);
         assert!(back[1].y > after[1].y, "theme grid did not scroll back");
 
-        // Outside the grid, the page must still scroll normally.
+        // Outside the grid, the page must still scroll normally. The page ends
+        // at the grid, so it scrolls back up.
         let body = cx.debug_bounds("settings-body").unwrap();
         scroll(
             cx,
             point(body.left() + px(10.), body.center().y),
-            ScrollDelta::Pixels(point(px(0.), px(-40.))),
+            ScrollDelta::Pixels(point(px(0.), px(40.))),
         );
         let outside = offsets(&view, cx);
-        assert!(outside[0].y < back[0].y);
+        assert!(outside[0].y > back[0].y);
         assert_eq!(outside[1], back[1]);
     }
 }

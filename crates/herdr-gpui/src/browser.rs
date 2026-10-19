@@ -1,16 +1,20 @@
 //! Browser tabs: web pages shown in place of the terminal, or beside it in
 //! another editor group, next to a workspace's Herdr tabs. Herdr panes are always
 //! terminals, so these tabs belong to this client alone; the daemon and its
-//! other clients never see them. Pages are native web views drawn above the window, which is why the
-//! window hides them whenever one of its own overlays is open. Each workspace
-//! may also show VS Code in a panel to the right of its groups, or as a tab
-//! in its groups.
+//! other clients never see them. Pages are native web views. On macOS they lie
+//! beneath the window's own drawing, so its menus and toasts show over them;
+//! on Windows they lie above it, so the window hides a page that one of its
+//! overlays reaches. Each workspace may also show VS Code in a panel to the
+//! right of its groups, or as a tab in its groups.
 
 #[cfg(any(target_os = "macos", windows, test))]
 mod annotate;
 // Linux builds show no pages, so there is nothing to annotate there.
 #[cfg(any(target_os = "macos", windows))]
 mod annotate_view;
+#[cfg(windows)]
+mod building;
+mod closed;
 mod code;
 mod code_group;
 mod code_start;
@@ -30,6 +34,8 @@ mod location;
 mod markdown;
 #[cfg(any(target_os = "macos", windows))]
 mod native;
+#[cfg(any(target_os = "macos", windows))]
+mod page;
 #[cfg(target_os = "macos")]
 mod page_keys;
 #[cfg(target_os = "macos")]
@@ -40,17 +46,22 @@ mod popup;
 mod preview;
 #[cfg(target_os = "macos")]
 mod snapshot;
+#[cfg(target_os = "macos")]
+mod stacking;
 mod store;
 mod tab_appear;
 mod tab_scroll;
+#[cfg(target_os = "macos")]
+mod underlay;
 mod view;
 #[cfg(test)]
 mod view_tests;
+mod zoom;
 
 #[cfg(any(target_os = "macos", windows))]
 pub(crate) use annotate_view::Annotations;
+pub(crate) use closed::ClosedHerdrTab;
 pub(crate) use feedback::{Batch, Feedback, FeedbackKey};
-#[cfg(unix)]
 pub(crate) use feedback::{TAKE_BUDGET, json_size};
 pub(crate) use group_motion::Fold;
 #[cfg(test)]
@@ -62,13 +73,20 @@ pub(crate) use location::PostedFrom;
 pub(crate) use location::{LocalFile, Location, OrchestratorRepo, ReviewCheckout};
 #[cfg(any(target_os = "macos", windows))]
 pub(crate) use native::Pages;
+#[cfg(target_os = "macos")]
+pub(crate) use page_keys::bind as bind_page_keys;
 /// A page screenshot as PNG, for `browser screenshot`.
 #[cfg(target_os = "macos")]
 pub(crate) use snapshot::png as page_png;
 pub(crate) use store::{Scope, Store, Tab, TabId};
 pub(crate) use tab_appear::{Leaving, Listed};
 pub(crate) use tab_scroll::{Thumb, ThumbDrag};
+#[cfg(target_os = "macos")]
+pub(crate) use underlay::{
+    AroundPages, ground as ground_around_pages, picture as picture_around_pages,
+};
 pub(crate) use view::{Browser, PageOpened, scope};
+pub(crate) use zoom::Zoom;
 
 /// Whether this build can show a page inside the window. Elsewhere a browser
 /// tab request opens the system browser instead.

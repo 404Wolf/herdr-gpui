@@ -19,6 +19,7 @@ use std::{
     rc::Rc,
 };
 
+mod base_menu;
 mod colours;
 pub(crate) use rows::code as styled_code;
 mod file_rows;
@@ -117,6 +118,11 @@ pub(crate) struct Review {
     scope: Scope,
     layout: Layout,
     ignore_whitespace: bool,
+    /// The branch's ref a branch review is compared with, as the user
+    /// picked it; None leaves the choice to the pull request and the remote.
+    base: Option<String>,
+    /// The list of branches to pick the base from, while it is open.
+    base_menu: Option<base_menu::BaseMenu>,
     /// The share of a side-by-side row the old side takes.
     split_ratio: f32,
     agent: Option<Agent>,
@@ -302,14 +308,21 @@ impl HerdrWindow {
         review.state = State::Loading;
         review.draft = None;
         review.seen = status;
-        let (request, checkout, scope, whitespace) = (
+        let (request, checkout, scope, base, whitespace) = (
             review.request,
             review.checkout.clone(),
             review.scope,
+            review.base.clone(),
             review.ignore_whitespace,
         );
         let loading = cx.background_executor().spawn(async move {
-            super::diff::load(&checkout, scope, base_hint.as_deref(), whitespace)
+            super::diff::load(
+                &checkout,
+                scope,
+                base.as_deref(),
+                base_hint.as_deref(),
+                whitespace,
+            )
         });
         cx.spawn(async move |this, cx| {
             let result = loading.await;
@@ -505,7 +518,7 @@ impl HerdrWindow {
             if let Some(review) = self.reviews.get_mut(&id) {
                 if let Some(note) = review.notes.get_mut(index) {
                     note.comment = edited.comment;
-                    note.sent = false;
+                    note.sent = None;
                 }
                 review.editing = None;
                 review.input.update(cx, |input, cx| input.clear(cx));
@@ -582,7 +595,7 @@ impl HerdrWindow {
     /// Removes the notes the agent already has, ending that round.
     fn clear_sent_review_notes(&mut self, id: TabId, cx: &mut Context<Self>) {
         if let Some(review) = self.reviews.get_mut(&id) {
-            review.notes.retain(|note| !note.sent);
+            review.notes.retain(|note| note.sent.is_none());
             review.editing = None;
             review.refresh_marks();
         }
@@ -597,7 +610,8 @@ impl HerdrWindow {
         if review.notes.is_empty() {
             return None;
         }
-        let indexes = crate::agent_notes::round(review.notes.iter().map(|note| note.sent));
+        let indexes =
+            crate::agent_notes::round(review.notes.iter().map(|note| note.sent.is_some()));
         let round: Vec<Note> = indexes
             .iter()
             .map(|&index| review.notes[index].clone())
@@ -614,7 +628,7 @@ impl HerdrWindow {
         let Some((text, indexes, pane)) = self.review_prompt(id) else {
             return;
         };
-        let Some(pending) = self
+        let Some((send, pending)) = self
             .reviews
             .get_mut(&id)
             .and_then(|review| review.sending.start())
@@ -628,7 +642,7 @@ impl HerdrWindow {
         if let Some(review) = self.reviews.get_mut(&id) {
             for index in indexes {
                 if let Some(note) = review.notes.get_mut(index) {
-                    note.sent = true;
+                    note.sent = Some(send);
                 }
             }
         }
@@ -642,6 +656,29 @@ impl HerdrWindow {
         {
             cx.write_to_clipboard(ClipboardItem::new_string(text));
         }
+        cx.notify();
+    }
+
+    /// Takes back the batch still waiting for the agent, marking its notes
+    /// unsent so the next Send carries them again.
+    fn withdraw_review(&mut self, id: TabId, cx: &mut Context<Self>) {
+        let Some(review) = self.reviews.get_mut(&id) else {
+            return;
+        };
+        let feedback = cx.default_global::<crate::browser::Feedback>();
+        let Some(send) = review
+            .sending
+            .withdraw(&mut self.deliveries, Some(feedback))
+        else {
+            self.show_flash(Flash::warning("The agent already has those notes"), cx);
+            return;
+        };
+        for note in &mut review.notes {
+            if note.sent == Some(send) {
+                note.sent = None;
+            }
+        }
+        self.show_flash(Flash::success("Notes withdrawn"), cx);
         cx.notify();
     }
 

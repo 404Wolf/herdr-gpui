@@ -20,7 +20,7 @@ fn pending_review_notes_are_sent_once_and_resend_after_collection(cx: &mut gpui:
             input.update(cx, |input, cx| input.set_text_selected("Edited once.", cx));
             view.add_review_note(the(view), window, cx);
             view.send_review(the(view), cx);
-            assert!(!view.reviews[&the(view)].notes[0].sent);
+            assert!(view.reviews[&the(view)].notes[0].sent.is_none());
             assert_eq!(view.deliveries.len(), 1);
             let mut shown = (**view.live.snapshot.as_ref().unwrap()).clone();
             shown.agents[0].agent_status = herdr_client::protocol::AgentStatus::Idle;
@@ -28,10 +28,8 @@ fn pending_review_notes_are_sent_once_and_resend_after_collection(cx: &mut gpui:
             view.poll_deliveries(cx);
             assert_eq!(view.deliveries.len(), 0);
             // Failed paste hands the pending batch to feedback, still once.
-            if cfg!(unix) {
-                view.send_review(the(view), cx);
-                assert_eq!(view.deliveries.len(), 0);
-            }
+            view.send_review(the(view), cx);
+            assert_eq!(view.deliveries.len(), 0);
         });
     });
     let original = kept(&view, cx).unwrap();

@@ -27,6 +27,31 @@ to package `Herdr.icns`. It also compiles `Herdr.car` (see below) and
 regenerates the PNG exports.
 Assets are checked in, so ordinary builds do not require Swift, librsvg, or Xcode.
 
+### GitHub App
+
+Upload `herdr-github-app.png` for the GitHub App logo. This 1024x1024 PNG
+uses a centered, redrawn ram head with transparent cutouts and no tile or cropped
+body. Set GitHub's badge background color to `#f4f1e9` (ivory) or `#ffffff`
+(white) for contrast with the graphite mark.
+
+The editable source is `herdr-github-app.svg`. Regenerate the upload with:
+
+```sh
+rsvg-convert -w 1024 -h 1024 assets/icons/herdr-github-app.svg \
+  -o assets/icons/herdr-github-app.png
+```
+
+`herdr-github-app-200.png` is an alternative 200x200 upload, rendered directly
+from the vector source rather than resized from the larger PNG:
+
+```sh
+rsvg-convert -w 200 -h 200 assets/icons/herdr-github-app.svg \
+  -o assets/icons/herdr-github-app-200.png
+```
+
+GitHub controls thumbnail sizing; a crisp source does not guarantee that its
+badge preview will remain sharp when enlarged or viewed at browser zoom.
+
 ### Linux desktops
 
 The tarball, Debian, RPM, Arch, and Nix packages install the circular SVG at
@@ -64,6 +89,26 @@ gtk-update-icon-cache --force --ignore-theme-index ~/.local/share/icons/hicolor
 
 This user-local icon overrides the packaged icon. Remove that SVG when you want
 future artwork changes to come from package upgrades again, then refresh the cache.
+
+### Windows
+
+`Herdr.ico` holds the rounded tile at 16, 20, 24, 32, 40, 48, 64, and 256 px, each
+a PNG rendered from `herdr-ui-icon-clean.svg`. Linked-worktree builds use the red
+`Herdr-worktree.ico`, with the palette of the Linux worktree SVG. The build script
+(`crates/herdr-gpui/windows_resource.rs`) embeds it in the executable as icon
+resource 1, the one GPUI loads for its windows, so Explorer, the window, and the
+taskbar all show it. Building for Windows therefore needs a resource compiler:
+`rc.exe` from the Windows SDK for MSVC, or mingw's `windres` for the GNU target.
+
+Run `just icons-windows` to regenerate both files. It needs Python's standard
+library and `rsvg-convert` (`apt-get install librsvg2-bin` or
+`brew install librsvg`), so on Windows run it under WSL. `just icons` runs it too.
+
+The Inno Setup installer uses `Herdr.ico` as its own icon, and the same tile at
+each DPI scale for its pages: `windows/wizard-small-*.png` in every page's
+corner, and `windows/wizard-*.png` centered on the welcome and finish pages.
+`just icons-windows` regenerates those too, with
+`scripts/generate-installer-images.py` (`rsvg-convert` or `resvg`).
 
 ### macOS sizing
 
@@ -120,8 +165,8 @@ workspace menu alongside the original `pencil.svg` (rename), `trash.svg`
 (delete checkout) and `chevron-up.svg` / `chevron-down.svg` (fold and unfold a
 worktree group); `git-branch.svg` is original artwork for the titlebar's Git
 actions button; `sessions.svg` is original artwork for the sidebar footer's local
-session list; `teleport.svg` is original artwork for moving a worktree to
-another host, and `teleport-back.svg` its mirror for bringing it back; `zoom.svg` is original artwork marking a zoomed tab in the tab strip; `window-minimize.svg`, `window-maximize.svg`, and `window-restore.svg` are original artwork for the window buttons drawn on Linux when the compositor provides none, beside `close.svg`; `user.svg` is an
+session list; `file.svg` is original document-outline artwork for Settings' Configuration section; `teleport.svg` is original artwork for moving a worktree to
+another host, and `teleport-back.svg` its mirror for bringing it back; `zoom.svg` is original artwork marking a zoomed tab in the tab strip; `window-minimize.svg`, `window-maximize.svg`, and `window-restore.svg` are original artwork for the window buttons drawn on Linux when the compositor provides none, beside `close.svg`; `pull-request.svg` and `issue.svg` are original artwork for the activity bar's Pull requests and Issues panels, and `beads.svg` for items from Beads; `user.svg` is an
 original generic silhouette for the future account placeholder, not a personal
 identity or GitHub logo. All of them are embedded through a
 minimal GPUI asset source. GPUI renders them as SVG masks tinted with the current

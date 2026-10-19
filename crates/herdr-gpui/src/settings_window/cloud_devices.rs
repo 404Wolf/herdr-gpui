@@ -1,8 +1,10 @@
-//! Settings > Cloud Devices: one tab per cloud provider whose machines this
+//! Settings > Cloud devices: one tab per cloud provider whose machines this
 //! app uses as devices. Each provider's card keeps its own fields and account
 //! state; this section only switches between them, so another provider adds a
 //! tab and a card.
 
+#[cfg(feature = "azure")]
+mod azure;
 #[cfg(feature = "boat")]
 mod boat;
 #[cfg(feature = "coder")]
@@ -11,7 +13,10 @@ mod coder;
 mod daytona;
 #[cfg(feature = "railway")]
 mod railway;
+mod setup;
 
+#[cfg(feature = "azure")]
+pub(super) use azure::AzureCard;
 #[cfg(feature = "boat")]
 pub(super) use boat::BoatCard;
 #[cfg(feature = "coder")]
@@ -29,7 +34,7 @@ use crate::{
 };
 use gpui::{prelude::*, *};
 
-/// Open Settings > Cloud Devices, on `provider`'s tab when the device picker's
+/// Open Settings > Cloud devices, on `provider`'s tab when the device picker's
 /// row sets that provider up, or on the first tab for its general row.
 // Add Device records the request instead in unit tests.
 #[cfg_attr(test, allow(dead_code, unused_imports))]
@@ -81,7 +86,12 @@ fn input(
 /// Follow a reloaded config in a card's inputs: a field still showing what
 /// was loaded last takes the new value, and one the user has edited keeps the
 /// edit, so a later Save neither writes stale values back nor drops typing.
-#[cfg(any(feature = "boat", feature = "coder", feature = "daytona"))]
+#[cfg(any(
+    feature = "azure",
+    feature = "boat",
+    feature = "coder",
+    feature = "daytona"
+))]
 fn follow_config<const N: usize>(
     inputs: &[Entity<SearchInput>; N],
     previous: [&str; N],
@@ -101,11 +111,29 @@ fn follow_config<const N: usize>(
     }
 }
 
+/// A fingerprint of the cloud devices `window` lists, which changes when one
+/// is added or removed there, by the sidebar, a job, or auto-stop.
+fn cloud_devices(window: &crate::HerdrWindow) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for endpoint in &window.endpoints {
+        if matches!(
+            endpoint.connection.target,
+            herdr_client::ConnectTarget::Cloud { .. }
+        ) {
+            endpoint.id.hash(&mut hasher);
+        }
+    }
+    hasher.finish()
+}
+
 impl SettingsWindow {
     /// Build each provider's card on first view, then refresh what it reads.
     pub(super) fn open_cloud_devices(&mut self, cx: &mut Context<Self>) {
         for &provider in CloudProvider::ALL {
             match provider {
+                #[cfg(feature = "azure")]
+                CloudProvider::Azure => self.open_azure_card(cx),
                 #[cfg(feature = "boat")]
                 CloudProvider::Boat => self.open_boat_card(cx),
                 #[cfg(feature = "coder")]
@@ -123,6 +151,8 @@ impl SettingsWindow {
     pub(super) fn cloud_config_changed(&mut self, cx: &mut Context<Self>) {
         for &provider in CloudProvider::ALL {
             match provider {
+                #[cfg(feature = "azure")]
+                CloudProvider::Azure => self.azure_config_changed(cx),
                 #[cfg(feature = "boat")]
                 CloudProvider::Boat => self.boat_config_changed(cx),
                 #[cfg(feature = "coder")]
@@ -142,7 +172,20 @@ impl SettingsWindow {
         source: &Entity<crate::HerdrWindow>,
         cx: &mut Context<Self>,
     ) {
-        let finished = source.read(cx).cloud_jobs.finished();
+        let window = source.read(cx);
+        let devices = cloud_devices(window);
+        let jobs = &window.cloud_jobs;
+        let (finished, revision) = (jobs.finished(), jobs.revision());
+        if devices != self.cloud_devices_seen {
+            self.cloud_devices_seen = devices;
+            self.cloud_config_changed(cx);
+        }
+        if revision != self.cloud_jobs_drawn {
+            self.cloud_jobs_drawn = revision;
+            if self.section == super::Section::CloudDevices {
+                cx.notify();
+            }
+        }
         if finished == self.cloud_jobs_seen {
             return;
         }
@@ -173,6 +216,8 @@ impl SettingsWindow {
 
     pub(super) fn render_cloud_devices(&self, cx: &mut Context<Self>) -> Div {
         let card = match self.cloud_tab {
+            #[cfg(feature = "azure")]
+            CloudProvider::Azure => self.render_azure_card(cx),
             #[cfg(feature = "boat")]
             CloudProvider::Boat => self.render_boat_card(cx),
             #[cfg(feature = "coder")]
@@ -183,15 +228,19 @@ impl SettingsWindow {
             CloudProvider::Railway => self.render_railway_card(cx),
         };
         div()
+            .relative()
+            .debug_selector(|| "cloud-accounts".into())
             .flex()
             .flex_col()
-            .gap(px(24.))
+            .gap(px(16.))
             .min_w_0()
+            .child(super::search::track_bounds("cloud-accounts".into()))
             .when_some(crate::cloud::unavailable(), |section, reason| {
                 section.child(self.control_note(format!(
                     "{reason} Accounts can still be edited here for other systems."
                 )))
             })
+            .child(self.render_cloud_setup(cx))
             .when(CloudProvider::ALL.len() > 1, |section| {
                 section.child(self.cloud_tabs(cx))
             })
@@ -274,6 +323,34 @@ impl SettingsWindow {
     ) -> Div {
         let key = device.provider.key();
         let id = device.id.clone();
+        let remove = self
+            .cloud_button(
+                SharedString::from(format!("cloud-{key}-remove-{index}")),
+                "Remove",
+                ready,
+            )
+            .debug_selector(move || format!("cloud-{key}-remove-{index}"))
+            .when(ready, |button| {
+                button.on_click(cx.listener(move |this, _, _, cx| forget(this, id.clone(), cx)))
+            })
+            .into_any_element();
+        self.cloud_device_row_actions(device, detail, actions.into_iter().chain([remove]))
+    }
+
+    /// A saved device's label and `detail`, with `actions` at the end.
+    #[cfg(any(
+        feature = "azure",
+        feature = "boat",
+        feature = "coder",
+        feature = "daytona",
+        feature = "railway"
+    ))]
+    fn cloud_device_row_actions(
+        &self,
+        device: &crate::cloud::SavedDevice,
+        detail: String,
+        actions: impl IntoIterator<Item = AnyElement>,
+    ) -> Div {
         div()
             .flex()
             .items_center()
@@ -296,20 +373,7 @@ impl SettingsWindow {
                     .flex_none()
                     .items_center()
                     .gap(px(8.))
-                    .children(actions)
-                    .child(
-                        self.cloud_button(
-                            SharedString::from(format!("cloud-{key}-remove-{index}")),
-                            "Remove",
-                            ready,
-                        )
-                        .debug_selector(move || format!("cloud-{key}-remove-{index}"))
-                        .when(ready, |button| {
-                            button.on_click(
-                                cx.listener(move |this, _, _, cx| forget(this, id.clone(), cx)),
-                            )
-                        }),
-                    ),
+                    .children(actions),
             )
     }
 }

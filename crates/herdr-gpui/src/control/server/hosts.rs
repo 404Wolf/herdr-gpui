@@ -1,9 +1,10 @@
-//! `pr`, `host`, `cloud add`, `ports`, `usage`, and `system`: what the
+//! `pr`, `host`, `cloud add`, `ports`, `usage`, `system`, and `security`: what the
 //! window gathers about its hosts, read from the state it already keeps.
 //! Nothing here starts a lookup, a scan, or a sample of its own; a request
 //! answers from the latest one, and says why when there is none.
 mod ports;
 mod pr;
+mod security;
 
 #[cfg(test)]
 mod tests;
@@ -52,7 +53,11 @@ pub(super) fn serve(
         HostOp::OpenPort { port } => return ports::open(call.caller, port, incoming, watches, cx),
         HostOp::Usage => in_window(caller, cx, |view, _, _| usage(view, SystemTime::now())),
         HostOp::System => in_window(caller, cx, |view, _, _| system(view)),
+        HostOp::Security => in_window(caller, cx, |view, _, _| security::alerts(view)),
         HostOp::Cloud => cloud(caller, cx),
+        HostOp::CloudSetup { id } => {
+            in_free_window(caller, cx, |view, _, cx| cloud_setup(view, &id, cx))
+        }
     };
     incoming.respond(response);
 }
@@ -228,7 +233,7 @@ fn system(view: &HerdrWindow) -> Response {
     let host = view
         .endpoints
         .get(view.selected_endpoint)
-        .and_then(|endpoint| crate::usage::Host::of(&endpoint.connection.target));
+        .and_then(|endpoint| crate::usage::Host::load_of(&endpoint.connection.target));
     let Some(host) = host else {
         return Response::Host {
             reply: Reply::System {
@@ -281,12 +286,79 @@ fn cloud(caller: &Caller, cx: &mut App) -> Response {
         return Response::error(ErrorCode::NoWindow, "The window closed");
     };
     crate::settings_window::open_cloud(source, None, cx);
-    Response::done("Opened Settings at Cloud Devices; add a machine there")
+    Response::done("Opened Settings at Cloud devices; add a machine there")
 }
 
 #[cfg(not(feature = "cloud"))]
 fn cloud(caller: &Caller, cx: &mut App) -> Response {
     let _ = (caller, cx);
+    Response::error(ErrorCode::Unsupported, "This build has no cloud providers")
+}
+
+/// Runs a cloud device's setup script again. The device is named by its
+/// endpoint ID, the machine ID `cloud list` prints, or its label.
+#[cfg(feature = "cloud")]
+fn cloud_setup(
+    view: &mut HerdrWindow,
+    name: &str,
+    cx: &mut gpui::Context<HerdrWindow>,
+) -> Response {
+    use crate::cloud_setup::Error;
+    let cloud: Vec<_> = view
+        .endpoints
+        .iter()
+        .filter(|endpoint| {
+            matches!(
+                endpoint.connection.target,
+                herdr_client::ConnectTarget::Cloud { .. }
+            )
+        })
+        .collect();
+    let found = cloud
+        .iter()
+        .find(|endpoint| endpoint.id == name)
+        .or_else(|| {
+            cloud.iter().find(|endpoint| {
+                endpoint
+                    .id
+                    .split_once(':')
+                    .is_some_and(|(_, id)| id == name)
+            })
+        })
+        .or_else(|| {
+            cloud
+                .iter()
+                .find(|endpoint| endpoint.label.eq_ignore_ascii_case(name))
+        })
+        .map(|endpoint| (endpoint.id.clone(), endpoint.label.clone()));
+    let Some((id, label)) = found else {
+        return Response::error(
+            ErrorCode::NotFound,
+            format!("No cloud device is named {name}; `herdr-gpui cloud list` lists them"),
+        );
+    };
+    match view.rerun_cloud_setup(&id, cx) {
+        Ok(()) => Response::done(format!(
+            "Showing {label}; its setup script runs in a new tab once it connects"
+        )),
+        Err(crate::Error::CloudSetup(Error::NoDevice(_))) => Response::error(
+            ErrorCode::InvalidRequest,
+            format!("Cloud device {label} is turned off; turn it on in the sidebar first"),
+        ),
+        Err(error @ crate::Error::CloudSetup(Error::NoScript(_))) => {
+            Response::error(ErrorCode::InvalidRequest, error.to_string())
+        }
+        Err(error) => Response::error(ErrorCode::Failed, error.to_string()),
+    }
+}
+
+#[cfg(not(feature = "cloud"))]
+fn cloud_setup(
+    view: &mut HerdrWindow,
+    name: &str,
+    cx: &mut gpui::Context<HerdrWindow>,
+) -> Response {
+    let _ = (view, name, cx);
     Response::error(ErrorCode::Unsupported, "This build has no cloud providers")
 }
 

@@ -9,8 +9,10 @@ use crate::dialog_input::DialogInput;
 use gpui::{App, Entity, FocusHandle, Pixels, Point, ScrollHandle, Subscription};
 use herdr_client::protocol::ClientShellSnapshot;
 
-/// What an open menu covers, as its last frame laid it out: the window's
-/// native pages above GPUI would hide it, so the ones it covers step aside.
+/// What an open menu covers, as its last frame laid it out. Windows pages
+/// draw above GPUI and would hide it, so the ones it covers hide instead.
+/// Tests and native checks read it too, to find the menu in the window.
+#[cfg(any(windows, test, feature = "integration-test"))]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) enum Cover {
     /// Not laid out yet.
@@ -22,7 +24,7 @@ pub(crate) enum Cover {
     Panel(gpui::Bounds<Pixels>),
 }
 
-#[cfg(any(target_os = "macos", windows, test))]
+#[cfg(any(windows, test))]
 impl Cover {
     /// Whether a page drawn at `page` would hide this menu. Before the menu
     /// is laid out nothing is, so pages keep showing for that one frame.
@@ -36,7 +38,7 @@ impl Cover {
 
     /// This cover if it was measured for `open`, the page open now; one
     /// measured for another page is stale until this one is laid out.
-    #[cfg(any(target_os = "macos", windows))]
+    #[cfg(windows)]
     pub(crate) fn settled(self, measured_for: Option<Page>, open: Option<Page>) -> Self {
         if measured_for == open {
             self
@@ -50,7 +52,8 @@ pub(crate) struct MenuState {
     pub page: Option<Page>,
     pub(crate) application: Option<crate::menus::in_window::OpenMenu>,
     pub(crate) application_bar: crate::menus::in_window::Geometry,
-    /// Written by the menu's layout, read when presenting pages.
+    /// Written by the menu's layout, read when presenting Windows pages.
+    #[cfg(any(windows, test, feature = "integration-test"))]
     pub(crate) cover: std::rc::Rc<std::cell::Cell<Cover>>,
     pub(super) device_setup: Option<super::devices::Setup>,
     /// The provider whose Settings tab Add Device last asked for. Unit tests
@@ -61,6 +64,8 @@ pub(crate) struct MenuState {
     /// The saved distribution the removal confirmation names.
     pub(super) wsl_remove: Option<String>,
     pub(super) session_edit: Option<super::sessions::Edit>,
+    /// The folder the open-checkout question is about.
+    pub(super) open_checkout: Option<std::path::PathBuf>,
     /// The address the open-link question is about.
     pub(super) open_link: Option<crate::terminal::ExternalUrl>,
     #[cfg(feature = "coder")]
@@ -133,6 +138,8 @@ pub(crate) struct MenuState {
     pub(super) github_adding: Option<String>,
     /// The pasted-token field, while the GitHub page shows it.
     pub(super) github_token: Option<Entity<crate::search_input::SearchInput>>,
+    /// Logins this window already toasted as waiting on GitHub App approval.
+    pub(super) github_toasted: std::collections::HashSet<String>,
     /// Saved devices whose removal is running, by endpoint ID. Kept after
     /// success until the catalog drops the device, so its header pulses
     /// until it disappears; the confirmation closes as soon as it starts.
@@ -300,6 +307,7 @@ impl MenuState {
             page: None,
             application: None,
             application_bar: Default::default(),
+            #[cfg(any(windows, test, feature = "integration-test"))]
             cover: Default::default(),
             device_setup: None,
             #[cfg(all(test, feature = "cloud"))]
@@ -307,6 +315,7 @@ impl MenuState {
             wsl_setup: None,
             wsl_remove: None,
             session_edit: None,
+            open_checkout: None,
             open_link: None,
             #[cfg(feature = "coder")]
             coder: None,
@@ -355,6 +364,7 @@ impl MenuState {
             github_account: None,
             github_adding: None,
             github_token: None,
+            github_toasted: Default::default(),
             removing_devices: Default::default(),
             github_selected: None,
             github_scroll: ScrollHandle::new(),
@@ -371,11 +381,13 @@ impl MenuState {
 
     pub fn reset(&mut self) {
         self.application = None;
+        #[cfg(any(windows, test, feature = "integration-test"))]
         self.cover.set(Cover::Unknown);
         self.device_setup = None;
         self.wsl_setup = None;
         self.wsl_remove = None;
         self.session_edit = None;
+        self.open_checkout = None;
         self.open_link = None;
         #[cfg(feature = "coder")]
         {

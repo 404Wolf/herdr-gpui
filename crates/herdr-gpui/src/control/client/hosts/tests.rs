@@ -1,5 +1,7 @@
 #![allow(clippy::unwrap_used)]
 use super::text;
+
+mod security;
 use crate::control::protocol::{
     app::HostInfo,
     hosts::{
@@ -197,4 +199,10 @@ fn cloud_machines_read_one_per_line() {
         "Daytona Sandbox (abc, team) session default, turned off"
     );
     assert!(text(&[]).contains("cloud add"));
+}
+
+#[test]
+fn cloud_help_describes_running_setup_again() {
+    let help = super::super::help::usage(Some("cloud"));
+    assert!(help.contains("herdr-gpui cloud setup ID"), "{help}");
 }

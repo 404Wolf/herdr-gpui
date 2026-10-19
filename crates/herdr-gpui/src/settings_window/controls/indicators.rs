@@ -1,183 +1,69 @@
-//! Settings > Indicators: Herdr's shared dots or symbols, or one of this
-//! client's drawn icon sets, which only Herdr UI shows.
+//! Agent status indicators: which of this client's sets draws status, and
+//! the edge rail. The Indicators page renders the choice; this keeps how a
+//! pick is saved.
 use super::*;
 use crate::config::{StatusIcons, preferences::Preference};
-use herdr_client::protocol::AgentStatus;
 
-const STATUSES: [(AgentStatus, &str, &str); 5] = [
-    (AgentStatus::Working, "Working", "\u{25d0}"),
-    (AgentStatus::Blocked, "Blocked", "\u{d7}"),
-    (AgentStatus::Done, "Done", "\u{2713}"),
-    (AgentStatus::Idle, "Idle", "\u{25cb}"),
-    (AgentStatus::Unknown, "Unknown", "\u{b7}"),
-];
+/// The name the Indicators page gives a set.
+pub(in crate::settings_window) fn set_label(icons: StatusIcons) -> &'static str {
+    match icons {
+        StatusIcons::Dots => "Dots",
+        StatusIcons::Solid => "Solid",
+        StatusIcons::Outline => "Outline",
+        StatusIcons::Tiles => "Tiles",
+        StatusIcons::Wave => "Wave",
+        StatusIcons::Braille => "Braille",
+        StatusIcons::Orca => "Orca",
+    }
+}
+
+/// One line on what sets a set apart, under its preview.
+pub(in crate::settings_window) fn set_description(icons: StatusIcons) -> &'static str {
+    match icons {
+        StatusIcons::Dots => "Small dots; a ring with a turning arc while working.",
+        StatusIcons::Solid => "Filled discs with a cut-out mark; a crescent when idle.",
+        StatusIcons::Outline => "The same marks in outline, with an open arc spinning.",
+        StatusIcons::Tiles => "Each mark on a tile tinted with its status color.",
+        StatusIcons::Wave => "Superset's wave grid; every status drawn in its cells.",
+        StatusIcons::Braille => "Braille cells; blocked fills and empties dot by dot.",
+        StatusIcons::Orca => "Orca's stepping ring, question bubble, and ringed check.",
+    }
+}
 
 impl SettingsWindow {
-    pub(super) fn render_indicator_controls(&self, cx: &mut Context<Self>) -> Div {
-        let mut card = self.control_card("Agent status indicators");
-        let ready = self.controls_shared_ready();
-        let light = matches!(
-            cx.window_appearance(),
-            WindowAppearance::Light | WindowAppearance::VibrantLight
-        );
-        let icons = self.config.status_icons;
-        // Herdr's style as it applies now; Dots when its file is unreadable.
-        let herdr = self
-            .shared
-            .as_ref()
-            .map_or(IndicatorStyle::Dots, |shared| shared.indicators);
-        for (label, style) in [
-            ("Dots", IndicatorStyle::Dots),
-            ("Symbols", IndicatorStyle::Symbols),
-        ] {
-            let selected = icons.is_none() && self.shared.is_some() && herdr == style;
-            // Going back to the style Herdr already uses only drops this
-            // client's key, so it works where the shared file is read-only.
-            let enabled = ready || (icons.is_some() && herdr == style);
-            let id = format!("settings-indicators-{label}");
-            let mut choice = self
-                .control_choice(id.clone(), label, selected, enabled)
-                .debug_selector(move || id)
-                .flex()
-                .flex_col()
-                .gap(px(18.))
-                .when(enabled, |choice| {
-                    choice.on_click(
-                        cx.listener(move |this, _, _, cx| this.choose_herdr_indicators(style, cx)),
-                    )
-                });
-            if let Some(shared) = &self.shared {
-                let mut preview = div().flex().flex_wrap().gap(px(20.));
-                for (status, name, symbol) in STATUSES {
-                    let color = rgb(self.theme.ink(shared.status_color(status, light)));
-                    let mark = div()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .w(px(self.config.ui.size))
-                        .h(px(self.config.ui.line_height()))
-                        .when(style == IndicatorStyle::Symbols, |mark| {
-                            mark.text_color(color).child(symbol)
-                        })
-                        .when(style == IndicatorStyle::Dots, |mark| {
-                            mark.child(
-                                div()
-                                    .size(px(if status == AgentStatus::Unknown {
-                                        3.
-                                    } else {
-                                        7.
-                                    }))
-                                    .rounded_full()
-                                    .border_1()
-                                    .border_color(color)
-                                    .when(status != AgentStatus::Idle, |dot| dot.bg(color)),
-                            )
-                        });
-                    preview = preview.child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(6.))
-                            .child(mark)
-                            .child(name),
-                    );
-                }
-                choice = choice.child(preview);
-            }
-            card = card.child(choice);
-        }
-        for (label, choice_icons) in StatusIcons::ALL.map(|icons| (icon_label(icons), icons)) {
-            let indicators = crate::sidebar::Indicators::new(
-                self.shared.as_ref(),
-                Some(choice_icons),
-                light,
-                &self.theme,
-            );
-            let mut preview = div().flex().flex_wrap().gap(px(20.));
-            for (status, name, _) in STATUSES {
-                preview = preview.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .child(crate::sidebar::status_indicator(
-                            status,
-                            &self.config.ui,
-                            indicators,
-                        ))
-                        .child(name),
-                );
-            }
-            let id = format!("settings-indicators-{}", choice_icons.as_str());
-            card = card.child(
-                self.control_choice(id.clone(), label, icons == Some(choice_icons), true)
-                    .debug_selector(move || id)
-                    .flex()
-                    .flex_col()
-                    .gap(px(18.))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        if this.config.status_icons != Some(choice_icons) {
-                            this.save_preference(Preference::StatusIcons(Some(choice_icons)), cx);
-                        }
-                    }))
-                    .child(preview),
-            );
-        }
-        card.child(self.control_note(
-            "Solid, Tiles, and Edge rail are drawn by Herdr UI only and saved in its own \
-             config; Herdr's terminal client keeps its dots or symbols.",
-        ))
-    }
-
-    /// Picks Herdr's shared style, dropping this client's icons first so the
-    /// choice shows. Both writes run as one save, the local one first: a
-    /// failed shared write then still leaves Herdr's style in charge. The
-    /// shared file is written only when it is editable and says otherwise.
-    fn choose_herdr_indicators(&mut self, style: IndicatorStyle, cx: &mut Context<Self>) {
-        if self.config.status_icons.is_none() {
-            self.save_shared(Edit::Indicators(style), cx);
+    /// Picks the set status is drawn with. The set already in use saves
+    /// nothing. A retired `rail` value turned the rail on with no `edge_rail`
+    /// key, so an on rail is written with the set to stay on once that value
+    /// is replaced.
+    pub(in crate::settings_window) fn choose_status_icons(
+        &mut self,
+        icons: StatusIcons,
+        cx: &mut Context<Self>,
+    ) {
+        if self.config.status_icons == icons {
             return;
         }
-        let shared = self
-            .shared
-            .clone()
-            .filter(|shared| self.controls_shared_ready() && shared.indicators != style);
-        let changed = shared.is_some();
-        let shared_save = move || -> crate::Result<()> {
-            if let Some(shared) = shared {
-                shared.save(Edit::Indicators(style))?;
-            }
-            Ok(())
-        };
+        let edits: Vec<Preference> = self
+            .config
+            .edge_rail
+            .then_some(Preference::EdgeRail(true))
+            .into_iter()
+            .chain([Preference::StatusIcons(icons)])
+            .collect();
         #[cfg(test)]
         if let Some(io) = self.controls.preference_io.clone() {
+            let load = io.load.clone();
             self.save_with(
-                move || {
-                    (io.write)(Preference::StatusIcons(None))?;
-                    shared_save()
-                },
-                io.load,
-                changed,
+                move || edits.into_iter().try_for_each(|edit| (io.write)(edit)),
+                move || load(),
+                false,
                 cx,
             );
             return;
         }
-        self.save_with(
-            move || {
-                Config::save_preference(Preference::StatusIcons(None))?;
-                shared_save()
-            },
-            self.loader(cx),
-            changed,
+        self.save_native(
+            move || edits.into_iter().try_for_each(Config::save_preference),
             cx,
         );
-    }
-}
-
-fn icon_label(icons: StatusIcons) -> &'static str {
-    match icons {
-        StatusIcons::Solid => "Solid",
-        StatusIcons::Tiles => "Tiles",
-        StatusIcons::Rail => "Edge rail",
     }
 }

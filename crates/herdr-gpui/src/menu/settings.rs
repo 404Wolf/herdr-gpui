@@ -160,6 +160,7 @@ impl HerdrWindow {
         }
         let theme_revision = crate::settings_window::theme_load_revision(cx);
         let layout_revision = crate::settings_window::layout_load_revision(cx);
+        let sidebar_revision = crate::settings_window::sidebar_load_revision(cx);
         // Loaders resolve the theme for the appearance when they start.
         let light = crate::app::light_appearance(cx);
         let load = cx.background_executor().spawn(async move { load() });
@@ -172,6 +173,7 @@ impl HerdrWindow {
                 match loaded {
                     Ok((mut config, mut theme)) => {
                         crate::settings_window::apply_loaded_layout(&mut config, layout_revision, cx);
+                        crate::settings_window::apply_loaded_sidebar(&mut config, sidebar_revision, cx);
                         crate::settings_window::apply_loaded_theme(&mut config, &mut theme, theme_revision, cx);
                         if let Some(shared) = &this.settings.shared {
                             config.apply_shared_notifications(shared);
@@ -183,6 +185,7 @@ impl HerdrWindow {
                             theme: theme.clone(),
                             error: None,
                         });
+                        crate::caffeine::set_scope(config.status_bar.keep_awake_scope, cx);
                         if config.keybindings != this.config.keybindings {
                             crate::actions::rebind_keys(cx);
                         } else if config.layout.mode != this.config.layout.mode {
@@ -320,6 +323,7 @@ impl HerdrWindow {
                 | Command::EditScrollback
                 | Command::ClosePane
                 | Command::CloseTab
+                | Command::ReopenClosedTab
                 | Command::NewBrowserTab
                 | Command::OpenOrchestrator
                 | Command::SplitEditor
@@ -365,6 +369,8 @@ impl HerdrWindow {
                 | Command::ToggleSidebar
                 | Command::OpenCode
                 | Command::ToggleStatusBar
+                | Command::FocusNextRegion
+                | Command::FocusPreviousRegion
                 | Command::ToggleZenMode
                 | Command::DevicesOverview
                 | Command::IncreaseFontSize

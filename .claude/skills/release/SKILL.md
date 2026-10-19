@@ -1,14 +1,15 @@
 ---
 name: release
-description: Publish a herdr-gpui release. Use when the user asks to cut, push, ship, or publish a release, or to approve, verify, or GPG-sign one that is already running. Covers `just release`, the protected environments the run stops at, and the local verification and signing steps that are not part of CI.
+description: Publish a herdr-gpui release. Use when the user asks to cut, push, ship, or publish a release, or to approve or verify one that is already running. Covers `just release`, the protected environments the run stops at, and the local verification step that is not part of CI.
 ---
 
 # Releasing herdr-gpui
 
 The owner has given standing authorization to approve the release run's protected
 environments when they ask for a release. Do not wait to be asked again per run.
-Everything else on this page still applies: the preconditions are hard gates, and
-the local GPG step needs a physical YubiKey tap that only the owner can give.
+Everything else on this page still applies: the preconditions are hard gates.
+Rerun a job that fails on a transient outside error, such as Apple's stapler
+reporting "The network connection was lost"; stop for anything that needs a fix.
 
 Releases go out to real users through the in-app updater and Homebrew. Never
 dispatch one that was not asked for.
@@ -36,6 +37,18 @@ failure is not a surprise:
 | `origin` is `penso/herdr-gpui` | `git remote get-url origin` |
 | `gh` authenticated as `penso` | `gh api user --jq .login` |
 | Local HEAD == `origin/main` on GitHub | compare `git rev-parse HEAD` with `gh api repos/penso/herdr-gpui/git/ref/heads/main --jq .object.sha` |
+The release workflow runs no test suites of its own: its `ci-gate` job
+requires a successful owner-triggered push or manual CI run on main with every
+platform check and Linux optimized build completed successfully. A green run
+with skipped checks does not qualify. CI builds macOS release binaries on pull
+requests only, so the release's macOS builds get the macOS runners. `dispatch.sh` does not wait for CI: the
+release builds while CI runs, and `ci-gate` holds `sign` and `windows-sign`
+until CI passes, so a failed or cancelled CI run fails the release at `ci-gate`.
+If a CI job fails on a known flake, rerun it (`gh run rerun <id> --failed`)
+while `ci-gate` waits. For a documentation-only commit whose push CI skipped
+the suites, run `gh workflow run ci.yml --repo penso/herdr-gpui --ref main`
+before dispatching. Apple's notary and stapler calls retry ten times in
+`sign-macos.sh`, so a dropped connection there rarely needs a rerun.
 
 The script never fetches or checks out for you: if HEAD does not match, stop and
 tell the owner rather than pulling on their behalf.
@@ -88,13 +101,19 @@ everything since the previous stable one. `release.yml` and `promote.yml` share 
 ## The run stops for approvals
 
 Jobs run roughly: `audit` (shown as "Release Workflow Security") and `validate`,
-then `macos-checks`, `macos-build` (arm64 + x86_64), `linux` (aarch64 + x86_64),
-`windows` (x86_64 MSVC), `metadata` and `changelog`, then `sign`, `attest`, `publish`,
-and finally `homebrew`.
+then `macos-build` (arm64 + x86_64, both on Apple Silicon), `linux` (aarch64 + x86_64),
+`windows` (x86_64 and ARM64 MSVC), `metadata` and `changelog`, then `sign` and
+`windows-sign` (Authenticode, one per Windows target), `windows-smoke` (installs
+the signed installers), `attest`, `publish`, and finally `homebrew` and `winget`.
+Until the `WINDOWS_SIGNING_SUBJECT` repository variable is set, `windows-sign`,
+`windows-smoke` and `winget` are skipped and Windows ships unsigned.
 
-`sign`, `attest` and `publish` use the **`release`** environment; `homebrew` uses
-the **`homebrew`** environment. Both have required reviewers, so the run pauses
-at each and waits. `sign` is additionally gated on the actor being `penso`.
+`sign`, `windows-sign`, `attest` and `publish` use the **`release`** environment;
+`homebrew` uses the **`homebrew`** environment and `winget` the **`winget`**
+environment. All have required reviewers, so the run pauses at each and waits.
+`sign` is additionally gated on the actor being `penso`. Betas skip `homebrew`
+and `winget`; `just release-promote` runs both. `winget` only warns until the
+first winget-pkgs version is submitted by hand (`scripts/release/README.md`).
 
 Approve a pending gate:
 
@@ -148,7 +167,7 @@ attested. Both files are uploaded as the run's `release-notes` workflow artifact
 
 ## After it publishes
 
-Both of these are local and deliberately **not** CI steps.
+This is local and deliberately **not** a CI step.
 
 Verify the published artifacts — the exact asset set, both checksums, Sigstore,
 and GitHub provenance. Pin the commit with `--sha`; it is recommended:
@@ -157,22 +176,15 @@ and GitHub provenance. Pin the commit with `--sha`; it is recommended:
 just verify-release --version vYYYYMMDD.COUNTER --sha <release-commit-sha>
 ```
 
-Supplemental detached GPG signatures, which the release does not otherwise carry:
+That completes a release. Do **not** run `just sign-release` as part of one:
+the owner skips supplemental GPG signatures. The immutable release cannot carry
+them (its asset set is exact), nothing publishes them elsewhere, and GitHub
+provenance plus Sigstore already tie every binary to its workflow and commit.
 
-```sh
-just sign-release vYYYYMMDD.COUNTER <output-dir> <full-signing-fingerprint>
-```
-
-Four things to get right here:
-
-- The output directory **must not already exist**; the script creates it `700`.
-- The fingerprint must be the **full** 40- or 64-hex signing subkey fingerprint,
-  not a short key ID. It is not recorded in this repo — ask the owner, or read it
-  from their GPG config. Never guess it.
-- Signing touches the YubiKey, so **the owner must tap it**. Say so before
-  starting rather than leaving them staring at a stalled command.
-- Nothing is uploaded. The signatures land in `<output-dir>/gpg/` and the release
-  on GitHub is untouched, so this cannot damage a published release.
+Run it only when the owner asks. Then the output directory must not already
+exist, the fingerprint must be the **full** signing subkey fingerprint (ask, or
+read it from their GPG config; never guess), the owner must tap the YubiKey, and
+nothing is uploaded: the signatures land in `<output-dir>/gpg/`.
 
 ## Before touching release machinery itself
 
@@ -190,6 +202,6 @@ universal DMG and also publishes nothing.
 - Dispatch a release the owner did not ask for.
 - Invent, pass, or locally create a version tag.
 - Report success from a queue state, or failure from a dead watcher.
-- Run `just sign-release` expecting to complete it without the owner's tap.
+- Run `just sign-release` unless the owner asked for it.
 - Edit the vendored protocol crate, the workflow pins, or `NOTICE.md` as
   incidental release cleanup.

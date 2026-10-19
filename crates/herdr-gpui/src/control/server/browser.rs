@@ -1,6 +1,6 @@
 //! Browser tabs, page notes, and the agents waiting for them.
 use super::super::{
-    Opening, Placed, Placement, Target, main_windows, plain,
+    Opening, Placed, Placement, Target, main_windows, plain, plain_path,
     protocol::{
         BrowserOpen, Caller, ErrorCode, FeedbackRequest, MAX_WAIT_SECONDS, NotesRequest, NotesTo,
         OpenedIn, Page, Response,
@@ -118,7 +118,7 @@ pub(super) fn reload(caller: &Caller, cx: &mut App) -> Response {
         .map(|store| store.opened_by(pane).map(|tab| tab.id).collect())
         .unwrap_or_default();
     for handle in main_windows(cx) {
-        let _ = handle.update(cx, |view, _, cx| view.reload_browser_tabs(&tabs, cx));
+        let _ = handle.update(cx, |view, _, _| view.reload_browser_tabs(&tabs));
     }
     Response::Reloaded { tabs: tabs.len() }
 }
@@ -216,7 +216,7 @@ pub(super) fn feedback(
     let Some(daemon) = request
         .daemon_socket
         .as_deref()
-        .filter(|path| plain(path, 4096))
+        .filter(|path| plain_path(path))
     else {
         incoming.respond(Response::error(
             ErrorCode::InvalidRequest,
@@ -228,7 +228,7 @@ pub(super) fn feedback(
         scope: Scope::local(Path::new(daemon)),
         pane_id: request.pane_id.clone(),
     };
-    let kept = cx.default_global::<Feedback>().take(&target);
+    let kept = take_feedback(&target, cx);
     if kept.is_some() || request.wait_seconds == 0 {
         respond_feedback(incoming, target, kept, cx);
         return;
@@ -253,6 +253,16 @@ pub(super) fn feedback(
             + std::time::Duration::from_secs(request.wait_seconds.min(MAX_WAIT_SECONDS)),
         incoming,
     });
+}
+
+/// Takes what is kept for `target`. A tab shows its batch as kept until an
+/// agent collects it, so the windows redraw once one does.
+fn take_feedback(target: &FeedbackKey, cx: &mut App) -> Option<String> {
+    let text = cx.default_global::<Feedback>().take(target);
+    if text.is_some() {
+        cx.refresh_windows();
+    }
+    text
 }
 
 fn respond_feedback(
@@ -283,7 +293,7 @@ pub(super) fn serve_waiters(waiters: &mut Vec<Waiter>, cx: &mut App) {
             .try_global::<Feedback>()
             .is_some_and(|feedback| feedback.has(&waiter.target));
         if has {
-            let text = cx.default_global::<Feedback>().take(&waiter.target);
+            let text = take_feedback(&waiter.target, cx);
             respond_feedback(waiter.incoming, waiter.target, text, cx);
         } else if now >= waiter.until {
             waiter.incoming.respond(Response::Feedback { text: None });

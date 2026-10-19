@@ -2,6 +2,7 @@ use herdr_client::{Method, protocol::ClientShellSnapshot};
 use serde_json::{Value, json};
 
 mod shortcuts;
+pub(crate) use shortcuts::CTRL_SHORTCUTS;
 #[cfg(test)]
 pub(crate) use shortcuts::platform_default;
 
@@ -39,9 +40,15 @@ pub enum Command {
     EditScrollback,
     ClosePane,
     CloseTab,
+    /// Reopens the focused workspace's most recently closed tab.
+    ReopenClosedTab,
     TabNumber(u8),
     ToggleSidebar,
     ToggleStatusBar,
+    /// Moves keyboard focus to the next of the terminal, the title bar, the
+    /// sidebar, and the status bar, where Tab moves between controls.
+    FocusNextRegion,
+    FocusPreviousRegion,
     /// Hides the window's chrome and every group but the one in use.
     ToggleZenMode,
     DevicesOverview,
@@ -414,6 +421,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         label: "Close Tab",
     },
     CommandInfo {
+        command: Command::ReopenClosedTab,
+        name: "reopen_closed_tab",
+        label: "Reopen Closed Tab",
+    },
+    CommandInfo {
         command: Command::TabNumber(1),
         name: "focus_tab_1",
         label: "Focus Tab 1",
@@ -524,6 +536,16 @@ pub const COMMANDS: &[CommandInfo] = &[
         label: "Toggle Status Bar",
     },
     CommandInfo {
+        command: Command::FocusNextRegion,
+        name: "focus_next_region",
+        label: "Focus Next Region",
+    },
+    CommandInfo {
+        command: Command::FocusPreviousRegion,
+        name: "focus_previous_region",
+        label: "Focus Previous Region",
+    },
+    CommandInfo {
         command: Command::ToggleZenMode,
         name: "toggle_zen_mode",
         label: "Toggle Zen Mode",
@@ -626,7 +648,7 @@ pub const COMMANDS: &[CommandInfo] = &[
     CommandInfo {
         command: Command::OpenOrchestrator,
         name: "open_orchestrator",
-        label: "Open Orchestrator",
+        label: "Show Issues",
     },
     CommandInfo {
         command: Command::InstallBrowserSkill,
@@ -807,6 +829,8 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         | Command::AnnotateSelection
         | Command::ToggleSidebar
         | Command::ToggleStatusBar
+        | Command::FocusNextRegion
+        | Command::FocusPreviousRegion
         | Command::ToggleZenMode
         | Command::DevicesOverview
         | Command::IncreaseFontSize
@@ -838,6 +862,7 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         // These need state beyond the snapshot, such as the sidebar's order
         // or a dialog, so the window runs them.
         | Command::RenameTab
+        | Command::ReopenClosedTab
         | Command::LastPane
         | Command::Back
         | Command::Forward

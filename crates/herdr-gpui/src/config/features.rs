@@ -25,19 +25,27 @@ macro_rules! features {
             pub const ALL: &[Self] = &[$(Self::$variant,)+];
 
             /// The key under `[features]`.
-            pub fn key(self) -> &'static str {
+            pub const fn key(self) -> &'static str {
                 match self {
                     $(Self::$variant => stringify!($field),)+
                 }
             }
 
-            pub fn label(self) -> &'static str {
+            /// The id of the flag's row in Settings > General, which its
+            /// search entry and debug selector share.
+            pub const fn setting_id(self) -> &'static str {
+                match self {
+                    $(Self::$variant => concat!("general-feature-", stringify!($field)),)+
+                }
+            }
+
+            pub const fn label(self) -> &'static str {
                 match self {
                     $(Self::$variant => $label,)+
                 }
             }
 
-            pub fn description(self) -> &'static str {
+            pub const fn description(self) -> &'static str {
                 match self {
                     $(Self::$variant => $description,)+
                 }
