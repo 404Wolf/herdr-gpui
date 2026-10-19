@@ -4,6 +4,7 @@ use crate::px0::tests::HttpServer;
 
 #[cfg(unix)]
 mod fixture;
+mod replacement;
 
 #[test]
 fn attached_workbench_is_never_owned_or_stopped() {

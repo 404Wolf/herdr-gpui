@@ -58,10 +58,11 @@ impl Worker {
         thread::Builder::new()
             .name("herdr-px0".into())
             .spawn(move || {
-                if let Some(previous) = previous {
-                    previous.shutdown();
-                }
-                let result = run(&config, &stopped, &output, &child);
+                // Discovery must not attach to a workbench whose old worker
+                // has taken its child out of `owned` but is still killing it.
+                let result = previous
+                    .map_or(Ok(()), Self::finish)
+                    .and_then(|()| run(&config, &stopped, &output, &child));
                 if let Err(error) = result {
                     *output.lock().unwrap_or_else(PoisonError::into_inner) =
                         State::Failed(Arc::new(error));
@@ -89,6 +90,16 @@ impl Worker {
         let _ = self.stop.try_send(());
         cleanup(&self.owned);
         let _ = self.done.recv_timeout(Duration::from_millis(20));
+    }
+
+    /// Replacement runs on a worker, so it can await full cleanup rather than
+    /// use the short app-quit budget. Fail closed if completion is unavailable.
+    fn finish(self) -> Result<(), Error> {
+        let _ = self.stop.try_send(());
+        cleanup(&self.owned);
+        self.done
+            .recv_timeout(Duration::from_secs(15))
+            .map_err(Error::Shutdown)
     }
 
     pub(super) fn stop(&self) {

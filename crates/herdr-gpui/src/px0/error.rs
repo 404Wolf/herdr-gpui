@@ -26,4 +26,6 @@ pub enum Error {
     Exited,
     #[error("Cannot check the px0 process: {0}")]
     Process(#[source] std::io::Error),
+    #[error("The previous px0 worker did not finish stopping: {0}")]
+    Shutdown(#[source] std::sync::mpsc::RecvTimeoutError),
 }
