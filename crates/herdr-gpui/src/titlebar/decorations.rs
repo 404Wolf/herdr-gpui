@@ -191,6 +191,8 @@ fn render_controls(
             .rounded_full()
             .cursor_pointer()
             .hover(move |style| style.bg(rgb(active)))
+            // Stop the press from bubbling to the movable bar, which would start
+            // a window move instead of letting the button's click fire.
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(svg().path(icon).size(px(14.)).text_color(rgb(foreground)))
     };
