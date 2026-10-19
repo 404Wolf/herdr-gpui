@@ -1,6 +1,31 @@
 use super::*;
 
 #[gpui::test]
+fn a_window_with_stale_settings_cannot_reset_the_shared_workbench(cx: &mut gpui::TestAppContext) {
+    use crate::px0::{Config, Launcher, State};
+    let (view, cx) = window(cx);
+    let current = WebUrl::try_from("http://localhost:8888/").unwrap();
+    cx.update(|_, cx| {
+        Launcher::fixture(
+            cx,
+            Config {
+                url: Some(current.clone()),
+            },
+            State::Ready(current.clone()),
+        )
+    });
+    for old in ["http://localhost:7777/", "http://localhost:9999/"] {
+        view.update(cx, |view, _| {
+            view.config.px0.url = Some(WebUrl::try_from(old).unwrap())
+        });
+        cx.update(|window, cx| view.update(cx, |view, cx| view.ensure_px0_page(window, cx)));
+        cx.update(|_, cx| {
+            assert!(matches!(Launcher::state(cx), State::Ready(url) if url == current))
+        });
+    }
+}
+
+#[gpui::test]
 fn px0_opens_in_the_active_group_without_browser_chrome(cx: &mut gpui::TestAppContext) {
     let (view, cx) = window(cx);
     view.update(cx, |view, _| {

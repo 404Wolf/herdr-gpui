@@ -2,6 +2,7 @@
 //! ownership stay on a worker; windows consume only its latest state.
 mod error;
 mod server;
+mod settings;
 mod worker;
 
 use crate::browser::WebUrl;
@@ -27,7 +28,11 @@ impl Config {
 
 #[derive(Default)]
 pub(crate) struct Launcher {
+    /// Authoritative disk configuration, applied by one app-level watcher.
     config: Option<Config>,
+    started: bool,
+    quitting: bool,
+    watch: Option<gpui::Task<()>>,
     worker: Option<worker::Worker>,
     state: State,
 }
@@ -35,10 +40,31 @@ pub(crate) struct Launcher {
 impl Global for Launcher {}
 
 impl Launcher {
+    #[cfg(test)]
+    pub(crate) fn fixture(cx: &mut App, config: Config, state: State) {
+        cx.set_global(Self {
+            config: Some(config),
+            started: true,
+            state,
+            ..Default::default()
+        });
+    }
+
     pub(crate) fn install(cx: &mut App) {
+        Self::initialize(cx);
+        if crate::browser::EMBEDDED {
+            let watch = settings::watch(cx);
+            cx.global_mut::<Self>().watch = Some(watch);
+        }
+    }
+
+    fn initialize(cx: &mut App) {
         cx.set_global(Self::default());
         cx.on_app_quit(|cx| {
-            let worker = cx.global_mut::<Self>().worker.take();
+            let launcher = cx.global_mut::<Self>();
+            launcher.quitting = true;
+            launcher.watch = None;
+            let worker = launcher.worker.take();
             cx.background_executor().spawn(async move {
                 if let Some(worker) = worker {
                     worker.shutdown();
@@ -50,7 +76,7 @@ impl Launcher {
 
     pub(crate) fn state(cx: &App) -> State {
         cx.try_global::<Self>().map_or(State::Idle, |launcher| {
-            if launcher.config.is_none() {
+            if !launcher.started {
                 return State::Idle;
             }
             launcher
@@ -60,24 +86,32 @@ impl Launcher {
         })
     }
 
-    pub(crate) fn sync(cx: &mut App, config: &Config) {
-        if let Some(launcher) = cx.try_global::<Self>()
-            && launcher.config.as_ref().is_some_and(|old| old != config)
-        {
-            Self::reset(cx);
+    /// Only the serialized app-level loader supplies configuration. Windows
+    /// may postpone their own reloads while editing or previewing a theme.
+    fn apply_config(cx: &mut App, config: Config) {
+        let Some(launcher) = cx.try_global::<Self>() else {
+            return;
+        };
+        if launcher.quitting || launcher.config.as_ref() == Some(&config) {
+            return;
         }
+        Self::reset(cx);
+        cx.global_mut::<Self>().config = Some(config);
+        cx.refresh_windows();
     }
 
-    pub(crate) fn want(cx: &mut App, config: &Config) {
+    pub(crate) fn want(cx: &mut App) {
         if !crate::browser::EMBEDDED || !cx.has_global::<Self>() {
             return;
         }
-        Self::sync(cx, config);
         let launcher = cx.global_mut::<Self>();
-        if launcher.config.is_some() {
+        if launcher.started || launcher.quitting {
             return;
         }
-        launcher.config = Some(config.clone());
+        let Some(config) = &launcher.config else {
+            return;
+        };
+        launcher.started = true;
         match worker::Worker::start(config.clone(), launcher.worker.take()) {
             Ok(worker) => launcher.worker = Some(worker),
             Err(error) => launcher.state = State::Failed(std::sync::Arc::new(error)),
@@ -87,7 +121,7 @@ impl Launcher {
     pub(crate) fn reset(cx: &mut App) {
         if cx.has_global::<Self>() {
             let launcher = cx.global_mut::<Self>();
-            launcher.config = None;
+            launcher.started = false;
             launcher.state = State::Idle;
             if let Some(worker) = &launcher.worker {
                 worker.stop();

@@ -8,6 +8,8 @@ pub(in crate::settings_window) struct Px0Settings {
     input: Option<Entity<SearchInput>>,
     shown: String,
     invalid: bool,
+    /// Exact submitted text, including whitespace, until its save completes.
+    saving: Option<String>,
 }
 
 #[cfg(test)]
@@ -26,7 +28,10 @@ impl SettingsWindow {
             return;
         };
         let saved = self.config.px0.url.as_ref().map_or("", WebUrl::as_str);
-        if !self.px0.invalid && input.read(cx).text() == self.px0.shown {
+        if !self.px0.invalid
+            && !input.read(cx).is_composing()
+            && input.read(cx).text() == self.px0.shown
+        {
             input.update(cx, |input, cx| input.set_text_selected(saved, cx));
             self.px0.shown = saved.to_owned();
         }
@@ -60,6 +65,7 @@ impl SettingsWindow {
             return;
         };
         self.px0.invalid = false;
+        self.px0.saving = Some(input.read(cx).text().to_owned());
         // Keep a failed write as an edit, rather than replacing it on reload.
         self.save_native(
             move || match config.url {
@@ -68,6 +74,20 @@ impl SettingsWindow {
             },
             cx,
         );
+    }
+
+    /// A successful write acknowledges only the submitted text. A newer edit
+    /// or composition stays a draft; failures never advance the baseline.
+    pub(in crate::settings_window) fn finish_px0_save(&mut self, saved: bool, cx: &App) {
+        let Some(submitted) = self.px0.saving.take() else {
+            return;
+        };
+        let Some(input) = &self.px0.input else {
+            return;
+        };
+        if saved && !input.read(cx).is_composing() && input.read(cx).text() == submitted {
+            self.px0.shown = submitted;
+        }
     }
 
     pub(in crate::settings_window) fn render_px0_controls(&self, cx: &mut Context<Self>) -> Div {

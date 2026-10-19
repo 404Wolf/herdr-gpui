@@ -2,6 +2,9 @@
 use super::*;
 use crate::px0::tests::HttpServer;
 
+#[cfg(unix)]
+mod fixture;
+
 #[test]
 fn attached_workbench_is_never_owned_or_stopped() {
     let server = HttpServer::new(200, r#"{"workbench":true,"version":"1"}"#);
@@ -75,22 +78,21 @@ fn owned_launch_uses_its_published_ephemeral_port_and_is_reaped() {
     use std::os::unix::fs::PermissionsExt;
     let temp = tempfile::tempdir().unwrap();
     let program = temp.path().join("fake-px0");
-    std::fs::write(&program, r#"#!/usr/bin/env python3
-import http.server, json, os, pathlib, sys
-class Handler(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        data = b'{"workbench":true,"version":"fixture"}'
-        self.send_response(200)
-        self.send_header('Content-Length', str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-server = http.server.HTTPServer(('127.0.0.1', 0), Handler)
-state = pathlib.Path(os.environ['XDG_STATE_HOME']) / 'px0'
-state.mkdir(parents=True, exist_ok=True)
-(state / 'args.json').write_text(json.dumps(sys.argv[1:]))
-(state / 'workbench.lock').write_text(json.dumps({'pid':os.getpid(), 'url':'http://127.0.0.1:%s/' % server.server_port}))
-server.serve_forever()
-"#).unwrap();
+    // Re-exec the native test executable: Python launchers on macOS may
+    // introduce another process, unlike the native px0 binary we supervise.
+    let executable = std::env::current_exe().unwrap();
+    let executable = herdr_client::shell_quote(executable.to_str().unwrap());
+    std::fs::write(
+        &program,
+        format!(
+            r#"#!/bin/sh
+printf '%s\n' "$@" > "$XDG_STATE_HOME/args.txt"
+export HERDR_PX0_TEST_CHILD=1
+exec {executable} --exact px0::worker::tests::fixture::workbench --nocapture
+"#
+        ),
+    )
+    .unwrap();
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
     let (_stop, stopped) = mpsc::sync_channel(1);
     let owned = Mutex::new(Owned::default());
@@ -104,10 +106,10 @@ server.serve_forever()
     assert_eq!(url, found.url);
     assert!(server::probe(&url).is_err());
     assert!(owned.lock().unwrap().child.is_none());
-    let args: Vec<String> =
-        serde_json::from_slice(&std::fs::read(temp.path().join("px0/args.json")).unwrap()).unwrap();
+    let text = std::fs::read_to_string(temp.path().join("args.txt")).unwrap();
+    let args: Vec<_> = text.lines().collect();
     assert!(args.windows(2).any(|pair| pair == ["-port", "0"]));
     assert!(args.windows(2).any(|pair| pair == ["-host", "127.0.0.1"]));
-    assert!(args.iter().any(|arg| arg == "-no-open"));
-    assert!(args.iter().any(|arg| arg == "-no-update"));
+    assert!(args.contains(&"-no-open"));
+    assert!(args.contains(&"-no-update"));
 }

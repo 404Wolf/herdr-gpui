@@ -164,10 +164,10 @@ fn workspace_paths_are_encoded_and_proxy_prefix_is_preserved() {
 #[gpui::test]
 fn installing_a_launcher_does_not_start_px0(cx: &mut gpui::TestAppContext) {
     cx.update(|cx| {
-        Launcher::install(cx);
+        Launcher::initialize(cx);
         assert!(matches!(Launcher::state(cx), State::Idle));
         assert!(cx.global::<Launcher>().worker.is_none());
-        Launcher::sync(cx, &Config::default());
+        Launcher::apply_config(cx, Config::default());
         assert!(cx.global::<Launcher>().worker.is_none());
     });
 }
@@ -183,13 +183,16 @@ fn a_changed_address_retires_the_previous_result(cx: &mut gpui::TestAppContext) 
         };
         cx.set_global(Launcher {
             config: Some(old.clone()),
+            started: true,
             worker: None,
             state: State::Failed(std::sync::Arc::new(Error::Timeout)),
+            ..Default::default()
         });
-        Launcher::sync(cx, &old);
+        Launcher::apply_config(cx, old);
         assert!(matches!(Launcher::state(cx), State::Failed(_)));
-        Launcher::sync(cx, &next);
+        Launcher::apply_config(cx, next.clone());
         assert!(matches!(Launcher::state(cx), State::Idle));
         assert!(cx.global::<Launcher>().worker.is_none());
+        assert_eq!(cx.global::<Launcher>().config.as_ref(), Some(&next));
     });
 }

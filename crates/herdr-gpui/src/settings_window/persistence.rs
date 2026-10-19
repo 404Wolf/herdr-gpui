@@ -442,6 +442,7 @@ impl SettingsWindow {
                     layouts::clear_layout_draft(cx);
                 }
                 let sidebar_saved = this.finish_sidebar_save(sidebar_save, saved.is_ok(), cx);
+                this.finish_px0_save(saved.is_ok(), cx);
                 this.apply_loaded(loaded, cx);
                 if sidebar_saved {
                     this.broadcast_sidebar(cx);

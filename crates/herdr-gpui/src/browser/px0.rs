@@ -43,7 +43,6 @@ impl HerdrWindow {
         if !super::EMBEDDED {
             return;
         }
-        Launcher::sync(cx, &self.config.px0);
         let state = Launcher::state(cx);
         let phase = Some(std::mem::discriminant(&state));
         if self.browser.px0.phase != phase {
@@ -67,7 +66,7 @@ impl HerdrWindow {
         let Some(root) = self.px0_root() else {
             return;
         };
-        Launcher::want(cx, &self.config.px0);
+        Launcher::want(cx);
         let State::Ready(base) = Launcher::state(cx) else {
             return;
         };
