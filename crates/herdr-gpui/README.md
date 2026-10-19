@@ -1970,6 +1970,13 @@ turns it off, and `herdr-gpui ui panel NAME` shows a section.
 When Overview or a section opens an agent's pane, the title bar's Back returns
 to it before walking back through panes.
 
+A section's icon shows its count in the accent color until the section is
+opened, then in a muted gray until something it counts changes again: an
+issue or pull request updated, an alert or report opened, or an agent coming
+to need you. When each section was last open is remembered per daemon between
+runs. Agent states are timed from when this client first saw them, so after a
+restart an agent already waiting on you counts as new once.
+
 ## Orchestrator
 
 The activity bar's **Pull requests** and **Issues** sections list, across the
