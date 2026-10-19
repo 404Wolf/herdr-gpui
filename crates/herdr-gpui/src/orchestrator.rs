@@ -39,6 +39,7 @@ pub(crate) use model::{
     SourceKey,
 };
 pub(crate) use naming::LiveBranch;
+pub(crate) use repo::github_repository;
 pub(crate) use review::{CheckState, PrStatus, Review};
 #[cfg(test)]
 pub(crate) use service::SourceStatus;
