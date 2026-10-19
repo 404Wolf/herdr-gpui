@@ -236,7 +236,7 @@ fn requested_repository(variables: &Value) -> Option<String> {
 /// Enterprise Managed User, which an additional account can read instead.
 pub(crate) fn hidden_hint(app_token: bool) -> &'static str {
     if app_token {
-        "This GitHub App sign-in only reaches repositories the App is installed on: install it for the repository's owner, or add the account that owns it on the GitHub page."
+        "This GitHub App sign-in only reaches repositories the App is installed on: install it for the repository's owner and approve the permissions it asks for, or add the account that owns it on the GitHub page."
     } else {
         "Check the remote, the token's repository access, and SSO authorization, or add the account that owns it on the GitHub page."
     }
