@@ -5,8 +5,11 @@
 //! one bus peer until the bus refused new ones (#387).
 //!
 //! The click rule is registered before the first `Notify`, so a click on even
-//! the first notification is seen. Closes are not tracked: the registry's
-//! bounded record of recent posts is the only per-notification state.
+//! the first notification is seen. Closes are not tracked: the bounded
+//! registry and coalesced outbox are the only per-notification state.
+
+mod outbox;
+pub(super) use outbox::{Outbox, post};
 
 #[cfg(test)]
 mod tests;

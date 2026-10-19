@@ -3,7 +3,7 @@ use super::*;
 use gpui::{WindowHandle, WindowId};
 use std::{sync::Weak, time::Instant};
 
-fn posted(tag: &str) -> Posted {
+pub(super) fn posted(tag: &str) -> Posted {
     Posted {
         tag: tag.to_owned().into(),
         window: WindowHandle::<HerdrWindow>::new(WindowId::from(1)),
@@ -36,16 +36,17 @@ fn a_click_resolves_to_the_tag_its_reply_named() {
 }
 
 #[test]
-fn a_repost_replaces_the_shown_notification_and_forgets_its_id() {
+fn a_repost_keeps_the_shown_notification_id_until_its_reply() {
     let mut registry = Registry::default();
     registry.record(posted("a"));
     registry.set_bus_id("a", 7);
     // What the next post for the tag passes as `replaces`.
     assert_eq!(registry.find("a").and_then(|p| p.bus_id), Some(7));
     registry.record(posted("a"));
-    assert!(registry.find_bus_id(7).is_none());
-    registry.set_bus_id("a", 7);
     assert_eq!(registry.find_bus_id(7).map(|p| p.tag.as_ref()), Some("a"));
+    registry.set_bus_id("a", 8);
+    assert!(registry.find_bus_id(7).is_none());
+    assert_eq!(registry.find_bus_id(8).map(|p| p.tag.as_ref()), Some("a"));
 }
 
 #[test]

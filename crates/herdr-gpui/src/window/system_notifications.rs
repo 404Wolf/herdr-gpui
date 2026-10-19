@@ -53,6 +53,8 @@ pub(crate) struct Registry {
     identity: bool,
     #[cfg(target_os = "linux")]
     bus: freedesktop::Bus,
+    #[cfg(target_os = "linux")]
+    outbox: freedesktop::Outbox,
     /// What the shell offers, once known; until then GPUI posts.
     #[cfg(windows)]
     shell: Option<toast::Shell>,
@@ -73,6 +75,12 @@ impl Registry {
     }
 
     fn record(&mut self, posted: Posted) {
+        #[cfg(target_os = "linux")]
+        let posted = Posted {
+            // A replacement remains clickable while its Notify reply is pending.
+            bus_id: self.find(&posted.tag).and_then(|old| old.bus_id),
+            ..posted
+        };
         self.posted.retain(|old| old.tag != posted.tag);
         if self.posted.len() == REGISTRY_LIMIT {
             self.posted.pop_front();
@@ -84,8 +92,8 @@ impl Registry {
         self.posted.iter().rev().find(|posted| posted.tag == tag)
     }
 
-    /// Replies arrive in posting order, so the last one for a tag names the
-    /// notification shown for it.
+    /// The Linux outbox sends only one request at a time, so a reply cannot
+    /// overwrite the id of a newer request.
     #[cfg(target_os = "linux")]
     fn set_bus_id(&mut self, tag: &str, bus_id: u32) {
         if let Some(posted) = self.posted.iter_mut().rev().find(|p| p.tag == tag) {
@@ -111,7 +119,7 @@ pub(crate) fn install(cx: &mut App) {
 }
 
 /// Everything but the Linux session bus, which tests must not reach.
-fn install_registry(cx: &mut App) {
+pub(crate) fn install_registry(cx: &mut App) {
     cx.set_global(Registry::default());
     #[cfg(windows)]
     {
@@ -226,14 +234,6 @@ impl HerdrWindow {
             body: body(label.as_deref(), text.as_deref()),
             actions: Vec::new(),
         };
-        // A re-post for the same tag replaces the shown one, as tags do on
-        // the other platforms.
-        #[cfg(target_os = "linux")]
-        let replaces = cx
-            .global::<Registry>()
-            .find(&tag)
-            .and_then(|posted| posted.bus_id)
-            .unwrap_or_default();
         cx.global_mut::<Registry>().record(Posted {
             tag,
             window: handle,
@@ -254,16 +254,7 @@ impl HerdrWindow {
             }
             freedesktop::Bus::Connected(session) => {
                 let session = session.clone();
-                cx.spawn(async move |_, cx| {
-                    match freedesktop::show(&session, &notification, replaces).await {
-                        Ok(bus_id) => cx.update(|cx| {
-                            cx.global_mut::<Registry>()
-                                .set_bus_id(&notification.tag, bus_id);
-                        }),
-                        Err(error) => tracing::warn!(error = ?error, "System notification failed"),
-                    }
-                })
-                .detach();
+                freedesktop::post(session, notification, cx);
                 return;
             }
         }
