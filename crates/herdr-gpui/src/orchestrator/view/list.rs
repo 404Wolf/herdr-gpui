@@ -27,6 +27,17 @@ const ACTION_WIDTH: f32 = 96.;
 /// Checks a row names before counting the rest.
 const CHECK_PILLS: usize = 3;
 
+/// Why the list is empty.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Empty {
+    NoRepositories,
+    Loading,
+    /// The search matches nothing.
+    Search,
+    /// The pills or the Issues facets hide everything.
+    Filtered,
+    Nothing,
+}
 impl OrchestratorView {
     /// Whether rows keep only the columns that fit beside an open item.
     fn compact(&self) -> bool {
@@ -145,12 +156,8 @@ impl OrchestratorView {
             .into_any_element()
     }
 
-    fn render_empty(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let look = &self.look;
-        let what = match self.tab {
-            Tab::Issues => "open issues",
-            Tab::PullRequests => "pull requests",
-        };
+    /// Why nothing is listed, which picks what the empty list says.
+    pub(super) fn empty(&self) -> Empty {
         let loading = self.repos.iter().any(|repo| {
             let snapshot = &repo.snapshot;
             snapshot.error.is_none()
@@ -160,11 +167,34 @@ impl OrchestratorView {
                         .iter()
                         .any(|status| matches!(status.state, SyncState::Syncing)))
         });
+        let searching = !self.query.trim().is_empty();
+        // The pills narrow both tabs; the facets only Issues.
+        let filtered = !self.projects.is_empty()
+            || !self.backends.is_empty()
+            || (self.tab == Tab::Issues && self.active_filters() > 0);
+        if self.repos.is_empty() {
+            Empty::NoRepositories
+        } else if loading && !searching {
+            Empty::Loading
+        } else if searching {
+            Empty::Search
+        } else if filtered {
+            Empty::Filtered
+        } else {
+            Empty::Nothing
+        }
+    }
+
+    fn render_empty(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let look = &self.look;
+        let what = match self.tab {
+            Tab::Issues => "open issues",
+            Tab::PullRequests => "pull requests",
+        };
         let query = self.query.trim();
-        let filtered = self.tab == Tab::Issues && self.active_filters() > 0;
         // With nothing listed at all, the section says what it is for.
-        let (icon, text, about) = if self.repos.is_empty() {
-            (
+        let (icon, text, about) = match self.empty() {
+            Empty::NoRepositories => (
                 "icons/git-branch.svg",
                 "No repositories".to_owned(),
                 Some(
@@ -172,35 +202,33 @@ impl OrchestratorView {
                      are in, on this machine or an SSH host. Open a workspace in one to list \
                      them here.",
                 ),
-            )
-        } else if loading && query.is_empty() {
-            ("icons/refresh.svg", "Loading\u{2026}".to_owned(), None)
-        } else if !query.is_empty() {
-            (
+            ),
+            Empty::Loading => ("icons/refresh.svg", "Loading\u{2026}".to_owned(), None),
+            Empty::Search => (
                 "icons/search.svg",
                 format!("No {what} match \u{201c}{query}\u{201d}"),
                 None,
-            )
-        } else if filtered {
-            (
+            ),
+            Empty::Filtered => (
                 "icons/search.svg",
                 format!("No {what} match the filters"),
                 None,
-            )
-        } else {
-            let about = match self.tab {
-                Tab::Issues => {
-                    "This lists the open issues of every repository your workspaces hold, \
-                     from GitHub, GitLab, and Beads. Pick one to read it or to start an \
-                     agent on it."
-                }
-                Tab::PullRequests => {
-                    "This lists the pull requests of every repository your workspaces hold, \
-                     with their reviews and checks. Pick one to read it or to start an \
-                     agent on it."
-                }
-            };
-            ("icons/check.svg", format!("No {what}"), Some(about))
+            ),
+            Empty::Nothing => {
+                let about = match self.tab {
+                    Tab::Issues => {
+                        "This lists the open issues of every repository your workspaces \
+                         hold, from GitHub, GitLab, and Beads. Pick one to read it or to \
+                         start an agent on it."
+                    }
+                    Tab::PullRequests => {
+                        "This lists the pull requests of every repository your workspaces \
+                         hold, with their reviews and checks. Pick one to read it or to \
+                         start an agent on it."
+                    }
+                };
+                ("icons/check.svg", format!("No {what}"), Some(about))
+            }
         };
         div()
             .debug_selector(|| "orchestrator-empty".into())
