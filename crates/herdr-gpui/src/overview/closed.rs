@@ -134,8 +134,13 @@ impl Closed {
             }
         }
         let mut changed = self.agents.len() != before;
+        // Another agent started in the pane, between two reports, still
+        // closed the one before it.
         for (row, cwd) in previous {
-            if current.iter().any(|(shown, _)| pane(shown) == pane(&row)) {
+            if current
+                .iter()
+                .any(|(shown, _)| pane(shown) == pane(&row) && shown.identity == row.identity)
+            {
                 continue;
             }
             if self.agents.len() >= MAX_CLOSED {

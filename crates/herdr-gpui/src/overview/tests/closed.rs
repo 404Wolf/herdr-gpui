@@ -72,6 +72,21 @@ fn an_agent_gone_from_its_host_is_closed_with_its_folder() {
 }
 
 #[test]
+fn an_agent_replaced_in_its_pane_is_closed() {
+    let mut closed = Closed::default();
+    let (shown, rows) = report("b1", &["a"]);
+    closed.observe("local", &shown, &rows, at(10));
+    let mut codex = rows[0].clone();
+    codex.identity = Some("codex".into());
+    closed.observe("local", &shown, [&codex], at(20));
+    assert_eq!(names(&closed), ["a"]);
+    assert_eq!(
+        closed.agents().next().unwrap().row.identity.as_deref(),
+        Some("claude")
+    );
+}
+
+#[test]
 fn a_daemon_restart_closes_nothing() {
     let mut closed = Closed::default();
     observe(&mut closed, "b1", &["a"], 10);
