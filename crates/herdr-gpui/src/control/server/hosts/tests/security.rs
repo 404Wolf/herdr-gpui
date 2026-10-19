@@ -27,6 +27,8 @@ fn repo(name: &str, alerts: Result<Alerts, Error>) -> Repo {
         host: "Local".into(),
         alerts: alerts.map_err(Arc::new),
         reports: Ok(Reports::Off),
+        account: None,
+        checkouts: Vec::new(),
     }
 }
 

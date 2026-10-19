@@ -114,7 +114,7 @@ fn family(name: &str) -> &'static str {
         }
         "usage" => "herdr-gpui usage\n    AI plan usage on the window's selected host.",
         "security" => {
-            "herdr-gpui security\n    Private vulnerability reports in triage (titles only) and open\n    Dependabot alerts of the github.com repositories the window's\n    workspaces hold, most severe first, as the Security section last read\n    them (sign in to GitHub first). Exits 4 when there are none.\n    `ui panel security` shows the section."
+            "herdr-gpui security\n    Private vulnerability reports in triage (titles only) and open\n    Dependabot alerts of the github.com repositories the window's\n    workspaces hold, most severe first, as the Security section last read\n    them (sign in to GitHub first). Exits 4 when there are none.\n    `ui panel security` shows the section.\nherdr-gpui security open REPOSITORY ALERT|GHSA\n    Show alert ALERT (its number) or private report GHSA (its GHSA ID) of\n    REPOSITORY (owner/name) in the Security section, beside its list, as\n    the section last read it."
         }
         "system" => {
             "herdr-gpui system\n    The window's selected host's load, when Herdr UI samples it."

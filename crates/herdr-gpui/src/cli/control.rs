@@ -14,7 +14,7 @@ pub(crate) use super::args::Args;
 pub use crate::control::{Cursor, EventKind, FontSize, Script, Size, Sound, Switch, ZoomChange};
 pub use app::{AppCommand, UiCommand, WindowCommand};
 pub use browser::{BrowserCommand, Placement};
-pub use hosts::{CloudCommand, HostCommand, PortsCommand, PrCommand};
+pub use hosts::{CloudCommand, HostCommand, PortsCommand, PrCommand, SecurityCommand};
 pub use settings::{
     CaffeineCommand, ConfigCommand, IntegrationsCommand, KeybindsCommand, SoundCommand,
     ThemeCommand, UpdateCommand,
@@ -78,7 +78,7 @@ pub enum ControlCommand {
     },
     Usage,
     System,
-    Security,
+    Security(SecurityCommand),
     Search {
         files: bool,
         query: String,
@@ -323,7 +323,7 @@ fn command(family: &'static str, args: &mut Args) -> Result<ControlCommand, CliE
         },
         "usage" => ControlCommand::Usage,
         "system" => ControlCommand::System,
-        "security" => ControlCommand::Security,
+        "security" => ControlCommand::Security(hosts::security(args)?),
         "search" => {
             let files = match args.verb().as_ref().and_then(|verb| verb.to_str()) {
                 Some("symbol" | "symbols") => false,

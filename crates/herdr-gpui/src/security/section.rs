@@ -4,7 +4,7 @@
 //! with none, those with Dependabot alerts off, those whose reports this
 //! sign-in may not read, and those GitHub would not answer for.
 
-use super::{Alert, Alerts, Repo, Report, Reports, Severity};
+use super::{Alert, Alerts, Item, Repo, Report, Reports, Severity};
 use crate::HerdrWindow;
 use gpui::{prelude::*, *};
 use std::time::{Duration, SystemTime};
@@ -94,15 +94,25 @@ impl HerdrWindow {
             .text_color(rgb(theme.foreground))
             .text_size(px(font.size))
             .child(header)
-            .child(
-                div()
+            .child(match self.security.opened().cloned() {
+                Some(opened) => div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .when(!self.security.list_hidden(), |split| {
+                        split.child(self.render_security_list(&opened, cx))
+                    })
+                    .child(self.render_security_page(&opened, cx))
+                    .into_any_element(),
+                None => div()
                     .id("security-section-scroll")
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
                     .track_scroll(&self.security.scroll)
-                    .child(self.security_body(cx)),
-            )
+                    .child(self.security_body(cx))
+                    .into_any_element(),
+            })
             .into_any_element()
     }
 
@@ -125,15 +135,7 @@ impl HerdrWindow {
                     .child(text),
             );
         }
-        let reported: Vec<(usize, &Repo, &Report)> = repos
-            .iter()
-            .enumerate()
-            .flat_map(|(index, repo)| {
-                repo.reported()
-                    .iter()
-                    .map(move |report| (index, repo, report))
-            })
-            .collect();
+        let reported = self.security.reported();
         if !reported.is_empty() {
             // A queue longer than one page reads as "50+", not as 50.
             let more = repos.iter().any(Repo::more_reports);
@@ -196,7 +198,8 @@ impl HerdrWindow {
         body
     }
 
-    /// Reports outsiders filed, across repositories, most severe first.
+    /// Reports outsiders filed, across repositories, in
+    /// [`super::Security::reported`]'s order.
     fn security_reported(
         &self,
         reported: &[(usize, &Repo, &Report)],
@@ -205,12 +208,6 @@ impl HerdrWindow {
     ) -> Div {
         let theme = &self.theme;
         let small = px(self.config.ui.size - 1.);
-        let mut sorted = reported.to_vec();
-        sorted.sort_by(|(_, _, a), (_, _, b)| {
-            (a.severity.is_none(), a.severity)
-                .cmp(&(b.severity.is_none(), b.severity))
-                .then_with(|| b.created_at.cmp(&a.created_at))
-        });
         let mut rows = div()
             .flex()
             .flex_col()
@@ -218,7 +215,7 @@ impl HerdrWindow {
             .bg(rgb(theme.surface))
             .py_1();
         let now = SystemTime::now();
-        for (index, repo, report) in sorted {
+        for &(index, repo, report) in reported {
             let (label, color) = match report.severity {
                 Some(severity) => (severity.label(), severity_color(theme, severity)),
                 None => ("Unrated", theme.muted),
@@ -239,7 +236,10 @@ impl HerdrWindow {
             .flatten()
             .collect::<Vec<_>>()
             .join(" · ");
-            let url = repo.report_url(report);
+            let item = Item::Report {
+                repo: repo.name.clone(),
+                advisory: report.advisory.clone(),
+            };
             let hover = theme.active;
             rows = rows.child(
                 div()
@@ -253,10 +253,8 @@ impl HerdrWindow {
                     .flex()
                     .items_start()
                     .gap_3()
-                    .when(url.is_some(), |row| {
-                        row.cursor_pointer()
-                            .hover(move |style| style.bg(rgb(hover)))
-                    })
+                    .cursor_pointer()
+                    .hover(move |style| style.bg(rgb(hover)))
                     .child(
                         div()
                             .flex_none()
@@ -282,11 +280,9 @@ impl HerdrWindow {
                                     .child(detail),
                             ),
                     )
-                    .when_some(url, |row, url| {
-                        row.on_click(cx.listener(move |this, _, window, cx| {
-                            this.open_security_page(&url, window, cx);
-                        }))
-                    }),
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.open_security_item(item.clone(), cx);
+                    })),
             );
         }
         div()
@@ -408,7 +404,10 @@ impl HerdrWindow {
             .filter(|part| !part.is_empty())
             .collect::<Vec<_>>()
             .join(" · ");
-        let url = repo.alert_url(alert);
+        let item = Item::Alert {
+            repo: repo.name.clone(),
+            number: alert.number,
+        };
         let hover = theme.active;
         div()
             .id(SharedString::from(format!(
@@ -474,8 +473,8 @@ impl HerdrWindow {
                             .child(detail),
                     ),
             )
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.open_security_page(&url, window, cx);
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.open_security_item(item.clone(), cx);
             }))
     }
 }
@@ -489,7 +488,7 @@ fn note(selector: &'static str, text: String, color: u32) -> Div {
 
 /// Red for what needs fixing now, yellow for what can wait, as the
 /// theme's own palette draws them.
-fn severity_color(theme: &crate::config::Theme, severity: Severity) -> u32 {
+pub(super) fn severity_color(theme: &crate::config::Theme, severity: Severity) -> u32 {
     match severity {
         Severity::Critical => theme.ink(theme.palette[1]),
         Severity::High => theme.ink(theme.palette[9]),

@@ -26,6 +26,7 @@ mod rows;
 mod tests;
 
 pub(crate) use look::Look;
+pub(crate) use markdown::without_html;
 pub(crate) use repo::RepoSpec;
 pub(crate) use rows::{LiveAgent, Tab as List, key_label};
 

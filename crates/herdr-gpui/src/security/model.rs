@@ -4,10 +4,12 @@
 //! names rather than taken from the response.
 
 use super::{Error, Report, Reports};
+use crate::github::Tokens;
 use chrono::{DateTime, Utc};
+use herdr_client::ConnectTarget;
 use serde::Deserialize;
 use serde_json::Value;
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 /// How bad an advisory is, most severe first, so sorting puts it on top.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
@@ -91,6 +93,33 @@ pub(crate) struct Repo {
     pub(crate) host: String,
     pub(crate) alerts: Result<Alerts, Arc<Error>>,
     pub(crate) reports: Result<Reports, Arc<Error>>,
+    /// The account the listing was read with, which an item's page is read
+    /// with too.
+    pub(crate) account: Option<Account>,
+    /// Where the window's workspaces hold it, for an agent's workspace and
+    /// a manifest's file.
+    pub(crate) checkouts: Vec<Checkout>,
+}
+
+/// A GitHub account's tokens, kept beside what they read. Its `Debug`
+/// names no token.
+#[derive(Clone)]
+pub(crate) struct Account(pub(crate) Tokens);
+
+impl std::fmt::Debug for Account {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Account(..)")
+    }
+}
+
+/// One workspace holding the repository.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Checkout {
+    pub(crate) target: ConnectTarget,
+    pub(crate) workspace_id: String,
+    /// The repository's root on this machine, found while reading; `None`
+    /// on another host, where the code view cannot open a file.
+    pub(crate) root: Option<PathBuf>,
 }
 
 impl Repo {

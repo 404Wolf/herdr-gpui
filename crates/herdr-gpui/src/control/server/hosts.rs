@@ -54,6 +54,9 @@ pub(super) fn serve(
         HostOp::Usage => in_window(caller, cx, |view, _, _| usage(view, SystemTime::now())),
         HostOp::System => in_window(caller, cx, |view, _, _| system(view)),
         HostOp::Security => in_window(caller, cx, |view, _, _| security::alerts(view)),
+        HostOp::SecurityOpen { repository, item } => in_window(caller, cx, |view, window, cx| {
+            security::open(view, &repository, &item, window, cx)
+        }),
         HostOp::Cloud => cloud(caller, cx),
         HostOp::CloudSetup { id } => {
             in_free_window(caller, cx, |view, _, cx| cloud_setup(view, &id, cx))
