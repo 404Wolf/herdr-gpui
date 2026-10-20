@@ -111,9 +111,10 @@ pub(super) fn rows(frames: &[&str]) -> usize {
 }
 
 /// A dot's diameter in a `size` slot: three rows of dots and their gaps take
-/// three fifths of it, so a cell stands about as tall as lowercase letters.
+/// up to seven tenths of it, in half pixels so the cell grows smoothly with
+/// the font rather than in whole-pixel jumps.
 pub(super) fn dot_diameter(size: f32) -> f32 {
-    ((size * 0.6 - 2.) / 3.).floor().max(1.)
+    ((size * 0.7 - 2.) / 3. * 2.).floor().max(2.) / 2.
 }
 
 /// A slot a braille cell centers in.

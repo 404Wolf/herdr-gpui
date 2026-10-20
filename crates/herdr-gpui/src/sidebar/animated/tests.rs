@@ -183,14 +183,15 @@ fn braille_cells_decode_their_dots_and_rows() {
     }
 }
 
-/// Three rows of dots take no more than three fifths of the slot, so a
+/// Three rows of dots take no more than seven tenths of the slot, so a
 /// compact row's cell is no taller than its letters, and never vanish at the
 /// smallest fonts.
 #[test]
-fn braille_dots_stay_within_three_fifths_of_their_slot() {
+fn braille_dots_stay_within_seven_tenths_of_their_slot() {
     for size in [6., 10., 12., 14., 16., 20., 28.] {
         let dot = dot_diameter(size);
         assert!(dot >= 1., "{size}: {dot}");
-        assert!(dot * 3. + 2. <= (size * 0.6).max(5.), "{size}: {dot}");
+        assert!(dot * 3. + 2. <= (size * 0.7).max(5.), "{size}: {dot}");
+        assert_eq!((dot * 2.).fract(), 0., "{size}: {dot}");
     }
 }
