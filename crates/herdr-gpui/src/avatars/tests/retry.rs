@@ -92,5 +92,8 @@ fn an_unreachable_retry_is_not_refused_by_the_request_bound() {
 fn local_checkouts_never_fail_the_lookup() {
     let missing = std::env::temp_dir().join("herdr-avatar-no-such-checkout");
     let cwd = missing.to_str().expect("UTF-8 temporary directory");
-    assert!(matches!(repo_owner(Checkout::Local(cwd)), Ok(None)));
+    assert!(matches!(
+        repo_owner(Checkout::Local(cwd), &Default::default()),
+        Ok(None)
+    ));
 }

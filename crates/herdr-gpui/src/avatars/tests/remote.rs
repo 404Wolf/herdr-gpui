@@ -117,10 +117,13 @@ fn requests_stop_at_the_bound_across_hosts() {
 fn reads_the_repository_owner_over_ssh() {
     let target = std::env::var("HERDR_AVATAR_TEST_SSH").expect("set a saved SSH target");
     let git_dir = std::env::var("HERDR_AVATAR_TEST_GIT_DIR").expect("set the host's Git dir");
-    let owner = repo_owner(Checkout::Ssh {
-        target: &target,
-        git_dir: &git_dir,
-    })
+    let owner = repo_owner(
+        Checkout::Ssh {
+            target: &target,
+            git_dir: &git_dir,
+        },
+        &Default::default(),
+    )
     .expect("host read over SSH");
     assert!(owner.is_some(), "no GitHub owner read over SSH");
     eprintln!("Owner read over SSH: {owner:?}");

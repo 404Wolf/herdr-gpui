@@ -3,7 +3,7 @@
 use super::{ACTIVATION_TIMEOUT, LOCAL, Redraw};
 use crate::{HerdrWindow, avatars::Checkout};
 use gpui::{ClipboardItem, Context};
-use herdr_client::RemoteHost;
+use herdr_client::{ConnectTarget, RemoteHost};
 use std::time::Instant;
 
 impl HerdrWindow {
@@ -79,9 +79,17 @@ impl HerdrWindow {
                 Instant::now(),
             );
             changed = changed.max(updated);
+            // An SSH device's avatar reads follow its connection, before any
+            // request below, so a reconnection's first snapshot asks again.
+            if let (Some(avatars), ConnectTarget::Ssh { target, .. }) =
+                (&mut self.avatars, &endpoint.connection.target)
+            {
+                avatars.follow(&endpoint.id, target, endpoint.online_since());
+            }
             // Remote cwd strings must never be resolved against this machine's
             // Git repos; `Checkout::of` reads a saved SSH device's over SSH.
             if updated == Redraw::Window
+                && endpoint.online_since().is_some()
                 && let (Some(avatars), Some(snapshot)) =
                     (&mut self.avatars, &endpoint.live.snapshot)
             {

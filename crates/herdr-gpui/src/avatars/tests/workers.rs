@@ -27,6 +27,8 @@ fn split(
         results,
         local: HashMap::new(),
         remote: HashMap::new(),
+        links: HashMap::new(),
+        offline: links::Offline::default(),
     };
     (avatars, local, ssh)
 }

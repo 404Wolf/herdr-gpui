@@ -1,6 +1,7 @@
 #![allow(clippy::expect_used)]
 use super::*;
 
+mod reconnect;
 mod remote;
 mod remote_userinfo;
 mod retry;
@@ -86,7 +87,7 @@ fn profile_avatar_urls_never_accept_credentials_or_other_hosts() {
 fn loads_local_repository_owner_avatar() {
     let cwd = std::env::var("HERDR_AVATAR_TEST_REPO").expect("set a local GitHub repository path");
     let checkout = Checkout::Local(cwd.as_str());
-    let owner = repo_owner(checkout)
+    let owner = repo_owner(checkout, &Default::default())
         .ok()
         .flatten()
         .expect("repository has a GitHub origin");
@@ -201,6 +202,8 @@ pub(super) fn detached() -> (Avatars, mpsc::Receiver<Checkout<String>>, Results)
         results,
         local: HashMap::new(),
         remote: HashMap::new(),
+        links: HashMap::new(),
+        offline: links::Offline::default(),
     };
     (avatars, incoming, outgoing)
 }

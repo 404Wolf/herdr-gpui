@@ -1,5 +1,6 @@
 use gpui::{Image, ImageFormat};
 mod cache;
+mod links;
 use herdr_client::{ConnectTarget, protocol::ClientShellWorkspace};
 use std::{
     collections::HashMap,
@@ -16,9 +17,9 @@ const MAX_SEGMENT: usize = 100;
 /// The whole budget for reading one remote checkout's Git configuration.
 const REMOTE_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// How long a checkout whose host could not be read waits before a sidebar
-/// update may ask again. A host that is briefly down then gets its avatar
-/// without a restart, and one that stays down costs one read per interval.
+/// How long a checkout whose host could not be read, while its device stayed
+/// connected, waits before a sidebar update may ask again. A device that
+/// reconnects is asked at once instead (see `Avatars::follow`).
 const RETRY_AFTER: Duration = Duration::from_secs(60);
 
 /// SSH reads that may run at once. A host that stops answering holds a
@@ -85,7 +86,8 @@ enum Slot {
     Pending,
     /// The owner's avatar, or `None` for a checkout without a GitHub owner.
     Resolved(Option<Arc<Image>>),
-    /// The host could not be read; asked again from `retry_at`.
+    /// The host could not be read; asked again from `retry_at`, or as soon as
+    /// its device reconnects.
     Unreachable { retry_at: Instant },
 }
 
@@ -107,6 +109,9 @@ pub struct Avatars {
     local: HashMap<String, Slot>,
     // Keyed by SSH target, then Git directory, so a row looks up without allocating.
     remote: HashMap<String, HashMap<String, Slot>>,
+    // Each connected SSH endpoint's host and when its connection came up.
+    links: HashMap<String, (String, Instant)>,
+    offline: links::Offline,
 }
 
 impl Avatars {
@@ -131,23 +136,29 @@ impl Avatars {
                 }
             }
         });
+        let offline = links::Offline::default();
         // Deliberately detach: dropping the senders ends the workers without a UI join.
         let remote_incoming = Arc::new(Mutex::new(remote_incoming));
         for _ in 0..REMOTE_READERS {
-            let (incoming, outgoing, refresh) =
-                (remote_incoming.clone(), outgoing.clone(), refresh.clone());
+            let (incoming, offline, outgoing, refresh) = (
+                remote_incoming.clone(),
+                offline.clone(),
+                outgoing.clone(),
+                refresh.clone(),
+            );
             thread::spawn(move || {
                 // The lock is held only while waiting, never across a read.
                 while let Some(checkout) = incoming.lock().ok().and_then(|rx| rx.recv().ok()) {
-                    if !answer(checkout, &outgoing, &refresh) {
+                    if !answer(checkout, &offline, &outgoing, &refresh) {
                         break;
                     }
                 }
             });
         }
+        let local_offline = offline.clone();
         thread::spawn(move || {
             for checkout in local_incoming {
-                if !answer(checkout, &outgoing, &refresh) {
+                if !answer(checkout, &local_offline, &outgoing, &refresh) {
                     break;
                 }
             }
@@ -158,6 +169,8 @@ impl Avatars {
             results,
             local: HashMap::new(),
             remote: HashMap::new(),
+            links: HashMap::new(),
+            offline,
         }
     }
 
@@ -191,6 +204,9 @@ impl Avatars {
         while let Ok((checkout, lookup)) = self.results.try_recv() {
             let slot = match lookup {
                 Ok(image) => Slot::Resolved(image),
+                // Stopped because its device disconnected: due again as soon
+                // as one is connected, since only then is it asked for.
+                Err(herdr_client::Error::SshCancelled) => Slot::Unreachable { retry_at: now },
                 Err(_) => Slot::Unreachable {
                     retry_at: now + RETRY_AFTER,
                 },
@@ -233,8 +249,13 @@ impl Avatars {
 /// Look up one checkout's owner and send what the disk cache holds for it,
 /// queueing a download when that is missing or stale. False once the UI end
 /// is gone.
-fn answer(checkout: Checkout<String>, outgoing: &Results, refresh: &Refresh) -> bool {
-    let url = match repo_owner(checkout.as_deref()) {
+fn answer(
+    checkout: Checkout<String>,
+    offline: &links::Offline,
+    outgoing: &Results,
+    refresh: &Refresh,
+) -> bool {
+    let url = match repo_owner(checkout.as_deref(), offline) {
         Ok(owner) => {
             owner.map(|owner| format!("https://avatars.githubusercontent.com/{owner}?size=48"))
         }
@@ -255,15 +276,22 @@ fn answer(checkout: Checkout<String>, outgoing: &Results, refresh: &Refresh) -> 
 }
 
 /// The GitHub owner behind a checkout's `upstream` remote, else its `origin`.
-/// Fails only when a remote host could not be read; local Git failures and
-/// absent remotes are `None`.
-fn repo_owner(checkout: Checkout<&str>) -> herdr_client::Result<Option<String>> {
+/// Fails only when a remote host could not be read, or went offline before
+/// or during the read; local Git failures and absent remotes are `None`.
+fn repo_owner(
+    checkout: Checkout<&str>,
+    offline: &links::Offline,
+) -> herdr_client::Result<Option<String>> {
     let deadline = Instant::now() + REMOTE_TIMEOUT;
     for key in ["remote.upstream.url", "remote.origin.url"] {
         let url = match checkout {
             Checkout::Local(cwd) => local_config(cwd, key),
             // The upstream read may use most of the budget; origin gets only
             // what is left.
+            // A read queued before its device disconnected never dials.
+            Checkout::Ssh { target, .. } if links::is_offline(offline, target) => {
+                return Err(herdr_client::Error::SshCancelled);
+            }
             Checkout::Ssh { target, git_dir } => herdr_client::remote_config_value(
                 target,
                 git_dir,
@@ -271,7 +299,7 @@ fn repo_owner(checkout: Checkout<&str>) -> herdr_client::Result<Option<String>> 
                 deadline
                     .checked_duration_since(Instant::now())
                     .ok_or(herdr_client::Error::SshTimeout)?,
-                || false,
+                || links::is_offline(offline, target),
             )?,
         };
         if let Some(owner) = url.as_deref().and_then(github_owner) {
