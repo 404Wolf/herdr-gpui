@@ -4,6 +4,7 @@ use super::*;
 mod remote;
 mod remote_userinfo;
 mod retry;
+mod workers;
 
 // Exercises the disk cache; other platforms have no cache root.
 #[cfg(any(unix, windows))]
@@ -195,7 +196,8 @@ pub(super) fn detached() -> (Avatars, mpsc::Receiver<Checkout<String>>, Results)
     let (requests, incoming) = mpsc::sync_channel(MAX_REQUESTS);
     let (outgoing, results) = mpsc::channel();
     let avatars = Avatars {
-        requests,
+        local_requests: requests.clone(),
+        remote_requests: requests,
         results,
         local: HashMap::new(),
         remote: HashMap::new(),

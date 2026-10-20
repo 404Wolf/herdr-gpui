@@ -3,7 +3,7 @@ mod cache;
 use herdr_client::{ConnectTarget, protocol::ClientShellWorkspace};
 use std::{
     collections::HashMap,
-    sync::{Arc, mpsc},
+    sync::{Arc, Mutex, mpsc},
     thread,
     time::{Duration, Instant, SystemTime},
 };
@@ -20,6 +20,11 @@ const REMOTE_TIMEOUT: Duration = Duration::from_secs(10);
 /// update may ask again. A host that is briefly down then gets its avatar
 /// without a restart, and one that stays down costs one read per interval.
 const RETRY_AFTER: Duration = Duration::from_secs(60);
+
+/// SSH reads that may run at once. A host that stops answering holds a
+/// reader for up to `REMOTE_TIMEOUT`, so a few readers keep one slow host
+/// from stalling every other device's avatars.
+const REMOTE_READERS: usize = 4;
 
 /// A checkout whose repository owner's avatar a sidebar row shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -88,9 +93,15 @@ enum Slot {
 /// not be read, never when it was read and has no GitHub owner.
 type Lookup = herdr_client::Result<Option<Arc<Image>>>;
 
+type Results = mpsc::SyncSender<(Checkout<String>, Lookup)>;
+type Refresh = mpsc::SyncSender<(Checkout<String>, String)>;
+
 /// Memory front end to the shared public-image disk cache.
 pub struct Avatars {
-    requests: mpsc::SyncSender<Checkout<String>>,
+    // Local Git answers at once while an SSH read may take `REMOTE_TIMEOUT`,
+    // so each has its own queue and a slow host never delays a local avatar.
+    local_requests: mpsc::SyncSender<Checkout<String>>,
+    remote_requests: mpsc::SyncSender<Checkout<String>>,
     results: mpsc::Receiver<(Checkout<String>, Lookup)>,
     // Presence deduplicates pending requests as well as resolved hits and misses.
     local: HashMap<String, Slot>,
@@ -100,7 +111,8 @@ pub struct Avatars {
 
 impl Avatars {
     pub fn new() -> Self {
-        let (requests, incoming) = mpsc::sync_channel::<Checkout<String>>(MAX_REQUESTS);
+        let (local_requests, local_incoming) = mpsc::sync_channel(MAX_REQUESTS);
+        let (remote_requests, remote_incoming) = mpsc::sync_channel(MAX_REQUESTS);
         let (outgoing, results) = mpsc::sync_channel(MAX_REQUESTS * 2);
         let (refresh, network) = mpsc::sync_channel::<(Checkout<String>, String)>(MAX_REQUESTS);
         let updated = outgoing.clone();
@@ -119,35 +131,30 @@ impl Avatars {
                 }
             }
         });
-        // Deliberately detach: dropping the sender ends the worker without a UI join.
-        thread::spawn(move || {
-            for checkout in incoming {
-                let url = match repo_owner(checkout.as_deref()) {
-                    Ok(owner) => owner.map(|owner| {
-                        format!("https://avatars.githubusercontent.com/{owner}?size=48")
-                    }),
-                    Err(error) => {
-                        if outgoing.send((checkout, Err(error))).is_err() {
-                            break;
-                        }
-                        continue;
+        // Deliberately detach: dropping the senders ends the workers without a UI join.
+        let remote_incoming = Arc::new(Mutex::new(remote_incoming));
+        for _ in 0..REMOTE_READERS {
+            let (incoming, outgoing, refresh) =
+                (remote_incoming.clone(), outgoing.clone(), refresh.clone());
+            thread::spawn(move || {
+                // The lock is held only while waiting, never across a read.
+                while let Some(checkout) = incoming.lock().ok().and_then(|rx| rx.recv().ok()) {
+                    if !answer(checkout, &outgoing, &refresh) {
+                        break;
                     }
-                };
-                let cached = url.as_deref().and_then(cached_image);
-                let fresh = cached.as_ref().is_some_and(|(_, fresh)| *fresh);
-                if outgoing
-                    .send((checkout.clone(), Ok(cached.map(|(image, _)| image))))
-                    .is_err()
-                {
-                    break;
                 }
-                if !fresh && let Some(url) = url {
-                    let _ = refresh.try_send((checkout, url));
+            });
+        }
+        thread::spawn(move || {
+            for checkout in local_incoming {
+                if !answer(checkout, &outgoing, &refresh) {
+                    break;
                 }
             }
         });
         Self {
-            requests,
+            local_requests,
+            remote_requests,
             results,
             local: HashMap::new(),
             remote: HashMap::new(),
@@ -168,7 +175,11 @@ impl Avatars {
                 }
             }
         }
-        if self.requests.try_send(checkout.to_owned()).is_ok() {
+        let requests = match checkout {
+            Checkout::Local(_) => &self.local_requests,
+            Checkout::Ssh { .. } => &self.remote_requests,
+        };
+        if requests.try_send(checkout.to_owned()).is_ok() {
             self.insert(checkout.to_owned(), Slot::Pending);
         }
     }
@@ -217,6 +228,30 @@ impl Avatars {
             }
         }
     }
+}
+
+/// Look up one checkout's owner and send what the disk cache holds for it,
+/// queueing a download when that is missing or stale. False once the UI end
+/// is gone.
+fn answer(checkout: Checkout<String>, outgoing: &Results, refresh: &Refresh) -> bool {
+    let url = match repo_owner(checkout.as_deref()) {
+        Ok(owner) => {
+            owner.map(|owner| format!("https://avatars.githubusercontent.com/{owner}?size=48"))
+        }
+        Err(error) => return outgoing.send((checkout, Err(error))).is_ok(),
+    };
+    let cached = url.as_deref().and_then(cached_image);
+    let fresh = cached.as_ref().is_some_and(|(_, fresh)| *fresh);
+    if outgoing
+        .send((checkout.clone(), Ok(cached.map(|(image, _)| image))))
+        .is_err()
+    {
+        return false;
+    }
+    if !fresh && let Some(url) = url {
+        let _ = refresh.try_send((checkout, url));
+    }
+    true
 }
 
 /// The GitHub owner behind a checkout's `upstream` remote, else its `origin`.
