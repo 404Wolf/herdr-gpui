@@ -20,6 +20,7 @@ mod pills;
 mod pull;
 mod repo;
 mod rows;
+mod status;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
@@ -781,7 +782,6 @@ impl Render for OrchestratorView {
         let body = self.render_inbox(window, cx);
         let notice = self.render_notice(cx);
         let overlay = self.render_overlay(cx);
-        let merge_menu = self.render_merge_menu(cx);
         let look = &self.look;
         div()
             .id("orchestrator")
@@ -808,7 +808,6 @@ impl Render for OrchestratorView {
             )
             .children(notice)
             .child(body)
-            .children(merge_menu)
             .children(overlay)
     }
 }

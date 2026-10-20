@@ -18,6 +18,7 @@ mod pr_empty;
 mod refresh;
 mod rows;
 mod sessions;
+mod status;
 
 fn at(value: &str) -> DateTime<Utc> {
     DateTime::parse_from_rfc3339(value)

@@ -343,17 +343,7 @@ impl HerdrWindow {
 
 /// A colored word, such as a severity or state.
 pub(super) fn tag(look: &Look, text: impl Into<SharedString>, color: u32) -> Div {
-    div()
-        .flex_none()
-        .whitespace_nowrap()
-        .px(px(6.))
-        .py(px(1.))
-        .rounded(px(corners::SMALL))
-        .bg(rgb(mix(look.theme.background, color, 18)))
-        .text_color(rgb(color))
-        .text_size(look.small())
-        .font_weight(FontWeight::SEMIBOLD)
-        .child(text.into())
+    look.tag(text, color)
 }
 
 pub(super) fn heading(text: impl Into<SharedString>) -> Div {
