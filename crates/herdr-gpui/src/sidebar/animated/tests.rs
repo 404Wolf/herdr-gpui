@@ -161,3 +161,14 @@ fn settled_marks_keep_their_family_inside_the_slot(cx: &mut TestAppContext) {
         );
     }
 }
+
+/// Braille glyphs draw smaller than their slot, so a compact row's cell is
+/// no taller than its letters, and never vanish at the smallest fonts.
+#[test]
+fn braille_glyphs_draw_smaller_than_their_slot() {
+    for size in [6., 10., 12., 14., 16., 20., 28.] {
+        let text = braille_text_size(size);
+        assert!(text < size, "{size}: {text}");
+        assert!(text >= 4., "{size}: {text}");
+    }
+}

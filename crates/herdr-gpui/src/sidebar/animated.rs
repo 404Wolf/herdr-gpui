@@ -89,7 +89,14 @@ fn disc(diameter: f32, color: u32) -> Div {
         .bg(rgb(color))
 }
 
-/// A slot holding one braille glyph, a line as tall as the slot.
+/// A braille glyph spans nearly its whole em, from ascender to descender, so
+/// at the slot's size it stands taller than the row's letters. Three
+/// quarters keeps its dots within their cap height.
+fn braille_text_size(size: f32) -> f32 {
+    (size * 0.75).round().max(4.)
+}
+
+/// A slot holding one braille glyph, centered on a line as tall as the slot.
 fn braille_cell(selector: &'static str, size: f32, color: u32) -> Div {
     div()
         .debug_selector(move || selector.into())
@@ -98,7 +105,7 @@ fn braille_cell(selector: &'static str, size: f32, color: u32) -> Div {
         .flex()
         .items_center()
         .justify_center()
-        .text_size(px(size))
+        .text_size(px(braille_text_size(size)))
         .line_height(px(size))
         .text_color(rgb(color))
 }
