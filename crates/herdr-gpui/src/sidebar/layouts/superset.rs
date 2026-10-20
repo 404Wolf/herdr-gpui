@@ -350,14 +350,28 @@ impl RowLayout for Superset {
             });
             return shell(key, state, 0., line, cx);
         }
-        // Where the agent runs trails its name, never over half the row.
+        // The agent's pane, then where it runs, trail its name, each never over
+        // half the row.
         let line = line
-            .fill(
+            .lead(
                 div()
                     .debug_selector(|| format!("name-{key}"))
                     .text_color(rgb(color)),
                 agent.name,
+                glyph_at(cx.font, cx.font.size),
+                0.4,
             )
+            .when_some(agent.pane, |line, pane| {
+                line.label(
+                    div()
+                        .debug_selector(|| format!("pane-{key}"))
+                        .text_size(px(m.small))
+                        .text_color(rgb(theme.muted)),
+                    pane,
+                    m.glyph,
+                    0.5,
+                )
+            })
             .when_some(parts::agent_place(agent.place, cx.host), |line, place| {
                 line.label(
                     div()
@@ -370,14 +384,14 @@ impl RowLayout for Superset {
                 )
             })
             .when_some(agent.status_text.as_deref(), |line, text| {
-                line.label(
+                line.keep(
                     div()
                         .debug_selector(|| format!("status-{key}"))
                         .text_size(px(m.small))
                         .text_color(rgb(cx.indicators.color(agent.status))),
                     text,
                     m.glyph,
-                    0.5,
+                    0.3,
                 )
             });
         shell(key, state, 0., line, cx)
