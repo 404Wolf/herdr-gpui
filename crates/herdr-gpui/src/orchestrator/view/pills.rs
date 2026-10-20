@@ -40,8 +40,7 @@ impl OrchestratorView {
         }
         backends.sort_by_key(|(provider, _)| provider_name(*provider));
         let projects: Vec<(String, String, usize)> = self
-            .repos
-            .iter()
+            .projects_named()
             .map(|repo| {
                 let count = rows(repo, tab).iter().filter(|row| row.depth == 0).count();
                 (repo.key.clone(), self.project_label(repo), count)
@@ -132,8 +131,7 @@ impl OrchestratorView {
     pub(super) fn project_label(&self, repo: &super::Repo) -> String {
         let name = repo.name();
         let shared = self
-            .repos
-            .iter()
+            .projects_named()
             .filter(|other| other.name() == name)
             .count()
             > 1;

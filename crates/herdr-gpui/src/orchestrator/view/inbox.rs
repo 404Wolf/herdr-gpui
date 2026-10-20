@@ -296,7 +296,8 @@ impl OrchestratorView {
     fn render_header(&self, cx: &mut Context<Self>) -> Div {
         let look = &self.look;
         let theme = &look.theme;
-        let title = match self.repos.as_slice() {
+        let listed: Vec<_> = self.projects_named().collect();
+        let title = match listed.as_slice() {
             [] => "No repositories yet".to_owned(),
             [only] => only.name(),
             many => format!("{} projects", many.len()),
@@ -631,8 +632,8 @@ impl OrchestratorView {
     fn render_banners(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let look = &self.look;
         let mut banners = Vec::new();
-        let named = self.repos.len() > 1;
-        for repo in &self.repos {
+        let named = self.projects_named().count() > 1;
+        for repo in self.projects_named() {
             // With several projects listed, each says whose trouble it is.
             let of = |text: String| {
                 if named {
@@ -680,6 +681,7 @@ impl OrchestratorView {
             .enumerate()
             .map(|(index, banner)| {
                 banner
+                    .debug_selector(|| "orchestrator-banner".into())
                     .id(("orchestrator-banner", index))
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| {

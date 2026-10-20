@@ -12,6 +12,12 @@ use gpui::Context;
 use std::{collections::HashSet, sync::Arc};
 
 impl OrchestratorView {
+    /// The repositories the header, pills, and banners name: every one
+    /// asked for but folders outside Git.
+    pub(super) fn projects_named(&self) -> impl Iterator<Item = &Repo> {
+        self.repos.iter().filter(|repo| !repo.outside_git())
+    }
+
     /// Lists exactly `specs`: a repository no longer asked for stops its
     /// worker, a new one starts its own. The active one stays active.
     pub(crate) fn set_repos(&mut self, specs: Vec<RepoSpec>, cx: &mut Context<Self>) {

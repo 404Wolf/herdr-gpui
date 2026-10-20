@@ -45,7 +45,7 @@ impl OrchestratorView {
 
     /// Whether rows of several projects are listed, so each names its own.
     fn listing_projects(&self) -> bool {
-        self.repos.len() > 1 && self.projects.len() != 1
+        self.projects_named().count() > 1 && self.projects.len() != 1
     }
 
     /// A row's project, in its own column while several are listed.
