@@ -51,11 +51,15 @@ mod layouts;
 #[cfg(test)]
 mod listening_ports;
 #[cfg(test)]
+mod local_counts_chip;
+#[cfg(test)]
 mod nested_agents;
 #[cfg(test)]
 mod palette;
 #[cfg(test)]
 mod palette_header;
+#[cfg(test)]
+mod pane_names;
 #[cfg(test)]
 mod picker_scroll;
 #[cfg(test)]
