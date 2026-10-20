@@ -371,11 +371,11 @@ impl PaintedText {
         // describe the previous layout. Compute the sidebar column directly.
         let left =
             px(bar + look.content_x() + layout.child_indent() + super::STATUS_WIDTH + layout.gap());
+        // A child draws no fold chevron, so it keeps that column too.
         let width = px(look.content_width(super::SIDEBAR_WIDTH)
             - super::STATUS_WIDTH
             - layout.gap()
-            - layout.child_indent()
-            - super::ARROW_RESERVE);
+            - layout.child_indent());
         ensure!(
             near(self.bounds.left(), left),
             "child label left: actual {:?}, expected {left:?}",
