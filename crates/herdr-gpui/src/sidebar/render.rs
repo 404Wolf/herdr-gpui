@@ -389,6 +389,9 @@ impl HerdrWindow {
                         tree,
                         icon: if indented || !self.config.show_repository_icons {
                             RowIcon::None
+                        } else if workspace.branch.is_none() {
+                            // Not a Git checkout, so no mark that reads as one.
+                            RowIcon::Blank
                         } else {
                             self.avatars
                                 .as_ref()

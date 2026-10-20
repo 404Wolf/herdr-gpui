@@ -322,4 +322,14 @@ impl Sections {
                 .filter(|row| row.state.needs_you())
                 .count()
     }
+
+    /// When the latest of the rows [`Self::needing`] counts entered its
+    /// state.
+    pub(crate) fn needing_since(&self) -> Option<SystemTime> {
+        self.needs
+            .iter()
+            .chain(self.pinned.iter().filter(|row| row.state.needs_you()))
+            .filter_map(|row| row.since)
+            .max()
+    }
 }
