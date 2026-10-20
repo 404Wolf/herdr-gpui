@@ -415,9 +415,6 @@ impl HerdrWindow {
             .border_r_1()
             .border_color(rgb(theme.active));
         for &panel in ActivityPanel::ALL {
-            if panel == ActivityPanel::Security && !self.security_listed() {
-                continue;
-            }
             let state = if panel == self.activity.panel {
                 BarState::Selected
             } else {

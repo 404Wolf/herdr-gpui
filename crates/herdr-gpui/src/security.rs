@@ -70,9 +70,6 @@ pub(crate) struct Security {
     /// When the next read is due; `None` reads at the next tick.
     next: Option<Instant>,
     task: Option<Task<()>>,
-    /// Whether any repository had Dependabot alerts or private reporting
-    /// on, this session.
-    available: bool,
     /// The GitHub logins `repos` was read as. Private reports are only for
     /// the accounts that may see them, so what one sign-in read is dropped
     /// once the window reads GitHub as anyone else.
@@ -98,7 +95,6 @@ impl Default for Security {
             read_at: None,
             next: None,
             task: None,
-            available: false,
             accounts: Vec::new(),
             cancelled: Arc::default(),
             scroll: ScrollHandle::new(),
@@ -118,11 +114,6 @@ impl Drop for Security {
 }
 
 impl Security {
-    /// Whether the bar shows the section's icon.
-    pub(crate) fn available(&self) -> bool {
-        self.available
-    }
-
     /// The repositories as last read.
     pub(crate) fn repos(&self) -> &[Repo] {
         &self.repos
@@ -198,7 +189,6 @@ impl Security {
 
     /// What a read found, replacing the last one.
     fn install(&mut self, repos: Vec<Repo>, now: Instant, at: SystemTime) {
-        self.available |= repos.iter().any(Repo::enabled);
         self.repos = repos;
         self.keep_opened();
         self.read_at = Some(at);
@@ -268,13 +258,6 @@ impl HerdrWindow {
         logins.sort_unstable();
         logins.dedup();
         logins
-    }
-
-    /// Whether the bar lists the section: once alerts are on somewhere, or
-    /// while it is the one shown, so a stored or asked-for choice is never
-    /// left without its icon.
-    pub(crate) fn security_listed(&self) -> bool {
-        self.security.available() || self.activity.panel == ActivityPanel::Security
     }
 
     /// Shows `url`, an alert's or repository's page, in a browser tab of the

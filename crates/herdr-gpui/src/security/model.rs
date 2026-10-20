@@ -144,13 +144,6 @@ impl Repo {
         matches!(self.reports, Ok(Reports::Open { more: true, .. }))
     }
 
-    /// Whether GitHub reported Dependabot alerts or private vulnerability
-    /// reporting on for the repository.
-    pub(crate) fn enabled(&self) -> bool {
-        matches!(self.alerts, Ok(Alerts::Open { .. }))
-            || matches!(self.reports, Ok(Reports::Open { .. }))
-    }
-
     /// The report's page in the repository's Security tab.
     pub(crate) fn report_url(&self, report: &Report) -> Option<String> {
         super::reports::report_url(&self.name, report)
