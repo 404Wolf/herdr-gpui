@@ -18,6 +18,7 @@ mod outside_git;
 mod pills;
 mod pr_empty;
 mod refresh;
+mod row_start;
 mod rows;
 mod sessions;
 mod status;

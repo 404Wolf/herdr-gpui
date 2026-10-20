@@ -107,12 +107,9 @@ impl OrchestratorView {
                 }
                 head.push(("TITLE", None));
                 if !compact {
-                    head.extend([
-                        ("AUTHOR", Some(110.)),
-                        ("\u{1f4ac}", Some(34.)),
-                        ("", Some(ACTION_WIDTH)),
-                    ]);
+                    head.extend([("AUTHOR", Some(110.)), ("\u{1f4ac}", Some(34.))]);
                 }
+                head.push(("", Some(ACTION_WIDTH)));
             }
             Tab::PullRequests => {
                 head.push(("PR", Some(48.)));
@@ -394,9 +391,10 @@ impl OrchestratorView {
         });
         let writable = self.repos[row.repo].snapshot.access == Some(Access::ReadWrite);
         let blocked = !item.blocked_by.is_empty() || item.state == "blocked";
-        let start = (!compact && writable && row.run.is_none() && !blocked).then(|| {
+        let start = (writable && row.run.is_none() && !blocked).then(|| {
             let key = key.clone();
             look.compact_button(("orchestrator-start", index), "Start agent")
+                .debug_selector(|| "orchestrator-start".into())
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(move |this, _, window, cx| {
                     this.open_dispatch(key.clone(), window, cx);
@@ -466,16 +464,16 @@ impl OrchestratorView {
                                 .unwrap_or_default(),
                         ),
                 )
-                .child(
-                    div()
-                        .flex_none()
-                        .w(px(ACTION_WIDTH))
-                        .flex()
-                        .justify_end()
-                        .children(start)
-                        .when(blocked, |el| el.child(look.badge("blocked", YELLOW))),
-                )
             })
+            .child(
+                div()
+                    .flex_none()
+                    .w(px(ACTION_WIDTH))
+                    .flex()
+                    .justify_end()
+                    .children(start)
+                    .when(blocked, |el| el.child(look.badge("blocked", YELLOW))),
+            )
             .into_any_element()
     }
 
