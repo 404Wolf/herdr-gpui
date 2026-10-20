@@ -1,10 +1,11 @@
 use gpui::{Image, ImageFormat};
 mod cache;
+use herdr_client::{ConnectTarget, protocol::ClientShellWorkspace};
 use std::{
     collections::HashMap,
     sync::{Arc, mpsc},
     thread,
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 const MAX_REQUESTS: usize = 128;
@@ -12,30 +13,89 @@ const MAX_REQUESTS: usize = 128;
 /// A bound on each remote path segment, above GitHub's own name limits.
 const MAX_SEGMENT: usize = 100;
 
+/// The whole budget for reading one remote checkout's Git configuration.
+const REMOTE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// A checkout whose repository owner's avatar a sidebar row shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Checkout<S> {
+    /// A workspace directory on this machine, read by local Git.
+    Local(S),
+    /// The Git directory a saved SSH device's daemon reported, read there.
+    Ssh { target: S, git_dir: S },
+}
+
+impl<'a> Checkout<&'a str> {
+    /// The checkout behind `workspace` on the device reached by `target`.
+    /// Only the local daemon's directories are read by this machine's Git; a
+    /// saved SSH device is read over SSH by the Git directory its daemon
+    /// reported, so it needs worktree metadata. Other devices may be forwarded
+    /// from an unknown machine and get none.
+    pub(crate) fn of(
+        local: bool,
+        target: &'a ConnectTarget,
+        workspace: &'a ClientShellWorkspace,
+    ) -> Option<Self> {
+        match target {
+            ConnectTarget::Ssh { target, .. } => {
+                workspace.worktree.as_ref().map(|tree| Self::Ssh {
+                    target,
+                    git_dir: &tree.key,
+                })
+            }
+            _ if local => Some(Self::Local(&workspace.new_workspace_cwd)),
+            _ => None,
+        }
+    }
+
+    fn to_owned(self) -> Checkout<String> {
+        match self {
+            Self::Local(cwd) => Checkout::Local(cwd.to_owned()),
+            Self::Ssh { target, git_dir } => Checkout::Ssh {
+                target: target.to_owned(),
+                git_dir: git_dir.to_owned(),
+            },
+        }
+    }
+}
+
+impl Checkout<String> {
+    fn as_deref(&self) -> Checkout<&str> {
+        match self {
+            Self::Local(cwd) => Checkout::Local(cwd),
+            Self::Ssh { target, git_dir } => Checkout::Ssh { target, git_dir },
+        }
+    }
+}
+
+type Slot = Option<Arc<Image>>;
+
 /// Memory front end to the shared public-image disk cache.
 pub struct Avatars {
-    requests: mpsc::SyncSender<String>,
-    results: mpsc::Receiver<(String, Option<Arc<Image>>)>,
+    requests: mpsc::SyncSender<Checkout<String>>,
+    results: mpsc::Receiver<(Checkout<String>, Slot)>,
     // Presence deduplicates pending requests as well as resolved hits and misses.
-    images: HashMap<String, Option<Arc<Image>>>,
+    local: HashMap<String, Slot>,
+    // Keyed by SSH target, then Git directory, so a row looks up without allocating.
+    remote: HashMap<String, HashMap<String, Slot>>,
 }
 
 impl Avatars {
     pub fn new() -> Self {
-        let (requests, incoming) = mpsc::sync_channel::<String>(MAX_REQUESTS);
+        let (requests, incoming) = mpsc::sync_channel::<Checkout<String>>(MAX_REQUESTS);
         let (outgoing, results) = mpsc::sync_channel(MAX_REQUESTS * 2);
-        let (refresh, network) = mpsc::sync_channel::<(String, String)>(MAX_REQUESTS);
+        let (refresh, network) = mpsc::sync_channel::<(Checkout<String>, String)>(MAX_REQUESTS);
         let updated = outgoing.clone();
         thread::spawn(move || {
             let agent = avatar_agent();
             let mut owners = HashMap::new();
-            for (cwd, url) in network {
+            for (checkout, url) in network {
                 let image = owners
                     .entry(url.clone())
                     .or_insert_with(|| download(&agent, &url))
                     .clone();
                 if let Some(image) = image
-                    && updated.send((cwd, Some(image))).is_err()
+                    && updated.send((checkout, Some(image))).is_err()
                 {
                     break;
                 }
@@ -43,69 +103,109 @@ impl Avatars {
         });
         // Deliberately detach: dropping the sender ends the worker without a UI join.
         thread::spawn(move || {
-            for cwd in incoming {
-                let url = repo_owner(&cwd)
+            for checkout in incoming {
+                let url = repo_owner(checkout.as_deref())
                     .map(|owner| format!("https://avatars.githubusercontent.com/{owner}?size=48"));
                 let cached = url.as_deref().and_then(cached_image);
                 let fresh = cached.as_ref().is_some_and(|(_, fresh)| *fresh);
                 if outgoing
-                    .send((cwd.clone(), cached.map(|(image, _)| image)))
+                    .send((checkout.clone(), cached.map(|(image, _)| image)))
                     .is_err()
                 {
                     break;
                 }
                 if !fresh && let Some(url) = url {
-                    let _ = refresh.try_send((cwd, url));
+                    let _ = refresh.try_send((checkout, url));
                 }
             }
         });
         Self {
             requests,
             results,
-            images: HashMap::new(),
+            local: HashMap::new(),
+            remote: HashMap::new(),
         }
     }
 
-    /// Enqueue each exact cwd at most once, including failed resolutions.
-    pub fn request(&mut self, cwd: &str) {
-        if self.images.len() >= MAX_REQUESTS {
+    /// Enqueue each exact checkout at most once, including failed resolutions.
+    pub(crate) fn request(&mut self, checkout: Checkout<&str>) {
+        let len = self.local.len() + self.remote.values().map(HashMap::len).sum::<usize>();
+        if len >= MAX_REQUESTS || self.slot(checkout).is_some() {
             return;
         }
-        if let std::collections::hash_map::Entry::Vacant(entry) = self.images.entry(cwd.to_owned())
-            && self.requests.try_send(entry.key().clone()).is_ok()
-        {
-            entry.insert(None);
+        if self.requests.try_send(checkout.to_owned()).is_ok() {
+            self.insert(checkout.to_owned(), None);
         }
     }
 
     /// Drain completed requests without blocking. Misses also count as updates.
     pub fn poll(&mut self) -> bool {
         let mut changed = false;
-        for (cwd, image) in self.results.try_iter() {
-            self.images.insert(cwd, image);
+        while let Ok((checkout, image)) = self.results.try_recv() {
+            self.insert(checkout, image);
             changed = true;
         }
         changed
     }
 
-    pub fn image(&self, cwd: &str) -> Option<Arc<Image>> {
-        self.images.get(cwd).cloned().flatten()
+    pub(crate) fn image(&self, checkout: Checkout<&str>) -> Option<Arc<Image>> {
+        self.slot(checkout).cloned().flatten()
+    }
+
+    fn slot(&self, checkout: Checkout<&str>) -> Option<&Slot> {
+        match checkout {
+            Checkout::Local(cwd) => self.local.get(cwd),
+            Checkout::Ssh { target, git_dir } => self.remote.get(target)?.get(git_dir),
+        }
+    }
+
+    fn insert(&mut self, checkout: Checkout<String>, image: Slot) {
+        match checkout {
+            Checkout::Local(cwd) => {
+                self.local.insert(cwd, image);
+            }
+            Checkout::Ssh { target, git_dir } => {
+                self.remote
+                    .entry(target)
+                    .or_default()
+                    .insert(git_dir, image);
+            }
+        }
     }
 }
 
-fn repo_owner(cwd: &str) -> Option<String> {
-    for key in ["remote.upstream.url", "remote.origin.url"] {
-        if let Ok(output) = herdr_client::new_command("git")
-            .args(["-C", cwd, "config", "--default", "", "--get", key])
-            .output()
-            && output.status.success()
-            && let Ok(text) = std::str::from_utf8(&output.stdout)
-            && let Some(owner) = github_owner(text.trim_end_matches(['\r', '\n']))
-        {
-            return Some(owner);
-        }
-    }
-    None
+/// The GitHub owner behind a checkout's `upstream` remote, else its `origin`.
+fn repo_owner(checkout: Checkout<&str>) -> Option<String> {
+    let deadline = Instant::now() + REMOTE_TIMEOUT;
+    ["remote.upstream.url", "remote.origin.url"]
+        .into_iter()
+        .find_map(|key| {
+            let url = match checkout {
+                Checkout::Local(cwd) => local_config(cwd, key),
+                // The upstream read may use most of the budget; origin gets
+                // only what is left.
+                Checkout::Ssh { target, git_dir } => herdr_client::remote_config_value(
+                    target,
+                    git_dir,
+                    key,
+                    deadline.checked_duration_since(Instant::now())?,
+                    || false,
+                )
+                .ok()
+                .flatten(),
+            }?;
+            github_owner(&url)
+        })
+}
+
+fn local_config(cwd: &str, key: &str) -> Option<String> {
+    let output = herdr_client::new_command("git")
+        .args(["-C", cwd, "config", "--default", "", "--get", key])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())?;
+    let text = std::str::from_utf8(&output.stdout).ok()?;
+    Some(text.trim_end_matches(['\r', '\n']).to_owned())
 }
 
 fn github_owner(remote: &str) -> Option<String> {

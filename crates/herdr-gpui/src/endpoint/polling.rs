@@ -1,7 +1,7 @@
 //! The window's periodic endpoint work: draining each connection, activating
 //! the selected surface, and probing sessions.
 use super::{ACTIVATION_TIMEOUT, LOCAL, Redraw};
-use crate::HerdrWindow;
+use crate::{HerdrWindow, avatars::Checkout};
 use gpui::{ClipboardItem, Context};
 use herdr_client::RemoteHost;
 use std::time::Instant;
@@ -79,14 +79,17 @@ impl HerdrWindow {
                 Instant::now(),
             );
             changed = changed.max(updated);
-            // Remote cwd strings must never be resolved against this machine's Git repos.
+            // Remote cwd strings must never be resolved against this machine's
+            // Git repos; `Checkout::of` reads a saved SSH device's over SSH.
             if updated == Redraw::Window
-                && index == 0
                 && let (Some(avatars), Some(snapshot)) =
                     (&mut self.avatars, &endpoint.live.snapshot)
             {
+                let target = &endpoint.connection.target;
                 for workspace in &snapshot.workspaces {
-                    avatars.request(&workspace.new_workspace_cwd);
+                    if let Some(checkout) = Checkout::of(index == 0, target, workspace) {
+                        avatars.request(checkout);
+                    }
                 }
             }
             if endpoint.enabled
