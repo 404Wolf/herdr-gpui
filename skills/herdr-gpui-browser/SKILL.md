@@ -210,6 +210,7 @@ for what only Herdr UI shows or keeps.
 | To | Run |
 | --- | --- |
 | Show a file at a line, read-only | `herdr-gpui code open src/main.rs:42` |
+| Show a local Claude pane as Chat or Terminal, or report its mode | `herdr-gpui ui chat on`, `herdr-gpui ui chat off`, `herdr-gpui ui chat status --json` |
 | Open the review of your uncommitted changes | `herdr-gpui review` |
 | Get notes the user sent this pane (pages, reviews, terminals) | `herdr-gpui feedback --wait 600` |
 | Keep a note on this worktree (repository and branch) | `herdr-gpui notes set waiting on CI` |

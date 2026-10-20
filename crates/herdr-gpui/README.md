@@ -32,7 +32,8 @@ edge, unless that row holds one of these separators, so a prompt on the last row
 stays cell-high. Backgrounds, highlights, underlines, and separators share snapped
 absolute cell edges to prevent one-pixel seams at fractional cell widths. This
 rendering is independent of the program producing the terminal cells.
-Dashed, double, rounded and diagonal box lines, shading characters, and
+Rounded box corners also follow the cell grid, so their edges meet vertical
+lines at any configured line height. Dashed, double and diagonal box lines, shading characters, and
 graphemes with combining marks continue to use font rendering.
 
 ```sh
@@ -66,6 +67,53 @@ at the end of its backoff.
 The status dot pulses amber during local daemon startup and is red when disconnected.
 Healthy connections leave the status bar quiet; connection indicators live in the
 device picker. Startup, disconnection, and operation errors remain in the status bar.
+
+## Claude chat
+
+A local Claude Code pane offers a **Terminal / Chat** segmented control above
+the selected terminal group. Chat reads the exact session reported by Herdr from
+Claude's native JSONL store. On macOS and Linux, when Herdr has no session hook
+metadata, Chat uses the pane's unique foreground Claude process and its native
+`sessions/<pid>.json` record, verifying the process start identity to reject PID
+reuse. This also works before the first message creates a transcript file.
+Windows still requires Herdr's reported session identity. Chat does not create an ACP session or take ownership
+of the terminal. Switching back shows the original terminal and its normal
+configured font, weight, fallbacks, size, and line height.
+
+The native conversation shows Markdown, folded tool activity, copyable turns,
+and a multiline composer. Enter inserts a newline; Cmd+Enter on macOS or
+Ctrl+Enter elsewhere sends. Drafts, expansion, and reading position survive mode
+switches during this window's lifetime. History follows new messages only when
+already at the bottom. A new terminal or Claude session requires explicitly
+discarding the old draft before attaching it to the replacement.
+
+This first version supports local release sessions and Claude's default
+`~/.claude/projects` store, or `CLAUDE_CONFIG_DIR` inherited by the app. The native
+process fallback also follows that process's `CLAUDE_CONFIG_DIR`. An older Claude
+without a verifiable PID record needs Herdr's session integration; ambiguous
+processes or stores stay available in Terminal. SSH, WSL, explicit socket targets, development
+sessions, other agents, image rendering, and approval cards are not supported
+in Chat yet. Answer approvals and interactive questions in Terminal.
+
+Reads run on a bounded background worker. The newest 2 MiB is read first;
+**Load older history** extends the window up to 16 MiB. Oversized records and
+display limits are reported rather than loaded without bounds. Clear and
+compaction boundaries exclude preceding history. Up to eight chat views are
+retained per window; empty terminal-mode views can be reclaimed, but drafts
+are never silently evicted. Drafts are not saved to disk across app restarts.
+
+Send uses the installed Herdr CLI's `agent.prompt` after checking the exact
+pane, terminal, session, idle state, and an empty live input box. Unknown input
+layouts and unverified suggestion styles require using Terminal. Dim placeholder
+text counts as empty only when the colored viewport is verified against unchanged
+live-screen reads and bottom-of-history scroll metadata. Chat never clears a terminal
+draft or automatically retries a failed/uncertain send. Herdr's acknowledgement
+means the terminal received the submission, not that the model answered. The
+API does not offer an atomic compare-session-and-prompt operation: another
+client changing the session between validation and submission remains a race.
+
+`herdr-gpui ui chat on|off|status` changes or reports this view from the
+[command line](../../docs/cli.md); it never submits a prompt.
 
 For split terminal panes within a tab, **Focus follows mouse** is on by default.
 Disable it in **Settings > Tabs & panes > Panes**, or run

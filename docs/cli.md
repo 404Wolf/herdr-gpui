@@ -68,10 +68,18 @@ Every command accepts:
 | `window detach\|reconnect` | Detach from, or reconnect to, the selected host |
 | `ui sidebar\|statusbar [on\|off\|toggle]` | For this window and session |
 | `ui font-size +\|-\|reset\|POINTS` | The terminal font size for this session |
+| `ui chat [on\|off\|status]` | Switch the selected local Claude pane between Chat and Terminal, or report its current mode |
 | `ui panel workspaces\|overview\|pull-requests\|issues\|security\|usage` | Show an activity bar section: Workspaces with the sidebar expanded, Overview of what needs you on every host, the focused workspace's pull requests or issues across the window, the vulnerability reports and Dependabot alerts of your repositories, or every host's plan usage |
 | `run COMMAND` | Any app command by its `[keybindings]` name, as the palette runs it |
 | `commands` | The names `run` accepts (no app needed) |
 | `open DIR` | Open a folder as **Open Project** in the palette does, starting the app if needed (below) |
+
+`ui chat` uses the same Terminal / Chat control as the pane header. It supports
+local Claude Code panes in release sessions; other agents, SSH/WSL hosts,
+development sessions, and explicit socket targets return exit 8. A caller in
+another pane is refused (exit 5), and an open dialog returns exit 6. `--json`
+returns `{"pane":"…","mode":"chat"}` or `"terminal"`. This command changes
+the view only; agent prompts remain Herdr's responsibility.
 
 `open DIR` checks the folder where you run it and resolves it to an absolute,
 canonical path. A path that does not exist exits 5; a file, or a folder in a

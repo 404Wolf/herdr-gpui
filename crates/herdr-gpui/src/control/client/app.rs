@@ -128,12 +128,26 @@ pub(super) fn window(command: WindowCommand, context: &Context) -> crate::Result
 
 pub(super) fn ui(command: UiCommand, context: &Context) -> crate::Result<Output> {
     let op = match command {
+        UiCommand::Chat(mode) => UiOp::Chat { mode },
         UiCommand::Sidebar(switch) => UiOp::Sidebar { switch },
         UiCommand::StatusBar(switch) => UiOp::StatusBar { switch },
         UiCommand::FontSize(size) => UiOp::FontSize { size },
         UiCommand::Panel(panel) => UiOp::Panel { panel },
     };
     match context.call(Request::Ui, op)? {
+        Response::App {
+            reply: Reply::Chat { mode, pane },
+        } => Output::data(
+            format!(
+                "{pane}: {}",
+                if mode == herdr_client::chat::Mode::Chat {
+                    "chat"
+                } else {
+                    "terminal"
+                }
+            ),
+            &serde_json::json!({ "pane": pane, "mode": mode }),
+        ),
         Response::Done { message } => Ok(Output::message(message)),
         Response::App {
             reply: Reply::FontSize { points },

@@ -31,6 +31,8 @@ fn running(argv: &[&str]) -> ProcessInfo {
         foreground_process_group_id: Some(9),
         shell_pid: Some(1),
         foreground_processes: vec![Process {
+            argv0: None,
+            name: None,
             pid: 9,
             argv: strings(argv),
             cwd: None,

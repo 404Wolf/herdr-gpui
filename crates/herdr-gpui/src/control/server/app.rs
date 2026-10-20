@@ -268,6 +268,24 @@ pub(super) fn window(call: Call<WindowOp>, cx: &mut App) -> Response {
 
 pub(super) fn ui(call: Call<UiOp>, cx: &mut App) -> Response {
     in_window(&call.caller, cx, |view, window, cx| match call.op {
+        UiOp::Chat { mode } => {
+            if view.menu.page.is_some() {
+                return Response::error(
+                    ErrorCode::WindowBusy,
+                    "Close the dialog before switching agent views",
+                );
+            }
+            match view.chat_mode(mode, call.caller.pane_id.as_deref(), window, cx) {
+                Ok((mode, pane)) => Response::App {
+                    reply: Reply::Chat { mode, pane },
+                },
+                Err(crate::chat::Error::Unsupported) => Response::error(
+                    ErrorCode::Unsupported,
+                    "Select a local Claude Code pane in a release session first",
+                ),
+                Err(error) => Response::error(ErrorCode::NotFound, error.to_string()),
+            }
+        }
         UiOp::Sidebar { switch } => {
             let visible = switch.apply(view.sidebar_visible);
             if visible != view.sidebar_visible {

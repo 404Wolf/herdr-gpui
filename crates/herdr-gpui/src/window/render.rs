@@ -662,7 +662,7 @@ impl Render for HerdrWindow {
             let body = match (&shown, tab) {
                 (Shown::Terminal, _) if terminal_slot == Some(slot) => terminal
                     .take()
-                    .map(IntoElement::into_any_element)
+                    .map(|terminal| self.render_agent_chat(terminal.into_any_element(), cx))
                     .unwrap_or_else(|| div().into_any_element()),
                 (Shown::Terminal, _) if self.shows_parked_terminal(slot.id, cx) => {
                     self.render_parked_terminal(slot, parked_font.clone(), cell_height, cx)

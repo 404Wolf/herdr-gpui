@@ -23,6 +23,8 @@ mod sessions;
 mod snapshot;
 mod ui;
 
+#[cfg(any(test, target_os = "macos", target_os = "linux"))]
+pub(crate) use snapshot::Process;
 pub(crate) use {
     error::{Error, Step},
     fresh::{

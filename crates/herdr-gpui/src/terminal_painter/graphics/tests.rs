@@ -125,7 +125,7 @@ fn box_corners_tees_and_mixed_weights_join() {
 }
 
 #[test]
-fn graphics_are_bounded_and_pixel_aligned() {
+fn quad_graphics_are_bounded_and_pixel_aligned() {
     for code in 0x2500..=0x259f {
         let Some(ch) = char::from_u32(code) else {
             continue;
@@ -133,6 +133,10 @@ fn graphics_are_bounded_and_pixel_aligned() {
         let Some(graphic) = Graphic::from_symbol(&ch.to_string()) else {
             continue;
         };
+        // Rounded corners are paths; their stroke joins are checked separately.
+        if matches!(graphic, Graphic::Rounded { .. }) {
+            continue;
+        }
         for scale in [1., 1.25, 1.5, 2., 3.] {
             let cell = Bounds::new(point(px(3.27), px(7.13)), size(px(8.53), px(20.7)));
             let full = rectangles("█", cell, scale)[0];
@@ -169,7 +173,6 @@ fn ordinary_text_and_unsupported_graphics_keep_font_shaping() {
         "─\u{301}",
         "█\u{fe0f}",
         "██",
-        "╭",
         "╱",
         "═",
         "┆",

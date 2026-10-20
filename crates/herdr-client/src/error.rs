@@ -23,6 +23,8 @@ pub enum StorageOperation {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error(transparent)]
+    Chat(#[from] crate::chat::Error),
     /// Paths are available to diagnostic callers but omitted from presentation text.
     #[error("{source}")]
     Storage {

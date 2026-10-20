@@ -668,17 +668,20 @@ impl TerminalPainter {
                         .flatten()
                     {
                         let color = rgb(cell_colors(cell, &self.theme).0);
-                        graphic.rectangles(
+                        match graphic.paint(
                             Bounds::new(position, size(px(cell_width), px(self.cell_height))),
-                            window.scale_factor(),
-                            |bounds| {
-                                window.paint_quad(fill(bounds, color));
+                            color,
+                            window,
+                        ) {
+                            Ok(count) => {
+                                let _ = count;
                                 #[cfg(feature = "integration-test")]
                                 {
-                                    counts.quads += 1;
+                                    counts.quads += count;
                                 }
-                            },
-                        );
+                            }
+                            Err(_) => paint_errors += 1,
+                        }
                     }
                     let row = index / usize::from(frame.width);
                     for (y, left, right) in

@@ -85,6 +85,9 @@ pub enum FontSize {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum UiOp {
+    Chat {
+        mode: Option<herdr_client::chat::Mode>,
+    },
     Sidebar {
         switch: Switch,
     },
@@ -143,9 +146,20 @@ pub(crate) struct HostInfo {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum Reply {
-    Windows { windows: Vec<WindowInfo> },
-    Size { width: f32, height: f32 },
-    FontSize { points: f32 },
+    Chat {
+        mode: herdr_client::chat::Mode,
+        pane: String,
+    },
+    Windows {
+        windows: Vec<WindowInfo>,
+    },
+    Size {
+        width: f32,
+        height: f32,
+    },
+    FontSize {
+        points: f32,
+    },
 }
 
 #[cfg(test)]

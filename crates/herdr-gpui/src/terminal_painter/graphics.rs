@@ -1,6 +1,8 @@
 //! Terminal graphics occupy the cell, not the font's ink bounds. Keep their
 //! edges on the same device-pixel grid even with fractional cell metrics.
-use gpui::{Bounds, Path, PathBuilder, Pixels, Point, point, px};
+use gpui::{Bounds, Path, PathBuilder, Pixels, Point, Rgba, Window, fill, point, px};
+
+mod rounded;
 
 #[derive(Clone, Copy)]
 pub(super) enum Graphic {
@@ -8,6 +10,7 @@ pub(super) enum Graphic {
     Lines([u8; 4]),
     Block([u8; 4]),
     Quadrants(u8),
+    Rounded { right: bool, down: bool },
 }
 
 #[cfg(test)]
@@ -105,6 +108,30 @@ impl Graphic {
             return None;
         }
         let lines = match ch {
+            '╭' => {
+                return Some(Self::Rounded {
+                    right: true,
+                    down: true,
+                });
+            }
+            '╮' => {
+                return Some(Self::Rounded {
+                    right: false,
+                    down: true,
+                });
+            }
+            '╰' => {
+                return Some(Self::Rounded {
+                    right: true,
+                    down: false,
+                });
+            }
+            '╯' => {
+                return Some(Self::Rounded {
+                    right: false,
+                    down: false,
+                });
+            }
             '─' => [1, 1, 0, 0],
             '━' => [2, 2, 0, 0],
             '│' => [0, 0, 1, 1],
@@ -210,7 +237,7 @@ impl Graphic {
                 const MASKS: [u8; 10] = [4, 8, 1, 13, 9, 7, 11, 2, 6, 14];
                 return Some(Self::Quadrants(MASKS[(ch as u32 - '▖' as u32) as usize]));
             }
-            // Dashed, double, rounded and diagonal lines, and shades retain
+            // Dashed, double and diagonal lines, and shades retain
             // their font rendering rather than changing their intended shape.
             _ => return None,
         };
@@ -238,6 +265,7 @@ impl Graphic {
             }
         };
         match self {
+            Self::Rounded { .. } => {}
             Self::Block([left, top, right, bottom]) => rect(
                 x + w * f32::from(left) / 8.,
                 y + h * f32::from(top) / 8.,

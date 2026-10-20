@@ -26,6 +26,7 @@ pub enum WindowCommand {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UiCommand {
+    Chat(Option<herdr_client::chat::Mode>),
     Sidebar(Switch),
     StatusBar(Switch),
     FontSize(FontSize),
@@ -85,9 +86,18 @@ const PANELS: &str = "workspaces|overview|pull-requests|issues|security|usage";
 pub(super) fn ui(args: &mut Args) -> Result<UiCommand, CliError> {
     let verb = args.verb().ok_or(CliError::MissingArgument {
         command: "ui",
-        what: "sidebar|statusbar|font-size|panel",
+        what: "sidebar|statusbar|font-size|panel|chat",
     })?;
     Ok(match verb.to_str() {
+        Some("chat") => UiCommand::Chat(match args.positional() {
+            None => None,
+            Some(value) => match value.to_str() {
+                Some("status") => None,
+                Some("on") => Some(herdr_client::chat::Mode::Chat),
+                Some("off") => Some(herdr_client::chat::Mode::Terminal),
+                _ => return Err(CliError::InvalidValue("on|off|status")),
+            },
+        }),
         Some("sidebar") => UiCommand::Sidebar(switch(args.positional())?),
         Some("statusbar" | "status-bar") => UiCommand::StatusBar(switch(args.positional())?),
         Some("panel") => {

@@ -1,6 +1,7 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
 use crate::control::protocol::app::Switch;
+mod chat;
 
 fn call<T>(op: T) -> Call<T> {
     Call {

@@ -91,20 +91,7 @@ fn is_working<'de, D: serde::Deserializer<'de>>(d: D) -> Result<bool, D::Error> 
     Ok(Option::<String>::deserialize(d)?.as_deref() == Some("working"))
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-pub(crate) struct AgentSession {
-    pub(crate) agent: String,
-    pub(crate) kind: SessionKind,
-    pub(crate) source: String,
-    pub(crate) value: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum SessionKind {
-    Id,
-    Path,
-}
+pub(crate) use herdr_client::chat::{AgentSession, SessionKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 pub(crate) struct Rect {
@@ -166,11 +153,18 @@ pub(crate) struct ProcessInfo {
     pub(crate) foreground_processes: Vec<Process>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub(crate) struct Process {
     pub(crate) pid: u32,
     #[serde(default)]
     pub(crate) argv: Vec<String>,
+    // The native Claude PID-record fallback is available on these hosts.
+    #[cfg(any(test, target_os = "macos", target_os = "linux"))]
+    #[serde(default)]
+    pub(crate) argv0: Option<String>,
+    #[cfg(any(test, target_os = "macos", target_os = "linux"))]
+    #[serde(default)]
+    pub(crate) name: Option<String>,
     pub(crate) cwd: Option<String>,
 }
 

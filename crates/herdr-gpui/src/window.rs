@@ -129,6 +129,7 @@ pub(crate) struct HerdrWindow {
     pub(crate) browser: crate::browser::Browser,
     pub(crate) catalog: endpoint::Catalog,
     pub(crate) cell_width: f32,
+    pub(crate) chats: crate::chat::Chats,
     /// Snapshots of checkouts taken at agent turns, and the dialog listing them.
     pub(crate) checkpoints: crate::checkpoint::Checkpoints,
     /// The chrome region whose controls take Tab; see `chrome_focus`.
@@ -531,6 +532,7 @@ impl HerdrWindow {
         self.post_system_notifications(window, cx);
         self.ring_bell(window);
         self.poll_integrations(cx);
+        self.poll_chat(cx);
         self.poll_links(window, cx);
         if self.settings.task.is_none() {
             let mut reload = false;
