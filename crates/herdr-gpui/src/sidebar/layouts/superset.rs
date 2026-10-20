@@ -228,6 +228,7 @@ impl RowLayout for Superset {
                 cx.look.density.card_indent()
             };
         let pr = badge.as_ref().and_then(|badge| badge.pr.as_ref());
+        let changes = badge.as_ref().and_then(|badge| badge.counts.as_ref());
         let dirty = badge.as_ref().is_some_and(|badge| badge.dirty);
         let teleported = badge.as_ref().is_some_and(|badge| badge.teleported);
         let dirty_size = (line_height(cx.font) * 0.75).round().min(15.);
@@ -301,11 +302,19 @@ impl RowLayout for Superset {
             .when(teleported, |line| {
                 line.fixed(dirty_size, parts::teleported(label, dirty_size, theme))
             })
-            .when(dirty, |line| {
-                line.fixed(dirty_size, parts::dirty(label, dirty_size, theme))
-            })
-            .when_some(pr, |line, pr| {
-                let (width, counts) = parts::pr_counts(label, pr, m.glyph, counts);
+            // Local counts take the dirty mark's place, in a chip of its hue.
+            .when(
+                dirty && !changes.is_some_and(|changes| changes.local),
+                |line| line.fixed(dirty_size, parts::dirty(label, dirty_size, theme)),
+            )
+            .when_some(changes, |line, changes| {
+                if changes.local {
+                    let (glyph, icon) = (m.glyph, (dirty_size * 0.8).round());
+                    let chip = changes.chip(label, glyph, icon, counts, theme);
+                    return line
+                        .shrink(changes.chip_width(glyph, icon), chip.text_size(px(m.small)));
+                }
+                let (width, counts) = parts::counts(label, changes, m.glyph, counts);
                 line.shrink(width, counts.text_size(px(m.small)))
             })
             .when_some(fold, |line, fold| {

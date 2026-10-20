@@ -10,7 +10,7 @@
 use super::super::{
     cell::{RowContext, RowState},
     glyph_width, label_text, line_height,
-    row::{self, PrBadge, RowLift, removing_dot},
+    row::{self, Counts, PrBadge, RowLift, removing_dot},
     status_indicator,
     tokens::ResolvedToken,
 };
@@ -304,10 +304,10 @@ pub(super) fn dirty(key: &str, size: f32, theme: &Theme) -> Div {
     crate::icons::uncommitted(theme, size).debug_selector(|| format!("dirty-{key}"))
 }
 
-/// The pull request's `+additions -deletions`, colored or muted, and the
-/// width it needs at `glyph`.
-pub(super) fn pr_counts(key: &str, pr: &PrBadge, glyph: f32, colors: (u32, u32)) -> (f32, Div) {
-    let glyphs = pr.additions.chars().count() + pr.deletions.chars().count() + 1;
+/// The row's `+additions -deletions`, colored or muted, and the width it
+/// needs at `glyph`.
+pub(super) fn counts(key: &str, counts: &Counts, glyph: f32, colors: (u32, u32)) -> (f32, Div) {
+    let glyphs = counts.glyphs();
     let element = div()
         .debug_selector(|| format!("pr-{key}"))
         .flex()
@@ -315,12 +315,12 @@ pub(super) fn pr_counts(key: &str, pr: &PrBadge, glyph: f32, colors: (u32, u32))
         .child(
             div()
                 .text_color(rgb(colors.0))
-                .child(label_text(&pr.additions)),
+                .child(label_text(&counts.additions)),
         )
         .child(
             div()
                 .text_color(rgb(colors.1))
-                .child(label_text(&pr.deletions)),
+                .child(label_text(&counts.deletions)),
         );
     ((glyphs as f32 * glyph).ceil(), element)
 }

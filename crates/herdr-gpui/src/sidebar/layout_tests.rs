@@ -51,6 +51,8 @@ mod layouts;
 #[cfg(test)]
 mod listening_ports;
 #[cfg(test)]
+mod local_counts_chip;
+#[cfg(test)]
 mod nested_agents;
 #[cfg(test)]
 mod palette;
