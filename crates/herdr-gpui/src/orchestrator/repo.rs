@@ -52,35 +52,22 @@ pub(crate) fn detect(
     if host.is_local() {
         return detect_local(target, checkout);
     }
-    let body = format!(
-        r#"cd -- {checkout} 2>/dev/null || exit 0
-root=$(git rev-parse --show-toplevel 2>/dev/null) || {{
-  if [ -d .beads ]; then
-    root=$(pwd -P)
-    printf 'common\t%s/.beads\nmain\t%s\nbeads\t1\n' "$root" "$root"
-  fi
-  exit 0
-}}
-cd -- "$root"
-common=$(git rev-parse --git-common-dir)
-common=$(cd -- "$common" && pwd -P)
-main=$(git worktree list --porcelain | sed -n '1s/^worktree //p')
-printf 'common\t%s\n' "$common"
-printf 'main\t%s\n' "${{main:-$root}}"
-if [ -d "${{main:-$root}}/.beads" ]; then printf 'beads\t1\n'; fi
-for name in $(git remote); do
-  printf 'remote\t%s\t%s\n' "$name" "$(git remote get-url "$name" 2>/dev/null)"
-done
-"#,
-        checkout = shell_quote(checkout),
-    );
     let output = host
-        .capture(&body, cancelled)
+        .capture(&detection_script(checkout), cancelled)
         .map_err(script("Reading the repository"))?;
     let output = String::from_utf8(output).map_err(|_| Error::Output {
         operation: "Reading the repository",
     })?;
     parse(target, &output)
+}
+
+/// The SSH probe is also exercised under a local shell in regression tests.
+pub(super) fn detection_script(checkout: &str) -> String {
+    format!(
+        "checkout={}\n{}",
+        shell_quote(checkout),
+        include_str!("repo/discover.sh")
+    )
 }
 
 /// The GitHub.com repository, as `owner/name`, whose issues the orchestrator
@@ -101,6 +88,9 @@ pub(crate) fn github_repository(
 }
 
 pub(super) fn parse(target: &ConnectTarget, output: &str) -> Result<RepoInfo> {
+    if output == "not-repository\n" {
+        return Err(Error::NotARepository);
+    }
     let mut common = None;
     let mut main = None;
     let mut beads = false;
@@ -108,15 +98,21 @@ pub(super) fn parse(target: &ConnectTarget, output: &str) -> Result<RepoInfo> {
     for line in output.lines() {
         let mut fields = line.splitn(3, '\t');
         match (fields.next(), fields.next(), fields.next()) {
-            (Some("common"), Some(path), None) => common = Some(path.to_owned()),
-            (Some("main"), Some(path), None) => main = Some(path.to_owned()),
+            (Some("common"), Some(path), None) if !path.is_empty() => {
+                common = Some(path.to_owned());
+            }
+            (Some("main"), Some(path), None) if !path.is_empty() => {
+                main = Some(path.to_owned());
+            }
             (Some("beads"), Some("1"), None) => beads = true,
             (Some("remote"), Some(name), Some(url)) => remotes.push((name, url)),
             _ => {}
         }
     }
     let (Some(common), Some(main_root)) = (common, main) else {
-        return Err(Error::NotARepository);
+        return Err(Error::Output {
+            operation: "Reading the repository",
+        });
     };
     Ok(assemble(target, common, main_root, beads, &remotes))
 }

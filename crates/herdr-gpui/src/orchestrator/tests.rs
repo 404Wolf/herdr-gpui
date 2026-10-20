@@ -17,6 +17,9 @@ mod naming;
 mod project_fixtures;
 mod prompt;
 mod repo;
+mod repo_output;
+#[cfg(unix)]
+mod repo_script;
 mod retry;
 mod service;
 mod store;
