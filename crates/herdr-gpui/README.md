@@ -294,13 +294,16 @@ edits only the local catalog: the host's own Herdr keeps running. When the
 device has its own GitHub sign-in, the confirmation also offers to delete it,
 since its account panel goes away with the device. Local has no such menu.
 
-A cloud device's header (Coder, Daytona, or Railway) has a menu too:
-**Rename…** changes the name the sidebar shows, falling back to the machine's
-name when left empty; **Cloud device settings…** opens its provider under
-Settings > Cloud devices; and **Remove device…** forgets it on this computer,
-leaving the workspace, sandbox, or VM as it is at the provider. Port forwards
-and server keybindings need a saved SSH host, so a cloud device does not offer
-them.
+A cloud device's header (Azure, Boat, Coder, Daytona, or Railway) has a menu
+too: **Rename…** changes the name the sidebar shows, falling back to the
+machine's name when left empty; **Cloud device settings…** opens its provider
+under Settings > Cloud devices; and **Remove device…** removes it from this
+computer. For an Azure machine, a Boat or Daytona sandbox, or a Coder
+workspace, it deletes the machine at the provider by default, with **Remove
+from Herdr only** beside it; a Railway VM is left as it is and expires on its
+own. `herdr-gpui cloud destroy` asks the same for several devices at once,
+and `herdr-gpui cloud create` asks to make several (see `docs/cli.md`). Port forwards and server keybindings need a saved SSH
+host, so a cloud device does not offer them.
 
 **Forward port…** in the same menu forwards one of the host's ports, such as a
 dev server an agent started there, to this computer. Each forward has its own

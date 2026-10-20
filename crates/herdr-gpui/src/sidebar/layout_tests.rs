@@ -373,6 +373,8 @@ impl PaintedText {
         // chevron's column.
         let left =
             px(bar + look.content_x() + layout.child_indent() + super::STATUS_WIDTH + layout.gap());
+        // A worktree group's member draws no chevron, so its name also
+        // takes the arrow column.
         let width = px(look.content_width(super::SIDEBAR_WIDTH)
             - super::STATUS_WIDTH
             - layout.gap()
