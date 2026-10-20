@@ -128,3 +128,20 @@ fn a_saved_machine_counts_until_the_window_lists_it() {
     assert_eq!(registry.creating(|_| false), 1, "saved but not yet listed");
     assert_eq!(registry.creating(|endpoint| endpoint == made.endpoint), 0);
 }
+
+#[test]
+fn a_running_batch_outlives_the_history_bound() {
+    let registry = Registry::default();
+    let mut waiting = target("a").info();
+    waiting.endpoint.clear();
+    let (registry, running, ()) = registry
+        .open(BatchKind::Create, vec![waiting], ())
+        .confirm()
+        .unwrap();
+    for _ in 0..KEPT * 2 {
+        drop(registry.open_destroy(&[target("b")]));
+    }
+    assert!(registry.get(running).is_some());
+    assert_eq!(registry.all().len(), KEPT);
+    assert_eq!(registry.creating(|_| false), 1);
+}

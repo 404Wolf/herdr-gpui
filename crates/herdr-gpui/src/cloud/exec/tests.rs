@@ -99,3 +99,19 @@ fn a_command_past_its_time_or_cancelled_is_stopped() {
     assert!(matches!(cancelled, Err(Error::Cancelled)));
     assert!(started.elapsed() < Duration::from_secs(10));
 }
+
+#[test]
+fn time_spent_reaching_the_machine_comes_out_of_the_command_s() {
+    let timeout = Duration::from_secs(120);
+    let spent = until(Instant::now() - Duration::from_secs(1), timeout, |_| {
+        panic!("a command past its deadline must not start")
+    });
+    assert!(matches!(spent, Err(Error::Timeout(120))));
+    let mut given = Duration::ZERO;
+    let started = until(Instant::now() + Duration::from_secs(30), timeout, |left| {
+        given = left;
+        Err(Error::Timeout(left.as_secs()))
+    });
+    assert!(matches!(started, Err(Error::Timeout(120))));
+    assert!(given <= Duration::from_secs(30) && given > Duration::from_secs(25));
+}

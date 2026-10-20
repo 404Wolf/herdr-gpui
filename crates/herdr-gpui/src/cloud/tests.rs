@@ -4,6 +4,7 @@ use herdr_client::ConnectTarget;
 use std::sync::atomic::AtomicBool;
 
 // A loopback API for the providers that have one; Railway is reached over SSH.
+mod discard;
 #[cfg(any(feature = "boat", feature = "coder", feature = "daytona"))]
 pub(crate) mod server;
 

@@ -116,5 +116,36 @@ impl Step {
     }
 }
 
+/// Finish a machine the provider has just made with `finish`, and delete it
+/// with `discard` when that fails. A create that fails before the device is
+/// saved would otherwise leave the machine billing with no saved device to
+/// find it by. A failed delete is logged; `finish`'s error is returned
+/// either way.
+#[cfg_attr(not(any(feature = "coder", feature = "daytona")), allow(dead_code))]
+pub(crate) fn discard_on_error<T>(
+    provider: CloudProvider,
+    id: &str,
+    finish: impl FnOnce() -> crate::Result<T>,
+    discard: impl FnOnce() -> crate::Result<()>,
+) -> crate::Result<T> {
+    finish().inspect_err(|_| {
+        tracing::info!(
+            category = "cloud",
+            ?provider,
+            id,
+            "Deleting a failed create"
+        );
+        if let Err(error) = discard() {
+            tracing::warn!(
+                category = "cloud",
+                ?provider,
+                id,
+                %error,
+                "Could not delete a failed create; delete it at the provider"
+            );
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests;

@@ -86,7 +86,8 @@ pub(crate) fn script(argv: &[String], cwd: Option<&str>) -> Result<String> {
 
 /// Run `argv` on `machine` for at most `timeout`. Blocks: run it on a worker.
 /// Reaching the machine may first wait for it to start, which `cancelled`
-/// stops; the timeout counts from when the command starts.
+/// stops; the timeout counts from now, so that wait comes out of the
+/// command's time, and a command is not started once it has run out.
 pub(crate) fn run(
     machine: &Machine,
     argv: &[String],
@@ -94,6 +95,7 @@ pub(crate) fn run(
     timeout: Duration,
     cancelled: &AtomicBool,
 ) -> Result<Finished> {
+    let deadline = Instant::now() + timeout;
     let script = script(argv, cwd)?;
     super::with_command(
         machine.provider,
@@ -102,10 +104,29 @@ pub(crate) fn run(
         cancelled,
         |mut command| {
             command.arg(format!("/bin/sh -c {}", shell_quote(&script)));
-            capture(command, timeout, cancelled)
+            until(deadline, timeout, |left| capture(command, left, cancelled))
         },
     )
     .map_err(Error::Reach)?
+}
+
+/// Run `start` with the time left before `deadline`, unless none is; either
+/// way a timeout reports the whole `timeout`.
+fn until(
+    deadline: Instant,
+    timeout: Duration,
+    start: impl FnOnce(Duration) -> Result<Finished>,
+) -> Result<Finished> {
+    let left = deadline.saturating_duration_since(Instant::now());
+    let result = if left.is_zero() {
+        Err(Error::Timeout(0))
+    } else {
+        start(left)
+    };
+    result.map_err(|error| match error {
+        Error::Timeout(_) => Error::Timeout(timeout.as_secs()),
+        error => error,
+    })
 }
 
 /// Run `command` with no input, keeping the tail of each stream.

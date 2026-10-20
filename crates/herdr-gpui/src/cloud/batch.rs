@@ -109,7 +109,10 @@ impl Registry {
     }
 
     /// A new batch over `devices`, waiting for the user to accept `work`.
-    /// The oldest batch goes once more than [`KEPT`] are kept.
+    /// The oldest settled batch goes once more than [`KEPT`] are kept. One
+    /// still going stays, as its machines still count toward the device
+    /// limit; those are bounded by that limit and the one question a window
+    /// asks at a time.
     pub(crate) fn open<T>(&self, kind: BatchKind, devices: Vec<DeviceInfo>, work: T) -> Pending<T> {
         let mut inner = self.lock();
         inner.next += 1;
@@ -121,7 +124,10 @@ impl Registry {
             devices,
         });
         while inner.batches.len() > KEPT {
-            inner.batches.pop_front();
+            let Some(settled) = inner.batches.iter().position(|batch| batch.phase.settled()) else {
+                break;
+            };
+            inner.batches.remove(settled);
         }
         Pending {
             registry: self.clone(),
