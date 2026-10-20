@@ -30,6 +30,9 @@ pub(crate) struct WorkspaceTarget {
     /// `HEAD`: a linked checkout asks its main checkout, the only source the
     /// daemon accepts, to branch from the linked checkout's branch instead.
     pub(super) base: Option<String>,
+    /// Whether this main checkout's shell has moved out of the repository
+    /// Herdr opened it in, which the daemon would still branch.
+    pub(super) left_checkout: bool,
 }
 
 impl WorkspaceTarget {
@@ -43,6 +46,7 @@ impl WorkspaceTarget {
             heads_group: heads_group(snapshot, workspace),
             branch: workspace.branch.clone(),
             base: None,
+            left_checkout: left_checkout(workspace),
         }
     }
 
@@ -59,7 +63,9 @@ impl WorkspaceTarget {
             .filter(|tree| tree.is_linked_worktree)
         else {
             let target = Self::new(snapshot, workspace);
-            return if target.can_create() {
+            return if target.left_checkout {
+                Err(NewWorktreeUnavailable::LeftCheckout)
+            } else if target.can_create() {
                 Ok(target)
             } else {
                 Err(NewWorktreeUnavailable::NotGit)
@@ -71,8 +77,11 @@ impl WorkspaceTarget {
             .ok_or(NewWorktreeUnavailable::Detached)?;
         let main =
             main_checkout(snapshot, tree).ok_or(NewWorktreeUnavailable::MainCheckoutClosed)?;
+        // The linked checkout names the repository, so its main checkout's
+        // shell having wandered off does not change what would be branched.
         Ok(Self {
             base: Some(branch),
+            left_checkout: false,
             ..Self::new(snapshot, main)
         })
     }
@@ -96,7 +105,9 @@ impl WorkspaceTarget {
 
     pub(super) fn can_create(&self) -> bool {
         // Like the TUI, accept Git branches before worktree metadata is available.
-        (self.worktree.is_some() || self.branch.is_some()) && !self.can_delete()
+        (self.worktree.is_some() || self.branch.is_some())
+            && !self.can_delete()
+            && !self.left_checkout
     }
 
     pub(super) fn can_delete(&self) -> bool {
@@ -115,6 +126,7 @@ impl WorkspaceTarget {
         if !self.can_create()
             || self.worktree != workspace.worktree
             || (workspace.worktree.is_none() && workspace.branch.is_none())
+            || (self.base.is_none() && left_checkout(workspace))
         {
             return Err(crate::Error::WorkspaceRepositoryChanged);
         }
@@ -228,6 +240,7 @@ pub(super) enum NewWorktreeUnavailable {
     NotGit,
     MainCheckoutClosed,
     Detached,
+    LeftCheckout,
 }
 
 impl NewWorktreeUnavailable {
@@ -238,8 +251,22 @@ impl NewWorktreeUnavailable {
             Self::NotGit => "This workspace is not a Git repository",
             Self::MainCheckoutClosed => "Open this repository's main checkout to create a worktree",
             Self::Detached => "This checkout has no branch to start a worktree from",
+            Self::LeftCheckout => LEFT_CHECKOUT,
         }
     }
+}
+
+/// Why a workspace whose shell left its repository offers no worktrees.
+pub(super) const LEFT_CHECKOUT: &str = "This workspace has moved out of the repository Herdr opened it in; open its new directory as a workspace to make worktrees there";
+
+/// Whether `workspace` is a main checkout whose directory is no longer inside
+/// the repository Herdr keeps for it. A linked checkout's own path is not in
+/// the snapshot, so it is never judged.
+fn left_checkout(workspace: &ClientShellWorkspace) -> bool {
+    workspace.worktree.as_ref().is_some_and(|tree| {
+        !tree.is_linked_worktree
+            && crate::worktree::left_checkout(&tree.key, &workspace.new_workspace_cwd)
+    })
 }
 
 /// The workspace focused when the new worktree shortcut is pressed, once it

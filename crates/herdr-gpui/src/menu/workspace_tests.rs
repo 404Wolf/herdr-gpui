@@ -9,6 +9,7 @@ mod close_unconfirmed;
 mod dialog_layout;
 mod dispatch;
 mod issues;
+mod left_checkout;
 mod merged_removal;
 mod naming;
 mod pull_requests;
