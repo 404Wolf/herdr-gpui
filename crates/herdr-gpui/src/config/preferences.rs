@@ -16,6 +16,7 @@ pub(crate) enum Preference {
     ShowAgentsHeader(bool),
     ShowSidebarSearch(bool),
     ShowRepositoryIcons(bool),
+    ShowWindowControls(bool),
     /// `status_icons`: the set agent status is drawn with.
     StatusIcons(StatusIcons),
     /// `edge_rail`: the bar on busy and finished rows.
@@ -47,8 +48,12 @@ pub(crate) enum Preference {
     SidebarRowGap(Option<f32>),
     SidebarHostGap(Option<f32>),
     SidebarSelect(SelectMode),
+    /// `[sidebar] activity_bar`: whether the icon column leads the window.
+    SidebarActivityBar(bool),
     /// `[sidebar] device_footer`: when the sidebar draws its device footer.
     SidebarDeviceFooter(DeviceFooter),
+    /// `[sidebar] change_counts`: whose line counts a worktree row shows.
+    SidebarChangeCounts(ChangeCounts),
     /// `None` removes the host's colour.
     HostColor {
         host: String,
@@ -129,6 +134,9 @@ impl Config {
                 Preference::ShowDeviceIcons(value) => {
                     (None, "show_device_icons", Some(value.into()))
                 }
+                Preference::ShowWindowControls(value) => {
+                    (None, "show_window_controls", Some(value.into()))
+                }
                 Preference::SmoothScroll(value) => (None, "smooth_scroll", Some(value.into())),
                 Preference::StatusIcons(value) => {
                     (None, "status_icons", Some(value.as_str().into()))
@@ -195,10 +203,18 @@ impl Config {
                         SelectMode::GroupDim => "group-dim",
                     })),
                 ),
+                Preference::SidebarActivityBar(value) => {
+                    (Some("sidebar"), "activity_bar", Some(value.into()))
+                }
                 Preference::SidebarDeviceFooter(footer) => (
                     Some("sidebar"),
                     "device_footer",
                     Some(toml_edit::Value::from(footer.as_str())),
+                ),
+                Preference::SidebarChangeCounts(counts) => (
+                    Some("sidebar"),
+                    "change_counts",
+                    Some(toml_edit::Value::from(counts.as_str())),
                 ),
                 Preference::HostColor { host, color } => {
                     if let Some(color) = color.filter(|color| *color > 0xFF_FFFF) {

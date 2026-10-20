@@ -68,6 +68,11 @@ mod tab_strip;
 #[cfg(any(target_os = "macos", windows))]
 mod tab_steps;
 
+/// Move Tab Left and Right move a page among the pages. Needs a build that
+/// shows pages: elsewhere a new tab opens nothing.
+#[cfg(any(target_os = "macos", windows))]
+mod tab_moves;
+
 /// The VS Code tab's server checks. No native page is created, so this
 /// runs on every platform, except the checks only builds that show pages
 /// make.

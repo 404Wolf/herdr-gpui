@@ -28,6 +28,7 @@ mod provider_settings;
 #[cfg(unix)]
 mod quiet_app_data;
 mod refresh;
+mod rejected_backoff;
 #[cfg(unix)]
 mod remote_hosts;
 mod section;
