@@ -49,11 +49,12 @@ pub(super) fn serve(
             batch,
             wait_seconds,
         } => return wait(batch, wait_seconds, incoming, watches, cx),
-        CloudOp::Batches => Response::Cloud {
-            reply: Reply::Batches {
-                batches: cx.default_global::<Registry>().all(),
-            },
-        },
+        CloudOp::Batches => {
+            let (batches, omitted) = newest(cx.default_global::<Registry>().all());
+            Response::Cloud {
+                reply: Reply::Batches { batches, omitted },
+            }
+        }
         CloudOp::Exec {
             device,
             command,
@@ -78,6 +79,28 @@ pub(super) fn serve(_: Call<CloudOp>, incoming: socket::Incoming, _: &mut Watche
         ErrorCode::Unsupported,
         "This build has no cloud providers",
     ));
+}
+
+/// The newest of `batches`, oldest first, whose JSON fits in half a
+/// message, and how many older ones were left out. Each device keeps a
+/// bounded step and error, but 32 batches of 64 devices could still pass
+/// the socket bound, which would lose the whole list.
+#[cfg(feature = "cloud")]
+fn newest(mut batches: Vec<BatchInfo>) -> (Vec<BatchInfo>, usize) {
+    let mut room = crate::control::protocol::MAX_MESSAGE / 2;
+    let kept = batches
+        .iter()
+        .rev()
+        .take_while(|batch| {
+            let size = serde_json::to_vec(batch).map_or(usize::MAX, |json| json.len());
+            room.checked_sub(size)
+                .inspect(|left| room = *left)
+                .is_some()
+        })
+        .count();
+    let omitted = batches.len() - kept;
+    batches.drain(..omitted);
+    (batches, omitted)
 }
 
 #[cfg(feature = "cloud")]

@@ -210,9 +210,20 @@ pub(crate) struct ExecInfo {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum Reply {
-    Batch { batch: BatchInfo },
-    Batches { batches: Vec<BatchInfo> },
+    Batch {
+        batch: BatchInfo,
+    },
+    Batches {
+        batches: Vec<BatchInfo>,
+        /// Older batches left out so the answer stays inside the socket bound.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        omitted: usize,
+    },
     Exec(Box<ExecInfo>),
+}
+
+fn is_zero(count: &usize) -> bool {
+    *count == 0
 }
 
 #[cfg(test)]

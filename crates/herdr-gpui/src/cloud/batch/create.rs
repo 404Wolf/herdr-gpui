@@ -7,7 +7,7 @@
 
 use super::{Error, Registry, Target};
 use crate::{
-    cloud::{self, CloudProvider, Spec, exec},
+    cloud::{self, CloudProvider, SavedDevice, Spec, exec},
     control::batch::{DeviceInfo, DeviceState},
 };
 use std::{
@@ -123,13 +123,13 @@ pub(crate) fn create(creation: &Creation, report: &Report) -> crate::Result<()> 
     let provision = cloud::provision(provider).ok_or(Error::NotOffered(cloud::name(provider)))?;
     let device = provision(&creation.spec, &|| false, &|step| {
         report.step(DeviceState::Creating, step.text());
+    })
+    .inspect_err(|error| {
+        if let Some(device) = saved_before(provider, error) {
+            report.created(&target(&device));
+        }
     })?;
-    report.created(&Target {
-        provider,
-        id: device.id.clone(),
-        endpoint: device.endpoint_id(),
-        label: device.label.clone(),
-    });
+    report.created(&target(&device));
     if !creation.setup {
         return Ok(());
     }
@@ -158,6 +158,39 @@ pub(crate) fn create(creation: &Creation, report: &Report) -> crate::Result<()> 
         output: tail(&finished),
     }
     .into())
+}
+
+fn target(device: &SavedDevice) -> Target {
+    Target {
+        provider: device.provider,
+        id: device.id.clone(),
+        endpoint: device.endpoint_id(),
+        label: device.label.clone(),
+    }
+}
+
+/// The device a failed create had already saved. Boat saves its sandbox as
+/// soon as it exists, before it is ready and has Herdr, so the batch must
+/// still name it for `cloud destroy --batch` to find it.
+fn saved_before(provider: CloudProvider, error: &crate::Error) -> Option<SavedDevice> {
+    let id = saved_id(error)?;
+    cloud::load()
+        .ok()?
+        .into_iter()
+        .find(|device| device.provider == provider && device.id == id)
+}
+
+#[cfg(feature = "boat")]
+fn saved_id(error: &crate::Error) -> Option<&str> {
+    match error {
+        crate::Error::Boat(crate::boat::Error::Setup { id, .. }) => Some(id),
+        _ => None,
+    }
+}
+
+#[cfg(not(feature = "boat"))]
+fn saved_id(_: &crate::Error) -> Option<&str> {
+    None
 }
 
 /// The setup script as a device's setup tab runs it: in the user's login

@@ -102,7 +102,7 @@ fn machines_being_made_count_toward_the_device_list(cx: &mut TestAppContext) {
                 .devices(),
             (),
         );
-        assert_eq!(registry.creating(), MAX_CREATE as usize);
+        assert_eq!(registry.creating(|_| false), MAX_CREATE as usize);
         let room = MAX_DEVICES - MAX_CREATE as usize;
         let mut kept = Vec::new();
         for _ in 0..room / MAX_CREATE as usize {
@@ -121,7 +121,7 @@ fn machines_being_made_count_toward_the_device_list(cx: &mut TestAppContext) {
             Some(ErrorCode::InvalidRequest)
         );
         drop(pending);
-        assert!(registry.creating() < MAX_DEVICES);
+        assert!(registry.creating(|_| false) < MAX_DEVICES);
     });
 }
 

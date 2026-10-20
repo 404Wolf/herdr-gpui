@@ -40,13 +40,19 @@ pub(super) fn run(command: BatchCommand, context: &Context) -> crate::Result<Out
             })
         }
         Response::Cloud {
-            reply: Reply::Batches { batches },
+            reply: Reply::Batches { batches, omitted },
         } => {
-            let text = if batches.is_empty() {
+            let mut text = if batches.is_empty() {
                 "Herdr UI keeps no cloud batch".to_owned()
             } else {
                 batches.iter().map(text).collect::<Vec<_>>().join("\n\n")
             };
+            if omitted > 0 {
+                text.push_str(&format!(
+                    "\n\n{omitted} older batch{} left out; follow one with `herdr-gpui cloud wait BATCH`",
+                    if omitted == 1 { " is" } else { "es are" }
+                ));
+            }
             let output = Output::data(text, &batches)?;
             Ok(if batches.is_empty() {
                 output.nothing()

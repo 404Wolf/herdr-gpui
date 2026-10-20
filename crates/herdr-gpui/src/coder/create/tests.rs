@@ -41,6 +41,22 @@ fn a_template_is_named_or_the_only_one() {
 }
 
 #[test]
+fn an_exact_name_wins_over_a_display_name_and_a_shared_one_is_refused() {
+    let mut shown_dev = template("gpu");
+    shown_dev.display_name = "Dev".into();
+    let exact = super::template(vec![shown_dev.clone(), template("dev")], Some("dev")).unwrap();
+    assert_eq!(exact.name, "dev");
+    let mut other = template("cpu");
+    other.display_name = "dev".into();
+    let Err(Error::AmbiguousTemplate { name, matches }) =
+        super::template(vec![shown_dev, other], Some("DEV"))
+    else {
+        panic!("a display name two templates share must be refused");
+    };
+    assert_eq!((name.as_str(), matches.as_str()), ("DEV", "gpu, cpu"));
+}
+
+#[test]
 fn a_preset_is_named_or_the_template_s_default() {
     let dev = template("dev");
     let presets = || vec![preset("small", false), preset("large", true)];

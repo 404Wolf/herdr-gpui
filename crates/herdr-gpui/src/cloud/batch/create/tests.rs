@@ -122,3 +122,16 @@ fn a_failed_setup_says_how_it_ended() {
         "A signal ended the setup script."
     );
 }
+
+#[cfg(feature = "boat")]
+#[test]
+fn a_boat_sandbox_saved_before_setup_failed_is_still_named() {
+    let failed: crate::Error = crate::boat::Error::Setup {
+        id: "sandbox-1".into(),
+        source: Box::new(Error::NotOffered("Boat").into()),
+    }
+    .into();
+    assert_eq!(saved_id(&failed), Some("sandbox-1"));
+    let other: crate::Error = Error::NotOffered("Boat").into();
+    assert_eq!(saved_id(&other), None);
+}

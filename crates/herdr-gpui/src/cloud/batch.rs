@@ -12,12 +12,17 @@ use crate::control::batch::{BatchInfo, BatchKind, DeviceInfo, DeviceState, Phase
 use std::{
     collections::VecDeque,
     sync::{Arc, Mutex, MutexGuard, PoisonError},
+    time::{Duration, Instant},
 };
 
 /// Batches kept for `cloud wait` and `cloud batches`; the oldest go first.
 const KEPT: usize = 32;
 /// The longest failure kept for a device, in characters.
 const ERROR_LIMIT: usize = 500;
+/// How long a machine just saved still counts as being made, unless the
+/// window already lists it: windows reload the device list every two
+/// seconds, and in between it would count in neither place.
+const HANDOFF: Duration = Duration::from_secs(30);
 
 /// Why a machine of a batch failed, besides its provider's own errors.
 #[derive(Debug, thiserror::Error)]
@@ -75,13 +80,25 @@ impl gpui::Global for Registry {}
 
 #[derive(Debug, Default)]
 struct Inner {
-    next: u64,
     batches: VecDeque<BatchInfo>,
+    /// Endpoints of machines saved within [`HANDOFF`], oldest first.
+    handoffs: VecDeque<(String, Instant)>,
+    next: u64,
 }
 
 impl Inner {
     fn batch(&mut self, id: u64) -> Option<&mut BatchInfo> {
         self.batches.iter_mut().find(|batch| batch.id == id)
+    }
+
+    fn expire_handoffs(&mut self, now: Instant) {
+        while self
+            .handoffs
+            .front()
+            .is_some_and(|(_, saved)| now.duration_since(*saved) >= HANDOFF)
+        {
+            self.handoffs.pop_front();
+        }
     }
 }
 
@@ -128,15 +145,24 @@ impl Registry {
     }
 
     /// Machines create batches are still making, or may make once the user
-    /// confirms, that are not saved yet.
-    pub(crate) fn creating(&self) -> usize {
-        self.lock()
+    /// confirms, that are not saved yet, and those just saved that `listed`
+    /// does not yet know by endpoint.
+    pub(crate) fn creating(&self, listed: impl Fn(&str) -> bool) -> usize {
+        let mut inner = self.lock();
+        inner.expire_handoffs(Instant::now());
+        let making = inner
             .batches
             .iter()
             .filter(|batch| batch.kind == BatchKind::Create && !batch.phase.settled())
             .flat_map(|batch| &batch.devices)
             .filter(|device| !device.state.settled() && device.endpoint.is_empty())
-            .count()
+            .count();
+        let handed = inner
+            .handoffs
+            .iter()
+            .filter(|(endpoint, _)| !listed(endpoint))
+            .count();
+        making + handed
     }
 
     /// Each kept batch's phase, cheaply, for the event log's every tick.
@@ -217,6 +243,12 @@ impl Registry {
 
     /// Name device `index` once it is made and saved.
     pub(crate) fn created(&self, id: u64, index: usize, target: &Target) {
+        {
+            let now = Instant::now();
+            let mut inner = self.lock();
+            inner.expire_handoffs(now);
+            inner.handoffs.push_back((target.endpoint.clone(), now));
+        }
         self.change(id, index, |device| {
             device.provider = target.provider.key().to_owned();
             device.id.clone_from(&target.id);

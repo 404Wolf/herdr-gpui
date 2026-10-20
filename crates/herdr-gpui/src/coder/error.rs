@@ -79,6 +79,9 @@ pub enum Error {
     Storage(#[source] Box<crate::Error>),
     #[error("Coder {0} worker stopped.")]
     Worker(&'static str),
+    /// A display name a command gave that more than one template has.
+    #[error("Several Coder templates are shown as {name} ({matches}); name one by its name or ID.")]
+    AmbiguousTemplate { name: String, matches: String },
     /// A template a command named, or none when the deployment has several.
     /// `available` lists the deployment's templates by name, bounded.
     #[error("{}", template_message(.name.as_deref(), .available))]

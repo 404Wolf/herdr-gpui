@@ -124,3 +124,30 @@ fn destroying_only_asks_in_the_window(cx: &mut TestAppContext) {
         })
     });
 }
+
+#[test]
+fn only_the_newest_batches_that_fit_are_listed() {
+    let device = crate::control::protocol::cloud::DeviceInfo {
+        provider: "coder".into(),
+        id: "id".into(),
+        endpoint: "coder:id".into(),
+        label: "label".into(),
+        state: crate::control::protocol::cloud::DeviceState::Failed,
+        step: None,
+        error: Some("\"".repeat(500)),
+    };
+    let batches: Vec<BatchInfo> = (1..=32)
+        .map(|id| BatchInfo {
+            id,
+            kind: crate::control::protocol::cloud::BatchKind::Destroy,
+            phase: Phase::Done,
+            devices: vec![device.clone(); MAX_DEVICES],
+        })
+        .collect();
+    let (kept, omitted) = newest(batches.clone());
+    assert!(omitted > 0);
+    assert_eq!(kept.len() + omitted, batches.len());
+    assert_eq!(kept.last().map(|batch| batch.id), Some(32));
+    assert!(serde_json::to_vec(&kept).unwrap().len() <= crate::control::protocol::MAX_MESSAGE / 2);
+    assert_eq!(newest(batches[..1].to_vec()), (batches[..1].to_vec(), 0));
+}

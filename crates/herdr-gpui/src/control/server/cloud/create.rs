@@ -96,7 +96,13 @@ pub(super) fn creation(
             "{name} makes one kind of machine; --sandbox is for Azure"
         )));
     }
-    let saved = devices(view).len() + registry.creating();
+    let listed = devices(view);
+    let saved = listed.len()
+        + registry.creating(|endpoint| {
+            listed
+                .iter()
+                .any(|device| device.target.endpoint == endpoint)
+        });
     if saved + op.count as usize > MAX_DEVICES {
         return Err(invalid(format!(
             "At most {MAX_DEVICES} cloud devices are kept, and {saved} are saved or being made"

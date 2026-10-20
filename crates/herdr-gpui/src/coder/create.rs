@@ -63,22 +63,37 @@ fn listed<'a>(names: impl Iterator<Item = &'a str>) -> String {
     text
 }
 
-/// The template `name` names, by name, display name, or ID; with no name,
-/// the deployment's only one.
+/// The template `name` names: by ID or name exactly, or else by a display
+/// name only one template has; with no name, the deployment's only one.
 pub(super) fn template(templates: Vec<Template>, name: Option<&str>) -> Result<Template> {
     let available = listed(templates.iter().map(|template| template.name.as_str()));
-    let mut found = templates.into_iter().filter(|template| {
-        name.is_none_or(|name| {
-            template.id == name
-                || template.name == name
-                || template.display_name.eq_ignore_ascii_case(name)
-        })
-    });
-    match (found.next(), found.next(), name) {
-        (Some(template), None, _) | (Some(template), Some(_), Some(_)) => Ok(template),
-        _ => Err(Error::Template {
-            name: name.map(str::to_owned),
-            available,
+    let missing = || Error::Template {
+        name: name.map(str::to_owned),
+        available: available.clone(),
+    };
+    let Some(name) = name else {
+        let mut templates = templates.into_iter();
+        return match (templates.next(), templates.next()) {
+            (Some(template), None) => Ok(template),
+            _ => Err(missing()),
+        };
+    };
+    let (exact, others): (Vec<_>, Vec<_>) = templates
+        .into_iter()
+        .partition(|template| template.id == name || template.name == name);
+    if let Some(template) = exact.into_iter().next() {
+        return Ok(template);
+    }
+    let mut shown: Vec<Template> = others
+        .into_iter()
+        .filter(|template| template.display_name.eq_ignore_ascii_case(name))
+        .collect();
+    match shown.len() {
+        0 => Err(missing()),
+        1 => Ok(shown.swap_remove(0)),
+        _ => Err(Error::AmbiguousTemplate {
+            name: name.to_owned(),
+            matches: listed(shown.iter().map(|template| template.name.as_str())),
         }),
     }
 }

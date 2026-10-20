@@ -73,6 +73,16 @@ fn only_the_tail_of_long_output_is_kept() {
 }
 
 #[test]
+fn invalid_utf8_stays_inside_the_limit_once_decoded() {
+    let tail = Tail::new(STDOUT_LIMIT);
+    tail.kept.lock().unwrap().0 = [vec![0xff; STDOUT_LIMIT - 3], b"END".to_vec()].concat();
+    let (text, truncated) = tail.text();
+    assert!(truncated);
+    assert!(text.len() <= STDOUT_LIMIT);
+    assert!(text.ends_with("\u{fffd}END"));
+}
+
+#[test]
 fn a_command_past_its_time_or_cancelled_is_stopped() {
     let started = Instant::now();
     let timed_out = capture(

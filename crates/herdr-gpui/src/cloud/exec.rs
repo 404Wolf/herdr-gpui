@@ -199,6 +199,8 @@ impl Tail {
     }
 
     /// The text kept, without terminal controls, and whether any was cut.
+    /// Decoding can grow it, as each invalid byte becomes a three-byte
+    /// replacement character, so the text is bounded again after.
     fn text(&self) -> (String, bool) {
         let kept = self.kept.lock().unwrap_or_else(PoisonError::into_inner);
         let mut text = String::with_capacity(kept.0.len());
@@ -212,7 +214,14 @@ impl Tail {
                 c => text.push(c),
             }
         }
-        (text, kept.1)
+        if text.len() <= self.limit {
+            return (text, kept.1);
+        }
+        let start = (text.len() - self.limit..text.len())
+            .find(|&index| text.is_char_boundary(index))
+            .unwrap_or(text.len());
+        text.drain(..start);
+        (text, true)
     }
 }
 

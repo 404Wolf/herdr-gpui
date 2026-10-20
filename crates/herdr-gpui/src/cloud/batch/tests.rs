@@ -113,3 +113,18 @@ fn only_the_newest_batches_are_kept_and_failures_are_bounded() {
     registry.update(last, 9, DeviceState::Destroyed, None);
     registry.update(first, 0, DeviceState::Destroyed, None);
 }
+
+#[test]
+fn a_saved_machine_counts_until_the_window_lists_it() {
+    let registry = Registry::default();
+    let mut waiting = target("a").info();
+    waiting.endpoint.clear();
+    let pending = registry.open(BatchKind::Create, vec![waiting], ());
+    let (registry, id, ()) = pending.confirm().unwrap();
+    assert_eq!(registry.creating(|_| false), 1);
+    let made = target("a");
+    registry.created(id, 0, &made);
+    registry.update(id, 0, DeviceState::Ready, None);
+    assert_eq!(registry.creating(|_| false), 1, "saved but not yet listed");
+    assert_eq!(registry.creating(|endpoint| endpoint == made.endpoint), 0);
+}
