@@ -332,6 +332,27 @@ pub(crate) fn destroy_device(
     forget_device(id)
 }
 
+/// Destroy the saved device `id` with the configured deployment, as the
+/// sidebar's Remove does when asked to delete it at Coder too. A device no
+/// longer saved has nothing left to do; one saved from another deployment is
+/// refused. Blocks: run it off the UI thread.
+pub(crate) fn destroy_saved(id: &str) -> crate::Result<()> {
+    let Some(device) = cloud::load()?
+        .into_iter()
+        .find(|device| device.provider == CloudProvider::Coder && device.id == id)
+    else {
+        return Ok(());
+    };
+    let settings = crate::config::Config::load()?
+        .coder
+        .settings()?
+        .ok_or(Error::Missing("url"))?;
+    if settings.base != device.account {
+        return Err(Error::Deployment.into());
+    }
+    Ok(destroy_device(&settings, id, || false, |_| {})?)
+}
+
 /// Save (or with `None`, forget) the OAuth client secret typed into Settings.
 pub(crate) fn save_client_secret(
     store: crate::github::Store,

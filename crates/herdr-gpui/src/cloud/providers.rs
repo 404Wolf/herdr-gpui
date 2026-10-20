@@ -141,7 +141,11 @@ providers! {
         offer: "Create a Boat sandbox in Settings",
         noun: "sandbox",
         command: gateway,
-        deletion: None,
+        deletion: Some(Deletion {
+            noun: |_| "sandbox",
+            leftovers: ", with its snapshots,",
+            run: crate::boat::destroy::destroy_saved,
+        }),
     },
     "coder" Coder => {
         module: coder,
@@ -150,7 +154,11 @@ providers! {
         offer: "Create or attach a Coder workspace",
         noun: "workspace",
         command: plain,
-        deletion: None,
+        deletion: Some(Deletion {
+            noun: |_| "workspace",
+            leftovers: ", with its disk,",
+            run: crate::coder::setup::destroy_saved,
+        }),
     },
     // Sandboxes are created in Settings; existing ones cannot be attached yet.
     "daytona" Daytona => {
@@ -160,7 +168,11 @@ providers! {
         offer: "Create a Daytona sandbox in Settings",
         noun: "sandbox",
         command: gateway,
-        deletion: None,
+        deletion: Some(Deletion {
+            noun: |_| "sandbox",
+            leftovers: "",
+            run: crate::daytona::destroy::destroy_saved,
+        }),
     },
     "railway" Railway => {
         module: railway,
