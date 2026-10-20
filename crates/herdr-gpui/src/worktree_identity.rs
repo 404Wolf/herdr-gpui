@@ -2,19 +2,19 @@
 //!
 //! The daemon already reports, per workspace, whether its checkout is a linked
 //! worktree (its `.git` is a file pointing into another repository's
-//! `worktrees/`), so nothing here reads Git. A linked worktree gets one hue: a
-//! faint wash and the branch glyph on its sidebar row, and a hairline where
-//! its tab strip meets its terminals. The main checkout keeps the theme as
-//! drawn, so the odd one out is the copy, not the original.
+//! `worktrees/`), so nothing here reads Git. In the sidebar a linked worktree
+//! hangs from its main checkout on the tree's guide lines, in every layout,
+//! and one standing alone (its main checkout not open) takes the branch glyph
+//! instead, since it has no line to hang from. In the workspace, a hairline
+//! runs where its tab strip meets its terminals. The main checkout keeps the
+//! theme as drawn, so the odd one out is the copy, not the original.
 //!
-//! The hue is the theme's blue, as the notes kept on worktrees draw it, never
-//! [`Theme::primary`]: that already means "selected", and a worktree row that
-//! looked selected would say the wrong thing.
+//! The guides are structure, not identity, so they keep the tree's own muted
+//! stroke and stay quiet however many worktrees are open. The glyph and the
+//! rule carry the hue: the theme's blue, as the notes kept on worktrees draw
+//! it, never [`Theme::primary`], which already means "selected".
 
-use crate::{
-    config::Theme,
-    contrast::{Contrast, distance, hue_shift},
-};
+use crate::config::Theme;
 use gpui::{Div, ParentElement, Styled, div, px, rgb};
 use herdr_client::protocol::{ClientShellSnapshot, ClientShellWorkspace};
 use serde::Deserialize;
@@ -29,21 +29,6 @@ pub(crate) const RULE: f32 = 2.;
 /// The palette entry the default hue comes from: the theme's blue.
 const BLUE: usize = 4;
 
-/// How far the wash turns the sidebar toward the hue, in OKLab chroma. It
-/// keeps the sidebar's lightness, so labels keep their contrast over it.
-const WASH_CHROMA: f32 = 0.15;
-
-/// How different a washed row looks from a plain one, in OKLab distance:
-/// just past the 0.02 a viewer notices side by side, so the wash reads at a
-/// glance without competing with a selected row. The wash's alpha is solved
-/// for this on each theme, since a light sidebar has far less room for
-/// colour than a dark one.
-const WASH_DISTANCE: f32 = 0.03;
-
-/// The alpha range the wash may take: never so faint it vanishes, never so
-/// strong that a selected or hovered row under it stops reading as one.
-const WASH_ALPHA: (u32, u32) = (0x1a, 0x4d);
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("worktrees.tint must be a #rgb or #rrggbb colour, not {0:?}")]
@@ -54,17 +39,20 @@ pub enum Error {
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Surface {
-    /// The workspace's row in the sidebar.
+    /// The sidebar: guide lines in the layouts that draw no tree of their
+    /// own, and the branch glyph on a worktree standing alone.
     Sidebar,
     /// The edge between the workspace's tab strip and its terminals.
     Terminal,
 }
 
 /// `[worktrees]`, resolved: an optional hue and the surfaces that show it.
-/// `apply_to = []` turns every mark off.
+/// `apply_to = []` turns every mark off, leaving the sidebar as Herdr draws
+/// it without them: the flat layouts keep their tree, the rest none.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Worktrees {
-    /// A configured hue, as `0xRRGGBB`. Unset, the theme's blue.
+    /// A configured hue for the glyph and the rule, as `0xRRGGBB`. Unset,
+    /// the theme's blue.
     pub tint: Option<u32>,
     pub sidebar: bool,
     pub terminal: bool,
@@ -78,17 +66,6 @@ impl Default for Worktrees {
             terminal: true,
         }
     }
-}
-
-/// What a linked worktree's sidebar row is drawn with on one theme.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct SidebarMarks {
-    /// The branch glyph's colour.
-    pub(crate) glyph: u32,
-    /// The wash over the row, as a colour and an alpha. `None` under high
-    /// contrast, which keeps every label at its full contrast; the glyph and
-    /// the row's accessible name still mark the worktree.
-    pub(crate) wash: Option<(u32, u32)>,
 }
 
 impl Worktrees {
@@ -117,14 +94,10 @@ impl Worktrees {
         }
     }
 
-    /// The sidebar's marks for linked worktrees on `theme`, unless the
-    /// sidebar does not show them. Computed once per frame, not per row.
-    pub(crate) fn sidebar_marks(&self, theme: &Theme) -> Option<SidebarMarks> {
-        self.sidebar.then(|| {
-            let glyph = self.mark(theme);
-            let wash = (theme.contrast != Contrast::High).then(|| wash(theme, glyph));
-            SidebarMarks { glyph, wash }
-        })
+    /// The branch glyph's colour on `theme` for a linked worktree standing
+    /// alone, unless the sidebar does not show the marks.
+    pub(crate) fn glyph(&self, theme: &Theme) -> Option<u32> {
+        self.sidebar.then(|| self.mark(theme))
     }
 
     /// The rule along the edge of a linked worktree's terminals, when they
@@ -140,38 +113,6 @@ impl Worktrees {
                 .bg(rgb(self.mark(theme)))
         })
     }
-}
-
-/// The sidebar turned toward `hue` at its own lightness, and the least alpha
-/// in [`WASH_ALPHA`] that puts a washed row [`WASH_DISTANCE`] from a plain one.
-/// Blending happens in sRGB, which is far from linear in OKLab, so the alpha
-/// is found by bisection rather than by proportion.
-fn wash(theme: &Theme, hue: u32) -> (u32, u32) {
-    let sidebar = theme.sidebar_background();
-    let color = hue_shift(sidebar, hue, WASH_CHROMA);
-    let (mut low, mut high) = WASH_ALPHA;
-    if distance(over(sidebar, color, high), sidebar) <= WASH_DISTANCE {
-        return (color, high);
-    }
-    while high - low > 1 {
-        let middle = (low + high) / 2;
-        if distance(over(sidebar, color, middle), sidebar) < WASH_DISTANCE {
-            low = middle;
-        } else {
-            high = middle;
-        }
-    }
-    (color, high)
-}
-
-/// `color` at `alpha` over `base`, per sRGB channel, as the wash layer is
-/// composited.
-fn over(base: u32, color: u32, alpha: u32) -> u32 {
-    let channel = |shift: u32| {
-        let (base, color) = ((base >> shift) & 255, (color >> shift) & 255);
-        (base * (255 - alpha) + color * alpha + 127) / 255
-    };
-    (channel(16) << 16) | (channel(8) << 8) | channel(0)
 }
 
 /// Whether `workspace` is a linked worktree rather than a main checkout or a

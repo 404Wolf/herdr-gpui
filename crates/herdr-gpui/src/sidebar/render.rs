@@ -122,7 +122,7 @@ impl HerdrWindow {
         // A lifted device folds the list to its headers.
         let device_plan = headed.then(|| self.device_plan(devices, &query)).flatten();
         let mut sliding = device_plan.as_ref().is_some_and(|plan| plan.sliding);
-        let worktree_marks = self.config.worktrees.sidebar_marks(theme);
+        let worktree_glyph = self.config.worktrees.glyph(theme);
         for (endpoint_index, endpoint) in self.displayed_devices() {
             if !self.device_visible(&endpoint.id)
                 || (devices && !self.device_listed(endpoint_index, &query))
@@ -232,7 +232,6 @@ impl HerdrWindow {
                 }
                 let workspace = &snapshot.workspaces[index];
                 let linked = crate::worktree_identity::is_linked(workspace);
-                let worktree = worktree_marks.filter(|_| linked);
                 if selected && workspace.focused {
                     highlighted[0] = Some(space_rows);
                 }
@@ -391,11 +390,12 @@ impl HerdrWindow {
                         workspace,
                         label,
                         tree,
-                        // A child already reads as a linked worktree by its
-                        // place under the main checkout; one standing alone
-                        // takes the branch glyph where the owner's avatar sat.
-                        icon: if let Some(marks) = worktree.filter(|_| !indented) {
-                            RowIcon::Worktree(marks.glyph)
+                        // A child hangs from the main checkout on the guide
+                        // lines; one standing alone has no line to hang from,
+                        // so it takes the branch glyph where the owner's
+                        // avatar sat.
+                        icon: if let Some(glyph) = worktree_glyph.filter(|_| linked && !indented) {
+                            RowIcon::Worktree(glyph)
                         } else if indented || !self.config.show_repository_icons {
                             RowIcon::None
                         } else if workspace.branch.is_none() {
@@ -425,12 +425,7 @@ impl HerdrWindow {
                         status: shown_status,
                         lines,
                     }),
-                    &RowContext {
-                        mark: row_cx
-                            .mark
-                            .with_worktree(worktree.and_then(|marks| marks.wash)),
-                        ..row_cx
-                    },
+                    &row_cx,
                 )
                 .selected(selected && workspace.focused)
                 .highlighted(selected && menu_target == Some(id.as_str()))

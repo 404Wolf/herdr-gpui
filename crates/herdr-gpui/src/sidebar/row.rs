@@ -44,6 +44,11 @@ pub(super) enum RowIcon {
 }
 
 impl RowIcon {
+    /// Whether the slot shows something; a blank one only keeps the room.
+    pub(super) fn draws(&self) -> bool {
+        matches!(self, Self::Mark | Self::Avatar(_) | Self::Worktree(_))
+    }
+
     fn slot(self, key: &str, font: &FontConfig, color: u32) -> Div {
         let probe = match self {
             Self::Worktree(_) => "worktree-icon",
@@ -152,14 +157,14 @@ pub(super) enum RowTree {
 }
 
 /// Trunk and tick for a child row, given the gutter the row reserves between
-/// the parent's label column and the child's status dot. Snapped to whole
-/// device pixels and painted as quads rather than borders: a bordered box
-/// rounds each edge on its own, which left the trunk thinner than its tick.
+/// the parent's label column and the child's leading mark, with the tick at
+/// `middle`, the middle of the row's first line. Snapped to whole device
+/// pixels and painted as quads rather than borders: a bordered box rounds
+/// each edge on its own, which left the trunk thinner than its tick.
 pub(super) fn tree_lines(
     gutter: Bounds<Pixels>,
     tree: RowTree,
-    font: &FontConfig,
-    padding: f32,
+    middle: Pixels,
     scale: f32,
 ) -> [Bounds<Pixels>; 2] {
     let device = |value: Pixels| f32::from(value) * scale;
@@ -167,11 +172,9 @@ pub(super) fn tree_lines(
     let weight = scale.round().max(1.);
     let snap = |value: Pixels| logical(device(value).round());
     // The trunk runs down the gutter's leading edge; the tick crosses it at the
-    // status dot's middle row and stops where the dot begins.
+    // row's first line and stops where the row's leading mark begins.
     let x = snap(gutter.origin.x);
-    let middle = logical(
-        (device(gutter.origin.y + px(padding + line_height(font) / 2.)) - weight / 2.).round(),
-    );
+    let middle = logical((device(middle) - weight / 2.).round());
     let end = if tree == RowTree::LastChild {
         middle + logical(weight)
     } else {
@@ -189,18 +192,85 @@ pub(super) fn tree_lines(
     ]
 }
 
-/// The trunk a child row's gutter carries on through the lines that ride
-/// under it (its note, its ports), so the next sibling stays tied to the same
-/// tree. A last child's elbow has already ended, so it has none, and neither
-/// does a row whose density draws no tree lines. Absolute: the caller places it
-/// in a relative box spanning those lines.
-pub(super) fn trunk_below(key: &str, tree: RowTree, cx: &RowContext<'_>) -> Option<Div> {
+/// Where a guide's tick meets its row.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum Elbow {
+    /// This far below the row's top: the middle of its first line.
+    At(f32),
+    /// Halfway down the row, for a row that centres its one line.
+    Middle,
+}
+
+/// The gutter a child of Herdr's rows reserves for its guide, as `(x,
+/// width)` from the sidebar's leading edge: from the parent's label column
+/// to the child's status dot. A configured indent or gap can leave none.
+pub(super) fn tree_gutter(cx: &RowContext<'_>) -> (f32, f32) {
     let layout = cx.look.density;
     let extra_status_width = cx.indicators.width(cx.font) - STATUS_WIDTH;
-    // The same gutter `row` reserves between the parent's label column and
-    // the child's dot, so the trunk lines up with the one painted in the row.
-    let tree_width = layout.padding() + layout.child_indent() - layout.tree_gutter();
-    if tree != RowTree::Child || !layout.tree_lines || tree_width <= 0. {
+    (
+        cx.nest + cx.look.tree_gutter() + extra_status_width,
+        layout.padding() + layout.child_indent() - layout.tree_gutter(),
+    )
+}
+
+/// A worktree child's guide: a trunk down the leading edge of `gutter`
+/// (`x` and width, in the row's own coordinates) and a tick across it at
+/// `elbow`, ending where the row's leading mark begins. A last child's
+/// trunk stops at its tick. Every layout draws its guides with this, in the
+/// tree's muted colour and one device pixel's weight, so they read as one
+/// family. None for a parent, while the look draws no guides, or when the
+/// gutter has no room. Absolute: the row must be relative.
+pub(super) fn guide(
+    key: &str,
+    tree: RowTree,
+    (x, width): (f32, f32),
+    elbow: Elbow,
+    cx: &RowContext<'_>,
+) -> Option<Div> {
+    if tree == RowTree::None || !cx.look.density.tree_lines || width <= 0. {
+        return None;
+    }
+    let color = cx.theme.muted;
+    let key = key.to_owned();
+    Some(
+        div()
+            .debug_selector(move || format!("tree-{key}"))
+            .absolute()
+            .left(px(x))
+            .w(px(width))
+            .top_0()
+            .bottom_0()
+            .child(
+                canvas(
+                    |_, _, _| (),
+                    move |bounds, _, window, _| {
+                        let middle = match elbow {
+                            Elbow::At(depth) => bounds.origin.y + px(depth),
+                            Elbow::Middle => bounds.center().y,
+                        };
+                        for line in tree_lines(bounds, tree, middle, window.scale_factor()) {
+                            window.paint_quad(fill(line, rgb(color)));
+                        }
+                    },
+                )
+                .size_full(),
+            ),
+    )
+}
+
+/// The trunk a child row's guide carries on through the lines that ride
+/// under it (its note, its ports), so the next sibling stays tied to the same
+/// tree. `gutter` is the row's guide gutter, from the sidebar's leading edge.
+/// A last child's elbow has already ended, so it has none, and neither does
+/// a row whose look draws no guides. Absolute: the caller places it in a
+/// relative box spanning those lines.
+pub(super) fn trunk_below(
+    key: &str,
+    tree: RowTree,
+    (x, width): (f32, f32),
+    cx: &RowContext<'_>,
+) -> Option<Div> {
+    if tree != RowTree::Child || !cx.look.density.tree_lines || width <= 0. {
         return None;
     }
     let color = cx.theme.muted;
@@ -209,8 +279,8 @@ pub(super) fn trunk_below(key: &str, tree: RowTree, cx: &RowContext<'_>) -> Opti
         div()
             .debug_selector(move || format!("trunk-{key}"))
             .absolute()
-            .left(px(cx.nest + cx.look.tree_gutter() + extra_status_width))
-            .w(px(tree_width))
+            .left(px(x))
+            .w(px(width))
             .top_0()
             .bottom_0()
             .child(
@@ -367,7 +437,6 @@ pub(super) fn row(
     } else {
         0
     };
-    let padding = layout.padding();
     let content_x = look.content_x();
     let gap = layout.gap();
     let vertical_padding = look.row_padding();
@@ -400,11 +469,6 @@ pub(super) fn row(
         } else {
             layout.child_indent() + extra_status_width
         };
-    // Room for tree lines between the parent's label column and this row's own
-    // dot: `child_indent - STATUS_WIDTH - gap`. A configured indent or gap can
-    // leave none, and then no lines are drawn rather than a box of negative width.
-    let tree_width = padding + indent - cx.nest - layout.tree_gutter() - extra_status_width;
-    let draw_tree = tree != RowTree::None && look.density.tree_lines && tree_width > 0.;
     // Only a drawn chevron takes its column. The badge hugs the row's edge
     // either way, so an empty column would only cut a group member's name.
     let arrow_reserve = if reserve_arrow && arrow.is_some() {
@@ -506,36 +570,13 @@ pub(super) fn row(
         .map(|row| look.mark(row, key, (state, cx.mark), theme))
         // Tree lines run in the indent the row already reserves, so a child is
         // tied to its parent without box-drawing glyphs in the label.
-        .when(draw_tree, |row| {
-            let (color, font) = (theme.muted, font.clone());
-            let gutter = cx.nest + look.tree_gutter() + extra_status_width;
-            row.child(
-                div()
-                    .debug_selector(|| format!("tree-{key}"))
-                    .absolute()
-                    .left(px(gutter))
-                    .w(px(tree_width))
-                    .top_0()
-                    .bottom_0()
-                    .child(
-                        canvas(
-                            |_, _, _| (),
-                            move |bounds, _, window, _| {
-                                for line in tree_lines(
-                                    bounds,
-                                    tree,
-                                    &font,
-                                    content_top,
-                                    window.scale_factor(),
-                                ) {
-                                    window.paint_quad(fill(line, rgb(color)));
-                                }
-                            },
-                        )
-                        .size_full(),
-                    ),
-            )
-        })
+        .children(guide(
+            key,
+            tree,
+            tree_gutter(cx),
+            Elbow::At(content_top + line_height(font) / 2.),
+            cx,
+        ))
         .when(show_status, |row| {
             let centered = indicators.centered();
             row.child(
@@ -592,10 +633,9 @@ pub(super) fn row(
                                 .when_some(agent_first, |line, icon| {
                                     line.child(agent_mark(key, icon, agent_size, name_color, font))
                                 })
-                                .when(
-                                    matches!(workspace_icon, RowIcon::Mark | RowIcon::Avatar(_)),
-                                    |title| title.child(workspace_icon.slot(key, font, muted)),
-                                )
+                                .when(workspace_icon.draws(), |title| {
+                                    title.child(workspace_icon.slot(key, font, muted))
+                                })
                                 .child(
                                     name_line(
                                         name,

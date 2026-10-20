@@ -1,14 +1,20 @@
-//! Linked worktree rows wear their hue, and the branch glyph when they stand
-//! alone; the main checkout and plain folders keep the theme as drawn.
+//! Linked worktrees hang from their main checkout on guide lines in every
+//! layout, and one standing alone leads with the branch glyph; the main
+//! checkout and plain folders keep the theme as drawn.
 use super::*;
-use crate::{config::LayoutMode, worktree_identity::Worktrees};
+use crate::{
+    config::{Density, LayoutMode, Style},
+    sidebar::{STATUS_WIDTH, layout::SidebarMetrics},
+    worktree_identity::{Surface, Worktrees},
+};
 
-/// The fixture's repository: `agent-launcher` is the main checkout (w3) and
-/// w5 is a linked worktree nested under it. w4 becomes a linked worktree of
-/// a repository whose main checkout is not open, so it stands alone. `herdr`
-/// is a folder outside Git.
+/// The fixture's repository: `agent-launcher` is the main checkout (w3) with
+/// two linked worktrees nested under it, w4 and then w5, the last child. w2
+/// becomes a linked worktree of a repository whose main checkout is not
+/// open, so it stands alone. `herdr` is a folder outside Git.
 const MAIN: &str = "agent-launcher";
-const CHILD: &str = "sidebar-child-with-a-long-readable-branch-name";
+const FIRST: &str = "sidebar-child";
+const LAST: &str = "sidebar-child-with-a-long-readable-branch-name";
 const ALONE: &str = "launcher-hotfix";
 const PLAIN: &str = "herdr";
 
@@ -32,7 +38,7 @@ fn draw(
             view.config.worktrees = worktrees;
             view.config.show_repository_icons = repository_icons;
             let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
-            let alone = &mut snapshot.workspaces[4];
+            let alone = &mut snapshot.workspaces[2];
             alone.label = ALONE.into();
             alone.worktree = Some(ClientShellWorktree {
                 key: "/fixture/elsewhere/.git".into(),
@@ -50,38 +56,142 @@ fn draw(
     cx
 }
 
-/// Every layout washes the linked worktrees' rows, nested or alone, and
-/// only theirs.
-#[gpui::test]
-fn every_layout_washes_only_linked_worktrees(cx: &mut gpui::TestAppContext) {
-    for mode in LayoutMode::ALL
+fn layouts() -> impl Iterator<Item = LayoutMode> {
+    LayoutMode::ALL
         .into_iter()
         .filter(|mode| mode.lists_workspaces())
-    {
+}
+
+/// Every layout hangs the nested worktrees from guide lines, and only them:
+/// the main checkout, a worktree standing alone and a plain folder have no
+/// line to hang from.
+#[gpui::test]
+fn every_layout_hangs_nested_worktrees_from_guides(cx: &mut gpui::TestAppContext) {
+    for mode in layouts() {
         let cx = draw(cx, mode, Worktrees::default(), true);
-        for key in [CHILD, ALONE] {
-            assert!(
-                probe(cx, format!("worktree-wash-{key}")).is_some(),
-                "{mode}: {key} unwashed"
-            );
+        for key in [FIRST, LAST] {
+            assert!(probe(cx, format!("tree-{key}")).is_some(), "{mode}: {key}");
         }
-        for key in [MAIN, PLAIN] {
-            assert!(
-                probe(cx, format!("worktree-wash-{key}")).is_none(),
-                "{mode}: {key} washed"
-            );
+        for key in [MAIN, ALONE, PLAIN] {
+            assert!(probe(cx, format!("tree-{key}")).is_none(), "{mode}: {key}");
         }
     }
 }
 
+/// Where the guide lies in each layout: the trunk drops from the leading
+/// edge of the parent's first mark, the tick ends where the child's own
+/// leading mark begins, and the trunk runs unbroken from the main checkout
+/// down through every child, across the gaps between rounded rows and cards.
+#[gpui::test]
+fn guides_run_from_the_main_checkout_to_each_childs_leading_mark(cx: &mut gpui::TestAppContext) {
+    for mode in layouts() {
+        let cx = draw(cx, mode, Worktrees::default(), true);
+        let first = probe(cx, format!("tree-{FIRST}")).unwrap();
+        let last = probe(cx, format!("tree-{LAST}")).unwrap();
+        let parent = probe(cx, format!("row-{MAIN}")).unwrap();
+        let (drop_from, reach) = match mode {
+            // The parent's glyph, centred in its slot at 70% of it.
+            LayoutMode::Superset => {
+                let (parent, child) = (
+                    probe(cx, format!("icon-{MAIN}")).unwrap(),
+                    probe(cx, format!("icon-{FIRST}")).unwrap(),
+                );
+                let inset = parent.size.width * 0.15;
+                (parent.left() + inset, child.left() + inset)
+            }
+            // The parent's status dot, centred in its 12px column inside its
+            // card's border and padding.
+            LayoutMode::Orca => (
+                parent.left() + px(1. + 6. + 2.),
+                probe(cx, format!("row-{FIRST}")).unwrap().left() + px(1. + 6. + 2.),
+            ),
+            // The parent's label column, as Herdr's rows lay it out after
+            // the status dot and the gap; the tick ends at the child's dot.
+            LayoutMode::Minimal => {
+                let gap = SidebarMetrics::for_mode(mode).gap;
+                (
+                    probe(cx, format!("name-{MAIN}")).unwrap().left(),
+                    probe(cx, format!("name-{FIRST}")).unwrap().left() - px(STATUS_WIDTH + gap),
+                )
+            }
+            _ => (
+                probe(cx, format!("column-{MAIN}")).unwrap().left(),
+                probe(cx, format!("mark-{FIRST}")).unwrap().left(),
+            ),
+        };
+        // Layout rounds to the pixel grid, and the lines then snap to
+        // device pixels, so half a pixel is as close as a box can say.
+        for guide in [first, last] {
+            assert!((guide.left() - drop_from).abs() <= px(0.5), "{mode}");
+            assert!((guide.right() - reach).abs() <= px(0.5), "{mode}");
+        }
+        // Unbroken: the first child's guide starts where the main checkout's
+        // row ends, and the last child's where the first child's ends.
+        assert_eq!(first.top(), parent.bottom(), "{mode}");
+        assert_eq!(last.top(), first.bottom(), "{mode}");
+        // The guide spans its row, and never reaches into the label beyond.
+        for key in [FIRST, LAST] {
+            let row = probe(cx, format!("row-{key}")).unwrap();
+            let guide = probe(cx, format!("tree-{key}")).unwrap();
+            assert_eq!((guide.top(), guide.bottom()), (row.top(), row.bottom()));
+            assert!(guide.right() < probe(cx, format!("name-{key}")).unwrap().left());
+        }
+    }
+}
+
+/// Herdr's flat rows draw their tree on their own; every other layout draws
+/// guides for `[worktrees]` and none without it, as before worktrees asked
+/// for them.
+#[test]
+fn only_the_flat_layouts_draw_guides_without_worktrees() {
+    for mode in LayoutMode::ALL {
+        let preset = SidebarMetrics::for_mode(mode);
+        let own = matches!(
+            mode,
+            LayoutMode::Classic {
+                style: Style::Flat,
+                ..
+            } | LayoutMode::Devices
+        );
+        assert_eq!(preset.tree_lines, own, "{mode}");
+        assert_eq!(preset.with_guides(false).tree_lines, own, "{mode}");
+        assert!(preset.with_guides(true).tree_lines, "{mode}");
+    }
+}
+
+/// `apply_to` without `sidebar` leaves every layout as Herdr draws it
+/// without the marks: the flat ones keep their tree, the rest drop their
+/// guides, and the row standing alone gets the owner's avatar back.
+#[gpui::test]
+fn turning_the_sidebar_off_leaves_rows_unmarked(cx: &mut gpui::TestAppContext) {
+    for mode in [
+        LayoutMode::default(),
+        LayoutMode::new(Density::Comfortable, Style::Rounded),
+        LayoutMode::Superset,
+        LayoutMode::Orca,
+        LayoutMode::Minimal,
+    ] {
+        let cx = draw(cx, mode, Worktrees::new(None, &[Surface::Terminal]), true);
+        let flat = mode == LayoutMode::default();
+        assert_eq!(probe(cx, format!("tree-{FIRST}")).is_some(), flat, "{mode}");
+        assert!(
+            probe(cx, format!("worktree-icon-{ALONE}")).is_none(),
+            "{mode}"
+        );
+    }
+    let cx = draw(cx, LayoutMode::default(), Worktrees::new(None, &[]), true);
+    assert!(probe(cx, format!("github-{ALONE}")).is_some());
+}
+
 /// In Herdr's own rows a linked worktree standing alone takes the branch
 /// glyph in the slot its owner's avatar used, so it never relies on colour
-/// alone, even with the repository icons off. A nested child is marked by
-/// its place under the main checkout and keeps its geometry.
+/// alone, even with the repository icons off. A nested child hangs from its
+/// guide and keeps its geometry.
 #[gpui::test]
 fn a_linked_worktree_standing_alone_leads_with_the_branch_glyph(cx: &mut gpui::TestAppContext) {
     for mode in [
-        LayoutMode::from(crate::config::Density::Comfortable),
+        LayoutMode::from(Density::Comfortable),
+        LayoutMode::new(Density::Comfortable, Style::Rounded),
         LayoutMode::default(),
     ] {
         for icons in [true, false] {
@@ -99,7 +209,7 @@ fn a_linked_worktree_standing_alone_leads_with_the_branch_glyph(cx: &mut gpui::T
             if let Some(main) = main {
                 assert_eq!(main.left(), glyph.left(), "{mode}");
             }
-            for key in [MAIN, CHILD, PLAIN] {
+            for key in [MAIN, FIRST, LAST, PLAIN] {
                 assert!(
                     probe(cx, format!("worktree-icon-{key}")).is_none(),
                     "{mode}: {key}"
@@ -107,48 +217,4 @@ fn a_linked_worktree_standing_alone_leads_with_the_branch_glyph(cx: &mut gpui::T
             }
         }
     }
-}
-
-/// The wash lies inside its row, in the shape of the row's highlight.
-#[gpui::test]
-fn the_wash_lies_inside_its_row(cx: &mut gpui::TestAppContext) {
-    for mode in [
-        LayoutMode::default(),
-        LayoutMode::new(
-            crate::config::Density::Comfortable,
-            crate::config::Style::Rounded,
-        ),
-    ] {
-        let cx = draw(cx, mode, Worktrees::default(), true);
-        for key in [CHILD, ALONE] {
-            let wash = probe(cx, format!("worktree-wash-{key}")).unwrap();
-            let row = probe(cx, format!("row-{key}")).unwrap();
-            assert!(
-                wash.left() >= row.left() && wash.right() <= row.right(),
-                "{mode}"
-            );
-            assert!(
-                wash.top() >= row.top() && wash.bottom() <= row.bottom(),
-                "{mode}"
-            );
-            assert!(wash.size.height > row.size.height / 2., "{mode}");
-        }
-    }
-}
-
-/// `apply_to` without `sidebar` leaves every row as the theme draws it,
-/// with the owner's avatar back on the row standing alone.
-#[gpui::test]
-fn turning_the_sidebar_off_leaves_rows_unmarked(cx: &mut gpui::TestAppContext) {
-    let cx = draw(
-        cx,
-        LayoutMode::default(),
-        Worktrees::new(None, &[crate::worktree_identity::Surface::Terminal]),
-        true,
-    );
-    for key in [CHILD, ALONE] {
-        assert!(probe(cx, format!("worktree-wash-{key}")).is_none());
-        assert!(probe(cx, format!("worktree-icon-{key}")).is_none());
-    }
-    assert!(probe(cx, format!("github-{ALONE}")).is_some());
 }

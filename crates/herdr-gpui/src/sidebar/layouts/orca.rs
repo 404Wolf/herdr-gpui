@@ -8,7 +8,7 @@ use super::{
     super::{
         cell::{AgentRow, RowContext, RowLayout, RowState, WorkspaceRow},
         line_height,
-        row::{RowKind, RowTree, TokenLook, left_behind, token_column},
+        row::{Elbow, RowKind, RowTree, TokenLook, guide, left_behind, token_column},
         tokens::ResolvedToken,
         wash::HostMark,
     },
@@ -61,6 +61,40 @@ fn card(
         (wash(theme.foreground, 0x1a), wash(theme.foreground, 0x0a)),
         theme,
     )
+}
+
+/// A child's guide gutter, as `(x, width)` from the sidebar's leading edge:
+/// the trunk drops from the leading edge of the parent's status mark, and the
+/// tick spans the indent to the child's mark, as the tree's tick meets its
+/// dot. The mark sits centred in its status column.
+fn gutter(cx: &RowContext<'_>) -> (f32, f32) {
+    let mark = (status_width(cx) - cx.indicators.width(cx.font)) / 2.;
+    (
+        MARGIN + cx.nest + BORDER + GAP + mark,
+        cx.look.density.card_indent(),
+    )
+}
+
+/// A child card's guide, drawn from the card itself: it lies in the indent
+/// to the card's left, and spans the card's border box so the trunk runs
+/// unbroken from card to card. `padding` is the card's top padding.
+fn card_guide(
+    key: &str,
+    tree: RowTree,
+    indent: f32,
+    padding: f32,
+    cx: &RowContext<'_>,
+) -> Option<Div> {
+    let (x, width) = gutter(cx);
+    let line = line_height(cx.font);
+    guide(
+        key,
+        tree,
+        (x - MARGIN - indent - BORDER, width),
+        Elbow::At(BORDER + padding + line / 2.),
+        cx,
+    )
+    .map(|guide| guide.top(px(-BORDER)).bottom(px(-BORDER)))
 }
 
 /// Width inside a card's margins, border, and padding, less its status
@@ -196,6 +230,7 @@ impl RowLayout for Orca {
                 .items_start()
                 .py(px(5.))
                 .when(removing, |card| card.opacity(REMOVING_OPACITY))
+                .children(card_guide(label, tree, indent, 5., cx))
                 .children(mark)
                 .child(text.into_div().items_start());
         }
@@ -245,10 +280,12 @@ impl RowLayout for Orca {
                 let (width, number) = parts::pr_number(label, pr, small, glyph);
                 line.shrink(width, number)
             });
+        let padding = if meta { 5. } else { 7. };
         card(label, state, indent, 8., (theme, cx.mark))
             .items_start()
-            .py(px(if meta { 5. } else { 7. }))
+            .py(px(padding))
             .when(removing, |card| card.opacity(REMOVING_OPACITY))
+            .children(card_guide(label, tree, indent, padding, cx))
             .child({
                 let column = status_column(parts::status(status, removing, cx), cx);
                 if cx.indicators.centered() {
@@ -273,6 +310,10 @@ impl RowLayout for Orca {
                         )
                     }),
             )
+    }
+
+    fn trunk_below(&self, key: &str, tree: RowTree, cx: &RowContext<'_>) -> Option<Div> {
+        super::super::row::trunk_below(key, tree, gutter(cx), cx)
     }
 
     fn agent(&self, agent: AgentRow<'_>, state: RowState, cx: &RowContext<'_>) -> Div {

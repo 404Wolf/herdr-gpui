@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
-use crate::contrast::ratio;
+use crate::contrast::{Contrast, ratio};
 
 mod placement;
 
@@ -23,10 +23,6 @@ fn themes() -> Vec<(String, Theme)> {
             })
         })
         .collect()
-}
-
-fn over(base: u32, (color, alpha): (u32, u32)) -> u32 {
-    super::over(base, color, alpha)
 }
 
 /// The glyph and the rule are meaningful graphics: WCAG asks 3:1 of them,
@@ -90,73 +86,18 @@ fn a_configured_tint_keeps_its_hue() {
     }
 }
 
-/// The wash turns the row's hue, not its lightness: every label keeps
-/// nearly all its contrast, and text that met WCAG AA still does.
+/// The glyph and the rule are one mark, which keeps its contrast under
+/// high contrast: the guides are the tree's own and need nothing here.
 #[test]
-fn the_wash_keeps_every_label_readable() {
+fn the_glyph_and_the_rule_share_the_mark() {
     for (name, theme) in themes() {
-        let Some(SidebarMarks {
-            wash: Some(wash), ..
-        }) = Worktrees::default().sidebar_marks(&theme)
-        else {
-            assert_eq!(theme.contrast, Contrast::High, "{name}: no wash");
-            continue;
-        };
-        for base in [theme.sidebar_background(), theme.active] {
-            let washed = over(base, wash);
-            for text in [theme.foreground, theme.subtext(), theme.muted] {
-                let (plain, tinted) = (ratio(text, base), ratio(text, washed));
-                assert!(
-                    tinted >= plain * 0.92,
-                    "{name}: {text:06x} on {base:06x} falls from {plain:.2} to {tinted:.2}"
-                );
-                if plain >= 4.5 * 1.08 {
-                    assert!(tinted >= 4.5, "{name}: {text:06x} falls under AA");
-                }
-            }
-        }
-    }
-}
-
-/// Seen beside a plain row, a washed one is told apart on every theme,
-/// light ones included, and a selected row stays the most marked one.
-#[test]
-fn the_wash_is_noticed_without_outshouting_a_selection() {
-    for (name, theme) in themes() {
-        let Some((color, alpha)) = Worktrees::default()
-            .sidebar_marks(&theme)
-            .and_then(|marks| marks.wash)
-        else {
-            continue;
-        };
-        assert!(
-            (WASH_ALPHA.0..=WASH_ALPHA.1).contains(&alpha),
-            "{name}: {alpha:#x}"
-        );
-        let sidebar = theme.sidebar_background();
-        let washed = over(sidebar, (color, alpha));
-        let seen = distance(washed, sidebar);
-        assert!(seen >= 0.018, "{name}: wash too faint ({seen:.3})");
-        assert!(seen <= 0.045, "{name}: wash too loud ({seen:.3})");
-        // The selected (or hovered) row under the wash still stands off the
-        // washed rows around it by most of what it did unwashed.
-        let selected = distance(theme.active, sidebar);
-        let selected_washed = distance(over(theme.active, (color, alpha)), washed);
-        assert!(
-            selected_washed >= (selected * 0.6).min(0.02),
-            "{name}: selection fades from {selected:.3} to {selected_washed:.3}"
+        let worktrees = Worktrees::default();
+        assert_eq!(
+            worktrees.glyph(&theme),
+            Some(worktrees.mark(&theme)),
+            "{name}"
         );
     }
-}
-
-/// High contrast promises every label its full contrast, so the wash steps
-/// aside there and the glyph alone marks the row.
-#[test]
-fn high_contrast_drops_the_wash_and_keeps_the_glyph() {
-    let theme = Theme::default().with_contrast(Contrast::High);
-    let marks = Worktrees::default().sidebar_marks(&theme).unwrap();
-    assert_eq!(marks.wash, None);
-    assert_eq!(marks.glyph, Worktrees::default().mark(&theme));
 }
 
 #[test]
@@ -169,11 +110,7 @@ fn surfaces_switch_each_mark_on_its_own() {
         (&[][..], false, false),
     ] {
         let worktrees = Worktrees::new(None, surfaces);
-        assert_eq!(
-            worktrees.sidebar_marks(&theme).is_some(),
-            sidebar,
-            "{surfaces:?}"
-        );
+        assert_eq!(worktrees.glyph(&theme).is_some(), sidebar, "{surfaces:?}");
         assert_eq!(
             worktrees.rule(true, &theme).is_some(),
             terminal,
@@ -221,24 +158,4 @@ fn degrees_apart(first: u32, second: u32) -> f32 {
         .abs()
         .rem_euclid(360.);
     apart.min(360. - apart)
-}
-
-/// The wash and the glyph are one hue: a light sidebar has little room for
-/// colour, but the wash makes room rather than bending toward another hue.
-#[test]
-fn the_wash_keeps_the_marks_hue() {
-    for (name, theme) in themes() {
-        let Some(SidebarMarks {
-            glyph,
-            wash: Some((color, _)),
-        }) = Worktrees::default().sidebar_marks(&theme)
-        else {
-            continue;
-        };
-        let apart = degrees_apart(glyph, color);
-        assert!(
-            apart <= 30.,
-            "{name}: wash {color:06x} is {apart:.0} degrees off {glyph:06x}"
-        );
-    }
 }

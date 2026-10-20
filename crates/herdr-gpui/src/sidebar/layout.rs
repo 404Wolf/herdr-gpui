@@ -50,6 +50,9 @@ pub(crate) struct SidebarMetrics {
     pub(crate) style_padding: f32,
     pub(crate) radius: f32,
     pub(crate) highlight: Highlight,
+    /// Whether worktree children hang from guide lines: a trunk under their
+    /// main checkout and an elbow to each child. Herdr's flat rows always
+    /// draw them; every other layout draws them for `[worktrees]`.
     pub(crate) tree_lines: bool,
     pub(crate) header_case: HeaderCase,
 }
@@ -62,9 +65,25 @@ impl SidebarMetrics {
             Density::Normal => Self::normal(),
             Density::Compact => Self::compact(),
         };
-        match mode.style() {
+        let metrics = match mode.style() {
             Style::Flat => density,
             Style::Rounded => density.rounded(),
+        };
+        // Superset and Minimal share a flat density but are their own
+        // designs, which have no tree of their own.
+        let own_rows = matches!(mode, LayoutMode::Classic { .. } | LayoutMode::Devices);
+        Self {
+            tree_lines: metrics.tree_lines && own_rows,
+            ..metrics
+        }
+    }
+
+    /// The preset with worktree guides drawn whatever its own look, as
+    /// `[worktrees]` asks of the sidebar.
+    pub(crate) fn with_guides(self, guides: bool) -> Self {
+        Self {
+            tree_lines: self.tree_lines || guides,
+            ..self
         }
     }
 
@@ -156,9 +175,10 @@ impl SidebarMetrics {
     };
 
     /// Inset rows with rounded, outlined highlights. Worktrees keep their
-    /// indent but drop tree lines, which would break across the gaps
-    /// between rows. Spacing scales with the density, so a compact rounded
-    /// sidebar stays tighter than a normal one.
+    /// indent; the preset alone draws no tree lines, but `[worktrees]` adds
+    /// them, and they run unbroken because each row's box spans its share
+    /// of the gap to the next. Spacing scales with the density, so a compact
+    /// rounded sidebar stays tighter than a normal one.
     fn rounded(self) -> Self {
         let trim = (self.gap / 3.).round();
         Self {
@@ -573,11 +593,14 @@ pub(super) fn for_mode(mode: LayoutMode) -> SidebarLook {
     }
 }
 
-/// The look a window's config asks for: its layout with its overrides, and
-/// highlights as translucent as its backdrop's panels allow.
+/// The look a window's config asks for: its layout with its overrides and
+/// worktree guides, and highlights as translucent as its backdrop's panels
+/// allow.
 pub(super) fn for_config(config: &crate::config::Config, fill: Fill) -> SidebarLook {
     SidebarLook {
-        density: SidebarMetrics::for_mode(config.layout.mode).with(&config.sidebar_style.overrides),
+        density: SidebarMetrics::for_mode(config.layout.mode)
+            .with(&config.sidebar_style.overrides)
+            .with_guides(config.worktrees.sidebar),
         mark: fill.mark(),
     }
 }

@@ -27,7 +27,6 @@ fn row_mode_shows_configured_colours_only() {
                     alpha: REST_ALPHA
                 }),
                 dim: false,
-                worktree: None,
             }
         );
         assert_eq!(

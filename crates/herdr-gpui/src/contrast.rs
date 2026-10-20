@@ -10,8 +10,6 @@ use serde::Deserialize;
 use std::{cell::RefCell, collections::HashMap};
 
 #[cfg(test)]
-mod hue_tests;
-#[cfg(test)]
 mod system_tests;
 #[cfg(windows)]
 mod windows;
@@ -179,71 +177,6 @@ pub(crate) fn ink(color: u32, backgrounds: &[u32], target: f32) -> u32 {
         }
     }
     found
-}
-
-/// `base` turned toward the hue of `toward` by up to `chroma` OKLab units,
-/// close to `base`'s own lightness: a tint that shifts colour without moving
-/// luminance much, so text drawn over it keeps nearly all its contrast.
-/// Near white or black the display can show little colour, so the tint
-/// first steps up to [`HUE_SHIFT_LIGHTNESS`] toward mid-grey to make room,
-/// then shrinks its chroma until it fits. It is never clipped per channel,
-/// which would bend the hue (a light blue toward cyan). A grey `toward` has
-/// no hue to give, and `base` comes back unchanged.
-pub(crate) fn hue_shift(base: u32, toward: u32, chroma: f32) -> u32 {
-    let [lightness, a, b] = to_oklab(base);
-    let [_, hue_a, hue_b] = to_oklab(toward);
-    let length = hue_a.hypot(hue_b);
-    if length <= f32::EPSILON {
-        return base;
-    }
-    let inward = if lightness > 0.5 { -1. } else { 1. };
-    let at = |step: usize, scale: f32| {
-        let reach = chroma * scale / length;
-        [
-            lightness + inward * HUE_SHIFT_LIGHTNESS * step as f32 / HUE_SHIFT_STEPS as f32,
-            a + hue_a * reach,
-            b + hue_b * reach,
-        ]
-    };
-    if let Some(step) = (0..=HUE_SHIFT_STEPS).find(|&step| in_gamut(at(step, 1.))) {
-        return from_oklab(at(step, 1.));
-    }
-    let (mut inside, mut outside) = (0., 1.);
-    for _ in 0..STEPS {
-        let middle = (inside + outside) / 2.;
-        if in_gamut(at(HUE_SHIFT_STEPS, middle)) {
-            inside = middle;
-        } else {
-            outside = middle;
-        }
-    }
-    from_oklab(at(HUE_SHIFT_STEPS, inside))
-}
-
-/// The most [`hue_shift`] moves lightness to fit its colour, in OKLab units,
-/// and the steps it tries on the way.
-const HUE_SHIFT_LIGHTNESS: f32 = 0.08;
-const HUE_SHIFT_STEPS: usize = 8;
-
-/// Whether an OKLab colour lies inside sRGB, before any clipping.
-fn in_gamut([lightness, a, b]: [f32; 3]) -> bool {
-    let l = (lightness + 0.396_337_78 * a + 0.215_803_76 * b).powi(3);
-    let m = (lightness - 0.105_561_346 * a - 0.063_854_17 * b).powi(3);
-    let s = (lightness - 0.089_484_18 * a - 1.291_485_5 * b).powi(3);
-    [
-        4.076_741_7 * l - 3.307_711_6 * m + 0.230_969_94 * s,
-        -1.268_438 * l + 2.609_757_4 * m - 0.341_319_38 * s,
-        -0.004_196_086_3 * l - 0.703_418_6 * m + 1.707_614_7 * s,
-    ]
-    .into_iter()
-    .all(|channel| (-0.001..=1.001).contains(&channel))
-}
-
-/// Euclidean distance between two colours in OKLab, where about 0.02 is the
-/// least difference a viewer notices side by side.
-pub(crate) fn distance(first: u32, second: u32) -> f32 {
-    let ([l1, a1, b1], [l2, a2, b2]) = (to_oklab(first), to_oklab(second));
-    ((l1 - l2).powi(2) + (a1 - a2).powi(2) + (b1 - b2).powi(2)).sqrt()
 }
 
 /// `color`'s OKLab hue, in degrees.

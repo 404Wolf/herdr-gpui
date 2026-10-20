@@ -1136,12 +1136,12 @@ Three densities of Herdr's own rows are available:
 Add `-rounded` to any density (`normal-rounded`, `compact-rounded`,
 `comfortable-rounded`) for inset rows with rounded corners, a bordered selection,
 and title-case section headings. Rounded rows are a little taller, and worktree
-children keep their indent without tree guides, which would break across the
-gaps between rows.
+children hang from the same tree guides as flat rows, unbroken across the gaps
+between rows (see [Telling Worktrees Apart](#telling-worktrees-apart)).
 
 Normal and Compact show PR numbers without change counts. Status indicators and
-agent-name lines remain visible in every density, and flat ones keep tree guides;
-font sizes and terminal spacing are unchanged. Saved edits apply automatically.
+agent-name lines remain visible in every density, and every density keeps tree
+guides; font sizes and terminal spacing are unchanged. Saved edits apply automatically.
 
 When the daemon's `[ui.sidebar.agents]` rows name the `state_text` token, the
 GUI shows the same status word beside each agent, in the activity dot's color,
@@ -1744,28 +1744,33 @@ keeps the theme as drawn, so you can see at a glance which copy you are about
 to type into. The daemon already says which checkouts are linked worktrees;
 the app reads no Git of its own for this.
 
-- In the sidebar, a linked worktree's row carries a faint wash in the theme's
-  blue, the hue its notes use, in every layout. The wash turns the row's hue
-  without changing its lightness, so names keep their contrast, and selected,
-  hovered, and agent status marks read as before. Nested under its
-  main checkout, the row's place in the tree also marks it; standing alone,
-  it shows the branch glyph where a repository row shows its owner's avatar,
-  so colour is never the only cue. Screen readers hear "linked worktree"
-  after its name.
-- In the workspace, a 2-pixel rule in the same hue lies along the tab strip's
-  edge that meets the terminals, or along the top while the strip is hidden.
-  It sits in the chrome, so no terminal cell is covered or recoloured.
+- In the sidebar, linked worktrees nested under their main checkout hang from
+  it on guide lines in every layout: a trunk under the main checkout and a
+  short elbow to each worktree, the same thin, muted lines the flat layouts
+  have always drawn. Rounded, Superset, Orca and Minimal draw them too, so
+  ten or twenty worktrees read as one quiet group rather than a block of
+  colour, and selection, hover and status marks look as before. A linked
+  worktree standing alone, with its main checkout not open, has no line to
+  hang from, so it shows the branch glyph, in the theme's blue (the hue its
+  notes use), where a repository row shows its owner's avatar. Screen
+  readers hear "linked worktree" after its name.
+- In the workspace, a 2-pixel rule in the same blue lies along the tab
+  strip's edge that meets the terminals, or along the top while the strip is
+  hidden. It sits in the chrome, so no terminal cell is covered or
+  recoloured.
 
-Under `contrast = "high"` the wash steps aside so every label keeps its full
-contrast; the glyph and the rule stay. The `[worktrees]` table changes the hue
-or where it shows:
+The glyph and the rule reach 3:1 against the chrome (4.5:1 under
+`contrast = "high"`). The `[worktrees]` table changes their hue or where the
+marks show:
 
 ```toml
 [worktrees]
-# Any #rgb or #rrggbb; it only gets lighter or darker as far as it must to
-# stand out from the chrome. Unset, the theme's blue.
+# The glyph's and the rule's hue, as #rgb or #rrggbb; it only gets lighter or
+# darker as far as it must to stand out from the chrome. Unset, the theme's
+# blue.
 tint = "#7aa2f7"
-# Where the marks show; [] turns them off.
+# Where the marks show; [] turns them off. Without "sidebar", the flat
+# layouts keep their tree and the others draw no guides, as before.
 apply_to = ["sidebar", "terminal"]
 ```
 
