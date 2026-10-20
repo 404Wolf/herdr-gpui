@@ -84,6 +84,8 @@ pub(crate) struct Security {
     opened: Option<page::Opened>,
     /// Whether the page takes the whole section, the list folded away.
     list_hidden: bool,
+    /// The page's width beside the list, as its handle was dragged.
+    pane_width: f32,
     /// Pages read this session, by item.
     pages: HashMap<Item, page::Loaded>,
     page_scroll: ScrollHandle,
@@ -102,6 +104,7 @@ impl Default for Security {
             scroll: ScrollHandle::new(),
             opened: None,
             list_hidden: false,
+            pane_width: crate::orchestrator::pane::PANE_DEFAULT,
             pages: HashMap::new(),
             page_scroll: ScrollHandle::new(),
         }

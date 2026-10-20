@@ -58,8 +58,18 @@ impl OrchestratorView {
                 .truncate()
                 .text_size(look.small())
                 .text_color(rgb(look.theme.subtext()))
-                .child(self.project_label(&self.repos[row.repo]))
+                .child(self.row_project(row))
         })
+    }
+
+    /// The project a row names: its checkout's, or how many hosts list it
+    /// when several checkouts of the same repository do.
+    fn row_project(&self, row: &ItemRow) -> String {
+        let repo = &self.repos[row.repo];
+        match self.twins(&self.row_item(row).key.canonical()) {
+            0 => self.project_label(repo),
+            twins => format!("{} \u{00b7} {} hosts", repo.name(), twins + 1),
+        }
     }
 
     /// A row's source as a muted mark, while the list mixes backends.
@@ -341,7 +351,10 @@ impl OrchestratorView {
             .border_color(rgb(theme.active))
             .cursor_pointer()
             .hover(move |style| style.bg(rgb(hover)))
-            .when(selected || open, |el| el.bg(rgb(theme.primary_wash())))
+            // The accent marks only the row whose page is open; a row the
+            // keys moved to, with no page, wears the hover's quiet tint.
+            .when(open, |el| el.bg(rgb(theme.primary_wash())))
+            .when(selected && !open, |el| el.bg(rgb(hover)))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, _: &MouseDownEvent, _, cx| {

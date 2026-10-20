@@ -1,5 +1,6 @@
 //! The list beside an open page: the same items as the section's cards, in
-//! the same order, one compact row each, the open one marked.
+//! the same order, one compact row each, the open one marked. It keeps the
+//! room the page's pane leaves, as an issue list does.
 
 use super::{
     Item,
@@ -9,9 +10,6 @@ use super::{
 use crate::HerdrWindow;
 use gpui::{prelude::*, *};
 use std::time::SystemTime;
-
-/// The list's width beside a page.
-const WIDTH: f32 = 320.;
 
 impl HerdrWindow {
     pub(super) fn render_security_list(
@@ -23,8 +21,8 @@ impl HerdrWindow {
         let mut list = div()
             .id("security-list")
             .debug_selector(|| "security-list".into())
-            .flex_none()
-            .w(px(WIDTH))
+            .flex_1()
+            .min_w_0()
             .h_full()
             .min_h_0()
             .overflow_y_scroll()

@@ -5,7 +5,7 @@
 //! beads cost only the rows on screen.
 
 use super::{
-    Event, OrchestratorView, PANE_MAX_SHARE, PANE_MIN, PaneDrag,
+    Event, OrchestratorView, PaneDrag, Resize,
     look::{BLUE, GREEN, Look, MAGENTA, RED, YELLOW, age},
     rows::{Sort, Tab},
 };
@@ -45,14 +45,9 @@ impl OrchestratorView {
                     .flex()
                     .on_drag_move(cx.listener(
                         |this, event: &DragMoveEvent<PaneDrag>, window, cx| {
-                            let right = event.bounds.right();
-                            let width = f32::from(right - event.event.position.x);
-                            let max = f32::from(window.viewport_size().width) * PANE_MAX_SHARE;
-                            // Dragged nearly shut, the details close.
-                            if width < PANE_MIN / 2. {
-                                this.detail = None;
-                            } else {
-                                this.pane_width = width.clamp(PANE_MIN, max.max(PANE_MIN));
+                            match Resize::of(event, window) {
+                                Resize::Close => this.detail = None,
+                                Resize::Width(width) => this.pane_width = width,
                             }
                             cx.notify();
                         },
@@ -73,26 +68,7 @@ impl OrchestratorView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Div {
-        let theme = &self.look.theme;
-        let handle = div()
-            .id("orchestrator-pane-handle")
-            .flex_none()
-            .w(px(6.))
-            .h_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .border_l_1()
-            .border_color(rgb(theme.active))
-            .cursor(CursorStyle::ResizeLeftRight)
-            .on_drag(PaneDrag, |drag, _, _, cx| cx.new(|_| *drag))
-            .child(
-                div()
-                    .w(px(2.))
-                    .h(px(28.))
-                    .rounded_full()
-                    .bg(rgb(theme.active)),
-            );
+        let handle = super::pane::handle(&self.look.theme, "orchestrator-pane-handle");
         div()
             .debug_selector(|| "orchestrator-pane".into())
             .flex_none()
