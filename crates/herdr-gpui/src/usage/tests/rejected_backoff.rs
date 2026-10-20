@@ -132,8 +132,9 @@ fn an_outage_between_rejections_keeps_the_wait_growing() {
 }
 
 /// The worker's own provider loop leaves a held provider unasked while the
-/// others still answer. Both stand-ins answer from an empty home, so the
-/// read stays on this machine and calls no service.
+/// others still answer. Both answer from an empty home on a host whose
+/// `uname` says Linux and whose `security` finds nothing, so the read never
+/// reaches this machine's Keychain or calls a service.
 #[cfg(unix)]
 #[test]
 fn the_worker_does_not_ask_a_held_provider() {
@@ -151,12 +152,18 @@ fn the_worker_does_not_ask_a_held_provider() {
     };
     let asked = |held: &HashSet<Provider>| {
         let home = tempfile::tempdir().unwrap();
+        let bin = home.path().join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        for (tool, script) in [("uname", "echo Linux"), ("security", "exit 44")] {
+            crate::test_executable::write(bin.join(tool), format!("#!/bin/sh\n{script}\n"), 0o755)
+                .unwrap();
+        }
         let mut command = std::process::Command::new("/bin/sh");
         command
             .arg("-s")
             .env_clear()
             .env("HOME", home.path())
-            .env("PATH", "/usr/bin:/bin")
+            .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null());
