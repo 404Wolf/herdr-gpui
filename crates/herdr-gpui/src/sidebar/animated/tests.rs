@@ -195,3 +195,49 @@ fn braille_dots_stay_within_seven_tenths_of_their_slot() {
         assert_eq!((dot * 2.).fract(), 0., "{size}: {dot}");
     }
 }
+
+struct SizedMark {
+    status: AgentStatus,
+    size: f32,
+}
+
+impl Render for SizedMark {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().child(mark(StatusIcons::Braille, self.status, self.size, 0xf9e2af))
+    }
+}
+
+/// The drawn dots sit centered inside their slot at every size, as a grid
+/// of their own rows: three for the spinner and settled marks, four for the
+/// breathing blocked cell.
+#[gpui::test]
+fn braille_dots_render_centered_inside_their_slot(cx: &mut TestAppContext) {
+    for side in [8., 12., 20., 28.] {
+        for (status, selector, rows) in [
+            (AgentStatus::Working, "status-braille", 3.),
+            (AgentStatus::Blocked, "status-braille-fill", 4.),
+            (AgentStatus::Done, "status-braille-done", 3.),
+            (AgentStatus::Idle, "status-braille-idle", 3.),
+        ] {
+            let (_, cx) = cx.add_window_view(|_, _| SizedMark { status, size: side });
+            cx.update(|window, cx| window.draw(cx).clear(cx));
+            let slot = cx.debug_bounds(selector).unwrap();
+            let grid = cx.debug_bounds("status-braille-dots").unwrap();
+            let dot = dot_diameter(side);
+            let case = format!("{status:?} at {side}: slot={slot:?}, grid={grid:?}");
+            assert_eq!(slot.size, size(px(side), px(side)), "{case}");
+            assert_eq!(grid.size.width, px(dot * 2. + 1.), "{case}");
+            assert_eq!(grid.size.height, px(dot * rows + rows - 1.), "{case}");
+            assert!(slot.contains(&grid.origin), "{case}");
+            assert!(slot.contains(&grid.bottom_right()), "{case}");
+            assert!(
+                (slot.center().x - grid.center().x).abs() <= px(0.5),
+                "{case}"
+            );
+            assert!(
+                (slot.center().y - grid.center().y).abs() <= px(0.5),
+                "{case}"
+            );
+        }
+    }
+}

@@ -135,6 +135,7 @@ fn braille_cell(selector: &'static str, size: f32) -> Div {
 fn dots(glyph: &str, rows: usize, size: f32, color: u32) -> Div {
     let dot = dot_diameter(size);
     div()
+        .debug_selector(|| "status-braille-dots".into())
         .flex_none()
         .flex()
         .flex_col()
