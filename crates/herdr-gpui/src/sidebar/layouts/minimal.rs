@@ -193,13 +193,13 @@ impl RowLayout for Minimal {
                 )
             })
             .when_some(agent.status_text.as_deref(), |line, text| {
-                line.label(
+                line.keep(
                     div()
                         .debug_selector(|| format!("status-{}", agent.key))
                         .text_color(rgb(cx.indicators.color(agent.status))),
                     text,
                     parts::glyph_at(font, font.size),
-                    0.5,
+                    0.3,
                 )
             });
         shell(&agent.key, state, 0., (line, None), cx)

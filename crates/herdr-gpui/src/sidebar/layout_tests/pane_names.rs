@@ -287,6 +287,42 @@ fn the_agent_name_stays_whole_beside_long_labels(cx: &mut gpui::TestAppContext) 
     }
 }
 
+/// The written state keeps its room ahead of the pane and place labels, so
+/// a long pane name beside a long workspace cannot hide it.
+#[gpui::test]
+fn the_written_status_stays_beside_long_pane_and_place_labels(cx: &mut gpui::TestAppContext) {
+    let pane = "api-service-with-a-deliberately-long-pane-name";
+    let mut snapshot = crowded(1, |_| Some(pane.into()));
+    snapshot.workspaces[0].label = "w".repeat(60);
+    let agent = &mut snapshot.agents[0];
+    let key = crate::sidebar::agents::status_text(agent.agent_status).to_owned();
+    agent.state_labels.push((key, "working".into()));
+    let (view, cx) = window(cx, snapshot);
+    view.update(cx, |view, _| {
+        view.config.sidebar_layout.agents.rows =
+            vec![vec![crate::config::sidebar::ConfiguredToken::plain(
+                crate::config::AgentToken::StateText,
+            )]];
+    });
+    for mode in [LayoutMode::Minimal, LayoutMode::Orca, LayoutMode::Superset] {
+        for width in [NARROWEST, 200., SIDEBAR] {
+            show(&view, mode, width, cx);
+            let probes = probes(cx);
+            let (bounds, rendered, _) = probes
+                .get("working")
+                .unwrap_or_else(|| panic!("{mode:?} {width}: no status in {probes:?}"));
+            assert!(
+                bounds.size.width > px(0.),
+                "{mode:?} {width}: status hidden"
+            );
+            assert!(!rendered.is_empty(), "{mode:?} {width}: status empty");
+            if width == SIDEBAR {
+                assert_eq!(rendered, "working", "{mode:?}: status was cut");
+            }
+        }
+    }
+}
+
 #[gpui::test]
 fn long_names_truncate_inside_the_row_at_narrow_widths(cx: &mut gpui::TestAppContext) {
     let wide = "\u{65e5}\u{672c}\u{8a9e}".repeat(20);

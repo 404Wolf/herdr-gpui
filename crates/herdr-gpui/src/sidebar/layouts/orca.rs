@@ -336,13 +336,13 @@ impl RowLayout for Orca {
                 )
             })
             .when_some(agent.status_text.as_deref(), |line, text| {
-                line.label(
+                line.keep(
                     div()
                         .debug_selector(|| format!("status-{key}"))
                         .text_color(rgb(cx.indicators.color(agent.status))),
                     text,
                     glyph_at(font, font.size),
-                    0.5,
+                    0.3,
                 )
             });
         card(key, state, 0., 4., (theme, cx.mark))

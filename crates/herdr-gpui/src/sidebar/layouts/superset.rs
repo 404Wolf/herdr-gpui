@@ -375,14 +375,14 @@ impl RowLayout for Superset {
                 )
             })
             .when_some(agent.status_text.as_deref(), |line, text| {
-                line.label(
+                line.keep(
                     div()
                         .debug_selector(|| format!("status-{key}"))
                         .text_size(px(m.small))
                         .text_color(rgb(cx.indicators.color(agent.status))),
                     text,
                     m.glyph,
-                    0.5,
+                    0.3,
                 )
             });
         shell(key, state, 0., line, cx)
