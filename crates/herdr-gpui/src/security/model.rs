@@ -79,6 +79,11 @@ impl Alert {
 pub(crate) enum Alerts {
     /// Dependabot alerts are turned off for the repository.
     Off,
+    /// This sign-in may not read them. GraphQL answers such a token with an
+    /// empty listing, so an empty one is checked over REST, which refuses:
+    /// a GitHub App without the Dependabot alerts permission is the usual
+    /// case.
+    Hidden,
     /// The open alerts read, most severe first, and how many GitHub counts,
     /// which is more when the listing was capped.
     Open { alerts: Vec<Alert>, total: u64 },

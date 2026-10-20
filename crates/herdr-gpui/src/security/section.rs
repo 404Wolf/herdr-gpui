@@ -182,6 +182,7 @@ impl HerdrWindow {
         let mut quiet = Vec::new();
         let mut off = Vec::new();
         let mut hidden = Vec::new();
+        let mut unreadable = Vec::new();
         let mut failed = Vec::new();
         for repo in repos {
             match &repo.reports {
@@ -203,6 +204,7 @@ impl HerdrWindow {
                 }
                 Ok(Alerts::Open { .. }) => quiet.push(repo.name.as_str()),
                 Ok(Alerts::Off) => off.push(repo.name.as_str()),
+                Ok(Alerts::Hidden) => unreadable.push(repo.name.as_str()),
                 Err(error) => failed.push((repo.name.as_str(), error.to_string())),
             }
         }
@@ -227,6 +229,16 @@ impl HerdrWindow {
             body = body.child(note(
                 "security-section-off",
                 format!("Dependabot alerts are off: {}", off.join(", ")),
+                theme.muted,
+            ));
+        }
+        if !unreadable.is_empty() {
+            body = body.child(note(
+                "security-section-unreadable",
+                format!(
+                    "Dependabot alerts are not readable with this GitHub sign-in: {}",
+                    unreadable.join(", ")
+                ),
                 theme.muted,
             ));
         }
