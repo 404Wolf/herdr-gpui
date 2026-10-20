@@ -2006,7 +2006,9 @@ The activity bar's **Pull requests** and **Issues** sections list, across the
 window, every repository the workspaces of every connected local or SSH host
 hold: their GitHub issues and pull requests or GitLab issues, their
 [Beads](https://github.com/steveyegge/beads) issues when a main checkout has a
-`.beads` folder, and the agent runs dispatched for them. Worktrees of one
+`.beads` folder, and the agent runs dispatched for them. Folders outside Git
+are quietly skipped unless they have a `.beads` folder; **Refresh** checks
+skipped folders again. Worktrees of one
 repository count once, and each repository syncs on its own, so up to 32 are
 listed. A row shows its project while several are listed. Under the search, a
 row of pills picks backends (GitHub, GitLab, Beads) and projects, each with its

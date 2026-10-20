@@ -13,7 +13,8 @@ use std::{
 /// What one checkout's repository offers.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct RepoInfo {
-    /// The key of the shared database.
+    /// The key of the shared database: the Git common directory, or `.beads`
+    /// for a standalone Beads project.
     pub(crate) repository: Repository,
     /// The main checkout, where `bd` runs and Beads' source is keyed.
     pub(crate) main_root: String,
@@ -53,7 +54,13 @@ pub(crate) fn detect(
     }
     let body = format!(
         r#"cd -- {checkout} 2>/dev/null || exit 0
-root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+root=$(git rev-parse --show-toplevel 2>/dev/null) || {{
+  if [ -d .beads ]; then
+    root=$(pwd -P)
+    printf 'common\t%s/.beads\nmain\t%s\nbeads\t1\n' "$root" "$root"
+  fi
+  exit 0
+}}
 cd -- "$root"
 common=$(git rev-parse --git-common-dir)
 common=$(cd -- "$common" && pwd -P)
@@ -118,7 +125,23 @@ pub(super) fn parse(target: &ConnectTarget, output: &str) -> Result<RepoInfo> {
 /// shell or `git`, so every client platform reads its own checkouts.
 fn detect_local(target: &ConnectTarget, checkout: &str) -> Result<RepoInfo> {
     let Some(found) = super::git::checkout(Path::new(checkout))? else {
-        return Err(Error::NotARepository);
+        if !Path::new(checkout).join(".beads").is_dir() {
+            return Err(Error::NotARepository);
+        }
+        let root = Path::new(checkout)
+            .canonicalize()
+            .map(plain)
+            .map_err(|source| Error::Git {
+                operation: "Resolving the Beads folder",
+                source: Box::new(source),
+            })?;
+        return Ok(assemble(
+            target,
+            root.join(".beads").to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+            true,
+            &[],
+        ));
     };
     let main = found.main.to_string_lossy().into_owned();
     let beads = found.main.join(".beads").is_dir();
