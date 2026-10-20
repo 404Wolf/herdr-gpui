@@ -374,8 +374,7 @@ impl PaintedText {
         let width = px(look.content_width(super::SIDEBAR_WIDTH)
             - super::STATUS_WIDTH
             - layout.gap()
-            - layout.child_indent()
-            - super::ARROW_RESERVE);
+            - layout.child_indent());
         ensure!(
             near(self.bounds.left(), left),
             "child label left: actual {:?}, expected {left:?}",
