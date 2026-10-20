@@ -23,9 +23,15 @@ impl OrchestratorView {
             }
         }
         let mut backends: Vec<(Provider, usize)> = Vec::new();
+        // An item several checkouts list is one row, so it counts once.
+        let mut counted = std::collections::HashSet::new();
         for repo in &self.repos {
             for row in rows(repo, tab).iter().filter(|row| row.depth == 0) {
-                let provider = repo.snapshot.items[row.item].key.source.provider;
+                let key = &repo.snapshot.items[row.item].key;
+                if !counted.insert(key.canonical()) {
+                    continue;
+                }
+                let provider = key.source.provider;
                 match backends.iter_mut().find(|(found, _)| *found == provider) {
                     Some((_, count)) => *count += 1,
                     None => backends.push((provider, 1)),

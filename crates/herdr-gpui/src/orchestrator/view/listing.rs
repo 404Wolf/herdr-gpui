@@ -59,9 +59,24 @@ impl OrchestratorView {
         &self.repos[row.repo].snapshot.items[row.item]
     }
 
-    /// The repository listing `key`.
+    /// The repository listing `key`: the one its row in the shown list
+    /// came from, so a page and its actions go to the checkout the row is,
+    /// else the first holding it.
     pub(super) fn repo_of(&self, key: &str) -> Option<usize> {
-        self.repos.iter().position(|repo| repo.item(key).is_some())
+        self.lines
+            .iter()
+            .find_map(|line| match line {
+                rows::Line::Row(row) if self.row_item(row).key.canonical() == key => Some(row.repo),
+                _ => None,
+            })
+            .or_else(|| self.repos.iter().position(|repo| repo.item(key).is_some()))
+    }
+
+    /// The repositories listing the item `key`, beyond the one its row shows.
+    pub(super) fn twins(&self, key: &str) -> usize {
+        self.holders
+            .get(key)
+            .map_or(0, |repos| repos.len().saturating_sub(1))
     }
 
     /// Makes the repository listing `key` the active one, so its page and
@@ -153,6 +168,8 @@ impl OrchestratorView {
             })
             .collect();
         let merged = rows::merge(lists, |row| self.row_item(row), self.sort);
+        let (merged, holders) = rows::dedupe(merged, |row| self.row_item(row).key.canonical());
+        self.holders = holders;
         let lines = match self.tab {
             Tab::Issues => rows::issue_lines(&merged, |row| self.row_item(row)),
             Tab::PullRequests => rows::pull_request_lines(&merged, |row| {

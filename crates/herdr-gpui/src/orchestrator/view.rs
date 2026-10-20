@@ -40,7 +40,7 @@ use repo::Repo;
 pub(crate) use rows::Tab;
 use rows::{Filters, Runs, Sort};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -168,6 +168,9 @@ pub(crate) struct OrchestratorView {
     scroll: UniformListScrollHandle,
     /// The shown list's lines: headings and rows.
     lines: Vec<rows::Line>,
+    /// Every repository listing each shown item, by its key: one item, such
+    /// as a GitHub issue two checkouts read, is one row.
+    holders: HashMap<String, Vec<usize>>,
     /// Whether the shown list mixes backends, so rows mark their source.
     mixed_sources: bool,
     /// The open item's description, parsed once per change of its text.
@@ -245,6 +248,7 @@ impl OrchestratorView {
             scroll: UniformListScrollHandle::new(),
             lines: Vec::new(),
             mixed_sources: false,
+            holders: HashMap::new(),
             description: markdown::Markdown::default(),
             dialog: None,
             confirm: None,
