@@ -5,10 +5,10 @@
 //! search field and pills (`filter`) narrow what the section lists.
 //!
 //! The repositories are the ones the Pull requests and Issues sections list
-//! (`HerdrWindow::repo_specs`), read with the same GitHub accounts, but the
-//! alerts live here only: the orchestrator's database is a contract shared
-//! with agent-launcher and has no place for them. A background read runs
-//! every [`INTERVAL`], or when Refresh asks; drawing reads what it left.
+//! (`HerdrWindow::repo_specs`), read with the same GitHub accounts. A
+//! background read runs every [`INTERVAL`], or when Refresh asks; drawing
+//! reads what it left. The app's cache keeps the last read (`saved`), shown
+//! at start until the first read of the run replaces it.
 
 mod actions;
 mod fetch;
@@ -18,6 +18,7 @@ mod model;
 mod page;
 mod pane;
 mod reports;
+mod saved;
 mod section;
 
 #[cfg(test)]
@@ -32,6 +33,7 @@ use crate::{HerdrWindow, browser::WebUrl, sidebar::ActivityPanel};
 use gpui::{prelude::*, *};
 use std::{
     collections::HashMap,
+    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -87,6 +89,10 @@ pub(crate) struct Security {
     /// Pages read this session, by item.
     pages: HashMap<Item, page::Loaded>,
     page_scroll: ScrollHandle,
+    /// The app's cache file; tests keep none unless they set one.
+    cache: Option<PathBuf>,
+    /// Reads the cached read for the accounts just signed in.
+    restoring: Option<Task<()>>,
 }
 
 impl Default for Security {
@@ -104,6 +110,14 @@ impl Default for Security {
             pane_width: crate::orchestrator::pane::PANE_DEFAULT,
             pages: HashMap::new(),
             page_scroll: ScrollHandle::new(),
+            cache: if cfg!(test) {
+                None
+            } else {
+                crate::cache::path()
+                    .inspect_err(|error| tracing::debug!(%error, "No cache for Security"))
+                    .ok()
+            },
+            restoring: None,
         }
     }
 }
@@ -184,8 +198,19 @@ impl Security {
         self.read_at = None;
         self.next = None;
         self.task = None;
+        self.restoring = None;
         self.opened = None;
         self.pages.clear();
+    }
+
+    /// What the cache kept, read at `at`, unless this run's own read is in.
+    fn restore(&mut self, repos: Vec<Repo>, at: SystemTime) {
+        if self.read_at.is_some() {
+            return;
+        }
+        self.repos = repos;
+        self.keep_opened();
+        self.read_at = Some(at);
     }
 
     /// What a read found, replacing the last one.
@@ -207,6 +232,7 @@ impl HerdrWindow {
         if accounts != self.security.accounts {
             self.security.forget();
             self.security.accounts = accounts;
+            self.restore_security(cx);
             cx.notify();
         }
         if !self.activity_bar_shown() || !self.security.due(now) {
@@ -228,18 +254,53 @@ impl HerdrWindow {
             return;
         }
         let cancelled = self.security.cancelled.clone();
-        let work = cx
-            .background_executor()
-            .spawn(async move { fetch::read(&specs, &cancelled) });
+        let cache = self.security.cache.clone();
+        let accounts = self.security.accounts.clone();
+        let work = cx.background_executor().spawn(async move {
+            let repos = fetch::read(&specs, &cancelled);
+            // A cancelled read stopped short: it is no read to keep.
+            if !cancelled.load(Ordering::Relaxed)
+                && let Some(cache) = cache.and_then(|path| open_cache(&path))
+            {
+                saved::save(&cache, &accounts, &repos);
+            }
+            repos
+        });
         self.security.task = Some(cx.spawn(async move |this, cx| {
             let repos = work.await;
             let _ = this.update(cx, |this, cx| {
                 this.security
                     .install(repos, Instant::now(), SystemTime::now());
+                this.read_waiting_page(cx);
                 cx.notify();
             });
         }));
         cx.notify();
+    }
+
+    /// Lists what the cache kept for the accounts signed in, in the
+    /// background, until the first read of the run is in.
+    fn restore_security(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.security.cache.clone() else {
+            return;
+        };
+        if self.security.accounts.is_empty() {
+            return;
+        }
+        let accounts = self.security.accounts.clone();
+        let work = cx
+            .background_executor()
+            .spawn(async move { saved::restore(&open_cache(&path)?, &accounts) });
+        self.security.restoring = Some(cx.spawn(async move |this, cx| {
+            let restored = work.await;
+            let _ = this.update(cx, |this, cx| {
+                this.security.restoring = None;
+                if let Some((repos, at)) = restored {
+                    this.security.restore(repos, at);
+                    cx.notify();
+                }
+            });
+        }));
     }
 
     /// Every login the window reads GitHub as, on this device and on its
@@ -281,4 +342,10 @@ impl HerdrWindow {
         }
         cx.notify();
     }
+}
+
+fn open_cache(path: &std::path::Path) -> Option<crate::cache::Cache> {
+    crate::cache::Cache::open_at(path)
+        .inspect_err(|error| tracing::debug!(%error, "Cannot open the cache"))
+        .ok()
 }

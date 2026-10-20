@@ -15,6 +15,7 @@ mod location;
 mod naming;
 mod prompt;
 mod repo;
+mod restart;
 mod retry;
 mod service;
 mod store;

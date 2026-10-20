@@ -7,12 +7,12 @@ use super::{Error, Report, Reports};
 use crate::github::Tokens;
 use chrono::{DateTime, Utc};
 use herdr_client::ConnectTarget;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{path::PathBuf, sync::Arc};
 
 /// How bad an advisory is, most severe first, so sorting puts it on top.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub(crate) enum Severity {
     Critical,
@@ -49,7 +49,7 @@ impl Severity {
 }
 
 /// One open Dependabot alert.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Alert {
     pub(crate) number: u64,
     pub(crate) severity: Severity,
@@ -75,7 +75,7 @@ impl Alert {
 }
 
 /// What a repository's alerts listing said.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum Alerts {
     /// Dependabot alerts are turned off for the repository.
     Off,

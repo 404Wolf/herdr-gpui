@@ -16,6 +16,7 @@ mod pane_resize;
 mod parse;
 mod partial;
 mod reports;
+mod saved;
 mod section;
 mod state;
 mod unreadable;
