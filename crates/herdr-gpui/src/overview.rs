@@ -107,11 +107,10 @@ impl HerdrWindow {
             };
             // Each device's answers are its own: another host may have the
             // same checkout path and branch.
-            let origin = self.endpoint_pr_origin(index);
+            let view = self.endpoint_pr_view(index);
             let pr = |key: &str, branch: &str| {
-                origin
-                    .as_ref()
-                    .and_then(|origin| self.menu.pr_cache.peek(origin, key, branch))
+                view.as_ref()
+                    .and_then(|view| self.menu.pr_cache.peek(view, key, branch))
                     .map(|pr| model::Pr {
                         number: pr.number,
                         checks: pr.checks_outcome(),

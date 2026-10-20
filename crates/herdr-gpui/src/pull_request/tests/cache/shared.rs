@@ -23,7 +23,7 @@ fn windows_on_the_same_checkouts_ask_github_once_and_share_the_answer() {
     assert_eq!(
         second
             .cache
-            .peek(&Origin::Local, "/repo/.git", "feature")
+            .peek(&local(), "/repo/.git", "feature")
             .unwrap()
             .number,
         8
@@ -79,7 +79,7 @@ fn signing_out_forgets_only_that_accounts_answers() {
     assert!(
         second
             .cache
-            .peek(&Origin::Local, "/repo/.git", "theirs")
+            .peek(&second.cache.view, "/repo/.git", "theirs")
             .is_some()
     );
     assert!(

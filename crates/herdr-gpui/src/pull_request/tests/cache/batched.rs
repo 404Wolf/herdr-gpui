@@ -32,10 +32,7 @@ fn due_checkouts_share_one_request_and_each_keeps_its_own_answer() {
         .unwrap();
     peer.cache.poll(now);
     assert_eq!(
-        peer.cache
-            .peek(&Origin::Local, "/repo/.git", "0")
-            .unwrap()
-            .number,
+        peer.cache.peek(&local(), "/repo/.git", "0").unwrap().number,
         8
     );
     let (value, message) = peer.cache.lookup(&input("1")).unwrap();
@@ -115,11 +112,7 @@ fn a_checkout_gone_mid_request_is_dropped_but_the_rest_are_answered() {
         ))
         .unwrap();
     peer.cache.poll(now);
-    assert!(
-        peer.cache
-            .peek(&Origin::Local, "/repo/.git", "kept")
-            .is_some()
-    );
+    assert!(peer.cache.peek(&local(), "/repo/.git", "kept").is_some());
     assert!(peer.cache.lookup(&input("gone")).is_none());
 }
 
@@ -137,7 +130,7 @@ fn a_worker_that_stops_fails_its_whole_batch_and_keeps_answers() {
     assert!(peer.cache.active.is_empty());
     assert_eq!(
         peer.cache
-            .peek(&Origin::Local, "/repo/.git", "first")
+            .peek(&local(), "/repo/.git", "first")
             .unwrap()
             .number,
         8

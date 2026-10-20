@@ -28,10 +28,7 @@ fn local_counts_sit_in_the_dirty_chip_under_the_number(cx: &mut gpui::TestAppCon
             pr.number = 7;
             pr.additions = 23;
             pr.deletions = 342;
-            view.live.local_daemon_peer = true;
-            view.menu
-                .pr_cache
-                .seed(input("worktree/sidebar-child"), pr, now);
+            view.seed_pr(input("worktree/sidebar-child"), pr, now);
             let counted = |additions, deletions| Counted {
                 lines: Status {
                     additions,

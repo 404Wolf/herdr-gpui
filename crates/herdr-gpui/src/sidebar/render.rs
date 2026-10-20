@@ -177,7 +177,7 @@ impl HerdrWindow {
             let Some(snapshot) = &live.snapshot else {
                 continue;
             };
-            let pr_origin = self.endpoint_pr_origin(endpoint_index);
+            let pr_view = self.endpoint_pr_view(endpoint_index);
             let collapsed_repos = if endpoint_index == 0 {
                 &self.collapsed_repos
             } else {
@@ -404,9 +404,7 @@ impl HerdrWindow {
                         grouped,
                         badge: workspace_badge(
                             workspace,
-                            pr_origin
-                                .as_ref()
-                                .map(|origin| (&self.menu.pr_cache, origin)),
+                            pr_view.as_ref().map(|view| (&self.menu.pr_cache, view)),
                             (
                                 (endpoint_index == 0).then_some(&self.git),
                                 self.config.sidebar_style.change_counts,
