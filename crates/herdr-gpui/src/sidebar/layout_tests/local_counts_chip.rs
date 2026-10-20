@@ -86,6 +86,29 @@ fn local_counts_sit_in_the_dirty_chip_under_the_number(cx: &mut gpui::TestAppCon
         );
     });
 
+    // Rows the daemon's sidebar config lays out split the same way.
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            view.config.sidebar_layout = toml::from_str(
+                r#"
+                [spaces]
+                rows = [["workspace"], ["state_text"]]
+            "#,
+            )
+            .unwrap();
+            cx.notify();
+        })
+    });
+    cx.update(|window, cx| {
+        window.refresh();
+        full_draw(window, cx).clear(cx);
+    });
+    let chip = cx.debug_bounds("dirty-sidebar-child").unwrap();
+    let name = cx.debug_bounds("name-sidebar-child").unwrap();
+    let detail = cx.debug_bounds("detail-sidebar-child").unwrap();
+    assert!(name.right() > chip.left(), "{name:?} {chip:?}");
+    assert!(detail.right() <= chip.left(), "{detail:?} {chip:?}");
+
     // The card layout puts the same chip on the label line.
     cx.update(|_, cx| {
         view.update(cx, |view, cx| {

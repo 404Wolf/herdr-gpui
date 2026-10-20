@@ -393,8 +393,13 @@ pub(super) fn row(
     // leave none, and then no lines are drawn rather than a box of negative width.
     let tree_width = padding + indent - cx.nest - layout.tree_gutter() - extra_status_width;
     let draw_tree = tree != RowTree::None && look.density.tree_lines && tree_width > 0.;
-    let arrow_reserve = if reserve_arrow { ARROW_RESERVE } else { 0. };
-    let arrow_absent = arrow.is_none();
+    // Only a drawn chevron takes its column. The badge hugs the row's edge
+    // either way, so an empty column would only cut a group member's name.
+    let arrow_reserve = if reserve_arrow && arrow.is_some() {
+        ARROW_RESERVE
+    } else {
+        0.
+    };
     let status_gutter = if show_status { status_width + gap } else { 0. };
     let available = (look.content_width(width) - status_gutter - indent - arrow_reserve).max(0.);
     // Narrow sidebars and large fonts can leave less room than a badge needs.
@@ -403,14 +408,14 @@ pub(super) fn row(
         badge.width(font, &layout).min((available - gap).max(0.))
     });
     // The label's first line yields only the badge's first line; the counts
-    // under it take their room from the detail line. Configured rows put
-    // tokens on every line, and a fold chevron is a click target as tall as
-    // the row, so those still yield the whole column.
-    let unconfigured = badge.as_ref().filter(|_| !configured && arrow.is_none());
-    let badge_first = unconfigured.map_or(badge_width, |badge| {
+    // under it take their room from the second line. A fold chevron is a
+    // click target as tall as the row, so beside one the label still yields
+    // the whole column.
+    let hanging = badge.as_ref().filter(|_| arrow.is_none());
+    let badge_first = hanging.map_or(badge_width, |badge| {
         badge.first_width(font, &layout).min(badge_width)
     });
-    let counts_reserve = unconfigured
+    let counts_reserve = hanging
         .map(|badge| badge.counts_width(font, &layout).min(badge_width))
         .filter(|width| *width > 0.)
         .map_or(0., |width| width + gap);
@@ -561,7 +566,7 @@ pub(super) fn row(
                                 focused,
                                 teleported,
                             },
-                            label_width,
+                            (label_width, detail_limit),
                             workspace_icon,
                             cx,
                         );
@@ -670,14 +675,8 @@ pub(super) fn row(
                     .child(upstream.element(key, glyph, theme)),
             )
         })
-        // The collapse column comes first so the badge can hug the row's edge;
-        // a reserved-but-empty column keeps every badge on the same right edge.
+        // The collapse column comes first so the badge can hug the row's edge.
         .when_some(arrow, |row, arrow| row.child(arrow))
-        .when(arrow_absent && reserve_arrow, |row| {
-            // The row's gap already covers part of the reserve; a wide gap
-            // covers all of it.
-            row.child(div().w(px((ARROW_RESERVE - gap).max(0.))).flex_none())
-        })
         .when_some(badge, |row, badge| {
             let element = badge.element(key, badge_width, font, theme, &layout);
             if badge_first >= badge_width {
