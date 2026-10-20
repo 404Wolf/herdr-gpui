@@ -2,7 +2,7 @@ use super::*;
 use crate::github::{Access, Auth, Installation};
 use crate::menu::github::installation::attention;
 
-const INSTALL: &str = "https://github.com/apps/herdr-gpui/installations/new";
+const INSTALL: &str = "https://github.com/apps/herdr-ui/installations/new";
 
 fn pending(count: usize) -> Access {
     Access::Pending(

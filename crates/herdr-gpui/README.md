@@ -1,7 +1,7 @@
 # Herdr Native Shell
 
 A GPUI 0.3.6 (`gpui-pre`) client for a Local daemon and saved SSH hosts, with macOS
-support, experimental Linux x86_64/ARM64 builds, and an experimental Windows build with
+support, Linux x86_64/ARM64 builds, and a Windows build with
 native CI coverage. See [Windows](#windows) for what is unavailable there.
 It starts an installed local `herdr server` when absent; explicit socket and
 development targets remain attach-only. On Unix, GUI launches resolve the login-shell
@@ -1937,8 +1937,9 @@ or macOS client and the local session or a saved SSH host on both ends.
 
 An icon column at the window's left edge picks what the window shows. Every
 section but Workspaces takes the window's body, keeping the title bar and the
-status bar; zen mode keeps the terminals. `[sidebar] activity_bar = false`
-turns it off, and `herdr-gpui ui panel NAME` shows a section.
+status bar; zen mode keeps the terminals. **Settings > Sidebar > Show
+activity bar** (or `[sidebar] activity_bar = false`) turns it off in every
+window at once, and `herdr-gpui ui panel NAME` shows a section.
 
 - **Workspaces** is the sidebar beside the terminals. Clicking it while shown
   folds the sidebar to its rail.
@@ -3961,7 +3962,7 @@ GPUI native action/menu/keybinding patterns.
 
 ## Windows
 
-Windows is experimental. CI checks formatting, lints every target and feature,
+CI checks formatting, lints every target and feature,
 and runs workspace tests with default and all features on `windows-2025` (x86_64)
 and `windows-11-arm` (ARM64), including headless UI and CLI tests. Its
 `windows-native` job then runs the native tests in both runners' desktop

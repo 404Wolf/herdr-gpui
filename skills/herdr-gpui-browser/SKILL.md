@@ -216,6 +216,7 @@ for what only Herdr UI shows or keeps.
 | Save the working tree before a risky change, and compare later | `herdr-gpui checkpoint create before refactor`, `herdr-gpui checkpoint diff ID` |
 | Your branch's pull request, its checks, and (with your workspace focused) its comments | `herdr-gpui pr`, `herdr-gpui pr checks`, `herdr-gpui pr comments` |
 | List the vulnerability reports outsiders filed and the open Dependabot alerts of your repositories, most severe first | `herdr-gpui security --json` |
+| Show the user an alert's or a vulnerability report's page in Herdr UI | `herdr-gpui security open OWNER/NAME 42` or `... GHSA-xxxx-xxxx-xxxx` |
 | Open a dev server in a tab, forwarded when you run on an SSH host | `herdr-gpui ports open 3000` |
 | See the processes under a pane, with CPU and memory | `herdr-gpui processes` |
 | List or focus the app's windows and its own tabs | `herdr-gpui window`, `herdr-gpui tab`, `herdr-gpui tab focus ID` |

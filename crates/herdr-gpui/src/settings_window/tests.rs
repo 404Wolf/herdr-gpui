@@ -6,6 +6,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
+mod activity_bar_windows;
 mod config_watch;
 #[cfg(windows)]
 mod launch_at_login;

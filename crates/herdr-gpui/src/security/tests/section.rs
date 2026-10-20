@@ -21,13 +21,13 @@ pub(super) fn window(
     (view, cx)
 }
 
-fn draw(cx: &mut VisualTestContext) {
+pub(super) fn draw(cx: &mut VisualTestContext) {
     cx.update(|window, cx| {
         full_draw(window, cx).clear(cx);
     });
 }
 
-fn install(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, repos: Vec<Repo>) {
+pub(super) fn install(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, repos: Vec<Repo>) {
     cx.update(|_, cx| {
         view.update(cx, |view, _| {
             view.security

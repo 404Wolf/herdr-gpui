@@ -317,7 +317,15 @@ not execute escape sequences, read graphics file paths, or mutate the clipboard.
 - One dedicated thread owns connect, handshake, ordered writes, and reads.
 - 64 channel-queued commands plus one worker-held command, 8 ordered events,
   and one in-flight API request. A waiting request holds later commands in FIFO
-  order until the preceding response is complete. Events
+  order until the preceding response is complete. The one exception is a
+  `client_shell.surface.set` queued directly behind `pane.focus`, `tab.focus`, or
+  `workspace.focus`: Herdr applies that focus synchronously and handles surface
+  activation before its busy check, so the activation follows unacknowledged.
+  Its response is delivered after the focus response. If a daemon refuses it as
+  `endpoint_busy`, it is resent once after focus completes and the connection
+  stops pipelining; focus is never resent. No capability promises this
+  ordering, so only stable Herdr 0.9.0 through 0.9.5, whose sources were
+  checked, pipeline it; other versions keep the serialized order. Events
   use backpressure rather than losing snapshots, input, patches, or responses.
 - 2 MiB ordinary outbound payload cap; clipboard images alone allow 16 MiB of
   data plus 2048 bytes of bounded envelope overhead. 32 MiB inbound cap (semantic

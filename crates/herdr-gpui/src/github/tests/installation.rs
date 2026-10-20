@@ -12,7 +12,7 @@ fn app(permissions: Value) -> App {
 fn installed(id: u64, login: &str, kind: &str, permissions: Value) -> Value {
     serde_json::json!({
         "id": id,
-        "app_slug": "herdr-gpui",
+        "app_slug": "herdr-ui",
         "account": { "login": login, "type": kind },
         "permissions": permissions,
     })

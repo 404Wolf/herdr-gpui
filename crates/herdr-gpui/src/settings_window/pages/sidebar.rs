@@ -160,6 +160,26 @@ impl SettingsWindow {
                     .control(self.layout_dropdown(ready, cx)),
             )
             .child(
+                ui::row(theme, "sidebar-activity-bar", "Show activity bar")
+                    .description(
+                        "The icon column at the window's left edge that switches between \
+                         workspaces, overview, pull requests, issues and usage.",
+                    )
+                    .switch(
+                        ui::toggle(
+                            theme,
+                            "sidebar-activity-bar-toggle",
+                            self.config.sidebar_style.activity_bar,
+                            ready,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            let mut intent = SidebarIntent::of(&this.config);
+                            intent.style.activity_bar = !intent.style.activity_bar;
+                            this.commit_sidebar(intent, cx);
+                        })),
+                    ),
+            )
+            .child(
                 ui::row(theme, "sidebar-select", "Selection marks")
                     .description("What selecting a workspace highlights beyond its own row.")
                     .control(ui::segmented(

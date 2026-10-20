@@ -72,7 +72,7 @@ impl GitHubConfig {
     /// own: another App's page cannot be found from its client ID.
     pub fn app_install_url(&self) -> Option<&'static str> {
         (self.client_id().ok().flatten().as_deref() == Some(DEFAULT_CLIENT_ID))
-            .then_some("https://github.com/apps/herdr-gpui/installations/new")
+            .then_some("https://github.com/apps/herdr-ui/installations/new")
     }
 
     pub fn client_id(&self) -> Result<Option<String>> {

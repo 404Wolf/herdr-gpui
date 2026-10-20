@@ -3,10 +3,11 @@
 //! lists them only over REST, and only to the repository's admins, security
 //! managers, and the advisory's collaborators; anyone else reads none.
 //!
-//! A report describes a vulnerability that is not fixed yet, so only its
-//! title and metadata are read. The description and any proof of concept are
-//! skipped while parsing, never deserialized, and reach neither the section
-//! nor the CLI.
+//! A report describes a vulnerability that is not fixed yet, so the listing
+//! reads only its title and metadata: the description and any proof of
+//! concept are skipped while parsing and never reach the list or the CLI.
+//! Its page reads them when the user opens it, and keeps them in memory
+//! only (`super::page`).
 
 use super::{Error, Severity, model::ghsa};
 use chrono::{DateTime, Utc};
