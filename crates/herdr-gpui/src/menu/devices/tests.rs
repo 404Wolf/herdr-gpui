@@ -17,6 +17,8 @@ mod local_network;
 #[cfg(feature = "cloud")]
 mod rail;
 #[cfg(unix)]
+mod setup_activation;
+#[cfg(unix)]
 mod setup_workspace;
 
 #[test]
