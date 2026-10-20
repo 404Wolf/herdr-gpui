@@ -6,7 +6,9 @@ use crate::usage::{
 
 /// A Linux host signed in to Claude Code through `.credentials.json`, with
 /// `settings` as its `settings.json` and `base` as `ANTHROPIC_BASE_URL`. Its
-/// `curl` only leaves a mark, so a test can tell whether a request was sent.
+/// `curl` only leaves a mark, so a test can tell whether a request was sent,
+/// and its `uname` and `security` stand in for the real ones, so on a Mac the
+/// read never reaches this machine's Keychain.
 fn host(settings: Option<&str>, base: Option<&str>) -> (tempfile::TempDir, Shell) {
     let root = tempfile::tempdir().unwrap();
     let home = root.path().join("home");
@@ -22,12 +24,14 @@ fn host(settings: Option<&str>, base: Option<&str>) -> (tempfile::TempDir, Shell
     if let Some(settings) = settings {
         std::fs::write(claude.join("settings.json"), settings).unwrap();
     }
-    crate::test_executable::write(
-        bin.join("curl"),
-        "#!/bin/sh\ntouch \"$HOME/asked\"\nexit 7\n",
-        0o755,
-    )
-    .unwrap();
+    for (tool, script) in [
+        ("curl", "touch \"$HOME/asked\"\nexit 7"),
+        ("security", "exit 44"),
+        ("uname", "echo Linux"),
+    ] {
+        crate::test_executable::write(bin.join(tool), format!("#!/bin/sh\n{script}\n"), 0o755)
+            .unwrap();
+    }
     let mut command = std::process::Command::new("/bin/sh");
     command
         .arg("-s")
