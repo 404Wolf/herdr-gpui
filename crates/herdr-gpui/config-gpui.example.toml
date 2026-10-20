@@ -336,7 +336,8 @@ size = 12
 # device_footer = "always"
 # Whose +added/-deleted line counts a worktree row shows: "pr" (its cached
 # pull request's) or "local" (the checkout's uncommitted changes against HEAD,
-# for checkouts on this machine). Only one set is shown. Local counts reuse
+# for checkouts on this machine, drawn inside the pencil chip that marks
+# uncommitted work). Only one set is shown. Local counts reuse
 # the uncommitted-work probe's slow schedule: one checkout at a time, each at
 # most every 30 seconds while the window is active.
 # change_counts = "pr"

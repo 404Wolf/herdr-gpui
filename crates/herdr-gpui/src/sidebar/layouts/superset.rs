@@ -302,10 +302,18 @@ impl RowLayout for Superset {
             .when(teleported, |line| {
                 line.fixed(dirty_size, parts::teleported(label, dirty_size, theme))
             })
-            .when(dirty, |line| {
-                line.fixed(dirty_size, parts::dirty(label, dirty_size, theme))
-            })
+            // Local counts take the dirty mark's place, in a chip of its hue.
+            .when(
+                dirty && !changes.is_some_and(|changes| changes.local),
+                |line| line.fixed(dirty_size, parts::dirty(label, dirty_size, theme)),
+            )
             .when_some(changes, |line, changes| {
+                if changes.local {
+                    let (glyph, icon) = (m.glyph, (dirty_size * 0.8).round());
+                    let chip = changes.chip(label, glyph, icon, counts, theme);
+                    return line
+                        .shrink(changes.chip_width(glyph, icon), chip.text_size(px(m.small)));
+                }
                 let (width, counts) = parts::counts(label, changes, m.glyph, counts);
                 line.shrink(width, counts.text_size(px(m.small)))
             })

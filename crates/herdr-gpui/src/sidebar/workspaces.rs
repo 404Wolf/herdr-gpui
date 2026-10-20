@@ -123,7 +123,7 @@ pub(super) fn workspace_badge(
         ChangeCounts::Local => git
             .and_then(|git| git.counts(key, branch))
             .filter(|status| status.additions > 0 || status.deletions > 0)
-            .map(|status| Counts::new(status.additions, status.deletions)),
+            .map(|status| Counts::local(status.additions, status.deletions)),
     };
     RowBadge::new(
         pr.map(|pr| PrBadge::new(&pr, theme)),

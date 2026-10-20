@@ -3170,7 +3170,10 @@ Ctrl+Shift+U is left unbound for
   carries its cached pull request number and diff counts. Set
   `change_counts = "local"` under `[sidebar]` (or Settings > Sidebar > Change
   counts) to show the checkout's uncommitted `+added/-deleted` lines against
-  HEAD instead; only one set is ever shown. Local counts cover checkouts on this
+  HEAD instead; only one set is ever shown. They sit inside the yellow pencil
+  chip that marks uncommitted work, so they never read as the pull request's;
+  a change with no lines to count (an untracked or binary file) keeps the bare
+  pencil. Local counts cover checkouts on this
   machine only, and every one but the focused checkout is counted on the slow,
   rate-limited schedule of the uncommitted-work probe (one checkout at a time,
   each at most every 30 seconds while the window is active). A branch that has

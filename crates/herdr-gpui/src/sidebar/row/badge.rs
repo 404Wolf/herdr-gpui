@@ -48,20 +48,32 @@ impl RowBadge {
 
     pub(in crate::sidebar) fn width(&self, font: &FontConfig, layout: &SidebarMetrics) -> f32 {
         // The number and the counts under it share one column.
+        let glyph = glyph_width(font);
         let number = self.pr.as_ref().map_or(0, |pr| pr.number.chars().count());
-        let counts = self
-            .counts
-            .as_ref()
-            .filter(|_| layout.pr_counts())
-            .map_or(0, Counts::glyphs);
-        let pr = (glyph_width(font) * number.max(counts) as f32).ceil();
+        let number = (glyph * number as f32).ceil();
+        let counts = self.counts.as_ref().filter(|_| layout.pr_counts());
+        let counts = counts.map_or(0., |counts| match counts.local {
+            true => counts.chip_width(glyph, chip_icon(font)),
+            false => (glyph * counts.glyphs() as f32).ceil(),
+        });
+        let pr = number.max(counts);
         // Reserve the icon and the gap before the PR number, even at small fonts.
-        let mark = line_height(font).min(18.) + glyph_width(font);
-        let marks = [self.dirty, self.teleported, self.noted]
-            .into_iter()
-            .filter(|mark| *mark)
-            .count();
+        let mark = line_height(font).min(18.) + glyph;
+        let marks = [
+            self.dirty && !self.chipped(layout),
+            self.teleported,
+            self.noted,
+        ]
+        .into_iter()
+        .filter(|mark| *mark)
+        .count();
         pr + mark * marks as f32
+    }
+
+    /// Local counts take the dirty mark's place, in a chip of its hue under
+    /// the number, wherever the counts line shows.
+    fn chipped(&self, layout: &SidebarMetrics) -> bool {
+        layout.pr_counts() && self.counts.as_ref().is_some_and(|counts| counts.local)
     }
 
     /// The badge column at a row's trailing edge, `width` wide: the marks and
@@ -74,6 +86,7 @@ impl RowBadge {
         theme: &Theme,
         layout: &SidebarMetrics,
     ) -> Div {
+        let chipped = self.chipped(layout);
         let Self {
             pr,
             counts,
@@ -114,7 +127,7 @@ impl RowBadge {
                                 .debug_selector(|| format!("note-{key}")),
                         )
                     })
-                    .when(dirty, |line| {
+                    .when(dirty && !chipped, |line| {
                         line.child(
                             // Well under the line height, so marks on
                             // neighbouring rows keep a visible gap.
@@ -136,6 +149,11 @@ impl RowBadge {
                     }),
             )
             .when_some(counts.filter(|_| layout.pr_counts()), |column, badge| {
+                if badge.local {
+                    let colors = (theme.ink(theme.palette[2]), theme.ink(theme.palette[1]));
+                    let chip = badge.chip(key, glyph_width(font), chip_icon(font), colors, theme);
+                    return column.child(chip.h(px(line_height(font))));
+                }
                 column.child(
                     div()
                         .flex()
@@ -185,14 +203,84 @@ impl PrBadge {
 pub(in crate::sidebar) struct Counts {
     pub(in crate::sidebar) additions: String,
     pub(in crate::sidebar) deletions: String,
+    /// The checkout's uncommitted lines rather than its pull request's. They
+    /// are drawn inside the dirty mark's chip, so the two never read alike.
+    pub(in crate::sidebar) local: bool,
 }
+
+/// Room inside a local counts chip: padding on each side, its one-pixel
+/// border, and the gap after the pencil.
+const CHIP_PADDING: f32 = 3.;
 
 impl Counts {
     pub(in crate::sidebar) fn new(additions: u64, deletions: u64) -> Self {
         Self {
             additions: format!("+{}", compact(additions)),
             deletions: format!("-{}", compact(deletions)),
+            local: false,
         }
+    }
+
+    pub(in crate::sidebar) fn local(additions: u64, deletions: u64) -> Self {
+        Self {
+            local: true,
+            ..Self::new(additions, deletions)
+        }
+    }
+
+    /// A local chip's width at `glyph`, with an `icon`-wide pencil.
+    pub(in crate::sidebar) fn chip_width(&self, glyph: f32, icon: f32) -> f32 {
+        (glyph * self.glyphs() as f32).ceil() + icon + CHIP_PADDING * 3. + 2.
+    }
+
+    /// The pencil and the counts in the dirty mark's hue: it stands for the
+    /// mark, so it carries the mark's selector and the counts the badge's.
+    pub(in crate::sidebar) fn chip(
+        &self,
+        key: &str,
+        glyph: f32,
+        icon: f32,
+        (additions, deletions): (u32, u32),
+        theme: &Theme,
+    ) -> Div {
+        let hue = theme.palette[3];
+        div()
+            .debug_selector(|| format!("dirty-{key}"))
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(px(CHIP_PADDING))
+            .px(px(CHIP_PADDING))
+            .overflow_hidden()
+            .rounded(px(crate::config::corners::SMALL))
+            .bg(rgba((hue << 8) | 0x24))
+            .border_1()
+            .border_color(rgba((hue << 8) | 0x70))
+            .child(
+                svg()
+                    .flex_none()
+                    .size(px(icon))
+                    .path("icons/pencil.svg")
+                    .text_color(rgb(theme.ink(hue))),
+            )
+            .child(
+                div()
+                    .debug_selector(|| format!("counts-{key}"))
+                    .flex()
+                    .flex_none()
+                    .w(px((glyph * self.glyphs() as f32).ceil()))
+                    .child(
+                        div()
+                            .text_color(rgb(additions))
+                            .child(label_text(&self.additions)),
+                    )
+                    .child(div().text_color(rgb(theme.muted)).child(label_text("/")))
+                    .child(
+                        div()
+                            .text_color(rgb(deletions))
+                            .child(label_text(&self.deletions)),
+                    ),
+            )
     }
 
     /// Both counts and the separator between them. Sidebar labels are
@@ -202,6 +290,12 @@ impl Counts {
     pub(in crate::sidebar) fn glyphs(&self) -> usize {
         self.additions.chars().count() + self.deletions.chars().count() + 1
     }
+}
+
+/// The pencil inside a local counts chip, a little smaller than the bare
+/// mark's so the chip keeps a line's height.
+pub(in crate::sidebar) fn chip_icon(font: &FontConfig) -> f32 {
+    (line_height(font) * 0.6).round().min(12.)
 }
 
 /// How far the checked-out branch has drifted from its upstream, as the
