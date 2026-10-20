@@ -97,7 +97,7 @@ fn stepped_animations_walk_every_frame_in_order() {
 
 #[test]
 fn spinner_frames_are_single_braille_cells() {
-    for frame in BRAILLE.iter().chain(&BREATHE).chain(&["⠿", "⠤", "⠄"]) {
+    for frame in BRAILLE.iter().chain(&BREATHE).chain(&["⠿", "⠒", "⠂"]) {
         let mut chars = frame.chars();
         let cell = chars.next().unwrap();
         assert!(chars.next().is_none(), "{frame}");
@@ -162,13 +162,35 @@ fn settled_marks_keep_their_family_inside_the_slot(cx: &mut TestAppContext) {
     }
 }
 
-/// Braille glyphs draw smaller than their slot, so a compact row's cell is
-/// no taller than its letters, and never vanish at the smallest fonts.
+/// Braille cells are drawn dot for dot from the glyph's bits, and the
+/// six-dot ones in three rows, so they center on the row instead of sitting
+/// high in a cell of four.
 #[test]
-fn braille_glyphs_draw_smaller_than_their_slot() {
+fn braille_cells_decode_their_dots_and_rows() {
+    assert!(raised("⠁", 0, 0) && !raised("⠁", 0, 1));
+    assert!(raised("⡀", 3, 0) && !raised("⡀", 0, 0));
+    assert!(raised("⢀", 3, 1));
+    for (row, column) in [(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1)] {
+        assert!(raised("⠿", row, column), "{row} {column}");
+    }
+    assert!(!raised("x", 0, 0));
+    assert_eq!(rows(&BRAILLE), 3);
+    assert_eq!(rows(&BREATHE), 4);
+    // The settled marks sit on the middle of their three rows.
+    for glyph in ["⠒", "⠂"] {
+        assert_eq!(rows(&[glyph]), 3);
+        assert!((0..2).all(|column| !raised(glyph, 0, column) && !raised(glyph, 2, column)));
+    }
+}
+
+/// Three rows of dots take no more than three fifths of the slot, so a
+/// compact row's cell is no taller than its letters, and never vanish at the
+/// smallest fonts.
+#[test]
+fn braille_dots_stay_within_three_fifths_of_their_slot() {
     for size in [6., 10., 12., 14., 16., 20., 28.] {
-        let text = braille_text_size(size);
-        assert!(text < size, "{size}: {text}");
-        assert!(text >= 4., "{size}: {text}");
+        let dot = dot_diameter(size);
+        assert!(dot >= 1., "{size}: {dot}");
+        assert!(dot * 3. + 2. <= (size * 0.6).max(5.), "{size}: {dot}");
     }
 }
