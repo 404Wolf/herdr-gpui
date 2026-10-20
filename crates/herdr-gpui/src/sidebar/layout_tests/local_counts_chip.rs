@@ -61,7 +61,14 @@ fn local_counts_sit_in_the_dirty_chip_under_the_number(cx: &mut gpui::TestAppCon
     assert_eq!(chip.right(), badge.right());
     assert!(badge.left() <= chip.left() && chip.bottom() <= row.bottom());
     assert!(chip.left() < counts.left() && counts.right() <= chip.right());
-    assert!(cx.debug_bounds("name-sidebar-child").unwrap().right() <= badge.left());
+    // The name only yields the number's line, so it runs on above the
+    // wider chip; the detail line beside the chip stops short of it.
+    let name = cx.debug_bounds("name-sidebar-child").unwrap();
+    assert!(name.right() > chip.left(), "{name:?} {chip:?}");
+    assert!(name.right() < badge.right() - px(16.));
+    if let Some(detail) = cx.debug_bounds("detail-sidebar-child") {
+        assert!(detail.right() <= chip.left(), "{detail:?} {chip:?}");
+    }
     // The head's binary edit keeps the bare mark on the number's line.
     let head = cx.debug_bounds("pr-agent-launcher").unwrap();
     let mark = cx.debug_bounds("dirty-agent-launcher").unwrap();

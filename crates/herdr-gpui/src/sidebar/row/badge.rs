@@ -46,17 +46,37 @@ impl RowBadge {
         })
     }
 
+    /// The whole column's width: its first line or the counts line under
+    /// it, whichever is wider.
     pub(in crate::sidebar) fn width(&self, font: &FontConfig, layout: &SidebarMetrics) -> f32 {
-        // The number and the counts under it share one column.
+        self.first_width(font, layout)
+            .max(self.counts_width(font, layout))
+    }
+
+    /// The counts line's width, or nothing when it is not drawn.
+    pub(in crate::sidebar) fn counts_width(
+        &self,
+        font: &FontConfig,
+        layout: &SidebarMetrics,
+    ) -> f32 {
         let glyph = glyph_width(font);
-        let number = self.pr.as_ref().map_or(0, |pr| pr.number.chars().count());
-        let number = (glyph * number as f32).ceil();
         let counts = self.counts.as_ref().filter(|_| layout.pr_counts());
-        let counts = counts.map_or(0., |counts| match counts.local {
+        counts.map_or(0., |counts| match counts.local {
             true => counts.chip_width(glyph, chip_icon(font)),
             false => (glyph * counts.glyphs() as f32).ceil(),
-        });
-        let pr = number.max(counts);
+        })
+    }
+
+    /// The first line's width: the marks and the pull request number. The
+    /// label's own first line only yields this much, not the counts' width.
+    pub(in crate::sidebar) fn first_width(
+        &self,
+        font: &FontConfig,
+        layout: &SidebarMetrics,
+    ) -> f32 {
+        let glyph = glyph_width(font);
+        let number = self.pr.as_ref().map_or(0, |pr| pr.number.chars().count());
+        let pr = (glyph * number as f32).ceil();
         // Reserve the icon and the gap before the PR number, even at small fonts.
         let mark = line_height(font).min(18.) + glyph;
         let marks = [
@@ -104,6 +124,7 @@ impl RowBadge {
             .overflow_hidden()
             .child(
                 div()
+                    .debug_selector(|| format!("badge-line-{key}"))
                     .h(px(line_height(font)))
                     .flex_none()
                     .flex()
