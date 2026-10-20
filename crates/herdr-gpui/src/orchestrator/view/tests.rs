@@ -12,6 +12,7 @@ mod conversation_list;
 mod dialog;
 mod empty;
 mod groups;
+mod list_switch;
 mod markdown;
 mod pills;
 mod pr_empty;
