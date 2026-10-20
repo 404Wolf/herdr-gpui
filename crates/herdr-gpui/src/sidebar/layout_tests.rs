@@ -55,6 +55,8 @@ mod local_counts_chip;
 #[cfg(test)]
 mod nested_agents;
 #[cfg(test)]
+mod other_device_prs;
+#[cfg(test)]
 mod palette;
 #[cfg(test)]
 mod palette_header;
