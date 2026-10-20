@@ -14,6 +14,8 @@ use std::time::{Duration, Instant, SystemTime};
 mod antigravity_consent;
 mod browser_cookies;
 #[cfg(unix)]
+mod claude_base_url;
+#[cfg(unix)]
 mod claude_keychain;
 #[cfg(feature = "azure")]
 mod cloud_load;
