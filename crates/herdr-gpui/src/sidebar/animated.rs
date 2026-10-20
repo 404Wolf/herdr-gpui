@@ -90,10 +90,10 @@ fn disc(diameter: f32, color: u32) -> Div {
 }
 
 /// A braille glyph spans nearly its whole em, from ascender to descender, so
-/// at the slot's size it stands taller than the row's letters. Three
-/// quarters keeps its dots within their cap height.
+/// at the slot's size it stands taller than the row's letters. Three fifths
+/// keeps it about as tall as lowercase letters.
 fn braille_text_size(size: f32) -> f32 {
-    (size * 0.75).round().max(4.)
+    (size * 0.6).round().max(4.)
 }
 
 /// A slot holding one braille glyph, centered on a line as tall as the slot.
