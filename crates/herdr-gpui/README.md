@@ -3834,6 +3834,10 @@ Ctrl+Shift+U is left unbound for
   (right Option-E, then E, types é); `"left"` and `"right"` pick a side on
   any layout. Option-Left and Option-Right move a word back and forward
   (Esc-b and Esc-f), Cmd-Left and Cmd-Right to the line's start and end.
+  Windows reports AltGr as Ctrl+Alt. When AltGr makes a key type a
+  character, as AltGr-W types `?` on a Brazilian ABNT2 layout, the pane gets
+  that character; a Ctrl+Alt key that types nothing still reaches it as a
+  chord.
 - Ctrl-Cmd-F toggles full screen and Cmd-` brings the app's next window
   forward, as in other Mac apps, from the Settings and Log windows too. The
   cycle visits every window in a stable order, not front to back.
