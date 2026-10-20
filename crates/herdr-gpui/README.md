@@ -328,7 +328,9 @@ saved SSH device.
 
 The label is optional: an empty one names the device after its SSH target as
 typed, such as `user@host` or an address. Once the device is saved, the dialog
-closes by itself.
+closes by itself unless there is recovery advice to read. That warning wraps
+inside the scrollable dialog and stays until you choose **Done**, close the
+dialog, or press Enter or Escape; the device is already saved.
 
 **Add device** first checks the host over non-interactive SSH, using
 the same executable search and compatibility rules as the connection bridge, and

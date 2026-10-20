@@ -50,6 +50,8 @@ pub(super) enum Step {
     Saving(setup::Request, HostProbe),
     /// Saved; the next frame closes the dialog (see `poll_device_setup`).
     Saved,
+    /// Already saved; keep the recovery advice readable until dismissed.
+    SavedWarning(&'static str),
     /// SSH refused an unknown host key; fetching it for the user to approve.
     FetchingKey(setup::Request),
     /// The user compares the host key's fingerprint before trusting it.
@@ -204,6 +206,13 @@ impl HerdrWindow {
         let Some(form) = &self.menu.device_setup else {
             return false;
         };
+        if matches!(form.step, Step::SavedWarning(_)) {
+            if matches!(event.keystroke.key.as_str(), "enter" | "escape") {
+                self.dismiss_menu(window, cx);
+            }
+            // The completed form has no editable fields or further setup action.
+            return true;
+        }
         if form
             .fields
             .iter()
@@ -256,6 +265,9 @@ impl HerdrWindow {
         let Some(setup) = &self.menu.device_setup else {
             return frame(div(), cx);
         };
+        if let Step::SavedWarning(warning) = setup.step {
+            return frame(self.render_device_saved_warning(warning, cx), cx);
+        }
         let ghost = matches!(setup.step, Step::Form)
             .then(|| {
                 let text = setup.fields[0].read(cx).text().to_owned();
@@ -317,7 +329,7 @@ impl HerdrWindow {
                 "Herdr is running on {}. Saving the device…",
                 request.target()
             )),
-            Step::Saved => None,
+            Step::Saved | Step::SavedWarning(_) => None,
             Step::FetchingKey(request) => {
                 Some(format!("Fetching the host key of {}…", request.target()))
             }
@@ -633,13 +645,11 @@ impl HerdrWindow {
         outcome: setup::SaveOutcome,
         cx: &mut Context<Self>,
     ) {
-        // Saved: the catalog now refuses this host by itself. The warning
-        // survives dismissal of the dialog and requires no restart approval.
+        // Saving is already complete. Keep recovery advice in the scrollable
+        // dialog until dismissed, rather than timing out a truncated flash.
         if let Some(form) = &mut self.menu.device_setup {
-            form.step = Step::Saved;
-        }
-        if let Some(warning) = outcome.warning() {
-            self.show_flash(crate::window::Flash::warning(warning), cx);
+            form.step = outcome.warning().map_or(Step::Saved, Step::SavedWarning);
+            form.error = None;
         }
         cx.notify();
     }
@@ -777,6 +787,20 @@ impl HerdrWindow {
                 return cx.notify();
             }
             return self.dismiss_menu(window, cx);
+        }
+        // The saved summary replaces the focused input fields. Move focus to
+        // its menu so Enter/Escape keep working without focusing hidden inputs.
+        if self.menu.page == Some(Page::AddDevice)
+            && self
+                .menu
+                .device_setup
+                .as_ref()
+                .is_some_and(|form| matches!(form.step, Step::SavedWarning(_)))
+        {
+            if !self.menu.focus.is_focused(window) {
+                window.focus(&self.menu.focus, cx);
+            }
+            return;
         }
         let Some(Setup {
             step: Step::Opening(_, space),
