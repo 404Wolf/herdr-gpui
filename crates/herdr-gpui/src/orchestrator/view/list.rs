@@ -351,7 +351,10 @@ impl OrchestratorView {
             .border_color(rgb(theme.active))
             .cursor_pointer()
             .hover(move |style| style.bg(rgb(hover)))
-            .when(selected || open, |el| el.bg(rgb(theme.primary_wash())))
+            // The accent marks only the row whose page is open; a row the
+            // keys moved to, with no page, wears the hover's quiet tint.
+            .when(open, |el| el.bg(rgb(theme.primary_wash())))
+            .when(selected && !open, |el| el.bg(rgb(hover)))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, _: &MouseDownEvent, _, cx| {
