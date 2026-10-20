@@ -83,7 +83,7 @@ fn profile_plan(profile: &str) -> Option<String> {
     let bin = _root.path().join("home/.local/bin");
     crate::test_executable::write(
         bin.join("security"),
-        "#!/bin/sh\ncase \"$*\" in\n  *'Claude Code-credentials-2ea9e238 '*|*'Claude Code-credentials-5636a904 '*) printf '%s' '{\"claudeAiOauth\":{\"accessToken\":\"profile-token\",\"subscriptionType\":\"profile\"}}' ;;\n  *'Claude Code-credentials '*) printf '%s' '{\"claudeAiOauth\":{\"accessToken\":\"wrong-token\",\"subscriptionType\":\"generic\"}}' ;;\n  *) exit 44 ;;\nesac\n",
+        "#!/bin/sh\ncase \"$*\" in\n  *'Claude Code-credentials-2ea9e238 '*|*'Claude Code-credentials-5636a904 '*) printf '%s' '{\"claudeAiOauth\":{\"accessToken\":\"profile-token\",\"subscriptionType\":\"profile\"}}' ;;\n  *'Claude Code-credentials-a10b5e0a '*) printf '%s' '{\"claudeAiOauth\":{\"accessToken\":\"trailing-token\",\"subscriptionType\":\"trailing\"}}' ;;\n  *'Claude Code-credentials '*) printf '%s' '{\"claudeAiOauth\":{\"accessToken\":\"wrong-token\",\"subscriptionType\":\"generic\"}}' ;;\n  *) exit 44 ;;\nesac\n",
         0o755,
     ).unwrap();
     let mut exec = Exec::Remote(shell);
@@ -112,5 +112,14 @@ fn claude_profile_keychain_normalizes_unicode_to_nfc() {
     assert_eq!(
         profile_plan("/profiles/e\u{301}quipe").as_deref(),
         Some("profile")
+    );
+}
+
+#[test]
+fn claude_profile_keychain_keeps_surrounding_whitespace() {
+    assert_eq!(
+        profile_plan("/profiles/work ").as_deref(),
+        Some("trailing"),
+        "a trailing space names a different directory"
     );
 }

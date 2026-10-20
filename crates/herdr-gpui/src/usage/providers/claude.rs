@@ -118,10 +118,7 @@ pub(crate) fn keychain(probe: &mut Probe) -> Option<Secret> {
     // Claude Code namespaces explicit profiles by the NFC-normalized config
     // directory. Never fall back to the generic service for a selected profile:
     // that can silently report another account's usage.
-    let service = match probe
-        .env_text("CLAUDE_CONFIG_DIR")
-        .filter(|path| !path.is_empty())
-    {
+    let service = match probe.env_path("CLAUDE_CONFIG_DIR") {
         Some(path) => {
             let digest = Sha256::digest(path.nfc().collect::<String>().as_bytes());
             format!(
