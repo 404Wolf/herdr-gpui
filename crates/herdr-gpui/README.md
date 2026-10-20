@@ -1937,8 +1937,9 @@ or macOS client and the local session or a saved SSH host on both ends.
 
 An icon column at the window's left edge picks what the window shows. Every
 section but Workspaces takes the window's body, keeping the title bar and the
-status bar; zen mode keeps the terminals. `[sidebar] activity_bar = false`
-turns it off, and `herdr-gpui ui panel NAME` shows a section.
+status bar; zen mode keeps the terminals. **Settings > Sidebar > Show
+activity bar** (or `[sidebar] activity_bar = false`) turns it off in every
+window at once, and `herdr-gpui ui panel NAME` shows a section.
 
 - **Workspaces** is the sidebar beside the terminals. Clicking it while shown
   folds the sidebar to its rail.
