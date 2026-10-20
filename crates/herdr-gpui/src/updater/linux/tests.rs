@@ -65,7 +65,7 @@ fn package_commands_pass_a_literal_absolute_path_and_fixed_manager() {
         (
             Format::Rpm,
             "/usr/bin/dnf",
-            vec!["install", "--assumeyes", "--"],
+            vec!["install", "--assumeyes"],
         ),
         (
             Format::Arch,
