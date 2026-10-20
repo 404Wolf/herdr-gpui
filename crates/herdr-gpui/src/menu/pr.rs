@@ -12,9 +12,21 @@ impl HerdrWindow {
     /// looked up for them: the verified local daemon, or a saved SSH device.
     /// Any other socket may be forwarded from an unknown machine.
     pub(crate) fn pr_origin(&self) -> Option<Origin> {
-        match &self.endpoints[self.selected_endpoint].connection.target {
+        self.endpoint_pr_origin(self.selected_endpoint)
+    }
+
+    /// [`Self::pr_origin`] for any device, selected or not, so its rows show
+    /// the answers found while it was selected.
+    pub(crate) fn endpoint_pr_origin(&self, index: usize) -> Option<Origin> {
+        let endpoint = self.endpoints.get(index)?;
+        let live = if index == self.selected_endpoint {
+            &self.live
+        } else {
+            &endpoint.live
+        };
+        match &endpoint.connection.target {
             herdr_client::ConnectTarget::Ssh { target, .. } => Some(Origin::Ssh(target.clone())),
-            _ if self.selected_endpoint == 0 && self.live.local_daemon_peer => Some(Origin::Local),
+            _ if index == 0 && live.local_daemon_peer => Some(Origin::Local),
             _ => None,
         }
     }

@@ -28,6 +28,8 @@ fn worktree_rows_wear_their_cached_pull_request(cx: &mut gpui::TestAppContext) {
                 label: "solo".into(),
                 is_linked_worktree: false,
             });
+            // Pull requests are only shown for a verified local daemon.
+            view.live.local_daemon_peer = true;
             let now = std::time::Instant::now();
             for (key, branch, number, state, additions, deletions) in [
                 (REPO_KEY, "worktree/sidebar-child", 7, "MERGED", 23, 342),

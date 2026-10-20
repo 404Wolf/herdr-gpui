@@ -158,14 +158,17 @@ impl HerdrWindow {
     pub(crate) fn git_pull_request(
         &self,
     ) -> Option<std::cell::Ref<'_, crate::pull_request::PullRequest>> {
+        // The Git probe only tracks this machine's checkouts.
         let input = self.git.tracked()?;
         self.menu
             .github
             .connected()
             .then(|| {
-                self.menu
-                    .pr_cache
-                    .peek(input.repo_key.as_deref()?, &input.branch)
+                self.menu.pr_cache.peek(
+                    &crate::pull_request::Origin::Local,
+                    input.repo_key.as_deref()?,
+                    &input.branch,
+                )
             })
             .flatten()
     }
