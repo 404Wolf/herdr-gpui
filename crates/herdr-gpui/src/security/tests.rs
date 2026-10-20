@@ -11,6 +11,7 @@ use std::{
 mod accounts;
 mod page;
 mod pane;
+mod pane_resize;
 mod parse;
 mod partial;
 mod reports;

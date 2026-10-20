@@ -16,6 +16,7 @@ mod list;
 mod listing;
 mod look;
 mod markdown;
+pub(crate) mod pane;
 mod pills;
 mod pull;
 mod repo;
@@ -28,6 +29,7 @@ mod tests;
 
 pub(crate) use look::Look;
 pub(crate) use markdown::without_html;
+use pane::{PANE_DEFAULT, PaneDrag, Resize};
 pub(crate) use repo::RepoSpec;
 pub(crate) use rows::{LiveAgent, Tab as List, key_label};
 
@@ -76,12 +78,8 @@ pub(crate) enum Event {
 
 impl EventEmitter<Event> for OrchestratorView {}
 
-/// The details pane's width bounds, in pixels, and its share of the view.
 /// How long Refresh spins before the workers' own sync states take over.
 const REFRESH_GRACE: Duration = Duration::from_millis(1500);
-const PANE_MIN: f32 = 360.;
-const PANE_DEFAULT: f32 = 520.;
-const PANE_MAX_SHARE: f32 = 0.7;
 
 /// The detail page of one item.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -126,16 +124,6 @@ impl DetailTab {
             Self::Agent => "Agent",
             Self::Details => "Details",
         }
-    }
-}
-
-/// The details pane's drag handle, as a drag payload.
-#[derive(Clone, Copy)]
-pub(crate) struct PaneDrag;
-
-impl Render for PaneDrag {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        Empty
     }
 }
 

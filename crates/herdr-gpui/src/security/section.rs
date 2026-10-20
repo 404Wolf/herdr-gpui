@@ -5,7 +5,7 @@
 //! sign-in may not read, and those GitHub would not answer for.
 
 use super::{Alert, Alerts, Item, Repo, Report, Reports, Severity};
-use crate::HerdrWindow;
+use crate::{HerdrWindow, orchestrator::pane};
 use gpui::{prelude::*, *};
 use std::time::{Duration, SystemTime};
 
@@ -95,14 +95,41 @@ impl HerdrWindow {
             .text_size(px(font.size))
             .child(header)
             .child(match self.security.opened().cloned() {
-                Some(opened) => div()
+                // Like an issue's page: the list keeps the room and the page
+                // sits in a pane its left edge resizes, or drags shut.
+                Some(opened) if self.security.list_hidden() => div()
                     .flex_1()
                     .min_h_0()
                     .flex()
-                    .when(!self.security.list_hidden(), |split| {
-                        split.child(self.render_security_list(&opened, cx))
-                    })
                     .child(self.render_security_page(&opened, cx))
+                    .into_any_element(),
+                Some(opened) => div()
+                    .id("security-split")
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .on_drag_move(cx.listener(
+                        |this, event: &DragMoveEvent<pane::PaneDrag>, window, cx| {
+                            match pane::Resize::of(event, window) {
+                                pane::Resize::Close => this.close_security_item(cx),
+                                pane::Resize::Width(width) => {
+                                    this.security.pane_width = width;
+                                    cx.notify();
+                                }
+                            }
+                        },
+                    ))
+                    .child(self.render_security_list(&opened, cx))
+                    .child(
+                        div()
+                            .debug_selector(|| "security-pane".into())
+                            .flex_none()
+                            .w(px(self.security.pane_width))
+                            .h_full()
+                            .flex()
+                            .child(pane::handle(theme, "security-pane-handle"))
+                            .child(self.render_security_page(&opened, cx)),
+                    )
                     .into_any_element(),
                 None => div()
                     .id("security-section-scroll")

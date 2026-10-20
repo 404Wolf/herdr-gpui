@@ -47,7 +47,7 @@ pub(crate) use service::SourceStatus;
 pub(crate) use service::{Notice, Request, Service, Snapshot, SyncState, Timing};
 pub(crate) use store::{Access, SCHEMA_VERSION, Store};
 pub(crate) use view::{
-    Event, List, LiveAgent, Look, OrchestratorView, RepoSpec, key_label, without_html,
+    Event, List, LiveAgent, Look, OrchestratorView, RepoSpec, key_label, pane, without_html,
 };
 
 #[cfg(test)]
