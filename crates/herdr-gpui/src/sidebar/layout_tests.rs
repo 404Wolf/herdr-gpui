@@ -51,13 +51,19 @@ mod layouts;
 #[cfg(test)]
 mod listening_ports;
 #[cfg(test)]
+mod local_counts_chip;
+#[cfg(test)]
 mod nested_agents;
 #[cfg(test)]
 mod palette;
 #[cfg(test)]
 mod palette_header;
 #[cfg(test)]
+mod pane_names;
+#[cfg(test)]
 mod picker_scroll;
+#[cfg(test)]
+mod plain_folder_icon;
 #[cfg(test)]
 mod probe_bar;
 #[cfg(test)]
@@ -568,6 +574,9 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
                 activity_bar: false,
                 ..Default::default()
             },
+            // Disable window controls so the menu bar's movable handler doesn't
+            // consume mouse events that tests expect to bubble.
+            show_window_controls: false,
             ..Default::default()
         },
         theme: Default::default(),

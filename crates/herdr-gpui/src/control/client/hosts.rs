@@ -9,7 +9,7 @@ mod tests;
 
 use super::{Context, Output, unexpected};
 use crate::{
-    cli::control::{CloudCommand, HostCommand, PortsCommand, PrCommand},
+    cli::control::{CloudCommand, HostCommand, PortsCommand, PrCommand, SecurityCommand},
     control::protocol::{
         Request, Response,
         hosts::{HostOp, Reply},
@@ -112,7 +112,10 @@ pub(super) fn usage(context: &Context) -> crate::Result<Output> {
     }
 }
 
-pub(super) fn security(context: &Context) -> crate::Result<Output> {
+pub(super) fn security(command: SecurityCommand, context: &Context) -> crate::Result<Output> {
+    if let SecurityCommand::Open { repository, item } = command {
+        return context.act(Request::Host, HostOp::SecurityOpen { repository, item });
+    }
     match context.call(Request::Host, HostOp::Security)? {
         Response::Host {
             reply: reply @ Reply::Security { .. },

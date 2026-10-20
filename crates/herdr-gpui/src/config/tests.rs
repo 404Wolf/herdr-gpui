@@ -9,6 +9,7 @@ mod agents_placement;
 mod backdrop;
 mod bitmap_fonts;
 mod bold_color;
+mod change_counts;
 mod cloud_setup;
 mod code;
 mod code_navigation;

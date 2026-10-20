@@ -5,11 +5,13 @@
 
 use super::{
     Error,
-    model::{Alerts, Repo, parse, valid_name},
+    model::{Account, Alerts, Checkout, Repo, parse, valid_name},
 };
 use crate::{github::Tokens, orchestrator::RepoSpec};
+use herdr_client::ConnectTarget;
 use secrecy::ExposeSecret;
 use std::{
+    path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -48,6 +50,7 @@ pub(super) const QUERY: &str = r#"query($owner: String!, $repo: String!) {
 /// reports, the next one is tried, and the most readable answer is kept.
 pub(super) fn read(specs: &[RepoSpec], cancelled: &AtomicBool) -> Vec<Repo> {
     let mut found: Vec<Found<'_>> = Vec::new();
+    let mut checkouts: Vec<(String, Checkout)> = Vec::new();
     for spec in specs {
         if cancelled.load(Ordering::Relaxed) {
             return Vec::new();
@@ -67,6 +70,14 @@ pub(super) fn read(specs: &[RepoSpec], cancelled: &AtomicBool) -> Vec<Repo> {
                 continue;
             }
         };
+        checkouts.push((
+            name.clone(),
+            Checkout {
+                target: spec.request.target.clone(),
+                workspace_id: spec.request.workspace_id.clone(),
+                root: local_root(&spec.request.target, &spec.request.checkout),
+            },
+        ));
         let account = (spec.host.as_str(), tokens);
         match found
             .iter_mut()
@@ -106,6 +117,12 @@ pub(super) fn read(specs: &[RepoSpec], cancelled: &AtomicBool) -> Vec<Repo> {
                 host: host.to_owned(),
                 alerts,
                 reports,
+                account: Some(Account(tokens.clone())),
+                checkouts: checkouts
+                    .iter()
+                    .filter(|(name, _)| name.eq_ignore_ascii_case(&repo.name))
+                    .map(|(_, checkout)| checkout.clone())
+                    .collect(),
             };
             let score = readable(&read);
             if best.as_ref().is_none_or(|(kept, _)| score > *kept) {
@@ -118,6 +135,18 @@ pub(super) fn read(specs: &[RepoSpec], cancelled: &AtomicBool) -> Vec<Repo> {
         repos.extend(best.map(|(_, read)| read));
     }
     repos
+}
+
+/// The repository root holding `checkout` on this machine: the nearest
+/// folder with a `.git` entry. Another host's files are out of reach.
+fn local_root(target: &ConnectTarget, checkout: &str) -> Option<PathBuf> {
+    if target.is_remote() {
+        return None;
+    }
+    Path::new(checkout)
+        .ancestors()
+        .find(|folder| folder.join(".git").exists())
+        .map(Path::to_path_buf)
 }
 
 /// A repository and the accounts its hosts read GitHub with, each with the

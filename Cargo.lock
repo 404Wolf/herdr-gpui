@@ -4346,6 +4346,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tungstenite",
+ "unicode-normalization",
  "unicode-properties",
  "unicode-segmentation",
  "unicode-width",

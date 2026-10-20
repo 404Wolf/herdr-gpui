@@ -11,8 +11,12 @@
 //! with agent-launcher and has no place for them. A background read runs
 //! every [`INTERVAL`], or when Refresh asks; drawing reads what it left.
 
+mod actions;
 mod fetch;
+mod list;
 mod model;
+mod page;
+mod pane;
 mod reports;
 mod section;
 
@@ -20,11 +24,13 @@ mod section;
 mod tests;
 
 pub(crate) use model::{Alert, Alerts, Repo, Severity};
+pub(crate) use page::{Item, Tab};
 pub(crate) use reports::{Report, Reports};
 
 use crate::{HerdrWindow, browser::WebUrl, sidebar::ActivityPanel};
 use gpui::{prelude::*, *};
 use std::{
+    collections::HashMap,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -74,6 +80,13 @@ pub(crate) struct Security {
     /// Tells a read in flight to stop when the window goes.
     cancelled: Arc<AtomicBool>,
     scroll: ScrollHandle,
+    /// The alert or report whose page is shown beside the list.
+    opened: Option<page::Opened>,
+    /// Whether the page takes the whole section, the list folded away.
+    list_hidden: bool,
+    /// Pages read this session, by item.
+    pages: HashMap<Item, page::Loaded>,
+    page_scroll: ScrollHandle,
 }
 
 impl Default for Security {
@@ -87,6 +100,10 @@ impl Default for Security {
             accounts: Vec::new(),
             cancelled: Arc::default(),
             scroll: ScrollHandle::new(),
+            opened: None,
+            list_hidden: false,
+            pages: HashMap::new(),
+            page_scroll: ScrollHandle::new(),
         }
     }
 }
@@ -133,6 +150,29 @@ impl Security {
                 .sum::<usize>()
     }
 
+    /// When the newest of what [`Self::urgent`] counts was opened, so the
+    /// bar can tell whether it arrived since the section was last open.
+    pub(crate) fn urgent_since(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+        let alerts = self
+            .repos
+            .iter()
+            .flat_map(Repo::open)
+            .filter(|alert| alert.severity.urgent())
+            .filter_map(|alert| alert.created_at);
+        let reports = self
+            .repos
+            .iter()
+            .flat_map(Repo::reported)
+            .filter_map(|report| report.created_at);
+        alerts.chain(reports).max()
+    }
+
+    /// Installs `repos` as a read would, for tests outside this module.
+    #[cfg(test)]
+    pub(crate) fn read_for_test(&mut self, repos: Vec<Repo>) {
+        self.install(repos, Instant::now(), SystemTime::now());
+    }
+
     /// Reads again at the next tick.
     pub(crate) fn refresh(&mut self) {
         self.next = None;
@@ -149,12 +189,15 @@ impl Security {
         self.read_at = None;
         self.next = None;
         self.task = None;
+        self.opened = None;
+        self.pages.clear();
     }
 
     /// What a read found, replacing the last one.
     fn install(&mut self, repos: Vec<Repo>, now: Instant, at: SystemTime) {
         self.available |= repos.iter().any(Repo::enabled);
         self.repos = repos;
+        self.keep_opened();
         self.read_at = Some(at);
         self.next = Some(now + INTERVAL);
         self.task = None;
