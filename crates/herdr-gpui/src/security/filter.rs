@@ -156,8 +156,8 @@ impl HerdrWindow {
     }
 
     /// The search field, then a pill per source and per repository with
-    /// how many items the field lets through; a group of pills shows only
-    /// with more than one to choose between.
+    /// how many items the field lets through; a group of pills shows with
+    /// more than one to choose between, or while one of them is picked.
     pub(super) fn render_security_toolbar(
         &self,
         look: &Look,
@@ -230,7 +230,8 @@ impl HerdrWindow {
             .flex_wrap()
             .items_center()
             .gap_2();
-        let many_sources = sources.len() > 1;
+        // A group shows with a choice to make, or with a pick to undo.
+        let many_sources = sources.len() > 1 || !search.sources.is_empty();
         if many_sources {
             for (source, items) in sources {
                 let on = search.sources.contains(&source);
@@ -252,7 +253,7 @@ impl HerdrWindow {
                 );
             }
         }
-        let many_repos = repos.len() > 1;
+        let many_repos = repos.len() > 1 || !search.repos.is_empty();
         if many_repos {
             if many_sources {
                 pills = pills.child(div().w(px(1.)).h(px(16.)).bg(rgb(theme.active)));

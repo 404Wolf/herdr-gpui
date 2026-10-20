@@ -13,7 +13,11 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use rusqlite::{
     Connection, OpenFlags, OptionalExtension, Row, Transaction, TransactionBehavior, params,
 };
-use std::{collections::HashMap, path::Path, time::Duration};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 /// The newest schema this build reads and writes.
 pub(crate) const SCHEMA_VERSION: i64 = 2;
@@ -161,20 +165,29 @@ impl Store {
     }
 
     /// Copies agent-launcher's database at `legacy` to `path`, where none is
-    /// yet, so its items and runs come along. The copy is written into the
-    /// private file [`crate::private_file::prepare`] makes, and a failed one
-    /// leaves that file empty for [`Self::open`] to start afresh.
+    /// yet, so its items and runs come along. The copy is written to a
+    /// private file of its own beside `path` and only then moved there,
+    /// never over a file: when another window opens the same repository at
+    /// once, the first copy in place stays and the other is dropped. A
+    /// failed copy leaves no file behind.
     pub(crate) fn import(legacy: &Path, path: &Path) -> Result<()> {
-        let Some(target) = path.to_str() else {
-            return Err(Error::Database(rusqlite::Error::InvalidPath(
-                path.to_owned(),
-            )));
-        };
-        crate::private_file::prepare(path)?;
-        let source = Connection::open_with_flags(legacy, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        source.busy_timeout(BUSY_TIMEOUT)?;
-        source.execute("VACUUM INTO ?1", [target])?;
-        Ok(())
+        let staging = staging_path(path);
+        let copied = copy(legacy, &staging).and_then(|()| match publish(&staging, path) {
+            Ok(()) => Ok(()),
+            // Another window's copy is in place: it came from the same file.
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+            Err(source) => Err(Error::Private(crate::private_file::Error::Prepare {
+                path: path.to_owned(),
+                source,
+            })),
+        });
+        // Gone once published; what a failure or a lost race leaves.
+        match std::fs::remove_file(&staging) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => tracing::debug!(%error, "Cannot remove a staged import"),
+        }
+        copied
     }
 
     pub(crate) fn access(&self) -> Access {
@@ -649,4 +662,42 @@ fn optional_time(row: &Row<'_>, column: &'static str) -> Result<Option<DateTime<
     row.get::<_, Option<String>>(column)?
         .map(|value| parse_time(column, value))
         .transpose()
+}
+
+/// A name beside `path` no other import uses: this process's id and a
+/// count of its imports.
+fn staging_path(path: &Path) -> PathBuf {
+    static IMPORTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let count = IMPORTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let mut name = path.file_name().unwrap_or_default().to_owned();
+    name.push(format!(".import-{}-{count}", std::process::id()));
+    path.with_file_name(name)
+}
+
+/// `legacy`, whole and consistent, into a new private file at `staging`.
+fn copy(legacy: &Path, staging: &Path) -> Result<()> {
+    let Some(target) = staging.to_str() else {
+        return Err(Error::Database(rusqlite::Error::InvalidPath(
+            staging.to_owned(),
+        )));
+    };
+    crate::private_file::prepare(staging)?;
+    let source = Connection::open_with_flags(legacy, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    source.busy_timeout(BUSY_TIMEOUT)?;
+    source.execute("VACUUM INTO ?1", [target])?;
+    Ok(())
+}
+
+/// Moves `staging` to `path` unless a file is there, in one step.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn publish(staging: &Path, path: &Path) -> std::io::Result<()> {
+    use rustix::fs::{CWD, RenameFlags, renameat_with};
+    renameat_with(CWD, staging, CWD, path, RenameFlags::NOREPLACE).map_err(std::io::Error::from)
+}
+
+/// Links `staging` at `path`, which fails when a file is there; the caller
+/// removes `staging`. Unlike a rename it never replaces one.
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn publish(staging: &Path, path: &Path) -> std::io::Result<()> {
+    std::fs::hard_link(staging, path)
 }

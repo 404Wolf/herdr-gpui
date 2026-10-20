@@ -22,6 +22,7 @@ mod row_start;
 mod rows;
 mod sessions;
 mod status;
+mod twin_text;
 mod twins;
 
 fn at(value: &str) -> DateTime<Utc> {

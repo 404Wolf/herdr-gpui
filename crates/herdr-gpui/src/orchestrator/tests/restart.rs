@@ -126,3 +126,36 @@ fn the_repository_a_checkout_held_is_cached_until_git_disagrees() {
         None
     );
 }
+
+/// Two windows opening one repository at once each copy agent-launcher's
+/// database; the first copy in place stays, whole, and nothing else is
+/// left in the folder.
+#[test]
+fn imports_at_once_leave_one_whole_copy() {
+    let dir = tempfile::tempdir().unwrap();
+    let legacy = dir.path().join("legacy").join("state.sqlite3");
+    let mut old = Store::open(&legacy).unwrap();
+    old.save_run(&run("r1", Owner::HerdrGpui), None).unwrap();
+    drop(old);
+    let path = dir.path().join("app").join("state.sqlite3");
+    std::thread::scope(|scope| {
+        for _ in 0..4 {
+            scope.spawn(|| Store::import(&legacy, &path).unwrap());
+        }
+    });
+    let runs = Store::open(&path).unwrap().runs().unwrap();
+    assert_eq!(runs.len(), 1);
+    let names: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .filter(|name| !name.ends_with("-wal") && !name.ends_with("-shm"))
+        .collect();
+    assert_eq!(names, ["state.sqlite3"]);
+
+    // A database already in place is never replaced.
+    let mut store = Store::open(&path).unwrap();
+    store.delete_run("r1").unwrap();
+    drop(store);
+    Store::import(&legacy, &path).unwrap();
+    assert!(Store::open(&path).unwrap().runs().unwrap().is_empty());
+}

@@ -225,7 +225,11 @@ impl OrchestratorView {
     /// The item `key` names, or the stand-in of one a run works on that is
     /// no longer listed.
     pub(super) fn item(&self, key: &str) -> Option<&Item> {
-        self.repos.iter().find_map(|repo| repo.item(key))
+        // The copy of the checkout the row shows: another checkout may have
+        // read the item differently.
+        self.repo_of(key)
+            .and_then(|repo| self.repos[repo].item(key))
+            .or_else(|| self.repos.iter().find_map(|repo| repo.item(key)))
     }
 
     /// Every repository's items and runs, those found from branches

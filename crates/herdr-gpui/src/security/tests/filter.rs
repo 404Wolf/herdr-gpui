@@ -123,3 +123,34 @@ fn every_row_offers_start_agent_and_stepping_keeps_to_the_search(cx: &mut gpui::
     draw(cx);
     assert_eq!(opened(cx), Some(first));
 }
+
+#[gpui::test]
+fn a_picked_pill_stays_to_be_unpicked_when_it_is_the_only_one_left(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = window(cx);
+    let mut lodash = alert(7, Severity::Moderate);
+    lodash.package = "lodash".into();
+    install(
+        &view,
+        cx,
+        vec![
+            repo("a/one", Ok(open(vec![alert(1, Severity::Critical)]))),
+            repo("a/two", Ok(open(vec![lodash]))),
+        ],
+    );
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.show_activity_panel(ActivityPanel::Security, window, cx);
+        });
+    });
+    draw(cx);
+    click(cx, "security-pill-repo-1");
+    // Only the picked repository holds a match: its pill is the group's
+    // last, and still there to unpick.
+    type_search(&view, cx, "lodash");
+    assert_eq!(shown_items(&view, cx).len(), 1);
+    assert!(cx.debug_bounds("security-pill-repo-1").is_none());
+    click(cx, "security-pill-repo-0");
+    click(cx, "security-search-clear");
+    assert!(!cx.update(|_, cx| view.read(cx).security_search.narrows()));
+    assert_eq!(shown_items(&view, cx).len(), 2);
+}
