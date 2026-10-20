@@ -307,14 +307,26 @@ impl RowLayout for Orca {
                 .child(icon)
                 .child(column);
         }
-        // The agent leads, then where it runs, all on one line.
+        // The agent leads, then its pane, then where it runs, all on one line.
         let text = Line::new(inner(cx, 0.) - icon - GAP, GAP)
-            .fill(
+            .lead(
                 div()
                     .debug_selector(|| format!("name-{key}"))
                     .text_color(rgb(color)),
                 agent.name,
+                glyph_at(font, font.size),
+                0.4,
             )
+            .when_some(agent.pane, |line, pane| {
+                line.label(
+                    div()
+                        .debug_selector(|| format!("pane-{key}"))
+                        .text_color(rgb(theme.muted)),
+                    pane,
+                    glyph_at(font, font.size),
+                    0.5,
+                )
+            })
             .when_some(parts::agent_place(agent.place, cx.host), |line, place| {
                 line.label(
                     div().text_color(rgb(theme.muted)),
@@ -324,13 +336,13 @@ impl RowLayout for Orca {
                 )
             })
             .when_some(agent.status_text.as_deref(), |line, text| {
-                line.label(
+                line.keep(
                     div()
                         .debug_selector(|| format!("status-{key}"))
                         .text_color(rgb(cx.indicators.color(agent.status))),
                     text,
                     glyph_at(font, font.size),
-                    0.5,
+                    0.3,
                 )
             });
         card(key, state, 0., 4., (theme, cx.mark))
