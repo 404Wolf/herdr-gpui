@@ -5,6 +5,7 @@
 mod app;
 mod batch;
 mod browser;
+mod exec;
 mod hosts;
 mod settings;
 mod tabs;
@@ -16,6 +17,7 @@ pub use crate::control::{Cursor, EventKind, FontSize, Script, Size, Sound, Switc
 pub use app::{AppCommand, UiCommand, WindowCommand};
 pub use batch::BatchCommand;
 pub use browser::{BrowserCommand, Placement};
+pub use exec::ExecCommand;
 pub use hosts::{CloudCommand, HostCommand, PortsCommand, PrCommand, SecurityCommand};
 pub use settings::{
     CaffeineCommand, ConfigCommand, IntegrationsCommand, KeybindsCommand, SoundCommand,
@@ -174,7 +176,7 @@ pub const FAMILIES: &[(&str, &str)] = &[
     ("host", "List the window's hosts, or show one"),
     (
         "cloud",
-        "Saved cloud machines: list, add, destroy, follow a batch",
+        "Saved cloud machines: list, add, run a command, destroy",
     ),
     (
         "ports",
@@ -211,7 +213,11 @@ pub const FAMILIES: &[(&str, &str)] = &[
 /// Whether `args` are a control command asking for JSON, whose errors,
 /// usage errors included, are then printed as JSON.
 pub fn wants_json(args: &[OsString]) -> bool {
-    args.first().is_some_and(is_family) && args.iter().any(|arg| arg == "--json")
+    args.first().is_some_and(is_family)
+        && args
+            .iter()
+            .take_while(|arg| *arg != "--")
+            .any(|arg| arg == "--json")
 }
 
 pub fn is_family(word: &OsString) -> bool {

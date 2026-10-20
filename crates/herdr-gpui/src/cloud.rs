@@ -9,6 +9,7 @@
 pub(crate) mod batch;
 mod catalog;
 mod command;
+pub(crate) mod exec;
 pub(crate) mod install;
 mod jobs;
 pub(crate) mod names;

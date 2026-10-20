@@ -1,6 +1,6 @@
-//! Saved cloud machines handled in batches, so an agent can clean up the
-//! machines it worked on: destroying several after one confirmation in the
-//! window, and following what each batch did to every machine.
+//! Saved cloud machines an agent works with: running a command on one,
+//! destroying several after one confirmation in the window, and following
+//! what each batch did to every machine.
 use serde::{Deserialize, Serialize};
 
 /// The most devices one batch holds, as many as the device list keeps.
@@ -23,12 +23,22 @@ pub(crate) enum CloudOp {
     Wait { batch: u64, wait_seconds: u64 },
     /// The batches the app keeps, oldest first.
     Batches,
+    /// Run `command` (a program and its arguments, quoted as they are) on
+    /// the saved device `device`, in `cwd` when given, for at most
+    /// `wait_seconds` in all.
+    Exec {
+        device: String,
+        command: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cwd: Option<String>,
+        wait_seconds: u64,
+    },
 }
 
 impl CloudOp {
     pub(crate) fn wait_seconds(&self) -> u64 {
         match self {
-            Self::Wait { wait_seconds, .. } => *wait_seconds,
+            Self::Wait { wait_seconds, .. } | Self::Exec { wait_seconds, .. } => *wait_seconds,
             Self::Destroy { .. } | Self::Batches => 0,
         }
     }
@@ -129,11 +139,26 @@ impl BatchInfo {
     }
 }
 
+/// How a command on a cloud machine ended.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct ExecInfo {
+    /// The device's endpoint ID.
+    pub device: String,
+    /// The command's exit code; `None` when a signal ended it.
+    pub status: Option<i32>,
+    /// The tail of each stream, without terminal controls.
+    pub stdout: String,
+    pub stderr: String,
+    /// Whether either stream was longer than the tail kept.
+    pub truncated: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum Reply {
     Batch { batch: BatchInfo },
     Batches { batches: Vec<BatchInfo> },
+    Exec(Box<ExecInfo>),
 }
 
 #[cfg(test)]

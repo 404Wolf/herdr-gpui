@@ -38,6 +38,12 @@ fn cloud_requests_have_a_stable_wire_form() {
             wait_seconds: 30,
         },
         CloudOp::Batches,
+        CloudOp::Exec {
+            device: "coder:w1".into(),
+            command: vec!["git".into(), "push".into()],
+            cwd: Some("~/code/app".into()),
+            wait_seconds: 120,
+        },
     ] {
         let request = Request::Cloud(Call {
             caller: Caller::default(),
@@ -55,6 +61,7 @@ fn unknown_cloud_operations_and_fields_are_rejected() {
         r#"{"method":"cloud","caller":{},"op":{"op":"wait"}}"#,
         r#"{"method":"cloud","caller":{},"op":{"op":"wait","batch":-1,"wait_seconds":1}}"#,
         r#"{"method":"cloud","caller":{},"op":{"op":"destroy","force":true}}"#,
+        r#"{"method":"cloud","caller":{},"op":{"op":"exec","device":"d","command":["ls"]}}"#,
     ] {
         assert!(
             serde_json::from_str::<Request>(invalid).is_err(),
@@ -129,4 +136,21 @@ fn phases_are_named_as_the_wire_names_them() {
     ] {
         assert_eq!(serde_json::to_value(phase).unwrap(), phase.name());
     }
+}
+
+#[test]
+fn a_command_s_answer_keeps_its_streams_apart() {
+    let response = Response::Cloud {
+        reply: Reply::Exec(Box::new(ExecInfo {
+            device: "coder:w1".into(),
+            status: Some(1),
+            stdout: "out".into(),
+            stderr: "err".into(),
+            truncated: false,
+        })),
+    };
+    let text = serde_json::to_string(&response).unwrap();
+    assert!(text.contains(r#""kind":"exec""#), "{text}");
+    assert!(text.contains(r#""stderr":"err""#), "{text}");
+    assert_eq!(serde_json::from_str::<Response>(&text).unwrap(), response);
 }

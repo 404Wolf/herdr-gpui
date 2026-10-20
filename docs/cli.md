@@ -140,6 +140,7 @@ Herdr UI** entry, which both Windows installers add, runs this command through
 | `cloud [list]` | Saved cloud machines (no app needed) |
 | `cloud add` | Open the settings that add one |
 | `cloud setup ID` | Run the `[cloud]` setup script on a saved machine again, in a new tab once the window shows it. `ID` is the machine ID from `cloud list`, its host ID, or its label |
+| `cloud exec ID [--timeout S] [--cwd DIR] -- COMMAND...` | Run a command on a saved machine through the app's connection to it, and print its output (below) |
 | `cloud destroy ID... \| --batch BATCH` | Ask in the window to delete saved machines at their providers and forget them; the user confirms there, once for all of them. Prints the batch to follow (below) |
 | `cloud wait BATCH [--timeout S]` | Each machine of a batch once all are settled, or after S seconds (default 60, at most 600) |
 | `cloud batches` | The batches the app keeps |
@@ -192,6 +193,26 @@ herdr-gpui config set cloud.coder.agents '[]'   # nothing extra on Coder
 herdr-gpui cloud setup herdr-tidy-lark-aa
 ```
 
+`cloud exec` runs one command on a saved cloud machine, named as for
+`cloud setup`, through the same authenticated command the app connects with
+(`coder ssh`, a provider's SSH gateway, and so on), so the agent needs no
+credentials of its own. Everything after `--` is the command, word for word;
+it gets no input. `--cwd` runs it in a directory, `~/` being the machine's
+home. `--timeout` (default 120 seconds, at most 600) counts everything,
+including waiting for a stopped machine to start; past it the command is
+stopped. Its stdout comes back on stdout and its stderr on stderr, each cut
+to its last 64 or 32 KiB and with terminal controls removed; `--json` gives
+`{"device", "status", "stdout", "stderr", "truncated"}`. It exits 0 when the
+command exited 0, and 1 otherwise. It asks nothing: like the agent's own
+shell, it acts on the user's machine at once. Git pushes from a machine need
+credentials there, such as Coder's external auth or a `gh auth login` in the
+`[cloud]` setup script.
+
+```sh
+herdr-gpui cloud exec herdr-tidy-lark-aa --cwd ~/code -- git clone https://github.com/me/app
+herdr-gpui cloud exec herdr-tidy-lark-aa --cwd ~/code/app -- sh -c 'git switch -c fix && make test'
+```
+
 An agent that worked on cloud machines removes them with `cloud destroy`,
 naming each by its machine ID, host ID, or label (a label two machines share
 is refused), or with `--batch` every machine a batch named. The window asks
@@ -233,7 +254,9 @@ herdr-gpui wait window            # also waits for the app to start
 
 ## What stays in the app
 
-Commands never bypass a confirmation. Restoring a checkpoint, teleporting a
+Commands never bypass a confirmation. `cloud exec` asks none because it
+confirms nothing: it is the agent's own work, run on a machine the user
+saved. Restoring a checkpoint, teleporting a
 worktree, fanning out a prompt, running a worktree script the app has not
 seen, destroying cloud machines, and adding a cloud machine open the app's
 own dialog (archiving a worktree has no command at all), already pointed at
