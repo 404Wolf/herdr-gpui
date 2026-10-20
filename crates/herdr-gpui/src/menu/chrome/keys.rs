@@ -336,6 +336,10 @@ impl HerdrWindow {
                 self.confirm_open_link(window, cx);
             }
             #[cfg(feature = "cloud")]
+            "enter" if self.menu.page == Some(Page::CreateCloud) => {
+                self.confirm_create_cloud(window, cx);
+            }
+            #[cfg(feature = "cloud")]
             "enter" if self.menu.page == Some(Page::DestroyCloud) => {
                 self.confirm_destroy_cloud(window, cx);
             }

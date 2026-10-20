@@ -1,7 +1,8 @@
-//! `cloud exec`, `cloud destroy`, `cloud wait`, and `cloud batches`. A
-//! command runs on a saved cloud machine at once, as the agent's own work on
-//! the user's machine; destroying asks in the window, which the user answers
-//! once for the whole batch, so nothing is deleted from here.
+//! `cloud create`, `cloud exec`, `cloud destroy`, `cloud wait`, and `cloud
+//! batches`. A command runs on a saved cloud machine at once, as the agent's
+//! own work on the user's machine; creating and destroying ask in the
+//! window, which the user answers once for the whole batch, so nothing is
+//! created or deleted from here.
 use super::{Watches, socket};
 use crate::control::protocol::{Call, ErrorCode, Response, cloud::CloudOp};
 use gpui::App;
@@ -23,6 +24,8 @@ use {
 };
 
 #[cfg(feature = "cloud")]
+mod create;
+#[cfg(feature = "cloud")]
 mod exec;
 #[cfg(test)]
 mod tests;
@@ -36,6 +39,9 @@ pub(super) fn serve(
 ) {
     let caller = &call.caller;
     let response = match call.op {
+        CloudOp::Create(op) => in_free_window(caller, cx, |view, window, cx| {
+            create::ask(view, op, window, cx)
+        }),
         CloudOp::Destroy { devices, batch } => in_free_window(caller, cx, |view, window, cx| {
             destroy(view, &devices, batch, window, cx)
         }),

@@ -77,3 +77,62 @@ fn cloud_wait_follows_one_batch_for_a_bounded_time() {
     assert_eq!(batch(&["cloud", "batches"]), BatchCommand::List);
     assert!(parse(&["cloud", "batches", "extra"]).is_err());
 }
+
+#[test]
+fn cloud_create_asks_for_machines_of_one_provider() {
+    use crate::control::batch::{CreateOp, Shape};
+    assert_eq!(
+        batch(&[
+            "cloud",
+            "create",
+            "coder",
+            "--count",
+            "10",
+            "--template",
+            "dev",
+            "--preset",
+            "large"
+        ]),
+        BatchCommand::Create(CreateOp {
+            provider: "coder".into(),
+            count: 10,
+            template: Some("dev".into()),
+            preset: Some("large".into()),
+            shape: Shape::Machine,
+            install: true,
+            setup: true,
+        })
+    );
+    assert_eq!(
+        batch(&[
+            "cloud",
+            "create",
+            "azure",
+            "--sandbox",
+            "--no-install",
+            "--no-setup"
+        ]),
+        BatchCommand::Create(CreateOp {
+            provider: "azure".into(),
+            count: 1,
+            template: None,
+            preset: None,
+            shape: Shape::Sandbox,
+            install: false,
+            setup: false,
+        })
+    );
+    for count in ["0", "17"] {
+        assert_eq!(
+            parse(&["cloud", "create", "coder", "--count", count]).unwrap_err(),
+            CliError::InvalidValue("--count")
+        );
+    }
+    assert_eq!(
+        parse(&["cloud", "create"]).unwrap_err(),
+        CliError::MissingArgument {
+            command: "cloud",
+            what: "PROVIDER"
+        }
+    );
+}

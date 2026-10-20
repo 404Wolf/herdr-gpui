@@ -91,7 +91,7 @@ pub enum Error {
     Cloud(#[from] crate::cloud::Error),
     #[cfg(feature = "cloud")]
     #[error(transparent)]
-    CloudExec(#[from] crate::cloud::exec::Error),
+    CloudBatch(#[from] crate::cloud::batch::Error),
     /// Only CPU and memory are sampled on an Azure machine so far.
     #[cfg(feature = "azure")]
     #[error("This is not available for cloud machines yet.")]

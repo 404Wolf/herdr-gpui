@@ -301,8 +301,8 @@ under Settings > Cloud devices; and **Remove device…** removes it from this
 computer. For an Azure machine, a Boat or Daytona sandbox, or a Coder
 workspace, it deletes the machine at the provider by default, with **Remove
 from Herdr only** beside it; a Railway VM is left as it is and expires on its
-own. `herdr-gpui cloud destroy` asks the same for several devices at once
-(see `docs/cli.md`). Port forwards and server keybindings need a saved SSH
+own. `herdr-gpui cloud destroy` asks the same for several devices at once,
+and `herdr-gpui cloud create` asks to make several (see `docs/cli.md`). Port forwards and server keybindings need a saved SSH
 host, so a cloud device does not offer them.
 
 **Forward port…** in the same menu forwards one of the host's ports, such as a

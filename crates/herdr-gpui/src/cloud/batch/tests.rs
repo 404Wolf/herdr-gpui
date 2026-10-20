@@ -32,7 +32,7 @@ fn settled(registry: &Registry, id: u64) -> BatchInfo {
 #[test]
 fn closing_the_question_unanswered_cancels_every_device() {
     let registry = Registry::default();
-    let pending = registry.open(BatchKind::Destroy, &[target("a"), target("b")]);
+    let pending = registry.open_destroy(&[target("a"), target("b")]);
     let id = pending.id();
     assert_eq!(registry.get(id).unwrap().phase, Phase::Confirming);
     drop(pending);
@@ -44,7 +44,7 @@ fn closing_the_question_unanswered_cancels_every_device() {
 #[test]
 fn a_confirmed_batch_is_done_once_every_device_settles() {
     let registry = Registry::default();
-    let pending = registry.open(BatchKind::Destroy, &[target("a"), target("b"), target("c")]);
+    let pending = registry.open_destroy(&[target("a"), target("b"), target("c")]);
     let (registry, id, targets) = pending.confirm().unwrap();
     assert_eq!(targets.len(), 3);
     destroy::start(&registry, id, targets, |target| match target.id.as_str() {
@@ -72,7 +72,7 @@ fn a_confirmed_batch_is_done_once_every_device_settles() {
 #[test]
 fn a_batch_answered_once_cannot_be_answered_again() {
     let registry = Registry::default();
-    let pending = registry.open(BatchKind::Destroy, &[target("a")]);
+    let pending = registry.open_destroy(&[target("a")]);
     let id = pending.id();
     registry.cancel(id);
     assert!(
@@ -80,7 +80,7 @@ fn a_batch_answered_once_cannot_be_answered_again() {
         "a cancelled batch never starts"
     );
     assert_eq!(registry.get(id).unwrap().phase, Phase::Cancelled);
-    let pending = registry.open(BatchKind::Destroy, &[target("a")]);
+    let pending = registry.open_destroy(&[target("a")]);
     let id = pending.id();
     let _ = pending.confirm().unwrap();
     registry.cancel(id);
@@ -90,10 +90,10 @@ fn a_batch_answered_once_cannot_be_answered_again() {
 #[test]
 fn only_the_newest_batches_are_kept_and_failures_are_bounded() {
     let registry = Registry::default();
-    let first = registry.open(BatchKind::Destroy, &[target("a")]).id();
+    let first = registry.open_destroy(&[target("a")]).id();
     let mut last = first;
     for _ in 0..KEPT {
-        last = registry.open(BatchKind::Destroy, &[target("a")]).id();
+        last = registry.open_destroy(&[target("a")]).id();
     }
     assert!(registry.get(first).is_none());
     assert_eq!(registry.all().len(), KEPT);

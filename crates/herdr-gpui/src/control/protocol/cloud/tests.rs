@@ -9,6 +9,7 @@ fn device(state: DeviceState) -> DeviceInfo {
         endpoint: "coder:w1".into(),
         label: "Build box".into(),
         state,
+        step: None,
         error: None,
     }
 }
@@ -38,6 +39,15 @@ fn cloud_requests_have_a_stable_wire_form() {
             wait_seconds: 30,
         },
         CloudOp::Batches,
+        CloudOp::Create(CreateOp {
+            provider: "coder".into(),
+            count: 10,
+            template: Some("dev".into()),
+            preset: None,
+            shape: Shape::Machine,
+            install: true,
+            setup: true,
+        }),
         CloudOp::Exec {
             device: "coder:w1".into(),
             command: vec!["git".into(), "push".into()],
@@ -153,4 +163,33 @@ fn a_command_s_answer_keeps_its_streams_apart() {
     assert!(text.contains(r#""kind":"exec""#), "{text}");
     assert!(text.contains(r#""stderr":"err""#), "{text}");
     assert_eq!(serde_json::from_str::<Response>(&text).unwrap(), response);
+}
+
+#[test]
+fn a_create_request_leaves_defaults_off_the_wire() {
+    let op = CloudOp::Create(CreateOp {
+        provider: "azure".into(),
+        count: 2,
+        template: None,
+        preset: None,
+        shape: Shape::Machine,
+        install: false,
+        setup: false,
+    });
+    let text = serde_json::to_string(&op).unwrap();
+    assert_eq!(
+        text,
+        r#"{"op":"create","provider":"azure","count":2,"install":false,"setup":false}"#
+    );
+    let sandbox: CloudOp = serde_json::from_str(
+        r#"{"op":"create","provider":"azure","count":1,"shape":"sandbox","install":true,"setup":true}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        sandbox,
+        CloudOp::Create(CreateOp {
+            shape: Shape::Sandbox,
+            ..
+        })
+    ));
 }

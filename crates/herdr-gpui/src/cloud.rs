@@ -20,7 +20,9 @@ pub(crate) use catalog::{SavedDevice, load, remove, rename, save};
 pub(crate) use command::with_command;
 pub(crate) use herdr_client::CloudProvider;
 pub(crate) use jobs::Jobs;
-pub(crate) use providers::{Deletion, connect, deletion, icon, name, noun, offer};
+pub(crate) use providers::{
+    Deletion, Shape, Spec, connect, deletion, icon, name, noun, offer, provision,
+};
 
 use std::{io, path::PathBuf};
 

@@ -70,8 +70,13 @@ pub(crate) struct MenuState {
     pub(super) open_link: Option<crate::terminal::ExternalUrl>,
     /// The batch the destroy-cloud-devices question is about. Dropping it
     /// unanswered cancels the batch.
+    /// The batch the create-cloud-machines question is about.
     #[cfg(feature = "cloud")]
-    pub(super) cloud_destroy: Option<crate::cloud::batch::Pending>,
+    pub(super) cloud_create:
+        Option<crate::cloud::batch::Pending<crate::cloud::batch::create::Creation>>,
+    #[cfg(feature = "cloud")]
+    pub(super) cloud_destroy:
+        Option<crate::cloud::batch::Pending<Vec<crate::cloud::batch::Target>>>,
     #[cfg(feature = "coder")]
     pub(super) coder: Option<super::devices::coder::Wizard>,
     pub(super) devices_scroll: ScrollHandle,
@@ -322,6 +327,8 @@ impl MenuState {
             open_checkout: None,
             open_link: None,
             #[cfg(feature = "cloud")]
+            cloud_create: None,
+            #[cfg(feature = "cloud")]
             cloud_destroy: None,
             #[cfg(feature = "coder")]
             coder: None,
@@ -397,6 +404,7 @@ impl MenuState {
         self.open_link = None;
         #[cfg(feature = "cloud")]
         {
+            self.cloud_create = None;
             self.cloud_destroy = None;
         }
         #[cfg(feature = "coder")]

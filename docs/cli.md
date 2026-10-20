@@ -140,6 +140,7 @@ Herdr UI** entry, which both Windows installers add, runs this command through
 | `cloud [list]` | Saved cloud machines (no app needed) |
 | `cloud add` | Open the settings that add one |
 | `cloud setup ID` | Run the `[cloud]` setup script on a saved machine again, in a new tab once the window shows it. `ID` is the machine ID from `cloud list`, its host ID, or its label |
+| `cloud create PROVIDER [--count N] [--template T] [--preset P] [--sandbox] [--no-install] [--no-setup]` | Ask in the window to create up to 16 machines; the user confirms there, once for all of them. Prints the batch to follow (below) |
 | `cloud exec ID [--timeout S] [--cwd DIR] -- COMMAND...` | Run a command on a saved machine through the app's connection to it, and print its output (below) |
 | `cloud destroy ID... \| --batch BATCH` | Ask in the window to delete saved machines at their providers and forget them; the user confirms there, once for all of them. Prints the batch to follow (below) |
 | `cloud wait BATCH [--timeout S]` | Each machine of a batch once all are settled, or after S seconds (default 60, at most 600) |
@@ -192,6 +193,29 @@ herdr-gpui config set cloud.setup '"git config --global pull.rebase true"'
 herdr-gpui config set cloud.coder.agents '[]'   # nothing extra on Coder
 herdr-gpui cloud setup herdr-tidy-lark-aa
 ```
+
+An agent that needs machines of its own asks for them with `cloud create`,
+then follows the batch with `cloud wait` until each is ready:
+
+```sh
+herdr-gpui cloud create coder --count 10 --template dev --json
+herdr-gpui cloud wait 3 --timeout 600 --json   # again while it exits 4
+```
+
+The window asks once, saying how many machines of which provider, how they
+are made, and that the provider bills each until it is destroyed. Once
+confirmed, each machine is made on its own, saved as a device, given Herdr
+when it lacks it (unless `--no-install`), and has the `[cloud]` setup script
+run on it in a login shell from its home directory, without a terminal
+(unless `--no-setup`). Only then is it `ready`; `cloud wait` shows each
+machine's step meanwhile, and its device ID once saved. A failed setup script
+fails the machine with the end of its output, but the machine stays saved;
+destroy it like any other. Coder takes `--template` and `--preset` by name
+(without them, the deployment's only template and its default preset);
+Azure makes a Container Apps sandbox with `--sandbox`. Boat and Railway make
+their machines one at a time. Providers are named by key or name: azure,
+boat, coder, daytona, railway. The device list keeps at most 64 cloud
+devices, counting those being made.
 
 `cloud exec` runs one command on a saved cloud machine, named as for
 `cloud setup`, through the same authenticated command the app connects with
@@ -254,20 +278,22 @@ herdr-gpui wait window            # also waits for the app to start
 
 ## What stays in the app
 
-Commands never bypass a confirmation. `cloud exec` asks none because it
-confirms nothing: it is the agent's own work, run on a machine the user
-saved. Restoring a checkpoint, teleporting a
+Commands never bypass a confirmation. Restoring a checkpoint, teleporting a
 worktree, fanning out a prompt, running a worktree script the app has not
-seen, destroying cloud machines, and adding a cloud machine open the app's
-own dialog (archiving a worktree has no command at all), already pointed at
-your checkout or the machines named, and the user confirms there. Nothing here installs,
-starts, stops, or upgrades Herdr, and `update` never installs the app.
+seen, creating or destroying cloud machines, and adding a cloud machine open
+the app's own dialog (archiving a worktree has no command at all), already
+pointed at your checkout or the machines named, and the user confirms there.
+`cloud exec` asks nothing because it confirms nothing: it is the agent's own
+work, run on a machine the user saved. Nothing here installs, starts, stops,
+or upgrades Herdr on this computer, and `update` never installs the app;
+`cloud create` installs Herdr only on the machines the user confirmed, as
+creating them in Settings does.
 
-Adding a device has no command either: the Add Device dialog runs it. Its
-setup workspace runs `herdr-gpui __device-setup-attach SOCKET`, an internal
-helper that shows the setup the app runs (see the Native Shell README's
-"Local Network access"); it is not a command to call yourself, and the socket
-it names is single use.
+Adding an SSH or local network device has no command: the Add Device dialog
+runs it. Its setup workspace runs `herdr-gpui __device-setup-attach SOCKET`,
+an internal helper that shows the setup the app runs (see the Native Shell
+README's "Local Network access"); it is not a command to call yourself, and
+the socket it names is single use.
 
 Scrollback search is not repeated here: `herdr pane read` covers it. Moving a
 window and capturing a whole window have no command because the app cannot

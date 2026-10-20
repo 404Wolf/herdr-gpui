@@ -4,6 +4,7 @@
 //! settled. Workers update it from their own threads, so it is shared behind
 //! a mutex; the window and the control server read it on the UI thread.
 
+pub(crate) mod create;
 pub(crate) mod destroy;
 
 use super::CloudProvider;
@@ -18,6 +19,29 @@ const KEPT: usize = 32;
 /// The longest failure kept for a device, in characters.
 const ERROR_LIMIT: usize = 500;
 
+/// Why a machine of a batch failed, besides its provider's own errors.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error(transparent)]
+    Exec(#[from] super::exec::Error),
+    #[error("{0} machines cannot be created from the command line.")]
+    NotOffered(&'static str),
+    #[error("{}", setup_message(*.code, .output))]
+    Setup { code: Option<i32>, output: String },
+}
+
+fn setup_message(code: Option<i32>, output: &str) -> String {
+    let ended = match code {
+        Some(code) => format!("The setup script exited {code}"),
+        None => "A signal ended the setup script".to_owned(),
+    };
+    if output.is_empty() {
+        format!("{ended}.")
+    } else {
+        format!("{ended}: {output}")
+    }
+}
+
 /// One saved device a batch acts on.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Target {
@@ -30,13 +54,14 @@ pub(crate) struct Target {
 }
 
 impl Target {
-    fn info(&self) -> DeviceInfo {
+    pub(crate) fn info(&self) -> DeviceInfo {
         DeviceInfo {
             provider: self.provider.key().to_owned(),
             id: self.id.clone(),
             endpoint: self.endpoint.clone(),
             label: self.label.clone(),
             state: DeviceState::Waiting,
+            step: None,
             error: None,
         }
     }
@@ -66,9 +91,9 @@ impl Registry {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// A new batch over `targets`, waiting for the user. The oldest batch
-    /// goes once more than [`KEPT`] are kept.
-    pub(crate) fn open(&self, kind: BatchKind, targets: &[Target]) -> Pending {
+    /// A new batch over `devices`, waiting for the user to accept `work`.
+    /// The oldest batch goes once more than [`KEPT`] are kept.
+    pub(crate) fn open<T>(&self, kind: BatchKind, devices: Vec<DeviceInfo>, work: T) -> Pending<T> {
         let mut inner = self.lock();
         inner.next += 1;
         let id = inner.next;
@@ -76,7 +101,7 @@ impl Registry {
             id,
             kind,
             phase: Phase::Confirming,
-            devices: targets.iter().map(Target::info).collect(),
+            devices,
         });
         while inner.batches.len() > KEPT {
             inner.batches.pop_front();
@@ -84,9 +109,14 @@ impl Registry {
         Pending {
             registry: self.clone(),
             id,
-            targets: targets.to_vec(),
-            answered: false,
+            work: Some(work),
         }
+    }
+
+    /// A batch destroying `targets`, waiting for the user.
+    pub(crate) fn open_destroy(&self, targets: &[Target]) -> Pending<Vec<Target>> {
+        let devices = targets.iter().map(Target::info).collect();
+        self.open(BatchKind::Destroy, devices, targets.to_vec())
     }
 
     pub(crate) fn get(&self, id: u64) -> Option<BatchInfo> {
@@ -95,6 +125,18 @@ impl Registry {
 
     pub(crate) fn all(&self) -> Vec<BatchInfo> {
         self.lock().batches.iter().cloned().collect()
+    }
+
+    /// Machines create batches are still making, or may make once the user
+    /// confirms, that are not saved yet.
+    pub(crate) fn creating(&self) -> usize {
+        self.lock()
+            .batches
+            .iter()
+            .filter(|batch| batch.kind == BatchKind::Create && !batch.phase.settled())
+            .flat_map(|batch| &batch.devices)
+            .filter(|device| !device.state.settled() && device.endpoint.is_empty())
+            .count()
     }
 
     /// Each kept batch's phase, cheaply, for the event log's every tick.
@@ -138,9 +180,9 @@ impl Registry {
         true
     }
 
-    /// Record device `index`'s state. The batch is done once every device
-    /// is settled.
-    pub(crate) fn update(&self, id: u64, index: usize, state: DeviceState, error: Option<&str>) {
+    /// Change device `index` with `change`. The batch is done once every
+    /// device is settled.
+    fn change(&self, id: u64, index: usize, change: impl FnOnce(&mut DeviceInfo)) {
         let mut inner = self.lock();
         let Some(batch) = inner.batch(id) else {
             return;
@@ -148,49 +190,76 @@ impl Registry {
         let Some(device) = batch.devices.get_mut(index) else {
             return;
         };
-        device.state = state;
-        device.error = error.map(|error| error.chars().take(ERROR_LIMIT).collect());
+        change(device);
         if batch.phase == Phase::Running
             && batch.devices.iter().all(|device| device.state.settled())
         {
             batch.phase = Phase::Done;
         }
     }
+
+    /// Record device `index`'s state, and why it failed.
+    pub(crate) fn update(&self, id: u64, index: usize, state: DeviceState, error: Option<&str>) {
+        self.change(id, index, |device| {
+            device.state = state;
+            device.step = None;
+            device.error = error.map(|error| error.chars().take(ERROR_LIMIT).collect());
+        });
+    }
+
+    /// Record what device `index` is doing now.
+    pub(crate) fn progress(&self, id: u64, index: usize, state: DeviceState, step: String) {
+        self.change(id, index, |device| {
+            device.state = state;
+            device.step = Some(step.chars().take(ERROR_LIMIT).collect());
+        });
+    }
+
+    /// Name device `index` once it is made and saved.
+    pub(crate) fn created(&self, id: u64, index: usize, target: &Target) {
+        self.change(id, index, |device| {
+            device.provider = target.provider.key().to_owned();
+            device.id.clone_from(&target.id);
+            device.endpoint.clone_from(&target.endpoint);
+            device.label.clone_from(&target.label);
+        });
+    }
 }
 
-/// A batch the window is asking the user about. Dropping it unanswered, as
-/// closing the dialog does, cancels the batch.
+/// A batch the window is asking the user about, with the work it would
+/// start. Dropping it unanswered, as closing the dialog does, cancels the
+/// batch.
 #[derive(Debug)]
-pub(crate) struct Pending {
+pub(crate) struct Pending<T> {
     registry: Registry,
     id: u64,
-    targets: Vec<Target>,
-    answered: bool,
+    /// Taken once the user answers.
+    work: Option<T>,
 }
 
-impl Pending {
+impl<T> Pending<T> {
     pub(crate) fn id(&self) -> u64 {
         self.id
     }
 
-    pub(crate) fn targets(&self) -> &[Target] {
-        &self.targets
+    /// What confirming starts.
+    pub(crate) fn work(&self) -> Option<&T> {
+        self.work.as_ref()
     }
 
-    /// The user accepted: the batch, its targets, and the registry to
-    /// report to, or `None` when the batch was already settled.
-    pub(crate) fn confirm(mut self) -> Option<(Registry, u64, Vec<Target>)> {
-        self.answered = true;
-        let targets = std::mem::take(&mut self.targets);
+    /// The user accepted: the registry to report to, the batch, and its
+    /// work, or `None` when the batch was already settled.
+    pub(crate) fn confirm(mut self) -> Option<(Registry, u64, T)> {
+        let work = self.work.take()?;
         self.registry
             .confirm(self.id)
-            .then(|| (self.registry.clone(), self.id, targets))
+            .then(|| (self.registry.clone(), self.id, work))
     }
 }
 
-impl Drop for Pending {
+impl<T> Drop for Pending<T> {
     fn drop(&mut self) {
-        if !self.answered {
+        if self.work.is_some() {
             self.registry.cancel(self.id);
         }
     }

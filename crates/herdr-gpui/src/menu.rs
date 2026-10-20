@@ -6,6 +6,8 @@
 mod checkpoints;
 mod chrome;
 #[cfg(feature = "cloud")]
+mod cloud_create;
+#[cfg(feature = "cloud")]
 mod cloud_destroy;
 mod colors;
 mod devices;
@@ -66,14 +68,14 @@ use page::WorkspaceMenuAction;
 use state::Submission;
 use workspace::WorkspaceTarget;
 
-/// A build without cloud providers never asks to destroy one.
+/// A build without cloud providers never asks to create or destroy one.
 #[cfg(not(feature = "cloud"))]
 impl crate::HerdrWindow {
-    fn destroy_cloud_open(&self) -> bool {
+    fn cloud_batch_open(&self) -> bool {
         false
     }
 
-    fn destroy_cloud_page(&self, _: &mut gpui::Context<Self>) -> Option<gpui::Div> {
+    fn cloud_batch_page(&self, _: &mut gpui::Context<Self>) -> Option<gpui::Div> {
         None
     }
 }

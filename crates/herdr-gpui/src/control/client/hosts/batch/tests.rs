@@ -9,6 +9,7 @@ fn device(label: &str, state: DeviceState, error: Option<&str>) -> DeviceInfo {
         endpoint: format!("coder:{}", label.to_lowercase()),
         label: label.into(),
         state,
+        step: None,
         error: error.map(str::to_owned),
     }
 }
@@ -49,4 +50,23 @@ fn a_batch_reads_one_device_per_line() {
          Follow it with `herdr-gpui cloud wait 3`."
     );
     assert!(text(&asking).starts_with("Batch 3: waiting for the user to confirm\n"));
+}
+
+#[test]
+fn a_create_batch_names_devices_before_they_exist() {
+    let mut creating = device("New Coder workspace 1", DeviceState::Creating, None);
+    creating.endpoint = String::new();
+    creating.step = Some("Building (pending)…".into());
+    let mut made = batch(
+        Phase::Running,
+        vec![creating, device("herdr-a", DeviceState::SettingUp, None)],
+    );
+    made.kind = BatchKind::Create;
+    assert_eq!(
+        text(&made),
+        "Batch 3: running\n\
+         New Coder workspace 1: creating, Building (pending)…\n\
+         herdr-a (coder:herdr-a): running the setup script"
+    );
+    assert!(asked_text(&made).starts_with("Asked in Herdr UI to create 2 devices as batch 3;"));
 }

@@ -7,7 +7,7 @@ use super::Page;
 use crate::{
     HerdrWindow,
     cloud::batch::{Registry, Target, destroy},
-    control::batch::{BatchInfo, BatchKind, DeviceState},
+    control::batch::{BatchInfo, DeviceState},
 };
 use gpui::{prelude::*, *};
 use std::time::Duration;
@@ -16,15 +16,19 @@ use std::time::Duration;
 const FOLLOW: Duration = Duration::from_millis(500);
 
 impl HerdrWindow {
-    /// Whether the question is open, for the menu's layout.
-    pub(in crate::menu) fn destroy_cloud_open(&self) -> bool {
-        self.menu.page == Some(Page::DestroyCloud)
+    /// Whether a cloud batch question (create or destroy) is open, for the
+    /// menu's layout.
+    pub(in crate::menu) fn cloud_batch_open(&self) -> bool {
+        matches!(self.menu.page, Some(Page::CreateCloud | Page::DestroyCloud))
     }
 
-    /// The question's body, while it is open.
-    pub(in crate::menu) fn destroy_cloud_page(&self, cx: &mut Context<Self>) -> Option<Div> {
-        self.destroy_cloud_open()
-            .then(|| self.render_destroy_cloud(cx))
+    /// The open cloud batch question's body.
+    pub(in crate::menu) fn cloud_batch_page(&self, cx: &mut Context<Self>) -> Option<Div> {
+        match self.menu.page {
+            Some(Page::CreateCloud) => Some(self.render_create_cloud(cx)),
+            Some(Page::DestroyCloud) => Some(self.render_destroy_cloud(cx)),
+            _ => None,
+        }
     }
 
     /// Asks to destroy `targets`, unless another page holds the window; the
@@ -38,9 +42,7 @@ impl HerdrWindow {
         if self.menu.page.is_some() || !self.open_menu(window, cx) {
             return None;
         }
-        let pending = cx
-            .default_global::<Registry>()
-            .open(BatchKind::Destroy, targets);
+        let pending = cx.default_global::<Registry>().open_destroy(targets);
         let id = pending.id();
         self.menu.cloud_destroy = Some(pending);
         self.menu.page = Some(Page::DestroyCloud);
@@ -112,7 +114,7 @@ impl HerdrWindow {
         let Some(pending) = &self.menu.cloud_destroy else {
             return div();
         };
-        let targets = pending.targets();
+        let targets = pending.work().map_or(&[][..], Vec::as_slice);
         let rows = targets.iter().enumerate().map(|(index, target)| {
             div()
                 .debug_selector(move || format!("destroy-cloud-device-{index}"))

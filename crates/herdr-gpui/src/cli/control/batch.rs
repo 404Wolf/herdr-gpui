@@ -1,10 +1,16 @@
-//! `cloud destroy`, `cloud wait`, and `cloud batches`: saved cloud devices
-//! handled in batches, which an agent follows until each machine is settled.
+//! `cloud create`, `cloud destroy`, `cloud wait`, and `cloud batches`: cloud
+//! machines handled in batches, which an agent follows until each machine is
+//! settled.
 use super::{Args, CliError, MAX_WAIT};
-use crate::{cli::args::utf8, control::batch::MAX_DEVICES};
+use crate::{
+    cli::args::utf8,
+    control::batch::{CreateOp, MAX_CREATE, MAX_DEVICES, Shape},
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BatchCommand {
+    /// Ask in the window to create machines.
+    Create(CreateOp),
     /// Ask in the window to destroy saved devices: the ones named, and the
     /// ones a batch holds.
     Destroy {
@@ -20,6 +26,19 @@ pub enum BatchCommand {
 /// The command `verb` names, or `None` when it is not one of these.
 pub(super) fn parse(verb: &str, args: &mut Args) -> Result<Option<BatchCommand>, CliError> {
     Ok(Some(match verb {
+        "create" => BatchCommand::Create(CreateOp {
+            count: args.number("--count", 1..=MAX_CREATE)?.unwrap_or(1),
+            template: args.text_option("--template")?,
+            preset: args.text_option("--preset")?,
+            shape: if args.flag("--sandbox") {
+                Shape::Sandbox
+            } else {
+                Shape::Machine
+            },
+            install: !args.flag("--no-install"),
+            setup: !args.flag("--no-setup"),
+            provider: args.required_text("PROVIDER")?,
+        }),
         "destroy" => {
             let batch = args.number("--batch", 1..=u64::MAX)?;
             let mut devices = Vec::new();

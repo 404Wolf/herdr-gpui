@@ -1,14 +1,55 @@
-//! Saved cloud machines an agent works with: running a command on one,
-//! destroying several after one confirmation in the window, and following
-//! what each batch did to every machine.
+//! Cloud machines an agent works with: creating several and destroying them
+//! after one confirmation in the window each, running a command on one, and
+//! following what each batch did to every machine.
 use serde::{Deserialize, Serialize};
 
 /// The most devices one batch holds, as many as the device list keeps.
 pub(crate) const MAX_DEVICES: usize = 64;
+/// The most machines one `cloud create` makes.
+pub(crate) const MAX_CREATE: u32 = 16;
+
+/// What kind of machine a provider with more than one makes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Shape {
+    /// The provider's usual machine, such as an Azure VM.
+    #[default]
+    Machine,
+    /// A lighter sandbox, such as an Azure Container Apps session.
+    Sandbox,
+}
+
+fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
+}
+
+/// New machines `cloud create` asks for.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateOp {
+    /// The provider's key or name, such as `coder`.
+    pub provider: String,
+    pub count: u32,
+    /// Coder: the template by name or ID; absent, the deployment's only one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<String>,
+    /// Coder: the template's preset by name; absent, its default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset: Option<String>,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub shape: Shape,
+    /// Whether Herdr's installer may run on a machine that lacks Herdr.
+    pub install: bool,
+    /// Whether the `[cloud]` setup script runs before a machine is ready.
+    pub setup: bool,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum CloudOp {
+    /// Ask in the window to create machines. Nothing is created until the
+    /// user confirms there.
+    Create(CreateOp),
     /// Ask in the window to destroy saved cloud devices: the ones `devices`
     /// names (endpoint ID, machine ID, or label), and the ones batch `batch`
     /// holds. Nothing is deleted until the user confirms there.
@@ -39,7 +80,7 @@ impl CloudOp {
     pub(crate) fn wait_seconds(&self) -> u64 {
         match self {
             Self::Wait { wait_seconds, .. } | Self::Exec { wait_seconds, .. } => *wait_seconds,
-            Self::Destroy { .. } | Self::Batches => 0,
+            Self::Create(_) | Self::Destroy { .. } | Self::Batches => 0,
         }
     }
 }
@@ -47,6 +88,7 @@ impl CloudOp {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum BatchKind {
+    Create,
     Destroy,
 }
 
@@ -84,6 +126,12 @@ impl Phase {
 pub(crate) enum DeviceState {
     /// Not started: the batch waits for the user.
     Waiting,
+    /// Being made, until it is saved as a device.
+    Creating,
+    /// Saved, and running the `[cloud]` setup script.
+    SettingUp,
+    /// Made, saved, and set up: ready for work.
+    Ready,
     Destroying,
     /// Deleted at its provider, and forgotten here.
     Destroyed,
@@ -96,7 +144,10 @@ pub(crate) enum DeviceState {
 impl DeviceState {
     #[cfg(feature = "cloud")]
     pub(crate) fn settled(self) -> bool {
-        !matches!(self, Self::Waiting | Self::Destroying)
+        !matches!(
+            self,
+            Self::Waiting | Self::Creating | Self::SettingUp | Self::Destroying
+        )
     }
 
     /// Settled without what was asked happening.
@@ -115,6 +166,9 @@ pub(crate) struct DeviceInfo {
     pub endpoint: String,
     pub label: String,
     pub state: DeviceState,
+    /// What it is doing now, for a person, such as "Building (pending)…".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<String>,
     /// Why it failed, for a person.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,

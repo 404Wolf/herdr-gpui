@@ -2,9 +2,7 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
 use crate::{
-    cloud::CloudProvider,
-    control::protocol::cloud::{BatchKind, Phase},
-    menu::Page,
+    cloud::CloudProvider, control::protocol::cloud::Phase, menu::Page,
     sidebar::layout_tests::fixture_window,
 };
 use gpui::{Entity, TestAppContext, VisualTestContext};
@@ -90,14 +88,12 @@ fn a_batch_names_the_devices_still_saved(cx: &mut TestAppContext) {
                 endpoint: format!("{}:{id}", provider.key()),
                 label: id.into(),
             };
-            let id = registry
-                .open(BatchKind::Destroy, &[target("w1"), target("gone")])
-                .id();
+            let id = registry.open_destroy(&[target("w1"), target("gone")]).id();
             let found = targets(view, &[], Some(id), &registry).unwrap();
             assert_eq!(endpoints(&found), ["w1"]);
             let unknown = targets(view, &[], Some(id + 1), &registry).unwrap_err();
             assert_eq!(error_code(&unknown), Some(ErrorCode::NotFound));
-            let only_gone = registry.open(BatchKind::Destroy, &[target("gone")]).id();
+            let only_gone = registry.open_destroy(&[target("gone")]).id();
             let empty = targets(view, &[], Some(only_gone), &registry).unwrap_err();
             assert_eq!(error_code(&empty), Some(ErrorCode::NotFound));
         })
