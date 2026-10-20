@@ -600,16 +600,12 @@ impl HerdrWindow {
                 };
                 let request = request.clone();
                 match &result {
-                    Ok(()) => tracing::info!(category = "device_setup", "Device saved"),
+                    Ok(_) => tracing::info!(category = "device_setup", "Device saved"),
                     Err(_) => tracing::warn!(category = "device_setup", "Device save failed"),
                 }
                 let error = match result {
-                    Ok(()) => {
-                        // Saved: the catalog now refuses this host by itself.
-                        if let Some(form) = &mut this.menu.device_setup {
-                            form.step = Step::Saved;
-                        }
-                        cx.notify();
+                    Ok(outcome) => {
+                        this.device_save_succeeded(outcome, cx);
                         return;
                     }
                     Err(error) => error,
@@ -629,6 +625,22 @@ impl HerdrWindow {
                 cx.notify();
             });
         }));
+        cx.notify();
+    }
+
+    pub(super) fn device_save_succeeded(
+        &mut self,
+        outcome: setup::SaveOutcome,
+        cx: &mut Context<Self>,
+    ) {
+        // Saved: the catalog now refuses this host by itself. The warning
+        // survives dismissal of the dialog and requires no restart approval.
+        if let Some(form) = &mut self.menu.device_setup {
+            form.step = Step::Saved;
+        }
+        if let Some(warning) = outcome.warning() {
+            self.show_flash(crate::window::Flash::warning(warning), cx);
+        }
         cx.notify();
     }
 

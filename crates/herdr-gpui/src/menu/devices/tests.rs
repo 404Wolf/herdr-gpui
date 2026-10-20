@@ -18,6 +18,7 @@ mod local_network;
 mod rail;
 #[cfg(unix)]
 mod setup_workspace;
+mod version_warning;
 
 #[test]
 fn only_a_present_herdr_is_saved_without_a_terminal() {
