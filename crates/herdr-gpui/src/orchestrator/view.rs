@@ -574,8 +574,12 @@ impl OrchestratorView {
     fn select_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {
         self.tab = tab;
         self.selected = None;
+        // The open item belongs to the list left behind.
+        self.detail = None;
+        self.merge_open = false;
         self.sort_open = false;
         self.refresh_rows();
+        self.follow_pull_request();
         cx.notify();
     }
 

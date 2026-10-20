@@ -1,7 +1,6 @@
 //! A section's list: its column heads and virtualized lines, headings
-//! between rows of issues or pull requests, each row a click to select and a
-//! double-click to open. While an item is open beside the list, rows keep
-//! only the columns that fit.
+//! between rows of issues or pull requests, each row a click to open. While
+//! an item is open beside the list, rows keep only the columns that fit.
 
 use super::{
     OrchestratorView,
@@ -310,7 +309,7 @@ impl OrchestratorView {
             .into_any_element()
     }
 
-    /// A row's shell: selection, click to select, double-click to open.
+    /// A row's shell: selection, and a click to open it.
     /// `item` names the row for a screen reader by its identifier, title, and
     /// state.
     fn row_shell(
@@ -345,13 +344,9 @@ impl OrchestratorView {
             .when(selected || open, |el| el.bg(rgb(theme.primary_wash())))
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                cx.listener(move |this, _: &MouseDownEvent, _, cx| {
                     this.selected = Some(key.clone());
-                    this.activate(&key);
-                    if event.click_count == 2 {
-                        this.open_detail(key.clone(), cx);
-                    }
-                    cx.notify();
+                    this.open_detail(key.clone(), cx);
                 }),
             )
     }
