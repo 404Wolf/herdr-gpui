@@ -269,7 +269,7 @@ project_roots = []
 # cycle_windows = "cmd-`"
 # close_window = "cmd-alt-shift-w"
 # Unbound by default: themes, reconnect, logs, about, worktree_notes,
-# edit_worktree_note.
+# edit_worktree_note, review_changes, git_menu.
 
 # What the focused pane receives instead of a keystroke, as Ghostty's text:
 # binds do. The value is a key a terminal can receive (ctrl-a, home, alt-b,

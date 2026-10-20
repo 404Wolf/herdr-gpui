@@ -2599,7 +2599,9 @@ them to the agent that opened it, so it can change the page.
 **Review Changes** in a group's **…** menu opens a review tab on the focused
 local checkout's changes, with untracked text files as wholly added,
 and lets you send review notes to the agent that made them, like inline
-comments on a pull request.
+comments on a pull request. It has no default key; bind `review_changes`
+under `[keybindings]` to open it from the keyboard, and `git_menu` to open
+the titlebar's Git menu where its button would.
 
 - The review is a tab like a browser tab: it sits in the group in use, can be
   moved to a group of its own beside the terminal, take the whole window, or

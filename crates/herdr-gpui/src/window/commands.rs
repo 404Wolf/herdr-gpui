@@ -297,6 +297,16 @@ impl HerdrWindow {
                 self.open_orchestrator(window, cx);
                 return;
             }
+            Command::ReviewChanges => {
+                self.open_review(window, cx);
+                return;
+            }
+            Command::GitMenu => {
+                // Where the titlebar's Git button last painted, so the
+                // shortcut opens the menu where clicking the button does.
+                self.open_git_menu(self.git_anchor.get(), window, cx);
+                return;
+            }
             Command::SplitEditor => {
                 self.split_active_group(window, cx);
                 return;
