@@ -42,7 +42,9 @@ fn daemon_metadata_still_wins_and_remote_devices_still_require_it() {
     let cwd = std::env::temp_dir().join("repo");
     let cwd = cwd.to_str().unwrap();
     let key = std::env::temp_dir().join("other/.git");
-    let mut known = workspace(cwd, Some("main"));
+    // A subdirectory of the checkout the metadata names, as Herdr opens it.
+    let inside = std::env::temp_dir().join("other/src");
+    let mut known = workspace(inside.to_str().unwrap(), Some("main"));
     known.worktree = Some(ClientShellWorktree {
         key: key.to_str().unwrap().into(),
         label: "other".into(),

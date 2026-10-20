@@ -27,8 +27,6 @@ pub(super) enum Unavailable {
     MainCheckoutClosed,
     /// Herdr removes only linked worktrees, never a repository's main checkout.
     MainCheckout,
-    /// The main checkout's shell moved out of the repository Herdr keeps for it.
-    LeftCheckout,
 }
 
 impl Unavailable {
@@ -39,7 +37,6 @@ impl Unavailable {
             Self::NotGit => "This workspace is not a Git repository",
             Self::MainCheckoutClosed => "Open this repository's main checkout to open a worktree",
             Self::MainCheckout => "Only a linked worktree can be removed, not a main checkout",
-            Self::LeftCheckout => super::workspace::LEFT_CHECKOUT,
         }
     }
 }
@@ -63,9 +60,6 @@ impl WorktreeShortcut {
             .ok_or(Unavailable::NoWorkspace)?;
         // The same tests the menu uses to offer each row.
         let target = WorkspaceTarget::new(snapshot, focused);
-        if self == Self::Open && target.left_checkout {
-            return Err(Unavailable::LeftCheckout);
-        }
         if !target.can_create() && !target.can_delete() {
             return Err(Unavailable::NotGit);
         }

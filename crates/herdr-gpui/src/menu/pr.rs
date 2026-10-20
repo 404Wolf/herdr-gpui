@@ -42,10 +42,7 @@ impl HerdrWindow {
             if !self.workspace_pr_target_current() {
                 return Err(crate::Error::StaleWorkspace);
             }
-            let workspace = self
-                .menu_target_workspace()
-                .ok_or(crate::Error::StaleWorkspace)?;
-            workspace_input(workspace, &origin)
+            self.menu_target_input(&origin)
         })();
         match result {
             Ok(input) => {
@@ -115,9 +112,29 @@ impl HerdrWindow {
             .filter(|snapshot| snapshot.boot_id == target.boot_id)?;
         snapshot.workspaces.iter().find(|workspace| {
             workspace.workspace_id == target.id
-                && workspace.worktree == target.worktree
+                && super::workspace::known_worktree(workspace) == target.worktree
                 && workspace.branch == target.branch
         })
+    }
+
+    /// The repository lookup for the menu's workspace, read through what the
+    /// menu trusts of it: a main checkout whose shell left the repository
+    /// Herdr keeps for it is looked up by the directory its requests name.
+    pub(super) fn menu_target_input(&self, origin: &Origin) -> crate::Result<Input> {
+        let target = self
+            .menu
+            .target
+            .as_ref()
+            .ok_or(crate::Error::StaleWorkspace)?;
+        let mut workspace = self
+            .menu_target_workspace()
+            .ok_or(crate::Error::StaleWorkspace)?
+            .clone();
+        workspace.worktree.clone_from(&target.worktree);
+        if let super::workspace::Source::Directory(directory) = &target.source {
+            workspace.new_workspace_cwd.clone_from(directory);
+        }
+        workspace_input(&workspace, origin)
     }
 
     pub(crate) fn update_workspace_pr(&mut self) -> bool {
