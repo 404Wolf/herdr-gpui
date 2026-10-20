@@ -274,7 +274,7 @@ pub(super) fn configured_lines(
         if agent_here && let Some(icon) = agent_icon {
             text = text.child(agent_mark(key, icon, agent_size, icon_color, font));
         }
-        if index == 0 && !matches!(workspace_icon, RowIcon::None) {
+        if index == 0 && matches!(workspace_icon, RowIcon::Mark | RowIcon::Avatar(_)) {
             text = text.child(std::mem::replace(&mut workspace_icon, RowIcon::None).slot(
                 key,
                 font,

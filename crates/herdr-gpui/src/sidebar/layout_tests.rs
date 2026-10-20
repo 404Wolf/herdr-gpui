@@ -59,6 +59,8 @@ mod palette_header;
 #[cfg(test)]
 mod picker_scroll;
 #[cfg(test)]
+mod plain_folder_icon;
+#[cfg(test)]
 mod probe_bar;
 #[cfg(test)]
 mod probe_scale;

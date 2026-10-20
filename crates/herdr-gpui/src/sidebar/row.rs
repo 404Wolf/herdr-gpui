@@ -29,11 +29,13 @@ pub(super) use configured::{
 };
 
 /// What a row shows in its leading icon slot: a repository owner's avatar when
-/// one is cached, the GitHub mark while it is not, and nothing for a row that
-/// reserves no slot at all: a child row, or any row while the repository
-/// icons are turned off.
+/// one is cached, the GitHub mark while it is not, an empty slot for a folder
+/// that is not a Git checkout, so its name lines up with the rows around it,
+/// and nothing for a row that reserves no slot at all: a child row, or any
+/// row while the repository icons are turned off.
 pub(super) enum RowIcon {
     None,
+    Blank,
     Mark,
     Avatar(Arc<Image>),
 }
@@ -55,7 +57,7 @@ impl RowIcon {
     /// avatar still loading or failing to decode shows the mark instead.
     pub(super) fn element(self, color: u32) -> AnyElement {
         match self {
-            Self::None => Empty.into_any_element(),
+            Self::None | Self::Blank => Empty.into_any_element(),
             Self::Mark => github_mark(color).size_full().into_any_element(),
             Self::Avatar(image) => img(image)
                 .size_full()
@@ -560,9 +562,10 @@ pub(super) fn row(
                                 .when_some(agent_first, |line, icon| {
                                     line.child(agent_mark(key, icon, agent_size, name_color, font))
                                 })
-                                .when(!matches!(workspace_icon, RowIcon::None), |title| {
-                                    title.child(workspace_icon.slot(key, font, muted))
-                                })
+                                .when(
+                                    matches!(workspace_icon, RowIcon::Mark | RowIcon::Avatar(_)),
+                                    |title| title.child(workspace_icon.slot(key, font, muted)),
+                                )
                                 .child(
                                     name_line(
                                         name,
