@@ -1,7 +1,7 @@
-//! Who a pipe belongs to. The control pipe's name lives in a namespace every
-//! local user shares, so the server restricts it to the user it runs as and
-//! the client checks the pipe it reached is owned by that same user before
-//! sending anything.
+//! Who a pipe belongs to. Pipe names live in a namespace every local user
+//! shares, so a server restricts its pipe to the user it runs as and a client
+//! checks the pipe it reached is owned by that same user before sending
+//! anything.
 //!
 //! Neither the standard library nor `interprocess` reads a token's user or a
 //! kernel object's owner, so both go through `windows-sys`. Each `unsafe`
@@ -61,7 +61,7 @@ unsafe fn sid_string(sid: PSID) -> io::Result<String> {
 
 /// The SID of the user this process runs as. A process token's user never
 /// changes, so it is read once and kept.
-pub(in crate::control::socket) fn user_sid() -> io::Result<String> {
+pub fn user_sid() -> io::Result<String> {
     static SID: OnceLock<String> = OnceLock::new();
     if let Some(sid) = SID.get() {
         return Ok(sid.clone());
@@ -116,7 +116,7 @@ fn read_user_sid() -> io::Result<String> {
 
 /// The SID of the user who owns the kernel object behind `handle`. The
 /// handle must allow `READ_CONTROL`, which a pipe opened for reading does.
-pub(in crate::control::socket) fn owner_sid(handle: BorrowedHandle<'_>) -> io::Result<String> {
+pub fn owner_sid(handle: BorrowedHandle<'_>) -> io::Result<String> {
     let mut owner: PSID = ptr::null_mut();
     let mut descriptor: PSECURITY_DESCRIPTOR = ptr::null_mut();
     // SAFETY: the handle is borrowed for the call; the out pointers are live,

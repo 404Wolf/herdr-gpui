@@ -1,5 +1,5 @@
 [workspace]
-members  = ["crates/embed-resource", "crates/herdr-client", "crates/herdr-gpui", "crates/herdr-gpui-launcher", "crates/herdr-protocol"]
+members  = ["crates/embed-resource", "crates/herdr-acp", "crates/herdr-chat-protocol", "crates/herdr-client", "crates/herdr-gpui", "crates/herdr-gpui-launcher", "crates/herdr-protocol"]
 resolver = "2"
 
 [workspace.package]
@@ -22,6 +22,8 @@ unwrap_used = "deny"
 
 [workspace.dependencies]
 url = "2"
+# ACP wire types for herdr-acp; its own transport, so no async runtime.
+acp                  = { default-features = false, package = "agent-client-protocol-schema", version = "1.12" }
 anyhow               = "1"
 aes                  = "0.9.3"
 ammonia              = "4.2.1"
@@ -54,6 +56,7 @@ gpui_platform        = { package = "gpui-pre-platform", version = "=0.3.6" }
 gix                  = { default-features = false, features = ["sha1"], version = "0.89" }
 # The web views behind browser tabs; `browser::page` lays them out in the window.
 wry                  = { package = "lb-wry", version = "=0.53.3" }
+herdr-chat-protocol  = { path = "crates/herdr-chat-protocol" }
 herdr-client         = { path = "crates/herdr-client" }
 herdr-protocol       = { path = "crates/herdr-protocol" }
 interprocess         = "2.4.2"
@@ -84,6 +87,9 @@ objc2-web-kit        = { default-features = false, features = ["WKSnapshotConfig
 # Asks for Dock badge permission; the version GPUI's macOS platform already links.
 objc2-user-notifications ={ default-features = false, features = ["UNUserNotificationCenter", "block2", "std"], version = "0.3.2" }
 raw-window-handle    = "0.6"
+# herdr-acp's in-pane chat view.
+ratatui              = { default-features = false, features = ["crossterm"], version = "0.30" }
+crossterm            = "0.29"
 # TLS for the Azure sandbox exec stream, with the ring provider and roots
 # ureq already links.
 rustls               = { default-features = false, features = ["ring", "std", "tls12"], version = "0.23" }

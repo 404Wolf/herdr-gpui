@@ -79,6 +79,9 @@ fn family(name: &str) -> &'static str {
         "review" => {
             "herdr-gpui review [open]\n    Open the review of the caller's workspace's uncommitted changes."
         }
+        "chat" => {
+            "herdr-gpui chat [status]\n    The window's herdr-acp chat panes on a local host: pane, agent, status,\n    and whether the native chat view or the terminal shows. Exits 4 when\n    there are none.\nherdr-gpui chat show|hide|toggle [--pane ID]\n    Show the native chat view over the pane, or its terminal, for this\n    window. The pane is the caller's own, else the focused one. Exits 5 when\n    it runs no chat the window can show.\nherdr-gpui chat new AGENT [--pane ID]\n    Open a tab running a herdr-acp chat with AGENT (claude, codex, copilot,\n    gemini, or opencode) in the workspace and folder of the pane, else the\n    caller's own. The chat view attaches once the program starts. Exits 8\n    when herdr-acp is missing or the host is not this machine."
+        }
         "notes" => {
             "herdr-gpui notes [list]\n    Every worktree note, most recently edited first.\nherdr-gpui notes get|clear\nherdr-gpui notes set TEXT...\n    The note on the caller's checkout (its repository and branch), or the\n    focused workspace's outside a Herdr pane. Notes are one line of at most\n    500 characters. `list` and `get` exit 4 when there is none."
         }

@@ -2842,6 +2842,43 @@ mkdir -p ~/.claude/skills/herdr-gpui-browser
 herdr-gpui browser skill > ~/.claude/skills/herdr-gpui-browser/SKILL.md
 ```
 
+## Chats
+
+An agent can run as a chat instead of in its own terminal interface:
+`herdr-acp`, a program shipped beside the app, talks to the agent through the
+[Agent Client Protocol](https://agentclientprotocol.com) inside an ordinary
+Herdr pane and draws the conversation there, and the app draws the same
+conversation natively over that pane. The program is the agent's only client,
+so the Herdr TUI, a plain terminal, and every app window see one conversation.
+
+**Starting one.** A group's **…** menu lists **New Chat** with one row per
+agent `herdr-acp` knows (Claude, Codex, Copilot, Gemini, OpenCode). A row
+opens a tab named after the agent in the focused workspace, in the focused
+pane's folder, and runs the program there; `herdr-gpui chat new AGENT` does
+the same from a pane. The rows show once the app has found `herdr-acp`,
+first beside its own executable (the app bundle, `cargo build`'s target
+directory, or where `just install` puts both) and then on the login shell's
+`PATH`, and only for the Herdr on this machine. Each agent's ACP command has
+to be installed: `claude-agent-acp`, `codex-acp` (both else run through
+`npx`), `copilot --acp`, `gemini --acp`, or `opencode acp`. The program can
+also be started by hand in any pane: `herdr-acp claude`.
+
+**The chat view.** Over a chat's pane the app shows the agent's messages,
+reasoning, tool calls with their diffs, the plan, permission requests to
+answer, queued prompts, and a prompt box. The header shows how long the
+running turn has taken, how full the context window is (yellow past 75%, red
+past 90%) and what the session has cost when the agent reports it, stops a
+turn, and switches back to the pane's terminal (`herdr-gpui chat
+show|hide|toggle`). Under it, a button per setting the agent offers picks its
+model, thinking level, and mode; the gear lists the rest, such as toggles.
+Each finished turn leaves a line with its duration and tokens, and an agent
+message copies with the button under it. In the prompt box `/` completes the
+agent's commands (Tab or a click takes one) and Up recalls earlier prompts. Both views stay live: a prompt or an answer from either
+shows in both, and the first answer to a permission request wins. The view
+attaches through a private local endpoint, a socket on Unix and a named pipe
+on Windows reachable by this user alone, and is never offered for SSH, WSL,
+or cloud hosts. See `crates/herdr-acp/README.md` for the program itself.
+
 ## VS Code
 
 VS Code opens as a tab of a space's editor groups, like a browser tab, for

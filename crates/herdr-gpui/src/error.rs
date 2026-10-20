@@ -45,6 +45,8 @@ pub enum Error {
     CaffeineThread(#[source] io::Error),
     #[error("The keep-awake thread stopped; the display may sleep")]
     CaffeineWorkerStopped,
+    #[error(transparent)]
+    Chat(#[from] crate::chat::Error),
     #[error("That checkpoint was taken on another branch. Check that branch out to restore it.")]
     CheckpointBranch,
     #[error("A merge, rebase, cherry-pick, or revert is in progress. Finish or abort it first.")]

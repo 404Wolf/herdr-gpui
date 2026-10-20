@@ -3,6 +3,7 @@
 //! or, with `--json`, as one JSON document.
 mod app;
 mod browser;
+mod chat;
 mod events;
 mod help;
 mod hosts;
@@ -406,6 +407,7 @@ pub(crate) fn run(invocation: Invocation) -> ExitCode {
         ControlCommand::Devices => tabs::devices(&context),
         ControlCommand::Orchestrator(command) => tabs::orchestrator(command, &context),
         ControlCommand::Review => tabs::review(&context),
+        ControlCommand::Chat(command) => chat::chat(command, &context),
         ControlCommand::Notes(command) => work::notes(command, &context),
         ControlCommand::Feedback { wait } => browser::feedback(wait, &context),
         ControlCommand::Checkpoint(command) => work::checkpoint(command, &context),

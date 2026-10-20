@@ -4,6 +4,7 @@
 //! these cover what only this client knows or draws.
 mod app;
 mod browser;
+mod chat;
 mod hosts;
 mod settings;
 mod tabs;
@@ -14,6 +15,7 @@ pub(crate) use super::args::Args;
 pub use crate::control::{Cursor, EventKind, FontSize, Script, Size, Sound, Switch, ZoomChange};
 pub use app::{AppCommand, UiCommand, WindowCommand};
 pub use browser::{BrowserCommand, Placement};
+pub use chat::ChatCommand;
 pub use hosts::{CloudCommand, HostCommand, PortsCommand, PrCommand, SecurityCommand};
 pub use settings::{
     CaffeineCommand, ConfigCommand, IntegrationsCommand, KeybindsCommand, SoundCommand,
@@ -54,6 +56,7 @@ pub enum ControlCommand {
     Devices,
     Orchestrator(OrchestratorCommand),
     Review,
+    Chat(ChatCommand),
     Notes(NotesCommand),
     /// Every kind of note the user sent this pane: page, review, terminal.
     Feedback {
@@ -150,6 +153,10 @@ pub const FAMILIES: &[(&str, &str)] = &[
         "A repository's issues, pull requests, and runs",
     ),
     ("review", "Open the review of the uncommitted changes"),
+    (
+        "chat",
+        "Native views of herdr-acp chats: start one, list them, show or hide one",
+    ),
     ("notes", "Notes kept on worktrees"),
     (
         "feedback",
@@ -299,6 +306,7 @@ fn command(family: &'static str, args: &mut Args) -> Result<ControlCommand, CliE
             tabs::open_only(args)?;
             ControlCommand::Review
         }
+        "chat" => ControlCommand::Chat(chat::chat(args)?),
         "notes" => ControlCommand::Notes(work::notes(args)?),
         "feedback" => ControlCommand::Feedback {
             wait: wait_option(args, "--wait")?,

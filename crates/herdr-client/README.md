@@ -151,6 +151,17 @@ stdin and stdout, overlapped on this end, with the same deadlines; the standard 
 If adapting a typed error to that callback, use
 `io::Error::new(error.kind(), error)`, not `error.to_string()`, to retain sources.
 
+`private_endpoint` is a local channel only the current user can reach, for
+the user's own programs (the `herdr-acp` chat and the app attached to it): on
+Unix a socket of mode 0600 in a directory of mode 0700, on Windows a named pipe
+created as the first instance with a DACL admitting only the user and refusing
+remote clients. A client checks the pipe's owner is the caller before sending
+anything; `user_sid` and `owner_sid` are those checks, also used by the app's
+control pipe. A connection splits into a reader, a writer, and a closer that
+ends the reader from any thread. Windows reads peek before reading, like the
+control pipe, so a read honours its timeout and a closer can end it; the SID
+lookups are the module's only `unsafe`.
+
 Catalog and selection failures carry `Error::Storage { operation, path, source }`.
 `StorageOperation` distinguishes filesystem, encoding, decoding, and validation
 steps; `Replace { destination }` retains both rename paths. The boxed source keeps

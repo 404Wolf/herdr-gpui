@@ -242,6 +242,7 @@ impl Render for HerdrWindow {
         let find_bar = self.render_find_bar(surface.as_deref(), cx);
         let terminal_note = self.render_terminal_note(surface.as_deref(), cx);
         let copy_badge = self.render_copy_mode_badge(surface.as_deref(), cx);
+        let chats = self.render_chats(surface.as_deref(), cx);
         let terminal = padding
             .pad(div())
             .id("terminal")
@@ -580,6 +581,7 @@ impl Render for HerdrWindow {
                         .size_full(),
                     );
                 cells
+                    .children(chats)
                     .children(self.render_reconnecting(cx))
                     .when_some(find_bar, |terminal, bar| terminal.child(bar))
                     .when_some(terminal_note, |terminal, note| terminal.child(note))
