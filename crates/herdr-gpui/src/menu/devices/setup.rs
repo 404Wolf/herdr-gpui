@@ -78,6 +78,12 @@ impl Claim {
             releases: false,
         })
     }
+
+    /// The user `ssh` logs in as, which the local configuration supplies when
+    /// the target names none.
+    pub(super) fn user(&self) -> &str {
+        &self.destination.user
+    }
 }
 
 impl Drop for Claim {

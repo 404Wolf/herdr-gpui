@@ -89,9 +89,12 @@ impl Offer {
         }
     }
 
-    pub(super) fn question(self, target: &str) -> String {
+    /// `user` is the login `ssh` resolved for the target, when known: a target
+    /// without one logs in as the local user, which may not be the account
+    /// the user's keys are installed for.
+    pub(super) fn question(self, target: &str, user: Option<&str>) -> String {
         if cfg!(windows) {
-            return self.terminal_instructions(target);
+            return self.terminal_instructions(target, user);
         }
         match self {
             Self::Install => {
@@ -106,9 +109,15 @@ impl Offer {
             Self::Restart => format!(
                 "Restart the Herdr server on {target}? A local terminal asks you to confirm."
             ),
-            Self::InstallKey => format!(
-                "{target} accepted none of your SSH keys. Install your key there? A local terminal runs ssh-copy-id, which asks for the password once, then saves the device."
-            ),
+            Self::InstallKey => match implied_user(target, user) {
+                Some(user) => format!(
+                    "{target} accepted none of your SSH keys for the user {user}. If you log in there as someone else, change the target to {} and press Enter to check it. Otherwise, install your key for {user}? A local terminal runs ssh-copy-id, which asks for the password once, then saves the device.",
+                    with_user(target, "name")
+                ),
+                None => format!(
+                    "{target} accepted none of your SSH keys. Install your key there? A local terminal runs ssh-copy-id, which asks for the password once, then saves the device."
+                ),
+            },
         }
     }
 
@@ -123,17 +132,41 @@ impl Offer {
 
     /// Windows cannot run a setup on a local terminal yet (see
     /// `setup::terminal_setup`), so the user runs Herdr's own command in one.
-    fn terminal_instructions(self, target: &str) -> String {
+    fn terminal_instructions(self, target: &str, user: Option<&str>) -> String {
         let reason = match self {
-            Self::Install => "Herdr was not detected there",
-            Self::Update => "its Herdr is too old for this app",
-            Self::Terminal => "SSH needs your input, such as a password or host key",
-            Self::Restart => "its Herdr server has to restart",
-            Self::InstallKey => "it accepted none of your SSH keys",
+            Self::Install => "Herdr was not detected there".into(),
+            Self::Update => "its Herdr is too old for this app".into(),
+            Self::Terminal => "SSH needs your input, such as a password or host key".into(),
+            Self::Restart => "its Herdr server has to restart".into(),
+            Self::InstallKey => match implied_user(target, user) {
+                Some(user) => format!(
+                    "it accepted none of your SSH keys for the user {user} (use {} to log in as someone else)",
+                    with_user(target, "name")
+                ),
+                None => "it accepted none of your SSH keys".into(),
+            },
         };
         format!(
             "Setting up {target} needs a terminal: {reason}. Run `herdr machine add {target}` in a terminal, then add the device again."
         )
+    }
+}
+
+/// The resolved login, only when `target` does not name one itself: the
+/// dialog then has not shown which account SSH tried.
+fn implied_user<'a>(target: &str, user: Option<&'a str>) -> Option<&'a str> {
+    let named = target
+        .strip_prefix("ssh://")
+        .unwrap_or(target)
+        .contains('@');
+    user.filter(|_| !named)
+}
+
+/// `target` logging in as `user`; an `ssh://` URI takes the user inside it.
+fn with_user(target: &str, user: &str) -> String {
+    match target.strip_prefix("ssh://") {
+        Some(rest) => format!("ssh://{user}@{rest}"),
+        None => format!("{user}@{target}"),
     }
 }
 
@@ -176,7 +209,19 @@ impl HerdrWindow {
                 setup.suggested_label = None;
             }
         });
-        let target_edits = cx.subscribe(&fields[0], |_, _, _: &Changed, cx| cx.notify());
+        // An offer runs for the target that was checked, so changing the
+        // target withdraws it: the next submit checks the new target.
+        let target_edits = cx.subscribe(&fields[0], |this, field, _: &Changed, cx| {
+            if let Some(setup) = &mut this.menu.device_setup
+                && let Step::Confirm(request, _) = &setup.step
+                && request.target() != field.read(cx).text().trim()
+            {
+                setup.step = Step::Form;
+                setup.claim = None;
+                setup.error = None;
+            }
+            cx.notify();
+        });
         self.menu.device_setup = Some(Setup {
             fields,
             step: Step::Form,
@@ -325,7 +370,10 @@ impl HerdrWindow {
                 body = body.child(self.render_host_key(request.target(), key));
                 None
             }
-            Step::Confirm(request, offer) => Some(offer.question(request.target())),
+            Step::Confirm(request, offer) => Some(offer.question(
+                request.target(),
+                setup.claim.as_ref().map(setup::Claim::user),
+            )),
             Step::Verifying(request, _) => {
                 Some(format!("Checking {} is not saved yet…", request.target()))
             }
