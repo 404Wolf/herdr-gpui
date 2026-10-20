@@ -369,6 +369,8 @@ impl PaintedText {
         let layout = look.density;
         // Menu labels share text keys, and retained paint probes can still
         // describe the previous layout. Compute the sidebar column directly.
+        // The child row draws no fold chevron, so its label also takes the
+        // chevron's column.
         let left =
             px(bar + look.content_x() + layout.child_indent() + super::STATUS_WIDTH + layout.gap());
         // A group member draws no chevron, so its label also takes the
