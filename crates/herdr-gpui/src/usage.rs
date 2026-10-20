@@ -406,7 +406,9 @@ impl Usage {
                         .saturating_mul(2u32.saturating_pow(strikes))
                         .min(REJECTED_LIMIT);
                     entry.rejected.insert(provider, (strikes, now + wait));
-                } else {
+                } else if report.is_ok() {
+                    // Only an answer proves the sign-in works; an outage or a
+                    // rate limit between rejections keeps the wait growing.
                     entry.rejected.remove(&provider);
                 }
                 let previous = entry
@@ -534,7 +536,7 @@ fn read(
     granted: &HashSet<Provider>,
     held: &HashSet<Provider>,
     cookies: &mut CookieJar,
-    mut report: impl FnMut(Provider, crate::Result<Report>) -> bool,
+    report: impl FnMut(Provider, crate::Result<Report>) -> bool,
 ) -> crate::Result<()> {
     let mut exec = match host {
         Host::Local => Exec::Local,
@@ -544,6 +546,19 @@ fn read(
         #[cfg(feature = "azure")]
         Host::Azure { .. } => return Err(crate::Error::CloudHostUnsupported),
     };
+    read_with(&mut exec, config, granted, held, cookies, report);
+    Ok(())
+}
+
+/// Asks each provider through `exec`, the provider loop of [`read`].
+fn read_with(
+    exec: &mut Exec,
+    config: &UsageConfig,
+    granted: &HashSet<Provider>,
+    held: &HashSet<Provider>,
+    cookies: &mut CookieJar,
+    mut report: impl FnMut(Provider, crate::Result<Report>) -> bool,
+) {
     for provider in registry::all() {
         if config.hidden(provider) || held.contains(&provider) {
             continue;
@@ -559,13 +574,7 @@ fn read(
             (true, true, false) => Consent::Keychain,
             (true, true, true) => Consent::Browsers,
         };
-        let mut probe = Probe::new(
-            &mut exec,
-            provider,
-            config.settings(provider),
-            cookies,
-            consent,
-        );
+        let mut probe = Probe::new(exec, provider, config.settings(provider), cookies, consent);
         let answer = match provider.service().fetch(&mut probe) {
             Some(answer) => answer,
             None if requested => Err(probe.missing()),
@@ -575,5 +584,4 @@ fn read(
             break;
         }
     }
-    Ok(())
 }

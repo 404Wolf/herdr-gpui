@@ -108,6 +108,78 @@ fn refresh_allow_and_a_good_answer_ask_a_rejected_sign_in_again() {
 }
 
 #[test]
+fn an_outage_between_rejections_keeps_the_wait_growing() {
+    let start = Instant::now();
+    let claude = provider("claude");
+    let local = Host::Local;
+    let mut usage = Usage::default();
+    read_once(&mut usage, &local, start);
+
+    // Due again, Claude's service is down rather than rejecting the sign-in.
+    let due = start + REFRESH * 2;
+    begin(&mut usage, &local, due);
+    usage.apply(
+        Message::Reading(local.clone(), claude, Err(Error::UsageRateLimited)),
+        due,
+    );
+    usage.apply(Message::Done(local.clone(), Ok(())), due);
+    assert_eq!(again(&usage, claude), Some((1, start + REFRESH * 2)));
+
+    // The sign-in still has not worked, so the next rejection counts second.
+    let later = due + REFRESH;
+    read_once(&mut usage, &local, later);
+    assert_eq!(again(&usage, claude), Some((2, later + REFRESH * 4)));
+}
+
+/// The worker's own provider loop leaves a held provider unasked while the
+/// others still answer. Both stand-ins answer from an empty home, so the
+/// read stays on this machine and calls no service.
+#[cfg(unix)]
+#[test]
+fn the_worker_does_not_ask_a_held_provider() {
+    use crate::usage::{probe::Shell, read_with};
+    use std::collections::HashSet;
+
+    let (claude, codex) = (provider("claude"), provider("codex"));
+    let config = UsageConfig {
+        show_providers: vec![claude.id().into(), codex.id().into()],
+        hide_providers: registry::all()
+            .filter(|other| ![claude, codex].contains(other))
+            .map(|other| other.id().into())
+            .collect(),
+        ..UsageConfig::default()
+    };
+    let asked = |held: &HashSet<Provider>| {
+        let home = tempfile::tempdir().unwrap();
+        let mut command = std::process::Command::new("/bin/sh");
+        command
+            .arg("-s")
+            .env_clear()
+            .env("HOME", home.path())
+            .env("PATH", "/usr/bin:/bin")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null());
+        let mut exec = Exec::Remote(Shell::start(command).unwrap());
+        let mut asked = Vec::new();
+        read_with(
+            &mut exec,
+            &config,
+            &HashSet::new(),
+            held,
+            &mut CookieJar::default(),
+            |provider, _| {
+                asked.push(provider);
+                true
+            },
+        );
+        asked.into_iter().collect::<HashSet<_>>()
+    };
+    assert_eq!(asked(&HashSet::new()), HashSet::from([claude, codex]));
+    assert_eq!(asked(&HashSet::from([claude])), HashSet::from([codex]));
+}
+
+#[test]
 fn a_config_change_asks_every_rejected_sign_in_again() {
     let start = Instant::now();
     let claude = provider("claude");
