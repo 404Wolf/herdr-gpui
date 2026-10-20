@@ -552,6 +552,13 @@ impl<'a> Probe<'a> {
     }
 
     fn reveal(&mut self, secret: &Secret) -> Option<String> {
+        let text = self.reveal_exact(secret)?;
+        let text = text.trim();
+        (!text.is_empty()).then(|| text.to_owned())
+    }
+
+    /// The secret's text as the host holds it, surrounding whitespace kept.
+    fn reveal_exact(&mut self, secret: &Secret) -> Option<String> {
         let text = match (&mut *self.exec, &secret.0) {
             (_, Held::Here(value)) => value.expose_secret().to_owned(),
             (Exec::Remote(shell), Held::There(variable)) => {
@@ -563,8 +570,7 @@ impl<'a> Probe<'a> {
             }
             (Exec::Local, Held::There(_)) => return None,
         };
-        let text = text.trim();
-        (!text.is_empty()).then(|| text.to_owned())
+        (!text.is_empty()).then_some(text)
     }
 
     /// A command on the probed host, with the usual per-user install
@@ -672,6 +678,13 @@ impl<'a> Probe<'a> {
     pub fn env_text(&mut self, name: &str) -> Option<String> {
         let value = self.env(name)?;
         self.reveal(&value)
+    }
+
+    /// A host environment variable naming a path, kept byte for byte: a
+    /// directory may end in a space, and trimming would name another one.
+    pub fn env_path(&mut self, name: &str) -> Option<String> {
+        let value = self.env(name)?;
+        self.reveal_exact(&value)
     }
 
     pub fn http(&mut self, request: Request) -> Result<Response> {

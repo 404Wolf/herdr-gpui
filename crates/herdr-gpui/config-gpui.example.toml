@@ -108,6 +108,12 @@ show_network_quality = false
 # and momentum; false scrolls by whole rows. Applications reading the mouse
 # always get whole rows. Also under Settings > General.
 smooth_scroll = true
+# Linux only: draw minimize, maximize, and close buttons at the right end of the
+# menu bar. When true the window needs no title bar from the window manager;
+# disable server-side decorations in your compositor or window manager settings.
+# On Wayland without server-side decorations (GNOME), buttons are always shown
+# regardless of this setting.
+# show_window_controls = true
 
 # Focus split terminal panes on hover in the active window, without clicking.
 focus_follows_mouse = true
@@ -334,6 +340,13 @@ size = 12
 # keep their shortcuts and command palette entries, and Devices Overview in
 # the palette still offers Add Device.
 # device_footer = "always"
+# Whose +added/-deleted line counts a worktree row shows: "pr" (its cached
+# pull request's) or "local" (the checkout's uncommitted changes against HEAD,
+# for checkouts on this machine, drawn inside the pencil chip that marks
+# uncommitted work). Only one set is shown. Local counts reuse
+# the uncommitted-work probe's slow schedule: one checkout at a time, each at
+# most every 30 seconds while the window is active.
+# change_counts = "pr"
 
 # The activity bar: an icon column at the window's left edge. Workspaces is
 # the sidebar beside the terminals; Orchestrator, Pull requests, and Issues

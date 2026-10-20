@@ -3,8 +3,8 @@
 use super::{SettingsWindow, on_value, ui};
 use crate::{
     config::{
-        AgentsPlacement, Config, DeviceFooter, LayoutMode, SelectMode, SidebarOverrides,
-        preferences::Preference,
+        AgentsPlacement, ChangeCounts, Config, DeviceFooter, LayoutMode, SelectMode,
+        SidebarOverrides, preferences::Preference,
     },
     settings_window::{
         inputs::{DropdownField, NumberField},
@@ -218,6 +218,28 @@ impl SettingsWindow {
                         on_value(cx, |this, footer, _, cx| {
                             let mut intent = SidebarIntent::of(&this.config);
                             intent.style.device_footer = footer;
+                            this.commit_sidebar(intent, cx);
+                        }),
+                    )),
+            )
+            .child(
+                ui::row(theme, "sidebar-change-counts", "Change counts")
+                    .description(
+                        "The +added/-deleted lines under a worktree: its pull request's, or \
+                         its uncommitted changes against HEAD.",
+                    )
+                    .control(ui::segmented(
+                        theme,
+                        "sidebar-change-counts-control",
+                        &[
+                            (ChangeCounts::PullRequest, "Pull request"),
+                            (ChangeCounts::Local, "Uncommitted"),
+                        ],
+                        Some(self.config.sidebar_style.change_counts),
+                        ready,
+                        on_value(cx, |this, counts, _, cx| {
+                            let mut intent = SidebarIntent::of(&this.config);
+                            intent.style.change_counts = counts;
                             this.commit_sidebar(intent, cx);
                         }),
                     )),
