@@ -212,6 +212,9 @@ pub struct Config {
     pub show_sidebar_search: bool,
     /// CPU and memory of the selected host in the status bar.
     pub show_system_load: bool,
+    /// Draw minimize, maximize, and close buttons in the menu bar on Linux.
+    /// When true the window needs no title bar from the window manager.
+    pub show_window_controls: bool,
     pub sidebar: FontConfig,
     /// Daemon sidebar rows, falling back to defaults when invalid.
     pub sidebar_layout: SidebarLayout,
@@ -470,6 +473,7 @@ impl Default for Config {
             show_repository_icons: true,
             show_sidebar_search: true,
             show_system_load: true,
+            show_window_controls: cfg!(target_os = "linux"),
             sidebar: font(monospace, 12.0),
             sidebar_layout: SidebarLayout::default(),
             sidebar_style: SidebarStyle::default(),
@@ -537,6 +541,7 @@ struct Settings {
     show_repository_icons: Option<bool>,
     show_sidebar_search: Option<bool>,
     show_system_load: Option<bool>,
+    show_window_controls: Option<bool>,
     sidebar: sidebar_style::SidebarSettings,
     smooth_scroll: Option<bool>,
     sound: SoundConfig,
@@ -943,6 +948,9 @@ impl Config {
         config.show_repository_icons = settings.show_repository_icons.unwrap_or(true);
         config.show_sidebar_search = settings.show_sidebar_search.unwrap_or(true);
         config.show_system_load = settings.show_system_load.unwrap_or(true);
+        config.show_window_controls = settings
+            .show_window_controls
+            .unwrap_or(cfg!(target_os = "linux"));
         config.smooth_scroll = settings.smooth_scroll.unwrap_or(true);
         // keep-sorted end
         config.status_bar = settings.status_bar;

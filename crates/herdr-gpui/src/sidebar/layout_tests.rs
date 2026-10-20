@@ -570,6 +570,9 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
                 activity_bar: false,
                 ..Default::default()
             },
+            // Disable window controls so the menu bar's movable handler doesn't
+            // consume mouse events that tests expect to bubble.
+            show_window_controls: false,
             ..Default::default()
         },
         theme: Default::default(),
