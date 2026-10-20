@@ -91,6 +91,13 @@ impl Output {
         self.status = exit::NOTHING;
         self
     }
+
+    /// An answer that reports a failure, such as a batch where a device
+    /// failed: printed in full, exiting [`exit::REFUSED`].
+    pub(crate) fn failed(mut self) -> Self {
+        self.status = exit::REFUSED;
+        self
+    }
 }
 
 /// Who asks and where: the pane, workspace, and daemon Herdr set in the

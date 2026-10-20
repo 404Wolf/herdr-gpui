@@ -6,6 +6,7 @@
 //! provider adds a `CloudProvider` variant, a module, and a row in
 //! [`providers`].
 
+pub(crate) mod batch;
 mod catalog;
 mod command;
 pub(crate) mod install;

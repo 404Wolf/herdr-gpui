@@ -104,7 +104,7 @@ fn family(name: &str) -> &'static str {
             "herdr-gpui host [list]\n    The window's hosts and their status. Herdr's `machine` command\n    manages saved hosts.\nherdr-gpui host select ID\n    Show that host in the window, as choosing it in the sidebar does."
         }
         "cloud" => {
-            "herdr-gpui cloud [list]\n    Saved cloud machines (Herdr UI need not run).\nherdr-gpui cloud add\n    Open the settings that add a machine. A machine is never created or\n    destroyed from the command line.\nherdr-gpui cloud setup ID\n    Run the setup script from [cloud] in config-gpui.toml again on a saved\n    machine, named by its ID or label, in a new tab once it is shown."
+            "herdr-gpui cloud [list]\n    Saved cloud machines (Herdr UI need not run).\nherdr-gpui cloud add\n    Open the settings that add a machine.\nherdr-gpui cloud setup ID\n    Run the setup script from [cloud] in config-gpui.toml again on a saved\n    machine, named by its ID or label, in a new tab once it is shown.\nherdr-gpui cloud destroy ID... | --batch BATCH\n    Ask in Herdr UI to delete saved machines at their providers and forget\n    them (a provider that cannot delete one only forgets it). The user\n    confirms there, once for all of them; prints the batch to follow.\nherdr-gpui cloud wait BATCH [--timeout S]\n    Each machine of the batch once all are settled, or after S seconds\n    (default 60, at most 600). Exits 0 when all went as asked, 1 when one\n    failed or the user said no, 4 while it is still going.\nherdr-gpui cloud batches\n    The batches Herdr UI keeps."
         }
         "ports" => {
             "herdr-gpui ports [list]\n    Ports the caller's workspace's processes listen on, and forwards.\n    Listening ports are known only while show_listening_ports is on.\nherdr-gpui ports forward|unforward PORT\n    Forward a port of the workspace's SSH host to this machine, or stop.\nherdr-gpui ports open PORT\n    Show localhost:PORT in a browser tab, forwarding it first if remote."
@@ -142,7 +142,7 @@ fn family(name: &str) -> &'static str {
         }
         "bell" => "herdr-gpui bell\n    Ring the system bell, as a terminal bell does.",
         "events" => {
-            "herdr-gpui events [--after CURSOR] [--wait SECONDS] [--kind KIND]... [--follow]\n    What happened since CURSOR, the INSTANCE:SEQ the last call printed:\n    windows and tabs opening and closing, notes, and host status. A cursor\n    from an earlier app run gets everything this run kept. --follow keeps\n    printing until interrupted. Kinds:\n    window_opened, window_closed, window_focused, tab_opened, tab_closed,\n    feedback, note, host."
+            "herdr-gpui events [--after CURSOR] [--wait SECONDS] [--kind KIND]... [--follow]\n    What happened since CURSOR, the INSTANCE:SEQ the last call printed:\n    windows and tabs opening and closing, notes, host status, and cloud\n    batches. A cursor\n    from an earlier app run gets everything this run kept. --follow keeps\n    printing until interrupted. Kinds:\n    window_opened, window_closed, window_focused, tab_opened, tab_closed,\n    feedback, note, host, cloud_batch."
         }
         "wait" => {
             "herdr-gpui wait feedback|window|online|tab-closed ID [--timeout SECONDS]\n    Wait (default 60, at most 600 seconds). Exits 4 when time runs out."

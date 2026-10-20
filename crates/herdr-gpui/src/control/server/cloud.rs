@@ -1,0 +1,225 @@
+//! `cloud destroy`, `cloud wait`, and `cloud batches`: saved cloud devices
+//! handled in batches. Destroying asks in the window, which the user answers
+//! once for the whole batch; nothing is deleted from here.
+use super::{Watches, socket};
+use crate::control::protocol::{Call, ErrorCode, Response, cloud::CloudOp};
+use gpui::App;
+
+#[cfg(feature = "cloud")]
+use {
+    super::in_free_window,
+    crate::{
+        HerdrWindow,
+        cloud::batch::{Registry, Target},
+        control::protocol::{
+            MAX_WAIT_SECONDS,
+            cloud::{BatchInfo, MAX_DEVICES, Reply},
+        },
+    },
+    gpui::{Context, Window},
+    herdr_client::ConnectTarget,
+    std::time::{Duration, Instant},
+};
+
+#[cfg(test)]
+mod tests;
+
+#[cfg(feature = "cloud")]
+pub(super) fn serve(
+    call: Call<CloudOp>,
+    incoming: socket::Incoming,
+    watches: &mut Watches,
+    cx: &mut App,
+) {
+    let caller = &call.caller;
+    let response = match call.op {
+        CloudOp::Destroy { devices, batch } => in_free_window(caller, cx, |view, window, cx| {
+            destroy(view, &devices, batch, window, cx)
+        }),
+        CloudOp::Wait {
+            batch,
+            wait_seconds,
+        } => return wait(batch, wait_seconds, incoming, watches, cx),
+        CloudOp::Batches => Response::Cloud {
+            reply: Reply::Batches {
+                batches: cx.default_global::<Registry>().all(),
+            },
+        },
+    };
+    incoming.respond(response);
+}
+
+#[cfg(not(feature = "cloud"))]
+pub(super) fn serve(_: Call<CloudOp>, incoming: socket::Incoming, _: &mut Watches, _: &mut App) {
+    incoming.respond(Response::error(
+        ErrorCode::Unsupported,
+        "This build has no cloud providers",
+    ));
+}
+
+#[cfg(feature = "cloud")]
+fn answer(batch: BatchInfo) -> Response {
+    Response::Cloud {
+        reply: Reply::Batch { batch },
+    }
+}
+
+#[cfg(feature = "cloud")]
+fn invalid(message: impl Into<String>) -> Response {
+    Response::error(ErrorCode::InvalidRequest, message)
+}
+
+/// Asks in the window to destroy the devices `names` and batch `from` name.
+#[cfg(feature = "cloud")]
+fn destroy(
+    view: &mut HerdrWindow,
+    names: &[String],
+    from: Option<u64>,
+    window: &mut Window,
+    cx: &mut Context<HerdrWindow>,
+) -> Response {
+    let registry = cx.default_global::<Registry>().clone();
+    let targets = match targets(view, names, from, &registry) {
+        Ok(targets) => targets,
+        Err(response) => return response,
+    };
+    let Some(id) = view.ask_to_destroy_cloud(&targets, window, cx) else {
+        return Response::error(
+            ErrorCode::WindowBusy,
+            "A dialog is open in the window; close it first",
+        );
+    };
+    super::work::bring_forward(window, cx);
+    match registry.get(id) {
+        Some(batch) => answer(batch),
+        None => Response::error(ErrorCode::Failed, "The batch was not kept"),
+    }
+}
+
+/// The window's saved cloud devices `names` and batch `from` name, each
+/// once, in the order named. A name is an endpoint ID, a machine ID, or a
+/// label; a label more than one device has is refused rather than guessed.
+#[cfg(feature = "cloud")]
+fn targets(
+    view: &HerdrWindow,
+    names: &[String],
+    from: Option<u64>,
+    registry: &Registry,
+) -> Result<Vec<Target>, Response> {
+    if names.is_empty() && from.is_none() {
+        return Err(invalid(
+            "Name the devices to destroy, or a batch with --batch",
+        ));
+    }
+    let cloud: Vec<Target> = view
+        .endpoints
+        .iter()
+        .filter_map(|endpoint| match &endpoint.connection.target {
+            ConnectTarget::Cloud { provider, id, .. } => Some(Target {
+                provider: *provider,
+                id: id.clone(),
+                endpoint: endpoint.id.clone(),
+                label: endpoint.label.clone(),
+            }),
+            _ => None,
+        })
+        .collect();
+    let mut found: Vec<Target> = Vec::new();
+    for name in names {
+        let by_id = cloud
+            .iter()
+            .find(|target| target.endpoint == *name)
+            .or_else(|| cloud.iter().find(|target| target.id == *name));
+        let target = match by_id {
+            Some(target) => target,
+            None => {
+                let mut labelled = cloud
+                    .iter()
+                    .filter(|target| target.label.eq_ignore_ascii_case(name));
+                match (labelled.next(), labelled.next()) {
+                    (Some(target), None) => target,
+                    (Some(_), Some(_)) => {
+                        return Err(invalid(format!(
+                            "More than one cloud device is named {name}; name it by the ID `herdr-gpui cloud list` prints"
+                        )));
+                    }
+                    (None, _) => {
+                        return Err(Response::error(
+                            ErrorCode::NotFound,
+                            format!(
+                                "No cloud device is named {name}; `herdr-gpui cloud list` lists them"
+                            ),
+                        ));
+                    }
+                }
+            }
+        };
+        found.push(target.clone());
+    }
+    if let Some(from) = from {
+        let Some(batch) = registry.get(from) else {
+            return Err(Response::error(
+                ErrorCode::NotFound,
+                format!("Herdr UI keeps no batch {from}; `herdr-gpui cloud batches` lists them"),
+            ));
+        };
+        found.extend(batch.devices.iter().filter_map(|device| {
+            cloud
+                .iter()
+                .find(|target| target.endpoint == device.endpoint)
+                .cloned()
+        }));
+    }
+    let mut targets: Vec<Target> = Vec::with_capacity(found.len());
+    for target in found {
+        if !targets.iter().any(|kept| kept.endpoint == target.endpoint) {
+            targets.push(target);
+        }
+    }
+    if targets.is_empty() {
+        return Err(Response::error(
+            ErrorCode::NotFound,
+            "None of the batch's devices is saved any more",
+        ));
+    }
+    if targets.len() > MAX_DEVICES {
+        return Err(invalid(format!(
+            "At most {MAX_DEVICES} devices are destroyed at once"
+        )));
+    }
+    Ok(targets)
+}
+
+/// Answers once batch `id` is settled, or with how far it got after
+/// `wait_seconds`.
+#[cfg(feature = "cloud")]
+fn wait(
+    id: u64,
+    wait_seconds: u64,
+    incoming: socket::Incoming,
+    watches: &mut Watches,
+    cx: &mut App,
+) {
+    let registry = cx.default_global::<Registry>().clone();
+    let gone = move || {
+        Response::error(
+            ErrorCode::NotFound,
+            format!("Herdr UI keeps no batch {id}; `herdr-gpui cloud batches` lists them"),
+        )
+    };
+    let wait = Duration::from_secs(wait_seconds.min(MAX_WAIT_SECONDS));
+    let until = Instant::now() + wait;
+    watches.add(
+        incoming,
+        // The check answers at `until` with the batch as it is; the watch's
+        // own expiry, a little later, only covers a check that never ran.
+        wait + Duration::from_secs(1),
+        move |_| match registry.get(id) {
+            None => Some(gone()),
+            Some(batch) if batch.phase.settled() || Instant::now() >= until => Some(answer(batch)),
+            Some(_) => None,
+        },
+        Response::error(ErrorCode::Timeout, "The batch did not settle in time"),
+        cx,
+    );
+}

@@ -5,6 +5,8 @@
 
 mod checkpoints;
 mod chrome;
+#[cfg(feature = "cloud")]
+mod cloud_destroy;
 mod colors;
 mod devices;
 mod fan_out;
@@ -63,6 +65,18 @@ pub(crate) use devices::{SettingsHint, enter as enter_key};
 use page::WorkspaceMenuAction;
 use state::Submission;
 use workspace::WorkspaceTarget;
+
+/// A build without cloud providers never asks to destroy one.
+#[cfg(not(feature = "cloud"))]
+impl crate::HerdrWindow {
+    fn destroy_cloud_open(&self) -> bool {
+        false
+    }
+
+    fn destroy_cloud_page(&self, _: &mut gpui::Context<Self>) -> Option<gpui::Div> {
+        None
+    }
+}
 
 /// Shared trailing action geometry for pickers and workspace context menus.
 fn action_icon(

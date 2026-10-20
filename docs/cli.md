@@ -140,6 +140,9 @@ Herdr UI** entry, which both Windows installers add, runs this command through
 | `cloud [list]` | Saved cloud machines (no app needed) |
 | `cloud add` | Open the settings that add one |
 | `cloud setup ID` | Run the `[cloud]` setup script on a saved machine again, in a new tab once the window shows it. `ID` is the machine ID from `cloud list`, its host ID, or its label |
+| `cloud destroy ID... \| --batch BATCH` | Ask in the window to delete saved machines at their providers and forget them; the user confirms there, once for all of them. Prints the batch to follow (below) |
+| `cloud wait BATCH [--timeout S]` | Each machine of a batch once all are settled, or after S seconds (default 60, at most 600) |
+| `cloud batches` | The batches the app keeps |
 | `processes [--pane ID]` | The processes under a pane, with CPU and memory (no app needed) |
 | `search symbol\|file QUERY` | Go to Symbol or Go to File over the current checkout (no app needed) |
 
@@ -189,6 +192,24 @@ herdr-gpui config set cloud.coder.agents '[]'   # nothing extra on Coder
 herdr-gpui cloud setup herdr-tidy-lark-aa
 ```
 
+An agent that worked on cloud machines removes them with `cloud destroy`,
+naming each by its machine ID, host ID, or label (a label two machines share
+is refused), or with `--batch` every machine a batch named. The window asks
+once, listing each machine and what happens to it: Azure, Boat, Coder, and
+Daytona delete the machine with what goes with it and then forget it here;
+Railway VMs cannot be deleted from this app, so they are only forgotten and
+expire on their own. A dialog already open refuses the request (exit 6).
+
+```sh
+herdr-gpui cloud destroy coder:5d1c… herdr-tidy-lark-aa --json
+herdr-gpui cloud wait 3 --timeout 600 --json
+```
+
+`cloud wait` exits 0 once every machine went as asked, 1 once the batch
+settled otherwise (a machine failed, with why, or the user said no), and 4
+while it is still waiting for the user or running. A batch keeps going if the
+command or the window that asked goes away; the app keeps the last 32.
+
 Focus-on-hover between split terminal panes is on by default. Disable it with
 `herdr-gpui config set focus_follows_mouse false`.
 The change applies live; `config get focus_follows_mouse` reads it back.
@@ -197,7 +218,9 @@ The change applies live; `config get focus_follows_mouse` reads it back.
 
 `events` prints what happened in the app: windows opening, closing, and
 gaining focus; the app's tabs opening and closing; notes kept for a pane;
-worktree notes changing; and host status changes. Each event has a sequence
+worktree notes changing; host status changes; and cloud batches moving on
+(`cloud_batch`, with the batch and its phase: `confirming`, `running`,
+`done`, or `cancelled`). Each event has a sequence
 number; pass back the `INSTANCE:SEQ` cursor a call prints with `--after` to
 get only newer events. A cursor from an earlier run of the app gets every
 event the new run has kept, so a restart never hides events.
@@ -212,9 +235,9 @@ herdr-gpui wait window            # also waits for the app to start
 
 Commands never bypass a confirmation. Restoring a checkpoint, teleporting a
 worktree, fanning out a prompt, running a worktree script the app has not
-seen, and adding a cloud machine open the app's own dialog (archiving a
-worktree has no command at all), already pointed
-at your checkout, and the user confirms there. Nothing here installs,
+seen, destroying cloud machines, and adding a cloud machine open the app's
+own dialog (archiving a worktree has no command at all), already pointed at
+your checkout or the machines named, and the user confirms there. Nothing here installs,
 starts, stops, or upgrades Herdr, and `update` never installs the app.
 
 Adding a device has no command either: the Add Device dialog runs it. Its
@@ -224,8 +247,8 @@ helper that shows the setup the app runs (see the Native Shell README's
 it names is single use.
 
 Scrollback search is not repeated here: `herdr pane read` covers it. Moving a
-window, capturing a whole window, and destroying a cloud machine have no
-command because the app cannot do them.
+window and capturing a whole window have no command because the app cannot
+do them.
 
 ## Links
 
@@ -254,7 +277,7 @@ request is `{"method", "caller", "op"}`, where `caller` carries the pane,
 workspace, daemon socket, and window, and `op` is tagged with `"op"`. Browser
 requests keep their original flat form (`browser.open`, `browser.reload`,
 `browser.feedback`, `notes.send`). `status` reports the protocol version,
-currently 4. Requests and responses are bounded to 256 KiB, a request that
+currently 6. Requests and responses are bounded to 256 KiB, a request that
 waits says for how long (at most 600 seconds), and the app answers at most a
 few requests at a time.
 

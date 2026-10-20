@@ -1,0 +1,108 @@
+//! `cloud destroy`, `cloud wait`, and `cloud batches`, answered by the app.
+//! `wait` exits 0 once every device of the batch went as asked, 1 once the
+//! batch settled otherwise (a device failed, or the user said no), and 4
+//! while it is still going.
+use super::{Context, Output, unexpected};
+use crate::{
+    cli::control::BatchCommand,
+    control::protocol::{
+        Request, Response,
+        cloud::{BatchInfo, CloudOp, DeviceState, Phase, Reply},
+    },
+};
+
+pub(super) fn run(command: BatchCommand, context: &Context) -> crate::Result<Output> {
+    let op = match command {
+        BatchCommand::Destroy { devices, batch } => CloudOp::Destroy { devices, batch },
+        BatchCommand::Wait { batch, timeout } => CloudOp::Wait {
+            batch,
+            wait_seconds: timeout,
+        },
+        BatchCommand::List => CloudOp::Batches,
+    };
+    let asked = matches!(op, CloudOp::Destroy { .. });
+    match context.call(Request::Cloud, op)? {
+        Response::Cloud {
+            reply: Reply::Batch { batch },
+        } if asked => Output::data(asked_text(&batch), &batch),
+        Response::Cloud {
+            reply: Reply::Batch { batch },
+        } => {
+            let output = Output::data(text(&batch), &batch)?;
+            Ok(if !batch.phase.settled() {
+                output.nothing()
+            } else if batch.succeeded() {
+                output
+            } else {
+                output.failed()
+            })
+        }
+        Response::Cloud {
+            reply: Reply::Batches { batches },
+        } => {
+            let text = if batches.is_empty() {
+                "Herdr UI keeps no cloud batch".to_owned()
+            } else {
+                batches.iter().map(text).collect::<Vec<_>>().join("\n\n")
+            };
+            let output = Output::data(text, &batches)?;
+            Ok(if batches.is_empty() {
+                output.nothing()
+            } else {
+                output
+            })
+        }
+        response => Err(unexpected(response)),
+    }
+}
+
+fn asked_text(batch: &BatchInfo) -> String {
+    let count = batch.devices.len();
+    format!(
+        "Asked in Herdr UI to destroy {count} device{} as batch {id}; the user confirms there.\n\
+         Follow it with `herdr-gpui cloud wait {id}`.",
+        if count == 1 { "" } else { "s" },
+        id = batch.id,
+    )
+}
+
+fn phase(phase: Phase) -> &'static str {
+    match phase {
+        Phase::Confirming => "waiting for the user to confirm",
+        Phase::Running => "running",
+        Phase::Done => "done",
+        Phase::Cancelled => "cancelled",
+    }
+}
+
+fn state(state: DeviceState) -> &'static str {
+    match state {
+        DeviceState::Waiting => "waiting",
+        DeviceState::Destroying => "destroying",
+        DeviceState::Destroyed => "destroyed",
+        DeviceState::Forgotten => "removed from Herdr; its provider cannot delete it from here",
+        DeviceState::Failed => "failed",
+        DeviceState::Cancelled => "cancelled",
+    }
+}
+
+pub(super) fn text(batch: &BatchInfo) -> String {
+    let mut lines = vec![format!("Batch {}: {}", batch.id, phase(batch.phase))];
+    lines.extend(batch.devices.iter().map(|device| {
+        let mut line = format!(
+            "{} ({}): {}",
+            device.label,
+            device.endpoint,
+            state(device.state)
+        );
+        if let Some(error) = &device.error {
+            line.push_str(": ");
+            line.push_str(error);
+        }
+        line
+    }));
+    lines.join("\n")
+}
+
+#[cfg(test)]
+mod tests;

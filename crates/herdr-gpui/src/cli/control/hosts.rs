@@ -1,5 +1,5 @@
 //! `pr`, `host`, `cloud`, `ports`, and `security`.
-use super::{Args, CliError, unknown};
+use super::{Args, BatchCommand, CliError, batch, unknown};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrCommand {
@@ -24,6 +24,8 @@ pub enum CloudCommand {
     Add,
     /// Run the configured setup script on a saved machine again.
     Setup(String),
+    /// Machines handled in batches: destroying them, and following that.
+    Batch(BatchCommand),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -87,6 +89,13 @@ pub(super) fn cloud(args: &mut Args) -> Result<CloudCommand, CliError> {
     let Some(verb) = args.verb() else {
         return Ok(CloudCommand::List);
     };
+    if let Some(Some(command)) = verb
+        .to_str()
+        .map(|verb| batch::parse(verb, args))
+        .transpose()?
+    {
+        return Ok(CloudCommand::Batch(command));
+    }
     Ok(match verb.to_str() {
         Some("list") => CloudCommand::List,
         Some("add") => CloudCommand::Add,

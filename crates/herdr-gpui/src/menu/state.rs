@@ -68,6 +68,10 @@ pub(crate) struct MenuState {
     pub(super) open_checkout: Option<std::path::PathBuf>,
     /// The address the open-link question is about.
     pub(super) open_link: Option<crate::terminal::ExternalUrl>,
+    /// The batch the destroy-cloud-devices question is about. Dropping it
+    /// unanswered cancels the batch.
+    #[cfg(feature = "cloud")]
+    pub(super) cloud_destroy: Option<crate::cloud::batch::Pending>,
     #[cfg(feature = "coder")]
     pub(super) coder: Option<super::devices::coder::Wizard>,
     pub(super) devices_scroll: ScrollHandle,
@@ -317,6 +321,8 @@ impl MenuState {
             session_edit: None,
             open_checkout: None,
             open_link: None,
+            #[cfg(feature = "cloud")]
+            cloud_destroy: None,
             #[cfg(feature = "coder")]
             coder: None,
             devices_scroll: ScrollHandle::new(),
@@ -389,6 +395,10 @@ impl MenuState {
         self.session_edit = None;
         self.open_checkout = None;
         self.open_link = None;
+        #[cfg(feature = "cloud")]
+        {
+            self.cloud_destroy = None;
+        }
         #[cfg(feature = "coder")]
         {
             self.coder = None;

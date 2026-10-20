@@ -3,6 +3,7 @@
 //! CLI already drives workspaces, tabs, panes, agents, and notifications;
 //! these cover what only this client knows or draws.
 mod app;
+mod batch;
 mod browser;
 mod hosts;
 mod settings;
@@ -13,6 +14,7 @@ use super::CliError;
 pub(crate) use super::args::Args;
 pub use crate::control::{Cursor, EventKind, FontSize, Script, Size, Sound, Switch, ZoomChange};
 pub use app::{AppCommand, UiCommand, WindowCommand};
+pub use batch::BatchCommand;
 pub use browser::{BrowserCommand, Placement};
 pub use hosts::{CloudCommand, HostCommand, PortsCommand, PrCommand, SecurityCommand};
 pub use settings::{
@@ -170,7 +172,10 @@ pub const FAMILIES: &[(&str, &str)] = &[
     ),
     ("pr", "The pull request of the caller's branch"),
     ("host", "List the window's hosts, or show one"),
-    ("cloud", "Saved cloud machines, and adding one"),
+    (
+        "cloud",
+        "Saved cloud machines: list, add, destroy, follow a batch",
+    ),
     (
         "ports",
         "Listening ports, and forwarding them to this machine",

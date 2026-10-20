@@ -37,6 +37,8 @@ impl Page {
             Self::Checkpoints => "Checkpoints",
             Self::CodeSearch => "Go to symbol or file",
             Self::ConfirmClose => "Close",
+            #[cfg(feature = "cloud")]
+            Self::DestroyCloud => "Destroy cloud devices",
             Self::Devices => "Devices",
             Self::DeviceTheme => "Device theme",
             Self::Dialog(action) => match action {
