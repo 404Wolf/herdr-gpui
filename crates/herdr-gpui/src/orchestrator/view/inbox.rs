@@ -541,34 +541,8 @@ impl OrchestratorView {
     /// is text.
     fn render_search_field(&self, window: &Window, cx: &mut Context<Self>) -> Stateful<Div> {
         let look = &self.look;
-        let theme = &look.theme;
         let focused = self.search.read(cx).focus.is_focused(window);
-        div()
-            .id("orchestrator-search")
-            .flex_1()
-            .min_w_0()
-            .h(px(look.ui.line_height() + 12.))
-            .flex()
-            .items_center()
-            .gap_2()
-            .px_3()
-            .rounded(px(corners::CONTROL))
-            .border_1()
-            .border_color(rgb(if focused {
-                theme.primary()
-            } else {
-                theme.active
-            }))
-            .bg(rgb(theme.background))
-            .child(look.icon(
-                "icons/search.svg",
-                13.,
-                if focused {
-                    theme.foreground
-                } else {
-                    theme.muted
-                },
-            ))
+        look.search_frame("orchestrator-search", focused)
             .child(div().flex_1().min_w_0().child(self.search.clone()))
             .when(!self.query.is_empty(), |field| {
                 field.child(

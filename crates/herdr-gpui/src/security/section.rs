@@ -10,7 +10,11 @@ use gpui::{prelude::*, *};
 use std::time::{Duration, SystemTime};
 
 impl HerdrWindow {
-    pub(crate) fn render_security_section(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn render_security_section(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let theme = &self.theme;
         let font = &self.config.ui;
         let small = px(font.size - 1.);
@@ -94,6 +98,11 @@ impl HerdrWindow {
             .text_color(rgb(theme.foreground))
             .text_size(px(font.size))
             .child(header)
+            // The search narrows a list, so a page alone has none.
+            .when(
+                self.security.opened().is_none() || !self.security.list_hidden(),
+                |el| el.child(self.render_security_toolbar(&self.security_look(), window, cx)),
+            )
             .child(match self.security.opened().cloned() {
                 // Like an issue's page: the list keeps the room and the page
                 // sits in a pane its left edge resizes, or drags shut.
@@ -162,12 +171,14 @@ impl HerdrWindow {
                     .child(text),
             );
         }
-        let reported = self.security.reported();
+        let narrowed = self.security_search.narrows();
+        let reported = self.shown_reports();
         if !reported.is_empty() {
             // A queue longer than one page reads as "50+", not as 50.
-            let more = repos.iter().any(Repo::more_reports);
+            let more = !narrowed && repos.iter().any(Repo::more_reports);
             body = body.child(self.security_reported(&reported, more, cx));
         }
+        let mut shown = !reported.is_empty();
         let mut quiet = Vec::new();
         let mut off = Vec::new();
         let mut hidden = Vec::new();
@@ -184,12 +195,26 @@ impl HerdrWindow {
         for (index, repo) in repos.iter().enumerate() {
             match &repo.alerts {
                 Ok(Alerts::Open { alerts, total }) if !alerts.is_empty() => {
-                    body = body.child(self.security_repo(index, repo, alerts, *total, cx));
+                    let alerts = self.shown_alerts(repo);
+                    if !alerts.is_empty() {
+                        shown = true;
+                        body = body.child(self.security_repo(index, repo, &alerts, *total, cx));
+                    }
                 }
                 Ok(Alerts::Open { .. }) => quiet.push(repo.name.as_str()),
                 Ok(Alerts::Off) => off.push(repo.name.as_str()),
                 Err(error) => failed.push((repo.name.as_str(), error.to_string())),
             }
+        }
+        // What the search hides is no news about the rest.
+        if narrowed {
+            return body.when(!shown, |body| {
+                body.child(note(
+                    "security-section-no-match",
+                    "Nothing matches the search and the pills picked.".into(),
+                    theme.muted,
+                ))
+            });
         }
         if !quiet.is_empty() {
             body = body.child(note(
@@ -242,6 +267,7 @@ impl HerdrWindow {
             .bg(rgb(theme.surface))
             .py_1();
         let now = SystemTime::now();
+        let look = self.security_look();
         for &(index, repo, report) in reported {
             let (label, color) = match report.severity {
                 Some(severity) => (severity.label(), severity_color(theme, severity)),
@@ -307,6 +333,12 @@ impl HerdrWindow {
                                     .child(detail),
                             ),
                     )
+                    .child(self.security_start(
+                        &look,
+                        SharedString::from(format!("security-start-{index}-{}", report.advisory)),
+                        item.clone(),
+                        cx,
+                    ))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.open_security_item(item.clone(), cx);
                     })),
@@ -356,7 +388,7 @@ impl HerdrWindow {
         &self,
         index: usize,
         repo: &Repo,
-        alerts: &[Alert],
+        alerts: &[&Alert],
         total: u64,
         cx: &mut Context<Self>,
     ) -> Div {
@@ -400,8 +432,9 @@ impl HerdrWindow {
             .rounded(px(crate::config::corners::PANEL))
             .bg(rgb(theme.surface))
             .py_1();
-        for alert in alerts {
-            rows = rows.child(self.security_alert(index, repo, alert, cx));
+        let look = self.security_look();
+        for &alert in alerts {
+            rows = rows.child(self.security_alert(&look, index, repo, alert, cx));
         }
         div()
             .debug_selector(move || format!("security-repo-{index}"))
@@ -414,6 +447,7 @@ impl HerdrWindow {
 
     fn security_alert(
         &self,
+        look: &crate::orchestrator::Look,
         index: usize,
         repo: &Repo,
         alert: &Alert,
@@ -500,6 +534,12 @@ impl HerdrWindow {
                             .child(detail),
                     ),
             )
+            .child(self.security_start(
+                look,
+                SharedString::from(format!("security-start-{index}-{}", alert.number)),
+                item.clone(),
+                cx,
+            ))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.open_security_item(item.clone(), cx);
             }))

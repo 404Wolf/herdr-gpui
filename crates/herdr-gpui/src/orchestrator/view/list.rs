@@ -396,7 +396,7 @@ impl OrchestratorView {
         let blocked = !item.blocked_by.is_empty() || item.state == "blocked";
         let start = (!compact && writable && row.run.is_none() && !blocked).then(|| {
             let key = key.clone();
-            compact_button(look, ("orchestrator-start", index), "Start agent")
+            look.compact_button(("orchestrator-start", index), "Start agent")
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(move |this, _, window, cx| {
                     this.open_dispatch(key.clone(), window, cx);
@@ -633,27 +633,6 @@ pub(super) fn source_mark(look: &Look, provider: Provider) -> AnyElement {
 }
 
 /// A button small enough to sit in a row with room above and below.
-fn compact_button(look: &Look, id: impl Into<ElementId>, label: &'static str) -> Stateful<Div> {
-    let theme = &look.theme;
-    let hover = theme.active;
-    div()
-        .id(id)
-        .role(Role::Button)
-        .aria_label(label)
-        .flex_none()
-        .px_2()
-        .py(px(1.))
-        .rounded(px(crate::config::corners::SMALL))
-        .border_1()
-        .border_color(rgb(theme.active))
-        .bg(rgb(theme.surface))
-        .hover(move |style| style.bg(rgb(hover)))
-        .cursor_pointer()
-        .text_size(look.tiny())
-        .whitespace_nowrap()
-        .child(label)
-}
-
 fn column_head(look: &Look, cells: &[(&str, Option<f32>)]) -> Div {
     let theme = &look.theme;
     div()

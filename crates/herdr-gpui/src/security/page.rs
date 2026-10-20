@@ -223,7 +223,8 @@ impl HerdrWindow {
         let Some(opened) = &self.security.opened else {
             return;
         };
-        let items = self.security.items();
+        // Through what the search and pills show, as the list does.
+        let items = self.shown_items();
         let Some(at) = items.iter().position(|item| *item == opened.item) else {
             return;
         };

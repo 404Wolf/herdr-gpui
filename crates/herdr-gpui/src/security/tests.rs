@@ -9,6 +9,7 @@ use std::{
 };
 
 mod accounts;
+mod filter;
 mod page;
 mod pane;
 mod pane_resize;

@@ -1,9 +1,8 @@
 //! The activity bar's Security section: the private vulnerability reports
 //! outsiders filed (`reports`) and the open Dependabot alerts of every
 //! github.com repository the window's workspaces hold, most severe first.
-//! Its icon joins the bar only once GitHub reports either on for one of
-//! them, and stays for the session so the bar does not shift when a later
-//! read fails.
+//! Its icon is always in the bar, so it never waits on the first read; a
+//! search field and pills (`filter`) narrow what the section lists.
 //!
 //! The repositories are the ones the Pull requests and Issues sections list
 //! (`HerdrWindow::repo_specs`), read with the same GitHub accounts, but the
@@ -13,6 +12,7 @@
 
 mod actions;
 mod fetch;
+mod filter;
 mod list;
 mod model;
 mod page;
@@ -23,6 +23,7 @@ mod section;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use filter::SecuritySearch;
 pub(crate) use model::{Alert, Alerts, Repo, Severity};
 pub(crate) use page::{Item, Tab};
 pub(crate) use reports::{Report, Reports};

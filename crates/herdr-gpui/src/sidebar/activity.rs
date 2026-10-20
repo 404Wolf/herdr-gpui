@@ -325,11 +325,15 @@ impl HerdrWindow {
     }
 
     /// The shown section across the window's body, or `None` in Workspaces.
-    pub(crate) fn render_activity_section(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(crate) fn render_activity_section(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         let section = match self.activity_section()? {
             ActivityPanel::Workspaces => return None,
             ActivityPanel::Overview => self.render_overview(cx),
-            ActivityPanel::Security => self.render_security_section(cx),
+            ActivityPanel::Security => self.render_security_section(window, cx),
             ActivityPanel::Usage => self.render_usage_section(cx),
             ActivityPanel::PullRequests | ActivityPanel::Issues => {
                 return self.render_orchestrator_section();

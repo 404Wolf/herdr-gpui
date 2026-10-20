@@ -66,7 +66,7 @@ const FACTS_WIDTH: f32 = 220.;
 
 impl HerdrWindow {
     /// What the page draws with: the section's own fonts.
-    fn security_look(&self) -> Look {
+    pub(super) fn security_look(&self) -> Look {
         Look {
             theme: self.theme.clone(),
             ui: self.config.ui.clone(),
@@ -142,7 +142,7 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) -> Div {
         let theme = &look.theme;
-        let items = self.security.items();
+        let items = self.shown_items();
         let at = items.iter().position(|item| *item == opened.item);
         let (lead, list, last, url) = match found {
             Found::Alert(repo, alert) => (

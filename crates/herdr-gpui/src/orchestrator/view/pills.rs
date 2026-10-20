@@ -49,25 +49,7 @@ impl OrchestratorView {
         if backends.len() < 2 && projects.len() < 2 {
             return None;
         }
-        let pill = |id: SharedString, on: bool| {
-            let hover = theme.active;
-            div()
-                .id(id.clone())
-                .debug_selector(move || id.to_string())
-                .flex_none()
-                .flex()
-                .items_center()
-                .gap_1()
-                .px_2()
-                .py(px(2.))
-                .rounded_full()
-                .border_1()
-                .border_color(rgb(if on { theme.primary() } else { theme.active }))
-                .when(on, |el| el.bg(rgb(theme.primary_wash())))
-                .when(!on, |el| el.hover(move |style| style.bg(rgb(hover))))
-                .cursor_pointer()
-                .text_size(look.small())
-        };
+        let pill = |id: SharedString, on: bool| look.pill(id, on);
         let count = |count: usize| {
             (count > 0).then(|| div().text_color(rgb(theme.muted)).child(count.to_string()))
         };
