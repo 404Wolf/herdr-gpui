@@ -16,6 +16,11 @@ const MAX_SEGMENT: usize = 100;
 /// The whole budget for reading one remote checkout's Git configuration.
 const REMOTE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// How long a checkout whose host could not be read waits before a sidebar
+/// update may ask again. A host that is briefly down then gets its avatar
+/// without a restart, and one that stays down costs one read per interval.
+const RETRY_AFTER: Duration = Duration::from_secs(60);
+
 /// A checkout whose repository owner's avatar a sidebar row shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Checkout<S> {
@@ -68,12 +73,25 @@ impl Checkout<String> {
     }
 }
 
-type Slot = Option<Arc<Image>>;
+/// What is known about one checkout's avatar.
+#[derive(Clone, Debug)]
+enum Slot {
+    /// Requested and not yet answered.
+    Pending,
+    /// The owner's avatar, or `None` for a checkout without a GitHub owner.
+    Resolved(Option<Arc<Image>>),
+    /// The host could not be read; asked again from `retry_at`.
+    Unreachable { retry_at: Instant },
+}
+
+/// A worker's answer for one checkout: an error only when the host could
+/// not be read, never when it was read and has no GitHub owner.
+type Lookup = herdr_client::Result<Option<Arc<Image>>>;
 
 /// Memory front end to the shared public-image disk cache.
 pub struct Avatars {
     requests: mpsc::SyncSender<Checkout<String>>,
-    results: mpsc::Receiver<(Checkout<String>, Slot)>,
+    results: mpsc::Receiver<(Checkout<String>, Lookup)>,
     // Presence deduplicates pending requests as well as resolved hits and misses.
     local: HashMap<String, Slot>,
     // Keyed by SSH target, then Git directory, so a row looks up without allocating.
@@ -95,7 +113,7 @@ impl Avatars {
                     .or_insert_with(|| download(&agent, &url))
                     .clone();
                 if let Some(image) = image
-                    && updated.send((checkout, Some(image))).is_err()
+                    && updated.send((checkout, Ok(Some(image)))).is_err()
                 {
                     break;
                 }
@@ -104,12 +122,21 @@ impl Avatars {
         // Deliberately detach: dropping the sender ends the worker without a UI join.
         thread::spawn(move || {
             for checkout in incoming {
-                let url = repo_owner(checkout.as_deref())
-                    .map(|owner| format!("https://avatars.githubusercontent.com/{owner}?size=48"));
+                let url = match repo_owner(checkout.as_deref()) {
+                    Ok(owner) => owner.map(|owner| {
+                        format!("https://avatars.githubusercontent.com/{owner}?size=48")
+                    }),
+                    Err(error) => {
+                        if outgoing.send((checkout, Err(error))).is_err() {
+                            break;
+                        }
+                        continue;
+                    }
+                };
                 let cached = url.as_deref().and_then(cached_image);
                 let fresh = cached.as_ref().is_some_and(|(_, fresh)| *fresh);
                 if outgoing
-                    .send((checkout.clone(), cached.map(|(image, _)| image)))
+                    .send((checkout.clone(), Ok(cached.map(|(image, _)| image))))
                     .is_err()
                 {
                     break;
@@ -127,29 +154,47 @@ impl Avatars {
         }
     }
 
-    /// Enqueue each exact checkout at most once, including failed resolutions.
-    pub(crate) fn request(&mut self, checkout: Checkout<&str>) {
-        let len = self.local.len() + self.remote.values().map(HashMap::len).sum::<usize>();
-        if len >= MAX_REQUESTS || self.slot(checkout).is_some() {
-            return;
+    /// Enqueue each exact checkout at most once, including ones without a
+    /// GitHub owner. A host that could not be read is asked again once its
+    /// retry time has passed at `now`.
+    pub(crate) fn request(&mut self, checkout: Checkout<&str>, now: Instant) {
+        match self.slot(checkout) {
+            Some(Slot::Unreachable { retry_at }) if now >= *retry_at => {}
+            Some(_) => return,
+            None => {
+                let len = self.local.len() + self.remote.values().map(HashMap::len).sum::<usize>();
+                if len >= MAX_REQUESTS {
+                    return;
+                }
+            }
         }
         if self.requests.try_send(checkout.to_owned()).is_ok() {
-            self.insert(checkout.to_owned(), None);
+            self.insert(checkout.to_owned(), Slot::Pending);
         }
     }
 
-    /// Drain completed requests without blocking. Misses also count as updates.
-    pub fn poll(&mut self) -> bool {
+    /// Drain completed requests without blocking. Misses also count as
+    /// updates; a host that could not be read is retried after `now`.
+    pub fn poll(&mut self, now: Instant) -> bool {
         let mut changed = false;
-        while let Ok((checkout, image)) = self.results.try_recv() {
-            self.insert(checkout, image);
+        while let Ok((checkout, lookup)) = self.results.try_recv() {
+            let slot = match lookup {
+                Ok(image) => Slot::Resolved(image),
+                Err(_) => Slot::Unreachable {
+                    retry_at: now + RETRY_AFTER,
+                },
+            };
+            self.insert(checkout, slot);
             changed = true;
         }
         changed
     }
 
     pub(crate) fn image(&self, checkout: Checkout<&str>) -> Option<Arc<Image>> {
-        self.slot(checkout).cloned().flatten()
+        match self.slot(checkout)? {
+            Slot::Resolved(image) => image.clone(),
+            Slot::Pending | Slot::Unreachable { .. } => None,
+        }
     }
 
     fn slot(&self, checkout: Checkout<&str>) -> Option<&Slot> {
@@ -175,27 +220,30 @@ impl Avatars {
 }
 
 /// The GitHub owner behind a checkout's `upstream` remote, else its `origin`.
-fn repo_owner(checkout: Checkout<&str>) -> Option<String> {
+/// Fails only when a remote host could not be read; local Git failures and
+/// absent remotes are `None`.
+fn repo_owner(checkout: Checkout<&str>) -> herdr_client::Result<Option<String>> {
     let deadline = Instant::now() + REMOTE_TIMEOUT;
-    ["remote.upstream.url", "remote.origin.url"]
-        .into_iter()
-        .find_map(|key| {
-            let url = match checkout {
-                Checkout::Local(cwd) => local_config(cwd, key),
-                // The upstream read may use most of the budget; origin gets
-                // only what is left.
-                Checkout::Ssh { target, git_dir } => herdr_client::remote_config_value(
-                    target,
-                    git_dir,
-                    key,
-                    deadline.checked_duration_since(Instant::now())?,
-                    || false,
-                )
-                .ok()
-                .flatten(),
-            }?;
-            github_owner(&url)
-        })
+    for key in ["remote.upstream.url", "remote.origin.url"] {
+        let url = match checkout {
+            Checkout::Local(cwd) => local_config(cwd, key),
+            // The upstream read may use most of the budget; origin gets only
+            // what is left.
+            Checkout::Ssh { target, git_dir } => herdr_client::remote_config_value(
+                target,
+                git_dir,
+                key,
+                deadline
+                    .checked_duration_since(Instant::now())
+                    .ok_or(herdr_client::Error::SshTimeout)?,
+                || false,
+            )?,
+        };
+        if let Some(owner) = url.as_deref().and_then(github_owner) {
+            return Ok(Some(owner));
+        }
+    }
+    Ok(None)
 }
 
 fn local_config(cwd: &str, key: &str) -> Option<String> {

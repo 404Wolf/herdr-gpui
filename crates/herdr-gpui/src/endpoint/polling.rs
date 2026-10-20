@@ -86,9 +86,10 @@ impl HerdrWindow {
                     (&mut self.avatars, &endpoint.live.snapshot)
             {
                 let target = &endpoint.connection.target;
+                let now = Instant::now();
                 for workspace in &snapshot.workspaces {
                     if let Some(checkout) = Checkout::of(index == 0, target, workspace) {
-                        avatars.request(checkout);
+                        avatars.request(checkout, now);
                     }
                 }
             }

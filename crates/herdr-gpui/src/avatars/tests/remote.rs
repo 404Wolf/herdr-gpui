@@ -60,6 +60,7 @@ fn only_the_local_daemon_resolves_directories_with_local_git() {
 #[test]
 fn remote_avatars_are_kept_per_host_and_apart_from_local_paths() {
     let (mut avatars, incoming, outgoing) = detached();
+    let now = Instant::now();
     let git_dir = "/home/user/src/app/.git";
     let devbox = Checkout::Ssh {
         target: "devbox",
@@ -70,7 +71,7 @@ fn remote_avatars_are_kept_per_host_and_apart_from_local_paths() {
         git_dir,
     };
     for checkout in [devbox, other, Checkout::Local(git_dir), devbox, other] {
-        avatars.request(checkout);
+        avatars.request(checkout, now);
     }
     assert_eq!(
         incoming.try_iter().collect::<Vec<_>>(),
@@ -83,11 +84,11 @@ fn remote_avatars_are_kept_per_host_and_apart_from_local_paths() {
     let image = Arc::new(Image::empty());
     assert!(
         outgoing
-            .send((devbox.to_owned(), Some(image.clone())))
+            .send((devbox.to_owned(), Ok(Some(image.clone()))))
             .is_ok()
     );
-    assert!(outgoing.send((other.to_owned(), None)).is_ok());
-    assert!(avatars.poll());
+    assert!(outgoing.send((other.to_owned(), Ok(None))).is_ok());
+    assert!(avatars.poll(now));
     assert!(
         avatars
             .image(devbox)
@@ -100,12 +101,13 @@ fn remote_avatars_are_kept_per_host_and_apart_from_local_paths() {
 #[test]
 fn requests_stop_at_the_bound_across_hosts() {
     let (mut avatars, incoming, _outgoing) = detached();
+    let now = Instant::now();
     let dirs = (0..=MAX_REQUESTS)
         .map(|index| format!("/repo/{index}/.git"))
         .collect::<Vec<_>>();
     for (index, git_dir) in dirs.iter().enumerate() {
         let target = if index % 2 == 0 { "devbox" } else { "other" };
-        avatars.request(Checkout::Ssh { target, git_dir });
+        avatars.request(Checkout::Ssh { target, git_dir }, now);
     }
     assert_eq!(incoming.try_iter().count(), MAX_REQUESTS);
 }
@@ -118,7 +120,8 @@ fn reads_the_repository_owner_over_ssh() {
     let owner = repo_owner(Checkout::Ssh {
         target: &target,
         git_dir: &git_dir,
-    });
+    })
+    .expect("host read over SSH");
     assert!(owner.is_some(), "no GitHub owner read over SSH");
     eprintln!("Owner read over SSH: {owner:?}");
 }

@@ -3,6 +3,7 @@ use super::*;
 
 mod remote;
 mod remote_userinfo;
+mod retry;
 
 // Exercises the disk cache; other platforms have no cache root.
 #[cfg(any(unix, windows))]
@@ -84,12 +85,15 @@ fn profile_avatar_urls_never_accept_credentials_or_other_hosts() {
 fn loads_local_repository_owner_avatar() {
     let cwd = std::env::var("HERDR_AVATAR_TEST_REPO").expect("set a local GitHub repository path");
     let checkout = Checkout::Local(cwd.as_str());
-    let owner = repo_owner(checkout).expect("repository has a GitHub origin");
+    let owner = repo_owner(checkout)
+        .ok()
+        .flatten()
+        .expect("repository has a GitHub origin");
     let mut avatars = Avatars::new();
-    avatars.request(checkout);
+    avatars.request(checkout, Instant::now());
     let deadline = Instant::now() + Duration::from_secs(10);
     while avatars.image(checkout).is_none() {
-        avatars.poll();
+        avatars.poll(Instant::now());
         assert!(Instant::now() < deadline, "avatar worker timed out");
         thread::sleep(Duration::from_millis(20));
     }
@@ -183,7 +187,7 @@ fn accepts_only_supported_content_types() {
     }
 }
 
-type Results = mpsc::Sender<(Checkout<String>, Slot)>;
+type Results = mpsc::Sender<(Checkout<String>, Lookup)>;
 
 /// An `Avatars` whose worker ends are the test's: the request receiver and
 /// the result sender.
@@ -202,10 +206,11 @@ pub(super) fn detached() -> (Avatars, mpsc::Receiver<Checkout<String>>, Results)
 #[test]
 fn deduplicates_pending_hits_and_misses_and_drains_results() {
     let (mut avatars, incoming, outgoing) = detached();
-    assert!(!avatars.poll());
+    let now = Instant::now();
+    assert!(!avatars.poll(now));
     assert!(avatars.image(Checkout::Local("hit")).is_none());
     for cwd in ["hit", "miss", "hit", "miss"] {
-        avatars.request(Checkout::Local(cwd));
+        avatars.request(Checkout::Local(cwd), now);
     }
     assert_eq!(
         incoming.try_iter().collect::<Vec<_>>(),
@@ -217,23 +222,23 @@ fn deduplicates_pending_hits_and_misses_and_drains_results() {
     let image = Arc::new(Image::empty());
     assert!(
         outgoing
-            .send((Checkout::Local("hit".into()), Some(image.clone())))
+            .send((Checkout::Local("hit".into()), Ok(Some(image.clone()))))
             .is_ok()
     );
     assert!(
         outgoing
-            .send((Checkout::Local("miss".into()), None))
+            .send((Checkout::Local("miss".into()), Ok(None)))
             .is_ok()
     );
-    assert!(avatars.poll());
-    assert!(!avatars.poll());
+    assert!(avatars.poll(now));
+    assert!(!avatars.poll(now));
     assert!(
         avatars
             .image(Checkout::Local("hit"))
             .is_some_and(|cached| Arc::ptr_eq(&cached, &image))
     );
     assert!(avatars.image(Checkout::Local("miss")).is_none());
-    avatars.request(Checkout::Local("hit"));
-    avatars.request(Checkout::Local("miss"));
+    avatars.request(Checkout::Local("hit"), now);
+    avatars.request(Checkout::Local("miss"), now);
     assert!(incoming.try_recv().is_err());
 }
