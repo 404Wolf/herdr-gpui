@@ -1,7 +1,7 @@
 use super::{Page, WorkspaceMenuAction};
 use crate::{
     HerdrWindow,
-    pull_request::{Input, Origin, Outcome, ReviewDecision, workspace_input},
+    pull_request::{Input, Origin, Outcome, ReviewDecision, View, workspace_input},
 };
 use gpui::{prelude::*, *};
 use herdr_client::protocol::*;
@@ -12,9 +12,33 @@ impl HerdrWindow {
     /// looked up for them: the verified local daemon, or a saved SSH device.
     /// Any other socket may be forwarded from an unknown machine.
     pub(crate) fn pr_origin(&self) -> Option<Origin> {
-        match &self.endpoints[self.selected_endpoint].connection.target {
+        self.endpoint_pr_origin(self.selected_endpoint)
+    }
+
+    /// Whose pull request answers a device's rows show: its checkouts' origin
+    /// and the account set they are read with, which differs between devices
+    /// signed in to their own accounts. Selected or not, so a device's rows
+    /// keep the answers found while it was selected.
+    pub(crate) fn endpoint_pr_view(&self, index: usize) -> Option<View> {
+        let origin = self.endpoint_pr_origin(index)?;
+        let profile = self.endpoint_pr_profile(index)?;
+        Some(View {
+            origin,
+            login: self.tokens_over(profile).key(),
+        })
+    }
+
+    /// [`Self::pr_origin`] for any device, selected or not.
+    fn endpoint_pr_origin(&self, index: usize) -> Option<Origin> {
+        let endpoint = self.endpoints.get(index)?;
+        let live = if index == self.selected_endpoint {
+            &self.live
+        } else {
+            &endpoint.live
+        };
+        match &endpoint.connection.target {
             herdr_client::ConnectTarget::Ssh { target, .. } => Some(Origin::Ssh(target.clone())),
-            _ if self.selected_endpoint == 0 && self.live.local_daemon_peer => Some(Origin::Local),
+            _ if index == 0 && live.local_daemon_peer => Some(Origin::Local),
             _ => None,
         }
     }
@@ -449,13 +473,28 @@ impl HerdrWindow {
             .ok_or(crate::Error::StaleWorkspace)?;
         let input = workspace_input(workspace, &Origin::Local)?;
         self.menu.github = crate::github::Auth::connected_fixture();
-        self.live.local_daemon_peer = true;
-        self.sync_pr_scope();
-        self.menu
-            .pr_cache
-            .seed(input, value, std::time::Instant::now());
+        self.seed_pr(input, value, std::time::Instant::now());
         self.refresh_workspace_pr();
         Ok(())
+    }
+
+    /// Records `value` as the prefetch would: signed in, under the selected
+    /// device's view, which on this machine needs a verified local daemon.
+    #[cfg(any(test, all(feature = "integration-test", target_os = "macos")))]
+    pub(crate) fn seed_pr(
+        &mut self,
+        input: Input,
+        value: crate::pull_request::PullRequest,
+        now: std::time::Instant,
+    ) {
+        if !self.menu.github.connected() {
+            self.menu.github = crate::github::Auth::connected_fixture();
+        }
+        if self.selected_endpoint == 0 {
+            self.live.local_daemon_peer = true;
+        }
+        self.sync_pr_scope();
+        self.menu.pr_cache.seed(input, value, now);
     }
 
     #[cfg(any(test, feature = "integration-test"))]

@@ -448,15 +448,18 @@ impl Cache {
     }
 
     /// Pure cache read for chrome painted every frame: never schedules work and
-    /// never reorders the cache, so rendering cannot start a request.
-    pub fn peek(&self, repo_key: &str, branch: &str) -> Option<Ref<'_, PullRequest>> {
+    /// never reorders the cache, so rendering cannot start a request. `view`
+    /// is the device the row's checkout is on and its account set, which need
+    /// not be the selected device's: each device's answers are kept apart, so
+    /// the same path and branch on two hosts never share one.
+    pub fn peek(&self, view: &View, repo_key: &str, branch: &str) -> Option<Ref<'_, PullRequest>> {
         let store = self.store.try_borrow().ok()?;
         Ref::filter_map(store, |store| {
             store
                 .entries
                 .iter()
                 .find(|entry| {
-                    entry.view == self.view
+                    entry.view == *view
                         && entry.input.checkout.is_none()
                         && entry.input.repo_key.as_deref() == Some(repo_key)
                         && entry.input.branch == branch
