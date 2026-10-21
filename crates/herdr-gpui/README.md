@@ -328,7 +328,9 @@ saved SSH device.
 
 The label is optional: an empty one names the device after its SSH target as
 typed, such as `user@host` or an address. Once the device is saved, the dialog
-closes by itself.
+closes by itself unless there is recovery advice to read. That warning wraps
+inside the scrollable dialog and stays until you choose **Done**, close the
+dialog, or press Enter or Escape; the device is already saved.
 
 **Add device** first checks the host over non-interactive SSH, using
 the same executable search and compatibility rules as the connection bridge, and
@@ -337,6 +339,10 @@ never installs or starts anything while checking:
 - Herdr running, or installed but stopped: the installed `herdr machine add`
   runs without a terminal and saves the device. It starts a stopped server
   itself. Any approval it would need fails instead of waiting for input.
+  If it refuses to save because the existing server needs a restart, the app
+  checks the host again. A still-running host that passes the app's compatibility
+  probe is saved locally with a warning about version/startup differences and
+  SSH recovery. Adding it does not require restarting the server or its panes.
 - Herdr missing: the dialog asks "Herdr was not detected on the host. Should we
   install it?" An outdated Herdr asks to update it instead.
 - SSH needs a prompt (unknown host key, password, passphrase), the check failed,
