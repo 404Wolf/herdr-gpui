@@ -5,6 +5,9 @@ pub use github::{GitHubAccountsError, GitHubJsonError};
 use std::{io, path::PathBuf};
 pub use theme::ThemeParseError;
 
+#[cfg(any(target_os = "macos", windows))]
+use wry::raw_window_handle::HandleError as WindowHandleError;
+
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Debug, thiserror::Error)]
@@ -940,7 +943,7 @@ pub enum Error {
     WebView(#[from] wry::Error),
     #[cfg(any(target_os = "macos", windows))]
     #[error("Could not reach the native window for the page: {0}")]
-    WindowHandle(#[from] raw_window_handle::HandleError),
+    WindowHandle(#[from] WindowHandleError),
     #[error("Checkout changed. Dismiss and reopen the menu.")]
     WorkspaceCheckoutChanged,
     #[error("Workspace group changed. Dismiss and review the group again.")]
@@ -977,8 +980,7 @@ pub enum Error {
     WorktreeScriptsUnsupportedHost,
     #[error("Select a checkout from the daemon's worktree list.")]
     WorktreeSelection,
-    /// A shell into a WSL distribution starts through `wsl.exe`, which only a
-    /// Windows client has.
+    /// WSL shells start through `wsl.exe`, which only a Windows client has.
     #[error("WSL distributions can only be reached from Windows.")]
     WslHostUnsupported,
     #[error("Another drop's paths are still being mapped in WSL. Try again in a moment.")]
