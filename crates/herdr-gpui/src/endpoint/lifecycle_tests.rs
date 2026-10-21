@@ -25,6 +25,7 @@ mod file_paste;
 mod focus_fences;
 mod focus_follows_mouse;
 mod focus_follows_mouse_render;
+mod focus_pipeline;
 mod function_keys;
 mod group_navigation_choices;
 mod group_page_move;
@@ -171,6 +172,10 @@ fn wait_until(mut ready: impl FnMut() -> bool) {
 }
 
 fn connected_endpoint(id: &str) -> (Endpoint, Server) {
+    connected_endpoint_reporting(id, None)
+}
+
+fn connected_endpoint_reporting(id: &str, server_version: Option<&str>) -> (Endpoint, Server) {
     static SERIAL: AtomicU64 = AtomicU64::new(0);
     let path = std::env::temp_dir().join(format!(
         "hg-{}-{}.sock",
@@ -212,6 +217,9 @@ fn connected_endpoint(id: &str) -> (Endpoint, Server) {
         "../../../herdr-protocol/tests/fixtures/endpoint-welcome-v1.json"
     ))
     .unwrap();
+    if let Some(version) = server_version {
+        welcome.server_version = version.into();
+    }
     welcome.capabilities.extend([
         "surface_interest".into(),
         "presentation_effects_fence".into(),

@@ -250,6 +250,7 @@ embedded_icons! {
     "search.svg",
     "sessions.svg",
     "settings.svg",
+    "shield.svg",
     "split.svg",
     "status-bar.svg",
     "status-orbit.svg",

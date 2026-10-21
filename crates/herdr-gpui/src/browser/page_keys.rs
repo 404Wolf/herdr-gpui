@@ -51,13 +51,16 @@ thread_local! {
 }
 
 /// The commands a focused page leaves to the app: moving to another tab,
-/// workspace, or agent, and the font size commands, which zoom the page.
+/// workspace, or agent, moving the page's own tab, and the font size
+/// commands, which zoom the page.
 fn leaves_page(command: Command) -> bool {
     matches!(
         command,
         Command::NextTab
             | Command::PreviousTab
             | Command::TabNumber(_)
+            | Command::MoveTabPrevious
+            | Command::MoveTabNext
             | Command::NextWorkspace
             | Command::PreviousWorkspace
             | Command::WorkspaceNumber(_)

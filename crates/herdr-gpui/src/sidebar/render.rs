@@ -177,6 +177,7 @@ impl HerdrWindow {
             let Some(snapshot) = &live.snapshot else {
                 continue;
             };
+            let pr_view = self.endpoint_pr_view(endpoint_index);
             let collapsed_repos = if endpoint_index == 0 {
                 &self.collapsed_repos
             } else {
@@ -389,6 +390,9 @@ impl HerdrWindow {
                         tree,
                         icon: if indented || !self.config.show_repository_icons {
                             RowIcon::None
+                        } else if workspace.branch.is_none() {
+                            // Not a Git checkout, so no mark that reads as one.
+                            RowIcon::Blank
                         } else {
                             self.avatars
                                 .as_ref()
@@ -400,9 +404,11 @@ impl HerdrWindow {
                         grouped,
                         badge: workspace_badge(
                             workspace,
-                            (endpoint_index == self.selected_endpoint)
-                                .then_some(&self.menu.pr_cache),
-                            &self.git,
+                            pr_view.as_ref().map(|view| (&self.menu.pr_cache, view)),
+                            (
+                                (endpoint_index == 0).then_some(&self.git),
+                                self.config.sidebar_style.change_counts,
+                            ),
                             (&self.teleport_marks, &endpoint.id),
                             note.as_deref(),
                             theme,

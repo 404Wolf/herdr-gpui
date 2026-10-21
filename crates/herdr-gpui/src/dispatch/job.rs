@@ -173,7 +173,11 @@ impl Job {
                     )?,
                     None => None,
                 };
-                let saved = provision(image.as_deref(), &stopped, &|step| {
+                let spec = crate::cloud::Spec {
+                    image,
+                    ..crate::cloud::Spec::new()
+                };
+                let saved = provision(&spec, &stopped, &|step| {
                     let _ = events.send(Event::Provision(step));
                 })?;
                 let _ = events.send(Event::Provisioned(saved.clone()));

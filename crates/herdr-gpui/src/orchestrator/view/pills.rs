@@ -63,7 +63,9 @@ impl OrchestratorView {
                 .cursor_pointer()
                 .text_size(look.small())
         };
-        let count = |count: usize| div().text_color(rgb(theme.muted)).child(count.to_string());
+        let count = |count: usize| {
+            (count > 0).then(|| div().text_color(rgb(theme.muted)).child(count.to_string()))
+        };
         let mut row = div()
             .debug_selector(|| "orchestrator-pills".into())
             .flex_none()
@@ -83,7 +85,7 @@ impl OrchestratorView {
                     )
                     .child(provider_mark(look, provider))
                     .child(provider_name(provider))
-                    .child(count(items))
+                    .children(count(items))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if !this.backends.remove(&provider) {
                             this.backends.insert(provider);
@@ -105,7 +107,7 @@ impl OrchestratorView {
                         .rounded(px(corners::CONTROL))
                         .child(look.icon("icons/git-branch.svg", 11., theme.subtext()))
                         .child(label)
-                        .child(count(items))
+                        .children(count(items))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             if !this.projects.remove(&key) {
                                 this.projects.insert(key.clone());

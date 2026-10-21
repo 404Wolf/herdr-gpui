@@ -443,6 +443,7 @@ pub(crate) fn run() -> std::process::ExitCode {
                 crate::window::system_notifications::install(cx);
                 // Nor do they start VS Code.
                 crate::code_server::Launcher::install(cx);
+                crate::px0::Launcher::install(cx);
                 #[cfg(feature = "azure")]
                 crate::azure::install(cx);
                 #[cfg(feature = "container")]

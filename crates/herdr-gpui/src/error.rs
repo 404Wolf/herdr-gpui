@@ -83,6 +83,9 @@ pub enum Error {
     #[cfg(feature = "cloud")]
     #[error(transparent)]
     Cloud(#[from] crate::cloud::Error),
+    #[cfg(feature = "cloud")]
+    #[error(transparent)]
+    CloudBatch(#[from] crate::cloud::batch::Error),
     /// Only CPU and memory are sampled on an Azure machine so far.
     #[cfg(feature = "azure")]
     #[error("This is not available for cloud machines yet.")]
@@ -712,6 +715,8 @@ pub enum Error {
     PrWorkspaceRepository,
     #[error("Local repository unavailable for worktree lookup.")]
     PrWorktreeLookup,
+    #[error(transparent)]
+    Px0(#[from] crate::px0::Error),
     #[error("XDG_CONFIG_HOME must be an absolute path")]
     RelativeConfigRoot,
     #[error("Could not install the agent tools on the SSH host: {0}")]

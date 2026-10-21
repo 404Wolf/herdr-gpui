@@ -26,6 +26,7 @@ mod rows;
 mod tests;
 
 pub(crate) use look::Look;
+pub(crate) use markdown::without_html;
 pub(crate) use repo::RepoSpec;
 pub(crate) use rows::{LiveAgent, Tab as List, key_label};
 
@@ -141,6 +142,8 @@ pub(crate) struct OrchestratorView {
     /// Every repository listed, and the one the open item, the selection,
     /// and the dialogs belong to.
     repos: Vec<Repo>,
+    /// Non-project folders already checked; retried on Refresh or after removal.
+    skipped_repos: HashSet<String>,
     active: usize,
     /// What a view without a repository reads.
     blank: Snapshot,
@@ -229,6 +232,7 @@ impl OrchestratorView {
         });
         Self {
             repos: Vec::new(),
+            skipped_repos: HashSet::new(),
             active: 0,
             blank: Snapshot::default(),
             backends: HashSet::new(),
@@ -328,6 +332,7 @@ impl OrchestratorView {
             }
         }
         if read {
+            self.discard_non_projects();
             self.reconcile_agents();
             self.refresh_rows();
             self.follow_pull_request();
@@ -529,6 +534,7 @@ impl OrchestratorView {
     }
 
     fn refresh(&mut self) {
+        self.skipped_repos.clear();
         for repo in &self.repos {
             if let Some(service) = &repo.service {
                 service.refresh(repo.request.token.clone());

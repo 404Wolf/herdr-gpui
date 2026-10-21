@@ -13,6 +13,7 @@ mod host_key;
 mod host_menu;
 mod local_network;
 pub(super) mod rail;
+mod saved_warning;
 mod setup;
 mod wsl;
 

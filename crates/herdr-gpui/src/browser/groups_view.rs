@@ -765,10 +765,8 @@ impl HerdrWindow {
         if self.primary_group() == Some(group) {
             self.pending_navigation = None;
         }
-        if tab.place.is_code() {
-            // The VS Code tab's page waits for its server, and carries its
-            // token.
-            self.ensure_code_page(window, cx);
+        if let Some(editor) = tab.place.editor() {
+            self.ensure_editor_page(editor, window, cx);
         } else {
             #[cfg(any(target_os = "macos", windows))]
             match self.browser.pages.ensure(&tab, window, cx) {
@@ -782,7 +780,7 @@ impl HerdrWindow {
             }
         }
         self.sync_address(group, Some(&tab), true, window, cx);
-        if tab.location.is_none() {
+        if tab.location.is_none() && !tab.place.is_editor() {
             let focus = self.group_address(group, cx).read(cx).focus.clone();
             window.focus(&focus, cx);
         }

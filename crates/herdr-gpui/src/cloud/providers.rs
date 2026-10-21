@@ -1,10 +1,12 @@
 //! Every provider described once. A provider is one row of the table at the
-//! bottom: its feature, module, words, logo, how its command is prepared, and
-//! whether removing a device can delete the machine there too. The macro
+//! bottom: its feature, module, words, logo, how its command is prepared,
+//! whether removing a device can delete the machine there too, which sandbox
+//! images it holds, and how it makes a new machine without a dialog. The macro
 //! turns the rows into the `match`es the rest of the app calls, so supporting
 //! another provider adds a row here rather than an arm in each of them.
 
 use super::{CloudProvider, Error};
+pub(crate) use crate::control::batch::Shape;
 use herdr_client::{ConnectTarget, Transport};
 use std::{io, process::Command, sync::atomic::AtomicBool};
 
@@ -22,11 +24,43 @@ pub(crate) struct Deletion {
     pub(crate) run: fn(&str) -> crate::Result<()>,
 }
 
-/// Make a new, ready machine for work that needs one of its own, such as a
-/// worktree dispatched to a new sandbox, starting from the given sandbox
-/// image when there is one. Blocks: run it on a worker.
+/// What a new machine should be, as `cloud create` or dispatch asks for it.
+/// A provider reads what applies to it and ignores the rest.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Spec {
+    /// Its name; `None` lets the provider pick one.
+    pub(crate) name: Option<String>,
+    /// A sandbox image to start from, for a provider that holds them.
+    pub(crate) image: Option<String>,
+    /// Whether Herdr's installer may run on a machine that lacks Herdr.
+    pub(crate) install: bool,
+    /// Coder: the template, by name or ID; `None` takes the only one.
+    pub(crate) template: Option<String>,
+    /// Coder: the template's preset, by name; `None` takes its default.
+    pub(crate) preset: Option<String>,
+    /// Azure: a VM or a Container Apps sandbox.
+    pub(crate) shape: Shape,
+}
+
+impl Spec {
+    /// The provider's usual machine, named by the provider, with Herdr
+    /// installed when it lacks it.
+    pub(crate) fn new() -> Self {
+        Self {
+            name: None,
+            image: None,
+            install: true,
+            template: None,
+            preset: None,
+            shape: Shape::Machine,
+        }
+    }
+}
+
+/// Make a new, ready machine as `spec` says and save it as a device,
+/// reporting each step. Blocks: run it on a worker.
 pub(crate) type Provision =
-    fn(Option<&str>, &dyn Fn() -> bool, &dyn Fn(super::Step)) -> crate::Result<super::SavedDevice>;
+    fn(&Spec, &dyn Fn() -> bool, &dyn Fn(super::Step)) -> crate::Result<super::SavedDevice>;
 
 macro_rules! providers {
     ($(
@@ -174,7 +208,7 @@ providers! {
             run: crate::azure::destroy::destroy_saved,
         }),
         image: None,
-        provision: None,
+        provision: Some(crate::azure::create::provision),
     },
     "boat" Boat => {
         module: boat,
@@ -183,9 +217,13 @@ providers! {
         offer: "Create a Boat sandbox in Settings",
         noun: "sandbox",
         command: gateway,
-        deletion: None,
+        deletion: Some(Deletion {
+            noun: |_| "sandbox",
+            leftovers: ", with its snapshots,",
+            run: crate::boat::destroy::destroy_saved,
+        }),
         image: None,
-        provision: None,
+        provision: Some(crate::boat::create::provision),
     },
     "coder" Coder => {
         module: coder,
@@ -194,9 +232,13 @@ providers! {
         offer: "Create or attach a Coder workspace",
         noun: "workspace",
         command: plain,
-        deletion: None,
+        deletion: Some(Deletion {
+            noun: |_| "workspace",
+            leftovers: ", with its disk,",
+            run: crate::coder::setup::destroy_saved,
+        }),
         image: None,
-        provision: None,
+        provision: Some(crate::coder::create::provision),
     },
     "container" Container => {
         module: container,
@@ -221,9 +263,13 @@ providers! {
         offer: "Create a Daytona sandbox in Settings",
         noun: "sandbox",
         command: gateway,
-        deletion: None,
+        deletion: Some(Deletion {
+            noun: |_| "sandbox",
+            leftovers: "",
+            run: crate::daytona::destroy::destroy_saved,
+        }),
         image: Some(&crate::daytona::image::SUPPORT),
-        provision: Some(crate::daytona::setup::provision),
+        provision: Some(crate::daytona::create::provision),
     },
     "opensandbox" OpenSandbox => {
         module: opensandbox,
@@ -249,7 +295,7 @@ providers! {
         command: plain,
         deletion: None,
         image: None,
-        provision: None,
+        provision: Some(crate::railway::create::provision),
     },
     "sprites" Sprites => {
         module: sprites,

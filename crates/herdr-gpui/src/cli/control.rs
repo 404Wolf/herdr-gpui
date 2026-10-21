@@ -3,7 +3,9 @@
 //! CLI already drives workspaces, tabs, panes, agents, and notifications;
 //! these cover what only this client knows or draws.
 mod app;
+mod batch;
 mod browser;
+mod exec;
 mod hosts;
 mod settings;
 mod tabs;
@@ -13,8 +15,10 @@ use super::CliError;
 pub(crate) use super::args::Args;
 pub use crate::control::{Cursor, EventKind, FontSize, Script, Size, Sound, Switch, ZoomChange};
 pub use app::{AppCommand, UiCommand, WindowCommand};
+pub use batch::BatchCommand;
 pub use browser::{BrowserCommand, Placement};
-pub use hosts::{CloudCommand, HostCommand, PortsCommand, PrCommand};
+pub use exec::ExecCommand;
+pub use hosts::{CloudCommand, HostCommand, PortsCommand, PrCommand, SecurityCommand};
 pub use settings::{
     CaffeineCommand, ConfigCommand, IntegrationsCommand, KeybindsCommand, SoundCommand,
     ThemeCommand, UpdateCommand,
@@ -54,6 +58,7 @@ pub enum ControlCommand {
     Devices,
     Orchestrator(OrchestratorCommand),
     Review,
+    Px0,
     Notes(NotesCommand),
     /// Every kind of note the user sent this pane: page, review, terminal.
     Feedback {
@@ -78,6 +83,7 @@ pub enum ControlCommand {
     },
     Usage,
     System,
+    Security(SecurityCommand),
     Search {
         files: bool,
         query: String,
@@ -149,6 +155,7 @@ pub const FAMILIES: &[(&str, &str)] = &[
         "A repository's issues, pull requests, and runs",
     ),
     ("review", "Open the review of the uncommitted changes"),
+    ("px0", "Open px0 on the caller's local checkout"),
     ("notes", "Notes kept on worktrees"),
     (
         "feedback",
@@ -169,7 +176,10 @@ pub const FAMILIES: &[(&str, &str)] = &[
     ),
     ("pr", "The pull request of the caller's branch"),
     ("host", "List the window's hosts, or show one"),
-    ("cloud", "Saved cloud machines, and adding one"),
+    (
+        "cloud",
+        "Saved cloud machines: list, add, run a command, destroy",
+    ),
     (
         "ports",
         "Listening ports, and forwarding them to this machine",
@@ -177,6 +187,10 @@ pub const FAMILIES: &[(&str, &str)] = &[
     ("processes", "The processes running under a pane"),
     ("usage", "AI plan usage on the selected host"),
     ("system", "The selected host's load"),
+    (
+        "security",
+        "Vulnerability reports and Dependabot alerts of your repositories",
+    ),
     ("search", "Find a symbol or a file in the focused checkout"),
     ("config", "Herdr UI settings: path, get, set, reload, check"),
     ("theme", "List or choose a color theme"),
@@ -201,7 +215,11 @@ pub const FAMILIES: &[(&str, &str)] = &[
 /// Whether `args` are a control command asking for JSON, whose errors,
 /// usage errors included, are then printed as JSON.
 pub fn wants_json(args: &[OsString]) -> bool {
-    args.first().is_some_and(is_family) && args.iter().any(|arg| arg == "--json")
+    args.first().is_some_and(is_family)
+        && args
+            .iter()
+            .take_while(|arg| *arg != "--")
+            .any(|arg| arg == "--json")
 }
 
 pub fn is_family(word: &OsString) -> bool {
@@ -294,6 +312,10 @@ fn command(family: &'static str, args: &mut Args) -> Result<ControlCommand, CliE
             tabs::open_only(args)?;
             ControlCommand::Review
         }
+        "px0" => {
+            tabs::open_only(args)?;
+            ControlCommand::Px0
+        }
         "notes" => ControlCommand::Notes(work::notes(args)?),
         "feedback" => ControlCommand::Feedback {
             wait: wait_option(args, "--wait")?,
@@ -318,6 +340,7 @@ fn command(family: &'static str, args: &mut Args) -> Result<ControlCommand, CliE
         },
         "usage" => ControlCommand::Usage,
         "system" => ControlCommand::System,
+        "security" => ControlCommand::Security(hosts::security(args)?),
         "search" => {
             let files = match args.verb().as_ref().and_then(|verb| verb.to_str()) {
                 Some("symbol" | "symbols") => false,

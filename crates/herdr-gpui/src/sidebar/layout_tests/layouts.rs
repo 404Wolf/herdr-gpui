@@ -29,7 +29,7 @@ fn check_layouts(modes: &[crate::config::LayoutMode], cx: &mut gpui::TestAppCont
         pr.number = 7;
         pr.additions = 234;
         pr.deletions = 567;
-        view.menu.pr_cache.seed(input.clone(), pr, now);
+        view.seed_pr(input.clone(), pr, now);
         view.git.seed_probe(input, true, now);
         // Its work was teleported away, so the row carries that mark too.
         view.teleport_marks.add(crate::teleport::Mark {
@@ -204,7 +204,7 @@ fn sidebar_densities_keep_details_and_badges_within_their_rows(cx: &mut gpui::Te
         pr.number = 7;
         pr.additions = 234;
         pr.deletions = 567;
-        view.menu.pr_cache.seed(input.clone(), pr, now);
+        view.seed_pr(input.clone(), pr, now);
         view.git.seed_probe(input, true, now);
         view
     });
@@ -313,7 +313,8 @@ fn sidebar_densities_keep_details_and_badges_within_their_rows(cx: &mut gpui::Te
                 let badge = cx.debug_bounds("pr-sidebar-child").unwrap();
                 assert_eq!(badge.right(), row.right() - px(padding));
                 assert!(badge.bottom() <= row.bottom());
-                assert!(cx.debug_bounds("name-sidebar-child").unwrap().right() <= badge.left());
+                let first = cx.debug_bounds("badge-line-sidebar-child").unwrap();
+                assert!(cx.debug_bounds("name-sidebar-child").unwrap().right() <= first.left());
                 assert!(cx.debug_bounds("dirty-sidebar-child").is_some());
                 // Debug bounds outlive the element that recorded them, so a
                 // rounded frame cannot prove tree lines absent here; see

@@ -112,6 +112,7 @@ mod opensandbox;
 mod orchestrator;
 mod osc52;
 mod overview;
+mod owned_process;
 mod palette;
 mod pane_menu;
 mod pane_move;
@@ -124,6 +125,7 @@ mod presentation;
 mod processes;
 mod progress;
 mod pull_request;
+mod px0;
 #[cfg(feature = "railway")]
 mod railway;
 mod release_notes;
@@ -134,6 +136,7 @@ mod restart_manager;
 mod review;
 mod scrollback;
 mod search_input;
+mod security;
 mod sessions;
 mod settings_panel;
 mod settings_window;
@@ -180,7 +183,7 @@ pub use error::{Error, Result};
 pub(crate) use {
     actions::{
         CheckForUpdates, Hide, HideOthers, Minimize, PlaySound, Quit, RunCommand, ShowAll,
-        ShowHerdrNotDetected, ShowLogs, ShowUpdatePreview, bind_keys,
+        ShowHerdrNotDetected, ShowLogs, ShowUpdatePreview, ZoomWindow, bind_keys,
     },
     app::open_additional_window,
     constants::{APP_VERSION, RELEASE_BUILD, TAB_HEIGHT, TAB_WIDTH, WINDOW_TITLE},

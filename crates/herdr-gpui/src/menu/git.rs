@@ -62,6 +62,9 @@ impl HerdrWindow {
     pub(crate) fn update_git(&mut self) -> bool {
         let now = std::time::Instant::now();
         let mut changed = self.git.track(self.git_input(), self.active, now);
+        self.git.set_counted(
+            self.config.sidebar_style.change_counts == crate::config::ChangeCounts::Local,
+        );
         self.git
             .track_listed(self.listed_git_inputs(), self.active, now);
         changed |= self.git.poll(now);
@@ -155,14 +158,20 @@ impl HerdrWindow {
     pub(crate) fn git_pull_request(
         &self,
     ) -> Option<std::cell::Ref<'_, crate::pull_request::PullRequest>> {
+        // The Git probe only tracks this machine's checkouts, read with its
+        // main account.
         let input = self.git.tracked()?;
+        let view = crate::pull_request::View {
+            origin: crate::pull_request::Origin::Local,
+            login: self.main_tokens()?.key(),
+        };
         self.menu
             .github
             .connected()
             .then(|| {
                 self.menu
                     .pr_cache
-                    .peek(input.repo_key.as_deref()?, &input.branch)
+                    .peek(&view, input.repo_key.as_deref()?, &input.branch)
             })
             .flatten()
     }

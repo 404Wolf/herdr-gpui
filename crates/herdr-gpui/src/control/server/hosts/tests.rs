@@ -8,6 +8,8 @@ mod cloud_setup;
 mod info;
 mod ports;
 mod pr;
+mod security;
+mod security_open;
 mod strict;
 mod wsl_forwards;
 

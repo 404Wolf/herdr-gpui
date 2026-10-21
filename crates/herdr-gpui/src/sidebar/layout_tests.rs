@@ -51,13 +51,21 @@ mod layouts;
 #[cfg(test)]
 mod listening_ports;
 #[cfg(test)]
+mod local_counts_chip;
+#[cfg(test)]
 mod nested_agents;
+#[cfg(test)]
+mod other_device_prs;
 #[cfg(test)]
 mod palette;
 #[cfg(test)]
 mod palette_header;
 #[cfg(test)]
+mod pane_names;
+#[cfg(test)]
 mod picker_scroll;
+#[cfg(test)]
+mod plain_folder_icon;
 #[cfg(test)]
 mod probe_bar;
 #[cfg(test)]
@@ -100,6 +108,8 @@ mod update_panel;
 mod workspace_click_hover;
 #[cfg(test)]
 mod workspace_menu;
+#[cfg(test)]
+mod workspace_menu_name;
 #[cfg(test)]
 mod worktree_note_trunk;
 #[cfg(test)]
@@ -363,13 +373,16 @@ impl PaintedText {
         let layout = look.density;
         // Menu labels share text keys, and retained paint probes can still
         // describe the previous layout. Compute the sidebar column directly.
+        // The child row draws no fold chevron, so its label also takes the
+        // chevron's column.
         let left =
             px(bar + look.content_x() + layout.child_indent() + super::STATUS_WIDTH + layout.gap());
+        // A worktree group's member draws no chevron, so its name also
+        // takes the arrow column.
         let width = px(look.content_width(super::SIDEBAR_WIDTH)
             - super::STATUS_WIDTH
             - layout.gap()
-            - layout.child_indent()
-            - super::ARROW_RESERVE);
+            - layout.child_indent());
         ensure!(
             near(self.bounds.left(), left),
             "child label left: actual {:?}, expected {left:?}",
@@ -533,6 +546,8 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         app_update_notes_scroll: gpui::ScrollHandle::new(),
         removal: None,
         merged_cleanup: Default::default(),
+        #[cfg(feature = "integration-test")]
+        navigations: Default::default(),
         worktree_script: None,
         wsl_paste: None,
         editor_open: None,
@@ -566,6 +581,9 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
                 activity_bar: false,
                 ..Default::default()
             },
+            // Disable window controls so the menu bar's movable handler doesn't
+            // consume mouse events that tests expect to bubble.
+            show_window_controls: false,
             ..Default::default()
         },
         theme: Default::default(),
@@ -652,6 +670,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         #[cfg(feature = "cloud")]
         sandbox_image_builds: Default::default(),
         scrollbar_drag: None,
+        security: Default::default(),
         split_drag: None,
         split_cursor: None,
         pending_images: Vec::new(),

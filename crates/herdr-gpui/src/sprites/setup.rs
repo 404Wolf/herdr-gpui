@@ -4,7 +4,7 @@
 
 use super::{Result, Settings, connect::relay_command, http::Request, store};
 use crate::{
-    cloud::{self, CloudProvider, SavedDevice, install},
+    cloud::{self, CloudProvider, SavedDevice, Spec, install},
     github::Store,
 };
 use secrecy::SecretString;
@@ -112,11 +112,11 @@ fn prepare(
     Ok(())
 }
 
-/// Make a ready sprite with the configured account and a generated name, for
-/// work that needs a new machine of its own. Sprites hold no images, so
-/// `_image` is never given. Blocks: run it on a worker.
+/// Make the sprite `spec` describes with the configured account, for `cloud
+/// create` or work that needs a new machine of its own. Sprites hold no
+/// images, so `spec.image` is ignored. Blocks: run it on a worker.
 pub(crate) fn provision(
-    _image: Option<&str>,
+    spec: &Spec,
     cancelled: &dyn Fn() -> bool,
     report: &dyn Fn(cloud::Step),
 ) -> crate::Result<SavedDevice> {
@@ -127,8 +127,8 @@ pub(crate) fn provision(
     add_device(
         AddRequest {
             settings,
-            name: random_name(),
-            install: true,
+            name: spec.name.clone().unwrap_or_else(random_name),
+            install: spec.install,
         },
         cancelled,
         report,

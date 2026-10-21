@@ -7,7 +7,7 @@ pub(crate) use super::{
     machine::State,
     settings::{DEFAULT_CPUS, DEFAULT_IMAGE, DEFAULT_MEMORY},
 };
-use crate::cloud::{self, CloudProvider, SavedDevice, install};
+use crate::cloud::{self, CloudProvider, SavedDevice, Spec, install};
 
 /// The session every container device attaches to.
 const SESSION: &str = "default";
@@ -149,25 +149,25 @@ fn install_herdr(
     Ok(())
 }
 
-/// Make a ready container with the configured settings and a generated
-/// name, installing Herdr, for work that needs a new machine of its own, such
-/// as a worktree dispatched to a new container. It starts from `image`, a
+/// Make the container `spec` describes with the configured settings, for
+/// `cloud create` or work that needs a new machine of its own, such as a
+/// worktree dispatched to a new container. It starts from `spec.image`, a
 /// project's sandbox image, when there is one; Herdr is in it already.
 /// Blocks: run it on a worker.
 pub(crate) fn provision(
-    image: Option<&str>,
+    spec: &Spec,
     cancelled: &dyn Fn() -> bool,
     report: &dyn Fn(cloud::Step),
 ) -> crate::Result<SavedDevice> {
     let mut settings = crate::config::Config::load()?.container.settings()?;
-    if let Some(image) = image {
+    if let Some(image) = &spec.image {
         image.clone_into(&mut settings.image);
     }
     add_device(
         AddRequest {
             settings,
-            name: random_name(),
-            install: true,
+            name: spec.name.clone().unwrap_or_else(random_name),
+            install: spec.install,
         },
         cancelled,
         report,

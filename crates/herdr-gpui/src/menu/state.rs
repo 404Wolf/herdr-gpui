@@ -71,6 +71,15 @@ pub(crate) struct MenuState {
     pub(super) open_checkout: Option<std::path::PathBuf>,
     /// The address the open-link question is about.
     pub(super) open_link: Option<crate::terminal::ExternalUrl>,
+    /// The batch the destroy-cloud-devices question is about. Dropping it
+    /// unanswered cancels the batch.
+    /// The batch the create-cloud-machines question is about.
+    #[cfg(feature = "cloud")]
+    pub(super) cloud_create:
+        Option<crate::cloud::batch::Pending<crate::cloud::batch::create::Creation>>,
+    #[cfg(feature = "cloud")]
+    pub(super) cloud_destroy:
+        Option<crate::cloud::batch::Pending<Vec<crate::cloud::batch::Target>>>,
     #[cfg(feature = "coder")]
     pub(super) coder: Option<super::devices::coder::Wizard>,
     pub(super) devices_scroll: ScrollHandle,
@@ -141,6 +150,8 @@ pub(crate) struct MenuState {
     pub(super) github_adding: Option<String>,
     /// The pasted-token field, while the GitHub page shows it.
     pub(super) github_token: Option<Entity<crate::search_input::SearchInput>>,
+    /// Logins this window already toasted as waiting on GitHub App approval.
+    pub(super) github_toasted: std::collections::HashSet<String>,
     /// Saved devices whose removal is running, by endpoint ID. Kept after
     /// success until the catalog drops the device, so its header pulses
     /// until it disappears; the confirmation closes as soon as it starts.
@@ -320,6 +331,10 @@ impl MenuState {
             session_edit: None,
             open_checkout: None,
             open_link: None,
+            #[cfg(feature = "cloud")]
+            cloud_create: None,
+            #[cfg(feature = "cloud")]
+            cloud_destroy: None,
             #[cfg(feature = "coder")]
             coder: None,
             devices_scroll: ScrollHandle::new(),
@@ -367,6 +382,7 @@ impl MenuState {
             github_account: None,
             github_adding: None,
             github_token: None,
+            github_toasted: Default::default(),
             removing_devices: Default::default(),
             github_selected: None,
             github_scroll: ScrollHandle::new(),
@@ -391,6 +407,11 @@ impl MenuState {
         self.session_edit = None;
         self.open_checkout = None;
         self.open_link = None;
+        #[cfg(feature = "cloud")]
+        {
+            self.cloud_create = None;
+            self.cloud_destroy = None;
+        }
         #[cfg(feature = "coder")]
         {
             self.coder = None;

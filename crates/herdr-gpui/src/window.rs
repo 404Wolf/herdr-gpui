@@ -227,6 +227,9 @@ pub(crate) struct HerdrWindow {
     pub(crate) menu: menu::MenuState,
     /// Removing worktrees whose pull request is merged, when enabled.
     pub(crate) merged_cleanup: crate::merged_cleanup::Cleanup,
+    /// The focus changes asked of the daemon, for the native GUI harness.
+    #[cfg(feature = "integration-test")]
+    pub(crate) navigations: smoke::Navigations,
     /// The notes panel beside a review or an annotated page; both share it.
     /// The revision of the app-wide network reading this window last drew.
     pub(crate) network_quality_seen: u64,
@@ -279,6 +282,8 @@ pub(crate) struct HerdrWindow {
     #[cfg(feature = "cloud")]
     pub(crate) sandbox_image_builds: crate::cloud::image::Prebuilds,
     pub(crate) scrollbar_drag: Option<mouse::ScrollbarDrag>,
+    /// The activity bar's Security section: Dependabot alerts.
+    pub(crate) security: crate::security::Security,
     pub(crate) selected_endpoint: usize,
     pub(crate) selected_generation: u64,
     /// The terminal cells the pointer is choosing. A release copies them and
@@ -462,7 +467,9 @@ impl HerdrWindow {
     /// Stored chrome yields to anything changed before it arrived. A stored
     /// sort is a past toggle, so it overrides the daemon's from then on.
     pub(crate) fn apply_stored_chrome(&mut self, chrome: preferences::Chrome) {
-        self.activity.restore(chrome.activity_panel);
+        let resave = self
+            .activity
+            .restore(chrome.activity_panel, &chrome.activity_last_opened);
         if !self.sidebar_modified {
             self.sidebar_width = chrome.sidebar_width;
         }
@@ -485,6 +492,10 @@ impl HerdrWindow {
         {
             self.agent_sort = sort;
             self.agent_sort_modified = true;
+        }
+        // Saved once the whole chrome is merged, so the save keeps it all.
+        if resave {
+            self.save_chrome();
         }
     }
 
@@ -628,6 +639,7 @@ impl HerdrWindow {
         }
         self.poll_devices_overview(cx);
         self.poll_overview(cx);
+        self.poll_security(cx);
         if self.update_system_load() {
             cx.notify();
         }

@@ -335,6 +335,12 @@ pub(crate) fn menus(layout: Layout) -> Vec<Menu> {
                         command: Command::OpenCode,
                     },
                 ),
+                MenuItem::action(
+                    "Open px0",
+                    RunCommand {
+                        command: Command::OpenPx0,
+                    },
+                ),
                 MenuItem::separator(),
                 MenuItem::action(
                     "Reconnect",

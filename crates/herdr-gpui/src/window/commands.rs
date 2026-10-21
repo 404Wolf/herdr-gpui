@@ -51,6 +51,7 @@ impl HerdrWindow {
         .detach();
     }
 
+    #[track_caller]
     pub(crate) fn navigate(
         &mut self,
         target: NavigationTarget<&str>,
@@ -104,6 +105,7 @@ impl HerdrWindow {
     }
 
     /// Complete an accepted navigation even if its context menu has since opened.
+    #[track_caller]
     pub(crate) fn dispatch_navigation(
         &mut self,
         target: NavigationTarget<&str>,
@@ -127,6 +129,7 @@ impl HerdrWindow {
 
     /// `label` is what a failure is reported as, not a method name: navigation
     /// picks its method from the target, so it reports itself by name.
+    #[track_caller]
     pub(crate) fn request_focus_change(
         &mut self,
         label: &str,
@@ -143,6 +146,9 @@ impl HerdrWindow {
             if let Err(error) = enqueue(handle, &snapshot.boot_id) {
                 self.local_error = Some(format!("{label}: {error}"));
             } else {
+                #[cfg(feature = "integration-test")]
+                self.navigations
+                    .record(label, focus.as_ref(), std::panic::Location::caller());
                 self.fence_focus_change(focus);
                 return true;
             }
@@ -297,6 +303,10 @@ impl HerdrWindow {
             }
             Command::OpenCode => {
                 self.open_code(None, window, cx);
+                return;
+            }
+            Command::OpenPx0 => {
+                self.open_px0(None, window, cx);
                 return;
             }
             Command::InstallBrowserSkill => {
@@ -542,6 +552,10 @@ impl HerdrWindow {
             | Command::AgentNumber(_) => {
                 self.step_sidebar(command, cx);
                 window.focus(&self.focus, cx);
+                return;
+            }
+            // A browser tab moves without the daemon, so before its check.
+            Command::MoveTabPrevious | Command::MoveTabNext if self.move_page_tab(command, cx) => {
                 return;
             }
             Command::MoveTabPrevious | Command::MoveTabNext if !self.live.supports_tab_move => {
