@@ -162,6 +162,8 @@ fn a_compaction_summary_folds_into_a_card(cx: &mut TestAppContext) {
     };
     let _stream = attach_with(&view, &program, snapshot, cx);
     let folded = cx.debug_bounds("chat-summary-1").unwrap();
+    // Copy takes the whole summary, so a cut one can still be read in full.
+    assert!(cx.debug_bounds("chat-copy-1").is_some());
     assert!(cx.debug_bounds("chat-summary-line-0").is_none());
     cx.simulate_click(folded.center(), Modifiers::default());
     poll(&view, &program, cx);

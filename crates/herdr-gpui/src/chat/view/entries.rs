@@ -78,17 +78,18 @@ impl HerdrWindow {
                         self.render_chat_message(parts, &chat.prepared.visuals)
                     }
                     Some(Body::Summary(summary)) => {
-                        return self.render_chat_entry_row(
-                            chat,
-                            index,
-                            self.render_chat_summary(
+                        // Copy takes the whole summary, as its cut note says.
+                        let card = div()
+                            .group("chat-agent-message")
+                            .child(self.render_chat_summary(
                                 pane_id,
                                 entry,
                                 summary,
                                 chat.expanded.contains(&entry.id),
                                 cx,
-                            ),
-                        );
+                            ))
+                            .child(self.render_chat_copy(entry.id.0, text, cx));
+                        return self.render_chat_entry_row(chat, index, card);
                     }
                     _ => div().child(text.clone()),
                 };
