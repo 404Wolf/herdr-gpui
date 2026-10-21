@@ -5,9 +5,6 @@ pub use github::{GitHubAccountsError, GitHubJsonError};
 use std::{io, path::PathBuf};
 pub use theme::ThemeParseError;
 
-#[cfg(any(target_os = "macos", windows))]
-use wry::raw_window_handle::HandleError as WindowHandleError;
-
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Debug, thiserror::Error)]
@@ -943,7 +940,7 @@ pub enum Error {
     WebView(#[from] wry::Error),
     #[cfg(any(target_os = "macos", windows))]
     #[error("Could not reach the native window for the page: {0}")]
-    WindowHandle(#[from] WindowHandleError),
+    WindowHandle(#[from] wry::raw_window_handle::HandleError),
     #[error("Checkout changed. Dismiss and reopen the menu.")]
     WorkspaceCheckoutChanged,
     #[error("Workspace group changed. Dismiss and review the group again.")]
