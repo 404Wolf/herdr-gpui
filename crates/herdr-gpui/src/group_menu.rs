@@ -150,9 +150,7 @@ impl HerdrWindow {
         if self.code_offered(cx) {
             actions.push(Action::VsCode);
         }
-        if self.can_start_chat() {
-            actions.extend(Agent::ALL.iter().copied().map(Action::Chat));
-        }
+        actions.extend(self.chat_agents().into_iter().map(Action::Chat));
         if let Some((_, _, listed)) = self.focused_listening_ports() {
             actions.extend(listed.ports.iter().filter_map(|port| {
                 Some(Action::Port {

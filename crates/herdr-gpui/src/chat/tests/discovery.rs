@@ -60,7 +60,7 @@ fn an_invalid_token_names_nothing() {
 fn a_local_daemon_lists_each_chat_pane_once() {
     let other = "fedcba9876543210fedcba9876543210";
     let snapshot = snapshot(&[("p1", ID), ("p2", "bad"), ("p1", other), ("p3", other)]);
-    let targets = discovery::targets(&snapshot, true);
+    let targets = discovery::targets(&snapshot, Some(&Route::Local));
     let panes: Vec<_> = targets.iter().map(|t| t.pane_id.as_str()).collect();
     assert_eq!(panes, ["p1", "p3"]);
     assert_eq!(targets[0].endpoint.as_str(), ID);
@@ -71,14 +71,42 @@ fn chat_panes_are_bounded() {
     let panes: Vec<String> = (0..MAX_CHATS + 4).map(|n| format!("p{n}")).collect();
     let agents: Vec<_> = panes.iter().map(|pane| (pane.as_str(), ID)).collect();
     assert_eq!(
-        discovery::targets(&snapshot(&agents), true).len(),
+        discovery::targets(&snapshot(&agents), Some(&Route::Local)).len(),
         MAX_CHATS
     );
 }
 
 #[test]
-fn a_remote_daemon_offers_no_chat() {
-    assert!(discovery::targets(&snapshot(&[("p1", ID)]), false).is_empty());
+fn only_an_ssh_daemon_is_reached_remotely() {
+    assert!(discovery::targets(&snapshot(&[("p1", ID)]), None).is_empty());
+    let live = connected(true);
+    let ssh = ConnectTarget::Ssh {
+        target: "host".into(),
+        session: "default".into(),
+    };
+    assert_eq!(
+        discovery::route(&ssh, &live),
+        Some(Route::Ssh("host".into()))
+    );
+    let remote = discovery::targets(&snapshot(&[("p1", ID)]), Some(&Route::Ssh("host".into())));
+    assert_eq!(remote[0].route, Route::Ssh("host".into()));
+    assert_eq!(
+        discovery::route(&ConnectTarget::Local, &live),
+        Some(Route::Local)
+    );
+    for target in [
+        ConnectTarget::Wsl {
+            distro: "Ubuntu".into(),
+            session: "default".into(),
+        },
+        ConnectTarget::Socket("/tmp/herdr.sock".into()),
+    ] {
+        assert_eq!(discovery::route(&target, &live), None, "{target:?}");
+    }
+}
+
+#[test]
+fn a_remote_daemon_is_not_local() {
     let live = connected(true);
     for target in [
         ConnectTarget::Ssh {
@@ -115,4 +143,14 @@ fn only_an_owned_connected_local_daemon_is_local() {
         &ConnectTarget::Local,
         &LiveState::default()
     ));
+}
+
+#[test]
+fn the_remote_script_prefers_herdr_bin_and_falls_back_to_path() {
+    let script = remote_program_script("connect 0123456789abcdef0123456789abcdef");
+    let herdr = script.find("$HOME/.herdr/bin/herdr-acp").unwrap();
+    let path = script.find("$(command -v herdr-acp)").unwrap();
+    assert!(herdr < path);
+    assert!(script.contains("exec \"$p\" connect 0123456789abcdef0123456789abcdef"));
+    assert!(script.ends_with("exit 127"));
 }

@@ -16,12 +16,15 @@
 
 mod chats;
 mod discovery;
+mod harnesses;
 mod link;
 mod list;
 mod prepared;
 mod session;
 mod start;
+mod summary;
 mod view;
+mod visual;
 mod window;
 
 pub(crate) use chats::Chats;
@@ -58,10 +61,10 @@ pub enum Error {
     /// A change that does not fit the transcript this client holds.
     #[error("a chat change does not fit the transcript")]
     Apply(#[source] herdr_chat_protocol::Error),
-    #[error("the chat program left: {0:?}")]
-    Bye(ByeReason),
     #[error("too many chat commands are waiting for an answer")]
     Busy,
+    #[error("the chat program left: {0:?}")]
+    Bye(ByeReason),
     #[error("the chat program closed the connection")]
     Closed,
     #[error("could not reach the chat program")]
@@ -76,6 +79,8 @@ pub enum Error {
     Overflow,
     #[error("could not read from the chat program")]
     Read(#[source] herdr_chat_protocol::Error),
+    #[error("could not reach the chat program over SSH")]
+    Remote(#[source] herdr_client::Error),
     #[error("could not start the chat worker")]
     Spawn(#[source] io::Error),
     #[error(transparent)]
@@ -106,11 +111,42 @@ impl Error {
     }
 }
 
-/// The pane a chat belongs to, and the program it talks to.
+/// The pane a chat belongs to, the program it talks to, and how the window
+/// reaches that program.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct Target {
     pub(crate) endpoint: EndpointId,
     pub(crate) pane_id: String,
+    pub(crate) route: Route,
+}
+
+/// How the window reaches a chat's program.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum Route {
+    /// Its socket in this user's private directory on this machine.
+    Local,
+    /// `herdr-acp connect` on the SSH host the daemon runs on, carried over
+    /// `ssh`; the program there is reached as that host's user.
+    Ssh(String),
+}
+
+/// Folders a remote `herdr-acp` is looked for in before the remote `PATH`,
+/// which a noninteractive SSH shell often leaves short. `~/.herdr/bin` is
+/// where `cargo install --root ~/.herdr` puts it.
+const REMOTE_PROGRAM_DIRS: [&str; 3] = ["$HOME/.herdr/bin", "$HOME/.cargo/bin", "$HOME/.local/bin"];
+
+/// The remote `/bin/sh` script that runs the first `herdr-acp` found with
+/// `args`, or says where it looked and exits 127. `args` must be
+/// shell-safe; the script has no single quotes, so it may be wrapped in them.
+pub(crate) fn remote_program_script(args: &str) -> String {
+    let candidates: String = REMOTE_PROGRAM_DIRS
+        .iter()
+        .map(|dir| format!("\"{dir}/herdr-acp\" "))
+        .collect();
+    format!(
+        "for p in {candidates}\"$(command -v herdr-acp)\"; do [ -x \"$p\" ] && exec \"$p\" {args}; done; \
+         echo \"herdr-acp is not installed here: install it in ~/.herdr/bin\" >&2; exit 127"
+    )
 }
 
 #[cfg(test)]

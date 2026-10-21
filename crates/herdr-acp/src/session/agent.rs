@@ -81,6 +81,11 @@ impl<R: FnMut(Activity)> Session<R> {
                 ));
             }
         };
+        let prompts = &response.agent_capabilities.prompt_capabilities;
+        self.accepts = crate::files::Accepts {
+            embedded: prompts.embedded_context,
+            image: prompts.image,
+        };
         let cwd = self.config.cwd.clone();
         match self.config.load.clone() {
             Some(id) if response.agent_capabilities.load_session => {
@@ -254,6 +259,7 @@ impl<R: FnMut(Activity)> Session<R> {
                 title,
             },
         });
+        self.auto_answer(permission);
     }
 
     /// Answers one permission request, with an option or as cancelled.

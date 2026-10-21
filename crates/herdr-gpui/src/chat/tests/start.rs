@@ -94,20 +94,38 @@ fn the_tab_carries_the_program_in_its_environment() {
         "w1",
         Some("/repo"),
         Agent::Codex,
-        Path::new("/opt/herdr-acp"),
+        Some(Path::new("/opt/herdr-acp")),
     );
     assert_eq!(
         params,
         json!({"workspace_id": "w1", "label": "Codex", "focus": true, "cwd": "/repo",
             "env": {"HERDR_ACP": "/opt/herdr-acp"}})
     );
-    let params = tab_params("w1", None, Agent::Codex, Path::new("/opt/herdr-acp"));
+    let params = tab_params("w1", None, Agent::Codex, Some(Path::new("/opt/herdr-acp")));
     assert!(params.get("cwd").is_none());
+    // A remote chat's tab carries no local path.
+    assert!(
+        tab_params("w1", None, Agent::Codex, None)
+            .get("env")
+            .is_none()
+    );
+}
+
+#[test]
+fn a_remote_line_finds_the_hosts_own_program() {
+    let line = start::remote_command_line(Agent::Opencode);
+    assert!(line.starts_with(" sh -c '"));
+    assert!(line.ends_with("exit 127'"));
+    assert!(line.contains("$HOME/.herdr/bin/herdr-acp"));
+    assert!(line.contains("exec \"$p\" opencode"));
+    // Wrapped in single quotes, so the script must hold none of its own.
+    assert_eq!(line.matches('\'').count(), 2);
 }
 
 /// A window on a local daemon this user owns, with `program` found.
 fn local_window(view: &mut HerdrWindow, peer: &MockPeer, cx: &mut gpui::Context<HerdrWindow>) {
     connect(view, peer, cx);
+    view.config.features.acp_chats = true;
     view.endpoints[0].connection.target = herdr_client::ConnectTarget::Local;
     view.live.local_daemon_peer = true;
     view.endpoints[0].live = view.live.clone();
@@ -170,7 +188,7 @@ fn a_new_chat_opens_a_tab_and_types_the_fixed_line(cx: &mut gpui::TestAppContext
 }
 
 #[gpui::test]
-fn a_chat_does_not_start_without_the_program_or_a_local_host(cx: &mut gpui::TestAppContext) {
+fn a_chat_does_not_start_without_the_program_or_a_reachable_host(cx: &mut gpui::TestAppContext) {
     let peer = MockPeer::advertising(&["tab.create"]);
     let (view, cx) = cx.add_window_view(fixture_window);
     cx.update(|_, cx| {
@@ -188,10 +206,15 @@ fn a_chat_does_not_start_without_the_program_or_a_local_host(cx: &mut gpui::Test
                 Err(start::Error::ProgramUnknown)
             ));
             view.chats.program = Program::Found(PathBuf::from("/opt/herdr-acp"));
+            // An SSH host starts its own program, found there.
             view.endpoints[0].connection.target = herdr_client::ConnectTarget::Ssh {
                 target: "host".into(),
                 session: "default".into(),
             };
+            assert!(view.can_start_chat());
+            // A socket by path may be another host's, with no way to reach it.
+            view.endpoints[0].connection.target =
+                herdr_client::ConnectTarget::Socket(PathBuf::from("/tmp/herdr.sock"));
             assert!(!view.can_start_chat());
             assert!(matches!(
                 view.start_chat(Agent::Claude, None),
@@ -214,6 +237,24 @@ fn a_start_from_a_replaced_connection_types_nothing(cx: &mut gpui::TestAppContex
             view.poll_chat_start(cx);
             assert!(!view.chat_starting());
             assert!(view.flash.is_some(), "the user is told it did not start");
+        })
+    });
+}
+
+#[gpui::test]
+fn an_agent_the_host_lacks_does_not_start(cx: &mut gpui::TestAppContext) {
+    let peer = MockPeer::advertising(&["tab.create"]);
+    let (view, cx) = cx.add_window_view(fixture_window);
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            local_window(view, &peer, cx);
+            let id = view.endpoints[0].id.clone();
+            view.chats.agents.record(&id, vec![Agent::Opencode]);
+            assert!(matches!(
+                view.start_chat(Agent::Claude, None),
+                Err(start::Error::AgentMissing(Agent::Claude))
+            ));
+            assert!(!view.chat_starting());
         })
     });
 }

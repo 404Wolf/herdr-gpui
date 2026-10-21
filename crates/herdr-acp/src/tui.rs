@@ -2,6 +2,7 @@
 //! including Herdr's own. It is a client of the session like Herdr UI is,
 //! applying the same changes through the same reducer.
 
+mod dropped;
 mod lines;
 mod render;
 mod view;

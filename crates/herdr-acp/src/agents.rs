@@ -8,6 +8,57 @@ use std::{
 
 pub(crate) use herdr_chat_protocol::Agent;
 
+/// Where agents install themselves besides `PATH`, relative to the home
+/// folder, searched after it: a noninteractive SSH shell, or an app started
+/// from the desktop, often runs with a `PATH` that leaves them out.
+const USER_DIRS: [&str; 6] = [
+    ".local/bin",
+    ".cargo/bin",
+    ".bun/bin",
+    ".npm-global/bin",
+    ".opencode/bin",
+    ".volta/bin",
+];
+/// System folders package managers install into, searched last.
+#[cfg(unix)]
+const SYSTEM_DIRS: [&str; 2] = ["/opt/homebrew/bin", "/usr/local/bin"];
+#[cfg(not(unix))]
+const SYSTEM_DIRS: [&str; 0] = [];
+/// The runner that fetches a package on first use; an agent only it can
+/// start is not installed.
+const FETCHER: &str = "npx";
+
+/// `path`'s folders, then the user and system folders agents install to.
+pub(crate) fn search_path(path: Option<&OsStr>, home: Option<&Path>) -> OsString {
+    let mut dirs: Vec<PathBuf> = path
+        .map(std::env::split_paths)
+        .into_iter()
+        .flatten()
+        .collect();
+    dirs.extend(
+        home.into_iter()
+            .flat_map(|home| USER_DIRS.iter().map(|dir| home.join(dir))),
+    );
+    dirs.extend(SYSTEM_DIRS.iter().map(PathBuf::from));
+    std::env::join_paths(dirs).unwrap_or_default()
+}
+
+/// The agents whose own ACP command is on `path`, in table order. One only
+/// `npx` could start does not count: it would be downloaded, not run.
+pub(crate) fn installed(path: Option<&OsStr>) -> Vec<Agent> {
+    Agent::ALL
+        .iter()
+        .copied()
+        .filter(|agent| {
+            agent
+                .candidates()
+                .iter()
+                .filter(|(program, _)| *program != FETCHER)
+                .any(|(program, _)| find_program(program, path).is_some())
+        })
+        .collect()
+}
+
 /// The first of `agent`'s commands found on `path`, or the last one by name
 /// so that starting it fails with a message naming what to install.
 pub(crate) fn command(agent: Agent, path: Option<&OsStr>) -> (OsString, Vec<OsString>) {

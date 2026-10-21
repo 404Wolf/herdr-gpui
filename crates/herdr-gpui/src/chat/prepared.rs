@@ -1,7 +1,9 @@
 //! What the view draws for an entry, prepared when the entry changes rather
-//! than on every frame: agent text parsed as Markdown, and a tool call's
-//! output and file changes summarized.
+//! than on every frame: agent text parsed as Markdown with its Mermaid
+//! fences split out as diagrams, pictures asked of [`Visuals`], and a tool
+//! call's output and file changes summarized.
 
+use super::visual::{MAX_DIAGRAM_SOURCE, Source, VisualId, Visuals};
 use crate::release_notes::{self, Line};
 use herdr_chat_protocol::{EntryId, EntryKind, ToolContent, Transcript};
 use std::{
@@ -14,6 +16,10 @@ const TOOL_LINES: usize = 6;
 /// Bytes of a diff's sides compared line by line; past them it is counted
 /// as changed without its lines.
 const DIFF_BYTES: usize = 512 * 1024;
+/// Diagrams drawn per message; later fences stay code.
+const DIAGRAMS: usize = 8;
+/// Pictures shown under one tool call.
+const TOOL_IMAGES: usize = 4;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DiffSummary {
@@ -27,26 +33,75 @@ pub(crate) struct ToolSummary {
     pub(crate) diffs: Vec<DiffSummary>,
     /// The first lines of its text output.
     pub(crate) lines: Vec<String>,
+    /// Pictures it returned, the first [`TOOL_IMAGES`] of them.
+    pub(crate) images: Vec<VisualId>,
     /// Text lines left out.
     pub(crate) more: usize,
     pub(crate) terminals: usize,
 }
 
+/// One stretch of an agent message.
+#[derive(Debug)]
+pub(crate) enum Part {
+    Text(Rc<[Line]>),
+    /// A Mermaid fence, with its source as code lines for when it cannot be
+    /// drawn.
+    Diagram(VisualId, Rc<[Line]>),
+}
+
 #[derive(Debug)]
 pub(crate) enum Body {
-    Markdown(Rc<[Line]>),
+    Message(Vec<Part>),
+    /// An agent's compaction summary, folded.
+    Summary(super::summary::Summary),
+    Image(VisualId),
     Tool(ToolSummary),
 }
 
-/// Bodies by entry, each with the revision it was prepared at.
+impl Body {
+    fn visuals(&self) -> impl Iterator<Item = VisualId> + '_ {
+        let (parts, images): (&[Part], &[VisualId]) = match self {
+            Self::Message(parts) => (parts, &[]),
+            Self::Summary(_) => (&[], &[]),
+            Self::Image(id) => (&[], std::slice::from_ref(id)),
+            Self::Tool(summary) => (&[], &summary.images),
+        };
+        parts
+            .iter()
+            .filter_map(|part| match part {
+                Part::Diagram(id, _) => Some(*id),
+                Part::Text(_) => None,
+            })
+            .chain(images.iter().copied())
+    }
+}
+
+/// Bodies by entry, each with the revision it was prepared at, and the
+/// pictures they draw.
 #[derive(Default)]
 pub(crate) struct Prepared {
     bodies: HashMap<EntryId, (u64, Rc<Body>)>,
+    /// Files the transcript's tool calls changed, first change first, with
+    /// their lines added and removed summed.
+    changed: Vec<DiffSummary>,
+    pub(crate) visuals: Visuals,
 }
 
 impl Prepared {
     pub(crate) fn body(&self, id: EntryId) -> Option<Rc<Body>> {
         self.bodies.get(&id).map(|(_, body)| body.clone())
+    }
+
+    pub(crate) fn changed(&self) -> &[DiffSummary] {
+        &self.changed
+    }
+
+    /// The entries that draw `visual`, to measure again once it lands.
+    pub(crate) fn drawing(&self, visual: VisualId) -> impl Iterator<Item = EntryId> + '_ {
+        self.bodies
+            .iter()
+            .filter(move |(_, (_, body))| body.visuals().any(|id| id == visual))
+            .map(|(id, _)| *id)
     }
 
     /// Prepares the entries whose revision moved and forgets those gone.
@@ -61,22 +116,110 @@ impl Prepared {
             {
                 continue;
             }
+            let visuals = &mut self.visuals;
             let body = match &entry.kind {
-                EntryKind::Agent { text } => Body::Markdown(release_notes::parse(text).into()),
-                EntryKind::Tool(tool) => Body::Tool(summarize(&tool.content)),
+                EntryKind::Agent { text } => {
+                    match super::summary::summary(&release_notes::parse(text)) {
+                        Some(summary) => Body::Summary(summary),
+                        None => Body::Message(message(text, visuals)),
+                    }
+                }
+                EntryKind::Image { image, .. } => {
+                    let id = VisualId::of(&image.data);
+                    visuals.want(id, Source::Image(image.clone()));
+                    Body::Image(id)
+                }
+                EntryKind::Tool(tool) => Body::Tool(summarize(&tool.content, visuals)),
                 _ => continue,
             };
             self.bodies.insert(entry.id, (*revision, Rc::new(body)));
         }
+        self.changed.clear();
+        for entry in &transcript.entries {
+            let Some((_, body)) = self.bodies.get(&entry.id) else {
+                continue;
+            };
+            let Body::Tool(summary) = &**body else {
+                continue;
+            };
+            for diff in &summary.diffs {
+                match self
+                    .changed
+                    .iter_mut()
+                    .find(|known| known.path == diff.path)
+                {
+                    Some(known) => {
+                        known.added += diff.added;
+                        known.removed += diff.removed;
+                    }
+                    None => self.changed.push(diff.clone()),
+                }
+            }
+        }
+        let live: HashSet<VisualId> = self
+            .bodies
+            .values()
+            .flat_map(|(_, body)| body.visuals())
+            .collect();
+        self.visuals.retain(&live);
     }
 
     /// Starts over, as after a snapshot that may reuse entry ids.
     pub(crate) fn clear(&mut self) {
         self.bodies.clear();
+        self.changed.clear();
+        self.visuals.clear();
     }
 }
 
-pub(crate) fn summarize(content: &[ToolContent]) -> ToolSummary {
+/// An agent message as Markdown text and the diagrams between it. Only a
+/// closed fence becomes a diagram, so one still streaming shows as code.
+fn message(text: &str, visuals: &mut Visuals) -> Vec<Part> {
+    let mut parts = Vec::new();
+    let mut prose = String::new();
+    let mut lines = text.split_inclusive('\n');
+    let mut diagrams = 0;
+    while let Some(line) = lines.next() {
+        let opens = line
+            .trim()
+            .strip_prefix("```")
+            .is_some_and(|info| info.trim().eq_ignore_ascii_case("mermaid"));
+        if !opens || diagrams == DIAGRAMS {
+            prose.push_str(line);
+            continue;
+        }
+        let mut source = String::new();
+        let mut closed = false;
+        let mut fence = line.to_owned();
+        for inner in lines.by_ref() {
+            fence.push_str(inner);
+            if inner.trim() == "```" {
+                closed = true;
+                break;
+            }
+            source.push_str(inner);
+        }
+        if !closed || source.trim().is_empty() || source.len() > MAX_DIAGRAM_SOURCE {
+            prose.push_str(&fence);
+            continue;
+        }
+        if !prose.trim().is_empty() {
+            parts.push(Part::Text(release_notes::parse(&prose).into()));
+        }
+        prose.clear();
+        diagrams += 1;
+        let id = VisualId::of(&source);
+        let code = release_notes::parse(&fence).into();
+        visuals.want(id, Source::Diagram(source.into()));
+        parts.push(Part::Diagram(id, code));
+    }
+    if !prose.trim().is_empty() || parts.is_empty() {
+        parts.push(Part::Text(release_notes::parse(&prose).into()));
+    }
+    parts
+}
+
+pub(crate) fn summarize(content: &[ToolContent], visuals: &mut Visuals) -> ToolSummary {
     let mut summary = ToolSummary::default();
     for item in content {
         match item {
@@ -98,6 +241,13 @@ pub(crate) fn summarize(content: &[ToolContent]) -> ToolSummary {
                     added,
                     removed,
                 });
+            }
+            ToolContent::Image { image } => {
+                if summary.images.len() < TOOL_IMAGES {
+                    let id = VisualId::of(&image.data);
+                    visuals.want(id, Source::Image(image.clone()));
+                    summary.images.push(id);
+                }
             }
             ToolContent::Terminal { .. } => summary.terminals += 1,
         }

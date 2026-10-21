@@ -10,8 +10,11 @@ use super::*;
 use crate::rpc::{Inbound, Outbox};
 
 mod attach;
+mod attachments;
+mod auto_accept;
 mod commands;
 mod flow;
+mod media;
 mod permissions;
 mod settings;
 
@@ -167,6 +170,7 @@ fn prompt(harness: &mut Harness, conn: u64, text: &str) -> i64 {
         conn,
         Command::Prompt {
             text: text.to_owned(),
+            attachments: Vec::new(),
         },
     );
     harness.last_request("session/prompt")["id"]

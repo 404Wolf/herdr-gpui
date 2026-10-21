@@ -67,7 +67,10 @@ pub(super) fn serve(call: Call<ChatOp>, cx: &mut App) -> Response {
 fn start_code(error: &crate::chat::StartError) -> ErrorCode {
     use crate::chat::StartError;
     match error {
-        StartError::NotLocal | StartError::ProgramMissing => ErrorCode::Unsupported,
+        StartError::AgentMissing(_)
+        | StartError::Disabled
+        | StartError::NotLocal
+        | StartError::ProgramMissing => ErrorCode::Unsupported,
         StartError::NoWorkspace => ErrorCode::NotFound,
         StartError::SlotBusy | StartError::ProgramUnknown => ErrorCode::Busy,
         StartError::NotConnected

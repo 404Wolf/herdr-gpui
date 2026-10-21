@@ -9,6 +9,7 @@ fn target(pane: &str, endpoint: &str) -> Target {
     Target {
         endpoint: endpoint.parse::<EndpointId>().unwrap(),
         pane_id: pane.into(),
+        route: Route::Local,
     }
 }
 
@@ -205,12 +206,22 @@ fn a_command_sent_while_away_goes_out_on_reconnect() {
     drop(stream);
     harness.poll_until(|chats| !chats.pane("p1").unwrap().attached());
     let pane = harness.chats.pane_mut("p1").unwrap();
-    pane.send(Command::Prompt { text: "hi".into() }).unwrap();
+    pane.send(Command::Prompt {
+        text: "hi".into(),
+        attachments: Vec::new(),
+    })
+    .unwrap();
     harness.later();
     harness.reconcile(vec![target("p1", A)]);
     let (mut stream, _) = harness.program.accept();
     let Some(ClientMessage::Command { command, .. }) = read(&mut stream) else {
         panic!("the prompt");
     };
-    assert_eq!(command, Command::Prompt { text: "hi".into() });
+    assert_eq!(
+        command,
+        Command::Prompt {
+            text: "hi".into(),
+            attachments: Vec::new(),
+        }
+    );
 }

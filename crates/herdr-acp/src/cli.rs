@@ -18,11 +18,19 @@ pub enum Error {
     NotUtf8(&'static str),
     #[error("give the agent command after `--`")]
     EmptyCommand,
+    #[error("`connect` needs a chat's endpoint id")]
+    MissingEndpoint,
+    #[error("`{0}` is not a chat endpoint id")]
+    InvalidEndpoint(String),
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Parsed {
     Run(Options),
+    /// Carry a client connection to a running chat over stdin and stdout.
+    Connect(herdr_chat_protocol::EndpointId),
+    /// List the agents installed here, one name per line.
+    Agents,
     Help,
     Version,
 }
@@ -59,6 +67,9 @@ Runs an ACP agent in this terminal and shares the conversation with Herdr UI.
 Usage:
   herdr-acp [OPTIONS] AGENT [-- AGENT_ARGS...]
   herdr-acp [OPTIONS] -- COMMAND [ARGS...]
+  herdr-acp connect ID   Attach stdin and stdout to the running chat ID
+                         (Herdr UI runs this over SSH for remote chats)
+  herdr-acp agents       List the agents installed here, one per line
 
 Agents:
   claude     claude-agent-acp (or npx @agentclientprotocol/claude-agent-acp)
@@ -89,7 +100,25 @@ Keys:
 ";
 
 pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Parsed, Error> {
-    let mut args = args.into_iter();
+    let mut args = args.into_iter().peekable();
+    if args.peek().and_then(|arg| arg.to_str()) == Some("agents") {
+        args.next();
+        return match args.next() {
+            Some(extra) => Err(Error::UnknownOption(extra)),
+            None => Ok(Parsed::Agents),
+        };
+    }
+    if args.peek().and_then(|arg| arg.to_str()) == Some("connect") {
+        args.next();
+        let id = utf8(args.next(), "connect").map_err(|_| Error::MissingEndpoint)?;
+        if let Some(extra) = args.next() {
+            return Err(Error::UnknownOption(extra));
+        }
+        return id
+            .parse()
+            .map(Parsed::Connect)
+            .map_err(|_| Error::InvalidEndpoint(id));
+    }
     let mut options = Options {
         agent: AgentChoice::Command {
             program: OsString::new(),

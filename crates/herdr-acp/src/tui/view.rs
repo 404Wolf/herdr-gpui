@@ -5,7 +5,8 @@ use std::collections::HashMap;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use herdr_chat_protocol::{
-    Change, Command, Cursor, EntryId, Rejection, ServerMessage, Status, Transcript,
+    Attachment, Change, Command, Cursor, EntryId, MAX_ATTACHMENTS, Rejection, ServerMessage,
+    Status, Transcript,
 };
 use ratatui::text::Line;
 use unicode_width::UnicodeWidthChar;
@@ -126,6 +127,8 @@ impl Composer {
 
 #[derive(Default)]
 pub(crate) struct View {
+    /// Files dragged in, which the next prompt carries.
+    pub attachments: Vec<Attachment>,
     cache: HashMap<EntryId, Vec<Line<'static>>>,
     cache_width: usize,
     /// Which option of the oldest permission request is selected.
@@ -225,6 +228,19 @@ impl View {
 
     pub(crate) fn paste(&mut self, text: &str) {
         self.quit_armed = false;
+        if let Some(files) = super::dropped::files(text) {
+            for path in files {
+                if self.attachments.len() >= MAX_ATTACHMENTS {
+                    self.flash = Some(format!("A prompt takes at most {MAX_ATTACHMENTS} files"));
+                    break;
+                }
+                let attachment = Attachment { path };
+                if !self.attachments.contains(&attachment) {
+                    self.attachments.push(attachment);
+                }
+            }
+            return;
+        }
         self.composer
             .insert(&text.replace("\r\n", "\n").replace('\r', "\n"));
     }
@@ -322,13 +338,18 @@ impl View {
             KeyCode::Enter if alt || shift => self.composer.insert("\n"),
             KeyCode::Enter if asking && empty => return self.answer(self.choice),
             KeyCode::Enter => {
-                if self.composer.text.trim().is_empty() {
+                if self.composer.text.trim().is_empty() && self.attachments.is_empty() {
                     return None;
                 }
                 self.scroll = 0;
                 let text = self.composer.take();
-                self.history.push(&text);
-                return Some(Out::Command(Command::Prompt { text }));
+                if !text.trim().is_empty() {
+                    self.history.push(&text);
+                }
+                return Some(Out::Command(Command::Prompt {
+                    text,
+                    attachments: std::mem::take(&mut self.attachments),
+                }));
             }
             KeyCode::Char(digit @ '1'..='9') if asking && empty => {
                 return self.answer(digit as usize - '1' as usize);
@@ -344,6 +365,10 @@ impl View {
             KeyCode::Up => self.scroll = self.scroll.saturating_add(1),
             KeyCode::Down => self.scroll = self.scroll.saturating_sub(1),
             KeyCode::Backspace if alt => self.composer.delete_word(),
+            // From an empty composer, Backspace takes back the last file.
+            KeyCode::Backspace if empty && !self.attachments.is_empty() => {
+                self.attachments.pop();
+            }
             KeyCode::Backspace => self.composer.backspace(),
             KeyCode::Delete => self.composer.delete(),
             KeyCode::Left => self.composer.cursor = self.composer.previous(),

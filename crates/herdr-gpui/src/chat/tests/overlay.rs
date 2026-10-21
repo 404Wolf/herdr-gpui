@@ -26,6 +26,7 @@ pub(super) fn open(
     let peer = MockPeer::advertising(&[]);
     let (view, cx) = cx.add_window_view(|window, cx| {
         let mut view = fixture_window(window, cx);
+        view.config.features.acp_chats = true;
         peer.prepare(&mut view, cx);
         view.endpoints[0].connection.target = target;
         view.live.local_daemon_peer = true;
@@ -103,7 +104,9 @@ fn a_local_chat_pane_is_drawn_over_its_cells(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn a_remote_daemon_keeps_its_terminal(cx: &mut TestAppContext) {
+fn an_ssh_daemons_chat_is_dialled_over_ssh_and_keeps_its_terminal_until_it_answers(
+    cx: &mut TestAppContext,
+) {
     let (view, _peer, cx) = open(
         cx,
         ConnectTarget::Ssh {
@@ -111,14 +114,22 @@ fn a_remote_daemon_keeps_its_terminal(cx: &mut TestAppContext) {
             session: "default".into(),
         },
     );
+    let mut routes = Vec::new();
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
-            view.poll_chats_with(&mut |_, _, _| panic!("no connection"), window, cx);
+            view.poll_chats_with(
+                &mut |target, _, _| {
+                    routes.push(target.route.clone());
+                    Err(Error::Closed)
+                },
+                window,
+                cx,
+            );
         });
         full_draw(window, cx).clear(cx);
     });
+    assert_eq!(routes, [Route::Ssh("host".into())]);
     assert!(cx.debug_bounds("chat-view").is_none());
-    assert!(view.read_with(cx, |view, _| view.chats.pane("w1:p1").is_none()));
 }
 
 #[gpui::test]
@@ -137,7 +148,8 @@ fn typing_goes_to_the_chat_not_the_terminal(cx: &mut TestAppContext) {
     assert_eq!(
         command,
         Command::Prompt {
-            text: "first\nsecond".into()
+            text: "first\nsecond".into(),
+            attachments: Vec::new(),
         }
     );
     // Nothing reached the pane: the next pane input is the sentinel.

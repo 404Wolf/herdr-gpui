@@ -153,20 +153,83 @@ fn dropping_the_session_side_closes_the_connection() {
     assert_eq!(read_frame::<_, ServerMessage>(&mut reader).unwrap(), None);
 }
 
+// The dead endpoint is answered by the probe rather than made by binding a
+// socket and closing it: on macOS a child another test starts meanwhile can
+// inherit that listener before it is marked close-on-exec, and keep it
+// listening.
 #[cfg(unix)]
 #[test]
 fn stale_sockets_are_swept_and_the_live_one_removed_on_drop() {
-    use std::os::unix::net::UnixListener;
+    use std::io;
     let mut fixture = server();
     let chat = fixture.dir.path().join("acp");
     let stale = herdr_chat_protocol::endpoint_path(&chat, &EndpointId::random());
-    drop(UnixListener::bind(&stale).unwrap());
+    std::fs::write(&stale, "").unwrap();
+    let busy = herdr_chat_protocol::endpoint_path(&chat, &EndpointId::random());
+    std::fs::write(&busy, "").unwrap();
     let other = chat.join("notes.sock");
-    drop(UnixListener::bind(&other).unwrap());
-    sweep(&chat);
+    std::fs::write(&other, "").unwrap();
+    sweep_with(&chat, |path| {
+        if path == stale || path == other {
+            Err(io::ErrorKind::ConnectionRefused.into())
+        } else if path == busy {
+            Err(io::ErrorKind::WouldBlock.into())
+        } else {
+            Ok(())
+        }
+    });
     assert!(!stale.exists());
+    assert!(busy.exists(), "only a refusal means nobody listens");
     assert!(other.exists(), "only endpoint sockets are swept");
     assert!(fixture.address.exists(), "a live socket is kept");
     fixture.server.take();
     assert!(!fixture.address.exists());
+}
+
+#[test]
+fn a_command_from_a_newer_client_is_refused_and_the_connection_stays() {
+    let fixture = server();
+    let (_reader, mut writer) = connect(&fixture);
+    hello(&mut writer, VERSION);
+    let Input::Attach(attach) = fixture.inputs.recv_timeout(WAIT).unwrap() else {
+        panic!("expected attach");
+    };
+    let id = CommandId::random();
+    write_frame(
+        &mut writer,
+        &serde_json::json!({"type": "command", "id": id,
+            "command": {"command": "teleport", "to": "mars"}}),
+    )
+    .unwrap();
+    let Input::Unsupported { conn, id: refused } = fixture.inputs.recv_timeout(WAIT).unwrap()
+    else {
+        panic!("expected a refusal");
+    };
+    assert_eq!((conn, refused), (attach.conn, id));
+    // The connection still carries commands it knows.
+    let next = CommandId::random();
+    write_frame(
+        &mut writer,
+        &ClientMessage::Command {
+            command: Command::Cancel,
+            id: next,
+        },
+    )
+    .unwrap();
+    let Input::Command { id: received, .. } = fixture.inputs.recv_timeout(WAIT).unwrap() else {
+        panic!("expected a command");
+    };
+    assert_eq!(received, next);
+}
+
+#[test]
+fn a_frame_that_is_no_command_still_ends_the_connection() {
+    assert!(matches!(
+        command_frame(serde_json::json!({"type": "command", "command": {"command": "x"}})),
+        Frame::Invalid
+    ));
+    assert!(matches!(
+        command_frame(serde_json::json!([1, 2])),
+        Frame::Invalid
+    ));
 }

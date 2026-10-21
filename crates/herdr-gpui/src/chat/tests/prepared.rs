@@ -1,5 +1,5 @@
 use super::*;
-use crate::chat::prepared::{Body, DiffSummary, Prepared, diff_counts, summarize};
+use crate::chat::prepared::{Body, DiffSummary, Part, Prepared, diff_counts, summarize};
 use herdr_chat_protocol::{Tool, ToolContent, ToolKind, ToolStatus};
 
 #[test]
@@ -15,15 +15,18 @@ fn a_tool_call_is_summarized() {
         .map(|n| format!("line {n}"))
         .collect::<Vec<_>>()
         .join("\n");
-    let summary = summarize(&[
-        ToolContent::Text { text },
-        ToolContent::Diff {
-            new: "x\ny\n".into(),
-            old: None,
-            path: "/src/new.rs".into(),
-        },
-        ToolContent::Terminal { id: "t1".into() },
-    ]);
+    let summary = summarize(
+        &[
+            ToolContent::Text { text },
+            ToolContent::Diff {
+                new: "x\ny\n".into(),
+                old: None,
+                path: "/src/new.rs".into(),
+            },
+            ToolContent::Terminal { id: "t1".into() },
+        ],
+        &mut Default::default(),
+    );
     assert_eq!(summary.lines.len(), 6);
     assert_eq!(summary.more, 4);
     assert_eq!(
@@ -62,7 +65,8 @@ fn bodies_are_prepared_once_per_revision() {
     let mut prepared = Prepared::default();
     prepared.update(&transcript, &keys);
     let first = prepared.body(EntryId(1)).unwrap();
-    assert!(matches!(&*first, Body::Markdown(lines) if lines[0].text == "bold text"));
+    assert!(matches!(&*first, Body::Message(parts)
+        if matches!(&parts[..], [Part::Text(lines)] if lines[0].text == "bold text")));
     assert!(matches!(
         &*prepared.body(EntryId(2)).unwrap(),
         Body::Tool(_)

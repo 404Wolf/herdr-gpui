@@ -8,9 +8,10 @@ use std::collections::HashMap;
 
 use acp::v1 as wire;
 use herdr_chat_protocol::{
-    Change, Choice, ConfigOption, Cost, Entry, EntryId, EntryKind, Mode, Modes, NoticeLevel,
-    OptionCategory, OptionKind, OptionValue, PlanEntry, PlanPriority, PlanStatus, SessionInfo,
-    SlashCommand, Tokens, Tool, ToolContent, ToolKind, ToolStatus, Transcript, TurnSummary, Usage,
+    Author, Change, Choice, ConfigOption, Cost, Entry, EntryId, EntryKind, Image, Mode, Modes,
+    NoticeLevel, OptionCategory, OptionKind, OptionValue, PlanEntry, PlanPriority, PlanStatus,
+    SessionInfo, SlashCommand, Tokens, Tool, ToolContent, ToolKind, ToolStatus, Transcript,
+    TurnSummary, Usage,
 };
 
 /// The most text one entry keeps; later chunks are dropped.
@@ -71,6 +72,18 @@ impl Projector {
             entry: Entry {
                 id,
                 kind: EntryKind::Turn(summary),
+            },
+        }
+    }
+
+    /// A picture of its own, between the text before and after it.
+    pub(crate) fn image(&mut self, author: Author, image: Image) -> Change {
+        self.close();
+        let id = self.next_id();
+        Change::Push {
+            entry: Entry {
+                id,
+                kind: EntryKind::Image { author, image },
             },
         }
     }
@@ -249,6 +262,16 @@ impl Projector {
         stream: Stream,
         chunk: wire::ContentChunk,
     ) -> Option<Change> {
+        if let Some(image) = media(&chunk.content) {
+            let author = match stream {
+                Stream::User => Some(Author::User),
+                Stream::Agent => Some(Author::Agent),
+                Stream::Thought => None,
+            };
+            if let Some(author) = author {
+                return Some(self.image(author, image));
+            }
+        }
         let message = chunk.message_id.map(|id| id.0.to_string());
         self.text(
             transcript,
@@ -402,6 +425,15 @@ pub(crate) fn session(id: &wire::SessionId, cwd: &std::path::Path) -> SessionInf
     }
 }
 
+/// A content block's picture, when it is one every client can draw; any
+/// other image stays a named placeholder.
+fn media(block: &wire::ContentBlock) -> Option<Image> {
+    match block {
+        wire::ContentBlock::Image(image) => Image::new(&image.mime_type, image.data.clone()),
+        _ => None,
+    }
+}
+
 /// The readable form of a content block; media are named, not embedded.
 pub(crate) fn block_text(block: &wire::ContentBlock) -> String {
     match block {
@@ -482,8 +514,11 @@ fn tool_status(status: wire::ToolCallStatus) -> ToolStatus {
 
 fn tool_content(content: wire::ToolCallContent) -> ToolContent {
     match content {
-        wire::ToolCallContent::Content(content) => ToolContent::Text {
-            text: bounded(block_text(&content.content)),
+        wire::ToolCallContent::Content(content) => match media(&content.content) {
+            Some(image) => ToolContent::Image { image },
+            None => ToolContent::Text {
+                text: bounded(block_text(&content.content)),
+            },
         },
         wire::ToolCallContent::Diff(diff) => ToolContent::Diff {
             new: bounded(diff.new_text),

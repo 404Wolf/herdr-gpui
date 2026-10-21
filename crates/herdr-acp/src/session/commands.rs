@@ -2,8 +2,8 @@
 
 use acp::v1 as wire;
 use herdr_chat_protocol::{
-    Change, Command, CommandId, MAX_PROMPT_SIZE, OptionValue, PermissionId, Queued, Rejection,
-    Status, Turn,
+    Attachment, Author, Change, Command, CommandId, MAX_ATTACHMENTS, MAX_PROMPT_SIZE, OptionValue,
+    PermissionId, Queued, Rejection, Status, Turn,
 };
 
 use super::{Activity, ConnId, Pending, Session};
@@ -18,20 +18,35 @@ impl<R: FnMut(Activity)> Session<R> {
             );
         }
         let rejected = match command {
-            Command::Prompt { text } => self.prompt(id, text),
+            Command::Prompt { text, attachments } => self.prompt(id, text, attachments),
             Command::Cancel => self.cancel(),
             Command::Answer { option, permission } => self.answer(permission, &option),
             Command::SetMode { id } => self.set_mode(id),
             Command::SetOption { id, value } => self.set_option(id, &value),
             Command::Unqueue { id } => self.unqueue(id),
+            Command::SetAutoAccept { on } => {
+                self.set_auto_accept(on);
+                Ok(())
+            }
         }
         .err();
         self.ack(conn, id, rejected);
     }
 
-    fn prompt(&mut self, id: CommandId, text: String) -> Result<(), Rejection> {
-        if text.trim().is_empty() {
+    fn prompt(
+        &mut self,
+        id: CommandId,
+        text: String,
+        attachments: Vec<Attachment>,
+    ) -> Result<(), Rejection> {
+        if text.trim().is_empty() && attachments.is_empty() {
             return Err(Rejection::EmptyPrompt);
+        }
+        if attachments.len() > MAX_ATTACHMENTS {
+            return Err(Rejection::TooManyAttachments);
+        }
+        if !attachments.iter().all(crate::files::readable) {
+            return Err(Rejection::UnknownFile);
         }
         if text.len() > MAX_PROMPT_SIZE {
             return Err(Rejection::PromptTooLong);
@@ -41,24 +56,50 @@ impl<R: FnMut(Activity)> Session<R> {
         }
         if self.turn.is_some() || !self.ready {
             let mut queued = self.transcript.queued.clone();
-            queued.push(Queued { id, text });
+            queued.push(Queued {
+                attachments,
+                id,
+                text,
+            });
             self.queue_changed(queued);
             return Ok(());
         }
-        self.send_prompt(&text);
+        self.send_prompt(&text, &attachments);
         Ok(())
     }
 
-    fn send_prompt(&mut self, text: &str) {
+    /// Sends a prompt with its files, read now, and shows it in the
+    /// transcript: the text with a line per file, then the pictures.
+    fn send_prompt(&mut self, text: &str, attachments: &[Attachment]) {
         let Some(session) = self.acp_session.clone() else {
             return;
         };
-        let prompt = self.projector.prompt(text);
+        let prepared: Vec<_> = attachments
+            .iter()
+            .map(|attachment| crate::files::prepare(attachment, self.accepts))
+            .collect();
+        let mut shown = text.to_owned();
+        for attachment in attachments {
+            if !shown.is_empty() {
+                shown.push('\n');
+            }
+            shown.push_str("\u{1f4ce} ");
+            shown.push_str(attachment.name());
+        }
+        let prompt = self.projector.prompt(&shown);
         self.emit(prompt);
-        let request = wire::PromptRequest::new(
-            session,
-            vec![wire::ContentBlock::Text(wire::TextContent::new(text))],
-        );
+        let mut blocks = Vec::with_capacity(prepared.len() + 1);
+        if !text.trim().is_empty() {
+            blocks.push(wire::ContentBlock::Text(wire::TextContent::new(text)));
+        }
+        for item in prepared {
+            if let Some(image) = item.image {
+                let change = self.projector.image(Author::User, image);
+                self.emit(change);
+            }
+            blocks.push(item.block);
+        }
+        let request = wire::PromptRequest::new(session, blocks);
         if self.request("session/prompt", &request, Pending::Prompt) {
             self.turn = Some(self.next_request);
             self.emit(Change::Turn {
@@ -81,7 +122,7 @@ impl<R: FnMut(Activity)> Session<R> {
         }
         let next = queued.remove(0);
         self.queue_changed(queued);
-        self.send_prompt(&next.text);
+        self.send_prompt(&next.text, &next.attachments);
     }
 
     fn cancel(&mut self) -> Result<(), Rejection> {
@@ -150,6 +191,43 @@ impl<R: FnMut(Activity)> Session<R> {
             return Err(Rejection::AgentUnavailable);
         }
         Ok(())
+    }
+
+    /// Turns auto-accepting on or off; turning it on also answers the
+    /// requests already waiting.
+    fn set_auto_accept(&mut self, on: bool) {
+        if self.transcript.auto_accept != on {
+            self.emit(Change::AutoAccept { on });
+        }
+        if on {
+            let waiting: Vec<PermissionId> = self
+                .transcript
+                .permissions
+                .iter()
+                .map(|permission| permission.id)
+                .collect();
+            for permission in waiting {
+                self.auto_answer(permission);
+            }
+        }
+    }
+
+    /// Answers `permission` with its allow option while auto-accepting;
+    /// one that offers no way to allow it keeps waiting for a person.
+    pub(super) fn auto_answer(&mut self, permission: PermissionId) {
+        if !self.transcript.auto_accept {
+            return;
+        }
+        let option = self
+            .transcript
+            .permissions
+            .iter()
+            .find(|asked| asked.id == permission)
+            .and_then(|asked| asked.allow_option())
+            .map(|option| option.id.clone());
+        if let Some(option) = option {
+            self.resolve(permission, Some(&option));
+        }
     }
 
     fn unqueue(&mut self, id: CommandId) -> Result<(), Rejection> {

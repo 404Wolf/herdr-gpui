@@ -1,12 +1,15 @@
-//! The session's settings in the chat header: a button per setting worth
+//! The session's settings along the composer's foot: a button per setting worth
 //! having at hand (model, thinking level, mode), the menu each opens, the
 //! rest behind one more button, and how full the context window is.
 
 use super::{super::chats::ChatPane, Hues};
-use crate::{HerdrWindow, chat::chats::Menu, config::corners, notifications::safe_text};
+use crate::{
+    HerdrWindow, chat::chats::Menu, config::corners, notifications::safe_text,
+    search_input::SearchInput,
+};
 use gpui::{prelude::*, *};
 use herdr_chat_protocol::{
-    Command, ConfigOption, OptionCategory, OptionKind, OptionValue, Transcript, display,
+    Choice, Command, ConfigOption, OptionCategory, OptionKind, OptionValue, Transcript, display,
 };
 
 /// The settings the header shows a button for, in order.
@@ -19,6 +22,65 @@ const AT_HAND: [OptionCategory; 3] = [
 const WARN: u8 = 75;
 const ALARM: u8 = 90;
 const METER: f32 = 48.;
+/// A setting with this many choices, other than the model, is a switch
+/// between them rather than a menu: build or plan, say.
+const SWITCH: usize = 2;
+/// Menus with more choices than this open with a search field.
+const SEARCHABLE: usize = 8;
+
+/// The choices whose name, group, or description holds `query`, ignoring
+/// case, with their place in the full list.
+pub(in crate::chat) fn matching<'a>(
+    choices: &'a [Choice],
+    query: &str,
+) -> impl Iterator<Item = (usize, &'a Choice)> {
+    let query = query.trim().to_lowercase();
+    choices.iter().enumerate().filter(move |(_, choice)| {
+        query.is_empty()
+            || [
+                Some(&choice.name),
+                choice.group.as_ref(),
+                choice.description.as_ref(),
+            ]
+            .into_iter()
+            .flatten()
+            .any(|text| text.to_lowercase().contains(&query))
+    })
+}
+
+/// Whether the agent's own modes already include not asking for
+/// permission, such as Claude's "Bypass permissions"; the composer then
+/// leaves out its auto-accept button rather than offer the same twice.
+pub(super) fn agent_bypasses(transcript: &Transcript) -> bool {
+    let bypass = |id: &str, name: &str| {
+        [id, name]
+            .iter()
+            .any(|text| text.to_ascii_lowercase().contains("bypass"))
+    };
+    let options = transcript
+        .options
+        .iter()
+        .filter(|option| option.category == OptionCategory::Mode)
+        .any(|option| match &option.kind {
+            OptionKind::Select { choices, .. } => choices
+                .iter()
+                .any(|choice| bypass(&choice.id, &choice.name)),
+            OptionKind::Toggle { .. } => false,
+        });
+    let modes = transcript.modes.as_ref().is_some_and(|modes| {
+        modes
+            .available
+            .iter()
+            .any(|mode| bypass(&mode.id, &mode.name))
+    });
+    options || modes
+}
+
+/// Whether `option` shows as a switch.
+fn switches(option: &ConfigOption) -> bool {
+    matches!(&option.kind, OptionKind::Select { choices, .. } if choices.len() == SWITCH)
+        && option.category != OptionCategory::Model
+}
 
 /// The settings the header has no button for.
 fn others(transcript: &Transcript) -> Vec<&ConfigOption> {
@@ -42,24 +104,180 @@ impl HerdrWindow {
             .flex()
             .items_center()
             .gap(px(4.))
-            .px(px(6.))
-            .h(px(22.))
+            .px(px(8.))
+            .h(px(26.))
             .rounded(px(corners::CONTROL))
-            .border_1()
-            .border_color(rgb(theme.active))
+            .bg(rgb(theme.active))
+            .text_size(px((self.chat_text_size() - 1.).max(10.)))
             .cursor_pointer()
-            .hover(|button| button.bg(rgb(theme.active)))
+            .hover(|button| button.bg(rgb(crate::config::mix(theme.active, theme.foreground, 12))))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
     }
 
-    fn toggle_chat_menu(&mut self, pane_id: &str, menu: Menu, cx: &mut Context<Self>) {
-        if let Some(pane) = self.chats.pane_mut(pane_id) {
-            pane.menu = (pane.menu.as_ref() != Some(&menu)).then_some(menu);
+    /// Opens `menu`, or closes it when it is open. A long setting menu
+    /// opens with its search field holding the keyboard; closing it gives
+    /// the keyboard back to the composer.
+    pub(in crate::chat) fn toggle_chat_menu(
+        &mut self,
+        pane_id: &str,
+        menu: Menu,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let mut font = self.config.ui.clone();
+        font.size = self.chat_text_size();
+        let theme = self.theme.clone();
+        let Some(pane) = self.chats.pane_mut(pane_id) else {
+            return;
+        };
+        let opening = pane.menu.as_ref() != Some(&menu);
+        let long = match &menu {
+            Menu::Setting(id) => pane
+                .session
+                .transcript()
+                .options
+                .iter()
+                .find(|option| &option.id == id)
+                .is_some_and(|option| {
+                    matches!(&option.kind, OptionKind::Select { choices, .. }
+                        if choices.len() > SEARCHABLE)
+                }),
+            Menu::Modes | Menu::Settings => false,
+        };
+        pane.menu = opening.then_some(menu);
+        let search = (opening && long).then(|| {
+            let input = cx.new(|cx| {
+                let mut input = SearchInput::new(cx);
+                // The menu draws the field's frame.
+                input.set_frameless(cx);
+                input.set_appearance(font, theme, cx);
+                input.set_placeholder("Search\u{2026}", cx);
+                input
+            });
+            let redraw = cx.observe(&input, |this, _, cx| this.redraw_terminal(cx));
+            (input, redraw)
+        });
+        let Some(pane) = self.chats.pane_mut(pane_id) else {
+            return;
+        };
+        pane.menu_search = search;
+        let focus = pane
+            .menu_search
+            .as_ref()
+            .map(|(input, _)| input)
+            .or(pane.composer.as_ref())
+            .map(|input| input.read(cx).focus.clone());
+        if let Some(focus) = focus {
+            window.focus(&focus, cx);
         }
         cx.notify();
     }
 
-    /// The header's setting buttons: one per setting at hand, the agent's
+    /// An on/off switch between a setting's two choices, labeled with the
+    /// current one: off is the first choice, on the second.
+    fn chat_switch(
+        &self,
+        id: String,
+        choices: Vec<(String, bool, Command)>,
+        pane_id: &str,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let theme = &self.theme;
+        let on = choices.get(1).is_some_and(|(_, current, _)| *current);
+        let name = choices
+            .iter()
+            .find(|(_, current, _)| *current)
+            .map(|(name, _, _)| name.clone())
+            .unwrap_or_default();
+        let other = choices
+            .into_iter()
+            .find(|(_, current, _)| !*current)
+            .map(|(_, _, command)| command);
+        let pane = pane_id.to_owned();
+        let fill = if on { theme.primary() } else { theme.active };
+        let selector = id.clone();
+        div()
+            .id(SharedString::from(id))
+            .debug_selector(move || selector.clone())
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .px(px(4.))
+            .h(px(26.))
+            .cursor_pointer()
+            .text_size(px((self.chat_text_size() - 2.).max(10.)))
+            .text_color(rgb(if on { theme.primary() } else { theme.subtext() }))
+            .child(
+                div()
+                    .flex_none()
+                    .w(px(26.))
+                    .h(px(15.))
+                    .p(px(2.))
+                    .rounded_full()
+                    .bg(rgb(fill))
+                    .flex()
+                    .when(on, |track| track.justify_end())
+                    .child(div().size(px(11.)).rounded_full().bg(rgb(theme.background))),
+            )
+            .child(safe_text(&name, 40))
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                cx.stop_propagation();
+                if let Some(command) = other.clone() {
+                    this.chat_send(&pane, command, cx);
+                }
+            }))
+    }
+
+    /// Whether permission requests are answered without asking: a shield
+    /// that turns yellow while they are.
+    pub(super) fn render_chat_auto_accept(
+        &self,
+        chat: &ChatPane,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let theme = &self.theme;
+        let yellow = Hues::of(theme).yellow;
+        let on = chat.session.transcript().auto_accept;
+        let pane = chat.target.pane_id.clone();
+        let color = if on { yellow } else { theme.subtext() };
+        div()
+            .id("chat-auto-accept")
+            .debug_selector(|| "chat-auto-accept".into())
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(px(5.))
+            .px(px(8.))
+            .h(px(26.))
+            .rounded(px(corners::CONTROL))
+            .cursor_pointer()
+            .border_1()
+            .border_color(rgb(if on { yellow } else { theme.active }))
+            .bg(rgb(if on {
+                crate::config::mix(theme.background, yellow, 18)
+            } else {
+                theme.background
+            }))
+            .text_size(px((self.chat_text_size() - 2.).max(10.)))
+            .text_color(rgb(color))
+            .child(
+                svg()
+                    .flex_none()
+                    .path("icons/shield.svg")
+                    .size(px(12.))
+                    .text_color(rgb(color)),
+            )
+            .child(if on { "Auto-accepting" } else { "Asks first" })
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                cx.stop_propagation();
+                this.chat_send(&pane, Command::SetAutoAccept { on: !on }, cx);
+            }))
+    }
+
+    /// The composer's setting buttons: one per setting at hand, the agent's
     /// older modes when it has no mode setting, then one for the rest.
     pub(super) fn render_chat_settings_buttons(
         &self,
@@ -80,6 +298,29 @@ impl HerdrWindow {
             let Some(option) = transcript.option(category) else {
                 continue;
             };
+            if switches(option)
+                && let OptionKind::Select { choices, current } = &option.kind
+            {
+                let switch = choices
+                    .iter()
+                    .map(|choice| {
+                        let command = Command::SetOption {
+                            id: option.id.clone(),
+                            value: OptionValue::Choice {
+                                id: choice.id.clone(),
+                            },
+                        };
+                        (choice.name.clone(), &choice.id == current, command)
+                    })
+                    .collect();
+                buttons.push(self.chat_switch(
+                    format!("chat-setting-{}", option.id),
+                    switch,
+                    &pane_id,
+                    cx,
+                ));
+                continue;
+            }
             let id = option.id.clone();
             let pane = pane_id.clone();
             let button = self
@@ -108,9 +349,9 @@ impl HerdrWindow {
                     }))
                 }
                 OptionKind::Select { .. } => button.child(chevron()).on_click(cx.listener(
-                    move |this, _: &ClickEvent, _, cx| {
+                    move |this, _: &ClickEvent, window, cx| {
                         cx.stop_propagation();
-                        this.toggle_chat_menu(&pane, Menu::Setting(id.clone()), cx);
+                        this.toggle_chat_menu(&pane, Menu::Setting(id.clone()), window, cx);
                     },
                 )),
             });
@@ -122,15 +363,29 @@ impl HerdrWindow {
                 .current()
                 .map_or_else(|| modes.current.clone(), |mode| mode.name.clone());
             let pane = pane_id.clone();
-            buttons.push(
-                self.chat_header_button("chat-mode".into())
-                    .child(div().max_w(px(160.)).truncate().child(safe_text(&name, 80)))
-                    .child(chevron())
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        cx.stop_propagation();
-                        this.toggle_chat_menu(&pane, Menu::Modes, cx);
-                    })),
-            );
+            if modes.available.len() == SWITCH {
+                let switch = modes
+                    .available
+                    .iter()
+                    .map(|mode| {
+                        let command = Command::SetMode {
+                            id: mode.id.clone(),
+                        };
+                        (mode.name.clone(), mode.id == modes.current, command)
+                    })
+                    .collect();
+                buttons.push(self.chat_switch("chat-mode".into(), switch, &pane, cx));
+            } else {
+                buttons.push(
+                    self.chat_header_button("chat-mode".into())
+                        .child(div().max_w(px(160.)).truncate().child(safe_text(&name, 80)))
+                        .child(chevron())
+                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                            cx.stop_propagation();
+                            this.toggle_chat_menu(&pane, Menu::Modes, window, cx);
+                        })),
+                );
+            }
         }
         if !others(transcript).is_empty() {
             let pane = pane_id.clone();
@@ -142,9 +397,9 @@ impl HerdrWindow {
                             .size(px(12.))
                             .text_color(rgb(theme.foreground)),
                     )
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                         cx.stop_propagation();
-                        this.toggle_chat_menu(&pane, Menu::Settings, cx);
+                        this.toggle_chat_menu(&pane, Menu::Settings, window, cx);
                     })),
             );
         }
@@ -225,7 +480,7 @@ impl HerdrWindow {
                 .px(px(8.))
                 .pt(px(6.))
                 .pb(px(2.))
-                .text_size(px((self.config.ui.size - 1.).max(10.)))
+                .text_size(px((self.chat_text_size() - 1.).max(10.)))
                 .text_color(rgb(theme.muted))
                 .child(safe_text(text, 80))
         };
@@ -255,9 +510,9 @@ impl HerdrWindow {
                         row(index, mode.id == modes.current)
                             .child(name)
                             .children(description)
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                                 cx.stop_propagation();
-                                this.toggle_chat_menu(&pane, Menu::Modes, cx);
+                                this.toggle_chat_menu(&pane, Menu::Modes, window, cx);
                                 this.chat_send(&pane, command.clone(), cx);
                             }))
                             .into_any_element(),
@@ -272,8 +527,43 @@ impl HerdrWindow {
                     return div().into_any_element();
                 };
                 rows.push(heading(&option.name).into_any_element());
+                let query = chat
+                    .menu_search
+                    .as_ref()
+                    .map(|(search, _)| search.read(cx).text().to_owned())
+                    .unwrap_or_default();
+                if let Some(search) = chat.menu_search.as_ref().map(|(search, _)| search.clone()) {
+                    rows.push(
+                        div()
+                            .debug_selector(|| "chat-menu-search".into())
+                            .mx(px(4.))
+                            .mb(px(4.))
+                            .px(px(6.))
+                            .h(px(30.))
+                            .flex()
+                            .items_center()
+                            .rounded(px(corners::SMALL))
+                            .border_1()
+                            .border_color(rgb(theme.active))
+                            .bg(rgb(theme.background))
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .child(search)
+                            .into_any_element(),
+                    );
+                }
+                let mut found = matching(choices, &query).peekable();
+                if found.peek().is_none() {
+                    rows.push(
+                        div()
+                            .px(px(8.))
+                            .py(px(4.))
+                            .text_color(rgb(theme.muted))
+                            .child("No match")
+                            .into_any_element(),
+                    );
+                }
                 let mut group = None;
-                for (index, choice) in choices.iter().enumerate() {
+                for (index, choice) in found {
                     if choice.group.is_some() && choice.group != group {
                         group.clone_from(&choice.group);
                         rows.push(
@@ -293,9 +583,9 @@ impl HerdrWindow {
                         row(index, &choice.id == current)
                             .child(name)
                             .children(description)
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                                 cx.stop_propagation();
-                                this.toggle_chat_menu(&pane, menu.clone(), cx);
+                                this.toggle_chat_menu(&pane, menu.clone(), window, cx);
                                 this.chat_send(&pane, command.clone(), cx);
                             }))
                             .into_any_element(),
@@ -330,7 +620,7 @@ impl HerdrWindow {
                                     .text_color(rgb(theme.subtext()))
                                     .child(safe_text(description, 200))
                             }))
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                                 cx.stop_propagation();
                                 match &value {
                                     Some(value) => {
@@ -340,9 +630,12 @@ impl HerdrWindow {
                                         };
                                         this.chat_send(&pane, command, cx);
                                     }
-                                    None => {
-                                        this.toggle_chat_menu(&pane, Menu::Setting(id.clone()), cx)
-                                    }
+                                    None => this.toggle_chat_menu(
+                                        &pane,
+                                        Menu::Setting(id.clone()),
+                                        window,
+                                        cx,
+                                    ),
                                 }
                             }))
                             .into_any_element(),
@@ -350,16 +643,18 @@ impl HerdrWindow {
                 }
             }
         }
+        // Over the composer, whose foot holds the buttons that open it.
         div()
             .absolute()
-            .top(px(66.))
-            .left(px(8.))
-            .w(px(300.))
+            .bottom(relative(1.))
+            .left(px(12.))
+            .w(px(360.))
             .child(
                 div()
                     .id("chat-menu")
                     .debug_selector(|| "chat-menu".into())
                     .occlude()
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .flex()
                     .flex_col()
                     .p(px(4.))

@@ -123,13 +123,16 @@ fn a_new_snapshot_replaces_the_transcript() {
 fn commands_wait_for_their_acknowledgement() {
     let mut session = live(cursor(1, 0), Vec::new());
     let ClientMessage::Command { id, .. } = session
-        .submit(Command::Prompt { text: "hi".into() })
+        .submit(Command::Prompt {
+            text: "hi".into(),
+            attachments: Vec::new(),
+        })
         .unwrap()
     else {
         panic!("a command");
     };
     session.submit(Command::Cancel).unwrap();
-    let resent: Vec<_> = session.resend().collect();
+    let resent = session.resend();
     assert_eq!(resent.len(), 2);
     assert!(matches!(&resent[0], ClientMessage::Command { id: first, .. } if *first == id));
     assert!(
@@ -137,7 +140,18 @@ fn commands_wait_for_their_acknowledgement() {
             .receive(ServerMessage::Ack { id, rejected: None })
             .unwrap()
     );
-    assert_eq!(session.resend().count(), 1);
+    assert_eq!(session.rejection(), None);
+}
+
+#[test]
+fn a_command_that_keeps_ending_the_connection_is_given_up() {
+    let mut session = live(cursor(1, 0), Vec::new());
+    session.submit(Command::SetAutoAccept { on: true }).unwrap();
+    // Sent once with submit, once more on the next connection.
+    assert_eq!(session.resend().len(), 1);
+    // That connection ended too: the third leaves it behind.
+    assert!(session.resend().is_empty());
+    assert_eq!(session.rejection(), Some(Rejection::Unsupported));
 }
 
 #[test]

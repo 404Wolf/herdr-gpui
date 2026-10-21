@@ -6,9 +6,11 @@ mod app;
 mod attach;
 mod cli;
 mod error;
+mod files;
 mod herdr;
 mod process;
 mod project;
+mod relay;
 mod rpc;
 mod session;
 mod tui;
@@ -27,6 +29,23 @@ fn main() -> ExitCode {
             println!("herdr-acp {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
+        Ok(cli::Parsed::Agents) => {
+            let path = agents::search_path(
+                std::env::var_os("PATH").as_deref(),
+                std::env::home_dir().as_deref(),
+            );
+            for agent in agents::installed(Some(&path)) {
+                println!("{agent}");
+            }
+            ExitCode::SUCCESS
+        }
+        Ok(cli::Parsed::Connect(id)) => match relay::run(&id) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("herdr-acp: {error:#}");
+                ExitCode::FAILURE
+            }
+        },
         Ok(cli::Parsed::Run(options)) => match app::run(options) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {

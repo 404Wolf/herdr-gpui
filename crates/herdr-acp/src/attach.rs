@@ -11,7 +11,8 @@ use std::{
 
 use crossbeam_channel::{Sender, bounded};
 use herdr_chat_protocol::{
-    ByeReason, ClientMessage, EndpointId, ServerMessage, VERSION, read_frame, write_frame,
+    ByeReason, ClientMessage, Command, CommandId, EndpointId, ServerMessage, VERSION, read_frame,
+    write_frame,
 };
 use herdr_client::private_endpoint::{Connection, Listener, release};
 
@@ -79,7 +80,16 @@ const SWEEP: usize = 256;
 /// Removes sockets left by chats that ended without cleaning up.
 #[cfg(unix)]
 pub(crate) fn sweep(dir: &Path) {
-    use std::{io, os::unix::net::UnixStream};
+    sweep_with(dir, |path| {
+        std::os::unix::net::UnixStream::connect(path).map(drop)
+    });
+}
+
+/// [`sweep`], probing each endpoint with `connect`: one that refuses has
+/// nobody listening and is removed.
+#[cfg(unix)]
+fn sweep_with(dir: &Path, mut connect: impl FnMut(&Path) -> std::io::Result<()>) {
+    use std::io;
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -91,7 +101,7 @@ pub(crate) fn sweep(dir: &Path) {
                 .and_then(|stem| stem.to_str())
                 .is_some_and(|stem| stem.parse::<EndpointId>().is_ok());
         if is_endpoint
-            && let Err(error) = UnixStream::connect(&path)
+            && let Err(error) = connect(&path)
             && error.kind() == io::ErrorKind::ConnectionRefused
         {
             let _ = std::fs::remove_file(&path);
@@ -141,9 +151,19 @@ fn serve(connection: Connection, inputs: &Sender<Input>) -> Result<()> {
     if inputs.send(Input::Attach(attach)).is_err() {
         return Ok(());
     }
-    while let Ok(Some(message)) = read_frame::<_, ClientMessage>(&mut reader) {
-        let ClientMessage::Command { command, id } = message else {
-            break;
+    while let Ok(Some(frame)) = read_frame::<_, serde_json::Value>(&mut reader) {
+        let (command, id) = match command_frame(frame) {
+            Frame::Command { command, id } => (command, id),
+            // A newer client's command is refused, not taken as a broken
+            // stream: dropping the connection would only have the client
+            // reconnect and send it again.
+            Frame::Unknown(id) => {
+                if inputs.send(Input::Unsupported { conn, id }).is_err() {
+                    break;
+                }
+                continue;
+            }
+            Frame::Invalid => break,
         };
         if inputs.send(Input::Command { command, conn, id }).is_err() {
             break;
@@ -152,6 +172,30 @@ fn serve(connection: Connection, inputs: &Sender<Input>) -> Result<()> {
     let _ = inputs.send(Input::Detach(conn));
     closer.close();
     Ok(())
+}
+
+/// What a client sent after its greeting.
+enum Frame {
+    Command {
+        command: Command,
+        id: CommandId,
+    },
+    /// A well-formed command this version does not know.
+    Unknown(CommandId),
+    /// Anything else, which ends the connection.
+    Invalid,
+}
+
+fn command_frame(frame: serde_json::Value) -> Frame {
+    let id = (frame.get("type").and_then(serde_json::Value::as_str) == Some("command"))
+        .then(|| frame.get("id").cloned())
+        .flatten()
+        .and_then(|id| serde_json::from_value::<CommandId>(id).ok());
+    match serde_json::from_value::<ClientMessage>(frame) {
+        Ok(ClientMessage::Command { command, id }) => Frame::Command { command, id },
+        Ok(ClientMessage::Hello { .. }) => Frame::Invalid,
+        Err(_) => id.map_or(Frame::Invalid, Frame::Unknown),
+    }
 }
 
 /// Where this run listens, and its id for the Herdr token.

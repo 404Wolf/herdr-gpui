@@ -68,6 +68,10 @@ pub enum Change {
     Usage {
         usage: Option<Usage>,
     },
+    /// Permission requests are now answered without asking, or asked again.
+    AutoAccept {
+        on: bool,
+    },
 }
 
 impl Transcript {
@@ -139,6 +143,7 @@ impl Transcript {
             Change::Session { session } => self.session.clone_from(session),
             Change::Commands { commands } => self.commands.clone_from(commands),
             Change::Usage { usage } => self.usage.clone_from(usage),
+            Change::AutoAccept { on } => self.auto_accept = *on,
         }
         Ok(())
     }

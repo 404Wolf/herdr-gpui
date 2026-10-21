@@ -3,7 +3,7 @@
 
 use super::{
     Error, MAX_FAILURES, Result, Target,
-    link::Link,
+    link::{Dial, Link},
     list::{self, Splice},
     prepared::Prepared,
     session::Session,
@@ -28,15 +28,23 @@ pub(crate) type Connect<'a> =
     dyn FnMut(&Target, Option<Cursor>, Vec<ClientMessage>) -> Result<Link> + 'a;
 
 /// The connector the app uses: the program's endpoint by the id its pane
-/// reported, a socket in this user's private directory or a named pipe.
+/// reported, a socket in this user's private directory or a named pipe, or
+/// for a chat on an SSH host, `herdr-acp connect` run there over `ssh`.
 pub(crate) fn connect(
     target: &Target,
     since: Option<Cursor>,
     resend: Vec<ClientMessage>,
 ) -> Result<Link> {
-    let path =
-        herdr_chat_protocol::endpoint_address(&target.endpoint).ok_or(Error::NoEndpointDir)?;
-    Link::start(path, since, resend)
+    let dial = match &target.route {
+        super::Route::Local => Dial::Socket(
+            herdr_chat_protocol::endpoint_address(&target.endpoint).ok_or(Error::NoEndpointDir)?,
+        ),
+        super::Route::Ssh(host) => {
+            let script = super::remote_program_script(&format!("connect {}", target.endpoint));
+            Dial::Process(herdr_client::script_command(host, &script).map_err(Error::Remote)?)
+        }
+    };
+    Link::start(dial, since, resend)
 }
 
 /// The menu open over a chat's header.
@@ -51,6 +59,8 @@ pub(crate) enum Menu {
 }
 
 pub(crate) struct ChatPane {
+    /// Files the next prompt carries, in the order they were added.
+    pub(crate) attachments: Vec<std::path::PathBuf>,
     /// Which slash-command completion is selected.
     pub(crate) completion: usize,
     pub(crate) composer: Option<Entity<SearchInput>>,
@@ -70,12 +80,19 @@ pub(crate) struct ChatPane {
     list_keys: Vec<(EntryId, u64)>,
     list_snapshots: u64,
     pub(crate) menu: Option<Menu>,
+    /// The search field over a long menu while one is open, with the
+    /// subscription that redraws the menu as it changes.
+    pub(crate) menu_search: Option<(Entity<SearchInput>, gpui::Subscription)>,
     /// Trying again cannot help: the program speaks another version.
     permanent: bool,
     pub(crate) prepared: Prepared,
+    /// Whether the plan and changed files show beside the entries.
+    pub(crate) rail: bool,
     retry_at: Option<Instant>,
     pub(crate) session: Session,
     pub(crate) target: Target,
+    /// Files being copied to the chat's SSH host to attach there.
+    pub(crate) uploading: usize,
 }
 
 impl ChatPane {
@@ -83,6 +100,7 @@ impl ChatPane {
         let list = ListState::new(0, ListAlignment::Bottom, px(OVERDRAW));
         list.set_follow_mode(gpui::FollowMode::Tail);
         Self {
+            attachments: Vec::new(),
             completion: 0,
             composer: None,
             draft: Vec::new(),
@@ -96,11 +114,14 @@ impl ChatPane {
             list_keys: Vec::new(),
             list_snapshots: 0,
             menu: None,
+            menu_search: None,
             permanent: false,
             prepared: Prepared::default(),
+            rail: true,
             retry_at: None,
             session: Session::default(),
             target,
+            uploading: 0,
         }
     }
 
@@ -142,7 +163,7 @@ impl ChatPane {
         self.retry_at = None;
         self.generation += 1;
         self.session.begin();
-        let resend = self.session.resend().collect();
+        let resend = self.session.resend();
         match connect(&self.target, self.session.since(), resend) {
             Ok(link) => self.link = Some((self.generation, link)),
             Err(error) => self.fail(&error, now),
@@ -237,11 +258,15 @@ impl ChatPane {
 /// Every chat pane of the window's daemon, in its snapshot's order.
 #[derive(Default)]
 pub(crate) struct Chats {
+    /// The agents installed on each host new chats may start on.
+    pub(crate) agents: super::harnesses::Harnesses,
     panes: Vec<ChatPane>,
     /// The `herdr-acp` new chats run.
     pub(crate) program: super::Program,
     /// Programs whose panes the user turned back to their terminal.
     raw: HashSet<EndpointId>,
+    /// Textures of panes no longer attached, for the window to drop.
+    released: Vec<std::sync::Arc<gpui::RenderImage>>,
     /// The second a running turn's timer last redrew at.
     pub(crate) ticked: u64,
     /// A new chat whose tab is being made.
@@ -258,7 +283,15 @@ impl Chats {
         connect: &mut Connect<'_>,
     ) -> bool {
         let before = self.panes.len();
-        self.panes.retain(|pane| targets.contains(&pane.target));
+        let released = &mut self.released;
+        self.panes.retain_mut(|pane| {
+            let keep = targets.contains(&pane.target);
+            if !keep {
+                pane.prepared.visuals.clear();
+                released.extend(pane.prepared.visuals.take_released());
+            }
+            keep
+        });
         let mut changed = self.panes.len() != before;
         let mut panes = Vec::with_capacity(targets.len());
         for target in targets {
@@ -293,6 +326,10 @@ impl Chats {
         self.panes
             .iter_mut()
             .fold(false, |changed, pane| pane.poll(now) | changed)
+    }
+
+    pub(crate) fn take_released(&mut self) -> Vec<std::sync::Arc<gpui::RenderImage>> {
+        std::mem::take(&mut self.released)
     }
 
     pub(crate) fn panes(&self) -> impl Iterator<Item = &ChatPane> {

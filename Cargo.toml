@@ -66,6 +66,9 @@ if-addrs             = "0.15"
 # Display and idle holds behind the status bar cup; `bin` would pull in a CLI.
 keepawake            = { default-features = false, version = "0.6.1" }
 image                = { default-features = false, features = ["gif", "jpeg", "png", "webp"], version = "0.25.10" }
+# Mermaid fences in chat answers become diagrams: parse, lay out, and write
+# SVG in pure Rust; GPUI rasterizes the SVG. No CLI and no PNG writer.
+mermaid-rs-renderer  = { default-features = false, version = "0.3.1" }
 # Helix's fzf-style scorer behind the command palette.
 nucleo-matcher       = "0.3.1"
 # Bonjour browsing for SSH hosts in the Add Device dialog; it runs its own

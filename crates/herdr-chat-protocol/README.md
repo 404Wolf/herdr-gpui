@@ -9,15 +9,30 @@ needs no ACP types and no per-agent knowledge.
 ## Model
 
 `Transcript` is the whole conversation a client draws: entries (user, agent,
-thought, tool call, turn summary, notice), the turn status and when the running
+thought, image, tool call, turn summary, notice), the turn status and when the running
 turn started, pending permission requests, the plan, session modes and
 settings (ACP config options: model, thinking level, mode, and others),
-context window use and cost, queued prompts, and how many clients watch. `Change` is
+context window use and cost, queued prompts, how many clients watch, and
+whether permission requests are auto-accepted. While they are, the program
+answers each one with its allow option (once before always) as it arrives;
+a request that offers none still waits for a person. `Change` is
 one step from one transcript to the next, and `Transcript::apply` is the only
 reducer: the program and every client run the same function, so they cannot
 disagree about what a change means. A change that does not fit (an unknown
 entry, a resolved permission that was never asked) is an error, and the client
 answers it by asking for a fresh snapshot.
+
+An image is a PNG, JPEG, GIF, or WebP as base64 text of at most
+`MAX_IMAGE_DATA` bytes, either an entry of its own (from the user or the agent)
+or part of a tool call's content. The program keeps other media as a named
+placeholder such as `[image]`, and so does its own terminal view for every
+image; a graphical client decodes the bytes itself, with its own bounds.
+
+A prompt may carry files as `Attachment`s, by absolute path on the machine
+the program runs on, at most `MAX_ATTACHMENTS`. The program reads them when
+the prompt goes out: a picture as an image when the agent takes images, a
+text file as embedded text when it takes embedded context, and anything else
+as a link to the file.
 
 `assist` holds what every client does the same way with that model:
 completing the agent's slash commands, recalling earlier prompts, and stepping

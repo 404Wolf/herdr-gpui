@@ -43,7 +43,10 @@ fn the_worker_greets_and_delivers_in_order() {
 #[test]
 fn commands_follow_the_greeting_and_resent_ones_go_first() {
     let program = Program::new();
-    let resent = command(Command::Prompt { text: "a".into() });
+    let resent = command(Command::Prompt {
+        text: "a".into(),
+        attachments: Vec::new(),
+    });
     let link = Link::start(program.path.clone(), None, [resent.clone()]).unwrap();
     let later = command(Command::Cancel);
     link.send(later.clone()).unwrap();
@@ -126,4 +129,41 @@ fn a_frame_the_program_cannot_have_sent_ends_the_link() {
     stream.write_all(&[3, 0, 0, 0, b'{', b'x', b'}']).unwrap();
     let polled = collect(&link, usize::MAX);
     assert!(matches!(polled.end, Some(Error::Read(_))));
+}
+
+/// `bytes` as a POSIX `printf` format of octal escapes.
+#[cfg(unix)]
+fn printf_format(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("\\{byte:03o}")).collect()
+}
+
+#[cfg(unix)]
+#[test]
+fn a_child_process_carries_the_connection() {
+    use crate::chat::link::Dial;
+    let mut frame = Vec::new();
+    write_frame(&mut frame, &welcome()).unwrap();
+    // The child greets, then holds its stdout open until the link kills it.
+    let mut command = std::process::Command::new("/bin/sh");
+    command.args([
+        "-c",
+        &format!("printf '{}'; exec sleep 30", printf_format(&frame)),
+    ]);
+    let link = Link::start(Dial::Process(command), None, []).unwrap();
+    let polled = collect(&link, 1);
+    assert_eq!(polled.messages.first(), Some(&welcome()));
+    assert!(polled.end.is_none(), "{:?}", polled.end);
+    drop(link);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_child_that_exits_ends_the_link() {
+    use crate::chat::link::Dial;
+    let mut command = std::process::Command::new("/bin/sh");
+    command.args(["-c", "exit 127"]);
+    let link = Link::start(Dial::Process(command), None, []).unwrap();
+    let polled = collect(&link, 1);
+    assert!(polled.messages.is_empty());
+    assert!(matches!(polled.end, Some(Error::Closed)));
 }

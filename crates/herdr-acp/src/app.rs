@@ -27,8 +27,13 @@ struct Agent {
 fn agent(choice: AgentChoice, name: Option<String>) -> Agent {
     match choice {
         AgentChoice::Builtin { agent, args: extra } => {
-            let (program, mut args) =
-                crate::agents::command(agent, std::env::var_os("PATH").as_deref());
+            let (program, mut args) = crate::agents::command(
+                agent,
+                Some(&crate::agents::search_path(
+                    std::env::var_os("PATH").as_deref(),
+                    std::env::home_dir().as_deref(),
+                )),
+            );
             args.extend(extra);
             Agent {
                 args,

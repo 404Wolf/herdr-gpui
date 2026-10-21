@@ -1,7 +1,7 @@
 //! Transcript entries as wrapped, styled terminal lines.
 
 use herdr_chat_protocol::{
-    Entry, EntryKind, NoticeLevel, PlanEntry, PlanStatus, Tool, ToolContent, ToolStatus,
+    Author, Entry, EntryKind, NoticeLevel, PlanEntry, PlanStatus, Tool, ToolContent, ToolStatus,
 };
 use ratatui::{
     style::{Color, Modifier, Style},
@@ -114,6 +114,17 @@ pub(crate) fn entry(entry: &Entry, width: usize) -> Vec<Line<'static>> {
                 lines.push(Line::styled(format!("  … {hidden} more lines"), style));
             }
         }
+        // The terminal names a picture; attached clients draw it.
+        EntryKind::Image { author, .. } => {
+            let (lead, color) = match author {
+                Author::User => ("› ", Color::Cyan),
+                Author::Agent => ("  ", Color::DarkGray),
+            };
+            lines.push(Line::styled(
+                format!("{lead}[image]"),
+                Style::default().fg(color),
+            ));
+        }
         EntryKind::Tool(tool) => tool_lines(&mut lines, tool, width),
         EntryKind::Turn(summary) => {
             let text = summary.describe();
@@ -212,6 +223,7 @@ fn tool_lines(lines: &mut Vec<Line<'static>>, tool: &Tool, width: usize) {
                     lines.push(Line::styled(format!("  │ … {hidden} more lines"), dim));
                 }
             }
+            ToolContent::Image { .. } => lines.push(Line::styled("  │ [image]", dim)),
             ToolContent::Terminal { id } => {
                 lines.push(Line::styled(format!("  terminal {id}"), dim));
             }

@@ -4,6 +4,8 @@ use herdr_chat_protocol::{EntryId, ToolKind};
 
 use super::*;
 
+mod images;
+
 fn plain(lines: &[Line<'_>]) -> Vec<String> {
     lines
         .iter()

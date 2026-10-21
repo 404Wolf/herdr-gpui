@@ -35,10 +35,14 @@ const DEADLINE: Duration = Duration::from_secs(15);
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     // keep-sorted start
-    #[error("chats start on this machine's Herdr only")]
-    NotLocal,
+    #[error("{} is not installed on this host", .0.display_name())]
+    AgentMissing(Agent),
+    #[error("ACP chats are off in Settings")]
+    Disabled,
     #[error("Herdr UI is not connected")]
     NotConnected,
+    #[error("chats start on this machine's Herdr or an SSH host's")]
+    NotLocal,
     #[error("no workspace is focused")]
     NoWorkspace,
     #[error("herdr-acp was not found beside Herdr UI or on PATH")]
@@ -121,19 +125,33 @@ pub(crate) fn command_line(agent: Agent) -> String {
     }
 }
 
-/// The `tab.create` a chat runs in, labelled after its agent.
+/// The line typed into a new tab on an SSH host: the first `herdr-acp`
+/// found there, `~/.herdr/bin` before the rest, else a message saying where
+/// to install it, which stays on screen.
+pub(crate) fn remote_command_line(agent: Agent) -> String {
+    format!(
+        " sh -c '{}'",
+        super::remote_program_script(&agent.to_string())
+    )
+}
+
+/// The `tab.create` a chat runs in, labelled after its agent. A local chat
+/// carries this app's program in the tab's environment; a remote one finds
+/// its host's own.
 pub(crate) fn tab_params(
     workspace: &str,
     cwd: Option<&str>,
     agent: Agent,
-    program: &Path,
+    program: Option<&Path>,
 ) -> serde_json::Value {
     let mut params = json!({
         "workspace_id": workspace,
         "label": agent.display_name(),
         "focus": true,
-        "env": { PROGRAM_ENV: program.to_string_lossy() },
     });
+    if let Some(program) = program {
+        params["env"] = json!({ PROGRAM_ENV: program.to_string_lossy() });
+    }
     if let Some(cwd) = cwd {
         params["cwd"] = json!(cwd);
     }
@@ -145,6 +163,9 @@ pub(crate) fn tab_params(
 #[derive(Debug)]
 pub(crate) struct Starting {
     agent: Agent,
+    /// Whether the chat runs on an SSH host, so its line finds the host's
+    /// own program.
+    remote: bool,
     boot: String,
     deadline: Instant,
     endpoint: (u64, u64),
@@ -170,18 +191,24 @@ impl HerdrWindow {
         .detach();
     }
 
-    /// Whether this window can start a chat now: the program is here and the
-    /// selected Herdr runs on this machine.
+    /// Whether this window can start a chat now: the selected Herdr runs on
+    /// this machine and the program is here, or it runs on an SSH host,
+    /// whose own program the new tab looks for.
     pub(crate) fn can_start_chat(&self) -> bool {
-        matches!(self.chats.program, Program::Found(_)) && self.chat_host_local()
+        if !self.config.features.acp_chats {
+            return false;
+        }
+        match self.chat_route() {
+            Some(super::Route::Local) => matches!(self.chats.program, Program::Found(_)),
+            Some(super::Route::Ssh(_)) => true,
+            None => false,
+        }
     }
 
-    fn chat_host_local(&self) -> bool {
+    fn chat_route(&self) -> Option<super::Route> {
         self.endpoints
             .get(self.selected_endpoint)
-            .is_some_and(|endpoint| {
-                super::discovery::local(&endpoint.connection.target, &self.live)
-            })
+            .and_then(|endpoint| super::discovery::route(&endpoint.connection.target, &self.live))
     }
 
     pub(crate) fn chat_starting(&self) -> bool {
@@ -191,14 +218,20 @@ impl HerdrWindow {
     /// Opens a tab running a chat with `agent` in the workspace of `beside`,
     /// else of the focused pane, in that pane's folder.
     pub(crate) fn start_chat(&mut self, agent: Agent, beside: Option<&str>) -> Result<(), Error> {
-        let program = match &self.chats.program {
-            Program::Found(program) => program.clone(),
-            Program::Missing => return Err(Error::ProgramMissing),
-            Program::Unknown | Program::Looking => return Err(Error::ProgramUnknown),
-        };
-        if !self.chat_host_local() {
-            return Err(Error::NotLocal);
+        if !self.config.features.acp_chats {
+            return Err(Error::Disabled);
         }
+        if self.chat_agent_missing(agent) {
+            return Err(Error::AgentMissing(agent));
+        }
+        let program = match self.chat_route().ok_or(Error::NotLocal)? {
+            super::Route::Ssh(_) => None,
+            super::Route::Local => match &self.chats.program {
+                Program::Found(program) => Some(program.clone()),
+                Program::Missing => return Err(Error::ProgramMissing),
+                Program::Unknown | Program::Looking => return Err(Error::ProgramUnknown),
+            },
+        };
         if self.script_slot_busy() {
             return Err(Error::SlotBusy);
         }
@@ -223,11 +256,12 @@ impl HerdrWindow {
             .request_script(
                 &boot,
                 Method::TabCreate,
-                tab_params(&workspace, cwd.as_deref(), agent, &program),
+                tab_params(&workspace, cwd.as_deref(), agent, program.as_deref()),
             )
             .map_err(|_| Error::NotConnected)?;
         self.chats.starting = Some(Starting {
             agent,
+            remote: program.is_none(),
             boot,
             deadline: Instant::now() + DEADLINE,
             endpoint: (self.selection_epoch, endpoint.generation),
@@ -300,7 +334,12 @@ impl HerdrWindow {
                 })
             })
             .and_then(|(tab, pane)| {
-                self.type_script_line(&starting.boot, &pane, &command_line(starting.agent))?;
+                let line = if starting.remote {
+                    remote_command_line(starting.agent)
+                } else {
+                    command_line(starting.agent)
+                };
+                self.type_script_line(&starting.boot, &pane, &line)?;
                 Ok(tab)
             });
         match typed {

@@ -24,12 +24,18 @@ use crate::{project::Projector, rpc};
 
 /// Changes kept for clients that reconnect with a cursor.
 const LOG: usize = 8192;
+/// Bytes of logged changes kept, so a run of pictures cannot pin the log's
+/// memory; a client older than the log gets a snapshot.
+const LOG_BYTES: usize = 32 * 1024 * 1024;
 /// Commands remembered so a resent one is not run twice.
 const HANDLED: usize = 256;
 /// The most entries a transcript keeps.
 pub(crate) const MAX_ENTRIES: usize = 2000;
 /// The most text a transcript keeps, so a snapshot always fits in one frame.
 pub(crate) const MAX_TRANSCRIPT_TEXT: usize = 2 * 1024 * 1024;
+/// The most image data a transcript keeps, apart from its text, so a
+/// snapshot with both still fits in one frame.
+pub(crate) const MAX_TRANSCRIPT_MEDIA: usize = 8 * 1024 * 1024;
 
 /// A connection to the session: the in-pane view or an attached client.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -51,6 +57,12 @@ pub(crate) enum Input {
     },
     Detach(ConnId),
     Shutdown,
+    /// A command this version does not know, from a newer client: refused
+    /// with an acknowledgement rather than by dropping the connection.
+    Unsupported {
+        conn: ConnId,
+        id: CommandId,
+    },
 }
 
 #[derive(Debug)]
@@ -108,6 +120,8 @@ struct Asked {
 }
 
 pub(crate) struct Session<R: FnMut(Activity)> {
+    /// What the agent takes in a prompt besides text, from its handshake.
+    accepts: crate::files::Accepts,
     acp_session: Option<wire::SessionId>,
     activity: Option<Activity>,
     asked: HashMap<PermissionId, Asked>,
@@ -115,6 +129,8 @@ pub(crate) struct Session<R: FnMut(Activity)> {
     epoch: Uuid,
     handled: VecDeque<(CommandId, Option<Rejection>)>,
     log: VecDeque<(u64, Change)>,
+    /// What the logged changes weigh, by [`change_size`].
+    log_bytes: usize,
     next_permission: u64,
     next_request: i64,
     outbox: rpc::Outbox,
@@ -132,6 +148,7 @@ impl<R: FnMut(Activity)> Session<R> {
     pub(crate) fn new(config: Config, outbox: rpc::Outbox, report: R) -> Self {
         let transcript = Transcript::new(config.agent.clone());
         Self {
+            accepts: crate::files::Accepts::default(),
             acp_session: None,
             activity: None,
             asked: HashMap::new(),
@@ -139,6 +156,7 @@ impl<R: FnMut(Activity)> Session<R> {
             epoch: Uuid::new_v4(),
             handled: VecDeque::new(),
             log: VecDeque::new(),
+            log_bytes: 0,
             next_permission: 0,
             next_request: 0,
             outbox,
@@ -186,6 +204,9 @@ impl<R: FnMut(Activity)> Session<R> {
             Input::Attach(attach) => self.attach(attach),
             Input::Command { command, conn, id } => self.command(conn, id, command),
             Input::Detach(conn) => self.detach(conn),
+            Input::Unsupported { conn, id } => {
+                self.ack(conn, id, Some(Rejection::Unsupported));
+            }
             Input::Shutdown => {
                 self.bye(ByeReason::Exiting);
                 return Flow::Exit;
@@ -213,9 +234,13 @@ impl<R: FnMut(Activity)> Session<R> {
             self.projector.forget_before(*before);
         }
         self.seq += 1;
-        if self.log.len() == LOG {
-            self.log.pop_front();
+        let size = change_size(&change);
+        while self.log.len() == LOG || (self.log_bytes + size > LOG_BYTES && !self.log.is_empty()) {
+            if let Some((_, old)) = self.log.pop_front() {
+                self.log_bytes -= change_size(&old);
+            }
         }
+        self.log_bytes += size;
         self.log.push_back((self.seq, change.clone()));
         let message = ServerMessage::Change {
             change: change.clone(),
@@ -253,11 +278,15 @@ impl<R: FnMut(Activity)> Session<R> {
     /// Drops the oldest entries once the transcript holds too many or too much.
     fn bound(&mut self) {
         let entries = &self.transcript.entries;
-        let mut total: usize = entries.iter().map(entry_size).sum();
         let mut drop = entries.len().saturating_sub(MAX_ENTRIES);
-        total -= entries[..drop].iter().map(entry_size).sum::<usize>();
-        while total > MAX_TRANSCRIPT_TEXT && drop + 1 < entries.len() {
-            total -= entry_size(&entries[drop]);
+        let kept = &entries[drop..];
+        let mut text: usize = kept.iter().map(entry_size).sum();
+        let mut media: usize = kept.iter().map(entry_media).sum();
+        while (text > MAX_TRANSCRIPT_TEXT || media > MAX_TRANSCRIPT_MEDIA)
+            && drop + 1 < entries.len()
+        {
+            text -= entry_size(&entries[drop]);
+            media -= entry_media(&entries[drop]);
             drop += 1;
         }
         if drop > 0 {
@@ -446,11 +475,40 @@ fn entry_size(entry: &herdr_chat_protocol::Entry) -> usize {
                             new.len() + old.as_ref().map_or(0, String::len) + path.len()
                         }
                         ToolContent::Terminal { id } => id.len(),
+                        ToolContent::Image { .. } => 0,
                     })
                     .sum::<usize>()
         }
         EntryKind::Turn(_) => 32,
         kind => kind.text().map_or(0, str::len),
+    }
+}
+
+/// The image data an entry adds to a snapshot, counted apart from its text.
+fn entry_media(entry: &herdr_chat_protocol::Entry) -> usize {
+    use herdr_chat_protocol::{EntryKind, ToolContent};
+    match &entry.kind {
+        EntryKind::Image { image, .. } => image.data.len(),
+        EntryKind::Tool(tool) => tool
+            .content
+            .iter()
+            .map(|content| match content {
+                ToolContent::Image { image } => image.data.len(),
+                _ => 0,
+            })
+            .sum(),
+        _ => 0,
+    }
+}
+
+/// Roughly how many bytes a logged change holds.
+fn change_size(change: &Change) -> usize {
+    match change {
+        Change::Push { entry } | Change::Replace { entry } => {
+            entry_size(entry) + entry_media(entry)
+        }
+        Change::Append { text, .. } => text.len(),
+        _ => 64,
     }
 }
 

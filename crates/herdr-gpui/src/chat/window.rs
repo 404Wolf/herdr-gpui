@@ -5,10 +5,11 @@
 use super::{
     chats::{self, Connect},
     discovery,
+    visual::{DiagramStyle, Drawn, VisualId},
 };
 use crate::{HerdrWindow, search_input::SearchInput};
 use gpui::{prelude::*, *};
-use herdr_chat_protocol::{Command, MAX_PROMPT_SIZE, Status, assist};
+use herdr_chat_protocol::{Attachment, Command, MAX_ATTACHMENTS, MAX_PROMPT_SIZE, Status, assist};
 use std::time::Instant;
 
 impl HerdrWindow {
@@ -26,23 +27,30 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let local = self
+        // Off, every chat is let go and its pane shows its terminal again.
+        let enabled = self.config.features.acp_chats;
+        let route = self
             .endpoints
             .get(self.selected_endpoint)
-            .is_some_and(|endpoint| discovery::local(&endpoint.connection.target, &self.live));
+            .filter(|_| enabled)
+            .and_then(|endpoint| discovery::route(&endpoint.connection.target, &self.live));
         let targets = self
             .live
             .snapshot
             .as_deref()
-            .map(|snapshot| discovery::targets(snapshot, local))
+            .map(|snapshot| discovery::targets(snapshot, route.as_ref()))
             .unwrap_or_default();
-        self.locate_chat_program(cx);
+        if enabled {
+            self.locate_chat_program(cx);
+            self.probe_chat_agents(cx);
+        }
         self.poll_chat_start(cx);
         let now = Instant::now();
         let mut changed = self.chats.reconcile(targets, now, connect);
         changed |= self.chats.poll(now);
+        self.prepare_chat_visuals(window, cx);
         let mut font = self.config.ui.clone();
-        font.size = font.size.max(13.);
+        font.size = self.chat_text_size();
         let theme = self.theme.clone();
         for pane in self.chats.panes_mut() {
             if !pane.available() {
@@ -72,7 +80,7 @@ impl HerdrWindow {
                 input.set_appearance(font.clone(), theme.clone(), cx);
                 input.set_placeholder(
                     if accepts {
-                        "Message the agent\u{2026}"
+                        "Message the agent \u{2014} / for commands, Shift-Enter for a new line"
                     } else {
                         "The agent cannot take prompts"
                     },
@@ -97,6 +105,54 @@ impl HerdrWindow {
         if changed {
             self.redraw_terminal(cx);
         }
+    }
+
+    /// Starts the pictures and diagrams each chat waits for on the
+    /// background executor, and drops the textures no entry draws any more.
+    fn prepare_chat_visuals(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        for texture in self.chats.take_released() {
+            cx.drop_image(texture, Some(window));
+        }
+        let style = DiagramStyle::of(&self.theme, &self.config.ui);
+        let renderer = cx.svg_renderer();
+        for pane in self.chats.panes_mut() {
+            for texture in pane.prepared.visuals.take_released() {
+                cx.drop_image(texture, Some(window));
+            }
+            for job in pane.prepared.visuals.jobs(&style, &renderer) {
+                let pane_id = pane.target.pane_id.clone();
+                let task = cx.background_spawn(async move { job.run() });
+                cx.spawn(async move |this, cx| {
+                    let (id, ticket, drawn) = task.await;
+                    let _ = this.update(cx, |this, cx| {
+                        this.finish_chat_visual(&pane_id, id, ticket, drawn, cx);
+                    });
+                })
+                .detach();
+            }
+        }
+    }
+
+    fn finish_chat_visual(
+        &mut self,
+        pane_id: &str,
+        id: VisualId,
+        ticket: u64,
+        drawn: super::visual::Result<Drawn>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(pane) = self.chats.pane_mut(pane_id) else {
+            return;
+        };
+        if !pane.prepared.visuals.finish(id, ticket, drawn) {
+            return;
+        }
+        // The row's height changed with what it now draws.
+        let entries: Vec<_> = pane.prepared.drawing(id).collect();
+        for entry in entries {
+            pane.remeasure(entry);
+        }
+        self.redraw_terminal(cx);
     }
 
     /// The composer of the chat over the Herdr-focused pane, when the
@@ -147,9 +203,66 @@ impl HerdrWindow {
     pub(crate) fn chat_focused(&self, window: &Window, cx: &App) -> bool {
         self.chats.panes().any(|pane| {
             pane.composer
-                .as_ref()
-                .is_some_and(|input| input.read(cx).focus.is_focused(window))
+                .iter()
+                .chain(pane.menu_search.as_ref().map(|(search, _)| search))
+                .any(|input| input.read(cx).focus.is_focused(window))
         })
+    }
+
+    /// Enter in a menu's search field picks the first match; Escape
+    /// closes the menu.
+    fn chat_menu_search_key(
+        &mut self,
+        pane_id: &str,
+        search: &Entity<SearchInput>,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if search.read(cx).is_composing() || event.keystroke.modifiers.modified() {
+            return;
+        }
+        let Some(pane) = self.chats.pane(pane_id) else {
+            return;
+        };
+        let Some(menu) = pane.menu.clone() else {
+            return;
+        };
+        match event.keystroke.key.as_str() {
+            "enter" => {
+                let query = search.read(cx).text().to_owned();
+                let picked = match &menu {
+                    chats::Menu::Setting(id) => pane
+                        .session
+                        .transcript()
+                        .options
+                        .iter()
+                        .find(|option| &option.id == id),
+                    _ => None,
+                }
+                .and_then(|option| match &option.kind {
+                    herdr_chat_protocol::OptionKind::Select { choices, .. } => {
+                        super::view::matching(choices, &query)
+                            .next()
+                            .map(|(_, choice)| Command::SetOption {
+                                id: option.id.clone(),
+                                value: herdr_chat_protocol::OptionValue::Choice {
+                                    id: choice.id.clone(),
+                                },
+                            })
+                    }
+                    herdr_chat_protocol::OptionKind::Toggle { .. } => None,
+                });
+                self.toggle_chat_menu(pane_id, menu, window, cx);
+                if let Some(command) = picked {
+                    self.chat_send(pane_id, command, cx);
+                }
+            }
+            "escape" => self.toggle_chat_menu(pane_id, menu, window, cx),
+            _ => return,
+        }
+        cx.stop_propagation();
+        window.prevent_default();
     }
 
     /// Sends `command` to the chat over `pane_id`; a failure shows in the view.
@@ -173,6 +286,15 @@ impl HerdrWindow {
         let Some(pane) = self.chats.pane_mut(pane_id) else {
             return;
         };
+        if let Some(search) = pane
+            .menu_search
+            .as_ref()
+            .map(|(search, _)| search.clone())
+            .filter(|search| search.read(cx).focus.is_focused(window))
+        {
+            self.chat_menu_search_key(pane_id, &search, event, window, cx);
+            return;
+        }
         let Some(input) = pane.composer.clone() else {
             return;
         };
@@ -217,6 +339,14 @@ impl HerdrWindow {
         let Some(pane) = self.chats.pane_mut(pane_id) else {
             return;
         };
+        // The menu's search field takes its own keys.
+        if pane
+            .menu_search
+            .as_ref()
+            .is_some_and(|(search, _)| search.read(cx).focus.is_focused(window))
+        {
+            return;
+        }
         let Some(input) = pane.composer.clone() else {
             return;
         };
@@ -302,6 +432,148 @@ impl HerdrWindow {
         cx.notify();
     }
 
+    /// Adds files to the next prompt of the chat over `pane_id`. A chat on
+    /// an SSH host takes copies made there, since this machine's paths name
+    /// nothing on that host.
+    pub(crate) fn attach_chat_files(
+        &mut self,
+        pane_id: &str,
+        paths: Vec<std::path::PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let host = match self.chats.pane(pane_id).map(|pane| &pane.target.route) {
+            Some(super::Route::Ssh(host)) => host.clone(),
+            Some(super::Route::Local) => return self.add_chat_files(pane_id, paths, window, cx),
+            None => return,
+        };
+        self.upload_chat_files(pane_id, host, paths, window, cx);
+    }
+
+    /// Copies files to `host` off the UI thread, then attaches the copies.
+    fn upload_chat_files(
+        &mut self,
+        pane_id: &str,
+        host: String,
+        paths: Vec<std::path::PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(pane) = self.chats.pane_mut(pane_id) else {
+            return;
+        };
+        if paths.is_empty() {
+            return;
+        }
+        pane.uploading += paths.len();
+        let count = paths.len();
+        let upload = cx.background_spawn(async move {
+            let cancelled = std::sync::atomic::AtomicBool::new(false);
+            herdr_client::upload_files(&host, &paths, &cancelled, |_, _| {})
+        });
+        let pane_id = pane_id.to_owned();
+        cx.spawn_in(window, async move |this, cx| {
+            let uploaded = upload.await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                let Some(pane) = this.chats.pane_mut(&pane_id) else {
+                    return;
+                };
+                pane.uploading = pane.uploading.saturating_sub(count);
+                match uploaded {
+                    Ok(remote) => {
+                        let remote = remote.into_iter().map(std::path::PathBuf::from).collect();
+                        this.add_chat_files(&pane_id, remote, window, cx);
+                    }
+                    Err(error) => {
+                        pane.error = Some(format!("Files not attached: {error}"));
+                        this.redraw_terminal(cx);
+                    }
+                }
+            });
+        })
+        .detach();
+        self.redraw_terminal(cx);
+    }
+
+    /// Adds paths, as the program will read them, to the next prompt,
+    /// skipping ones already there and any past [`MAX_ATTACHMENTS`]. Whether
+    /// each exists is checked by the program when the prompt goes out.
+    fn add_chat_files(
+        &mut self,
+        pane_id: &str,
+        paths: Vec<std::path::PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(pane) = self.chats.pane_mut(pane_id) else {
+            return;
+        };
+        for path in paths {
+            if pane.attachments.len() >= MAX_ATTACHMENTS {
+                pane.error = Some(format!("A prompt takes at most {MAX_ATTACHMENTS} files"));
+                break;
+            }
+            if !pane.attachments.contains(&path) {
+                pane.attachments.push(path);
+            }
+        }
+        if let Some(input) = pane.composer.clone() {
+            let focus = input.read(cx).focus.clone();
+            window.focus(&focus, cx);
+        }
+        self.redraw_terminal(cx);
+        cx.notify();
+    }
+
+    /// The system file dialog; the chosen files join the next prompt.
+    pub(super) fn browse_chat_files(
+        &mut self,
+        pane_id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let paths = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: true,
+            prompt: Some("Attach".into()),
+        });
+        let pane_id = pane_id.to_owned();
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(Ok(Some(paths))) = paths.await else {
+                return;
+            };
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.attach_chat_files(&pane_id, paths, window, cx);
+            });
+        })
+        .detach();
+    }
+
+    /// Takes a file back off the next prompt.
+    pub(super) fn detach_chat_file(&mut self, pane_id: &str, index: usize, cx: &mut Context<Self>) {
+        if let Some(pane) = self.chats.pane_mut(pane_id)
+            && index < pane.attachments.len()
+        {
+            pane.attachments.remove(index);
+            self.redraw_terminal(cx);
+            cx.notify();
+        }
+    }
+
+    /// Sends what the composer holds, as Enter does.
+    pub(super) fn send_chat_composer(&mut self, pane_id: &str, cx: &mut Context<Self>) {
+        let Some(input) = self
+            .chats
+            .pane(pane_id)
+            .and_then(|pane| pane.composer.clone())
+        else {
+            return;
+        };
+        self.submit_chat_prompt(pane_id, &input, cx);
+        cx.notify();
+    }
+
     fn submit_chat_prompt(
         &mut self,
         pane_id: &str,
@@ -312,18 +584,28 @@ impl HerdrWindow {
             return;
         };
         let text = prompt_text(&pane.draft, input.read(cx).text());
-        if text.trim().is_empty() {
+        if text.trim().is_empty() && pane.attachments.is_empty() {
             return;
         }
         if text.len() > MAX_PROMPT_SIZE {
             pane.error = Some("The prompt is longer than the agent accepts".into());
             return;
         }
-        pane.history.push(&text);
-        match pane.send(Command::Prompt { text }) {
+        if !text.trim().is_empty() {
+            pane.history.push(&text);
+        }
+        let attachments = pane
+            .attachments
+            .iter()
+            .map(|path| Attachment {
+                path: path.to_string_lossy().into_owned(),
+            })
+            .collect();
+        match pane.send(Command::Prompt { text, attachments }) {
             Ok(()) => {
                 pane.error = None;
                 pane.draft.clear();
+                pane.attachments.clear();
                 input.update(cx, |input, cx| input.clear(cx));
             }
             Err(error) => pane.error = Some(error.to_string()),

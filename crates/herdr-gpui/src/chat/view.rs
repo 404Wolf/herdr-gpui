@@ -1,11 +1,18 @@
-//! The chat view over a pane: a header, the entries, what waits on the user,
-//! and the composer. Everything is drawn from the session and the bodies
+//! The chat view over a pane: a header, the entries on a timeline, what
+//! waits on the user, the composer, and a rail with the plan and the files
+//! the turn changed. Everything is drawn from the session and the bodies
 //! prepared when entries changed; nothing here reads a socket. Program text
 //! is untrusted and only ever drawn as text.
 
+mod composer;
 mod entries;
 mod panels;
+mod rail;
 mod settings;
+mod summary;
+
+pub(super) use settings::matching;
+mod visuals;
 
 use super::chats::ChatPane;
 use crate::{
@@ -31,6 +38,32 @@ pub(crate) fn pane_bounds(rect: SurfaceRect, cell_width: f32, cell_height: f32) 
             px(f32::from(rect.height) * cell_height),
         ),
     )
+}
+
+/// Widest the entries and the composer are drawn; a wider pane centers
+/// them, so lines stay short enough to read.
+const COLUMN: f32 = 860.;
+
+/// `content` in the centered reading column.
+pub(super) fn column(content: impl IntoElement) -> Div {
+    div()
+        .w_full()
+        .flex()
+        .justify_center()
+        .child(div().w_full().min_w_0().max_w(px(COLUMN)).child(content))
+}
+
+impl HerdrWindow {
+    /// The chat's text size: the terminal's, since the chat stands in for
+    /// the pane's terminal and should read the same size.
+    pub(in crate::chat) fn chat_text_size(&self) -> f32 {
+        self.config.terminal.size
+    }
+}
+
+/// The logo of the agent a chat runs, by its display name.
+pub(super) fn agent_icon(agent: &str) -> &'static str {
+    crate::icons::AgentIcon::from_identity(Some(agent.to_ascii_lowercase().as_str())).path()
 }
 
 /// Theme colors the view uses, by meaning.
@@ -144,7 +177,7 @@ impl HerdrWindow {
                     .border_color(rgb(theme.active))
                     .bg(rgb(theme.surface))
                     .text_color(rgb(theme.foreground))
-                    .text_size(px(self.config.ui.size))
+                    .text_size(px(self.chat_text_size()))
                     .text_font(&self.config.ui)
                     .cursor_pointer()
                     .hover(|button| button.bg(rgb(theme.active)))
@@ -200,8 +233,13 @@ impl HerdrWindow {
             .flex()
             .flex_col()
             .bg(rgb(theme.background))
+            // Files dragged over the chat become attachments when dropped.
+            .drag_over::<ExternalPaths>({
+                let wash = theme.primary_wash();
+                move |style, _, _, _| style.bg(rgb(wash))
+            })
             .text_color(rgb(theme.foreground))
-            .text_size(px(self.config.ui.size))
+            .text_size(px(self.chat_text_size()))
             .text_font(&self.config.ui)
             .on_mouse_down(
                 MouseButton::Left,
@@ -219,17 +257,29 @@ impl HerdrWindow {
             .capture_key_down(cx.listener(move |this, event: &KeyDownEvent, window, cx| {
                 this.chat_capture_key(&capture_pane, event, window, cx);
             }))
-            .child(self.render_chat_header(chat, cx))
-            .child(entries)
-            .children(self.render_chat_plan(chat))
-            .children(self.render_chat_permissions(chat, cx))
-            .children(self.render_chat_queue(chat, cx))
-            .children(self.render_chat_completions(chat, cx))
-            .child(self.render_chat_composer(chat))
-            .children(
-                chat.menu
-                    .clone()
-                    .map(|menu| self.render_chat_menu(chat, &menu, cx)),
+            .child(self.render_chat_header(chat, rail::fits(bounds), cx))
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .child(entries)
+                            .children(
+                                self.render_chat_permissions(chat, cx)
+                                    .into_iter()
+                                    .map(column),
+                            )
+                            .children(self.render_chat_queue(chat, cx).into_iter().map(column))
+                            .children(self.render_chat_completions(chat, cx).map(column))
+                            .child(column(self.render_chat_composer(chat, cx))),
+                    )
+                    .children(self.render_chat_rail(chat, bounds)),
             )
             .into_any_element()
     }
@@ -253,11 +303,15 @@ impl HerdrWindow {
             && pane.menu.is_some()
         {
             pane.menu = None;
+            pane.menu_search = None;
             cx.notify();
         }
     }
 
-    fn render_chat_header(&self, chat: &ChatPane, cx: &mut Context<Self>) -> Div {
+    /// The agent and its status, Stop while a turn runs, and the buttons
+    /// for the rail and the terminal. `rail_fits` says whether the pane is
+    /// wide enough to show the rail at all.
+    fn render_chat_header(&self, chat: &ChatPane, rail_fits: bool, cx: &mut Context<Self>) -> Div {
         let theme = &self.theme;
         let hues = Hues::of(theme);
         let transcript = chat.session.transcript();
@@ -284,8 +338,6 @@ impl HerdrWindow {
                 .hover(|button| button.bg(rgb(theme.active)))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         };
-        let settings = self.render_chat_settings_buttons(chat, cx);
-        let usage = self.render_chat_usage(chat);
         let cancel = (*status == Status::Working).then(|| {
             let pane_id = pane_id.clone();
             button("chat-cancel")
@@ -308,6 +360,7 @@ impl HerdrWindow {
                 .text_color(rgb(hues.yellow))
                 .child("Reconnecting\u{2026}")
         });
+        let rail = self.render_chat_rail_controls(chat, rail_fits, cx);
         let terminal = {
             let pane_id = pane_id.clone();
             button("chat-terminal")
@@ -334,15 +387,20 @@ impl HerdrWindow {
             .flex_col()
             .border_b_1()
             .border_color(rgb(theme.active))
-            .bg(rgb(theme.surface))
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap(px(8.))
-                    .px(px(10.))
-                    .h(px(34.))
-                    .child(div().flex_none().size(px(8.)).rounded_full().bg(rgb(dot)))
+                    .px(px(12.))
+                    .h(px(38.))
+                    .child(
+                        svg()
+                            .flex_none()
+                            .path(agent_icon(chat.session.agent()))
+                            .size(px(15.))
+                            .text_color(rgb(theme.foreground)),
+                    )
                     .child(
                         div()
                             .debug_selector(|| "chat-agent".into())
@@ -351,6 +409,7 @@ impl HerdrWindow {
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(crate::notifications::safe_text(chat.session.agent(), 80)),
                     )
+                    .child(div().flex_none().size(px(7.)).rounded_full().bg(rgb(dot)))
                     .child(
                         div()
                             .debug_selector(|| "chat-status".into())
@@ -361,21 +420,10 @@ impl HerdrWindow {
                     .child(div().flex_1())
                     .children(reconnecting)
                     .children(watching)
-                    .children(usage)
                     .children(cancel)
+                    .children(rail)
                     .child(terminal),
             )
-            .children((!settings.is_empty()).then(|| {
-                div()
-                    .debug_selector(|| "chat-settings".into())
-                    .flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap(px(4.))
-                    .px(px(8.))
-                    .pb(px(6.))
-                    .children(settings)
-            }))
             .children(message.map(|message| {
                 div()
                     .px(px(10.))

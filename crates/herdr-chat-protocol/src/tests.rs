@@ -4,10 +4,12 @@ use super::*;
 
 mod agents;
 mod assist;
+mod auto_accept;
 mod change;
 mod display;
 mod endpoint;
 mod frame;
+mod media;
 mod wire;
 
 fn text(id: u64, kind: fn(String) -> EntryKind, value: &str) -> Entry {

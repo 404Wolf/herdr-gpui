@@ -2,6 +2,8 @@
 
 use super::*;
 
+mod connect;
+
 fn args(list: &[&str]) -> Vec<OsString> {
     list.iter().map(OsString::from).collect()
 }

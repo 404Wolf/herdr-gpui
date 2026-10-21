@@ -8,6 +8,8 @@ use uuid::Uuid;
 
 use super::*;
 
+mod attachments;
+
 fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
     KeyEvent {
         code,
@@ -72,7 +74,8 @@ fn enter_sends_the_prompt_and_alt_enter_adds_a_line() {
     assert_eq!(
         press(&mut view, KeyCode::Enter),
         Some(Out::Command(Command::Prompt {
-            text: "fix\nit".to_owned()
+            text: "fix\nit".to_owned(),
+            attachments: Vec::new(),
         }))
     );
     assert!(view.composer.text.is_empty());

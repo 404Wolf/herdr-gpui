@@ -2,7 +2,9 @@
 //! writer thread, and reads; the window only ever polls and queues, through
 //! bounded channels, so no socket I/O or thread join reaches the UI thread.
 //! The endpoint is `herdr_client::private_endpoint`: a socket on Unix, and on
-//! Windows a pipe checked to be this user's before anything is sent.
+//! Windows a pipe checked to be this user's before anything is sent. A chat
+//! on an SSH host is reached through a child process instead, `ssh` running
+//! `herdr-acp connect` there, whose standard streams carry the same frames.
 //! A reader that gets ahead of the window by [`MAX_EVENTS`] messages gives the
 //! connection up rather than buffering more, and the window reconnects from
 //! its cursor.
@@ -11,10 +13,11 @@ use super::{Error, MAX_EVENTS, MAX_PENDING, Result};
 use herdr_chat_protocol::{
     ClientKind, ClientMessage, Cursor, ServerMessage, VERSION, read_frame, write_frame,
 };
-use herdr_client::private_endpoint::{Closer, Connection, Writer};
+use herdr_client::private_endpoint::Connection;
 use std::{
-    io::{BufReader, BufWriter},
-    path::{Path, PathBuf},
+    io::{BufReader, BufWriter, Read, Write},
+    path::PathBuf,
+    process::{Child, Command, Stdio},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -37,6 +40,85 @@ pub(crate) struct Polled {
     pub(crate) messages: Vec<ServerMessage>,
     /// Why the connection ended, once every message before it was taken.
     pub(crate) end: Option<Error>,
+}
+
+/// How a link reaches its program.
+pub(crate) enum Dial {
+    /// The program's private endpoint on this machine.
+    Socket(PathBuf),
+    /// A child whose stdin and stdout carry the connection, such as `ssh`
+    /// running `herdr-acp connect` on the program's host.
+    Process(Command),
+}
+
+impl From<PathBuf> for Dial {
+    fn from(path: PathBuf) -> Self {
+        Self::Socket(path)
+    }
+}
+
+/// Ends a connection from any thread without waiting: shuts the socket
+/// down, or kills the child, whose reader then reaps it.
+enum Closer {
+    Socket(herdr_client::private_endpoint::Closer),
+    Process(Arc<Mutex<Child>>),
+}
+
+impl Closer {
+    fn try_clone(&self) -> std::io::Result<Self> {
+        Ok(match self {
+            Self::Socket(closer) => Self::Socket(closer.try_clone()?),
+            Self::Process(child) => Self::Process(child.clone()),
+        })
+    }
+
+    fn close(&self) {
+        match self {
+            Self::Socket(closer) => closer.close(),
+            // Held only while the reader reaps a child already killed.
+            Self::Process(child) => {
+                if let Ok(mut child) = child.try_lock() {
+                    let _ = child.kill();
+                }
+            }
+        }
+    }
+
+    /// Reaps a killed child; called only from the reader thread.
+    fn reap(&self) {
+        if let Self::Process(child) = self
+            && let Ok(mut child) = child.lock()
+        {
+            let _ = child.wait();
+        }
+    }
+}
+
+type Parts = (Box<dyn Read + Send>, Box<dyn Write + Send>, Closer);
+
+/// Connects as `dial` says, into a reader, a writer, and their closer.
+fn open(dial: Dial) -> std::io::Result<Parts> {
+    match dial {
+        Dial::Socket(path) => {
+            let (reader, writer, closer) = Connection::connect(&path, CONNECT_TIMEOUT)?.split()?;
+            Ok((Box::new(reader), Box::new(writer), Closer::Socket(closer)))
+        }
+        Dial::Process(mut command) => {
+            let mut child = command
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()?;
+            let streams = child.stdout.take().zip(child.stdin.take());
+            let closer = Closer::Process(Arc::new(Mutex::new(child)));
+            let Some((stdout, stdin)) = streams else {
+                closer.close();
+                closer.reap();
+                return Err(std::io::ErrorKind::BrokenPipe.into());
+            };
+            Ok((Box::new(stdout), Box::new(stdin), closer))
+        }
+    }
 }
 
 pub(crate) struct Link {
@@ -81,14 +163,15 @@ impl Socket {
 }
 
 impl Link {
-    /// Starts connecting to the program at `path`, resuming after `since`.
-    /// `resend` goes out right after the greeting: commands an earlier
-    /// connection may not have delivered, which the program runs once.
+    /// Starts connecting to the program `dial` reaches, resuming after
+    /// `since`. `resend` goes out right after the greeting: commands an
+    /// earlier connection may not have delivered, which the program runs once.
     pub(crate) fn start(
-        path: PathBuf,
+        dial: impl Into<Dial>,
         since: Option<Cursor>,
         resend: impl IntoIterator<Item = ClientMessage>,
     ) -> Result<Self> {
+        let dial = dial.into();
         let (commands, queued) = mpsc::sync_channel(MAX_COMMANDS);
         for message in resend {
             commands.try_send(message).map_err(|_| Error::Busy)?;
@@ -100,7 +183,7 @@ impl Link {
         thread::Builder::new()
             .name("herdr-gui-chat".into())
             .spawn(move || {
-                let error = run(&path, since, queued, &sender, &thread_socket);
+                let error = run(dial, since, queued, &sender, &thread_socket);
                 if let Ok(mut slot) = thread_end.lock() {
                     *slot = Some(error);
                 }
@@ -155,14 +238,13 @@ impl Drop for Link {
 /// The reader thread: connects, greets through the writer, and reads until
 /// the connection ends, returning why.
 fn run(
-    path: &Path,
+    dial: Dial,
     since: Option<Cursor>,
     queued: Receiver<ClientMessage>,
     events: &SyncSender<ServerMessage>,
     socket: &Socket,
 ) -> Error {
-    let parts = Connection::connect(path, CONNECT_TIMEOUT).and_then(|connection| {
-        let (reader, writer, closer) = connection.split()?;
+    let parts = open(dial).and_then(|(reader, writer, closer)| {
         let writer_closer = closer.try_clone()?;
         Ok((reader, writer, closer, writer_closer))
     });
@@ -196,12 +278,18 @@ fn run(
         }
     };
     closer.close();
+    closer.reap();
     end
 }
 
 /// The writer thread: the greeting, then each queued command in order,
 /// until the link is dropped or a write fails.
-fn write(writer: Writer, closer: &Closer, hello: ClientMessage, queued: &Receiver<ClientMessage>) {
+fn write(
+    writer: impl Write,
+    closer: &Closer,
+    hello: ClientMessage,
+    queued: &Receiver<ClientMessage>,
+) {
     let mut writer = BufWriter::new(writer);
     if write_frame(&mut writer, &hello).is_ok() {
         while let Ok(message) = queued.recv() {

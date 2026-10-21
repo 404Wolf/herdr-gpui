@@ -4,6 +4,8 @@ use serde_json::json;
 
 use super::*;
 
+mod images;
+
 fn update(value: serde_json::Value) -> wire::SessionUpdate {
     serde_json::from_value(value).unwrap()
 }

@@ -10,11 +10,18 @@ use herdr_chat_protocol::{
 };
 use std::collections::HashMap;
 
+/// Connections a command is sent on before it is given up. A program that
+/// drops the connection on a command it cannot read would otherwise get it
+/// again on every reconnect and never come back.
+const SENDS: u8 = 2;
+
 /// A command sent and not yet acknowledged, resent on a new connection.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Pending {
     command: Command,
     id: CommandId,
+    /// Connections it has been sent on.
+    sends: u8,
 }
 
 #[derive(Debug, Default)]
@@ -102,11 +109,24 @@ impl Session {
 
     /// The commands to send again on a new connection, in order. The
     /// program acknowledges one it already ran without running it twice.
-    pub(crate) fn resend(&self) -> impl Iterator<Item = ClientMessage> + '_ {
-        self.pending.iter().map(|pending| ClientMessage::Command {
-            command: pending.command.clone(),
-            id: pending.id,
-        })
+    /// One sent on [`SENDS`] connections that each ended without an answer
+    /// is given up and shown as refused.
+    pub(crate) fn resend(&mut self) -> Vec<ClientMessage> {
+        let before = self.pending.len();
+        self.pending.retain(|pending| pending.sends < SENDS);
+        if self.pending.len() < before {
+            self.rejection = Some(Rejection::Unsupported);
+        }
+        self.pending
+            .iter_mut()
+            .map(|pending| {
+                pending.sends += 1;
+                ClientMessage::Command {
+                    command: pending.command.clone(),
+                    id: pending.id,
+                }
+            })
+            .collect()
     }
 
     /// Records `command` as waiting and returns the message that sends it.
@@ -119,6 +139,7 @@ impl Session {
         self.pending.push(Pending {
             command: command.clone(),
             id,
+            sends: 1,
         });
         Ok(ClientMessage::Command { command, id })
     }

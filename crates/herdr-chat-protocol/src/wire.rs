@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{Change, OptionValue, PermissionId, Transcript};
+use crate::{Attachment, Change, MAX_ATTACHMENTS, OptionValue, PermissionId, Transcript};
 
 /// The attach protocol version; a client and program must agree exactly.
 pub const VERSION: u32 = 1;
@@ -66,6 +66,9 @@ pub enum Command {
     /// Sends a prompt now, or queues it behind the running turn.
     Prompt {
         text: String,
+        /// Files sent with it, at most [`MAX_ATTACHMENTS`].
+        #[serde(default)]
+        attachments: Vec<Attachment>,
     },
     /// Ends the running turn, declines its pending permission requests, and
     /// drops queued prompts.
@@ -85,6 +88,11 @@ pub enum Command {
     /// Withdraws a queued prompt before it is sent.
     Unqueue {
         id: CommandId,
+    },
+    /// Answers permission requests with their allow option from now on,
+    /// including those waiting, or goes back to asking.
+    SetAutoAccept {
+        on: bool,
     },
 }
 
@@ -140,6 +148,13 @@ pub enum Rejection {
     UnknownQueued,
     #[error("the program could not deliver the command to the agent")]
     AgentUnavailable,
+    #[error("a prompt takes at most {MAX_ATTACHMENTS} files")]
+    TooManyAttachments,
+    #[error("an attached file does not exist or cannot be read")]
+    UnknownFile,
+    /// A command this program's version does not know, from a newer client.
+    #[error("this chat program is older than Herdr UI; start a new chat to use that")]
+    Unsupported,
     #[serde(other)]
     #[error("the program refused the command")]
     Other,

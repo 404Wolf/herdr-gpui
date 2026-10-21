@@ -51,6 +51,7 @@ fn busy() -> View {
         title: "Run cargo test -p parser".to_owned(),
     }];
     transcript.queued = vec![Queued {
+        attachments: Vec::new(),
         id: herdr_chat_protocol::CommandId::random(),
         text: "and then commit".to_owned(),
     }];

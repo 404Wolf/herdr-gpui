@@ -15,7 +15,7 @@ aes.workspace                  = true
 ammonia.workspace              = true
 anyhow.workspace               = true
 cbc.workspace                  = true
-base64                         = { optional = true, workspace = true }
+base64.workspace               = true
 chrono.workspace               = true
 config_loader.workspace        = true
 ed25519-dalek.workspace        = true
@@ -32,6 +32,7 @@ if-addrs.workspace             = true
 image                          = { features = ["bmp", "tiff"], workspace = true }
 keepawake.workspace            = true
 mdns-sd.workspace              = true
+mermaid-rs-renderer.workspace  = true
 nucleo-matcher.workspace       = true
 pbkdf2.workspace               = true
 percent-encoding.workspace     = true
@@ -78,11 +79,11 @@ default = ["azure", "boat", "coder", "daytona", "railway"]
 cloud = ["herdr-client/cloud"]
 # Azure VMs and Container Apps sandboxes as devices, with generic credentials
 # or local Azure CLI. Sandboxes are reached over the data plane's exec stream.
-azure = ["cloud", "herdr-client/azure", "dep:base64", "dep:rustls", "dep:tungstenite", "dep:webpki-roots"]
+azure = ["cloud", "herdr-client/azure", "dep:rustls", "dep:tungstenite", "dep:webpki-roots"]
 # Boat sandboxes as devices, with an API key and per-machine SSH key setup.
 boat = ["cloud", "herdr-client/boat"]
 # Coder workspaces as devices, with OAuth2 sign-in.
-coder = ["cloud", "herdr-client/coder", "dep:base64"]
+coder = ["cloud", "herdr-client/coder"]
 # Daytona sandboxes as devices, with an API key and its SSH gateway.
 daytona = ["cloud", "herdr-client/daytona"]
 # Railway free VMs as devices, reached over SSH with a saved key identity.

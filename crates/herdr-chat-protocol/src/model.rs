@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::CommandId;
+use crate::{Author, CommandId, Image};
 
 /// An entry's identity, assigned by the program in increasing order.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -22,6 +22,10 @@ pub struct PermissionId(pub u64);
 pub struct Transcript {
     /// The agent's display name, such as `Claude`.
     pub agent: String,
+    /// Permission requests are answered with their allow option as they
+    /// come, without asking.
+    #[serde(default)]
+    pub auto_accept: bool,
     /// How many attached clients watch, not counting the program's own view.
     #[serde(default)]
     pub clients: u32,
@@ -137,6 +141,11 @@ pub enum EntryKind {
     Thought {
         text: String,
     },
+    /// A picture the user or the agent put in the conversation.
+    Image {
+        author: Author,
+        image: Image,
+    },
     Tool(Tool),
     /// How a prompt turn ended: how long it took and what it used.
     Turn(TurnSummary),
@@ -154,7 +163,7 @@ impl EntryKind {
             | Self::Agent { text }
             | Self::Thought { text }
             | Self::Notice { text, .. } => Some(text),
-            Self::Tool(_) | Self::Turn(_) => None,
+            Self::Image { .. } | Self::Tool(_) | Self::Turn(_) => None,
         }
     }
 
@@ -164,7 +173,7 @@ impl EntryKind {
             | Self::Agent { text }
             | Self::Thought { text }
             | Self::Notice { text, .. } => Some(text),
-            Self::Tool(_) | Self::Turn(_) => None,
+            Self::Image { .. } | Self::Tool(_) | Self::Turn(_) => None,
         }
     }
 }
@@ -234,6 +243,10 @@ pub enum ToolContent {
         old: Option<String>,
         path: String,
     },
+    /// A picture the tool returned, such as a screenshot or an image file read.
+    Image {
+        image: Image,
+    },
     /// Output of a terminal the agent ran through the client; shown by id only.
     Terminal {
         id: String,
@@ -274,6 +287,16 @@ pub enum PermissionKind {
 impl PermissionKind {
     pub fn allows(self) -> bool {
         matches!(self, Self::AllowOnce | Self::AllowAlways)
+    }
+}
+
+impl Permission {
+    /// The option auto-accepting picks: allowing this once, else always.
+    /// None when the agent offers no way to allow it.
+    pub fn allow_option(&self) -> Option<&PermissionOption> {
+        [PermissionKind::AllowOnce, PermissionKind::AllowAlways]
+            .into_iter()
+            .find_map(|kind| self.options.iter().find(|option| option.kind == kind))
     }
 }
 
@@ -328,8 +351,30 @@ pub struct Mode {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Queued {
+    #[serde(default)]
+    pub attachments: Vec<Attachment>,
     pub id: CommandId,
     pub text: String,
+}
+
+/// The most files one prompt carries.
+pub const MAX_ATTACHMENTS: usize = 10;
+
+/// A file sent with a prompt, by its absolute path on the machine the
+/// program runs on; the program reads it when the prompt goes out.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Attachment {
+    pub path: String,
+}
+
+impl Attachment {
+    /// The file's name, for chips and transcript lines.
+    pub fn name(&self) -> &str {
+        self.path
+            .rsplit(['/', '\\'])
+            .find(|part| !part.is_empty())
+            .unwrap_or(&self.path)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

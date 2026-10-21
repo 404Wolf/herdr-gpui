@@ -2,6 +2,8 @@
 
 use super::*;
 
+mod installed;
+
 #[cfg(unix)]
 fn install(dir: &Path, name: &str) {
     use std::os::unix::fs::PermissionsExt;

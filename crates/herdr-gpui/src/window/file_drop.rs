@@ -35,6 +35,14 @@ impl HerdrWindow {
             return;
         };
         cx.stop_propagation();
+        // A chat view takes files as attachments to its next prompt; its
+        // program's own terminal view under it is hidden.
+        if let InputTarget::Pane(pane_id) = &target
+            && self.chats.shown(pane_id)
+        {
+            self.attach_chat_files(pane_id, paths.paths().to_vec(), window, cx);
+            return;
+        }
         if self.paste_files(target, paths.paths(), cx) {
             window.focus(&self.focus, cx);
         }

@@ -33,6 +33,7 @@ fn the_prompt_request_carries_the_text_and_session() {
         0,
         Command::Prompt {
             text: "hello".to_owned(),
+            attachments: Vec::new(),
         },
     );
     let request = harness.last_request("session/prompt");
@@ -122,6 +123,7 @@ fn authentication_errors_say_how_to_sign_in() {
         0,
         Command::Prompt {
             text: "hi".to_owned(),
+            attachments: Vec::new(),
         },
     );
     assert_eq!(

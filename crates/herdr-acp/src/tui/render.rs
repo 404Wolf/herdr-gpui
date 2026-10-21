@@ -218,6 +218,13 @@ fn header_line(view: &View, tick: usize) -> Line<'static> {
         spans.push(Span::styled(" · ", dim));
         spans.push(Span::raw(mode.name.clone()));
     }
+    if transcript.auto_accept {
+        spans.push(Span::styled(" · ", dim));
+        spans.push(Span::styled(
+            "auto-accepting",
+            Style::default().fg(Color::Yellow),
+        ));
+    }
     if let Some(title) = transcript.session.as_ref().and_then(|s| s.title.clone()) {
         spans.push(Span::styled(" · ", dim));
         spans.push(Span::styled(title, dim));
@@ -269,9 +276,17 @@ fn composer_height(view: &View, width: usize) -> (usize, Bottom) {
 }
 
 fn draw_composer(frame: &mut Frame<'_>, view: &View, area: Rect) {
-    let block = Block::default()
+    let mut block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::DarkGray));
+    // Files the prompt carries name themselves on the composer's border.
+    if !view.attachments.is_empty() {
+        let names: Vec<&str> = view.attachments.iter().map(|file| file.name()).collect();
+        block = block.title(Line::styled(
+            format!(" \u{1f4ce} {} ", names.join(" \u{b7} ")),
+            Style::default().fg(Color::Cyan),
+        ));
+    }
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if view.composer.text.is_empty() {
