@@ -80,3 +80,61 @@ fn a_read_stopped_by_a_disconnect_is_due_on_the_next_request() {
     avatars.request(DEVBOX, now);
     assert_eq!(incoming.try_iter().collect::<Vec<_>>(), [DEVBOX.to_owned()]);
 }
+
+#[test]
+fn a_read_failing_after_its_device_reconnected_is_asked_again_at_once() {
+    let (mut avatars, incoming, outgoing) = detached();
+    let start = Instant::now();
+    avatars.follow("dev", "devbox", Some(start));
+    avatars.request(DEVBOX, start);
+    assert_eq!(incoming.try_iter().count(), 1);
+
+    // The device drops and comes back while the read is still pending, so
+    // the new connection's snapshot cannot ask for it again.
+    let back = start + Duration::from_secs(1);
+    avatars.follow("dev", "devbox", None);
+    avatars.follow("dev", "devbox", Some(back));
+    avatars.request(DEVBOX, back);
+    assert!(incoming.try_recv().is_err());
+
+    for error in [
+        herdr_client::Error::SshCancelled,
+        herdr_client::Error::SshTimeout,
+    ] {
+        assert!(outgoing.send((DEVBOX.to_owned(), Err(error))).is_ok());
+        assert!(avatars.poll(back + Duration::from_secs(1)));
+        assert_eq!(incoming.try_iter().collect::<Vec<_>>(), [DEVBOX.to_owned()]);
+        // Asked after the reconnection, so the retry is pending again with
+        // the current connection.
+        avatars.follow("dev", "devbox", None);
+        avatars.follow("dev", "devbox", Some(back + Duration::from_secs(2)));
+    }
+}
+
+#[test]
+fn a_read_failing_on_the_same_connection_waits_for_its_retry() {
+    let (mut avatars, incoming, outgoing) = detached();
+    let start = Instant::now();
+    avatars.follow("dev", "devbox", Some(start));
+    avatars.request(DEVBOX, start);
+    assert_eq!(incoming.try_iter().count(), 1);
+    assert!(
+        outgoing
+            .send((DEVBOX.to_owned(), Err(herdr_client::Error::SshTimeout)))
+            .is_ok()
+    );
+    assert!(avatars.poll(start));
+    assert!(incoming.try_recv().is_err());
+}
+
+#[test]
+fn a_device_removed_from_the_catalog_takes_its_host_offline() {
+    let (mut avatars, _incoming, _outgoing) = detached();
+    let now = Instant::now();
+    avatars.follow("a", "devbox", Some(now));
+    avatars.follow("b", "devbox", Some(now));
+    avatars.keep_links(|id| id == "b");
+    assert!(!links::is_offline(&avatars.offline, "devbox"));
+    avatars.keep_links(|_| false);
+    assert!(links::is_offline(&avatars.offline, "devbox"));
+}

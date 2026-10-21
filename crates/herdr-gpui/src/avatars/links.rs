@@ -1,6 +1,6 @@
 //! Which saved SSH devices are connected, so remote avatar reads follow the
 //! window's own reconnection rather than probing a host it knows is down.
-use super::{Avatars, Slot};
+use super::{Avatars, Checkout, Slot};
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
@@ -51,6 +51,34 @@ impl Avatars {
                 *retry_at = since;
             }
         }
+    }
+
+    /// Forget the connections of endpoints that left the catalog, which are
+    /// never followed again; `kept` says whether an endpoint is still saved.
+    pub(crate) fn keep_links(&mut self, mut kept: impl FnMut(&str) -> bool) {
+        let gone: Vec<String> = self
+            .links
+            .keys()
+            .filter(|endpoint| !kept(endpoint))
+            .cloned()
+            .collect();
+        for endpoint in gone {
+            self.unlink(&endpoint);
+        }
+    }
+
+    /// Whether a pending SSH read's host has connected again since it was
+    /// asked for.
+    pub(super) fn reconnected_since_asked(&self, checkout: Checkout<&str>) -> bool {
+        let Checkout::Ssh { target, .. } = checkout else {
+            return false;
+        };
+        let Some(Slot::Pending { asked }) = self.slot(checkout) else {
+            return false;
+        };
+        self.links
+            .values()
+            .any(|(host, since)| host == target && since > asked)
     }
 
     /// Forget an endpoint's connection; its host goes offline once no other

@@ -62,6 +62,12 @@ impl HerdrWindow {
         // OSC 52 writes are drained per endpoint so they are written once and
         // never linger in a live state that a later poll would re-read.
         let mut clipboard_writes = std::collections::VecDeque::new();
+        // A device removed from the catalog is never followed again, so its
+        // avatar reads stop here rather than dialing a deleted host.
+        if let Some(avatars) = &mut self.avatars {
+            let endpoints = &self.endpoints;
+            avatars.keep_links(|id| endpoints.iter().any(|endpoint| endpoint.id == id));
+        }
         for (index, endpoint) in self.endpoints.iter_mut().enumerate() {
             let updated = endpoint.poll(Instant::now());
             clipboard_writes.append(&mut endpoint.live.clipboard_writes);

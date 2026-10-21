@@ -82,8 +82,8 @@ impl Checkout<String> {
 /// What is known about one checkout's avatar.
 #[derive(Clone, Debug)]
 enum Slot {
-    /// Requested and not yet answered.
-    Pending,
+    /// Requested at `asked` and not yet answered.
+    Pending { asked: Instant },
     /// The owner's avatar, or `None` for a checkout without a GitHub owner.
     Resolved(Option<Arc<Image>>),
     /// The host could not be read; asked again from `retry_at`, or as soon as
@@ -193,7 +193,7 @@ impl Avatars {
             Checkout::Ssh { .. } => &self.remote_requests,
         };
         if requests.try_send(checkout.to_owned()).is_ok() {
-            self.insert(checkout.to_owned(), Slot::Pending);
+            self.insert(checkout.to_owned(), Slot::Pending { asked: now });
         }
     }
 
@@ -202,16 +202,26 @@ impl Avatars {
     pub fn poll(&mut self, now: Instant) -> bool {
         let mut changed = false;
         while let Ok((checkout, lookup)) = self.results.try_recv() {
+            // A read that failed after its device reconnected missed that
+            // connection's snapshot, which found it still pending, so it is
+            // asked again here rather than waiting for another snapshot.
+            let reconnected = lookup.is_err() && self.reconnected_since_asked(checkout.as_deref());
             let slot = match lookup {
                 Ok(image) => Slot::Resolved(image),
                 // Stopped because its device disconnected: due again as soon
                 // as one is connected, since only then is it asked for.
                 Err(herdr_client::Error::SshCancelled) => Slot::Unreachable { retry_at: now },
+                Err(_) if reconnected => Slot::Unreachable { retry_at: now },
                 Err(_) => Slot::Unreachable {
                     retry_at: now + RETRY_AFTER,
                 },
             };
-            self.insert(checkout, slot);
+            if reconnected {
+                self.insert(checkout.clone(), slot);
+                self.request(checkout.as_deref(), now);
+            } else {
+                self.insert(checkout, slot);
+            }
             changed = true;
         }
         changed
@@ -220,7 +230,7 @@ impl Avatars {
     pub(crate) fn image(&self, checkout: Checkout<&str>) -> Option<Arc<Image>> {
         match self.slot(checkout)? {
             Slot::Resolved(image) => image.clone(),
-            Slot::Pending | Slot::Unreachable { .. } => None,
+            Slot::Pending { .. } | Slot::Unreachable { .. } => None,
         }
     }
 
