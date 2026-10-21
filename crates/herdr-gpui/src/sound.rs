@@ -3,10 +3,10 @@
 mod config;
 mod error;
 mod playback;
-
-pub use error::Error;
 #[cfg(test)]
 mod tests;
+
+pub(crate) use error::Error;
 
 use crate::state::LiveState;
 use config::Settings;
