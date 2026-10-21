@@ -53,7 +53,10 @@ fn checks_are_kept_per_repository_and_replaced_whole() {
 fn agent_launchers_database_is_carried_over_once() {
     let dir = tempfile::tempdir().unwrap();
     let checkout = repository(dir.path());
-    let git_dir = std::fs::canonicalize(std::path::Path::new(&checkout).join(".git")).unwrap();
+    // As detection names it: canonical, without Windows' `\\?\` prefix.
+    let git_dir = crate::orchestrator::repo::plain(
+        std::fs::canonicalize(std::path::Path::new(&checkout).join(".git")).unwrap(),
+    );
     let repo = Repository::Local(git_dir);
     let data = dir.path().join("data");
     let legacy = legacy_path_in(&data, &repo);
