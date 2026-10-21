@@ -3,6 +3,8 @@
 use super::*;
 
 mod installed;
+#[cfg(unix)]
+mod launch;
 
 #[cfg(unix)]
 fn install(dir: &Path, name: &str) {

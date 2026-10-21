@@ -8,38 +8,62 @@ use crossbeam_channel::{Sender, bounded};
 use herdr_chat_protocol::{EndpointId, NoticeLevel};
 
 use crate::{
+    agents::Launch,
     cli::{AgentChoice, Options},
+    harness::{Acp, Pipes, Reach},
     herdr::{Reporter, Target},
-    process, rpc,
+    process,
     session::{Config, Flow, Input, Session},
 };
 
 /// Inputs waiting for the session thread.
 const INPUTS: usize = 1024;
 
+/// Asks for the ACP adapter, as `--acp` does.
+const ADAPTER_VARIABLE: &str = "HERDR_ACP_ADAPTER";
+
 struct Agent {
     args: Vec<std::ffi::OsString>,
     display: String,
     login_hint: Option<String>,
     program: std::ffi::OsString,
+    reach: Box<dyn Reach>,
 }
 
-fn agent(choice: AgentChoice, name: Option<String>) -> Agent {
-    match choice {
+fn agent(options: &Options) -> Agent {
+    let name = options.name.clone();
+    match &options.agent {
         AgentChoice::Builtin { agent, args: extra } => {
-            let (program, mut args) = crate::agents::command(
-                agent,
-                Some(&crate::agents::search_path(
-                    std::env::var_os("PATH").as_deref(),
-                    std::env::home_dir().as_deref(),
-                )),
+            let agent = *agent;
+            let path = crate::agents::search_path(
+                std::env::var_os("PATH").as_deref(),
+                std::env::home_dir().as_deref(),
             );
-            args.extend(extra);
+            let adapter = options.adapter
+                || std::env::var_os(ADAPTER_VARIABLE).is_some_and(|value| value == "1");
+            let (program, mut args, reach): (_, _, Box<dyn Reach>) =
+                match crate::agents::launch(agent, Some(&path), adapter) {
+                    Launch::Claude(program) => {
+                        let session = options
+                            .load
+                            .clone()
+                            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                        let args = crate::claude::args(&session, options.load.is_some());
+                        (
+                            program.into_os_string(),
+                            args,
+                            crate::claude::reach(session),
+                        )
+                    }
+                    Launch::Acp(program, args) => (program, args, Box::new(Acp)),
+                };
+            args.extend(extra.iter().cloned());
             Agent {
                 args,
                 display: name.unwrap_or_else(|| agent.display_name().to_owned()),
                 login_hint: Some(agent.login_hint().to_owned()),
                 program,
+                reach,
             }
         }
         AgentChoice::Command { program, args } => Agent {
@@ -48,31 +72,35 @@ fn agent(choice: AgentChoice, name: Option<String>) -> Agent {
                     .file_name()
                     .map_or_else(|| "Agent".to_owned(), |n| n.to_string_lossy().into_owned())
             }),
-            args,
+            args: args.clone(),
             login_hint: None,
-            program,
+            program: program.clone(),
+            reach: Box::new(Acp),
         },
     }
 }
 
 pub(crate) fn run(options: Options) -> anyhow::Result<()> {
-    let cwd = match options.cwd {
+    let cwd = match options.cwd.clone() {
         Some(cwd) => cwd,
         None => std::env::current_dir().context("could not read the current directory")?,
     };
     let cwd = cwd
         .canonicalize()
         .with_context(|| format!("no directory {}", cwd.display()))?;
-    let agent = agent(options.agent, options.name);
+    let agent = agent(&options);
     let spawned = process::spawn(&agent.program, &agent.args, &cwd)?;
     let agent_process = spawned.process.clone();
     let (inputs, receiver) = bounded::<Input>(INPUTS);
 
     let to_session = inputs.clone();
-    rpc::spawn_reader(spawned.output, move |inbound| {
-        to_session.send(Input::Agent(inbound)).is_ok()
-    })?;
-    let (outbox, _writer) = rpc::spawn_writer(spawned.input)?;
+    let outbox = agent.reach.connect(
+        Pipes {
+            input: Box::new(spawned.input),
+            output: Box::new(spawned.output),
+        },
+        Box::new(move |inbound| to_session.send(Input::Agent(inbound)).is_ok()),
+    )?;
     let waiter = inputs.clone();
     let watched = agent_process.clone();
     thread::Builder::new()

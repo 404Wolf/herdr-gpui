@@ -54,6 +54,13 @@ fn a_custom_command_after_the_separator() {
 }
 
 #[test]
+fn acp_asks_for_the_adapter() {
+    assert!(!run(&["claude"]).adapter);
+    assert!(run(&["--acp", "claude"]).adapter);
+    assert!(run(&["claude", "--acp"]).adapter);
+}
+
+#[test]
 fn load_takes_a_session_id() {
     assert_eq!(
         run(&["codex", "--load", "abc"]).load.as_deref(),

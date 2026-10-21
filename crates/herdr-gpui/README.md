@@ -2899,9 +2899,10 @@ pane's folder, and runs the program there; `herdr-gpui chat new AGENT` does
 the same from a pane. The rows show once the app has found `herdr-acp`,
 first beside its own executable (the app bundle, `cargo build`'s target
 directory, or where `just install` puts both) and then on the login shell's
-`PATH`, and only for the Herdr on this machine. Each agent's ACP command has
-to be installed: `claude-agent-acp`, `codex-acp` (both else run through
-`npx`), `copilot --acp`, `gemini --acp`, or `opencode acp`. The program can
+`PATH`, and only for the Herdr on this machine. Each agent has to be
+installed: `claude` (which `herdr-acp` drives without an ACP adapter),
+`codex-acp` (else run through `npx`), `copilot --acp`, `gemini --acp`, or
+`opencode acp`. The program can
 also be started by hand in any pane: `herdr-acp claude`.
 
 **The chat view.** Over a chat's pane the app shows the agent's messages,

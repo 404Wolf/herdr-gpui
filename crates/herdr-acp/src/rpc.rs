@@ -75,33 +75,50 @@ pub(crate) fn spawn_reader(
     output: impl Read + Send + 'static,
     mut deliver: impl FnMut(Inbound) -> bool + Send + 'static,
 ) -> std::io::Result<thread::JoinHandle<()>> {
-    thread::Builder::new()
-        .name("acp-reader".to_owned())
-        .spawn(move || {
-            let mut reader = BufReader::new(output);
-            let mut line = Vec::new();
-            let error = loop {
-                line.clear();
-                let read = (&mut reader)
-                    .take(MAX_LINE as u64 + 1)
-                    .read_until(b'\n', &mut line);
-                match read {
-                    Ok(0) => break None,
-                    Ok(_) if line.len() > MAX_LINE => {
-                        break Some(Error::LineTooLong { limit: MAX_LINE });
-                    }
-                    Ok(_) => {
-                        if let Some(inbound) = classify(&line)
-                            && !deliver(inbound)
-                        {
-                            return;
-                        }
-                    }
-                    Err(error) => break Some(error.into()),
+    spawn_lines(output, "acp-reader", move |read| match read {
+        Lines::Line(line) => classify(line).is_none_or(&mut deliver),
+        Lines::End(error) => deliver(Inbound::Closed(error)),
+    })
+}
+
+/// What [`spawn_lines`] hands on.
+pub(crate) enum Lines<'a> {
+    Line(&'a [u8]),
+    /// The output ended, cleanly or with why it could not be read.
+    End(Option<Error>),
+}
+
+/// Reads lines of at most [`MAX_LINE`] bytes on a thread named `name`,
+/// handing each to `handle` until it returns `false`, then how the output
+/// ended unless `handle` stopped first.
+pub(crate) fn spawn_lines(
+    output: impl Read + Send + 'static,
+    name: &str,
+    mut handle: impl FnMut(Lines<'_>) -> bool + Send + 'static,
+) -> std::io::Result<thread::JoinHandle<()>> {
+    thread::Builder::new().name(name.to_owned()).spawn(move || {
+        let mut reader = BufReader::new(output);
+        let mut line = Vec::new();
+        let error = loop {
+            line.clear();
+            let read = (&mut reader)
+                .take(MAX_LINE as u64 + 1)
+                .read_until(b'\n', &mut line);
+            match read {
+                Ok(0) => break None,
+                Ok(_) if line.len() > MAX_LINE => {
+                    break Some(Error::LineTooLong { limit: MAX_LINE });
                 }
-            };
-            deliver(Inbound::Closed(error));
-        })
+                Ok(_) => {
+                    if !handle(Lines::Line(&line)) {
+                        return;
+                    }
+                }
+                Err(error) => break Some(error.into()),
+            }
+        };
+        handle(Lines::End(error));
+    })
 }
 
 /// Writes queued lines to the agent's input in order, until the queue closes.
@@ -127,7 +144,8 @@ pub(crate) fn spawn_writer(
 pub(crate) struct Outbox(pub(crate) Sender<Vec<u8>>);
 
 impl Outbox {
-    fn send(&self, message: &Value) -> Result<()> {
+    /// Queues one message as a line.
+    pub(crate) fn send(&self, message: &Value) -> Result<()> {
         let mut line = serde_json::to_vec(message).map_err(Error::Encode)?;
         line.push(b'\n');
         match self.0.try_send(line) {

@@ -37,6 +37,9 @@ pub(crate) enum Parsed {
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Options {
+    /// Reach a built-in agent through its ACP adapter even where `herdr-acp`
+    /// can speak to the agent itself.
+    pub adapter: bool,
     pub agent: AgentChoice,
     /// Listen for Herdr UI and other clients.
     pub attach: bool,
@@ -72,13 +75,16 @@ Usage:
   herdr-acp agents       List the agents installed here, one per line
 
 Agents:
-  claude     claude-agent-acp (or npx @agentclientprotocol/claude-agent-acp)
+  claude     claude itself, or with --acp claude-agent-acp
+             (or npx @agentclientprotocol/claude-agent-acp)
   codex      codex-acp (or npx @agentclientprotocol/codex-acp)
   copilot    copilot --acp
   gemini     gemini --acp
   opencode   opencode acp
 
 Options:
+  --acp          Use the agent's ACP adapter, not the agent itself
+                 (also HERDR_ACP_ADAPTER=1)
   --cwd DIR      Run the session in DIR instead of the current directory
   --load ID      Continue the agent's session ID instead of starting a new one
   --name NAME    The name to show for a custom command
@@ -120,6 +126,7 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Parsed, 
             .map_err(|_| Error::InvalidEndpoint(id));
     }
     let mut options = Options {
+        adapter: false,
         agent: AgentChoice::Command {
             program: OsString::new(),
             args: Vec::new(),
@@ -135,6 +142,7 @@ pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Parsed, 
         match arg.to_str() {
             Some("-h" | "--help") => return Ok(Parsed::Help),
             Some("-V" | "--version") => return Ok(Parsed::Version),
+            Some("--acp") => options.adapter = true,
             Some("--headless") => options.headless = true,
             Some("--no-attach") => options.attach = false,
             Some("--cwd") => {

@@ -43,18 +43,49 @@ pub(crate) fn search_path(path: Option<&OsStr>, home: Option<&Path>) -> OsString
     std::env::join_paths(dirs).unwrap_or_default()
 }
 
-/// The agents whose own ACP command is on `path`, in table order. One only
-/// `npx` could start does not count: it would be downloaded, not run.
+/// How an agent is reached.
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum Launch {
+    /// `claude` itself, through [`crate::claude`]'s bridge.
+    Claude(PathBuf),
+    /// An ACP server: the program and its arguments.
+    Acp(OsString, Vec<OsString>),
+}
+
+/// How to start `agent`: the agent itself where `herdr-acp` speaks its own
+/// protocol and it is on `path`, unless `adapter` asks for ACP; otherwise
+/// [`command`].
+pub(crate) fn launch(agent: Agent, path: Option<&OsStr>, adapter: bool) -> Launch {
+    if !adapter
+        && let Some(program) = native(agent)
+        && let Some(found) = find_program(program, path)
+    {
+        return Launch::Claude(found);
+    }
+    let (program, args) = command(agent, path);
+    Launch::Acp(program, args)
+}
+
+/// The agent's own program, for an agent `herdr-acp` can talk to without an
+/// ACP adapter.
+fn native(agent: Agent) -> Option<&'static str> {
+    (agent == Agent::Claude).then_some(crate::claude::PROGRAM)
+}
+
+/// The agents whose own program or ACP command is on `path`, in table
+/// order. One only `npx` could start does not count: it would be
+/// downloaded, not run.
 pub(crate) fn installed(path: Option<&OsStr>) -> Vec<Agent> {
     Agent::ALL
         .iter()
         .copied()
         .filter(|agent| {
-            agent
-                .candidates()
-                .iter()
-                .filter(|(program, _)| *program != FETCHER)
-                .any(|(program, _)| find_program(program, path).is_some())
+            native(*agent).is_some_and(|program| find_program(program, path).is_some())
+                || agent
+                    .candidates()
+                    .iter()
+                    .filter(|(program, _)| *program != FETCHER)
+                    .any(|(program, _)| find_program(program, path).is_some())
         })
         .collect()
 }

@@ -4,9 +4,11 @@
 mod agents;
 mod app;
 mod attach;
+mod claude;
 mod cli;
 mod error;
 mod files;
+mod harness;
 mod herdr;
 mod process;
 mod project;
