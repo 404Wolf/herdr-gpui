@@ -8,6 +8,7 @@ use crate::{
 use gpui::{Entity, VisualTestContext};
 use std::{path::Path, sync::Arc};
 
+mod px0;
 mod windows;
 
 fn web(url: &str) -> Location {
@@ -45,9 +46,10 @@ fn tabs_are_listed_by_kind_with_what_they_show() {
         store.open(scope.clone(), "w_1", location, Some("w_1:p1".into()));
     }
     // The VS Code tab's address carries its token, which is never listed.
-    store.open_code_tab(
+    store.open_editor_tab(
         scope.clone(),
         "w_1",
+        crate::browser::Editor::VsCode,
         Some(web("http://127.0.0.1:8000/?tkn=secret")),
     );
     let listed: Vec<TabInfo> = store.tabs().map(info).collect();

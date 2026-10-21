@@ -723,6 +723,8 @@ pub enum Error {
     PrWorkspaceRepository,
     #[error("Local repository unavailable for worktree lookup.")]
     PrWorktreeLookup,
+    #[error(transparent)]
+    Px0(#[from] crate::px0::Error),
     #[cfg(feature = "railway")]
     #[error(transparent)]
     Railway(#[from] crate::railway::Error),
@@ -800,26 +802,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[error("Audio playback cancelled")]
-    SoundCancelled,
-    #[error("Sound configuration exceeds 1 MiB")]
-    SoundConfigSize,
-    #[error("Could not decode MP3 sound: {0}")]
-    SoundDecode(#[from] rodio::decoder::DecoderError),
-    #[error("Could not open audio output: {0}")]
-    SoundDevice(#[from] rodio::DeviceSinkError),
-    #[error("Could not read sound file {}: {source}", path.display())]
-    SoundFile {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error("Sound must be a regular file of at most 16 MiB")]
-    SoundFileSize,
-    #[error("Audio output failed: {0}")]
-    SoundStream(#[from] rodio::cpal::StreamError),
-    #[error("Audio playback timed out")]
-    SoundTimeout,
+    #[error(transparent)]
+    Sound(#[from] crate::sound::Error),
     #[error("Could not read {}: {source}", path.display())]
     SshConfig {
         path: PathBuf,
@@ -875,14 +859,8 @@ pub enum Error {
     TooManyKeystrokes(&'static str),
     #[error("pane_keys must list at most {0} keystrokes")]
     TooManyPaneKeys(usize),
-    #[error("SSH ended before the tunnel opened ({0}).")]
-    TunnelExited(std::process::ExitStatus),
-    #[error("No free local port for an SSH tunnel.")]
-    TunnelPort(#[source] io::Error),
-    #[error("Could not start ssh for a tunnel.")]
-    TunnelStart(#[source] io::Error),
-    #[error("The SSH tunnel did not open in time.")]
-    TunnelTimeout,
+    #[error(transparent)]
+    Tunnel(#[from] crate::listening_ports::TunnelError),
     #[error("Herdr UI has no setting {}; config-gpui.toml lists every setting", .0.join(", "))]
     UnknownConfigKeys(Vec<String>),
     #[error("keybindings.{0} is not a command; see the keybindings list in config-gpui.toml")]

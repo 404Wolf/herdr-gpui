@@ -109,6 +109,8 @@ mod workspace_click_hover;
 #[cfg(test)]
 mod workspace_menu;
 #[cfg(test)]
+mod workspace_menu_name;
+#[cfg(test)]
 mod worktree_note_trunk;
 #[cfg(test)]
 mod worktree_notes;
@@ -669,6 +671,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         terminal_mouse: None,
         scrollbar_drag: None,
         security: Default::default(),
+        security_search: crate::security::SecuritySearch::new(cx),
         split_drag: None,
         split_cursor: None,
         pending_images: Vec::new(),
