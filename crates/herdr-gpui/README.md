@@ -2138,8 +2138,15 @@ work. Cancelling an image already partially written closes that client connectio
 to avoid corrupting framing; it does not stop the daemon. Slow/stalled transfers
 have a 60-second deadline. There is no upload acknowledgement or progress API.
 
-macOS uses the native pasteboard on a background executor; AppKit may materialize
-its data before the client can check its size. Linux uses `wl-paste` (Wayland) or
+macOS acquires clipboard data in a short-lived copy of the application, on that
+process's main thread before any windows or daemon connections are opened. The
+background preparation task accepts only a complete, bounded response from a
+successful reader, with a three-second deadline. A native pasteboard crash or
+stall fails that paste without closing the GUI; the reader is killed and reaped
+on timeout. Clipboard data travels only over a private socket, never a temporary
+file or a log. The existing format priority, revision check, and paste ordering
+are preserved. AppKit may still materialize data inside the reader before its
+size can be checked. Linux uses `wl-paste` (Wayland) or
 `xclip` (X11) for explicit Ctrl-V image acquisition, with bounded output and a
 three-second acquisition deadline. Ordinary Linux paste retains GPUI's native
 clipboard reader and needs no helper; that existing synchronous API can still
