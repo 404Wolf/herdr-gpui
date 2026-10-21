@@ -59,6 +59,9 @@ pub(super) enum Step {
     /// Checking the catalog on disk again before opening the setup workspace
     /// for the offer the user accepted.
     Verifying(setup::Request, Offer),
+    /// Waiting for the window to show this computer's Herdr, whose surface
+    /// must be active before it creates a workspace (see `create_setup_space`).
+    Activating(setup::Request, setup::TerminalSetup, Offer),
     /// Waiting for the local daemon to create the setup workspace.
     Opening(setup::Request, LocalSpace),
 }
@@ -89,9 +92,12 @@ impl Offer {
         }
     }
 
-    pub(super) fn question(self, target: &str) -> String {
+    /// `user` is the login `ssh` resolved for the target, when known: a target
+    /// without one logs in as the local user, which may not be the account
+    /// the user's keys are installed for.
+    pub(super) fn question(self, target: &str, user: Option<&str>) -> String {
         if cfg!(windows) {
-            return self.terminal_instructions(target);
+            return self.terminal_instructions(target, user);
         }
         match self {
             Self::Install => {
@@ -106,9 +112,15 @@ impl Offer {
             Self::Restart => format!(
                 "Restart the Herdr server on {target}? A local terminal asks you to confirm."
             ),
-            Self::InstallKey => format!(
-                "{target} accepted none of your SSH keys. Install your key there? A local terminal runs ssh-copy-id, which asks for the password once, then saves the device."
-            ),
+            Self::InstallKey => match implied_user(target, user) {
+                Some(user) => format!(
+                    "{target} accepted none of your SSH keys for the user {user}. If you log in there as someone else, change the target to {} and press Enter to check it. Otherwise, install your key for {user}? A local terminal runs ssh-copy-id, which asks for the password once, then saves the device.",
+                    with_user(target, "name")
+                ),
+                None => format!(
+                    "{target} accepted none of your SSH keys. Install your key there? A local terminal runs ssh-copy-id, which asks for the password once, then saves the device."
+                ),
+            },
         }
     }
 
@@ -123,17 +135,41 @@ impl Offer {
 
     /// Windows cannot run a setup on a local terminal yet (see
     /// `setup::terminal_setup`), so the user runs Herdr's own command in one.
-    fn terminal_instructions(self, target: &str) -> String {
+    fn terminal_instructions(self, target: &str, user: Option<&str>) -> String {
         let reason = match self {
-            Self::Install => "Herdr was not detected there",
-            Self::Update => "its Herdr is too old for this app",
-            Self::Terminal => "SSH needs your input, such as a password or host key",
-            Self::Restart => "its Herdr server has to restart",
-            Self::InstallKey => "it accepted none of your SSH keys",
+            Self::Install => "Herdr was not detected there".into(),
+            Self::Update => "its Herdr is too old for this app".into(),
+            Self::Terminal => "SSH needs your input, such as a password or host key".into(),
+            Self::Restart => "its Herdr server has to restart".into(),
+            Self::InstallKey => match implied_user(target, user) {
+                Some(user) => format!(
+                    "it accepted none of your SSH keys for the user {user} (use {} to log in as someone else)",
+                    with_user(target, "name")
+                ),
+                None => "it accepted none of your SSH keys".into(),
+            },
         };
         format!(
             "Setting up {target} needs a terminal: {reason}. Run `herdr machine add {target}` in a terminal, then add the device again."
         )
+    }
+}
+
+/// The resolved login, only when `target` does not name one itself: the
+/// dialog then has not shown which account SSH tried.
+fn implied_user<'a>(target: &str, user: Option<&'a str>) -> Option<&'a str> {
+    let named = target
+        .strip_prefix("ssh://")
+        .unwrap_or(target)
+        .contains('@');
+    user.filter(|_| !named)
+}
+
+/// `target` logging in as `user`; an `ssh://` URI takes the user inside it.
+fn with_user(target: &str, user: &str) -> String {
+    match target.strip_prefix("ssh://") {
+        Some(rest) => format!("ssh://{user}@{rest}"),
+        None => format!("{user}@{target}"),
     }
 }
 
@@ -176,7 +212,19 @@ impl HerdrWindow {
                 setup.suggested_label = None;
             }
         });
-        let target_edits = cx.subscribe(&fields[0], |_, _, _: &Changed, cx| cx.notify());
+        // An offer runs for the target that was checked, so changing the
+        // target withdraws it: the next submit checks the new target.
+        let target_edits = cx.subscribe(&fields[0], |this, field, _: &Changed, cx| {
+            if let Some(setup) = &mut this.menu.device_setup
+                && let Step::Confirm(request, _) = &setup.step
+                && request.target() != field.read(cx).text().trim()
+            {
+                setup.step = Step::Form;
+                setup.claim = None;
+                setup.error = None;
+            }
+            cx.notify();
+        });
         self.menu.device_setup = Some(Setup {
             fields,
             step: Step::Form,
@@ -325,11 +373,14 @@ impl HerdrWindow {
                 body = body.child(self.render_host_key(request.target(), key));
                 None
             }
-            Step::Confirm(request, offer) => Some(offer.question(request.target())),
+            Step::Confirm(request, offer) => Some(offer.question(
+                request.target(),
+                setup.claim.as_ref().map(setup::Claim::user),
+            )),
             Step::Verifying(request, _) => {
                 Some(format!("Checking {} is not saved yet…", request.target()))
             }
-            Step::Opening(..) => Some("Opening a local workspace…".into()),
+            Step::Activating(..) | Step::Opening(..) => Some("Opening a local workspace…".into()),
         };
         if let Some(status) = status {
             body = body.child(
@@ -706,42 +757,114 @@ impl HerdrWindow {
                 return;
             }
         };
-        let local = &self.endpoints[0];
-        let result = (|| {
-            let setup = terminal?;
-            let boot = local
-                .live
-                .snapshot
-                .as_ref()
-                .filter(|_| local.live.status.is_connected())
-                .map(|snapshot| snapshot.boot_id.clone())
-                .ok_or(crate::Error::NotConnected)?;
-            let id = local.connection.request_dialog(
-                &boot,
-                Method::WorkspaceCreate,
-                serde_json::json!({
-                    "focus": true,
-                    "label": format!("Set up {}", request.label()),
-                }),
-            )?;
-            Ok::<_, crate::Error>(LocalSpace {
-                request: id,
-                boot,
-                setup,
-                offer,
-            })
-        })();
         let Some(form) = &mut self.menu.device_setup else {
             return;
         };
         form.claim = Some(claim);
-        match result {
-            Ok(space) => form.step = Step::Opening(request, space),
-            Err(error) => {
-                form.step = Step::Confirm(request, offer);
-                self.set_device_error(Some(format!("Open a local workspace: {error}")));
-            }
+        let setup = match terminal {
+            Ok(setup) => setup,
+            Err(error) => return self.fail_setup_space(request, offer, &error, cx),
+        };
+        // Herdr refuses commands from a connection whose surface is inactive,
+        // as Local's is while the window shows another device, so the window
+        // moves to Local first; it ends there anyway once the setup opens.
+        // Switching closes every dialog, so this one is put back over Local.
+        let (page, form) = (self.menu.page, self.menu.device_setup.take());
+        let selected = self.select_endpoint(crate::endpoint::LOCAL, cx);
+        (self.menu.page, self.menu.device_setup) = (page, form);
+        if !selected {
+            return self.fail_setup_space(request, offer, &crate::Error::NotConnected, cx);
         }
+        if let Some(form) = &mut self.menu.device_setup {
+            form.step = Step::Activating(request, setup, offer);
+        }
+        self.create_setup_space(cx);
+    }
+
+    /// Asks the local daemon for the setup workspace once the window has
+    /// queued Local's surface activation. The request follows it on the same
+    /// ordered connection, so Herdr handles it with the surface active.
+    pub(super) fn create_setup_space(&mut self, cx: &mut Context<Self>) {
+        let Some(Setup {
+            step: Step::Activating(..),
+            ..
+        }) = &self.menu.device_setup
+        else {
+            return;
+        };
+        let local = &self.endpoints[0];
+        let connected = local.live.status.is_connected();
+        if self.selected_endpoint == 0 && connected && !local.surface_requested() {
+            // The next poll activates the surface.
+            return;
+        }
+        let result = (|| {
+            if self.selected_endpoint != 0 {
+                return Err(crate::Error::StaleConnection);
+            }
+            let boot = local
+                .live
+                .snapshot
+                .as_ref()
+                .filter(|_| connected)
+                .map(|snapshot| snapshot.boot_id.clone())
+                .ok_or(crate::Error::NotConnected)?;
+            let Some(Setup {
+                step: Step::Activating(request, ..),
+                ..
+            }) = &self.menu.device_setup
+            else {
+                return Err(crate::Error::StaleConnection);
+            };
+            local
+                .connection
+                .request_dialog(
+                    &boot,
+                    Method::WorkspaceCreate,
+                    serde_json::json!({
+                        "focus": true,
+                        "label": format!("Set up {}", request.label()),
+                    }),
+                )
+                .map(|id| (id, boot))
+        })();
+        let Some(form) = &mut self.menu.device_setup else {
+            return;
+        };
+        let Step::Activating(request, setup, offer) = std::mem::replace(&mut form.step, Step::Form)
+        else {
+            return;
+        };
+        match result {
+            Ok((id, boot)) => {
+                form.step = Step::Opening(
+                    request,
+                    LocalSpace {
+                        request: id,
+                        boot,
+                        setup,
+                        offer,
+                    },
+                );
+                cx.notify();
+            }
+            Err(error) => self.fail_setup_space(request, offer, &error, cx),
+        }
+    }
+
+    /// Back to the question, keeping the claim for a retry.
+    fn fail_setup_space(
+        &mut self,
+        request: setup::Request,
+        offer: Offer,
+        error: &crate::Error,
+        cx: &mut Context<Self>,
+    ) {
+        tracing::warn!(category = "device_setup", "Setup workspace failed");
+        if let Some(form) = &mut self.menu.device_setup {
+            form.step = Step::Confirm(request, offer);
+        }
+        self.set_device_error(Some(format!("Open a local workspace: {error}")));
         cx.notify();
     }
 
@@ -766,6 +889,7 @@ impl HerdrWindow {
             }
             return self.dismiss_menu(window, cx);
         }
+        self.create_setup_space(cx);
         let Some(Setup {
             step: Step::Opening(_, space),
             ..
