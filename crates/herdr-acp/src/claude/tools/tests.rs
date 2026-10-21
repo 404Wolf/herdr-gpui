@@ -11,7 +11,13 @@ fn as_json(call: &wire::ToolCall) -> Value {
 #[test]
 fn calls_are_titled_by_what_they_do() {
     let cases = [
-        ("Bash", json!({"command": "ls -la\necho done"}), "`ls -la`"),
+        ("Bash", json!({"command": "ls -la"}), "`ls -la`"),
+        (
+            "Bash",
+            json!({"command": "ls -la\necho done"}),
+            "`ls -la` (+1 more line)",
+        ),
+        ("Bash", json!({"command": "a\nb\nc"}), "`a` (+2 more lines)"),
         ("Read", json!({"file_path": "/a/b.rs"}), "Read /a/b.rs"),
         ("Grep", json!({"pattern": "fn main"}), "Search for fn main"),
         (
@@ -69,6 +75,25 @@ fn an_edit_shows_its_diff_and_location() {
         &json!({"file_path": "/a.rs", "offset": 40}),
     ));
     assert_eq!(read["locations"][0]["line"], 40);
+}
+
+#[test]
+fn a_command_of_several_lines_is_shown_whole() {
+    let shown = as_json(&call(
+        "t1",
+        "Bash",
+        &json!({"command": "echo hi\nrm -rf build"}),
+    ));
+    assert_eq!(
+        shown["content"][0]["content"]["text"],
+        "echo hi\nrm -rf build"
+    );
+    let short = as_json(&call("t2", "Bash", &json!({"command": "ls"})));
+    assert!(
+        short
+            .get("content")
+            .is_none_or(|content| content.as_array().is_some_and(Vec::is_empty))
+    );
 }
 
 #[test]

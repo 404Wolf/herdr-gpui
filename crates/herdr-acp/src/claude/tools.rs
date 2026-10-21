@@ -43,7 +43,7 @@ pub(super) fn result(
 pub(super) fn title(name: &str, input: &Value) -> String {
     let field = |key: &str| input.get(key).and_then(Value::as_str);
     let titled = match name {
-        "Bash" => field("command").map(|command| format!("`{}`", first_line(command))),
+        "Bash" => field("command").map(command_title),
         "Read" => field("file_path").map(|path| format!("Read {path}")),
         "Write" => field("file_path").map(|path| format!("Write {path}")),
         "Edit" | "MultiEdit" => field("file_path").map(|path| format!("Edit {path}")),
@@ -103,6 +103,13 @@ fn content(name: &str, input: &Value) -> Vec<wire::ToolCallContent> {
             })
             .collect(),
         (EXIT_PLAN, _) => field("plan").map(text).into_iter().collect(),
+        // The whole command, so what a permission request runs is never
+        // hidden behind its one-line title.
+        ("Bash", _) => field("command")
+            .filter(|command| command.lines().nth(1).is_some())
+            .map(text)
+            .into_iter()
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -142,8 +149,15 @@ fn path(input: &Value) -> Option<&str> {
         .find_map(|key| input.get(*key).and_then(Value::as_str))
 }
 
-fn first_line(text: &str) -> &str {
-    text.lines().next().unwrap_or_default()
+/// A command's first line, saying how many more it has.
+fn command_title(command: &str) -> String {
+    let mut lines = command.lines();
+    let first = lines.next().unwrap_or_default();
+    match lines.count() {
+        0 => format!("`{first}`"),
+        1 => format!("`{first}` (+1 more line)"),
+        more => format!("`{first}` (+{more} more lines)"),
+    }
 }
 
 /// The question of an `AskUserQuestion` call that asks exactly one.

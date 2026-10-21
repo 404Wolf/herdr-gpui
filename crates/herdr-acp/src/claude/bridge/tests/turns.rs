@@ -107,7 +107,8 @@ fn a_tool_call_runs_through_to_its_result() {
     let call = update(&outs[0]);
     assert_eq!(call["sessionUpdate"], "tool_call");
     assert_eq!(call["toolCallId"], "toolu_1");
-    assert_eq!(call["title"], "`cargo test`");
+    assert_eq!(call["title"], "`cargo test` (+1 more line)");
+    assert_eq!(call["content"][0]["content"]["text"], "cargo test\n--quiet");
     assert_eq!(call["kind"], "execute");
     // Pending is ACP's default, so it goes unsaid.
     assert!(call.get("status").is_none_or(|status| status == "pending"));
