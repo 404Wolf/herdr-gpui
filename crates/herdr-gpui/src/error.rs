@@ -723,6 +723,8 @@ pub enum Error {
     PrWorkspaceRepository,
     #[error("Local repository unavailable for worktree lookup.")]
     PrWorktreeLookup,
+    #[error(transparent)]
+    Px0(#[from] crate::px0::Error),
     #[cfg(feature = "railway")]
     #[error(transparent)]
     Railway(#[from] crate::railway::Error),

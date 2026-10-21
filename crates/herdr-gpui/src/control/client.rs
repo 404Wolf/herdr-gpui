@@ -435,6 +435,7 @@ pub(crate) fn run(invocation: Invocation) -> ExitCode {
         ControlCommand::Devices => tabs::devices(&context),
         ControlCommand::Orchestrator(command) => tabs::orchestrator(command, &context),
         ControlCommand::Review => tabs::review(&context),
+        ControlCommand::Px0 => tabs::px0(&context),
         ControlCommand::Notes(command) => work::notes(command, &context),
         ControlCommand::Feedback { wait } => browser::feedback(wait, &context),
         ControlCommand::Checkpoint(command) => work::checkpoint(command, &context),

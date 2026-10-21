@@ -163,6 +163,7 @@ struct SettingsWindow {
     controls: controls::Controls,
     plugins: controls::plugins::Plugins,
     code: controls::code::CodeSettings,
+    px0: controls::px0::Px0Settings,
     /// The open override dropdown, if any; its list renders inside its button.
     dropdown: Option<ui::Dropdown>,
     /// The number field being typed into, if any.
@@ -314,6 +315,7 @@ impl SettingsWindow {
             controls: controls::Controls::new(cx),
             plugins: controls::plugins::Plugins::new(cx),
             code: Default::default(),
+            px0: Default::default(),
             dropdown: None,
             number_edit: None,
             number_preview: None,
@@ -664,6 +666,7 @@ impl SettingsWindow {
         self.navigation_scroll.scroll_to_item(section.nav_item());
         if section == Section::Code {
             self.open_code_page(window, cx);
+            self.open_px0_settings(cx);
         }
         self.body_scroll.set_offset(Point::default());
         window.focus(&self.focus, cx);

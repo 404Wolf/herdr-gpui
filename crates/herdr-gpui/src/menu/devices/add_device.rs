@@ -50,6 +50,8 @@ pub(super) enum Step {
     Saving(setup::Request, HostProbe),
     /// Saved; the next frame closes the dialog (see `poll_device_setup`).
     Saved,
+    /// Already saved; keep the recovery advice readable until dismissed.
+    SavedWarning(&'static str),
     /// SSH refused an unknown host key; fetching it for the user to approve.
     FetchingKey(setup::Request),
     /// The user compares the host key's fingerprint before trusting it.
@@ -252,6 +254,13 @@ impl HerdrWindow {
         let Some(form) = &self.menu.device_setup else {
             return false;
         };
+        if matches!(form.step, Step::SavedWarning(_)) {
+            if matches!(event.keystroke.key.as_str(), "enter" | "escape") {
+                self.dismiss_menu(window, cx);
+            }
+            // The completed form has no editable fields or further setup action.
+            return true;
+        }
         if form
             .fields
             .iter()
@@ -304,6 +313,9 @@ impl HerdrWindow {
         let Some(setup) = &self.menu.device_setup else {
             return frame(div(), cx);
         };
+        if let Step::SavedWarning(warning) = setup.step {
+            return frame(self.render_device_saved_warning(warning, cx), cx);
+        }
         let ghost = matches!(setup.step, Step::Form)
             .then(|| {
                 let text = setup.fields[0].read(cx).text().to_owned();
@@ -365,7 +377,7 @@ impl HerdrWindow {
                 "Herdr is running on {}. Saving the device…",
                 request.target()
             )),
-            Step::Saved => None,
+            Step::Saved | Step::SavedWarning(_) => None,
             Step::FetchingKey(request) => {
                 Some(format!("Fetching the host key of {}…", request.target()))
             }
@@ -651,16 +663,12 @@ impl HerdrWindow {
                 };
                 let request = request.clone();
                 match &result {
-                    Ok(()) => tracing::info!(category = "device_setup", "Device saved"),
+                    Ok(_) => tracing::info!(category = "device_setup", "Device saved"),
                     Err(_) => tracing::warn!(category = "device_setup", "Device save failed"),
                 }
                 let error = match result {
-                    Ok(()) => {
-                        // Saved: the catalog now refuses this host by itself.
-                        if let Some(form) = &mut this.menu.device_setup {
-                            form.step = Step::Saved;
-                        }
-                        cx.notify();
+                    Ok(outcome) => {
+                        this.device_save_succeeded(outcome, cx);
                         return;
                     }
                     Err(error) => error,
@@ -872,22 +880,8 @@ impl HerdrWindow {
     /// shows it. The command is typed into the pane's shell: the endpoint API
     /// has no method that starts a command in a pane.
     pub(crate) fn poll_device_setup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // A saved device appears in the sidebar and picker by itself, so the
-        // dialog has nothing left to say. Closing here, where the window is
-        // at hand, returns focus to the terminal.
-        if self
-            .menu
-            .device_setup
-            .as_ref()
-            .is_some_and(|form| matches!(form.step, Step::Saved))
-        {
-            // While another source of Add Device shows, only the finished
-            // SSH form goes; the next visit to SSH starts a fresh one.
-            if self.menu.page != Some(Page::AddDevice) {
-                self.menu.device_setup = None;
-                return cx.notify();
-            }
-            return self.dismiss_menu(window, cx);
+        if self.poll_saved_device(window, cx) {
+            return;
         }
         self.create_setup_space(cx);
         let Some(Setup {
