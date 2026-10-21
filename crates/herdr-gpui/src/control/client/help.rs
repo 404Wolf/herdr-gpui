@@ -79,6 +79,9 @@ fn family(name: &str) -> &'static str {
         "review" => {
             "herdr-gpui review [open]\n    Open the review of the caller's workspace's uncommitted changes."
         }
+        "px0" => {
+            "herdr-gpui px0 [open]\n    Open or focus the caller's px0 editor tab on its local checkout.\n    Discovers a running workbench or starts installed px0 lazily.\n    px0.url configures an existing loopback HTTP workbench.\n    Success means the tab opened; server startup errors appear there.\n    Embedded pages require macOS or Windows; remote workspaces are unsupported."
+        }
         "notes" => {
             "herdr-gpui notes [list]\n    Every worktree note, most recently edited first.\nherdr-gpui notes get|clear\nherdr-gpui notes set TEXT...\n    The note on the caller's checkout (its repository and branch), or the\n    focused workspace's outside a Herdr pane. Notes are one line of at most\n    500 characters. `list` and `get` exit 4 when there is none."
         }
