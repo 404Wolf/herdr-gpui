@@ -149,6 +149,11 @@ bundle profile="release" features="":
     cargo build --locked $flags --target-dir target -p herdr-gpui --features "{{features}}"
     cargo build --locked $flags --target-dir target -p herdr-acp
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+    # Replace the executables rather than rewrite them in place: macOS keeps
+    # a signed file's old signature with its inode, so reading the rewritten
+    # pages kills the reader, and a chat still running the old herdr-acp
+    # keeps its own copy.
+    rm -f "$app/Contents/MacOS/Herdr" "$app/Contents/MacOS/herdr-acp"
     cp target/{{profile}}/herdr-gpui "$app/Contents/MacOS/Herdr"
     # Chats the app starts run the herdr-acp beside its executable.
     cp target/{{profile}}/herdr-acp "$app/Contents/MacOS/herdr-acp"
