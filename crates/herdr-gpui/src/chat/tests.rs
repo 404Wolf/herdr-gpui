@@ -7,7 +7,11 @@ use herdr_client::private_endpoint::{Closer, Connection, Listener, Reader, Write
 use std::{
     io::{Read, Write},
     path::PathBuf,
-    sync::mpsc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     time::{Duration, Instant},
 };
 
@@ -110,7 +114,10 @@ fn address(name: &str) -> (Option<tempfile::TempDir>, PathBuf) {
 struct Program {
     _dir: Option<tempfile::TempDir>,
     accepted: mpsc::Receiver<Connection>,
+    /// The accepting thread, until [`Program::stop`].
+    listening: Option<std::thread::JoinHandle<()>>,
     path: PathBuf,
+    stopping: Arc<AtomicBool>,
 }
 
 impl Program {
@@ -118,10 +125,12 @@ impl Program {
         let (dir, path) = address("chat");
         let listener = Listener::bind(&path).unwrap();
         let (sender, accepted) = mpsc::channel();
-        // Blocks in `accept` until the test process ends; it is not joined.
-        std::thread::spawn(move || {
+        let stopping = Arc::new(AtomicBool::new(false));
+        let stop = Arc::clone(&stopping);
+        // Blocks in `accept` until the test process ends or `stop` wakes it.
+        let listening = std::thread::spawn(move || {
             while let Ok(connection) = listener.accept() {
-                if sender.send(connection).is_err() {
+                if stop.load(Ordering::Acquire) || sender.send(connection).is_err() {
                     return;
                 }
             }
@@ -129,7 +138,20 @@ impl Program {
         Self {
             _dir: dir,
             accepted,
+            listening: Some(listening),
             path,
+            stopping,
+        }
+    }
+
+    /// Stops listening, as a program that went away does: on Windows its
+    /// pipe is gone, on Unix nothing answers at its socket.
+    fn stop(&mut self) {
+        self.stopping.store(true, Ordering::Release);
+        // Wakes the blocked `accept`.
+        let _ = Connection::connect(&self.path, WAIT);
+        if let Some(listening) = self.listening.take() {
+            listening.join().unwrap();
         }
     }
 

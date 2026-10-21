@@ -167,7 +167,7 @@ fn a_program_that_stays_away_gives_the_pane_back_to_its_terminal() {
     let mut harness = Harness::new();
     let stream = harness.attach(cursor(1, 0), Vec::new());
     drop(stream);
-    std::fs::remove_file(&harness.program.path).unwrap();
+    harness.program.stop();
     harness.poll_until(|chats| !chats.pane("p1").unwrap().attached());
     for _ in 1..MAX_FAILURES {
         assert!(harness.chats.shown("p1"));
