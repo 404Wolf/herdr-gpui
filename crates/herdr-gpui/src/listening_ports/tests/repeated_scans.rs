@@ -1,26 +1,29 @@
 use crate::listening_ports::{STEP_TIMEOUT, local_shell, scan::COMMAND};
 
-/// The step runs again and again in one long-lived shell, so after the first
-/// run it must leave `PATH` as it found it rather than grow it every scan.
+/// The step runs again and again in one long-lived shell, so it adds each
+/// missing system directory to `PATH` once and leaves it alone afterwards
+/// rather than growing it every scan.
 #[test]
-fn repeated_scans_keep_path_the_same() {
-    let mut shell = local_shell().unwrap();
-    let mut path = || {
-        shell.run(COMMAND, STEP_TIMEOUT).unwrap();
-        shell
-            .run("printf '%s\\n' \"$PATH\"", STEP_TIMEOUT)
-            .unwrap()
-            .stdout
-    };
-    let first = path();
-    for _ in 0..3 {
-        assert_eq!(path(), first);
-    }
-    let entries: Vec<&str> = first.trim_end().split(':').collect();
-    for directory in ["/usr/sbin", "/sbin"] {
-        assert!(
-            entries.contains(&directory),
-            "{directory} missing from {first:?}"
-        );
+fn repeated_scans_add_missing_directories_once() {
+    let cases = [
+        ("/usr/bin:/bin", "/usr/bin:/bin:/usr/sbin:/sbin"),
+        ("/usr/bin:/bin:/usr/sbin", "/usr/bin:/bin:/usr/sbin:/sbin"),
+        ("/usr/bin:/bin:/sbin", "/usr/bin:/bin:/sbin:/usr/sbin"),
+        (
+            "/sbin:/usr/bin:/usr/sbin:/bin",
+            "/sbin:/usr/bin:/usr/sbin:/bin",
+        ),
+    ];
+    for (start, expected) in cases {
+        let mut shell = local_shell().unwrap();
+        shell.run(&format!("PATH='{start}'"), STEP_TIMEOUT).unwrap();
+        for scan in 1..=3 {
+            shell.run(COMMAND, STEP_TIMEOUT).unwrap();
+            let path = shell
+                .run("printf '%s\\n' \"$PATH\"", STEP_TIMEOUT)
+                .unwrap()
+                .stdout;
+            assert_eq!(path.trim_end(), expected, "scan {scan} from {start:?}");
+        }
     }
 }
