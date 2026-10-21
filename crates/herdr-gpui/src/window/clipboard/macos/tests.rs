@@ -1,3 +1,5 @@
+mod cleanup;
+
 use super::*;
 use gpui::{ClipboardEntry, ExternalPaths, Image, ImageFormat};
 use std::{ffi::OsString, os::unix::ffi::OsStringExt, path::PathBuf};
@@ -152,30 +154,6 @@ fn native_failures_keep_changed_encoding_and_size_diagnostics() {
             (_, other) => panic!("unexpected clipboard result: {other:?}"),
         }
     }
-}
-
-#[test]
-fn stalled_or_oversized_readers_are_killed_and_reaped() {
-    let started = Instant::now();
-    assert!(matches!(
-        acquire(
-            &mut shell(r"printf '\001'; while :; do :; done"),
-            started + Duration::from_millis(100),
-            100
-        ),
-        Err(crate::Error::Clipboard(ClipboardError::Timeout))
-    ));
-    assert!(started.elapsed() < TIMEOUT);
-    assert!(matches!(
-        acquire(
-            &mut shell(r"printf '\001too large'; while :; do :; done"),
-            Instant::now() + TIMEOUT,
-            4
-        ),
-        Err(crate::Error::Clipboard(ClipboardError::Size { limit: 4 }))
-    ));
-    // A failed acquisition leaves no worker or busy flag that can strand the next paste.
-    assert!(acquire(&mut shell(r"printf '\000'"), Instant::now() + TIMEOUT, 100).is_ok());
 }
 
 #[test]
