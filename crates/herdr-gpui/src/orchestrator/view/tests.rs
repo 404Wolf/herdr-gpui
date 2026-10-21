@@ -13,6 +13,7 @@ mod dialog;
 mod empty;
 mod groups;
 mod markdown;
+mod non_projects;
 mod pills;
 mod pr_empty;
 mod refresh;

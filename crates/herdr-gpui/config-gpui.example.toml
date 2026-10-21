@@ -417,6 +417,12 @@ size = 12
 # license_accepted = true
 # url = "http://127.0.0.1:8000/?tkn=..."
 
+# px0 in an editor tab (local workspaces on macOS and Windows). With no url,
+# discover an existing workbench, or start installed px0 lazily. Set a local
+# workbench address to attach to your own. Settings > Code edits this value.
+# [px0]
+# url = "http://127.0.0.1:7777/"
+
 # Native GitHub sign-in uses the public Herdr GPUI GitHub App by default.
 # Optionally override with your own Device Flow-enabled app's public client ID.
 # Never put an App ID, client secret, private key, or token here.
