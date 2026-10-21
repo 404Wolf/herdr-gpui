@@ -52,7 +52,7 @@ it; terminals that do not ignore it.
 
 | Name | Started as |
 | --- | --- |
-| `claude` | `claude-agent-acp`, else `npx -y @agentclientprotocol/claude-agent-acp` |
+| `claude` | `claude` itself (see below); with `--acp`, `claude-agent-acp`, else `npx -y @agentclientprotocol/claude-agent-acp` |
 | `codex` | `codex-acp`, else `npx -y @agentclientprotocol/codex-acp` |
 | `copilot` | `copilot --acp` |
 | `gemini` | `gemini --acp` |
@@ -60,6 +60,49 @@ it; terminals that do not ignore it.
 
 Arguments after `--` go to the agent. Each agent signs in its own way; when it
 reports that it needs authentication, the chat says how.
+
+### Claude without the adapter
+
+Where `claude` is installed, `herdr-acp claude` runs it directly in its
+`stream-json` mode, the JSON lines Anthropic's own Agent SDKs speak, and
+translates between that and ACP on a thread of its own (`src/claude.rs`).
+There is no Node process or `npx` download in between, and a chat is ready
+about twice as fast. A turn takes as long either way: the model's time
+dominates it. The control messages on that pipe (the handshake, interrupt,
+permission questions, and setting changes) are not a published interface;
+they follow Anthropic's Python Agent SDK. `--acp`, or `HERDR_ACP_ADAPTER=1`
+in the environment, goes back to the ACP adapter, for when a Claude Code
+release changes them.
+
+What it offers: Claude Code's permission modes (Default, Accept Edits, Plan,
+Bypass Permissions), its models and effort levels from its handshake, its
+slash commands, the to-do list as the plan, diffs for edits, permission
+questions with Claude's own "don't ask again" suggestion, a plan to approve
+when leaving plan mode, and questions with choices. `--load` continues a
+session with its context, but the chat starts empty: the earlier messages
+are not shown again.
+
+### Enterprise endpoints
+
+`herdr-acp` starts the agent with its own environment, untouched, so each
+agent reaches whatever endpoint its configuration names, exactly as it does
+when run by hand in the same pane:
+
+- Copilot on GitHub Enterprise Cloud with data residency: `GH_HOST` set to
+  the enterprise host (such as `mycompany.ghe.com`) after `copilot login
+  --host`, or a token in `COPILOT_GITHUB_TOKEN`; on GitHub Enterprise
+  Server, `COPILOT_PROVIDER_GHES_HOST` and its token.
+- Claude: `ANTHROPIC_BASE_URL` for an LLM gateway, `CLAUDE_CODE_USE_BEDROCK`
+  or `CLAUDE_CODE_USE_VERTEX`, `HTTPS_PROXY`, and `NODE_EXTRA_CA_CERTS`, or
+  the same keys in the `env` block of Claude Code's settings; both the direct
+  path and the ACP adapter read them.
+- Codex: a `[model_providers]` entry with its `base_url` in
+  `~/.codex/config.toml`. Gemini: `GOOGLE_CLOUD_PROJECT` and Vertex AI
+  settings, or `.gemini/.env`. OpenCode: a provider's `baseURL`, or its
+  GitHub Enterprise URL when signing in to Copilot.
+
+These must be set where the pane's shell sees them: the shell startup files
+of the machine the chat runs on, which for a chat on an SSH host is that host.
 
 ## The chat
 
