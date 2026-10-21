@@ -94,6 +94,14 @@ impl OrchestratorView {
     }
 
     pub(super) fn refresh_rows(&mut self) {
+        // A folder outside Git has no pill (`projects_named`), so a pick of
+        // it, as opening its workspace's issues makes, could not be undone.
+        let repos = &self.repos;
+        self.projects.retain(|key| {
+            !repos
+                .iter()
+                .any(|repo| repo.key == *key && repo.outside_git())
+        });
         for (index, repo) in self.repos.iter_mut().enumerate() {
             let found = crate::orchestrator::naming::found_runs(
                 &repo.snapshot.items,
