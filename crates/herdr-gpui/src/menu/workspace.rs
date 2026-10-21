@@ -345,7 +345,7 @@ pub(super) fn main_checkout<'a>(
 
 /// Whether the daemon keeps `workspace` as `tree`'s main checkout, wherever
 /// its shell is now.
-fn is_main_of(workspace: &ClientShellWorkspace, tree: &ClientShellWorktree) -> bool {
+pub(super) fn is_main_of(workspace: &ClientShellWorkspace, tree: &ClientShellWorktree) -> bool {
     workspace
         .worktree
         .as_ref()
@@ -688,8 +688,12 @@ impl HerdrWindow {
     ) {
         // Every listing and request of the dialog goes through the main
         // checkout; only the base remembers the linked checkout.
-        if action == WorkspaceAction::NewWorktree
-            && let Some(target) = self.linked_new_worktree_target()
+        // A linked checkout opens one only when its main checkout's shell has
+        // wandered off; see `WorktreeShortcut::target`.
+        if matches!(
+            action,
+            WorkspaceAction::NewWorktree | WorkspaceAction::OpenWorktree
+        ) && let Some(target) = self.linked_new_worktree_target()
         {
             self.menu.target = Some(target);
         }

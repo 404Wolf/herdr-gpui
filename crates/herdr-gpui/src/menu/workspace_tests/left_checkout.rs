@@ -148,12 +148,29 @@ fn a_linked_checkout_creates_through_its_repository_root() {
         serde_json::json!({"cwd": root, "base": "refs/heads/worktree/sidebar-child",
             "focus": true, "trust_repository": false})
     );
-    // Opening a checkout from the linked one needs a main checkout that still
-    // stands for the repository; the moved one would list its new directory.
+    // Opening a checkout goes through the linked checkout rather than the
+    // moved main checkout, whose own menu would list the directory it moved
+    // to; its dialog then lists and opens by the repository's root.
     let mut focused = snapshot.clone();
     focused.focused_workspace_id = Some("w4".into());
+    assert_eq!(WorktreeShortcut::Open.target(&focused), Ok("w4".into()));
     assert_eq!(
-        WorktreeShortcut::Open.target(&focused),
+        target.list_params(),
+        serde_json::json!({"cwd": root, "trust_repository": false})
+    );
+    assert_eq!(
+        target
+            .request(&snapshot, WorkspaceAction::OpenWorktree, "/elsewhere")
+            .unwrap()
+            .1,
+        serde_json::json!({"cwd": root, "path": "/elsewhere", "focus": true,
+            "trust_repository": false})
+    );
+    // With no main checkout at all, there is still nothing to open through.
+    let mut closed = focused.clone();
+    closed.workspaces.remove(3);
+    assert_eq!(
+        WorktreeShortcut::Open.target(&closed),
         Err(Unavailable::MainCheckoutClosed)
     );
     // A main checkout still in the repository is preferred over a moved one.
@@ -178,4 +195,14 @@ fn a_moved_main_checkout_still_closes() {
         target.request(&snapshot, WorkspaceAction::Close, ""),
         Ok((Method::WorkspaceClose, _))
     ));
+}
+
+/// Removing still explains that a main checkout is never removed, rather than
+/// calling a moved one not Git.
+#[test]
+fn removing_a_moved_main_checkout_explains_main_checkouts_stay() {
+    assert_eq!(
+        WorktreeShortcut::Remove.target(&moved()),
+        Err(Unavailable::MainCheckout)
+    );
 }
