@@ -8,9 +8,13 @@ use std::path::Path;
 /// Paths one paste attaches at most; a longer paste stays text.
 const MAX_PATHS: usize = 64;
 
+/// Whether a backslash escapes the next character. Windows terminals paste
+/// a drop as plain or double-quoted paths whose separators are backslashes.
+const ESCAPES: bool = cfg!(not(windows));
+
 /// The files a paste names, when it names nothing but existing files.
 pub(crate) fn files(text: &str) -> Option<Vec<String>> {
-    let words = words(text.trim())?;
+    let words = words(text.trim(), ESCAPES)?;
     let files = !words.is_empty()
         && words.len() <= MAX_PATHS
         && words.iter().all(|word| {
@@ -20,9 +24,10 @@ pub(crate) fn files(text: &str) -> Option<Vec<String>> {
     files.then_some(words)
 }
 
-/// Shell words: spaces separate, a backslash escapes the next character,
-/// and single or double quotes group. `None` for an unclosed quote.
-fn words(text: &str) -> Option<Vec<String>> {
+/// Shell words: spaces separate, a backslash escapes the next character
+/// when `escapes` is set, and single or double quotes group. `None` for an
+/// unclosed quote.
+fn words(text: &str, escapes: bool) -> Option<Vec<String>> {
     let mut words = Vec::new();
     let mut word = String::new();
     let mut started = false;
@@ -30,7 +35,7 @@ fn words(text: &str) -> Option<Vec<String>> {
     let mut chars = text.chars();
     while let Some(ch) = chars.next() {
         match (quote, ch) {
-            (None, '\\') | (Some('"'), '\\') => {
+            (None, '\\') | (Some('"'), '\\') if escapes => {
                 word.push(chars.next()?);
                 started = true;
             }
