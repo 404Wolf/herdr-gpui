@@ -56,6 +56,9 @@ pub enum Error {
     Output,
     #[error("Cannot read GitHub's alerts listing: {0}")]
     Json(#[from] serde_json::Error),
+    /// Restored from the cache, which held no read of it yet.
+    #[error("Not read yet")]
+    Unread,
 }
 
 impl Error {
@@ -232,7 +235,6 @@ impl HerdrWindow {
         if accounts != self.security.accounts {
             self.security.forget();
             self.security.accounts = accounts;
-            self.restore_security(cx);
             cx.notify();
         }
         if !self.activity_bar_shown() || !self.security.due(now) {
@@ -253,16 +255,21 @@ impl HerdrWindow {
             self.security.next = Some(now + WAIT);
             return;
         }
+        // What this window reads, as the cache keeps it: another window
+        // signed in as the same accounts may hold other repositories.
+        let key = saved::key(&self.security.accounts, &specs);
+        if self.security.read_at.is_none() {
+            self.restore_security(key.clone(), cx);
+        }
         let cancelled = self.security.cancelled.clone();
         let cache = self.security.cache.clone();
-        let accounts = self.security.accounts.clone();
         let work = cx.background_executor().spawn(async move {
             let repos = fetch::read(&specs, &cancelled);
             // A cancelled read stopped short: it is no read to keep.
             if !cancelled.load(Ordering::Relaxed)
                 && let Some(cache) = cache.and_then(|path| open_cache(&path))
             {
-                saved::save(&cache, &accounts, &repos);
+                saved::save(&cache, &key, &repos);
             }
             repos
         });
@@ -278,19 +285,15 @@ impl HerdrWindow {
         cx.notify();
     }
 
-    /// Lists what the cache kept for the accounts signed in, in the
+    /// Lists what the cache kept under `key` for this window, in the
     /// background, until the first read of the run is in.
-    fn restore_security(&mut self, cx: &mut Context<Self>) {
+    fn restore_security(&mut self, key: String, cx: &mut Context<Self>) {
         let Some(path) = self.security.cache.clone() else {
             return;
         };
-        if self.security.accounts.is_empty() {
-            return;
-        }
-        let accounts = self.security.accounts.clone();
         let work = cx
             .background_executor()
-            .spawn(async move { saved::restore(&open_cache(&path)?, &accounts) });
+            .spawn(async move { saved::restore(&open_cache(&path)?, &key) });
         self.security.restoring = Some(cx.spawn(async move |this, cx| {
             let restored = work.await;
             let _ = this.update(cx, |this, cx| {

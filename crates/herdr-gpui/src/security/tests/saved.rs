@@ -10,24 +10,27 @@ fn names(repos: &[Repo]) -> Vec<&str> {
 }
 
 #[test]
-fn a_read_is_kept_for_its_sign_in_and_a_failed_repository_keeps_its_last() {
+fn a_read_is_kept_per_window_and_a_failed_half_keeps_its_last() {
     let dir = tempfile::tempdir().unwrap();
     let cache = Cache::open_at(&path_in(dir.path())).unwrap();
-    let me = ["me".to_owned()];
-    assert!(restore(&cache, &me).is_none());
+    // The key names the sign-ins and the window's checkouts (`saved::key`).
+    let window = "me\n\nLocal:/src/one/.git";
+    assert!(restore(&cache, window).is_none());
     let first = vec![
-        repo("a/one", Ok(open(vec![alert(1, Severity::High)]))),
-        reported(
-            "a/two",
-            vec![report("GHSA-aaaa-bbbb-cccc", None, "2026-10-05T00:00:00Z")],
-        ),
+        Repo {
+            reports: Ok(Reports::Open {
+                reports: vec![report("GHSA-aaaa-bbbb-cccc", None, "2026-10-05T00:00:00Z")],
+                more: false,
+            }),
+            ..repo("a/one", Ok(open(vec![alert(1, Severity::High)])))
+        },
         repo("a/gone", Ok(Alerts::Off)),
     ];
-    save(&cache, &me, &first);
-    let (repos, _) = restore(&cache, &me).unwrap();
-    assert_eq!(names(&repos), ["a/one", "a/two", "a/gone"]);
+    save(&cache, window, &first);
+    let (repos, _) = restore(&cache, window).unwrap();
+    assert_eq!(names(&repos), ["a/one", "a/gone"]);
     assert_eq!(repos[0].open(), first[0].open());
-    assert_eq!(repos[1].reported(), first[1].reported());
+    assert_eq!(repos[0].reported(), first[0].reported());
     // Nothing that reads GitHub or starts an agent is kept.
     assert!(
         repos
@@ -35,19 +38,29 @@ fn a_read_is_kept_for_its_sign_in_and_a_failed_repository_keeps_its_last() {
             .all(|repo| repo.account.is_none() && repo.checkouts.is_empty())
     );
 
-    // a/one fails this time and a/gone is no longer read.
+    // a/one's alerts fail this time but its reports are read anew; a/new's
+    // reports fail on its first read; a/gone is no longer read.
     let second = vec![
-        repo("a/one", Err(Error::Output)),
-        repo("a/two", Ok(Alerts::Off)),
+        Repo {
+            reports: Ok(Reports::Off),
+            ..repo("a/one", Err(Error::Output))
+        },
+        Repo {
+            reports: Err(Arc::new(Error::Output)),
+            ..repo("a/new", Ok(open(vec![alert(3, Severity::Low)])))
+        },
     ];
-    save(&cache, &me, &second);
-    let (repos, _) = restore(&cache, &me).unwrap();
-    assert_eq!(names(&repos), ["a/one", "a/two"]);
+    save(&cache, window, &second);
+    let (repos, _) = restore(&cache, window).unwrap();
+    assert_eq!(names(&repos), ["a/one", "a/new"]);
     assert_eq!(repos[0].open(), first[0].open());
-    assert!(repos[1].reported().is_empty());
+    assert_eq!(repos[0].reports.as_ref().ok(), Some(&Reports::Off));
+    assert_eq!(repos[1].open(), second[1].open());
+    assert!(matches!(&repos[1].reports, Err(error) if matches!(**error, Error::Unread)));
 
-    // Another sign-in reads none of it.
-    assert!(restore(&cache, &["someone".to_owned()]).is_none());
+    // Another window, or another sign-in, reads none of it.
+    assert!(restore(&cache, "me\n\nLocal:/src/two/.git").is_none());
+    assert!(restore(&cache, "someone\n\nLocal:/src/one/.git").is_none());
 }
 
 #[test]
