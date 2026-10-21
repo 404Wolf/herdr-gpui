@@ -138,7 +138,13 @@ fn a_linked_checkout_creates_through_its_repository_root() {
     let snapshot = moved();
     let target = WorkspaceTarget::for_new_worktree(&snapshot, &snapshot.workspaces[4]).unwrap();
     let root = sidebar::layout_tests::REPO_KEY.trim_end_matches("/.git");
-    assert_eq!(target.source, Source::Directory(root.into()));
+    assert_eq!(
+        target.source,
+        Source::Repository {
+            root: root.into(),
+            key: sidebar::layout_tests::REPO_KEY.into(),
+        }
+    );
     let (method, params) = target
         .request(&snapshot, WorkspaceAction::NewWorktree, "")
         .unwrap();

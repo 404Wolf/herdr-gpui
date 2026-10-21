@@ -45,6 +45,22 @@ pub(super) enum Source {
     /// one repository whose shell then moved into another would otherwise
     /// branch the first one under the second one's name.
     Directory(String),
+    /// A repository's main checkout directory, for a linked checkout whose
+    /// only open main checkout's shell has wandered off: the daemon refuses
+    /// a linked checkout as a source. Its Git directory, with the linked
+    /// checkout's branch, is what lookups read, since the main checkout's
+    /// reported branch is of the repository its shell moved to.
+    Repository { root: String, key: String },
+}
+
+impl Source {
+    fn of(workspace: &ClientShellWorkspace) -> Self {
+        if left_checkout(workspace) {
+            Self::Directory(workspace.new_workspace_cwd.clone())
+        } else {
+            Self::Workspace
+        }
+    }
 }
 
 impl WorkspaceTarget {
@@ -58,11 +74,17 @@ impl WorkspaceTarget {
             heads_group: heads_group(snapshot, workspace),
             branch: workspace.branch.clone(),
             base: None,
-            source: if left_checkout(workspace) {
-                Source::Directory(workspace.new_workspace_cwd.clone())
-            } else {
-                Source::Workspace
-            },
+            source: Source::of(workspace),
+        }
+    }
+
+    /// Whether `workspace` is still named the way this target names it. A
+    /// repository root stands for its main checkout only while that main
+    /// checkout is still away from it.
+    pub(super) fn addresses(&self, workspace: &ClientShellWorkspace) -> bool {
+        match (&self.source, Source::of(workspace)) {
+            (Source::Repository { .. }, Source::Directory(_)) => true,
+            (source, current) => *source == current,
         }
     }
 
@@ -70,7 +92,9 @@ impl WorkspaceTarget {
     fn source_params(&self) -> serde_json::Value {
         match &self.source {
             Source::Workspace => serde_json::json!({"workspace_id": self.id}),
-            Source::Directory(cwd) => serde_json::json!({"cwd": cwd}),
+            Source::Directory(cwd) | Source::Repository { root: cwd, .. } => {
+                serde_json::json!({"cwd": cwd})
+            }
         }
     }
 
@@ -117,7 +141,10 @@ impl WorkspaceTarget {
         if let (Source::Directory(_), Some(root)) =
             (&target.source, crate::worktree::checkout_root(&tree.key))
         {
-            target.source = Source::Directory(root.to_owned());
+            target.source = Source::Repository {
+                root: root.to_owned(),
+                key: tree.key.clone(),
+            };
         }
         Ok(target)
     }
@@ -157,18 +184,11 @@ impl WorkspaceTarget {
             .find(|workspace| workspace.workspace_id == self.id)
             .filter(|_| snapshot.boot_id == self.boot_id)
             .ok_or(crate::Error::StaleWorkspace)?;
-        let current = Self::new(snapshot, workspace);
-        // A linked checkout's target names its main checkout's root rather
-        // than the directory that main checkout's shell moved to.
-        let moved = match (&self.source, &current.source) {
-            (Source::Workspace, Source::Workspace) => false,
-            (Source::Directory(_), Source::Directory(_)) if self.base.is_some() => false,
-            (source, current) => source != current,
-        };
+        let worktree = known_worktree(workspace);
         if !self.can_create()
-            || moved
-            || self.worktree != current.worktree
-            || (current.worktree.is_none() && workspace.branch.is_none())
+            || !self.addresses(workspace)
+            || self.worktree != worktree
+            || (worktree.is_none() && workspace.branch.is_none())
         {
             return Err(crate::Error::WorkspaceRepositoryChanged);
         }
