@@ -511,7 +511,11 @@ impl HerdrWindow {
             }
             cx.notify();
         }
-        if self.avatars.as_mut().is_some_and(|avatars| avatars.poll()) {
+        if self
+            .avatars
+            .as_mut()
+            .is_some_and(|avatars| avatars.poll(std::time::Instant::now()))
+        {
             cx.notify();
         }
         if let Some(chrome) = self.sidebar_preferences.as_mut().and_then(|p| p.loaded()) {
