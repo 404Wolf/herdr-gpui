@@ -16,6 +16,26 @@ const TOOL_LINES: usize = 6;
 /// Bytes of a diff's sides compared line by line; past them it is counted
 /// as changed without its lines.
 const DIFF_BYTES: usize = 512 * 1024;
+/// How much of one answer is drawn: as much text as the program keeps for
+/// an entry, with room for long code. A longer answer ends with a note.
+const MESSAGE: release_notes::Limits = release_notes::Limits {
+    body: 256 * 1024,
+    lines: 2_000,
+    line: 4_000,
+};
+
+/// An answer's Markdown lines, ending with a note when some are not shown;
+/// Copy still takes the whole answer.
+fn message_lines(text: &str) -> Rc<[Line]> {
+    let (mut lines, cut) = release_notes::parse_within(text, MESSAGE);
+    if cut {
+        lines.push(release_notes::note(
+            "The rest of this answer is too long to show here; Copy takes all of it.",
+        ));
+    }
+    lines.into()
+}
+
 /// Diagrams drawn per message; later fences stay code.
 const DIAGRAMS: usize = 8;
 /// Pictures shown under one tool call.
@@ -204,7 +224,7 @@ fn message(text: &str, visuals: &mut Visuals) -> Vec<Part> {
             continue;
         }
         if !prose.trim().is_empty() {
-            parts.push(Part::Text(release_notes::parse(&prose).into()));
+            parts.push(Part::Text(message_lines(&prose)));
         }
         prose.clear();
         diagrams += 1;
@@ -214,7 +234,7 @@ fn message(text: &str, visuals: &mut Visuals) -> Vec<Part> {
         parts.push(Part::Diagram(id, code));
     }
     if !prose.trim().is_empty() || parts.is_empty() {
-        parts.push(Part::Text(release_notes::parse(&prose).into()));
+        parts.push(Part::Text(message_lines(&prose)));
     }
     parts
 }

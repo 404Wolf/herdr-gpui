@@ -435,14 +435,30 @@ impl HerdrWindow {
             return false;
         };
         let text = text.replace("\r\n", "\n").replace('\r', "\n");
-        let Some((first, rest)) = text.split_once('\n') else {
+        if !text.contains('\n') {
+            return false;
+        }
+        // The composer's selection is not exposed, so a marker it keeps (it
+        // drops only line breaks) stands in for the paste and shows where
+        // the line splits around it.
+        input.update(cx, |input, cx| {
+            input.replace_text_in_range(None, PASTE_MARK, window, cx);
+        });
+        let line = input.read(cx).text().to_owned();
+        let (before, after) = line.split_once(PASTE_MARK).unwrap_or((line.as_str(), ""));
+        let joined = format!("{before}{text}{after}");
+        let (lines, last) = draft_lines(&joined);
+        let last = last.to_owned();
+        let Some(pane) = self.chats.pane_mut(pane_id) else {
             return false;
         };
+        pane.draft.extend(lines);
         input.update(cx, |input, cx| {
-            input.replace_text_in_range(None, first, window, cx)
+            input.clear(cx);
+            input.replace_text_in_range(None, &last, window, cx);
         });
-        let line = format!("{}\n{rest}", input.read(cx).text());
-        self.set_chat_prompt(pane_id, &input, &line, window, cx);
+        self.redraw_terminal(cx);
+        cx.notify();
         true
     }
 
@@ -646,7 +662,13 @@ impl HerdrWindow {
             return;
         };
         let text = prompt_text(&pane.draft, input.read(cx).text());
-        if text.trim().is_empty() && pane.attachments.is_empty() {
+        if text.trim().is_empty() && pane.attachments.is_empty() && pane.uploading == 0 {
+            return;
+        }
+        // Files still copying to an SSH host belong to this prompt; sending
+        // now would leave them for the next one.
+        if pane.uploading > 0 {
+            pane.error = Some("Files are still being copied; send once they are attached".into());
             return;
         }
         if text.len() > MAX_PROMPT_SIZE {
@@ -694,6 +716,10 @@ impl HerdrWindow {
         true
     }
 }
+
+/// What a paste briefly puts at the composer's cursor: private-use
+/// characters no prompt is expected to hold.
+const PASTE_MARK: &str = "\u{F8FF}\u{E000}";
 
 /// `text` as draft lines and the composer's last line, so that
 /// [`prompt_text`] rebuilds it.

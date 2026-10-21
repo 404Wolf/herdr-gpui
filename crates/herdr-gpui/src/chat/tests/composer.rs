@@ -75,3 +75,74 @@ fn a_long_draft_keeps_the_editable_line_in_the_pane(cx: &mut TestAppContext) {
         "{composer:?} in {chat:?}"
     );
 }
+
+#[gpui::test]
+fn a_paste_keeps_the_draft_and_splits_at_the_cursor(cx: &mut TestAppContext) {
+    let (view, _peer, cx) = open(cx, ConnectTarget::Local);
+    let program = Program::new();
+    let mut stream = attach_with(&view, &program, idle(), cx);
+    cx.simulate_input("before");
+    cx.simulate_keystrokes("shift-enter");
+    cx.simulate_input("AB");
+    cx.simulate_keystrokes("left");
+    cx.write_to_clipboard(ClipboardItem::new_string("x\ny".into()));
+    cx.simulate_keystrokes(paste_key());
+    poll(&view, &program, cx);
+    cx.simulate_keystrokes("enter");
+    assert_eq!(prompt_text(&mut stream), "before\nAx\nyB");
+}
+
+#[gpui::test]
+fn a_prompt_waits_for_its_files_to_finish_copying(cx: &mut TestAppContext) {
+    let (view, _peer, cx) = open(cx, ConnectTarget::Local);
+    let program = Program::new();
+    let mut stream = attach_with(&view, &program, idle(), cx);
+    view.update(cx, |view, _| {
+        if let Some(pane) = view.chats.panes_mut().next() {
+            pane.uploading = 1;
+        }
+    });
+    cx.simulate_input("look at this");
+    cx.simulate_keystrokes("enter");
+    let error = view.read_with(cx, |view, _| {
+        view.chats
+            .panes()
+            .next()
+            .and_then(|pane| pane.error.clone())
+    });
+    assert!(error.is_some(), "the send is held while files copy");
+    view.update(cx, |view, _| {
+        if let Some(pane) = view.chats.panes_mut().next() {
+            pane.uploading = 0;
+        }
+    });
+    cx.simulate_keystrokes("enter");
+    assert_eq!(prompt_text(&mut stream), "look at this");
+}
+
+#[gpui::test]
+fn a_long_queue_keeps_the_composer_in_the_pane(cx: &mut TestAppContext) {
+    let (view, _peer, cx) = open(cx, ConnectTarget::Local);
+    let program = Program::new();
+    let mut transcript = Transcript::new("Claude");
+    transcript.status = Status::Working;
+    transcript.queued = (0..20)
+        .map(|n| herdr_chat_protocol::Queued {
+            attachments: Vec::new(),
+            id: herdr_chat_protocol::CommandId::random(),
+            text: format!("queued {n}"),
+        })
+        .collect();
+    let snapshot = ServerMessage::Snapshot {
+        cursor: cursor(1, 0),
+        transcript: Box::new(transcript),
+    };
+    let _stream = attach_with(&view, &program, snapshot, cx);
+    assert!(cx.debug_bounds("chat-queue-more").is_some());
+    let chat = cx.debug_bounds("chat-view").unwrap();
+    let composer = cx.debug_bounds("chat-composer").unwrap();
+    assert!(
+        composer.bottom() <= chat.bottom(),
+        "{composer:?} in {chat:?}"
+    );
+}

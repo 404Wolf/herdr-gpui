@@ -81,3 +81,30 @@ fn bodies_are_prepared_once_per_revision() {
     prepared.update(&transcript, &keys[1..]);
     assert!(prepared.body(EntryId(1)).is_none());
 }
+
+#[test]
+fn an_answer_too_long_to_show_ends_with_a_note() {
+    let text = (0..3_000)
+        .map(|n| format!("line {n}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut transcript = Transcript::new("Claude");
+    transcript.entries = vec![agent(1, &text)];
+    let mut prepared = Prepared::default();
+    prepared.update(&transcript, &[(EntryId(1), 1)]);
+    let Body::Message(parts) = &*prepared.body(EntryId(1)).unwrap() else {
+        panic!("not a message");
+    };
+    let Part::Text(lines) = parts.last().unwrap() else {
+        panic!("not text");
+    };
+    assert!(lines.len() > 400, "chat shows more than release notes do");
+    assert!(lines.last().unwrap().text.contains("Copy takes all of it"));
+    // A short answer has no note.
+    transcript.entries = vec![agent(2, "short")];
+    prepared.update(&transcript, &[(EntryId(2), 1)]);
+    let Body::Message(parts) = &*prepared.body(EntryId(2)).unwrap() else {
+        panic!("not a message");
+    };
+    assert!(matches!(&parts[..], [Part::Text(lines)] if lines.len() == 1));
+}

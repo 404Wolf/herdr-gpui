@@ -132,22 +132,52 @@ pub(crate) struct DaemonText {
     pub release_notes: Prepared,
 }
 
+/// How much of a body is drawn.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Limits {
+    /// Bytes scanned; a longer body is cut at a character boundary.
+    pub(crate) body: usize,
+    pub(crate) lines: usize,
+    /// Characters kept of one line.
+    pub(crate) line: usize,
+}
+
+/// The limits for daemon text: release notes and announcements.
+const DAEMON: Limits = Limits {
+    body: MAX_BODY,
+    lines: MAX_LINES,
+    line: MAX_LINE,
+};
+
 /// Bounded, display-safe lines of a daemon-provided body.
 pub(crate) fn parse(body: &str) -> Vec<Line> {
-    let mut end = body.len().min(MAX_BODY);
+    parse_within(body, DAEMON).0
+}
+
+/// A quoted line saying something about the text around it, such as that
+/// part of it is not shown.
+pub(crate) fn note(text: &str) -> Line {
+    Line::plain(Kind::Quote, text.to_owned())
+}
+
+/// [`parse`] within `limits`, and whether part of the body was left out.
+pub(crate) fn parse_within(body: &str, limits: Limits) -> (Vec<Line>, bool) {
+    let mut end = body.len().min(limits.body);
     while !body.is_char_boundary(end) {
         end -= 1;
     }
+    let mut cut = end < body.len() || body[..end].lines().count() > limits.lines;
     let mut lines = Vec::new();
     let mut fenced = false;
-    for raw in body[..end].lines().take(MAX_LINES) {
+    for raw in body[..end].lines().take(limits.lines) {
+        cut |= raw.chars().count() > limits.line;
         let trimmed = raw.trim_end();
         if trimmed.trim_start().starts_with("```") {
             fenced = !fenced;
             continue;
         }
         if fenced {
-            lines.push(Line::plain(Kind::Code, safe_text(trimmed, MAX_LINE)));
+            lines.push(Line::plain(Kind::Code, safe_text(trimmed, limits.line)));
             continue;
         }
         let indent = list_indent(trimmed);
@@ -172,7 +202,7 @@ pub(crate) fn parse(body: &str) -> Vec<Line> {
                 let row = cells.iter().map(|cell| cell.trim()).collect::<Vec<_>>();
                 lines.push(Line::plain(
                     Kind::Table,
-                    safe_text(&row.join(" \u{2502} "), MAX_LINE),
+                    safe_text(&row.join(" \u{2502} "), limits.line),
                 ));
             }
             continue;
@@ -193,7 +223,7 @@ pub(crate) fn parse(body: &str) -> Vec<Line> {
         } else {
             (Kind::Paragraph, trimmed)
         };
-        let safe = safe_text(rest, MAX_LINE);
+        let safe = safe_text(rest, limits.line);
         let mut line = if kind == Kind::Heading {
             Line::plain(kind, safe)
         } else {
@@ -207,7 +237,7 @@ pub(crate) fn parse(body: &str) -> Vec<Line> {
     while lines.last().is_some_and(|line| line.kind == Kind::Blank) {
         lines.pop();
     }
-    lines
+    (lines, cut)
 }
 
 /// How deep a list item sits: two leading spaces, or a tab, per level.

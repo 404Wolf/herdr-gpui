@@ -137,5 +137,6 @@ impl AgentProcess {
     }
 }
 
-#[cfg(test)]
+// Process groups are a Unix notion; Windows has no test here.
+#[cfg(all(test, unix))]
 mod tests;

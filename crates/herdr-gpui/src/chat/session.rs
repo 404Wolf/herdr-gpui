@@ -10,9 +10,10 @@ use herdr_chat_protocol::{
 };
 use std::collections::HashMap;
 
-/// Connections a command is sent on before it is given up. A program that
+/// Connections a command reaches before it is given up: a program that
 /// drops the connection on a command it cannot read would otherwise get it
-/// again on every reconnect and never come back.
+/// again on every reconnect and never come back. Only connections the
+/// program greeted count, so an outage alone never drops a prompt.
 const SENDS: u8 = 2;
 
 /// A command sent and not yet acknowledged, resent on a new connection.
@@ -20,7 +21,7 @@ const SENDS: u8 = 2;
 struct Pending {
     command: Command,
     id: CommandId,
-    /// Connections it has been sent on.
+    /// Greeted connections it went out on.
     sends: u8,
 }
 
@@ -109,8 +110,8 @@ impl Session {
 
     /// The commands to send again on a new connection, in order. The
     /// program acknowledges one it already ran without running it twice.
-    /// One sent on [`SENDS`] connections that each ended without an answer
-    /// is given up and shown as refused.
+    /// One that reached [`SENDS`] greeted connections, each of which ended
+    /// without an answer, is given up and shown as refused.
     pub(crate) fn resend(&mut self) -> Vec<ClientMessage> {
         let before = self.pending.len();
         self.pending.retain(|pending| pending.sends < SENDS);
@@ -118,13 +119,10 @@ impl Session {
             self.rejection = Some(Rejection::Unsupported);
         }
         self.pending
-            .iter_mut()
-            .map(|pending| {
-                pending.sends += 1;
-                ClientMessage::Command {
-                    command: pending.command.clone(),
-                    id: pending.id,
-                }
+            .iter()
+            .map(|pending| ClientMessage::Command {
+                command: pending.command.clone(),
+                id: pending.id,
             })
             .collect()
     }
@@ -139,7 +137,8 @@ impl Session {
         self.pending.push(Pending {
             command: command.clone(),
             id,
-            sends: 1,
+            // Out now on a greeted connection, else with the next one's resends.
+            sends: u8::from(self.welcomed),
         });
         Ok(ClientMessage::Command { command, id })
     }
@@ -154,6 +153,10 @@ impl Session {
                 }
                 self.agent = agent;
                 self.welcomed = true;
+                // The resends went out right after the greeting.
+                for pending in &mut self.pending {
+                    pending.sends = pending.sends.saturating_add(1);
+                }
                 Ok(true)
             }
             _ if !self.welcomed => Err(Error::Handshake),

@@ -6,6 +6,8 @@ use crate::{HerdrWindow, config::corners, notifications::safe_text};
 use gpui::{prelude::*, *};
 use herdr_chat_protocol::{Command, PermissionKind, assist};
 
+/// Queued prompts listed; the rest are counted.
+const QUEUE_ROWS: usize = 3;
 /// Characters of a queued prompt shown.
 const QUEUED: usize = 160;
 
@@ -81,11 +83,11 @@ impl HerdrWindow {
 
     pub(super) fn render_chat_queue(&self, chat: &ChatPane, cx: &mut Context<Self>) -> Vec<Div> {
         let theme = &self.theme;
-        chat.session
-            .transcript()
-            .queued
+        let queued = &chat.session.transcript().queued;
+        let mut rows: Vec<Div> = queued
             .iter()
             .enumerate()
+            .take(QUEUE_ROWS)
             .map(|(index, queued)| {
                 let pane_id = chat.target.pane_id.clone();
                 let id = queued.id;
@@ -137,7 +139,22 @@ impl HerdrWindow {
                             })),
                     )
             })
-            .collect()
+            .collect();
+        // The rest are counted, so a long queue never pushes the composer
+        // out of the pane.
+        if queued.len() > QUEUE_ROWS {
+            rows.push(
+                div()
+                    .debug_selector(|| "chat-queue-more".into())
+                    .flex_none()
+                    .mx(px(12.))
+                    .mb(px(4.))
+                    .px(px(8.))
+                    .text_color(rgb(theme.muted))
+                    .child(format!("{} more queued", queued.len() - QUEUE_ROWS)),
+            );
+        }
+        rows
     }
 
     /// The agent's slash commands the composer's text would complete to,

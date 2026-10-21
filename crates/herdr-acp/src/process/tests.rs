@@ -4,7 +4,6 @@ use super::*;
 
 /// The agent exits at once on TERM, but leaves a tool behind that ignores
 /// it; stopping the chat must still end the tool.
-#[cfg(unix)]
 #[test]
 fn stopping_ends_a_tool_that_ignores_term_after_the_agent_exits() {
     let dir = tempfile::tempdir().unwrap();

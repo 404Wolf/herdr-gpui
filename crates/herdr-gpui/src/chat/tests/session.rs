@@ -147,11 +147,35 @@ fn commands_wait_for_their_acknowledgement() {
 fn a_command_that_keeps_ending_the_connection_is_given_up() {
     let mut session = live(cursor(1, 0), Vec::new());
     session.submit(Command::SetAutoAccept { on: true }).unwrap();
-    // Sent once with submit, once more on the next connection.
+    // It reached this connection, which ended; the next one gets it again.
+    session.lost(&Error::Closed);
+    session.begin();
     assert_eq!(session.resend().len(), 1);
-    // That connection ended too: the third leaves it behind.
+    session.receive(welcome()).unwrap();
+    // That connection ended too, so the third leaves it behind.
+    session.lost(&Error::Closed);
+    session.begin();
     assert!(session.resend().is_empty());
     assert_eq!(session.rejection(), Some(Rejection::Unsupported));
+}
+
+#[test]
+fn an_outage_alone_never_drops_a_prompt() {
+    let mut session = live(cursor(1, 0), Vec::new());
+    session.lost(&Error::Closed);
+    session
+        .submit(Command::Prompt {
+            text: "while away".into(),
+            attachments: Vec::new(),
+        })
+        .unwrap();
+    // Connections that never greeted do not count against it.
+    for _ in 0..10 {
+        session.begin();
+        assert_eq!(session.resend().len(), 1);
+        session.lost(&Error::Closed);
+    }
+    assert_eq!(session.rejection(), None);
 }
 
 #[test]
