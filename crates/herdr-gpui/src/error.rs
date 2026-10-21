@@ -940,7 +940,7 @@ pub enum Error {
     WebView(#[from] wry::Error),
     #[cfg(any(target_os = "macos", windows))]
     #[error("Could not reach the native window for the page: {0}")]
-    WindowHandle(#[from] wry::raw_window_handle::HandleError),
+    WindowHandle(#[from] raw_window_handle::HandleError),
     #[error("Checkout changed. Dismiss and reopen the menu.")]
     WorkspaceCheckoutChanged,
     #[error("Workspace group changed. Dismiss and review the group again.")]
