@@ -325,11 +325,14 @@ impl HerdrWindow {
                     return true;
                 }
                 let modifiers = without(event.modifiers, gesture.strip);
+                // Pixel motion within one cell is forwarded but selects no
+                // text, so only reaching another cell makes it a drag.
+                let moved_cell = hit.cell() != gesture.hit.cell();
                 if self.send_mouse(&hit, kind, modifiers, cx)
                     && let Some(gesture) = &mut self.terminal_mouse
                 {
                     gesture.hit = hit;
-                    gesture.dragged = true;
+                    gesture.dragged |= moved_cell;
                 }
             } else if !waits {
                 self.cancel_terminal_mouse(cx);

@@ -199,3 +199,41 @@ fn a_shift_selection_over_a_mouse_reporting_pane_retires_the_hint(cx: &mut gpui:
         });
     });
 }
+
+/// An application that asked for pixels is sent motion within one cell,
+/// but that press selected nothing either: only reaching another cell
+/// spends the hint.
+#[gpui::test]
+fn pixel_motion_within_one_cell_leaves_the_hint_unspent(cx: &mut gpui::TestAppContext) {
+    let (fixture, cx) = cx.add_window_view(|window, cx| {
+        Fixture(cx.new(|cx| crate::sidebar::layout_tests::fixture_window(window, cx)))
+    });
+    let view = fixture.update(cx, |fixture, _| fixture.0.clone());
+    let (endpoint, _server) = connected_endpoint("ssh:mouse");
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            prepare_mouse(view, endpoint, cx);
+            for pane in &mut Arc::make_mut(view.live.surface.as_mut().unwrap()).panes {
+                pane.sgr_pixel_mouse = true;
+            }
+            assert!(drag(
+                view,
+                MouseButton::Left,
+                Modifiers::default(),
+                3.9,
+                window,
+                cx
+            ));
+            assert!(view.flash.is_none(), "{:?}", view.flash);
+            assert!(drag(
+                view,
+                MouseButton::Left,
+                Modifiers::default(),
+                9.5,
+                window,
+                cx
+            ));
+            assert!(hinted(view), "{:?}", view.flash);
+        });
+    });
+}
