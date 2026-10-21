@@ -150,6 +150,23 @@ impl Security {
                 .sum::<usize>()
     }
 
+    /// When the newest of what [`Self::urgent`] counts was opened, so the
+    /// bar can tell whether it arrived since the section was last open.
+    pub(crate) fn urgent_since(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+        let alerts = self
+            .repos
+            .iter()
+            .flat_map(Repo::open)
+            .filter(|alert| alert.severity.urgent())
+            .filter_map(|alert| alert.created_at);
+        let reports = self
+            .repos
+            .iter()
+            .flat_map(Repo::reported)
+            .filter_map(|report| report.created_at);
+        alerts.chain(reports).max()
+    }
+
     /// Installs `repos` as a read would, for tests outside this module.
     #[cfg(test)]
     pub(crate) fn read_for_test(&mut self, repos: Vec<Repo>) {

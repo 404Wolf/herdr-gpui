@@ -45,6 +45,11 @@ const REFRESH: Duration = Duration::from_secs(10 * 60);
 const RATE_LIMITED: Duration = Duration::from_secs(30 * 60);
 /// A host that could not be reached is retried sooner than a full refresh.
 const ERROR_BACKOFF: Duration = Duration::from_secs(5 * 60);
+/// A sign-in the service rejected is asked again half as often after each
+/// rejection, up to this. A dead token left behind would otherwise be sent
+/// every refresh for as long as the app runs, which services can take for
+/// abuse.
+const REJECTED_LIMIT: Duration = Duration::from_secs(6 * 60 * 60);
 /// A click cannot queue reads back to back.
 const MANUAL_SPACING: Duration = Duration::from_secs(10);
 /// Hosts are few; an unbounded catalog still cannot grow the cache past this.
@@ -94,6 +99,23 @@ pub(crate) struct Entry {
     /// silent (signed out) can be dropped when it ends.
     round: HashSet<Provider>,
     rate_limited: bool,
+    /// Providers whose sign-in was rejected: how many reads in a row, and
+    /// when to ask again. Refresh, Allow, and a config change ask at once.
+    rejected: HashMap<Provider, (u32, Instant)>,
+    /// Providers the read under way leaves out because their sign-in was
+    /// rejected, kept as they were rather than dropped as signed out.
+    held: HashSet<Provider>,
+}
+
+impl Entry {
+    /// Providers whose rejected sign-in is not due to be asked again.
+    fn held(&self, now: Instant) -> HashSet<Provider> {
+        self.rejected
+            .iter()
+            .filter(|(_, (_, again))| *again > now)
+            .map(|(provider, _)| *provider)
+            .collect()
+    }
 }
 
 impl Entry {
@@ -159,6 +181,7 @@ struct Job {
     config: Arc<UsageConfig>,
     granted: HashSet<Provider>,
     retry: HashSet<Provider>,
+    held: HashSet<Provider>,
 }
 
 struct Worker {
@@ -216,7 +239,9 @@ impl Usage {
     pub fn allow(&mut self, provider: Provider, now: Instant) {
         self.retry.insert(provider);
         if let Some(host) = self.host.clone() {
-            self.entries.entry(host).or_default().due = Some(now);
+            let entry = self.entries.entry(host).or_default();
+            entry.rejected.remove(&provider);
+            entry.due = Some(now);
         }
     }
 
@@ -235,6 +260,8 @@ impl Usage {
             .requested
             .is_none_or(|requested| now.duration_since(requested) >= MANUAL_SPACING)
         {
+            // Asked for by hand, so a rejected sign-in is tried again too.
+            entry.rejected.clear();
             entry.due = Some(now);
         }
     }
@@ -262,6 +289,7 @@ impl Usage {
             .is_some_and(|last| last != revision)
         {
             for entry in self.entries.values_mut() {
+                entry.rejected.clear();
                 entry.due = Some(now);
             }
         }
@@ -324,6 +352,11 @@ impl Usage {
             config: Arc::new(config.clone()),
             granted: granted.clone(),
             retry: self.retry.clone(),
+            held: self
+                .entries
+                .get(&host)
+                .map(|entry| entry.held(now))
+                .unwrap_or_default(),
         };
         match worker.requests.try_send(job) {
             Ok(()) => {
@@ -350,6 +383,7 @@ impl Usage {
         entry.requested = Some(now);
         entry.round.clear();
         entry.rate_limited = false;
+        entry.held = entry.held(now);
         // Due again only once this read answers.
         entry.due = Some(now + REFRESH);
         self.busy = Some(host);
@@ -362,6 +396,21 @@ impl Usage {
                     return;
                 };
                 entry.round.insert(provider);
+                if matches!(report, Err(crate::Error::UsageRejected)) {
+                    let strikes = entry
+                        .rejected
+                        .get(&provider)
+                        .map_or(0, |(strikes, _)| *strikes)
+                        .saturating_add(1);
+                    let wait = REFRESH
+                        .saturating_mul(2u32.saturating_pow(strikes))
+                        .min(REJECTED_LIMIT);
+                    entry.rejected.insert(provider, (strikes, now + wait));
+                } else if report.is_ok() {
+                    // Only an answer proves the sign-in works; an outage or a
+                    // rate limit between rejections keeps the wait growing.
+                    entry.rejected.remove(&provider);
+                }
                 let previous = entry
                     .readings
                     .iter()
@@ -412,9 +461,10 @@ impl Usage {
                     Ok(()) => {
                         let heard = std::mem::take(&mut entry.round);
                         // A provider that stopped answering has been signed out.
-                        entry
-                            .readings
-                            .retain(|reading| heard.contains(&reading.provider));
+                        entry.readings.retain(|reading| {
+                            heard.contains(&reading.provider)
+                                || entry.held.contains(&reading.provider)
+                        });
                         entry.error = None;
                         entry.updated = Some(SystemTime::now());
                         entry.due = Some(
@@ -454,6 +504,7 @@ fn spawn() -> Option<Worker> {
                     &host,
                     &job.config,
                     &job.granted,
+                    &job.held,
                     &mut cookies,
                     |provider, report| {
                         outgoing
@@ -477,13 +528,15 @@ fn spawn() -> Option<Worker> {
 
 /// Reads every provider on `host`, reporting each through `report` as it
 /// answers. A provider the config lists but the host has no sign-in for
-/// answers with what to set up, or that it waits on Keychain access.
+/// answers with what to set up, or that it waits on Keychain access. A
+/// `held` provider, whose sign-in was just rejected, is not asked.
 fn read(
     host: &Host,
     config: &UsageConfig,
     granted: &HashSet<Provider>,
+    held: &HashSet<Provider>,
     cookies: &mut CookieJar,
-    mut report: impl FnMut(Provider, crate::Result<Report>) -> bool,
+    report: impl FnMut(Provider, crate::Result<Report>) -> bool,
 ) -> crate::Result<()> {
     let mut exec = match host {
         Host::Local => Exec::Local,
@@ -493,8 +546,21 @@ fn read(
         #[cfg(feature = "azure")]
         Host::Azure { .. } => return Err(crate::Error::CloudHostUnsupported),
     };
+    read_with(&mut exec, config, granted, held, cookies, report);
+    Ok(())
+}
+
+/// Asks each provider through `exec`, the provider loop of [`read`].
+fn read_with(
+    exec: &mut Exec,
+    config: &UsageConfig,
+    granted: &HashSet<Provider>,
+    held: &HashSet<Provider>,
+    cookies: &mut CookieJar,
+    mut report: impl FnMut(Provider, crate::Result<Report>) -> bool,
+) {
     for provider in registry::all() {
-        if config.hidden(provider) {
+        if config.hidden(provider) || held.contains(&provider) {
             continue;
         }
         let requested = config.shown(provider);
@@ -508,13 +574,7 @@ fn read(
             (true, true, false) => Consent::Keychain,
             (true, true, true) => Consent::Browsers,
         };
-        let mut probe = Probe::new(
-            &mut exec,
-            provider,
-            config.settings(provider),
-            cookies,
-            consent,
-        );
+        let mut probe = Probe::new(exec, provider, config.settings(provider), cookies, consent);
         let answer = match provider.service().fetch(&mut probe) {
             Some(answer) => answer,
             None if requested => Err(probe.missing()),
@@ -524,5 +584,4 @@ fn read(
             break;
         }
     }
-    Ok(())
 }

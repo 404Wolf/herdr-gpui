@@ -8,6 +8,7 @@ use super::{
 };
 use crate::{
     CheckForUpdates, Minimize, PlaySound, RunCommand, ShowHerdrNotDetected, ShowUpdatePreview,
+    ZoomWindow,
     actions::{RingBellPreview, ShowToastPreview},
     browser::Shown,
     config::ClipboardToastPosition,
@@ -768,6 +769,9 @@ impl Render for HerdrWindow {
             }))
             .on_action(cx.listener(|_, _: &Minimize, window, _| {
                 window.minimize_window();
+            }))
+            .on_action(cx.listener(|_, _: &ZoomWindow, window, _| {
+                window.zoom_window();
             }))
             .on_action(cx.listener(|this, _: &ShowHerdrNotDetected, window, cx| {
                 this.show_install_modal(window, cx);

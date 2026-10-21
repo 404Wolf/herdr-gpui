@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used)]
 
-use super::{Location, Store, WebUrl, view::scope};
+use super::{Editor, Location, Store, WebUrl, view::scope};
 use crate::{
     HerdrWindow,
     sidebar::layout_tests::{fixture_window, full_draw, snapshot},
@@ -68,6 +68,11 @@ mod tab_strip;
 #[cfg(any(target_os = "macos", windows))]
 mod tab_steps;
 
+/// Move Tab Left and Right move a page among the pages. Needs a build that
+/// shows pages: elsewhere a new tab opens nothing.
+#[cfg(any(target_os = "macos", windows))]
+mod tab_moves;
+
 /// The VS Code tab's server checks. No native page is created, so this
 /// runs on every platform, except the checks only builds that show pages
 /// make.
@@ -75,6 +80,8 @@ mod code;
 
 /// VS Code as a tab of the groups, opened in the group in use.
 mod code_tab;
+mod editors;
+mod px0;
 
 /// A new VS Code server moves the VS Code tabs to it. Only builds that
 /// show pages follow a server at all.

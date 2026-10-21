@@ -57,6 +57,7 @@ toml_edit.workspace            = true
 tracing.workspace              = true
 tracing-subscriber.workspace   = true
 tungstenite                    = { optional = true, workspace = true }
+unicode-normalization.workspace = true
 unicode-properties.workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace        = true

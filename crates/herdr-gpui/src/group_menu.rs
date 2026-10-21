@@ -34,6 +34,7 @@ enum Action {
     VsCode,
     /// A new tab running a `herdr-acp` chat with the agent.
     Chat(Agent),
+    Px0,
     /// One of the focused workspace's listening ports and where it opens.
     Port {
         number: u16,
@@ -59,6 +60,7 @@ impl Action {
             Self::Orchestrator => "Issues and pull requests".into(),
             Self::VsCode => "VS Code".into(),
             Self::Chat(agent) => agent.display_name().into(),
+            Self::Px0 => "px0".into(),
             Self::Port { link, .. } => link.label().into(),
             Self::Close => "Close Tab".into(),
             Self::CloseOthers => "Close Others".into(),
@@ -72,7 +74,8 @@ impl Action {
             Self::NewBrowserTab => Some("icons/globe.svg"),
             Self::Review => Some("icons/diff-unified.svg"),
             Self::Orchestrator => Some("icons/issue.svg"),
-            Self::VsCode => Some("icons/vscode.svg"),
+            Self::VsCode => Some(crate::browser::Editor::VsCode.icon()),
+            Self::Px0 => Some(crate::browser::Editor::Px0.icon()),
             Self::Chat(agent) => {
                 Some(crate::icons::AgentIcon::from_identity(Some(agent.name())).path())
             }
@@ -94,7 +97,7 @@ impl Action {
     /// Which run of rows this one belongs to; a rule separates runs.
     fn section(&self) -> u8 {
         match self {
-            Self::NewBrowserTab | Self::Review | Self::Orchestrator | Self::VsCode => 0,
+            Self::NewBrowserTab | Self::Review | Self::Orchestrator | Self::VsCode | Self::Px0 => 0,
             Self::Chat(_) => 1,
             Self::Port { .. } => 2,
             Self::Close | Self::CloseOthers | Self::CloseGroup => 3,
@@ -149,6 +152,9 @@ impl HerdrWindow {
         }
         if self.code_offered(cx) {
             actions.push(Action::VsCode);
+        }
+        if crate::browser::EMBEDDED && self.px0_root().is_some() {
+            actions.push(Action::Px0);
         }
         actions.extend(self.chat_agents().into_iter().map(Action::Chat));
         if let Some((_, _, listed)) = self.focused_listening_ports() {
@@ -209,6 +215,9 @@ impl HerdrWindow {
             Action::Orchestrator => self.open_orchestrator(window, cx),
             Action::VsCode => self.open_code(Some(group), window, cx),
             Action::Chat(agent) => self.start_chat_or_flash(agent, cx),
+            Action::Px0 => {
+                self.open_px0(Some(group), window, cx);
+            }
             Action::Port { link, .. } => {
                 let Some((endpoint, workspace)) = self
                     .focused_listening_ports()
@@ -332,6 +341,7 @@ impl HerdrWindow {
                     .into(),
                 // It has no default key; one bound to open_code shows.
                 Action::VsCode => self.keymap().primary(Command::OpenCode).to_owned().into(),
+                Action::Px0 => self.keymap().primary(Command::OpenPx0).to_owned().into(),
                 Action::Port { process, .. } => process.clone().into(),
                 _ => "".into(),
             };

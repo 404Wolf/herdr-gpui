@@ -7,10 +7,11 @@ use std::{
 };
 use uuid::Uuid;
 
-/// A repository the database is keyed by, through its git common directory.
+/// A project the database is keyed by, through its Git common directory or
+/// its `.beads` directory when it has no Git repository.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Repository {
-    /// The canonicalized `git rev-parse --git-common-dir` on this machine.
+    /// The canonicalized Git common directory or standalone `.beads` directory.
     Local(PathBuf),
     /// A repository on an SSH host. agent-launcher never derives these keys,
     /// so they are this machine's own.

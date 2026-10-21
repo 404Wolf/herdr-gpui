@@ -305,6 +305,10 @@ impl HerdrWindow {
                 self.open_code(None, window, cx);
                 return;
             }
+            Command::OpenPx0 => {
+                self.open_px0(None, window, cx);
+                return;
+            }
             Command::InstallBrowserSkill => {
                 self.install_browser_skill(window, cx);
                 return;
@@ -548,6 +552,10 @@ impl HerdrWindow {
             | Command::AgentNumber(_) => {
                 self.step_sidebar(command, cx);
                 window.focus(&self.focus, cx);
+                return;
+            }
+            // A browser tab moves without the daemon, so before its check.
+            Command::MoveTabPrevious | Command::MoveTabNext if self.move_page_tab(command, cx) => {
                 return;
             }
             Command::MoveTabPrevious | Command::MoveTabNext if !self.live.supports_tab_move => {

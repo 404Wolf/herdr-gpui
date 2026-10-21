@@ -91,6 +91,9 @@ pub enum Error {
     #[cfg(feature = "cloud")]
     #[error(transparent)]
     Cloud(#[from] crate::cloud::Error),
+    #[cfg(feature = "cloud")]
+    #[error(transparent)]
+    CloudBatch(#[from] crate::cloud::batch::Error),
     /// Only CPU and memory are sampled on an Azure machine so far.
     #[cfg(feature = "azure")]
     #[error("This is not available for cloud machines yet.")]
@@ -722,6 +725,8 @@ pub enum Error {
     PrWorkspaceRepository,
     #[error("Local repository unavailable for worktree lookup.")]
     PrWorktreeLookup,
+    #[error(transparent)]
+    Px0(#[from] crate::px0::Error),
     #[cfg(feature = "railway")]
     #[error(transparent)]
     Railway(#[from] crate::railway::Error),
@@ -799,26 +804,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[error("Audio playback cancelled")]
-    SoundCancelled,
-    #[error("Sound configuration exceeds 1 MiB")]
-    SoundConfigSize,
-    #[error("Could not decode MP3 sound: {0}")]
-    SoundDecode(#[from] rodio::decoder::DecoderError),
-    #[error("Could not open audio output: {0}")]
-    SoundDevice(#[from] rodio::DeviceSinkError),
-    #[error("Could not read sound file {}: {source}", path.display())]
-    SoundFile {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error("Sound must be a regular file of at most 16 MiB")]
-    SoundFileSize,
-    #[error("Audio output failed: {0}")]
-    SoundStream(#[from] rodio::cpal::StreamError),
-    #[error("Audio playback timed out")]
-    SoundTimeout,
+    #[error(transparent)]
+    Sound(#[from] crate::sound::Error),
     #[error("Could not read {}: {source}", path.display())]
     SshConfig {
         path: PathBuf,

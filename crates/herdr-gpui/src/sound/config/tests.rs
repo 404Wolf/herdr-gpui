@@ -1,4 +1,5 @@
 use super::*;
+use crate::sound::Error as SoundError;
 
 #[test]
 fn shared_config_path_precedence_is_independent_of_gui_build() {
@@ -142,7 +143,7 @@ fn bounded_reads_preserve_sources() {
     assert!(std::error::Error::source(&error).is_some());
     std::fs::write(&path, vec![b' '; 1_048_577]).unwrap();
     assert!(
-        matches!(Settings::load_path(&path), Err(Error::Path { source, .. }) if matches!(*source, Error::SoundConfigSize))
+        matches!(Settings::load_path(&path), Err(Error::Path { source, .. }) if matches!(*source, Error::Sound(SoundError::ConfigSize)))
     );
 }
 
@@ -221,7 +222,9 @@ fn worker_reloads_asynchronously_and_keeps_last_valid_config() {
         sounds.recv_timeout(Duration::from_secs(3)).unwrap(),
         Some("/local/new.mp3".into())
     );
-    loads.send(Err(Error::SoundConfigSize)).unwrap();
+    loads
+        .send(Err(Error::Sound(SoundError::ConfigSize)))
+        .unwrap();
     service.reload.store(true, Ordering::Release);
     wait_loaded(3);
     send("retained");

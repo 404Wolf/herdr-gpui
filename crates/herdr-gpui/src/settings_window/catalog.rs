@@ -139,6 +139,13 @@ pub(super) const CATALOG: &[Entry] = &[
     ),
     entry(
         Section::Sidebar,
+        "sidebar-change-counts",
+        "Change counts",
+        "The +added/-deleted lines under a worktree: its pull request's, or its uncommitted \
+         changes against HEAD.",
+    ),
+    entry(
+        Section::Sidebar,
         "sidebar-show-agents",
         "Show agents",
         "List running agents in the sidebar.",

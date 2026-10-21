@@ -88,7 +88,7 @@ pub(crate) use sidebar::{
     AgentLayout, AgentToken, MAX_ROWS as MAX_SIDEBAR_ROWS, Rows, SidebarConfigError, SidebarLayout,
     SidebarScope, SpaceLayout, SpaceToken, TokenStyle,
 };
-pub(crate) use sidebar_style::DeviceFooter;
+pub(crate) use sidebar_style::{ChangeCounts, DeviceFooter};
 pub use sidebar_style::{SelectMode, SidebarOverrides, SidebarStyle};
 pub use status_bar::StatusBar;
 pub use status_icons::StatusIcons;
@@ -189,6 +189,7 @@ pub struct Config {
     /// The `[pane_keys]` table `keybindings` was built from, for the same
     /// reason.
     pub(crate) pane_keys: PaneKeys,
+    pub(crate) px0: crate::px0::Config,
     /// Whether a linked worktree whose pull request is merged is removed, and
     /// its workspace closed, without asking. The focused workspace still asks.
     pub remove_merged_worktrees: bool,
@@ -212,6 +213,9 @@ pub struct Config {
     pub show_sidebar_search: bool,
     /// CPU and memory of the selected host in the status bar.
     pub show_system_load: bool,
+    /// Draw minimize, maximize, and close buttons in the menu bar on Linux.
+    /// When true the window needs no title bar from the window manager.
+    pub show_window_controls: bool,
     pub sidebar: FontConfig,
     /// Daemon sidebar rows, falling back to defaults when invalid.
     pub sidebar_layout: SidebarLayout,
@@ -461,6 +465,7 @@ impl Default for Config {
             option_as_alt: OptionAsAlt::default(),
             palette: crate::palette::PaletteConfig::default(),
             pane_keys: PaneKeys::new(),
+            px0: crate::px0::Config::default(),
             remove_merged_worktrees: false,
             show_agents: true,
             show_agents_header: true,
@@ -470,6 +475,7 @@ impl Default for Config {
             show_repository_icons: true,
             show_sidebar_search: true,
             show_system_load: true,
+            show_window_controls: cfg!(target_os = "linux"),
             sidebar: font(monospace, 12.0),
             sidebar_layout: SidebarLayout::default(),
             sidebar_style: SidebarStyle::default(),
@@ -528,6 +534,7 @@ struct Settings {
     option_as_alt: OptionAsAlt,
     palette: crate::palette::PaletteConfig,
     pane_keys: PaneKeys,
+    px0: crate::px0::Config,
     remove_merged_worktrees: Option<bool>,
     show_agents: Option<bool>,
     show_agents_header: Option<bool>,
@@ -537,6 +544,7 @@ struct Settings {
     show_repository_icons: Option<bool>,
     show_sidebar_search: Option<bool>,
     show_system_load: Option<bool>,
+    show_window_controls: Option<bool>,
     sidebar: sidebar_style::SidebarSettings,
     smooth_scroll: Option<bool>,
     sound: SoundConfig,
@@ -943,6 +951,9 @@ impl Config {
         config.show_repository_icons = settings.show_repository_icons.unwrap_or(true);
         config.show_sidebar_search = settings.show_sidebar_search.unwrap_or(true);
         config.show_system_load = settings.show_system_load.unwrap_or(true);
+        config.show_window_controls = settings
+            .show_window_controls
+            .unwrap_or(cfg!(target_os = "linux"));
         config.smooth_scroll = settings.smooth_scroll.unwrap_or(true);
         // keep-sorted end
         config.status_bar = settings.status_bar;
@@ -959,6 +970,8 @@ impl Config {
         config.option_as_alt = settings.option_as_alt;
         config.open_links_in = settings.open_links_in;
         config.code = settings.code;
+        settings.px0.check()?;
+        config.px0 = settings.px0;
         config.open_files_in = settings.open_files_in;
         config.editor_command = settings.editor_command;
         config.keep_selection_after_copy = settings.keep_selection_after_copy.unwrap_or(true);

@@ -3,8 +3,10 @@
 //! CLI already drives workspaces, tabs, panes, agents, and notifications;
 //! these cover what only this client knows or draws.
 mod app;
+mod batch;
 mod browser;
 mod chat;
+mod exec;
 mod hosts;
 mod settings;
 mod tabs;
@@ -14,8 +16,10 @@ use super::CliError;
 pub(crate) use super::args::Args;
 pub use crate::control::{Cursor, EventKind, FontSize, Script, Size, Sound, Switch, ZoomChange};
 pub use app::{AppCommand, UiCommand, WindowCommand};
+pub use batch::BatchCommand;
 pub use browser::{BrowserCommand, Placement};
 pub use chat::ChatCommand;
+pub use exec::ExecCommand;
 pub use hosts::{CloudCommand, HostCommand, PortsCommand, PrCommand, SecurityCommand};
 pub use settings::{
     CaffeineCommand, ConfigCommand, IntegrationsCommand, KeybindsCommand, SoundCommand,
@@ -57,6 +61,7 @@ pub enum ControlCommand {
     Orchestrator(OrchestratorCommand),
     Review,
     Chat(ChatCommand),
+    Px0,
     Notes(NotesCommand),
     /// Every kind of note the user sent this pane: page, review, terminal.
     Feedback {
@@ -157,6 +162,7 @@ pub const FAMILIES: &[(&str, &str)] = &[
         "chat",
         "Native views of herdr-acp chats: start one, list them, show or hide one",
     ),
+    ("px0", "Open px0 on the caller's local checkout"),
     ("notes", "Notes kept on worktrees"),
     (
         "feedback",
@@ -177,7 +183,10 @@ pub const FAMILIES: &[(&str, &str)] = &[
     ),
     ("pr", "The pull request of the caller's branch"),
     ("host", "List the window's hosts, or show one"),
-    ("cloud", "Saved cloud machines, and adding one"),
+    (
+        "cloud",
+        "Saved cloud machines: list, add, run a command, destroy",
+    ),
     (
         "ports",
         "Listening ports, and forwarding them to this machine",
@@ -213,7 +222,11 @@ pub const FAMILIES: &[(&str, &str)] = &[
 /// Whether `args` are a control command asking for JSON, whose errors,
 /// usage errors included, are then printed as JSON.
 pub fn wants_json(args: &[OsString]) -> bool {
-    args.first().is_some_and(is_family) && args.iter().any(|arg| arg == "--json")
+    args.first().is_some_and(is_family)
+        && args
+            .iter()
+            .take_while(|arg| *arg != "--")
+            .any(|arg| arg == "--json")
 }
 
 pub fn is_family(word: &OsString) -> bool {
@@ -307,6 +320,10 @@ fn command(family: &'static str, args: &mut Args) -> Result<ControlCommand, CliE
             ControlCommand::Review
         }
         "chat" => ControlCommand::Chat(chat::chat(args)?),
+        "px0" => {
+            tabs::open_only(args)?;
+            ControlCommand::Px0
+        }
         "notes" => ControlCommand::Notes(work::notes(args)?),
         "feedback" => ControlCommand::Feedback {
             wait: wait_option(args, "--wait")?,
