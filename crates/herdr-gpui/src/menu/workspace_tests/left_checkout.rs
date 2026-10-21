@@ -212,3 +212,37 @@ fn removing_a_moved_main_checkout_explains_main_checkouts_stay() {
         Err(Unavailable::MainCheckout)
     );
 }
+
+/// A main checkout moved to a directory outside any repository reports no
+/// branch. A linked checkout routed through it still creates and opens
+/// worktrees of its repository, until the main checkout is kept for another.
+#[test]
+fn a_linked_checkout_creates_while_its_main_checkout_is_outside_git() {
+    let mut snapshot = moved();
+    snapshot.workspaces[3].branch = None;
+    let target = WorkspaceTarget::for_new_worktree(&snapshot, &snapshot.workspaces[4]).unwrap();
+    assert!(matches!(target.source, Source::Repository { .. }));
+    assert!(target.can_create());
+    let root = sidebar::layout_tests::REPO_KEY.trim_end_matches("/.git");
+    assert_eq!(
+        target
+            .request(&snapshot, WorkspaceAction::NewWorktree, "")
+            .unwrap()
+            .1,
+        serde_json::json!({"cwd": root, "base": "refs/heads/worktree/sidebar-child",
+            "focus": true, "trust_repository": false})
+    );
+    assert!(
+        target
+            .request(&snapshot, WorkspaceAction::OpenWorktree, "/elsewhere")
+            .is_ok()
+    );
+    let mut rekeyed = snapshot;
+    if let Some(tree) = rekeyed.workspaces[3].worktree.as_mut() {
+        tree.key = "/fixture/other/.git".into();
+    }
+    assert!(matches!(
+        target.request(&rekeyed, WorkspaceAction::NewWorktree, ""),
+        Err(crate::Error::WorkspaceRepositoryChanged)
+    ));
+}

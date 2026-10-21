@@ -168,7 +168,12 @@ impl WorkspaceTarget {
 
     pub(super) fn can_create(&self) -> bool {
         // Like the TUI, accept Git branches before worktree metadata is available.
-        (self.worktree.is_some() || self.branch.is_some()) && !self.can_delete()
+        // A repository root is named by its linked checkout, whatever the
+        // moved main checkout's directory reports.
+        (self.worktree.is_some()
+            || self.branch.is_some()
+            || matches!(self.source, Source::Repository { .. }))
+            && !self.can_delete()
     }
 
     pub(super) fn can_delete(&self) -> bool {
@@ -185,11 +190,16 @@ impl WorkspaceTarget {
             .filter(|_| snapshot.boot_id == self.boot_id)
             .ok_or(crate::Error::StaleWorkspace)?;
         let worktree = known_worktree(workspace);
-        if !self.can_create()
-            || !self.addresses(workspace)
-            || self.worktree != worktree
-            || (worktree.is_none() && workspace.branch.is_none())
-        {
+        let named = match &self.source {
+            // The main checkout must still be kept for the same repository;
+            // the branch of the directory its shell moved to is unrelated.
+            Source::Repository { key, .. } => workspace
+                .worktree
+                .as_ref()
+                .is_some_and(|tree| tree.key == *key && !tree.is_linked_worktree),
+            _ => worktree.is_some() || workspace.branch.is_some(),
+        };
+        if !self.can_create() || !self.addresses(workspace) || self.worktree != worktree || !named {
             return Err(crate::Error::WorkspaceRepositoryChanged);
         }
         Ok(())
