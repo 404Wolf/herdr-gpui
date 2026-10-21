@@ -74,7 +74,7 @@ fn assert_script_failure(error: Error, expected_status: i32) {
     else {
         panic!("expected a script failure, got {error:?}");
     };
-    assert_eq!(status.code(), Some(expected_status));
+    assert_eq!(status.code(), Some(expected_status), "{stderr}");
     assert!(!stderr.is_empty());
 }
 
@@ -115,10 +115,14 @@ fn a_git_subdirectory_keeps_its_repository_and_remote() {
 fn missing_git_is_a_failure_even_with_beads() {
     for beads in [false, true] {
         let fixture = Fixture::new(true, beads);
+        // An empty PATH can trigger a shell's default search path. A real,
+        // empty directory makes Git unavailable on every tested shell.
+        let bin = fixture.dir.path().join("empty-bin");
+        std::fs::create_dir(&bin).unwrap();
         assert_script_failure(
             fixture
                 .probe(|command| {
-                    command.env("PATH", "");
+                    command.env("PATH", &bin);
                 })
                 .unwrap_err(),
             127,
