@@ -14,6 +14,7 @@ mod empty;
 mod groups;
 mod list_switch;
 mod markdown;
+mod non_projects;
 mod outside_git;
 mod pills;
 mod pr_empty;

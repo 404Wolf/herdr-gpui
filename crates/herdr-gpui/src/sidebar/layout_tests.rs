@@ -55,6 +55,8 @@ mod local_counts_chip;
 #[cfg(test)]
 mod nested_agents;
 #[cfg(test)]
+mod other_device_prs;
+#[cfg(test)]
 mod palette;
 #[cfg(test)]
 mod palette_header;
@@ -106,6 +108,8 @@ mod update_panel;
 mod workspace_click_hover;
 #[cfg(test)]
 mod workspace_menu;
+#[cfg(test)]
+mod workspace_menu_name;
 #[cfg(test)]
 mod worktree_note_trunk;
 #[cfg(test)]

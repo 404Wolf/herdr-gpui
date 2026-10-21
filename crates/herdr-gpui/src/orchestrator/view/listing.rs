@@ -18,9 +18,12 @@ impl OrchestratorView {
         self.repos.iter().filter(|repo| !repo.outside_git())
     }
 
-    /// Lists exactly `specs`: a repository no longer asked for stops its
-    /// worker, a new one starts its own. The active one stays active.
-    pub(crate) fn set_repos(&mut self, specs: Vec<RepoSpec>, cx: &mut Context<Self>) {
+    /// Lists the projects in `specs`: a repository no longer asked for stops
+    /// its worker, a new candidate starts its own. The active one stays active.
+    pub(crate) fn set_repos(&mut self, mut specs: Vec<RepoSpec>, cx: &mut Context<Self>) {
+        self.skipped_repos
+            .retain(|key| specs.iter().any(|spec| spec.key == *key));
+        specs.retain(|spec| !self.skipped_repos.contains(&spec.key));
         let same = specs.len() == self.repos.len()
             && specs
                 .iter()
@@ -47,6 +50,28 @@ impl OrchestratorView {
             .retain(|key| self.repos.iter().any(|repo| repo.key == *key));
         self.refresh_rows();
         cx.notify();
+    }
+
+    /// Keep ordinary folders out of the project list without restarting a
+    /// failed discovery on every window tick. Other failures remain visible.
+    pub(super) fn discard_non_projects(&mut self) {
+        let active = self.repo().map(|repo| repo.key.clone());
+        self.repos.retain(|repo| {
+            if matches!(
+                repo.snapshot.error.as_deref(),
+                Some(crate::orchestrator::Error::NotARepository)
+            ) {
+                self.skipped_repos.insert(repo.key.clone());
+                false
+            } else {
+                true
+            }
+        });
+        self.active = active
+            .and_then(|key| self.repos.iter().position(|repo| repo.key == key))
+            .unwrap_or(0);
+        self.projects
+            .retain(|key| !self.skipped_repos.contains(key));
     }
 
     /// Lists only the project `key` names, as a menu opening one workspace's

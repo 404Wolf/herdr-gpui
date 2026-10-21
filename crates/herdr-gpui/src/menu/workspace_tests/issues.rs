@@ -38,6 +38,10 @@ fn a_git_workspace_offers_issues_and_pull_requests(cx: &mut gpui::TestAppContext
 
 #[gpui::test]
 fn the_menu_shows_every_project_narrowed_to_the_workspaces(cx: &mut gpui::TestAppContext) {
+    let repositories = tempfile::tempdir().unwrap();
+    for folder in ["worktrees", "other"] {
+        gix::init(repositories.path().join(folder)).unwrap();
+    }
     let (view, cx) = cx.add_window_view(sidebar::layout_tests::fixture_window);
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
@@ -47,6 +51,7 @@ fn the_menu_shows_every_project_narrowed_to_the_workspaces(cx: &mut gpui::TestAp
             if let Some(snapshot) = view.live.snapshot.as_mut() {
                 std::sync::Arc::make_mut(snapshot).focused_workspace_id = Some("w3".into());
             }
+            view.prepare_orchestrator_projects_for_tests(repositories.path(), cx);
             // A folder no workspace holds narrows to the workspace's project.
             view.open_orchestrator_in("w3".into(), Some("/nonexistent/repo".into()), window, cx);
             assert_eq!(view.activity.panel, sidebar::ActivityPanel::Issues);

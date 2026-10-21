@@ -106,6 +106,7 @@ mod notifications;
 mod orchestrator;
 mod osc52;
 mod overview;
+mod owned_process;
 mod palette;
 mod pane_menu;
 mod pane_move;
@@ -119,6 +120,7 @@ mod private_file;
 mod processes;
 mod progress;
 mod pull_request;
+mod px0;
 #[cfg(feature = "railway")]
 mod railway;
 mod release_notes;
