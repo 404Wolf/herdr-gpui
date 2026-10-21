@@ -13,6 +13,7 @@ use std::{
 
 mod attachments;
 mod chats;
+mod composer;
 mod controls;
 mod discovery;
 mod feature;

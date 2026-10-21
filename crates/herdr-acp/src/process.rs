@@ -103,29 +103,32 @@ impl AgentProcess {
             .collect()
     }
 
-    /// Asks the agent's process group to end, then kills it after a grace period.
+    /// Asks the agent's process group to end, then kills what is left of it
+    /// after a grace period. The agent exiting is not enough: a tool it
+    /// started may ignore the request, so the wait lasts until the whole
+    /// group is gone.
     pub(crate) fn stop(&self) {
         #[cfg(unix)]
         {
+            use rustix::process::{Signal, kill_process_group, test_kill_process_group};
             let id = self.lock().id();
-            if let Some(group) = i32::try_from(id)
+            let group = i32::try_from(id)
                 .ok()
-                .and_then(rustix::process::Pid::from_raw)
-            {
-                let _ = rustix::process::kill_process_group(group, rustix::process::Signal::TERM);
+                .and_then(rustix::process::Pid::from_raw);
+            if let Some(group) = group {
+                let _ = kill_process_group(group, Signal::TERM);
             }
             let deadline = std::time::Instant::now() + GRACE;
             while std::time::Instant::now() < deadline {
-                if matches!(self.lock().try_wait(), Ok(Some(_)) | Err(_)) {
+                let agent_gone = matches!(self.lock().try_wait(), Ok(Some(_)) | Err(_));
+                let group_gone = group.is_none_or(|group| test_kill_process_group(group).is_err());
+                if agent_gone && group_gone {
                     return;
                 }
                 thread::sleep(POLL);
             }
-            if let Some(group) = i32::try_from(id)
-                .ok()
-                .and_then(rustix::process::Pid::from_raw)
-            {
-                let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
+            if let Some(group) = group {
+                let _ = kill_process_group(group, Signal::KILL);
             }
         }
         let mut child = self.lock();
@@ -133,3 +136,6 @@ impl AgentProcess {
         let _ = child.wait();
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -98,3 +98,61 @@ fn an_api_error_is_typed() {
     let error = call(&socket, "pane.report_agent", json!({})).unwrap_err();
     assert!(matches!(error, Error::HerdrApi(message) if message.contains("pane_not_found")));
 }
+
+#[cfg(unix)]
+#[test]
+fn a_failed_announcement_is_sent_again() {
+    use std::os::unix::net::UnixListener;
+
+    let dir = tempfile::tempdir().unwrap();
+    let socket = dir.path().join("api.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    let (sender, receiver) = crossbeam_channel::unbounded::<Value>();
+    thread::spawn(move || {
+        let mut metadata = 0;
+        for stream in listener.incoming() {
+            let mut stream = stream.unwrap();
+            let mut line = String::new();
+            BufReader::new(stream.try_clone().unwrap())
+                .read_line(&mut line)
+                .unwrap();
+            let request: Value = serde_json::from_str(&line).unwrap();
+            let id = request["id"].clone();
+            // The first announcement fails, as a slow or busy daemon's would.
+            let failed = request["method"] == "pane.report_metadata" && {
+                metadata += 1;
+                metadata == 1
+            };
+            sender.send(request).unwrap();
+            if failed {
+                writeln!(stream, "{}", json!({"id": id, "error": {"code": "busy"}})).unwrap();
+            } else {
+                writeln!(stream, "{}", json!({"id": id, "result": {"type": "ok"}})).unwrap();
+            }
+        }
+    });
+    let reporter = Reporter::start(
+        Target {
+            pane: "p_1".to_owned(),
+            socket,
+        },
+        "Claude".to_owned(),
+        Some("0123456789abcdef0123456789abcdef".to_owned()),
+    )
+    .unwrap();
+    reporter.handle().report(Activity::Working);
+    let wait = Duration::from_secs(10);
+    let methods: Vec<_> = (0..3)
+        .map(|_| receiver.recv_timeout(wait).unwrap()["method"].clone())
+        .collect();
+    // No further activity: the retry alone sends the token again.
+    assert_eq!(
+        methods,
+        [
+            json!("pane.report_agent"),
+            json!("pane.report_metadata"),
+            json!("pane.report_metadata")
+        ]
+    );
+    reporter.close();
+}

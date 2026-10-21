@@ -333,6 +333,14 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if crate::actions::edit_modifiers(event.keystroke.modifiers)
+            && event.keystroke.key == "v"
+            && self.chat_paste(pane_id, window, cx)
+        {
+            cx.stop_propagation();
+            window.prevent_default();
+            return;
+        }
         if event.keystroke.modifiers.modified() {
             return;
         }
@@ -382,10 +390,7 @@ impl HerdrWindow {
                 let Some(recalled) = recalled.map(str::to_owned) else {
                     return;
                 };
-                input.update(cx, |input, cx| {
-                    input.clear(cx);
-                    input.replace_text_in_range(None, &recalled, window, cx);
-                });
+                self.set_chat_prompt(pane_id, &input, &recalled, window, cx);
             }
             "backspace" if text.is_empty() => {
                 let Some(line) = pane.draft.pop() else {
@@ -404,6 +409,63 @@ impl HerdrWindow {
         }
         cx.stop_propagation();
         window.prevent_default();
+        cx.notify();
+    }
+
+    /// Pastes the clipboard's text into the composer when it holds several
+    /// lines, which the one-line composer would join: every line but the
+    /// last joins the draft above it. Whether it took the paste.
+    pub(super) fn chat_paste(
+        &mut self,
+        pane_id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(input) = self
+            .chats
+            .pane(pane_id)
+            .and_then(|pane| pane.composer.clone())
+        else {
+            return false;
+        };
+        if !input.read(cx).focus.is_focused(window) {
+            return false;
+        }
+        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+            return false;
+        };
+        let text = text.replace("\r\n", "\n").replace('\r', "\n");
+        let Some((first, rest)) = text.split_once('\n') else {
+            return false;
+        };
+        input.update(cx, |input, cx| {
+            input.replace_text_in_range(None, first, window, cx)
+        });
+        let line = format!("{}\n{rest}", input.read(cx).text());
+        self.set_chat_prompt(pane_id, &input, &line, window, cx);
+        true
+    }
+
+    /// Puts `text` in the composer: its last line in the editable field,
+    /// the lines before it in the draft, replacing both.
+    fn set_chat_prompt(
+        &mut self,
+        pane_id: &str,
+        input: &Entity<SearchInput>,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(pane) = self.chats.pane_mut(pane_id) else {
+            return;
+        };
+        let (draft, last) = draft_lines(text);
+        pane.draft = draft;
+        input.update(cx, |input, cx| {
+            input.clear(cx);
+            input.replace_text_in_range(None, last, window, cx);
+        });
+        self.redraw_terminal(cx);
         cx.notify();
     }
 
@@ -630,6 +692,15 @@ impl HerdrWindow {
         self.follow_chat_focus(window, cx);
         cx.notify();
         true
+    }
+}
+
+/// `text` as draft lines and the composer's last line, so that
+/// [`prompt_text`] rebuilds it.
+pub(crate) fn draft_lines(text: &str) -> (Vec<String>, &str) {
+    match text.rsplit_once('\n') {
+        Some((head, last)) => (head.split('\n').map(str::to_owned).collect(), last),
+        None => (Vec::new(), text),
     }
 }
 

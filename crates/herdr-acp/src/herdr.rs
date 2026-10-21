@@ -20,6 +20,8 @@ const SOURCE: &str = "herdr-acp";
 /// The agent label Herdr records for the pane.
 const AGENT: &str = "acp";
 const TIMEOUT: Duration = Duration::from_secs(2);
+/// How long a failed announcement waits before it is sent again.
+const RETRY: Duration = Duration::from_secs(2);
 const MAX_RESPONSE: u64 = 64 * 1024;
 
 #[derive(Clone, Debug)]
@@ -102,13 +104,27 @@ fn run(
     mailbox: &(Mutex<Mailbox>, Condvar),
 ) {
     let mut seq = Sequence::default();
+    // Whether the agent was reported, so closing withdraws it, and whether
+    // the token reached Herdr: until it has, the native view cannot find
+    // the chat, so a failed announcement is sent again after `RETRY`.
+    let mut reported = false;
     let mut announced = false;
     loop {
         let (activity, closing) = {
             let (lock, wake) = mailbox;
             let mut state = lock.lock().unwrap_or_else(PoisonError::into_inner);
             while state.activity.is_none() && !state.closing {
-                state = wake.wait(state).unwrap_or_else(PoisonError::into_inner);
+                if reported && !announced {
+                    let (next, waited) = wake
+                        .wait_timeout(state, RETRY)
+                        .unwrap_or_else(PoisonError::into_inner);
+                    state = next;
+                    if waited.timed_out() {
+                        break;
+                    }
+                } else {
+                    state = wake.wait(state).unwrap_or_else(PoisonError::into_inner);
+                }
             }
             (state.activity.take(), state.closing)
         };
@@ -124,22 +140,23 @@ fn run(
                 json!({"pane_id": target.pane, "source": SOURCE, "agent": AGENT,
                     "state": state, "seq": seq.next()}),
             );
-            if !announced {
-                announced = true;
-                let mut tokens = serde_json::Map::new();
-                if let Some(endpoint) = endpoint {
-                    tokens.insert(herdr_chat_protocol::TOKEN.to_owned(), json!(endpoint));
-                }
-                let _ = call(
-                    &target.socket,
-                    "pane.report_metadata",
-                    json!({"pane_id": target.pane, "source": SOURCE, "agent": AGENT,
-                        "display_agent": display, "tokens": tokens, "seq": seq.next()}),
-                );
+            reported = true;
+        }
+        if reported && !announced && !closing {
+            let mut tokens = serde_json::Map::new();
+            if let Some(endpoint) = endpoint {
+                tokens.insert(herdr_chat_protocol::TOKEN.to_owned(), json!(endpoint));
             }
+            announced = call(
+                &target.socket,
+                "pane.report_metadata",
+                json!({"pane_id": target.pane, "source": SOURCE, "agent": AGENT,
+                    "display_agent": display, "tokens": tokens, "seq": seq.next()}),
+            )
+            .is_ok();
         }
         if closing {
-            if announced {
+            if reported {
                 let _ = call(
                     &target.socket,
                     "pane.report_metadata",

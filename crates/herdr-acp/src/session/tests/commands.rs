@@ -195,3 +195,23 @@ fn set_mode_asks_the_agent_then_records_the_mode() {
     harness.respond(request["id"].as_i64().unwrap(), json!({}));
     assert_eq!(harness.transcript().modes.as_ref().unwrap().current, "plan");
 }
+
+#[test]
+fn the_queue_is_bounded() {
+    let mut harness = ready();
+    prompt(&mut harness, 0, "first");
+    for n in 0..40 {
+        harness.command(
+            0,
+            Command::Prompt {
+                text: format!("queued {n}"),
+                attachments: Vec::new(),
+            },
+        );
+    }
+    assert_eq!(harness.transcript().queued.len(), 32);
+    assert_eq!(
+        harness.session.handled.back().unwrap().1,
+        Some(Rejection::QueueFull)
+    );
+}

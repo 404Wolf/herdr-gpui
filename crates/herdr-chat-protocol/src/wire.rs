@@ -150,6 +150,8 @@ pub enum Rejection {
     AgentUnavailable,
     #[error("a prompt takes at most {MAX_ATTACHMENTS} files")]
     TooManyAttachments,
+    #[error("too many prompts are waiting; wait for the turn to end")]
+    QueueFull,
     #[error("an attached file does not exist or cannot be read")]
     UnknownFile,
     /// A command this program's version does not know, from a newer client.

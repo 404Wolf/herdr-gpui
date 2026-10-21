@@ -6,6 +6,10 @@ use super::{super::chats::ChatPane, Hues};
 use crate::{HerdrWindow, config::corners};
 use gpui::{prelude::*, *};
 
+/// Draft lines shown above the editable one; earlier ones are counted, so a
+/// long draft never pushes the editable line out of the pane.
+const DRAFT_LINES: usize = 6;
+
 impl HerdrWindow {
     pub(super) fn render_chat_composer(&self, chat: &ChatPane, cx: &mut Context<Self>) -> Div {
         let theme = &self.theme;
@@ -179,17 +183,33 @@ impl HerdrWindow {
                     .px(px(14.))
                     .pt(px(12.))
                     .pb(px(8.))
-                    .children(chat.draft.iter().map(|line| {
+                    .children((chat.draft.len() > DRAFT_LINES).then(|| {
+                        let earlier = chat.draft.len() - DRAFT_LINES;
                         div()
-                            .text_color(rgb(theme.subtext()))
-                            .whitespace_nowrap()
-                            .overflow_hidden()
-                            .child(if line.is_empty() {
-                                " ".to_owned()
-                            } else {
-                                line.clone()
+                            .debug_selector(|| "chat-draft-earlier".into())
+                            .text_size(small)
+                            .text_color(rgb(theme.muted))
+                            .child(match earlier {
+                                1 => "1 earlier line".to_owned(),
+                                count => format!("{count} earlier lines"),
                             })
                     }))
+                    .children(
+                        chat.draft
+                            .iter()
+                            .skip(chat.draft.len().saturating_sub(DRAFT_LINES))
+                            .map(|line| {
+                                div()
+                                    .text_color(rgb(theme.subtext()))
+                                    .whitespace_nowrap()
+                                    .overflow_hidden()
+                                    .child(if line.is_empty() {
+                                        " ".to_owned()
+                                    } else {
+                                        line.clone()
+                                    })
+                            }),
+                    )
                     .child(
                         div()
                             .debug_selector(|| "chat-composer".into())

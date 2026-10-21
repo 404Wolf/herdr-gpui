@@ -8,6 +8,11 @@ use herdr_chat_protocol::{
 
 use super::{Activity, ConnId, Pending, Session};
 
+/// Prompts waiting behind a turn, and their text in bytes: the queue is
+/// copied into every change and snapshot, so it stays well inside a frame.
+const MAX_QUEUED: usize = 32;
+const MAX_QUEUED_TEXT: usize = 1024 * 1024;
+
 impl<R: FnMut(Activity)> Session<R> {
     pub(super) fn command(&mut self, conn: ConnId, id: CommandId, command: Command) {
         if let Some((_, rejected)) = self.handled.iter().find(|(handled, _)| *handled == id) {
@@ -55,6 +60,11 @@ impl<R: FnMut(Activity)> Session<R> {
             return Err(Rejection::NotReady);
         }
         if self.turn.is_some() || !self.ready {
+            let waiting = &self.transcript.queued;
+            let text_size: usize = waiting.iter().map(|queued| queued.text.len()).sum();
+            if waiting.len() >= MAX_QUEUED || text_size + text.len() > MAX_QUEUED_TEXT {
+                return Err(Rejection::QueueFull);
+            }
             let mut queued = self.transcript.queued.clone();
             queued.push(Queued {
                 attachments,

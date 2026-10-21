@@ -257,6 +257,14 @@ impl HerdrWindow {
             .capture_key_down(cx.listener(move |this, event: &KeyDownEvent, window, cx| {
                 this.chat_capture_key(&capture_pane, event, window, cx);
             }))
+            .capture_action(cx.listener({
+                let pane = pane_id.clone();
+                move |this, _: &crate::actions::Paste, window, cx| {
+                    if this.chat_paste(&pane, window, cx) {
+                        cx.stop_propagation();
+                    }
+                }
+            }))
             .child(self.render_chat_header(chat, rail::fits(bounds), cx))
             .child(
                 div()
