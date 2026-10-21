@@ -72,6 +72,23 @@ impl HerdrWindow {
             .filter(|region| self.regions().contains(region))
     }
 
+    /// Returns the keyboard to the terminal once the region holding it is no
+    /// longer drawn, as when Enter dismisses the last notice card: its focused
+    /// control is gone, and Escape could no longer leave a region that is not
+    /// on screen. An open menu page keeps its own focus.
+    pub(super) fn leave_vanished_region(&mut self, window: &mut Window, cx: &mut App) {
+        let Some(region) = self.chrome_region else {
+            return;
+        };
+        if self.regions().contains(&region) {
+            return;
+        }
+        self.chrome_region = None;
+        if self.menu.page.is_none() {
+            window.focus(&self.focus, cx);
+        }
+    }
+
     pub(super) fn cycle_region(
         &mut self,
         forward: bool,

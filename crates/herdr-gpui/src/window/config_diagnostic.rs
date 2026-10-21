@@ -2,7 +2,7 @@
 //! terminal area, where Herdr draws its own: this app's GUI config warning,
 //! the missing icon font, then the selected endpoint's daemon `config.toml`
 //! diagnostic.
-use super::{Flash, HerdrWindow, chrome_focus::Region};
+use super::{Flash, HerdrWindow, chrome_focus::Region, render::Notice};
 use crate::{fonts::StyledFont, notifications::safe_text};
 use gpui::{prelude::*, *};
 use std::sync::Arc;
@@ -27,7 +27,7 @@ struct Card<'a> {
 impl HerdrWindow {
     /// This app's GUI config warning and icon font notice, then the selected
     /// daemon's diagnostic.
-    pub(super) fn config_diagnostic_cards(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    pub(super) fn config_diagnostic_cards(&self, cx: &mut Context<Self>) -> Vec<Notice> {
         let gui = self.gui_config_diagnostic.visible().map(|lines| {
             let (dismissed, toggled) = (lines.clone(), lines.clone());
             self.render_diagnostic_card(
@@ -116,11 +116,7 @@ impl HerdrWindow {
                     cx,
                 ))
             });
-        gui.into_iter()
-            .chain(icon_font)
-            .chain(endpoint)
-            .map(IntoElement::into_any_element)
-            .collect()
+        gui.into_iter().chain(icon_font).chain(endpoint).collect()
     }
 
     /// A command the card names, in the terminal face on its own chip so it
@@ -176,13 +172,15 @@ impl HerdrWindow {
     /// to open: a click anywhere on it, or Enter or Space on its chevron,
     /// wraps every line in full, scrolling past [`fold::MAX_OPEN_HEIGHT`].
     /// A card whose rows all fit draws exactly as before, with no chevron.
+    /// An open card gives up height in a short window, down to none for its
+    /// lines, which then scroll.
     fn render_diagnostic_card(
         &self,
         card: Card<'_>,
         dismiss: impl Fn(&mut Self, &mut Context<Self>) + 'static,
         toggle: impl Fn(&mut Self, &mut Context<Self>) + Clone + 'static,
         cx: &mut Context<Self>,
-    ) -> Stateful<Div> {
+    ) -> Notice {
         let Card {
             selector,
             label,
@@ -214,7 +212,11 @@ impl HerdrWindow {
             .flex()
             .flex_col()
             .gap(px(4.))
-            .child(row(label.clone().into()).text_color(rgb(self.theme.muted)))
+            .child(
+                row(label.clone().into())
+                    .flex_none()
+                    .text_color(rgb(self.theme.muted)),
+            )
             .child(
                 div()
                     .id("lines")
@@ -224,7 +226,10 @@ impl HerdrWindow {
                     .flex_col()
                     .gap(px(4.))
                     .when(open, |lines| {
-                        lines.max_h(px(fold::MAX_OPEN_HEIGHT)).overflow_y_scroll()
+                        lines
+                            .min_h_0()
+                            .max_h(px(fold::MAX_OPEN_HEIGHT))
+                            .overflow_y_scroll()
                     })
                     .children(lines.iter().enumerate().map(|(index, line)| {
                         row(line.clone().into())
@@ -280,6 +285,7 @@ impl HerdrWindow {
             }));
         let header = div()
             .min_w_0()
+            .when(open, |header| header.min_h_0())
             .flex()
             .gap(px(8.))
             .child(
@@ -299,7 +305,7 @@ impl HerdrWindow {
                     .children(chevron)
                     .child(self.chrome_stop(Region::Notices, dismiss)),
             );
-        div()
+        let card = div()
             .id(selector)
             .debug_selector(move || selector.into())
             .role(Role::Group)
@@ -326,7 +332,11 @@ impl HerdrWindow {
                     .on_click(cx.listener(move |this, _, _, cx| toggle(this, cx)))
             })
             .child(header)
-            .children(footer)
+            .children(footer.map(|footer| div().flex_none().child(footer)));
+        Notice {
+            card: card.into_any_element(),
+            shrinks: open,
+        }
     }
 
     /// Dismisses the banner only for the connection and text it was drawn
