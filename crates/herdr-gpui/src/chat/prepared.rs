@@ -24,14 +24,15 @@ const MESSAGE: release_notes::Limits = release_notes::Limits {
     line: 4_000,
 };
 
+/// What ends an answer cut at [`MESSAGE`].
+const CUT: &str = "The rest of this answer is too long to show here; Copy takes all of it.";
+
 /// An answer's Markdown lines, ending with a note when some are not shown;
 /// Copy still takes the whole answer.
 fn message_lines(text: &str) -> Rc<[Line]> {
     let (mut lines, cut) = release_notes::parse_within(text, MESSAGE);
     if cut {
-        lines.push(release_notes::note(
-            "The rest of this answer is too long to show here; Copy takes all of it.",
-        ));
+        lines.push(release_notes::note(CUT));
     }
     lines.into()
 }
@@ -139,8 +140,14 @@ impl Prepared {
             let visuals = &mut self.visuals;
             let body = match &entry.kind {
                 EntryKind::Agent { text } => {
-                    match super::summary::summary(&release_notes::parse(text)) {
-                        Some(summary) => Body::Summary(summary),
+                    let (lines, cut) = release_notes::parse_within(text, MESSAGE);
+                    match super::summary::summary(&lines) {
+                        Some(mut summary) => {
+                            if cut {
+                                summary.lines.push(release_notes::note(CUT));
+                            }
+                            Body::Summary(summary)
+                        }
                         None => Body::Message(message(text, visuals)),
                     }
                 }

@@ -449,14 +449,13 @@ impl HerdrWindow {
         let joined = format!("{before}{text}{after}");
         let (lines, last) = draft_lines(&joined);
         let last = last.to_owned();
+        // The cursor goes right after the pasted text, before the line's tail.
+        let cursor = last.len() - after.len();
         let Some(pane) = self.chats.pane_mut(pane_id) else {
             return false;
         };
         pane.draft.extend(lines);
-        input.update(cx, |input, cx| {
-            input.clear(cx);
-            input.replace_text_in_range(None, &last, window, cx);
-        });
+        input.update(cx, |input, cx| input.set_text_at(&last, cursor, cx));
         self.redraw_terminal(cx);
         cx.notify();
         true

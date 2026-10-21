@@ -6,8 +6,8 @@ use crate::{HerdrWindow, config::corners, notifications::safe_text};
 use gpui::{prelude::*, *};
 use herdr_chat_protocol::{Command, PermissionKind, assist};
 
-/// Queued prompts listed; the rest are counted.
-const QUEUE_ROWS: usize = 3;
+/// Queued prompts in view at once; the list scrolls past them.
+const QUEUE_ROWS: f32 = 3.5;
 /// Characters of a queued prompt shown.
 const QUEUED: usize = 160;
 
@@ -81,13 +81,19 @@ impl HerdrWindow {
             .collect()
     }
 
-    pub(super) fn render_chat_queue(&self, chat: &ChatPane, cx: &mut Context<Self>) -> Vec<Div> {
+    pub(super) fn render_chat_queue(
+        &self,
+        chat: &ChatPane,
+        cx: &mut Context<Self>,
+    ) -> Option<Stateful<Div>> {
         let theme = &self.theme;
         let queued = &chat.session.transcript().queued;
-        let mut rows: Vec<Div> = queued
+        if queued.is_empty() {
+            return None;
+        }
+        let rows: Vec<Div> = queued
             .iter()
             .enumerate()
-            .take(QUEUE_ROWS)
             .map(|(index, queued)| {
                 let pane_id = chat.target.pane_id.clone();
                 let id = queued.id;
@@ -118,6 +124,7 @@ impl HerdrWindow {
                     .child(
                         div()
                             .id(("chat-unqueue", index))
+                            .debug_selector(move || format!("chat-unqueue-{index}"))
                             .flex_none()
                             .size(px(18.))
                             .flex()
@@ -140,21 +147,20 @@ impl HerdrWindow {
                     )
             })
             .collect();
-        // The rest are counted, so a long queue never pushes the composer
-        // out of the pane.
-        if queued.len() > QUEUE_ROWS {
-            rows.push(
-                div()
-                    .debug_selector(|| "chat-queue-more".into())
-                    .flex_none()
-                    .mx(px(12.))
-                    .mb(px(4.))
-                    .px(px(8.))
-                    .text_color(rgb(theme.muted))
-                    .child(format!("{} more queued", queued.len() - QUEUE_ROWS)),
-            );
-        }
-        rows
+        // A height-limited list that scrolls, so a long queue keeps every
+        // prompt's withdraw button and never pushes the composer out.
+        let row = self.chat_text_size() * 1.5 + 10.;
+        Some(
+            div()
+                .id("chat-queue")
+                .debug_selector(|| "chat-queue".into())
+                .flex_none()
+                .flex()
+                .flex_col()
+                .max_h(px(row * QUEUE_ROWS))
+                .overflow_y_scroll()
+                .children(rows),
+        )
     }
 
     /// The agent's slash commands the composer's text would complete to,

@@ -88,8 +88,10 @@ fn a_paste_keeps_the_draft_and_splits_at_the_cursor(cx: &mut TestAppContext) {
     cx.write_to_clipboard(ClipboardItem::new_string("x\ny".into()));
     cx.simulate_keystrokes(paste_key());
     poll(&view, &program, cx);
+    // Typing goes on right after the pasted text, before the line's tail.
+    cx.simulate_input("Z");
     cx.simulate_keystrokes("enter");
-    assert_eq!(prompt_text(&mut stream), "before\nAx\nyB");
+    assert_eq!(prompt_text(&mut stream), "before\nAx\nyZB");
 }
 
 #[gpui::test]
@@ -138,8 +140,14 @@ fn a_long_queue_keeps_the_composer_in_the_pane(cx: &mut TestAppContext) {
         transcript: Box::new(transcript),
     };
     let _stream = attach_with(&view, &program, snapshot, cx);
-    assert!(cx.debug_bounds("chat-queue-more").is_some());
+    let queue = cx.debug_bounds("chat-queue").unwrap();
     let chat = cx.debug_bounds("chat-view").unwrap();
+    assert!(
+        queue.size.height < chat.size.height / 2.0,
+        "the queue is bounded"
+    );
+    // Every queued prompt keeps its withdraw button, in the scrolled list.
+    assert!(cx.debug_bounds("chat-unqueue-19").is_some());
     let composer = cx.debug_bounds("chat-composer").unwrap();
     assert!(
         composer.bottom() <= chat.bottom(),
