@@ -288,6 +288,15 @@ impl OrchestratorView {
         self.projects.iter().cloned().collect()
     }
 
+    /// Whether detection found the checkout `key` names outside Git, for
+    /// tests.
+    #[cfg(test)]
+    pub(crate) fn outside_git(&self, key: &str) -> bool {
+        self.repos
+            .iter()
+            .any(|repo| repo.key == key && repo.outside_git())
+    }
+
     /// The shown repository's last worker snapshot, for tests.
     #[cfg(test)]
     pub(crate) fn repo_snapshot_for_tests(&self) -> Snapshot {
