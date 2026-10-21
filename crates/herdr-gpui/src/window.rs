@@ -37,6 +37,7 @@ mod reconnecting;
 mod regions;
 mod render;
 mod report_issue;
+mod select_hint;
 mod selection;
 mod server_keys;
 mod sound;
