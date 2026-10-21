@@ -3,7 +3,15 @@
 //! A pipe has no receive timeout, and a blocking read would hold its thread
 //! until the peer writes, so reads peek first and sleep while nothing is
 //! buffered, as the daemon client does. Reads and writes go through shared
-//! references to one pipe, which `interprocess` supports from two threads.
+//! references to one pipe from two threads.
+//!
+//! The client end stays a plain synchronous file. Wrapping it in an
+//! `interprocess` stream reopens the handle by name, which joins the next
+//! free instance the listener made and closes the one the server accepted,
+//! and drops the identification-only security level it was opened with.
+//! Reads never wait on a synchronous handle (they follow a peek), so a read
+//! queued behind a write lasts only as long as the server takes to drain
+//! the pipe, which its own reader thread does continuously.
 
 mod security;
 
@@ -15,11 +23,11 @@ use interprocess::os::windows::{
     security_descriptor::SecurityDescriptor,
 };
 use std::{
-    fs::OpenOptions,
+    fs::{File, OpenOptions},
     io::{self, Read, Write},
     os::windows::{
         fs::OpenOptionsExt as _,
-        io::{AsHandle as _, OwnedHandle},
+        io::{AsHandle, BorrowedHandle},
     },
     path::Path,
     sync::{
@@ -38,8 +46,6 @@ const RETRY: Duration = Duration::from_millis(1);
 const MAX_RETRY: Duration = Duration::from_millis(25);
 /// `ERROR_PIPE_BUSY`: every instance is taken; the listener makes another.
 const PIPE_BUSY: i32 = 231;
-/// `FILE_FLAG_OVERLAPPED`, which `interprocess` opens its pipes with.
-const OVERLAPPED: u32 = 0x4000_0000;
 /// `SECURITY_IDENTIFICATION`: the server may learn who called, not act as them.
 const IDENTIFICATION: u32 = 0x0001_0000;
 
@@ -70,22 +76,60 @@ impl Listener {
     }
 
     pub fn accept(&self) -> io::Result<Connection> {
-        Ok(Connection::new(self.0.accept()?))
+        Ok(Connection::new(End::Server(self.0.accept()?)))
     }
 }
 
 pub(super) fn release(_: &Path) {}
 
+/// One end of the pipe: the server's `interprocess` stream, or the client's
+/// synchronous file (see the module).
+enum End {
+    Client(File),
+    Server(Pipe),
+}
+
+impl AsHandle for End {
+    fn as_handle(&self) -> BorrowedHandle<'_> {
+        match self {
+            Self::Client(file) => file.as_handle(),
+            Self::Server(pipe) => pipe.as_handle(),
+        }
+    }
+}
+
+impl Read for &End {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            End::Client(file) => (&*file).read(buf),
+            End::Server(pipe) => (&*pipe).read(buf),
+        }
+    }
+}
+
+impl Write for &End {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            End::Client(file) => (&*file).write(buf),
+            End::Server(pipe) => (&*pipe).write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 pub struct Connection {
     closed: Arc<AtomicBool>,
-    pipe: Arc<Pipe>,
+    pipe: Arc<End>,
 }
 
 impl Connection {
-    fn new(pipe: Pipe) -> Self {
+    fn new(end: End) -> Self {
         Self {
             closed: Arc::new(AtomicBool::new(false)),
-            pipe: Arc::new(pipe),
+            pipe: Arc::new(end),
         }
     }
 
@@ -97,7 +141,6 @@ impl Connection {
             let opened = OpenOptions::new()
                 .read(true)
                 .write(true)
-                .custom_flags(OVERLAPPED)
                 .security_qos_flags(IDENTIFICATION)
                 .open(address);
             match opened {
@@ -108,15 +151,10 @@ impl Connection {
                 Err(error) => return Err(error),
             }
         };
-        let pipe = Pipe::try_from(OwnedHandle::from(file)).map_err(io::Error::from)?;
-        // Nothing is written yet. A wrapped handle otherwise counts as
-        // unflushed and lingers after a drop, so the server would not see
-        // this end close.
-        pipe.assume_flushed();
-        if owner_sid(pipe.as_handle())? != user_sid()? {
+        if owner_sid(file.as_handle())? != user_sid()? {
             return Err(io::ErrorKind::PermissionDenied.into());
         }
-        Ok(Self::new(pipe))
+        Ok(Self::new(End::Client(file)))
     }
 
     pub fn split(self) -> io::Result<(Reader, Writer, Closer)> {
@@ -139,7 +177,7 @@ impl Connection {
 
 pub struct Reader {
     closed: Arc<AtomicBool>,
-    pipe: Arc<Pipe>,
+    pipe: Arc<End>,
     timeout: Option<Duration>,
 }
 
@@ -188,7 +226,7 @@ impl Read for Reader {
 
 pub struct Writer {
     closed: Arc<AtomicBool>,
-    pipe: Arc<Pipe>,
+    pipe: Arc<End>,
 }
 
 impl Write for Writer {

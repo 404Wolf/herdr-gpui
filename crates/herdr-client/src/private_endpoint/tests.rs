@@ -66,6 +66,28 @@ fn bytes_flow_both_ways_on_two_threads() {
 }
 
 #[test]
+fn a_client_keeps_the_connection_a_waiting_server_accepted() {
+    let address = address();
+    let listener = Listener::bind(&address.path).unwrap();
+    let server = thread::spawn(move || {
+        let connection = listener.accept().unwrap();
+        // The listener has made its next instance by now; a client that
+        // reopened its handle would land there and leave this one closed.
+        (listener, connection)
+    });
+    thread::sleep(Duration::from_millis(50));
+    let client = Connection::connect(&address.path, WAIT).unwrap();
+    let (_listener, server) = server.join().unwrap();
+    let (mut reader, _writer, _closer) = server.split().unwrap();
+    let (_client_reader, mut writer, _client_closer) = client.split().unwrap();
+    writer.write_all(b"x").unwrap();
+    reader.set_timeout(Some(WAIT)).unwrap();
+    let mut buffer = [0; 1];
+    assert_eq!(reader.read(&mut buffer).unwrap(), 1);
+    assert_eq!(&buffer, b"x");
+}
+
+#[test]
 fn closing_ends_a_blocked_read() {
     let address = address();
     let (_listener, server, _client) = pair(&address);
