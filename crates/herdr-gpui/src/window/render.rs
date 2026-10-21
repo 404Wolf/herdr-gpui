@@ -26,7 +26,7 @@ impl HerdrWindow {
     /// reachable. A menu page owns the window's attention, and zen mode keeps
     /// the window clear; they wait behind either.
     fn render_notices(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        if self.menu.page.is_some() || self.zen_active() {
+        if !self.notices_allowed() {
             return None;
         }
         let mut cards = self.config_diagnostic_cards(cx);
@@ -54,6 +54,25 @@ impl HerdrWindow {
                 )
                 .into_any_element(),
         )
+    }
+}
+
+impl HerdrWindow {
+    fn notices_allowed(&self) -> bool {
+        self.menu.page.is_none() && !self.zen_active()
+    }
+
+    /// Whether [`Self::render_notices`] draws a card, so the keyboard can
+    /// reach the cards as a region of their own.
+    pub(super) fn notices_shown(&self) -> bool {
+        self.notices_allowed()
+            && (self.gui_config_diagnostic.visible().is_some()
+                || self.icon_font_notice.visible().is_some()
+                || self
+                    .endpoints
+                    .get(self.selected_endpoint)
+                    .is_some_and(|endpoint| endpoint.config_diagnostic.visible().is_some())
+                || self.live.product_announcement().is_some())
     }
 }
 

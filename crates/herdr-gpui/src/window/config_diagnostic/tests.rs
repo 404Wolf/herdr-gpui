@@ -4,6 +4,7 @@ use herdr_client::protocol::ClientShellSnapshot;
 use std::sync::Arc;
 
 mod command_chip;
+mod fold;
 mod narrow_window;
 
 fn set_diagnostic(
