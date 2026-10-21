@@ -1,9 +1,50 @@
 //! The completed Add Device state: the device is saved before this is shown.
 //! Recovery advice wraps and stays available until the user closes the dialog.
+use super::{Page, add_device::Step, setup::SaveOutcome};
 use crate::HerdrWindow;
 use gpui::{prelude::*, *};
 
 impl HerdrWindow {
+    pub(super) fn device_save_succeeded(&mut self, outcome: SaveOutcome, cx: &mut Context<Self>) {
+        // Saving is already complete. Keep recovery advice in the scrollable
+        // dialog until dismissed, rather than timing out a truncated flash.
+        if let Some(form) = &mut self.menu.device_setup {
+            form.step = outcome.warning().map_or(Step::Saved, Step::SavedWarning);
+            form.error = None;
+        }
+        cx.notify();
+    }
+
+    /// Handle completed saves before polling any setup workspace in progress.
+    pub(super) fn poll_saved_device(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        match self.menu.device_setup.as_ref().map(|form| &form.step) {
+            Some(Step::Saved) => {
+                // While another source of Add Device shows, only the finished
+                // SSH form goes; the next visit to SSH starts a fresh one.
+                if self.menu.page != Some(Page::AddDevice) {
+                    self.menu.device_setup = None;
+                    cx.notify();
+                } else {
+                    self.dismiss_menu(window, cx);
+                }
+                true
+            }
+            Some(Step::SavedWarning(_)) => {
+                // The summary replaced the input fields. Focus its menu so
+                // Enter/Escape work, without taking focus from another source.
+                if self.menu.page == Some(Page::AddDevice) && !self.menu.focus.is_focused(window) {
+                    window.focus(&self.menu.focus, cx);
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub(super) fn render_device_saved_warning(
         &self,
         warning: &'static str,
