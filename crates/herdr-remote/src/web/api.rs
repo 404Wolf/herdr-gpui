@@ -133,16 +133,33 @@ pub(super) async fn command(
     Path(pane): Path<String>,
     Json(command): Json<Command>,
 ) -> Result<Json<Value>, ApiError> {
-    // A phone cannot name files on this computer.
-    if let Command::Prompt { attachments, .. } = &command
-        && !attachments.is_empty()
-    {
-        return Err(ApiError::Invalid("attachments are not supported yet"));
-    }
+    // A phone names only pictures it uploaded, never a path here.
+    let command = match command {
+        Command::Prompt { text, attachments } => Command::Prompt {
+            text,
+            attachments: state.uploads.resolve(&attachments)?,
+        },
+        command => command,
+    };
     let rejected = state.hub.command(&pane, command).await?;
     Ok(Json(
         json!({ "rejected": rejected.map(|rejection| rejection.to_string()) }),
     ))
+}
+
+pub(super) async fn upload(
+    State(state): State<Shared>,
+    _device: Device,
+    Path(pane): Path<String>,
+    bytes: axum::body::Bytes,
+) -> Result<Json<Value>, ApiError> {
+    state.hub.chat(&pane).ok_or(ApiError::NotFound)?;
+    let id = crate::auth::random_id()?;
+    let stored = state.clone();
+    let id = tokio::task::spawn_blocking(move || stored.uploads.store(id, &bytes, now_ms()))
+        .await
+        .map_err(|_| ApiError::Invalid("the upload was interrupted"))??;
+    Ok(Json(json!({ "id": id })))
 }
 
 #[derive(Deserialize)]

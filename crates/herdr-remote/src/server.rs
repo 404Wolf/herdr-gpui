@@ -78,6 +78,7 @@ pub async fn run(options: Options) -> Result<()> {
         port: options.port,
         privacy: options.privacy,
         push,
+        uploads: web::Uploads::new(&options.state_dir),
     });
     let (stop, stopped) = watch::channel(false);
     control::serve(&options.state_dir, state.clone(), stop.clone())?;

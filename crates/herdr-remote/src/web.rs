@@ -11,8 +11,10 @@ mod assets;
 mod fragments;
 mod render;
 mod stream;
+mod uploads;
 
 pub(crate) use render::now_ms;
+pub(crate) use uploads::Uploads;
 
 use crate::control::DeviceId;
 use crate::{
@@ -52,6 +54,7 @@ pub(crate) struct State {
     pub(crate) port: u16,
     pub(crate) privacy: Privacy,
     pub(crate) push: Option<Sender>,
+    pub(crate) uploads: Uploads,
 }
 
 impl State {
@@ -97,6 +100,10 @@ pub(crate) fn router(state: Shared) -> Router {
         .route("/api/session/challenge", post(api::challenge))
         .route("/api/session", post(api::session))
         .route("/api/chat/{pane}/command", post(api::command))
+        .route(
+            "/api/chat/{pane}/upload",
+            post(api::upload).layer(DefaultBodyLimit::max(uploads::MAX_UPLOAD + 1024)),
+        )
         .route("/api/workspaces", post(api::create_workspace))
         .route("/api/workspaces/{workspace}/chats", post(api::start_chat))
         .route(
@@ -245,6 +252,8 @@ pub(crate) enum ApiError {
     Push(#[from] crate::push::Error),
     #[error("sign in again")]
     Unauthorized,
+    #[error(transparent)]
+    Upload(#[from] uploads::Error),
     // keep-sorted end
 }
 
@@ -260,7 +269,8 @@ impl IntoResponse for ApiError {
                 | auth::Error::StoreFormat { .. }
                 | auth::Error::Random(_),
             ) => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::Auth(_) | Self::Folder | Self::Invalid(_) | Self::Push(_) => {
+            Self::Upload(uploads::Error::Write(_)) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::Auth(_) | Self::Folder | Self::Invalid(_) | Self::Push(_) | Self::Upload(_) => {
                 StatusCode::BAD_REQUEST
             }
             Self::Hub(crate::hub::Error::UnknownChat | crate::hub::Error::UnknownWorkspace) => {

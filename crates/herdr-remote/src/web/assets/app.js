@@ -75,14 +75,15 @@ class HttpError extends Error {
   }
 }
 
-async function call(path, { method = "GET", body, auth = true, origin } = {}) {
+async function call(path, { method = "GET", body, raw, auth = true, origin } = {}) {
   const headers = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (raw !== undefined) headers["Content-Type"] = raw.type || "application/octet-stream";
   if (auth && app.session) headers.Authorization = `Bearer ${app.session.token}`;
   const response = await fetch((origin || app.origin || "") + path, {
     method,
     headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: raw !== undefined ? raw : body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
   });
   if (!response.ok) {
@@ -428,6 +429,39 @@ document.addEventListener("alpine:init", () => {
     },
   }));
   Alpine.data("composer", () => ({
+    files: [],
+    pick() {
+      this.$refs.file.click();
+    },
+    async attach(event) {
+      const pane = this.$el.closest("[data-pane]").dataset.pane;
+      for (const file of [...event.target.files].slice(0, 4 - this.files.length)) {
+        try {
+          const { id } = await (await api(`/api/chat/${pane}/upload`, { method: "POST", raw: file })).json();
+          this.files.push({ id, name: file.name || "Picture" });
+        } catch (error) {
+          flash(error.message);
+        }
+      }
+      event.target.value = "";
+      this.chips();
+    },
+    chips() {
+      const chips = this.$refs.chips;
+      chips.replaceChildren(
+        ...this.files.map((file, index) => {
+          const chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "chip";
+          chip.textContent = `${file.name} ✕`;
+          chip.addEventListener("click", () => {
+            this.files.splice(index, 1);
+            this.chips();
+          });
+          return chip;
+        }),
+      );
+    },
     grow() {
       const text = this.$refs.text;
       text.style.height = "auto";
@@ -447,9 +481,12 @@ document.addEventListener("alpine:init", () => {
       event.preventDefault();
       const text = this.$refs.text.value.trim();
       if (!text) return;
+      const attachments = this.files.map((file) => ({ path: file.id }));
       this.$refs.text.value = "";
+      this.files = [];
+      this.chips();
       this.grow();
-      await command(this.$el.dataset.pane, { command: "prompt", text, attachments: [] });
+      await command(this.$el.dataset.pane, { command: "prompt", text, attachments });
     },
   }));
   Alpine.data("settings", () => ({

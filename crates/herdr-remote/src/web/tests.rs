@@ -14,6 +14,7 @@ use tower::ServiceExt;
 
 mod pairing;
 mod routes;
+mod uploads;
 
 pub(super) const ORIGIN: &str = "https://192.168.1.20:7443";
 
@@ -36,6 +37,7 @@ pub(super) fn state(dir: &std::path::Path) -> Shared {
         port: 7443,
         privacy: Privacy::Generic,
         push: None,
+        uploads: Uploads::new(dir),
     })
 }
 

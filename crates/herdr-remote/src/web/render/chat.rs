@@ -307,7 +307,10 @@ fn composer(row: &ChatRow, view: &View) -> Markup {
                     }
                 }
             }
-            div class="flex items-end gap-2 bg-raised rounded-3xl pl-3.5 pr-1.5 py-1.5" {
+            div x-ref="chips" class="flex gap-1.5 flex-wrap pb-1.5 empty:hidden" {}
+            div class="flex items-end gap-2 bg-raised rounded-3xl pl-2 pr-1.5 py-1.5" {
+                input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple x-ref="file" x-on:change="attach" class="hidden";
+                button type="button" class="w-8 h-8 grid place-items-center text-muted text-xl shrink-0" x-on:click="pick" aria-label="Attach a picture" { "＋" }
                 textarea name="text" rows="1" x-ref="text" x-on:input="grow" x-on:keydown="key"
                     class="flex-1 bg-transparent resize-none outline-none py-1.5 max-h-40 placeholder:text-faint"
                     placeholder=(if working { "Queue a prompt…" } else { "Message the agent…" })
