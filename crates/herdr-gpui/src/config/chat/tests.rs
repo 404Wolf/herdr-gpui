@@ -67,7 +67,15 @@ fn malformed_or_unsafe_pairs_are_refused() {
 fn the_layout_is_read_and_saved_by_name() {
     let config = crate::config::Config::parse("[chat]\nlayout = \"cards\"\n").unwrap();
     assert_eq!(config.chat.layout, ChatLayoutMode::Cards);
-    assert!(crate::config::Config::parse("[chat]\nlayout = \"pill\"\n").is_err());
+    assert!(crate::config::Config::parse("[chat]\nlayout = \"stack\"\n").is_err());
+    // A retired layout a config may still name opens in its closest one.
+    assert_eq!(
+        crate::config::Config::parse("[chat]\nlayout = \"pill\"\n")
+            .unwrap()
+            .chat
+            .layout,
+        ChatLayoutMode::Bubbles
+    );
     assert_eq!(
         crate::config::Config::parse("").unwrap().chat.layout,
         ChatLayoutMode::Timeline

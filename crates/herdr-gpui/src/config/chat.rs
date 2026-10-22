@@ -100,6 +100,11 @@ impl ChatLayoutMode {
 impl<'de> Deserialize<'de> for ChatLayoutMode {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let name = String::deserialize(deserializer)?;
+        // `pill` was offered by builds before it was retired; a config that
+        // saved it opens in its closest layout rather than failing to load.
+        if name == "pill" {
+            return Ok(Self::Bubbles);
+        }
         Self::ALL
             .iter()
             .copied()
