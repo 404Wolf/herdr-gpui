@@ -94,9 +94,11 @@ impl Drop for ReaderProbe {
 fn stalled_reader_is_killed_and_reaped() -> anyhow::Result<()> {
     let mut probe = ReaderProbe::new()?;
     let started = Instant::now();
+    // Leave a loaded machine time to start the shell and publish its PID
+    // before the deadline kills it, while staying well inside TIMEOUT.
     let result = acquire(
         &mut probe.command(""),
-        started + Duration::from_millis(100),
+        started + Duration::from_secs(1),
         100,
     );
     probe.assert_gone_and_reaped()?;
