@@ -10,6 +10,7 @@ use std::collections::HashMap;
 mod chat_view;
 mod lists;
 mod markup;
+mod preview;
 
 pub(super) fn row(pane: &str) -> ChatRow {
     ChatRow {
