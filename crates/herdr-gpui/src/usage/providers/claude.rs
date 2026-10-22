@@ -1,6 +1,8 @@
 //! Claude plan usage, read with Claude Code's own sign-in: the login keychain
 //! on a Mac, else `.credentials.json` in its config directory. Other accounts
-//! claude-swap manages are listed beneath it.
+//! claude-swap manages are listed beneath it. A Claude Code pointed at another
+//! endpoint, or signing in through an API key helper, is not using that
+//! sign-in, so it is left alone.
 
 mod cswap;
 
@@ -24,6 +26,8 @@ pub(crate) const BETA: &str = "oauth-2025-04-20";
 /// The usage endpoint serves Claude Code's OAuth clients.
 pub(crate) const AGENT: &str = "claude-code/2.1.0";
 pub(crate) const KEYCHAIN: &str = "Claude Code-credentials";
+/// Where Claude Code sends requests unless `ANTHROPIC_BASE_URL` says otherwise.
+const API: &str = "https://api.anthropic.com";
 
 pub(crate) struct Claude;
 
@@ -90,6 +94,9 @@ impl Service for Claude {
 /// The usage of the account Claude Code is signed in with.
 fn signed_in(probe: &mut Probe) -> Option<Result<Report>> {
     let directory = |rest: &str| HostPath::env_or("CLAUDE_CONFIG_DIR", ".claude", rest);
+    if elsewhere(probe, &directory("settings.json")) {
+        return None;
+    }
     let credentials = keychain(probe).or_else(|| probe.file(&directory(".credentials.json")))?;
     let token = probe.field(&credentials, &["claudeAiOauth", "accessToken"])?;
     let email = [directory(".claude.json"), HostPath::home(".claude.json")]
@@ -105,6 +112,28 @@ fn signed_in(probe: &mut Probe) -> Option<Result<Report>> {
         .header("anthropic-beta", BETA)
         .header("User-Agent", AGENT);
     Some(probe.body(request).and_then(|body| parse(&body, sign_in)))
+}
+
+/// Whether Claude Code works without its OAuth sign-in: `ANTHROPIC_BASE_URL`,
+/// from the host's environment or the `env` of its `settings`, names another
+/// endpoint, or an `apiKeyHelper` supplies its key. An OAuth token still in
+/// the keychain is then a leftover, possibly revoked, and asking Anthropic's
+/// usage endpoint with it only repeats a request the service rejects (#708).
+pub(crate) fn elsewhere(probe: &mut Probe, settings: &HostPath) -> bool {
+    let base = probe
+        .env_text("ANTHROPIC_BASE_URL")
+        .or_else(|| probe.file_text(settings, &["env", "ANTHROPIC_BASE_URL"]));
+    base.is_some_and(|url| !anthropic(&url))
+        || probe.file_text(settings, &["apiKeyHelper"]).is_some()
+}
+
+/// Whether `url` is Anthropic's own API, with or without a path after it.
+fn anthropic(url: &str) -> bool {
+    let url = url.trim().trim_end_matches('/');
+    url == API
+        || url
+            .strip_prefix(API)
+            .is_some_and(|rest| rest.starts_with('/'))
 }
 
 /// Claude Code keeps its sign-in under the user's account name. Asked by
