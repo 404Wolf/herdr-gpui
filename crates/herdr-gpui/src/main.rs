@@ -163,6 +163,7 @@ mod window_state;
 mod words;
 mod worktree;
 mod worktree_banner;
+mod worktree_identity;
 mod worktree_notes;
 mod worktree_scripts;
 
