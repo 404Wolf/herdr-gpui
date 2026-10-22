@@ -51,7 +51,7 @@ impl HerdrWindow {
                     )
                     .into_any_element(),
                     Part::Diagram(id, code) => self.render_chat_diagram(*id, code, visuals),
-                    Part::Html { page, .. } => self.render_chat_html_card(pane_id, index, page, cx),
+                    Part::Html { page } => self.render_chat_html(pane_id, entry, index, page, cx),
                     Part::Picture { alt } => self.render_chat_picture_caption(alt),
                     Part::Remote { id, url, alt } => self.render_chat_remote_picture(
                         pane_id, entry, index, *id, url, alt, visuals, cx,

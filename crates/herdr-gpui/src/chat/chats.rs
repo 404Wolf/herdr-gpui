@@ -83,8 +83,8 @@ pub(crate) struct ChatPane {
     /// The search field over a long menu while one is open, with the
     /// subscription that redraws the menu as it changes.
     pub(crate) menu_search: Option<(Entity<SearchInput>, gpui::Subscription)>,
-    /// The web page shown in the panel beside the entries.
-    pub(crate) page: Option<super::page::ChatPage>,
+    /// The web pages live in the chat's messages, oldest first.
+    pub(crate) pages: Vec<super::page::ChatPage>,
     /// Trying again cannot help: the program speaks another version.
     permanent: bool,
     pub(crate) prepared: Prepared,
@@ -117,7 +117,7 @@ impl ChatPane {
             list_snapshots: 0,
             menu: None,
             menu_search: None,
-            page: None,
+            pages: Vec::new(),
             permanent: false,
             prepared: Prepared::default(),
             rail: true,
@@ -269,6 +269,9 @@ pub(crate) struct Chats {
     pub(crate) opened_pages: u64,
     /// Pages of panes no longer attached, for the window to close.
     closed_pages: Vec<crate::browser::TabId>,
+    /// The chat pages the window presented this frame, for the check that
+    /// asks for a frame when they moved.
+    pub(crate) presented: std::rc::Rc<std::cell::RefCell<Vec<crate::browser::TabId>>>,
     panes: Vec<ChatPane>,
     /// The `herdr-acp` new chats run.
     pub(crate) program: super::Program,
@@ -313,7 +316,7 @@ impl Chats {
             if !keep {
                 pane.prepared.visuals.clear();
                 released.extend(pane.prepared.visuals.take_released());
-                closed_pages.extend(pane.page.take().map(|page| page.id));
+                closed_pages.extend(pane.pages.drain(..).map(|page| page.id));
             }
             keep
         });

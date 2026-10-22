@@ -65,6 +65,8 @@ mod zoom;
 
 #[cfg(any(target_os = "macos", windows))]
 pub(crate) use annotate_view::Annotations;
+#[cfg(any(target_os = "macos", windows))]
+pub(crate) use chat_pages::chat_page_visible;
 pub(crate) use closed::ClosedHerdrTab;
 pub(crate) use editor::Editor;
 pub(crate) use feedback::{Batch, Feedback, FeedbackKey};

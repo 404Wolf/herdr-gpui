@@ -68,6 +68,15 @@ pub(super) struct Look<'a> {
     pub(super) text: f32,
     /// The terminal's font, for code and for layouts that read like one.
     pub(super) mono: &'a FontConfig,
+    window: &'a HerdrWindow,
+}
+
+impl Look<'_> {
+    /// `content` over `color`, as `.bg(color)` would paint it, except where
+    /// a page in a message shows from beneath the window's drawing.
+    pub(super) fn ground(&self, content: Div, color: u32) -> AnyElement {
+        self.window.with_ground(content, rgb(color))
+    }
 }
 
 impl HerdrWindow {
@@ -76,6 +85,7 @@ impl HerdrWindow {
             theme: &self.theme,
             text: self.chat_text_size(),
             mono: &self.config.terminal,
+            window: self,
         }
     }
 }

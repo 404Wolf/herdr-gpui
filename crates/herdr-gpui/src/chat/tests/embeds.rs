@@ -10,9 +10,12 @@ use super::{
 use crate::HerdrWindow;
 use crate::{
     browser::TabId,
-    chat::{page::ChatPage, visual::VisualId},
+    chat::{
+        page::{self, ChatPage, PageKey},
+        visual::VisualId,
+    },
 };
-use gpui::{Entity, Modifiers, TestAppContext, VisualTestContext};
+use gpui::{Entity, Modifiers, TestAppContext, VisualTestContext, px};
 use herdr_chat_protocol::{Tool, ToolKind, ToolStatus};
 use herdr_client::ConnectTarget;
 
@@ -92,28 +95,65 @@ fn a_web_picture_loads_only_once_asked(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn the_page_panel_takes_the_rail_s_place_and_closes(cx: &mut TestAppContext) {
+fn a_shown_page_lives_in_its_message_and_hides_back_to_its_card(cx: &mut TestAppContext) {
     let (view, _peer, cx) = open(cx, ConnectTarget::Local);
     let program = Program::new();
-    let _stream = attach_with(&view, &program, said("```html\n<p>hi</p>\n```"), cx);
-    assert!(cx.debug_bounds("chat-html-0").is_some());
-    assert!(cx.debug_bounds("chat-preview").is_some());
+    let _stream = attach_with(&view, &program, said("Look:\n```html\n<p>hi</p>\n```"), cx);
+    assert!(cx.debug_bounds("chat-html-1").is_some());
+    assert!(cx.debug_bounds("chat-show-page").is_some());
     assert!(cx.debug_bounds("chat-page").is_none());
+    let card = cx.debug_bounds("chat-html-1").unwrap();
+    // As if Show page had opened it: a real page needs a desktop.
     let pane = chat_pane(&view, cx);
+    let key = PageKey {
+        entry: EntryId(1),
+        part: 1,
+    };
     view.update(cx, |view, _| {
-        view.chats.pane_mut(&pane).unwrap().page = Some(ChatPage {
+        let chat = view.chats.pane_mut(&pane).unwrap();
+        chat.pages.push(ChatPage {
+            key,
             id: TabId::panel(1),
-            title: "HTML page".into(),
+        });
+        chat.remeasure(key.entry);
+    });
+    poll(&view, &program, cx);
+    // The list lays a row out again the frame after it is measured anew.
+    poll(&view, &program, cx);
+    let page = cx.debug_bounds("chat-page").unwrap();
+    assert!(
+        cx.debug_bounds("chat-html-1").is_none(),
+        "in place of its card"
+    );
+    assert!(
+        (page.top() - card.top()).abs() < px(page::PAGE_HEIGHT),
+        "where it was"
+    );
+    assert!(
+        page.size.height > px(page::PAGE_HEIGHT),
+        "the page and its bar"
+    );
+    assert!(
+        cx.debug_bounds("chat-rail").is_none()
+            || page.right() < cx.debug_bounds("chat-rail").unwrap().left()
+    );
+    // The test window is shorter than the page, so its bar starts above
+    // the list until the list scrolls to the top.
+    view.update(cx, |view, _| {
+        view.chats.pane(&pane).unwrap().list.scroll_to(gpui::ListOffset {
+            item_ix: 0,
+            offset_in_item: px(0.),
         });
     });
     poll(&view, &program, cx);
-    let panel = cx.debug_bounds("chat-page").unwrap();
-    let chat = cx.debug_bounds("chat-view").unwrap();
-    assert_eq!(panel.right(), chat.right(), "on the right");
-    assert!(cx.debug_bounds("chat-rail").is_none());
-    let close = cx.debug_bounds("chat-page-close").unwrap();
-    cx.simulate_click(close.center(), Modifiers::default());
-    assert!(view.read_with(cx, |view, _| view.chats.pane(&pane).unwrap().page.is_none()));
+    let hide = cx.debug_bounds("chat-hide-page").unwrap();
+    assert!(hide.top() >= cx.debug_bounds("chat-view").unwrap().top());
+    cx.simulate_click(hide.center(), Modifiers::default());
+    assert!(view.read_with(cx, |view, _| {
+        view.chats.pane(&pane).unwrap().pages.is_empty()
+    }));
+    poll(&view, &program, cx);
+    assert!(cx.debug_bounds("chat-html-1").is_some());
 }
 
 #[gpui::test]
@@ -143,5 +183,5 @@ fn an_html_file_a_tool_wrote_offers_a_preview(cx: &mut TestAppContext) {
         transcript: Box::new(transcript),
     };
     let _stream = attach_with(&view, &program, snapshot, cx);
-    assert!(cx.debug_bounds("chat-preview").is_some());
+    assert!(cx.debug_bounds("chat-show-page").is_some());
 }

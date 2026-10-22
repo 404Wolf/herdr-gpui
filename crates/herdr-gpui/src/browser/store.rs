@@ -29,6 +29,10 @@ impl TabId {
         Self(u64::MAX - n)
     }
 
+    pub(crate) const fn number(self) -> u64 {
+        self.0
+    }
+
     /// Whether this is a chat panel's page rather than a store tab.
     pub(crate) const fn is_panel(self) -> bool {
         self.0 > u64::MAX / 2

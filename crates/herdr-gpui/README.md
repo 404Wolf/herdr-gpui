@@ -2941,13 +2941,15 @@ beside the agent, so this works for chats on SSH hosts too, and only files
 whose bytes are an image count. A picture linked on the web shows as a card
 naming its host and loads only when you press Load, since loading it tells
 that server your address. An `html` code block, or an HTML file a tool call
-wrote on this machine, gets a Preview button: on macOS and Windows the page
-opens in a panel beside the chat and closes with the panel's ×; on Linux,
-which has no pages in the window, it opens in your browser. The page is
-copied alone into a private folder first, so its script cannot read the
-files beside it; a page that loads its own stylesheets or scripts from
-separate files shows without them. A web picture is fetched from the host
-its card names only, without following a redirect.
+wrote on this machine, gets a Show page button: on macOS and Windows the page
+then runs live inside the message, in place of its card, and scrolls with the
+chat (on Windows it shows while all of it is in view); Hide turns it back
+into the card, and a chat keeps at most four pages live. On Linux, which has
+no pages in the window, the button opens your browser. The page is copied
+alone into a private folder first, so its script cannot read the files
+beside it; a page that loads its own stylesheets or scripts from separate
+files shows without them. A web picture is fetched from the host its card
+names only, without following a redirect.
 
 **Layouts.** `[chat] layout` picks how a chat view draws: `timeline` puts the
 entries on a line with an avatar where the speaker changes, `bubbles` puts

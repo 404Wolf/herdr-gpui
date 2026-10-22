@@ -69,7 +69,6 @@ impl ChatLayout for Cards {
         let piece = div()
             .debug_selector(move || format!("chat-card-{id}"))
             .min_w_0()
-            .bg(rgb(mix(theme.background, theme.foreground, 3)))
             .border_l_1()
             .border_r_1()
             .border_color(rgb(theme.active))
@@ -80,6 +79,8 @@ impl ChatLayout for Cards {
                 piece.border_b_1().rounded_b(px(corners::PANEL))
             })
             .child(inner);
+        // A page shown in the card lies beneath its background on macOS.
+        let piece = look.ground(piece, mix(theme.background, theme.foreground, 3));
         column(
             div()
                 .id(("chat-entry", id))

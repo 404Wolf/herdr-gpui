@@ -1,34 +1,62 @@
-//! A web page the user previews from a chat: an HTML fence the agent
-//! wrote, or an HTML file one of its tool calls wrote. Where pages show in
-//! the window (macOS and Windows), it opens in a panel beside the entries,
-//! served from its folder as a local browser tab is; elsewhere it opens in
-//! the system browser. Either is copied first to a file of its own, in a
-//! folder only this user can read, so the page's script can read nothing
-//! beside it: an HTML file's siblings stay out of reach, at the cost of the
-//! stylesheets and scripts it loads from them.
+//! Web pages shown inside a chat: an HTML fence the agent wrote, or an
+//! HTML file one of its tool calls wrote. Where pages show in the window
+//! (macOS and Windows), one opens live in the message, in place of its card,
+//! and scrolls with it; elsewhere it opens in the system browser. Either is
+//! copied first to a file of its own, in a folder only this user can read,
+//! so the page's script can read nothing beside it: an HTML file's siblings
+//! stay out of reach, at the cost of the stylesheets and scripts it loads
+//! from them.
+//!
+//! A page in a message lies beneath the window's drawing on macOS, so the
+//! list's clip crops it like any row; on Windows it lies above, so it shows
+//! only while the whole of it is in view. Either way it shows only where
+//! the last frame drew it, and a frame that moves it asks for one more.
 //!
 //! The page is the agent's, so it is untrusted: it only ever loads because
 //! the user asked, and it gets what a local browser tab gets, no more.
 
 use crate::{HerdrWindow, browser::TabId, notifications::safe_text};
 use gpui::{AppContext as _, Context, Window};
+use herdr_chat_protocol::EntryId;
 use std::{
     hash::{DefaultHasher, Hash, Hasher},
     path::{Path, PathBuf},
     rc::Rc,
 };
 
-/// Narrowest pane that shows the page beside the entries.
-pub(crate) const MIN_PANE: f32 = 640.;
+/// How tall a page draws in a message.
+pub(crate) const PAGE_HEIGHT: f32 = 420.;
+/// Pages a chat keeps live; showing another closes the oldest.
+const MAX_LIVE: usize = 4;
 
-/// The page a chat's panel shows.
-#[derive(Debug)]
-pub(crate) struct ChatPage {
-    pub(crate) id: TabId,
-    pub(crate) title: String,
+/// Where in the transcript a page shows: the part of an agent message that
+/// holds the fence, or [`PageKey::TOOL`] under a tool call.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct PageKey {
+    pub(crate) entry: EntryId,
+    pub(crate) part: usize,
 }
 
-/// What to preview.
+impl PageKey {
+    /// The part a tool call's page takes.
+    pub(crate) const TOOL: usize = usize::MAX;
+}
+
+/// A page live in a chat's message.
+#[derive(Debug)]
+pub(crate) struct ChatPage {
+    pub(crate) key: PageKey,
+    pub(crate) id: TabId,
+}
+
+impl ChatPage {
+    /// A number for the element ids of the page's controls.
+    pub(crate) fn id_number(&self) -> u64 {
+        self.id.number()
+    }
+}
+
+/// What to show.
 #[derive(Clone, Debug)]
 pub(crate) enum PageSource {
     /// An HTML fence's source.
@@ -38,11 +66,12 @@ pub(crate) enum PageSource {
 }
 
 impl HerdrWindow {
-    /// Shows `source` beside the chat in `pane_id`, or in the system
-    /// browser where pages cannot show in the window.
-    pub(crate) fn preview_chat_page(
+    /// Shows `source` in the message at `key` of the chat in `pane_id`, or
+    /// in the system browser where pages cannot show in the window.
+    pub(crate) fn show_chat_page(
         &mut self,
         pane_id: &str,
+        key: PageKey,
         source: PageSource,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -50,7 +79,7 @@ impl HerdrWindow {
         let Some(pane) = self.chats.pane_mut(pane_id) else {
             return;
         };
-        let (title, copied) = match source {
+        let copied = match source {
             PageSource::File(path) => {
                 if let super::Route::Ssh(host) = &pane.target.route {
                     pane.error = Some(format!(
@@ -60,83 +89,86 @@ impl HerdrWindow {
                     cx.notify();
                     return;
                 }
-                let title = path.file_name().map_or_else(
-                    || "Page".to_owned(),
-                    |name| name.to_string_lossy().into_owned(),
-                );
-                let copied = cx.background_spawn(async move {
+                cx.background_spawn(async move {
                     let html = read_page(&path)?;
                     write_page(&html)
-                });
-                (title, copied)
+                })
             }
             PageSource::Html(html) => {
                 let html = html.as_bytes().to_vec();
-                let copied = cx.background_spawn(async move { write_page(&html) });
-                ("HTML page".to_owned(), copied)
+                cx.background_spawn(async move { write_page(&html) })
             }
         };
         let pane_id = pane_id.to_owned();
         cx.spawn_in(window, async move |this, cx| {
             let copied = copied.await;
             let _ = this.update_in(cx, |this, window, cx| match copied {
-                Ok(path) => this.show_chat_file(&pane_id, path, title, window, cx),
-                Err(error) => {
-                    if let Some(pane) = this.chats.pane_mut(&pane_id) {
-                        pane.error = Some(format!("The page could not be shown: {error}"));
-                    }
-                    cx.notify();
-                }
+                Ok(path) => this.open_chat_file(&pane_id, key, path, window, cx),
+                Err(error) => this.chat_page_failed(&pane_id, &error, cx),
             });
         })
         .detach();
     }
 
-    #[cfg(any(target_os = "macos", windows))]
-    fn show_chat_file(
+    fn chat_page_failed(
         &mut self,
         pane_id: &str,
+        error: &dyn std::fmt::Display,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(pane) = self.chats.pane_mut(pane_id) {
+            pane.error = Some(format!("The page could not be shown: {error}"));
+        }
+        cx.notify();
+    }
+
+    #[cfg(any(target_os = "macos", windows))]
+    fn open_chat_file(
+        &mut self,
+        pane_id: &str,
+        key: PageKey,
         path: PathBuf,
-        title: String,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let home = crate::config::home().ok();
         let file = match crate::browser::LocalFile::new(&path, home.as_deref()) {
             Ok(file) => file,
-            Err(error) => {
-                if let Some(pane) = self.chats.pane_mut(pane_id) {
-                    pane.error = Some(format!("The page could not be shown: {error}"));
-                }
-                cx.notify();
-                return;
-            }
+            Err(error) => return self.chat_page_failed(pane_id, &error, cx),
         };
-        self.close_chat_panel(pane_id, cx);
-        self.chats.opened_pages += 1;
-        let id = TabId::panel(self.chats.opened_pages);
-        if let Err(error) = self.open_chat_page(id, file, title.clone(), window, cx) {
-            if let Some(pane) = self.chats.pane_mut(pane_id) {
-                pane.error = Some(format!("The page could not be shown: {error}"));
-            }
-            cx.notify();
+        let open = self
+            .chats
+            .pane(pane_id)
+            .is_some_and(|pane| pane.pages.iter().any(|page| page.key == key));
+        if open {
             return;
         }
-        if let Some(pane) = self.chats.pane_mut(pane_id) {
-            pane.page = Some(ChatPage { id, title });
-        } else {
+        self.chats.opened_pages += 1;
+        let id = TabId::panel(self.chats.opened_pages);
+        if let Err(error) = self.open_chat_page(id, file, "HTML page".to_owned(), window, cx) {
+            return self.chat_page_failed(pane_id, &error, cx);
+        }
+        let Some(pane) = self.chats.pane_mut(pane_id) else {
             self.close_chat_page(id);
+            return;
+        };
+        pane.pages.push(ChatPage { key, id });
+        pane.remeasure(key.entry);
+        let oldest = (pane.pages.len() > MAX_LIVE).then(|| pane.pages.remove(0));
+        if let Some(oldest) = oldest {
+            pane.remeasure(oldest.key.entry);
+            self.close_chat_page(oldest.id);
         }
         cx.notify();
     }
 
     /// Without pages in the window, the system browser shows the file.
     #[cfg(not(any(target_os = "macos", windows)))]
-    fn show_chat_file(
+    fn open_chat_file(
         &mut self,
         pane_id: &str,
+        _key: PageKey,
         path: PathBuf,
-        _title: String,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -148,24 +180,20 @@ impl HerdrWindow {
                     cx,
                 );
             }
-            Err(()) => {
-                if let Some(pane) = self.chats.pane_mut(pane_id) {
-                    pane.error = Some("The page could not be shown: not a file path".to_owned());
-                }
-                cx.notify();
-            }
+            Err(()) => self.chat_page_failed(pane_id, &"not a file path", cx),
         }
     }
 
-    /// Closes the page beside the chat in `pane_id`.
-    pub(crate) fn close_chat_panel(&mut self, pane_id: &str, cx: &mut Context<Self>) {
-        let Some(page) = self
-            .chats
-            .pane_mut(pane_id)
-            .and_then(|pane| pane.page.take())
-        else {
+    /// Closes the page at `key` of the chat in `pane_id`, back to its card.
+    pub(crate) fn hide_chat_page(&mut self, pane_id: &str, key: PageKey, cx: &mut Context<Self>) {
+        let Some(pane) = self.chats.pane_mut(pane_id) else {
             return;
         };
+        let Some(index) = pane.pages.iter().position(|page| page.key == key) else {
+            return;
+        };
+        let page = pane.pages.remove(index);
+        pane.remeasure(key.entry);
         #[cfg(any(target_os = "macos", windows))]
         self.close_chat_page(page.id);
         #[cfg(not(any(target_os = "macos", windows)))]
@@ -173,32 +201,42 @@ impl HerdrWindow {
         cx.notify();
     }
 
-    /// The panel pages the window draws this frame: those of chats on
-    /// screen in panes wide enough for the panel.
+    /// The chat pages to show this frame: those of chats on screen that the
+    /// last frame drew, and on Windows drew whole.
     pub(crate) fn shown_chat_pages(&self) -> Vec<TabId> {
-        let Some(surface) = self
-            .live
+        #[cfg(any(target_os = "macos", windows))]
+        {
+            let shown: Vec<TabId> = self
+                .chat_pages_on_screen()
+                .filter(|id| {
+                    self.chat_page_drawn(*id)
+                        .is_some_and(|drawn| crate::browser::chat_page_visible(drawn, PAGE_HEIGHT))
+                })
+                .collect();
+            self.chats.presented.replace(shown.clone());
+            shown
+        }
+        #[cfg(not(any(target_os = "macos", windows)))]
+        Vec::new()
+    }
+
+    /// The pages of the chats the frame on screen draws.
+    #[cfg(any(target_os = "macos", windows))]
+    pub(crate) fn chat_pages_on_screen(&self) -> impl Iterator<Item = TabId> + '_ {
+        self.live
             .surface
             .as_ref()
             .filter(|surface| surface.popup.is_none())
-        else {
-            return Vec::new();
-        };
-        surface
-            .panes
-            .iter()
-            .filter(|pane| {
-                f32::from(pane.inner_rect.width) * self.cell_width >= MIN_PANE
-                    && !self.chats.raw(&pane.pane_id)
-            })
+            .into_iter()
+            .flat_map(|surface| surface.panes.iter())
+            .filter(|pane| !self.chats.raw(&pane.pane_id))
             .filter_map(|pane| self.chats.pane(&pane.pane_id))
             .filter(|chat| chat.available())
-            .filter_map(|chat| chat.page.as_ref().map(|page| page.id))
-            .collect()
+            .flat_map(|chat| chat.pages.iter().map(|page| page.id))
     }
 }
 
-/// Bytes of an HTML file previewed; a larger one is refused.
+/// Bytes of an HTML file shown; a larger one is refused.
 const MAX_FILE: u64 = 4 * 1024 * 1024;
 
 /// The HTML file at `path`, when it is a bounded regular file.

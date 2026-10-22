@@ -279,11 +279,10 @@ impl HerdrWindow {
                             .text_size(small)
                             .text_color(rgb(color))
                             .child(status),
-                    )
-                    .children(
-                        page_written(tool)
-                            .map(|path| self.render_chat_file_preview(pane_id, entry, path, cx)),
                     ),
+            )
+            .children(
+                page_written(tool).map(|path| self.render_chat_file_page(pane_id, entry, path, cx)),
             )
             .children(tool.locations.iter().take(LOCATIONS).map(|location| {
                 div()
