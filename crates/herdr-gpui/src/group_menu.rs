@@ -1,7 +1,7 @@
 //! The menu behind a group's "…" button: tabs other than a terminal to open
 //! in the group (a blank browser tab, the focused checkout's review, the
 //! repository's orchestrator, the focused workspace's listening ports, its
-//! VS Code), closing the tab it shows, its other tabs, or the group itself,
+//! VS Code), a new chat with an agent through `herdr-acp`, closing the tab it shows, its other tabs, or the group itself,
 //! and splitting it. A terminal tab comes from the group's "+". Closing a
 //! tab here is the tab's own close; closing the group closes no tab: its
 //! tabs go to the group that takes its room.
@@ -13,6 +13,7 @@ use crate::{
     menu::Page,
 };
 use gpui::{prelude::*, *};
+use herdr_chat_protocol::Agent;
 
 /// The most a port's process name takes in its row. Names run to 32
 /// characters, and the address beside it is what tells ports apart.
@@ -31,6 +32,8 @@ enum Action {
     Orchestrator,
     /// The workspace's VS Code tab, opened in this group.
     VsCode,
+    /// A new tab running a `herdr-acp` chat with the agent.
+    Chat(Agent),
     Px0,
     /// One of the focused workspace's listening ports and where it opens.
     Port {
@@ -56,6 +59,7 @@ impl Action {
             Self::Review => "Review Changes".into(),
             Self::Orchestrator => "Issues and pull requests".into(),
             Self::VsCode => "VS Code".into(),
+            Self::Chat(agent) => agent.display_name().into(),
             Self::Px0 => "px0".into(),
             Self::Port { link, .. } => link.label().into(),
             Self::Close => "Close Tab".into(),
@@ -72,6 +76,9 @@ impl Action {
             Self::Orchestrator => Some("icons/issue.svg"),
             Self::VsCode => Some(crate::browser::Editor::VsCode.icon()),
             Self::Px0 => Some(crate::browser::Editor::Px0.icon()),
+            Self::Chat(agent) => {
+                Some(crate::icons::AgentIcon::from_identity(Some(agent.name())).path())
+            }
             Self::Port { .. } => Some("icons/arrow-right.svg"),
             Self::Split => Some("icons/split.svg"),
             Self::Close | Self::CloseOthers | Self::CloseGroup => None,
@@ -82,6 +89,7 @@ impl Action {
     fn selector(&self) -> String {
         match self {
             Self::Port { number, .. } => format!("group-menu-Port{number}"),
+            Self::Chat(agent) => format!("group-menu-Chat-{agent}"),
             action => format!("group-menu-{action:?}"),
         }
     }
@@ -90,9 +98,19 @@ impl Action {
     fn section(&self) -> u8 {
         match self {
             Self::NewBrowserTab | Self::Review | Self::Orchestrator | Self::VsCode | Self::Px0 => 0,
-            Self::Port { .. } => 1,
-            Self::Close | Self::CloseOthers | Self::CloseGroup => 2,
-            Self::Split => 3,
+            Self::Chat(_) => 1,
+            Self::Port { .. } => 2,
+            Self::Close | Self::CloseOthers | Self::CloseGroup => 3,
+            Self::Split => 4,
+        }
+    }
+
+    /// The heading over the rows of this one's section, if it has one.
+    fn heading(&self) -> Option<&'static str> {
+        match self {
+            Self::Chat(_) => Some("New Chat"),
+            Self::Port { .. } => Some("Listening"),
+            _ => None,
         }
     }
 }
@@ -105,14 +123,19 @@ pub(crate) struct GroupMenu {
     scroll: ScrollHandle,
 }
 
-/// The panel child that draws `actions[index]`: the "Listening" heading
-/// before the first port is a child of its own.
+/// The panel child that draws `actions[index]`: the heading before the
+/// first row of a headed section, such as "Listening", is a child of its own.
 fn child_index(actions: &[Action], index: usize) -> usize {
-    let heading = actions
+    let headings = actions
         .iter()
         .take(index + 1)
-        .any(|action| matches!(action, Action::Port { .. }));
-    index + usize::from(heading)
+        .enumerate()
+        .filter(|(at, action)| {
+            action.heading().is_some()
+                && (*at == 0 || actions[at - 1].section() != action.section())
+        })
+        .count();
+    index + headings
 }
 
 impl HerdrWindow {
@@ -133,6 +156,7 @@ impl HerdrWindow {
         if crate::browser::EMBEDDED && self.px0_root().is_some() {
             actions.push(Action::Px0);
         }
+        actions.extend(self.chat_agents().into_iter().map(Action::Chat));
         if let Some((_, _, listed)) = self.focused_listening_ports() {
             actions.extend(listed.ports.iter().filter_map(|port| {
                 Some(Action::Port {
@@ -190,6 +214,7 @@ impl HerdrWindow {
             Action::Review => self.open_review(window, cx),
             Action::Orchestrator => self.open_orchestrator(window, cx),
             Action::VsCode => self.open_code(Some(group), window, cx),
+            Action::Chat(agent) => self.start_chat_or_flash(agent, cx),
             Action::Px0 => {
                 self.open_px0(Some(group), window, cx);
             }
@@ -286,9 +311,11 @@ impl HerdrWindow {
         let mut section = None;
         for (index, action) in self.group_actions(menu.group, cx).into_iter().enumerate() {
             let starts_section = section.is_some_and(|last| last != action.section());
-            let first_port = matches!(action, Action::Port { .. }) && section != Some(1);
+            let heading = action
+                .heading()
+                .filter(|_| section != Some(action.section()));
             section = Some(action.section());
-            if first_port {
+            if let Some(heading) = heading {
                 panel = panel.child(
                     div()
                         .flex_none()
@@ -303,7 +330,7 @@ impl HerdrWindow {
                         .px(px(8.))
                         .text_xs()
                         .text_color(rgb(theme.muted))
-                        .child("Listening"),
+                        .child(heading),
                 );
             }
             let detail: SharedString = match &action {
@@ -341,7 +368,7 @@ impl HerdrWindow {
                     .id(("group-menu-action", index))
                     .flex_none()
                     .debug_selector(move || selector.clone())
-                    .when(starts_section && !first_port, |row| {
+                    .when(starts_section && heading.is_none(), |row| {
                         row.mt(px(4.)).border_t_1().border_color(rgb(theme.active))
                     })
                     .min_h(px(self.config.ui.line_height() + 12.))

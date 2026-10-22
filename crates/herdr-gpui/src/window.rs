@@ -135,6 +135,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) browser: crate::browser::Browser,
     pub(crate) catalog: endpoint::Catalog,
     pub(crate) cell_width: f32,
+    /// Native views of the `herdr-acp` chats in this daemon's panes.
+    pub(crate) chats: crate::chat::Chats,
     /// Snapshots of checkouts taken at agent turns, and the dialog listing them.
     pub(crate) checkpoints: crate::checkpoint::Checkpoints,
     /// The chrome region whose controls take Tab; see `chrome_focus`.
@@ -196,6 +198,9 @@ pub(crate) struct HerdrWindow {
     pub(crate) flash: Option<(Flash, std::time::Instant)>,
     pub(crate) focus: FocusHandle,
     pub(crate) git: git::Git,
+    /// Where the titlebar's Git button last painted. The window owns it so a
+    /// shortcut and a click open the Git menu at the same place.
+    pub(crate) git_anchor: std::rc::Rc<std::cell::Cell<Point<Pixels>>>,
     /// Unknown keys in the GUI config, ignored but reported; follows `config`.
     pub(crate) gui_config_diagnostic: crate::config_diagnostic::ConfigDiagnostic,
     pub(crate) held_keys: crate::terminal::HeldKeys,
@@ -584,6 +589,7 @@ impl HerdrWindow {
         self.save_group_layouts(cx);
         self.poll_browser(window, cx);
         self.poll_remote_browser(window, cx);
+        self.poll_chats(window, cx);
         self.offer_browser_skill(window, cx);
         self.poll_sessions(cx);
         self.flush_scrollbar(cx);

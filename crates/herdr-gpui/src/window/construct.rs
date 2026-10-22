@@ -149,6 +149,7 @@ impl HerdrWindow {
             browser,
             catalog,
             cell_width: 9.,
+            chats: Default::default(),
             checkpoints: Default::default(),
             chrome_region: None,
             #[cfg(feature = "cloud")]
@@ -188,6 +189,7 @@ impl HerdrWindow {
             flash: None,
             focus,
             git: git::Git::default(),
+            git_anchor: Default::default(),
             gui_config_diagnostic,
             held_keys: Default::default(),
             hover: None,

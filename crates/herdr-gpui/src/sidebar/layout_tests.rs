@@ -111,6 +111,8 @@ mod workspace_menu;
 #[cfg(test)]
 mod workspace_menu_name;
 #[cfg(test)]
+mod worktree_identity;
+#[cfg(test)]
 mod worktree_note_trunk;
 #[cfg(test)]
 mod worktree_notes;
@@ -539,6 +541,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
     HerdrWindow {
         _terminal_focus: terminal_focus,
         chrome_region: None,
+        chats: Default::default(),
         sound: Default::default(),
         bell: Default::default(),
         updater: crate::updater::Updater::default(),
@@ -594,6 +597,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         config_watch: None,
         config_load_revision: 0,
         git: Default::default(),
+        git_anchor: Default::default(),
         deliveries: Default::default(),
         terminal_notes: Default::default(),
         notes_width: crate::panel_resize::NOTES,

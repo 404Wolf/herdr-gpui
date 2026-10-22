@@ -23,6 +23,8 @@ Closing or detaching the GUI must leave the daemon and its terminals running.
 | Location | Responsibility |
 | --- | --- |
 | `crates/herdr-protocol` | Generation-1 wire types, framing, validation, and atomic surface patches |
+| `crates/herdr-acp` | `herdr-acp` binary run inside a Herdr pane: the only ACP client of an agent, its in-pane chat view, the attach socket Herdr UI connects to, and Herdr status reports |
+| `crates/herdr-chat-protocol` | Attach wire between `herdr-acp` and its clients: transcript model, the shared change reducer, framing, and endpoint discovery; no ACP or GPUI types |
 | `crates/herdr-client` | Discovery, socket worker, session transitions, ordered commands, and client-local activity projection |
 | `crates/herdr-gpui` | Native UI, connection bridge, presentation state, semantic input, geometry, and painting |
 | `crates/herdr-gpui-launcher` | Windows-only windowed launcher that starts `herdr-gpui.exe` without a console window; std plus `MessageBoxW` for start failures |

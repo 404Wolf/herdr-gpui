@@ -232,16 +232,18 @@ impl HerdrWindow {
             self.wheel.drop_lines();
         }
         cx.stop_propagation();
-        for input in target.wheel_events(steps, event.modifiers) {
-            let result =
-                ConnectionBridge::send_input(handle, &snapshot.boot_id, &target.target, input);
-            if let Err(error) = result {
-                self.local_error = Some(format!("Wheel input not sent: {error}"));
-                // The rows asked for never left, so nothing may wait on them.
-                self.presentation.scroll.clear();
-                cx.notify();
-                break;
-            }
+        // One message, so a step's worth of reports cannot fill the queue.
+        let inputs: Vec<_> = target.wheel_events(steps, event.modifiers).collect();
+        let result = if inputs.is_empty() {
+            Ok(())
+        } else {
+            ConnectionBridge::send_inputs(handle, &snapshot.boot_id, &target.target, inputs)
+        };
+        if let Err(error) = result {
+            self.local_error = Some(format!("Wheel input not sent: {error}"));
+            // The rows asked for never left, so nothing may wait on them.
+            self.presentation.scroll.clear();
+            cx.notify();
         }
         if smooth.is_some() {
             // The drawing moves with every delta, before any surface lands.
@@ -283,6 +285,9 @@ impl HerdrWindow {
             || self.terminal_note_focused(window, cx)
             || self.copy_search_focused(window, cx)
         {
+            return;
+        }
+        if self.chat_focused(window, cx) {
             return;
         }
         // Copy mode owns the keyboard: its keys run and nothing else is typed.

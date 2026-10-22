@@ -123,6 +123,7 @@ impl HerdrWindow {
         // A lifted device folds the list to its headers.
         let device_plan = headed.then(|| self.device_plan(devices, &query)).flatten();
         let mut sliding = device_plan.as_ref().is_some_and(|plan| plan.sliding);
+        let worktree_glyph = self.config.worktrees.glyph(theme);
         for (endpoint_index, endpoint) in self.displayed_devices() {
             if !self.device_visible(&endpoint.id)
                 || (devices && !self.device_listed(endpoint_index, &query))
@@ -231,6 +232,7 @@ impl HerdrWindow {
                     break;
                 }
                 let workspace = &snapshot.workspaces[index];
+                let linked = crate::worktree_identity::is_linked(workspace);
                 if selected && workspace.focused {
                     highlighted[0] = Some(space_rows);
                 }
@@ -389,7 +391,13 @@ impl HerdrWindow {
                         workspace,
                         label,
                         tree,
-                        icon: if indented || !self.config.show_repository_icons {
+                        // A child hangs from the main checkout on the guide
+                        // lines; one standing alone has no line to hang from,
+                        // so it takes the branch glyph where the owner's
+                        // avatar sat.
+                        icon: if let Some(glyph) = worktree_glyph.filter(|_| linked && !indented) {
+                            RowIcon::Worktree(glyph)
+                        } else if indented || !self.config.show_repository_icons {
                             RowIcon::None
                         } else if workspace.branch.is_none() {
                             // Not a Git checkout, so no mark that reads as one.
@@ -495,8 +503,12 @@ impl HerdrWindow {
                 )
                 .id(SharedString::from(format!("workspace-{endpoint_id}-{id}")))
                 .map(|row| {
-                    let name =
-                        super::accessibility::workspace_name(label, shown_status, row_cx.host);
+                    let name = super::accessibility::workspace_name(
+                        label,
+                        linked,
+                        shown_status,
+                        row_cx.host,
+                    );
                     self.workspace_item(row, name, selected && workspace.focused, folds, cx)
                 })
                 .when(multi, |row| {
