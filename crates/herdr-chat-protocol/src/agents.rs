@@ -51,6 +51,7 @@ agents! {
     Copilot => "copilot", "Copilot", "run `copilot` and use /login, or for GitHub Enterprise `copilot login --host HOST` with GH_HOST set", [("copilot", "--acp")];
     Gemini => "gemini", "Gemini", "run `gemini` once to sign in", [("gemini", "--acp")];
     Opencode => "opencode", "OpenCode", "run `opencode auth login`", [("opencode", "acp")];
+    Pi => "pi", "Pi", "run `pi` and use /login, or set your provider's API key", [("pi-acp"), ("npx", "-y", "pi-acp")];
     // keep-sorted end
 }
 

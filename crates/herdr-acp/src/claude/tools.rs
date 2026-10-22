@@ -4,6 +4,8 @@
 use acp::v1 as wire;
 use serde_json::Value;
 
+use crate::harness::out;
+
 /// The tool that keeps Claude's to-do list, shown as the plan rather than
 /// as a call.
 pub(super) const TODOS: &str = "TodoWrite";
@@ -43,7 +45,7 @@ pub(super) fn result(
 pub(super) fn title(name: &str, input: &Value) -> String {
     let field = |key: &str| input.get(key).and_then(Value::as_str);
     let titled = match name {
-        "Bash" => field("command").map(command_title),
+        "Bash" => field("command").map(out::command_title),
         "Read" => field("file_path").map(|path| format!("Read {path}")),
         "Write" => field("file_path").map(|path| format!("Write {path}")),
         "Edit" | "MultiEdit" => field("file_path").map(|path| format!("Edit {path}")),
@@ -102,12 +104,12 @@ fn content(name: &str, input: &Value) -> Vec<wire::ToolCallContent> {
                 )
             })
             .collect(),
-        (EXIT_PLAN, _) => field("plan").map(text).into_iter().collect(),
+        (EXIT_PLAN, _) => field("plan").map(out::text).into_iter().collect(),
         // The whole command, so what a permission request runs is never
         // hidden behind its one-line title.
         ("Bash", _) => field("command")
             .filter(|command| command.lines().nth(1).is_some())
-            .map(text)
+            .map(out::text)
             .into_iter()
             .collect(),
         _ => Vec::new(),
@@ -117,11 +119,11 @@ fn content(name: &str, input: &Value) -> Vec<wire::ToolCallContent> {
 /// A tool result's text and pictures.
 fn output_content(output: &Value) -> Vec<wire::ToolCallContent> {
     match output {
-        Value::String(output) if !output.is_empty() => vec![text(output)],
+        Value::String(output) if !output.is_empty() => vec![out::text(output)],
         Value::Array(blocks) => blocks
             .iter()
             .filter_map(|block| match block.get("type").and_then(Value::as_str) {
-                Some("text") => block.get("text").and_then(Value::as_str).map(text),
+                Some("text") => block.get("text").and_then(Value::as_str).map(out::text),
                 Some("image") => {
                     let source = block.get("source")?;
                     let data = source.get("data")?.as_str()?;
@@ -137,27 +139,10 @@ fn output_content(output: &Value) -> Vec<wire::ToolCallContent> {
     }
 }
 
-fn text(text: &str) -> wire::ToolCallContent {
-    wire::ToolCallContent::Content(wire::Content::new(wire::ContentBlock::Text(
-        wire::TextContent::new(text),
-    )))
-}
-
 fn path(input: &Value) -> Option<&str> {
     ["file_path", "notebook_path", "path"]
         .iter()
         .find_map(|key| input.get(*key).and_then(Value::as_str))
-}
-
-/// A command's first line, saying how many more it has.
-fn command_title(command: &str) -> String {
-    let mut lines = command.lines();
-    let first = lines.next().unwrap_or_default();
-    match lines.count() {
-        0 => format!("`{first}`"),
-        1 => format!("`{first}` (+1 more line)"),
-        more => format!("`{first}` (+{more} more lines)"),
-    }
 }
 
 /// The question of an `AskUserQuestion` call that asks exactly one.

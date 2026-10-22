@@ -17,9 +17,30 @@ fn claude_itself_is_used_unless_the_adapter_is_asked_for() {
     install(dir.path(), "claude");
     assert_eq!(
         launch(Agent::Claude, Some(path), false),
-        Launch::Claude(dir.path().join("claude"))
+        Launch::Native(dir.path().join("claude"))
     );
     assert_eq!(launch(Agent::Claude, Some(path), true), adapter);
+}
+
+#[test]
+fn codex_and_pi_are_reached_directly_too() {
+    let dir = tempfile::tempdir().unwrap();
+    install(dir.path(), "codex");
+    install(dir.path(), "pi");
+    let path = dir.path().as_os_str();
+    assert_eq!(
+        launch(Agent::Codex, Some(path), false),
+        Launch::Native(dir.path().join("codex"))
+    );
+    assert_eq!(
+        launch(Agent::Pi, Some(path), false),
+        Launch::Native(dir.path().join("pi"))
+    );
+    assert_eq!(installed(Some(path)), [Agent::Codex, Agent::Pi]);
+    assert!(matches!(
+        launch(Agent::Pi, Some(path), true),
+        Launch::Acp(..)
+    ));
 }
 
 #[test]

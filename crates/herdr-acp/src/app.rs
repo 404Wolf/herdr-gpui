@@ -43,17 +43,9 @@ fn agent(options: &Options) -> Agent {
                 || std::env::var_os(ADAPTER_VARIABLE).is_some_and(|value| value == "1");
             let (program, mut args, reach): (_, _, Box<dyn Reach>) =
                 match crate::agents::launch(agent, Some(&path), adapter) {
-                    Launch::Claude(program) => {
-                        let session = options
-                            .load
-                            .clone()
-                            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                        let args = crate::claude::args(&session, options.load.is_some());
-                        (
-                            program.into_os_string(),
-                            args,
-                            crate::claude::reach(session),
-                        )
+                    Launch::Native(program) => {
+                        let (args, reach) = native(agent, options.load.as_deref());
+                        (program.into_os_string(), args, reach)
                     }
                     Launch::Acp(program, args) => (program, args, Box::new(Acp)),
                 };
@@ -77,6 +69,27 @@ fn agent(options: &Options) -> Agent {
             program: program.clone(),
             reach: Box::new(Acp),
         },
+    }
+}
+
+/// The arguments that start `agent`'s own program, and the translator that
+/// reaches it, continuing session `load` when set.
+fn native(
+    agent: crate::agents::Agent,
+    load: Option<&str>,
+) -> (Vec<std::ffi::OsString>, Box<dyn Reach>) {
+    use crate::agents::Agent;
+    match agent {
+        Agent::Codex => (crate::codex::args(), crate::codex::reach()),
+        Agent::Pi => (crate::pi::args(load), crate::pi::reach()),
+        // `launch` reaches no other agent natively; Claude is the default.
+        _ => {
+            let session = load.map_or_else(|| uuid::Uuid::new_v4().to_string(), str::to_owned);
+            (
+                crate::claude::args(&session, load.is_some()),
+                crate::claude::reach(session),
+            )
+        }
     }
 }
 

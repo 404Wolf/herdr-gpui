@@ -46,8 +46,9 @@ pub(crate) fn search_path(path: Option<&OsStr>, home: Option<&Path>) -> OsString
 /// How an agent is reached.
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum Launch {
-    /// `claude` itself, through [`crate::claude`]'s bridge.
-    Claude(PathBuf),
+    /// The agent's own program, through a translator of its protocol
+    /// ([`crate::claude`], [`crate::codex`], [`crate::pi`]).
+    Native(PathBuf),
     /// An ACP server: the program and its arguments.
     Acp(OsString, Vec<OsString>),
 }
@@ -60,7 +61,7 @@ pub(crate) fn launch(agent: Agent, path: Option<&OsStr>, adapter: bool) -> Launc
         && let Some(program) = native(agent)
         && let Some(found) = find_program(program, path)
     {
-        return Launch::Claude(found);
+        return Launch::Native(found);
     }
     let (program, args) = command(agent, path);
     Launch::Acp(program, args)
@@ -69,7 +70,12 @@ pub(crate) fn launch(agent: Agent, path: Option<&OsStr>, adapter: bool) -> Launc
 /// The agent's own program, for an agent `herdr-acp` can talk to without an
 /// ACP adapter.
 fn native(agent: Agent) -> Option<&'static str> {
-    (agent == Agent::Claude).then_some(crate::claude::PROGRAM)
+    match agent {
+        Agent::Claude => Some(crate::claude::PROGRAM),
+        Agent::Codex => Some(crate::codex::PROGRAM),
+        Agent::Pi => Some(crate::pi::PROGRAM),
+        Agent::Copilot | Agent::Gemini | Agent::Opencode => None,
+    }
 }
 
 /// The agents whose own program or ACP command is on `path`, in table

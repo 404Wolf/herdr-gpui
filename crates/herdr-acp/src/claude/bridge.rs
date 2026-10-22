@@ -8,7 +8,10 @@ use serde_json::{Value, json};
 
 use super::{permission, settings, settings::Settings, tools};
 use crate::{
-    harness::{Out, Translator},
+    harness::{
+        Out, Translator, out,
+        out::{failure, reply, to_value},
+    },
     rpc::Inbound,
 };
 
@@ -133,18 +136,7 @@ impl Translator for Bridge {
 impl Bridge {
     fn request(&mut self, id: wire::RequestId, method: &str, params: Value) -> Vec<Out> {
         match method {
-            "initialize" => {
-                let capabilities = wire::AgentCapabilities::new()
-                    .load_session(true)
-                    .prompt_capabilities(
-                        wire::PromptCapabilities::new()
-                            .image(true)
-                            .embedded_context(true),
-                    );
-                let response = wire::InitializeResponse::new(acp::ProtocolVersion::V1)
-                    .agent_capabilities(capabilities);
-                vec![reply(id, to_value(&response))]
-            }
+            "initialize" => vec![reply(id, out::initialized())],
             "session/new" | "session/load" => match &self.handshake {
                 Handshake::Waiting => {
                     self.opening = Some(id);
@@ -174,18 +166,11 @@ impl Bridge {
         let settings = match &self.handshake {
             Handshake::Ready(settings) => settings,
             Handshake::Failed(message) => {
-                return vec![reply(id, Err(wire::Error::new(-32603, message.clone())))];
+                return vec![reply(id, Err(failure(message.clone())))];
             }
             Handshake::Waiting => return Vec::new(),
         };
-        let mut response =
-            to_value(&wire::NewSessionResponse::new(self.session.clone()).modes(settings.modes()));
-        if let Ok(Value::Object(response)) = &mut response {
-            response.insert(
-                "configOptions".to_owned(),
-                serde_json::to_value(settings.options()).unwrap_or(Value::Null),
-            );
-        }
+        let response = out::opened(&self.session, Some(settings.modes()), &settings.options());
         vec![reply(id, response)]
     }
 
@@ -194,10 +179,7 @@ impl Bridge {
             return vec![reply(id, Err(wire::Error::invalid_params()))];
         };
         if self.prompt.is_some() {
-            return vec![reply(
-                id,
-                Err(wire::Error::new(-32603, "A turn is already running.")),
-            )];
+            return vec![reply(id, Err(failure("A turn is already running.")))];
         }
         self.prompt = Some(id);
         self.interrupted = false;
@@ -471,13 +453,7 @@ impl Bridge {
     }
 
     fn chunk(&self, thought: bool, text: &str, message: Option<String>) -> Out {
-        let chunk = wire::ContentChunk::new(wire::ContentBlock::Text(wire::TextContent::new(text)))
-            .message_id(message.map(wire::MessageId::new));
-        self.update(if thought {
-            wire::SessionUpdate::AgentThoughtChunk(chunk)
-        } else {
-            wire::SessionUpdate::AgentMessageChunk(chunk)
-        })
+        out::chunk(&self.session, thought, text, message.as_deref())
     }
 
     fn assistant(&mut self, message: Option<&Value>) -> Vec<Out> {
@@ -601,31 +577,15 @@ impl Bridge {
                 }
                 response
             }),
-            Err(message) => Err(wire::Error::new(-32603, message)),
+            Err(message) => Err(failure(message)),
         };
         outs.push(reply(id, result));
         outs
     }
 
     fn update(&self, update: wire::SessionUpdate) -> Out {
-        let notification = wire::SessionNotification::new(self.session.clone(), update);
-        Out::Session(Inbound::Notification {
-            method: "session/update".to_owned(),
-            params: serde_json::to_value(notification).unwrap_or(Value::Null),
-        })
+        out::update(&self.session, update)
     }
-}
-
-fn reply(id: wire::RequestId, result: Result<Value, wire::Error>) -> Out {
-    Out::Session(Inbound::Response { id, result })
-}
-
-fn to_value(value: &impl serde::Serialize) -> Result<Value, wire::Error> {
-    serde_json::to_value(value).map_err(|_| wire::Error::internal_error())
-}
-
-fn failure(message: String) -> wire::Error {
-    wire::Error::new(-32603, message)
 }
 
 fn blocks(message: &Value) -> impl Iterator<Item = &Value> {

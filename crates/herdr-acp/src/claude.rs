@@ -20,7 +20,7 @@ use std::ffi::OsString;
 use acp::v1 as wire;
 use serde_json::{Value, json};
 
-use crate::harness::{Reach, Translated};
+use crate::harness::{Reach, Translated, out};
 
 /// The program this module starts.
 pub(crate) const PROGRAM: &str = "claude";
@@ -74,24 +74,14 @@ fn content(block: &wire::ContentBlock) -> Option<Value> {
             "source": {"type": "base64", "media_type": image.mime_type, "data": image.data},
         })),
         wire::ContentBlock::Resource(resource) => match &resource.resource {
-            wire::EmbeddedResourceResource::TextResourceContents(file) => text(format!(
-                "<file path=\"{}\">\n{}\n</file>",
-                file_path(&file.uri),
-                file.text
-            )),
+            wire::EmbeddedResourceResource::TextResourceContents(file) => {
+                text(out::embedded_file(&file.uri, &file.text))
+            }
             _ => None,
         },
-        wire::ContentBlock::ResourceLink(link) => text(format!("@{}", file_path(&link.uri))),
+        wire::ContentBlock::ResourceLink(link) => text(format!("@{}", out::file_path(&link.uri))),
         _ => None,
     }
-}
-
-/// A `file://` URI's path, or the URI itself.
-fn file_path(uri: &str) -> String {
-    url::Url::parse(uri)
-        .ok()
-        .and_then(|url| url.to_file_path().ok())
-        .map_or_else(|| uri.to_owned(), |path| path.display().to_string())
 }
 
 #[cfg(test)]

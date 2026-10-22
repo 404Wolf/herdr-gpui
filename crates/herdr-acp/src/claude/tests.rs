@@ -53,12 +53,6 @@ fn claude_runs_in_its_streaming_mode_for_one_session() {
     assert!(pair(&resumed, "--session-id").is_none());
 }
 
-#[test]
-fn file_links_name_their_path() {
-    assert_eq!(file_path("file:///work/My%20File.md"), "/work/My File.md");
-    assert_eq!(file_path("https://example.com/a"), "https://example.com/a");
-}
-
 /// Claude's side of the pipes.
 struct FakeClaude {
     input: BufReader<std::io::PipeReader>,

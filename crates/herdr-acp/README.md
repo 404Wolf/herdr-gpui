@@ -53,10 +53,11 @@ it; terminals that do not ignore it.
 | Name | Started as |
 | --- | --- |
 | `claude` | `claude` itself (see below); with `--acp`, `claude-agent-acp`, else `npx -y @agentclientprotocol/claude-agent-acp` |
-| `codex` | `codex-acp`, else `npx -y @agentclientprotocol/codex-acp` |
+| `codex` | `codex app-server` (see below); with `--acp`, `codex-acp`, else `npx -y @agentclientprotocol/codex-acp` |
 | `copilot` | `copilot --acp` |
 | `gemini` | `gemini --acp` |
 | `opencode` | `opencode acp` |
+| `pi` | `pi --mode rpc` (see below); with `--acp`, `pi-acp`, else `npx -y pi-acp` |
 
 Arguments after `--` go to the agent. Each agent signs in its own way; when it
 reports that it needs authentication, the chat says how.
@@ -81,6 +82,24 @@ questions with Claude's own "don't ask again" suggestion, a plan to approve
 when leaving plan mode, and questions with choices. `--load` continues a
 session with its context, but the chat starts empty: the earlier messages
 are not shown again.
+
+### Codex and pi without an adapter
+
+The same holds for two more agents, each through a translator of its own
+(`src/codex.rs`, `src/pi.rs`) behind the `Translator` trait in
+`src/harness.rs`, which Claude's uses too:
+
+- **Codex** runs as `codex app-server`, the JSON-RPC protocol OpenAI's editor
+  extension and Python SDK drive; OpenAI marks it experimental. Its modes are
+  Codex's approval presets (Read Only, Auto, Full Access), its models and
+  reasoning efforts come from `model/list` and go with each turn, and command,
+  file-change, and extra-access approvals become permission requests. A
+  configured model the account does not offer gives way to Codex's default.
+- **pi** (`@earendil-works/pi-coding-agent`) runs as `pi --mode rpc`, the JSON
+  lines its `docs/rpc.md` documents. pi asks no tool approvals of its own; an
+  extension's `select` and `confirm` dialogs become permission requests, and
+  its models and thinking levels are the session's settings. `--load` passes
+  pi's `--session`.
 
 ### Enterprise endpoints
 

@@ -3,6 +3,8 @@
 //! with a protocol of its own gets a [`Translator`] in between, on a thread
 //! of its own, so the session cannot tell the two apart.
 
+pub(crate) mod out;
+
 use std::{
     io::{Read, Write},
     thread,

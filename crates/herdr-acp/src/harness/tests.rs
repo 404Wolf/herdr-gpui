@@ -143,3 +143,17 @@ fn a_translator_sits_between_the_session_and_the_harness() {
         Inbound::Closed(None)
     ));
 }
+
+#[test]
+fn file_links_name_their_path_and_long_commands_say_so() {
+    assert_eq!(
+        out::file_path("file:///work/My%20File.md"),
+        "/work/My File.md"
+    );
+    assert_eq!(
+        out::file_path("https://example.com/a"),
+        "https://example.com/a"
+    );
+    assert_eq!(out::command_title("ls"), "`ls`");
+    assert_eq!(out::command_title("a\nb\nc"), "`a` (+2 more lines)");
+}

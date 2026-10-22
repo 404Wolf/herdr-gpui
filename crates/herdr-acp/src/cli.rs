@@ -77,10 +77,12 @@ Usage:
 Agents:
   claude     claude itself, or with --acp claude-agent-acp
              (or npx @agentclientprotocol/claude-agent-acp)
-  codex      codex-acp (or npx @agentclientprotocol/codex-acp)
+  codex      codex app-server, or with --acp codex-acp
+             (or npx @agentclientprotocol/codex-acp)
   copilot    copilot --acp
   gemini     gemini --acp
   opencode   opencode acp
+  pi         pi --mode rpc, or with --acp pi-acp (or npx pi-acp)
 
 Options:
   --acp          Use the agent's ACP adapter, not the agent itself
