@@ -123,6 +123,16 @@ pub(crate) fn ring(percent: u8, label: &str) -> Markup {
     }
 }
 
+/// A folder as a person reads it: the home directory as `~`.
+pub(crate) fn display_folder(path: &str) -> String {
+    match std::env::var("HOME") {
+        Ok(home) if !home.is_empty() && path.starts_with(&home) => {
+            format!("~{}", &path[home.len()..])
+        }
+        _ => path.to_owned(),
+    }
+}
+
 /// A link the app shell routes without reloading.
 pub(crate) fn nav(href: &str, class: &str, body: Markup) -> Markup {
     html! { a href=(href) data-nav class=(class) { (body) } }

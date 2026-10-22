@@ -1,7 +1,7 @@
 //! Forms and settings: a new workspace, a new chat in a workspace, and this
 //! phone's settings.
 
-use super::home::urlencode;
+use super::{display_folder, home::urlencode};
 use crate::hub::Workspace;
 use herdr_chat_protocol::Agent;
 use maud::{Markup, html};
@@ -125,15 +125,5 @@ pub(crate) fn devices(computer: &str, origins: &[String], fingerprint: &str) -> 
                 button type="button" class="row text-red w-full text-left" x-on:click="forget" { "Forget this computer" }
             }
         }
-    }
-}
-
-/// A folder as a person reads it: the home directory as `~`.
-fn display_folder(path: &str) -> String {
-    match std::env::var("HOME") {
-        Ok(home) if !home.is_empty() && path.starts_with(&home) => {
-            format!("~{}", &path[home.len()..])
-        }
-        _ => path.to_owned(),
     }
 }

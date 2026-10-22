@@ -2,7 +2,7 @@
 //! grouped lists of chats and (not yet controllable) terminal tabs. The
 //! board is the same chats grouped by state, behind the toolbar's eye.
 
-use super::{agent_icon, elapsed, nav, status_word};
+use super::{agent_icon, display_folder, elapsed, nav, status_word};
 use crate::hub::{ChatRow, Layout, Summary, Workspace};
 use herdr_chat_protocol::Status;
 use maud::{Markup, html};
@@ -82,7 +82,7 @@ pub(crate) fn home(lists: &Lists<'_>) -> Markup {
                                 span class="flex-1 min-w-0 truncate" {
                                     (terminal.label)
                                     @if let Some(cwd) = &terminal.cwd {
-                                        small class="text-muted ml-1" { (cwd) }
+                                        small class="text-muted ml-1" { (display_folder(cwd)) }
                                     }
                                 }
                                 span class="badge" { "Soon" }
