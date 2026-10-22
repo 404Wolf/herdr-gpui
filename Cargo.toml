@@ -142,6 +142,15 @@ axum                 = { default-features = false, features = ["http1", "json", 
 # Drives herdr-remote's router in tests without a socket; axum already links it.
 tower                = { default-features = false, features = ["util"], version = "0.5" }
 tokio-rustls         = { default-features = false, features = ["ring", "tls12"], version = "0.26" }
+# herdr-remote's APNs sender for iOS Live Activities: APNs speaks only
+# HTTP/2, which ureq lacks. hyper's own HTTP/2 client (plus h2) over the
+# tokio-rustls above on the daemon's Tokio runtime is the smallest maintained
+# stack for it: axum already links hyper, hyper-util, and http-body-util, so
+# only h2 is new. Not reqwest, which would bring a second connection pool and
+# TLS configuration; not a2, which pins its own HTTP and crypto stacks.
+http-body-util       = "0.1"
+hyper                = { default-features = false, features = ["client", "http2"], version = "1" }
+hyper-util           = { default-features = false, features = ["tokio"], version = "0.1" }
 # Certificate validity dates for rcgen, from a `SystemTime`.
 time                 = { default-features = false, features = ["std"], version = "0.3.47" }
 toml                 = "1.1"

@@ -21,6 +21,9 @@ server = [
     "dep:base64",
     "dep:getrandom",
     "dep:hkdf",
+    "dep:http-body-util",
+    "dep:hyper",
+    "dep:hyper-util",
     "dep:if-addrs",
     "dep:maud",
     "dep:p256",
@@ -35,6 +38,7 @@ server = [
     "dep:tokio-rustls",
     "dep:ureq",
     "dep:url",
+    "dep:webpki-roots",
 ]
 
 [[bin]]
@@ -56,6 +60,9 @@ base64         = { optional = true, workspace = true }
 futures-lite   = { optional = true, workspace = true }
 getrandom      = { optional = true, workspace = true }
 hkdf           = { optional = true, workspace = true }
+http-body-util = { optional = true, workspace = true }
+hyper          = { optional = true, workspace = true }
+hyper-util     = { optional = true, workspace = true }
 if-addrs       = { optional = true, workspace = true }
 maud           = { optional = true, workspace = true }
 p256           = { optional = true, workspace = true }
@@ -69,6 +76,7 @@ tokio          = { optional = true, workspace = true }
 tokio-rustls   = { optional = true, workspace = true }
 ureq           = { optional = true, workspace = true }
 url            = { optional = true, workspace = true }
+webpki-roots   = { optional = true, workspace = true }
 
 # The host name for the CA's name and `HOSTNAME.local`.
 [target.'cfg(unix)'.dependencies]

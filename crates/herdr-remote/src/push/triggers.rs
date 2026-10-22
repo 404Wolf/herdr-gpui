@@ -232,7 +232,7 @@ fn body(chat: &Chat<'_>, excerpt: Option<String>, facts: Option<&str>) -> String
 
 /// `text` on one line, at most [`EXCERPT_CHARS`] characters, ending in `…`
 /// when cut.
-pub(super) fn excerpt(text: &str) -> String {
+pub(crate) fn excerpt(text: &str) -> String {
     let words: Vec<&str> = text.split_whitespace().collect();
     let line = words.join(" ");
     if line.chars().count() <= EXCERPT_CHARS {
