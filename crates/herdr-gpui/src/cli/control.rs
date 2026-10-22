@@ -8,6 +8,7 @@ mod browser;
 mod chat;
 mod exec;
 mod hosts;
+mod remote;
 mod settings;
 mod tabs;
 mod work;
@@ -21,6 +22,7 @@ pub use browser::{BrowserCommand, Placement};
 pub use chat::ChatCommand;
 pub use exec::ExecCommand;
 pub use hosts::{CloudCommand, HostCommand, PortsCommand, PrCommand, SecurityCommand};
+pub use remote::RemoteCommand;
 pub use settings::{
     CaffeineCommand, ConfigCommand, IntegrationsCommand, KeybindsCommand, SoundCommand,
     ThemeCommand, UpdateCommand,
@@ -87,6 +89,7 @@ pub enum ControlCommand {
     Usage,
     System,
     Security(SecurityCommand),
+    Remote(RemoteCommand),
     Search {
         files: bool,
         query: String,
@@ -197,6 +200,10 @@ pub const FAMILIES: &[(&str, &str)] = &[
     (
         "security",
         "Vulnerability reports and Dependabot alerts of your repositories",
+    ),
+    (
+        "remote",
+        "Remote control from a phone: status, pairing, and paired devices",
     ),
     ("search", "Find a symbol or a file in the focused checkout"),
     ("config", "Herdr UI settings: path, get, set, reload, check"),
@@ -349,6 +356,7 @@ fn command(family: &'static str, args: &mut Args) -> Result<ControlCommand, CliE
         "usage" => ControlCommand::Usage,
         "system" => ControlCommand::System,
         "security" => ControlCommand::Security(hosts::security(args)?),
+        "remote" => ControlCommand::Remote(remote::remote(args)?),
         "search" => {
             let files = match args.verb().as_ref().and_then(|verb| verb.to_str()) {
                 Some("symbol" | "symbols") => false,
