@@ -1,6 +1,6 @@
 use super::*;
 
-const NIGHTLY: &str = r#"
+pub(super) const NIGHTLY: &str = r#"
 herdr.at("03:00", { tz = "Europe/Paris" }, function(fire)
   pull("main")
   local v = sh("just ci", { check = false })
@@ -15,45 +15,29 @@ herdr.at("03:00", { tz = "Europe/Paris" }, function(fire)
 end)
 "#;
 
-fn plan(body: &str) -> Plan {
-    Plan::of(&load(body).unwrap()).unwrap()
+fn kinds(steps: &[PlannedStep]) -> Vec<Kind> {
+    steps.iter().map(|step| step.call.step.kind()).collect()
 }
 
 #[test]
 fn the_nightly_example_shows_every_branch() {
     let plan = plan(NIGHTLY);
-    let trigger = plan.triggers.first().unwrap();
-    let names = trigger
-        .steps
-        .iter()
-        .map(|step| step.call.step.kind())
-        .collect::<Vec<_>>();
-    assert_eq!(names, [Kind::Pull, Kind::Sh, Kind::Agent]);
-    let failures = trigger
-        .steps
-        .iter()
-        .map(|step| &step.on_failure)
-        .collect::<Vec<_>>();
-    let Failure::Branch(instead) = failures.get(1).unwrap() else {
-        panic!("validation should branch: {failures:?}");
+    let steps = &plan.triggers.first().unwrap().steps;
+    assert_eq!(kinds(steps), [Kind::Pull, Kind::Sh, Kind::Agent]);
+    let Failure::Branch(instead) = &steps.get(1).unwrap().on_failure else {
+        panic!("validation should branch: {steps:?}");
     };
-    assert_eq!(
-        instead
-            .iter()
-            .map(|call| call.step.kind())
-            .collect::<Vec<_>>(),
-        [Kind::Agent, Kind::Agent]
-    );
+    assert_eq!(kinds(instead), [Kind::Agent, Kind::Agent]);
     let Some(Step::Agent {
         worktree, prompt, ..
-    }) = instead.first().map(|call| &call.step)
+    }) = instead.first().map(|step| &step.call.step)
     else {
         panic!("the fix agent comes first");
     };
-    assert_eq!(worktree.as_deref(), Some("fix-validation-<date>"));
-    assert!(prompt.contains(FAKE_LOG_TAIL));
-    assert_eq!(failures.first(), Some(&&Failure::Stops));
-    assert_eq!(failures.get(2), Some(&&Failure::Stops));
+    assert_eq!(worktree.as_deref(), Some("fix-validation-{date}"));
+    assert!(prompt.contains("{log_tail:2}"), "{prompt}");
+    assert_eq!(steps.first().unwrap().on_failure, Failure::Stops);
+    assert_eq!(steps.get(2).unwrap().on_failure, Failure::Stops);
 }
 
 #[test]
@@ -66,9 +50,9 @@ test
     1. pull main
     2. sh `just ci` (arbitrary command) · the script handles failure
        └ on failure, instead:
-           - agent claude in worktree fix-validation-<date>, prompt 72 chars
-           - agent claude in worktree nightly-<date>, prompt 12 chars
-    3. agent claude in worktree nightly-<date>, prompt 12 chars
+         1. agent claude in worktree fix-validation-{date}, prompt 55 chars
+         2. agent claude in worktree nightly-{date}, prompt 12 chars
+    3. agent claude in worktree nightly-{date}, prompt 12 chars
 ";
     assert_eq!(text, expected);
 }
@@ -98,16 +82,52 @@ fn returning_on_failure_ends_the_run() {
 }
 
 #[test]
-fn a_manual_trigger_plans_as_manual() {
-    let plan = plan("herdr.manual({ name = \"deploy\" }, function(fire) notify(fire.reason) end)");
-    let trigger = plan.triggers.first().unwrap();
-    assert_eq!(
-        trigger.steps.first().map(|step| step.call.step.clone()),
-        Some(Step::Notify {
-            text: "manual".to_owned(),
-        })
+fn combined_failures_are_planned_too() {
+    // Only both failing reaches the alarm; single failures would not show it.
+    let plan = plan(
+        "herdr.manual(function()\n\
+           local a = sh(\"first\", { check = false })\n\
+           local b = sh(\"second\", { check = false })\n\
+           if not a.ok and not b.ok then notify(\"both failed\") end\n\
+         end)",
     );
+    let steps = &plan.triggers.first().unwrap().steps;
+    let Failure::Branch(after_first) = &steps.first().unwrap().on_failure else {
+        panic!("the first failure changes what follows: {steps:?}");
+    };
+    let Failure::Branch(after_both) = &after_first.first().unwrap().on_failure else {
+        panic!("the second failure after the first branches: {after_first:?}");
+    };
+    assert_eq!(kinds(after_both), [Kind::Notify]);
+    assert!(plan.to_string().contains("notify \"both failed\""));
+}
+
+#[test]
+fn too_many_paths_are_refused() {
+    let body = format!(
+        "herdr.manual(function()\n{}end)",
+        "sh(\"x\", { check = false })\n".repeat(9)
+    );
+    let error = Plan::build(&source(&body), Limits::default()).unwrap_err();
+    assert!(
+        matches!(error, Error::TooManyPaths { limit: MAX_PATHS }),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn a_manual_trigger_plans_by_name() {
+    let plan = plan("herdr.manual({ name = \"deploy\" }, function() notify(\"go\") end)");
     assert!(plan.to_string().contains("deploy: manual only"));
+}
+
+#[test]
+fn the_plan_carries_the_hash() {
+    let source = source(NIGHTLY);
+    assert_eq!(
+        Plan::build(&source, Limits::default()).unwrap().hash,
+        source.hash
+    );
 }
 
 #[test]

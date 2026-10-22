@@ -58,7 +58,7 @@ fn steps_are_refused_at_the_top_level() {
 #[test]
 fn triggers_cannot_be_declared_while_running() {
     let script = load("herdr.manual(function() herdr.manual(function() end) end)\n").unwrap();
-    let result = script.run(0, &fire(Reason::Manual), |_| Outcome::default());
+    let result = script.run::<Infallible>(0, |_| Verdict::Succeeded);
     assert_eq!(refusal(result), Refusal::TriggerInsideTrigger);
 }
 
@@ -80,46 +80,64 @@ fn step_names_are_unique() {
 }
 
 #[test]
-fn the_same_script_makes_the_same_calls() {
-    let script = load(
-        "herdr.at(\"03:00\", function(fire)\n\
-           for i = 1, 3 do notify(\"pass \" .. i .. \" on \" .. fire.date) end\n\
-         end)\n",
-    )
-    .unwrap();
-    assert_eq!(record(&script, 0), record(&script, 0));
+fn a_script_sees_tokens_not_the_date() {
+    let body = "herdr.manual(function(fire)\n\
+                  if fire.date == \"2026-12-25\" then sh(\"rm -rf ~\") end\n\
+                  notify(fire.date .. \" \" .. fire.time)\n\
+                end)\n";
+    let (calls, _) = record(body, 0);
+    assert_eq!(
+        calls
+            .iter()
+            .map(|call| call.step.clone())
+            .collect::<Vec<_>>(),
+        [Step::Notify {
+            text: "{date} {time}".to_owned(),
+        }]
+    );
 }
 
 #[test]
-fn a_script_sees_why_it_fired() {
-    let script = load("herdr.at(\"03:00\", function(fire) notify(fire.reason .. \" \" .. fire.date .. \" \" .. fire.time) end)\n")
-        .unwrap();
-    let mut texts = Vec::new();
-    script
-        .run(0, &fire(Reason::Manual), |call| {
-            if let Step::Notify { text } = &call.step {
-                texts.push(text.clone());
-            }
-            Outcome {
-                ok: true,
-                ..Outcome::default()
-            }
-        })
-        .unwrap();
-    assert_eq!(texts, ["manual 2026-10-22 03:00"]);
+fn no_state_carries_over_between_runs() {
+    let body = "local runs = 0\n\
+                herdr.manual(function()\n\
+                  runs = runs + 1\n\
+                  if runs > 1 then sh(\"second run\") end\n\
+                  notify(tostring(runs))\n\
+                end)\n";
+    for _ in 0..3 {
+        let (calls, _) = record(body, 0);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls.first().map(|call| call.step.clone()),
+            Some(Step::Notify {
+                text: "1".to_owned(),
+            })
+        );
+    }
 }
 
 #[test]
 fn an_unknown_trigger_is_an_error() {
     let script = load("herdr.manual(function() end)\n").unwrap();
     let error = script
-        .run(3, &fire(Reason::Manual), |_| Outcome::default())
+        .run::<Infallible>(3, |_| Verdict::Succeeded)
         .unwrap_err();
     assert!(matches!(error, Error::UnknownTrigger(3)));
 }
 
 #[test]
 fn a_syntax_error_names_the_script() {
-    let error = Script::load("nightly", "herdr.caps {", Limits::default()).unwrap_err();
+    let error = Source::new("nightly", "herdr.caps {")
+        .load(Limits::default())
+        .unwrap_err();
     assert!(error.to_string().contains("nightly"), "{error}");
+}
+
+#[test]
+fn the_source_hash_pins_the_text() {
+    let first = Source::new("a", "text");
+    assert_eq!(first.hash.len(), 64);
+    assert_eq!(first.hash, Source::new("b", "text").hash);
+    assert_ne!(first.hash, Source::new("a", "text ").hash);
 }

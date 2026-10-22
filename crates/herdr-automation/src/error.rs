@@ -19,6 +19,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("a trigger has more than {limit} paths; call fewer steps with check = false")]
+    TooManyPaths { limit: usize },
     #[error("the script is {size} bytes; the limit is {limit}")]
     TooLarge { size: u64, limit: u64 },
     #[error("the script has no trigger number {0}")]
@@ -66,6 +68,9 @@ pub enum Refusal {
         function: &'static str,
         problem: Problem,
     },
+    /// Unwinds a run the runner halted; [`crate::End::Halted`] says why.
+    #[error("the runner stopped the run at step {}", .0 + 1)]
+    Halted(usize),
     #[error("{0}() can be called only inside a trigger")]
     StepOutsideTrigger(&'static str),
     /// Stops a run: a step failed and the script did not ask for its result.
@@ -99,6 +104,8 @@ impl fmt::Display for Budget {
 pub enum Problem {
     #[error("`{0}` contains a control character")]
     Control(&'static str),
+    #[error("`{0}` contains an invisible formatting character, such as a bidi override")]
+    Format(&'static str),
     #[error("invalid cron expression `{expression}`: {reason}")]
     Cron {
         expression: String,

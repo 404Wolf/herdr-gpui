@@ -48,7 +48,9 @@ impl Cron {
     /// Whether a local time matches. `weekday` counts from Sunday as 0;
     /// `month` and `day` count from 1.
     pub fn matches(&self, minute: u8, hour: u8, day: u8, month: u8, weekday: u8) -> bool {
-        self.matches_minute(minute) && self.matches_hour(hour) && self.matches_day(day, month, weekday)
+        self.matches_minute(minute)
+            && self.matches_hour(hour)
+            && self.matches_day(day, month, weekday)
     }
 
     pub(crate) fn matches_minute(&self, minute: u8) -> bool {

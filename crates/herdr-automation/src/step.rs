@@ -282,26 +282,25 @@ fn shorten(text: &str, limit: usize) -> String {
     short
 }
 
-/// What a step did, as the script sees it.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Outcome {
-    pub ok: bool,
-    pub exit: Option<i32>,
-    pub duration: Duration,
-    /// The last lines of the step's output, bounded by the runner.
-    pub log_tail: String,
-    /// The agent run a step started, for `agent`.
-    pub run_id: Option<String>,
+/// What the runner reports for a step. A script sees only whether it
+/// succeeded; the rest of the result reaches later steps as tokens.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Verdict<H> {
+    Succeeded,
+    Failed,
+    /// The runner stops the run for its own reason: a cap, a cancel, or a
+    /// call the approved plan does not have.
+    Halt(H),
 }
 
-impl Outcome {
-    pub(crate) fn to_table(&self, lua: &Lua) -> mlua::Result<Table> {
+impl<H> Verdict<H> {
+    pub(crate) fn to_table(&self, lua: &Lua, step: usize, kind: Kind) -> mlua::Result<Table> {
         let table = lua.create_table()?;
-        table.raw_set("ok", self.ok)?;
-        table.raw_set("exit", self.exit)?;
-        table.raw_set("duration", self.duration.as_secs_f64())?;
-        table.raw_set("log_tail", self.log_tail.as_str())?;
-        table.raw_set("run_id", self.run_id.as_deref())?;
+        table.raw_set("ok", matches!(self, Self::Succeeded))?;
+        table.raw_set("log_tail", crate::tokens::log_tail(step))?;
+        if kind == Kind::Agent {
+            table.raw_set("run_id", crate::tokens::run_id(step))?;
+        }
         Ok(table)
     }
 }

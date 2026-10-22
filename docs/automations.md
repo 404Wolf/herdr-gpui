@@ -47,9 +47,9 @@ nightly
     1. pull main
     2. sh `just ci` (arbitrary command) · the script handles failure
        └ on failure, instead:
-           - agent claude in worktree fix-validation-<date>, prompt 72 chars
-           - agent claude in worktree nightly-<date>, prompt 3 chars
-    3. agent claude in worktree nightly-<date>, prompt 3 chars
+         1. agent claude in worktree fix-validation-{date}, prompt 55 chars
+         2. agent claude in worktree nightly-{date}, prompt 3 chars
+    3. agent claude in worktree nightly-{date}, prompt 3 chars
   deploy-preview: manual only
     1. sh `./scripts/deploy-preview.sh` (arbitrary command)
     2. notify "Preview deployed"
@@ -74,9 +74,7 @@ Every trigger can also be started by hand. Each takes an optional
 `{ name = "..." }`, unique within the script; a script has at most 16
 triggers. Times are read in the host's zone unless `tz` names one.
 
-The handler gets `fire`: `fire.reason` is `"schedule"`, `"late"` (the
-schedule came round while the runner was down) or `"manual"`, with
-`fire.date` (`YYYY-MM-DD`) and `fire.time` (`HH:MM`).
+The handler gets `fire`, whose `date` and `time` are tokens (see below).
 
 ## Caps
 
@@ -96,18 +94,31 @@ print in the plan, so they are approved with it.
 | `worktree { name, base? }` | Create a worktree |
 
 A step that fails stops the run. With `{ check = false }` it returns
-`{ ok, exit, duration, log_tail, run_id }` instead and the script decides.
-Steps also take `{ timeout = "30m" }`. Unknown fields, control characters in
-names, and over-long text are refused with the field named.
+`{ ok, log_tail }` instead (and `run_id` for `agent`) and the script decides.
+Steps also take `{ timeout = "30m" }`. Unknown fields, control characters,
+invisible formatting characters such as bidi overrides, and over-long text are
+refused with the field named.
+
+## Tokens
+
+What a script cannot know reaches it as tokens it can pass along but not
+read: `fire.date` is `"{date}"`, `fire.time` is `"{time}"`, and a result's
+`log_tail` is `"{log_tail:N}"` for step N (`run_id` likewise). The runner fills
+them in only when it runs a step. Step output is untrusted, so in a `sh`
+command an output token becomes a quoted `"$HERDR_LOG_TAIL_N"` variable and
+the value travels in the environment, never in the command text.
 
 ## What a script cannot do
 
 Steps are a script's only effects. The sandbox has no `os`, `io`, `debug`,
-`require`, `loadstring`, `print`, `pcall`, `math.random` or coroutines, and
-the libraries are read-only. So the same script always makes the same calls,
-and the plan, which runs each trigger with every step succeeding and then
-once per step with that step failing, shows everything it can do. Steps are
-refused at the top level, and triggers inside a handler.
+`require`, `loadstring`, `print`, `pcall`, `math.random` or coroutines, the
+libraries are read-only, and every run starts from a freshly loaded script,
+so nothing carries over between runs. Because dates and step output are
+tokens, the only thing a script's path can depend on is which unchecked steps
+succeeded. The plan tries every combination (at most 256 paths per trigger),
+so it shows every path, and the runner halts a run that ever calls a step
+its approved plan does not have next. Steps are refused at the top level,
+and triggers inside a handler.
 
 A script's own computation is bounded: about 10 million interrupt checks per
 load or run, 32 MiB of memory, 32 steps per run, and 256 KiB of source.

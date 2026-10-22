@@ -4,19 +4,16 @@
 
 use crate::{
     Caps, Error, Refusal, Result,
-    step::{Call, Kind, Outcome},
+    step::{Call, Kind, Verdict},
+    tokens,
     vm::{self, Limits, Meter},
 };
 use mlua::{Function, Lua, MultiValue, Value};
-use serde::Serialize;
-use std::{cell::RefCell, fmt, fs, io::Read, path::Path, rc::Rc};
+use std::{cell::RefCell, fmt, rc::Rc};
 
 mod declare;
 
 pub use declare::Trigger;
-
-/// The largest script file read.
-pub const MAX_SCRIPT_BYTES: u64 = 256 * 1024;
 
 /// The registry slot holding the current run's step dispatcher.
 const DISPATCH: &str = "herdr.dispatch";
@@ -40,76 +37,22 @@ impl fmt::Debug for Script {
     }
 }
 
-/// Why a trigger fired, as the script sees it in `fire.reason`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Reason {
-    /// Its schedule came round.
-    Schedule,
-    /// Its schedule came round while the runner was down.
-    Late,
-    /// Someone started it.
-    Manual,
-}
-
-impl Reason {
-    fn name(self) -> &'static str {
-        match self {
-            Self::Schedule => "schedule",
-            Self::Late => "late",
-            Self::Manual => "manual",
-        }
-    }
-}
-
-/// What a trigger's handler receives. The runner fills it from the clock;
-/// the script never reads a clock itself.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Fire {
-    pub reason: Reason,
-    /// `YYYY-MM-DD` in the trigger's zone.
-    pub date: String,
-    /// `HH:MM` in the trigger's zone.
-    pub time: String,
-}
-
 /// How a run ended without an error.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum End {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum End<H> {
     Completed,
     /// A checked step failed; nothing after it ran.
     Stopped {
         step: usize,
     },
+    /// The runner stopped the run at `step` for its own reason.
+    Halted {
+        step: usize,
+        halt: H,
+    },
 }
 
 impl Script {
-    /// Reads and loads a script file, named after its file stem.
-    pub fn read(path: impl AsRef<Path>) -> Result<Self> {
-        let path = path.as_ref();
-        let read = |source| Error::Read {
-            path: path.to_owned(),
-            source,
-        };
-        let file = fs::File::open(path).map_err(read)?;
-        let size = file.metadata().map_err(read)?.len();
-        if size > MAX_SCRIPT_BYTES {
-            return Err(Error::TooLarge {
-                size,
-                limit: MAX_SCRIPT_BYTES,
-            });
-        }
-        let mut source = String::new();
-        file.take(MAX_SCRIPT_BYTES + 1)
-            .read_to_string(&mut source)
-            .map_err(read)?;
-        let name = path
-            .file_stem()
-            .map(|stem| stem.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "script".to_owned());
-        Self::load(name, &source, Limits::default())
-    }
-
     /// Loads a script from its source. Its top level runs once, declaring
     /// caps and triggers; nothing else may happen there.
     pub fn load(name: impl Into<String>, source: &str, limits: Limits) -> Result<Self> {
@@ -149,27 +92,24 @@ impl Script {
         &self.triggers
     }
 
-    /// Runs trigger `index`, handing each step to `exec` in order. A checked
-    /// step whose outcome is not `ok` stops the run.
-    pub fn run(
-        &self,
-        index: usize,
-        fire: &Fire,
-        mut exec: impl FnMut(&Call) -> Outcome,
-    ) -> Result<End> {
+    /// Runs trigger `index`, handing each step to `exec` in order. A run
+    /// consumes the script, so no state carries over to the next run: the
+    /// runner and the planner load the source afresh each time. A checked
+    /// step that does not succeed stops the run.
+    pub fn run<H>(self, index: usize, mut exec: impl FnMut(&Call) -> Verdict<H>) -> Result<End<H>> {
         let trigger = self
             .triggers
             .get(index)
             .ok_or(Error::UnknownTrigger(index))?;
-        let fire_table = self.lua.create_table()?;
-        fire_table.raw_set("reason", fire.reason.name())?;
-        fire_table.raw_set("date", fire.date.as_str())?;
-        fire_table.raw_set("time", fire.time.as_str())?;
+        let fire = self.lua.create_table()?;
+        fire.raw_set("date", tokens::DATE)?;
+        fire.raw_set("time", tokens::TIME)?;
         self.meter.reset();
         let steps = self.limits.steps;
+        let halted = RefCell::new(None);
+        let count = std::cell::Cell::new(0usize);
         let result = self.lua.scope(|scope| {
-            let mut count = 0usize;
-            let dispatch = scope.create_function_mut(move |lua, mut args: MultiValue| {
+            let dispatch = scope.create_function_mut(|lua, mut args: MultiValue| {
                 let index = match args.pop_front() {
                     Some(Value::Integer(index)) => usize::try_from(index).ok(),
                     Some(Value::Number(index)) if index.fract() == 0. && index >= 0. => {
@@ -181,22 +121,29 @@ impl Script {
                     .and_then(|index| Kind::ALL.get(index).copied())
                     .ok_or_else(|| mlua::Error::runtime("unknown step"))?;
                 let call = Call::read(kind, args)?;
-                if count >= steps {
+                let step = count.get();
+                if step >= steps {
                     return Err(mlua::Error::external(Refusal::Budget(crate::Budget::Steps)));
                 }
-                let step = count;
-                count += 1;
-                let outcome = exec(&call);
-                if call.check && !outcome.ok {
+                count.set(step + 1);
+                let verdict = exec(&call);
+                if let Verdict::Halt(halt) = verdict {
+                    *halted.borrow_mut() = Some((step, halt));
+                    return Err(mlua::Error::external(Refusal::Halted(step)));
+                }
+                if call.check && !matches!(verdict, Verdict::Succeeded) {
                     return Err(mlua::Error::external(Refusal::StepFailed(step)));
                 }
-                outcome.to_table(lua)
+                verdict.to_table(lua, step, kind)
             })?;
             self.lua.set_named_registry_value(DISPATCH, dispatch)?;
-            let result = trigger.handler().call::<()>(fire_table);
+            let result = trigger.handler().call::<()>(fire);
             self.lua.unset_named_registry_value(DISPATCH)?;
             Ok(result)
         })?;
+        if let Some((step, halt)) = halted.into_inner() {
+            return Ok(End::Halted { step, halt });
+        }
         match result {
             Ok(()) => Ok(End::Completed),
             Err(error) => match error.downcast_ref::<Refusal>() {

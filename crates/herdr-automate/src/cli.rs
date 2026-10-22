@@ -1,7 +1,7 @@
 //! The command line: parsing from OS strings, so a script's path need not
 //! be UTF-8, and running the parsed command against any writer.
 
-use herdr_automation::{Kind, Plan, Script};
+use herdr_automation::{Kind, Limits, Plan, Source};
 use serde_json::json;
 use std::{
     ffi::OsString,
@@ -36,12 +36,18 @@ script can do.
   herdr.manual({ name = \"deploy\" }, function(fire) ... end)
 
 Every trigger can also be started by hand; herdr.manual has no schedule.
-Triggers take an optional { name = \"...\" }. A handler gets fire.reason
-(\"schedule\", \"late\" or \"manual\"), fire.date (YYYY-MM-DD) and fire.time (HH:MM).
+Triggers take an optional { name = \"...\" }.
 
 A step that fails stops the run, unless called with { check = false }: then
-it returns { ok, exit, duration, log_tail, run_id } and the script decides.
+it returns { ok, log_tail } (and run_id for agent) and the script decides.
 Steps also take { timeout = \"30m\" }. `herdr-automate steps` lists them.
+
+What a script cannot know reaches it as tokens it can pass along but not
+read: fire.date is \"{date}\", fire.time is \"{time}\", and a result's log_tail
+is \"{log_tail:N}\" for step N. The runner fills them in when it runs a step;
+in a sh command they become \"$HERDR_...\" variables. So the plan, which tries
+every combination of unchecked results, is every path the script can take,
+and a run that leaves it is halted.
 
 Exit status: 0 the script is valid, 1 it is not or cannot be read, 2 usage.
 ";
@@ -154,7 +160,7 @@ pub fn run(command: &Command, out: &mut impl Write) -> io::Result<ExitCode> {
 }
 
 fn check(file: &PathBuf, json: bool, out: &mut impl Write) -> io::Result<ExitCode> {
-    let plan = Script::read(file).and_then(|script| Plan::of(&script));
+    let plan = Source::read(file).and_then(|source| Plan::build(&source, Limits::default()));
     match (plan, json) {
         (Ok(plan), false) => {
             write!(out, "{plan}")?;

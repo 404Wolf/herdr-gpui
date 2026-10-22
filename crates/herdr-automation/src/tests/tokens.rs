@@ -1,0 +1,76 @@
+use super::*;
+
+fn values<'a>(log_tails: &'a [Option<String>], run_ids: &'a [Option<String>]) -> Values<'a> {
+    Values {
+        date: "2026-10-22",
+        time: "03:00",
+        log_tails,
+        run_ids,
+    }
+}
+
+#[test]
+fn tokens_fill_in_text() {
+    let tails = [None, Some("error: test failed".to_owned())];
+    let values = values(&tails, &[]);
+    assert_eq!(
+        values.fill("nightly-{date} at {time}: {log_tail:2}"),
+        "nightly-2026-10-22 at 03:00: error: test failed"
+    );
+}
+
+#[test]
+fn unknown_and_missing_tokens_stay() {
+    let values = values(&[None], &[]);
+    assert_eq!(
+        values.fill("{log_tail:1} {log_tail:9} {nope} {log_tail:0} {"),
+        "{log_tail:1} {log_tail:9} {nope} {log_tail:0} {"
+    );
+}
+
+#[test]
+fn shell_commands_get_output_through_variables() {
+    let tails = [Some("$(rm -rf ~); `id`".to_owned())];
+    let (command, env) = values(&tails, &[]).fill_shell("echo {log_tail:1} {log_tail:1} on {date}");
+    assert_eq!(
+        command,
+        "echo \"$HERDR_LOG_TAIL_1\" \"$HERDR_LOG_TAIL_1\" on 2026-10-22"
+    );
+    assert_eq!(
+        env,
+        [(
+            "HERDR_LOG_TAIL_1".to_owned(),
+            "$(rm -rf ~); `id`".to_owned()
+        )]
+    );
+}
+
+#[test]
+fn resolving_a_call_fills_every_field() {
+    let tails = [Some("boom".to_owned())];
+    let runs = [Some("pane-7".to_owned())];
+    let values = values(&tails, &runs);
+    let call = Call {
+        step: Step::Agent {
+            harness: "claude".to_owned(),
+            prompt: "Failed with {log_tail:1}; see {run_id:1}".to_owned(),
+            worktree: Some("fix-{date}".to_owned()),
+            base: None,
+            wait: false,
+        },
+        check: true,
+        timeout: None,
+    };
+    let resolved = call.resolve(&values);
+    assert_eq!(
+        resolved.call.step,
+        Step::Agent {
+            harness: "claude".to_owned(),
+            prompt: "Failed with boom; see pane-7".to_owned(),
+            worktree: Some("fix-2026-10-22".to_owned()),
+            base: None,
+            wait: false,
+        }
+    );
+    assert!(resolved.env.is_empty());
+}

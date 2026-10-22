@@ -79,7 +79,10 @@ fn check_prints_the_plan() {
     let (code, text) = output(&Command::Check { file, json: false });
     assert_eq!(code, ExitCode::SUCCESS);
     assert!(text.starts_with("nightly-validate\n"), "{text}");
-    assert!(text.contains("    2. sh `just ci` (arbitrary command)\n"), "{text}");
+    assert!(
+        text.contains("    2. sh `just ci` (arbitrary command)\n"),
+        "{text}"
+    );
     assert!(
         text.contains("OK: 1 trigger. Every trigger can also be started by hand."),
         "{text}"

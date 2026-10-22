@@ -1,16 +1,16 @@
 use super::*;
 
 fn calls(handler: &str) -> Vec<Call> {
-    let script = load(&format!("herdr.manual(function(fire)\n{handler}\nend)")).unwrap();
-    record(&script, 0).0
+    record(&format!("herdr.manual(function(fire)\n{handler}\nend)"), 0).0
 }
 
 fn run_refusal(handler: &str) -> Refusal {
     let script = load(&format!("herdr.manual(function(fire)\n{handler}\nend)")).unwrap();
-    refusal(script.run(0, &fire(Reason::Manual), |_| Outcome {
-        ok: true,
-        ..Outcome::default()
-    }))
+    refusal(script.run::<Infallible>(0, |_| Verdict::Succeeded))
+}
+
+fn invalid(function: &'static str, problem: Problem) -> Refusal {
+    Refusal::Invalid { function, problem }
 }
 
 #[test]
@@ -63,7 +63,6 @@ fn each_step_reads_its_arguments() {
 
 #[test]
 fn arguments_are_checked() {
-    let invalid = |function, problem| Refusal::Invalid { function, problem };
     assert_eq!(
         run_refusal("agent { harness = \"claude\", prompt = \"x\", model = \"big\" }"),
         invalid("agent", Problem::Unknown("model".to_owned()))
@@ -110,6 +109,20 @@ fn arguments_are_checked() {
 }
 
 #[test]
+fn invisible_characters_are_refused() {
+    // A right-to-left override could make the plan read differently from
+    // what runs.
+    assert_eq!(
+        run_refusal("sh(\"echo safe \\u{202e}fr- mr\")"),
+        invalid("sh", Problem::Format("command"))
+    );
+    assert_eq!(
+        run_refusal("agent { harness = \"claude\", prompt = \"hi\\u{200b}\" }"),
+        invalid("agent", Problem::Format("prompt"))
+    );
+}
+
+#[test]
 fn run_takes_only_worktree_scripts() {
     assert!(matches!(
         run_refusal("run(\"validation\")"),
@@ -125,9 +138,9 @@ fn a_checked_failure_stops_the_run() {
     let script = load("herdr.manual(function() pull(\"main\") notify(\"never\") end)").unwrap();
     let mut seen = 0;
     let end = script
-        .run(0, &fire(Reason::Manual), |_| {
+        .run::<Infallible>(0, |_| {
             seen += 1;
-            Outcome::default()
+            Verdict::Failed
         })
         .unwrap();
     assert_eq!(end, End::Stopped { step: 0 });
@@ -135,34 +148,45 @@ fn a_checked_failure_stops_the_run() {
 }
 
 #[test]
-fn an_unchecked_failure_reaches_the_script() {
+fn an_unchecked_failure_reaches_the_script_as_tokens() {
     let script = load(
         "herdr.manual(function()\n\
            local v = run(\"run\", { check = false })\n\
-           if not v.ok then notify(\"failed with \" .. v.exit .. \": \" .. v.log_tail) end\n\
+           assert(v.exit == nil and v.duration == nil)\n\
+           if not v.ok then notify(\"failed: \" .. v.log_tail) end\n\
          end)",
     )
     .unwrap();
     let mut texts = Vec::new();
     let end = script
-        .run(0, &fire(Reason::Manual), |call| {
-            if let Step::Notify { text } = &call.step {
+        .run::<Infallible>(0, |call| match &call.step {
+            Step::Notify { text } => {
                 texts.push(text.clone());
-                return Outcome {
-                    ok: true,
-                    ..Outcome::default()
-                };
+                Verdict::Succeeded
             }
-            Outcome {
-                ok: false,
-                exit: Some(2),
-                log_tail: "test failed".to_owned(),
-                ..Outcome::default()
-            }
+            _ => Verdict::Failed,
         })
         .unwrap();
     assert_eq!(end, End::Completed);
-    assert_eq!(texts, ["failed with 2: test failed"]);
+    assert_eq!(texts, ["failed: {log_tail:1}"]);
+}
+
+#[test]
+fn the_runner_can_halt_a_run() {
+    let script = load("herdr.manual(function() notify(\"a\") notify(\"b\") end)").unwrap();
+    let end = script
+        .run(0, |call| match &call.step {
+            Step::Notify { text } if text == "b" => Verdict::Halt("over the cap"),
+            _ => Verdict::Succeeded,
+        })
+        .unwrap();
+    assert_eq!(
+        end,
+        End::Halted {
+            step: 1,
+            halt: "over the cap",
+        }
+    );
 }
 
 #[test]

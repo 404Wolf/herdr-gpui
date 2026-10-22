@@ -35,7 +35,12 @@ impl Schedule {
     /// The first occurrence strictly after `after`. `anchor` is the last
     /// firing, which sets the phase of `every`; without one, an interval
     /// starts at `after`.
-    pub fn next_after(&self, zone: &TimeZone, after: Timestamp, anchor: Option<Timestamp>) -> Option<Timestamp> {
+    pub fn next_after(
+        &self,
+        zone: &TimeZone,
+        after: Timestamp,
+        anchor: Option<Timestamp>,
+    ) -> Option<Timestamp> {
         match self {
             Self::Manual => None,
             Self::Every { seconds } => {
@@ -54,7 +59,12 @@ impl Schedule {
                         return None;
                     }
                     let at = date
-                        .at(i8::try_from(time.hour).ok()?, i8::try_from(time.minute).ok()?, 0, 0)
+                        .at(
+                            i8::try_from(time.hour).ok()?,
+                            i8::try_from(time.minute).ok()?,
+                            0,
+                            0,
+                        )
                         .to_zoned(zone.clone())
                         .ok()?
                         .timestamp();
@@ -71,11 +81,18 @@ impl Schedule {
 fn next_cron(cron: &Cron, zone: &TimeZone, after: Timestamp) -> Option<Timestamp> {
     let limit = after.checked_add(8_808.hours()).ok()?;
     let start = after.checked_add(60.seconds()).ok()?;
-    let mut at = Timestamp::from_second(start.as_second() - start.as_second().rem_euclid(60)).ok()?;
+    let mut at =
+        Timestamp::from_second(start.as_second() - start.as_second().rem_euclid(60)).ok()?;
     while at <= limit {
         let local = at.to_zoned(zone.clone());
-        let (minute, hour) = (u8::try_from(local.minute()).ok()?, u8::try_from(local.hour()).ok()?);
-        let (day, month) = (u8::try_from(local.day()).ok()?, u8::try_from(local.month()).ok()?);
+        let (minute, hour) = (
+            u8::try_from(local.minute()).ok()?,
+            u8::try_from(local.hour()).ok()?,
+        );
+        let (day, month) = (
+            u8::try_from(local.day()).ok()?,
+            u8::try_from(local.month()).ok()?,
+        );
         let weekday = u8::try_from(local.weekday().to_sunday_zero_offset()).ok()?;
         at = if !cron.matches_day(day, month, weekday) {
             start_of_next(&local, Unit::Day)?

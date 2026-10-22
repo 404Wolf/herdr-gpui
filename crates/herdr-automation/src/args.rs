@@ -181,6 +181,26 @@ impl Text {
         if text.chars().any(|c| c.is_control() && !allowed(c)) {
             return Err(site.refuse(Problem::Control(self.field)));
         }
+        if text.chars().any(invisible) {
+            return Err(site.refuse(Problem::Format(self.field)));
+        }
         Ok(())
     }
+}
+
+/// Characters that change how text reads without showing: bidi controls,
+/// zero-width characters and the like. A plan must read as what runs.
+fn invisible(c: char) -> bool {
+    matches!(
+        c,
+        '\u{00ad}'
+            | '\u{061c}'
+            | '\u{180e}'
+            | '\u{200b}'..='\u{200f}'
+            | '\u{202a}'..='\u{202e}'
+            | '\u{2060}'..='\u{2064}'
+            | '\u{2066}'..='\u{206f}'
+            | '\u{feff}'
+            | '\u{fff9}'..='\u{fffb}'
+    )
 }

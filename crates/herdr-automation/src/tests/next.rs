@@ -28,7 +28,8 @@ fn a_time_of_day_fires_in_its_zone() {
 #[test]
 fn days_skip_to_the_next_allowed_one() {
     // Friday 2026-10-23 after 03:00 UTC: the next weekday is Monday.
-    let next = daily(3, 0, Days::WEEKDAYS).next_after(&TimeZone::UTC, at("2026-10-23T04:00:00Z"), None);
+    let next =
+        daily(3, 0, Days::WEEKDAYS).next_after(&TimeZone::UTC, at("2026-10-23T04:00:00Z"), None);
     assert_eq!(next, Some(at("2026-10-26T03:00:00Z")));
 }
 
@@ -65,14 +66,29 @@ fn an_impossible_cron_never_fires() {
     let never = Schedule::Cron {
         cron: Cron::parse("0 0 31 2 *").unwrap(),
     };
-    assert_eq!(never.next_after(&TimeZone::UTC, at("2026-10-22T00:00:00Z"), None), None);
+    assert_eq!(
+        never.next_after(&TimeZone::UTC, at("2026-10-22T00:00:00Z"), None),
+        None
+    );
 }
 
 #[test]
 fn manual_triggers_never_come_due() {
     let checked = at("2026-10-01T00:00:00Z");
-    assert_eq!(Schedule::Manual.next_after(&TimeZone::UTC, checked, None), None);
-    assert_eq!(due(&Schedule::Manual, &TimeZone::UTC, checked, None, at("2026-10-22T00:00:00Z")), None);
+    assert_eq!(
+        Schedule::Manual.next_after(&TimeZone::UTC, checked, None),
+        None
+    );
+    assert_eq!(
+        due(
+            &Schedule::Manual,
+            &TimeZone::UTC,
+            checked,
+            None,
+            at("2026-10-22T00:00:00Z")
+        ),
+        None
+    );
 }
 
 #[test]
