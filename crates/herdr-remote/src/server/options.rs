@@ -40,10 +40,10 @@ pub enum ParseError {
     Missing(&'static str),
     #[error("--state-dir is required")]
     NoStateDir,
-    #[error("{option} has an invalid value")]
-    Value { option: &'static str },
     #[error("unknown option {0}")]
     Unknown(String),
+    #[error("{option} has an invalid value")]
+    Value { option: &'static str },
     // keep-sorted end
 }
 
