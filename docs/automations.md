@@ -6,10 +6,9 @@ new worktree with a prompt. They are meant to be written by an agent from a
 sentence ("every day at 3am, pull main, run validation, then start an agent
 with this prompt") and reviewed by a person before they run.
 
-**Status: phase 1.** `herdr-automate check` loads a script and prints its
-plan, and `herdr-automate steps` lists the steps. Nothing runs scripts yet:
-the daemon that schedules and runs them, approval, and the Automations
-section in Herdr UI come next.
+`herdr-automate` runs them: a small daemon per host that keeps going when
+Herdr UI quits and when Herdr itself is killed, and a command line for
+people, agents, and Herdr UI's Automations section.
 
 ## A script
 
@@ -131,3 +130,86 @@ load or run, 32 MiB of memory, 32 steps per run, and 256 KiB of source.
 
 Luau's `--!strict` comment is accepted, but `check` does not type-check yet:
 the Luau type checker is not part of the embedded interpreter.
+
+## Running scripts
+
+On each host:
+
+```sh
+herdr-automate repo add ~/code/app       # load ~/code/app/.herdr/automations
+herdr-automate install-service           # keep the daemon running (or: start)
+herdr-automate approve ~/code/app/.herdr/automations/nightly.luau
+herdr-automate status
+```
+
+The daemon rescans scripts every 30 seconds. A script runs only once it is
+approved on that host, and only in the exact text approved: any change,
+including one a `git pull` brings in, waits for approval again. A person
+approves either at a terminal, typing the script's name after reading its
+plan, or in Herdr UI's dialog. `approve` refuses when its input is not a
+terminal or when the pane it runs in runs an agent, and `--hash` (Herdr UI's
+path) is refused inside any Herdr pane. This guards against mistakes, not a
+hostile agent: an agent with a shell could run commands directly.
+
+| Command | Does |
+| --- | --- |
+| `status`, `watch` | Scripts, their state and next firing, recent runs; `watch` redraws live |
+| `run-now SCRIPT [--trigger NAME\|N]` | Start any trigger by hand, at any time |
+| `pause\|resume SCRIPT\|--all`, `disable\|enable SCRIPT` | Stop or restart scheduling |
+| `runs [SCRIPT]`, `runs show RUN`, `log RUN [--step N]` | Runs, a run's steps, a step's full output |
+| `stop RUN` | Stop a running run |
+| `usage [SCRIPT] [--since 24h\|7d\|30d\|all] [--by script\|run\|step]` | Tokens, CPU and memory |
+| `log --daemon [--lines N] [--follow]` | The daemon's own log |
+| `start`, `shutdown`, `install-service`, `uninstall-service` | The daemon itself |
+
+Every command takes `--json`; errors are then `{"ok": false, "message": ...}`.
+
+### How a run goes
+
+- A firing missed while the daemon was down runs once when it is back,
+  marked late; one missed many times still runs once. Nothing fires for the
+  time a script was paused, disabled or not yet approved, and a firing never
+  runs twice. A script runs one run at a time; a firing during a run is
+  skipped and logged.
+- Each run loads the script afresh and is checked step by step against its
+  approved plan; a step the plan does not have next halts the run.
+- `pull` refuses a dirty checkout or one on another branch, and only
+  fast-forwards. `run` and `sh` run as child processes with their output
+  logged; a timeout or `stop` ends the whole process group. `worktree`,
+  `agent` and `notify` go through the `herdr` CLI; when a step needs Herdr and
+  its server is not running, the daemon starts it.
+- Personal scripts have no repository, so they can use only `sh` and
+  `notify`.
+- Three failed runs in a row pause a script.
+
+### Caps and usage
+
+Besides each script's caps, the host has its own in
+`~/.config/herdr-automate/config.toml`:
+
+```toml
+max_agents = 3                # agents automations may run at once
+max_tokens_per_day = 10000000 # every script together
+# herdr = "/path/to/herdr"    # when not on PATH
+# herdr_session = "work"      # a Herdr session other than the default
+```
+
+A run halts before an agent step that would cross the script's
+`agents_per_run`, the host's `max_agents`, or a daily token budget; a script
+that spends its budget is also paused. Token counts come from the agents'
+own session files (Claude and Codex today; other harnesses show as unknown,
+never zero), sampled once a minute, so a budget can be overrun by what an
+agent spends in that minute. CPU and peak memory come from the processes of
+each step and agent pane.
+
+### Keeping the daemon running
+
+`install-service` writes and loads a launchd agent (macOS), a systemd user
+unit (Linux) or a logon task (Windows), printing what it writes. No admin
+rights are needed. The daemon restarts after a crash; `shutdown` stops it
+after its runs and it stays stopped. On a headless Linux host, a user unit
+only runs while the user is logged in unless lingering is on
+(`loginctl enable-linger`); `install-service` does not change that for you.
+
+State lives in `~/.local/state/herdr-automate` (`%LOCALAPPDATA%` on
+Windows): the database, the daemon's log, and each run's step output.
