@@ -14,7 +14,21 @@ workspace = true
 # The daemon itself. Herdr UI depends on this crate without it, for the
 # control protocol alone, so Tokio never reaches the GUI.
 default = ["server"]
-server  = ["dep:axum", "dep:base64", "dep:getrandom", "dep:maud", "dep:p256", "dep:pulldown-cmark", "dep:sha2", "dep:tokio"]
+server = [
+    "dep:axum",
+    "dep:base64",
+    "dep:getrandom",
+    "dep:if-addrs",
+    "dep:maud",
+    "dep:p256",
+    "dep:pulldown-cmark",
+    "dep:rcgen",
+    "dep:rustix",
+    "dep:rustls",
+    "dep:sha2",
+    "dep:time",
+    "dep:tokio",
+]
 
 [[bin]]
 name              = "herdr-remote"
@@ -32,11 +46,20 @@ uuid.workspace                = true
 axum           = { optional = true, workspace = true }
 base64         = { optional = true, workspace = true }
 getrandom      = { optional = true, workspace = true }
+if-addrs       = { optional = true, workspace = true }
 maud           = { optional = true, workspace = true }
 p256           = { optional = true, workspace = true }
 pulldown-cmark = { optional = true, workspace = true }
+rcgen          = { optional = true, workspace = true }
+rustls         = { optional = true, workspace = true }
 sha2           = { optional = true, workspace = true }
+time           = { optional = true, workspace = true }
 tokio          = { optional = true, workspace = true }
 
+# The host name for the CA's name and `HOSTNAME.local`.
+[target.'cfg(unix)'.dependencies]
+rustix = { features = ["system"], optional = true, workspace = true }
+
 [dev-dependencies]
-tempfile.workspace = true
+roxmltree.workspace = true
+tempfile.workspace  = true

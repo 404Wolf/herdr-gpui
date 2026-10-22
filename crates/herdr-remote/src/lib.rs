@@ -9,6 +9,8 @@ mod error;
 #[cfg(feature = "server")]
 mod hub;
 #[cfg(feature = "server")]
+mod tls;
+#[cfg(feature = "server")]
 mod web;
 
 pub use error::{Error, Result};

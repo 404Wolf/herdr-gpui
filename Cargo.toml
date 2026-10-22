@@ -100,6 +100,11 @@ crossterm            = "0.29"
 # TLS for the Azure sandbox exec stream, with the ring provider and roots
 # ureq already links.
 rustls               = { default-features = false, features = ["ring", "std", "tls12"], version = "0.23" }
+# The remote control daemon's own certificate authority and server
+# certificates; ring signs, as rustls does, and x509-parser reloads the CA.
+rcgen                = { default-features = false, features = ["crypto", "pem", "ring", "x509-parser"], version = "0.14.10" }
+# Checks the remote control daemon's mobileconfig profile in tests.
+roxmltree            = "0.21"
 rusqlite             = { features = ["bundled"], version = "0.40" }
 rodio                = { default-features = false, features = ["playback", "symphonia-mp3", "tracing"], version = "0.22.2" }
 rustix               = { features = ["event", "fs", "process", "pty", "termios"], version = "=1.1.5" }
@@ -129,6 +134,8 @@ tokio                = { features = ["macros", "net", "rt-multi-thread", "signal
 # Server-rendered HTML for the remote control web app, escaped by default.
 maud                 = "0.27"
 axum                 = { default-features = false, features = ["http1", "json", "query", "tokio"], version = "0.8" }
+# Certificate validity dates for rcgen, from a `SystemTime`.
+time                 = { default-features = false, features = ["std"], version = "0.3.47" }
 toml                 = "1.1"
 toml_edit            = "0.25"
 tracing              = "0.1"
