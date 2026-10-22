@@ -3,6 +3,7 @@
 use serde_json::{Value, json};
 
 use super::*;
+use crate::harness::tests::{file_name, file_uri};
 
 mod settings;
 mod turns;
@@ -189,8 +190,8 @@ fn a_prompt_goes_to_claude_as_a_user_message() {
         json!({"sessionId": SESSION, "prompt": [
             {"type": "text", "text": "Look at this"},
             {"type": "image", "mimeType": "image/png", "data": "iVBORw0K"},
-            {"type": "resource_link", "uri": "file:///work/src/main.rs", "name": "main.rs"},
-            {"type": "resource", "resource": {"uri": "file:///work/notes.md", "text": "- one"}},
+            {"type": "resource_link", "uri": file_uri("src/main.rs"), "name": "main.rs"},
+            {"type": "resource", "resource": {"uri": file_uri("notes.md"), "text": "- one"}},
         ]}),
     ));
     let message = claude(&outs[0]);
@@ -200,10 +201,10 @@ fn a_prompt_goes_to_claude_as_a_user_message() {
     assert_eq!(content[0], json!({"type": "text", "text": "Look at this"}));
     assert_eq!(content[1]["source"]["media_type"], "image/png");
     assert_eq!(content[1]["source"]["data"], "iVBORw0K");
-    assert_eq!(content[2]["text"], "@/work/src/main.rs");
+    assert_eq!(content[2]["text"], format!("@{}", file_name("src/main.rs")));
     assert_eq!(
         content[3]["text"],
-        "<file path=\"/work/notes.md\">\n- one\n</file>"
+        format!("<file path=\"{}\">\n- one\n</file>", file_name("notes.md"))
     );
     let again = prompt(&mut bridge, 3, "again");
     assert!(response(&again[0], 3).is_err(), "one turn at a time");

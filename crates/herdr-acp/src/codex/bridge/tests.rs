@@ -3,6 +3,7 @@
 use serde_json::{Value, json};
 
 use super::*;
+use crate::harness::tests::{file_name, file_uri};
 
 const THREAD: &str = "01a160d5-4de7-7262-b413-0ce5180918ce";
 
@@ -99,7 +100,7 @@ fn prompt(bridge: &mut Bridge, id: i64) -> Value {
         json!({"sessionId": THREAD, "prompt": [
             {"type": "text", "text": "Fix it"},
             {"type": "image", "mimeType": "image/png", "data": "iVBOR"},
-            {"type": "resource_link", "uri": "file:///work/a.rs", "name": "a.rs"},
+            {"type": "resource_link", "uri": file_uri("a.rs"), "name": "a.rs"},
         ]}),
     ));
     let start = harness(&outs[0]).clone();
@@ -188,7 +189,7 @@ fn a_prompt_starts_a_turn_with_the_chosen_settings() {
     assert_eq!(params["input"][1]["url"], "data:image/png;base64,iVBOR");
     assert_eq!(
         params["input"][2],
-        json!({"type": "mention", "name": "a.rs", "path": "/work/a.rs"})
+        json!({"type": "mention", "name": "a.rs", "path": file_name("a.rs")})
     );
     let unknown = bridge.on_session(request(
         7,

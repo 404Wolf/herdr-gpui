@@ -3,6 +3,7 @@
 use serde_json::{Value, json};
 
 use super::*;
+use crate::harness::tests::{file_name, file_uri};
 
 const SESSION: &str = "5f1c9a2e-0000-4000-8000-00000000000a";
 
@@ -103,7 +104,7 @@ fn prompt(bridge: &mut Bridge, id: i64) -> Value {
         json!({"sessionId": SESSION, "prompt": [
             {"type": "text", "text": "Look"},
             {"type": "image", "mimeType": "image/png", "data": "iVBOR"},
-            {"type": "resource_link", "uri": "file:///work/a.rs", "name": "a.rs"},
+            {"type": "resource_link", "uri": file_uri("a.rs"), "name": "a.rs"},
         ]}),
     ));
     let command = harness(&outs[0]).clone();
@@ -119,7 +120,10 @@ fn a_prompt_carries_its_pictures_and_files() {
     let mut bridge = opened();
     let command = prompt(&mut bridge, 2);
     assert_eq!(command["type"], "prompt");
-    assert_eq!(command["message"], "Look\n\n@/work/a.rs");
+    assert_eq!(
+        command["message"],
+        format!("Look\n\n@{}", file_name("a.rs"))
+    );
     assert_eq!(
         command["images"][0],
         json!({"type": "image", "data": "iVBOR", "mimeType": "image/png"})

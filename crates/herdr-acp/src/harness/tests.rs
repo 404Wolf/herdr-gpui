@@ -13,6 +13,25 @@ use super::*;
 
 const WAIT: Duration = Duration::from_secs(10);
 
+/// A file link under the test checkout, absolute on this platform: a
+/// Windows file URI needs a drive to name a path.
+pub(crate) fn file_uri(name: &str) -> String {
+    if cfg!(windows) {
+        format!("file:///C:/work/{name}")
+    } else {
+        format!("file:///work/{name}")
+    }
+}
+
+/// The path [`file_uri`] names, as the platform writes it.
+pub(crate) fn file_name(name: &str) -> String {
+    if cfg!(windows) {
+        format!("C:\\work\\{}", name.replace('/', "\\"))
+    } else {
+        format!("/work/{name}")
+    }
+}
+
 /// The far end of a harness's pipes, and the session's side of the reach.
 struct Wired {
     delivered: Receiver<Inbound>,
@@ -147,8 +166,8 @@ fn a_translator_sits_between_the_session_and_the_harness() {
 #[test]
 fn file_links_name_their_path_and_long_commands_say_so() {
     assert_eq!(
-        out::file_path("file:///work/My%20File.md"),
-        "/work/My File.md"
+        out::file_path(&file_uri("My%20File.md")),
+        file_name("My File.md")
     );
     assert_eq!(
         out::file_path("https://example.com/a"),
