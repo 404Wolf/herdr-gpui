@@ -1511,6 +1511,11 @@ motion. Hold Shift to select locally instead; releasing a selection of terminal
 text in a pane also offers the annotation pill described below. In applications
 without mouse reporting, selection works without Shift. A forwarded drag stays
 in the pane or popup where it started, including when the pointer moves outside it.
+Many agent TUIs take the mouse without selecting text, so the first left drag an
+application receives in a session shows **Hold Shift and drag to select text**
+for a few seconds, where the `copied to clipboard` flash appears. It shows once
+per session, never for a click, and not at all once you have pressed with Shift
+over such a pane.
 
 Right-click opens the GUI pane menu unless Herdr routes that pane's right-clicks
 to the application (`herdr pane input --right-click pane`, or **Send
@@ -2116,12 +2121,12 @@ on an item's branch shows as that item's run, working or stopped by whether an
 agent is in it, and so does an `agent/…` branch in the repository that no
 workspace shows. These runs open their workspace but have no controls.
 
-The tab shares its data with agent-launcher,
-so both can be open on one repository at once: each lists the other's runs,
-updates only its own, and uses agent-launcher's prompt profiles from
-`~/.config/agent-launcher/agents/<name>/prompt.md` (the built-in prompt when
-none is chosen). Issues and runs are kept in agent-launcher's per-repository
-database under the platform data directory. GitHub is read as the account used
+Issues, pull requests with their reviews and checks, and runs are kept in a
+per-repository database in Herdr UI's state directory, so a restart lists them
+at once and syncs after. The first time a repository opens, agent-launcher's
+database for it is copied in, with its runs. The tab uses agent-launcher's
+prompt profiles from `~/.config/agent-launcher/agents/<name>/prompt.md` (the
+built-in prompt when none is chosen). GitHub is read as the account used
 for pull requests on that host. A GitLab remote, on gitlab.com or a
 self-managed host, lists its open issues (not yet its merge requests), read
 with `GITLAB_TOKEN` or `GITLAB_ACCESS_TOKEN` when `GITLAB_HOST` names that host
@@ -2177,8 +2182,15 @@ work. Cancelling an image already partially written closes that client connectio
 to avoid corrupting framing; it does not stop the daemon. Slow/stalled transfers
 have a 60-second deadline. There is no upload acknowledgement or progress API.
 
-macOS uses the native pasteboard on a background executor; AppKit may materialize
-its data before the client can check its size. Linux uses `wl-paste` (Wayland) or
+macOS acquires clipboard data in a short-lived copy of the application, on that
+process's main thread before any windows or daemon connections are opened. The
+background preparation task accepts only a complete, bounded response from a
+successful reader, with a three-second deadline. A native pasteboard crash or
+stall fails that paste without closing the GUI; the reader is killed and reaped
+on timeout. Clipboard data travels only over a private socket, never a temporary
+file or a log. The existing format priority, revision check, and paste ordering
+are preserved. AppKit may still materialize data inside the reader before its
+size can be checked. Linux uses `wl-paste` (Wayland) or
 `xclip` (X11) for explicit Ctrl-V image acquisition, with bounded output and a
 three-second acquisition deadline. Ordinary Linux paste retains GPUI's native
 clipboard reader and needs no helper; that existing synchronous API can still
