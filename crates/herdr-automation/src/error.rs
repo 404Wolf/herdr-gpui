@@ -1,4 +1,6 @@
-use std::{fmt, io, path::PathBuf};
+#[cfg(feature = "engine")]
+use std::fmt;
+use std::{io, path::PathBuf};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -7,6 +9,7 @@ pub enum Error {
     /// Compile errors, runtime errors and everything the host refused while
     /// the script ran. A refusal travels through Lua as an external error
     /// and keeps the script location Lua adds; [`Error::refusal`] finds it.
+    #[cfg(feature = "engine")]
     #[error("{0}")]
     Lua(#[from] mlua::Error),
     #[error("the script declares no caps; call herdr.caps {{ ... }} at its top level")]
@@ -27,6 +30,7 @@ pub enum Error {
     UnknownTrigger(usize),
 }
 
+#[cfg(feature = "engine")]
 impl Error {
     /// What the host refused, when that is why the script stopped.
     pub fn refusal(&self) -> Option<&Refusal> {
@@ -49,6 +53,7 @@ impl Error {
     }
 }
 
+#[cfg(feature = "engine")]
 fn is_memory_error(error: &(dyn std::error::Error + 'static)) -> bool {
     matches!(
         error.downcast_ref::<mlua::Error>(),
@@ -56,6 +61,7 @@ fn is_memory_error(error: &(dyn std::error::Error + 'static)) -> bool {
     )
 }
 
+#[cfg(feature = "engine")]
 /// Something the host would not do for a script.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum Refusal {
@@ -80,6 +86,7 @@ pub enum Refusal {
     TriggerInsideTrigger,
 }
 
+#[cfg(feature = "engine")]
 /// The limits that stop a script that runs away.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -89,6 +96,7 @@ pub enum Budget {
     Steps,
 }
 
+#[cfg(feature = "engine")]
 impl fmt::Display for Budget {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
@@ -99,6 +107,7 @@ impl fmt::Display for Budget {
     }
 }
 
+#[cfg(feature = "engine")]
 /// Why an argument was refused.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum Problem {
@@ -123,6 +132,11 @@ pub enum Problem {
     Range {
         field: &'static str,
         range: &'static str,
+    },
+    #[error("`{field}` must be {rule}")]
+    Shape {
+        field: &'static str,
+        rule: &'static str,
     },
     #[error("invalid time `{0}`; use HH:MM in 24-hour form")]
     Time(String),

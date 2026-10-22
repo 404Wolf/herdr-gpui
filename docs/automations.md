@@ -93,6 +93,11 @@ print in the plan, so they are approved with it.
 | `sh("command")` | Run a shell command; the plan marks it as an arbitrary command |
 | `worktree { name, base? }` | Create a worktree |
 
+Branch and worktree names (`pull`, `worktree`, `agent`'s `worktree` and
+`base`) take letters, digits, `. _ / -` and the `{date}` token, with git's
+rules (no leading `-`, no `..`); a harness is a lowercase name such as
+`claude` or `codex`.
+
 A step that fails stops the run. With `{ check = false }` it returns
 `{ ok, log_tail }` instead (and `run_id` for `agent`) and the script decides.
 Steps also take `{ timeout = "30m" }`. Unknown fields, control characters,

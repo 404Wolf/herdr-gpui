@@ -14,29 +14,49 @@
 //! end)
 //! ```
 
+#[cfg(feature = "engine")]
 mod args;
+#[cfg(feature = "engine")]
 mod caps;
 mod error;
+#[cfg(feature = "engine")]
 mod plan;
+pub mod report;
+#[cfg(feature = "engine")]
 mod schedule;
+#[cfg(feature = "engine")]
 mod script;
+#[cfg(feature = "engine")]
 mod source;
+#[cfg(feature = "engine")]
 mod step;
+#[cfg(feature = "engine")]
 mod tokens;
+#[cfg(feature = "engine")]
 mod vm;
 
+#[cfg(feature = "engine")]
 pub use caps::Caps;
-pub use error::{Budget, Error, Problem, Refusal, Result};
+#[cfg(feature = "engine")]
+pub use error::{Budget, Problem, Refusal};
+pub use error::{Error, Result};
+#[cfg(feature = "engine")]
 pub use plan::{Failure, MAX_PATHS, Plan, PlannedStep, TriggerPlan, Walker};
+#[cfg(feature = "engine")]
 pub use schedule::{
     ClockTime, Cron, Days, Due, LATE_AFTER, Schedule, Zone, due, format_duration, parse_duration,
 };
+#[cfg(feature = "engine")]
 pub use script::{End, Script, Trigger};
+#[cfg(feature = "engine")]
 pub use source::{MAX_SCRIPT_BYTES, Source};
+#[cfg(feature = "engine")]
 pub use step::{Call, Kind, Step, Verdict};
+#[cfg(feature = "engine")]
 pub use tokens::{DATE, Resolved, TIME, Values};
+#[cfg(feature = "engine")]
 pub use vm::Limits;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "engine"))]
 #[allow(clippy::unwrap_used)]
 mod tests;

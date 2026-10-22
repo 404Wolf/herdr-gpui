@@ -145,25 +145,53 @@ impl Site {
 pub(crate) struct Text {
     pub(crate) field: &'static str,
     limit: usize,
-    multiline: bool,
+    form: Form,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Form {
+    /// One line of any visible text: a trigger name, a time zone.
+    Line,
+    /// Free text that may span lines and carry tokens: a prompt, a command.
+    Body,
+    /// A git branch or worktree name: `A-Z a-z 0-9 . _ / -` and `{date}`.
+    Reference,
+    /// A lowercase name such as an agent harness: `a-z 0-9 -`.
+    Identifier,
 }
 
 impl Text {
-    /// A one-line name: a branch, a script name, a harness.
     pub(crate) const fn name(field: &'static str) -> Self {
         Self {
             field,
             limit: 200,
-            multiline: false,
+            form: Form::Line,
         }
     }
 
-    /// Free text that may span lines: a prompt, a command.
     pub(crate) const fn body(field: &'static str, limit: usize) -> Self {
         Self {
             field,
             limit,
-            multiline: true,
+            form: Form::Body,
+        }
+    }
+
+    /// A branch or worktree name. Step output tokens cannot appear here;
+    /// only `{date}`, which fills in as digits and dashes.
+    pub(crate) const fn reference(field: &'static str) -> Self {
+        Self {
+            field,
+            limit: 200,
+            form: Form::Reference,
+        }
+    }
+
+    pub(crate) const fn identifier(field: &'static str) -> Self {
+        Self {
+            field,
+            limit: 64,
+            form: Form::Identifier,
         }
     }
 
@@ -177,30 +205,74 @@ impl Text {
                 limit: self.limit,
             }));
         }
-        let allowed = |c: char| self.multiline && matches!(c, '\n' | '\t');
+        let allowed = |c: char| self.form == Form::Body && matches!(c, '\n' | '\t');
         if text.chars().any(|c| c.is_control() && !allowed(c)) {
             return Err(site.refuse(Problem::Control(self.field)));
         }
         if text.chars().any(invisible) {
             return Err(site.refuse(Problem::Format(self.field)));
         }
+        let fits = match self.form {
+            Form::Line | Form::Body => true,
+            Form::Reference => is_reference(text),
+            Form::Identifier => text
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+        };
+        if !fits {
+            return Err(site.refuse(Problem::Shape {
+                field: self.field,
+                rule: match self.form {
+                    Form::Identifier => "lowercase letters, digits and -",
+                    _ => "a branch name: letters, digits, . _ / -, and {date}; no leading -, no ..",
+                },
+            }));
+        }
         Ok(())
     }
 }
 
-/// Characters that change how text reads without showing: bidi controls,
-/// zero-width characters and the like. A plan must read as what runs.
+/// A name git accepts as a branch, also once `{date}` is filled in.
+fn is_reference(text: &str) -> bool {
+    let filled = text.replace(crate::tokens::DATE, "2026-01-01");
+    let plain = filled
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '/' | '-'));
+    plain
+        && !filled.starts_with(['-', '/', '.'])
+        && !filled.ends_with(['/', '.'])
+        && !filled.ends_with(".lock")
+        && !filled.contains("..")
+        && !filled.contains("//")
+        && !filled.contains("/.")
+}
+
+/// Characters that change how text reads without showing, or show as
+/// anything: format controls such as bidi overrides and zero-width joiners,
+/// line and paragraph separators, private use, unassigned code points, and
+/// the default-ignorable marks outside those categories. A plan must read
+/// as what runs.
 fn invisible(c: char) -> bool {
+    use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
     matches!(
+        c.general_category(),
+        GeneralCategory::Format
+            | GeneralCategory::LineSeparator
+            | GeneralCategory::ParagraphSeparator
+            | GeneralCategory::PrivateUse
+            | GeneralCategory::Surrogate
+            | GeneralCategory::Unassigned
+    ) || matches!(
         c,
-        '\u{00ad}'
-            | '\u{061c}'
-            | '\u{180e}'
-            | '\u{200b}'..='\u{200f}'
-            | '\u{202a}'..='\u{202e}'
-            | '\u{2060}'..='\u{2064}'
-            | '\u{2066}'..='\u{206f}'
-            | '\u{feff}'
-            | '\u{fff9}'..='\u{fffb}'
+        '\u{034f}'
+            | '\u{115f}'
+            | '\u{1160}'
+            | '\u{17b4}'
+            | '\u{17b5}'
+            | '\u{180b}'..='\u{180f}'
+            | '\u{3164}'
+            | '\u{fe00}'..='\u{fe0f}'
+            | '\u{ffa0}'
+            | '\u{e0000}'..='\u{e0fff}'
     )
 }

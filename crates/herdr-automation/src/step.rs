@@ -151,17 +151,17 @@ impl Call {
                         ],
                     )?;
                     Step::Agent {
-                        harness: site.required_text(&table, Text::name("harness"))?,
+                        harness: site.required_text(&table, Text::identifier("harness"))?,
                         prompt: site.required_text(&table, Text::body("prompt", 64 * 1024))?,
-                        worktree: site.optional_text(&table, Text::name("worktree"))?,
-                        base: site.optional_text(&table, Text::name("base"))?,
+                        worktree: site.optional_text(&table, Text::reference("worktree"))?,
+                        base: site.optional_text(&table, Text::reference("base"))?,
                         wait: site.optional_bool(&table, "wait")?.unwrap_or(false),
                     }
                 } else {
                     site.only(&table, &["name", "base", "check", "timeout"])?;
                     Step::Worktree {
-                        name: site.required_text(&table, Text::name("name"))?,
-                        base: site.optional_text(&table, Text::name("base"))?,
+                        name: site.required_text(&table, Text::reference("name"))?,
+                        base: site.optional_text(&table, Text::reference("base"))?,
                     }
                 };
                 Ok(Self {
@@ -176,7 +176,7 @@ impl Call {
                         text: site.text(first, Text::body("text", 1_024))?,
                     },
                     Kind::Pull => Step::Pull {
-                        branch: site.text(first, Text::name("branch"))?,
+                        branch: site.text(first, Text::reference("branch"))?,
                     },
                     Kind::Run => {
                         let name = site.text(first, Text::name("name"))?;

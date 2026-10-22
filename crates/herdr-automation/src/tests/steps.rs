@@ -120,6 +120,54 @@ fn invisible_characters_are_refused() {
         run_refusal("agent { harness = \"claude\", prompt = \"hi\\u{200b}\" }"),
         invalid("agent", Problem::Format("prompt"))
     );
+    // A variation selector is no format character, but still invisible.
+    assert_eq!(
+        run_refusal("notify(\"ok\\u{fe0f}\")"),
+        invalid("notify", Problem::Format("text"))
+    );
+    assert_eq!(
+        run_refusal("notify(\"tag\\u{e0041}\")"),
+        invalid("notify", Problem::Format("text"))
+    );
+}
+
+#[test]
+fn names_must_be_safe_git_references() {
+    for bad in [
+        "pull(\"-x\")",
+        "pull(\"a..b\")",
+        "pull(\"main.lock\")",
+        "pull(\"feat branch\")",
+        "worktree { name = \"fix-{log_tail:1}\" }",
+        "agent { harness = \"claude\", prompt = \"x\", worktree = \"w/{run_id:1}\" }",
+    ] {
+        assert!(
+            matches!(
+                run_refusal(bad),
+                Refusal::Invalid {
+                    problem: Problem::Shape { .. },
+                    ..
+                }
+            ),
+            "{bad}"
+        );
+    }
+    let ok = calls("worktree { name = \"nightly/{date}\", base = \"origin/main\" }");
+    assert_eq!(ok.len(), 1);
+}
+
+#[test]
+fn harnesses_are_lowercase_names() {
+    assert!(matches!(
+        run_refusal("agent { harness = \"Claude Code\", prompt = \"x\" }"),
+        Refusal::Invalid {
+            problem: Problem::Shape {
+                field: "harness",
+                ..
+            },
+            ..
+        }
+    ));
 }
 
 #[test]
