@@ -84,25 +84,29 @@ fn working(state: &State) -> u32 {
     u32::try_from(count).unwrap_or(u32::MAX)
 }
 
-fn dispatch(state: &Arc<State>, mut live: Live) {
-    live.state.waiting = waiting(state);
-    live.state.working = working(state);
-    let registrations: Vec<(DeviceId, Registration)> = state
-        .auth()
-        .devices()
+/// Every device's non-empty APNs registration, read under one lock: the
+/// auth mutex is not reentrant.
+pub(super) fn registrations(state: &State) -> Vec<(DeviceId, Registration)> {
+    let auth = state.auth();
+    let devices = auth.devices();
+    devices
         .list(|_| false)
         .into_iter()
         .filter_map(|device| {
             let registration = Registration::from_stored(
-                state
-                    .auth()
-                    .devices()
+                devices
                     .get(&device.id)
                     .and_then(|record| record.apns.as_ref()),
             );
             (!registration.is_empty()).then_some((device.id, registration))
         })
-        .collect();
+        .collect()
+}
+
+fn dispatch(state: &Arc<State>, mut live: Live) {
+    live.state.waiting = waiting(state);
+    live.state.working = working(state);
+    let registrations = registrations(state);
     for (device, registration) in registrations {
         let token = match live.event {
             Event::Start { .. } => registration.push_to_start.clone(),

@@ -127,3 +127,48 @@ async fn a_phone_pairs_with_the_desktops_approval_and_signs_in() {
         .unwrap();
     assert_eq!(send(&state, request).await.0, StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn registered_live_activity_tokens_are_read_without_deadlock() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = state(dir.path());
+    let Response::Offer(offer) = control(&state, Request::Pair) else {
+        panic!("expected an offer");
+    };
+    let key = SigningKey::from_slice(&[9; 32]).unwrap();
+    let public = key.verifying_key().to_sec1_point(false);
+    let claim = state
+        .auth()
+        .claim(
+            [10, 0, 0, 9].into(),
+            &token_of(&offer.url),
+            "iPhone",
+            &URL_SAFE_NO_PAD.encode(public.as_bytes()),
+            now_ms(),
+        )
+        .unwrap();
+    control(
+        &state,
+        Request::Approve {
+            id: offer.id,
+            allow: true,
+            code: claim.code,
+        },
+    );
+    let device = state.auth().devices().list(|_| false)[0].id.clone();
+    let registration = json!({"push_to_start": "ab".repeat(32), "activities": []});
+    state
+        .auth()
+        .devices_mut()
+        .set_apns(&device, Some(registration))
+        .unwrap();
+    // Reading every registration takes the auth lock once; a nested lock
+    // would hang here.
+    let found = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        crate::server::registrations_for_tests(&state)
+    })
+    .await
+    .unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].0, device);
+}

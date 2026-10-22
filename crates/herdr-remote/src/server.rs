@@ -45,6 +45,14 @@ pub(crate) fn answer_for_tests(
     control::answer(state, stop, request)
 }
 
+/// Every device's APNs registration, for other modules' tests.
+#[cfg(test)]
+pub(crate) fn registrations_for_tests(
+    state: &State,
+) -> Vec<(crate::control::DeviceId, crate::apns::Registration)> {
+    live::registrations(state)
+}
+
 /// Runs the daemon on the current Tokio runtime until it is told to stop.
 pub async fn run(options: Options) -> Result<()> {
     std::fs::create_dir_all(&options.state_dir)?;
