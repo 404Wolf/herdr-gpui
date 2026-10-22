@@ -26,7 +26,7 @@ impl Render for Group {
         let rule = Worktrees::default()
             .rule(true, &Theme::default())
             .map(|rule| rule.debug_selector(|| "rule".into()));
-        let (strip, rule) = place_rule(strip, rule, below);
+        let strip = place_rule(strip, rule, below);
         let body = div().debug_selector(|| "body".into()).flex_1().min_h_0();
         div()
             .size_full()
@@ -37,15 +37,14 @@ impl Render for Group {
                 (Some(strip), true) => column.child(body).child(strip),
                 (None, _) => column.child(body),
             })
-            .children(rule)
     }
 }
 
 /// The rule lies inside the strip, on the edge that meets the terminals,
-/// so it covers no cell and the body keeps its full size; with no strip it
-/// lies along the group's top.
+/// so it covers no cell and the body keeps its full size; with no strip
+/// there is no chrome to hold it, and it is not drawn over the cells.
 #[gpui::test]
-fn the_rule_lies_on_the_strips_inner_edge_and_never_moves_the_body(cx: &mut TestAppContext) {
+fn the_rule_lies_on_the_strips_inner_edge_and_never_covers_the_body(cx: &mut TestAppContext) {
     for strip in [Some(false), Some(true), None] {
         let (_, cx) = cx.add_window_view(|_, _| Group { strip });
         cx.simulate_resize(size(px(640.), px(400.)));
@@ -54,11 +53,12 @@ fn the_rule_lies_on_the_strips_inner_edge_and_never_moves_the_body(cx: &mut Test
             window.refresh();
             let _ = window.draw(cx);
         });
-        let rule = cx.debug_bounds("rule").unwrap();
+        let rule = cx.debug_bounds("rule");
         let body = cx.debug_bounds("body").unwrap();
-        assert_eq!(rule.size, size(px(640.), px(RULE)), "{strip:?}");
         match strip {
             Some(below) => {
+                let rule = rule.unwrap();
+                assert_eq!(rule.size, size(px(640.), px(RULE)), "{below}");
                 let strip = cx.debug_bounds("strip").unwrap();
                 assert_eq!(body.size.height, px(400. - STRIP), "{below}");
                 if below {
@@ -71,7 +71,7 @@ fn the_rule_lies_on_the_strips_inner_edge_and_never_moves_the_body(cx: &mut Test
             }
             None => {
                 assert_eq!(body.size.height, px(400.));
-                assert_eq!(rule.top(), body.top());
+                assert!(rule.is_none());
             }
         }
     }

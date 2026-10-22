@@ -738,7 +738,7 @@ impl HerdrWindow {
             .is_some_and(crate::worktree_identity::focused_is_linked);
         let rule = self.config.worktrees.rule(linked, &self.theme);
         let rule = rule.map(|rule| rule.debug_selector(move || slot.selector("worktree-rule")));
-        let (strip, rule) = crate::worktree_identity::place_rule(strip, rule, bottom);
+        let strip = crate::worktree_identity::place_rule(strip, rule, bottom);
         // Zen mode draws the one group in use across the whole row, at once
         // even while it is still opening.
         let zen = self.zen_layout();
@@ -782,7 +782,6 @@ impl HerdrWindow {
                 (Some(strip), true) => column.child(body).child(strip),
                 (None, _) => column.child(body),
             })
-            .children(rule)
             .child({
                 let drawn = self.browser.group_bounds.clone();
                 canvas(

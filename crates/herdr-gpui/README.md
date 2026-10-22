@@ -1760,9 +1760,9 @@ the app reads no Git of its own for this.
   notes use), where a repository row shows its owner's avatar. Screen
   readers hear "linked worktree" after its name.
 - In the workspace, a 2-pixel rule in the same blue lies along the tab
-  strip's edge that meets the terminals, or along the top while the strip is
-  hidden. It sits in the chrome, so no terminal cell is covered or
-  recoloured.
+  strip's edge that meets the terminals. It sits in the chrome, so no
+  terminal cell is covered or recoloured; while the strip is hidden there is
+  no chrome to hold it, and the sidebar alone marks the worktree.
 
 The glyph and the rule reach 3:1 against the chrome (4.5:1 under
 `contrast = "high"`). The `[worktrees]` table changes their hue or where the

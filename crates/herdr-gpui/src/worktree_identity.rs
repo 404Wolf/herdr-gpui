@@ -6,7 +6,8 @@
 //! hangs from its main checkout on the tree's guide lines, in every layout,
 //! and one standing alone (its main checkout not open) takes the branch glyph
 //! instead, since it has no line to hang from. In the workspace, a hairline
-//! runs where its tab strip meets its terminals. The main checkout keeps the
+//! runs where its tab strip meets its terminals, and none while the strip is
+//! hidden, since it would then cover cells. The main checkout keeps the
 //! theme as drawn, so the odd one out is the copy, not the original.
 //!
 //! The guides are structure, not identity, so they keep the tree's own muted
@@ -133,20 +134,15 @@ pub(crate) fn focused_is_linked(snapshot: &ClientShellSnapshot) -> bool {
         .is_some_and(is_linked)
 }
 
-/// Where a group's rule lies: along its strip's edge that meets the
-/// terminals, inside the chrome so no cell is covered, or along the group's
-/// top when it shows no strip. `below` is a strip under the terminals.
-/// Returns the strip, and the rule when the group itself must carry it.
-pub(crate) fn place_rule(
-    strip: Option<Div>,
-    rule: Option<Div>,
-    below: bool,
-) -> (Option<Div>, Option<Div>) {
-    match (strip, rule) {
-        (Some(strip), Some(rule)) => {
-            let rule = if below { rule.top_0() } else { rule.bottom_0() };
-            (Some(strip.child(rule)), None)
-        }
-        (strip, rule) => (strip, rule.map(Styled::top_0)),
-    }
+/// A group's strip with its rule, along the strip's edge that meets the
+/// terminals and inside the chrome so no cell is covered. `below` is a strip
+/// under the terminals. A group that shows no strip has no chrome edge, and
+/// a rule along its top would lie over the first row of cells, so it shows
+/// none.
+pub(crate) fn place_rule(strip: Option<Div>, rule: Option<Div>, below: bool) -> Option<Div> {
+    let strip = strip?;
+    Some(match rule {
+        Some(rule) => strip.child(if below { rule.top_0() } else { rule.bottom_0() }),
+        None => strip,
+    })
 }
