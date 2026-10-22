@@ -123,6 +123,8 @@ test-case            = "3"
 thiserror            = "2"
 # The remote control daemon's runtime and web server; only herdr-remote uses them.
 tokio                = { features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"], version = "1" }
+# Server-rendered HTML for the remote control web app, escaped by default.
+maud                 = "0.27"
 axum                 = { default-features = false, features = ["http1", "json", "query", "tokio"], version = "0.8" }
 toml                 = "1.1"
 toml_edit            = "0.25"

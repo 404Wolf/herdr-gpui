@@ -14,7 +14,7 @@ workspace = true
 # The daemon itself. Herdr UI depends on this crate without it, for the
 # control protocol alone, so Tokio never reaches the GUI.
 default = ["server"]
-server  = ["dep:axum", "dep:tokio"]
+server  = ["dep:axum", "dep:maud", "dep:pulldown-cmark", "dep:tokio"]
 
 [[bin]]
 name              = "herdr-remote"
@@ -29,8 +29,10 @@ serde_json.workspace          = true
 thiserror.workspace           = true
 uuid.workspace                = true
 
-axum  = { optional = true, workspace = true }
-tokio = { optional = true, workspace = true }
+axum           = { optional = true, workspace = true }
+maud           = { optional = true, workspace = true }
+pulldown-cmark = { optional = true, workspace = true }
+tokio          = { optional = true, workspace = true }
 
 [dev-dependencies]
 tempfile.workspace = true

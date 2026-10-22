@@ -60,6 +60,32 @@ pub(crate) struct View {
     pub(crate) connected: bool,
 }
 
+/// A chat as a list row shows it.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct Summary {
+    pub(crate) connected: bool,
+    pub(crate) status: herdr_chat_protocol::Status,
+    /// The oldest question waiting for an answer.
+    pub(crate) question: Option<herdr_chat_protocol::Permission>,
+    pub(crate) questions: usize,
+    /// The start of the agent's latest answer, on one line.
+    pub(crate) last_text: Option<String>,
+    pub(crate) turn_started_ms: Option<u64>,
+    pub(crate) agent: String,
+    pub(crate) usage_percent: Option<u8>,
+}
+
+/// The first `limit` characters of `text` on one line.
+pub(crate) fn excerpt(text: &str, limit: usize) -> String {
+    let line: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if line.chars().count() <= limit {
+        return line;
+    }
+    let mut cut: String = line.chars().take(limit.saturating_sub(1)).collect();
+    cut.push('…');
+    cut
+}
+
 #[derive(Default)]
 struct State {
     cursor: Option<Cursor>,
@@ -121,6 +147,32 @@ impl Chat {
             cursor: state.cursor,
             transcript: state.transcript.clone(),
             connected: state.connected,
+        }
+    }
+
+    /// What a list row shows, without copying the transcript.
+    pub(crate) fn summary(&self) -> Summary {
+        let state = lock(&self.state);
+        let transcript = &state.transcript;
+        Summary {
+            connected: state.connected,
+            status: transcript.status.clone(),
+            question: transcript.permissions.first().cloned(),
+            questions: transcript.permissions.len(),
+            last_text: transcript
+                .entries
+                .iter()
+                .rev()
+                .find_map(|entry| match &entry.kind {
+                    herdr_chat_protocol::EntryKind::Agent { text } => Some(excerpt(text, 140)),
+                    _ => None,
+                }),
+            turn_started_ms: transcript.turn.map(|turn| turn.started_ms),
+            agent: transcript.agent.clone(),
+            usage_percent: transcript
+                .usage
+                .as_ref()
+                .map(herdr_chat_protocol::Usage::percent),
         }
     }
 

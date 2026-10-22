@@ -8,8 +8,8 @@ mod chat;
 mod daemon;
 mod layout;
 
-pub(crate) use chat::{Chat, Event, View};
-pub(crate) use layout::{Layout, Workspace};
+pub(crate) use chat::{Chat, Event, Summary, View, excerpt};
+pub(crate) use layout::{Chat as ChatRow, Layout, Workspace};
 
 use herdr_chat_protocol::{Agent, Command, EndpointId, Rejection};
 use herdr_client::Method;
@@ -292,6 +292,16 @@ fn direct_command_line(program: &Path, agent: Agent) -> String {
         format!("& '{}' {agent}", program.replace('\'', "''"))
     } else {
         format!(" {} {agent}", herdr_client::shell_quote(&program))
+    }
+}
+
+/// A terminal row, for other modules' tests.
+#[cfg(test)]
+pub(crate) fn layout_terminal(tab: &str, label: &str) -> layout::Terminal {
+    layout::Terminal {
+        tab: tab.into(),
+        label: label.into(),
+        cwd: None,
     }
 }
 
