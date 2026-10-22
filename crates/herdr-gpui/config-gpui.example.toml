@@ -429,6 +429,13 @@ size = 12
 # [px0]
 # url = "http://127.0.0.1:7777/"
 
+# How chat views draw: "timeline" (entries on a line with avatars), "bubbles"
+# (your messages in bubbles on the right, settings under the composer, like
+# Claude's app), or "pill" (one rounded composer holding the settings, like
+# ChatGPT's and Codex's apps). The button in a chat's header steps through them.
+# [chat]
+# layout = "timeline"
+
 # Variables every chat's tab starts with, on this machine or an SSH host, so
 # an agent reaches a company endpoint the pane's shell does not set up: GitHub
 # Enterprise for Copilot, an LLM gateway for Claude. Values are stored as

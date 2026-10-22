@@ -260,6 +260,8 @@ impl ChatPane {
 pub(crate) struct Chats {
     /// The agents installed on each host new chats may start on.
     pub(crate) agents: super::harnesses::Harnesses,
+    /// The layout the lists' rows were last measured in.
+    measured: crate::config::ChatLayoutMode,
     panes: Vec<ChatPane>,
     /// The `herdr-acp` new chats run.
     pub(crate) program: super::Program,
@@ -274,6 +276,20 @@ pub(crate) struct Chats {
 }
 
 impl Chats {
+    /// Measures every list's rows again once the layout they are drawn in
+    /// changed, since each layout gives a row its own height. Says whether
+    /// it did.
+    pub(crate) fn relayout(&mut self, layout: crate::config::ChatLayoutMode) -> bool {
+        if self.measured == layout {
+            return false;
+        }
+        self.measured = layout;
+        for pane in &self.panes {
+            pane.list.remeasure();
+        }
+        true
+    }
+
     /// Attaches to `targets` and detaches from every other pane, then
     /// starts the connections that are due.
     pub(crate) fn reconcile(

@@ -47,6 +47,8 @@ impl HerdrWindow {
         self.poll_chat_start(cx);
         let now = Instant::now();
         let mut changed = self.chats.reconcile(targets, now, connect);
+        // A layout saved from Settings or the command line arrives here.
+        changed |= self.chats.relayout(self.config.chat.layout);
         changed |= self.chats.poll(now);
         self.prepare_chat_visuals(window, cx);
         let mut font = self.config.ui.clone();

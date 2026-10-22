@@ -12,7 +12,7 @@ use herdr_chat_protocol::{
 };
 use herdr_client::ConnectTarget;
 
-fn conversation(plan: bool) -> ServerMessage {
+pub(super) fn conversation(plan: bool) -> ServerMessage {
     let mut transcript = Transcript::new("Claude");
     transcript.status = Status::Idle;
     transcript.entries = vec![

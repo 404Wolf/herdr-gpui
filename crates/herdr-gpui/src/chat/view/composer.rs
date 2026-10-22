@@ -1,8 +1,12 @@
-//! The composer: a card holding the files to send, the draft, and the
-//! prompt line, with the session's settings, context use, and the send
-//! button along its foot. The settings' menus open above it.
+//! The composer's parts: the files to send, the draft and its prompt line,
+//! the session's settings, context use, and the send button, which the
+//! chat's layout arranges. The settings' menus open above them.
 
-use super::{super::chats::ChatPane, Hues};
+use super::{
+    super::chats::ChatPane,
+    Hues,
+    layout::{ComposerParts, Look, layout_for},
+};
 use crate::{HerdrWindow, config::corners};
 use gpui::{prelude::*, *};
 
@@ -167,77 +171,67 @@ impl HerdrWindow {
                     this.send_chat_composer(&pane_id, cx);
                 }))
         };
-        let card = div()
+        let draft = div()
             .flex()
             .flex_col()
-            .rounded(px(corners::PANEL))
-            .border_1()
-            .border_color(rgb(theme.primary()))
-            .bg(rgb(theme.background))
-            .children(chips)
-            .child(
+            .gap(px(2.))
+            .children((chat.draft.len() > DRAFT_LINES).then(|| {
+                let earlier = chat.draft.len() - DRAFT_LINES;
                 div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(2.))
-                    .px(px(14.))
-                    .pt(px(12.))
-                    .pb(px(8.))
-                    .children((chat.draft.len() > DRAFT_LINES).then(|| {
-                        let earlier = chat.draft.len() - DRAFT_LINES;
+                    .debug_selector(|| "chat-draft-earlier".into())
+                    .text_size(small)
+                    .text_color(rgb(theme.muted))
+                    .child(match earlier {
+                        1 => "1 earlier line".to_owned(),
+                        count => format!("{count} earlier lines"),
+                    })
+            }))
+            .children(
+                chat.draft
+                    .iter()
+                    .skip(chat.draft.len().saturating_sub(DRAFT_LINES))
+                    .map(|line| {
                         div()
-                            .debug_selector(|| "chat-draft-earlier".into())
-                            .text_size(small)
-                            .text_color(rgb(theme.muted))
-                            .child(match earlier {
-                                1 => "1 earlier line".to_owned(),
-                                count => format!("{count} earlier lines"),
+                            .text_color(rgb(theme.subtext()))
+                            .whitespace_nowrap()
+                            .overflow_hidden()
+                            .child(if line.is_empty() {
+                                " ".to_owned()
+                            } else {
+                                line.clone()
                             })
-                    }))
-                    .children(
-                        chat.draft
-                            .iter()
-                            .skip(chat.draft.len().saturating_sub(DRAFT_LINES))
-                            .map(|line| {
-                                div()
-                                    .text_color(rgb(theme.subtext()))
-                                    .whitespace_nowrap()
-                                    .overflow_hidden()
-                                    .child(if line.is_empty() {
-                                        " ".to_owned()
-                                    } else {
-                                        line.clone()
-                                    })
-                            }),
-                    )
-                    .child(
-                        div()
-                            .debug_selector(|| "chat-composer".into())
-                            .min_h(px(self.chat_text_size() * 1.6))
-                            .flex()
-                            .items_center()
-                            .children(chat.composer.clone()),
-                    ),
+                    }),
             )
             .child(
                 div()
-                    .debug_selector(|| "chat-settings".into())
+                    .debug_selector(|| "chat-composer".into())
+                    .min_h(px(self.chat_text_size() * 1.6))
                     .flex()
-                    .flex_wrap()
                     .items_center()
-                    .gap(px(8.))
-                    .px(px(10.))
-                    .pb(px(10.))
-                    .child(attach)
-                    .children(self.render_chat_settings_buttons(chat, cx))
-                    .children(
-                        (!super::settings::agent_bypasses(transcript))
-                            .then(|| self.render_chat_auto_accept(chat, cx)),
-                    )
-                    .child(div().flex_1())
-                    .children(self.render_chat_usage(chat))
-                    .child(send),
+                    .children(chat.composer.clone()),
             );
+        let settings = self
+            .render_chat_settings_buttons(chat, cx)
+            .into_iter()
+            .map(IntoElement::into_any_element)
+            .chain(
+                (!super::settings::agent_bypasses(transcript))
+                    .then(|| self.render_chat_auto_accept(chat, cx).into_any_element()),
+            )
+            .collect();
+        let parts = ComposerParts {
+            chips,
+            draft,
+            attach,
+            settings,
+            usage: self.render_chat_usage(chat),
+            send,
+        };
+        let look = Look {
+            theme,
+            text: self.chat_text_size(),
+        };
+        let card = layout_for(self.config.chat.layout).composer(parts, &look);
         div()
             .relative()
             .flex_none()

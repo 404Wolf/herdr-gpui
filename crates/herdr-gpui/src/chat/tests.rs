@@ -21,6 +21,7 @@ mod composer;
 mod controls;
 mod discovery;
 mod feature;
+mod layouts;
 mod link;
 mod list;
 mod menus;

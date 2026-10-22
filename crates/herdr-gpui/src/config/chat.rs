@@ -1,6 +1,9 @@
 //! The `[chat]` table: what chats started from the app run with.
 //!
 //! ```toml
+//! [chat]
+//! layout = "bubbles"
+//!
 //! [chat.env]
 //! GH_HOST = "mycompany.ghe.com"
 //! ANTHROPIC_BASE_URL = "https://llm.example.com"
@@ -10,6 +13,7 @@
 //! machine or an SSH host, so an agent reaches a company endpoint that the
 //! pane's shell does not set up. Values sit in the config file as written,
 //! so a token belongs in the shell or the agent's own sign-in instead.
+//! `layout` picks how a chat view draws its entries and composer.
 
 use std::collections::BTreeMap;
 
@@ -26,6 +30,75 @@ const RESERVED: [&str; 1] = [crate::chat::PROGRAM_ENV];
 #[serde(default, deny_unknown_fields)]
 pub struct ChatConfig {
     pub env: BTreeMap<String, String>,
+    pub layout: ChatLayoutMode,
+}
+
+/// Declares each layout once: its variant, the config value that selects
+/// it, and how the app titles it, in the order switchers list them.
+macro_rules! chat_layouts {
+    ($($(#[$doc:meta])* $variant:ident => $name:literal, $label:literal;)+) => {
+        /// How a chat view draws its entries and composer. Each one is a
+        /// `chat::view::layout::ChatLayout`; what a chat does is the same in
+        /// all.
+        #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+        pub enum ChatLayoutMode {
+            $($(#[$doc])* $variant,)+
+        }
+
+        impl ChatLayoutMode {
+            /// Every layout, in the order switchers list them.
+            pub const ALL: &'static [Self] = &[$(Self::$variant,)+];
+
+            /// `ALL`'s names, for errors that list what a config may say.
+            const NAMES: &'static [&'static str] = &[$($name,)+];
+
+            /// The config value that selects it.
+            pub const fn name(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $name,)+
+                }
+            }
+
+            /// How the app titles it.
+            pub const fn label(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $label,)+
+                }
+            }
+        }
+    };
+}
+
+chat_layouts! {
+    /// Entries on a line down the left, an avatar where the speaker
+    /// changes, and the settings inside the composer's card.
+    #[default]
+    Timeline => "timeline", "Timeline";
+    /// The user's messages in bubbles on the right and the agent's as
+    /// plain text, with the settings under the composer, like Claude's app.
+    Bubbles => "bubbles", "Bubbles";
+    /// Bubbles in a roomier column and a rounded composer holding the
+    /// settings beside the draft, like ChatGPT's and Codex's apps.
+    Pill => "pill", "Pill";
+}
+
+impl ChatLayoutMode {
+    /// The layout after this one, for a switcher that steps through them.
+    pub(crate) fn next(self) -> Self {
+        let index = Self::ALL.iter().position(|&mode| mode == self).unwrap_or(0);
+        Self::ALL[(index + 1) % Self::ALL.len()]
+    }
+}
+
+impl<'de> Deserialize<'de> for ChatLayoutMode {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(deserializer)?;
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|mode| mode.name() == name)
+            .ok_or_else(|| serde::de::Error::unknown_variant(&name, Self::NAMES))
+    }
 }
 
 impl ChatConfig {

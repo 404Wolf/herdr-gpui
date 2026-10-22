@@ -62,3 +62,29 @@ fn malformed_or_unsafe_pairs_are_refused() {
         Err(crate::chat::Error::EnvironmentSize)
     ));
 }
+
+#[test]
+fn the_layout_is_read_and_saved_by_name() {
+    let config = crate::config::Config::parse("[chat]\nlayout = \"pill\"\n").unwrap();
+    assert_eq!(config.chat.layout, ChatLayoutMode::Pill);
+    assert!(crate::config::Config::parse("[chat]\nlayout = \"cards\"\n").is_err());
+    assert_eq!(
+        crate::config::Config::parse("").unwrap().chat.layout,
+        ChatLayoutMode::Timeline
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config-gpui.local.toml");
+    std::fs::write(&path, "[chat.env]\nGH_HOST = \"ghe.example\"\n").unwrap();
+    for &mode in ChatLayoutMode::ALL {
+        crate::config::Config::save_preference_path(
+            crate::config::preferences::Preference::ChatLayout(mode),
+            &path,
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let config = crate::config::Config::parse(&text).unwrap();
+        assert_eq!(config.chat.layout, mode);
+        assert_eq!(config.chat.env.get("GH_HOST").unwrap(), "ghe.example");
+    }
+}

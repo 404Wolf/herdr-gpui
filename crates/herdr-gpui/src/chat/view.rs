@@ -6,6 +6,7 @@
 
 mod composer;
 mod entries;
+mod layout;
 mod panels;
 mod rail;
 mod settings;
@@ -317,7 +318,7 @@ impl HerdrWindow {
     }
 
     /// The agent and its status, Stop while a turn runs, and the buttons
-    /// for the rail and the terminal. `rail_fits` says whether the pane is
+    /// for the layout, the rail, and the terminal. `rail_fits` says whether the pane is
     /// wide enough to show the rail at all.
     fn render_chat_header(&self, chat: &ChatPane, rail_fits: bool, cx: &mut Context<Self>) -> Div {
         let theme = &self.theme;
@@ -368,6 +369,17 @@ impl HerdrWindow {
                 .text_color(rgb(hues.yellow))
                 .child("Reconnecting\u{2026}")
         });
+        let layout = {
+            let current = self.config.chat.layout;
+            button("chat-layout")
+                .text_size(px((self.chat_text_size() - 1.).max(10.)))
+                .text_color(rgb(theme.subtext()))
+                .child(current.label())
+                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    cx.stop_propagation();
+                    this.set_chat_layout(current.next(), cx);
+                }))
+        };
         let rail = self.render_chat_rail_controls(chat, rail_fits, cx);
         let terminal = {
             let pane_id = pane_id.clone();
@@ -429,6 +441,7 @@ impl HerdrWindow {
                     .children(reconnecting)
                     .children(watching)
                     .children(cancel)
+                    .child(layout)
                     .children(rail)
                     .child(terminal),
             )

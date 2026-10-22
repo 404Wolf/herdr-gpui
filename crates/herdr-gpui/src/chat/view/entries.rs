@@ -1,45 +1,21 @@
-//! One transcript entry as a row of the chat's list, on a timeline: a
-//! gutter down the left marks each entry, with an avatar where the speaker
-//! changes and a dot colored by state for the agent's thoughts, tool calls,
-//! and notices. The line through the gutter breaks at each turn's summary.
+//! What one transcript entry shows: a message, a thought, a tool call, a
+//! picture, a notice, or how a turn ended. The chat's layout decides the
+//! row it sits in.
 
 use super::{
     super::{chats::ChatPane, prepared::Body, visual::Visuals},
     Hues,
+    layout::{Look, Row, layout_for, side},
     visuals::Frame,
 };
 use crate::{HerdrWindow, config::corners, fonts::StyledFont, notifications::safe_text};
 use gpui::{prelude::*, *};
-use herdr_chat_protocol::{Author, Entry, EntryKind, NoticeLevel, Tool, ToolKind, ToolStatus};
+use herdr_chat_protocol::{Entry, EntryKind, NoticeLevel, Tool, ToolKind, ToolStatus};
 
 /// Locations listed under a tool call.
 const LOCATIONS: usize = 3;
 /// Characters of a folded thought shown.
 const FOLDED: usize = 120;
-/// Width of the timeline's gutter, and the size of an avatar in it.
-const GUTTER: f32 = 22.;
-/// Space above each entry, which the gutter's line spans.
-const SPACING: f32 = 8.;
-
-/// Who an entry speaks for, which decides where avatars go.
-#[derive(Clone, Copy, PartialEq)]
-enum Side {
-    User,
-    Agent,
-}
-
-fn side(kind: &EntryKind) -> Option<Side> {
-    match kind {
-        EntryKind::User { .. }
-        | EntryKind::Image {
-            author: Author::User,
-            ..
-        } => Some(Side::User),
-        EntryKind::Turn(_) => None,
-        _ => Some(Side::Agent),
-    }
-}
-
 fn tool_kind(kind: ToolKind) -> &'static str {
     match kind {
         ToolKind::Read => "Read",
@@ -120,149 +96,29 @@ impl HerdrWindow {
         self.render_chat_entry_row(chat, index, content)
     }
 
-    /// An entry's row: its gutter mark and line, the speaker's name where
-    /// it changes, and `content`, in the reading column.
+    /// An entry's row in the list, as the chat's layout draws it.
     fn render_chat_entry_row(&self, chat: &ChatPane, index: usize, content: Div) -> AnyElement {
         let entries = &chat.session.transcript().entries;
         let Some(entry) = entries.get(index) else {
             return div().into_any_element();
         };
-        let previous = index
-            .checked_sub(1)
-            .and_then(|index| entries.get(index))
-            .and_then(|entry| side(&entry.kind));
-        let next = entries.get(index + 1).and_then(|entry| side(&entry.kind));
-        let Some(this_side) = side(&entry.kind) else {
-            // A turn's summary spans the row and breaks the line.
-            return super::column(
-                div()
-                    .id(("chat-entry", entry.id.0))
-                    .px(px(12.))
-                    .pt(px(SPACING + 4.))
-                    .pb(px(4.))
-                    .min_w_0()
-                    .child(content),
-            )
-            .into_any_element();
+        let near = |index: Option<usize>| {
+            index
+                .and_then(|index| entries.get(index))
+                .and_then(|entry| side(&entry.kind))
         };
-        let speaker = previous != Some(this_side);
-        let line = rgb(crate::config::mix(
-            self.theme.background,
-            self.theme.foreground,
-            22,
-        ));
-        let gutter = div()
-            .flex_none()
-            .w(px(GUTTER))
-            .flex()
-            .flex_col()
-            .items_center()
-            .child(
-                div()
-                    .w(px(1.))
-                    .h(px(SPACING))
-                    .when(previous.is_some(), |segment| segment.bg(line)),
-            )
-            .child(self.render_chat_mark(entry, speaker, chat.session.agent()))
-            .child(
-                div()
-                    .flex_1()
-                    .w(px(1.))
-                    .when(next.is_some(), |segment| segment.bg(line)),
-            );
-        let label = speaker.then(|| {
-            let name = match this_side {
-                Side::User => "You".to_owned(),
-                Side::Agent => safe_text(chat.session.agent(), 80),
-            };
-            div()
-                .debug_selector(|| "chat-speaker".into())
-                .font_weight(FontWeight::SEMIBOLD)
-                .child(name)
-        });
-        super::column(
-            div()
-                .id(("chat-entry", entry.id.0))
-                .flex()
-                .px(px(12.))
-                .min_w_0()
-                .child(gutter)
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .gap(px(2.))
-                        .pl(px(10.))
-                        .pt(px(SPACING))
-                        .pb(px(2.))
-                        .children(label)
-                        .child(content),
-                ),
-        )
-        .into_any_element()
-    }
-
-    /// The gutter's mark for an entry: an avatar where the speaker changes,
-    /// else a dot colored by the entry's state.
-    fn render_chat_mark(&self, entry: &Entry, speaker: bool, agent: &str) -> Div {
-        let theme = &self.theme;
-        let hues = Hues::of(theme);
-        if speaker {
-            let (icon, fill) = match side(&entry.kind) {
-                Some(Side::User) => ("icons/user.svg", theme.active),
-                _ => (super::agent_icon(agent), theme.surface),
-            };
-            let id = entry.id.0;
-            return div()
-                .debug_selector(move || format!("chat-avatar-{id}"))
-                .flex_none()
-                .size(px(GUTTER))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded_full()
-                .border_1()
-                .border_color(rgb(theme.active))
-                .bg(rgb(fill))
-                .child(
-                    svg()
-                        .path(icon)
-                        .size(px(12.))
-                        .text_color(rgb(theme.text_on(fill))),
-                );
-        }
-        let (color, filled) = match &entry.kind {
-            EntryKind::Tool(tool) => match tool.status {
-                ToolStatus::Pending => (theme.muted, false),
-                ToolStatus::InProgress => (hues.yellow, false),
-                ToolStatus::Completed => (hues.green, true),
-                ToolStatus::Failed => (hues.red, true),
-            },
-            EntryKind::Notice { level, .. } => match level {
-                NoticeLevel::Info => (theme.subtext(), false),
-                NoticeLevel::Warning => (hues.yellow, true),
-                NoticeLevel::Error => (hues.red, true),
-            },
-            _ => (theme.muted, false),
+        let row = Row {
+            entry,
+            previous: near(index.checked_sub(1)),
+            next: near(index.checked_add(1)),
+            agent: chat.session.agent(),
+            content,
         };
-        // A row as tall as a line of text, so the dot sits beside the first.
-        let id = entry.id.0;
-        div()
-            .debug_selector(move || format!("chat-dot-{id}"))
-            .flex_none()
-            .h(px(self.chat_text_size() * 1.5))
-            .flex()
-            .items_center()
-            .child(
-                div()
-                    .size(px(8.))
-                    .rounded_full()
-                    .border_2()
-                    .border_color(rgb(color))
-                    .bg(rgb(if filled { color } else { theme.background })),
-            )
+        let look = Look {
+            theme: &self.theme,
+            text: self.chat_text_size(),
+        };
+        layout_for(self.config.chat.layout).row(row, &look)
     }
 
     /// A copy button under an agent message, shown while the pointer is on it.

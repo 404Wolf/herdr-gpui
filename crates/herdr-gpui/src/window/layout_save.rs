@@ -1,6 +1,6 @@
 //! Layout choices from the View menu, saved in the order they were made.
 
-use crate::config::{LayoutMode, TabLayoutMode};
+use crate::config::{ChatLayoutMode, LayoutMode, TabLayoutMode};
 use std::sync::{Arc, Mutex, PoisonError};
 
 /// The newest choice not yet written, and the lock its writer holds. Each
@@ -60,6 +60,7 @@ impl<T> LatestSave<T> {
 /// their order too.
 #[derive(Default)]
 pub(super) struct LayoutSaves {
+    pub(super) chat: LatestSave<ChatLayoutMode>,
     pub(super) sidebar: LatestSave<LayoutMode>,
     pub(super) tabs: LatestSave<TabLayoutMode>,
 }
