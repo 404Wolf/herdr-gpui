@@ -1,5 +1,5 @@
 [workspace]
-members  = ["crates/embed-resource", "crates/herdr-acp", "crates/herdr-chat-protocol", "crates/herdr-client", "crates/herdr-gpui", "crates/herdr-gpui-launcher", "crates/herdr-protocol"]
+members  = ["crates/embed-resource", "crates/herdr-acp", "crates/herdr-chat-protocol", "crates/herdr-client", "crates/herdr-gpui", "crates/herdr-gpui-launcher", "crates/herdr-protocol", "crates/herdr-remote"]
 resolver = "2"
 
 [workspace.package]
@@ -59,6 +59,7 @@ wry                  = { package = "lb-wry", version = "=0.53.3" }
 herdr-chat-protocol  = { path = "crates/herdr-chat-protocol" }
 herdr-client         = { path = "crates/herdr-client" }
 herdr-protocol       = { path = "crates/herdr-protocol" }
+herdr-remote         = { default-features = false, path = "crates/herdr-remote" }
 interprocess         = "2.4.2"
 # Local interface addresses, so Bonjour discovery skips this machine; the
 # version mdns-sd already uses.
@@ -120,6 +121,9 @@ tar                  = "0.4"
 tempfile             = "3"
 test-case            = "3"
 thiserror            = "2"
+# The remote control daemon's runtime and web server; only herdr-remote uses them.
+tokio                = { features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"], version = "1" }
+axum                 = { default-features = false, features = ["http1", "json", "query", "tokio"], version = "0.8" }
 toml                 = "1.1"
 toml_edit            = "0.25"
 tracing              = "0.1"

@@ -1,0 +1,36 @@
+[package]
+description            = "Serves Herdr chats to paired phones over HTTPS, with push notifications"
+edition.workspace      = true
+license.workspace      = true
+name                   = "herdr-remote"
+publish.workspace      = true
+rust-version.workspace = true
+version.workspace      = true
+
+[lints]
+workspace = true
+
+[features]
+# The daemon itself. Herdr UI depends on this crate without it, for the
+# control protocol alone, so Tokio never reaches the GUI.
+default = ["server"]
+server  = ["dep:axum", "dep:tokio"]
+
+[[bin]]
+name              = "herdr-remote"
+path              = "src/main.rs"
+required-features = ["server"]
+
+[dependencies]
+herdr-chat-protocol.workspace = true
+herdr-client.workspace        = true
+serde.workspace               = true
+serde_json.workspace          = true
+thiserror.workspace           = true
+uuid.workspace                = true
+
+axum  = { optional = true, workspace = true }
+tokio = { optional = true, workspace = true }
+
+[dev-dependencies]
+tempfile.workspace = true
