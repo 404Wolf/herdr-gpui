@@ -26,8 +26,8 @@ pub(crate) use send::{Topic, outcome};
 pub(crate) use subscription::Subscription;
 pub(crate) use throttle::Throttle;
 pub use triggers::Privacy;
-pub(crate) use triggers::{Chat, Kind, Notification, decide};
-pub(crate) use vapid::Vapid;
+pub(crate) use triggers::{Chat, Kind, Notification, decide, excerpt};
+pub(crate) use vapid::{Vapid, is_private};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

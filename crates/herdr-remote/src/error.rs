@@ -7,6 +7,9 @@ pub enum Error {
     // keep-sorted start
     #[cfg(feature = "server")]
     #[error(transparent)]
+    Apns(#[from] crate::apns::Error),
+    #[cfg(feature = "server")]
+    #[error(transparent)]
     Auth(#[from] crate::auth::Error),
     #[error(transparent)]
     Control(#[from] crate::control::Error),

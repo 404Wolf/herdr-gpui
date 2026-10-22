@@ -156,13 +156,13 @@ fn load(path: &Path) -> Result<Vapid> {
 }
 
 #[cfg(unix)]
-fn is_private(metadata: &fs::Metadata) -> bool {
+pub(crate) fn is_private(metadata: &fs::Metadata) -> bool {
     use std::os::unix::fs::MetadataExt;
     metadata.is_file() && metadata.mode() & 0o077 == 0
 }
 
 #[cfg(not(unix))]
-fn is_private(metadata: &fs::Metadata) -> bool {
+pub(crate) fn is_private(metadata: &fs::Metadata) -> bool {
     metadata.is_file()
 }
 

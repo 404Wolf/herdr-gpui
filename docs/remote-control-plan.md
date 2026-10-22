@@ -19,7 +19,7 @@ rules apply throughout.
 | Notifications | Web Push from an installed PWA. |
 | UI | Mobile-first server-rendered HTML: Tailwind, Alpine (CSP build), SSE. Mockups: `docs/mockups/remote-control/index.html`. Picked: home F (needs-you strip over lists grouped by computer, Ghostty-style), workspaces and tabs D (attention board), chat C (focus), questions A (bottom sheet). |
 | Computers | One phone app shows every paired computer, plus the SSH hosts a paired computer's Herdr UI connects to. |
-| iOS Live Activities | Wanted. A PWA cannot start them, so they need a small native companion app (later phase). |
+| iOS Live Activities | A PWA cannot start them, so a small native companion app (`ios/`) adds them, updated by the daemon through APNs. |
 
 ## Architecture
 
@@ -260,6 +260,49 @@ a native companion app:
   Swift files follow the same 1,000-line limit.
 - Android has no equivalent; there, an ongoing notification updated by push
   covers the same ground.
+
+### Built
+
+The companion lives in `ios/` (see `ios/README.md` for building, signing, and
+the APNs key):
+
+- **Project**: an XcodeGen spec (`ios/project.yml`) for the `HerdrRemote` app
+  and the `HerdrRemoteWidgets` extension, iOS 17.2+, bundle
+  `so.pen.herdr-remote`. Logic without UIKit sits in the `HerdrRemoteCore`
+  Swift package, whose tests run on the Mac with `swift test`.
+- **Activity**: `ChatActivityAttributes` (computer, workspace, chat title,
+  agent, pane) with `ChatActivityState` as its content (phase working,
+  question, finished, or failed; step; start time as Unix seconds; cost;
+  question; summary; plan progress; the computer's working and waiting
+  counts for the island). Lock screen, compact, minimal, and expanded
+  layouts follow mockup 5; every tap opens `herdr-remote://chat?...`, which
+  the app turns into `https://ORIGIN/chat/PANE` in Safari at the first
+  address that answers.
+- **Pairing**: the same QR as the web app (camera or pasted link), a Secure
+  Enclave P-256 key (software on the simulator) whose SEC1 point is the
+  claim's `public_key`, the matching code, then polling until Allow. The
+  app pins the computer's CA by the QR's fingerprint in its
+  `URLSessionDelegate`, anchoring the chain to that certificate alone, so it
+  needs no profile; Safari still does, for the web app. Sessions sign
+  `herdr-remote-session\0 || nonce` and send the P1363 signature, trying
+  each stored address in order.
+- **Push tokens**: the push-to-start token goes to every paired computer and
+  each activity's token to its own, through `POST /api/apns` with
+  `{push_to_start, activities: [{pane, token}]}`.
+- **Daemon**: `crates/herdr-remote/src/apns` loads `STATE_DIR/apns/AuthKey.p8`
+  and `config.json` (absent: off), signs the ES256 provider token (renewed
+  every fifty minutes), decides start, update, or end from the same inputs as
+  `push::decide`, paces step updates to one per ten seconds per chat, and
+  posts over one HTTP/2 connection (hyper's client on tokio-rustls) to
+  `api.push.apple.com` or `api.sandbox.push.apple.com` only. A
+  `BadDeviceToken` or `410` drops the token. JSON fixtures under
+  `ios/HerdrRemoteCore/Tests/HerdrRemoteCoreTests/Fixtures` are checked by
+  both the Rust and the Swift tests.
+
+Still to do: wire `apns::Sender` into the server (a `POST /api/apns` route
+storing `apns::Registration` in a new opaque `apns` slot of the device
+record, and a notifier branch calling `apns::decide`), check payloads and
+push-to-start on a device with a real key, and an app icon.
 
 ## Herdr UI
 
