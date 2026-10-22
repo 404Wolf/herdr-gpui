@@ -121,7 +121,7 @@ fn turn(row: &ChatRow, view: &View) -> Markup {
         main id="chat-turn" class="flex-1 flex flex-col gap-3 px-3.5 pt-3 pb-40" {
             @if !earlier.is_empty() {
                 div x-data="history" data-pane=(row.pane) {
-                    button type="button" class="fold w-full text-left" x-on:click="load" x-show="!loaded" {
+                    button type="button" class="fold w-full text-left" x-on:click="load" x-show="folded" {
                         "▸ " (folded_turns.max(1)) " earlier turn" @if folded_turns != 1 { "s" }
                         @if transcript.truncated { " (older ones were dropped)" }
                     }

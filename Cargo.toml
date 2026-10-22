@@ -29,6 +29,9 @@ aes                  = "0.9.3"
 ammonia              = "4.2.1"
 cbc                  = { features = ["block-padding"], version = "0.2.1" }
 percent-encoding     = "2"
+# Verifies the ECDSA P-256 signatures paired phones make with their WebCrypto
+# keys; only herdr-remote's server uses it.
+p256                 = { default-features = false, features = ["ecdsa"], version = "0.14" }
 pbkdf2               = { default-features = false, features = ["hmac"], version = "0.13.0" }
 pulldown-cmark       = { default-features = false, features = ["html"], version = "0.13.4" }
 base64               = "0.23.1"

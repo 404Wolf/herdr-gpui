@@ -5,6 +5,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     // keep-sorted start
+    #[cfg(feature = "server")]
+    #[error(transparent)]
+    Auth(#[from] crate::auth::Error),
     #[error(transparent)]
     Control(#[from] crate::control::Error),
     #[cfg(feature = "server")]

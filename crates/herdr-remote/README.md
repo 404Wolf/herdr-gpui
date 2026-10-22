@@ -18,6 +18,14 @@ response per connection, as length-prefixed JSON frames
 `default-features = false`, which leaves out the server and Tokio, and calls
 `control::request` from a background thread.
 
+## Pairing and authentication
+
+`auth` (server only) holds the pairing the desktop dialog opens, the paired
+devices in `devices.json` (0600, replaced atomically), challenge-signed
+sessions, and per-address rate limits. It is synchronous and takes every time
+as milliseconds since the Unix epoch, so the server calls it under a mutex and
+tests pass explicit times.
+
 ## Errors
 
 The crate exports `Error` and `Result<T>`.

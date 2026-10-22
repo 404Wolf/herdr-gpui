@@ -2,6 +2,8 @@
 //! paired phones over HTTPS, and the control protocol Herdr UI uses to run it.
 #![doc = include_str!("../README.md")]
 
+#[cfg(feature = "server")]
+mod auth;
 pub mod control;
 mod error;
 #[cfg(feature = "server")]

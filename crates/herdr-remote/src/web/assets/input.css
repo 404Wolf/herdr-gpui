@@ -1,0 +1,153 @@
+/* Source of app.css: `just web-css` compiles it with the Tailwind
+   standalone CLI, scanning the Rust templates and app.js for classes. The
+   compiled file is committed, so building the crate needs no Node. */
+@import "tailwindcss";
+@source "../render";
+@source "../render.rs";
+@source "./app.js";
+@source "./shell.html";
+
+:root {
+  --bg: #000000;
+  --surface: #1c1c1e;
+  --raised: #2c2c2e;
+  --line: #38383a;
+  --text: #f2f2f7;
+  --muted: #8e8e93;
+  --faint: #636366;
+  --accent: #7c9cff;
+  --amber: #f2b33d;
+  --green: #4fd18b;
+  --red: #ff6b6b;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f2f2f7;
+    --surface: #ffffff;
+    --raised: #e5e5ea;
+    --line: #d1d1d6;
+    --text: #1c1c1e;
+    --muted: #6c6c70;
+    --faint: #aeaeb2;
+    --accent: #3b5bdb;
+    --amber: #c98a0b;
+    --green: #1f9d5c;
+    --red: #d64545;
+    color-scheme: light;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-amber: var(--amber);
+  --color-green: var(--green);
+  --color-red: var(--red);
+  --color-claude: #d9643a;
+  --color-codex: #111111;
+  --color-gemini: #3b7cf0;
+  --color-copilot: #6e40c9;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+}
+
+@layer base {
+  html, body { background: var(--bg); color: var(--text); }
+  body {
+    font: 15px/1.45 var(--font-sans);
+    -webkit-text-size-adjust: 100%;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+    overscroll-behavior-y: none;
+  }
+  [x-cloak] { display: none !important; }
+  button, select, input, textarea { font: inherit; color: inherit; }
+}
+
+@layer components {
+  .group-list { @apply bg-surface rounded-2xl overflow-hidden; }
+  .row { @apply relative flex items-center gap-3 px-3 py-2.5 min-h-11; }
+  .group-list > li + li > .row::before, .group-list > li + li.row::before, .group-list > .row + .row::before {
+    content: ""; @apply absolute top-0 left-[52px] right-0 border-t border-line;
+  }
+  .badge { @apply text-[10.5px] text-muted border border-line rounded-md px-1.5; }
+  .pill-amber { @apply text-[11px] font-bold text-black bg-amber rounded-full px-2 py-0.5; }
+  .count { @apply min-w-5 h-5 rounded-full text-[11px] font-bold grid place-items-center text-black px-1.5; }
+  .dot-corner { @apply absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-surface; }
+  .strip-card {
+    @apply flex shrink-0 basis-[82%] gap-2.5 items-center px-3 py-2.5 rounded-2xl border;
+    background: color-mix(in srgb, var(--amber) 16%, var(--surface));
+    border-color: color-mix(in srgb, var(--amber) 40%, transparent);
+  }
+  .toolbar {
+    @apply fixed left-4 right-4 flex justify-between items-center z-20;
+    bottom: calc(18px + env(safe-area-inset-bottom));
+  }
+  .glass {
+    @apply flex gap-6 items-center px-5 py-2.5 rounded-full text-[19px] border border-white/10 shadow-xl;
+    background: color-mix(in srgb, var(--raised) 70%, transparent);
+    backdrop-filter: blur(18px) saturate(1.6);
+    -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  }
+  .glass > a { @apply relative min-w-7 text-center; }
+  .ring {
+    @apply inline-block w-6 h-6 rounded-full;
+    background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--raised) 0);
+    mask: radial-gradient(circle, transparent 7px, #000 8px);
+    -webkit-mask: radial-gradient(circle, transparent 7px, #000 8px);
+  }
+  .picker { @apply flex items-center shrink-0 bg-raised rounded-lg px-2 py-1; }
+  .picker select { @apply bg-transparent outline-none; }
+  .card { @apply bg-surface rounded-xl px-3 py-2.5 border border-transparent; }
+  .fold { @apply text-sm text-muted px-3 py-2 rounded-xl bg-surface; }
+  .tool { @apply bg-surface rounded-xl px-3 py-2 text-[13px]; }
+  .tool > summary { @apply cursor-pointer list-none; }
+  .code { @apply mt-2 p-2 rounded-lg bg-bg text-xs font-mono overflow-x-auto whitespace-pre max-h-80; }
+  .steps { @apply flex flex-col border-l-2 border-line ml-1.5; }
+  .st { @apply relative py-1 pl-4 text-[13px]; }
+  .st::before { content: ""; @apply absolute -left-[6px] top-2 w-2.5 h-2.5 rounded-full bg-raised border-2 border-bg; }
+  .st.ok::before { @apply bg-green; }
+  .st.run::before { @apply bg-amber; }
+  .st.todo { @apply text-faint; }
+  .sheet {
+    @apply fixed left-0 right-0 bottom-0 z-30 bg-surface rounded-t-3xl px-4 pt-2 flex flex-col gap-2 shadow-2xl;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
+    animation: rise .22s ease-out;
+  }
+  .btn { @apply rounded-2xl py-3.5 text-[15px] font-semibold bg-raised w-full; }
+  .btn-primary { @apply bg-accent text-white; }
+  .btn-subtle { @apply bg-transparent text-muted font-medium text-sm py-2; }
+  .composer {
+    @apply fixed left-0 right-0 bottom-0 z-20 bg-surface border-t border-line px-3 pt-2;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  }
+  .round-btn { @apply w-9 h-9 rounded-full grid place-items-center text-white shrink-0; }
+  .chip { @apply text-xs px-2 py-1 rounded-lg bg-raised whitespace-nowrap; }
+  .field { @apply bg-surface rounded-xl px-3 py-2.5 outline-none border border-transparent focus:border-accent; }
+  .agent-choice { @apply flex gap-2 items-center bg-surface p-2.5 rounded-xl border-[1.5px] border-transparent; }
+  .agent-choice:has(input:checked) { @apply border-accent; }
+  .section-title { @apply text-xs uppercase tracking-wider text-muted font-semibold mt-6 mb-1.5 px-1; }
+  .switch { @apply w-11 h-6 appearance-none rounded-full bg-raised relative transition checked:bg-green; }
+  .switch::after { content: ""; @apply absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition; }
+  .switch:checked::after { transform: translateX(20px); }
+  .prose { @apply leading-relaxed break-words; }
+  .prose p { @apply my-2; }
+  .prose pre { @apply my-2 p-2 rounded-lg bg-surface text-xs overflow-x-auto; }
+  .prose code { @apply font-mono text-[0.9em] bg-raised rounded px-1; }
+  .prose pre code { @apply bg-transparent p-0; }
+  .prose ul { @apply list-disc pl-5 my-2; }
+  .prose ol { @apply list-decimal pl-5 my-2; }
+  .prose a { @apply text-accent underline; }
+  .prose h1, .prose h2, .prose h3 { @apply font-bold mt-3 mb-1; }
+  .prose table { @apply block overflow-x-auto text-sm my-2; }
+  .prose td, .prose th { @apply border border-line px-2 py-1; }
+  .banner { @apply fixed top-0 left-0 right-0 z-40 text-center text-xs py-1 bg-amber text-black; padding-top: calc(4px + env(safe-area-inset-top)); }
+}
+
+@keyframes rise { from { transform: translateY(100%); } to { transform: none; } }
