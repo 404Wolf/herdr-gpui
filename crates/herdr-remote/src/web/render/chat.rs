@@ -3,7 +3,7 @@
 //! history, the pending question as a bottom sheet, and the composer.
 //! Each region has an id the stream replaces as the chat changes.
 
-use super::{agent_icon, markdown, ring, status_word};
+use super::{markdown, ring, status_word};
 use crate::hub::{ChatRow, View, Workspace};
 use herdr_chat_protocol::{
     Author, Entry, EntryKind, NoticeLevel, OptionCategory, OptionKind, Permission, PermissionKind,
@@ -58,7 +58,7 @@ fn head(workspace: &Workspace, row: &ChatRow, view: &View, now_ms: u64) -> Marku
                 span class="flex flex-col min-w-0 flex-1" {
                     b class="truncate" { (row.title) }
                     small class="text-muted truncate" {
-                        span class={ "inline-block w-2 h-2 rounded-full mr-1 align-middle bg-" (tone) } {}
+                        span class={ "inline-block w-2 h-2 rounded-full mr-1 align-middle " (tone) } {}
                         (word)
                         @if let Some(turn) = transcript.turn { " · " (display::duration(now_ms.saturating_sub(turn.started_ms))) }
                         " · " (workspace.label)

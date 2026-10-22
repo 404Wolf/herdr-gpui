@@ -1,6 +1,47 @@
-//! `herdr-remote serve`: the remote control daemon.
+//! `herdr-remote serve`: the remote control daemon. Herdr UI installs it as
+//! a user service when Remote control is on; see `--help`.
 
-fn main() {
-    eprintln!("herdr-remote: not implemented yet");
-    std::process::exit(2);
+use herdr_remote::server::{self, Invocation};
+use std::process::ExitCode;
+
+fn main() -> ExitCode {
+    let options = match server::parse(std::env::args_os()) {
+        Ok(Invocation::Serve(options)) => options,
+        Ok(Invocation::Help) => {
+            print!("{}", server::USAGE);
+            return ExitCode::SUCCESS;
+        }
+        Ok(Invocation::Version) => {
+            println!("herdr-remote {}", env!("CARGO_PKG_VERSION"));
+            return ExitCode::SUCCESS;
+        }
+        Err(error) => {
+            eprintln!("herdr-remote: {error}\n\n{}", server::USAGE);
+            return ExitCode::from(2);
+        }
+    };
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_name("herdr-remote")
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!("herdr-remote: could not start: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match runtime.block_on(server::run(options)) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            let mut message = error.to_string();
+            let mut source = std::error::Error::source(&error);
+            while let Some(cause) = source {
+                message.push_str(&format!(": {cause}"));
+                source = cause.source();
+            }
+            eprintln!("herdr-remote: {message}");
+            ExitCode::FAILURE
+        }
+    }
 }

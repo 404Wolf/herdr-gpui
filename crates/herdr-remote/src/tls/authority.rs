@@ -130,12 +130,13 @@ impl Authority {
         &self.ca_pem
     }
 
+    /// The iOS configuration profile that installs this CA.
     /// The CA certificate as DER.
+    #[cfg(test)]
     pub(crate) fn ca_der(&self) -> &[u8] {
         &self.ca_der
     }
 
-    /// The iOS configuration profile that installs this CA.
     pub(crate) fn mobileconfig(&self) -> Vec<u8> {
         super::profile::mobileconfig(&self.ca_der, &self.fingerprint)
     }

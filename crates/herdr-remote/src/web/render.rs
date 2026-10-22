@@ -9,7 +9,7 @@ mod home;
 mod pages;
 
 pub(crate) use chat::{chat, chat_history, chat_patches};
-pub(crate) use home::{Lists, board, home, urlencode};
+pub(crate) use home::{Lists, board, home};
 pub(crate) use pages::{Folders, devices, new_chat, new_workspace};
 
 use herdr_chat_protocol::{Status, display};
@@ -87,17 +87,18 @@ pub(crate) fn agent_icon(agent: Option<&str>, size: &str) -> Markup {
     }
 }
 
-/// A one-word state for a chat, with the colour its dot takes.
+/// A one-word state for a chat, with its dot's background class (spelled
+/// out whole, so Tailwind finds it).
 pub(crate) fn status_word(status: &Status, questions: usize) -> (&'static str, &'static str) {
     if questions > 0 {
-        return ("Needs answer", "amber");
+        return ("Needs answer", "bg-amber");
     }
     match status {
-        Status::Starting => ("Starting", "muted"),
-        Status::Idle => ("Idle", "muted"),
-        Status::Working => ("Working", "green"),
-        Status::Failed { .. } => ("Failed", "red"),
-        Status::Exited { .. } => ("Exited", "red"),
+        Status::Starting => ("Starting", "bg-muted"),
+        Status::Idle => ("Idle", "bg-muted"),
+        Status::Working => ("Working", "bg-green"),
+        Status::Failed { .. } => ("Failed", "bg-red"),
+        Status::Exited { .. } => ("Exited", "bg-red"),
     }
 }
 

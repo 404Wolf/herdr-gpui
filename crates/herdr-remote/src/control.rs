@@ -48,6 +48,11 @@ pub fn address(state_dir: &Path) -> PathBuf {
     state_dir.join("control.sock")
 }
 
+/// Removes what a daemon's listener left in `state_dir`.
+pub fn release(state_dir: &Path) {
+    herdr_client::private_endpoint::release(&address(state_dir));
+}
+
 /// Sends one request and waits for its response. Blocking.
 pub fn request(address: &Path, request: &Request) -> Result<Response, Error> {
     let connection = herdr_client::private_endpoint::Connection::connect(address, CONNECT_TIMEOUT)

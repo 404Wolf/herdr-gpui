@@ -12,9 +12,9 @@ use herdr_chat_protocol::{
 };
 use herdr_client::private_endpoint::{Closer, Connection};
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::HashMap,
     io::{BufReader, BufWriter, Read, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Arc, Mutex, MutexGuard, PoisonError,
         atomic::{AtomicBool, Ordering},
@@ -29,8 +29,6 @@ use tokio::sync::{broadcast, oneshot};
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 /// The longest wait between reconnects.
 const MAX_RETRY: Duration = Duration::from_secs(10);
-/// Changes kept so a phone that reconnects resumes without a snapshot.
-const HISTORY: usize = 512;
 /// Steps queued per subscriber before it lags and reloads.
 const SUBSCRIBERS_QUEUE: usize = 1024;
 /// Commands waiting for the writer.
@@ -43,19 +41,17 @@ const ACK_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) enum Event {
     /// The transcript was replaced (a new connection or a new run): reload.
     Reset,
-    /// One change, which brings the transcript to `cursor`.
+    /// One change to the transcript.
     Change {
-        cursor: Cursor,
         change: Arc<herdr_chat_protocol::Change>,
     },
     /// The program became reachable, or stopped being.
-    Connected(bool),
+    Connection,
 }
 
 /// What a subscriber starts from.
 #[derive(Clone, Debug)]
 pub(crate) struct View {
-    pub(crate) cursor: Option<Cursor>,
     pub(crate) transcript: Transcript,
     pub(crate) connected: bool,
 }
@@ -91,7 +87,6 @@ struct State {
     cursor: Option<Cursor>,
     transcript: Transcript,
     connected: bool,
-    history: VecDeque<(Cursor, Arc<herdr_chat_protocol::Change>)>,
 }
 
 pub(crate) struct Chat {
@@ -135,7 +130,7 @@ impl Chat {
 
     /// The transcript now and a subscription to every step after it. The
     /// subscription is taken first, so a step between the two is seen
-    /// twice at worst; subscribers skip changes at or before `cursor`.
+    /// twice at worst, which only renders the same view again.
     pub(crate) fn subscribe(&self) -> (View, broadcast::Receiver<Event>) {
         let receiver = self.events.subscribe();
         (self.view(), receiver)
@@ -144,7 +139,6 @@ impl Chat {
     pub(crate) fn view(&self) -> View {
         let state = lock(&self.state);
         View {
-            cursor: state.cursor,
             transcript: state.transcript.clone(),
             connected: state.connected,
         }
@@ -174,35 +168,6 @@ impl Chat {
                 .as_ref()
                 .map(herdr_chat_protocol::Usage::percent),
         }
-    }
-
-    /// The changes after `since`, when they are all still kept and `since`
-    /// belongs to the current run.
-    pub(crate) fn since(
-        &self,
-        since: Cursor,
-    ) -> Option<Vec<(Cursor, Arc<herdr_chat_protocol::Change>)>> {
-        let state = lock(&self.state);
-        let current = state.cursor?;
-        if current.epoch != since.epoch || since.seq > current.seq {
-            return None;
-        }
-        if since.seq == current.seq {
-            return Some(Vec::new());
-        }
-        let first = state.history.front()?.0;
-        // The change right after `since` must still be kept.
-        if first.seq > since.seq + 1 {
-            return None;
-        }
-        Some(
-            state
-                .history
-                .iter()
-                .filter(|(cursor, _)| cursor.seq > since.seq)
-                .cloned()
-                .collect(),
-        )
     }
 
     /// Sends `command` and waits for the program's answer: `None` when it
@@ -245,7 +210,7 @@ impl Chat {
         }
     }
 
-    fn run(&self, address: &PathBuf, all: &broadcast::Sender<(String, Event)>) {
+    fn run(&self, address: &Path, all: &broadcast::Sender<(String, Event)>) {
         let mut retry = Duration::from_millis(500);
         while !self.closed.load(Ordering::SeqCst) {
             let since = lock(&self.state).cursor;
@@ -319,7 +284,6 @@ impl Chat {
                     let mut state = lock(&self.state);
                     state.cursor = Some(cursor);
                     state.transcript = *transcript;
-                    state.history.clear();
                 }
                 self.publish(Event::Reset, all);
                 true
@@ -334,12 +298,8 @@ impl Chat {
                         return false;
                     }
                     state.cursor = Some(cursor);
-                    if state.history.len() == HISTORY {
-                        state.history.pop_front();
-                    }
-                    state.history.push_back((cursor, change.clone()));
                 }
-                self.publish(Event::Change { cursor, change }, all);
+                self.publish(Event::Change { change }, all);
                 true
             }
             ServerMessage::Ack { id, rejected } => {
@@ -358,7 +318,7 @@ impl Chat {
             std::mem::replace(&mut state.connected, connected) != connected
         };
         if changed {
-            self.publish(Event::Connected(connected), all);
+            self.publish(Event::Connection, all);
         }
     }
 

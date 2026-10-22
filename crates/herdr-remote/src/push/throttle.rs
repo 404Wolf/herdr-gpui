@@ -69,15 +69,6 @@ impl Throttle {
         sent
     }
 
-    /// When the next held push becomes due, for the caller's timer.
-    pub(crate) fn next_due_ms(&self) -> Option<u64> {
-        self.chats
-            .values()
-            .filter(|recent| recent.pending.is_some())
-            .map(|recent| recent.last_ms.saturating_add(CHAT_INTERVAL_MS))
-            .min()
-    }
-
     /// Records `notification` as sent at `now_ms` unless the hourly cap is
     /// reached. A push replaces whatever its chat held back, being newer.
     fn admit(&mut self, notification: Notification, now_ms: u64) -> Option<Notification> {

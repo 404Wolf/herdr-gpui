@@ -66,16 +66,11 @@ fn delivery_follows_the_notification() {
 
 #[test]
 fn urgency_headers_match_rfc8030() {
-    let headers: Vec<_> = [
-        Urgency::VeryLow,
-        Urgency::Low,
-        Urgency::Normal,
-        Urgency::High,
-    ]
-    .into_iter()
-    .map(Urgency::header)
-    .collect();
-    assert_eq!(headers, ["very-low", "low", "normal", "high"]);
+    let headers: Vec<_> = [Urgency::Normal, Urgency::High]
+        .into_iter()
+        .map(Urgency::header)
+        .collect();
+    assert_eq!(headers, ["normal", "high"]);
 }
 
 #[test]

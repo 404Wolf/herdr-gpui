@@ -2,7 +2,6 @@ use super::*;
 
 fn view(transcript: Transcript) -> View {
     View {
-        cursor: None,
         transcript,
         connected: true,
     }

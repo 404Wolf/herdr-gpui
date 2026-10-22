@@ -30,12 +30,10 @@ fn a_burst_for_one_chat_coalesces_to_the_latest() {
         throttle.offer(notification("a", Kind::Error, "3"), 2_000),
         None
     );
-    assert_eq!(throttle.next_due_ms(), Some(CHAT_INTERVAL_MS));
 
     assert!(throttle.due(CHAT_INTERVAL_MS - 1).is_empty());
     assert_eq!(bodies(&throttle.due(CHAT_INTERVAL_MS)), ["3"]);
     assert!(throttle.due(CHAT_INTERVAL_MS * 3).is_empty());
-    assert_eq!(throttle.next_due_ms(), None);
 }
 
 #[test]
@@ -128,7 +126,6 @@ fn held_pushes_are_dropped_when_the_cap_is_reached() {
         );
     }
     assert!(throttle.due(CHAT_INTERVAL_MS).is_empty());
-    assert_eq!(throttle.next_due_ms(), None);
 }
 
 #[test]

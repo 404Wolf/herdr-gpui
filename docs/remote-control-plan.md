@@ -80,12 +80,18 @@ required.
   (`rcgen`, P-256, key 0600 in its private state directory) and issues a
   server certificate whose SANs list every address it serves on: the LAN
   IPv4/IPv6 addresses, `HOSTNAME.local`, and, when Tailscale is up, the
-  Tailscale `100.x` address and MagicDNS name. When the address set changes
+  Tailscale `100.x` address (no MagicDNS name). When the address set changes
   (new Wi-Fi, Tailscale toggled), it reissues the leaf from the same CA and
   reloads it without restarting; the phone trusts the CA, so nothing changes
   there.
-- The CA is name-constrained to those addresses and names, so a stolen CA
-  key cannot vouch for arbitrary sites.
+- The CA is name-constrained to private address ranges, `.local`, and
+  `localhost` (not `ts.net`, which would cover every tailnet), and carries
+  the serverAuth EKU, so a stolen CA key cannot vouch for public sites or
+  sign anything but TLS servers.
+- On macOS with the application firewall on, the first start asks whether
+  `herdr-remote` may accept incoming connections; until the user allows it,
+  LAN and Tailscale requests hang (loopback works). The settings page says
+  so.
 - The phone installs the CA once during pairing: a `.mobileconfig` profile on
   iOS (then Settings > General > About > Certificate Trust Settings), a CA
   file on Android. The pairing page walks through it and the QR carries the
@@ -175,9 +181,14 @@ daemon post elsewhere. Payloads are encrypted end to end, so the push services
 ## Mobile UI
 
 Server-rendered with a template crate (`maud`) and `pulldown-cmark` (raw HTML
-escaped). SSE events carry `{op, entry_id, html}` fragments; `Last-Event-ID`
-is the chat `Cursor`, so a phone waking up resumes with `since` like Herdr
-UI. Alpine holds only local state (composer, sheets, expanded tool calls).
+shown as text, images turned into links, unsafe link schemes dropped). The
+server sends a static app shell (navigations cannot carry a bearer token),
+and the shell fetches HTML fragments (`/f/...`) and a patch stream
+(`/api/stream`, server-sent events read with `fetch` so the token rides in a
+header) from whichever of the computer's addresses answers. Each patch
+replaces regions by id; the stream's first patch brings the view up to date,
+so nothing is missed between the fragment and the stream. Alpine holds only
+local state (composer, sheets, folds).
 Tailwind is compiled ahead of time by the standalone CLI (`just web-css`) and
 committed; Alpine's CSP build is vendored; everything is embedded with
 `include_bytes!` under a strict CSP (`default-src 'self'`). No CDN.

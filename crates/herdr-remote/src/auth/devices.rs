@@ -74,6 +74,7 @@ impl Devices {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn path(&self) -> &Path {
         &self.path
     }

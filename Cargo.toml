@@ -139,6 +139,9 @@ tokio                = { features = ["macros", "net", "rt-multi-thread", "signal
 # Server-rendered HTML for the remote control web app, escaped by default.
 maud                 = "0.27"
 axum                 = { default-features = false, features = ["http1", "json", "query", "tokio"], version = "0.8" }
+# Drives herdr-remote's router in tests without a socket; axum already links it.
+tower                = { default-features = false, features = ["util"], version = "0.5" }
+tokio-rustls         = { default-features = false, features = ["ring", "tls12"], version = "0.26" }
 # Certificate validity dates for rcgen, from a `SystemTime`.
 time                 = { default-features = false, features = ["std"], version = "0.3.47" }
 toml                 = "1.1"

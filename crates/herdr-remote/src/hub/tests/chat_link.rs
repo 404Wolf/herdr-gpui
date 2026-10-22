@@ -108,11 +108,7 @@ async fn a_link_follows_answers_commands_and_resumes_from_its_cursor() {
 
     let (all, mut every) = broadcast::channel(64);
     let link = Link::start("p1".into(), path, all).unwrap();
-    until("the first change", || {
-        link.view().cursor == Some(cursor(epoch, 1))
-    })
-    .await;
-    assert_eq!(link.view().transcript.clients, 2);
+    until("the first change", || link.view().transcript.clients == 2).await;
     assert!(link.view().connected);
     assert_eq!(every.recv().await.unwrap().0, "p1");
 
@@ -121,16 +117,9 @@ async fn a_link_follows_answers_commands_and_resumes_from_its_cursor() {
         Some(Rejection::NotWorking)
     );
 
-    until("the resumed change", || {
-        link.view().cursor == Some(cursor(epoch, 2))
-    })
-    .await;
-    assert_eq!(link.view().transcript.clients, 3);
-    // Both changes are kept for a phone resuming from before them.
-    assert_eq!(link.since(cursor(epoch, 0)).unwrap().len(), 2);
-    assert_eq!(link.since(cursor(epoch, 2)).unwrap().len(), 0);
-    assert!(link.since(cursor(uuid::Uuid::new_v4(), 1)).is_none());
-    assert!(link.since(cursor(epoch, 9)).is_none());
+    // The second connection resumed from the cursor (the program asserts
+    // it) and applied the change it sent.
+    until("the resumed change", || link.view().transcript.clients == 3).await;
 
     link.close();
     drop(Connection::connect(

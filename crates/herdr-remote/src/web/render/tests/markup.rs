@@ -1,4 +1,5 @@
 use super::*;
+use crate::web::render::home::urlencode;
 
 #[test]
 fn raw_html_in_agent_text_is_shown_as_text() {

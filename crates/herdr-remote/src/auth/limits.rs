@@ -34,6 +34,7 @@ impl<K: Eq + Hash + Clone> RateLimiter<K> {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.buckets.len()
     }

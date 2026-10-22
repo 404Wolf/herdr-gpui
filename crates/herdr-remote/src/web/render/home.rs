@@ -21,7 +21,7 @@ impl Lists<'_> {
         self.summaries.get(pane).cloned().unwrap_or_default()
     }
 
-    fn waiting(&self) -> usize {
+    pub(crate) fn waiting(&self) -> usize {
         self.summaries
             .values()
             .map(|summary| summary.questions)
@@ -31,6 +31,7 @@ impl Lists<'_> {
 
 pub(crate) fn home(lists: &Lists<'_>) -> Markup {
     html! {
+        div id="lists" {
         div id="home" class="pb-28" {
             (strip(lists))
             div class="flex items-center gap-2.5 px-1 pt-4 pb-1.5" {
@@ -92,6 +93,7 @@ pub(crate) fn home(lists: &Lists<'_>) -> Markup {
             }
         }
         (toolbar(lists.waiting(), false))
+        }
     }
 }
 
@@ -153,7 +155,7 @@ pub(crate) fn board(lists: &Lists<'_>) -> Markup {
             @if !items.is_empty() {
                 div class="flex items-center gap-2 px-1.5 pt-4 pb-1.5" {
                     span class="flex-1 font-semibold text-[15px]" { (title) }
-                    span class={ "count bg-" (tone) } { (items.len()) }
+                    span class={ "count " (tone) } { (items.len()) }
                 }
                 ul class="group-list" {
                     @for (workspace, chat, summary) in items {
@@ -182,15 +184,17 @@ pub(crate) fn board(lists: &Lists<'_>) -> Markup {
         }
     };
     html! {
+        div id="lists" {
         div id="board" class="pb-28" {
-            (section("Needs you", "amber", &needs))
-            (section("Working", "green", &working))
-            (section("Idle", "raised", &rest))
+            (section("Needs you", "bg-amber", &needs))
+            (section("Working", "bg-green", &working))
+            (section("Idle", "bg-raised", &rest))
             @if needs.is_empty() && working.is_empty() && rest.is_empty() {
                 p class="text-muted px-2 py-10 text-center" { "No chats are running." }
             }
         }
         (toolbar(lists.waiting(), true))
+        }
     }
 }
 

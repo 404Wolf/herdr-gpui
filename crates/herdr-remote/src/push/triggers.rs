@@ -25,7 +25,7 @@ pub(crate) struct Chat<'a> {
 /// ciphertext, but a notification shows on a locked screen.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum Privacy {
+pub enum Privacy {
     /// Who asked and where, never what was said.
     #[default]
     Generic,

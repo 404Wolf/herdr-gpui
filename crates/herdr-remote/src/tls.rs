@@ -4,7 +4,7 @@
 //! - [`Authority`] is a P-256 CA created once in the state directory and
 //!   name-constrained to private addresses and local names, so a stolen key
 //!   cannot vouch for public sites. The phone installs it once, from
-//!   [`Authority::mobileconfig`] on iOS or [`Authority::ca_der`] elsewhere.
+//!   [`Authority::mobileconfig`] on iOS or [`Authority::ca_pem`] elsewhere.
 //! - [`Names`] lists what this machine is reachable as right now: LAN and
 //!   Tailscale addresses, loopback, `localhost`, and `HOSTNAME.local`.
 //! - [`Resolver`] hands rustls the current leaf, and [`Resolver::refresh`]

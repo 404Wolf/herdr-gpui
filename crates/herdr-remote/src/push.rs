@@ -20,10 +20,13 @@ use serde::{Deserialize, Serialize};
 use std::{io, path::PathBuf};
 
 pub(crate) use encrypt::{MAX_PAYLOAD, encrypt};
-pub(crate) use send::{Delivery, Outcome, Sender, Topic, Urgency, outcome};
+pub(crate) use send::{Delivery, Outcome, Sender, Urgency};
+#[cfg(test)]
+pub(crate) use send::{Topic, outcome};
 pub(crate) use subscription::Subscription;
 pub(crate) use throttle::Throttle;
-pub(crate) use triggers::{Chat, Kind, Notification, Privacy, decide};
+pub use triggers::Privacy;
+pub(crate) use triggers::{Chat, Kind, Notification, decide};
 pub(crate) use vapid::Vapid;
 
 #[derive(Debug, thiserror::Error)]

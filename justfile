@@ -188,6 +188,11 @@ check-sorted:
 sort:
     python3 scripts/check-sorted.py --fix
 
+# Compile the remote control web app's stylesheet (commit the result) with
+# the Tailwind standalone CLI v4, so building the crate needs no Node.
+web-css:
+    tailwindcss --input crates/herdr-remote/src/web/assets/input.css --output crates/herdr-remote/src/web/assets/app.css --minify
+
 test-mockup-wait:
     python3 .claude/skills/gpui-mockup/scripts/test_wait.py
 

@@ -11,6 +11,8 @@ mod hub;
 #[cfg(feature = "server")]
 mod push;
 #[cfg(feature = "server")]
+pub mod server;
+#[cfg(feature = "server")]
 mod tls;
 #[cfg(feature = "server")]
 mod web;

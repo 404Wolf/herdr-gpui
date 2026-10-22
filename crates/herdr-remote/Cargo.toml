@@ -17,6 +17,7 @@ default = ["server"]
 server = [
     "dep:aes-gcm",
     "dep:axum",
+    "dep:futures-lite",
     "dep:base64",
     "dep:getrandom",
     "dep:hkdf",
@@ -28,8 +29,10 @@ server = [
     "dep:rustix",
     "dep:rustls",
     "dep:sha2",
+    "dep:socket2",
     "dep:time",
     "dep:tokio",
+    "dep:tokio-rustls",
     "dep:ureq",
     "dep:url",
 ]
@@ -50,6 +53,7 @@ uuid.workspace                = true
 aes-gcm        = { optional = true, workspace = true }
 axum           = { optional = true, workspace = true }
 base64         = { optional = true, workspace = true }
+futures-lite   = { optional = true, workspace = true }
 getrandom      = { optional = true, workspace = true }
 hkdf           = { optional = true, workspace = true }
 if-addrs       = { optional = true, workspace = true }
@@ -59,8 +63,10 @@ pulldown-cmark = { optional = true, workspace = true }
 rcgen          = { optional = true, workspace = true }
 rustls         = { optional = true, workspace = true }
 sha2           = { optional = true, workspace = true }
+socket2        = { optional = true, workspace = true }
 time           = { optional = true, workspace = true }
 tokio          = { optional = true, workspace = true }
+tokio-rustls   = { optional = true, workspace = true }
 ureq           = { optional = true, workspace = true }
 url            = { optional = true, workspace = true }
 
@@ -69,5 +75,7 @@ url            = { optional = true, workspace = true }
 rustix = { features = ["system"], optional = true, workspace = true }
 
 [dev-dependencies]
+p256.workspace      = true
 roxmltree.workspace = true
 tempfile.workspace  = true
+tower.workspace     = true

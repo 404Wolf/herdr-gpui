@@ -60,6 +60,20 @@ impl Daemon {
         Ok(Self { shared })
     }
 
+    /// A daemon that never connects, for tests that must not reach a real
+    /// Herdr.
+    #[cfg(test)]
+    pub(crate) fn offline(layout: watch::Sender<Arc<Layout>>) -> Self {
+        Self {
+            shared: Arc::new(Shared {
+                handle: Mutex::new(None),
+                pending: Mutex::new(HashMap::new()),
+                layout,
+                stop: AtomicBool::new(true),
+            }),
+        }
+    }
+
     /// Sends an endpoint request on the current boot and waits for its
     /// `result`.
     pub(crate) async fn request(&self, method: Method, params: Value) -> Result<Value> {

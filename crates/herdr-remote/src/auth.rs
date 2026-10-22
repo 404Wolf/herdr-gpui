@@ -42,10 +42,10 @@ pub enum Error {
     Encode(#[source] serde_json::Error),
     #[error("this pairing token expired")]
     ExpiredToken,
-    #[error("a device name must be 1 to 64 characters with no control characters")]
-    InvalidName,
     #[error("the device key is not a P-256 public key")]
     InvalidKey,
+    #[error("a device name must be 1 to 64 characters with no control characters")]
+    InvalidName,
     #[error("the signature does not match the challenge")]
     InvalidSignature,
     #[error("the pairing token is not valid")]

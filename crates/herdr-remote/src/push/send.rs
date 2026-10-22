@@ -14,8 +14,6 @@ const MAX_TOPIC: usize = 32;
 /// How soon the push service should wake the device (RFC 8030 section 5.3).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Urgency {
-    VeryLow,
-    Low,
     Normal,
     High,
 }
@@ -23,8 +21,6 @@ pub(crate) enum Urgency {
 impl Urgency {
     pub(crate) fn header(self) -> &'static str {
         match self {
-            Self::VeryLow => "very-low",
-            Self::Low => "low",
             Self::Normal => "normal",
             Self::High => "high",
         }

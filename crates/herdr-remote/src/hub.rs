@@ -8,7 +8,7 @@ mod chat;
 mod daemon;
 mod layout;
 
-pub(crate) use chat::{Chat, Event, Summary, View, excerpt};
+pub(crate) use chat::{Chat, Event, Summary, View};
 pub(crate) use layout::{Chat as ChatRow, Layout, Workspace};
 
 use herdr_chat_protocol::{Agent, Command, EndpointId, Rejection};
@@ -77,6 +77,21 @@ impl Hub {
         let follower = hub.clone();
         tokio::spawn(async move { follower.follow().await });
         Ok(hub)
+    }
+
+    /// A hub showing `layout` that never connects to a daemon or a chat,
+    /// for tests that must not reach a real Herdr.
+    #[cfg(test)]
+    pub(crate) fn offline(layout: Layout) -> Arc<Self> {
+        let (sender, receiver) = watch::channel(Arc::new(layout));
+        let (all, _) = broadcast::channel(ALL_QUEUE);
+        Arc::new(Self {
+            daemon: daemon::Daemon::offline(sender),
+            layout: receiver,
+            chats: Mutex::new(HashMap::new()),
+            all,
+            program: None,
+        })
     }
 
     pub(crate) fn layout(&self) -> Arc<Layout> {
