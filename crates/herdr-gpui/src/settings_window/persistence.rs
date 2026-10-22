@@ -265,6 +265,7 @@ impl SettingsWindow {
                 self.error = loaded.error;
                 self.sync_code_field(cx);
                 self.sync_px0_field(cx);
+                self.sync_chat_env_field(cx);
                 // The saved volume reaches the shared sound worker now, not when
                 // a main window's watcher next reloads, which waits for its
                 // samples and holds off while that window's theme picker is open.
@@ -443,6 +444,7 @@ impl SettingsWindow {
                 }
                 let sidebar_saved = this.finish_sidebar_save(sidebar_save, saved.is_ok(), cx);
                 this.finish_px0_save(saved.is_ok(), cx);
+                this.finish_chat_env_save(saved.is_ok(), cx);
                 this.apply_loaded(loaded, cx);
                 if sidebar_saved {
                     this.broadcast_sidebar(cx);

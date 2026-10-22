@@ -132,6 +132,9 @@ and builds without embedded pages return exit 8. See [px0](../crates/herdr-gpui/
 | `scripts setup\|run` | Run one in a new tab; an unseen script still asks first. Archive removes the worktree, so it stays behind the app's delete dialog |
 | `teleport --to HOST` | Open the teleport dialog for your linked worktree, reviewing HOST; you confirm there |
 | `fan-out PROMPT [--agent KIND[:N]]...` | Open the fan-out dialog prefilled; you start it there |
+| `chat [status]` | The `herdr-acp` chat panes of the window's host, this machine or an SSH host: agent, status, model, context window use, and whether the chat view or the terminal shows |
+| `chat show\|hide\|toggle [--pane ID]` | Show the native chat view over your pane (or ID, else the focused one), or its terminal |
+| `chat new AGENT [--pane ID]` | Open a tab running a `herdr-acp` chat with a built-in agent (`claude`, `codex`, `copilot`, `gemini`, `opencode`, `pi`) in the workspace and folder of your pane (or ID). On an SSH host the tab runs that host's `herdr-acp` (see [Chats on SSH hosts](#chats-on-ssh-hosts)). Exits 8 when `herdr-acp` is missing here, the host cannot be reached, or the agent is not installed on it (`herdr-acp agents` lists those that are) |
 
 ### Hosts
 
@@ -362,3 +365,28 @@ A pipe has no receive or send timeout. Reads poll with `PeekNamedPipe`, as
 the daemon client does; writes have no deadline, so the app's out buffer
 holds a whole answer and the connection bound limits what a stalled caller
 can hold.
+
+## Chats on SSH hosts
+
+Native chat views are opt-in: turn on **ACP chats** in Settings > General
+(`acp_chats = true` under `[features]`). While it is off, chat panes show
+their terminal and `chat new` exits 8.
+
+A chat on an SSH host shows in the native chat view like a local one. Herdr UI
+runs `herdr-acp connect ID` on the host over the same SSH connection it uses
+for Herdr, and the program there sees an ordinary client on its own socket.
+Starting a chat there (`chat new`, or the workspace menu) runs the host's own
+`herdr-acp`, looked for in `~/.herdr/bin`, `~/.cargo/bin`, `~/.local/bin`, and
+then the remote `PATH`. Install it on the host with:
+
+```sh
+cargo install --locked --git https://github.com/penso/herdr-gpui herdr-acp --root ~/.herdr
+```
+
+The workspace menu offers only the agents whose own ACP command is installed
+on the host, as `herdr-acp agents` lists them; an agent `npx` would have to
+download first is left out.
+
+Files dropped on a remote chat are copied to the host first, into private
+temporary files under its `${TMPDIR:-/tmp}`, and the copies are attached.
+

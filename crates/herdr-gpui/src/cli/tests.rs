@@ -2,6 +2,7 @@ use super::*;
 use control::BrowserCommand;
 
 mod browser_zoom;
+mod chat;
 mod cloud_batch;
 mod cloud_exec;
 mod cloud_setup;

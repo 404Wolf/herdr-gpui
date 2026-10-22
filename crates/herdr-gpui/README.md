@@ -2934,6 +2934,78 @@ mkdir -p ~/.claude/skills/herdr-gpui-browser
 herdr-gpui browser skill > ~/.claude/skills/herdr-gpui-browser/SKILL.md
 ```
 
+## Chats
+
+An agent can run as a chat instead of in its own terminal interface:
+`herdr-acp`, a program shipped beside the app, talks to the agent through the
+[Agent Client Protocol](https://agentclientprotocol.com) inside an ordinary
+Herdr pane and draws the conversation there, and the app draws the same
+conversation natively over that pane. The program is the agent's only client,
+so the Herdr TUI, a plain terminal, and every app window see one conversation.
+
+**Starting one.** A group's **…** menu lists **New Chat** with one row per
+agent `herdr-acp` knows (Claude, Codex, Copilot, Gemini, OpenCode, Pi). A row
+opens a tab named after the agent in the focused workspace, in the focused
+pane's folder, and runs the program there; `herdr-gpui chat new AGENT` does
+the same from a pane. The rows show once the app has found `herdr-acp`,
+first beside its own executable (the app bundle, `cargo build`'s target
+directory, or where `just install` puts both) and then on the login shell's
+`PATH`, and only for the Herdr on this machine. Each agent has to be
+installed: `claude`, `codex` and `pi` (which `herdr-acp` drives without an
+ACP adapter), `copilot --acp`, `gemini --acp`, or `opencode acp`. The program can
+also be started by hand in any pane: `herdr-acp claude`.
+
+**Company endpoints.** Variables in `[chat.env]` go into the environment of
+every chat's tab, on this machine or an SSH host: `GH_HOST` for Copilot on
+GitHub Enterprise, `ANTHROPIC_BASE_URL` for a gateway, and so on. Settings >
+General edits them as `NAME=value` pairs while ACP chats are on. They are
+stored in plain text, so tokens belong in the shell or the agent's own
+sign-in.
+
+**The chat view.** Over a chat's pane the app shows the agent's messages,
+reasoning, tool calls with their diffs, the plan, permission requests to
+answer, queued prompts, and a prompt box. The header shows how long the
+running turn has taken, how full the context window is (yellow past 75%, red
+past 90%) and what the session has cost when the agent reports it, stops a
+turn, and switches back to the pane's terminal (`herdr-gpui chat
+show|hide|toggle`). Under it, a button per setting the agent offers picks its
+model, thinking level, and mode; the gear lists the rest, such as toggles.
+Each finished turn leaves a line with its duration and tokens, and an agent
+message copies with the button under it. In the prompt box `/` completes the
+agent's commands (Tab or a click takes one) and Up recalls earlier prompts.
+
+**Pictures and pages.** A picture the agent links as a local file, or an
+image file a tool call wrote or read, shows in the chat; `herdr-acp` reads it
+beside the agent, so this works for chats on SSH hosts too, and only files
+whose bytes are an image count. A picture linked on the web shows as a card
+naming its host and loads only when you press Load, since loading it tells
+that server your address. An `html` code block, or an HTML file a tool call
+wrote on this machine, gets a Show page button: on macOS and Windows the page
+then runs live inside the message, in place of its card, and scrolls with the
+chat (on Windows it shows while all of it is in view); Hide turns it back
+into the card, and a chat keeps at most four pages live. On Linux, which has
+no pages in the window, the button opens your browser. The page is copied
+alone into a private folder first, so its script cannot read the files
+beside it; a page that loads its own stylesheets or scripts from separate
+files shows without them. A web picture is fetched from the host its card
+names only, without following a redirect.
+
+**Layouts.** `[chat] layout` picks how a chat view draws: `timeline` puts the
+entries on a line with an avatar where the speaker changes, `bubbles` puts
+your messages in bubbles on the right with the settings under the prompt box,
+as Claude's app does, `terminal` draws it as Claude Code's own screen in the
+terminal font, `document` makes each prompt a heading with the reply as prose
+under it, and `cards` puts each turn in one card. The button in a chat's
+header steps through them, Settings > General picks one while ACP chats are
+on, and `herdr-gpui config set chat.layout cards` sets it from a script.
+What a chat does is the same in every layout.
+
+Both views stay live: a prompt or an answer from either
+shows in both, and the first answer to a permission request wins. The view
+attaches through a private local endpoint, a socket on Unix and a named pipe
+on Windows reachable by this user alone, and is never offered for SSH, WSL,
+or cloud hosts. See `crates/herdr-acp/README.md` for the program itself.
+
 ## VS Code
 
 VS Code opens as a tab of a space's editor groups, like a browser tab, for

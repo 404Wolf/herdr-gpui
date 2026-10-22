@@ -149,6 +149,7 @@ impl HerdrWindow {
             browser,
             catalog,
             cell_width: 9.,
+            chats: Default::default(),
             checkpoints: Default::default(),
             chrome_region: None,
             #[cfg(feature = "cloud")]

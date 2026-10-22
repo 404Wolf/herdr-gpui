@@ -1,5 +1,5 @@
 [workspace]
-members  = ["crates/embed-resource", "crates/herdr-client", "crates/herdr-gpui", "crates/herdr-gpui-launcher", "crates/herdr-protocol"]
+members  = ["crates/embed-resource", "crates/herdr-acp", "crates/herdr-chat-protocol", "crates/herdr-client", "crates/herdr-gpui", "crates/herdr-gpui-launcher", "crates/herdr-protocol"]
 resolver = "2"
 
 [workspace.package]
@@ -22,6 +22,8 @@ unwrap_used = "deny"
 
 [workspace.dependencies]
 url = "2"
+# ACP wire types for herdr-acp; its own transport, so no async runtime.
+acp                  = { default-features = false, package = "agent-client-protocol-schema", version = "1.12" }
 anyhow               = "1"
 aes                  = "0.9.3"
 ammonia              = "4.2.1"
@@ -54,6 +56,7 @@ gpui_platform        = { package = "gpui-pre-platform", version = "=0.3.6" }
 gix                  = { default-features = false, features = ["sha1"], version = "0.89" }
 # The web views behind browser tabs; `browser::page` lays them out in the window.
 wry                  = { package = "lb-wry", version = "=0.53.3" }
+herdr-chat-protocol  = { path = "crates/herdr-chat-protocol" }
 herdr-client         = { path = "crates/herdr-client" }
 herdr-protocol       = { path = "crates/herdr-protocol" }
 interprocess         = "2.4.2"
@@ -63,6 +66,9 @@ if-addrs             = "0.15"
 # Display and idle holds behind the status bar cup; `bin` would pull in a CLI.
 keepawake            = { default-features = false, version = "0.6.1" }
 image                = { default-features = false, features = ["gif", "jpeg", "png", "webp"], version = "0.25.10" }
+# Mermaid fences in chat answers become diagrams: parse, lay out, and write
+# SVG in pure Rust; GPUI rasterizes the SVG. No CLI and no PNG writer.
+mermaid-rs-renderer  = { default-features = false, version = "0.3.1" }
 # Helix's fzf-style scorer behind the command palette.
 nucleo-matcher       = "0.3.1"
 # Bonjour browsing for SSH hosts in the Add Device dialog; it runs its own
@@ -84,6 +90,9 @@ objc2-web-kit        = { default-features = false, features = ["WKSnapshotConfig
 # Asks for Dock badge permission; the version GPUI's macOS platform already links.
 objc2-user-notifications ={ default-features = false, features = ["UNUserNotificationCenter", "block2", "std"], version = "0.3.2" }
 raw-window-handle    = "0.6"
+# herdr-acp's in-pane chat view.
+ratatui              = { default-features = false, features = ["crossterm"], version = "0.30" }
+crossterm            = "0.29"
 # TLS for the Azure sandbox exec stream, with the ring provider and roots
 # ureq already links.
 rustls               = { default-features = false, features = ["ring", "std", "tls12"], version = "0.23" }
@@ -99,6 +108,9 @@ sha1                 = "0.11.0"
 sha2                 = "0.11.0"
 # Reads embedded bitmap strikes to spot fonts GPUI's Linux rasterizer panics on.
 skrifa               = { default-features = false, features = ["std"], version = "0.48" }
+# Tests hold a port with a socket that is bound but never listens; mdns-sd
+# already locks this version.
+socket2              = "0.6.5"
 # Diff syntax colouring: bundled grammars, parsed with the pure-Rust regex
 # engine, no themes (colours come from the app's theme).
 syntect              = { default-features = false, features = ["default-syntaxes", "parsing", "regex-fancy"], version = "5.3" }
