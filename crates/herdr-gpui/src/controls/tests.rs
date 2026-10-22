@@ -117,6 +117,8 @@ fn catalog_has_all_native_commands_and_gpui_shortcuts() {
         (About, &[]),
         (NewBrowserTab, &["cmd-shift-b"]),
         (OpenOrchestrator, &[]),
+        (ReviewChanges, &[]),
+        (GitMenu, &[]),
         (InstallBrowserSkill, &[]),
         (SplitEditor, &["cmd-\\"]),
         (OpenCode, &[]),
@@ -224,6 +226,8 @@ fn gui_commands_never_send_daemon_requests() {
         Command::NextAgent,
         Command::AgentNumber(1),
         Command::ReloadConfig,
+        Command::ReviewChanges,
+        Command::GitMenu,
     ] {
         assert!(request(command, &s).is_none(), "{command:?}");
     }

@@ -76,6 +76,10 @@ pub enum Command {
     NewBrowserTab,
     /// The focused workspace's repository's issues, pull requests, and runs.
     OpenOrchestrator,
+    /// A review of the focused checkout's changes.
+    ReviewChanges,
+    /// The titlebar's Git menu for the focused checkout.
+    GitMenu,
     InstallBrowserSkill,
     SplitEditor,
     OpenCode,
@@ -652,6 +656,16 @@ pub const COMMANDS: &[CommandInfo] = &[
         label: "Show Issues",
     },
     CommandInfo {
+        command: Command::ReviewChanges,
+        name: "review_changes",
+        label: "Review Changes",
+    },
+    CommandInfo {
+        command: Command::GitMenu,
+        name: "git_menu",
+        label: "Git Menu",
+    },
+    CommandInfo {
         command: Command::InstallBrowserSkill,
         name: "install_browser_skill",
         label: "Install Browser Skill for Agents",
@@ -859,6 +873,8 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         | Command::OpenNotificationTarget
         | Command::NewBrowserTab
         | Command::OpenOrchestrator
+        | Command::ReviewChanges
+        | Command::GitMenu
         | Command::InstallBrowserSkill
         | Command::SplitEditor
         | Command::OpenCode

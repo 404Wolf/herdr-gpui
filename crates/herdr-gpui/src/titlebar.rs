@@ -62,6 +62,7 @@ impl HerdrWindow {
         let background = rgb(theme.surface).blend(rgba(0xffffff1a));
         let status = self.git.status();
         let running = self.git.running().is_some();
+        let anchor = self.git_anchor.clone();
         let pr = self.git_pull_request().map(|pr| {
             (
                 format!("#{}", pr.number),
@@ -178,6 +179,7 @@ impl HerdrWindow {
                     div()
                         .id("titlebar-git")
                         .debug_selector(|| "titlebar-git".into())
+                        .relative()
                         .flex()
                         .items_center()
                         .gap(px(4.))
@@ -205,6 +207,15 @@ impl HerdrWindow {
                                 .size(px(12.))
                                 .flex_none()
                                 .text_color(rgb(theme.muted)),
+                        )
+                        .child(
+                            canvas(
+                                |_, _, _| (),
+                                move |bounds, _, _, _| anchor.set(bounds.center()),
+                            )
+                            .absolute()
+                            .inset_0()
+                            .size_full(),
                         )
                         .on_mouse_down(
                             MouseButton::Left,
@@ -687,6 +698,8 @@ mod tests {
 
 #[cfg(test)]
 mod git_button_tests;
+#[cfg(test)]
+mod git_command_tests;
 
 #[cfg(all(test, target_os = "macos"))]
 #[allow(clippy::unwrap_used)]

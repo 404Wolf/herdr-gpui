@@ -189,6 +189,7 @@ impl HerdrWindow {
             flash: None,
             focus,
             git: git::Git::default(),
+            git_anchor: Default::default(),
             gui_config_diagnostic,
             held_keys: Default::default(),
             hover: None,
