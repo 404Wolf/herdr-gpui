@@ -8,9 +8,6 @@ use herdr_automation::{Failure, Plan, PlannedStep, Source, Step};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
-/// The most of one worktree script shown in a plan.
-const SHOWN: usize = 4_096;
-
 /// The `setup` and `run` scripts of a repository's `.herdr/worktree.toml`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct WorktreeScripts {
@@ -68,11 +65,19 @@ impl Fingerprint {
             };
         };
         let worktree = WorktreeScripts::read(repo);
+        // An unambiguous encoding: each script is tagged present or
+        // missing, and a present one carries its length.
         let mut digest = Sha256::new();
         digest.update(source.hash.as_bytes());
         for script in [&worktree.setup, &worktree.run] {
-            digest.update(b"\n\0");
-            digest.update(script.as_deref().unwrap_or_default().as_bytes());
+            match script {
+                Some(script) => {
+                    digest.update([1]);
+                    digest.update((script.len() as u64).to_be_bytes());
+                    digest.update(script.as_bytes());
+                }
+                None => digest.update([0]),
+            }
         }
         Self {
             hash: digest
@@ -92,12 +97,8 @@ impl Fingerprint {
             match script {
                 Some(script) => {
                     text.push_str(&format!("    {name}:\n"));
-                    let shown = script.chars().take(SHOWN).collect::<String>();
-                    for line in shown.lines() {
-                        text.push_str(&format!("      {line}\n"));
-                    }
-                    if shown.len() < script.len() {
-                        text.push_str("      …\n");
+                    for line in script.lines() {
+                        text.push_str(&format!("      {}\n", visible(line)));
                     }
                 }
                 None => text.push_str(&format!("    {name}: (none)\n")),
@@ -105,6 +106,20 @@ impl Fingerprint {
         }
         Some(text)
     }
+}
+
+/// A line as it must be reviewed: in full, with control and invisible
+/// characters written as `\u{…}` so a terminal cannot hide or restyle them.
+fn visible(line: &str) -> String {
+    line.chars()
+        .map(|c| {
+            if (c.is_control() && c != '\t') || herdr_automation::invisible(c) {
+                format!("\\u{{{:04x}}}", u32::from(c))
+            } else {
+                c.to_string()
+            }
+        })
+        .collect()
 }
 
 /// Whether any path of the plan has a `run` step.

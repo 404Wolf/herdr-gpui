@@ -236,8 +236,7 @@ fn state_is_private_to_the_user() {
     std::fs::set_permissions(&state, std::fs::Permissions::from_mode(0o755)).unwrap();
     let database = state.join("state.sqlite");
     drop(Store::open(&database).unwrap());
-    let mode =
-        |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+    let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode(&state), 0o700, "an existing directory is tightened");
     assert_eq!(mode(&database), 0o600);
 }

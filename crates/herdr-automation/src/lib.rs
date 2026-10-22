@@ -36,6 +36,8 @@ mod tokens;
 mod vm;
 
 #[cfg(feature = "engine")]
+pub use args::invisible;
+#[cfg(feature = "engine")]
 pub use caps::Caps;
 #[cfg(feature = "engine")]
 pub use error::{Budget, Problem, Refusal};

@@ -252,7 +252,7 @@ fn is_reference(text: &str) -> bool {
 /// line and paragraph separators, private use, unassigned code points, and
 /// the default-ignorable marks outside those categories. A plan must read
 /// as what runs.
-fn invisible(c: char) -> bool {
+pub fn invisible(c: char) -> bool {
     use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
     matches!(
         c.general_category(),

@@ -390,13 +390,11 @@ impl Daemon<'_> {
                 .info(format!("{name}: skipped; the previous run is still going"));
             return;
         }
+        // Fingerprinted once, now: the run gets exactly the worktree
+        // scripts whose hash matched the approval.
+        let fingerprint = Fingerprint::of(&script.source, &script.plan, script.repo.as_deref());
         match self.store.approved_hash(path) {
-            // Checked again now: the worktree scripts may have changed
-            // since the last scan. The run uses what is read here.
-            Ok(Some(hash))
-                if hash
-                    == Fingerprint::of(&script.source, &script.plan, script.repo.as_deref())
-                        .hash => {}
+            Ok(Some(hash)) if hash == fingerprint.hash => {}
             _ => {
                 self.log.warn(format!(
                     "{name}: not approved in its current form; not running it"
@@ -417,7 +415,7 @@ impl Daemon<'_> {
             trigger_name: trigger.name.clone(),
             reason,
             scheduled,
-            hash: script.fingerprint.hash.clone(),
+            hash: fingerprint.hash.clone(),
             started_at: runner::now(),
         };
         let run = match self.store.start_run(&new) {

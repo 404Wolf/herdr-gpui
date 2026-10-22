@@ -77,3 +77,36 @@ fn a_personal_script_has_no_worktree_scripts() {
     let (source, plan) = plan("herdr.manual(function() run(\"run\") end)");
     assert_eq!(Fingerprint::of(&source, &plan, None).hash, source.hash);
 }
+
+#[test]
+fn hidden_characters_are_shown_and_nothing_is_cut() {
+    let (source, plan) = plan("herdr.manual(function() run(\"run\") end)");
+    let long = format!("echo {} \\u001b[2Kgone \\u202eevil", "x".repeat(10_000));
+    let dir = repo(&long);
+    let shown = Fingerprint::of(&source, &plan, Some(dir.path()))
+        .describe()
+        .unwrap();
+    assert!(shown.contains(&"x".repeat(10_000)), "shown in full");
+    assert!(
+        shown.contains("\\u{001b}[2Kgone"),
+        "{}",
+        &shown[shown.len() - 60..]
+    );
+    assert!(shown.contains("\\u{202e}evil"));
+    assert!(!shown.contains('\u{1b}') && !shown.contains('\u{202e}'));
+}
+
+#[test]
+fn a_missing_script_and_an_empty_one_differ() {
+    let (source, plan) = plan("herdr.manual(function() run(\"run\") end)");
+    let with_run = repo("x");
+    let base = Fingerprint::of(&source, &plan, Some(with_run.path())).hash;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join(".herdr")).unwrap();
+    std::fs::write(
+        dir.path().join(".herdr/worktree.toml"),
+        "[scripts]\nsetup = \"npm install\"\n",
+    )
+    .unwrap();
+    assert_ne!(Fingerprint::of(&source, &plan, Some(dir.path())).hash, base);
+}
