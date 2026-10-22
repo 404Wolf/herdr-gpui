@@ -7,7 +7,7 @@ use crate::control::{self, DeviceId};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    fs::{self, File, OpenOptions},
+    fs::{self, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
@@ -287,7 +287,7 @@ fn write_private(path: &Path, content: &[u8]) -> Result<()> {
     // A directory cannot be opened for fsync on Windows, where the rename is
     // already ordered by the filesystem.
     #[cfg(unix)]
-    File::open(parent)
+    fs::File::open(parent)
         .and_then(|directory| directory.sync_all())
         .map_err(|source| store_error(StoreOperation::Sync, parent, source))?;
     Ok(())
