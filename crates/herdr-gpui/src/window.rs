@@ -237,6 +237,8 @@ pub(crate) struct HerdrWindow {
     /// The last orchestrator view id handed out.
     pub(crate) next_orchestrator: u64,
     pub(crate) notes_width: crate::panel_resize::PanelWidth,
+    /// Which notice cards had lines too long for their row when last laid out.
+    pub(crate) notice_overflow: std::rc::Rc<config_diagnostic::Overflow>,
     pub(crate) options: ConnectOptions,
     /// Orchestrator views' requests, acted on at the next tick.
     pub(crate) orchestrator_events: Vec<(crate::orchestrator::ViewId, crate::orchestrator::Event)>,
