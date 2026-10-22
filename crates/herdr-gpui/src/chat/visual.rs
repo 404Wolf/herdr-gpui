@@ -47,12 +47,12 @@ pub(crate) enum Error {
     Decode(#[source] image::ImageError),
     #[error("the diagram could not be read")]
     Diagram(#[source] Box<dyn std::error::Error + Send + Sync>),
-    #[error("the diagram renderer failed")]
-    Panicked,
     #[error("the picture could not be fetched")]
     Fetch(#[source] Box<ureq::Error>),
     #[error("the address does not answer with a picture")]
     NotAnImage,
+    #[error("the diagram renderer failed")]
+    Panicked,
     #[error("the diagram could not be drawn")]
     Raster(#[source] Box<dyn std::error::Error + Send + Sync>),
     // keep-sorted end
