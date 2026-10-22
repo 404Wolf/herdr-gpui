@@ -1511,6 +1511,11 @@ motion. Hold Shift to select locally instead; releasing a selection of terminal
 text in a pane also offers the annotation pill described below. In applications
 without mouse reporting, selection works without Shift. A forwarded drag stays
 in the pane or popup where it started, including when the pointer moves outside it.
+Many agent TUIs take the mouse without selecting text, so the first left drag an
+application receives in a session shows **Hold Shift and drag to select text**
+for a few seconds, where the `copied to clipboard` flash appears. It shows once
+per session, never for a click, and not at all once you have pressed with Shift
+over such a pane.
 
 Right-click opens the GUI pane menu unless Herdr routes that pane's right-clicks
 to the application (`herdr pane input --right-click pane`, or **Send

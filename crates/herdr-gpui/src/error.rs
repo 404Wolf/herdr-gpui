@@ -685,22 +685,8 @@ pub enum Error {
     PrMetadata,
     #[error("No local worktree matches the daemon branch.")]
     PrMissingWorktree,
-    #[error("Herdr's answer about the pane's process was not understood.")]
-    ProcessesAnswer(#[source] serde_json::Error),
-    #[error("Still ending the last processes. Try again in a moment.")]
-    ProcessesBusy,
-    #[error("The herdr executable's path is not valid UTF-8.")]
-    ProcessesExecutable,
-    #[error("Herdr did not name a process for this pane.")]
-    ProcessesNoRoot,
-    #[error("Could not ask Herdr which process the pane runs.")]
-    ProcessesQuery(#[source] herdr_client::Error),
-    #[error("The pane's process has exited.")]
-    ProcessesRootExited,
-    #[error("The process list stopped updating. Reopen it to try again.")]
-    ProcessesStopped,
-    #[error("Could not start watching the pane's processes.")]
-    ProcessesWorker(#[source] io::Error),
+    #[error(transparent)]
+    Processes(#[from] crate::processes::Error),
     #[error("PR lookup supports GitHub.com origins only.")]
     PrOrigin,
     #[error("Could not {operation} for Git PR lookup.")]
@@ -958,8 +944,7 @@ pub enum Error {
     WorktreeScriptsUnsupportedHost,
     #[error("Select a checkout from the daemon's worktree list.")]
     WorktreeSelection,
-    /// A shell into a WSL distribution starts through `wsl.exe`, which only a
-    /// Windows client has.
+    /// WSL shells start through `wsl.exe`, which only a Windows client has.
     #[error("WSL distributions can only be reached from Windows.")]
     WslHostUnsupported,
     #[error("Another drop's paths are still being mapped in WSL. Try again in a moment.")]
