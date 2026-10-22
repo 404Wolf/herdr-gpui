@@ -23,3 +23,11 @@ fn ids_are_percent_encoded_for_urls() {
     assert_eq!(urlencode("w1:p 2/x"), "w1%3Ap%202%2Fx");
     assert_eq!(urlencode("plain-id_1.2~"), "plain-id_1.2~");
 }
+
+#[test]
+fn images_in_agent_text_become_links_that_load_nothing() {
+    let html = markdown("![pixel](https://tracker.example/p.gif?chat=1)").into_string();
+    assert!(!html.contains("<img"));
+    assert!(html.contains(r#"href="https://tracker.example/p.gif?chat=1""#));
+    assert!(html.contains("pixel"));
+}

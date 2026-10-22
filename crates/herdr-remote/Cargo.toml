@@ -15,9 +15,11 @@ workspace = true
 # control protocol alone, so Tokio never reaches the GUI.
 default = ["server"]
 server = [
+    "dep:aes-gcm",
     "dep:axum",
     "dep:base64",
     "dep:getrandom",
+    "dep:hkdf",
     "dep:if-addrs",
     "dep:maud",
     "dep:p256",
@@ -28,6 +30,8 @@ server = [
     "dep:sha2",
     "dep:time",
     "dep:tokio",
+    "dep:ureq",
+    "dep:url",
 ]
 
 [[bin]]
@@ -43,9 +47,11 @@ serde_json.workspace          = true
 thiserror.workspace           = true
 uuid.workspace                = true
 
+aes-gcm        = { optional = true, workspace = true }
 axum           = { optional = true, workspace = true }
 base64         = { optional = true, workspace = true }
 getrandom      = { optional = true, workspace = true }
+hkdf           = { optional = true, workspace = true }
 if-addrs       = { optional = true, workspace = true }
 maud           = { optional = true, workspace = true }
 p256           = { optional = true, workspace = true }
@@ -55,6 +61,8 @@ rustls         = { optional = true, workspace = true }
 sha2           = { optional = true, workspace = true }
 time           = { optional = true, workspace = true }
 tokio          = { optional = true, workspace = true }
+ureq           = { optional = true, workspace = true }
+url            = { optional = true, workspace = true }
 
 # The host name for the CA's name and `HOSTNAME.local`.
 [target.'cfg(unix)'.dependencies]

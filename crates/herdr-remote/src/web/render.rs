@@ -14,17 +14,28 @@ pub(crate) use pages::{Folders, devices, new_chat, new_workspace};
 
 use herdr_chat_protocol::{Status, display};
 use maud::{Markup, PreEscaped, html};
-use pulldown_cmark::{Event, Options, Parser, html::push_html};
+use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd, html::push_html};
 
-/// Markdown as HTML, with raw HTML shown as text and links made inert
-/// (`rel=noopener`, opened outside the app).
+/// Markdown as HTML, with raw HTML shown as text, images as links, and
+/// links made inert (`rel=noopener`, opened outside the app).
 pub(crate) fn markdown(text: &str) -> Markup {
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_TASKLISTS
         | Options::ENABLE_GFM;
+    // An image would load from wherever the agent's text points, telling
+    // that server the phone viewed the chat; it becomes a link instead.
     let events = Parser::new_ext(text, options).map(|event| match event {
         Event::Html(raw) | Event::InlineHtml(raw) => Event::Text(raw),
+        Event::Start(Tag::Image {
+            dest_url, title, ..
+        }) => Event::Start(Tag::Link {
+            link_type: LinkType::Inline,
+            dest_url,
+            title,
+            id: "".into(),
+        }),
+        Event::End(TagEnd::Image) => Event::End(TagEnd::Link),
         event => event,
     });
     let mut out = String::with_capacity(text.len() + text.len() / 4);

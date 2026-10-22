@@ -145,8 +145,11 @@ records live in the daemon's private state directory, written 0600.
 
 ## Push notifications
 
-Standard Web Push (VAPID, RFC 8291 and 8292) through the `web-push` crate on
-the Tokio runtime. Payloads are encrypted end to end, so the push services
+Standard Web Push (VAPID, RFC 8291 and 8292), implemented in `push` on
+RustCrypto (`p256`, `hkdf`, `aes-gcm`) with a blocking `ureq` request that
+the server runs in `spawn_blocking`. Endpoints are limited to the known push
+services (Apple, Google, Mozilla, Windows), so a device cannot make the
+daemon post elsewhere. Payloads are encrypted end to end, so the push services
 (Apple, Google, Mozilla) relay them without reading them.
 
 - iOS 16.4 and later deliver push only to an installed PWA (Add to Home

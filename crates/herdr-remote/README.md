@@ -26,6 +26,14 @@ sessions, and per-address rate limits. It is synchronous and takes every time
 as milliseconds since the Unix epoch, so the server calls it under a mutex and
 tests pass explicit times.
 
+## Push notifications
+
+`push` (server feature only) sends Web Push: a VAPID key created once at
+`STATE_DIR/push/vapid.pem` (0600), RFC 8291 `aes128gcm` encryption, the
+HTTPS post to the phone's push service, the triggers that turn chat changes
+into questions, finished turns, and errors, and a per-device throttle. The
+service worker receives `push::Message` as JSON.
+
 ## Errors
 
 The crate exports `Error` and `Result<T>`.

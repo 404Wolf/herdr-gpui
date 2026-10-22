@@ -29,9 +29,6 @@ aes                  = "0.9.3"
 ammonia              = "4.2.1"
 cbc                  = { features = ["block-padding"], version = "0.2.1" }
 percent-encoding     = "2"
-# Verifies the ECDSA P-256 signatures paired phones make with their WebCrypto
-# keys; only herdr-remote's server uses it.
-p256                 = { default-features = false, features = ["ecdsa"], version = "0.14" }
 pbkdf2               = { default-features = false, features = ["hmac"], version = "0.13.0" }
 pulldown-cmark       = { default-features = false, features = ["html"], version = "0.13.4" }
 base64               = "0.23.1"
@@ -114,6 +111,14 @@ serde                = { features = ["derive"], version = "1" }
 serde_json           = "1"
 serde_ignored        = "0.1.14"
 sha1                 = "0.11.0"
+# herdr-remote: P-256 verifies the signatures paired phones make with their
+# WebCrypto keys, and with HKDF and AES-GCM implements Web Push (VAPID ES256,
+# RFC 8291 encryption) on the sha2 below. Not web-push-native, which brings
+# jwt-simple and a second crypto stack; not ring, whose ECDH cannot take the
+# fixed key RFC 8291's test vector uses.
+aes-gcm              = { default-features = false, features = ["aes", "alloc"], version = "0.11" }
+hkdf                 = "0.13"
+p256                 = { default-features = false, features = ["ecdh", "ecdsa", "pem", "std"], version = "0.14" }
 sha2                 = "0.11.0"
 # Reads embedded bitmap strikes to spot fonts GPUI's Linux rasterizer panics on.
 skrifa               = { default-features = false, features = ["std"], version = "0.48" }
