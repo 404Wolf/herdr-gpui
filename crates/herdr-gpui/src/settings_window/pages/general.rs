@@ -105,8 +105,8 @@ impl SettingsWindow {
                 ui::row(theme, "general-chat-layout", "Chat layout")
                     .description(
                         "How chat views draw messages and the composer: on a timeline, as \
-                         bubbles like Claude's app, or with one rounded composer like ChatGPT's \
-                         and Codex's. The button in a chat's header steps through them too.",
+                         bubbles like Claude's app, as Claude Code's terminal screen, as a \
+                         document, or as one card per turn. The button in a chat's header steps through them too.",
                     )
                     .control(ui::segmented(
                         theme,

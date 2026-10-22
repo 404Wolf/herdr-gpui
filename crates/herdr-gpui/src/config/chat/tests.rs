@@ -65,9 +65,9 @@ fn malformed_or_unsafe_pairs_are_refused() {
 
 #[test]
 fn the_layout_is_read_and_saved_by_name() {
-    let config = crate::config::Config::parse("[chat]\nlayout = \"pill\"\n").unwrap();
-    assert_eq!(config.chat.layout, ChatLayoutMode::Pill);
-    assert!(crate::config::Config::parse("[chat]\nlayout = \"cards\"\n").is_err());
+    let config = crate::config::Config::parse("[chat]\nlayout = \"cards\"\n").unwrap();
+    assert_eq!(config.chat.layout, ChatLayoutMode::Cards);
+    assert!(crate::config::Config::parse("[chat]\nlayout = \"pill\"\n").is_err());
     assert_eq!(
         crate::config::Config::parse("").unwrap().chat.layout,
         ChatLayoutMode::Timeline

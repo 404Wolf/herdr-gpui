@@ -8,10 +8,15 @@
 //! itself), so a chat behaves the same in every layout.
 
 mod bubbles;
-mod pill;
+mod cards;
+mod document;
+mod terminal;
 mod timeline;
 
-use crate::config::{ChatLayoutMode, Theme};
+use crate::{
+    HerdrWindow,
+    config::{ChatLayoutMode, FontConfig, Theme},
+};
 use gpui::{prelude::*, *};
 use herdr_chat_protocol::{Author, Entry, EntryKind};
 
@@ -61,6 +66,18 @@ pub(super) struct Look<'a> {
     pub(super) theme: &'a Theme,
     /// The chat's text size.
     pub(super) text: f32,
+    /// The terminal's font, for code and for layouts that read like one.
+    pub(super) mono: &'a FontConfig,
+}
+
+impl HerdrWindow {
+    pub(super) fn chat_look(&self) -> Look<'_> {
+        Look {
+            theme: &self.theme,
+            text: self.chat_text_size(),
+            mono: &self.config.terminal,
+        }
+    }
 }
 
 /// The composer's parts, each already carrying its listeners.
@@ -84,13 +101,31 @@ pub(super) trait ChatLayout {
 
     /// The composer's card, from its parts.
     fn composer(&self, parts: ComposerParts, look: &Look<'_>) -> Div;
+
+    /// How a turn ended, from its description: by default a quiet rule
+    /// across the list.
+    fn turn(&self, text: &str, look: &Look<'_>) -> Div {
+        let rule = || div().flex_1().h(px(1.)).bg(rgb(look.theme.active));
+        div()
+            .debug_selector(|| "chat-turn".into())
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .text_size(px((look.text - 1.).max(10.)))
+            .text_color(rgb(look.theme.muted))
+            .child(rule())
+            .child(div().flex_none().child(text.to_owned()))
+            .child(rule())
+    }
 }
 
 pub(super) fn layout_for(mode: ChatLayoutMode) -> &'static dyn ChatLayout {
     match mode {
         ChatLayoutMode::Timeline => &timeline::Timeline,
         ChatLayoutMode::Bubbles => &bubbles::Bubbles,
-        ChatLayoutMode::Pill => &pill::Pill,
+        ChatLayoutMode::Terminal => &terminal::Terminal,
+        ChatLayoutMode::Document => &document::Document,
+        ChatLayoutMode::Cards => &cards::Cards,
     }
 }
 

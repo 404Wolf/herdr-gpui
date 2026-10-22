@@ -5,7 +5,7 @@
 use super::{
     super::chats::ChatPane,
     Hues,
-    layout::{ComposerParts, Look, layout_for},
+    layout::{ComposerParts, layout_for},
 };
 use crate::{HerdrWindow, config::corners};
 use gpui::{prelude::*, *};
@@ -227,11 +227,7 @@ impl HerdrWindow {
             usage: self.render_chat_usage(chat),
             send,
         };
-        let look = Look {
-            theme,
-            text: self.chat_text_size(),
-        };
-        let card = layout_for(self.config.chat.layout).composer(parts, &look);
+        let card = layout_for(self.config.chat.layout).composer(parts, &self.chat_look());
         div()
             .relative()
             .flex_none()

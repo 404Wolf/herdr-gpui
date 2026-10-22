@@ -21,7 +21,7 @@ fn bubbles_put_the_user_on_the_right_without_avatars(cx: &mut TestAppContext) {
     let (view, _peer, cx) = open(cx, ConnectTarget::Local);
     let program = Program::new();
     let _stream = attach_with(&view, &program, conversation(false), cx);
-    for mode in [ChatLayoutMode::Bubbles, ChatLayoutMode::Pill] {
+    for mode in [ChatLayoutMode::Bubbles] {
         switch(&view, mode, cx);
         poll(&view, &program, cx);
         assert!(cx.debug_bounds("chat-avatar-1").is_none(), "{mode:?}");
@@ -69,13 +69,18 @@ fn the_composer_arranges_its_parts_by_layout(cx: &mut TestAppContext) {
     assert!(send.left() >= draft.right(), "send beside the draft");
     assert!(attach.top() > draft.bottom(), "settings under the box");
 
-    // Pill: attach leads the draft and send closes the row.
-    switch(&view, ChatLayoutMode::Pill, cx);
-    poll(&view, &program, cx);
-    let (draft, attach, send) = parts(cx);
-    assert!(attach.right() <= draft.left(), "attach leads");
-    assert!(send.left() >= draft.right(), "send closes");
-    assert!(attach.top() < draft.bottom() && attach.bottom() > draft.top());
+    // The rest keep the buttons in a row under the draft.
+    for mode in [
+        ChatLayoutMode::Terminal,
+        ChatLayoutMode::Document,
+        ChatLayoutMode::Cards,
+    ] {
+        switch(&view, mode, cx);
+        poll(&view, &program, cx);
+        let (draft, attach, send) = parts(cx);
+        assert!(attach.top() >= draft.bottom(), "{mode:?}");
+        assert!(send.left() > attach.right(), "{mode:?}");
+    }
 }
 
 #[gpui::test]
@@ -84,11 +89,43 @@ fn the_header_names_the_layout(cx: &mut TestAppContext) {
     let program = Program::new();
     let _stream = attach_with(&view, &program, conversation(false), cx);
     assert!(cx.debug_bounds("chat-layout").is_some());
-    switch(&view, ChatLayoutMode::Pill, cx);
+    switch(&view, ChatLayoutMode::Cards, cx);
     assert_eq!(
         view.read_with(cx, |view, _| view.config.chat.layout),
-        ChatLayoutMode::Pill
+        ChatLayoutMode::Cards
     );
+}
+
+#[gpui::test]
+fn each_layout_marks_the_conversation_its_own_way(cx: &mut TestAppContext) {
+    let (view, _peer, cx) = open(cx, ConnectTarget::Local);
+    let program = Program::new();
+    let _stream = attach_with(&view, &program, conversation(false), cx);
+    let marks = [
+        (ChatLayoutMode::Timeline, "chat-avatar-1"),
+        (ChatLayoutMode::Bubbles, "chat-bubble-1"),
+        (ChatLayoutMode::Terminal, "chat-mark-1"),
+        (ChatLayoutMode::Document, "chat-heading-1"),
+        (ChatLayoutMode::Cards, "chat-card-1"),
+    ];
+    assert_eq!(marks.len(), ChatLayoutMode::ALL.len());
+    for (mode, mark) in marks {
+        switch(&view, mode, cx);
+        poll(&view, &program, cx);
+        for (_, other) in marks.iter().filter(|(other, _)| *other != mode) {
+            assert!(cx.debug_bounds(other).is_none(), "{mode:?} draws {other}");
+        }
+        assert!(cx.debug_bounds(mark).is_some(), "{mode:?}");
+        for part in ["chat-composer", "chat-settings", "chat-send", "chat-attach"] {
+            assert!(cx.debug_bounds(part).is_some(), "{mode:?}: {part}");
+        }
+    }
+    // A card's rows abut: the prompt opens it and the reply continues it.
+    switch(&view, ChatLayoutMode::Cards, cx);
+    poll(&view, &program, cx);
+    let prompt = cx.debug_bounds("chat-card-1").unwrap();
+    let reply = cx.debug_bounds("chat-card-2").unwrap();
+    assert_eq!(prompt.bottom(), reply.top());
 }
 
 #[test]

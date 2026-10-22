@@ -2938,11 +2938,12 @@ agent's commands (Tab or a click takes one) and Up recalls earlier prompts.
 **Layouts.** `[chat] layout` picks how a chat view draws: `timeline` puts the
 entries on a line with an avatar where the speaker changes, `bubbles` puts
 your messages in bubbles on the right with the settings under the prompt box,
-as Claude's app does, and `pill` makes the prompt box one rounded field
-holding the settings, as ChatGPT's and Codex's apps do. The button in a
-chat's header steps through them, Settings > General picks one while ACP
-chats are on, and `herdr-gpui config set chat.layout pill` sets it from a
-script. What a chat does is the same in every layout.
+as Claude's app does, `terminal` draws it as Claude Code's own screen in the
+terminal font, `document` makes each prompt a heading with the reply as prose
+under it, and `cards` puts each turn in one card. The button in a chat's
+header steps through them, Settings > General picks one while ACP chats are
+on, and `herdr-gpui config set chat.layout cards` sets it from a script.
+What a chat does is the same in every layout.
 
 Both views stay live: a prompt or an answer from either
 shows in both, and the first answer to a permission request wins. The view

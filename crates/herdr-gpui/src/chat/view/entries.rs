@@ -5,7 +5,7 @@
 use super::{
     super::{chats::ChatPane, prepared::Body, visual::Visuals},
     Hues,
-    layout::{Look, Row, layout_for, side},
+    layout::{Row, layout_for, side},
     visuals::Frame,
 };
 use crate::{HerdrWindow, config::corners, fonts::StyledFont, notifications::safe_text};
@@ -74,7 +74,9 @@ impl HerdrWindow {
                     .child(message)
                     .child(self.render_chat_copy(entry.id.0, text, cx))
             }
-            EntryKind::Turn(summary) => self.render_chat_turn(&summary.describe()),
+            EntryKind::Turn(summary) => {
+                layout_for(self.config.chat.layout).turn(&summary.describe(), &self.chat_look())
+            }
             EntryKind::Thought { text } => self.render_chat_thought(
                 pane_id,
                 entry,
@@ -114,11 +116,7 @@ impl HerdrWindow {
             agent: chat.session.agent(),
             content,
         };
-        let look = Look {
-            theme: &self.theme,
-            text: self.chat_text_size(),
-        };
-        layout_for(self.config.chat.layout).row(row, &look)
+        layout_for(self.config.chat.layout).row(row, &self.chat_look())
     }
 
     /// A copy button under an agent message, shown while the pointer is on it.
@@ -154,22 +152,6 @@ impl HerdrWindow {
                     this.show_flash(crate::window::Flash::success("Copied the message"), cx);
                 })),
         )
-    }
-
-    /// How a turn ended, as a quiet rule across the list.
-    fn render_chat_turn(&self, text: &str) -> Div {
-        let theme = &self.theme;
-        let rule = || div().flex_1().h(px(1.)).bg(rgb(theme.active));
-        div()
-            .debug_selector(|| "chat-turn".into())
-            .flex()
-            .items_center()
-            .gap(px(8.))
-            .text_size(px((self.chat_text_size() - 1.).max(10.)))
-            .text_color(rgb(theme.muted))
-            .child(rule())
-            .child(div().flex_none().child(text.to_owned()))
-            .child(rule())
     }
 
     fn render_chat_thought(

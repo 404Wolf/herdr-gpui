@@ -2,7 +2,7 @@
 //!
 //! ```toml
 //! [chat]
-//! layout = "bubbles"
+//! layout = "cards"
 //!
 //! [chat.env]
 //! GH_HOST = "mycompany.ghe.com"
@@ -77,9 +77,16 @@ chat_layouts! {
     /// The user's messages in bubbles on the right and the agent's as
     /// plain text, with the settings under the composer, like Claude's app.
     Bubbles => "bubbles", "Bubbles";
-    /// Bubbles in a roomier column and a rounded composer holding the
-    /// settings beside the draft, like ChatGPT's and Codex's apps.
-    Pill => "pill", "Pill";
+    /// The terminal's font throughout, prompts marked `›`, the agent and
+    /// its tools `⏺`, and a status line under the prompt, like Claude
+    /// Code's own screen.
+    Terminal => "terminal", "Terminal";
+    /// Each prompt as a heading with an accent bar, the reply as prose
+    /// under it, and a quiet rule closing each turn.
+    Document => "document", "Document";
+    /// Each turn in one card: the prompt on top, the reply under a
+    /// hairline, how it ended at its foot.
+    Cards => "cards", "Cards";
 }
 
 impl ChatLayoutMode {

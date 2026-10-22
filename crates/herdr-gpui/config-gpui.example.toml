@@ -430,9 +430,10 @@ size = 12
 # url = "http://127.0.0.1:7777/"
 
 # How chat views draw: "timeline" (entries on a line with avatars), "bubbles"
-# (your messages in bubbles on the right, settings under the composer, like
-# Claude's app), or "pill" (one rounded composer holding the settings, like
-# ChatGPT's and Codex's apps). The button in a chat's header steps through them.
+# (your messages in bubbles on the right, like Claude's app), "terminal"
+# (Claude Code's own screen, in the terminal font), "document" (each prompt
+# a heading, the reply prose under it), or "cards" (each turn in one card).
+# The button in a chat's header steps through them.
 # [chat]
 # layout = "timeline"
 
