@@ -4,5 +4,7 @@
 
 pub mod control;
 mod error;
+#[cfg(feature = "server")]
+mod hub;
 
 pub use error::{Error, Result};
