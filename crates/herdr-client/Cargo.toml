@@ -16,8 +16,11 @@ cloud = []
 azure = ["cloud"]
 boat = ["cloud"]
 coder = ["cloud"]
+container = ["cloud"]
 daytona = ["cloud"]
+opensandbox = ["cloud"]
 railway = ["cloud"]
+sprites = ["cloud"]
 
 [dependencies]
 base64.workspace            = true

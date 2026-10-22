@@ -1,4 +1,5 @@
 use super::*;
+use crate::cloud::ProviderError;
 use crate::cloud::tests::server::serve;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -50,7 +51,9 @@ fn exhausted_retries_survive_restart_and_cannot_create_a_replacement() {
     .unwrap_err();
     assert!(matches!(
         error,
-        crate::Error::Boat(super::super::super::Error::PendingCreation(_))
+        crate::Error::Provider(ProviderError::Boat(
+            super::super::super::Error::PendingCreation(_)
+        ))
     ));
     // A new invocation has no in-memory state, and the account's creation
     // options and proposed name have changed in the meantime.

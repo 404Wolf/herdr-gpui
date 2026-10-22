@@ -33,6 +33,8 @@ pub enum Error {
     Sandbox(String),
     #[error("The Daytona sandbox was deleted.")]
     Deleted,
+    #[error("Daytona could not build the snapshot: {0}")]
+    Snapshot(String),
     #[error("The Daytona sandbox did not start within 10 minutes.")]
     StartTimeout,
     #[error("Cancelled.")]

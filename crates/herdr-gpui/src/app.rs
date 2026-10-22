@@ -228,6 +228,14 @@ pub(crate) fn run() -> std::process::ExitCode {
     if let Some(exit) = crate::azure::sandbox::relay::run_helper(&args) {
         return exit;
     }
+    #[cfg(feature = "sprites")]
+    if let Some(exit) = crate::sprites::relay::run_helper(&args) {
+        return exit;
+    }
+    #[cfg(feature = "opensandbox")]
+    if let Some(exit) = crate::opensandbox::relay::run_helper(&args) {
+        return exit;
+    }
     // A control command asked for JSON gets its usage errors as JSON too.
     let json_errors = cli::control::wants_json(&args);
     let LaunchOptions { target, mut mode } = match LaunchOptions::parse(&args) {
@@ -442,6 +450,8 @@ pub(crate) fn run() -> std::process::ExitCode {
                 crate::px0::Launcher::install(cx);
                 #[cfg(feature = "azure")]
                 crate::azure::install(cx);
+                #[cfg(feature = "container")]
+                crate::container::idle::install(cx);
             }
             cx.set_global(appearance.select(light_appearance(cx)));
             app_icon::install();

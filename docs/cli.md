@@ -150,6 +150,8 @@ and builds without embedded pages return exit 8. See [px0](../crates/herdr-gpui/
 | `security open REPOSITORY ALERT\|GHSA` | Show alert `ALERT` (its number) or private report `GHSA` (its GHSA ID) of `REPOSITORY` (`owner/name`) in the Security section, beside its list: the fix, the advisory, and the dependency for an alert; the report, its advisory draft, and its conversation for a report. Only items the section lists open; nothing on GitHub changes |
 | `cloud [list]` | Saved cloud machines (no app needed) |
 | `cloud add` | Open the settings that add one |
+| `cloud images [list]` | Sandbox images built from projects' recipes (no app needed) |
+| `cloud images build [PROVIDER]` | Build the current repository's sandbox images ahead of a dispatch |
 | `cloud setup ID` | Run the `[cloud]` setup script on a saved machine again, in a new tab once the window shows it. `ID` is the machine ID from `cloud list`, its host ID, or its label |
 | `cloud create PROVIDER [--count N] [--template T] [--preset P] [--sandbox] [--no-install] [--no-setup]` | Ask in the window to create up to 16 machines; the user confirms there, once for all of them. Prints the batch to follow (below) |
 | `cloud exec ID [--timeout S] [--cwd DIR] -- COMMAND...` | Run a command on a saved machine through the app's connection to it, and print its output (below) |
@@ -225,8 +227,8 @@ destroy it like any other. Coder takes `--template` and `--preset` by name
 (without them, the deployment's only template and its default preset);
 Azure makes a Container Apps sandbox with `--sandbox`. Boat and Railway make
 their machines one at a time. Providers are named by key or name: azure,
-boat, coder, daytona, railway. The device list keeps at most 64 cloud
-devices, counting those being made.
+boat, coder, container, daytona, opensandbox, railway, sprites. The device
+list keeps at most 64 cloud devices, counting those being made.
 
 `cloud exec` runs one command on a saved cloud machine, named as for
 `cloud setup`, through the same authenticated command the app connects with
@@ -251,8 +253,9 @@ herdr-gpui cloud exec herdr-tidy-lark-aa --cwd ~/code/app -- sh -c 'git switch -
 An agent that worked on cloud machines removes them with `cloud destroy`,
 naming each by its machine ID, host ID, or label (a label two machines share
 is refused), or with `--batch` every machine a batch named. The window asks
-once, listing each machine and what happens to it: Azure, Boat, Coder, and
-Daytona delete the machine with what goes with it and then forget it here;
+once, listing each machine and what happens to it: Azure, Boat, Coder,
+Container, Daytona, OpenSandbox, and Sprites delete the machine with what
+goes with it and then forget it here;
 Railway VMs cannot be deleted from this app, so they are only forgotten and
 expire on their own. A dialog already open refuses the request (exit 6).
 

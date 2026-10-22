@@ -34,12 +34,15 @@ mod close_modal;
         feature = "azure",
         feature = "boat",
         feature = "coder",
+        feature = "container",
         feature = "daytona",
-        feature = "railway"
+        feature = "opensandbox",
+        feature = "railway",
+        feature = "sprites"
     ))
 ))]
 compile_error!(
-    "the `cloud` feature is enabled through a provider feature, such as `azure`, `boat`, `coder`, `daytona`, or `railway`"
+    "the `cloud` feature is enabled through a provider feature, such as `azure`, `boat`, `coder`, `container`, `daytona`, `opensandbox`, `railway`, or `sprites`"
 );
 #[cfg(feature = "cloud")]
 mod cloud;
@@ -54,6 +57,8 @@ mod config;
 mod config_diagnostic;
 mod connection;
 mod constants;
+#[cfg(feature = "container")]
+mod container;
 mod contrast;
 mod control;
 mod controls;
@@ -104,6 +109,8 @@ mod motion;
 mod navigation;
 mod network_quality;
 mod notifications;
+#[cfg(feature = "opensandbox")]
+mod opensandbox;
 mod orchestrator;
 mod osc52;
 mod overview;
@@ -141,6 +148,8 @@ mod setup_relay;
 mod sidebar;
 mod smooth_scroll;
 mod sound;
+#[cfg(feature = "sprites")]
+mod sprites;
 mod state;
 mod state_file;
 mod storage_warning;

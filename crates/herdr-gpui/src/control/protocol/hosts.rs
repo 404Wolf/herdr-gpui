@@ -53,6 +53,11 @@ pub(crate) enum HostOp {
     CloudSetup {
         id: String,
     },
+    /// Build the caller's repository's sandbox images, for `provider` (its
+    /// name or key) or every provider that holds images.
+    CloudImages {
+        provider: Option<String>,
+    },
 }
 
 impl HostOp {

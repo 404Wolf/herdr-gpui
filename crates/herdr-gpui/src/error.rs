@@ -20,14 +20,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[cfg(feature = "azure")]
-    #[error(transparent)]
-    Azure(#[from] crate::azure::Error),
     #[error(transparent)]
     Backdrop(#[from] crate::backdrop::Error),
-    #[cfg(feature = "boat")]
-    #[error(transparent)]
-    Boat(#[from] crate::boat::Error),
     #[error("Searching the local network failed: {0}")]
     Bonjour(#[from] mdns_sd::Error),
     #[error("{} already exists; choose a new file name", path.display())]
@@ -99,9 +93,6 @@ pub enum Error {
     CodeIndexCancelled,
     #[error("Only a local Git checkout can be searched for files and symbols")]
     CodeIndexRoot,
-    #[cfg(feature = "coder")]
-    #[error(transparent)]
-    Coder(#[from] crate::coder::Error),
     #[error("{0}")]
     Config(#[source] config_loader::ConfigError),
     #[error("{source}")]
@@ -171,9 +162,6 @@ pub enum Error {
     },
     #[error("Timed out waiting for herdr server at {}. Check the Herdr server log and use Terminal > Reconnect.", .0.display())]
     DaemonTimeout(PathBuf),
-    #[cfg(feature = "daytona")]
-    #[error(transparent)]
-    Daytona(#[from] crate::daytona::Error),
     #[error("Checkout lookup failed. Dismiss and reopen the menu.")]
     DeletionLookup,
     #[error("HEAD is detached. Check a branch out first.")]
@@ -680,6 +668,10 @@ pub enum Error {
     Processes(#[from] crate::processes::Error),
     #[error("PR lookup supports GitHub.com origins only.")]
     PrOrigin,
+    /// A cloud provider's own failure; see `cloud::ProviderError`.
+    #[cfg(feature = "cloud")]
+    #[error(transparent)]
+    Provider(#[from] crate::cloud::ProviderError),
     #[error("Could not {operation} for Git PR lookup.")]
     PrProcess {
         operation: &'static str,
@@ -704,9 +696,6 @@ pub enum Error {
     PrWorktreeLookup,
     #[error(transparent)]
     Px0(#[from] crate::px0::Error),
-    #[cfg(feature = "railway")]
-    #[error(transparent)]
-    Railway(#[from] crate::railway::Error),
     #[error("XDG_CONFIG_HOME must be an absolute path")]
     RelativeConfigRoot,
     #[error("Could not install the agent tools on the SSH host: {0}")]
@@ -723,6 +712,9 @@ pub enum Error {
     ReviewNoBase,
     #[error("These changes are too large to review here, even leaving out the largest files.")]
     ReviewTooLarge,
+    #[cfg(feature = "cloud")]
+    #[error(transparent)]
+    SandboxImage(#[from] crate::cloud::image::Error),
     #[error("The page's picture could not be turned into a PNG")]
     ScreenshotImage,
     #[error("Could not write the screenshot to {}: {source}", path.display())]

@@ -7,6 +7,8 @@ use crate::{HerdrWindow, search_input::SearchInput, sidebar::layout_tests::fixtu
 use gpui::{AppContext, Context};
 use herdr_client::HostProbe;
 
+#[cfg(feature = "cloud")]
+mod add_provider;
 #[cfg(feature = "boat")]
 mod boat_rail;
 #[cfg(feature = "cloud")]

@@ -18,7 +18,7 @@ mod launch;
 mod layout;
 mod marks;
 mod provision;
-mod remote;
+pub(crate) mod remote;
 mod sessions;
 mod snapshot;
 mod ui;

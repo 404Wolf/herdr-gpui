@@ -183,7 +183,10 @@ fn saved_before(provider: CloudProvider, error: &crate::Error) -> Option<SavedDe
 #[cfg(feature = "boat")]
 fn saved_id(error: &crate::Error) -> Option<&str> {
     match error {
-        crate::Error::Boat(crate::boat::Error::Setup { id, .. }) => Some(id),
+        crate::Error::Provider(cloud::ProviderError::Boat(crate::boat::Error::Setup {
+            id,
+            ..
+        })) => Some(id),
         _ => None,
     }
 }

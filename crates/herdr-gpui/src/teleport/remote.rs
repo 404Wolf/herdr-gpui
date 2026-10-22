@@ -55,7 +55,7 @@ impl RemoteId {
             .map_or(self.0.as_str(), |(host, _)| host)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "cloud"))]
     pub(crate) fn as_str(&self) -> &str {
         &self.0
     }

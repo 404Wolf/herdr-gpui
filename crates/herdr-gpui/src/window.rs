@@ -291,6 +291,9 @@ pub(crate) struct HerdrWindow {
     pub(crate) review_files_width: crate::panel_resize::PanelWidth,
     /// Each review tab's state, by its tab.
     pub(crate) reviews: std::collections::HashMap<crate::browser::TabId, crate::review::Review>,
+    /// Sandbox images this window was asked to build ahead of a dispatch.
+    #[cfg(feature = "cloud")]
+    pub(crate) sandbox_image_builds: crate::cloud::image::Prebuilds,
     pub(crate) scrollbar_drag: Option<mouse::ScrollbarDrag>,
     /// The activity bar's Security section: Dependabot alerts.
     pub(crate) security: crate::security::Security,

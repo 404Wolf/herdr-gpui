@@ -16,6 +16,7 @@ mod boat;
 pub(crate) mod chat;
 mod cloud;
 mod coder;
+mod container;
 mod daemon;
 mod daytona;
 mod devices;
@@ -29,11 +30,13 @@ mod keybindings;
 mod layout;
 mod notifications;
 mod omarchy;
+mod opensandbox;
 mod option_as_alt;
 mod padding;
 pub(crate) mod preferences;
 pub(crate) mod sidebar;
 mod sidebar_style;
+mod sprites;
 pub(crate) mod status_bar;
 mod status_icons;
 pub(crate) mod tab_layout;
@@ -41,7 +44,10 @@ pub(crate) mod tab_layout;
     feature = "azure",
     feature = "boat",
     feature = "coder",
-    feature = "daytona"
+    feature = "container",
+    feature = "daytona",
+    feature = "opensandbox",
+    feature = "sprites"
 ))]
 mod table;
 pub(crate) use sidebar_style::parse_hex;
@@ -65,6 +71,9 @@ pub use cloud::CloudConfig;
 pub use coder::CoderConfig;
 #[cfg(feature = "coder")]
 pub(crate) use coder::CoderFields;
+pub use container::ContainerConfig;
+#[cfg(feature = "container")]
+pub(crate) use container::ContainerFields;
 #[cfg(test)]
 use daemon::MAX_DAEMON_CONFIG_BYTES;
 pub(crate) use daemon::daemon_config_path;
@@ -91,6 +100,9 @@ pub use notifications::{
     BellConfig, ClipboardToast, ClipboardToastPosition, NotificationConfig, SoundConfig,
 };
 use notifications::{ClipboardToastSettings, NotificationSettings};
+pub use opensandbox::OpenSandboxConfig;
+#[cfg(feature = "opensandbox")]
+pub(crate) use opensandbox::OpenSandboxFields;
 pub use option_as_alt::{OptionAsAlt, OptionKeys};
 pub use padding::Padding;
 pub(crate) use padding::{Axis, MAX_PADDING, Side, Sides};
@@ -101,6 +113,9 @@ pub(crate) use sidebar::{
 };
 pub(crate) use sidebar_style::{ChangeCounts, DeviceFooter};
 pub use sidebar_style::{SelectMode, SidebarOverrides, SidebarStyle};
+pub use sprites::SpritesConfig;
+#[cfg(feature = "sprites")]
+pub(crate) use sprites::SpritesFields;
 pub use status_bar::StatusBar;
 pub use status_icons::StatusIcons;
 use std::{
@@ -162,6 +177,8 @@ pub struct Config {
     /// Whether a workspace close shows its dialog when the check finds no
     /// unpublished work. Uncommitted or unpushed work always asks.
     pub confirm_close_workspace: bool,
+    /// How new containers on this computer's Docker or Podman engine are made.
+    pub container: ContainerConfig,
     /// How far the app's own marks and labels stand off its chrome.
     pub contrast: Contrast,
     pub daytona: DaytonaConfig,
@@ -198,6 +215,8 @@ pub struct Config {
     /// Where a link-modifier click on a printed file path opens it.
     pub open_files_in: FileTarget,
     pub open_links_in: LinkTarget,
+    /// The self-hosted OpenSandbox server whose sandboxes are devices.
+    pub opensandbox: OpenSandboxConfig,
     pub option_as_alt: OptionAsAlt,
     pub palette: crate::palette::PaletteConfig,
     /// The `[pane_keys]` table `keybindings` was built from, for the same
@@ -239,6 +258,8 @@ pub struct Config {
     pub smooth_scroll: bool,
     /// How loud agent notification sounds play.
     pub sound: SoundConfig,
+    /// The Fly Sprites account whose sprites are devices.
+    pub sprites: SpritesConfig,
     /// Which status bar items show, and how compactly.
     pub status_bar: StatusBar,
     /// The set agent status is drawn with.
@@ -362,6 +383,7 @@ impl Default for Config {
             confirm_close_pane: true,
             confirm_close_tab: true,
             confirm_close_workspace: true,
+            container: ContainerConfig::default(),
             contrast: Contrast::default(),
             daytona: DaytonaConfig::default(),
             devices: BTreeMap::new(),
@@ -381,6 +403,7 @@ impl Default for Config {
             notifications: NotificationConfig::default(),
             open_files_in: FileTarget::default(),
             open_links_in: LinkTarget::default(),
+            opensandbox: OpenSandboxConfig::default(),
             option_as_alt: OptionAsAlt::default(),
             palette: crate::palette::PaletteConfig::default(),
             pane_keys: PaneKeys::new(),
@@ -400,6 +423,7 @@ impl Default for Config {
             sidebar_style: SidebarStyle::default(),
             smooth_scroll: true,
             sound: SoundConfig::default(),
+            sprites: SpritesConfig::default(),
             status_bar: StatusBar::default(),
             status_icons: StatusIcons::default(),
             tab_layout: TabLayoutMode::default(),
@@ -439,6 +463,7 @@ struct Settings {
     confirm_close_pane: Option<bool>,
     confirm_close_tab: Option<bool>,
     confirm_close_workspace: Option<bool>,
+    container: ContainerConfig,
     contrast: Contrast,
     daytona: DaytonaConfig,
     devices: BTreeMap<String, DeviceSettings>,
@@ -453,6 +478,7 @@ struct Settings {
     notifications: NotificationSettings,
     open_files_in: FileTarget,
     open_links_in: LinkTarget,
+    opensandbox: OpenSandboxConfig,
     option_as_alt: OptionAsAlt,
     palette: crate::palette::PaletteConfig,
     pane_keys: PaneKeys,
@@ -470,6 +496,7 @@ struct Settings {
     sidebar: sidebar_style::SidebarSettings,
     smooth_scroll: Option<bool>,
     sound: SoundConfig,
+    sprites: SpritesConfig,
     status_bar: StatusBar,
     status_icons: Option<status_icons::SavedIcons>,
     tab_layout: TabLayoutMode,
@@ -741,9 +768,18 @@ impl Config {
         #[cfg(feature = "coder")]
         settings.coder.check()?;
         config.coder = settings.coder;
+        #[cfg(feature = "container")]
+        settings.container.settings()?;
+        config.container = settings.container;
         #[cfg(feature = "daytona")]
         settings.daytona.settings_with(|_| None)?;
         config.daytona = settings.daytona;
+        #[cfg(feature = "opensandbox")]
+        settings.opensandbox.settings_with(|_| None)?;
+        config.opensandbox = settings.opensandbox;
+        #[cfg(feature = "sprites")]
+        settings.sprites.settings_with(|_| None)?;
+        config.sprites = settings.sprites;
         config.features = settings.features;
         config.notification_overrides = settings.notifications;
         config.notifications = settings
