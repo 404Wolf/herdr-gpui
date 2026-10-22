@@ -28,6 +28,8 @@ gpui_platform                  = { features = ["font-kit", "runtime_shaders", "w
 gix.workspace                  = true
 herdr-chat-protocol.workspace  = true
 herdr-client.workspace         = true
+# The remote control daemon's control protocol only, never its server.
+herdr-remote.workspace         = true
 if-addrs.workspace             = true
 image                          = { features = ["bmp", "tiff"], workspace = true }
 keepawake.workspace            = true
@@ -37,6 +39,7 @@ nucleo-matcher.workspace       = true
 pbkdf2.workspace               = true
 percent-encoding.workspace     = true
 pulldown-cmark.workspace       = true
+qrcode.workspace               = true
 rodio.workspace                = true
 rusqlite.workspace             = true
 rustls                         = { optional = true, workspace = true }
