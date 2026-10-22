@@ -2942,9 +2942,12 @@ whose bytes are an image count. A picture linked on the web shows as a card
 naming its host and loads only when you press Load, since loading it tells
 that server your address. An `html` code block, or an HTML file a tool call
 wrote on this machine, gets a Preview button: on macOS and Windows the page
-opens in a panel beside the chat, served from its own folder as a local
-browser tab is, and closes with the panel's ×; on Linux, which has no pages
-in the window, it opens in your browser.
+opens in a panel beside the chat and closes with the panel's ×; on Linux,
+which has no pages in the window, it opens in your browser. The page is
+copied alone into a private folder first, so its script cannot read the
+files beside it; a page that loads its own stylesheets or scripts from
+separate files shows without them. A web picture is fetched from the host
+its card names only, without following a redirect.
 
 **Layouts.** `[chat] layout` picks how a chat view draws: `timeline` puts the
 entries on a line with an avatar where the speaker changes, `bubbles` puts

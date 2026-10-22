@@ -2,8 +2,10 @@
 //! wrote, or an HTML file one of its tool calls wrote. Where pages show in
 //! the window (macOS and Windows), it opens in a panel beside the entries,
 //! served from its folder as a local browser tab is; elsewhere it opens in
-//! the system browser. A fence is written to a file of its own first, in a
-//! folder only this user can read, so the page reads nothing else.
+//! the system browser. Either is copied first to a file of its own, in a
+//! folder only this user can read, so the page's script can read nothing
+//! beside it: an HTML file's siblings stay out of reach, at the cost of the
+//! stylesheets and scripts it loads from them.
 //!
 //! The page is the agent's, so it is untrusted: it only ever loads because
 //! the user asked, and it gets what a local browser tab gets, no more.
@@ -48,7 +50,7 @@ impl HerdrWindow {
         let Some(pane) = self.chats.pane_mut(pane_id) else {
             return;
         };
-        match source {
+        let (title, copied) = match source {
             PageSource::File(path) => {
                 if let super::Route::Ssh(host) = &pane.target.route {
                     pane.error = Some(format!(
@@ -62,29 +64,32 @@ impl HerdrWindow {
                     || "Page".to_owned(),
                     |name| name.to_string_lossy().into_owned(),
                 );
-                self.show_chat_file(pane_id, path, title, window, cx);
+                let copied = cx.background_spawn(async move {
+                    let html = read_page(&path)?;
+                    write_page(&html)
+                });
+                (title, copied)
             }
             PageSource::Html(html) => {
-                let html = html.to_string();
-                let written = cx.background_spawn(async move { write_page(&html) });
-                let pane_id = pane_id.to_owned();
-                cx.spawn_in(window, async move |this, cx| {
-                    let written = written.await;
-                    let _ = this.update_in(cx, |this, window, cx| match written {
-                        Ok(path) => {
-                            this.show_chat_file(&pane_id, path, "HTML page".to_owned(), window, cx);
-                        }
-                        Err(error) => {
-                            if let Some(pane) = this.chats.pane_mut(&pane_id) {
-                                pane.error = Some(format!("The page could not be shown: {error}"));
-                            }
-                            cx.notify();
-                        }
-                    });
-                })
-                .detach();
+                let html = html.as_bytes().to_vec();
+                let copied = cx.background_spawn(async move { write_page(&html) });
+                ("HTML page".to_owned(), copied)
             }
-        }
+        };
+        let pane_id = pane_id.to_owned();
+        cx.spawn_in(window, async move |this, cx| {
+            let copied = copied.await;
+            let _ = this.update_in(cx, |this, window, cx| match copied {
+                Ok(path) => this.show_chat_file(&pane_id, path, title, window, cx),
+                Err(error) => {
+                    if let Some(pane) = this.chats.pane_mut(&pane_id) {
+                        pane.error = Some(format!("The page could not be shown: {error}"));
+                    }
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
     }
 
     #[cfg(any(target_os = "macos", windows))]
@@ -193,10 +198,25 @@ impl HerdrWindow {
     }
 }
 
-/// Writes an HTML fence to `index.html` in a folder of its own, named by
-/// what it holds, and returns the file. Blocks, so it runs off the UI
-/// thread.
-fn write_page(html: &str) -> std::io::Result<PathBuf> {
+/// Bytes of an HTML file previewed; a larger one is refused.
+const MAX_FILE: u64 = 4 * 1024 * 1024;
+
+/// The HTML file at `path`, when it is a bounded regular file.
+fn read_page(path: &Path) -> std::io::Result<Vec<u8>> {
+    use std::io::Read as _;
+    let mut html = Vec::new();
+    std::fs::File::open(path)?
+        .take(MAX_FILE + 1)
+        .read_to_end(&mut html)?;
+    if html.len() as u64 > MAX_FILE {
+        return Err(std::io::Error::other("the page is too large"));
+    }
+    Ok(html)
+}
+
+/// Writes a page to `index.html` in a folder of its own, named by what it
+/// holds, and returns the file. Blocks, so it runs off the UI thread.
+fn write_page(html: &[u8]) -> std::io::Result<PathBuf> {
     let root = pages_root().ok_or_else(|| std::io::Error::other("no folder for pages"))?;
     let mut hasher = DefaultHasher::new();
     html.hash(&mut hasher);

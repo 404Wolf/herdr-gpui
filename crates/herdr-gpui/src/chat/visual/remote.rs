@@ -1,6 +1,7 @@
 //! A picture an agent linked on the web, fetched only once the user asks:
 //! loading one tells its server this machine's address, as a page's
-//! tracking pixel would. The answer is bounded and must be an image of a
+//! tracking pixel would. Only the host the user agreed to is asked, with no
+//! redirect followed, and the answer is bounded and must be an image of a
 //! type the chat decodes.
 
 use super::{Drawn, Error, Result, decode_bytes};
@@ -11,15 +12,15 @@ use std::time::Duration;
 /// Bytes read from the server; a larger picture is refused.
 const MAX_BYTES: u64 = 16 * 1024 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(20);
-/// Redirects followed, as image hosts often send one to a CDN.
-const REDIRECTS: u32 = 3;
 
 /// Fetches and decodes the picture at `url`. Blocks, so it runs on the
 /// background executor.
 pub(super) fn fetch(url: &WebUrl) -> Result<Drawn> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(TIMEOUT))
-        .max_redirects(REDIRECTS)
+        // The user agreed to ask this host, so a redirect to another, such
+        // as one on this machine or its network, is not followed.
+        .max_redirects(0)
         .build()
         .into();
     let bytes = agent
