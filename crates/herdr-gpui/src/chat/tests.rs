@@ -20,6 +20,7 @@ mod chats;
 mod composer;
 mod controls;
 mod discovery;
+mod embeds;
 mod feature;
 mod layouts;
 mod link;

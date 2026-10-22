@@ -2935,6 +2935,17 @@ Each finished turn leaves a line with its duration and tokens, and an agent
 message copies with the button under it. In the prompt box `/` completes the
 agent's commands (Tab or a click takes one) and Up recalls earlier prompts.
 
+**Pictures and pages.** A picture the agent links as a local file, or an
+image file a tool call wrote or read, shows in the chat; `herdr-acp` reads it
+beside the agent, so this works for chats on SSH hosts too, and only files
+whose bytes are an image count. A picture linked on the web shows as a card
+naming its host and loads only when you press Load, since loading it tells
+that server your address. An `html` code block, or an HTML file a tool call
+wrote on this machine, gets a Preview button: on macOS and Windows the page
+opens in a panel beside the chat, served from its own folder as a local
+browser tab is, and closes with the panel's ×; on Linux, which has no pages
+in the window, it opens in your browser.
+
 **Layouts.** `[chat] layout` picks how a chat view draws: `timeline` puts the
 entries on a line with an avatar where the speaker changes, `bubbles` puts
 your messages in bubbles on the right with the settings under the prompt box,

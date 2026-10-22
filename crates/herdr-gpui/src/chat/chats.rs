@@ -83,6 +83,8 @@ pub(crate) struct ChatPane {
     /// The search field over a long menu while one is open, with the
     /// subscription that redraws the menu as it changes.
     pub(crate) menu_search: Option<(Entity<SearchInput>, gpui::Subscription)>,
+    /// The web page shown in the panel beside the entries.
+    pub(crate) page: Option<super::page::ChatPage>,
     /// Trying again cannot help: the program speaks another version.
     permanent: bool,
     pub(crate) prepared: Prepared,
@@ -115,6 +117,7 @@ impl ChatPane {
             list_snapshots: 0,
             menu: None,
             menu_search: None,
+            page: None,
             permanent: false,
             prepared: Prepared::default(),
             rail: true,
@@ -262,6 +265,10 @@ pub(crate) struct Chats {
     pub(crate) agents: super::harnesses::Harnesses,
     /// The layout the lists' rows were last measured in.
     measured: crate::config::ChatLayoutMode,
+    /// Panel pages opened so far, which numbers the next one.
+    pub(crate) opened_pages: u64,
+    /// Pages of panes no longer attached, for the window to close.
+    closed_pages: Vec<crate::browser::TabId>,
     panes: Vec<ChatPane>,
     /// The `herdr-acp` new chats run.
     pub(crate) program: super::Program,
@@ -300,11 +307,13 @@ impl Chats {
     ) -> bool {
         let before = self.panes.len();
         let released = &mut self.released;
+        let closed_pages = &mut self.closed_pages;
         self.panes.retain_mut(|pane| {
             let keep = targets.contains(&pane.target);
             if !keep {
                 pane.prepared.visuals.clear();
                 released.extend(pane.prepared.visuals.take_released());
+                closed_pages.extend(pane.page.take().map(|page| page.id));
             }
             keep
         });
@@ -342,6 +351,11 @@ impl Chats {
         self.panes
             .iter_mut()
             .fold(false, |changed, pane| pane.poll(now) | changed)
+    }
+
+    /// Panel pages whose panes went away.
+    pub(crate) fn take_closed_pages(&mut self) -> Vec<crate::browser::TabId> {
+        std::mem::take(&mut self.closed_pages)
     }
 
     pub(crate) fn take_released(&mut self) -> Vec<std::sync::Arc<gpui::RenderImage>> {

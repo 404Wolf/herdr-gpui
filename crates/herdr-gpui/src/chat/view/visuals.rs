@@ -7,7 +7,7 @@ use super::super::{
 };
 use crate::{HerdrWindow, config::corners, release_notes};
 use gpui::{prelude::*, *};
-use herdr_chat_protocol::Author;
+use herdr_chat_protocol::{Author, EntryId};
 
 /// Widest a picture in a message is drawn, in points.
 const IMAGE_WIDTH: f32 = 560.;
@@ -25,8 +25,16 @@ pub(super) enum Frame {
 }
 
 impl HerdrWindow {
-    /// An agent message: Markdown text with diagrams between it.
-    pub(super) fn render_chat_message(&self, parts: &[Part], visuals: &Visuals) -> Div {
+    /// An agent message: Markdown text with diagrams, pages, and pictures
+    /// between it.
+    pub(super) fn render_chat_message(
+        &self,
+        pane_id: &str,
+        entry: EntryId,
+        parts: &[Part],
+        visuals: &Visuals,
+        cx: &mut Context<Self>,
+    ) -> Div {
         div()
             .flex()
             .flex_col()
@@ -43,6 +51,11 @@ impl HerdrWindow {
                     )
                     .into_any_element(),
                     Part::Diagram(id, code) => self.render_chat_diagram(*id, code, visuals),
+                    Part::Html { page, .. } => self.render_chat_html_card(pane_id, index, page, cx),
+                    Part::Picture { alt } => self.render_chat_picture_caption(alt),
+                    Part::Remote { id, url, alt } => self.render_chat_remote_picture(
+                        pane_id, entry, index, *id, url, alt, visuals, cx,
+                    ),
                 };
                 div().id(("chat-part", index)).min_w_0().child(part)
             }))

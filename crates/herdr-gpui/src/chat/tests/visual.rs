@@ -22,7 +22,7 @@ fn png(width: u32, height: u32) -> Image {
     Image::new("image/png", data).unwrap()
 }
 
-fn message(text: &str) -> (Prepared, Vec<String>) {
+pub(super) fn message(text: &str) -> (Prepared, Vec<String>) {
     let mut transcript = Transcript::new("Claude");
     transcript.entries = vec![agent(1, text)];
     let mut prepared = Prepared::default();
@@ -35,6 +35,9 @@ fn message(text: &str) -> (Prepared, Vec<String>) {
         .map(|part| match part {
             Part::Text(lines) => format!("text:{}", lines[0].text),
             Part::Diagram(..) => "diagram".to_owned(),
+            Part::Html { .. } => "page".to_owned(),
+            Part::Picture { alt } => format!("picture:{alt}"),
+            Part::Remote { url, .. } => format!("remote:{}", url.as_str()),
         })
         .collect();
     (prepared, shape)

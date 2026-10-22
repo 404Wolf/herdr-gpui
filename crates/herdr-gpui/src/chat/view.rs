@@ -5,8 +5,10 @@
 //! is untrusted and only ever drawn as text.
 
 mod composer;
+mod embeds;
 mod entries;
 mod layout;
+mod page_panel;
 mod panels;
 mod rail;
 mod settings;
@@ -233,7 +235,11 @@ impl HerdrWindow {
             .overflow_hidden()
             .flex()
             .flex_col()
-            .bg(rgb(theme.background))
+            // A page in the panel shows from beneath the window's drawing
+            // on macOS, so the chat's background paints around it.
+            .when(!cfg!(target_os = "macos"), |view| {
+                view.bg(rgb(theme.background))
+            })
             // Files dragged over the chat become attachments when dropped.
             .drag_over::<ExternalPaths>({
                 let wash = theme.primary_wash();
@@ -266,6 +272,7 @@ impl HerdrWindow {
                     }
                 }
             }))
+            .children(self.chat_ground())
             .child(self.render_chat_header(chat, rail::fits(bounds), cx))
             .child(
                 div()
@@ -288,9 +295,45 @@ impl HerdrWindow {
                             .children(self.render_chat_completions(chat, cx).map(column))
                             .child(column(self.render_chat_composer(chat, cx))),
                     )
-                    .children(self.render_chat_rail(chat, bounds)),
+                    .children(match self.render_chat_page_panel(chat, bounds, cx) {
+                        Some(panel) => Some(panel.into_any_element()),
+                        None => self
+                            .render_chat_rail(chat, bounds)
+                            .map(IntoElement::into_any_element),
+                    }),
             )
             .into_any_element()
+    }
+
+    /// The chat's background where no page shows: on macOS, where a page
+    /// lies beneath the window's drawing. Elsewhere the view paints its
+    /// own background.
+    fn chat_ground(&self) -> Option<AnyElement> {
+        #[cfg(target_os = "macos")]
+        return Some(
+            crate::browser::ground_around_pages(
+                rgb(self.theme.background).into(),
+                self.browser.drawn_pages(),
+            )
+            .into_any_element(),
+        );
+        #[cfg(not(target_os = "macos"))]
+        None
+    }
+
+    /// The terminal's background where no page shows, for the window's
+    /// terminal area on macOS; see [`Self::chat_ground`].
+    pub(crate) fn terminal_ground(&self, color: Hsla) -> Option<AnyElement> {
+        #[cfg(target_os = "macos")]
+        return Some(
+            crate::browser::ground_around_pages(color, self.browser.drawn_pages())
+                .into_any_element(),
+        );
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = color;
+            None
+        }
     }
 
     /// Gives the chat's composer the keyboard and makes its pane Herdr's

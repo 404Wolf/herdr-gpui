@@ -1,6 +1,7 @@
 //! What the view draws for an entry, prepared when the entry changes rather
 //! than on every frame: agent text parsed as Markdown with its Mermaid
-//! fences split out as diagrams, pictures asked of [`Visuals`], and a tool
+//! fences split out as diagrams, its HTML fences as pages to preview, and
+//! its picture links as pictures, pictures asked of [`Visuals`], and a tool
 //! call's output and file changes summarized.
 
 use super::visual::{MAX_DIAGRAM_SOURCE, Source, VisualId, Visuals};
@@ -68,6 +69,21 @@ pub(crate) enum Part {
     /// A Mermaid fence, with its source as code lines for when it cannot be
     /// drawn.
     Diagram(VisualId, Rc<[Line]>),
+    /// An HTML fence: a page the user may preview.
+    Html {
+        page: Rc<str>,
+    },
+    /// A picture on the agent's machine; herdr-acp adds it after the
+    /// message, so the message only names it.
+    Picture {
+        alt: String,
+    },
+    /// A picture on the web, fetched once the user asks for it.
+    Remote {
+        id: VisualId,
+        url: crate::browser::WebUrl,
+        alt: String,
+    },
 }
 
 #[derive(Debug)]
@@ -90,8 +106,8 @@ impl Body {
         parts
             .iter()
             .filter_map(|part| match part {
-                Part::Diagram(id, _) => Some(*id),
-                Part::Text(_) => None,
+                Part::Diagram(id, _) | Part::Remote { id, .. } => Some(*id),
+                Part::Text(_) | Part::Html { .. } | Part::Picture { .. } => None,
             })
             .chain(images.iter().copied())
     }
@@ -199,22 +215,37 @@ impl Prepared {
     }
 }
 
-/// An agent message as Markdown text and the diagrams between it. Only a
-/// closed fence becomes a diagram, so one still streaming shows as code.
+/// An agent message as Markdown text with its diagrams, pages, and
+/// pictures between it. Only a closed fence becomes a diagram or a page, so
+/// one still streaming shows as code.
 fn message(text: &str, visuals: &mut Visuals) -> Vec<Part> {
     let mut parts = Vec::new();
     let mut prose = String::new();
+    let flush = |prose: &mut String, parts: &mut Vec<Part>| {
+        if !prose.trim().is_empty() {
+            parts.push(Part::Text(message_lines(prose)));
+        }
+        prose.clear();
+    };
     let mut lines = text.split_inclusive('\n');
-    let mut diagrams = 0;
+    let (mut diagrams, mut pages) = (0, 0);
     while let Some(line) = lines.next() {
-        let opens = line
-            .trim()
-            .strip_prefix("```")
-            .is_some_and(|info| info.trim().eq_ignore_ascii_case("mermaid"));
-        if !opens || diagrams == DIAGRAMS {
-            prose.push_str(line);
+        if let Some(part) = picture(line) {
+            flush(&mut prose, &mut parts);
+            parts.push(part);
             continue;
         }
+        let fence = line.trim().strip_prefix("```").map(str::trim);
+        let kind = match fence {
+            Some(info) if info.eq_ignore_ascii_case("mermaid") && diagrams < DIAGRAMS => {
+                Fence::Diagram
+            }
+            Some(info) if info.eq_ignore_ascii_case("html") && pages < PAGES => Fence::Page,
+            _ => {
+                prose.push_str(line);
+                continue;
+            }
+        };
         let mut source = String::new();
         let mut closed = false;
         let mut fence = line.to_owned();
@@ -226,24 +257,86 @@ fn message(text: &str, visuals: &mut Visuals) -> Vec<Part> {
             }
             source.push_str(inner);
         }
-        if !closed || source.trim().is_empty() || source.len() > MAX_DIAGRAM_SOURCE {
+        let limit = match kind {
+            Fence::Diagram => MAX_DIAGRAM_SOURCE,
+            Fence::Page => MAX_PAGE,
+        };
+        if !closed || source.trim().is_empty() || source.len() > limit {
             prose.push_str(&fence);
             continue;
         }
-        if !prose.trim().is_empty() {
-            parts.push(Part::Text(message_lines(&prose)));
+        flush(&mut prose, &mut parts);
+        match kind {
+            Fence::Diagram => {
+                diagrams += 1;
+                let id = VisualId::of(&source);
+                let code = release_notes::parse(&fence).into();
+                visuals.want(id, Source::Diagram(source.into()));
+                parts.push(Part::Diagram(id, code));
+            }
+            Fence::Page => {
+                pages += 1;
+                parts.push(Part::Html {
+                    page: source.into(),
+                });
+            }
         }
-        prose.clear();
-        diagrams += 1;
-        let id = VisualId::of(&source);
-        let code = release_notes::parse(&fence).into();
-        visuals.want(id, Source::Diagram(source.into()));
-        parts.push(Part::Diagram(id, code));
     }
     if !prose.trim().is_empty() || parts.is_empty() {
         parts.push(Part::Text(message_lines(&prose)));
     }
     parts
+}
+
+/// What a closed fence becomes.
+enum Fence {
+    Diagram,
+    Page,
+}
+
+/// Pages per message; later HTML fences stay code.
+const PAGES: usize = 4;
+/// Bytes of an HTML fence shown as a page; a longer one stays code.
+pub(crate) const MAX_PAGE: usize = 256 * 1024;
+
+/// A line that is only a Markdown picture, `![alt](target)`: a web address
+/// to fetch on request, or a file herdr-acp shows after the message.
+fn picture(line: &str) -> Option<Part> {
+    let inner = line.trim().strip_prefix("![")?.strip_suffix(')')?;
+    let (alt, target) = inner.split_once("](")?;
+    if alt.contains(['[', ']']) || target.contains(['(', ')']) {
+        return None;
+    }
+    let target = target.trim();
+    let target = target
+        .strip_prefix('<')
+        .and_then(|inner| inner.strip_suffix('>'))
+        .unwrap_or_else(|| target.split_whitespace().next().unwrap_or(""));
+    let alt = crate::notifications::safe_text(alt.trim(), 200);
+    if target.is_empty() || target.starts_with("data:") {
+        return None;
+    }
+    if target.starts_with("http://") || target.starts_with("https://") {
+        let url = crate::browser::WebUrl::try_from(target).ok()?;
+        return Some(Part::Remote {
+            id: VisualId::of(url.as_str()),
+            url,
+            alt,
+        });
+    }
+    // herdr-acp reads a path or a file URL; any other scheme stays text. A
+    // Windows drive letter looks like a one-letter scheme.
+    let scheme = target.split_once(':').map(|(scheme, _)| scheme);
+    if scheme.is_some_and(|scheme| {
+        scheme.len() > 1
+            && scheme != "file"
+            && scheme
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || "+-.".contains(ch))
+    }) {
+        return None;
+    }
+    Some(Part::Picture { alt })
 }
 
 pub(crate) fn summarize(content: &[ToolContent], visuals: &mut Visuals) -> ToolSummary {

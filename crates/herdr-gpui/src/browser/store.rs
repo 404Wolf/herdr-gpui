@@ -22,6 +22,19 @@ impl TabId {
     }
 }
 
+impl TabId {
+    /// The `n`th page a chat shows in its panel. Store tabs count up from
+    /// one, so these count down from the top and the two never meet.
+    pub(crate) const fn panel(n: u64) -> Self {
+        Self(u64::MAX - n)
+    }
+
+    /// Whether this is a chat panel's page rather than a store tab.
+    pub(crate) const fn is_panel(self) -> bool {
+        self.0 > u64::MAX / 2
+    }
+}
+
 /// An ID a control request names, as `tab list` printed it. Only ever
 /// compared with the store's own IDs.
 impl From<u64> for TabId {

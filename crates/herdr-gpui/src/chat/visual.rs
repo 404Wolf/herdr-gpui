@@ -13,6 +13,8 @@ use base64::Engine as _;
 use gpui::{RenderImage, SvgRenderer};
 use herdr_chat_protocol::{Image, ImageType};
 use image::{ImageFormat, ImageReader, Limits};
+mod remote;
+
 use std::{
     collections::{HashMap, HashSet},
     hash::{DefaultHasher, Hash, Hasher},
@@ -47,6 +49,10 @@ pub(crate) enum Error {
     Diagram(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error("the diagram renderer failed")]
     Panicked,
+    #[error("the picture could not be fetched")]
+    Fetch(#[source] Box<ureq::Error>),
+    #[error("the address does not answer with a picture")]
+    NotAnImage,
     #[error("the diagram could not be drawn")]
     Raster(#[source] Box<dyn std::error::Error + Send + Sync>),
     // keep-sorted end
@@ -69,6 +75,8 @@ impl VisualId {
 pub(crate) enum Source {
     Image(Image),
     Diagram(Arc<str>),
+    /// A picture on the web, asked for by the user.
+    Remote(crate::browser::WebUrl),
 }
 
 /// A texture and the size it is drawn at, in points.
@@ -174,6 +182,7 @@ pub(crate) struct Job {
 enum Work {
     Image(Image),
     Diagram(Arc<str>, Arc<DiagramStyle>, SvgRenderer),
+    Remote(crate::browser::WebUrl),
 }
 
 impl Job {
@@ -181,6 +190,7 @@ impl Job {
     pub(crate) fn run(self) -> (VisualId, u64, Result<Drawn>) {
         let drawn = match self.work {
             Work::Image(image) => decode(&image),
+            Work::Remote(url) => remote::fetch(&url),
             Work::Diagram(source, style, renderer) => {
                 // The renderer is a third-party parser fed untrusted text; a
                 // panic in it fails this diagram rather than the app.
@@ -203,6 +213,11 @@ pub(crate) fn decode(image: &Image) -> Result<Drawn> {
         ImageType::Png => ImageFormat::Png,
         ImageType::Webp => ImageFormat::WebP,
     };
+    decode_bytes(bytes, format)
+}
+
+/// Decodes `bytes` of `format` within the pixel and memory caps.
+fn decode_bytes(bytes: Vec<u8>, format: ImageFormat) -> Result<Drawn> {
     let mut reader = ImageReader::with_format(Cursor::new(bytes), format);
     let mut limits = Limits::default();
     limits.max_image_width = Some(MAX_IMAGE_SIDE);
@@ -298,6 +313,11 @@ impl Visuals {
         self.retain(&HashSet::new());
     }
 
+    /// Whether `id` was asked for, as a web picture is once the user asks.
+    pub(crate) fn wants(&self, id: VisualId) -> bool {
+        self.items.contains_key(&id)
+    }
+
     pub(crate) fn shown(&self, id: VisualId) -> Shown<'_> {
         match self.items.get(&id).and_then(|item| item.shown.as_ref()) {
             Some(Ok(drawn)) => Shown::Ready(drawn),
@@ -340,6 +360,7 @@ impl Visuals {
                     work
                 }
                 Some(Source::Image(image)) => Work::Image(image),
+                Some(Source::Remote(url)) => Work::Remote(url),
                 None => continue,
             };
             self.tickets += 1;

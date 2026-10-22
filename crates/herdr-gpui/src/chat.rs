@@ -19,6 +19,7 @@ mod discovery;
 mod harnesses;
 mod link;
 mod list;
+mod page;
 mod prepared;
 mod session;
 mod start;

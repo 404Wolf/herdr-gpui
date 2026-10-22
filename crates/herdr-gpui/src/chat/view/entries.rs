@@ -50,9 +50,13 @@ impl HerdrWindow {
             EntryKind::User { text } => div().child(text.clone()),
             EntryKind::Agent { text } => {
                 let message = match body.as_deref() {
-                    Some(Body::Message(parts)) => {
-                        self.render_chat_message(parts, &chat.prepared.visuals)
-                    }
+                    Some(Body::Message(parts)) => self.render_chat_message(
+                        pane_id,
+                        entry.id,
+                        parts,
+                        &chat.prepared.visuals,
+                        cx,
+                    ),
                     Some(Body::Summary(summary)) => {
                         // Copy takes the whole summary, as its cut note says.
                         let card = div()
@@ -90,9 +94,14 @@ impl HerdrWindow {
                 }
                 _ => div(),
             },
-            EntryKind::Tool(tool) => {
-                self.render_chat_tool(tool, body.as_deref(), &chat.prepared.visuals)
-            }
+            EntryKind::Tool(tool) => self.render_chat_tool(
+                pane_id,
+                entry.id,
+                tool,
+                body.as_deref(),
+                &chat.prepared.visuals,
+                cx,
+            ),
             EntryKind::Notice { level, text } => self.render_chat_notice(*level, text),
         };
         self.render_chat_entry_row(chat, index, content)
@@ -214,7 +223,15 @@ impl HerdrWindow {
         )
     }
 
-    fn render_chat_tool(&self, tool: &Tool, body: Option<&Body>, visuals: &Visuals) -> Div {
+    fn render_chat_tool(
+        &self,
+        pane_id: &str,
+        entry: herdr_chat_protocol::EntryId,
+        tool: &Tool,
+        body: Option<&Body>,
+        visuals: &Visuals,
+        cx: &mut Context<Self>,
+    ) -> Div {
         let theme = &self.theme;
         let hues = Hues::of(theme);
         let (status, color) = match tool.status {
@@ -262,6 +279,10 @@ impl HerdrWindow {
                             .text_size(small)
                             .text_color(rgb(color))
                             .child(status),
+                    )
+                    .children(
+                        page_written(tool)
+                            .map(|path| self.render_chat_file_preview(pane_id, entry, path, cx)),
                     ),
             )
             .children(tool.locations.iter().take(LOCATIONS).map(|location| {
@@ -345,4 +366,27 @@ impl HerdrWindow {
         };
         div().text_color(rgb(color)).child(text.to_owned())
     }
+}
+
+/// The HTML page a finished tool call wrote, by an absolute path, which
+/// the user may preview.
+fn page_written(tool: &Tool) -> Option<std::path::PathBuf> {
+    if tool.status != ToolStatus::Completed || tool.kind != ToolKind::Edit {
+        return None;
+    }
+    tool.locations.iter().find_map(|location| {
+        // A location may end with the line the call touched.
+        let path = match location.rsplit_once(':') {
+            Some((path, line)) if line.bytes().all(|byte| byte.is_ascii_digit()) => path,
+            _ => location.as_str(),
+        };
+        let path = std::path::Path::new(path);
+        let html = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| {
+                extension.eq_ignore_ascii_case("html") || extension.eq_ignore_ascii_case("htm")
+            });
+        (html && path.is_absolute()).then(|| path.to_owned())
+    })
 }
