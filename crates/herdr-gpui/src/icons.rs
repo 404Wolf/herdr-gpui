@@ -241,6 +241,7 @@ embedded_icons! {
     "panel-right.svg",
     "pass.svg",
     "pencil.svg",
+    "phone.svg",
     "play.svg",
     "plug.svg",
     "plus.svg",

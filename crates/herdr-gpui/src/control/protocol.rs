@@ -7,6 +7,7 @@ pub(crate) mod chat;
 pub(crate) mod cloud;
 pub(crate) mod events;
 pub(crate) mod hosts;
+pub(crate) mod remote;
 pub(crate) mod settings;
 pub(crate) mod tabs;
 pub(crate) mod work;
@@ -17,7 +18,8 @@ use serde::{Deserialize, Serialize};
 /// Raised whenever a request or reply changes shape, so `status` can tell
 /// an outdated app from a refused request. 3: `browser.open` placement.
 /// 4: `link`. 5: the `tab` family's `zoom`. 6: the `cloud` family. 7: `chat`.
-pub(crate) const PROTOCOL_VERSION: u32 = 7;
+/// 8: `remote`.
+pub(crate) const PROTOCOL_VERSION: u32 = 8;
 
 /// Older apps and clients know only tabs, so a tab is left off the wire.
 fn is_tab(placement: &Placement) -> bool {
@@ -67,6 +69,8 @@ pub(crate) enum Request {
     Chat(Call<chat::ChatOp>),
     #[serde(rename = "cloud")]
     Cloud(Call<cloud::CloudOp>),
+    #[serde(rename = "remote")]
+    Remote(Call<remote::RemoteOp>),
 }
 
 /// A `herdr-gpui://` link the shell started a second copy of the app with.
@@ -96,6 +100,7 @@ impl Request {
             Self::Host(call) => call.op.wait_seconds(),
             Self::Settings(call) => call.op.wait_seconds(),
             Self::Cloud(call) => call.op.wait_seconds(),
+            Self::Remote(call) => call.op.wait_seconds(),
             _ => 0,
         };
         wait.min(MAX_WAIT_SECONDS)
@@ -252,6 +257,9 @@ pub(crate) enum Response {
     },
     Cloud {
         reply: cloud::Reply,
+    },
+    Remote {
+        reply: remote::Reply,
     },
     Error {
         code: ErrorCode,

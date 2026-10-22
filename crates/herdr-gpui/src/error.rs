@@ -698,6 +698,8 @@ pub enum Error {
     Px0(#[from] crate::px0::Error),
     #[error("XDG_CONFIG_HOME must be an absolute path")]
     RelativeConfigRoot,
+    #[error(transparent)]
+    Remote(#[from] crate::remote::Error),
     #[error("Could not install the agent tools on the SSH host: {0}")]
     RemoteAgentTools(#[source] herdr_client::Error),
     #[error("{method}: {source}")]
