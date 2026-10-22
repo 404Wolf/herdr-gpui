@@ -6,6 +6,8 @@ run *args:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ "$(uname -s)" != Darwin ]; then
+        # Herdr UI finds the automation daemon beside its own executable.
+        cargo build --locked --release -p herdr-automate
         exec cargo run --locked --release -p herdr-gpui --features qa-menu -- {{args}}
     fi
     {{just_executable()}} bundle release qa-menu
@@ -27,6 +29,7 @@ run-debug *args:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ "$(uname -s)" != Darwin ]; then
+        cargo build --locked -p herdr-automate
         exec cargo run --locked -p herdr-gpui -- {{args}}
     fi
     {{just_executable()}} bundle debug
@@ -101,12 +104,13 @@ mockup file="" feedback="" capture="":
     exec target/debug/herdr-gpui "${args[@]}"
 
 build-release:
-    cargo build --locked --release -p herdr-gpui
+    cargo build --locked --release -p herdr-gpui -p herdr-automate
 
 # Compile and install the release executable into Cargo's bin directory.
 [unix]
 install:
     cargo install --locked --force --path crates/herdr-gpui --bin herdr-gpui
+    cargo install --locked --force --path crates/herdr-automate
 
 # Only installation bypasses the POSIX shell used by the other recipes.
 [windows]
@@ -114,7 +118,8 @@ install:
 install:
     #!cmd.exe /c
     cargo install --locked --force --path crates/herdr-gpui --bin herdr-gpui || exit /b 1
-    cargo install --locked --force --path crates/herdr-gpui-launcher
+    cargo install --locked --force --path crates/herdr-gpui-launcher || exit /b 1
+    cargo install --locked --force --path crates/herdr-automate
 
 # Regenerate circular Linux artwork on any platform (Python standard library).
 icons-linux:
@@ -130,7 +135,8 @@ icons-windows:
 icons: icons-linux icons-windows
     swift scripts/generate-icons.swift
 
-# Local, unsigned GUI-only bundle. Never installs or packages a daemon.
+# Local, unsigned bundle with the automation daemon's binary beside the app.
+# Never installs or starts a daemon.
 bundle profile="release" features="":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -142,8 +148,12 @@ bundle profile="release" features="":
     esac
     app=target/{{profile}}/Herdr.app
     cargo build --locked $flags --target-dir target -p herdr-gpui --features "{{features}}"
+    cargo build --locked $flags --target-dir target -p herdr-automate
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
     cp target/{{profile}}/herdr-gpui "$app/Contents/MacOS/Herdr"
+    # The automation daemon, found beside the app's executable.
+    cp target/{{profile}}/herdr-automate "$app/Contents/MacOS/herdr-automate"
+    codesign --force --sign - "$app/Contents/MacOS/herdr-automate"
     cp assets/macos/Info.plist "$app/Contents/Info.plist"
     # LaunchServices and the Dock cache icons by bundle ID, so every worktree
     # build sharing the release ID competed with the installed app's icon.
