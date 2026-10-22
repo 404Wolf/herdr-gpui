@@ -13,8 +13,10 @@ mod azure;
 pub(crate) mod backdrop;
 mod bitmap_fonts;
 mod boat;
+pub(crate) mod chat;
 mod cloud;
 mod coder;
+mod daemon;
 mod daytona;
 mod devices;
 mod edit;
@@ -27,12 +29,14 @@ mod keybindings;
 mod layout;
 mod notifications;
 mod omarchy;
+mod option_as_alt;
 mod padding;
 pub(crate) mod preferences;
 pub(crate) mod sidebar;
 mod sidebar_style;
 pub(crate) mod status_bar;
 mod status_icons;
+pub(crate) mod tab_layout;
 #[cfg(any(
     feature = "azure",
     feature = "boat",
@@ -44,6 +48,7 @@ pub(crate) use sidebar_style::parse_hex;
 mod theme;
 mod updates;
 pub(crate) mod watch;
+mod worktrees;
 mod zen;
 
 pub use accent::Accent;
@@ -55,10 +60,15 @@ pub use backdrop::{Backdrop, Material};
 pub use boat::BoatConfig;
 #[cfg(feature = "boat")]
 pub(crate) use boat::BoatFields;
+pub use chat::ChatLayoutMode;
 pub use cloud::CloudConfig;
 pub use coder::CoderConfig;
 #[cfg(feature = "coder")]
 pub(crate) use coder::CoderFields;
+#[cfg(test)]
+use daemon::MAX_DAEMON_CONFIG_BYTES;
+pub(crate) use daemon::daemon_config_path;
+use daemon::{Daemon, daemon_settings};
 pub use daytona::DaytonaConfig;
 #[cfg(feature = "daytona")]
 pub(crate) use daytona::DaytonaFields;
@@ -81,6 +91,7 @@ pub use notifications::{
     BellConfig, ClipboardToast, ClipboardToastPosition, NotificationConfig, SoundConfig,
 };
 use notifications::{ClipboardToastSettings, NotificationSettings};
+pub use option_as_alt::{OptionAsAlt, OptionKeys};
 pub use padding::Padding;
 pub(crate) use padding::{Axis, MAX_PADDING, Side, Sides};
 use serde::Deserialize;
@@ -88,7 +99,7 @@ pub(crate) use sidebar::{
     AgentLayout, AgentToken, MAX_ROWS as MAX_SIDEBAR_ROWS, Rows, SidebarConfigError, SidebarLayout,
     SidebarScope, SpaceLayout, SpaceToken, TokenStyle,
 };
-pub(crate) use sidebar_style::DeviceFooter;
+pub(crate) use sidebar_style::{ChangeCounts, DeviceFooter};
 pub use sidebar_style::{SelectMode, SidebarOverrides, SidebarStyle};
 pub use status_bar::StatusBar;
 pub use status_icons::StatusIcons;
@@ -98,6 +109,7 @@ use std::{
     io::ErrorKind,
     path::{Path, PathBuf},
 };
+pub use tab_layout::TabLayoutMode;
 pub use theme::Theme;
 pub(crate) use theme::ThemeName;
 pub(crate) use theme::mix;
@@ -135,6 +147,8 @@ pub struct Config {
     pub backdrop: Backdrop,
     pub bell: BellConfig,
     pub boat: BoatConfig,
+    /// What chats started from the app run with.
+    pub chat: chat::ChatConfig,
     /// Only the keys this GUI's own file sets, so Settings can tell an
     /// override from the Herdr value it shadows.
     pub(crate) clipboard_overrides: ClipboardToastSettings,
@@ -189,6 +203,7 @@ pub struct Config {
     /// The `[pane_keys]` table `keybindings` was built from, for the same
     /// reason.
     pub(crate) pane_keys: PaneKeys,
+    pub(crate) px0: crate::px0::Config,
     /// Whether a linked worktree whose pull request is merged is removed, and
     /// its workspace closed, without asking. The focused workspace still asks.
     pub remove_merged_worktrees: bool,
@@ -212,6 +227,9 @@ pub struct Config {
     pub show_sidebar_search: bool,
     /// CPU and memory of the selected host in the status bar.
     pub show_system_load: bool,
+    /// Draw minimize, maximize, and close buttons in the menu bar on Linux.
+    /// When true the window needs no title bar from the window manager.
+    pub show_window_controls: bool,
     pub sidebar: FontConfig,
     /// Daemon sidebar rows, falling back to defaults when invalid.
     pub sidebar_layout: SidebarLayout,
@@ -225,6 +243,8 @@ pub struct Config {
     pub status_bar: StatusBar,
     /// The set agent status is drawn with.
     pub status_icons: StatusIcons,
+    /// How tab strips draw their tabs, from View > Tab Layout.
+    pub tab_layout: TabLayoutMode,
     pub tabs: FontConfig,
     pub terminal: FontConfig,
     /// Blank space around every terminal's cells.
@@ -238,6 +258,8 @@ pub struct Config {
     /// Which releases the in-app updater offers.
     pub updates: UpdatesConfig,
     pub usage: crate::usage::UsageConfig,
+    /// How linked worktrees are marked apart from their main checkout.
+    pub worktrees: crate::worktree_identity::Worktrees,
     /// What Toggle Zen Mode does beyond hiding the chrome.
     pub zen: Zen,
     // keep-sorted end
@@ -308,106 +330,6 @@ pub enum FileTarget {
     System,
 }
 
-/// Whether macOS Option sends Alt shortcuts to a pane or types the character
-/// the keyboard layout puts on it. Other platforms have no Option layer, so
-/// Alt always reaches the pane there.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum OptionAsAlt {
-    /// The left Option sends Alt on the U.S. and ABC layouts, whose Option
-    /// layer only holds symbols like `π` and dead keys like `´`; the right
-    /// Option still types them. Both type elsewhere, where Option holds `@`,
-    /// `[`, or letters.
-    #[default]
-    Auto,
-    Always,
-    Never,
-    /// Only the left Option sends Alt; the right one types.
-    Left,
-    /// Only the right Option sends Alt; the left one types.
-    Right,
-}
-
-/// Which Option keys a keystroke was made with, as macOS reports them.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct OptionKeys {
-    pub left: bool,
-    pub right: bool,
-}
-
-impl OptionKeys {
-    /// What a keystroke whose side is unknown counts as: the left key,
-    /// which is where Alt has always been.
-    pub const LEFT: Self = Self {
-        left: true,
-        right: false,
-    };
-
-    /// The side from an `NSEvent`'s modifier flags, whose device-dependent
-    /// bits tell the two keys apart. Flags naming neither count as the left.
-    #[cfg(any(target_os = "macos", test))]
-    pub fn from_device_flags(flags: usize) -> Self {
-        const LEFT: usize = 0x20;
-        const RIGHT: usize = 0x40;
-        let keys = Self {
-            left: flags & LEFT != 0,
-            right: flags & RIGHT != 0,
-        };
-        if keys.left || keys.right {
-            keys
-        } else {
-            Self::LEFT
-        }
-    }
-}
-
-impl OptionAsAlt {
-    /// macOS layouts whose Option characters a terminal user rarely types.
-    const ALT_LAYOUTS: [&'static str; 2] = ["com.apple.keylayout.US", "com.apple.keylayout.ABC"];
-
-    /// Whether Option-modified keys made with `keys` go to the pane as Alt
-    /// under `layout`, the platform keyboard layout ID.
-    pub fn sends_alt(self, layout: &str, keys: OptionKeys) -> bool {
-        if !cfg!(target_os = "macos") {
-            return true;
-        }
-        match self {
-            Self::Auto => Self::ALT_LAYOUTS.contains(&layout) && keys.left,
-            Self::Always => true,
-            Self::Never => false,
-            Self::Left => keys.left,
-            Self::Right => keys.right,
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for OptionAsAlt {
-    fn deserialize<D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> std::result::Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Value {
-            Bool(bool),
-            Name(String),
-        }
-        const NAMES: &[&str] = &["auto", "left", "right"];
-        match Value::deserialize(deserializer)? {
-            Value::Bool(true) => Ok(Self::Always),
-            Value::Bool(false) => Ok(Self::Never),
-            Value::Name(name) => match name.as_str() {
-                "auto" => Ok(Self::Auto),
-                "left" => Ok(Self::Left),
-                "right" => Ok(Self::Right),
-                _ => Err(serde::de::Error::unknown_variant(&name, NAMES)),
-            },
-        }
-    }
-}
-
-/// The daemon's config is read for a handful of keys, so a file far larger
-/// than any hand-written config is skipped rather than parsed on every load.
-const MAX_DAEMON_CONFIG_BYTES: u64 = 1 << 20;
-
 impl Default for Config {
     fn default() -> Self {
         let fonts::DefaultFonts {
@@ -431,6 +353,7 @@ impl Default for Config {
             backdrop: Backdrop::default(),
             bell: BellConfig::default(),
             boat: BoatConfig::default(),
+            chat: chat::ChatConfig::default(),
             clipboard_overrides: ClipboardToastSettings::default(),
             clipboard_toast: ClipboardToast::default(),
             cloud: CloudConfig::default(),
@@ -461,6 +384,7 @@ impl Default for Config {
             option_as_alt: OptionAsAlt::default(),
             palette: crate::palette::PaletteConfig::default(),
             pane_keys: PaneKeys::new(),
+            px0: crate::px0::Config::default(),
             remove_merged_worktrees: false,
             show_agents: true,
             show_agents_header: true,
@@ -470,6 +394,7 @@ impl Default for Config {
             show_repository_icons: true,
             show_sidebar_search: true,
             show_system_load: true,
+            show_window_controls: cfg!(target_os = "linux"),
             sidebar: font(monospace, 12.0),
             sidebar_layout: SidebarLayout::default(),
             sidebar_style: SidebarStyle::default(),
@@ -477,6 +402,7 @@ impl Default for Config {
             sound: SoundConfig::default(),
             status_bar: StatusBar::default(),
             status_icons: StatusIcons::default(),
+            tab_layout: TabLayoutMode::default(),
             // Tabs are terminal chrome, so they read in the monospace face the
             // sidebar and terminal use, as they do in the reference UI.
             tabs: font(monospace, 12.0),
@@ -487,6 +413,7 @@ impl Default for Config {
             unknown_keys: Vec::new(),
             updates: UpdatesConfig::default(),
             usage: crate::usage::UsageConfig::default(),
+            worktrees: crate::worktree_identity::Worktrees::default(),
             zen: Zen::default(),
             // keep-sorted end
         }
@@ -504,6 +431,7 @@ struct Settings {
     backdrop: Backdrop,
     bell: BellConfig,
     boat: BoatConfig,
+    chat: chat::ChatConfig,
     clipboard_toast: ClipboardToastSettings,
     cloud: CloudConfig,
     code: CodeConfig,
@@ -528,6 +456,7 @@ struct Settings {
     option_as_alt: OptionAsAlt,
     palette: crate::palette::PaletteConfig,
     pane_keys: PaneKeys,
+    px0: crate::px0::Config,
     remove_merged_worktrees: Option<bool>,
     show_agents: Option<bool>,
     show_agents_header: Option<bool>,
@@ -537,17 +466,20 @@ struct Settings {
     show_repository_icons: Option<bool>,
     show_sidebar_search: Option<bool>,
     show_system_load: Option<bool>,
+    show_window_controls: Option<bool>,
     sidebar: sidebar_style::SidebarSettings,
     smooth_scroll: Option<bool>,
     sound: SoundConfig,
     status_bar: StatusBar,
     status_icons: Option<status_icons::SavedIcons>,
+    tab_layout: TabLayoutMode,
     tabs: FontSettings,
     terminal: FontSettings,
     theme: Option<String>,
     ui: FontSettings,
     updates: UpdatesConfig,
     usage: crate::usage::UsageConfig,
+    worktrees: worktrees::WorktreeSettings,
     zen: zen::ZenSettings,
     // keep-sorted end
 }
@@ -591,85 +523,6 @@ fn config_root() -> Result<PathBuf> {
             Ok(home()?.join(".config"))
         }
     }
-}
-
-/// The daemon's own config file, resolved exactly as herdr resolves it. Every
-/// GUI reader of those settings shares this one answer.
-pub(crate) fn daemon_config_path(get: impl Fn(&str) -> Option<std::ffi::OsString>) -> PathBuf {
-    if let Some(path) = get("HERDR_CONFIG_PATH") {
-        return path.into();
-    }
-    let root = get("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            #[cfg(windows)]
-            {
-                if let Some(root) = get("APPDATA") {
-                    return PathBuf::from(root);
-                }
-                get("HOME")
-                    .or_else(|| get("USERPROFILE"))
-                    .map(PathBuf::from)
-                    .map(|home| home.join("AppData/Roaming"))
-                    .unwrap_or_else(env::temp_dir)
-            }
-            #[cfg(not(windows))]
-            get("HOME")
-                .map(PathBuf::from)
-                .map(|home| home.join(".config"))
-                .unwrap_or_else(env::temp_dir)
-        });
-    // Share production TUI settings even in a debug GUI build or SSH session.
-    root.join("herdr/config.toml")
-}
-
-/// What the GUI honors from the daemon's own config.
-#[derive(Clone, Debug, Default)]
-struct Daemon {
-    clipboard_toast: ClipboardToast,
-    keys: DaemonKeys,
-    sidebar_layout: SidebarLayout,
-}
-
-/// A config file the GUI does not own can hold anything, including settings
-/// from a newer herdr, so only the keys read here matter and anything
-/// unreadable, oversized, malformed, or unrecognized leaves the defaults alone.
-fn daemon_settings(path: &Path) -> Daemon {
-    if fs::metadata(path).is_ok_and(|data| data.len() > MAX_DAEMON_CONFIG_BYTES) {
-        return Daemon::default();
-    }
-    let Some(table) = fs::read_to_string(path)
-        .ok()
-        .and_then(|text| text.parse::<toml::Table>().ok())
-    else {
-        return Daemon::default();
-    };
-    Daemon {
-        clipboard_toast: daemon_clipboard_toast(&table),
-        keys: DaemonKeys::from_table(table.get("keys").and_then(toml::Value::as_table)),
-        sidebar_layout: SidebarLayout::from_daemon_config(&table).unwrap_or_default(),
-    }
-}
-
-fn daemon_clipboard_toast(table: &toml::Table) -> ClipboardToast {
-    let mut resolved = ClipboardToast::default();
-    let Some(clipboard) = table
-        .get("ui")
-        .and_then(|ui| ui.get("toast")?.get("clipboard")?.as_table())
-    else {
-        return resolved;
-    };
-    if let Some(enabled) = clipboard.get("enabled").and_then(toml::Value::as_bool) {
-        resolved.enabled = enabled;
-    }
-    if let Some(position) = clipboard
-        .get("position")
-        .cloned()
-        .and_then(|position| position.try_into().ok())
-    {
-        resolved.position = position;
-    }
-    resolved
 }
 
 impl Config {
@@ -879,6 +732,8 @@ impl Config {
         #[cfg(feature = "boat")]
         settings.boat.settings_with(|_| None)?;
         config.boat = settings.boat;
+        settings.chat.check()?;
+        config.chat = settings.chat;
         settings.cloud.check()?;
         config.cloud = settings.cloud;
         // Check what the file says so a bad value is reported at load; the
@@ -943,13 +798,18 @@ impl Config {
         config.show_repository_icons = settings.show_repository_icons.unwrap_or(true);
         config.show_sidebar_search = settings.show_sidebar_search.unwrap_or(true);
         config.show_system_load = settings.show_system_load.unwrap_or(true);
+        config.show_window_controls = settings
+            .show_window_controls
+            .unwrap_or(cfg!(target_os = "linux"));
         config.smooth_scroll = settings.smooth_scroll.unwrap_or(true);
         // keep-sorted end
         config.status_bar = settings.status_bar;
+        config.tab_layout = settings.tab_layout;
         let (status_icons, legacy_rail) = status_icons::SavedIcons::resolve(settings.status_icons);
         config.status_icons = status_icons;
         config.edge_rail = settings.edge_rail.unwrap_or(legacy_rail);
         config.zen = settings.zen.try_into()?;
+        config.worktrees = settings.worktrees.resolve()?;
         settings.backdrop.validate()?;
         config.backdrop = settings.backdrop;
         config.accent = settings.accent;
@@ -959,6 +819,8 @@ impl Config {
         config.option_as_alt = settings.option_as_alt;
         config.open_links_in = settings.open_links_in;
         config.code = settings.code;
+        settings.px0.check()?;
+        config.px0 = settings.px0;
         config.open_files_in = settings.open_files_in;
         config.editor_command = settings.editor_command;
         config.keep_selection_after_copy = settings.keep_selection_after_copy.unwrap_or(true);

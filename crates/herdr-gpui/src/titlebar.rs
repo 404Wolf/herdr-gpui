@@ -8,6 +8,7 @@ pub(crate) use tabs::{Ends, strip_height};
 
 pub(crate) use decorations::controls;
 pub(crate) use decorations::frame;
+pub(crate) use decorations::show_controls;
 
 use crate::{HerdrWindow, fonts::StyledFont, menu::Page};
 use gpui::{prelude::*, *};
@@ -61,6 +62,7 @@ impl HerdrWindow {
         let background = rgb(theme.surface).blend(rgba(0xffffff1a));
         let status = self.git.status();
         let running = self.git.running().is_some();
+        let anchor = self.git_anchor.clone();
         let pr = self.git_pull_request().map(|pr| {
             (
                 format!("#{}", pr.number),
@@ -177,6 +179,7 @@ impl HerdrWindow {
                     div()
                         .id("titlebar-git")
                         .debug_selector(|| "titlebar-git".into())
+                        .relative()
                         .flex()
                         .items_center()
                         .gap(px(4.))
@@ -204,6 +207,15 @@ impl HerdrWindow {
                                 .size(px(12.))
                                 .flex_none()
                                 .text_color(rgb(theme.muted)),
+                        )
+                        .child(
+                            canvas(
+                                |_, _, _| (),
+                                move |bounds, _, _, _| anchor.set(bounds.center()),
+                            )
+                            .absolute()
+                            .inset_0()
+                            .size_full(),
                         )
                         .on_mouse_down(
                             MouseButton::Left,
@@ -390,7 +402,7 @@ impl HerdrWindow {
             )
             // The in-window menu bar carries the window controls instead.
             .when(!crate::menus::IN_WINDOW, |end| {
-                end.children(controls(window, &self.theme, |window, _| {
+                end.children(controls(false, window, &self.theme, |window, _| {
                     window.remove_window();
                 }))
             })
@@ -428,10 +440,21 @@ pub(super) fn render(
 /// macOS windows own titlebar dragging (`app_owns_titlebar_drag`), so AppKit
 /// never moves the window from under a tab, and a client-decorated window has
 /// nothing else to move it. A server-drawn frame moves the window from its own
-/// title bar, so there `area` is left alone.
+/// title bar, so there `area` is left alone—unless the user has enabled window
+/// controls, which implies they may hide the WM's title bar.
 pub(crate) fn movable<E: InteractiveElement>(area: E, window: &Window) -> E {
+    movable_with_controls(area, window, false)
+}
+
+/// Like `movable`, but `controls_enabled` forces dragging even with SSD,
+/// for users who hide the WM's title bar and need the menu bar to move.
+pub(crate) fn movable_with_controls<E: InteractiveElement>(
+    area: E,
+    window: &Window,
+    controls_enabled: bool,
+) -> E {
     let client = decorations::client(window);
-    if !cfg!(target_os = "macos") && !client {
+    if !cfg!(target_os = "macos") && !client && !controls_enabled {
         return area;
     }
     // The move starts on the press: pointer motion during a press is claimed
@@ -462,7 +485,7 @@ pub(crate) fn header(
     close: impl Fn(&mut Window, &mut App) + 'static,
 ) -> Option<Stateful<Div>> {
     (cfg!(target_os = "macos") || decorations::client(window)).then(|| {
-        let buttons = controls(window, theme, close);
+        let buttons = controls(false, window, theme, close);
         render(bar(theme.surface), None, window).children(buttons)
     })
 }
@@ -675,6 +698,8 @@ mod tests {
 
 #[cfg(test)]
 mod git_button_tests;
+#[cfg(test)]
+mod git_command_tests;
 
 #[cfg(all(test, target_os = "macos"))]
 #[allow(clippy::unwrap_used)]

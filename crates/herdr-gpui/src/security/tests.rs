@@ -9,11 +9,17 @@ use std::{
 };
 
 mod accounts;
+mod filter;
+mod page;
+mod pane;
+mod pane_resize;
 mod parse;
 mod partial;
 mod reports;
+mod saved;
 mod section;
 mod state;
+mod unreadable;
 
 /// One alert node in the shape GitHub's GraphQL API answers with.
 fn node(number: u64, severity: &str, created: &str, package: &str) -> Value {
@@ -59,6 +65,8 @@ fn repo(name: &str, alerts: Result<Alerts, Error>) -> Repo {
         host: "Local".into(),
         alerts: alerts.map_err(Arc::new),
         reports: Ok(Reports::Off),
+        account: None,
+        checkouts: Vec::new(),
     }
 }
 

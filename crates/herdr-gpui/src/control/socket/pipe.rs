@@ -13,7 +13,8 @@
 //! A pipe has no receive timeout, so reads peek first, as the daemon client
 //! does, and a pipe has no send timeout at all; the server's out buffer
 //! holds a whole answer so its write does not wait on the caller reading.
-pub(super) mod security;
+/// The user and pipe owner checks, shared with the chat endpoint.
+pub(super) use herdr_client::private_endpoint as security;
 
 use super::super::protocol::MAX_MESSAGE;
 use interprocess::os::windows::{

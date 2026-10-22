@@ -7,6 +7,7 @@ use crate::{
 };
 
 mod back;
+mod bubbles;
 mod counts;
 mod layout;
 mod sections;

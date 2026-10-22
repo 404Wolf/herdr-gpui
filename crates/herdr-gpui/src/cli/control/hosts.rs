@@ -1,5 +1,5 @@
-//! `pr`, `host`, `cloud`, and `ports`.
-use super::{Args, CliError, unknown};
+//! `pr`, `host`, `cloud`, `ports`, and `security`.
+use super::{Args, BatchCommand, CliError, ExecCommand, batch, exec, unknown};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrCommand {
@@ -24,6 +24,21 @@ pub enum CloudCommand {
     Add,
     /// Run the configured setup script on a saved machine again.
     Setup(String),
+    /// Machines handled in batches: destroying them, and following that.
+    Batch(BatchCommand),
+    /// One command on a saved machine.
+    Exec(ExecCommand),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SecurityCommand {
+    List,
+    /// Show an alert (`42`) or a private report (`GHSA-…`) of `repository`
+    /// in the section, beside its list.
+    Open {
+        repository: String,
+        item: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,14 +73,36 @@ pub(super) fn host(args: &mut Args) -> Result<HostCommand, CliError> {
     })
 }
 
+pub(super) fn security(args: &mut Args) -> Result<SecurityCommand, CliError> {
+    let Some(verb) = args.verb() else {
+        return Ok(SecurityCommand::List);
+    };
+    Ok(match verb.to_str() {
+        Some("list") => SecurityCommand::List,
+        Some("open") => SecurityCommand::Open {
+            repository: args.required_text("REPOSITORY")?,
+            item: args.required_text("ALERT|GHSA")?,
+        },
+        _ => return Err(unknown("security", verb)),
+    })
+}
+
 pub(super) fn cloud(args: &mut Args) -> Result<CloudCommand, CliError> {
     let Some(verb) = args.verb() else {
         return Ok(CloudCommand::List);
     };
+    if let Some(Some(command)) = verb
+        .to_str()
+        .map(|verb| batch::parse(verb, args))
+        .transpose()?
+    {
+        return Ok(CloudCommand::Batch(command));
+    }
     Ok(match verb.to_str() {
         Some("list") => CloudCommand::List,
         Some("add") => CloudCommand::Add,
         Some("setup") => CloudCommand::Setup(args.required_text("ID")?),
+        Some("exec") => CloudCommand::Exec(exec::parse(args)?),
         _ => return Err(unknown("cloud", verb)),
     })
 }

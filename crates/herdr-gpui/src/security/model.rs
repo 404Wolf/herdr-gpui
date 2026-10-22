@@ -4,13 +4,15 @@
 //! names rather than taken from the response.
 
 use super::{Error, Report, Reports};
+use crate::github::Tokens;
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use herdr_client::ConnectTarget;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 /// How bad an advisory is, most severe first, so sorting puts it on top.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub(crate) enum Severity {
     Critical,
@@ -47,7 +49,7 @@ impl Severity {
 }
 
 /// One open Dependabot alert.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Alert {
     pub(crate) number: u64,
     pub(crate) severity: Severity,
@@ -73,10 +75,15 @@ impl Alert {
 }
 
 /// What a repository's alerts listing said.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum Alerts {
     /// Dependabot alerts are turned off for the repository.
     Off,
+    /// This sign-in may not read them. GraphQL answers such a token with an
+    /// empty listing, so an empty one is checked over REST, which refuses:
+    /// a GitHub App without the Dependabot alerts permission is the usual
+    /// case.
+    Hidden,
     /// The open alerts read, most severe first, and how many GitHub counts,
     /// which is more when the listing was capped.
     Open { alerts: Vec<Alert>, total: u64 },
@@ -91,6 +98,33 @@ pub(crate) struct Repo {
     pub(crate) host: String,
     pub(crate) alerts: Result<Alerts, Arc<Error>>,
     pub(crate) reports: Result<Reports, Arc<Error>>,
+    /// The account the listing was read with, which an item's page is read
+    /// with too.
+    pub(crate) account: Option<Account>,
+    /// Where the window's workspaces hold it, for an agent's workspace and
+    /// a manifest's file.
+    pub(crate) checkouts: Vec<Checkout>,
+}
+
+/// A GitHub account's tokens, kept beside what they read. Its `Debug`
+/// names no token.
+#[derive(Clone)]
+pub(crate) struct Account(pub(crate) Tokens);
+
+impl std::fmt::Debug for Account {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Account(..)")
+    }
+}
+
+/// One workspace holding the repository.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Checkout {
+    pub(crate) target: ConnectTarget,
+    pub(crate) workspace_id: String,
+    /// The repository's root on this machine, found while reading; `None`
+    /// on another host, where the code view cannot open a file.
+    pub(crate) root: Option<PathBuf>,
 }
 
 impl Repo {
@@ -113,13 +147,6 @@ impl Repo {
     /// Whether GitHub holds more reports in triage than were read.
     pub(crate) fn more_reports(&self) -> bool {
         matches!(self.reports, Ok(Reports::Open { more: true, .. }))
-    }
-
-    /// Whether GitHub reported Dependabot alerts or private vulnerability
-    /// reporting on for the repository.
-    pub(crate) fn enabled(&self) -> bool {
-        matches!(self.alerts, Ok(Alerts::Open { .. }))
-            || matches!(self.reports, Ok(Reports::Open { .. }))
     }
 
     /// The report's page in the repository's Security tab.

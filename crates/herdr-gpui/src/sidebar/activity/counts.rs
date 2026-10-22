@@ -2,38 +2,52 @@
 //! on the last tick, and from the orchestrator views the window holds, open
 //! pull requests and open issues, and the open critical and high Dependabot
 //! alerts. An item two views list, such as one repository open in two
-//! workspaces, counts once.
+//! workspaces, counts once. Each count keeps when its newest item last
+//! changed, which the bar compares with when the section was last open.
 
 use super::ActivityPanel;
 use crate::{HerdrWindow, orchestrator::Item};
+use chrono::{DateTime, Utc};
 use gpui::App;
 use std::collections::HashSet;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct Counts {
-    needs: usize,
-    pull_requests: usize,
-    issues: usize,
-    security: usize,
+    needs: Count,
+    pull_requests: Count,
+    issues: Count,
+    security: Count,
+}
+
+/// How many items a bubble counts, and when the newest of them changed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Count {
+    items: usize,
+    latest: Option<DateTime<Utc>>,
 }
 
 impl Counts {
     /// One view's items added to the counts, skipping what `seen` holds.
+    /// A copy already counted still offers its time, since views sync on
+    /// their own and a later one may hold the newer copy.
     pub(super) fn add(&mut self, seen: &mut HashSet<String>, items: &[Item]) {
         for item in items {
-            if !open(item) || !seen.insert(item.key.canonical()) {
+            if !open(item) {
                 continue;
             }
-            if item.pull_request.is_some() {
-                self.pull_requests += 1;
+            let count = if item.pull_request.is_some() {
+                &mut self.pull_requests
             } else {
-                self.issues += 1;
+                &mut self.issues
+            };
+            if seen.insert(item.key.canonical()) {
+                count.items += 1;
             }
+            count.latest = count.latest.max(item.updated_at.or(item.created_at));
         }
     }
 
-    /// The bar's count for `panel`, if it shows one.
-    pub(super) fn of(self, panel: ActivityPanel) -> Option<usize> {
+    fn count(self, panel: ActivityPanel) -> Option<Count> {
         match panel {
             ActivityPanel::Overview => Some(self.needs),
             ActivityPanel::Workspaces | ActivityPanel::Usage => None,
@@ -41,6 +55,16 @@ impl Counts {
             ActivityPanel::Issues => Some(self.issues),
             ActivityPanel::Security => Some(self.security),
         }
+    }
+
+    /// The bar's count for `panel`, if it shows one.
+    pub(super) fn of(self, panel: ActivityPanel) -> Option<usize> {
+        self.count(panel).map(|count| count.items)
+    }
+
+    /// When the newest item `panel` counts changed, when known.
+    pub(super) fn latest(self, panel: ActivityPanel) -> Option<DateTime<Utc>> {
+        self.count(panel)?.latest
     }
 }
 
@@ -53,8 +77,14 @@ fn open(item: &Item) -> bool {
 impl HerdrWindow {
     pub(super) fn activity_counts(&self, cx: &App) -> Counts {
         let mut counts = Counts {
-            needs: self.overview_needing(),
-            security: self.security.urgent(),
+            needs: Count {
+                items: self.overview_needing(),
+                latest: self.overview_needing_since().map(DateTime::from),
+            },
+            security: Count {
+                items: self.security.urgent(),
+                latest: self.security.urgent_since(),
+            },
             ..Counts::default()
         };
         let mut seen = HashSet::new();

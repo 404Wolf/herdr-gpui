@@ -9,6 +9,7 @@ fn read_wsl(distro: &str) -> crate::Result<Vec<(Provider, crate::Result<Report>)
         &Host::Wsl(distro.into()),
         &UsageConfig::default(),
         &HashSet::new(),
+        &HashSet::new(),
         &mut jar,
         |provider, report| {
             found.push((provider, report));

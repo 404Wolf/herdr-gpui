@@ -76,9 +76,14 @@ pub enum Command {
     NewBrowserTab,
     /// The focused workspace's repository's issues, pull requests, and runs.
     OpenOrchestrator,
+    /// A review of the focused checkout's changes.
+    ReviewChanges,
+    /// The titlebar's Git menu for the focused checkout.
+    GitMenu,
     InstallBrowserSkill,
     SplitEditor,
     OpenCode,
+    OpenPx0,
     ToggleFullScreen,
     CycleWindows,
     /// Closes the window it runs in, leaving the daemon and its terminals.
@@ -651,6 +656,16 @@ pub const COMMANDS: &[CommandInfo] = &[
         label: "Show Issues",
     },
     CommandInfo {
+        command: Command::ReviewChanges,
+        name: "review_changes",
+        label: "Review Changes",
+    },
+    CommandInfo {
+        command: Command::GitMenu,
+        name: "git_menu",
+        label: "Git Menu",
+    },
+    CommandInfo {
         command: Command::InstallBrowserSkill,
         name: "install_browser_skill",
         label: "Install Browser Skill for Agents",
@@ -664,6 +679,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         command: Command::OpenCode,
         name: "open_code",
         label: "Open VS Code",
+    },
+    CommandInfo {
+        command: Command::OpenPx0,
+        name: "open_px0",
+        label: "Open px0",
     },
     CommandInfo {
         command: Command::ToggleFullScreen,
@@ -853,9 +873,12 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         | Command::OpenNotificationTarget
         | Command::NewBrowserTab
         | Command::OpenOrchestrator
+        | Command::ReviewChanges
+        | Command::GitMenu
         | Command::InstallBrowserSkill
         | Command::SplitEditor
         | Command::OpenCode
+        | Command::OpenPx0
         | Command::ToggleFullScreen
         | Command::CycleWindows
         | Command::CloseWindow

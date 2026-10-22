@@ -479,9 +479,19 @@ impl ConnectionBridge {
         target: &InputTarget,
         event: ClientPaneInputEvent,
     ) -> Result<(), herdr_client::SendError> {
+        Self::send_inputs(handle, boot_id, target, [event])
+    }
+
+    /// Sends `events` to `target` as one message, in order.
+    pub fn send_inputs(
+        handle: &ClientHandle,
+        boot_id: &str,
+        target: &InputTarget,
+        events: impl IntoIterator<Item = ClientPaneInputEvent>,
+    ) -> Result<(), herdr_client::SendError> {
         match target {
-            InputTarget::Pane(id) => handle.send_input(boot_id, id, [event]),
-            InputTarget::Popup(id) => handle.send_popup_input(boot_id, id, [event]),
+            InputTarget::Pane(id) => handle.send_input(boot_id, id, events),
+            InputTarget::Popup(id) => handle.send_popup_input(boot_id, id, events),
         }
     }
 }

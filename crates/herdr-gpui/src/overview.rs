@@ -70,6 +70,9 @@ pub(crate) struct Page {
     /// worked, and the closed agents' revision, so the tick redraws only
     /// when one of them moves.
     drawn: (u64, u64, usize, usize, u64),
+    /// When the latest row needing the user entered its state, on the last
+    /// tick, so the bar's count can tell new from already seen.
+    needing_since: Option<SystemTime>,
 }
 
 impl Default for Page {
@@ -86,6 +89,7 @@ impl Default for Page {
             reopen: None,
             scroll: ScrollHandle::new(),
             drawn: (0, 0, 0, 0, 0),
+            needing_since: None,
         }
     }
 }
@@ -96,14 +100,17 @@ impl HerdrWindow {
     pub(crate) fn overview_rows(&self, cx: &App) -> Vec<Row> {
         let mut rows = Vec::new();
         for (index, endpoint) in self.endpoints.iter().enumerate() {
-            let selected = index == self.selected_endpoint;
-            let live = if selected { &self.live } else { &endpoint.live };
-            // The prefetch holds only the selected device's pull requests:
-            // another host may have the same checkout path and branch.
+            let live = if index == self.selected_endpoint {
+                &self.live
+            } else {
+                &endpoint.live
+            };
+            // Each device's answers are its own: another host may have the
+            // same checkout path and branch.
+            let view = self.endpoint_pr_view(index);
             let pr = |key: &str, branch: &str| {
-                selected
-                    .then(|| self.menu.pr_cache.peek(key, branch))
-                    .flatten()
+                view.as_ref()
+                    .and_then(|view| self.menu.pr_cache.peek(view, key, branch))
                     .map(|pr| model::Pr {
                         number: pr.number,
                         checks: pr.checks_outcome(),
@@ -239,8 +246,10 @@ impl HerdrWindow {
             working,
             self.overview.closed.revision(),
         );
-        if drawn != self.overview.drawn {
+        let needing_since = sections.needing_since();
+        if drawn != self.overview.drawn || needing_since != self.overview.needing_since {
             self.overview.drawn = drawn;
+            self.overview.needing_since = needing_since;
             cx.notify();
         }
     }
@@ -248,6 +257,12 @@ impl HerdrWindow {
     /// How many rows needed the user on the last tick, for the bar's count.
     pub(crate) fn overview_needing(&self) -> usize {
         self.overview.drawn.2
+    }
+
+    /// When the latest row [`Self::overview_needing`] counts entered its
+    /// state, on the last tick.
+    pub(crate) fn overview_needing_since(&self) -> Option<SystemTime> {
+        self.overview.needing_since
     }
 
     /// How many agents were working on the last tick, which animates the

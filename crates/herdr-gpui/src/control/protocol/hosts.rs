@@ -40,6 +40,12 @@ pub(crate) enum HostOp {
     System,
     /// The Dependabot alerts the Security section last read.
     Security,
+    /// Show an alert's (`item` a number) or a private report's (`item` a
+    /// GHSA ID) page in the Security section.
+    SecurityOpen {
+        repository: String,
+        item: String,
+    },
     /// Open the settings that add cloud machines.
     Cloud,
     /// Run the configured setup script again on the cloud device `id`, in a
@@ -196,7 +202,8 @@ pub(crate) struct SecurityRepoInfo {
     pub host: String,
     /// Its Dependabot alerts page.
     pub url: String,
-    /// "open", "off" (Dependabot alerts turned off), or "error".
+    /// "open", "off" (Dependabot alerts turned off), "hidden" (this sign-in
+    /// may not read alerts), or "error".
     pub state: String,
     /// Open alerts GitHub counts, which may be more than `alerts` holds.
     pub total: u64,

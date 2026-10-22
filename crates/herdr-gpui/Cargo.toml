@@ -15,7 +15,7 @@ aes.workspace                  = true
 ammonia.workspace              = true
 anyhow.workspace               = true
 cbc.workspace                  = true
-base64                         = { optional = true, workspace = true }
+base64.workspace               = true
 chrono.workspace               = true
 config_loader.workspace        = true
 ed25519-dalek.workspace        = true
@@ -26,11 +26,13 @@ gpui.workspace                 = true
 # font-kit (macOS) or a Linux backend, text silently goes to a no-op system.
 gpui_platform                  = { features = ["font-kit", "runtime_shaders", "wayland", "x11"], workspace = true }
 gix.workspace                  = true
+herdr-chat-protocol.workspace  = true
 herdr-client.workspace         = true
 if-addrs.workspace             = true
 image                          = { features = ["bmp", "tiff"], workspace = true }
 keepawake.workspace            = true
 mdns-sd.workspace              = true
+mermaid-rs-renderer.workspace  = true
 nucleo-matcher.workspace       = true
 pbkdf2.workspace               = true
 percent-encoding.workspace     = true
@@ -55,6 +57,7 @@ toml_edit.workspace            = true
 tracing.workspace              = true
 tracing-subscriber.workspace   = true
 tungstenite                    = { optional = true, workspace = true }
+unicode-normalization.workspace = true
 unicode-properties.workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace        = true
@@ -68,6 +71,7 @@ winresource.workspace = true
 
 [dev-dependencies]
 gpui = { features = ["test-support"], workspace = true }
+socket2.workspace = true
 test-case.workspace = true
 
 [features]
@@ -77,11 +81,11 @@ default = ["azure", "boat", "coder", "daytona", "railway"]
 cloud = ["herdr-client/cloud"]
 # Azure VMs and Container Apps sandboxes as devices, with generic credentials
 # or local Azure CLI. Sandboxes are reached over the data plane's exec stream.
-azure = ["cloud", "herdr-client/azure", "dep:base64", "dep:rustls", "dep:tungstenite", "dep:webpki-roots"]
+azure = ["cloud", "herdr-client/azure", "dep:rustls", "dep:tungstenite", "dep:webpki-roots"]
 # Boat sandboxes as devices, with an API key and per-machine SSH key setup.
 boat = ["cloud", "herdr-client/boat"]
 # Coder workspaces as devices, with OAuth2 sign-in.
-coder = ["cloud", "herdr-client/coder", "dep:base64"]
+coder = ["cloud", "herdr-client/coder"]
 # Daytona sandboxes as devices, with an API key and its SSH gateway.
 daytona = ["cloud", "herdr-client/daytona"]
 # Railway free VMs as devices, reached over SSH with a saved key identity.
@@ -109,10 +113,10 @@ rustix.workspace = true
 [target.'cfg(any(target_os = "macos", windows))'.dependencies]
 wry.workspace = true
 
-# The control pipe: `interprocess` creates it with a DACL, and `windows-sys`
-# reads the user and the pipe owner it is checked against. `windows-sys` also
-# sets the window attributes and reads the system settings GPUI leaves to the
-# app, keeps saved sign-ins in Credential Manager (`github::credential_manager`),
+# The control pipe: `interprocess` creates it with a DACL, and
+# `herdr_client::private_endpoint` reads the user and the pipe owner it is
+# checked against. `windows-sys` sets the window attributes and reads the
+# system settings GPUI leaves to the app, keeps saved sign-ins in Credential Manager (`github::credential_manager`),
 # and opens avatar cache entries without following reparse points. It also
 # checks an update installer's Authenticode signature (`updater::windows`),
 # registers with Restart Manager (`restart_manager`), writes crash minidumps
@@ -139,7 +143,6 @@ windows-sys = { features = [
   "Wdk_System_SystemServices",
   "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",
-  "Win32_Security_Authorization",
   "Win32_Security_Credentials",
   "Win32_Security_Cryptography",
   "Win32_Security_Cryptography_Catalog",
