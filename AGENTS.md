@@ -27,6 +27,7 @@ Closing or detaching the GUI must leave the daemon and its terminals running.
 | `crates/herdr-chat-protocol` | Attach wire between `herdr-acp` and its clients: transcript model, the shared change reducer, framing, and endpoint discovery; no ACP or GPUI types |
 | `crates/herdr-client` | Discovery, socket worker, session transitions, ordered commands, and client-local activity projection |
 | `crates/herdr-gpui` | Native UI, connection bridge, presentation state, semantic input, geometry, and painting |
+| `crates/herdr-remote` | Remote control daemon: serves this machine's chats to paired phones over HTTPS (own CA, dual-approval pairing, Web Push), plus the control protocol Herdr UI uses without the `server` feature, so Tokio stays out of the GUI |
 | `crates/herdr-gpui-launcher` | Windows-only windowed launcher that starts `herdr-gpui.exe` without a console window; std plus `MessageBoxW` for start failures |
 | `crates/embed-resource` | No-op stand-in for GPUI's `embed-resource` build dependency, patched in so GPUI embeds no Windows manifest beside `crates/herdr-gpui/windows.manifest`; not a production crate |
 | `crates/test-support/sandbox.rs` | Shared isolated process setup for opt-in integration tests; not a production crate |
