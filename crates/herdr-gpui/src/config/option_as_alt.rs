@@ -1,6 +1,4 @@
-//! How macOS Option keys reach a pane: as Alt, or as the characters the
-//! keyboard layout puts on them.
-
+//! `option_as_alt`: whether macOS Option reaches a pane as Alt.
 use serde::Deserialize;
 
 /// Whether macOS Option sends Alt shortcuts to a pane or types the character

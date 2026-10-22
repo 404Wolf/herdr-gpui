@@ -1281,12 +1281,12 @@ Three densities of Herdr's own rows are available:
 Add `-rounded` to any density (`normal-rounded`, `compact-rounded`,
 `comfortable-rounded`) for inset rows with rounded corners, a bordered selection,
 and title-case section headings. Rounded rows are a little taller, and worktree
-children keep their indent without tree guides, which would break across the
-gaps between rows.
+children hang from the same tree guides as flat rows, unbroken across the gaps
+between rows (see [Telling Worktrees Apart](#telling-worktrees-apart)).
 
 Normal and Compact show PR numbers without change counts. Status indicators and
-agent-name lines remain visible in every density, and flat ones keep tree guides;
-font sizes and terminal spacing are unchanged. Saved edits apply automatically.
+agent-name lines remain visible in every density, and every density keeps tree
+guides; font sizes and terminal spacing are unchanged. Saved edits apply automatically.
 
 When the daemon's `[ui.sidebar.agents]` rows name the `state_text` token, the
 GUI shows the same status word beside each agent, in the activity dot's color,
@@ -1656,6 +1656,11 @@ motion. Hold Shift to select locally instead; releasing a selection of terminal
 text in a pane also offers the annotation pill described below. In applications
 without mouse reporting, selection works without Shift. A forwarded drag stays
 in the pane or popup where it started, including when the pointer moves outside it.
+Many agent TUIs take the mouse without selecting text, so the first left drag an
+application receives in a session shows **Hold Shift and drag to select text**
+for a few seconds, where the `copied to clipboard` flash appears. It shows once
+per session, never for a click, and not at all once you have pressed with Shift
+over such a pane.
 
 Right-click opens the GUI pane menu unless Herdr routes that pane's right-clicks
 to the application (`herdr pane input --right-click pane`, or **Send
@@ -1881,6 +1886,45 @@ A note is one line of at most 500 characters. Notes stay in this client, in
 repository, and every window shows the same ones. Like teleport marks they
 belong to a host, repository and branch, so a note survives a daemon restart
 and follows its branch, and it does not travel with a teleported worktree.
+
+## Telling Worktrees Apart
+
+A linked worktree looks different from its repository's main checkout, which
+keeps the theme as drawn, so you can see at a glance which copy you are about
+to type into. The daemon already says which checkouts are linked worktrees;
+the app reads no Git of its own for this.
+
+- In the sidebar, linked worktrees nested under their main checkout hang from
+  it on guide lines in every layout: a trunk under the main checkout and a
+  short elbow to each worktree, the same thin, muted lines the flat layouts
+  have always drawn. Rounded, Superset, Orca and Minimal draw them too, so
+  ten or twenty worktrees read as one quiet group rather than a block of
+  colour, and selection, hover and status marks look as before. A linked
+  worktree standing alone, with its main checkout not open, has no line to
+  hang from, so it shows the branch glyph, in the theme's blue (the hue its
+  notes use), where a repository row shows its owner's avatar. Screen
+  readers hear "linked worktree" after its name.
+- In the workspace, a 2-pixel rule in the same blue lies along the tab
+  strip's edge that meets the terminals. It sits in the chrome, so no
+  terminal cell is covered or recoloured; while the strip is hidden there is
+  no chrome to hold it, and the sidebar alone marks the worktree.
+
+The glyph and the rule reach 3:1 against the chrome (4.5:1 under
+`contrast = "high"`). The `[worktrees]` table changes their hue or where the
+marks show:
+
+```toml
+[worktrees]
+# The glyph's and the rule's hue, as #rgb or #rrggbb; it only gets lighter or
+# darker as far as it must to stand out from the chrome. Unset, the theme's
+# blue.
+tint = "#7aa2f7"
+# Where the marks show; [] turns them off. Without "sidebar", the flat
+# layouts keep their tree and the others draw no guides, as before.
+apply_to = ["sidebar", "terminal"]
+```
+
+`herdr-gpui config set worktrees.apply_to '[]'` sets it from a script.
 
 ## Moving Panes
 
@@ -2236,12 +2280,12 @@ on an item's branch shows as that item's run, working or stopped by whether an
 agent is in it, and so does an `agent/…` branch in the repository that no
 workspace shows. These runs open their workspace but have no controls.
 
-The tab shares its data with agent-launcher,
-so both can be open on one repository at once: each lists the other's runs,
-updates only its own, and uses agent-launcher's prompt profiles from
-`~/.config/agent-launcher/agents/<name>/prompt.md` (the built-in prompt when
-none is chosen). Issues and runs are kept in agent-launcher's per-repository
-database under the platform data directory. GitHub is read as the account used
+Issues, pull requests with their reviews and checks, and runs are kept in a
+per-repository database in Herdr UI's state directory, so a restart lists them
+at once and syncs after. The first time a repository opens, agent-launcher's
+database for it is copied in, with its runs. The tab uses agent-launcher's
+prompt profiles from `~/.config/agent-launcher/agents/<name>/prompt.md` (the
+built-in prompt when none is chosen). GitHub is read as the account used
 for pull requests on that host. A GitLab remote, on gitlab.com or a
 self-managed host, lists its open issues (not yet its merge requests), read
 with `GITLAB_TOKEN` or `GITLAB_ACCESS_TOKEN` when `GITLAB_HOST` names that host
@@ -2297,8 +2341,15 @@ work. Cancelling an image already partially written closes that client connectio
 to avoid corrupting framing; it does not stop the daemon. Slow/stalled transfers
 have a 60-second deadline. There is no upload acknowledgement or progress API.
 
-macOS uses the native pasteboard on a background executor; AppKit may materialize
-its data before the client can check its size. Linux uses `wl-paste` (Wayland) or
+macOS acquires clipboard data in a short-lived copy of the application, on that
+process's main thread before any windows or daemon connections are opened. The
+background preparation task accepts only a complete, bounded response from a
+successful reader, with a three-second deadline. A native pasteboard crash or
+stall fails that paste without closing the GUI; the reader is killed and reaped
+on timeout. Clipboard data travels only over a private socket, never a temporary
+file or a log. The existing format priority, revision check, and paste ordering
+are preserved. AppKit may still materialize data inside the reader before its
+size can be checked. Linux uses `wl-paste` (Wayland) or
 `xclip` (X11) for explicit Ctrl-V image acquisition, with bounded output and a
 three-second acquisition deadline. Ordinary Linux paste retains GPUI's native
 clipboard reader and needs no helper; that existing synchronous API can still
@@ -2799,7 +2850,9 @@ them to the agent that opened it, so it can change the page.
 **Review Changes** in a group's **…** menu opens a review tab on the focused
 local checkout's changes, with untracked text files as wholly added,
 and lets you send review notes to the agent that made them, like inline
-comments on a pull request.
+comments on a pull request. It has no default key; bind `review_changes`
+under `[keybindings]` to open it from the keyboard, and `git_menu` to open
+the titlebar's Git menu where its button would.
 
 - The review is a tab like a browser tab: it sits in the group in use, can be
   moved to a group of its own beside the terminal, take the whole window, or
@@ -3041,6 +3094,78 @@ elsewhere:
 mkdir -p ~/.claude/skills/herdr-gpui-browser
 herdr-gpui browser skill > ~/.claude/skills/herdr-gpui-browser/SKILL.md
 ```
+
+## Chats
+
+An agent can run as a chat instead of in its own terminal interface:
+`herdr-acp`, a program shipped beside the app, talks to the agent through the
+[Agent Client Protocol](https://agentclientprotocol.com) inside an ordinary
+Herdr pane and draws the conversation there, and the app draws the same
+conversation natively over that pane. The program is the agent's only client,
+so the Herdr TUI, a plain terminal, and every app window see one conversation.
+
+**Starting one.** A group's **…** menu lists **New Chat** with one row per
+agent `herdr-acp` knows (Claude, Codex, Copilot, Gemini, OpenCode, Pi). A row
+opens a tab named after the agent in the focused workspace, in the focused
+pane's folder, and runs the program there; `herdr-gpui chat new AGENT` does
+the same from a pane. The rows show once the app has found `herdr-acp`,
+first beside its own executable (the app bundle, `cargo build`'s target
+directory, or where `just install` puts both) and then on the login shell's
+`PATH`, and only for the Herdr on this machine. Each agent has to be
+installed: `claude`, `codex` and `pi` (which `herdr-acp` drives without an
+ACP adapter), `copilot --acp`, `gemini --acp`, or `opencode acp`. The program can
+also be started by hand in any pane: `herdr-acp claude`.
+
+**Company endpoints.** Variables in `[chat.env]` go into the environment of
+every chat's tab, on this machine or an SSH host: `GH_HOST` for Copilot on
+GitHub Enterprise, `ANTHROPIC_BASE_URL` for a gateway, and so on. Settings >
+General edits them as `NAME=value` pairs while ACP chats are on. They are
+stored in plain text, so tokens belong in the shell or the agent's own
+sign-in.
+
+**The chat view.** Over a chat's pane the app shows the agent's messages,
+reasoning, tool calls with their diffs, the plan, permission requests to
+answer, queued prompts, and a prompt box. The header shows how long the
+running turn has taken, how full the context window is (yellow past 75%, red
+past 90%) and what the session has cost when the agent reports it, stops a
+turn, and switches back to the pane's terminal (`herdr-gpui chat
+show|hide|toggle`). Under it, a button per setting the agent offers picks its
+model, thinking level, and mode; the gear lists the rest, such as toggles.
+Each finished turn leaves a line with its duration and tokens, and an agent
+message copies with the button under it. In the prompt box `/` completes the
+agent's commands (Tab or a click takes one) and Up recalls earlier prompts.
+
+**Pictures and pages.** A picture the agent links as a local file, or an
+image file a tool call wrote or read, shows in the chat; `herdr-acp` reads it
+beside the agent, so this works for chats on SSH hosts too, and only files
+whose bytes are an image count. A picture linked on the web shows as a card
+naming its host and loads only when you press Load, since loading it tells
+that server your address. An `html` code block, or an HTML file a tool call
+wrote on this machine, gets a Show page button: on macOS and Windows the page
+then runs live inside the message, in place of its card, and scrolls with the
+chat (on Windows it shows while all of it is in view); Hide turns it back
+into the card, and a chat keeps at most four pages live. On Linux, which has
+no pages in the window, the button opens your browser. The page is copied
+alone into a private folder first, so its script cannot read the files
+beside it; a page that loads its own stylesheets or scripts from separate
+files shows without them. A web picture is fetched from the host its card
+names only, without following a redirect.
+
+**Layouts.** `[chat] layout` picks how a chat view draws: `timeline` puts the
+entries on a line with an avatar where the speaker changes, `bubbles` puts
+your messages in bubbles on the right with the settings under the prompt box,
+as Claude's app does, `terminal` draws it as Claude Code's own screen in the
+terminal font, `document` makes each prompt a heading with the reply as prose
+under it, and `cards` puts each turn in one card. The button in a chat's
+header steps through them, Settings > General picks one while ACP chats are
+on, and `herdr-gpui config set chat.layout cards` sets it from a script.
+What a chat does is the same in every layout.
+
+Both views stay live: a prompt or an answer from either
+shows in both, and the first answer to a permission request wins. The view
+attaches through a private local endpoint, a socket on Unix and a named pipe
+on Windows reachable by this user alone, and is never offered for SSH, WSL,
+or cloud hosts. See `crates/herdr-acp/README.md` for the program itself.
 
 ## VS Code
 

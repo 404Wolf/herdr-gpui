@@ -13,9 +13,11 @@ mod azure;
 pub(crate) mod backdrop;
 mod bitmap_fonts;
 mod boat;
+pub(crate) mod chat;
 mod cloud;
 mod coder;
 mod container;
+mod daemon;
 mod daytona;
 mod devices;
 mod edit;
@@ -37,6 +39,7 @@ mod sidebar_style;
 mod sprites;
 pub(crate) mod status_bar;
 mod status_icons;
+pub(crate) mod tab_layout;
 #[cfg(any(
     feature = "azure",
     feature = "boat",
@@ -51,6 +54,7 @@ pub(crate) use sidebar_style::parse_hex;
 mod theme;
 mod updates;
 pub(crate) mod watch;
+mod worktrees;
 mod zen;
 
 pub use accent::Accent;
@@ -62,6 +66,7 @@ pub use backdrop::{Backdrop, Material};
 pub use boat::BoatConfig;
 #[cfg(feature = "boat")]
 pub(crate) use boat::BoatFields;
+pub use chat::ChatLayoutMode;
 pub use cloud::CloudConfig;
 pub use coder::CoderConfig;
 #[cfg(feature = "coder")]
@@ -69,6 +74,10 @@ pub(crate) use coder::CoderFields;
 pub use container::ContainerConfig;
 #[cfg(feature = "container")]
 pub(crate) use container::ContainerFields;
+#[cfg(test)]
+use daemon::MAX_DAEMON_CONFIG_BYTES;
+pub(crate) use daemon::daemon_config_path;
+use daemon::{Daemon, daemon_settings};
 pub use daytona::DaytonaConfig;
 #[cfg(feature = "daytona")]
 pub(crate) use daytona::DaytonaFields;
@@ -115,6 +124,7 @@ use std::{
     io::ErrorKind,
     path::{Path, PathBuf},
 };
+pub use tab_layout::TabLayoutMode;
 pub use theme::Theme;
 pub(crate) use theme::ThemeName;
 pub(crate) use theme::mix;
@@ -152,6 +162,8 @@ pub struct Config {
     pub backdrop: Backdrop,
     pub bell: BellConfig,
     pub boat: BoatConfig,
+    /// What chats started from the app run with.
+    pub chat: chat::ChatConfig,
     /// Only the keys this GUI's own file sets, so Settings can tell an
     /// override from the Herdr value it shadows.
     pub(crate) clipboard_overrides: ClipboardToastSettings,
@@ -252,6 +264,8 @@ pub struct Config {
     pub status_bar: StatusBar,
     /// The set agent status is drawn with.
     pub status_icons: StatusIcons,
+    /// How tab strips draw their tabs, from View > Tab Layout.
+    pub tab_layout: TabLayoutMode,
     pub tabs: FontConfig,
     pub terminal: FontConfig,
     /// Blank space around every terminal's cells.
@@ -265,6 +279,8 @@ pub struct Config {
     /// Which releases the in-app updater offers.
     pub updates: UpdatesConfig,
     pub usage: crate::usage::UsageConfig,
+    /// How linked worktrees are marked apart from their main checkout.
+    pub worktrees: crate::worktree_identity::Worktrees,
     /// What Toggle Zen Mode does beyond hiding the chrome.
     pub zen: Zen,
     // keep-sorted end
@@ -335,10 +351,6 @@ pub enum FileTarget {
     System,
 }
 
-/// The daemon's config is read for a handful of keys, so a file far larger
-/// than any hand-written config is skipped rather than parsed on every load.
-const MAX_DAEMON_CONFIG_BYTES: u64 = 1 << 20;
-
 impl Default for Config {
     fn default() -> Self {
         let fonts::DefaultFonts {
@@ -362,6 +374,7 @@ impl Default for Config {
             backdrop: Backdrop::default(),
             bell: BellConfig::default(),
             boat: BoatConfig::default(),
+            chat: chat::ChatConfig::default(),
             clipboard_overrides: ClipboardToastSettings::default(),
             clipboard_toast: ClipboardToast::default(),
             cloud: CloudConfig::default(),
@@ -413,6 +426,7 @@ impl Default for Config {
             sprites: SpritesConfig::default(),
             status_bar: StatusBar::default(),
             status_icons: StatusIcons::default(),
+            tab_layout: TabLayoutMode::default(),
             // Tabs are terminal chrome, so they read in the monospace face the
             // sidebar and terminal use, as they do in the reference UI.
             tabs: font(monospace, 12.0),
@@ -423,6 +437,7 @@ impl Default for Config {
             unknown_keys: Vec::new(),
             updates: UpdatesConfig::default(),
             usage: crate::usage::UsageConfig::default(),
+            worktrees: crate::worktree_identity::Worktrees::default(),
             zen: Zen::default(),
             // keep-sorted end
         }
@@ -440,6 +455,7 @@ struct Settings {
     backdrop: Backdrop,
     bell: BellConfig,
     boat: BoatConfig,
+    chat: chat::ChatConfig,
     clipboard_toast: ClipboardToastSettings,
     cloud: CloudConfig,
     code: CodeConfig,
@@ -483,12 +499,14 @@ struct Settings {
     sprites: SpritesConfig,
     status_bar: StatusBar,
     status_icons: Option<status_icons::SavedIcons>,
+    tab_layout: TabLayoutMode,
     tabs: FontSettings,
     terminal: FontSettings,
     theme: Option<String>,
     ui: FontSettings,
     updates: UpdatesConfig,
     usage: crate::usage::UsageConfig,
+    worktrees: worktrees::WorktreeSettings,
     zen: zen::ZenSettings,
     // keep-sorted end
 }
@@ -532,85 +550,6 @@ fn config_root() -> Result<PathBuf> {
             Ok(home()?.join(".config"))
         }
     }
-}
-
-/// The daemon's own config file, resolved exactly as herdr resolves it. Every
-/// GUI reader of those settings shares this one answer.
-pub(crate) fn daemon_config_path(get: impl Fn(&str) -> Option<std::ffi::OsString>) -> PathBuf {
-    if let Some(path) = get("HERDR_CONFIG_PATH") {
-        return path.into();
-    }
-    let root = get("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            #[cfg(windows)]
-            {
-                if let Some(root) = get("APPDATA") {
-                    return PathBuf::from(root);
-                }
-                get("HOME")
-                    .or_else(|| get("USERPROFILE"))
-                    .map(PathBuf::from)
-                    .map(|home| home.join("AppData/Roaming"))
-                    .unwrap_or_else(env::temp_dir)
-            }
-            #[cfg(not(windows))]
-            get("HOME")
-                .map(PathBuf::from)
-                .map(|home| home.join(".config"))
-                .unwrap_or_else(env::temp_dir)
-        });
-    // Share production TUI settings even in a debug GUI build or SSH session.
-    root.join("herdr/config.toml")
-}
-
-/// What the GUI honors from the daemon's own config.
-#[derive(Clone, Debug, Default)]
-struct Daemon {
-    clipboard_toast: ClipboardToast,
-    keys: DaemonKeys,
-    sidebar_layout: SidebarLayout,
-}
-
-/// A config file the GUI does not own can hold anything, including settings
-/// from a newer herdr, so only the keys read here matter and anything
-/// unreadable, oversized, malformed, or unrecognized leaves the defaults alone.
-fn daemon_settings(path: &Path) -> Daemon {
-    if fs::metadata(path).is_ok_and(|data| data.len() > MAX_DAEMON_CONFIG_BYTES) {
-        return Daemon::default();
-    }
-    let Some(table) = fs::read_to_string(path)
-        .ok()
-        .and_then(|text| text.parse::<toml::Table>().ok())
-    else {
-        return Daemon::default();
-    };
-    Daemon {
-        clipboard_toast: daemon_clipboard_toast(&table),
-        keys: DaemonKeys::from_table(table.get("keys").and_then(toml::Value::as_table)),
-        sidebar_layout: SidebarLayout::from_daemon_config(&table).unwrap_or_default(),
-    }
-}
-
-fn daemon_clipboard_toast(table: &toml::Table) -> ClipboardToast {
-    let mut resolved = ClipboardToast::default();
-    let Some(clipboard) = table
-        .get("ui")
-        .and_then(|ui| ui.get("toast")?.get("clipboard")?.as_table())
-    else {
-        return resolved;
-    };
-    if let Some(enabled) = clipboard.get("enabled").and_then(toml::Value::as_bool) {
-        resolved.enabled = enabled;
-    }
-    if let Some(position) = clipboard
-        .get("position")
-        .cloned()
-        .and_then(|position| position.try_into().ok())
-    {
-        resolved.position = position;
-    }
-    resolved
 }
 
 impl Config {
@@ -820,6 +759,8 @@ impl Config {
         #[cfg(feature = "boat")]
         settings.boat.settings_with(|_| None)?;
         config.boat = settings.boat;
+        settings.chat.check()?;
+        config.chat = settings.chat;
         settings.cloud.check()?;
         config.cloud = settings.cloud;
         // Check what the file says so a bad value is reported at load; the
@@ -899,10 +840,12 @@ impl Config {
         config.smooth_scroll = settings.smooth_scroll.unwrap_or(true);
         // keep-sorted end
         config.status_bar = settings.status_bar;
+        config.tab_layout = settings.tab_layout;
         let (status_icons, legacy_rail) = status_icons::SavedIcons::resolve(settings.status_icons);
         config.status_icons = status_icons;
         config.edge_rail = settings.edge_rail.unwrap_or(legacy_rail);
         config.zen = settings.zen.try_into()?;
+        config.worktrees = settings.worktrees.resolve()?;
         settings.backdrop.validate()?;
         config.backdrop = settings.backdrop;
         config.accent = settings.accent;

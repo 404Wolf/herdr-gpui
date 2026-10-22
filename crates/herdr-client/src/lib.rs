@@ -21,6 +21,7 @@ mod limits;
 mod local_network;
 mod method;
 mod options;
+pub mod private_endpoint;
 mod process;
 mod queue;
 mod remote_host;

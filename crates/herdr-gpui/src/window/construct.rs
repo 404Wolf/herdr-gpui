@@ -88,6 +88,7 @@ impl HerdrWindow {
         // Starts the thread that reads and saves the marks file.
         let teleport_marks = crate::teleport::Marks::start();
         let sidebar_search = sidebar::SidebarSearch::new(cx);
+        let security_search = crate::security::SecuritySearch::new(cx);
         let surface_signal = cx.new(|_| SurfaceSignal);
         let sidebar_invalidation = Self::invalidate_sidebar(cx);
         let host_theme = Self::observe_host_theme(cx);
@@ -148,6 +149,7 @@ impl HerdrWindow {
             browser,
             catalog,
             cell_width: 9.,
+            chats: Default::default(),
             checkpoints: Default::default(),
             chrome_region: None,
             #[cfg(feature = "cloud")]
@@ -187,6 +189,7 @@ impl HerdrWindow {
             flash: None,
             focus,
             git: git::Git::default(),
+            git_anchor: Default::default(),
             gui_config_diagnostic,
             held_keys: Default::default(),
             hover: None,
@@ -216,6 +219,7 @@ impl HerdrWindow {
             network_quality_seen: 0,
             next_orchestrator: 0,
             notes_width: crate::panel_resize::NOTES,
+            notice_overflow: Default::default(),
             options: ConnectOptions::default(),
             orchestrator_events: Vec::new(),
             orchestrator_live: Default::default(),
@@ -245,6 +249,7 @@ impl HerdrWindow {
             sandbox_image_builds: Default::default(),
             scrollbar_drag: None,
             security: Default::default(),
+            security_search,
             selected_endpoint: 0,
             selected_generation: 0,
             selection: None,
