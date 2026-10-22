@@ -64,7 +64,7 @@ struct ContentView: View {
             Section("Computers") {
                 ForEach(model.computers) { computer in
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(computer.name).font(.headline)
+                        Text(model.displayName(computer)).font(.headline)
                         Text(computer.origins.first ?? "")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -88,12 +88,11 @@ struct ContentView: View {
             Section("Running now") {
                 ForEach(running) { activity in
                     Button {
-                        let link = ChatLink(computer: activity.attributes.computer, pane: activity.attributes.pane)
-                        Task { await model.open(link.url) }
+                        Task { await model.open(activity.attributes.link.url) }
                     } label: {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(activity.attributes.place).font(.subheadline.weight(.semibold))
-                            Text("\(activity.attributes.agent) \u{b7} \(activity.state.headline)")
+                            Text(subtitle(activity))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -101,5 +100,14 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    /// The paired computer it belongs to (by fingerprint), the agent, and
+    /// what it is doing.
+    private func subtitle(_ activity: ActivityTokens.Running) -> String {
+        let owner = model.computer(for: activity.attributes).map(model.displayName)
+        return [owner, activity.attributes.agent, activity.state.headline]
+            .compactMap { $0 }
+            .joined(separator: " \u{b7} ")
     }
 }

@@ -1,16 +1,22 @@
 import Foundation
 
-/// The link a Live Activity opens: `herdr-remote://chat?computer=NAME&pane=PANE`.
-/// The widget knows only the computer's name; the app looks up its
-/// addresses and opens the chat in the web app, where it lives.
+/// The link a Live Activity opens:
+/// `herdr-remote://chat?id=FINGERPRINT&computer=NAME&pane=PANE`.
+/// The app finds the paired computer whose CA fingerprint is `id` (never by
+/// `computer`, a display name any computer can choose), and opens the chat in
+/// the web app, where it lives.
 public struct ChatLink: Equatable, Sendable {
     public static let scheme = "herdr-remote"
 
+    /// The computer's name, for messages only.
     public let computer: String
+    /// The computer's CA fingerprint, as `ChatActivityFacts.computerId`.
+    public let computerId: String
     public let pane: String
 
-    public init(computer: String, pane: String) {
+    public init(computer: String, computerId: String, pane: String) {
         self.computer = computer
+        self.computerId = computerId
         self.pane = pane
     }
 
@@ -18,12 +24,18 @@ public struct ChatLink: Equatable, Sendable {
     public init?(url: URL) {
         guard url.scheme == Self.scheme, url.host == "chat",
               let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
-              let computer = items.first(where: { $0.name == "computer" })?.value,
+              let computerId = items.first(where: { $0.name == "id" })?.value,
               let pane = items.first(where: { $0.name == "pane" })?.value,
               !pane.isEmpty
         else { return nil }
-        self.computer = computer
+        self.computer = items.first(where: { $0.name == "computer" })?.value ?? ""
+        self.computerId = computerId
         self.pane = pane
+    }
+
+    /// The computer the link names, when its id is a fingerprint.
+    public var fingerprint: Fingerprint? {
+        Fingerprint(computerId)
     }
 
     public var url: URL {
@@ -31,6 +43,7 @@ public struct ChatLink: Equatable, Sendable {
         components.scheme = Self.scheme
         components.host = "chat"
         components.queryItems = [
+            URLQueryItem(name: "id", value: computerId),
             URLQueryItem(name: "computer", value: computer),
             URLQueryItem(name: "pane", value: pane),
         ]

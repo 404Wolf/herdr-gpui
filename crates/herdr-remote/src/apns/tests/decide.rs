@@ -9,6 +9,10 @@ use herdr_chat_protocol::{
 
 const NOW_MS: u64 = 1_800_000_000_000;
 const STARTED_MS: u64 = 1_799_999_990_000;
+/// `state.fingerprint`'s form: uppercase hex pairs joined by colons (here
+/// with a lowercase pair, which the id normalizes too).
+const FINGERPRINT: &str = "AB:01:AB:01:AB:01:AB:01:AB:01:AB:01:AB:01:AB:01:\
+                           AB:01:AB:01:AB:01:AB:01:AB:01:AB:01:AB:01:ab:01";
 
 fn idle() -> Transcript {
     let mut transcript = Transcript::new("Claude");
@@ -88,7 +92,7 @@ fn summary(end: TurnEnd) -> EntryKind {
 }
 
 fn decide(before: &Transcript, change: &Change) -> Option<Live> {
-    super::decide(&CHAT, "studio", before, change, NOW_MS)
+    super::decide(&CHAT, "studio", FINGERPRINT, before, change, NOW_MS)
 }
 
 #[test]
@@ -107,6 +111,11 @@ fn a_turn_starting_starts_the_activity() {
     assert_eq!(alert.title, "Claude is working");
     assert_eq!(alert.body, "herdr-gpui \u{b7} remote plan");
     assert_eq!(attributes.computer, "studio");
+    assert_eq!(
+        attributes.computer_id,
+        "AB01".repeat(16),
+        "the daemon's colon form, as the app stores it"
+    );
     assert_eq!(attributes.chat_title, "remote plan");
     assert_eq!(attributes.pane, "w1-p3");
     assert_eq!(live.state.phase, Phase::Working);

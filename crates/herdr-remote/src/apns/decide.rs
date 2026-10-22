@@ -28,10 +28,13 @@ pub(crate) const LINGER_S: u64 = 15 * 60;
 pub(crate) const DEFAULT_STEP: &str = "Working";
 
 /// The push `change` calls for, given the transcript `before` it applies to,
-/// on the computer named `computer`, at `now_ms`.
+/// on the computer named `computer` whose CA has the SHA-256 `fingerprint`
+/// (any case, colons allowed, as `state.fingerprint` writes it), at
+/// `now_ms`.
 pub(crate) fn decide(
     chat: &Chat<'_>,
     computer: &str,
+    fingerprint: &str,
     before: &Transcript,
     change: &Change,
     now_ms: u64,
@@ -56,6 +59,7 @@ pub(crate) fn decide(
                         agent: excerpt(chat.agent),
                         chat_title: excerpt(chat.title),
                         computer: excerpt(computer),
+                        computer_id: computer_id(fingerprint),
                         pane: chat.pane.to_owned(),
                         workspace: excerpt(chat.workspace),
                     },
@@ -235,6 +239,17 @@ fn summarized(transcript: &Transcript) -> bool {
         .entries
         .last()
         .is_some_and(|entry| matches!(entry.kind, EntryKind::Turn(_)))
+}
+
+/// The activity's `computerId`: the CA fingerprint as 64 uppercase hex
+/// digits without separators, the form the pairing QR carries and the app
+/// stores (`Fingerprint.hex`).
+pub(crate) fn computer_id(fingerprint: &str) -> String {
+    fingerprint
+        .chars()
+        .filter(|c| *c != ':')
+        .map(|c| c.to_ascii_uppercase())
+        .collect()
 }
 
 fn place(chat: &Chat<'_>) -> String {

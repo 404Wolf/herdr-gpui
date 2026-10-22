@@ -119,20 +119,46 @@ public struct ChatActivityState: Codable, Hashable, Sendable {
 
 /// The fixed part of a chat's Live Activity, as plain data, so code outside
 /// ActivityKit can name it. Its keys are `attributes` in a push-to-start
-/// payload: `agent`, `chatTitle`, `computer`, `pane`, `workspace`.
+/// payload: `agent`, `chatTitle`, `computer`, `computerId`, `pane`,
+/// `workspace`.
 public struct ChatActivityFacts: Codable, Hashable, Sendable {
+    /// The computer's name: display only, since any computer can pick any
+    /// name.
     public var computer: String
+    /// The computer's CA fingerprint as `Fingerprint.hex` writes it: 64
+    /// uppercase hex digits, no separators. Links and push tokens are routed
+    /// by it alone.
+    public var computerId: String
     public var workspace: String
     public var chatTitle: String
     public var agent: String
     public var pane: String
 
-    public init(computer: String, workspace: String, chatTitle: String, agent: String, pane: String) {
+    public init(
+        computer: String,
+        computerId: String,
+        workspace: String,
+        chatTitle: String,
+        agent: String,
+        pane: String
+    ) {
         self.computer = computer
+        self.computerId = computerId
         self.workspace = workspace
         self.chatTitle = chatTitle
         self.agent = agent
         self.pane = pane
+    }
+
+    /// The computer the activity says it belongs to, when `computerId` is a
+    /// fingerprint at all.
+    public var fingerprint: Fingerprint? {
+        Fingerprint(computerId)
+    }
+
+    /// The link the activity opens.
+    public var link: ChatLink {
+        ChatLink(computer: computer, computerId: computerId, pane: pane)
     }
 
     /// `workspace · chat`, or the workspace alone for an untitled chat.
