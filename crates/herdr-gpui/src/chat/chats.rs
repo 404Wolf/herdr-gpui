@@ -265,12 +265,15 @@ pub(crate) struct Chats {
     pub(crate) agents: super::harnesses::Harnesses,
     /// The layout the lists' rows were last measured in.
     measured: crate::config::ChatLayoutMode,
-    /// Panel pages opened so far, which numbers the next one.
+    /// Chat pages opened so far, which numbers the next one.
+    #[cfg(any(target_os = "macos", windows))]
     pub(crate) opened_pages: u64,
     /// Pages of panes no longer attached, for the window to close.
+    #[cfg(any(target_os = "macos", windows))]
     closed_pages: Vec<crate::browser::TabId>,
     /// The chat pages the window presented this frame, for the check that
     /// asks for a frame when they moved.
+    #[cfg(any(target_os = "macos", windows))]
     pub(crate) presented: std::rc::Rc<std::cell::RefCell<Vec<crate::browser::TabId>>>,
     panes: Vec<ChatPane>,
     /// The `herdr-acp` new chats run.
@@ -310,12 +313,14 @@ impl Chats {
     ) -> bool {
         let before = self.panes.len();
         let released = &mut self.released;
+        #[cfg(any(target_os = "macos", windows))]
         let closed_pages = &mut self.closed_pages;
         self.panes.retain_mut(|pane| {
             let keep = targets.contains(&pane.target);
             if !keep {
                 pane.prepared.visuals.clear();
                 released.extend(pane.prepared.visuals.take_released());
+                #[cfg(any(target_os = "macos", windows))]
                 closed_pages.extend(pane.pages.drain(..).map(|page| page.id));
             }
             keep
@@ -356,7 +361,8 @@ impl Chats {
             .fold(false, |changed, pane| pane.poll(now) | changed)
     }
 
-    /// Panel pages whose panes went away.
+    /// Chat pages whose panes went away.
+    #[cfg(any(target_os = "macos", windows))]
     pub(crate) fn take_closed_pages(&mut self) -> Vec<crate::browser::TabId> {
         std::mem::take(&mut self.closed_pages)
     }

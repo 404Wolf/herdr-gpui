@@ -27,6 +27,7 @@ use std::{
 /// How tall a page draws in a message.
 pub(crate) const PAGE_HEIGHT: f32 = 420.;
 /// Pages a chat keeps live; showing another closes the oldest.
+#[cfg(any(target_os = "macos", windows))]
 const MAX_LIVE: usize = 4;
 
 /// Where in the transcript a page shows: the part of an agent message that
@@ -42,8 +43,10 @@ impl PageKey {
     pub(crate) const TOOL: usize = usize::MAX;
 }
 
-/// A page live in a chat's message.
+/// A page live in a chat's message. Linux shows pages in the system
+/// browser, so a chat there never has one.
 #[derive(Debug)]
+#[cfg_attr(not(any(target_os = "macos", windows, test)), allow(dead_code))]
 pub(crate) struct ChatPage {
     pub(crate) key: PageKey,
     pub(crate) id: TabId,
@@ -203,21 +206,17 @@ impl HerdrWindow {
 
     /// The chat pages to show this frame: those of chats on screen that the
     /// last frame drew, and on Windows drew whole.
+    #[cfg(any(target_os = "macos", windows))]
     pub(crate) fn shown_chat_pages(&self) -> Vec<TabId> {
-        #[cfg(any(target_os = "macos", windows))]
-        {
-            let shown: Vec<TabId> = self
-                .chat_pages_on_screen()
-                .filter(|id| {
-                    self.chat_page_drawn(*id)
-                        .is_some_and(|drawn| crate::browser::chat_page_visible(drawn, PAGE_HEIGHT))
-                })
-                .collect();
-            self.chats.presented.replace(shown.clone());
-            shown
-        }
-        #[cfg(not(any(target_os = "macos", windows)))]
-        Vec::new()
+        let shown: Vec<TabId> = self
+            .chat_pages_on_screen()
+            .filter(|id| {
+                self.chat_page_drawn(*id)
+                    .is_some_and(|drawn| crate::browser::chat_page_visible(drawn, PAGE_HEIGHT))
+            })
+            .collect();
+        self.chats.presented.replace(shown.clone());
+        shown
     }
 
     /// The pages of the chats the frame on screen draws.

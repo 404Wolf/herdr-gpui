@@ -23,8 +23,9 @@ impl TabId {
 }
 
 impl TabId {
-    /// The `n`th page a chat shows in its panel. Store tabs count up from
+    /// The `n`th page a chat shows in a message. Store tabs count up from
     /// one, so these count down from the top and the two never meet.
+    #[cfg(any(target_os = "macos", windows, test))]
     pub(crate) const fn panel(n: u64) -> Self {
         Self(u64::MAX - n)
     }
@@ -33,7 +34,8 @@ impl TabId {
         self.0
     }
 
-    /// Whether this is a chat panel's page rather than a store tab.
+    /// Whether this is a chat's page rather than a store tab.
+    #[cfg(any(target_os = "macos", windows, test))]
     pub(crate) const fn is_panel(self) -> bool {
         self.0 > u64::MAX / 2
     }
