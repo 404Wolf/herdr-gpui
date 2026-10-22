@@ -5,6 +5,7 @@ use acp::v1 as wire;
 use serde_json::{Map, Value, json};
 
 use super::tools;
+use crate::harness::out;
 
 /// What a chosen option tells Claude.
 #[derive(Clone, Debug, PartialEq)]
@@ -206,11 +207,11 @@ fn question(input: &Value) -> Vec<Offered> {
             let mut answered = input.as_object().cloned().unwrap_or_else(Map::new);
             answered.insert("answers".to_owned(), json!({ asked: label }));
             (
-                wire::PermissionOption::new(
+                out::manual(wire::PermissionOption::new(
                     format!("answer-{index}"),
                     *label,
                     wire::PermissionOptionKind::AllowOnce,
-                ),
+                )),
                 Choice::Allow {
                     input: Some(Value::Object(answered)),
                     updates: None,

@@ -386,6 +386,10 @@ fn an_approval_is_asked_and_its_answer_goes_back() {
     assert_eq!(method, "session/request_permission");
     assert_eq!(params["toolCall"]["toolCallId"], "exec-1");
     assert_eq!(params["toolCall"]["title"], "`rm -rf build` (+1 more line)");
+    assert_eq!(
+        params["toolCall"]["content"][0]["content"]["text"],
+        "rm -rf build\nls"
+    );
     let kinds: Vec<&str> = params["options"]
         .as_array()
         .unwrap()
@@ -419,7 +423,15 @@ fn a_dropped_approval_cancels_and_unknown_requests_are_refused() {
     else {
         panic!("{:?}", outs[0]);
     };
-    assert_eq!(params["toolCall"]["title"], "Write outside the workspace");
+    // Codex's reason never becomes the title.
+    assert_eq!(
+        params["toolCall"]["title"],
+        "Codex asks to apply its changes"
+    );
+    assert!(
+        params["toolCall"].get("content").is_none_or(Value::is_null),
+        "the diff stays"
+    );
     let reply = bridge.on_session(Inbound::Response {
         id: wire::RequestId::Number(*asked),
         result: Ok(json!({"outcome": {"outcome": "cancelled"}})),
@@ -483,4 +495,42 @@ fn warnings_and_final_errors_are_notices() {
         json!({"threadId": THREAD, "willRetry": false, "error": {"message": "quota"}}),
     );
     assert_eq!(update(&failed[0])["title"], "quota");
+}
+
+#[test]
+fn an_extra_access_request_shows_what_it_grants() {
+    let mut bridge = opened();
+    let outs = bridge.on_harness(&json!({
+        "id": 11,
+        "method": "item/permissions/requestApproval",
+        "params": {"threadId": THREAD, "turnId": "t", "itemId": "perm-1", "cwd": "/work",
+            "reason": "Just a quick read", "startedAtMs": 0, "environmentId": null,
+            "permissions": {"network": {"enabled": true}, "fileSystem": {"writableRoots": ["/"]}}},
+    }));
+    let Out::Session(Inbound::Request {
+        id: wire::RequestId::Number(asked),
+        params,
+        ..
+    }) = &outs[0]
+    else {
+        panic!("{:?}", outs[0]);
+    };
+    let call = &params["toolCall"];
+    assert_eq!(call["title"], "Codex asks for more access");
+    let shown = call["content"][0]["content"]["text"].as_str().unwrap();
+    assert!(shown.contains("Network: {\"enabled\":true}"), "{shown}");
+    assert!(shown.contains("\"writableRoots\":[\"/\"]"), "{shown}");
+    assert_eq!(
+        call["content"][1]["content"]["text"],
+        "Codex says: Just a quick read"
+    );
+    let reply = bridge.on_session(Inbound::Response {
+        id: wire::RequestId::Number(*asked),
+        result: Ok(json!({"outcome": {"outcome": "selected", "optionId": "turn"}})),
+    });
+    assert_eq!(harness(&reply[0])["result"]["scope"], "turn");
+    assert_eq!(
+        harness(&reply[0])["result"]["permissions"]["network"]["enabled"],
+        true
+    );
 }

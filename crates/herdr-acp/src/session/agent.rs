@@ -234,7 +234,15 @@ impl<R: FnMut(Activity)> Session<R> {
             .into_iter()
             .map(|option| PermissionOption {
                 id: option.option_id.0.to_string(),
+                // An option only a person may choose is never an allow that
+                // auto-accepting takes.
                 kind: match option.kind {
+                    _ if option.meta.as_ref().is_some_and(|meta| {
+                        meta.get(crate::harness::out::MANUAL) == Some(&Value::Bool(true))
+                    }) =>
+                    {
+                        PermissionKind::Other
+                    }
                     wire::PermissionOptionKind::AllowOnce => PermissionKind::AllowOnce,
                     wire::PermissionOptionKind::AllowAlways => PermissionKind::AllowAlways,
                     wire::PermissionOptionKind::RejectOnce => PermissionKind::RejectOnce,

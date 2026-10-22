@@ -91,3 +91,27 @@ fn a_newer_clients_command_is_refused_as_unsupported() {
         ServerMessage::Ack { id: acked, rejected: Some(Rejection::Unsupported) } if *acked == id
     )));
 }
+
+#[test]
+fn a_question_only_a_person_answers_still_waits() {
+    let mut harness = ready();
+    prompt(&mut harness, 0, "ask me");
+    harness.command(0, Command::SetAutoAccept { on: true });
+    let manual = json!({"herdr.manual": true});
+    request(
+        &mut harness,
+        12,
+        json!([
+            {"optionId": "answer-0", "name": "Postgres", "kind": "allow_once", "_meta": manual},
+            {"optionId": "answer-1", "name": "SQLite", "kind": "allow_once", "_meta": manual},
+            {"optionId": "reject", "name": "Answer in the chat", "kind": "reject_once"}]),
+    );
+    assert_eq!(answer_to(&harness, 12), None);
+    let asked = &harness.transcript().permissions[0];
+    assert!(
+        asked.options[..2]
+            .iter()
+            .all(|option| option.kind == herdr_chat_protocol::PermissionKind::Other)
+    );
+    assert!(asked.allow_option().is_none());
+}

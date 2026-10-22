@@ -586,7 +586,11 @@ impl Bridge {
         };
         let offered: Vec<wire::PermissionOption> = if confirm {
             vec![
-                wire::PermissionOption::new("yes", "Yes", wire::PermissionOptionKind::AllowOnce),
+                out::manual(wire::PermissionOption::new(
+                    "yes",
+                    "Yes",
+                    wire::PermissionOptionKind::AllowOnce,
+                )),
                 wire::PermissionOption::new("no", "No", wire::PermissionOptionKind::RejectOnce),
             ]
         } else {
@@ -594,11 +598,11 @@ impl Bridge {
                 .iter()
                 .enumerate()
                 .map(|(index, option)| {
-                    wire::PermissionOption::new(
+                    out::manual(wire::PermissionOption::new(
                         format!("option-{index}"),
                         option.clone(),
                         wire::PermissionOptionKind::AllowOnce,
-                    )
+                    ))
                 })
                 .collect()
         };

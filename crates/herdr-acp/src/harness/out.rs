@@ -166,3 +166,15 @@ pub(crate) fn command_title(command: &str) -> String {
         more => format!("`{first}` (+{more} more lines)"),
     }
 }
+
+/// The `_meta` key that marks an option only a person may choose.
+pub(crate) const MANUAL: &str = "herdr.manual";
+
+/// `option`, marked so auto-accepting never chooses it: an answer to a
+/// question, an extension's dialog, or a broader grant than one call.
+/// Other ACP clients still see its kind.
+pub(crate) fn manual(option: wire::PermissionOption) -> wire::PermissionOption {
+    let mut meta = serde_json::Map::new();
+    meta.insert(MANUAL.to_owned(), Value::Bool(true));
+    option.meta(Some(meta))
+}
