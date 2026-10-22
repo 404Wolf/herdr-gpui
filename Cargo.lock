@@ -4265,9 +4265,16 @@ name = "herdr-automate"
 version = "0.1.0"
 dependencies = [
  "herdr-automation",
+ "herdr-client",
+ "jiff",
+ "rusqlite",
+ "rustix",
+ "serde",
  "serde_json",
+ "sysinfo 0.39.6",
  "tempfile",
  "thiserror 2.0.21",
+ "toml 1.1.6+spec-1.1.0",
 ]
 
 [[package]]

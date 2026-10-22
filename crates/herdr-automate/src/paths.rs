@@ -1,0 +1,94 @@
+//! Where the daemon keeps its state and finds personal scripts. Everything
+//! lives under the user's home; `HERDR_AUTOMATE_HOME` moves all of it, so
+//! tests never touch a real installation.
+
+use crate::{Error, Result};
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Paths {
+    /// Runtime state: the database, the lock, logs, run output.
+    pub state: PathBuf,
+    /// The user's settings and personal scripts.
+    pub config: PathBuf,
+}
+
+impl Paths {
+    pub fn from_env() -> Result<Self> {
+        let var = |name: &str| {
+            env::var_os(name)
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from)
+        };
+        if let Some(root) = var("HERDR_AUTOMATE_HOME") {
+            return Ok(Self::under(&root));
+        }
+        let home = var("HOME")
+            .or_else(|| var("USERPROFILE"))
+            .ok_or(Error::NoHome)?;
+        if cfg!(windows) {
+            let local = var("LOCALAPPDATA").unwrap_or_else(|| home.join("AppData").join("Local"));
+            let roaming = var("APPDATA").unwrap_or_else(|| home.join("AppData").join("Roaming"));
+            return Ok(Self {
+                state: local.join("herdr-automate"),
+                config: roaming.join("herdr-automate"),
+            });
+        }
+        let state = var("XDG_STATE_HOME").unwrap_or_else(|| home.join(".local").join("state"));
+        let config = var("XDG_CONFIG_HOME").unwrap_or_else(|| home.join(".config"));
+        Ok(Self {
+            state: state.join("herdr-automate"),
+            config: config.join("herdr-automate"),
+        })
+    }
+
+    /// Both directories under one root, for tests and `HERDR_AUTOMATE_HOME`.
+    pub fn under(root: &Path) -> Self {
+        Self {
+            state: root.join("state"),
+            config: root.join("config"),
+        }
+    }
+
+    pub fn database(&self) -> PathBuf {
+        self.state.join("state.sqlite")
+    }
+
+    pub fn lock(&self) -> PathBuf {
+        self.state.join("daemon.lock")
+    }
+
+    pub fn log(&self) -> PathBuf {
+        self.state.join("daemon.log")
+    }
+
+    /// Step output, one directory per run.
+    pub fn runs(&self) -> PathBuf {
+        self.state.join("runs")
+    }
+
+    pub fn run_dir(&self, run: i64) -> PathBuf {
+        self.runs().join(run.to_string())
+    }
+
+    pub fn step_log(&self, run: i64, position: u32) -> PathBuf {
+        self.run_dir(run).join(format!("step-{position}.log"))
+    }
+
+    /// Personal scripts, which run against no repository.
+    pub fn personal(&self) -> PathBuf {
+        self.config.join("automations")
+    }
+
+    pub fn settings(&self) -> PathBuf {
+        self.config.join("config.toml")
+    }
+}
+
+/// Where a repository keeps its scripts.
+pub fn repository_scripts(repo: &Path) -> PathBuf {
+    repo.join(".herdr").join("automations")
+}
