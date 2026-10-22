@@ -72,3 +72,23 @@ fn a_finished_tool_call_shows_the_pictures_it_names() {
     tool.content.extend(images);
     assert!(of_tool(&tool, dir.path()).is_empty(), "it has its own");
 }
+
+#[test]
+fn links_never_name_a_network_share() {
+    let cwd = Path::new("/work");
+    for target in [
+        r"\\server\share\a.png",
+        "//server/share/a.png",
+        "file://server/share/a.png",
+        r"\\?\UNC\server\share\a.png",
+    ] {
+        assert!(
+            linked(&format!("![x]({target})"), cwd).is_empty(),
+            "{target}"
+        );
+    }
+    assert_eq!(
+        linked("![x](file://localhost/tmp/a.png)", cwd).len(),
+        usize::from(cfg!(unix))
+    );
+}

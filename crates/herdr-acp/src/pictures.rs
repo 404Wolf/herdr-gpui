@@ -87,7 +87,20 @@ fn local(target: &str, cwd: &Path) -> Option<PathBuf> {
         return None;
     }
     if target.starts_with("file:") {
-        return url::Url::parse(target).ok()?.to_file_path().ok();
+        let url = url::Url::parse(target).ok()?;
+        // A host other than this machine names a network share.
+        if url
+            .host_str()
+            .is_some_and(|host| !host.is_empty() && host != "localhost")
+        {
+            return None;
+        }
+        return url.to_file_path().ok().filter(|path| !network(path));
+    }
+    // Opening a share's path makes Windows sign in to that server with the
+    // user's credentials, so a link never names one.
+    if target.starts_with("\\\\") || target.starts_with("//") {
+        return None;
     }
     // Any other scheme, such as https: or data:, is not a file here. A
     // Windows drive letter looks like a one-letter scheme, so it is kept.
@@ -100,11 +113,25 @@ fn local(target: &str, cwd: &Path) -> Option<PathBuf> {
         return None;
     }
     let path = Path::new(target);
-    Some(if path.is_absolute() {
+    let path = if path.is_absolute() {
         path.to_owned()
     } else {
         cwd.join(path)
-    })
+    };
+    (!network(&path)).then_some(path)
+}
+
+/// Whether `path` names a network share or a device rather than a file on
+/// this machine's own disks.
+fn network(path: &Path) -> bool {
+    use std::path::{Component, Prefix};
+    matches!(
+        path.components().next(),
+        Some(Component::Prefix(prefix)) if matches!(
+            prefix.kind(),
+            Prefix::UNC(..) | Prefix::VerbatimUNC(..) | Prefix::DeviceNS(..) | Prefix::Verbatim(..)
+        )
+    ) || path.as_os_str().to_string_lossy().starts_with("//")
 }
 
 /// The pictures a finished tool call wrote or read, from the files it
