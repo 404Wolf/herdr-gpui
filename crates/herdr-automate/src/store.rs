@@ -6,7 +6,7 @@
 use crate::Result;
 use herdr_automation::report::{Reason, RunState, Tokens, TriggerStatus};
 use rusqlite::{Connection, OptionalExtension, Row, params};
-use std::{fs, path::Path, time::Duration};
+use std::{path::Path, time::Duration};
 
 mod rows;
 
@@ -63,11 +63,14 @@ pub struct Store {
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|source| crate::Error::Io {
-                path: parent.to_owned(),
-                source,
-            })?;
+            crate::paths::private_dir(parent).map_err(crate::Error::io(parent))?;
         }
+        // Create it private before SQLite does; its WAL files follow suit.
+        crate::paths::private_file()
+            .create(true)
+            .append(true)
+            .open(path)
+            .map_err(crate::Error::io(path))?;
         let connection = Connection::open(path)?;
         connection.busy_timeout(BUSY_TIMEOUT)?;
         connection.query_row("PRAGMA journal_mode = WAL", [], |_| Ok(()))?;

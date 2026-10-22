@@ -3,15 +3,15 @@
 //! step with the reason at the end of its log.
 
 use crate::{
+    fingerprint::WorktreeScripts,
     herdr::Herdr,
-    paths::Paths,
+    paths::{Paths, private_dir, private_file},
     process::{self, Job},
     store::{AgentRow, Store},
 };
 use herdr_automation::{Resolved, Step};
 use std::{
     ffi::OsStr,
-    fs::OpenOptions,
     io::Write,
     path::{Path, PathBuf},
     sync::atomic::AtomicBool,
@@ -38,18 +38,6 @@ pub enum Error {
     NoRepository,
     #[error(transparent)]
     Run(#[from] crate::Error),
-    #[error("{}: {source}", path.display())]
-    WorktreeFile {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
-    #[error("{}: {source}", path.display())]
-    WorktreeToml {
-        path: PathBuf,
-        #[source]
-        source: toml::de::Error,
-    },
     #[error("the checkout is on {current}, not {wanted}; the step does not switch branches")]
     WrongBranch { current: String, wanted: String },
 }
@@ -64,6 +52,8 @@ pub struct StepContext<'a> {
     pub script_name: &'a str,
     /// The repository a repository script runs against.
     pub repo: Option<&'a Path>,
+    /// Its worktree scripts as approved and read when the run started.
+    pub worktree: Option<&'a WorktreeScripts>,
     pub stop: &'a AtomicBool,
     pub now: fn() -> i64,
 }
@@ -137,9 +127,9 @@ pub fn execute(
 /// Appends a line to a step's log, best effort.
 fn note(log: &Path, line: &str) {
     if let Some(parent) = log.parent() {
-        let _ = std::fs::create_dir_all(parent);
+        let _ = private_dir(parent);
     }
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log) {
+    if let Ok(mut file) = private_file().create(true).append(true).open(log) {
         let _ = writeln!(file, "{line}");
     }
 }
@@ -220,7 +210,7 @@ fn pull(context: &StepContext<'_>, log: &Path, branch: &str, timeout: Duration) 
 }
 
 /// The `setup` or `run` script of the repository's `.herdr/worktree.toml`,
-/// run as Herdr UI runs it.
+/// as approved and read when the run started, run as Herdr UI runs it.
 fn worktree_script(
     context: &StepContext<'_>,
     log: &Path,
@@ -228,24 +218,11 @@ fn worktree_script(
     timeout: Duration,
 ) -> Outcome {
     let repo = repo(context)?;
-    let file = repo.join(".herdr").join("worktree.toml");
-    let text = std::fs::read_to_string(&file).map_err(|source| Error::WorktreeFile {
-        path: file.clone(),
-        source,
-    })?;
-    let table = text
-        .parse::<toml::Table>()
-        .map_err(|source| Error::WorktreeToml {
-            path: file.clone(),
-            source,
-        })?;
-    let script = table
-        .get("scripts")
+    let script = context
+        .worktree
         .and_then(|scripts| scripts.get(name))
-        .and_then(toml::Value::as_str)
-        .filter(|script| !script.trim().is_empty())
         .ok_or_else(|| Error::NoWorktreeScript {
-            path: file.clone(),
+            path: repo.join(".herdr").join("worktree.toml"),
             name: name.to_owned(),
         })?;
     if cfg!(windows) {

@@ -305,9 +305,9 @@ pub fn start(exe: &Path, paths: &Paths) -> crate::Result<bool> {
             .is_ok()
         };
     if !kicked {
-        fs::create_dir_all(&paths.state).map_err(crate::Error::io(&paths.state))?;
+        crate::paths::private_dir(&paths.state).map_err(crate::Error::io(&paths.state))?;
         let out = paths.state.join("daemon.out");
-        let file = fs::OpenOptions::new()
+        let file = crate::paths::private_file()
             .create(true)
             .append(true)
             .open(&out)

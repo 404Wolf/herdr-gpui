@@ -1,4 +1,5 @@
 use super::*;
+use std::fs;
 
 fn job<'a>(
     args: &'a [&'a OsStr],

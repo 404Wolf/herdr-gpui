@@ -7,7 +7,7 @@ use crate::{Error, Result};
 use std::{
     collections::HashMap,
     ffi::OsStr,
-    fs::{self, File, OpenOptions},
+    fs::File,
     io::{Read, Seek, SeekFrom},
     path::Path,
     process::{Child, Stdio},
@@ -54,9 +54,9 @@ impl Finished {
 
 pub fn run(job: &Job<'_>) -> Result<Finished> {
     if let Some(parent) = job.log.parent() {
-        fs::create_dir_all(parent).map_err(Error::io(parent))?;
+        crate::paths::private_dir(parent).map_err(Error::io(parent))?;
     }
-    let log = OpenOptions::new()
+    let log = crate::paths::private_file()
         .create(true)
         .append(true)
         .open(job.log)

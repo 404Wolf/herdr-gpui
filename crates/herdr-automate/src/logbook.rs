@@ -4,7 +4,7 @@
 
 use serde_json::json;
 use std::{
-    fs::{self, OpenOptions},
+    fs,
     io::Write,
     path::{Path, PathBuf},
 };
@@ -54,7 +54,7 @@ impl Logbook {
     /// Best effort: the log must never stop the daemon.
     fn write(&self, level: Level, message: &str) {
         if let Some(parent) = self.path.parent() {
-            let _ = fs::create_dir_all(parent);
+            let _ = crate::paths::private_dir(parent);
         }
         if fs::metadata(&self.path).is_ok_and(|metadata| metadata.len() >= ROTATE_AT) {
             rotate(&self.path);
@@ -64,7 +64,7 @@ impl Logbook {
             "level": level.name(),
             "message": message,
         });
-        if let Ok(mut file) = OpenOptions::new()
+        if let Ok(mut file) = crate::paths::private_file()
             .create(true)
             .append(true)
             .open(&self.path)

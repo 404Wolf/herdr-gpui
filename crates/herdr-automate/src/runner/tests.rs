@@ -12,6 +12,17 @@ fn run_script(
     repo: &std::path::Path,
     stop: bool,
 ) -> (i64, Ended) {
+    run_with(fixture, script, repo, stop, None)
+}
+
+/// As `run_script`, with the worktree scripts read at the run's start.
+fn run_with(
+    fixture: &Fixture,
+    script: &std::path::Path,
+    repo: &std::path::Path,
+    stop: bool,
+    worktree: Option<WorktreeScripts>,
+) -> (i64, Ended) {
     let store = fixture.store();
     let source = Source::read(script).unwrap();
     let path = script.to_string_lossy().into_owned();
@@ -33,6 +44,7 @@ fn run_script(
         path,
         repo: Some(repo.to_path_buf()),
         source,
+        worktree,
         trigger: 0,
         date: "2026-10-22".to_owned(),
         time: "03:00".to_owned(),
@@ -229,5 +241,39 @@ fn a_step_timeout_fails_the_step() {
         steps[0].log_tail.contains("ran past its timeout"),
         "{}",
         steps[0].log_tail
+    );
+}
+
+#[test]
+fn run_uses_the_worktree_scripts_read_when_the_run_started() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo();
+    std::fs::write(
+        repo.join(".herdr/worktree.toml"),
+        "[scripts]\nrun = \"echo changed on disk\"\n",
+    )
+    .unwrap();
+    let script = fixture.script(
+        &repo,
+        "validate",
+        "herdr.manual(function() run(\"run\") end)\n",
+    );
+    let snapshot = WorktreeScripts {
+        setup: None,
+        run: Some("echo approved copy".to_owned()),
+    };
+    let (run, ended) = run_with(&fixture, &script, &repo, false, Some(snapshot));
+    assert_eq!(ended.state, RunState::Completed, "{:?}", ended.detail);
+    let steps = fixture.store().steps(run).unwrap();
+    assert!(
+        steps[0].log_tail.contains("approved copy"),
+        "{}",
+        steps[0].log_tail
+    );
+    let (_, ended) = run_with(&fixture, &script, &repo, false, None);
+    assert_eq!(
+        ended.state,
+        RunState::Stopped,
+        "no snapshot, no worktree script"
     );
 }

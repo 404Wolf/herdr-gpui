@@ -5,6 +5,7 @@
 
 use crate::{
     Result,
+    fingerprint::WorktreeScripts,
     herdr::Herdr,
     paths::Paths,
     settings::Settings,
@@ -31,6 +32,9 @@ pub struct Job {
     pub path: String,
     pub repo: Option<PathBuf>,
     pub source: Source,
+    /// The worktree scripts read when the run started, which `run` steps
+    /// use: the approved copy, never one changed during the run.
+    pub worktree: Option<WorktreeScripts>,
     pub trigger: usize,
     /// `{date}` and `{time}` in the trigger's zone.
     pub date: String,
@@ -89,6 +93,7 @@ pub fn execute(paths: &Paths, settings: &Settings, herdr: &Herdr, job: &Job) -> 
         script_path: &job.path,
         script_name: &job.source.name,
         repo: job.repo.as_deref(),
+        worktree: job.worktree.as_ref(),
         stop: &job.stop,
         now,
     };

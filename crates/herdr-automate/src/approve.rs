@@ -7,7 +7,9 @@
 //! most easily approve its own script: off a terminal, from a pane Herdr
 //! says runs an agent, and `--hash` from inside any Herdr pane.
 
-use crate::{Result, herdr::Herdr, paths::Paths, runner::now, scan, store::Store};
+use crate::{
+    Result, fingerprint::Fingerprint, herdr::Herdr, paths::Paths, runner::now, scan, store::Store,
+};
 use herdr_automation::{Limits, Plan, Source};
 use std::{
     io::{BufRead, IsTerminal, Write},
@@ -57,15 +59,16 @@ pub fn approve(
     let found = scan::locate(paths, store, file)?;
     let source = Source::read(&found.path)?;
     let plan = Plan::build(&source, Limits::default())?;
+    let fingerprint = Fingerprint::of(&source, &plan, found.repo.as_deref());
     let by = match mode {
         Mode::Hash(hash) => {
             if pane.is_some() {
                 return Err(Error::HashInPane.into());
             }
-            if hash != source.hash {
+            if hash != fingerprint.hash {
                 return Err(Error::Changed {
                     expected: hash.to_owned(),
-                    found: source.hash.clone(),
+                    found: fingerprint.hash.clone(),
                 }
                 .into());
             }
@@ -83,8 +86,10 @@ pub fn approve(
             let mut out = std::io::stdout().lock();
             let _ = write!(
                 out,
-                "{plan}\nsha256 {}\n\nType the script's name ({}) to approve it on this host: ",
-                source.hash, source.name
+                "{plan}{}\nsha256 {}\n\nType the script's name ({}) to approve it on this host: ",
+                fingerprint.describe().unwrap_or_default(),
+                fingerprint.hash,
+                source.name
             );
             let _ = out.flush();
             let mut answer = String::new();
@@ -97,16 +102,19 @@ pub fn approve(
     };
     let path = found.path.to_string_lossy().into_owned();
     let now = now();
-    store.approve(&path, &source.hash, by, now)?;
+    store.approve(&path, &fingerprint.hash, by, now)?;
     // Fire nothing for the time before it was approved.
     store.clear_cursors(&path)?;
-    let repo = found
-        .repo
-        .as_ref()
-        .map(|repo| repo.to_string_lossy().into_owned());
-    store.put_script(&scan::plan_row(&source, path.clone(), repo, now))?;
+    store.put_script(&scan::row(
+        &source,
+        Ok(&plan),
+        Some(&fingerprint),
+        path.clone(),
+        found.repo.as_deref(),
+        now,
+    ))?;
     Ok(Approved {
         name: source.name,
-        hash: source.hash,
+        hash: fingerprint.hash,
     })
 }

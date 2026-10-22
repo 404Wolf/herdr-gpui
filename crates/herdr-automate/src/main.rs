@@ -7,6 +7,7 @@ mod approve;
 mod cli;
 mod daemon;
 mod error;
+mod fingerprint;
 mod herdr;
 mod logbook;
 mod paths;

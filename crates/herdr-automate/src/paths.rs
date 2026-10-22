@@ -88,6 +88,27 @@ impl Paths {
     }
 }
 
+/// Creates `dir` and its parents, readable only by the user: step output,
+/// the database and logs can hold secrets. Tightens a directory that
+/// already exists.
+pub fn private_dir(dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+/// Options for a file only the user may read, when it is created.
+pub fn private_file() -> std::fs::OpenOptions {
+    let mut options = std::fs::OpenOptions::new();
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    options
+}
+
 /// Where a repository keeps its scripts.
 pub fn repository_scripts(repo: &Path) -> PathBuf {
     repo.join(".herdr").join("automations")

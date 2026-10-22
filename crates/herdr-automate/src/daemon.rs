@@ -5,9 +5,10 @@
 
 use crate::{
     Error, Result,
+    fingerprint::Fingerprint,
     herdr::Herdr,
     logbook::Logbook,
-    paths::Paths,
+    paths::{Paths, private_dir, private_file},
     runner::{self, Ended, Job},
     sampler,
     scan::{self, Found},
@@ -53,9 +54,9 @@ impl Lock {
     pub fn acquire(paths: &Paths) -> Result<Self> {
         let path = paths.lock();
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(Error::io(parent))?;
+            private_dir(parent).map_err(Error::io(parent))?;
         }
-        let mut file = OpenOptions::new()
+        let mut file = private_file()
             .create(true)
             .truncate(false)
             .read(true)
@@ -91,6 +92,7 @@ impl Lock {
 struct Loaded {
     source: Source,
     plan: Plan,
+    fingerprint: Fingerprint,
     repo: Option<PathBuf>,
 }
 
@@ -258,21 +260,63 @@ impl Daemon<'_> {
             if let Some(known) = self.loaded.remove(&key)
                 && known.source.hash == source.hash
             {
-                self.store.put_script(&ScriptRow {
-                    repo: repo_text,
-                    seen_at: now,
-                    ..self.store.script(&key)?.unwrap_or_default()
-                })?;
-                kept.insert(key, Loaded { repo, ..known });
+                // The script is unchanged, but the worktree scripts it runs
+                // may not be: a new fingerprint needs approval again.
+                let fingerprint = Fingerprint::of(&source, &known.plan, repo.as_deref());
+                let row = if fingerprint == known.fingerprint {
+                    ScriptRow {
+                        repo: repo_text,
+                        seen_at: now,
+                        ..self.store.script(&key)?.unwrap_or_default()
+                    }
+                } else {
+                    scan::row(
+                        &source,
+                        Ok(&known.plan),
+                        Some(&fingerprint),
+                        key.clone(),
+                        repo.as_deref(),
+                        now,
+                    )
+                };
+                self.store.put_script(&row)?;
+                kept.insert(
+                    key,
+                    Loaded {
+                        repo,
+                        fingerprint,
+                        ..known
+                    },
+                );
                 continue;
             }
-            let row = scan::plan_row(&source, key.clone(), repo_text, now);
+            let plan = Plan::build(&source, herdr_automation::Limits::default());
+            let fingerprint = plan
+                .as_ref()
+                .ok()
+                .map(|plan| Fingerprint::of(&source, plan, repo.as_deref()));
+            let row = scan::row(
+                &source,
+                plan.as_ref(),
+                fingerprint.as_ref(),
+                key.clone(),
+                repo.as_deref(),
+                now,
+            );
             if let Some(error) = &row.error {
                 self.log.warn(format!("{}: {error}", source.name));
             }
             self.store.put_script(&row)?;
-            if let Ok(plan) = Plan::build(&source, herdr_automation::Limits::default()) {
-                kept.insert(key, Loaded { source, plan, repo });
+            if let (Ok(plan), Some(fingerprint)) = (plan, fingerprint) {
+                kept.insert(
+                    key,
+                    Loaded {
+                        source,
+                        plan,
+                        fingerprint,
+                        repo,
+                    },
+                );
             }
         }
         self.loaded = kept;
@@ -288,7 +332,7 @@ impl Daemon<'_> {
         };
         let switch = self.store.switch(path)?;
         let approved =
-            self.store.approved_hash(path)?.as_deref() == Some(script.source.hash.as_str());
+            self.store.approved_hash(path)?.as_deref() == Some(script.fingerprint.hash.as_str());
         let active = approved && !switch.paused && !switch.disabled && !paused_all;
         let mut statuses = scan::triggers(&script.plan);
         let mut due_now = Vec::new();
@@ -347,7 +391,12 @@ impl Daemon<'_> {
             return;
         }
         match self.store.approved_hash(path) {
-            Ok(Some(hash)) if hash == script.source.hash => {}
+            // Checked again now: the worktree scripts may have changed
+            // since the last scan. The run uses what is read here.
+            Ok(Some(hash))
+                if hash
+                    == Fingerprint::of(&script.source, &script.plan, script.repo.as_deref())
+                        .hash => {}
             _ => {
                 self.log.warn(format!(
                     "{name}: not approved in its current form; not running it"
@@ -368,7 +417,7 @@ impl Daemon<'_> {
             trigger_name: trigger.name.clone(),
             reason,
             scheduled,
-            hash: script.source.hash.clone(),
+            hash: script.fingerprint.hash.clone(),
             started_at: runner::now(),
         };
         let run = match self.store.start_run(&new) {
@@ -390,6 +439,8 @@ impl Daemon<'_> {
             path: path.to_owned(),
             repo: script.repo.clone(),
             source: script.source.clone(),
+            worktree: Fingerprint::of(&script.source, &script.plan, script.repo.as_deref())
+                .worktree,
             trigger: index,
             date: local.strftime("%Y-%m-%d").to_string(),
             time: local.strftime("%H:%M").to_string(),

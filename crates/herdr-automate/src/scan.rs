@@ -4,11 +4,12 @@
 
 use crate::{
     Result,
+    fingerprint::Fingerprint,
     paths::{Paths, repository_scripts},
     store::{ScriptRow, Store},
 };
 use herdr_automation::{
-    Limits, Plan, Schedule, Source,
+    Plan, Schedule, Source,
     report::{ScriptCaps, TriggerStatus},
 };
 use std::{
@@ -92,19 +93,43 @@ pub fn locate(paths: &Paths, store: &Store, file: &Path) -> Result<Found> {
 }
 
 /// What a script's plan says, or why it has none.
-pub fn plan_row(source: &Source, path: String, repo: Option<String>, now: i64) -> ScriptRow {
+#[cfg(test)]
+pub fn plan_row(source: &Source, path: String, repo: Option<&Path>, now: i64) -> ScriptRow {
+    let plan = Plan::build(source, herdr_automation::Limits::default());
+    let fingerprint = plan
+        .as_ref()
+        .ok()
+        .map(|plan| Fingerprint::of(source, plan, repo));
+    row(source, plan.as_ref(), fingerprint.as_ref(), path, repo, now)
+}
+
+/// A script's row from its plan, or the reason it has none, pinned to
+/// `fingerprint` when it has one.
+pub fn row(
+    source: &Source,
+    plan: std::result::Result<&Plan, &herdr_automation::Error>,
+    fingerprint: Option<&Fingerprint>,
+    path: String,
+    repo: Option<&Path>,
+    now: i64,
+) -> ScriptRow {
     let base = ScriptRow {
         path,
         name: source.name.clone(),
-        repo,
-        hash: source.hash.clone(),
+        repo: repo.map(|repo| repo.to_string_lossy().into_owned()),
+        hash: fingerprint.map_or_else(|| source.hash.clone(), |found| found.hash.clone()),
         seen_at: now,
         ..ScriptRow::default()
     };
-    match Plan::build(source, Limits::default()) {
+    match plan {
         Ok(plan) => ScriptRow {
-            plan: Some(plan.to_string()),
-            triggers: triggers(&plan),
+            plan: Some(format!(
+                "{plan}{}",
+                fingerprint
+                    .and_then(Fingerprint::describe)
+                    .unwrap_or_default()
+            )),
+            triggers: triggers(plan),
             caps: Some(ScriptCaps {
                 agents_per_run: plan.caps.agents_per_run,
                 tokens_per_day: plan.caps.tokens_per_day,
