@@ -268,19 +268,38 @@ fn double_click_evens_every_split_and_a_drag_still_resizes(cx: &mut gpui::TestAp
     );
 }
 
-/// A double-click lets go before the first ratio is answered, and a
-/// triple-click presses again while the rest wait. Neither cuts the queue
-/// short, and the released drag retires once every ratio is sent.
+/// The usual double-click lets go before the first ratio is answered. The rest
+/// still go out on the normal polling path, and the released drag retires
+/// once every ratio is sent.
 #[gpui::test]
-fn an_early_release_or_a_triple_click_lets_the_double_click_finish(cx: &mut gpui::TestAppContext) {
+fn an_early_release_lets_the_double_click_finish(cx: &mut gpui::TestAppContext) {
+    let (view, mut server, cx) = with_borders(cx, "ssh:early");
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            assert!(down(view, 50., 12.5, 2, cx));
+            assert!(view.live.drag_request.is_some());
+            up(view, 50., 12.5, cx);
+            assert!(view.split_drag.is_some());
+        });
+    });
+    assert_even(&evened(&view, &mut server, cx));
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert!(view.split_drag.is_none());
+        assert!(view.live.drag_request.is_none());
+    });
+}
+
+/// A triple-click presses again while the double-click's ratios wait. The
+/// press neither cuts the queue short nor picks up a border of its own.
+#[gpui::test]
+fn a_triple_click_lets_the_double_click_finish(cx: &mut gpui::TestAppContext) {
     let (view, mut server, cx) = with_borders(cx, "ssh:triple");
     cx.update(|_, cx| {
         view.update(cx, |view, cx| {
             let off_border = mouse_position(view, 5., 5.);
             assert!(down(view, 50., 12.5, 2, cx));
-            assert!(view.live.drag_request.is_some());
             up(view, 50., 12.5, cx);
-            assert!(view.split_drag.is_some());
             assert_eq!(view.split_cursor_at(off_border), None);
 
             // The press is the border's, not the pane's, and picks up nothing.
