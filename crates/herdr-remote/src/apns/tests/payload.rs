@@ -46,6 +46,7 @@ fn start_matches_the_swift_fixture() {
                 agent: "Claude".to_owned(),
                 chat_title: "remote plan".to_owned(),
                 computer: "studio".to_owned(),
+                computer_id: "AB".repeat(32),
                 pane: "w1-p3".to_owned(),
                 workspace: "herdr-gpui".to_owned(),
             },

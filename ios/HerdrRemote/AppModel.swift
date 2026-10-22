@@ -29,11 +29,14 @@ final class AppModel {
     }
 
     func add(_ computer: Computer) {
-        // Pairing the same computer again replaces the old record.
-        computers.removeAll { $0.name == computer.name || $0.device == computer.device }
+        // A computer is its CA: pairing the same CA (or the same device id)
+        // again replaces the old record. Names come from the computer and are
+        // display only, so another computer using the same name is kept
+        // beside it, never in its place.
+        computers.removeAll { $0.fingerprint == computer.fingerprint || $0.device == computer.device }
         computers.append(computer)
         save()
-        Task { await tokens.sync(computer: computer.name) }
+        Task { await tokens.sync(only: computer.fingerprint) }
     }
 
     func forget(_ computer: Computer) {
@@ -54,8 +57,10 @@ final class AppModel {
     /// computer's addresses that answers, in Safari.
     func open(_ url: URL) async {
         guard let link = ChatLink(url: url) else { return }
-        guard let computer = computers.first(where: { $0.name == link.computer }) else {
-            message = "\(link.computer) is not paired with this phone."
+        guard let fingerprint = link.fingerprint,
+              let computer = computers.first(where: { $0.fingerprint == fingerprint })
+        else {
+            message = "\(link.computer.isEmpty ? "That computer" : link.computer) is not paired with this phone."
             return
         }
         let origin = await reachableOrigin(of: computer)
@@ -64,6 +69,20 @@ final class AppModel {
     }
 
     /// Opens the computer's web app home in Safari.
+    /// The name to show for `computer`: its own, plus the start of its
+    /// fingerprint when another paired computer has the same name.
+    func displayName(_ computer: Computer) -> String {
+        let twins = computers.filter { $0.name == computer.name }.count
+        guard twins > 1 else { return computer.name }
+        return "\(computer.name) (\(computer.fingerprint.hex.prefix(8)))"
+    }
+
+    /// The paired computer an activity names by fingerprint, if any.
+    func computer(for facts: ChatActivityFacts) -> Computer? {
+        guard let fingerprint = facts.fingerprint else { return nil }
+        return computers.first { $0.fingerprint == fingerprint }
+    }
+
     func openWebApp(_ computer: Computer) async {
         let origin = await reachableOrigin(of: computer)
         guard let url = URL(string: origin + "/") else { return }
@@ -86,6 +105,7 @@ final class AppModel {
     func startSample() {
         let facts = ChatActivityFacts(
             computer: computers.first?.name ?? "studio",
+            computerId: computers.first?.fingerprint.hex ?? String(repeating: "0", count: 64),
             workspace: "herdr-gpui",
             chatTitle: "split tests",
             agent: "Codex",

@@ -270,14 +270,18 @@ the APNs key):
   and the `HerdrRemoteWidgets` extension, iOS 17.2+, bundle
   `so.pen.herdr-remote`. Logic without UIKit sits in the `HerdrRemoteCore`
   Swift package, whose tests run on the Mac with `swift test`.
-- **Activity**: `ChatActivityAttributes` (computer, workspace, chat title,
-  agent, pane) with `ChatActivityState` as its content (phase working,
+- **Activity**: `ChatActivityAttributes` (computer name, computer id,
+  workspace, chat title, agent, pane) with `ChatActivityState` as its
+  content (phase working,
   question, finished, or failed; step; start time as Unix seconds; cost;
   question; summary; plan progress; the computer's working and waiting
   counts for the island). Lock screen, compact, minimal, and expanded
   layouts follow mockup 5; every tap opens `herdr-remote://chat?...`, which
   the app turns into `https://ORIGIN/chat/PANE` in Safari at the first
-  address that answers.
+  address that answers. The computer id is the CA fingerprint (64
+  uppercase hex digits, no colons); the app keys paired computers by it and
+  routes links and activity tokens by it alone, since the name is whatever
+  the computer calls itself.
 - **Pairing**: the same QR as the web app (camera or pasted link), a Secure
   Enclave P-256 key (software on the simulator) whose SEC1 point is the
   claim's `public_key`, the matching code, then polling until Allow. The

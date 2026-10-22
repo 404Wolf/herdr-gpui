@@ -10,7 +10,8 @@
 //!     "timestamp": 1800000000, "event": "start",
 //!     "attributes-type": "ChatActivityAttributes",
 //!     "attributes": { "agent": "Claude", "chatTitle": "remote plan",
-//!                     "computer": "studio", "pane": "w1-p3",
+//!                     "computer": "studio", "computerId": "AB12…(64 hex)",
+//!                     "pane": "w1-p3",
 //!                     "workspace": "herdr-gpui" },
 //!     "content-state": { "phase": "working", "step": "Reading lib.rs",
 //!                        "startedAt": 1799999990, "cost": "$0.34",
@@ -52,8 +53,12 @@ pub(crate) struct Attributes {
     /// The agent's display name, such as `Claude`.
     pub(crate) agent: String,
     pub(crate) chat_title: String,
-    /// The computer's name, as pairing gave it to the app.
+    /// The computer's name, as pairing gave it to the app. Display only.
     pub(crate) computer: String,
+    /// The computer's CA fingerprint, 64 uppercase hex digits without
+    /// separators. The app routes the activity's link and push token by it,
+    /// never by the name, which any paired computer could also choose.
+    pub(crate) computer_id: String,
     pub(crate) pane: String,
     pub(crate) workspace: String,
 }

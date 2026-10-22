@@ -10,7 +10,8 @@ import HerdrRemoteCore
 ///
 /// ```json
 /// "attributes": { "agent": "Claude", "chatTitle": "remote plan",
-///                 "computer": "studio", "pane": "w1-p3", "workspace": "herdr-gpui" }
+///                 "computer": "studio", "computerId": "AB12…(64 hex)",
+///                 "pane": "w1-p3", "workspace": "herdr-gpui" }
 /// ```
 ///
 /// The fields are decoded flat through `ChatActivityFacts`, so the keys are
@@ -22,6 +23,9 @@ struct ChatActivityAttributes: ActivityAttributes {
     var facts: ChatActivityFacts
 
     var computer: String { facts.computer }
+    /// The computer's CA fingerprint, uppercase hex without separators: what
+    /// links and push tokens are routed by.
+    var computerId: String { facts.computerId }
     var workspace: String { facts.workspace }
     var chatTitle: String { facts.chatTitle }
     var agent: String { facts.agent }
@@ -41,6 +45,6 @@ struct ChatActivityAttributes: ActivityAttributes {
 
     /// The link the activity opens: the app turns it into the chat's page.
     var link: ChatLink {
-        ChatLink(computer: computer, pane: pane)
+        facts.link
     }
 }

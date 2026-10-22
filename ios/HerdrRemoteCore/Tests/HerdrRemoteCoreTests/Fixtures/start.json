@@ -8,6 +8,7 @@
       "agent": "Claude",
       "chatTitle": "remote plan",
       "computer": "studio",
+      "computerId": "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB",
       "pane": "w1-p3",
       "workspace": "herdr-gpui"
     },

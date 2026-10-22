@@ -24,6 +24,7 @@ final class ActivityTests: XCTestCase {
             facts,
             ChatActivityFacts(
                 computer: "studio",
+                computerId: String(repeating: "AB", count: 32),
                 workspace: "herdr-gpui",
                 chatTitle: "remote plan",
                 agent: "Claude",
@@ -31,6 +32,8 @@ final class ActivityTests: XCTestCase {
             )
         )
         XCTAssertEqual(facts.place, "herdr-gpui \u{b7} remote plan")
+        XCTAssertEqual(facts.fingerprint, Fingerprint(String(repeating: "AB", count: 32)))
+        XCTAssertEqual(facts.link.fingerprint, facts.fingerprint)
         let state = try decode(ChatActivityState.self, aps["content-state"])
         XCTAssertEqual(state.phase, .working)
         XCTAssertEqual(state.startedAt, Date(timeIntervalSince1970: 1_799_999_990))
@@ -83,14 +86,18 @@ final class ActivityTests: XCTestCase {
     }
 
     func testChatLinkRoundTripsAndEscapesThePane() throws {
-        let link = ChatLink(computer: "Fabien's Mac", pane: "w1 p/3")
+        let id = String(repeating: "0F", count: 32)
+        let link = ChatLink(computer: "Fabien's Mac", computerId: id, pane: "w1 p/3")
         XCTAssertEqual(ChatLink(url: link.url), link)
+        XCTAssertEqual(link.fingerprint?.hex, id)
         XCTAssertEqual(link.url.scheme, "herdr-remote")
         XCTAssertEqual(
             link.page(origin: "https://192.168.1.20:7443")?.absoluteString,
             "https://192.168.1.20:7443/chat/w1%20p%2F3"
         )
         XCTAssertNil(ChatLink(url: try XCTUnwrap(URL(string: "https://example.com/chat?pane=x&computer=y"))))
-        XCTAssertNil(ChatLink(url: try XCTUnwrap(URL(string: "herdr-remote://chat?computer=y"))))
+        XCTAssertNil(ChatLink(url: try XCTUnwrap(URL(string: "herdr-remote://chat?computer=y&id=\(id)"))))
+        // The name alone never names a computer.
+        XCTAssertNil(ChatLink(url: try XCTUnwrap(URL(string: "herdr-remote://chat?computer=y&pane=p"))))
     }
 }
