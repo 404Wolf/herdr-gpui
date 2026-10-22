@@ -67,6 +67,7 @@ fn images_show_their_state_progress_and_log(cx: &mut TestAppContext) {
                     outcome: Outcome::Ready {
                         reference: "herdr-ready-app-p1:abc".into(),
                     },
+                    stale: Vec::new(),
                 }],
             }];
             images.running = vec![Running {

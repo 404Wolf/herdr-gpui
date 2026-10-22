@@ -24,7 +24,9 @@ pub(crate) struct File {
 /// `root`) that a Git pathspec in `pathspecs` matches, framed as
 /// `path NUL mode NUL size NUL bytes`.
 /// A `dir` whose physical path leaves the project, through a linked folder,
-/// fails rather than listing another tree's files.
+/// fails rather than listing another tree's files. Below `dir`, a file under
+/// a linked folder is skipped: Git's index can still name `conf/a` after
+/// `conf` became a link, and opening it would follow the link.
 pub(crate) fn script(root: &str, dir: &str, pathspecs: &[String]) -> String {
     let pathspecs = pathspecs
         .iter()
@@ -39,6 +41,12 @@ case $(pwd -P) in "$top" | "$top"/*) ;; *) exit 4 ;; esac
 git ls-files -z --cached --others --exclude-standard -- {pathspecs} | xargs -0 sh -c '
 for f; do
   [ -f "$f" ] && [ ! -L "$f" ] || continue
+  p=$f linked=
+  while case $p in */*) true ;; *) false ;; esac; do
+    p=${{p%/*}}
+    if [ -L "$p" ]; then linked=1; break; fi
+  done
+  [ -z "$linked" ] || continue
   if [ -x "$f" ]; then m=x; else m=-; fi
   s=$(wc -c < "$f" | tr -d " ")
   printf "%s\0%s\0%s\0" "$f" "$m" "$s"

@@ -26,6 +26,7 @@ fn images_say_what_new_machines_start_from_or_why_not() {
                 outcome: Outcome::Ready {
                     reference: "herdr-app-p:k1".into(),
                 },
+                stale: Vec::new(),
             },
             Built {
                 provider: CloudProvider::Daytona,
@@ -34,6 +35,7 @@ fn images_say_what_new_machines_start_from_or_why_not() {
                 outcome: Outcome::Failed {
                     log: vec!["boom".into()],
                 },
+                stale: Vec::new(),
             },
         ],
     };

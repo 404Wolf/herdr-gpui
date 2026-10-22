@@ -52,6 +52,7 @@ fn ready(provider: CloudProvider, key: &str) -> Image {
         outcome: Outcome::Ready {
             reference: format!("img:{key}"),
         },
+        stale: Vec::new(),
     }
 }
 
@@ -73,15 +74,15 @@ fn one_image_per_project_and_provider_is_kept() {
             ready(CloudProvider::Container, "k1")
         )
         .unwrap(),
-        None
+        Vec::<String>::new()
     );
-    let replaced = record(
+    let stale = record(
         &project("p"),
         origin(),
         ready(CloudProvider::Container, "k2"),
     )
     .unwrap();
-    assert_eq!(replaced, Some(ready(CloudProvider::Container, "k1")));
+    assert_eq!(stale, ["img:k1"]);
     record(&project("p"), origin(), ready(CloudProvider::Daytona, "k3")).unwrap();
     record(
         &project("q"),
@@ -93,6 +94,35 @@ fn one_image_per_project_and_provider_is_kept() {
     assert_eq!(projects.len(), 2);
     assert_eq!(projects[0].images.len(), 2);
     assert_eq!(projects[0].images[0].key, "k2");
+    assert_eq!(projects[0].images[0].stale, ["img:k1"]);
+    deleted("p", CloudProvider::Container, &["img:k1".into()]).unwrap();
+    assert!(load().unwrap()[0].images[0].stale.is_empty());
+}
+
+#[test]
+fn a_replaced_image_is_kept_until_it_is_deleted() {
+    let _dir = isolated();
+    let container = CloudProvider::Container;
+    record(&project("p"), origin(), ready(container, "k1")).unwrap();
+    // A failed rebuild still remembers the ready image it replaced.
+    let failed = Image {
+        outcome: Outcome::Failed { log: Vec::new() },
+        ..ready(container, "k2")
+    };
+    assert_eq!(record(&project("p"), origin(), failed).unwrap(), ["img:k1"]);
+    // Rebuilt from the first recipe: its image is current, not stale.
+    assert!(
+        record(&project("p"), origin(), ready(container, "k1"))
+            .unwrap()
+            .is_empty()
+    );
+    // Deletes keep failing: the list stays bounded.
+    for key in 0..MAX_STALE + 4 {
+        record(&project("p"), origin(), ready(container, &key.to_string())).unwrap();
+    }
+    let stale = &load().unwrap()[0].images[0].stale;
+    assert_eq!(stale.len(), MAX_STALE);
+    assert_eq!(stale.last().unwrap(), &format!("img:{}", MAX_STALE + 2));
 }
 
 #[test]

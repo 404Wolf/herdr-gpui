@@ -90,11 +90,13 @@ fn containers_run_with_limits_and_never_with_host_access() {
     ] {
         assert!(!joined.contains(refused), "{refused} in {joined}");
     }
-    // The image comes last but for the command, so nothing after it is an option.
+    // The image comes last but for the command, so nothing after it is an
+    // option, and the keep-alive replaces any entrypoint the image names.
     assert_eq!(
         &args[args.len() - 3..],
-        ["debian@sha256:abc", "sleep", "infinity"]
+        ["sleep", "debian@sha256:abc", "infinity"]
     );
+    assert_eq!(args[args.len() - 4], "--entrypoint");
 }
 
 #[test]

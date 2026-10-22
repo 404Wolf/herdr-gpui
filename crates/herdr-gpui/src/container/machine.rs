@@ -103,8 +103,11 @@ pub(crate) fn run_args(id: &str, image: &str, settings: &Settings) -> Vec<String
         &format!("{}:{HOME}", volume(id)),
         "--env",
         &format!("HOME={HOME}"),
-        image,
+        // An image's own `ENTRYPOINT` would take `sleep infinity` as its
+        // arguments and could exit, so the keep-alive replaces it.
+        "--entrypoint",
         "sleep",
+        image,
         "infinity",
     ]
     .map(str::to_owned)

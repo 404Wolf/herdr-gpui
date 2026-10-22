@@ -116,3 +116,41 @@ fn a_linked_folder_cannot_reach_outside_the_project() {
     ));
     assert!(read_one(&host, root, "context/private.txt", &cancelled).is_err());
 }
+
+#[cfg(unix)]
+#[test]
+fn a_tracked_file_under_a_folder_now_linked_is_skipped() {
+    use std::process::Command;
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("project");
+    let outside = dir.path().join("outside");
+    let git = |args: &[&str]| {
+        let status = Command::new("git")
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap())
+            .env("HOME", dir.path())
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .arg("-C")
+            .arg(&project)
+            .args(args)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    };
+    std::fs::create_dir_all(project.join("context/conf")).unwrap();
+    std::fs::create_dir_all(&outside).unwrap();
+    git(&["init", "-q"]);
+    std::fs::write(project.join("context/Dockerfile"), "FROM x\n").unwrap();
+    std::fs::write(project.join("context/conf/secret.txt"), "tracked").unwrap();
+    git(&["add", "."]);
+    std::fs::write(outside.join("secret.txt"), "not yours").unwrap();
+    std::fs::remove_dir_all(project.join("context/conf")).unwrap();
+    std::os::unix::fs::symlink(&outside, project.join("context/conf")).unwrap();
+    let host = crate::teleport::Host::new(&herdr_client::ConnectTarget::Local).unwrap();
+    let cancelled = AtomicBool::new(false);
+    let root = project.to_str().unwrap();
+    let files = read(&host, root, "context", &[".".into()], &cancelled).unwrap();
+    let paths: Vec<_> = files.iter().map(|file| file.path.as_str()).collect();
+    assert_eq!(paths, ["Dockerfile"]);
+    assert!(read_one(&host, root, "context/conf/secret.txt", &cancelled).is_err());
+}

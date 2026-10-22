@@ -17,6 +17,8 @@ const LIMIT: u64 = 16 * 1024 * 1024;
 const MAX_PROJECTS: usize = 500;
 /// Log lines a failed build keeps for **Log**: its end, which says why.
 pub(crate) const LOG_LINES: usize = 40;
+/// Replaced images one record keeps while deleting them fails.
+const MAX_STALE: usize = 16;
 
 /// Where a project's recipe was last read: the endpoint, and the checkout's
 /// path on it.
@@ -44,6 +46,20 @@ pub(crate) struct Image {
     pub(crate) finished_at: u64,
     #[serde(flatten)]
     pub(crate) outcome: Outcome,
+    /// Images earlier builds left at the provider, kept until deleting them
+    /// works so a failed delete or a failed rebuild cannot orphan one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) stale: Vec<String>,
+}
+
+impl Image {
+    /// What new machines start from, when the build went well.
+    fn reference(&self) -> Option<&str> {
+        match &self.outcome {
+            Outcome::Ready { reference } => Some(reference),
+            Outcome::Failed { .. } => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -137,8 +153,10 @@ pub(crate) fn load() -> Result<Vec<Entry>> {
 }
 
 /// Record `image` as `project`'s latest for its provider, its recipe read
-/// from `origin`; returns what it replaced, for the caller to delete.
-pub(crate) fn record(project: &Project, origin: Origin, image: Image) -> Result<Option<Image>> {
+/// from `origin`. The image it replaces, and any still left from before,
+/// stay in its `stale` list until [`deleted`] says they are gone; returns
+/// that list, for the caller to delete.
+pub(crate) fn record(project: &Project, origin: Origin, mut image: Image) -> Result<Vec<String>> {
     transaction(|path| {
         let mut projects = read(path)?;
         let index = match projects
@@ -161,19 +179,57 @@ pub(crate) fn record(project: &Project, origin: Origin, image: Image) -> Result<
         let entry = &mut projects[index];
         entry.project.label.clone_from(&project.label);
         entry.origin = origin;
-        let replaced = match entry
+        let slot = entry
             .images
             .iter()
-            .position(|old| old.provider == image.provider)
-        {
-            Some(old) => Some(std::mem::replace(&mut entry.images[old], image)),
-            None => {
-                entry.images.push(image);
-                None
+            .position(|old| old.provider == image.provider);
+        if let Some(old) = slot.map(|at| &entry.images[at]) {
+            let current = image.reference().map(str::to_owned);
+            for leftover in old.stale.iter().map(String::as_str).chain(old.reference()) {
+                if current.as_deref() != Some(leftover)
+                    && !image.stale.iter().any(|kept| kept == leftover)
+                {
+                    image.stale.push(leftover.to_owned());
+                }
             }
-        };
+            // Bounded: the oldest is forgotten rather than the file growing.
+            let excess = image.stale.len().saturating_sub(MAX_STALE);
+            for forgotten in image.stale.drain(..excess) {
+                tracing::warn!(
+                    category = "sandbox_image",
+                    reference = %forgotten,
+                    "Forgot a replaced image that could not be deleted"
+                );
+            }
+        }
+        let stale = image.stale.clone();
+        match slot {
+            Some(at) => entry.images[at] = image,
+            None => entry.images.push(image),
+        }
         write(path, projects)?;
-        Ok(replaced)
+        Ok(stale)
+    })
+}
+
+/// Drop `gone`, images the provider deleted, from `project_id`'s stale list
+/// for `provider`.
+pub(crate) fn deleted(project_id: &str, provider: CloudProvider, gone: &[String]) -> Result<()> {
+    if gone.is_empty() {
+        return Ok(());
+    }
+    transaction(|path| {
+        let mut projects = read(path)?;
+        let Some(image) = projects
+            .iter_mut()
+            .filter(|entry| entry.project.id == project_id)
+            .flat_map(|entry| entry.images.iter_mut())
+            .find(|image| image.provider == provider)
+        else {
+            return Ok(());
+        };
+        image.stale.retain(|reference| !gone.contains(reference));
+        write(path, projects)
     })
 }
 

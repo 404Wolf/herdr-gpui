@@ -95,6 +95,60 @@ impl Drop for Registered {
     }
 }
 
+/// Claim `project`'s build slot on `provider`, shown to views with `status`.
+/// The caller has checked no one holds it.
+fn register(
+    state: &mut State,
+    provider: CloudProvider,
+    project: &Project,
+    key: &str,
+    status: &str,
+) -> Registered {
+    state.running.push(Running {
+        provider,
+        project: project.clone(),
+        key: key.to_owned(),
+        progress: Progress {
+            step: None,
+            status: status.into(),
+        },
+        log: VecDeque::new(),
+    });
+    changed(state);
+    Registered {
+        provider,
+        project_id: project.id.clone(),
+    }
+}
+
+/// Delete each of `stale`, the images a project's record keeps for
+/// cleanup, and drop from the record the ones that went. Stops at the
+/// first failure when `strict`, returning it; otherwise logs and goes on.
+fn delete_stale(
+    provider: CloudProvider,
+    support: &Support,
+    project_id: &str,
+    stale: &[String],
+    strict: bool,
+) -> crate::Result<()> {
+    let mut gone = Vec::new();
+    let mut failure = None;
+    for reference in stale {
+        match (support.delete)(reference, &|| false) {
+            Ok(()) => gone.push(reference.clone()),
+            Err(error) if strict => {
+                failure = Some(error);
+                break;
+            }
+            Err(error) => {
+                tracing::warn!(category = "sandbox_image", %error, "Could not delete a replaced image");
+            }
+        }
+    }
+    catalog::deleted(project_id, provider, &gone)?;
+    failure.map_or(Ok(()), Err)
+}
+
 /// Take a line of the build's output; returns its progress after it.
 fn update(provider: CloudProvider, project_id: &str, line: &str) -> Option<Progress> {
     let mut state = state();
@@ -165,21 +219,13 @@ pub(crate) fn ensure(
         if busy(&state) {
             continue;
         }
-        state.running.push(Running {
+        break register(
+            &mut state,
             provider,
-            project: recipe.project.clone(),
-            key: key.clone(),
-            progress: Progress {
-                step: None,
-                status: "Starting the build…".into(),
-            },
-            log: VecDeque::new(),
-        });
-        changed(&mut state);
-        break Registered {
-            provider,
-            project_id: recipe.project.id.clone(),
-        };
+            &recipe.project,
+            &key,
+            "Starting the build…",
+        );
     };
     let log = |line: &str| {
         if let Some(progress) = update(provider, &recipe.project.id, line) {
@@ -208,7 +254,7 @@ pub(crate) fn ensure(
             log: tail(Some(error.to_string())),
         },
     };
-    let replaced = catalog::record(
+    let stale = catalog::record(
         &recipe.project,
         recipe.origin.clone(),
         Image {
@@ -216,20 +262,16 @@ pub(crate) fn ensure(
             key,
             finished_at: catalog::now(),
             outcome,
+            stale: Vec::new(),
         },
     );
     state().catalog += 1;
-    drop(registered);
     let reference = built?;
-    if let Some(Image {
-        outcome: Outcome::Ready { reference: old },
-        ..
-    }) = replaced?
-        && old != reference
-        && let Err(error) = (support.delete)(&old, &|| false)
-    {
-        tracing::warn!(category = "sandbox_image", %error, "Could not delete a replaced image");
-    }
+    // Still holding the slot: a request rebuilding a replaced recipe waits,
+    // so it is never handed an image deleted after it returned.
+    delete_stale(provider, support, &recipe.project.id, &stale?, false)?;
+    state().catalog += 1;
+    drop(registered);
     Ok(reference)
 }
 
@@ -264,31 +306,55 @@ fn reusable(
     (support.find)(name, recipe, cancelled)
 }
 
-/// Delete `project_id`'s image on `provider` and forget it, so the next
-/// dispatch builds afresh. A build running for it is left to finish.
+/// Delete `project_id`'s image on `provider`, and those earlier builds left,
+/// then forget it, so the next dispatch builds afresh. A build running for
+/// it is left to finish. A failed delete keeps the record, so Reset can be
+/// tried again.
 pub(crate) fn reset(
     provider: CloudProvider,
     support: &Support,
     project_id: &str,
 ) -> crate::Result<()> {
-    let busy = state()
-        .running
-        .iter()
-        .any(|running| running.provider == provider && running.project.id == project_id);
-    if busy {
-        return Err(Error::Busy.into());
+    let project = catalog::load()?
+        .into_iter()
+        .find(|entry| entry.project.id == project_id)
+        .map(|entry| entry.project);
+    let _registered = {
+        let mut state = state();
+        let busy = state
+            .running
+            .iter()
+            .any(|running| running.provider == provider && running.project.id == project_id);
+        if busy {
+            return Err(Error::Busy.into());
+        }
+        let Some(project) = project else {
+            return Ok(());
+        };
+        register(&mut state, provider, &project, "", "Deleting the image…")
+    };
+    // Read again holding the slot, so a build that ended meanwhile is seen.
+    let Some(image) = catalog::load()?
+        .into_iter()
+        .filter(|entry| entry.project.id == project_id)
+        .flat_map(|entry| entry.images)
+        .find(|image| image.provider == provider)
+    else {
+        return Ok(());
+    };
+    let mut doomed = image.stale.clone();
+    // The current image goes last: until then the record still names it.
+    if let Outcome::Ready { reference } = &image.outcome {
+        doomed.push(reference.clone());
     }
-    if let Some(Image {
-        outcome: Outcome::Ready { reference },
-        ..
-    }) = catalog::forget(project_id, provider)?
-    {
-        (support.delete)(&reference, &|| false)?;
+    let deleted = delete_stale(provider, support, project_id, &doomed, true);
+    if deleted.is_ok() {
+        catalog::forget(project_id, provider)?;
     }
     let mut state = state();
     state.catalog += 1;
     changed(&mut state);
-    Ok(())
+    deleted
 }
 
 #[cfg(test)]
