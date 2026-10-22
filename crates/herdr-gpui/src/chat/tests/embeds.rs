@@ -140,10 +140,14 @@ fn a_shown_page_lives_in_its_message_and_hides_back_to_its_card(cx: &mut TestApp
     // The test window is shorter than the page, so its bar starts above
     // the list until the list scrolls to the top.
     view.update(cx, |view, _| {
-        view.chats.pane(&pane).unwrap().list.scroll_to(gpui::ListOffset {
-            item_ix: 0,
-            offset_in_item: px(0.),
-        });
+        view.chats
+            .pane(&pane)
+            .unwrap()
+            .list
+            .scroll_to(gpui::ListOffset {
+                item_ix: 0,
+                offset_in_item: px(0.),
+            });
     });
     poll(&view, &program, cx);
     let hide = cx.debug_bounds("chat-hide-page").unwrap();
