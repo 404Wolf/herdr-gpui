@@ -8,6 +8,10 @@ mod announcement;
 mod backdrop;
 pub(crate) mod chrome_focus;
 mod clipboard;
+#[cfg(target_os = "macos")]
+pub(crate) use clipboard::macos::{
+    Error as ClipboardHelperError, run_helper as run_clipboard_helper,
+};
 mod commands;
 mod config_diagnostic;
 mod construct;
@@ -24,6 +28,7 @@ mod function_keys;
 mod image_source;
 mod images;
 mod input;
+mod layout_save;
 mod lifecycle;
 pub(crate) use lifecycle::reasserts;
 mod links;
