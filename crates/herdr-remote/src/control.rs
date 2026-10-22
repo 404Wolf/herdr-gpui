@@ -94,10 +94,13 @@ pub enum Request {
     Pairing {
         id: PairingId,
     },
-    /// The user's answer to a claimed pairing in the desktop dialog.
+    /// The user's answer to a claimed pairing in the desktop dialog, with
+    /// the matching code it showed: an approval for any other claim is
+    /// refused.
     Approve {
         id: PairingId,
         allow: bool,
+        code: String,
     },
     /// Closes the dialog's pairing; its token stops working.
     CancelPairing {

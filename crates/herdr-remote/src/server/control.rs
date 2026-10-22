@@ -73,9 +73,10 @@ pub(crate) fn answer(state: &State, stop: &watch::Sender<bool>, request: Request
             .mint(now, &state.origins(), &state.fingerprint)
             .map(Response::Offer),
         Request::Pairing { id } => state.auth().pairing(&id, now).map(Response::Pairing),
-        Request::Approve { id, allow } => {
-            state.auth().answer(&id, allow, now).map(Response::Pairing)
-        }
+        Request::Approve { id, allow, code } => state
+            .auth()
+            .answer(&id, allow, &code, now)
+            .map(Response::Pairing),
         Request::CancelPairing { id } => state.auth().cancel(&id).map(|()| Response::Done),
         Request::Devices => {
             let connected = state.connected();

@@ -69,6 +69,7 @@ async fn a_phone_pairs_with_the_desktops_approval_and_signs_in() {
         Request::Approve {
             id: offer.id,
             allow: true,
+            code,
         },
     );
 

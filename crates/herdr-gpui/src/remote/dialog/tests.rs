@@ -159,7 +159,8 @@ fn a_phone_scans_claims_and_is_allowed(cx: &mut TestAppContext) {
     let log = PAIR_LOG.lock().unwrap().clone();
     assert!(log.contains(&Request::Approve {
         id: PairingId("p1".into()),
-        allow: true
+        allow: true,
+        code: "428913".into(),
     }));
     // A finished pairing is not cancelled on close.
     cx.simulate_keystrokes("escape");

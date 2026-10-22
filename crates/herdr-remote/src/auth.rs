@@ -38,6 +38,8 @@ pub enum Error {
     // keep-sorted start
     #[error("this pairing token was already claimed")]
     AlreadyClaimed,
+    #[error("the approval names another phone's code; pair again")]
+    CodeMismatch,
     #[error("could not encode the device list")]
     Encode(#[source] serde_json::Error),
     #[error("this pairing token expired")]
@@ -321,14 +323,26 @@ impl Auth {
         self.pairings.claim_status(id, now_ms)
     }
 
-    /// The desktop's answer; an approval stores the device before the phone
-    /// can learn it was approved.
+    /// The desktop's answer for the claim whose matching code it showed; an
+    /// approval stores the device before the phone can learn it was
+    /// approved. An approval naming any other code denies the pairing.
     pub(crate) fn answer(
         &mut self,
         id: &PairingId,
         allow: bool,
+        shown: &str,
         now_ms: u64,
     ) -> Result<PairingState> {
+        if allow {
+            let matches = matches!(
+                self.pairings.state(id, now_ms)?,
+                PairingState::Claimed { code, .. } if constant_time_eq(code.as_bytes(), shown.as_bytes())
+            );
+            if !matches {
+                self.pairings.answer(id, false, now_ms, |_| Ok(()))?;
+                return Err(Error::CodeMismatch);
+            }
+        }
         let devices = &mut self.devices;
         self.pairings.answer(id, allow, now_ms, |device| {
             devices.add(device.clone(), now_ms)

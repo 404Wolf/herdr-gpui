@@ -203,7 +203,7 @@ fn an_approval_the_store_cannot_keep_is_not_reported() {
         )
         .unwrap();
     assert!(matches!(
-        auth.answer(&offer.id, true, T0).unwrap_err(),
+        auth.answer(&offer.id, true, &claimed.code, T0).unwrap_err(),
         Error::Store { .. }
     ));
     assert_eq!(auth.devices().len(), 0);

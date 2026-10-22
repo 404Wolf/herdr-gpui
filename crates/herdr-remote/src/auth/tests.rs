@@ -58,15 +58,16 @@ fn auth(dir: &Path) -> Auth {
 /// Pairs a device through the façade and returns its id.
 fn pair(auth: &mut Auth, key: &SigningKey, now_ms: u64) -> DeviceId {
     let offer = auth.mint(now_ms, &origins(), FINGERPRINT).unwrap();
-    auth.claim(
-        IpAddr::from([192, 168, 1, 30]),
-        &token(&offer),
-        "iPhone",
-        &public_key(key),
-        now_ms,
-    )
-    .unwrap();
-    match auth.answer(&offer.id, true, now_ms).unwrap() {
+    let claim = auth
+        .claim(
+            IpAddr::from([192, 168, 1, 30]),
+            &token(&offer),
+            "iPhone",
+            &public_key(key),
+            now_ms,
+        )
+        .unwrap();
+    match auth.answer(&offer.id, true, &claim.code, now_ms).unwrap() {
         PairingState::Approved { device } => device,
         state => panic!("not approved: {state:?}"),
     }

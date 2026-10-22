@@ -123,11 +123,14 @@ impl Pairing {
             Phase::Showing { deadline, .. } if now >= *deadline => Request::Pair,
             Phase::Claimed {
                 offer,
+                code,
                 answer: Some(Answer { allow, sent: false }),
                 ..
             } => Request::Approve {
                 id: offer.id.clone(),
                 allow: *allow,
+                // The daemon refuses an approval for any claim but this one.
+                code: code.clone(),
             },
             Phase::Showing { offer, .. } | Phase::Claimed { offer, .. } if poll_due => {
                 Request::Pairing {

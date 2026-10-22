@@ -315,3 +315,30 @@ fn the_facade_reports_and_cancels_the_dialogs_pairing() {
         Error::UnknownPairing
     ));
 }
+
+#[test]
+fn an_approval_for_another_code_denies_the_pairing() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut auth = Auth::load(dir.path(), Limits::default()).unwrap();
+    let offer = auth.mint(T0, &origins(), FINGERPRINT).unwrap();
+    let claim = auth
+        .claim(
+            IpAddr::from([10, 0, 0, 3]),
+            &token(&offer),
+            "iPhone",
+            &public_key(&signing_key(2)),
+            T0,
+        )
+        .unwrap();
+    let wrong = if claim.code == "000000" {
+        "000001"
+    } else {
+        "000000"
+    };
+    assert!(matches!(
+        auth.answer(&offer.id, true, wrong, T0).unwrap_err(),
+        Error::CodeMismatch
+    ));
+    assert_eq!(auth.pairing(&offer.id, T0).unwrap(), PairingState::Denied);
+    assert_eq!(auth.devices().len(), 0);
+}

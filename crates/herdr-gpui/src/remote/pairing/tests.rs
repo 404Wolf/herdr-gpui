@@ -142,7 +142,8 @@ fn a_claim_asks_the_user_and_allow_waits_for_approval() {
         step(&mut pairing, at, Ok(Response::Done)),
         Request::Approve {
             id: PairingId("p1".into()),
-            allow: true
+            allow: true,
+            code: "428913".into(),
         }
     );
     assert!(matches!(
@@ -190,7 +191,8 @@ fn deny_ends_the_pairing() {
         step(&mut pairing, now + POLL, Ok(Response::Done)),
         Request::Approve {
             id: PairingId("p1".into()),
-            allow: false
+            allow: false,
+            code: "000111".into(),
         }
     );
     assert_eq!(pairing.phase(), &Phase::Denied);

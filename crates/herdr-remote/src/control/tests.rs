@@ -7,9 +7,10 @@ fn requests_and_responses_keep_their_wire_names() {
         serde_json::to_value(Request::Approve {
             id: PairingId("p1".into()),
             allow: true,
+            code: "428913".into(),
         })
         .unwrap(),
-        json!({"request": "approve", "id": "p1", "allow": true})
+        json!({"request": "approve", "id": "p1", "allow": true, "code": "428913"})
     );
     assert_eq!(
         serde_json::to_value(Response::Pairing(PairingState::Claimed {
