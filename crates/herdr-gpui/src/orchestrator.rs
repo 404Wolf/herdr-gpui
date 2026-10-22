@@ -22,6 +22,7 @@ mod repo;
 mod review;
 mod section;
 mod service;
+mod ssh_slots;
 mod store;
 mod view;
 

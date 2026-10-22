@@ -11,6 +11,7 @@ use super::{
     naming,
     prompt::{self, Profile},
     repo::{self, RepoInfo},
+    ssh_slots,
 };
 use crate::cache::{Cache, Kind};
 use crate::github::Tokens;
@@ -320,7 +321,11 @@ impl Worker {
                     self.publish();
                     let result = Host::new(&target)
                         .map_err(|_| Error::UnsupportedHost)
-                        .and_then(|host| installed(Some(&host), &self.cancelled));
+                        .and_then(|host| {
+                            ssh_slots::run(&target, &self.cancelled, || {
+                                installed(Some(&host), &self.cancelled)
+                            })
+                        });
                     match result {
                         Ok(agents) => self.snapshot.installed = Some(Arc::new(agents)),
                         Err(error) => self.snapshot.installed_error = Some(Arc::new(error)),
@@ -454,12 +459,11 @@ impl Worker {
                     false
                 }
             });
-        let info = match repo::detect(
-            &self.request.target,
-            &host,
-            &self.request.checkout,
-            &self.cancelled,
-        ) {
+        let target = &self.request.target;
+        let detected = ssh_slots::run(target, &self.cancelled, || {
+            repo::detect(target, &host, &self.request.checkout, &self.cancelled)
+        });
+        let info = match detected {
             Ok(info) => info,
             Err(error) => {
                 if !matches!(error, Error::Cancelled) {
@@ -481,7 +485,10 @@ impl Worker {
                 tracing::debug!(%error, "Cannot cache the repository");
             }
         }
-        match installed(self.host.as_ref(), &self.cancelled) {
+        let found = ssh_slots::run(&self.request.target, &self.cancelled, || {
+            installed(self.host.as_ref(), &self.cancelled)
+        });
+        match found {
             Ok(agents) => self.snapshot.installed = Some(Arc::new(agents)),
             Err(error) => self.snapshot.installed_error = Some(Arc::new(error)),
         }
@@ -610,8 +617,11 @@ impl Worker {
         let Some(info) = self.snapshot.repo.clone() else {
             return;
         };
+        let (target, cancelled) = (&self.request.target, &self.cancelled);
         if let Some(host) = &self.host
-            && let Some(branches) = naming::local_branches(host, &info.main_root, &self.cancelled)
+            && let Ok(Some(branches)) = ssh_slots::run(target, cancelled, || {
+                Ok(naming::local_branches(host, &info.main_root, cancelled))
+            })
         {
             self.snapshot.branches = Arc::new(branches);
         }
@@ -662,7 +672,10 @@ impl Worker {
         let writable = store.access() == Access::ReadWrite;
         match key.provider {
             Provider::Beads => {
-                let (items, checkpoint) = beads::sync(host, key, &self.cancelled)?;
+                let (items, checkpoint) =
+                    ssh_slots::run(&self.request.target, &self.cancelled, || {
+                        beads::sync(host, key, &self.cancelled)
+                    })?;
                 let count = items.len();
                 if writable {
                     store.replace_items(key, &items, &checkpoint)?;

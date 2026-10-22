@@ -23,6 +23,7 @@ mod repo_script;
 mod restart;
 mod retry;
 mod service;
+mod ssh_slots;
 mod store;
 
 fn at(value: &str) -> DateTime<Utc> {
