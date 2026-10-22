@@ -97,6 +97,7 @@ impl SettingsWindow {
             })
             .child(ui::section(theme, "Features", None))
             .children(self.feature_rows(cx))
+            .children(self.render_chat_env_controls(cx))
             .child(ui::section(theme, "Clipboard", None))
             .child(
                 self.gate_shared(

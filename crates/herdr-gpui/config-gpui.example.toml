@@ -423,6 +423,15 @@ size = 12
 # [px0]
 # url = "http://127.0.0.1:7777/"
 
+# Variables every chat's tab starts with, on this machine or an SSH host, so
+# an agent reaches a company endpoint the pane's shell does not set up: GitHub
+# Enterprise for Copilot, an LLM gateway for Claude. Values are stored as
+# written, so keep tokens in your shell or the agent's own sign-in. HERDR_ACP is
+# the app's own. Settings > General edits this while ACP chats are on.
+# [chat.env]
+# GH_HOST = "mycompany.ghe.com"
+# ANTHROPIC_BASE_URL = "https://llm.example.com"
+
 # Native GitHub sign-in uses the public Herdr GPUI GitHub App by default.
 # Optionally override with your own Device Flow-enabled app's public client ID.
 # Never put an App ID, client secret, private key, or token here.

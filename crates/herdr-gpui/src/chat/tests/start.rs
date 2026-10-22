@@ -90,25 +90,60 @@ fn the_typed_line_names_only_the_agent() {
 
 #[test]
 fn the_tab_carries_the_program_in_its_environment() {
+    let none = std::collections::BTreeMap::new();
     let params = tab_params(
         "w1",
         Some("/repo"),
         Agent::Codex,
         Some(Path::new("/opt/herdr-acp")),
+        &none,
     );
     assert_eq!(
         params,
         json!({"workspace_id": "w1", "label": "Codex", "focus": true, "cwd": "/repo",
             "env": {"HERDR_ACP": "/opt/herdr-acp"}})
     );
-    let params = tab_params("w1", None, Agent::Codex, Some(Path::new("/opt/herdr-acp")));
+    let params = tab_params(
+        "w1",
+        None,
+        Agent::Codex,
+        Some(Path::new("/opt/herdr-acp")),
+        &none,
+    );
     assert!(params.get("cwd").is_none());
     // A remote chat's tab carries no local path.
     assert!(
-        tab_params("w1", None, Agent::Codex, None)
+        tab_params("w1", None, Agent::Codex, None, &none)
             .get("env")
             .is_none()
     );
+}
+
+#[test]
+fn the_chat_environment_goes_with_every_chat_tab() {
+    let extra = std::collections::BTreeMap::from([
+        ("GH_HOST".to_owned(), "mycompany.ghe.com".to_owned()),
+        (
+            "ANTHROPIC_BASE_URL".to_owned(),
+            "https://llm.example.com".to_owned(),
+        ),
+    ]);
+    let local = tab_params(
+        "w1",
+        None,
+        Agent::Claude,
+        Some(Path::new("/opt/herdr-acp")),
+        &extra,
+    );
+    assert_eq!(
+        local["env"],
+        json!({"GH_HOST": "mycompany.ghe.com", "ANTHROPIC_BASE_URL": "https://llm.example.com",
+            "HERDR_ACP": "/opt/herdr-acp"})
+    );
+    // On an SSH host too, without the local program.
+    let remote = tab_params("w1", None, Agent::Copilot, None, &extra);
+    assert_eq!(remote["env"]["GH_HOST"], "mycompany.ghe.com");
+    assert!(remote["env"].get("HERDR_ACP").is_none());
 }
 
 #[test]

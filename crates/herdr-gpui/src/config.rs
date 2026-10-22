@@ -13,6 +13,7 @@ mod azure;
 pub(crate) mod backdrop;
 mod bitmap_fonts;
 mod boat;
+pub(crate) mod chat;
 mod cloud;
 mod coder;
 mod daytona;
@@ -135,6 +136,8 @@ pub struct Config {
     pub backdrop: Backdrop,
     pub bell: BellConfig,
     pub boat: BoatConfig,
+    /// What chats started from the app run with.
+    pub chat: chat::ChatConfig,
     /// Only the keys this GUI's own file sets, so Settings can tell an
     /// override from the Herdr value it shadows.
     pub(crate) clipboard_overrides: ClipboardToastSettings,
@@ -435,6 +438,7 @@ impl Default for Config {
             backdrop: Backdrop::default(),
             bell: BellConfig::default(),
             boat: BoatConfig::default(),
+            chat: chat::ChatConfig::default(),
             clipboard_overrides: ClipboardToastSettings::default(),
             clipboard_toast: ClipboardToast::default(),
             cloud: CloudConfig::default(),
@@ -510,6 +514,7 @@ struct Settings {
     backdrop: Backdrop,
     bell: BellConfig,
     boat: BoatConfig,
+    chat: chat::ChatConfig,
     clipboard_toast: ClipboardToastSettings,
     cloud: CloudConfig,
     code: CodeConfig,
@@ -887,6 +892,8 @@ impl Config {
         #[cfg(feature = "boat")]
         settings.boat.settings_with(|_| None)?;
         config.boat = settings.boat;
+        settings.chat.check()?;
+        config.chat = settings.chat;
         settings.cloud.check()?;
         config.cloud = settings.cloud;
         // Check what the file says so a bad value is reported at load; the

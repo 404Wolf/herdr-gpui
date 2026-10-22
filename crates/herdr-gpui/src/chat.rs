@@ -38,7 +38,7 @@ pub(super) fn now_ms() -> u64 {
             u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
         })
 }
-pub(crate) use start::{Error as StartError, Program};
+pub(crate) use start::{Error as StartError, PROGRAM_ENV, Program};
 
 use herdr_chat_protocol::{ByeReason, EndpointId};
 use std::io;
@@ -69,6 +69,14 @@ pub enum Error {
     Closed,
     #[error("could not reach the chat program")]
     Connect(#[source] io::Error),
+    #[error("`{name}` cannot be a chat environment variable")]
+    EnvironmentName { name: String },
+    #[error(
+        "[chat.env] holds more than {} variables or {} bytes",
+        crate::config::chat::MAX_ENV,
+        crate::config::chat::MAX_ENV_BYTES
+    )]
+    EnvironmentSize,
     #[error("the chat program did not greet first")]
     Handshake,
     #[error("no private directory holds chat sockets")]

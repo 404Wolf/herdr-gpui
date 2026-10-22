@@ -2893,17 +2893,23 @@ conversation natively over that pane. The program is the agent's only client,
 so the Herdr TUI, a plain terminal, and every app window see one conversation.
 
 **Starting one.** A group's **…** menu lists **New Chat** with one row per
-agent `herdr-acp` knows (Claude, Codex, Copilot, Gemini, OpenCode). A row
+agent `herdr-acp` knows (Claude, Codex, Copilot, Gemini, OpenCode, Pi). A row
 opens a tab named after the agent in the focused workspace, in the focused
 pane's folder, and runs the program there; `herdr-gpui chat new AGENT` does
 the same from a pane. The rows show once the app has found `herdr-acp`,
 first beside its own executable (the app bundle, `cargo build`'s target
 directory, or where `just install` puts both) and then on the login shell's
 `PATH`, and only for the Herdr on this machine. Each agent has to be
-installed: `claude` (which `herdr-acp` drives without an ACP adapter),
-`codex-acp` (else run through `npx`), `copilot --acp`, `gemini --acp`, or
-`opencode acp`. The program can
+installed: `claude`, `codex` and `pi` (which `herdr-acp` drives without an
+ACP adapter), `copilot --acp`, `gemini --acp`, or `opencode acp`. The program can
 also be started by hand in any pane: `herdr-acp claude`.
+
+**Company endpoints.** Variables in `[chat.env]` go into the environment of
+every chat's tab, on this machine or an SSH host: `GH_HOST` for Copilot on
+GitHub Enterprise, `ANTHROPIC_BASE_URL` for a gateway, and so on. Settings >
+General edits them as `NAME=value` pairs while ACP chats are on. They are
+stored in plain text, so tokens belong in the shell or the agent's own
+sign-in.
 
 **The chat view.** Over a chat's pane the app shows the agent's messages,
 reasoning, tool calls with their diffs, the plan, permission requests to

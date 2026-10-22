@@ -1,5 +1,6 @@
 //! Prepared controls for the standalone window; persistence belongs to its serial save path.
 pub(super) mod backdrop;
+pub(super) mod chat_env;
 pub(super) mod code;
 mod fonts;
 mod forms;
@@ -184,6 +185,7 @@ impl SettingsWindow {
             .refresh_appearance(&self.config, &self.theme, cx);
         self.refresh_code_appearance(cx);
         self.sync_px0_field(cx);
+        self.sync_chat_env_field(cx);
         if let Some(edit) = &self.number_edit {
             edit.input.update(cx, |input, cx| {
                 input.set_appearance(self.config.ui.clone(), self.theme.clone(), cx);

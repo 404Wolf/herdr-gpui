@@ -135,22 +135,30 @@ pub(crate) fn remote_command_line(agent: Agent) -> String {
     )
 }
 
-/// The `tab.create` a chat runs in, labelled after its agent. A local chat
-/// carries this app's program in the tab's environment; a remote one finds
-/// its host's own.
+/// The `tab.create` a chat runs in, labelled after its agent, with the
+/// `[chat.env]` variables in its environment. A local chat also carries
+/// this app's program there; a remote one finds its host's own.
 pub(crate) fn tab_params(
     workspace: &str,
     cwd: Option<&str>,
     agent: Agent,
     program: Option<&Path>,
+    extra: &std::collections::BTreeMap<String, String>,
 ) -> serde_json::Value {
     let mut params = json!({
         "workspace_id": workspace,
         "label": agent.display_name(),
         "focus": true,
     });
+    let mut env: serde_json::Map<String, serde_json::Value> = extra
+        .iter()
+        .map(|(name, value)| (name.clone(), json!(value)))
+        .collect();
     if let Some(program) = program {
-        params["env"] = json!({ PROGRAM_ENV: program.to_string_lossy() });
+        env.insert(PROGRAM_ENV.to_owned(), json!(program.to_string_lossy()));
+    }
+    if !env.is_empty() {
+        params["env"] = serde_json::Value::Object(env);
     }
     if let Some(cwd) = cwd {
         params["cwd"] = json!(cwd);
@@ -256,7 +264,13 @@ impl HerdrWindow {
             .request_script(
                 &boot,
                 Method::TabCreate,
-                tab_params(&workspace, cwd.as_deref(), agent, program.as_deref()),
+                tab_params(
+                    &workspace,
+                    cwd.as_deref(),
+                    agent,
+                    program.as_deref(),
+                    &self.config.chat.env,
+                ),
             )
             .map_err(|_| Error::NotConnected)?;
         self.chats.starting = Some(Starting {
