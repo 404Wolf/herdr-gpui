@@ -71,6 +71,7 @@ winresource.workspace = true
 
 [dev-dependencies]
 gpui = { features = ["test-support"], workspace = true }
+socket2.workspace = true
 test-case.workspace = true
 
 [features]

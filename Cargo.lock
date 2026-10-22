@@ -4502,6 +4502,7 @@ dependencies = [
  "sha1",
  "sha2 0.11.0",
  "skrifa 0.48.0",
+ "socket2",
  "syntect",
  "sysinfo 0.39.6",
  "tar",
