@@ -12,6 +12,7 @@ mod files;
 mod harness;
 mod herdr;
 mod pi;
+mod pictures;
 mod process;
 mod project;
 mod relay;

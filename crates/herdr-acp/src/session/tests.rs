@@ -14,6 +14,7 @@ mod attachments;
 mod auto_accept;
 mod commands;
 mod flow;
+mod linked_pictures;
 mod media;
 mod permissions;
 mod settings;

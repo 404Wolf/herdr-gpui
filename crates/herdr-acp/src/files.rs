@@ -16,7 +16,7 @@ use herdr_chat_protocol::{Attachment, Image, ImageType, MAX_IMAGE_DATA};
 /// Bytes of a text file embedded in a prompt; a larger one is linked.
 const MAX_TEXT: u64 = 256 * 1024;
 /// Bytes of an image read, so its base64 fits [`MAX_IMAGE_DATA`].
-const MAX_IMAGE: u64 = (MAX_IMAGE_DATA / 4 * 3) as u64;
+pub(crate) const MAX_IMAGE: u64 = (MAX_IMAGE_DATA / 4 * 3) as u64;
 
 /// What the agent said it takes in a prompt besides text and links.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -76,13 +76,13 @@ pub(crate) fn prepare(attachment: &Attachment, accepts: Accepts) -> Prepared {
     }
 }
 
-fn image_type(path: &Path) -> Option<ImageType> {
+pub(crate) fn image_type(path: &Path) -> Option<ImageType> {
     let extension = path.extension()?.to_str()?.to_ascii_lowercase();
     ImageType::from_mime(&format!("image/{extension}"))
 }
 
 /// The whole file, when it is at most `limit` bytes.
-fn read(path: &Path, limit: u64) -> Option<Vec<u8>> {
+pub(crate) fn read(path: &Path, limit: u64) -> Option<Vec<u8>> {
     let mut bytes = Vec::new();
     File::open(path)
         .ok()?

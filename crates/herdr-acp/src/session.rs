@@ -6,6 +6,7 @@
 
 mod agent;
 mod commands;
+mod pictures;
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -135,6 +136,7 @@ pub(crate) struct Session<R: FnMut(Activity)> {
     next_request: i64,
     outbox: rpc::Outbox,
     pending: HashMap<i64, Pending>,
+    pictures: pictures::Pictures,
     projector: Projector,
     ready: bool,
     report: R,
@@ -161,6 +163,7 @@ impl<R: FnMut(Activity)> Session<R> {
             next_request: 0,
             outbox,
             pending: HashMap::new(),
+            pictures: pictures::Pictures::default(),
             projector: Projector::default(),
             ready: false,
             report,
@@ -224,6 +227,7 @@ impl<R: FnMut(Activity)> Session<R> {
 
     /// Applies a change and sends it to every client.
     fn emit(&mut self, change: Change) {
+        let change = self.pictures_before(change);
         if self.transcript.apply(&change).is_err() {
             // The session only emits changes made from its own transcript, so
             // one that does not fit is a bug; dropping it keeps every client
@@ -267,6 +271,7 @@ impl<R: FnMut(Activity)> Session<R> {
             });
         }
         self.report_activity();
+        self.pictures_after(&change);
     }
 
     fn emit_all(&mut self, changes: impl IntoIterator<Item = Change>) {

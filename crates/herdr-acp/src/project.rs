@@ -45,6 +45,19 @@ impl Projector {
         EntryId(self.next)
     }
 
+    /// Gives the entry `old`, made but not yet in the transcript, a new id
+    /// after every other, and returns it: entries were added before it.
+    pub(crate) fn renumber(&mut self, old: EntryId) -> EntryId {
+        let new = self.next_id();
+        if let Some(open) = self.open.as_mut().filter(|open| open.entry == old) {
+            open.entry = new;
+        }
+        for id in self.tools.values_mut().filter(|id| **id == old) {
+            *id = new;
+        }
+        new
+    }
+
     /// Ends the streaming entry, so the next chunk starts a new one.
     pub(crate) fn close(&mut self) {
         self.open = None;
