@@ -61,13 +61,27 @@ impl Answer {
 /// Runs `command` against this user's state.
 pub fn run(command: &Command, out: &mut impl Write) -> io::Result<ExitCode> {
     match Paths::from_env() {
-        Ok(paths) => run_in(command, &paths, out),
+        Ok(paths) => run_with(command, &paths, out, true),
         Err(error) => print_error(command, &error, out),
     }
 }
 
-/// Runs `command` against the state under `paths`.
+/// Runs `command` against the state under `paths`, never starting the
+/// daemon.
+#[cfg(test)]
 pub fn run_in(command: &Command, paths: &Paths, out: &mut impl Write) -> io::Result<ExitCode> {
+    run_with(command, paths, out, false)
+}
+
+/// Runs `command` against the state under `paths`. With `start_daemon`, a
+/// command that leaves scripts to run starts the daemon when none is
+/// running; tests leave it off, since their executable is the test runner.
+pub fn run_with(
+    command: &Command,
+    paths: &Paths,
+    out: &mut impl Write,
+    start_daemon: bool,
+) -> io::Result<ExitCode> {
     let streamed = match command {
         Command::Serve => Some(daemon::serve(paths).map(|()| ExitCode::SUCCESS)),
         Command::Watch => Some(watch::run(paths, out).map(|()| ExitCode::SUCCESS)),
@@ -85,7 +99,10 @@ pub fn run_in(command: &Command, paths: &Paths, out: &mut impl Write) -> io::Res
         };
     }
     match answer(command, paths) {
-        Ok(answer) => {
+        Ok(mut answer) => {
+            if start_daemon {
+                ensure_daemon(command, paths, &mut answer);
+            }
             if json(command) {
                 writeln!(out, "{}", answer.json)?;
             } else if !answer.text.is_empty() {
@@ -94,6 +111,51 @@ pub fn run_in(command: &Command, paths: &Paths, out: &mut impl Write) -> io::Res
             Ok(answer.code)
         }
         Err(error) => print_error(command, &error, out),
+    }
+}
+
+/// Starts the daemon after a command that leaves scripts to run, when
+/// none is running: an approved script, a run asked for, a repository
+/// with scripts. Says so in the answer; a start that fails is reported
+/// there too, and the command still succeeded.
+fn ensure_daemon(command: &Command, paths: &Paths, answer: &mut Answer) {
+    if !leaves_scripts_to_run(command) || daemon::Lock::held(paths) {
+        return;
+    }
+    let note = match std::env::current_exe()
+        .map_err(Error::io("herdr-automate"))
+        .and_then(|exe| service::start(&exe, paths))
+    {
+        Ok(_) => "; started the daemon".to_owned(),
+        Err(error) => format!("; the daemon did not start: {error}"),
+    };
+    answer.text.push_str(&note);
+    if let Some(message) = answer
+        .json
+        .get("message")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+    {
+        answer.json["message"] = Value::String(format!("{message}{note}"));
+    }
+}
+
+/// Whether, once `command` succeeds, there are scripts for a daemon to run.
+pub(super) fn leaves_scripts_to_run(command: &Command) -> bool {
+    match command {
+        Command::Approve { .. } | Command::RunNow { .. } => true,
+        Command::Repo {
+            action: RepoAction::Add(repo),
+            ..
+        } => std::fs::read_dir(crate::paths::repository_scripts(repo)).is_ok_and(|entries| {
+            entries.flatten().any(|entry| {
+                entry
+                    .path()
+                    .extension()
+                    .is_some_and(|extension| extension == "luau")
+            })
+        }),
+        _ => false,
     }
 }
 

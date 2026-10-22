@@ -328,3 +328,39 @@ fn a_script_is_approved_by_hash_then_can_be_run_by_hand() {
     assert_eq!(code, ExitCode::FAILURE);
     assert!(text.contains("not approved"), "{text}");
 }
+
+#[test]
+fn commands_that_leave_scripts_to_run_start_the_daemon() {
+    let dir = tempfile::tempdir().unwrap();
+    let with_scripts = dir.path().join("with");
+    fs::create_dir_all(with_scripts.join(".herdr/automations")).unwrap();
+    fs::write(with_scripts.join(".herdr/automations/nightly.luau"), "").unwrap();
+    let without = dir.path().join("without");
+    fs::create_dir_all(&without).unwrap();
+    let repo_add = |repo: &std::path::Path| Command::Repo {
+        action: RepoAction::Add(repo.to_path_buf()),
+        json: false,
+    };
+    assert!(run::leaves_scripts_to_run(&repo_add(&with_scripts)));
+    assert!(!run::leaves_scripts_to_run(&repo_add(&without)));
+    for command in [
+        Command::Approve {
+            file: "a.luau".into(),
+            hash: None,
+            json: true,
+        },
+        Command::RunNow {
+            file: "a.luau".into(),
+            trigger: None,
+            json: false,
+        },
+    ] {
+        assert!(run::leaves_scripts_to_run(&command), "{command:?}");
+    }
+    for command in [
+        Command::Status { json: false },
+        Command::Steps { json: false },
+    ] {
+        assert!(!run::leaves_scripts_to_run(&command), "{command:?}");
+    }
+}

@@ -103,10 +103,14 @@ pub fn private_dir(dir: &Path) -> std::io::Result<()> {
 
 /// Options for a file only the user may read, when it is created.
 pub fn private_file() -> std::fs::OpenOptions {
-    let mut options = std::fs::OpenOptions::new();
     #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    options
+    {
+        let mut options = std::fs::OpenOptions::new();
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        options
+    }
+    #[cfg(not(unix))]
+    std::fs::OpenOptions::new()
 }
 
 /// Where a repository keeps its scripts.

@@ -24,6 +24,7 @@ pub const TAIL_LINES: usize = 200;
 const POLL: Duration = Duration::from_millis(100);
 const SAMPLE: Duration = Duration::from_secs(1);
 /// How long a stopped command gets to exit before it is killed.
+#[cfg(unix)]
 const GRACE: Duration = Duration::from_secs(5);
 
 pub struct Job<'a> {

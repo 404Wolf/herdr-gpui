@@ -1,6 +1,7 @@
 use super::*;
 use std::fs;
 
+#[cfg(unix)]
 fn job<'a>(
     args: &'a [&'a OsStr],
     log: &'a Path,

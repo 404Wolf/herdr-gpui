@@ -93,7 +93,7 @@ pub fn locate(paths: &Paths, store: &Store, file: &Path) -> Result<Found> {
 }
 
 /// What a script's plan says, or why it has none.
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub fn plan_row(source: &Source, path: String, repo: Option<&Path>, now: i64) -> ScriptRow {
     let plan = Plan::build(source, herdr_automation::Limits::default());
     let fingerprint = plan
