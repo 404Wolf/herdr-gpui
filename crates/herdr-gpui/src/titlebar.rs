@@ -8,6 +8,7 @@ pub(crate) use tabs::{Ends, strip_height};
 
 pub(crate) use decorations::controls;
 pub(crate) use decorations::frame;
+pub(crate) use decorations::show_controls;
 
 use crate::{HerdrWindow, fonts::StyledFont, menu::Page};
 use gpui::{prelude::*, *};
@@ -401,7 +402,7 @@ impl HerdrWindow {
             )
             // The in-window menu bar carries the window controls instead.
             .when(!crate::menus::IN_WINDOW, |end| {
-                end.children(controls(window, &self.theme, |window, _| {
+                end.children(controls(false, window, &self.theme, |window, _| {
                     window.remove_window();
                 }))
             })
@@ -439,10 +440,21 @@ pub(super) fn render(
 /// macOS windows own titlebar dragging (`app_owns_titlebar_drag`), so AppKit
 /// never moves the window from under a tab, and a client-decorated window has
 /// nothing else to move it. A server-drawn frame moves the window from its own
-/// title bar, so there `area` is left alone.
+/// title bar, so there `area` is left alone—unless the user has enabled window
+/// controls, which implies they may hide the WM's title bar.
 pub(crate) fn movable<E: InteractiveElement>(area: E, window: &Window) -> E {
+    movable_with_controls(area, window, false)
+}
+
+/// Like `movable`, but `controls_enabled` forces dragging even with SSD,
+/// for users who hide the WM's title bar and need the menu bar to move.
+pub(crate) fn movable_with_controls<E: InteractiveElement>(
+    area: E,
+    window: &Window,
+    controls_enabled: bool,
+) -> E {
     let client = decorations::client(window);
-    if !cfg!(target_os = "macos") && !client {
+    if !cfg!(target_os = "macos") && !client && !controls_enabled {
         return area;
     }
     // The move starts on the press: pointer motion during a press is claimed
@@ -473,7 +485,7 @@ pub(crate) fn header(
     close: impl Fn(&mut Window, &mut App) + 'static,
 ) -> Option<Stateful<Div>> {
     (cfg!(target_os = "macos") || decorations::client(window)).then(|| {
-        let buttons = controls(window, theme, close);
+        let buttons = controls(false, window, theme, close);
         render(bar(theme.surface), None, window).children(buttons)
     })
 }

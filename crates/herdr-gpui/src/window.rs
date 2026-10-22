@@ -8,6 +8,10 @@ mod announcement;
 mod backdrop;
 pub(crate) mod chrome_focus;
 mod clipboard;
+#[cfg(target_os = "macos")]
+pub(crate) use clipboard::macos::{
+    Error as ClipboardHelperError, run_helper as run_clipboard_helper,
+};
 mod commands;
 mod config_diagnostic;
 mod construct;
@@ -24,6 +28,7 @@ mod function_keys;
 mod image_source;
 mod images;
 mod input;
+mod layout_save;
 mod lifecycle;
 pub(crate) use lifecycle::reasserts;
 mod links;
@@ -37,6 +42,7 @@ mod reconnecting;
 mod regions;
 mod render;
 mod report_issue;
+mod select_hint;
 mod selection;
 mod server_keys;
 mod sound;
@@ -239,6 +245,8 @@ pub(crate) struct HerdrWindow {
     /// The last orchestrator view id handed out.
     pub(crate) next_orchestrator: u64,
     pub(crate) notes_width: crate::panel_resize::PanelWidth,
+    /// Which notice cards had lines too long for their row when last laid out.
+    pub(crate) notice_overflow: std::rc::Rc<config_diagnostic::Overflow>,
     pub(crate) options: ConnectOptions,
     /// Orchestrator views' requests, acted on at the next tick.
     pub(crate) orchestrator_events: Vec<(crate::orchestrator::ViewId, crate::orchestrator::Event)>,
@@ -284,6 +292,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) scrollbar_drag: Option<mouse::ScrollbarDrag>,
     /// The activity bar's Security section: Dependabot alerts.
     pub(crate) security: crate::security::Security,
+    /// The Security section's search field and pills.
+    pub(crate) security_search: crate::security::SecuritySearch,
     pub(crate) selected_endpoint: usize,
     pub(crate) selected_generation: u64,
     /// The terminal cells the pointer is choosing. A release copies them and
@@ -467,7 +477,9 @@ impl HerdrWindow {
     /// Stored chrome yields to anything changed before it arrived. A stored
     /// sort is a past toggle, so it overrides the daemon's from then on.
     pub(crate) fn apply_stored_chrome(&mut self, chrome: preferences::Chrome) {
-        self.activity.restore(chrome.activity_panel);
+        let resave = self
+            .activity
+            .restore(chrome.activity_panel, &chrome.activity_last_opened);
         if !self.sidebar_modified {
             self.sidebar_width = chrome.sidebar_width;
         }
@@ -491,6 +503,10 @@ impl HerdrWindow {
             self.agent_sort = sort;
             self.agent_sort_modified = true;
         }
+        // Saved once the whole chrome is merged, so the save keeps it all.
+        if resave {
+            self.save_chrome();
+        }
     }
 
     fn tick(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -506,7 +522,11 @@ impl HerdrWindow {
             }
             cx.notify();
         }
-        if self.avatars.as_mut().is_some_and(|avatars| avatars.poll()) {
+        if self
+            .avatars
+            .as_mut()
+            .is_some_and(|avatars| avatars.poll(std::time::Instant::now()))
+        {
             cx.notify();
         }
         if let Some(chrome) = self.sidebar_preferences.as_mut().and_then(|p| p.loaded()) {

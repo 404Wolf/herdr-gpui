@@ -2,26 +2,10 @@
 //! as plain text, which assistive technology never sees, so each row is one
 //! list item whose name says what the row shows, most telling part first.
 
-use crate::{HerdrWindow, accessibility::update, window::chrome_focus::Region};
-use gpui::{AccessibleAction, Context, Role, StatefulInteractiveElement, WeakEntity, Window};
+pub(super) use crate::accessibility::expandable;
+use crate::{HerdrWindow, window::chrome_focus::Region};
+use gpui::{Context, Role, StatefulInteractiveElement};
 use herdr_client::protocol::AgentStatus;
-
-/// Gives a row that folds its children the expanded state and the Expand and
-/// Collapse actions, which run the same `toggle` as its arrow. AccessKit only
-/// asks for the action that changes the state, so both toggle.
-pub(super) fn expandable<E: StatefulInteractiveElement>(
-    row: E,
-    expanded: bool,
-    view: WeakEntity<HerdrWindow>,
-    toggle: impl Fn(&mut HerdrWindow, &mut Window, &mut Context<HerdrWindow>) + Clone + 'static,
-) -> E {
-    row.aria_expanded(expanded)
-        .on_a11y_action(
-            AccessibleAction::Expand,
-            update(view.clone(), toggle.clone()),
-        )
-        .on_a11y_action(AccessibleAction::Collapse, update(view, toggle))
-}
 
 impl HerdrWindow {
     /// A sidebar button: its name, and its place among the sidebar's stops.
@@ -69,16 +53,25 @@ pub(super) fn workspace_name(label: &str, status: AgentStatus, host: Option<&str
     join([Some(label), status_word(status), host])
 }
 
-/// An agent row: the agent, its state (the agent's own label for it, when it
-/// gave one), and where it runs.
+/// An agent row: the agent, the name of its pane (what tells two agents of
+/// one name apart), its state (the agent's own label for it, when it gave
+/// one), and where it runs.
 pub(super) fn agent_name(
     name: &str,
+    pane: Option<&str>,
     state: &str,
     place: Option<(&str, Option<&str>)>,
     host: Option<&str>,
 ) -> String {
     let (workspace, tab) = place.unzip();
-    join([Some(name), Some(state), workspace, tab.flatten(), host])
+    join([
+        Some(name),
+        pane,
+        Some(state),
+        workspace,
+        tab.flatten(),
+        host,
+    ])
 }
 
 /// A device's header: its name, whether it is connected, and, in the Devices
@@ -130,12 +123,26 @@ mod tests {
     #[test]
     fn an_agent_names_its_state_and_place() {
         assert_eq!(
-            agent_name("claude", "working", Some(("herdr", Some("tests"))), None),
+            agent_name(
+                "claude",
+                None,
+                "working",
+                Some(("herdr", Some("tests"))),
+                None
+            ),
             "claude, working, herdr, tests"
         );
         assert_eq!(
-            agent_name("codex", "needs input", None, Some("devbox")),
+            agent_name("codex", None, "needs input", None, Some("devbox")),
             "codex, needs input, devbox"
+        );
+    }
+
+    #[test]
+    fn a_pane_name_tells_same_named_agents_apart() {
+        assert_eq!(
+            agent_name("grok", Some("api"), "working", Some(("herdr", None)), None),
+            "grok, api, working, herdr"
         );
     }
 
@@ -150,6 +157,9 @@ mod tests {
 
     #[test]
     fn blank_parts_leave_no_empty_commas() {
-        assert_eq!(agent_name("claude", " ", Some(("", None)), None), "claude");
+        assert_eq!(
+            agent_name("claude", Some(" "), " ", Some(("", None)), None),
+            "claude"
+        );
     }
 }
