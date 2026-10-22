@@ -6,6 +6,8 @@ run *args:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ "$(uname -s)" != Darwin ]; then
+        # The app starts chats with the herdr-acp beside its own executable.
+        cargo build --locked --release -p herdr-acp
         exec cargo run --locked --release -p herdr-gpui --features qa-menu -- {{args}}
     fi
     {{just_executable()}} bundle release qa-menu
@@ -27,6 +29,7 @@ run-debug *args:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ "$(uname -s)" != Darwin ]; then
+        cargo build --locked -p herdr-acp
         exec cargo run --locked -p herdr-gpui -- {{args}}
     fi
     {{just_executable()}} bundle debug
@@ -101,12 +104,13 @@ mockup file="" feedback="" capture="":
     exec target/debug/herdr-gpui "${args[@]}"
 
 build-release:
-    cargo build --locked --release -p herdr-gpui
+    cargo build --locked --release -p herdr-gpui -p herdr-acp
 
 # Compile and install the release executable into Cargo's bin directory.
 [unix]
 install:
     cargo install --locked --force --path crates/herdr-gpui --bin herdr-gpui
+    cargo install --locked --force --path crates/herdr-acp
 
 # Only installation bypasses the POSIX shell used by the other recipes.
 [windows]
@@ -114,7 +118,8 @@ install:
 install:
     #!cmd.exe /c
     cargo install --locked --force --path crates/herdr-gpui --bin herdr-gpui || exit /b 1
-    cargo install --locked --force --path crates/herdr-gpui-launcher
+    cargo install --locked --force --path crates/herdr-gpui-launcher || exit /b 1
+    cargo install --locked --force --path crates/herdr-acp
 
 # Regenerate circular Linux artwork on any platform (Python standard library).
 icons-linux:
@@ -142,8 +147,16 @@ bundle profile="release" features="":
     esac
     app=target/{{profile}}/Herdr.app
     cargo build --locked $flags --target-dir target -p herdr-gpui --features "{{features}}"
+    cargo build --locked $flags --target-dir target -p herdr-acp
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+    # Replace the executables rather than rewrite them in place: macOS keeps
+    # a signed file's old signature with its inode, so reading the rewritten
+    # pages kills the reader, and a chat still running the old herdr-acp
+    # keeps its own copy.
+    rm -f "$app/Contents/MacOS/Herdr" "$app/Contents/MacOS/herdr-acp"
     cp target/{{profile}}/herdr-gpui "$app/Contents/MacOS/Herdr"
+    # Chats the app starts run the herdr-acp beside its executable.
+    cp target/{{profile}}/herdr-acp "$app/Contents/MacOS/herdr-acp"
     cp assets/macos/Info.plist "$app/Contents/Info.plist"
     # LaunchServices and the Dock cache icons by bundle ID, so every worktree
     # build sharing the release ID competed with the installed app's icon.

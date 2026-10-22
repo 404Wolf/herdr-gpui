@@ -23,6 +23,7 @@ mod browser;
 mod cache;
 mod caffeine;
 mod caption;
+mod chat;
 mod checkpoint;
 mod cli;
 mod close_modal;

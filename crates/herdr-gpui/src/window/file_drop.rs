@@ -43,6 +43,9 @@ impl HerdrWindow {
                 return;
             };
             cx.stop_propagation();
+            if self.drop_on_chat(&target, paths.paths(), window, cx) {
+                return;
+            }
             // The window takes focus once the files are handed on, even when
             // the image bridge or file copy then refuses them. Behind held
             // input that waits on a background paste, the drop waits too.
@@ -62,9 +65,34 @@ impl HerdrWindow {
             return;
         };
         cx.stop_propagation();
+        if let DropAt::Pane(target) = &at
+            && self.drop_on_chat(target, paths.paths(), window, cx)
+        {
+            return;
+        }
         if self.hold_drop(at, paths.paths().to_vec(), cx) {
             window.focus(&self.focus, cx);
         }
+    }
+
+    /// A chat view takes files as attachments to its next prompt; its
+    /// program's own terminal view under it is hidden. The app draws the
+    /// chat, so the files need no terminal frame to land in.
+    fn drop_on_chat(
+        &mut self,
+        target: &InputTarget,
+        paths: &[PathBuf],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let InputTarget::Pane(pane_id) = target else {
+            return false;
+        };
+        if !self.chats.shown(pane_id) {
+            return false;
+        }
+        self.attach_chat_files(pane_id, paths.to_vec(), window, cx);
+        true
     }
 
     /// Where a drop made before the frame is ready goes: the pane under the

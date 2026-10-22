@@ -318,7 +318,8 @@ impl HerdrWindow {
                     self.browser
                         .pages
                         .ids()
-                        .filter(|id| store.get(*id).is_none()),
+                        // A chat's panel page has no tab; its chat owns it.
+                        .filter(|id| store.get(*id).is_none() && !id.is_panel()),
                 )
                 .collect();
             if !gone.is_empty() {

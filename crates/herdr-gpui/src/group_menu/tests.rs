@@ -255,6 +255,7 @@ fn the_menu_opens_from_the_strip_and_steps_with_the_keyboard(cx: &mut TestAppCon
 }
 
 mod any_repository;
+mod chat;
 mod close_others;
 mod closed_elsewhere;
 mod new_tabs;

@@ -164,6 +164,7 @@ struct SettingsWindow {
     plugins: controls::plugins::Plugins,
     code: controls::code::CodeSettings,
     px0: controls::px0::Px0Settings,
+    chat_env: controls::chat_env::ChatEnvSettings,
     /// The open override dropdown, if any; its list renders inside its button.
     dropdown: Option<ui::Dropdown>,
     /// The number field being typed into, if any.
@@ -316,6 +317,7 @@ impl SettingsWindow {
             plugins: controls::plugins::Plugins::new(cx),
             code: Default::default(),
             px0: Default::default(),
+            chat_env: Default::default(),
             dropdown: None,
             number_edit: None,
             number_preview: None,
@@ -670,6 +672,9 @@ impl SettingsWindow {
         if section == Section::Code {
             self.open_code_page(window, cx);
             self.open_px0_settings(cx);
+        }
+        if section == Section::General {
+            self.open_chat_env_settings(cx);
         }
         self.body_scroll.set_offset(Point::default());
         window.focus(&self.focus, cx);

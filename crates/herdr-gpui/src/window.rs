@@ -135,6 +135,8 @@ pub(crate) struct HerdrWindow {
     pub(crate) browser: crate::browser::Browser,
     pub(crate) catalog: endpoint::Catalog,
     pub(crate) cell_width: f32,
+    /// Native views of the `herdr-acp` chats in this daemon's panes.
+    pub(crate) chats: crate::chat::Chats,
     /// Snapshots of checkouts taken at agent turns, and the dialog listing them.
     pub(crate) checkpoints: crate::checkpoint::Checkpoints,
     /// The chrome region whose controls take Tab; see `chrome_focus`.
@@ -584,6 +586,7 @@ impl HerdrWindow {
         self.save_group_layouts(cx);
         self.poll_browser(window, cx);
         self.poll_remote_browser(window, cx);
+        self.poll_chats(window, cx);
         self.offer_browser_skill(window, cx);
         self.poll_sessions(cx);
         self.flush_scrollbar(cx);

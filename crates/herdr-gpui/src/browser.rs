@@ -14,6 +14,8 @@ mod annotate;
 mod annotate_view;
 #[cfg(windows)]
 mod building;
+#[cfg(any(target_os = "macos", windows))]
+mod chat_pages;
 mod closed;
 mod code;
 mod code_group;
@@ -63,6 +65,8 @@ mod zoom;
 
 #[cfg(any(target_os = "macos", windows))]
 pub(crate) use annotate_view::Annotations;
+#[cfg(any(target_os = "macos", windows))]
+pub(crate) use chat_pages::chat_page_visible;
 pub(crate) use closed::ClosedHerdrTab;
 pub(crate) use editor::Editor;
 pub(crate) use feedback::{Batch, Feedback, FeedbackKey};
@@ -87,7 +91,8 @@ pub(crate) use tab_appear::{Leaving, Listed};
 pub(crate) use tab_scroll::{Thumb, ThumbDrag};
 #[cfg(target_os = "macos")]
 pub(crate) use underlay::{
-    AroundPages, ground as ground_around_pages, picture as picture_around_pages,
+    AroundPages, around as around_pages, ground as ground_around_pages,
+    picture as picture_around_pages,
 };
 pub(crate) use view::{Browser, PageOpened, scope};
 pub(crate) use zoom::Zoom;
