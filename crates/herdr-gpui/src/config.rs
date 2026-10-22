@@ -16,6 +16,7 @@ mod boat;
 pub(crate) mod chat;
 mod cloud;
 mod coder;
+mod daemon;
 mod daytona;
 mod devices;
 mod edit;
@@ -61,6 +62,10 @@ pub use cloud::CloudConfig;
 pub use coder::CoderConfig;
 #[cfg(feature = "coder")]
 pub(crate) use coder::CoderFields;
+#[cfg(test)]
+use daemon::MAX_DAEMON_CONFIG_BYTES;
+pub(crate) use daemon::daemon_config_path;
+use daemon::{Daemon, daemon_settings};
 pub use daytona::DaytonaConfig;
 #[cfg(feature = "daytona")]
 pub(crate) use daytona::DaytonaFields;
@@ -415,10 +420,6 @@ impl<'de> Deserialize<'de> for OptionAsAlt {
     }
 }
 
-/// The daemon's config is read for a handful of keys, so a file far larger
-/// than any hand-written config is skipped rather than parsed on every load.
-const MAX_DAEMON_CONFIG_BYTES: u64 = 1 << 20;
-
 impl Default for Config {
     fn default() -> Self {
         let fonts::DefaultFonts {
@@ -610,85 +611,6 @@ fn config_root() -> Result<PathBuf> {
             Ok(home()?.join(".config"))
         }
     }
-}
-
-/// The daemon's own config file, resolved exactly as herdr resolves it. Every
-/// GUI reader of those settings shares this one answer.
-pub(crate) fn daemon_config_path(get: impl Fn(&str) -> Option<std::ffi::OsString>) -> PathBuf {
-    if let Some(path) = get("HERDR_CONFIG_PATH") {
-        return path.into();
-    }
-    let root = get("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            #[cfg(windows)]
-            {
-                if let Some(root) = get("APPDATA") {
-                    return PathBuf::from(root);
-                }
-                get("HOME")
-                    .or_else(|| get("USERPROFILE"))
-                    .map(PathBuf::from)
-                    .map(|home| home.join("AppData/Roaming"))
-                    .unwrap_or_else(env::temp_dir)
-            }
-            #[cfg(not(windows))]
-            get("HOME")
-                .map(PathBuf::from)
-                .map(|home| home.join(".config"))
-                .unwrap_or_else(env::temp_dir)
-        });
-    // Share production TUI settings even in a debug GUI build or SSH session.
-    root.join("herdr/config.toml")
-}
-
-/// What the GUI honors from the daemon's own config.
-#[derive(Clone, Debug, Default)]
-struct Daemon {
-    clipboard_toast: ClipboardToast,
-    keys: DaemonKeys,
-    sidebar_layout: SidebarLayout,
-}
-
-/// A config file the GUI does not own can hold anything, including settings
-/// from a newer herdr, so only the keys read here matter and anything
-/// unreadable, oversized, malformed, or unrecognized leaves the defaults alone.
-fn daemon_settings(path: &Path) -> Daemon {
-    if fs::metadata(path).is_ok_and(|data| data.len() > MAX_DAEMON_CONFIG_BYTES) {
-        return Daemon::default();
-    }
-    let Some(table) = fs::read_to_string(path)
-        .ok()
-        .and_then(|text| text.parse::<toml::Table>().ok())
-    else {
-        return Daemon::default();
-    };
-    Daemon {
-        clipboard_toast: daemon_clipboard_toast(&table),
-        keys: DaemonKeys::from_table(table.get("keys").and_then(toml::Value::as_table)),
-        sidebar_layout: SidebarLayout::from_daemon_config(&table).unwrap_or_default(),
-    }
-}
-
-fn daemon_clipboard_toast(table: &toml::Table) -> ClipboardToast {
-    let mut resolved = ClipboardToast::default();
-    let Some(clipboard) = table
-        .get("ui")
-        .and_then(|ui| ui.get("toast")?.get("clipboard")?.as_table())
-    else {
-        return resolved;
-    };
-    if let Some(enabled) = clipboard.get("enabled").and_then(toml::Value::as_bool) {
-        resolved.enabled = enabled;
-    }
-    if let Some(position) = clipboard
-        .get("position")
-        .cloned()
-        .and_then(|position| position.try_into().ok())
-    {
-        resolved.position = position;
-    }
-    resolved
 }
 
 impl Config {
