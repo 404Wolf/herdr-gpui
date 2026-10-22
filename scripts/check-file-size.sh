@@ -20,7 +20,13 @@ existing() {
 }
 
 # One wc per batch rather than per file: starting processes per file takes
-# minutes under Git Bash on Windows.
+# minutes under Git Bash on Windows. Counted before the loop so a file wc
+# cannot read fails the check instead of being skipped.
+if ! counts=$(git ls-files -z -- '*.rs' '*.py' '*.sh' '*.swift' | existing | xargs -0 wc -l); then
+  echo "FAIL: could not count lines in every source file" >&2
+  exit 1
+fi
+
 failures=0
 while read -r lines file; do
   # wc ends each batch with a "total" line; no checked file has that name.
@@ -29,7 +35,7 @@ while read -r lines file; do
     echo "FAIL: $file has $lines lines (limit $MAX_LINES)"
     failures=$((failures + 1))
   fi
-done < <(git ls-files -z -- '*.rs' '*.py' '*.sh' '*.swift' | existing | xargs -0 wc -l)
+done <<<"$counts"
 
 if ((failures > 0)); then
   echo
