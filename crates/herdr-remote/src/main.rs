@@ -1,5 +1,8 @@
 //! `herdr-remote serve`: the remote control daemon. Herdr UI installs it as
 //! a user service when Remote control is on; see `--help`.
+// On Windows the logon task would otherwise open a console window for the
+// life of the daemon. The cost: `--help` and errors print nowhere there.
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 use herdr_remote::server::{self, Invocation};
 use std::process::ExitCode;
