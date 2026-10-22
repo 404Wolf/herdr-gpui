@@ -1,5 +1,5 @@
 [workspace]
-members  = ["crates/embed-resource", "crates/herdr-client", "crates/herdr-gpui", "crates/herdr-gpui-launcher", "crates/herdr-protocol"]
+members  = ["crates/embed-resource", "crates/herdr-automate", "crates/herdr-automation", "crates/herdr-client", "crates/herdr-gpui", "crates/herdr-gpui-launcher", "crates/herdr-protocol"]
 resolver = "2"
 
 [workspace.package]
@@ -42,6 +42,8 @@ ed25519-dalek        = { default-features = false, features = ["std"], version =
 flate2               = "1"
 # Use the same strict macOS family lookup as GPUI, including legacy aliases.
 font-kit             = { package = "zed-font-kit", version = "=0.14.1-zed" }
+# Time zone names in automation schedules; the version the lockfile already has.
+jiff                 = "0.2.38"
 # Locates installed font files on Linux, as GPUI's own text system does.
 fontdb               = "0.24"
 foreign-types        = "0.5"
@@ -54,6 +56,7 @@ gpui_platform        = { package = "gpui-pre-platform", version = "=0.3.6" }
 gix                  = { default-features = false, features = ["sha1"], version = "0.89" }
 # The web views behind browser tabs; `browser::page` lays them out in the window.
 wry                  = { package = "lb-wry", version = "=0.53.3" }
+herdr-automation     = { path = "crates/herdr-automation" }
 herdr-client         = { path = "crates/herdr-client" }
 herdr-protocol       = { path = "crates/herdr-protocol" }
 interprocess         = "2.4.2"
@@ -63,6 +66,8 @@ if-addrs             = "0.15"
 # Display and idle holds behind the status bar cup; `bin` would pull in a CLI.
 keepawake            = { default-features = false, version = "0.6.1" }
 image                = { default-features = false, features = ["gif", "jpeg", "png", "webp"], version = "0.25.10" }
+# The sandboxed Luau interpreter behind automation scripts, built from source.
+mlua                 = { features = ["error-send", "luau"], version = "0.12.2" }
 # Helix's fzf-style scorer behind the command palette.
 nucleo-matcher       = "0.3.1"
 # Bonjour browsing for SSH hosts in the Add Device dialog; it runs its own

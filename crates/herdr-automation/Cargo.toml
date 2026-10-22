@@ -1,0 +1,22 @@
+# Automation scripts: the Luau sandbox, the step catalog, schedules, caps, and
+# the plan a person reviews before approving a script. No GPUI, no runtime.
+[package]
+edition.workspace      = true
+license.workspace      = true
+name                   = "herdr-automation"
+publish.workspace      = true
+rust-version.workspace = true
+version.workspace      = true
+
+[lints]
+workspace = true
+
+[dependencies]
+jiff.workspace      = true
+mlua.workspace      = true
+serde.workspace     = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace   = true

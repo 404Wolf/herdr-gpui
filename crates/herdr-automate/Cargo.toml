@@ -1,0 +1,20 @@
+# The automation daemon and its command line. Phase 1 ships `check` and
+# `steps`: agents can write and check scripts, and nothing runs yet.
+[package]
+edition.workspace      = true
+license.workspace      = true
+name                   = "herdr-automate"
+publish.workspace      = true
+rust-version.workspace = true
+version.workspace      = true
+
+[lints]
+workspace = true
+
+[dependencies]
+herdr-automation.workspace = true
+serde_json.workspace       = true
+thiserror.workspace        = true
+
+[dev-dependencies]
+tempfile.workspace = true
