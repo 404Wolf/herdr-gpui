@@ -170,6 +170,13 @@ pub(crate) struct TabContext<'a> {
 }
 
 impl TabContext<'_> {
+    /// Whether the strip takes Tab focus. Its close buttons are stops then,
+    /// so a layout that keeps them for the pointer shows them anyway: a
+    /// stop the keyboard can land on must be seen.
+    pub(crate) fn keyboard(&self) -> bool {
+        self.ring.is_some()
+    }
+
     /// Gives `control` a stop and a ring while the strip takes Tab focus,
     /// as the window's other chrome does.
     pub(crate) fn stop<E: InteractiveElement>(&self, control: E) -> E {

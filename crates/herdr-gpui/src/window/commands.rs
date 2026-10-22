@@ -2,7 +2,7 @@
 //! ordered surface barrier so input cannot reach the previous pane while the
 //! navigation and its projection are still in flight.
 
-use super::{Flash, HerdrWindow};
+use super::{Flash, HerdrWindow, layout_save::LayoutSaves};
 use crate::{
     app::InitialAppearance,
     config::{
@@ -44,7 +44,11 @@ impl HerdrWindow {
         }
         crate::menus::install(cx);
         cx.notify();
-        let save = cx.background_executor().spawn(async move { save(mode) });
+        let saves = cx.default_global::<LayoutSaves>().sidebar.clone();
+        saves.want(mode);
+        let save = cx
+            .background_executor()
+            .spawn(async move { saves.write_latest(save) });
         cx.spawn(async move |_, _| {
             if let Err(error) = save.await {
                 tracing::warn!(%error, "Could not save the sidebar layout");
@@ -80,7 +84,11 @@ impl HerdrWindow {
         }
         crate::menus::install(cx);
         cx.notify();
-        let save = cx.background_executor().spawn(async move { save(mode) });
+        let saves = cx.default_global::<LayoutSaves>().tabs.clone();
+        saves.want(mode);
+        let save = cx
+            .background_executor()
+            .spawn(async move { saves.write_latest(save) });
         cx.spawn(async move |_, _| {
             if let Err(error) = save.await {
                 tracing::warn!(%error, "Could not save the tab layout");

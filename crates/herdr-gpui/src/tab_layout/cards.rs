@@ -100,7 +100,7 @@ impl TabLayout for Cards {
             .child(
                 div()
                     .flex_none()
-                    .when(!state.selected, |slot| {
+                    .when(!state.selected && !cx.keyboard(), |slot| {
                         slot.opacity(0.)
                             .group_hover(hover.clone(), |s| s.opacity(1.))
                     })

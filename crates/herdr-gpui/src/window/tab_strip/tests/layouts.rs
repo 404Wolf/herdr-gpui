@@ -170,3 +170,57 @@ fn choosing_a_tab_layout_redraws_and_saves_it_once(cx: &mut TestAppContext) {
     });
     assert_eq!(*saved.lock().unwrap(), [TabLayoutMode::Pills]);
 }
+
+#[gpui::test]
+fn pills_show_close_buttons_while_the_strip_takes_tab_focus(cx: &mut TestAppContext) {
+    let (view, cx) = strip(cx, TabLayoutMode::Pills);
+    // The pointer reveals a pill's close button over its status.
+    assert!(cx.debug_bounds("tab-status-w1:t1").is_some());
+    view.update(cx, |view, cx| {
+        view.chrome_region = Some(crate::window::chrome_focus::Region::TitleBar);
+        cx.notify();
+    });
+    cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
+    // The keyboard can land on it, so it shows in place of the status.
+    assert!(cx.debug_bounds("tab-status-w1:t1").is_none());
+    assert!(cx.debug_bounds("close-tab-w1:t1").is_some());
+}
+
+#[gpui::test]
+fn a_tab_layout_read_from_the_config_file_moves_the_menu_check(cx: &mut TestAppContext) {
+    let (view, cx) = strip(cx, TabLayoutMode::Classic);
+    view.update(cx, |view, cx| {
+        let mut config = view.config.clone();
+        config.tab_layout = TabLayoutMode::Cards;
+        let theme = view.theme.clone();
+        view.load_gui_config_with(move || Ok((config, theme)), cx);
+    });
+    cx.run_until_parked();
+    let checked: Vec<String> = cx.update(|_, cx| {
+        let menus = cx.get_menus().unwrap();
+        let view_menu = menus
+            .iter()
+            .find(|menu| menu.name.as_ref() == "View")
+            .unwrap();
+        view_menu
+            .items
+            .iter()
+            .find_map(|item| match item {
+                OwnedMenuItem::Submenu(menu) if menu.name.as_ref() == "Tab Layout" => Some(menu),
+                _ => None,
+            })
+            .unwrap()
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                OwnedMenuItem::Action {
+                    name,
+                    checked: true,
+                    ..
+                } => Some(name.clone()),
+                _ => None,
+            })
+            .collect()
+    });
+    assert_eq!(checked, [TabLayoutMode::Cards.label()]);
+}

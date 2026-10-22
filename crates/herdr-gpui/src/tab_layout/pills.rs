@@ -81,8 +81,10 @@ impl TabLayout for Pills {
             .bg(rgb(chip_fill))
             .child(kind_icon(&mark, &probe, CHIP_ICON, text, cx));
         // The status shows until the pointer is over the pill, when the close
-        // button takes its place.
-        let status = status_mark(&mark, &probe, cx);
+        // button takes its place. While the strip takes Tab focus, the close
+        // button is a stop and shows throughout.
+        let keyboard = cx.keyboard();
+        let status = status_mark(&mark, &probe, cx).filter(|_| !keyboard);
         let end = div()
             .relative()
             .flex_none()
@@ -99,8 +101,10 @@ impl TabLayout for Pills {
                 div()
                     .absolute()
                     .inset_0()
-                    .opacity(0.)
-                    .group_hover(hover.clone(), |s| s.opacity(1.))
+                    .when(!keyboard, |slot| {
+                        slot.opacity(0.)
+                            .group_hover(hover.clone(), |s| s.opacity(1.))
+                    })
                     .child(close_button(close, &probe, END, text, cx)),
             );
         base.group(hover)
