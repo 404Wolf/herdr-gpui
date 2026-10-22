@@ -34,9 +34,15 @@ pub(crate) use config::Config;
 pub(crate) use decide::decide;
 pub(crate) use jwt::ProviderToken;
 pub(crate) use pacer::Pacer;
-pub(crate) use payload::{ATTRIBUTES_TYPE, Alert, Attributes, ContentState, Event, Live, Phase};
-pub(crate) use send::{Host, Outcome, Priority, Sender, outcome};
-pub(crate) use tokens::{ActivityToken, DeviceToken, Registration};
+#[cfg(test)]
+pub(crate) use payload::ATTRIBUTES_TYPE;
+pub(crate) use payload::{Alert, Attributes, ContentState, Event, Live, Phase};
+pub(crate) use send::{Host, Outcome, Sender};
+#[cfg(test)]
+pub(crate) use send::{Priority, outcome};
+#[cfg(test)]
+pub(crate) use tokens::ActivityToken;
+pub(crate) use tokens::{DeviceToken, Registration};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

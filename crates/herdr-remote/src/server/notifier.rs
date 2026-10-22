@@ -18,9 +18,10 @@ use tokio::sync::broadcast::error::RecvError;
 const TICK: Duration = Duration::from_secs(1);
 
 pub(super) async fn run(state: Arc<State>) {
-    if state.push.is_none() {
+    if state.push.is_none() && state.apns.is_none() {
         return;
     }
+    let mut live = super::live::LiveActivities::default();
     let mut events = state.hub.subscribe_all();
     let mut transcripts: HashMap<String, Transcript> = HashMap::new();
     let mut throttles: HashMap<DeviceId, Throttle> = HashMap::new();
@@ -41,6 +42,7 @@ pub(super) async fn run(state: Arc<State>) {
                         continue;
                     };
                     let notification = notification(&state, &pane, before, &change);
+                    live.change(&state, &pane, before, &change);
                     if before.apply(&change).is_err()
                         && let Some(link) = state.hub.chat(&pane)
                     {
@@ -55,6 +57,7 @@ pub(super) async fn run(state: Arc<State>) {
                 Err(RecvError::Closed) => return,
             },
             _ = ticker.tick() => {
+                live.tick(&state);
                 let now = now_ms();
                 let due: Vec<(DeviceId, Notification)> = throttles
                     .iter_mut()
@@ -128,7 +131,7 @@ fn offer(
 }
 
 /// Questions waiting across every chat, for the app badge.
-fn waiting(state: &State) -> u32 {
+pub(super) fn waiting(state: &State) -> u32 {
     let layout = state.hub.layout();
     let total: usize = layout
         .chats()

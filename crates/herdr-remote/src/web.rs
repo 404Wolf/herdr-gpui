@@ -42,6 +42,9 @@ const BODY_LIMIT: usize = 320 * 1024;
 
 /// What every request reads.
 pub(crate) struct State {
+    /// Live Activity pushes for the iOS companion, when the user set up an
+    /// APNs key.
+    pub(crate) apns: Option<crate::apns::Sender>,
     pub(crate) auth: Mutex<Auth>,
     /// Present when the daemon issues its own certificates.
     pub(crate) authority: Option<Authority>,
@@ -111,6 +114,10 @@ pub(crate) fn router(state: Shared) -> Router {
             post(api::subscribe_push).delete(api::unsubscribe_push),
         )
         .route("/api/push/key", get(api::push_key))
+        .route(
+            "/api/apns",
+            post(api::register_apns).layer(DefaultBodyLimit::max(16 * 1024)),
+        )
         .route("/api/stream", get(stream::stream))
         .route("/f/home", get(fragments::home))
         .route("/f/board", get(fragments::board))

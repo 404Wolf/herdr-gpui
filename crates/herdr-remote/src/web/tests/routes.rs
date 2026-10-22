@@ -100,3 +100,15 @@ async fn a_bad_pairing_token_is_refused() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(body.contains("error"));
 }
+
+#[tokio::test]
+async fn live_activity_tokens_need_a_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = state(dir.path());
+    let (status, _, _) = send(
+        &state,
+        post("/api/apns", serde_json::json!({"activities": []})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}

@@ -23,6 +23,7 @@ pub(super) fn state(dir: &std::path::Path) -> Shared {
     let names = Names::new([IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20))], Some("studio"));
     let authority = Authority::load_or_create(dir).unwrap();
     Arc::new(State {
+        apns: None,
         auth: Mutex::new(Auth::load(dir, Limits::default()).unwrap()),
         computer: "Studio".into(),
         connected: Mutex::new(HashMap::new()),

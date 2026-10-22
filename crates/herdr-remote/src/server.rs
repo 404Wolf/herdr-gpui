@@ -4,6 +4,7 @@
 
 mod control;
 mod listener;
+mod live;
 mod notifier;
 mod options;
 
@@ -66,8 +67,10 @@ pub async fn run(options: Options) -> Result<()> {
         .and_then(|vapid| Sender::new(vapid, PUSH_SUBJECT))
         .ok();
     let auth = Auth::load(&options.state_dir, Limits::default())?;
+    let apns = crate::apns::Sender::load(&options.state_dir)?;
     let hub = Hub::start()?;
     let state = Arc::new(State {
+        apns,
         auth: Mutex::new(auth),
         authority,
         computer: options::computer_name(),

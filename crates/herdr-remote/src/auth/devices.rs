@@ -30,6 +30,10 @@ pub(crate) struct DeviceRecord {
     /// The browser's push subscription, opaque to the store.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) push: Option<serde_json::Value>,
+    /// The iOS companion's APNs tokens (`apns::Registration`), opaque to
+    /// the store.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) apns: Option<serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -96,6 +100,7 @@ impl Devices {
             created_ms: now_ms,
             last_seen_ms: None,
             push: None,
+            apns: None,
         });
         self.save_or_undo(|devices| {
             devices.records.pop();
@@ -159,6 +164,23 @@ impl Devices {
         self.save_or_undo(move |devices| {
             if let Ok(record) = devices.record_mut(&id) {
                 record.push = previous;
+            }
+        })
+    }
+
+    /// Replaces a device's APNs registration, or drops it with `None`.
+    /// Blocking.
+    pub(crate) fn set_apns(
+        &mut self,
+        id: &DeviceId,
+        apns: Option<serde_json::Value>,
+    ) -> Result<()> {
+        let record = self.record_mut(id)?;
+        let previous = std::mem::replace(&mut record.apns, apns);
+        let id = id.clone();
+        self.save_or_undo(move |devices| {
+            if let Ok(record) = devices.record_mut(&id) {
+                record.apns = previous;
             }
         })
     }
