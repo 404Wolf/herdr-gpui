@@ -806,6 +806,8 @@ pub enum Error {
     /// The host's `uname -s`, bounded, so the message names what it is.
     #[error("CPU and memory cannot be read on {0:?} hosts.")]
     SystemLoadUnsupported(String),
+    #[error(transparent)]
+    TabLayout(#[from] crate::config::tab_layout::Error),
     #[error("Tailscale returned an unreadable status: {0}")]
     TailscaleJson(#[source] serde_json::Error),
     #[error("Tailscale did not answer in time")]

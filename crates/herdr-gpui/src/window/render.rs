@@ -799,6 +799,11 @@ impl Render for HerdrWindow {
                     this.set_layout(action.mode, cx);
                 }),
             )
+            .on_action(
+                cx.listener(|this, action: &crate::actions::SetTabLayout, _, cx| {
+                    this.set_tab_layout(action.mode, cx);
+                }),
+            )
             .on_action(cx.listener(|this, action: &RunCommand, window, cx| {
                 this.command(action.command, window, cx);
             }))
