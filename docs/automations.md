@@ -142,7 +142,11 @@ herdr-automate approve ~/code/app/.herdr/automations/nightly.luau
 herdr-automate status
 ```
 
-The daemon rescans scripts every 30 seconds. A script runs only once it is
+The daemon starts by itself once there is something to run: `approve`,
+`run-now` and `repo add` (for a repository with scripts) start it when none
+is running, and Herdr UI starts it on any host that lists scripts with no
+daemon up, retrying at most every five minutes. It rescans scripts every 30
+seconds. A script runs only once it is
 approved on that host, and only in the exact text approved: any change,
 including one a `git pull` brings in, waits for approval again. A person
 approves either at a terminal, typing the script's name after reading its
@@ -213,3 +217,10 @@ only runs while the user is logged in unless lingering is on
 
 State lives in `~/.local/state/herdr-automate` (`%LOCALAPPDATA%` on
 Windows): the database, the daemon's log, and each run's step output.
+
+## For agents
+
+Herdr UI installs a `herdr-automations` skill beside its browser skill (once
+you agree), so agents in your panes know how to write a script, check its
+plan, and ask you to approve it. Its source is
+[`skills/herdr-automations/SKILL.md`](../skills/herdr-automations/SKILL.md).
