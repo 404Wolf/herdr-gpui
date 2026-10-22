@@ -23,6 +23,8 @@ mod footer_fit;
 mod keychain_access;
 mod labels;
 #[cfg(unix)]
+mod linuxbrew_path;
+#[cfg(unix)]
 mod opencode_auth;
 mod pace_exhausted;
 mod provider_data;
