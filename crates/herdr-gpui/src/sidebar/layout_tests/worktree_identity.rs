@@ -31,10 +31,25 @@ fn draw(
     worktrees: Worktrees,
     repository_icons: bool,
 ) -> &mut gpui::VisualTestContext {
+    draw_rows(cx, mode, worktrees, repository_icons, None)
+}
+
+/// [`draw`], with the workspace rows Herdr's sidebar config names, if any.
+fn draw_rows<'a>(
+    cx: &'a mut gpui::TestAppContext,
+    mode: LayoutMode,
+    worktrees: Worktrees,
+    repository_icons: bool,
+    rows: Option<&str>,
+) -> &'a mut gpui::VisualTestContext {
     let (_, cx) = cx.add_window_view(|window, cx| {
         let view = cx.new(|cx| {
             let mut view = fixture_window(window, cx);
             view.config.layout.mode = mode;
+            if let Some(rows) = rows {
+                view.config.sidebar_layout =
+                    toml::from_str(&format!("[spaces]\nrows = {rows}")).unwrap();
+            }
             view.config.worktrees = worktrees;
             view.config.show_repository_icons = repository_icons;
             let snapshot = Arc::make_mut(view.live.snapshot.as_mut().unwrap());
@@ -213,6 +228,31 @@ fn a_linked_worktree_standing_alone_leads_with_the_branch_glyph(cx: &mut gpui::T
                 assert!(
                     probe(cx, format!("worktree-icon-{key}")).is_none(),
                     "{mode}: {key}"
+                );
+            }
+        }
+    }
+}
+
+/// The layouts without Herdr's avatar slot lead a linked worktree standing
+/// alone with the branch glyph too, on their own rows and on configured
+/// ones, so it never has neither a guide nor a glyph.
+#[gpui::test]
+fn rows_without_an_avatar_slot_lead_with_the_branch_glyph(cx: &mut gpui::TestAppContext) {
+    for mode in [LayoutMode::Minimal, LayoutMode::Orca] {
+        for rows in [None, Some(r#"[["state_icon", "workspace"]]"#)] {
+            let cx = draw_rows(cx, mode, Worktrees::default(), true, rows);
+            let glyph = probe(cx, format!("worktree-icon-{ALONE}"));
+            let glyph = glyph.unwrap_or_else(|| panic!("{mode}: {rows:?}: no glyph"));
+            let name = probe(cx, format!("name-{ALONE}")).unwrap();
+            let row = probe(cx, format!("row-{ALONE}")).unwrap();
+            assert!(glyph.right() <= name.left(), "{mode}: {rows:?}");
+            assert!(row.left() <= glyph.left(), "{mode}: {rows:?}");
+            assert!(glyph.top() >= row.top() && glyph.bottom() <= row.bottom());
+            for key in [MAIN, FIRST, LAST, PLAIN] {
+                assert!(
+                    probe(cx, format!("worktree-icon-{key}")).is_none(),
+                    "{mode}: {rows:?}: {key}"
                 );
             }
         }

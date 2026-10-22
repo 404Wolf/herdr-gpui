@@ -151,6 +151,7 @@ impl RowLayout for Orca {
         let WorkspaceRow {
             label,
             tree,
+            icon,
             fold,
             grouped,
             badge,
@@ -175,6 +176,7 @@ impl RowLayout for Orca {
         let dirty = badge.as_ref().is_some_and(|badge| badge.dirty);
         let teleported = badge.as_ref().is_some_and(|badge| badge.teleported);
         let dirty_size = (line * 0.7).round().min(14.);
+        let worktree = parts::worktree(label, &icon, dirty_size);
         let meta = branch.is_some() || cx.host.is_some() || badge.is_some() || upstream.is_some();
         // The repository's own checkout is the group's primary card.
         let primary = (grouped && tree == RowTree::None).then(|| {
@@ -192,6 +194,9 @@ impl RowLayout for Orca {
         if !lines.is_empty() {
             let (mark, room) = configured_status(&lines, status, removing, cx);
             let text = Line::new(width + room, GAP)
+                .when_some(worktree, |text, glyph| {
+                    text.fixed(dirty_size, parts::first_line(dirty_size, glyph, cx))
+                })
                 .fill_with(|width| {
                     token_column(
                         label,
@@ -235,6 +240,7 @@ impl RowLayout for Orca {
                 .child(text.into_div().items_start());
         }
         let title = Line::new(width, GAP)
+            .when_some(worktree, |line, glyph| line.fixed(dirty_size, glyph))
             .fill(
                 div()
                     .debug_selector(|| format!("name-{label}"))

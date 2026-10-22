@@ -99,6 +99,7 @@ impl RowLayout for Minimal {
         // teleported checkout is a copy left behind, so it keeps its mark.
         let teleported = row.badge.as_ref().is_some_and(|badge| badge.teleported);
         let mark = (line_height(cx.font) * 0.75).round().min(15.);
+        let worktree = parts::worktree(row.label, &row.icon, mark);
         let status = row.status();
         let line = Line::new(cx.look.content_width(cx.width) - indent, density.gap());
         let line = if row.lines.is_empty() {
@@ -106,6 +107,7 @@ impl RowLayout for Minimal {
                 cx.indicators.width(cx.font),
                 parts::status(status, row.removing, cx),
             )
+            .when_some(worktree, |line, glyph| line.fixed(mark, glyph))
             .fill(
                 name(row.label, RowKind::Workspace, state, teleported, theme),
                 row.label,
@@ -124,7 +126,10 @@ impl RowLayout for Minimal {
                     row.removing,
                 ),
                 line,
-                |line| line,
+                |line| match worktree {
+                    Some(glyph) => line.fixed(mark, parts::first_line(mark, glyph, cx)),
+                    None => line,
+                },
                 cx,
             )
         };
