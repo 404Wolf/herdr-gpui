@@ -4334,6 +4334,7 @@ dependencies = [
  "gix",
  "gpui-pre",
  "gpui-pre-platform",
+ "herdr-automation",
  "herdr-client",
  "if-addrs",
  "image",

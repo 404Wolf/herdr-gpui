@@ -194,6 +194,7 @@ pub(crate) fn list_of(section: ActivityPanel) -> Option<List> {
         ActivityPanel::PullRequests => Some(List::PullRequests),
         ActivityPanel::Overview
         | ActivityPanel::Security
+        | ActivityPanel::Automations
         | ActivityPanel::Workspaces
         | ActivityPanel::Usage => None,
     }

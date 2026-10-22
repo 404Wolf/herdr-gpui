@@ -19,6 +19,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error(transparent)]
+    Automations(#[from] crate::automations::Error),
     #[cfg(feature = "azure")]
     #[error(transparent)]
     Azure(#[from] crate::azure::Error),
@@ -37,14 +39,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[error("Could not keep the machine awake: {0}")]
-    Caffeine(#[source] keepawake::Error),
-    #[error("No agent is working, so there is nothing to stay awake for")]
-    CaffeineNoWorkingAgents,
-    #[error("Could not start the keep-awake thread")]
-    CaffeineThread(#[source] io::Error),
-    #[error("The keep-awake thread stopped; the display may sleep")]
-    CaffeineWorkerStopped,
+    #[error(transparent)]
+    Caffeine(#[from] crate::caffeine::Failure),
     #[error("That checkpoint was taken on another branch. Check that branch out to restore it.")]
     CheckpointBranch,
     #[error("A merge, rebase, cherry-pick, or revert is in progress. Finish or abort it first.")]

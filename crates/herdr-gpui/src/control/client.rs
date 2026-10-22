@@ -451,6 +451,7 @@ pub(crate) fn run(invocation: Invocation) -> ExitCode {
         ControlCommand::Usage => hosts::usage(&context),
         ControlCommand::System => hosts::system(&context),
         ControlCommand::Security(command) => hosts::security(command, &context),
+        ControlCommand::Automation(command) => hosts::automation(command, &context),
         ControlCommand::Search {
             files,
             query,

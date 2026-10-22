@@ -1,4 +1,4 @@
-//! `pr`, `host`, `cloud`, `ports`, and `security`.
+//! `pr`, `host`, `cloud`, `ports`, `security`, and `automation`.
 use super::{Args, BatchCommand, CliError, ExecCommand, batch, exec, unknown};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,6 +38,16 @@ pub enum SecurityCommand {
     Open {
         repository: String,
         item: String,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AutomationCommand {
+    /// Open the approval of the script at `file` on `host` (an endpoint ID
+    /// or label; absent, the caller's host). The user approves in the app.
+    Approve {
+        file: std::path::PathBuf,
+        host: Option<String>,
     },
 }
 
@@ -84,6 +94,20 @@ pub(super) fn security(args: &mut Args) -> Result<SecurityCommand, CliError> {
             item: args.required_text("ALERT|GHSA")?,
         },
         _ => return Err(unknown("security", verb)),
+    })
+}
+
+pub(super) fn automation(args: &mut Args) -> Result<AutomationCommand, CliError> {
+    let verb = args.verb().ok_or(CliError::MissingArgument {
+        command: "automation",
+        what: "approve",
+    })?;
+    Ok(match verb.to_str() {
+        Some("approve") => AutomationCommand::Approve {
+            host: args.text_option("--host")?,
+            file: args.required("FILE")?.into(),
+        },
+        _ => return Err(unknown("automation", verb)),
     })
 }
 

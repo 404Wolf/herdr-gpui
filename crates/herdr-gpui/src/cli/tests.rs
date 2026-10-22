@@ -1,6 +1,7 @@
 use super::*;
 use control::BrowserCommand;
 
+mod automation;
 mod browser_zoom;
 mod cloud_batch;
 mod cloud_exec;

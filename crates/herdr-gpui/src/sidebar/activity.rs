@@ -5,8 +5,9 @@
 //! (`crate::overview`), Orchestrator, Pull requests, and Issues the focused
 //! workspace's orchestrator on that list (see `orchestrator::section`),
 //! Security the Dependabot alerts of every repository (`crate::security`),
-//! listed only once GitHub reports them on for one, and Usage the plan
-//! limits of every host (`crate::usage::section`).
+//! listed only once GitHub reports them on for one, Automations the
+//! `herdr-automate` scripts and runs of every host (`crate::automations`),
+//! and Usage the plan limits of every host (`crate::usage::section`).
 //! `[sidebar] activity_bar = false` turns the bar off. With the bar on, the
 //! sidebar toggle sits at the end of the Workspaces title, and collapsing the
 //! sidebar keeps the bar, with the compact rail and the toggle beside it.
@@ -52,6 +53,7 @@ pub enum ActivityPanel {
     PullRequests,
     Issues,
     Security,
+    Automations,
     Usage,
 }
 
@@ -62,6 +64,7 @@ impl ActivityPanel {
         Self::PullRequests,
         Self::Issues,
         Self::Security,
+        Self::Automations,
         Self::Usage,
     ];
 
@@ -73,6 +76,7 @@ impl ActivityPanel {
             Self::PullRequests => "pull-requests",
             Self::Issues => "issues",
             Self::Security => "security",
+            Self::Automations => "automations",
             Self::Usage => "usage",
         }
     }
@@ -88,6 +92,7 @@ impl ActivityPanel {
             Self::PullRequests => "Pull requests",
             Self::Issues => "Issues",
             Self::Security => "Security",
+            Self::Automations => "Automations",
             Self::Usage => "Usage",
         }
     }
@@ -99,6 +104,7 @@ impl ActivityPanel {
             Self::PullRequests => "icons/pull-request.svg",
             Self::Issues => "icons/issue.svg",
             Self::Security => "icons/shield.svg",
+            Self::Automations => "icons/automations.svg",
             Self::Usage => "icons/chart.svg",
         }
     }
@@ -310,7 +316,12 @@ impl HerdrWindow {
         }
         self.sync_activity_section(cx);
         match self.activity_section() {
-            Some(ActivityPanel::Overview | ActivityPanel::Security | ActivityPanel::Usage) => {
+            Some(
+                ActivityPanel::Overview
+                | ActivityPanel::Security
+                | ActivityPanel::Automations
+                | ActivityPanel::Usage,
+            ) => {
                 let focus = self
                     .activity
                     .section_focus
@@ -330,6 +341,7 @@ impl HerdrWindow {
             ActivityPanel::Workspaces => return None,
             ActivityPanel::Overview => self.render_overview(cx),
             ActivityPanel::Security => self.render_security_section(cx),
+            ActivityPanel::Automations => self.render_automations_section(cx),
             ActivityPanel::Usage => self.render_usage_section(cx),
             ActivityPanel::PullRequests | ActivityPanel::Issues => {
                 return self.render_orchestrator_section();
@@ -424,8 +436,12 @@ impl HerdrWindow {
                 BarState::Idle
             };
             // Overview's icon pulses while agents work, as the sidebar's
-            // working dots do.
-            let busy = panel == ActivityPanel::Overview && self.overview_working() > 0;
+            // working dots do, and Automations' while a run goes on.
+            let busy = match panel {
+                ActivityPanel::Overview => self.overview_working() > 0,
+                ActivityPanel::Automations => self.automations.running() > 0,
+                _ => false,
+            };
             let bubble = counts.of(panel).map(|count| Bubble {
                 count,
                 unseen: self.activity.unseen(panel, counts.latest(panel)),
@@ -636,6 +652,7 @@ fn panel_selector(panel: ActivityPanel) -> &'static str {
         ActivityPanel::PullRequests => "activity-pull-requests",
         ActivityPanel::Issues => "activity-issues",
         ActivityPanel::Security => "activity-security",
+        ActivityPanel::Automations => "activity-automations",
         ActivityPanel::Usage => "activity-usage",
     }
 }

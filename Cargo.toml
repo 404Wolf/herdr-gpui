@@ -56,7 +56,8 @@ gpui_platform        = { package = "gpui-pre-platform", version = "=0.3.6" }
 gix                  = { default-features = false, features = ["sha1"], version = "0.89" }
 # The web views behind browser tabs; `browser::page` lays them out in the window.
 wry                  = { package = "lb-wry", version = "=0.53.3" }
-herdr-automation     = { path = "crates/herdr-automation" }
+# Reports only by default; the daemon turns on the Luau engine.
+herdr-automation     = { default-features = false, path = "crates/herdr-automation" }
 herdr-client         = { path = "crates/herdr-client" }
 herdr-protocol       = { path = "crates/herdr-protocol" }
 interprocess         = "2.4.2"

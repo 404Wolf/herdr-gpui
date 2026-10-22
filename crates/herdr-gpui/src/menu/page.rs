@@ -20,6 +20,8 @@ pub(crate) enum Page {
     /// The Linux window's application menu, from the native menu definitions.
     Application,
     AppUpdate,
+    /// Approving an automation script, or enabling automations on a host.
+    Automation,
     /// Reviewing, then following, a move of the pane menu's pane to another
     /// device.
     CarryPane,

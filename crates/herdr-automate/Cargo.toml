@@ -12,7 +12,7 @@ version.workspace      = true
 workspace = true
 
 [dependencies]
-herdr-automation.workspace = true
+herdr-automation           = { features = ["engine"], workspace = true }
 herdr-client.workspace     = true
 jiff.workspace             = true
 rusqlite.workspace         = true

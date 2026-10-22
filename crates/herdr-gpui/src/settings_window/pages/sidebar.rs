@@ -163,7 +163,7 @@ impl SettingsWindow {
                 ui::row(theme, "sidebar-activity-bar", "Show activity bar")
                     .description(
                         "The icon column at the window's left edge that switches between \
-                         workspaces, overview, pull requests, issues and usage.",
+                         workspaces, overview, pull requests, issues, security, automations and usage.",
                     )
                     .switch(
                         ui::toggle(

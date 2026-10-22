@@ -33,6 +33,7 @@ impl Page {
             Self::AgentSkill => "Install the agent skill",
             Self::Application => "Menu",
             Self::AppUpdate | Self::Update => "Update",
+            Self::Automation => "Automations",
             Self::CarryPane => "Move pane to another device",
             Self::Checkpoints => "Checkpoints",
             Self::CodeSearch => "Go to symbol or file",
