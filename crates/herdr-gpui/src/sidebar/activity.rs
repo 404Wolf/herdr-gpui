@@ -5,9 +5,11 @@
 //! (`crate::overview`), Orchestrator, Pull requests, and Issues the focused
 //! workspace's orchestrator on that list (see `orchestrator::section`),
 //! Security the Dependabot alerts of every repository (`crate::security`),
-//! listed only once GitHub reports them on for one, and Usage the plan
-//! limits of every host (`crate::usage::section`).
-//! `[sidebar] activity_bar = false` turns the bar off. With the bar on, the
+//! listed only once GitHub reports them on for one, Automations the
+//! `herdr-automate` scripts and runs of every host (`crate::automations`),
+//! and Usage the plan limits of every host (`crate::usage::section`).
+//! `[sidebar] activity_bar = false` turns the bar off, and `[sidebar]
+//! automations = false` leaves Automations off it. With the bar on, the
 //! sidebar toggle sits at the end of the Workspaces title, and collapsing the
 //! sidebar keeps the bar, with the compact rail and the toggle beside it.
 
@@ -52,6 +54,7 @@ pub enum ActivityPanel {
     PullRequests,
     Issues,
     Security,
+    Automations,
     Usage,
 }
 
@@ -62,6 +65,7 @@ impl ActivityPanel {
         Self::PullRequests,
         Self::Issues,
         Self::Security,
+        Self::Automations,
         Self::Usage,
     ];
 
@@ -73,6 +77,7 @@ impl ActivityPanel {
             Self::PullRequests => "pull-requests",
             Self::Issues => "issues",
             Self::Security => "security",
+            Self::Automations => "automations",
             Self::Usage => "usage",
         }
     }
@@ -88,6 +93,7 @@ impl ActivityPanel {
             Self::PullRequests => "Pull requests",
             Self::Issues => "Issues",
             Self::Security => "Security",
+            Self::Automations => "Automations",
             Self::Usage => "Usage",
         }
     }
@@ -99,6 +105,7 @@ impl ActivityPanel {
             Self::PullRequests => "icons/pull-request.svg",
             Self::Issues => "icons/issue.svg",
             Self::Security => "icons/shield.svg",
+            Self::Automations => "icons/automations.svg",
             Self::Usage => "icons/chart.svg",
         }
     }
@@ -234,6 +241,23 @@ impl HerdrWindow {
         self.config.sidebar_style.activity_bar
     }
 
+    /// Whether the bar lists `panel`. A section turned off in the settings
+    /// is not listed, and a window left on it shows Workspaces.
+    pub(crate) fn activity_panel_listed(&self, panel: ActivityPanel) -> bool {
+        match panel {
+            ActivityPanel::Automations => self.config.sidebar_style.automations,
+            _ => true,
+        }
+    }
+
+    /// The section the bar marks: the one picked, or Workspaces when that
+    /// one is no longer listed.
+    fn activity_panel(&self) -> ActivityPanel {
+        Some(self.activity.panel)
+            .filter(|panel| self.activity_panel_listed(*panel))
+            .unwrap_or_default()
+    }
+
     /// Whether the bar leads the left column, whatever the sidebar's state:
     /// on, and not set aside by zen mode. The sidebar toggle then lives in
     /// the column rather than the title bar.
@@ -255,7 +279,7 @@ impl HerdrWindow {
     /// Workspaces is shown. Zen mode keeps the terminals.
     pub(crate) fn activity_section(&self) -> Option<ActivityPanel> {
         self.activity_bar_leads()
-            .then_some(self.activity.panel)
+            .then(|| self.activity_panel())
             .filter(|panel| *panel != ActivityPanel::Workspaces)
     }
 
@@ -282,7 +306,7 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) {
         if panel == ActivityPanel::Workspaces
-            && self.activity.panel == panel
+            && self.activity_panel() == panel
             && self.sidebar_visible
         {
             self.toggle_sidebar();
@@ -300,6 +324,9 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if !self.activity_panel_listed(panel) {
+            return;
+        }
         if panel == ActivityPanel::Workspaces && !self.sidebar_visible {
             self.toggle_sidebar();
         }
@@ -310,7 +337,12 @@ impl HerdrWindow {
         }
         self.sync_activity_section(cx);
         match self.activity_section() {
-            Some(ActivityPanel::Overview | ActivityPanel::Security | ActivityPanel::Usage) => {
+            Some(
+                ActivityPanel::Overview
+                | ActivityPanel::Security
+                | ActivityPanel::Automations
+                | ActivityPanel::Usage,
+            ) => {
                 let focus = self
                     .activity
                     .section_focus
@@ -334,6 +366,7 @@ impl HerdrWindow {
             ActivityPanel::Workspaces => return None,
             ActivityPanel::Overview => self.render_overview(cx),
             ActivityPanel::Security => self.render_security_section(window, cx),
+            ActivityPanel::Automations => self.render_automations_section(cx),
             ActivityPanel::Usage => self.render_usage_section(cx),
             ActivityPanel::PullRequests | ActivityPanel::Issues => {
                 return self.render_orchestrator_section();
@@ -418,15 +451,23 @@ impl HerdrWindow {
             .bg(self.fill().panel(theme.sidebar_background()))
             .border_r_1()
             .border_color(rgb(theme.active));
+        let shown = self.activity_panel();
         for &panel in ActivityPanel::ALL {
-            let state = if panel == self.activity.panel {
+            if !self.activity_panel_listed(panel) {
+                continue;
+            }
+            let state = if panel == shown {
                 BarState::Selected
             } else {
                 BarState::Idle
             };
             // Overview's icon pulses while agents work, as the sidebar's
-            // working dots do.
-            let busy = panel == ActivityPanel::Overview && self.overview_working() > 0;
+            // working dots do, and Automations' while a run goes on.
+            let busy = match panel {
+                ActivityPanel::Overview => self.overview_working() > 0,
+                ActivityPanel::Automations => self.automations.running() > 0,
+                _ => false,
+            };
             let bubble = counts.of(panel).map(|count| Bubble {
                 count,
                 unseen: self.activity.unseen(panel, counts.latest(panel)),
@@ -637,6 +678,7 @@ fn panel_selector(panel: ActivityPanel) -> &'static str {
         ActivityPanel::PullRequests => "activity-pull-requests",
         ActivityPanel::Issues => "activity-issues",
         ActivityPanel::Security => "activity-security",
+        ActivityPanel::Automations => "activity-automations",
         ActivityPanel::Usage => "activity-usage",
     }
 }

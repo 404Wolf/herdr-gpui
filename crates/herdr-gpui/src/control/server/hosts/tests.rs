@@ -3,6 +3,7 @@ use super::*;
 use crate::sidebar::layout_tests::fixture_window;
 use gpui::{Entity, TestAppContext, VisualTestContext};
 
+mod automation;
 #[cfg(feature = "cloud")]
 mod cloud_setup;
 mod info;

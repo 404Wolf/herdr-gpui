@@ -1,5 +1,5 @@
 //! Hosts and what the app gathers about them: pull requests, listening and
-//! forwarded ports, plan usage, load, and Dependabot alerts.
+//! forwarded ports, plan usage, load, Dependabot alerts, and automations.
 use serde::{Deserialize, Serialize};
 
 /// How long a pull request's comments may take to load.
@@ -45,6 +45,14 @@ pub(crate) enum HostOp {
     SecurityOpen {
         repository: String,
         item: String,
+    },
+    /// Open the approval of the automation script at `path` on `host` (an
+    /// endpoint ID or label; absent, the caller's host). Only the dialog
+    /// opens: the user approves there.
+    AutomationApprove {
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        host: Option<String>,
     },
     /// Open the settings that add cloud machines.
     Cloud,

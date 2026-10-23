@@ -142,6 +142,7 @@ impl HerdrWindow {
             app_update_notes: Default::default(),
             app_update_notes_scroll: ScrollHandle::new(),
             arrival: None,
+            automations: Default::default(),
             avatars: None,
             backdrop: Default::default(),
             bell: crate::bell::Bell::default(),
