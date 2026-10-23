@@ -116,9 +116,9 @@ fn session_name(api: &Path) -> Option<&str> {
 fn open(host: &Host) -> Result<Shell> {
     match host {
         Host::Local => local_shell(),
-        Host::Ssh(target) => Ok(Shell::connect(target)?),
+        Host::Ssh(target) => Shell::connect(target).map_err(Error::from),
         // A distribution is scanned as a Linux host, with its own `ss`.
-        Host::Wsl(distro) => Ok(Shell::connect_wsl(distro)?),
+        Host::Wsl(distro) => Shell::connect_wsl(distro).map_err(Error::from),
         #[cfg(feature = "azure")]
         Host::Azure { .. } => Err(Error::CloudHostUnsupported),
     }

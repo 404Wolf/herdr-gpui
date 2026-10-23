@@ -792,8 +792,9 @@ pub enum Error {
     UnsupportedCommand,
     #[error("{0}")]
     Update(#[from] UpdateError),
+    /// A usage read failed; see `error/usage.rs` for what is folded elsewhere.
     #[error(transparent)]
-    Usage(#[from] herdr_usage::Error),
+    Usage(herdr_usage::Error),
     #[cfg(any(target_os = "macos", windows))]
     #[error("Could not create the page: {0}")]
     WebView(#[from] wry::Error),
@@ -855,6 +856,7 @@ mod github;
 mod path;
 mod remote;
 mod theme;
+mod usage;
 
 #[cfg(test)]
 mod tests;
