@@ -98,7 +98,6 @@ mod link;
 mod links;
 mod listening_ports;
 mod log_window;
-mod login_env;
 mod mark_layer;
 mod menu;
 mod menus;
@@ -189,7 +188,7 @@ pub use error::{Error, Result};
 // app's `crate::updater` paths.
 use herdr_updater as updater;
 // Shared with herdr-client's own SSH and probe children.
-use herdr_client::local_path;
+use herdr_client::{local_path, login_env};
 
 pub(crate) use {
     actions::{

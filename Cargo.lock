@@ -4465,6 +4465,7 @@ dependencies = [
  "crossbeam-channel",
  "herdr-protocol",
  "interprocess",
+ "nix",
  "rustix",
  "serde",
  "serde_json",

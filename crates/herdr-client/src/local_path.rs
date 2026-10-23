@@ -1,6 +1,6 @@
-//! Where this user's tools live, for an app started from the desktop rather
-//! than a shell: the home directory, and a `PATH` with the directories a GUI
-//! launch leaves out.
+//! Where this user's files and tools live, for an app started from the
+//! desktop rather than a shell: the home directory, Herdr UI's state
+//! directory, and a `PATH` with the directories a GUI launch leaves out.
 use std::{ffi::OsString, path::PathBuf};
 
 // Probing Linuxbrew on macOS triggers /home's automounter and directory lookups.
@@ -29,6 +29,34 @@ pub fn home_dir() -> Option<PathBuf> {
             }
         })
         .map(PathBuf::from)
+}
+
+/// Herdr UI's own state directory, shared by its preferences, logs, and
+/// saved devices.
+pub fn state_dir() -> Option<PathBuf> {
+    state_dir_with(|name| std::env::var_os(name))
+}
+
+fn state_dir_with(var: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
+    let var = |name| var(name).filter(|value| !value.is_empty());
+    let root = var("XDG_STATE_HOME").map(PathBuf::from).or_else(|| {
+        // Existing Windows installations with HOME already store preferences
+        // here. Keep selecting the same directory after an upgrade.
+        if let Some(home) = var("HOME") {
+            return Some(PathBuf::from(home).join(".local").join("state"));
+        }
+        #[cfg(windows)]
+        {
+            if let Some(local) = var("LOCALAPPDATA") {
+                return Some(PathBuf::from(local));
+            }
+            if let Some(profile) = var("USERPROFILE") {
+                return Some(PathBuf::from(profile).join("AppData").join("Local"));
+            }
+        }
+        None
+    });
+    root.map(|root| root.join("herdr").join("gpui"))
 }
 
 /// GUI launches omit directories commonly used by user-installed tools.

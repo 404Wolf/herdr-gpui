@@ -1,10 +1,13 @@
+//! The user's login shell environment, for the children an app started
+//! from the desktop runs: launchd and desktop sessions hand a GUI app a
+//! bare `PATH` and none of the variables a shell profile sets.
 #![forbid(unsafe_code)]
 
 use std::{ffi::OsString, process::Command};
 
 /// Called only by worker threads, such as the daemon connection's and the
 /// VS Code server's, never by a GPUI render/update.
-pub(crate) fn apply(command: &mut Command) {
+pub fn apply(command: &mut Command) {
     #[cfg(unix)]
     if let Some(environment) = unix::resolve() {
         command.envs(environment.iter().map(|(key, value)| (key, value)));
@@ -17,7 +20,7 @@ pub(crate) fn apply(command: &mut Command) {
 
 /// The `PATH` that [`apply`] gives a command, for finding a program on it.
 /// Blocking the first time on Unix, like [`apply`]: run it off the UI thread.
-pub(crate) fn path() -> Option<OsString> {
+pub fn path() -> Option<OsString> {
     #[cfg(unix)]
     return match unix::resolve() {
         Some(environment) => environment
@@ -33,7 +36,7 @@ pub(crate) fn path() -> Option<OsString> {
 /// The variable `name` as [`apply`] gives it to a command: the login
 /// shell's value when it sets one, else this process's. Blocking the first
 /// time on Unix, like [`apply`]: run it off the UI thread.
-pub(crate) fn var(name: &str) -> Option<OsString> {
+pub fn var(name: &str) -> Option<OsString> {
     #[cfg(unix)]
     if let Some((_, value)) = unix::resolve().and_then(|environment| {
         environment
@@ -48,8 +51,8 @@ pub(crate) fn var(name: &str) -> Option<OsString> {
 /// What the login shell at `shell` exports, probed as [`apply`] probes the
 /// user's, for tests elsewhere that start from a desktop launch's bare
 /// environment.
-#[cfg(all(test, unix))]
-pub(crate) fn probe_for_tests(shell: &std::path::Path) -> Option<Vec<(OsString, OsString)>> {
+#[cfg(all(unix, any(test, feature = "test-support")))]
+pub fn probe_for_tests(shell: &std::path::Path) -> Option<Vec<(OsString, OsString)>> {
     unix::probe(
         shell.as_os_str(),
         false,
@@ -64,11 +67,11 @@ pub(crate) fn probe_for_tests(shell: &std::path::Path) -> Option<Vec<(OsString, 
 /// shell blocks, so this runs once before the app starts, and only when no
 /// daemon answers at the default endpoint: a daemon there needs nothing
 /// adopted, and without one the probe would run anyway to start it.
-pub(crate) fn adopt_config_home() {
+pub fn adopt_config_home() {
     #[cfg(unix)]
     {
         if std::env::var_os("XDG_CONFIG_HOME").is_some()
-            || herdr_client::ConnectTarget::Local
+            || crate::ConnectTarget::Local
                 .socket_path()
                 .is_ok_and(|path| unix::answers(&path))
         {
@@ -77,7 +80,7 @@ pub(crate) fn adopt_config_home() {
         let Some(home) = unix::resolve().and_then(unix::config_home) else {
             return;
         };
-        if herdr_client::set_login_config_home(home.into()) {
+        if crate::set_login_config_home(home.into()) {
             tracing::info!("Using the login shell's XDG_CONFIG_HOME");
         }
     }
@@ -137,7 +140,7 @@ mod unix {
     /// the same check upstream's session list makes; the daemon only logs a
     /// client that handshakes.
     pub(super) fn answers(socket: &std::path::Path) -> bool {
-        herdr_client::Stream::connect(socket).is_ok()
+        crate::Stream::connect(socket).is_ok()
     }
 
     pub(super) fn config_home(environment: &Environment) -> Option<OsString> {
@@ -176,7 +179,7 @@ mod unix {
         let script = format!("printf '{start}\\0'; /usr/bin/env -0; printf '{end}\\0'");
         let (mut reader, writer) = UnixStream::pair()?;
         reader.set_nonblocking(true)?;
-        let mut child = herdr_client::new_command(shell)
+        let mut child = crate::new_command(shell)
             .args(["-l", "-i", "-c"])
             .arg(script)
             .stdin(Stdio::null())
