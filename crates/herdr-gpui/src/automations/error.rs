@@ -19,14 +19,14 @@ pub enum Error {
     Json(#[source] serde_json::Error),
     #[error("herdr-automate is not installed on this host")]
     Missing,
-    #[error("Automations are turned off in Herdr UI: Settings, Sidebar, Show automations")]
-    Off,
     #[error("This app has no herdr-automate build for {platform}")]
     NoBuild { platform: String },
     #[error("{host} has no automation script {path}")]
     NoScript { path: String, host: String },
     #[error("{host} has not been read yet; try again in a moment")]
     NotRead { host: String },
+    #[error("Automations are turned off in Herdr UI: Settings, Sidebar, Show automations")]
+    Off,
     #[error("Cannot tell this host's platform from `uname -sm`: {0}")]
     Platform(String),
     #[error(
