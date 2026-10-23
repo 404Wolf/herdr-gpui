@@ -109,7 +109,8 @@ pub(crate) fn devices(computer: &str, origins: &[String], fingerprint: &str) -> 
             div class="group-list" {
                 label class="row justify-between" {
                     span { "Push notifications" }
-                    input type="checkbox" x-model="push" x-on:change="togglePush" class="switch";
+                    // The CSP build cannot write through x-model; the handler reads the box.
+                    input type="checkbox" x-bind:checked="push" x-on:change="togglePush" class="switch";
                 }
                 p class="px-3 pb-3 text-xs text-muted" x-text="pushHint" {}
             }

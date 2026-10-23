@@ -13,6 +13,8 @@ const app = {
   session: readJson(sessionStorage, TOKEN),
   origin: null,
   stream: null,
+  // The navigation in progress; a newer one aborts it.
+  routing: null,
   retry: 0,
 };
 
@@ -75,7 +77,7 @@ class HttpError extends Error {
   }
 }
 
-async function call(path, { method = "GET", body, raw, auth = true, origin } = {}) {
+async function call(path, { method = "GET", body, raw, auth = true, origin, signal } = {}) {
   const headers = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (raw !== undefined) headers["Content-Type"] = raw.type || "application/octet-stream";
@@ -85,6 +87,7 @@ async function call(path, { method = "GET", body, raw, auth = true, origin } = {
     headers,
     body: raw !== undefined ? raw : body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
+    signal,
   });
   if (!response.ok) {
     let message = response.statusText;
@@ -185,12 +188,19 @@ function routeOf(path, search) {
 async function route() {
   const target = routeOf(location.pathname, location.search);
   stopStream();
+  // Only the newest navigation may fill the view or open a stream: an
+  // older page answering late must not replace the one the URL names.
+  app.routing?.abort();
+  const routing = new AbortController();
+  app.routing = routing;
   try {
-    const html = await (await api(target.fragment)).text();
+    const html = await (await api(target.fragment, { signal: routing.signal })).text();
+    if (app.routing !== routing) return;
     view().innerHTML = html;
     window.scrollTo(0, location.pathname.startsWith("/chat/") ? document.body.scrollHeight : 0);
     if (target.stream) startStream(target.stream);
   } catch (error) {
+    if (app.routing !== routing || routing.signal.aborted) return;
     if (error.status === 404) return navigate("/");
     if (error.status === 403) return forget();
     flash(error.message);
@@ -214,7 +224,8 @@ async function startStream(query) {
   const controller = new AbortController();
   app.stream = controller;
   try {
-    const response = await call(`/api/stream?${query}`, {});
+    const response = await call(`/api/stream?${query}`, { signal: controller.signal });
+    if (app.stream !== controller) return response.body?.cancel();
     app.retry = 0;
     banner("");
     const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -255,9 +266,10 @@ function handleEvent(block) {
   for (const [id, html] of Object.entries(patch.regions || {})) {
     const element = document.getElementById(id);
     if (!element) continue;
-    // Never replace a composer holding a draft.
+    // Never replace a composer holding a draft, pictures, or a send.
     const draft = element.querySelector?.("textarea");
     if (draft && (draft.value || document.activeElement === draft)) continue;
+    if (element.matches?.("[data-busy]") || element.querySelector?.("[data-busy]")) continue;
     const atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     element.outerHTML = html;
     if (atBottom && id === "chat-turn") window.scrollTo(0, document.body.scrollHeight);
@@ -266,13 +278,16 @@ function handleEvent(block) {
 
 // ---- commands and forms ----
 
+/// Sends a command; true when the chat took it.
 async function command(pane, body) {
   try {
     const answer = await (await api(`/api/chat/${pane}/command`, { method: "POST", body })).json();
-    if (answer.rejected) flash(answer.rejected);
+    if (!answer.rejected) return true;
+    flash(answer.rejected);
   } catch (error) {
     flash(error.message);
   }
+  return false;
 }
 
 document.addEventListener("click", (event) => {
@@ -430,21 +445,34 @@ document.addEventListener("alpine:init", () => {
   }));
   Alpine.data("composer", () => ({
     files: [],
+    uploading: 0,
+    sending: false,
+    // Marks the composer while it holds pictures or work in flight, so a
+    // live patch leaves it alone.
+    mark() {
+      const busy = this.files.length > 0 || this.uploading > 0 || this.sending;
+      if (busy) this.$root.dataset.busy = "";
+      else delete this.$root.dataset.busy;
+    },
     pick() {
       this.$refs.file.click();
     },
     async attach(event) {
       const pane = this.$el.closest("[data-pane]").dataset.pane;
-      for (const file of [...event.target.files].slice(0, 4 - this.files.length)) {
+      const picked = [...event.target.files].slice(0, 4 - this.files.length);
+      event.target.value = "";
+      this.uploading += picked.length;
+      this.mark();
+      for (const file of picked) {
         try {
           const { id } = await (await api(`/api/chat/${pane}/upload`, { method: "POST", raw: file })).json();
           this.files.push({ id, name: file.name || "Picture" });
         } catch (error) {
           flash(error.message);
         }
+        this.uploading -= 1;
+        this.chips();
       }
-      event.target.value = "";
-      this.chips();
     },
     chips() {
       const chips = this.$refs.chips;
@@ -461,6 +489,7 @@ document.addEventListener("alpine:init", () => {
           return chip;
         }),
       );
+      this.mark();
     },
     grow() {
       const text = this.$refs.text;
@@ -477,16 +506,24 @@ document.addEventListener("alpine:init", () => {
       this.$refs.text.value = `/${event.currentTarget.dataset.slash} `;
       this.$refs.text.focus();
     },
+    // The draft stays until the chat takes it, so a dropped connection
+    // loses nothing; the user sends again.
     async send(event) {
       event.preventDefault();
       const text = this.$refs.text.value.trim();
-      if (!text) return;
+      if (!text || this.sending || this.uploading > 0) return;
       const attachments = this.files.map((file) => ({ path: file.id }));
-      this.$refs.text.value = "";
-      this.files = [];
-      this.chips();
-      this.grow();
-      await command(this.$el.dataset.pane, { command: "prompt", text, attachments });
+      this.sending = true;
+      this.mark();
+      const taken = await command(this.$root.closest("[data-pane]").dataset.pane, { command: "prompt", text, attachments });
+      this.sending = false;
+      if (taken) {
+        this.$refs.text.value = "";
+        this.files = [];
+        this.chips();
+        this.grow();
+      }
+      this.mark();
     },
   }));
   Alpine.data("settings", () => ({
@@ -502,13 +539,19 @@ document.addEventListener("alpine:init", () => {
       this.push = Boolean(await pushSubscription());
       this.pushHint = this.push ? "Questions and finished turns arrive here." : "";
     },
-    async togglePush() {
+    // Alpine's CSP build cannot assign through x-model, so the switch's
+    // own state says what the user asked for.
+    async togglePush(event) {
+      const input = event.target;
+      const wanted = input.checked;
       try {
-        if (this.push) await subscribePush();
+        if (wanted) await subscribePush();
         else await unsubscribePush();
-        this.pushHint = this.push ? "Questions and finished turns arrive here." : "";
+        this.push = wanted;
+        this.pushHint = wanted ? "Questions and finished turns arrive here." : "";
       } catch (error) {
-        this.push = !this.push;
+        this.push = !wanted;
+        input.checked = !wanted;
         this.pushHint = error.message;
       }
     },
