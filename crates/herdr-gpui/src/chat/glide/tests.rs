@@ -106,3 +106,27 @@ fn redrawing_the_entry_at_the_top_keeps_the_place_in_it() {
     splice_in_place(&list, 0..1, 2);
     assert_eq!(list.logical_scroll_top().item_ix, 2);
 }
+
+#[test]
+fn a_steady_stream_moves_steadily_rather_than_a_dash_per_chunk() {
+    let mut glide = glide();
+    let start = Instant::now();
+    let (mut top, mut end) = (0., 0.);
+    let mut steps = Vec::new();
+    for frame in 0..120u64 {
+        // A line of text every fifth frame, as a reply streams.
+        if frame % 5 == 0 {
+            end += 20.;
+        }
+        let now = start + Duration::from_millis(16 * frame);
+        let step = glide.step(top, end, 600., now).unwrap_or(0.);
+        top += step;
+        steps.push(step);
+    }
+    // Once under way, no frame moves much more than the one before: the
+    // speed carries from chunk to chunk.
+    for pair in steps[30..].windows(2) {
+        assert!(pair[1] - pair[0] < 2., "{pair:?}");
+    }
+    assert!(end - top < 60., "keeps up: {} behind", end - top);
+}

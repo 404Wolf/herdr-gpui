@@ -1,12 +1,12 @@
 //! Following a streaming reply: the list opens at its end, and output that
-//! grows the last entry glides into view over several frames rather than
-//! jumping there.
+//! grows the last entry shows at once, or with `[chat] glide` on glides
+//! into view over several frames.
 
 use super::{
     overlay::{attach_with, open, poll},
     *,
 };
-use crate::HerdrWindow;
+use crate::{HerdrWindow, window::MockPeer};
 use gpui::{Entity, TestAppContext, VisualTestContext};
 use herdr_client::ConnectTarget;
 
@@ -18,26 +18,27 @@ fn behind(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) -> f32 {
     })
 }
 
-fn redraw(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) {
-    view.update(cx, |_, cx| cx.notify());
-    cx.run_until_parked();
+/// A window whose chats glide to new output.
+fn gliding(cx: &mut TestAppContext) -> (Entity<HerdrWindow>, MockPeer, &mut VisualTestContext) {
+    let (view, peer, cx) = open(cx, ConnectTarget::Local);
+    view.update(cx, |view, _| view.config.chat.glide = true);
+    (view, peer, cx)
 }
 
-#[gpui::test]
-fn a_growing_reply_glides_into_view(cx: &mut TestAppContext) {
-    let (view, _peer, cx) = open(cx, ConnectTarget::Local);
-    let program = Program::new();
+/// Opens 40 entries and grows the last by several paragraphs, then draws
+/// one frame and says how far behind its end the list is.
+fn grow_last(view: &Entity<HerdrWindow>, program: &Program, cx: &mut VisualTestContext) -> f32 {
     let entries = (1..=40)
         .map(|id| agent(id, "A line of an earlier reply."))
         .collect();
-    let mut stream = attach_with(&view, &program, snapshot(cursor(1, 0), entries), cx);
-    redraw(&view, cx);
-    assert!(behind(&view, cx) <= 1., "opens at its end");
+    let mut stream = attach_with(view, program, snapshot(cursor(1, 0), entries), cx);
+    redraw(view, cx);
+    assert!(behind(view, cx) <= 1., "opens at its end");
 
     let more = "\n\nAnother paragraph of the reply as it streams in.".repeat(6);
     send(&mut stream, &change(append(40, &more), cursor(1, 1)));
     wait_until(|| {
-        poll(&view, &program, cx);
+        poll(view, program, cx);
         view.read_with(cx, |view, _| {
             let entries = &view
                 .chats
@@ -49,8 +50,31 @@ fn a_growing_reply_glides_into_view(cx: &mut TestAppContext) {
             matches!(&entries[39].kind, EntryKind::Agent { text } if text.len() > 100)
         })
     });
-    redraw(&view, cx);
-    let start = behind(&view, cx);
+    redraw(view, cx);
+    behind(view, cx)
+}
+
+fn redraw(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext) {
+    view.update(cx, |_, cx| cx.notify());
+    cx.run_until_parked();
+}
+
+#[gpui::test]
+fn a_growing_reply_shows_at_once_by_default(cx: &mut TestAppContext) {
+    let (view, _peer, cx) = open(cx, ConnectTarget::Local);
+    let program = Program::new();
+    let behind = grow_last(&view, &program, cx);
+    assert!(
+        behind <= 1.,
+        "the new lines show in the frame they land in: {behind}"
+    );
+}
+
+#[gpui::test]
+fn a_growing_reply_glides_into_view(cx: &mut TestAppContext) {
+    let (view, _peer, cx) = gliding(cx);
+    let program = Program::new();
+    let start = grow_last(&view, &program, cx);
     assert!(
         start > 20.,
         "the new lines wait below rather than jump: {start}"
@@ -129,7 +153,7 @@ fn scrolled_up_the_list_stays_while_output_arrives(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn a_shorter_list_catches_up_to_its_end_on_its_own(cx: &mut TestAppContext) {
-    let (view, _peer, cx) = open(cx, ConnectTarget::Local);
+    let (view, _peer, cx) = gliding(cx);
     let program = Program::new();
     let entries = (1..=40)
         .map(|id| agent(id, "A line of an earlier reply."))

@@ -452,6 +452,10 @@ size = 12
 # The button in a chat's header steps through them.
 # [chat]
 # layout = "timeline"
+#
+# Scroll smoothly to a streaming reply's new text, rather than jumping to it
+# as each chunk lands. Settings > General edits this while ACP chats are on.
+# glide = false
 
 # Variables every chat's tab starts with, on this machine or an SSH host, so
 # an agent reaches a company endpoint the pane's shell does not set up: GitHub

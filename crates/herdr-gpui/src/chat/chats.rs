@@ -313,11 +313,12 @@ impl Chats {
     }
 
     /// Moves each list a frame's step toward its end while it follows a
-    /// reply, and says whether to draw another frame.
-    pub(crate) fn glide(&mut self, now: Instant) -> bool {
+    /// reply, or with `smooth` off all the way there, and says whether to
+    /// draw another frame.
+    pub(crate) fn glide(&mut self, now: Instant, smooth: bool) -> bool {
         let mut more = false;
         for pane in &mut self.panes {
-            more |= pane.glide.tick(&pane.list, now);
+            more |= pane.glide.tick(&pane.list, now, smooth);
         }
         more
     }

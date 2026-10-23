@@ -4,19 +4,22 @@
 //! The list itself never follows its tail: aligned to its top, it keeps
 //! its top where it is while entries grow beneath it, even at the end,
 //! where a list aligned to its bottom would stick to the end and jump.
-//! Each frame [`Glide`] scrolls part of the way to the end, easing out,
-//! until it is there, and [`Glide::watch`] asks for that frame once a
-//! layout leaves the list behind its end, whether an entry grew or the
-//! list itself got shorter. Scrolling up stops the following; scrolling
-//! back to the end starts it again.
+//! Each frame [`Glide`] moves the list toward its end on a critically
+//! damped spring, which keeps its speed when more text lands, so a stream
+//! of chunks reads as one steady glide rather than a dash per chunk, and
+//! settles at the end without passing it, and [`Glide::watch`] asks for
+//! that frame once a layout leaves the list behind its end, whether an
+//! entry grew or the list itself got shorter. With `[chat] glide` off, the
+//! list is put at its end before each layout instead, so new text shows
+//! in the frame it arrives in. Either way, scrolling up stops the
+//! following; scrolling back to the end starts it again.
 
 use gpui::{ListOffset, ListState, canvas, prelude::*, px};
 use std::{cell::Cell, ops::Range, rc::Rc, time::Instant};
 
-/// The time constant of the ease: about two thirds of what is left is
-/// covered in this long, so a few new lines settle in about 120ms and the
-/// view keeps up with text as it streams.
-const EASE_SECONDS: f32 = 0.04;
+/// How long the spring takes to settle, roughly: a few new lines arrive in
+/// about this long, and text streaming steadily is followed this far behind.
+const SMOOTH_SECONDS: f32 = 0.12;
 /// The longest frame gap counted, so a stall does not land in one jump.
 const MAX_FRAME_SECONDS: f32 = 0.05;
 /// A frame gap assumed for the first step of a glide.
@@ -38,6 +41,8 @@ pub(crate) struct Glide {
     /// as it does when the end comes up short, must not stop it.
     scrolled: Rc<Cell<bool>>,
     last_step: Option<Instant>,
+    /// The spring's speed, in pixels a second.
+    speed: f32,
 }
 
 impl Glide {
@@ -52,6 +57,7 @@ impl Glide {
             following: Rc::new(Cell::new(true)),
             scrolled,
             last_step: None,
+            speed: 0.,
         }
     }
 
@@ -60,6 +66,7 @@ impl Glide {
         self.following.set(true);
         self.scrolled.set(false);
         self.last_step = None;
+        self.speed = 0.;
         list.scroll_to(ListOffset {
             item_ix: list.item_count(),
             offset_in_item: px(0.),
@@ -92,11 +99,24 @@ impl Glide {
         .size_0()
     }
 
-    /// Scrolls `list` one frame's step toward its end, and says whether to
-    /// draw another frame.
-    pub(crate) fn tick(&mut self, list: &ListState, now: Instant) -> bool {
+    /// Scrolls `list` one frame's step toward its end, or with `smooth`
+    /// off all the way there, and says whether to draw another frame.
+    pub(crate) fn tick(&mut self, list: &ListState, now: Instant, smooth: bool) -> bool {
         let top = -f32::from(list.scroll_px_offset_for_scrollbar().y);
         let end = top + behind(list);
+        if !smooth {
+            self.last_step = None;
+            self.speed = 0.;
+            // At the end before this frame's layout, which then lays out
+            // whatever arrived with the end in view.
+            if self.follows(end - top) {
+                list.scroll_to(ListOffset {
+                    item_ix: list.item_count(),
+                    offset_in_item: px(0.),
+                });
+            }
+            return false;
+        }
         let viewport = f32::from(list.viewport_bounds().size.height);
         if let Some(distance) = self.step(top, end, viewport, now) {
             list.scroll_by(px(distance));
@@ -104,16 +124,22 @@ impl Glide {
         self.last_step.is_some()
     }
 
+    /// Whether to follow the end, `remaining` pixels away: the user's
+    /// scroll leaves the list following only at its end.
+    fn follows(&mut self, remaining: f32) -> bool {
+        if self.scrolled.take() {
+            self.following.set(remaining <= AT_END);
+        }
+        self.following.get()
+    }
+
     /// How far to scroll this frame, from the top's offset, the offset at
     /// the end, and the viewport's height, all in pixels.
     fn step(&mut self, top: f32, end: f32, viewport: f32, now: Instant) -> Option<f32> {
         let remaining = end - top;
-        // The user's scroll leaves the list following only at its end.
-        if self.scrolled.take() {
-            self.following.set(remaining <= AT_END);
-        }
-        if !self.following.get() || remaining <= MIN_STEP {
+        if !self.follows(remaining) || remaining <= MIN_STEP {
             self.last_step = None;
+            self.speed = 0.;
             return None;
         }
         let elapsed = self.last_step.map_or(FRAME_SECONDS, |last| {
@@ -124,8 +150,22 @@ impl Glide {
         self.last_step = Some(now);
         let jump = (remaining - viewport * MAX_BEHIND).max(0.);
         let left = remaining - jump;
-        let ease = left * (1. - (-elapsed / EASE_SECONDS).exp());
-        Some((jump + ease.max(MIN_STEP)).min(remaining))
+        // A critically damped spring toward the end, stepped exactly for
+        // `elapsed`: from `left` away at `speed`, it is
+        // `(left - (speed - omega * left) * t) * e^(-omega * t)` away.
+        // Its speed carries across a moved end, so it never lurches.
+        let omega = 2. / SMOOTH_SECONDS;
+        let decay = (-omega * elapsed).exp();
+        let lead = self.speed - omega * left;
+        let mut rest = (left - lead * elapsed) * decay;
+        self.speed = (self.speed - omega * lead * elapsed) * decay;
+        if rest < 0. {
+            // It would pass the end: stop there instead.
+            rest = 0.;
+            self.speed = 0.;
+        }
+        let distance = (jump + (left - rest).max(MIN_STEP)).min(remaining);
+        Some(distance)
     }
 }
 
