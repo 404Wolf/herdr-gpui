@@ -217,7 +217,9 @@ impl HerdrWindow {
             )
             .flex_1()
             .min_h_0()
-            .py(px(8.))
+            // Margins rather than padding: the list leaves its padding out
+            // of the end it reports, which would stop the glide short.
+            .my(px(8.))
         };
         let focus_pane = pane_id.clone();
         let key_pane = pane_id.clone();
@@ -286,6 +288,7 @@ impl HerdrWindow {
                             .flex()
                             .flex_col()
                             .child(entries)
+                            .child(chat.glide.watch(&chat.list))
                             .children(self.render_chat_working(chat).map(column))
                             .children(
                                 self.render_chat_permissions(chat, cx)
