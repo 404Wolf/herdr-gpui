@@ -14,13 +14,13 @@
 use crate::{
     Error, Result,
     usage::{
-        model::{Account, Kind, MONTH, Provider, Report, Section, WEEK, Window},
+        model::{Account, Balance, Kind, MONTH, Provider, Report, Section, Unit, WEEK, Window},
         probe::{HostPath, Probe, Request, Secret},
         service::{Meta, Service, Setting, Timestamp, json},
         values::invalid,
     },
 };
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use std::time::{Duration, SystemTime};
 
 const CREDITS: &str = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
@@ -172,17 +172,37 @@ pub(crate) fn parse(
             let used = config.on_demand_used.as_ref()?.val?;
             Some(used / cap * 100.)
         });
+    let balance = config.prepaid_balance.map(|cents| {
+        Balance::new(
+            "Prepaid balance",
+            cents as f64 / 100.,
+            Unit::Currency("USD".into()),
+        )
+    });
     let windows = match (percent, end) {
         (Some(percent), _) => vec![Window::new(kind(length), percent, end, length)],
         // A period without a percentage is unknown usage, not zero.
         (None, Some(_)) => Vec::new(),
+        (None, None) if balance.is_some() => Vec::new(),
         (None, None) => return Err(invalid()),
     };
-    let unknown = windows.is_empty().then(|| Section::Facts {
-        title: "Credits".into(),
-        facts: vec![("Usage".into(), "Unavailable".into())],
+    let unknown = windows.is_empty().then(|| {
+        let mut facts = vec![("Usage".into(), "Not reported".into())];
+        if let Some(end) = end {
+            let end = chrono::DateTime::<chrono::Utc>::from(end);
+            facts.push((
+                "Period ends".into(),
+                end.format("%b %-d, %Y %H:%M UTC").to_string(),
+            ));
+        }
+        Section::Facts {
+            title: "Included credits".into(),
+            facts,
+        }
     });
-    Ok(Report::new(Provider(&Grok), account, windows).with_sections(unknown))
+    Ok(Report::new(Provider(&Grok), account, windows)
+        .with_balances(balance)
+        .with_sections(unknown))
 }
 
 /// Grok bills weekly or monthly; the measured period decides which.
@@ -217,7 +237,29 @@ struct Config {
     billing_period_end: Option<String>,
     on_demand_cap: Option<Cents>,
     on_demand_used: Option<Cents>,
+    #[serde(default, deserialize_with = "prepaid_cents")]
+    prepaid_balance: Option<i64>,
     subscription_tier: Option<String>,
+}
+
+/// The proxy's Cent is USD cents, including `{}` for proto3's omitted zero.
+/// A malformed optional wallet must not discard an otherwise valid quota.
+fn prepaid_cents<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<i64>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    let cents = value.as_ref().and_then(|value| {
+        let object = value.as_object()?;
+        if object.is_empty() {
+            return Some(0);
+        }
+        match object.get("val")? {
+            serde_json::Value::Number(number) => number.as_i64(),
+            serde_json::Value::String(text) => text.parse().ok(),
+            _ => None,
+        }
+    });
+    Ok(cents.filter(|cents| *cents >= 0))
 }
 
 #[derive(Deserialize)]
@@ -237,102 +279,4 @@ struct CliSettings {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
-mod tests {
-    use super::*;
-
-    fn at(text: &str) -> SystemTime {
-        Timestamp::Text(text.into()).time().unwrap()
-    }
-
-    #[test]
-    fn parses_weekly_credits() {
-        let body = r#"{
-          "config": {
-            "creditUsagePercent": 12.5,
-            "currentPeriod": {
-              "type": "USAGE_PERIOD_TYPE_WEEKLY",
-              "start": "2026-08-06T00:00:00Z",
-              "end": "2026-08-13T00:00:00Z"
-            },
-            "billingPeriodEnd": "2026-08-13T00:00:00Z",
-            "onDemandCap": { "val": 1000 },
-            "onDemandUsed": { "val": 250 }
-          }
-        }"#;
-        let account = Account {
-            email: Some("user@example.com".into()),
-            plan: login_plan("oidc"),
-        };
-        let report = parse(
-            body,
-            Some("SuperGrok Heavy"),
-            account,
-            at("2026-08-12T00:00:00Z"),
-        )
-        .unwrap();
-        assert_eq!(report.windows.len(), 1);
-        assert_eq!(report.windows[0].kind, Kind::Weekly);
-        assert_eq!(report.windows[0].used, 12.5);
-        assert_eq!(report.windows[0].length, Some(WEEK));
-        assert_eq!(
-            report.windows[0].resets_at,
-            Some(at("2026-08-13T00:00:00Z"))
-        );
-        assert_eq!(report.account.plan.as_deref(), Some("SuperGrok Heavy"));
-        assert_eq!(report.account.email.as_deref(), Some("user@example.com"));
-    }
-
-    #[test]
-    fn falls_back_to_on_demand_ratio_and_billing_period() {
-        let body = r#"{"config":{
-            "billingPeriodStart":"2026-07-13T00:00:00Z",
-            "billingPeriodEnd":"2026-08-13T00:00:00Z",
-            "onDemandCap":{"val":1000},"onDemandUsed":{"val":250}}}"#;
-        let report = parse(body, None, Account::default(), at("2026-08-12T00:00:00Z")).unwrap();
-        assert_eq!(report.windows[0].percent(), 25);
-        assert_eq!(report.windows[0].kind, Kind::Monthly);
-    }
-
-    #[test]
-    fn period_without_percent_is_unknown() {
-        let body = r#"{"config":{"currentPeriod":{"start":"2026-08-06T00:00:00Z",
-            "end":"2026-08-13T00:00:00Z"}}}"#;
-        let report = parse(body, None, Account::default(), at("2026-08-12T00:00:00Z")).unwrap();
-        assert!(report.windows.is_empty());
-        assert_eq!(report.sections.len(), 1);
-    }
-
-    #[test]
-    fn future_start_leaves_length_unknown() {
-        let body = r#"{"config":{"creditUsagePercent":90,
-            "currentPeriod":{"start":"2026-08-14T00:00:00Z","end":"2026-08-21T00:00:00Z"}}}"#;
-        let report = parse(body, None, Account::default(), at("2026-08-12T00:00:00Z")).unwrap();
-        assert_eq!(report.windows[0].length, None);
-        assert_eq!(report.windows[0].kind, Kind::Named("Credits".into()));
-    }
-
-    #[test]
-    fn empty_answer_fails() {
-        assert!(parse("{}", None, Account::default(), SystemTime::now()).is_err());
-        assert!(
-            parse(
-                r#"{"config":{}}"#,
-                None,
-                Account::default(),
-                SystemTime::now()
-            )
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn names_plans() {
-        assert_eq!(
-            plan_name("super_grok_heavy").as_deref(),
-            Some("SuperGrok Heavy")
-        );
-        assert_eq!(plan_name("SuperGrok").as_deref(), Some("SuperGrok"));
-        assert_eq!(login_plan("session").as_deref(), Some("session"));
-    }
-}
+mod tests;
