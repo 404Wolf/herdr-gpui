@@ -4563,6 +4563,7 @@ dependencies = [
  "herdr-control-protocol",
  "herdr-credentials",
  "herdr-github",
+ "herdr-orchestrator",
  "herdr-remote",
  "herdr-updater",
  "herdr-usage",
@@ -4587,7 +4588,6 @@ dependencies = [
  "pulldown-cmark",
  "raw-window-handle",
  "rodio",
- "rusqlite",
  "rustix",
  "secrecy",
  "serde",
@@ -4617,7 +4617,6 @@ dependencies = [
  "windows-sys 0.61.2",
  "winresource",
  "zed-font-kit",
- "zeroize",
 ]
 
 [[package]]
@@ -4627,6 +4626,29 @@ dependencies = [
  "thiserror 2.0.21",
  "windows-sys 0.61.2",
  "winresource",
+]
+
+[[package]]
+name = "herdr-orchestrator"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "gix",
+ "herdr-client",
+ "herdr-github",
+ "herdr-remote",
+ "rusqlite",
+ "rustix",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+ "ureq",
+ "url",
+ "uuid",
+ "zeroize",
 ]
 
 [[package]]

@@ -17,7 +17,6 @@ mod avatars;
 mod backdrop;
 mod bell;
 mod browser;
-mod cache;
 mod caffeine;
 mod caption;
 mod chat;
@@ -106,7 +105,6 @@ mod plugin_values;
 mod port_forward;
 mod preferences;
 mod presentation;
-mod private_file;
 mod processes;
 mod progress;
 mod pull_request;
@@ -169,6 +167,9 @@ use herdr_updater as updater;
 // GitHub's pull request actions; `github` and `pull_request` are the app's
 // own modules, which add the avatars, the shared store, and badge colors.
 use herdr_github::pr_actions;
+// The orchestrator's records, readers, and worker, and the app's cache
+// database; `orchestrator` is the app's own module, which adds the views.
+use herdr_orchestrator::cache;
 // The command catalog and its default shortcuts, without GPUI.
 use herdr_commands as controls;
 // Git status and writes, checkpoints, and the code index, without GPUI.

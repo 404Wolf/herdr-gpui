@@ -32,6 +32,7 @@ herdr-commands.workspace       = true
 herdr-control-protocol.workspace = true
 herdr-credentials.workspace    = true
 herdr-github.workspace         = true
+herdr-orchestrator.workspace   = true
 herdr-remote.workspace         = true
 herdr-updater.workspace        = true
 herdr-usage.workspace          = true
@@ -45,7 +46,6 @@ nucleo-matcher.workspace       = true
 percent-encoding.workspace     = true
 pulldown-cmark.workspace       = true
 rodio.workspace                = true
-rusqlite.workspace             = true
 secrecy.workspace              = true
 serde.workspace                = true
 serde_ignored.workspace        = true
@@ -65,7 +65,6 @@ unicode-segmentation.workspace = true
 unicode-width.workspace        = true
 ureq.workspace                 = true
 uuid.workspace                 = true
-zeroize.workspace              = true
 
 [build-dependencies]
 winresource.workspace = true
@@ -77,6 +76,7 @@ herdr-commands = { features = ["test-support"], workspace = true }
 herdr-remote = { features = ["test-support"], workspace = true }
 herdr-control-protocol = { features = ["test-support"], workspace = true }
 herdr-github = { features = ["test-support"], workspace = true }
+herdr-orchestrator = { features = ["test-support"], workspace = true }
 herdr-usage = { features = ["test-support"], workspace = true }
 herdr-vcs = { features = ["test-support"], workspace = true }
 socket2.workspace = true

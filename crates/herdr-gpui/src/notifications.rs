@@ -2,7 +2,7 @@
 use crate::{icons::AgentIcon, navigation::NavigationTarget};
 use herdr_client::protocol::ClientShellSnapshot;
 use herdr_client::protocol::{SemanticNotification, SemanticNotificationKind, ToastHerdrPosition};
-pub(crate) use herdr_client::text::unsafe_char;
+pub(crate) use herdr_client::text::{safe_text, unsafe_char};
 use std::{
     collections::VecDeque,
     time::{Duration, Instant},
@@ -46,14 +46,6 @@ pub(crate) struct Notice {
     pub(crate) posted: bool,
     /// The body is the client's task and place lines, each shown on one row.
     pub(crate) described: bool,
-}
-
-pub(crate) fn safe_text(text: &str, limit: usize) -> String {
-    // Bound scanning as well as output, even for a payload made entirely of controls.
-    text.chars()
-        .take(limit)
-        .filter(|c| !unsafe_char(*c))
-        .collect()
 }
 
 impl Notice {
