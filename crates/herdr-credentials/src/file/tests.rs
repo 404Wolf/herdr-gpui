@@ -4,11 +4,15 @@ use std::os::unix::fs::{PermissionsExt, symlink};
 
 const NAME: &CStr = c"github-credentials";
 
-/// A stand-in record check: a bounded token of printable ASCII, as GitHub's
-/// own plain token record is.
+/// A stand-in record check: a bounded plain token of printable ASCII, as
+/// GitHub's own token record is, and never another feature's JSON record.
 fn token_record(value: &SecretString) -> Result<()> {
     let text = value.expose_secret();
-    if !text.is_empty() && text.len() <= 4096 && text.bytes().all(|b| b.is_ascii_graphic()) {
+    if !text.is_empty()
+        && text.len() <= 4096
+        && !text.starts_with('{')
+        && text.bytes().all(|b| b.is_ascii_graphic())
+    {
         Ok(())
     } else {
         Err(Error::Permissions)
@@ -40,7 +44,7 @@ fn another_features_record_uses_its_own_check_and_file() {
         }
     };
     let record: SecretString = r#"{"coder":1}"#.into();
-    // GitHub's own check would refuse this record; the feature's check decides.
+    // The stand-in token check refuses this record; the feature's check decides.
     assert!(store(path.path(), name, Some(&record), true).is_err());
     store_checked(path.path(), name, Some(&record), true, check).unwrap();
     assert_eq!(
