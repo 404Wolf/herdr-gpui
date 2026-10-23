@@ -119,6 +119,7 @@ fn catalog_has_all_native_commands_and_gpui_shortcuts() {
         (OpenOrchestrator, &[]),
         (ReviewChanges, &[]),
         (GitMenu, &[]),
+        (ToggleAnnotate, &[]),
         (InstallBrowserSkill, &[]),
         (SplitEditor, &["cmd-\\"]),
         (OpenCode, &[]),
@@ -228,6 +229,7 @@ fn gui_commands_never_send_daemon_requests() {
         Command::ReloadConfig,
         Command::ReviewChanges,
         Command::GitMenu,
+        Command::ToggleAnnotate,
     ] {
         assert!(request(command, &s).is_none(), "{command:?}");
     }
