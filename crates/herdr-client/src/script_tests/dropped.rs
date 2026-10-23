@@ -28,3 +28,18 @@ fn other_failures_are_not_dropped_connections() {
     assert!(!failure(1, "kex_exchange_identification: read: Connection reset by peer").dropped_before_key_exchange());
     assert!(!Error::ScriptCancelled.dropped_before_key_exchange());
 }
+
+#[test]
+fn a_host_ssh_could_not_reach_is_told_apart_from_a_script_that_failed_on_it() {
+    // `ssh` exits 255 for its own failures, whatever it printed.
+    assert!(failure(255, "kex_exchange_identification: read: Connection reset by peer").host_unreached());
+    assert!(failure(255, "ssh: connect to host box port 22: Connection refused").host_unreached());
+    assert!(failure(255, "user@host: Permission denied (publickey).").host_unreached());
+    assert!(Error::ScriptTimeout.host_unreached());
+    assert!(Error::ScriptConnect(io::Error::from(ErrorKind::ConnectionRefused)).host_unreached());
+    // The host answered: the script ran and failed, or was stopped here.
+    assert!(!failure(128, "fatal: not a git repository").host_unreached());
+    assert!(!failure(1, "kex_exchange_identification: read: Connection reset by peer").host_unreached());
+    assert!(!Error::ScriptCancelled.host_unreached());
+    assert!(!Error::ScriptOutputLimit.host_unreached());
+}

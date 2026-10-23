@@ -359,6 +359,18 @@ impl Error {
         )
     }
 
+    /// Whether a host script failed for want of its host, not on it: the
+    /// connection could not be made, went quiet past its deadline, or `ssh`
+    /// itself failed, which it reports by exiting 255. What the host last
+    /// answered may still hold, so a caller can keep it and ask again later.
+    pub fn host_unreached(&self) -> bool {
+        match self {
+            Self::ScriptConnect(_) | Self::ScriptTimeout => true,
+            Self::ScriptExit { status, .. } => status.code() == Some(255),
+            _ => false,
+        }
+    }
+
     /// Preserve transport retry/cancellation categories, including the historical
     /// InvalidData category for session deadlines and validation failures.
     pub fn kind(&self) -> io::ErrorKind {

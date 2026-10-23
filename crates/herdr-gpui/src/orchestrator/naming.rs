@@ -5,7 +5,7 @@
 //! branch, with or without an agent, or the branch in the repository, even
 //! when no database recorded the run, as on a machine that never had one.
 
-use super::{Backend, Item, Owner, Run, RunState, model::Workspace};
+use super::{Backend, Item, Owner, Result, Run, RunState, error::script, model::Workspace};
 use crate::{orchestrator::view::LiveAgent, teleport::Host};
 use chrono::{DateTime, Utc};
 use herdr_client::protocol::AgentStatus;
@@ -204,16 +204,13 @@ pub(crate) fn local_branches(
     host: &Host,
     main_root: &str,
     cancelled: &AtomicBool,
-) -> Option<Vec<String>> {
+) -> Result<Vec<String>> {
     if host.is_local() {
-        let branches = super::git::branches(std::path::Path::new(main_root), PREFIX, MAX_BRANCHES);
-        return Some(
-            branches
-                .ok()?
-                .into_iter()
-                .filter(|branch| branch_hash(branch).is_some())
-                .collect(),
-        );
+        let branches = super::git::branches(std::path::Path::new(main_root), PREFIX, MAX_BRANCHES)?;
+        return Ok(branches
+            .into_iter()
+            .filter(|branch| branch_hash(branch).is_some())
+            .collect());
     }
     let output = host
         .exec(
@@ -229,15 +226,13 @@ pub(crate) fn local_branches(
             Host::QUERY_IDLE,
             cancelled,
         )
-        .ok()?;
-    Some(
-        String::from_utf8_lossy(&output)
-            .lines()
-            .map(str::trim)
-            .filter(|branch| branch_hash(branch).is_some())
-            .map(str::to_owned)
-            .collect(),
-    )
+        .map_err(script("Reading the branches"))?;
+    Ok(String::from_utf8_lossy(&output)
+        .lines()
+        .map(str::trim)
+        .filter(|branch| branch_hash(branch).is_some())
+        .map(str::to_owned)
+        .collect())
 }
 
 #[cfg(test)]
