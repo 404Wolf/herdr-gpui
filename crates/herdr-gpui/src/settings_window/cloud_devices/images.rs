@@ -171,7 +171,11 @@ impl SettingsWindow {
         let reset = worker::spawn(
             "herdr-image-reset",
             cx,
-            move |_, send| send(Update::Reset(builds::reset(provider, support, &project_id))),
+            move |_, send| {
+                send(Update::Reset(
+                    builds::reset(provider, support, &project_id).map_err(Into::into),
+                ))
+            },
             |this: &mut Self, update, cx| this.apply_sandbox_images(update, cx),
         );
         match reset {

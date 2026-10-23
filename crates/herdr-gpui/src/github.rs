@@ -15,9 +15,6 @@ mod routing;
 mod store;
 mod token;
 
-#[cfg(all(unix, feature = "boat"))]
-pub(crate) use herdr_credentials::file::read_checked as read_private_entry;
-
 #[cfg(test)]
 mod tests;
 
@@ -29,16 +26,6 @@ pub(crate) use {
     routing::Tokens,
     store::{Account, Note, Store, note as store_note, select as select_store},
 };
-// Cloud providers keep their own secrets in the same store.
-#[cfg(any(
-    feature = "azure",
-    feature = "boat",
-    feature = "coder",
-    feature = "daytona",
-    feature = "opensandbox",
-    feature = "sprites"
-))]
-pub(crate) use store::{Entry, read_entry, save_entry};
 
 use crate::Result;
 use device::{Device, Reply, SETUP_MESSAGE, profile, profile_from, token_reply};

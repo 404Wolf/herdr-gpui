@@ -26,19 +26,22 @@ getting Herdr onto it, and moving Git state in and out with Teleport.
 
 ## What the original RFC asked for, and where it lives
 
+Paths are in `crates/herdr-remote/src/`, which has no GPUI, unless they name
+`crates/herdr-gpui/src/`: the jobs, batches, and views the window drives.
+
 | RFC component | Here |
 | --- | --- |
 | Provider registry, `SandboxProvider` | `cloud/providers.rs`: one `providers!` row per provider generates the name, logo, connector, background command, deletion, on-demand provisioning, and `cloud::ProviderError`. No async trait: everything blocks on workers. |
 | Session manager (PTY, reconnect) | The sandbox's own Herdr daemon, through `herdr_client::connect_command`. |
 | Exec / attach | The provider's command: `docker exec -i`, `ssh`, or this app as a relay (`azure/sandbox/relay.rs`, `sprites/relay.rs`, `opensandbox/relay.rs`, sharing `cloud/socket.rs`). |
 | Git sync | `teleport/`: `fresh.rs` (new worktree from a base commit, cloned or bundled), `carry.rs`, and Teleport itself, untracked files included. |
-| Workspace lifecycle | `cloud/jobs.rs` (create with progress), `cloud/catalog.rs` (saved devices), provider `setup.rs` (create, delete, roll back a failed create). |
+| Workspace lifecycle | `crates/herdr-gpui/src/cloud/jobs.rs` (create with progress), `cloud/catalog.rs` (saved devices), provider `setup.rs` (create, delete, roll back a failed create). |
 | Dirty-state warning before delete | `cloud/unsynced.rs`, shown by the sidebar's Remove dialog. |
-| Lane-to-sandbox | `dispatch/`: the **New container** / **New sprite** tile; `dispatch/job.rs` provisions, then dispatches. |
+| Lane-to-sandbox | `crates/herdr-gpui/src/dispatch/`: the **New container** / **New sprite** tile; `dispatch/job.rs` provisions, then dispatches. |
 | Prebuilt environments | `cloud/image/`: a project's recipe (`.herdr/sandbox/Dockerfile`, else a dev container) read from its host, a key hashed from what the build reads, a catalog of built images, and one shared build registry; containers and Daytona hold images (`container/image.rs`, `daytona/image.rs`). |
-| Idle timers, quotas | `container/idle.rs`, `[container] max_containers`; Azure's `cleanup.rs`; sprites sleep on their own. |
+| Idle timers, quotas | `container/idle.rs`, `[container] max_containers`; Azure's `cleanup.rs`, each checked every minute by the app (`crates/herdr-gpui/src/cloud.rs`); sprites sleep on their own. |
 | Credential broker | `teleport/credentials.rs` sends the `gh` token to a host that cannot reach GitHub. No scoping or trust tiers yet (see below). |
-| Port proxy | `port_forward/`, SSH hosts only. |
+| Port proxy | `crates/herdr-gpui/src/port_forward/`, SSH hosts only. |
 
 ## Adding a provider
 
@@ -50,7 +53,9 @@ getting Herdr onto it, and moving Git state in and out with Teleport.
    after the unpushed-work check; `provision` makes the machine available to
    dispatch; `image` (a `cloud::image::Support`) lets it start from a
    project's sandbox image, which `provision` then receives.
-4. A Settings card, a config table, and the per-provider `match` arms the
+4. A Settings card, a config table (`herdr-remote`'s `config/`, with its
+   `Sections` field, and the app's `save_*` beside its other tables), its
+   feature forwarded from herdr-gpui, and the per-provider `match` arms the
    compiler asks for (Settings tabs, Add Device). Keep the setup job's
    failure path deleting what it made.
 

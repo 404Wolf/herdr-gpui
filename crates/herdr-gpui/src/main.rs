@@ -14,12 +14,8 @@ mod app_badge;
 mod app_icon;
 mod automations;
 mod avatars;
-#[cfg(feature = "azure")]
-mod azure;
 mod backdrop;
 mod bell;
-#[cfg(feature = "boat")]
-mod boat;
 mod browser;
 mod cache;
 mod caffeine;
@@ -52,22 +48,16 @@ mod code_index;
 mod code_search;
 mod code_server;
 mod code_view;
-#[cfg(feature = "coder")]
-mod coder;
 mod config;
 mod config_diagnostic;
 mod connection;
 mod constants;
-#[cfg(feature = "container")]
-mod container;
 mod contrast;
 mod control;
 mod controls;
 mod copy_mode;
 mod crash;
 mod daemon;
-#[cfg(feature = "daytona")]
-mod daytona;
 mod devices_overview;
 mod diagnostics;
 mod dialog_input;
@@ -108,8 +98,6 @@ mod motion;
 mod navigation;
 mod network_quality;
 mod notifications;
-#[cfg(feature = "opensandbox")]
-mod opensandbox;
 mod orchestrator;
 mod osc52;
 mod overview;
@@ -128,8 +116,6 @@ mod processes;
 mod progress;
 mod pull_request;
 mod px0;
-#[cfg(feature = "railway")]
-mod railway;
 mod release_notes;
 mod remote_browser;
 mod reorder;
@@ -147,8 +133,6 @@ mod setup_relay;
 mod sidebar;
 mod smooth_scroll;
 mod sound;
-#[cfg(feature = "sprites")]
-mod sprites;
 mod state;
 mod state_file;
 mod storage_warning;
@@ -189,6 +173,24 @@ pub use error::{Error, Result};
 use herdr_updater as updater;
 // Shared with herdr-client's own SSH and probe children.
 use herdr_client::{local_path, login_env};
+// Cloud providers, host scripts, and Teleport's core; `cloud` and `teleport`
+// are the app's own modules, which add the jobs and views GPUI draws.
+#[cfg(feature = "azure")]
+use herdr_remote::azure;
+#[cfg(feature = "boat")]
+use herdr_remote::boat;
+#[cfg(feature = "coder")]
+use herdr_remote::coder;
+#[cfg(feature = "container")]
+use herdr_remote::container;
+#[cfg(feature = "daytona")]
+use herdr_remote::daytona;
+#[cfg(feature = "opensandbox")]
+use herdr_remote::opensandbox;
+#[cfg(feature = "railway")]
+use herdr_remote::railway;
+#[cfg(feature = "sprites")]
+use herdr_remote::sprites;
 
 pub(crate) use {
     actions::{

@@ -337,6 +337,7 @@ pub(crate) fn run() -> std::process::ExitCode {
     // SSH children use the login shell's `ssh` and agent, as the daemon does:
     // launchd's would miss keys such as a security key held by another agent.
     herdr_client::set_command_environment(crate::login_env::apply);
+    herdr_remote::config::set_loader(Config::load_remote);
     tracing::info!(
         version = APP_VERSION,
         os = std::env::consts::OS,
@@ -449,10 +450,8 @@ pub(crate) fn run() -> std::process::ExitCode {
                 // Nor do they start VS Code.
                 crate::code_server::Launcher::install(cx);
                 crate::px0::Launcher::install(cx);
-                #[cfg(feature = "azure")]
-                crate::azure::install(cx);
-                #[cfg(feature = "container")]
-                crate::container::idle::install(cx);
+                #[cfg(feature = "cloud")]
+                crate::cloud::install_idle_checks(cx);
             }
             cx.set_global(appearance.select(light_appearance(cx)));
             app_icon::install();

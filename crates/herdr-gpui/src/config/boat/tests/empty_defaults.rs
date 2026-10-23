@@ -45,7 +45,7 @@ fn nonempty_invalid_optional_values_remain_invalid() {
         .unwrap();
         assert!(matches!(
             config.settings_with(|_| None),
-            Err(crate::Error::Provider(ProviderError::Boat(
+            Err(herdr_remote::Error::Provider(ProviderError::Boat(
                 crate::boat::Error::Field(_)
             )))
         ));

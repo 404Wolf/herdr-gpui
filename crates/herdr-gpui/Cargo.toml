@@ -32,6 +32,7 @@ herdr-chat-protocol.workspace  = true
 herdr-client.workspace         = true
 herdr-control-protocol.workspace = true
 herdr-credentials.workspace    = true
+herdr-remote.workspace         = true
 herdr-updater.workspace        = true
 herdr-usage.workspace          = true
 if-addrs.workspace             = true
@@ -45,7 +46,6 @@ percent-encoding.workspace     = true
 pulldown-cmark.workspace       = true
 rodio.workspace                = true
 rusqlite.workspace             = true
-rustls                         = { optional = true, workspace = true }
 secrecy.workspace              = true
 serde.workspace                = true
 serde_ignored.workspace        = true
@@ -55,21 +55,18 @@ sha2.workspace                 = true
 skrifa.workspace               = true
 sysinfo.workspace              = true
 syntect.workspace              = true
-tar.workspace                  = true
 tempfile.workspace             = true
 thiserror.workspace            = true
 toml.workspace                 = true
 toml_edit.workspace            = true
 tracing.workspace              = true
 tracing-subscriber.workspace   = true
-tungstenite                    = { optional = true, workspace = true }
 unicode-normalization.workspace = true
 unicode-properties.workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace        = true
 ureq.workspace                 = true
 uuid.workspace                 = true
-webpki-roots                   = { optional = true, workspace = true }
 zeroize.workspace              = true
 
 [build-dependencies]
@@ -78,6 +75,7 @@ winresource.workspace = true
 [dev-dependencies]
 gpui = { features = ["test-support"], workspace = true }
 herdr-client = { features = ["test-support"], workspace = true }
+herdr-remote = { features = ["test-support"], workspace = true }
 herdr-control-protocol = { features = ["test-support"], workspace = true }
 herdr-usage = { features = ["test-support"], workspace = true }
 socket2.workspace = true
@@ -87,24 +85,24 @@ test-case.workspace = true
 default = ["azure", "boat", "coder", "container", "daytona", "opensandbox", "railway", "sprites"]
 # Machines from cloud providers as devices: the shared device list, background
 # jobs, and connector. Turned on by each provider below; not useful alone.
-cloud = ["herdr-client/cloud", "herdr-usage/cloud"]
+cloud = ["herdr-client/cloud", "herdr-remote/cloud", "herdr-usage/cloud"]
 # Azure VMs and Container Apps sandboxes as devices, with generic credentials
 # or local Azure CLI. Sandboxes are reached over the data plane's exec stream.
-azure = ["cloud", "herdr-client/azure", "herdr-usage/azure", "dep:rustls", "dep:tungstenite", "dep:webpki-roots"]
+azure = ["cloud", "herdr-client/azure", "herdr-remote/azure", "herdr-usage/azure"]
 # Boat sandboxes as devices, with an API key and per-machine SSH key setup.
-boat = ["cloud", "herdr-client/boat"]
+boat = ["cloud", "herdr-client/boat", "herdr-remote/boat"]
 # Coder workspaces as devices, with OAuth2 sign-in.
-coder = ["cloud", "herdr-client/coder"]
+coder = ["cloud", "herdr-client/coder", "herdr-remote/coder"]
 # Containers on this computer's Docker or Podman engine as devices.
-container = ["cloud", "herdr-client/container"]
+container = ["cloud", "herdr-client/container", "herdr-remote/container"]
 # Daytona sandboxes as devices, with an API key and its SSH gateway.
-daytona = ["cloud", "herdr-client/daytona"]
+daytona = ["cloud", "herdr-client/daytona", "herdr-remote/daytona"]
 # Railway free VMs as devices, reached over SSH with a saved key identity.
 # Sandboxes on a self-hosted OpenSandbox server as devices, through this app as their exec relay.
-opensandbox = ["cloud", "herdr-client/opensandbox", "dep:rustls", "dep:tungstenite", "dep:webpki-roots"]
-railway = ["cloud", "herdr-client/railway"]
+opensandbox = ["cloud", "herdr-client/opensandbox", "herdr-remote/opensandbox"]
+railway = ["cloud", "herdr-client/railway", "herdr-remote/railway"]
 # Fly Sprites as devices, with an API token and this app as their exec relay.
-sprites = ["cloud", "herdr-client/sprites", "dep:rustls", "dep:tungstenite", "dep:webpki-roots"]
+sprites = ["cloud", "herdr-client/sprites", "herdr-remote/sprites"]
 qa-menu = []
 # Development only: `--mockup` shows UI variants from HERDR_MOCKUP_FILE side by
 # side in a native window. Never enabled in release builds. GPUI's test support

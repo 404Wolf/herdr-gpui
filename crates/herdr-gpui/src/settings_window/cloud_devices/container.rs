@@ -233,14 +233,16 @@ impl SettingsWindow {
         };
         self.container_job(cx, move |cancelled, send| {
             send(Update::Done(
-                setup::adopt(engine, &id, install, cancelled).map(drop),
+                setup::adopt(engine, &id, install, cancelled)
+                    .map(drop)
+                    .map_err(Into::into),
             ));
         });
     }
 
     fn stop_container(&mut self, id: String, cx: &mut Context<Self>) {
         self.container_job(cx, move |_, send| {
-            send(Update::Done(setup::stop_saved(&id)));
+            send(Update::Done(setup::stop_saved(&id).map_err(Into::into)));
         });
     }
 

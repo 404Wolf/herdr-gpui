@@ -5,7 +5,7 @@ use super::*;
 use crate::HerdrWindow;
 use crate::cloud::{
     CloudProvider,
-    unsynced::{Checkout, tests::FAKE},
+    unsynced::{Checkout, FAKE},
 };
 use gpui::Entity;
 

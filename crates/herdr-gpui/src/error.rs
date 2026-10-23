@@ -654,6 +654,9 @@ pub enum Error {
     Px0(#[from] crate::px0::Error),
     #[error("XDG_CONFIG_HOME must be an absolute path")]
     RelativeConfigRoot,
+    /// What `herdr-remote` reports that the app has no variant of its own for.
+    #[error(transparent)]
+    Remote(herdr_remote::Error),
     #[error("Could not install the agent tools on the SSH host: {0}")]
     RemoteAgentTools(#[source] herdr_client::Error),
     #[error("{method}: {source}")]
@@ -850,6 +853,7 @@ mod config;
 mod daemon;
 mod github;
 mod path;
+mod remote;
 mod theme;
 
 #[cfg(test)]

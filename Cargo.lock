@@ -4533,6 +4533,7 @@ dependencies = [
  "herdr-client",
  "herdr-control-protocol",
  "herdr-credentials",
+ "herdr-remote",
  "herdr-updater",
  "herdr-usage",
  "if-addrs",
@@ -4558,7 +4559,6 @@ dependencies = [
  "rodio",
  "rusqlite",
  "rustix",
- "rustls",
  "secrecy",
  "serde",
  "serde_ignored",
@@ -4569,7 +4569,6 @@ dependencies = [
  "socket2",
  "syntect",
  "sysinfo 0.39.6",
- "tar",
  "tempfile",
  "test-case",
  "thiserror 2.0.21",
@@ -4577,7 +4576,6 @@ dependencies = [
  "toml_edit 0.25.15+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
- "tungstenite",
  "unicode-normalization",
  "unicode-properties",
  "unicode-segmentation",
@@ -4585,7 +4583,6 @@ dependencies = [
  "ureq",
  "url",
  "uuid",
- "webpki-roots",
  "windows 0.62.2",
  "windows-registry 0.100.0",
  "windows-result 0.100.0",
@@ -4613,6 +4610,37 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "herdr-remote"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "chrono",
+ "getrandom 0.4.3",
+ "herdr-client",
+ "herdr-control-protocol",
+ "herdr-credentials",
+ "nix",
+ "percent-encoding",
+ "rustix",
+ "rustls",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.21",
+ "toml 1.1.6+spec-1.1.0",
+ "tracing",
+ "tungstenite",
+ "ureq",
+ "url",
+ "uuid",
+ "webpki-roots",
+ "zeroize",
 ]
 
 [[package]]

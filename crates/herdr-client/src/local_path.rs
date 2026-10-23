@@ -1,6 +1,7 @@
 //! Where this user's files and tools live, for an app started from the
-//! desktop rather than a shell: the home directory, Herdr UI's state
-//! directory, and a `PATH` with the directories a GUI launch leaves out.
+//! desktop rather than a shell: the home directory, the configuration root,
+//! Herdr UI's state directory, and a `PATH` with the directories a GUI launch
+//! leaves out.
 use std::{ffi::OsString, path::PathBuf};
 
 // Probing Linuxbrew on macOS triggers /home's automounter and directory lookups.
@@ -15,6 +16,41 @@ pub const HOMEBREW_DIRS: &[&str] = if cfg!(target_os = "linux") {
 } else {
     &[]
 };
+
+/// Why the configuration root is unknown.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum PathError {
+    #[error("HOME is not set")]
+    MissingHome,
+    #[error("XDG_CONFIG_HOME must be an absolute path")]
+    RelativeConfigRoot,
+}
+
+/// Where configuration lives: `XDG_CONFIG_HOME` (also as the login shell
+/// sets it, see [`crate::local_var`]), else `%APPDATA%` on Windows, else
+/// `~/.config`. Herdr's own files are under its `herdr` directory.
+pub fn config_root() -> Result<PathBuf, PathError> {
+    match crate::local_var("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
+        Some(value) => {
+            let path = PathBuf::from(value);
+            if !path.is_absolute() {
+                return Err(PathError::RelativeConfigRoot);
+            }
+            Ok(path)
+        }
+        None => {
+            #[cfg(windows)]
+            if let Some(roaming) = std::env::var_os("APPDATA").filter(|value| !value.is_empty()) {
+                return Ok(PathBuf::from(roaming));
+            }
+            let home = home_dir().ok_or(PathError::MissingHome)?;
+            #[cfg(windows)]
+            return Ok(home.join("AppData").join("Roaming"));
+            #[cfg(not(windows))]
+            Ok(home.join(".config"))
+        }
+    }
+}
 
 /// This user's home directory: `HOME`, or `USERPROFILE` on Windows. None
 /// when neither is set to something non-empty.
