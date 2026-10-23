@@ -65,8 +65,23 @@ dialog and choose Allow there. The app keeps the computer's addresses and
 its CA fingerprint in the Keychain, with a device key in the Secure Enclave.
 
 The app trusts the computer through the fingerprint in the QR alone, so it
-needs no certificate profile. Opening a chat happens in Safari, which does:
-install the profile from the web app's pairing page once.
+needs no certificate profile.
+
+Opening a chat happens in Safari (or the web app on the Home Screen), which
+is a separate device with its own key: pairing the companion does not sign
+Safari in. Set Safari up once:
+
+1. In Herdr, open Remote control > Pair device again for a fresh QR.
+2. Scan it with the Camera app (not the companion), and open the link in
+   Safari.
+3. Install the certificate profile the pairing page offers, then turn on
+   full trust for it in Settings > General > About > Certificate Trust
+   Settings.
+4. Back on the pairing page, name the device, compare the 6-digit code with
+   the computer's dialog, and choose Allow there.
+
+Settings > Remote control then lists two devices, the companion and Safari;
+revoke each on its own.
 
 ## APNs key for the daemon
 
