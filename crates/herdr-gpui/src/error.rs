@@ -105,27 +105,8 @@ pub enum Error {
     ConnectionBusy,
     #[error("The connection is not ready. Try again.")]
     ConnectionNotReady,
-    #[error("Control request or response exceeds {limit} bytes")]
-    ControlMessageSize { limit: usize },
-    #[error("Herdr UI closed the control connection without answering")]
-    ControlNoResponse,
-    #[error("{} is held by something other than this user's Herdr UI, so it is not used", path.display())]
-    ControlPipeForeign { path: PathBuf },
-    #[error("{message}")]
-    ControlRejected {
-        code: crate::control::ErrorCode,
-        message: String,
-    },
-    #[error("Another Herdr UI already serves {}", path.display())]
-    ControlSocketInUse { path: PathBuf },
-    #[error("Herdr UI is not running, or its control socket {} is unreachable: {source}", path.display())]
-    ControlUnavailable {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error("Could not identify the Windows user: {0}")]
-    ControlUser(#[source] io::Error),
+    #[error(transparent)]
+    Control(#[from] crate::control::ControlError),
     #[error("Missing credential directory.")]
     CredentialDirectory,
     #[error("Cannot access private credential file.")]

@@ -117,7 +117,7 @@ fn queued(
 ) -> (
     Call<TabOp>,
     socket::Incoming,
-    std::thread::JoinHandle<crate::Result<Response>>,
+    std::thread::JoinHandle<herdr_control_protocol::Result<Response>>,
 ) {
     let path = server.path().to_owned();
     let call = Call { caller, op };

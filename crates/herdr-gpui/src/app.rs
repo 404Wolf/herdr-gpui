@@ -1,6 +1,7 @@
 //! Process bootstrap and window opening. CLI parsing and the updater helper
 //! run before GPUI starts, so an invalid option or `--build-info` exits without
 //! ever creating a window.
+use crate::control::ControlError;
 
 use crate::{
     APP_VERSION, HerdrWindow, Hide, HideOthers, Quit, ShowAll, ShowLogs, WINDOW_TITLE, app_icon,
@@ -262,7 +263,7 @@ pub(crate) fn run() -> std::process::ExitCode {
     if let LaunchMode::Link(link) = mode {
         match crate::control::send_link(&link) {
             Ok(_) => return std::process::ExitCode::SUCCESS,
-            Err(crate::Error::ControlUnavailable { .. }) => {
+            Err(crate::Error::Control(ControlError::Unavailable { .. })) => {
                 pending_link = Some(link);
                 mode = LaunchMode::Normal;
             }
@@ -550,7 +551,7 @@ fn focus_running(
     }
     match send() {
         Ok(_) => Some(std::process::ExitCode::SUCCESS),
-        Err(crate::Error::ControlUnavailable { .. }) => None,
+        Err(crate::Error::Control(ControlError::Unavailable { .. })) => None,
         Err(error) => {
             tracing::warn!(%error, "The running app did not come forward");
             None
@@ -564,6 +565,7 @@ mod tests {
     #[cfg(feature = "integration-test")]
     use super::{ConnectTarget, HerdrWindow};
     use crate::config::LayoutMode;
+    use crate::control::ControlError;
     #[cfg(feature = "integration-test")]
     use gpui::px;
 
@@ -629,23 +631,23 @@ mod tests {
         assert_eq!(focus_running(&LaunchMode::BuildInfo, &local, unasked), None);
         // No app answers, or the one that does cannot come forward: start one.
         let unavailable = || {
-            Err(crate::Error::ControlUnavailable {
+            Err(crate::Error::Control(ControlError::Unavailable {
                 path: "pipe".into(),
                 source: std::io::ErrorKind::NotFound.into(),
-            })
+            }))
         };
         assert_eq!(
             focus_running(&LaunchMode::Normal, &local, unavailable),
             None
         );
         let refused = || {
-            Err(crate::Error::ControlRejected {
+            Err(crate::Error::Control(ControlError::Rejected {
                 code: crate::control::ErrorCode::NoWindow,
                 message: "Herdr UI has no window".into(),
-            })
+            }))
         };
         assert_eq!(focus_running(&LaunchMode::Normal, &local, refused), None);
-        let silent = || Err(crate::Error::ControlNoResponse);
+        let silent = || Err(crate::Error::Control(ControlError::NoResponse));
         assert_eq!(focus_running(&LaunchMode::Normal, &local, silent), None);
     }
 

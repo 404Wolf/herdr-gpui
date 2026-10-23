@@ -21,7 +21,7 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use gpui::{prelude::*, *};
-use serde::{Deserialize, Serialize};
+pub use herdr_control_protocol::ActivityPanel;
 use std::{collections::HashMap, sync::Arc};
 
 mod counts;
@@ -43,71 +43,27 @@ const TITLE_END: f32 = 4.;
 /// One breath of a busy icon's pulse.
 const BUSY_PULSE: std::time::Duration = std::time::Duration::from_millis(1600);
 
-/// What the window shows, picked on the bar. The bar lists them in
-/// declaration order, so this order is what users see.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ActivityPanel {
-    #[default]
-    Workspaces,
-    Overview,
-    PullRequests,
-    Issues,
-    Security,
-    Automations,
-    Usage,
+fn label(panel: ActivityPanel) -> &'static str {
+    match panel {
+        ActivityPanel::Overview => "Overview",
+        ActivityPanel::Workspaces => "Workspaces",
+        ActivityPanel::PullRequests => "Pull requests",
+        ActivityPanel::Issues => "Issues",
+        ActivityPanel::Security => "Security",
+        ActivityPanel::Automations => "Automations",
+        ActivityPanel::Usage => "Usage",
+    }
 }
 
-impl ActivityPanel {
-    pub(crate) const ALL: &[Self] = &[
-        Self::Workspaces,
-        Self::Overview,
-        Self::PullRequests,
-        Self::Issues,
-        Self::Security,
-        Self::Automations,
-        Self::Usage,
-    ];
-
-    /// The name the CLI and the preferences file use.
-    pub(crate) fn name(self) -> &'static str {
-        match self {
-            Self::Overview => "overview",
-            Self::Workspaces => "workspaces",
-            Self::PullRequests => "pull-requests",
-            Self::Issues => "issues",
-            Self::Security => "security",
-            Self::Automations => "automations",
-            Self::Usage => "usage",
-        }
-    }
-
-    pub(crate) fn parse(name: &str) -> Option<Self> {
-        Self::ALL.iter().copied().find(|panel| panel.name() == name)
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::Overview => "Overview",
-            Self::Workspaces => "Workspaces",
-            Self::PullRequests => "Pull requests",
-            Self::Issues => "Issues",
-            Self::Security => "Security",
-            Self::Automations => "Automations",
-            Self::Usage => "Usage",
-        }
-    }
-
-    fn icon(self) -> &'static str {
-        match self {
-            Self::Overview => "icons/pulse.svg",
-            Self::Workspaces => "icons/terminal.svg",
-            Self::PullRequests => "icons/pull-request.svg",
-            Self::Issues => "icons/issue.svg",
-            Self::Security => "icons/shield.svg",
-            Self::Automations => "icons/automations.svg",
-            Self::Usage => "icons/chart.svg",
-        }
+fn icon(panel: ActivityPanel) -> &'static str {
+    match panel {
+        ActivityPanel::Overview => "icons/pulse.svg",
+        ActivityPanel::Workspaces => "icons/terminal.svg",
+        ActivityPanel::PullRequests => "icons/pull-request.svg",
+        ActivityPanel::Issues => "icons/issue.svg",
+        ActivityPanel::Security => "icons/shield.svg",
+        ActivityPanel::Automations => "icons/automations.svg",
+        ActivityPanel::Usage => "icons/chart.svg",
     }
 }
 
@@ -475,8 +431,8 @@ impl HerdrWindow {
             let button = self
                 .bar_button(
                     panel_selector(panel),
-                    panel.icon(),
-                    panel.label(),
+                    icon(panel),
+                    label(panel),
                     (state, busy),
                     bubble,
                 )
@@ -650,7 +606,7 @@ impl HerdrWindow {
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .child(panel.label().to_uppercase()),
+                        .child(label(panel).to_uppercase()),
                 )
             })
             .child(self.sidebar_toggle(cx))

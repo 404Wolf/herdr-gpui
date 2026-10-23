@@ -4475,6 +4475,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "herdr-control-protocol"
+version = "0.1.0"
+dependencies = [
+ "herdr-client",
+ "interprocess",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
 name = "herdr-gpui"
 version = "0.1.0"
 dependencies = [
@@ -4501,10 +4514,10 @@ dependencies = [
  "herdr-automation",
  "herdr-chat-protocol",
  "herdr-client",
+ "herdr-control-protocol",
  "herdr-updater",
  "if-addrs",
  "image",
- "interprocess",
  "keepawake",
  "lb-wry",
  "mdns-sd",

@@ -1,4 +1,5 @@
 //! `notes`, `checkpoint`, `scripts`, `teleport`, and `fan-out`.
+use crate::control::ControlError;
 mod checkpoint;
 mod here;
 mod scripts;
@@ -30,10 +31,10 @@ fn rejected(error: crate::Error) -> crate::Error {
         | crate::Error::CheckpointUnborn => ErrorCode::InvalidRequest,
         _ => ErrorCode::Failed,
     };
-    crate::Error::ControlRejected {
+    crate::Error::Control(ControlError::Rejected {
         code,
         message: crate::checkpoint::describe(&error),
-    }
+    })
 }
 
 /// A repository's name from its Git common directory: the directory the
@@ -111,12 +112,12 @@ pub(super) fn teleport(
     context: &Context,
 ) -> crate::Result<Output> {
     if let Some(worktree) = worktree {
-        return Err(crate::Error::ControlRejected {
+        return Err(crate::Error::Control(ControlError::Rejected {
             code: ErrorCode::InvalidRequest,
             message: format!(
                 "teleport moves the caller's own worktree, not {worktree}; run it from a pane there"
             ),
-        });
+        }));
     }
     context.act(Request::Work, WorkOp::Teleport { host })
 }

@@ -27,6 +27,7 @@ Closing or detaching the GUI must leave the daemon and its terminals running.
 | `crates/herdr-chat-protocol` | Attach wire between `herdr-acp` and its clients: transcript model, the shared change reducer, framing, and endpoint discovery; no ACP or GPUI types |
 | `crates/herdr-client` | Discovery, socket worker, session transitions, ordered commands, and client-local activity projection |
 | `crates/herdr-gpui` | Native UI, connection bridge, presentation state, semantic input, geometry, and painting |
+| `crates/herdr-control-protocol` | The control socket between `herdr-gpui <command>` and the running app: request and response types, bounds, and the Unix socket or named pipe; no GPUI |
 | `crates/herdr-updater` | The in-app update service: release checks, signed manifests, staging, the install helpers, and the release identity (`APP_ID`, `APP_VERSION`); no GPUI |
 | `crates/herdr-gpui-launcher` | Windows-only windowed launcher that starts `herdr-gpui.exe` without a console window; std plus `MessageBoxW` for start failures |
 | `crates/herdr-automation` | Automation scripts (`docs/automations.md`): the sandboxed Luau state, the step catalog, schedules, caps, and the plan a person approves; no GPUI or runtime |
@@ -99,8 +100,9 @@ agents in Herdr panes can use what only this client shows or keeps
 - When a feature adds something an agent or script could reasonably ask for
   (open or focus a view, read state the app holds, change a setting, wait for
   an event), add a command in the same change: the request in
-  `control/protocol`, its handler in `control/server`, parsing and output in
-  `control/client`, its `--help` text, and tests for each.
+  `herdr-control-protocol`'s `protocol`, its handler in `control/server`,
+  parsing and output in `control/client`, its `--help` text, and tests for
+  each.
 - Do not add a command that repeats Herdr's own `herdr` CLI (workspaces,
   terminal tabs, panes, agents, scrollback), that the app cannot really do,
   or that skips a confirmation. Destructive or outward actions open the

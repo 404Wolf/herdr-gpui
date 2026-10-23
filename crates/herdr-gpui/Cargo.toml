@@ -30,6 +30,7 @@ gix.workspace                  = true
 herdr-automation.workspace     = true
 herdr-chat-protocol.workspace  = true
 herdr-client.workspace         = true
+herdr-control-protocol.workspace = true
 herdr-updater.workspace        = true
 if-addrs.workspace             = true
 image                          = { features = ["bmp", "tiff"], workspace = true }
@@ -74,6 +75,7 @@ winresource.workspace = true
 
 [dev-dependencies]
 gpui = { features = ["test-support"], workspace = true }
+herdr-control-protocol = { features = ["test-support"], workspace = true }
 socket2.workspace = true
 test-case.workspace = true
 
@@ -122,9 +124,7 @@ rustix.workspace = true
 [target.'cfg(any(target_os = "macos", windows))'.dependencies]
 wry.workspace = true
 
-# The control pipe: `interprocess` creates it with a DACL, and
-# `herdr_client::private_endpoint` reads the user and the pipe owner it is
-# checked against. `windows-sys` sets the window attributes and reads the
+# `windows-sys` sets the window attributes and reads the
 # system settings GPUI leaves to the app, keeps saved sign-ins in Credential Manager (`github::credential_manager`),
 # and opens avatar cache entries without following reparse points. It also
 # registers with Restart Manager (`restart_manager`), writes crash minidumps
@@ -136,7 +136,6 @@ wry.workspace = true
 # handler and the startup entry, failing with `windows-result` errors.
 [target.'cfg(windows)'.dependencies]
 clipboard-win.workspace     = true
-interprocess.workspace      = true
 raw-window-handle.workspace = true
 windows = { features = [
   "Data_Xml_Dom",
