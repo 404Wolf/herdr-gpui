@@ -102,7 +102,7 @@ impl Auth {
         !self.signed_out && (self.reload_pending || self.profile_incoming.is_some())
     }
     pub fn initialize(&mut self, config: &crate::config::Config) -> bool {
-        self.initialize_with(Store::select(config))
+        self.initialize_with(super::store::select(config))
     }
     pub(super) fn initialize_with(&mut self, store: Store) -> bool {
         let changed = !self.initialized || self.store != store;
@@ -264,7 +264,7 @@ impl Auth {
         if self.busy() || self.connected() || self.loading_profile() {
             return;
         }
-        self.store = Store::select(config);
+        self.store = super::store::select(config);
         self.initialized = true;
         self.failed = false;
         if self.refuse_without_store() {
@@ -352,7 +352,7 @@ impl Auth {
     /// Use the GitHub CLI's sign-in for the main account. The worker reads
     /// and verifies its token, then saves only a marker, never the token.
     pub fn use_github_cli(&mut self, config: &crate::config::Config) {
-        let store = Store::select(config);
+        let store = super::store::select(config);
         self.use_github_cli_with(store, move || {
             let profile = cli::verify(cli::token()?)?;
             save_github_cli(store)?;
@@ -391,7 +391,7 @@ impl Auth {
     /// for an account Herdr's GitHub App cannot reach. GitHub checks it
     /// before it is saved, so a mistyped token is never stored.
     pub fn use_token(&mut self, token: SecretString, config: &crate::config::Config) {
-        let store = Store::select(config);
+        let store = super::store::select(config);
         let account = self.account.clone();
         self.use_token_with(store, move || {
             let token = token.expose_secret().trim();

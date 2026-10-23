@@ -4,8 +4,6 @@
 
 mod auth;
 mod cli;
-#[cfg(windows)]
-mod credential_manager;
 mod credentials;
 mod device;
 mod http;
@@ -14,15 +12,11 @@ mod installation;
 pub(crate) use http::fake_graphql;
 mod log;
 mod routing;
-#[cfg(target_os = "linux")]
-mod secret_service;
 mod store;
 mod token;
 
-#[cfg(windows)]
-pub use credential_manager::Error as CredentialManagerError;
 #[cfg(all(unix, feature = "boat"))]
-pub(crate) use credentials::read_checked as read_private_entry;
+pub(crate) use herdr_credentials::file::read_checked as read_private_entry;
 
 #[cfg(test)]
 mod tests;
@@ -33,7 +27,7 @@ pub(crate) use {
     http::{graphql, graphql_aliases, hidden_hint, mutation, rest},
     installation::{Access, Installation},
     routing::Tokens,
-    store::{Account, Note, Store},
+    store::{Account, Note, Store, note as store_note, select as select_store},
 };
 // Cloud providers keep their own secrets in the same store.
 #[cfg(any(

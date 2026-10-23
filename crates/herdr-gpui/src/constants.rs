@@ -14,10 +14,9 @@ pub(crate) const TAB_WIDTH: f32 = 64.;
 // The reference strip is a shallow band: chrome, not a toolbar.
 pub(crate) const TAB_HEIGHT: f32 = 24.;
 
-// Only the signed release pipeline sets that tag. Local `just run` and worktree
-// builds are unsigned, so features that depend on a stable code identity (such as
-// macOS Keychain access) must treat them as development builds.
-pub(crate) const RELEASE_BUILD: bool = option_env!("HERDR_RELEASE_VERSION").is_some();
+// Whether this is a signed release, which the credential store keys Keychain
+// access off; defined once there.
+pub(crate) use herdr_credentials::RELEASE_BUILD;
 
 // The git commit hash embedded by build.rs for source/dev builds.
 pub(crate) const BUILD_COMMIT: Option<&str> = option_env!("HERDR_BUILD_COMMIT");

@@ -10,7 +10,7 @@
 //! wrapper crates pull in a second `windows-sys` version. Each call is in its
 //! own block that states what it relies on.
 
-use super::{Result, store::credential_bytes};
+use crate::{Result, credential_bytes};
 use secrecy::{ExposeSecret, SecretString};
 use std::{io, iter::once};
 use windows_sys::Win32::{
@@ -21,9 +21,6 @@ use windows_sys::Win32::{
     },
 };
 use zeroize::Zeroize;
-
-const SERVICE: &str = "dev.herdr.gpui.github";
-const LABEL: &str = "Herdr UI GitHub sign-in";
 
 /// Why Credential Manager refused, with the Windows error as the source.
 #[derive(Debug, thiserror::Error)]
@@ -92,13 +89,8 @@ impl Drop for Read {
     }
 }
 
-/// The saved token for `account`, or `None` when nothing is saved.
-pub(super) fn read(account: &str) -> Result<Option<SecretString>> {
-    read_in(SERVICE, account)
-}
-
-/// `read` for an entry under another feature's service name.
-pub(super) fn read_in(service: &str, account: &str) -> Result<Option<SecretString>> {
+/// The entry `account` under `service`, or `None` when nothing is saved.
+pub(crate) fn read(service: &str, account: &str) -> Result<Option<SecretString>> {
     let name = wide(&target(service, account));
     let mut credential = std::ptr::null_mut();
     // SAFETY: `name` is NUL-terminated and outlives the call, and
@@ -117,14 +109,10 @@ pub(super) fn read_in(service: &str, account: &str) -> Result<Option<SecretStrin
     credential_bytes(Read(credential).secret()).map(Some)
 }
 
-/// Saves `token`, or removes the entry when it is `None`. Removing an entry
-/// that does not exist succeeds.
-pub(super) fn save(token: Option<&SecretString>, account: &str) -> Result<()> {
-    save_in(SERVICE, LABEL, token, account)
-}
-
-/// `save` for an entry under another feature's service name and label.
-pub(super) fn save_in(
+/// Saves `token` as `account` under `service`, with `label` as its comment,
+/// or removes the entry when it is `None`. Removing an entry that does not
+/// exist succeeds.
+pub(crate) fn save(
     service: &str,
     label: &str,
     token: Option<&SecretString>,

@@ -2,7 +2,6 @@
 
 use super::{Auth, Device, Note, Profile, Reply, SETUP_MESSAGE, Store, VERIFY_URL};
 use super::{
-    credentials,
     device::TokenResponse,
     http::{
         LIMIT, authorization, graphql, pause_until, pr_cooldown, query_error, rejection, response,

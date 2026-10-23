@@ -2,28 +2,11 @@ use super::*;
 use crate::github::store::resolve_token;
 
 #[test]
-fn keyring_is_used_by_signed_macos_releases_linux_and_windows() {
-    assert_eq!(Store::choose(false, true, false), Store::Keyring);
-    // The plaintext opt-in wins over a keyring where it is honoured at all, so
-    // a Linux desktop without a Secret Service still has a way to save.
-    assert_eq!(Store::choose(true, true, false), Store::File);
-    // An unsigned macOS development build gets a new code identity on every
-    // rebuild, so it uses the private file instead of re-prompting for Keychain.
-    assert_eq!(Store::choose(false, false, true), Store::File);
-    assert_eq!(Store::choose(true, false, true), Store::File);
-    // Everywhere else unencrypted storage stays an explicit opt-in.
-    assert_eq!(Store::choose(false, false, false), Store::Environment);
-    assert_eq!(Store::choose(true, false, false), Store::File);
-    assert_eq!(
-        KEYRING,
-        cfg!(target_os = "linux")
-            || cfg!(windows)
-            || (cfg!(target_os = "macos") && crate::RELEASE_BUILD)
-    );
+fn github_sign_ins_follow_the_build_and_the_plaintext_opt_in() {
     let mut config = crate::config::Config::default();
     #[cfg(target_os = "macos")]
     assert_eq!(
-        Store::select(&config),
+        store::select(&config),
         if crate::RELEASE_BUILD {
             Store::Keyring
         } else {
@@ -31,53 +14,35 @@ fn keyring_is_used_by_signed_macos_releases_linux_and_windows() {
         }
     );
     #[cfg(any(target_os = "linux", windows))]
-    assert_eq!(Store::select(&config), Store::Keyring);
+    assert_eq!(store::select(&config), Store::Keyring);
     config.github.allow_plaintext_credentials = true;
     // macOS picks its store from the build alone and ignores the opt-in.
     #[cfg(target_os = "macos")]
     assert_eq!(
-        Store::select(&config),
+        store::select(&config),
         Store::choose(false, KEYRING, store::FILE_DEFAULT)
     );
     #[cfg(target_os = "linux")]
-    assert_eq!(Store::select(&config), Store::File);
-    // Platforms without POSIX ownership and mode bits cannot keep the file
-    // private, so opting in must not select it there: Windows keeps using
-    // Credential Manager.
-    assert_eq!(store::FILE, cfg!(unix));
+    assert_eq!(store::select(&config), Store::File);
+    // Windows keeps using Credential Manager: the file cannot be private there.
     if !store::FILE {
-        assert_eq!(Store::select(&config), Store::choose(false, KEYRING, false));
-        assert!(matches!(
-            credentials::store(
-                std::path::Path::new("."),
-                c"github-credentials",
-                Some(&"token".into()),
-                true
-            ),
-            Err(Error::CredentialUnsupported)
-        ));
-        assert!(
-            credentials::store(
-                std::path::Path::new("."),
-                c"github-credentials",
-                None,
-                false
-            )
-            .is_ok()
-        );
+        assert_eq!(store::select(&config), Store::choose(false, KEYRING, false));
     }
 }
 #[test]
 fn credential_notes_state_where_tokens_are_kept() {
-    assert!(Store::Environment.note(false).is_none());
-    assert!(Store::Environment.note(true).is_none());
-    assert!(matches!(Store::Keyring.note(false), Some(Note::Info(_))));
+    assert!(store::note(Store::Environment, false).is_none());
+    assert!(store::note(Store::Environment, true).is_none());
+    assert!(matches!(
+        store::note(Store::Keyring, false),
+        Some(Note::Info(_))
+    ));
     assert!(
-        Store::Keyring.note(true).is_none(),
+        store::note(Store::Keyring, true).is_none(),
         "a connected account already proved keyring access"
     );
     for connected in [false, true] {
-        let Some(Note::Warning(text)) = Store::File.note(connected) else {
+        let Some(Note::Warning(text)) = store::note(Store::File, connected) else {
             panic!("unencrypted storage must always warn");
         };
         assert!(text.starts_with("WARNING: "));

@@ -5,6 +5,9 @@
 
 use crate::Error;
 use chrono::{DateTime, Utc};
+#[cfg(windows)]
+use herdr_credentials::CredentialManagerError;
+use herdr_credentials::Error as CredentialError;
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
 
@@ -175,29 +178,32 @@ pub(super) fn kind(error: &Error) -> &'static str {
         Error::GitHubQuery => "query",
         Error::GitHubRejected(_) => "rejected",
         Error::GitHubWorker(_) => "worker",
-        #[cfg(target_os = "macos")]
-        Error::KeychainRead(_) => "keychain_read",
-        #[cfg(target_os = "macos")]
-        Error::KeychainWrite(_) => "keychain_write",
-        #[cfg(target_os = "linux")]
-        Error::SecretServiceRead(_) => "secret_service_read",
-        #[cfg(target_os = "linux")]
-        Error::SecretServiceWrite(_) => "secret_service_write",
-        #[cfg(target_os = "linux")]
-        Error::SecretServiceUnavailable => "secret_service_unavailable",
-        #[cfg(windows)]
-        Error::CredentialManager(super::CredentialManagerError::Read(_)) => {
-            "credential_manager_read"
-        }
-        #[cfg(windows)]
-        Error::CredentialManager(super::CredentialManagerError::Write(_)) => {
-            "credential_manager_write"
-        }
+        Error::Credentials(error) => match error {
+            #[cfg(target_os = "macos")]
+            CredentialError::KeychainRead(_) => "keychain_read",
+            #[cfg(target_os = "macos")]
+            CredentialError::KeychainWrite(_) => "keychain_write",
+            #[cfg(target_os = "linux")]
+            CredentialError::SecretServiceRead(_) => "secret_service_read",
+            #[cfg(target_os = "linux")]
+            CredentialError::SecretServiceWrite(_) => "secret_service_write",
+            #[cfg(target_os = "linux")]
+            CredentialError::SecretServiceUnavailable => "secret_service_unavailable",
+            #[cfg(windows)]
+            CredentialError::CredentialManager(CredentialManagerError::Read(_)) => {
+                "credential_manager_read"
+            }
+            #[cfg(windows)]
+            CredentialError::CredentialManager(CredentialManagerError::Write(_)) => {
+                "credential_manager_write"
+            }
+            CredentialError::Permissions => "credential_permissions",
+            CredentialError::Io(_) => "credential_io",
+            CredentialError::Policy => "credential_policy",
+            CredentialError::Unsupported => "credential_unsupported",
+            CredentialError::Encoding(_) => "encoding",
+        },
         Error::CredentialDirectory => "credential_directory",
-        Error::CredentialPermissions => "credential_permissions",
-        Error::CredentialIo(_) => "credential_io",
-        Error::CredentialPolicy => "credential_policy",
-        Error::CredentialUnsupported => "credential_unsupported",
         _ => "other",
     }
 }

@@ -122,7 +122,7 @@ fn live_session_transient_failures_preserve_account_and_retry_but_rejection_disc
         Error::GitHubStatus(503),
         Error::GitHubRateLimit { reset: None },
         Error::GitHubForbidden,
-        Error::CredentialPolicy,
+        Error::Credentials(herdr_credentials::Error::Policy),
     ] {
         let mut auth = Auth::connected_fixture();
         let now = Instant::now();

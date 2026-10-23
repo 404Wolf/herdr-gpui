@@ -8,6 +8,9 @@ use super::{
     token::{Credential, GITHUB_CLI, Saved},
 };
 use crate::Error;
+pub(crate) use herdr_credentials::{FILE, Store};
+pub(super) use herdr_credentials::{FILE_DEFAULT, KEYRING};
+use herdr_credentials::{OPT_IN, keyring_read, keyring_save};
 use secrecy::{ExposeSecret, SecretString};
 use zeroize::Zeroizing;
 
@@ -32,8 +35,11 @@ pub(crate) const KEYRING_NOTICE: &str =
 pub(crate) const KEYRING_NOTICE: &str =
     "Credentials are saved in Windows Credential Manager for your Windows account.";
 
-#[cfg(target_os = "macos")]
+// The GitHub sign-in's keyring entries: one service, an account per sign-in.
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
 const SERVICE: &str = "dev.herdr.gpui.github";
+#[cfg(any(target_os = "linux", windows))]
+const LABEL: &str = "Herdr UI GitHub sign-in";
 
 /// Which saved GitHub sign-in a credential belongs to. Each one is a separate
 /// entry in the same store, so signing one out never touches another.
@@ -125,67 +131,22 @@ pub(super) fn environment_token(name: &str) -> Result<Option<SecretString>> {
         .transpose()
 }
 
-/// Where a saved GitHub token lives for this build.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum Store {
-    /// No persistent store: `GH_TOKEN` / `GITHUB_TOKEN` only.
-    #[default]
-    Environment,
-    /// The app-specific macOS login Keychain or Linux Secret Service entry.
-    Keyring,
-    /// A private `0600` file beside the GUI config.
-    File,
+/// The store for GitHub sign-ins under `config`'s plaintext opt-in.
+pub(crate) fn select(config: &crate::config::Config) -> Store {
+    Store::choose(
+        config.github.allow_plaintext_credentials && OPT_IN,
+        KEYRING,
+        FILE_DEFAULT,
+    )
 }
 
-// A macOS development build is unsigned and gets a fresh code identity on every
-// rebuild, so macOS would re-prompt for the Keychain item's ACL on every run.
-// Only the signed release pipeline sets `HERDR_RELEASE_VERSION`, so only it uses
-// Keychain. The Secret Service grants access per user session, not per binary,
-// so every Linux build uses it, and Credential Manager grants it per Windows
-// account, so every Windows build uses that.
-pub(super) const KEYRING: bool = (cfg!(target_os = "macos") && crate::RELEASE_BUILD)
-    || cfg!(target_os = "linux")
-    || cfg!(windows);
-// The private file relies on POSIX ownership and mode bits, so platforms
-// without them keep the environment as their only source of a saved token.
-pub(super) const FILE: bool = cfg!(unix);
-// macOS development builds have no other secure store to fall back on, so the
-// private file is their default.
-pub(super) const FILE_DEFAULT: bool = cfg!(target_os = "macos") && !KEYRING;
-// macOS picks its store from the build alone. Elsewhere the plaintext opt-in
-// chooses the file, even over the Secret Service: it is the fallback for a
-// desktop without one, and keeps a sign-in saved under that opt-in readable.
-pub(super) const OPT_IN: bool = FILE && !cfg!(target_os = "macos");
-// An unsigned build must never reach the Keychain, whatever else changes here.
-const _: () = assert!(!(KEYRING && cfg!(target_os = "macos")) || crate::RELEASE_BUILD);
-
-impl Store {
-    pub(crate) fn select(config: &crate::config::Config) -> Self {
-        Self::choose(
-            config.github.allow_plaintext_credentials && OPT_IN,
-            KEYRING,
-            FILE_DEFAULT,
-        )
-    }
-
-    pub(super) const fn choose(opted_in: bool, keyring: bool, file_default: bool) -> Self {
-        if opted_in || file_default {
-            Self::File
-        } else if keyring {
-            Self::Keyring
-        } else {
-            Self::Environment
-        }
-    }
-
-    /// Credential handling shown in the GitHub menu, so storage is never implicit.
-    pub(crate) fn note(self, connected: bool) -> Option<Note> {
-        match self {
-            Self::File if FILE_DEFAULT => Some(Note::Warning(DEVELOPMENT_WARNING)),
-            Self::File => Some(Note::Warning(PLAINTEXT_WARNING)),
-            Self::Keyring if !connected => Some(Note::Info(KEYRING_NOTICE)),
-            Self::Keyring | Self::Environment => None,
-        }
+/// Credential handling shown in the GitHub menu, so storage is never implicit.
+pub(crate) fn note(store: Store, connected: bool) -> Option<Note> {
+    match store {
+        Store::File if FILE_DEFAULT => Some(Note::Warning(DEVELOPMENT_WARNING)),
+        Store::File => Some(Note::Warning(PLAINTEXT_WARNING)),
+        Store::Keyring if !connected => Some(Note::Info(KEYRING_NOTICE)),
+        Store::Keyring | Store::Environment => None,
     }
 }
 
@@ -194,51 +155,38 @@ pub(crate) enum Note {
     Info(&'static str),
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
 fn keyring_token(account: &Account) -> Result<Option<SecretString>> {
-    keychain_read(SERVICE, &account.keyring_account())
+    Ok(keyring_read(SERVICE, &account.keyring_account())?)
 }
 
-#[cfg(target_os = "linux")]
-fn keyring_token(account: &Account) -> Result<Option<SecretString>> {
-    super::secret_service::read(&account.keyring_account())
-}
-
-#[cfg(windows)]
-fn keyring_token(account: &Account) -> Result<Option<SecretString>> {
-    super::credential_manager::read(&account.keyring_account())
-}
-
-// `Store::Keyring` is never selected elsewhere; the stubs keep the match total.
+// `Store::Keyring` is never selected elsewhere; the stub keeps the match total.
 #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 fn keyring_token(_: &Account) -> Result<Option<SecretString>> {
     Ok(None)
 }
 
-#[cfg(target_os = "macos")]
-fn keyring_save(token: Option<&SecretString>, account: &Account) -> Result<()> {
-    keychain_save(SERVICE, &account.keyring_account(), token)
-}
-
-#[cfg(target_os = "linux")]
-fn keyring_save(token: Option<&SecretString>, account: &Account) -> Result<()> {
-    super::secret_service::save(token, &account.keyring_account())
-}
-
-#[cfg(windows)]
-fn keyring_save(token: Option<&SecretString>, account: &Account) -> Result<()> {
-    super::credential_manager::save(token, &account.keyring_account())
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
+fn keyring_save_token(token: Option<&SecretString>, account: &Account) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    let label = "";
+    #[cfg(any(target_os = "linux", windows))]
+    let label = LABEL;
+    Ok(keyring_save(
+        SERVICE,
+        label,
+        token,
+        &account.keyring_account(),
+    )?)
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
-fn keyring_save(_: Option<&SecretString>, _: &Account) -> Result<()> {
-    Err(Error::CredentialPolicy)
+fn keyring_save_token(_: Option<&SecretString>, _: &Account) -> Result<()> {
+    Err(herdr_credentials::Error::Policy.into())
 }
 
-/// A credential another feature saves under the same policy as GitHub's:
-/// the keyring service, account and label, the private file beside the GUI
-/// config, and the record check every read and write must pass (which must
-/// also bound its size).
+/// A credential another feature saves under the same policy as GitHub's, in
+/// the same directory beside the GUI config.
 #[cfg(any(
     feature = "azure",
     feature = "boat",
@@ -247,63 +195,7 @@ fn keyring_save(_: Option<&SecretString>, _: &Account) -> Result<()> {
     feature = "opensandbox",
     feature = "sprites"
 ))]
-pub(crate) struct Entry {
-    // Only the keyrings address entries by these.
-    #[cfg_attr(
-        not(any(target_os = "macos", target_os = "linux", windows)),
-        allow(dead_code)
-    )]
-    pub(crate) service: &'static str,
-    #[cfg_attr(
-        not(any(target_os = "macos", target_os = "linux", windows)),
-        allow(dead_code)
-    )]
-    pub(crate) account: &'static str,
-    /// Shown by the Linux Secret Service and as the Credential Manager
-    /// comment; the Keychain has no item label here.
-    #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
-    pub(crate) label: &'static str,
-    pub(crate) file: &'static std::ffi::CStr,
-    pub(crate) validate: fn(&SecretString) -> Result<()>,
-}
-
-#[cfg(any(
-    feature = "azure",
-    feature = "boat",
-    feature = "coder",
-    feature = "daytona",
-    feature = "opensandbox",
-    feature = "sprites"
-))]
-impl Store {
-    /// The store for another feature's credential, from its own plaintext opt-in.
-    pub(crate) const fn for_policy(allow_plaintext: bool) -> Self {
-        Self::choose(allow_plaintext && OPT_IN, KEYRING, FILE_DEFAULT)
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn keychain_read(service: &str, account: &str) -> Result<Option<SecretString>> {
-    match security_framework::passwords::get_generic_password(service, account) {
-        Ok(bytes) => credential_bytes(bytes).map(Some),
-        Err(e) if e.code() == -25300 => Ok(None),
-        Err(error) => Err(Error::KeychainRead(error)),
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn keychain_save(service: &str, account: &str, token: Option<&SecretString>) -> Result<()> {
-    use security_framework::passwords::{delete_generic_password, set_generic_password};
-    let result = match token {
-        Some(token) => set_generic_password(service, account, token.expose_secret().as_bytes()),
-        None => delete_generic_password(service, account),
-    };
-    match result {
-        Ok(()) => Ok(()),
-        Err(e) if token.is_none() && e.code() == -25300 => Ok(()),
-        Err(error) => Err(Error::KeychainWrite(error)),
-    }
-}
+pub(crate) type Entry = herdr_credentials::Entry<Error>;
 
 /// Read `entry` from `store`. Callers run on a background worker.
 #[cfg(any(
@@ -315,20 +207,7 @@ fn keychain_save(service: &str, account: &str, token: Option<&SecretString>) -> 
     feature = "sprites"
 ))]
 pub(crate) fn read_entry(store: Store, entry: &Entry) -> Result<Option<SecretString>> {
-    match store {
-        Store::Environment => Ok(None),
-        #[cfg(target_os = "macos")]
-        Store::Keyring => keychain_read(entry.service, entry.account),
-        #[cfg(target_os = "linux")]
-        Store::Keyring => super::secret_service::read_in(entry.service, entry.account),
-        #[cfg(windows)]
-        Store::Keyring => super::credential_manager::read_in(entry.service, entry.account),
-        #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
-        Store::Keyring => Ok(None),
-        Store::File => {
-            credentials::read_checked(&credential_directory()?, entry.file, entry.validate)
-        }
-    }
+    herdr_credentials::read_entry(store, entry, &credential_directory()?)
 }
 
 /// Write or remove `entry` in `store`. Callers run on a background worker.
@@ -341,38 +220,7 @@ pub(crate) fn read_entry(store: Store, entry: &Entry) -> Result<Option<SecretStr
     feature = "sprites"
 ))]
 pub(crate) fn save_entry(store: Store, entry: &Entry, token: Option<&SecretString>) -> Result<()> {
-    if let Some(token) = token {
-        (entry.validate)(token)?;
-    }
-    match store {
-        #[cfg(target_os = "macos")]
-        Store::Keyring => keychain_save(entry.service, entry.account, token),
-        #[cfg(target_os = "linux")]
-        Store::Keyring => {
-            super::secret_service::save_in(entry.service, entry.label, token, entry.account)
-        }
-        #[cfg(windows)]
-        Store::Keyring => {
-            super::credential_manager::save_in(entry.service, entry.label, token, entry.account)
-        }
-        #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
-        Store::Keyring => Err(Error::CredentialPolicy),
-        // Removal stays allowed without an opt-in, as for GitHub sign-out.
-        Store::Environment => credentials::store_checked(
-            &credential_directory()?,
-            entry.file,
-            token,
-            false,
-            entry.validate,
-        ),
-        Store::File => credentials::store_checked(
-            &credential_directory()?,
-            entry.file,
-            token,
-            true,
-            entry.validate,
-        ),
-    }
+    herdr_credentials::save_entry(store, entry, &credential_directory()?, token)
 }
 
 pub(super) fn saved_token(store: Store, account: &Account) -> Result<Option<SecretString>> {
@@ -499,7 +347,7 @@ pub(super) fn save(token: Option<&SecretString>, store: Store, account: &Account
 fn save_unlocked(token: Option<&SecretString>, store: Store, account: &Account) -> Result<()> {
     let name = account.file_name();
     match store {
-        Store::Keyring => keyring_save(token, account),
+        Store::Keyring => keyring_save_token(token, account),
         // Removal stays allowed without an opt-in, so a file written under an
         // earlier policy is still cleaned up by an explicit sign-out.
         Store::Environment => credentials::store(&credential_directory()?, &name, token, false),

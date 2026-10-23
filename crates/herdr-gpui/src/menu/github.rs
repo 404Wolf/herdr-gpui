@@ -594,7 +594,7 @@ impl HerdrWindow {
                     .child(note),
             );
         }
-        if let Some(note) = auth.store().note(auth.connected()) {
+        if let Some(note) = crate::github::store_note(auth.store(), auth.connected()) {
             let (color, text) = match note {
                 crate::github::Note::Warning(text) => (theme.ink(theme.palette[1]), text),
                 crate::github::Note::Info(text) => (theme.muted, text),

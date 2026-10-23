@@ -43,7 +43,9 @@ fn github_failures_keep_typed_sources_and_redact_parser_diagnostics() -> anyhow:
             .is_some_and(|source| source.is::<serde_json::Error>())
     );
 
-    let error = Error::CredentialIo(io::Error::from(io::ErrorKind::PermissionDenied));
+    let error = Error::Credentials(herdr_credentials::Error::Io(io::Error::from(
+        io::ErrorKind::PermissionDenied,
+    )));
     assert!(
         error
             .source()

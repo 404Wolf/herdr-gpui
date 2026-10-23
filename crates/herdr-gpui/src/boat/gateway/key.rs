@@ -19,7 +19,9 @@ pub(super) fn snapshot(
     _directory: &Path,
     _generate: impl FnOnce(&Path) -> Result<()>,
 ) -> Result<Identity> {
-    Err(storage(crate::Error::CredentialUnsupported))
+    Err(storage(crate::Error::Credentials(
+        herdr_credentials::Error::Unsupported,
+    )))
 }
 
 fn storage(source: crate::Error) -> Error {
@@ -47,7 +49,9 @@ fn protected_path(directory: &Path) -> Result<()> {
             || (metadata.uid() != 0 && metadata.uid() != rustix::process::geteuid().as_raw())
             || (metadata.mode() & 0o022 != 0 && metadata.mode() & 0o1000 == 0)
         {
-            return Err(storage(crate::Error::CredentialPermissions));
+            return Err(storage(crate::Error::Credentials(
+                herdr_credentials::Error::Permissions,
+            )));
         }
     }
     Ok(())

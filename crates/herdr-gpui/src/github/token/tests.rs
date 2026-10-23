@@ -225,9 +225,9 @@ fn refresh_and_persistence_failures_are_reported_without_profile_retry() {
                 Err(Error::GitHubAuthentication)
             },
             |_| Ok(renewed()),
-            |_| Err(Error::CredentialPolicy)
+            |_| Err(Error::Credentials(herdr_credentials::Error::Policy))
         ),
-        Err(Error::CredentialPolicy)
+        Err(Error::Credentials(herdr_credentials::Error::Policy))
     ));
     let wrote = std::cell::Cell::new(false);
     assert!(matches!(

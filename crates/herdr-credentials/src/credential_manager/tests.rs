@@ -20,13 +20,13 @@ impl Scratch {
     }
 
     fn read(&self, account: &str) -> Option<String> {
-        read_in(&self.service, account)
+        read(&self.service, account)
             .unwrap()
             .map(|token| token.expose_secret().to_owned())
     }
 
     fn save(&self, account: &str, token: Option<&str>) -> Result<()> {
-        save_in(
+        save(
             &self.service,
             "Herdr UI test",
             token.map(SecretString::from).as_ref(),
@@ -46,7 +46,7 @@ impl Drop for Scratch {
 #[test]
 fn entries_are_named_by_service_and_account() {
     assert_eq!(
-        target(SERVICE, "github.com/host/0123"),
+        target("dev.herdr.gpui.github", "github.com/host/0123"),
         "dev.herdr.gpui.github/github.com/host/0123"
     );
     assert_eq!(
@@ -108,12 +108,12 @@ fn a_saved_entry_that_is_not_utf8_is_an_encoding_error() {
         Persist: CRED_PERSIST_LOCAL_MACHINE,
         ..CREDENTIALW::default()
     };
-    // SAFETY: as in `save_in`: every pointer outlives the call.
+    // SAFETY: as in `save`: every pointer outlives the call.
     #[allow(unsafe_code)]
     let written = unsafe { CredWriteW(&credential, 0) };
     assert_ne!(written, 0, "{}", io::Error::last_os_error());
     assert!(matches!(
-        read_in(&scratch.service, main),
-        Err(crate::Error::GitHubEncoding(_))
+        read(&scratch.service, main),
+        Err(crate::Error::Encoding(_))
     ));
 }

@@ -31,6 +31,7 @@ herdr-automation.workspace     = true
 herdr-chat-protocol.workspace  = true
 herdr-client.workspace         = true
 herdr-control-protocol.workspace = true
+herdr-credentials.workspace    = true
 herdr-updater.workspace        = true
 herdr-usage.workspace          = true
 if-addrs.workspace             = true
@@ -128,8 +129,7 @@ rustix.workspace = true
 wry.workspace = true
 
 # `windows-sys` sets the window attributes and reads the
-# system settings GPUI leaves to the app, keeps saved sign-ins in Credential Manager (`github::credential_manager`),
-# and opens avatar cache entries without following reparse points. It also
+# system settings GPUI leaves to the app, and opens avatar cache entries without following reparse points. It also
 # registers with Restart Manager (`restart_manager`), writes crash minidumps
 # (`crash::windows`), and sends the
 # performance fixture its window messages.
@@ -153,7 +153,6 @@ windows-sys = { features = [
   "Wdk_System_SystemServices",
   "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",
-  "Win32_Security_Credentials",
   "Win32_Storage_FileSystem",
   "Win32_System_Console",
   "Win32_System_Diagnostics_Debug",
@@ -189,7 +188,6 @@ objc2.workspace              = true
 objc2-app-kit.workspace      = true
 objc2-foundation.workspace   = true
 raw-window-handle            = { optional = true, workspace = true }
-security-framework.workspace = true
 
 [[test]]
 name              = "live_gui"

@@ -1,17 +1,13 @@
 //! The freedesktop Secret Service (GNOME Keyring, KWallet, KeePassXC) as the
-//! Linux keyring for saved GitHub sign-ins. `oo7` is the client GPUI's Linux
+//! Linux keyring for saved sign-ins. `oo7` is the client GPUI's Linux
 //! platform already links, built with the same async-io backend, so this adds
 //! no runtime: zbus drives its own connection thread and these calls block the
 //! background worker that makes them. Never call them on the UI thread.
 
-use super::{Result, store::credential_bytes};
-use crate::Error;
+use crate::{Error, Result, credential_bytes};
 use futures_lite::future::block_on;
 use oo7::{Keyring, zbus};
 use secrecy::{ExposeSecret, SecretString};
-
-const SERVICE: &str = "dev.herdr.gpui.github";
-const LABEL: &str = "Herdr UI GitHub sign-in";
 
 // `oo7::Error` is several times larger than the crate's other variants.
 fn read_error(error: oo7::Error) -> Error {
@@ -56,7 +52,7 @@ async fn open() -> Result<Option<Keyring>> {
         Ok(keyring) => keyring,
         Err(error) if unavailable(&error) => {
             tracing::info!(
-                category = "github_keyring",
+                category = "keyring",
                 ?error,
                 "No Secret Service is available"
             );
@@ -72,14 +68,10 @@ fn attributes<'a>(service: &'a str, account: &'a str) -> [(&'static str, &'a str
     [("service", service), ("account", account)]
 }
 
-/// A missing Secret Service holds nothing, so reading one is not an error:
-/// the environment remains the source of a token, exactly as before.
-pub(super) fn read(account: &str) -> Result<Option<SecretString>> {
-    read_in(SERVICE, account)
-}
-
-/// `read` for an entry under another feature's service name.
-pub(super) fn read_in(service: &str, account: &str) -> Result<Option<SecretString>> {
+/// The entry `account` under `service`. A missing Secret Service holds
+/// nothing, so reading one is not an error: the environment remains the
+/// source of a token, exactly as before.
+pub(crate) fn read(service: &str, account: &str) -> Result<Option<SecretString>> {
     block_on(async {
         let Some(keyring) = open().await? else {
             return Ok(None);
@@ -98,14 +90,10 @@ pub(super) fn read_in(service: &str, account: &str) -> Result<Option<SecretStrin
     })
 }
 
-/// Saves `token`, or removes the entry when it is `None`. Removing from a
-/// missing Secret Service succeeds, since nothing can have been saved there.
-pub(super) fn save(token: Option<&SecretString>, account: &str) -> Result<()> {
-    save_in(SERVICE, LABEL, token, account)
-}
-
-/// `save` for an entry under another feature's service name and label.
-pub(super) fn save_in(
+/// Saves `token` as `account` under `service`, shown as `label`, or removes
+/// the entry when it is `None`. Removing from a missing Secret Service
+/// succeeds, since nothing can have been saved there.
+pub(crate) fn save(
     service: &str,
     label: &str,
     token: Option<&SecretString>,
@@ -143,6 +131,9 @@ pub(super) fn save_in(
 mod tests {
     use super::*;
     use oo7::dbus::Error as DBus;
+
+    const SERVICE: &str = "dev.herdr.gpui.test";
+    const LABEL: &str = "Herdr UI test entry";
 
     fn fdo(error: zbus::fdo::Error) -> oo7::Error {
         oo7::Error::DBus(DBus::ZBus(zbus::Error::FDO(Box::new(error))))
@@ -191,17 +182,23 @@ mod tests {
     fn saves_reads_replaces_and_removes_a_live_entry() {
         let account = format!("test/{}", std::process::id());
         let other = format!("{account}/other");
-        assert!(read(&account).unwrap().is_none());
-        save(Some(&"first".into()), &account).unwrap();
-        save(Some(&"elsewhere".into()), &other).unwrap();
-        save(Some(&"second".into()), &account).unwrap();
-        assert_eq!(read(&account).unwrap().unwrap().expose_secret(), "second");
-        save(None, &account).unwrap();
-        assert!(read(&account).unwrap().is_none());
+        assert!(read(SERVICE, &account).unwrap().is_none());
+        save(SERVICE, LABEL, Some(&"first".into()), &account).unwrap();
+        save(SERVICE, LABEL, Some(&"elsewhere".into()), &other).unwrap();
+        save(SERVICE, LABEL, Some(&"second".into()), &account).unwrap();
+        assert_eq!(
+            read(SERVICE, &account).unwrap().unwrap().expose_secret(),
+            "second"
+        );
+        save(SERVICE, LABEL, None, &account).unwrap();
+        assert!(read(SERVICE, &account).unwrap().is_none());
         // Removing is idempotent and leaves other accounts alone.
-        save(None, &account).unwrap();
-        assert_eq!(read(&other).unwrap().unwrap().expose_secret(), "elsewhere");
-        save(None, &other).unwrap();
+        save(SERVICE, LABEL, None, &account).unwrap();
+        assert_eq!(
+            read(SERVICE, &other).unwrap().unwrap().expose_secret(),
+            "elsewhere"
+        );
+        save(SERVICE, LABEL, None, &other).unwrap();
     }
 
     /// Run with no session bus, as over SSH: nothing is saved, nothing fails
@@ -210,10 +207,10 @@ mod tests {
     #[ignore = "requires an environment without a session bus"]
     #[allow(clippy::unwrap_used)]
     fn a_missing_secret_service_holds_nothing() {
-        assert!(read("github.com").unwrap().is_none());
-        save(None, "github.com").unwrap();
+        assert!(read(SERVICE, "github.com").unwrap().is_none());
+        save(SERVICE, LABEL, None, "github.com").unwrap();
         assert!(matches!(
-            save(Some(&"token".into()), "github.com"),
+            save(SERVICE, LABEL, Some(&"token".into()), "github.com"),
             Err(Error::SecretServiceUnavailable)
         ));
     }

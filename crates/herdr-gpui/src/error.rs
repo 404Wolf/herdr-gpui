@@ -109,23 +109,8 @@ pub enum Error {
     Control(#[from] crate::control::ControlError),
     #[error("Missing credential directory.")]
     CredentialDirectory,
-    #[error("Cannot access private credential file.")]
-    CredentialIo(#[source] io::Error),
-    #[cfg(windows)]
     #[error(transparent)]
-    CredentialManager(#[from] crate::github::CredentialManagerError),
-    #[error(
-        "Cannot access private credential file. Require an owned directory and regular 0600 file; symlinks are rejected."
-    )]
-    CredentialPermissions,
-    #[error(
-        "No secure credential store configured. Explicitly opt in with allow_plaintext_credentials = true in the [github] or [coder] table, or use GH_TOKEN / GITHUB_TOKEN for GitHub."
-    )]
-    CredentialPolicy,
-    #[error(
-        "No GitHub credential store is available on this platform. Use GH_TOKEN / GITHUB_TOKEN."
-    )]
-    CredentialUnsupported,
+    Credentials(#[from] herdr_credentials::Error),
     #[error("daemon startup cancelled")]
     DaemonCancelled,
     #[error("herdr server exited before accepting connections: {0}. Check the Herdr server log.")]
@@ -454,12 +439,6 @@ pub enum Error {
     Io(#[from] io::Error),
     #[error("{0}")]
     Json(#[from] serde_json::Error),
-    #[cfg(target_os = "macos")]
-    #[error("Cannot read GitHub Keychain entry. Unlock your login Keychain or set GH_TOKEN.")]
-    KeychainRead(#[source] security_framework::base::Error),
-    #[cfg(target_os = "macos")]
-    #[error("GitHub Keychain update failed. Unlock your login Keychain and try again.")]
-    KeychainWrite(#[source] security_framework::base::Error),
     #[error(
         "keybindings.{command}: {keystroke:?} needs a cmd, ctrl, alt, or fn modifier so typing still reaches the terminal"
     )]
@@ -700,19 +679,6 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[cfg(target_os = "linux")]
-    #[error(
-        "Cannot read GitHub sign-in from the desktop keyring. Unlock your keyring or set GH_TOKEN."
-    )]
-    SecretServiceRead(#[source] Box<oo7::Error>),
-    #[cfg(target_os = "linux")]
-    #[error(
-        "No desktop keyring (Secret Service) is running. Start GNOME Keyring, KWallet, or KeePassXC, or set [github] allow_plaintext_credentials = true, or use GH_TOKEN / GITHUB_TOKEN."
-    )]
-    SecretServiceUnavailable,
-    #[cfg(target_os = "linux")]
-    #[error("GitHub keyring update failed. Unlock your desktop keyring and try again.")]
-    SecretServiceWrite(#[source] Box<oo7::Error>),
     #[error("The selection reaches rows the pane no longer shows.")]
     SelectionOffscreen,
     #[error("Selection is too large to copy.")]
