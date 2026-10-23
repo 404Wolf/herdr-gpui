@@ -855,6 +855,7 @@ mod path;
 mod remote;
 mod theme;
 mod usage;
+mod vcs;
 
 #[cfg(test)]
 mod tests;

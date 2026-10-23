@@ -4557,6 +4557,7 @@ dependencies = [
  "herdr-remote",
  "herdr-updater",
  "herdr-usage",
+ "herdr-vcs",
  "if-addrs",
  "image",
  "keepawake",
@@ -4709,6 +4710,21 @@ dependencies = [
  "url",
  "uuid",
  "zeroize",
+]
+
+[[package]]
+name = "herdr-vcs"
+version = "0.1.0"
+dependencies = [
+ "herdr-client",
+ "herdr-github",
+ "herdr-usage",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]

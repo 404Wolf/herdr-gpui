@@ -22,7 +22,8 @@ use std::fmt::Write as _;
 
 /// The display boundary for errors of the commands this process runs itself:
 /// the message with its causes, and the exit status the refusal deserves.
-fn rejected(error: crate::Error) -> crate::Error {
+fn rejected(error: impl Into<crate::Error>) -> crate::Error {
+    let error = error.into();
     let code = match &error {
         crate::Error::CheckpointMissing => ErrorCode::NotFound,
         crate::Error::NotInCheckout

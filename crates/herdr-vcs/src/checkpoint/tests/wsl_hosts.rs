@@ -2,13 +2,12 @@ use super::*;
 
 #[test]
 fn a_distribution_is_snapshotted_only_from_windows() {
-    let live = crate::LiveState::default();
     let wsl = ConnectTarget::Wsl {
         distro: "Ubuntu".into(),
         session: "default".into(),
     };
     assert_eq!(
-        host_for(&wsl, &live),
+        host_for(&wsl, false),
         cfg!(windows).then(|| Host::Wsl("Ubuntu".into()))
     );
 }

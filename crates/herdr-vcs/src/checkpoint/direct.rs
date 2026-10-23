@@ -18,17 +18,17 @@ const DIFF_LIMITS: ScriptLimits = ScriptLimits {
 };
 
 /// Runs a script on the checkout's own host, as the app's workers do.
-pub(crate) fn here(checkout: &Checkout, body: &str, limits: ScriptLimits) -> Result<String> {
+pub fn here(checkout: &Checkout, body: &str, limits: ScriptLimits) -> Result<String> {
     super::run_limited(checkout, body, limits)
 }
 
 /// [`here`], keeping the output's bytes as they are.
-pub(crate) fn here_bytes(checkout: &Checkout, body: &str, limits: ScriptLimits) -> Result<Vec<u8>> {
+pub fn here_bytes(checkout: &Checkout, body: &str, limits: ScriptLimits) -> Result<Vec<u8>> {
     super::run_bytes(checkout, body, limits)
 }
 
 /// The checkout's checkpoints, newest first.
-pub(crate) fn list(
+pub fn list(
     checkout: &Checkout,
     run: impl FnOnce(&Checkout, &str, ScriptLimits) -> Result<String>,
 ) -> Result<Vec<Checkpoint>> {
@@ -36,7 +36,7 @@ pub(crate) fn list(
 }
 
 /// Take a checkpoint now. `None` when nothing changed since the latest one.
-pub(crate) fn create(
+pub fn create(
     checkout: &Checkout,
     label: &str,
     run: impl FnOnce(&Checkout, &str, ScriptLimits) -> Result<String>,
@@ -47,7 +47,7 @@ pub(crate) fn create(
 
 /// The patch from checkpoint `from` to `to`, or to the working tree, as Git
 /// printed it: a file's bytes need not be UTF-8.
-pub(crate) fn diff(
+pub fn diff(
     checkout: &Checkout,
     from: &str,
     to: Option<&str>,

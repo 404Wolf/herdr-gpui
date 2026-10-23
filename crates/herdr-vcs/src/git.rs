@@ -7,9 +7,9 @@
 //! without a process per row per frame. When the sidebar shows local change
 //! counts, the probe counts lines instead, on the same schedule. Commit, push and pull request creation
 //! are explicit user actions and are never retried or replayed automatically.
-use crate::{
-    Error,
-    github::Tokens,
+use crate::Error;
+use herdr_github::{
+    Tokens,
     pull_request::{Input, base_repository, clean, local_checkout, run, run_bytes},
 };
 use secrecy::SecretString;
@@ -56,7 +56,7 @@ const CREATE_MUTATION: &str = r#"mutation($repository: ID!, $base: String!, $hea
 /// Tracked line changes against HEAD plus the untracked entries `git add -A`
 /// would also stage, so the chrome never understates what a commit includes.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) struct Status {
+pub struct Status {
     pub additions: u64,
     pub deletions: u64,
     pub untracked: u64,
@@ -69,7 +69,7 @@ impl Status {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) enum Action {
+pub enum Action {
     Commit(String),
     Push,
     CreatePullRequest,
@@ -88,7 +88,7 @@ impl Action {
 /// What an action achieved, in the user's terms. `url` is offered as a link
 /// rather than opened by the worker.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct Outcome {
+pub struct Outcome {
     pub message: String,
     pub url: Option<String>,
 }
@@ -114,7 +114,7 @@ enum Completion {
 /// to commit at all. The two are kept apart because a binary, mode-only, or
 /// submodule change is dirty without changing a countable line.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) struct Counted {
+pub struct Counted {
     pub lines: Status,
     pub dirty: bool,
 }
@@ -152,7 +152,7 @@ struct Worker {
 /// Client-local Git state for the focused checkout. Dropping it retires every
 /// in-flight request; no result of an old checkout can reach a new one.
 #[derive(Default)]
-pub(super) struct Git {
+pub struct Git {
     worker: Option<Worker>,
     generation: Arc<AtomicU64>,
     busy: bool,
@@ -179,7 +179,7 @@ impl Drop for Git {
 impl Git {
     /// Chrome fixture: a tracked checkout and its status, with no worker and
     /// therefore no scheduled Git work.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn fixture(input: Input, status: Status) -> Self {
         let mut git = Self::default();
         git.input = Some(input);
@@ -189,13 +189,13 @@ impl Git {
 
     /// Chrome fixture: a probe answer for a listed checkout, with no worker
     /// and therefore no scheduled Git work.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn seed_probe(&mut self, input: Input, dirty: bool, now: Instant) {
         self.record_probe(input, Some(Answer::Dirty(dirty)), now);
     }
 
     /// Chrome fixture: a counted answer for a listed checkout.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn seed_counts(&mut self, input: Input, counted: Counted, now: Instant) {
         self.record_probe(input, Some(Answer::Counted(counted)), now);
     }
@@ -375,7 +375,7 @@ impl Git {
             return Err(Error::GitCommitMessage);
         }
         if matches!(action, Action::CreatePullRequest) && token.is_none() {
-            return Err(Error::GitHubAuthentication);
+            return Err(Error::GitHub(herdr_github::Error::GitHubAuthentication));
         }
         self.error = None;
         self.outcome = None;
@@ -613,7 +613,7 @@ fn checkout_status(
 
 /// `--numstat` is machine readable in any locale; binary files report `-` and
 /// contribute no line counts.
-pub(super) fn parse_numstat(text: &str) -> Status {
+pub fn parse_numstat(text: &str) -> Status {
     let mut status = Status::default();
     for line in text.lines() {
         let mut fields = line.split('\t');
@@ -637,7 +637,7 @@ fn perform(
         Action::Commit(message) => commit(&checkout, &message, deadline, cancelled),
         Action::Push => push(&checkout, &input.branch, deadline, cancelled),
         Action::CreatePullRequest => {
-            let token = token.ok_or(Error::GitHubAuthentication)?;
+            let token = token.ok_or(Error::GitHub(herdr_github::Error::GitHubAuthentication))?;
             create_pull_request(&checkout, &input.branch, &token, deadline, cancelled)
         }
     }
@@ -731,7 +731,7 @@ fn create_pull_request(
         cancelled,
     )?;
     let mut cooldown = None;
-    let repository = crate::github::graphql(
+    let repository = herdr_github::graphql(
         "create_pr_repository",
         token,
         REPOSITORY_QUERY,
@@ -743,17 +743,17 @@ fn create_pull_request(
     let id = repository["data"]["repository"]["id"]
         .as_str()
         .filter(|id| !id.is_empty())
-        .ok_or(Error::PrRepository)?
+        .ok_or(Error::GitHub(herdr_github::Error::PrRepository))?
         .to_owned();
     let default_branch = repository["data"]["repository"]["defaultBranchRef"]["name"]
         .as_str()
         .filter(|name| !name.is_empty())
-        .ok_or(Error::PrRepository)?
+        .ok_or(Error::GitHub(herdr_github::Error::PrRepository))?
         .to_owned();
     if base.is_own_base(branch, &default_branch) {
         return Err(Error::GitPullRequestBase);
     }
-    let created = crate::github::graphql(
+    let created = herdr_github::graphql(
         "create_pr",
         token,
         CREATE_MUTATION,
@@ -773,7 +773,7 @@ fn parse_created(response: &serde_json::Value, owner: &str, repo: &str) -> crate
     let url = pr["url"].as_str().unwrap_or_default();
     let expected = number.map(|number| format!("https://github.com/{owner}/{repo}/pull/{number}"));
     if expected.as_deref() != Some(url) {
-        return Err(Error::PrIdentity);
+        return Err(Error::GitHub(herdr_github::Error::PrIdentity));
     }
     Ok(Outcome {
         message: format!("Opened pull request #{}", number.unwrap_or_default()),
@@ -783,7 +783,7 @@ fn parse_created(response: &serde_json::Value, owner: &str, repo: &str) -> crate
 
 /// Every Git child runs through the shared process policy: no shell, no
 /// terminal prompts, bounded output, and a deadline the caller owns.
-pub(crate) fn git(
+pub fn git(
     checkout: &str,
     args: &[&str],
     operation: &'static str,
@@ -803,7 +803,7 @@ pub(crate) fn git(
 
 /// [`git`] for output that may be large or not text: up to `limit` bytes,
 /// as Git wrote them.
-pub(crate) fn git_bytes(
+pub fn git_bytes(
     checkout: &str,
     args: &[&str],
     operation: &'static str,
@@ -840,7 +840,7 @@ fn command(checkout: &str, args: &[&str]) -> Command {
 /// Fresh close-time probe, including metadata-only and submodule changes that
 /// line counts cannot represent. Remote-tracking refs are the local evidence of
 /// a push; this read-only check never contacts a remote.
-pub(super) fn close_status(
+pub fn close_status(
     input: &Input,
     deadline: Instant,
     cancelled: &impl Fn() -> bool,

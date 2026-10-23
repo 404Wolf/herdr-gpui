@@ -169,9 +169,9 @@ impl CloseCheck {
                         if !local {
                             return Err(crate::Error::PrUntrustedEndpoint);
                         }
-                        crate::git::close_status(&input, deadline, &|| {
+                        Ok(crate::git::close_status(&input, deadline, &|| {
                             cancellation.load(Ordering::Relaxed)
-                        })
+                        })?)
                     });
                     match status {
                         Ok((dirty, unpushed)) => {

@@ -6,7 +6,7 @@
 
 /// What a definition defines, as the list shows it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum Kind {
+pub enum Kind {
     Function,
     /// A function indented under another definition.
     Method,
@@ -21,7 +21,7 @@ pub(crate) enum Kind {
 }
 
 impl Kind {
-    pub(crate) fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
             Self::Function => "function",
             Self::Method => "method",
@@ -36,7 +36,7 @@ impl Kind {
 
 /// The languages whose definitions are read, by file extension.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Language {
+pub enum Language {
     Rust,
     Python,
     Ruby,
@@ -51,7 +51,7 @@ pub(crate) enum Language {
 }
 
 impl Language {
-    pub(crate) fn of(path: &str) -> Option<Self> {
+    pub fn of(path: &str) -> Option<Self> {
         let extension = path.rsplit_once('.')?.1;
         Some(match extension {
             "rs" => Self::Rust,
@@ -211,10 +211,10 @@ impl Language {
 
 /// One definition: its name, what it is, and its 1-based line.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Definition {
-    pub(crate) name: String,
-    pub(crate) kind: Kind,
-    pub(crate) line: u32,
+pub struct Definition {
+    pub name: String,
+    pub kind: Kind,
+    pub line: u32,
 }
 
 /// The longest name kept, so a minified line cannot fill the index.
@@ -234,7 +234,7 @@ fn identifier<'a>(text: &'a str, extra: &[char]) -> Option<&'a str> {
 fn after<'a>(text: &'a str, word: &str) -> Option<&'a str> {
     let rest = text.strip_prefix(word)?;
     let trimmed = rest.trim_start();
-    // `pub(crate)` and `@objc(name)` take their parenthesised argument, and
+    // `pub` and `@objc(name)` take their parenthesised argument, and
     // `impl<T>` its parameters.
     if trimmed.len() == rest.len() && !rest.starts_with(['(', '<']) {
         return None;
@@ -325,7 +325,7 @@ fn definition(language: Language, line: &str) -> Option<(String, Kind)> {
             // The head is file text, shown as is: keep only safe characters.
             let head: String = head
                 .chars()
-                .filter(|c| !crate::notifications::unsafe_char(*c))
+                .filter(|c| !herdr_client::text::unsafe_char(*c))
                 .collect();
             let name = format!("{keyword} {head}");
             return Some((name.chars().take(MAX_NAME).collect(), kind));
@@ -373,7 +373,7 @@ fn definition(language: Language, line: &str) -> Option<(String, Kind)> {
 }
 
 /// The definitions in `text`, at most `limit` of them.
-pub(crate) fn scan(language: Language, text: &str, limit: usize) -> Vec<Definition> {
+pub fn scan(language: Language, text: &str, limit: usize) -> Vec<Definition> {
     let mut found = Vec::new();
     for (index, line) in text.lines().enumerate() {
         if found.len() >= limit {

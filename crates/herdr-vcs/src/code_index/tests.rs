@@ -16,7 +16,7 @@ fn found(name: &str, kind: Kind, line: u32) -> (String, Kind, u32) {
 fn rust_items_and_methods_are_read_by_their_keywords() {
     let text = "\
 use std::fmt;
-pub(crate) struct Index {
+pub struct Index {
     root: PathBuf,
 }
 impl<T: Clone> fmt::Display for Wrapper<T> where T: Copy {

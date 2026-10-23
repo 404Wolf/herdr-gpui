@@ -33,6 +33,7 @@ mod session;
 mod sessions;
 mod ssh;
 mod surface_images;
+pub mod text;
 mod transport;
 mod upload;
 pub mod workspaces;

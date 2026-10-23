@@ -3,7 +3,6 @@
 use super::*;
 use herdr_client::protocol::ClientShellWorktree;
 
-mod staged_metadata;
 mod wanted;
 mod wsl_hosts;
 
@@ -12,7 +11,30 @@ const KEY: &str = "/repo/.git";
 /// Two agents: p0 in w4 (a linked worktree on `feature`), p1 in w0 (no
 /// worktree), both idle.
 fn snapshot() -> ClientShellSnapshot {
-    let mut snapshot = crate::sidebar::layout_tests::snapshot(5);
+    let mut snapshot: ClientShellSnapshot = serde_json::from_value(serde_json::json!({
+        "boot_id": "checkpoint-test", "revision": 1,
+        "update_install_command": "", "latest_release_notes_available": false,
+        "integration_updates_available": false, "worktree_directory": "",
+        "tab_bar_right": [], "tab_bar_right_separator": "", "agent_order": [],
+        "tabs": [{
+            "tab_id": "t0", "workspace_id": "w0", "number": 1, "label": "tab 1",
+            "custom_label": false, "zoomed": false, "focused": true, "agent_status": "working"
+        }],
+        "panes": [], "commands": [],
+        "workspaces": (0..5).map(|i| serde_json::json!({
+            "workspace_id": format!("w{i}"), "active_tab_id": "t0", "new_workspace_cwd": "/tmp",
+            "number": i + 1, "label": "workspace", "custom_label": false,
+            "branch": if i == 0 { "main" } else { "other" }, "worktree": null,
+            "tokens": [], "focused": i == 0, "agent_status": "working"
+        })).collect::<Vec<_>>(),
+        "agents": (0..2).map(|i| serde_json::json!({
+            "pane_id": format!("p{i}"), "workspace_id": "w0", "tab_id": "t0",
+            "name": "agent", "display_agent": if i == 0 { "Claude Code" } else { "agent" },
+            "agent": "claude", "agent_status": "working", "state_change_seq": 0,
+            "state_labels": [], "tokens": [], "focused": false
+        })).collect::<Vec<_>>()
+    }))
+    .unwrap();
     snapshot.workspaces[4].worktree = Some(ClientShellWorktree {
         key: KEY.into(),
         label: "repo".into(),
@@ -40,12 +62,7 @@ fn feature() -> Checkout {
 }
 
 fn queued(checkpoints: &Checkpoints) -> Vec<(Checkout, Request)> {
-    checkpoints
-        .lanes
-        .values()
-        .flat_map(|lane| lane.queue.iter())
-        .map(|job| (job.checkout.clone(), job.request.clone()))
-        .collect()
+    checkpoints.queued()
 }
 
 fn capture(label: &str) -> Request {
@@ -305,7 +322,7 @@ fn ages_read_plainly() {
 
 #[test]
 fn git_runs_only_on_ssh_hosts_and_the_users_own_daemon() {
-    let mut live = crate::LiveState::default();
+    let mut local_daemon_peer = false;
     let local = ConnectTarget::Local;
     let session = ConnectTarget::Session {
         name: "work".into(),
@@ -317,14 +334,21 @@ fn git_runs_only_on_ssh_hosts_and_the_users_own_daemon() {
     };
     let socket = ConnectTarget::Socket("/tmp/other.sock".into());
     let scriptable = cfg!(any(target_os = "linux", target_os = "macos"));
-    assert_eq!(host_for(&local, &live), None, "not proven to be ours");
     assert_eq!(
-        host_for(&ssh, &live),
+        host_for(&local, local_daemon_peer),
+        None,
+        "not proven to be ours"
+    );
+    assert_eq!(
+        host_for(&ssh, local_daemon_peer),
         scriptable.then(|| Host::Ssh("me@box".into()))
     );
-    live.local_daemon_peer = true;
+    local_daemon_peer = true;
     for target in [&local, &session] {
-        assert_eq!(host_for(target, &live), scriptable.then_some(Host::Local));
+        assert_eq!(
+            host_for(target, local_daemon_peer),
+            scriptable.then_some(Host::Local)
+        );
     }
-    assert_eq!(host_for(&socket, &live), None);
+    assert_eq!(host_for(&socket, local_daemon_peer), None);
 }

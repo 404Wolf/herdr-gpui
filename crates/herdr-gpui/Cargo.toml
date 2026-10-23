@@ -36,6 +36,7 @@ herdr-github.workspace         = true
 herdr-remote.workspace         = true
 herdr-updater.workspace        = true
 herdr-usage.workspace          = true
+herdr-vcs.workspace            = true
 if-addrs.workspace             = true
 image                          = { features = ["bmp", "tiff"], workspace = true }
 keepawake.workspace            = true
@@ -80,6 +81,7 @@ herdr-remote = { features = ["test-support"], workspace = true }
 herdr-control-protocol = { features = ["test-support"], workspace = true }
 herdr-github = { features = ["test-support"], workspace = true }
 herdr-usage = { features = ["test-support"], workspace = true }
+herdr-vcs = { features = ["test-support"], workspace = true }
 socket2.workspace = true
 test-case.workspace = true
 
@@ -87,10 +89,10 @@ test-case.workspace = true
 default = ["azure", "boat", "coder", "container", "daytona", "opensandbox", "railway", "sprites"]
 # Machines from cloud providers as devices: the shared device list, background
 # jobs, and connector. Turned on by each provider below; not useful alone.
-cloud = ["herdr-client/cloud", "herdr-remote/cloud", "herdr-usage/cloud"]
+cloud = ["herdr-client/cloud", "herdr-remote/cloud", "herdr-usage/cloud", "herdr-vcs/cloud"]
 # Azure VMs and Container Apps sandboxes as devices, with generic credentials
 # or local Azure CLI. Sandboxes are reached over the data plane's exec stream.
-azure = ["cloud", "herdr-client/azure", "herdr-remote/azure", "herdr-usage/azure"]
+azure = ["cloud", "herdr-client/azure", "herdr-remote/azure", "herdr-usage/azure", "herdr-vcs/azure"]
 # Boat sandboxes as devices, with an API key and per-machine SSH key setup.
 boat = ["cloud", "herdr-client/boat", "herdr-remote/boat"]
 # Coder workspaces as devices, with OAuth2 sign-in.

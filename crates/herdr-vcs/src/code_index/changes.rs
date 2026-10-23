@@ -9,14 +9,14 @@ pub(super) const MAX_CHANGES: usize = 500;
 
 /// One changed file, as an index into the index's files.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Change {
-    pub(crate) file: usize,
+pub struct Change {
+    pub file: usize,
     /// Lines added and removed since the last commit; `None` for a binary
     /// file or one Git does not track yet.
-    pub(crate) counts: Option<(u32, u32)>,
+    pub counts: Option<(u32, u32)>,
     /// Untracked: new since the last commit.
-    pub(crate) new: bool,
-    pub(crate) modified: Option<SystemTime>,
+    pub new: bool,
+    pub modified: Option<SystemTime>,
 }
 
 /// Line counts by path from `git diff --numstat -z`: `added\tremoved\tpath`

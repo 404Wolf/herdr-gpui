@@ -10,8 +10,8 @@
 mod changes;
 mod symbols;
 
-pub(crate) use changes::Change;
-pub(crate) use symbols::{Kind, Language, scan};
+pub use changes::Change;
+pub use symbols::{Kind, Language, scan};
 
 use std::{
     collections::{HashMap, HashSet},
@@ -35,16 +35,16 @@ const GIT_DEADLINE: Duration = Duration::from_secs(30);
 
 /// One definition, and the file it is in as an index into [`Index::files`].
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Symbol {
-    pub(crate) name: String,
-    pub(crate) kind: Kind,
-    pub(crate) file: usize,
-    pub(crate) line: u32,
+pub struct Symbol {
+    pub name: String,
+    pub kind: Kind,
+    pub file: usize,
+    pub line: u32,
 }
 
 /// A checkout's files, relative to its root, and their definitions.
 #[derive(Debug, Default)]
-pub(crate) struct Index {
+pub struct Index {
     root: PathBuf,
     files: Vec<String>,
     symbols: Vec<Symbol>,
@@ -57,7 +57,7 @@ pub(crate) struct Index {
 
 impl Index {
     /// Lists and scans the checkout at `root`. Blocking.
-    pub(crate) fn build(root: &Path, cancelled: &AtomicBool) -> crate::Result<Self> {
+    pub fn build(root: &Path, cancelled: &AtomicBool) -> crate::Result<Self> {
         let checkout = root.to_str().ok_or(crate::Error::CodeIndexRoot)?;
         let stop = || cancelled.load(Ordering::Acquire);
         let git = |args: &[&str], operation| {
@@ -165,34 +165,34 @@ impl Index {
     }
 
     /// Uncommitted changes, newest first.
-    pub(crate) fn changes(&self) -> &[Change] {
+    pub fn changes(&self) -> &[Change] {
         &self.changes
     }
 
     /// File `file`'s uncommitted change, if it has one.
-    pub(crate) fn change(&self, file: usize) -> Option<&Change> {
+    pub fn change(&self, file: usize) -> Option<&Change> {
         self.changed.get(&file).map(|&place| &self.changes[place])
     }
 
-    pub(crate) fn root(&self) -> &Path {
+    pub fn root(&self) -> &Path {
         &self.root
     }
 
-    pub(crate) fn files(&self) -> &[String] {
+    pub fn files(&self) -> &[String] {
         &self.files
     }
 
-    pub(crate) fn symbols(&self) -> &[Symbol] {
+    pub fn symbols(&self) -> &[Symbol] {
         &self.symbols
     }
 
-    pub(crate) fn truncated(&self) -> bool {
+    pub fn truncated(&self) -> bool {
         self.truncated
     }
 
     /// An index of `files` and `symbols`, as a build would make it.
-    #[cfg(test)]
-    pub(crate) fn of(root: &Path, files: &[&str], symbols: Vec<Symbol>) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn of(root: &Path, files: &[&str], symbols: Vec<Symbol>) -> Self {
         Self {
             root: root.to_owned(),
             files: files.iter().map(|file| (*file).to_owned()).collect(),
@@ -204,14 +204,14 @@ impl Index {
     }
 
     /// `of`, with `changes` newest first.
-    #[cfg(test)]
-    pub(crate) fn with_changes(mut self, changes: Vec<Change>) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_changes(mut self, changes: Vec<Change>) -> Self {
         self.set_changes(changes);
         self
     }
 
     /// The absolute path of file `file`.
-    pub(crate) fn path(&self, file: usize) -> Option<PathBuf> {
+    pub fn path(&self, file: usize) -> Option<PathBuf> {
         self.files.get(file).map(|name| self.root.join(name))
     }
 }
@@ -220,7 +220,7 @@ impl Index {
 /// without control or direction-override characters.
 fn relative(name: &str) -> bool {
     !name.is_empty()
-        && !name.chars().any(crate::notifications::unsafe_char)
+        && !name.chars().any(herdr_client::text::unsafe_char)
         && Path::new(name)
             .components()
             .all(|part| matches!(part, std::path::Component::Normal(_)))
@@ -251,7 +251,7 @@ fn real_folders(root: &Path, name: &str, real: &mut HashSet<PathBuf>) -> bool {
 }
 
 /// A regular file's text, when it is small enough and reads as UTF-8 text.
-pub(crate) fn read_source(path: &Path) -> Option<String> {
+pub fn read_source(path: &Path) -> Option<String> {
     let metadata = std::fs::symlink_metadata(path).ok()?;
     if !metadata.is_file() || metadata.len() > MAX_SCANNED_BYTES {
         return None;
@@ -270,7 +270,7 @@ pub(crate) fn read_source(path: &Path) -> Option<String> {
 }
 
 /// The root of the Git checkout holding `dir`. Blocking.
-pub(crate) fn checkout_root(dir: &str, cancelled: &AtomicBool) -> crate::Result<PathBuf> {
+pub fn checkout_root(dir: &str, cancelled: &AtomicBool) -> crate::Result<PathBuf> {
     let root = crate::git::git(
         dir,
         &["rev-parse", "--show-toplevel"],

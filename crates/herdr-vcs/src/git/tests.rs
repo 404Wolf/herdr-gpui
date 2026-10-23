@@ -55,7 +55,7 @@ fn close_probe_detects_untracked_staged_unstaged_and_unpublished_work() {
     assert_eq!(probe(), (true, true));
     assert!(matches!(
         close_status(&input, Instant::now() + Duration::from_secs(15), &|| true),
-        Err(Error::PrCancelled)
+        Err(Error::GitHub(herdr_github::Error::PrCancelled))
     ));
 }
 
@@ -187,7 +187,7 @@ fn one_action_runs_at_a_time_and_reports_its_own_result() {
     ));
     assert!(matches!(
         peer.git.start(Action::CreatePullRequest, None),
-        Err(Error::GitHubAuthentication)
+        Err(Error::GitHub(herdr_github::Error::GitHubAuthentication))
     ));
     peer.git
         .start(Action::Commit("subject".into()), None)
@@ -344,7 +344,7 @@ fn created_pull_requests_must_match_their_repository() {
     ] {
         assert!(matches!(
             parse_created(&response(url, number), "example", "project"),
-            Err(Error::PrIdentity)
+            Err(Error::GitHub(herdr_github::Error::PrIdentity))
         ));
     }
 }

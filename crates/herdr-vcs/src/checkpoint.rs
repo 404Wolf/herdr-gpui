@@ -9,19 +9,20 @@
 //! a checkpoint never touches the checkout's index or files; restoring one is
 //! an explicit, confirmed action that first checkpoints the current state.
 
-pub(crate) mod direct;
+pub mod direct;
 mod script;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use script::valid_id;
+pub use script::valid_id;
 
-use crate::{Error, Result, usage::Host};
+use crate::{Error, Result};
 use herdr_client::{
     ConnectTarget, ScriptHost, ScriptLimits,
     protocol::{AgentStatus, ClientShellSnapshot},
     run_script,
 };
+use herdr_usage::Host;
 use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, Weak, atomic::AtomicBool, mpsc},
@@ -30,7 +31,7 @@ use std::{
 };
 
 /// Checkpoints kept per checkout; older ones are deleted as new ones arrive.
-pub(crate) const KEEP: usize = 50;
+pub const KEEP: usize = 50;
 /// Jobs waiting per host. Captures for one checkout merge, so this is only
 /// reached by many checkouts finishing turns at once.
 const QUEUE_LIMIT: usize = 32;
@@ -48,13 +49,13 @@ const LIMITS: ScriptLimits = ScriptLimits {
 /// the daemon is the user's own (the trust boundary local Git status uses).
 /// Host scripts need a POSIX client, except in a distribution, which a Windows
 /// client reaches through `wsl.exe`; see `herdr_client::run_script`.
-pub(crate) fn host_for(target: &ConnectTarget, live: &crate::LiveState) -> Option<Host> {
+pub fn host_for(target: &ConnectTarget, local_daemon_peer: bool) -> Option<Host> {
     match target {
         ConnectTarget::Wsl { distro, .. } => cfg!(windows).then(|| Host::Wsl(distro.clone())),
         _ if !cfg!(any(target_os = "linux", target_os = "macos")) => None,
         ConnectTarget::Ssh { target, .. } => Some(Host::Ssh(target.clone())),
         ConnectTarget::Local | ConnectTarget::Session { .. } => {
-            live.local_daemon_peer.then_some(Host::Local)
+            local_daemon_peer.then_some(Host::Local)
         }
         // A cloud machine is reached only through its provider's command, which host
         // scripts do not run over.
@@ -67,7 +68,7 @@ pub(crate) fn host_for(target: &ConnectTarget, live: &crate::LiveState) -> Optio
 /// A checkout on a host, found by its repository and checked-out branch, as
 /// the daemon's snapshot names them.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct Checkout {
+pub struct Checkout {
     pub host: Host,
     /// The repository's Git common directory on that host.
     pub repo_key: String,
@@ -91,14 +92,14 @@ impl Checkout {
 
 /// What a checkpoint changed since the one before it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct Diff {
+pub struct Diff {
     pub files: u64,
     pub additions: u64,
     pub deletions: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Checkpoint {
+pub struct Checkpoint {
     pub id: String,
     /// Unix seconds, on the host's clock.
     pub created: i64,
@@ -109,7 +110,7 @@ pub(crate) struct Checkpoint {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum Request {
+pub enum Request {
     Capture { label: String },
     List,
     Restore { id: String },
@@ -230,7 +231,7 @@ struct Watch {
 
 /// What a checkpoint list shows while it loads or after it failed.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Listing {
+pub enum Listing {
     Loading,
     Ready(Vec<Checkpoint>),
     Failed(String),
@@ -238,7 +239,7 @@ pub(crate) enum Listing {
 
 /// The open checkpoints dialog: one checkout's list, and the restore the user
 /// is confirming or running.
-pub(crate) struct View {
+pub struct View {
     pub checkout: Checkout,
     pub title: String,
     /// The workspace it was opened from, whose agents a restore would race.
@@ -279,13 +280,13 @@ impl View {
 /// A restore that finished, for the window to report even after its dialog
 /// closed.
 #[derive(Debug)]
-pub(crate) struct Restored {
+pub struct Restored {
     pub checkout: Checkout,
     pub result: Result<()>,
 }
 
 #[derive(Default)]
-pub(crate) struct Checkpoints {
+pub struct Checkpoints {
     watches: HashMap<String, Watch>,
     lanes: HashMap<Host, Lane>,
     pub view: Option<View>,
@@ -368,6 +369,16 @@ impl Checkpoints {
             return None;
         }
         Some(self.lanes.entry(host.clone()).or_default())
+    }
+
+    /// Every queued checkpoint and what it asks for, across hosts, for tests.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn queued(&self) -> Vec<(Checkout, Request)> {
+        self.lanes
+            .values()
+            .flat_map(|lane| lane.queue.iter())
+            .map(|job| (job.checkout.clone(), job.request.clone()))
+            .collect()
     }
 
     /// Queue a checkpoint of `checkout`. One still waiting for the same
@@ -619,7 +630,7 @@ impl Checkpoints {
 }
 
 /// The display boundary: an error and every cause behind it.
-pub(crate) fn describe(error: &Error) -> String {
+pub fn describe(error: &dyn std::error::Error) -> String {
     let mut text = error.to_string();
     let mut source = std::error::Error::source(error);
     while let Some(cause) = source {
@@ -631,7 +642,7 @@ pub(crate) fn describe(error: &Error) -> String {
 }
 
 /// How long ago `created` was, coarsely, from `now` (both Unix seconds).
-pub(crate) fn age(created: i64, now: i64) -> String {
+pub fn age(created: i64, now: i64) -> String {
     let seconds = now.saturating_sub(created).max(0);
     match seconds {
         0..60 => "just now".to_owned(),

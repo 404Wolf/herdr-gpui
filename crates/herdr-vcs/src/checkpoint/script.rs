@@ -245,7 +245,7 @@ pub(super) fn parse_list(output: &str) -> Result<Vec<Checkpoint>> {
 
 /// Stamps are the only ids this client creates: digits, so they are safe in a
 /// ref name and sort by age.
-pub(crate) fn valid_id(id: &str) -> bool {
+pub fn valid_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 32 && id.bytes().all(|b| b.is_ascii_digit())
 }
 

@@ -21,7 +21,6 @@ mod cache;
 mod caffeine;
 mod caption;
 mod chat;
-mod checkpoint;
 mod cli;
 mod close_modal;
 // `cloud` is the machinery every provider shares; alone it offers nothing to add.
@@ -44,7 +43,6 @@ compile_error!(
 #[cfg(feature = "cloud")]
 mod cloud;
 mod cloud_setup;
-mod code_index;
 mod code_search;
 mod code_server;
 mod code_view;
@@ -69,7 +67,6 @@ mod fan_out;
 mod find;
 mod font_picker;
 mod fonts;
-mod git;
 mod github;
 mod group_menu;
 mod group_terminals;
@@ -173,6 +170,8 @@ use herdr_updater as updater;
 // GitHub's pull request actions; `github` and `pull_request` are the app's
 // own modules, which add the avatars, the shared store, and badge colors.
 use herdr_github::pr_actions;
+// Git status and writes, checkpoints, and the code index, without GPUI.
+use herdr_vcs::{checkpoint, code_index, git};
 // Shared with herdr-client's own SSH and probe children.
 use herdr_client::{local_path, login_env};
 // Cloud providers, host scripts, and Teleport's core; `cloud` and `teleport`

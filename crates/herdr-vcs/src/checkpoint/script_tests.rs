@@ -60,9 +60,10 @@ fn labels_are_one_bounded_line() {
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod live {
+    use crate::Error;
     use crate::checkpoint::{Checkout, KEEP, script};
-    use crate::{Error, usage::Host};
     use herdr_client::{ScriptHost, ScriptLimits, run_script};
+    use herdr_usage::Host;
     use std::{
         fs,
         path::{Path, PathBuf},
