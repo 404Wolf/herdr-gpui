@@ -120,7 +120,7 @@ pub use status_bar::StatusBar;
 pub use status_icons::StatusIcons;
 use std::{
     collections::BTreeMap,
-    env, fs,
+    fs,
     io::ErrorKind,
     path::{Path, PathBuf},
 };
@@ -513,17 +513,7 @@ struct Settings {
 
 /// Windows sets `USERPROFILE` rather than `HOME`, and upstream Herdr reads both.
 pub(crate) fn home() -> Result<PathBuf> {
-    let variable = |name| env::var_os(name).filter(|value: &std::ffi::OsString| !value.is_empty());
-    variable("HOME")
-        .or_else(|| {
-            if cfg!(windows) {
-                variable("USERPROFILE")
-            } else {
-                None
-            }
-        })
-        .map(PathBuf::from)
-        .ok_or(Error::MissingHome)
+    herdr_client::local_path::home_dir().ok_or(Error::MissingHome)
 }
 
 /// The directory holding this app's `herdr` configuration directory. Upstream
@@ -541,7 +531,7 @@ fn config_root() -> Result<PathBuf> {
         }
         None => {
             #[cfg(windows)]
-            if let Some(roaming) = env::var_os("APPDATA").filter(|value| !value.is_empty()) {
+            if let Some(roaming) = std::env::var_os("APPDATA").filter(|value| !value.is_empty()) {
                 return Ok(PathBuf::from(roaming));
             }
             #[cfg(windows)]

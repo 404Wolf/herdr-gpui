@@ -1,7 +1,10 @@
+//! Where this user's tools live, for an app started from the desktop rather
+//! than a shell: the home directory, and a `PATH` with the directories a GUI
+//! launch leaves out.
 use std::{ffi::OsString, path::PathBuf};
 
 // Probing Linuxbrew on macOS triggers /home's automounter and directory lookups.
-pub(crate) const HOMEBREW_DIRS: &[&str] = if cfg!(target_os = "linux") {
+pub const HOMEBREW_DIRS: &[&str] = if cfg!(target_os = "linux") {
     &[
         "/opt/homebrew/bin",
         "/usr/local/bin",
@@ -13,10 +16,25 @@ pub(crate) const HOMEBREW_DIRS: &[&str] = if cfg!(target_os = "linux") {
     &[]
 };
 
+/// This user's home directory: `HOME`, or `USERPROFILE` on Windows. None
+/// when neither is set to something non-empty.
+pub fn home_dir() -> Option<PathBuf> {
+    let variable = |name| std::env::var_os(name).filter(|value: &OsString| !value.is_empty());
+    variable("HOME")
+        .or_else(|| {
+            if cfg!(windows) {
+                variable("USERPROFILE")
+            } else {
+                None
+            }
+        })
+        .map(PathBuf::from)
+}
+
 /// GUI launches omit directories commonly used by user-installed tools.
-pub(crate) fn local_path() -> OsString {
+pub fn local_path() -> OsString {
     let mut dirs = Vec::new();
-    if let Ok(home) = crate::config::home() {
+    if let Some(home) = home_dir() {
         dirs.extend(
             [".local/bin", ".cargo/bin", ".bun/bin", ".npm-global/bin"].map(|dir| home.join(dir)),
         );

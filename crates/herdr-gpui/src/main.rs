@@ -97,7 +97,6 @@ mod lenient;
 mod link;
 mod links;
 mod listening_ports;
-mod local_path;
 mod log_window;
 mod login_env;
 mod mark_layer;
@@ -181,6 +180,7 @@ mod performance;
 #[cfg(feature = "integration-test")]
 mod smoke;
 #[cfg(all(test, unix))]
+#[path = "../../test-support/executable.rs"]
 mod test_executable;
 
 pub use error::{Error, Result};
@@ -188,6 +188,8 @@ pub use error::{Error, Result};
 // Its own crate so it builds and is tested without GPUI; the alias keeps the
 // app's `crate::updater` paths.
 use herdr_updater as updater;
+// Shared with herdr-client's own SSH and probe children.
+use herdr_client::local_path;
 
 pub(crate) use {
     actions::{

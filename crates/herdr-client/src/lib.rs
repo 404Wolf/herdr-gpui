@@ -19,6 +19,7 @@ mod handle;
 mod host_theme;
 mod limits;
 mod local_network;
+pub mod local_path;
 mod method;
 mod options;
 pub mod private_endpoint;
@@ -37,6 +38,7 @@ pub mod workspaces;
 mod wsl;
 
 #[cfg(all(test, unix))]
+#[path = "../../test-support/executable.rs"]
 mod test_executable;
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
