@@ -87,6 +87,9 @@ chat_layouts! {
     /// Each turn in one card: the prompt on top, the reply under a
     /// hairline, how it ended at its foot.
     Cards => "cards", "Cards";
+    /// Blue bubbles on the right for the user, gray ones on the left for
+    /// the agent, each run ending in a tail, like Apple's Messages.
+    IMessage => "imessage", "iMessage";
 }
 
 impl ChatLayoutMode {

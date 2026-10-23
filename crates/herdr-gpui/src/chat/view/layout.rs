@@ -10,6 +10,7 @@
 mod bubbles;
 mod cards;
 mod document;
+mod imessage;
 mod terminal;
 mod timeline;
 
@@ -77,6 +78,14 @@ impl Look<'_> {
     pub(super) fn ground(&self, content: Div, color: u32) -> AnyElement {
         self.window.with_ground(content, rgb(color))
     }
+
+    /// For a background painted by hand: where it must paint around pages
+    /// in a message, or `None` while none lies under it.
+    pub(super) fn pages_under(
+        &self,
+    ) -> impl Fn(Bounds<Pixels>) -> Option<Vec<Bounds<Pixels>>> + 'static {
+        self.window.pages_under()
+    }
 }
 
 impl HerdrWindow {
@@ -112,6 +121,12 @@ pub(super) trait ChatLayout {
     /// The composer's card, from its parts.
     fn composer(&self, parts: ComposerParts, look: &Look<'_>) -> Div;
 
+    /// Where an agent message's copy button sits: by default in a row
+    /// under the message.
+    fn copy(&self, button: Stateful<Div>, _look: &Look<'_>) -> Div {
+        div().h(px(18.)).flex().child(button)
+    }
+
     /// How a turn ended, from its description: by default a quiet rule
     /// across the list.
     fn turn(&self, text: &str, look: &Look<'_>) -> Div {
@@ -136,6 +151,7 @@ pub(super) fn layout_for(mode: ChatLayoutMode) -> &'static dyn ChatLayout {
         ChatLayoutMode::Terminal => &terminal::Terminal,
         ChatLayoutMode::Document => &document::Document,
         ChatLayoutMode::Cards => &cards::Cards,
+        ChatLayoutMode::IMessage => &imessage::IMessage,
     }
 }
 

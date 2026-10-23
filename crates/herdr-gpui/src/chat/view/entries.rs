@@ -128,11 +128,11 @@ impl HerdrWindow {
         layout_for(self.config.chat.layout).row(row, &self.chat_look())
     }
 
-    /// A copy button under an agent message, shown while the pointer is on it.
+    /// A copy button by an agent message, shown while the pointer is on it.
     fn render_chat_copy(&self, id: u64, text: &str, cx: &mut Context<Self>) -> Div {
         let theme = &self.theme;
         let text = text.to_owned();
-        div().h(px(18.)).flex().child(
+        layout_for(self.config.chat.layout).copy(
             div()
                 .id(("chat-copy", id))
                 .debug_selector(move || format!("chat-copy-{id}"))
@@ -160,6 +160,7 @@ impl HerdrWindow {
                     cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
                     this.show_flash(crate::window::Flash::success("Copied the message"), cx);
                 })),
+            &self.chat_look(),
         )
     }
 
