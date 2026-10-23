@@ -22,38 +22,39 @@ use std::{
 };
 
 /// Reports and dumps kept; older ones are deleted when a new one is written.
-pub(crate) const KEEP_REPORTS: usize = 5;
+pub const KEEP_REPORTS: usize = 5;
 #[cfg(windows)]
 const KEEP_DUMPS: usize = 3;
-pub(crate) const PREFIX: &str = "crash-";
-pub(crate) const REPORT_EXTENSION: &str = "txt";
+pub const PREFIX: &str = "crash-";
+pub const REPORT_EXTENSION: &str = "txt";
 #[cfg(windows)]
-pub(crate) const DUMP_EXTENSION: &str = "dmp";
+pub const DUMP_EXTENSION: &str = "dmp";
 const TIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.3f %:z";
 /// How long a crashing process waits for its log record to reach the disk.
 const FLUSH: Duration = Duration::from_secs(2);
 
 /// Where reports go: the log file's directory.
-pub(crate) fn dir() -> Option<PathBuf> {
-    Some(crate::diagnostics::log_file()?.parent()?.to_owned())
+pub fn dir() -> Option<PathBuf> {
+    Some(crate::log_file()?.parent()?.to_owned())
 }
 
-/// Call once, after `diagnostics::init`. The default hook still runs after
-/// ours, so a terminal still sees the panic.
-pub(crate) fn install() {
+/// Call once, after [`crate::init`]. The default hook still runs after ours,
+/// so a terminal still sees the panic. Reports name `version` as the build
+/// that crashed.
+pub fn install(version: &'static str) {
     let Some(dir) = dir() else {
         return;
     };
     #[cfg(windows)]
-    windows::install(dir.clone());
+    windows::install(dir.clone(), version);
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        record(&dir, info);
+        record(&dir, version, info);
         previous(info);
     }));
 }
 
-fn record(dir: &Path, info: &PanicHookInfo<'_>) {
+fn record(dir: &Path, version: &str, info: &PanicHookInfo<'_>) {
     let now = chrono::Local::now();
     let backtrace = Backtrace::force_capture();
     let thread = std::thread::current();
@@ -64,6 +65,7 @@ fn record(dir: &Path, info: &PanicHookInfo<'_>) {
         .map(|location| location.to_string())
         .unwrap_or_default();
     let text = report(
+        version,
         &now.format(TIME_FORMAT).to_string(),
         thread,
         message,
@@ -93,7 +95,7 @@ fn record(dir: &Path, info: &PanicHookInfo<'_>) {
     }
     #[cfg(windows)]
     windows::dump_now();
-    crate::diagnostics::flush(FLUSH);
+    crate::flush(FLUSH);
 }
 
 /// A panic's payload as text: `panic!` passes a `&str` or a `String`.
@@ -105,9 +107,16 @@ fn message(payload: &(dyn std::any::Any + Send)) -> &str {
         .unwrap_or("Box<dyn Any>")
 }
 
-fn report(time: &str, thread: &str, message: &str, location: &str, backtrace: &str) -> String {
+fn report(
+    version: &str,
+    time: &str,
+    thread: &str,
+    message: &str,
+    location: &str,
+    backtrace: &str,
+) -> String {
     let mut text = String::from("Herdr UI crash report\n\n");
-    let _ = writeln!(text, "version: {}", crate::constants::APP_VERSION);
+    let _ = writeln!(text, "version: {version}");
     let _ = writeln!(
         text,
         "platform: {} {}",
@@ -170,7 +179,7 @@ fn write_new(path: &Path, text: &str) -> io::Result<()> {
 }
 
 /// This directory's crash files with `extension`, newest first.
-pub(crate) fn files(dir: &Path, extension: &str) -> Vec<PathBuf> {
+pub fn files(dir: &Path, extension: &str) -> Vec<PathBuf> {
     let Ok(entries) = fs::read_dir(dir) else {
         return Vec::new();
     };

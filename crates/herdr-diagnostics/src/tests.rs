@@ -2,6 +2,9 @@ use super::*;
 
 mod flush;
 
+/// The crates the app's own tests log from.
+const TARGETS: &[&str] = &["herdr_client", "herdr_gpui", "herdr_protocol"];
+
 #[test]
 fn timestamp_and_left_aligned_levels_have_exact_columns() {
     let time = chrono::DateTime::parse_from_rfc3339("2025-09-26T15:03:45-07:00").unwrap();
@@ -85,7 +88,7 @@ fn public_api_is_available_without_installing_a_global_subscriber() {
 #[test]
 fn json_schema_preserves_typed_fields_and_roundtrips() {
     let (capture, queued, _) = sink(QUEUE);
-    tracing::subscriber::with_default(subscriber(capture), || {
+    tracing::subscriber::with_default(subscriber(capture, TARGETS), || {
         let span = tracing::info_span!(target: "herdr_gpui", "paint", password = "secret");
         let _entered = span.enter();
         tracing::info!(target: "herdr_gpui::terminal_painter",
@@ -120,7 +123,7 @@ fn json_schema_preserves_typed_fields_and_roundtrips() {
 fn json_escaping_and_many_fields_share_one_record_budget() {
     let (capture, queued, _) = sink(QUEUE);
     let huge = "\"\\\n\u{1f980}".repeat(100_000);
-    tracing::subscriber::with_default(subscriber(capture), || {
+    tracing::subscriber::with_default(subscriber(capture, TARGETS), || {
         tracing::info!(target: "herdr_client", a = huge.as_str(), b = huge.as_str(), "{}", huge);
         tracing::info!(target: "herdr_client",
             a01=1,a02=2,a03=3,a04=4,a05=5,a06=6,a07=7,a08=8,a09=9,a10=10,
@@ -144,7 +147,7 @@ fn json_escaping_and_many_fields_share_one_record_budget() {
 #[test]
 fn levels_targets_and_span_context() {
     let (capture, queued, counters) = sink(QUEUE);
-    tracing::subscriber::with_default(subscriber(capture), || {
+    tracing::subscriber::with_default(subscriber(capture, TARGETS), || {
         let span =
             tracing::info_span!(target: "herdr_client", "connection", secret = "not retained");
         let _entered = span.enter();
@@ -189,7 +192,7 @@ fn bounded_utf8_controls_and_debug_stream() {
         }
     }
     let (capture, queued, _) = sink(QUEUE);
-    tracing::subscriber::with_default(subscriber(capture), || {
+    tracing::subscriber::with_default(subscriber(capture, TARGETS), || {
         tracing::info!(target: "herdr_gpui", value = ?Huge);
     });
     let records = queued_records(&queued);
@@ -207,7 +210,7 @@ fn filtered_and_reentrant_events_never_format_fields() {
         }
     }
     let (capture, queued, counters) = sink(QUEUE);
-    tracing::subscriber::with_default(subscriber(capture), || {
+    tracing::subscriber::with_default(subscriber(capture, TARGETS), || {
         tracing::error!(target: "dependency", value = ?MustNotFormat);
         FORMATTING.set(true);
         let _guard = FormattingGuard;
@@ -221,7 +224,7 @@ fn filtered_and_reentrant_events_never_format_fields() {
 #[test]
 fn a_full_queue_or_missing_writer_drops_without_blocking() {
     let (capture, queued, counters) = sink(1);
-    tracing::subscriber::with_default(subscriber(capture), || {
+    tracing::subscriber::with_default(subscriber(capture, TARGETS), || {
         for i in 0..3 {
             tracing::info!(target: "herdr_gpui", i, "queued");
         }
@@ -231,7 +234,7 @@ fn a_full_queue_or_missing_writer_drops_without_blocking() {
 
     let (capture, queued, counters) = sink(QUEUE);
     drop(queued);
-    tracing::subscriber::with_default(subscriber(capture), || {
+    tracing::subscriber::with_default(subscriber(capture, TARGETS), || {
         tracing::info!(target: "herdr_gpui", "no writer");
     });
     assert_eq!(counts(&counters), (1, 1));
@@ -247,7 +250,7 @@ fn concurrent_writers_reach_disk_or_count_as_dropped() {
         let counters = counters.clone();
         thread::spawn(move || write_lines(path, queued, &counters))
     };
-    let dispatch = tracing::Dispatch::new(subscriber(capture));
+    let dispatch = tracing::Dispatch::new(subscriber(capture, TARGETS));
     thread::scope(|scope| {
         for _ in 0..8 {
             let dispatch = dispatch.clone();

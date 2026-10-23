@@ -52,10 +52,8 @@ mod constants;
 mod contrast;
 mod control;
 mod copy_mode;
-mod crash;
 mod daemon;
 mod devices_overview;
-mod diagnostics;
 mod dialog_input;
 mod dispatch;
 mod editor;
@@ -82,6 +80,7 @@ mod lenient;
 mod link;
 mod links;
 mod listening_ports;
+mod log_targets;
 mod log_window;
 mod mark_layer;
 mod menu;
@@ -172,6 +171,8 @@ use herdr_github::pr_actions;
 use herdr_orchestrator::cache;
 // The command catalog and its default shortcuts, without GPUI.
 use herdr_commands as controls;
+// The log file and crash reports, without GPUI.
+use herdr_diagnostics::{self as diagnostics, crash};
 // Git status and writes, checkpoints, and the code index, without GPUI.
 use herdr_vcs::{checkpoint, code_index, git};
 // Shared with herdr-client's own SSH and probe children.

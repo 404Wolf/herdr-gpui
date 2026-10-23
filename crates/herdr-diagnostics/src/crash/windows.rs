@@ -63,14 +63,14 @@ static FINISHED: AtomicU64 = AtomicU64::new(0);
 /// then makes its own, so each crash gets a dump and a report.
 pub(super) static BUSY: AtomicBool = AtomicBool::new(false);
 
-pub(super) fn install(dir: PathBuf) {
+pub(super) fn install(dir: PathBuf, version: &'static str) {
     let (Some(requested), Some(done)) = (event(), event()) else {
         tracing::warn!(error = %io::Error::last_os_error(), "Crash dumps are off: no event");
         return;
     };
     let serving = std::thread::Builder::new()
         .name("crash-dump".into())
-        .spawn(move || serve(&dir, requested, done));
+        .spawn(move || serve(&dir, version, requested, done));
     if let Err(error) = serving {
         tracing::warn!(%error, "Crash dumps are off: no dump thread");
         return;
@@ -161,7 +161,7 @@ fn pause(done: usize, deadline: Instant) -> bool {
     true
 }
 
-fn serve(dir: &Path, requested: usize, done: usize) {
+fn serve(dir: &Path, version: &str, requested: usize, done: usize) {
     loop {
         // SAFETY: an event created at install and never closed.
         #[allow(unsafe_code)]
@@ -185,7 +185,7 @@ fn serve(dir: &Path, requested: usize, done: usize) {
                 let record = &*(*exception).ExceptionRecord;
                 (record.ExceptionCode, record.ExceptionAddress)
             };
-            report_exception(dir, code, address as usize);
+            report_exception(dir, version, code, address as usize);
         }
         FINISHED.store(ticket, Ordering::Release);
         BUSY.store(false, Ordering::Release);
@@ -198,11 +198,12 @@ fn serve(dir: &Path, requested: usize, done: usize) {
 }
 
 /// The text report and log record for a crash the panic hook never saw.
-fn report_exception(dir: &Path, code: i32, address: usize) {
+fn report_exception(dir: &Path, version: &str, code: i32, address: usize) {
     let now = chrono::Local::now();
     let message = format!("unhandled exception {:#010x}", code as u32);
     let location = format!("address {address:#x}");
     let text = report(
+        version,
         &now.format(TIME_FORMAT).to_string(),
         "unknown",
         &message,
@@ -220,7 +221,7 @@ fn report_exception(dir: &Path, code: i32, address: usize) {
         report = name,
         "Herdr UI crashed"
     );
-    crate::diagnostics::flush(FLUSH);
+    crate::flush(FLUSH);
 }
 
 /// Writes a dump of this process to a new file in `dir`; `exception` is the

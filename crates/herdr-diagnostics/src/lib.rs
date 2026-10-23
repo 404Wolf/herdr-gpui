@@ -6,6 +6,15 @@
 //! and counts them. No uploads, environment filters, or stderr. Span context
 //! includes names, not fields; arbitrary field Debug implementations must
 //! cooperate with fmt errors.
+//!
+//! Only events whose target is one of the crates `init` names are kept, so a
+//! dependency's own logging never fills the file.
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
+
+pub mod crash;
+mod error;
+
+pub use error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::{
@@ -39,9 +48,9 @@ const MAX_FILE_BYTES: u64 = 16 * 1024 * 1024;
 /// The writer issues one write per batch of at most this many bytes.
 const BATCH_BYTES: usize = 256 * 1024;
 /// Newest records a reader keeps; older ones remain only on disk.
-pub(crate) const TAIL_RECORDS: usize = 5000;
+pub const TAIL_RECORDS: usize = 5000;
 /// A reader opening an existing file starts this far from its end.
-pub(crate) const TAIL_BYTES: u64 = 4 * 1024 * 1024;
+pub const TAIL_BYTES: u64 = 4 * 1024 * 1024;
 const READ_CHUNK: usize = 64 * 1024;
 /// Longer lines are not ours; skip them without buffering.
 const MAX_LINE: usize = 64 * 1024;
@@ -50,22 +59,22 @@ thread_local! { static FORMATTING: Cell<bool> = const { Cell::new(false) }; }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename = "event")]
-pub(crate) struct Record {
+pub struct Record {
     #[serde(with = "level_json")]
-    pub(crate) level: Level,
+    pub level: Level,
     /// Local wall time at capture, retained unchanged for display and export.
-    pub(crate) timestamp: String,
-    pub(crate) target: String,
-    pub(crate) namespace: String,
-    pub(crate) message: String,
-    pub(crate) fields: Map<String, Value>,
+    pub timestamp: String,
+    pub target: String,
+    pub namespace: String,
+    pub message: String,
+    pub fields: Map<String, Value>,
     /// Leaf first, names only. Never retain raw span fields.
-    pub(crate) spans: Vec<String>,
-    pub(crate) truncated: bool,
+    pub spans: Vec<String>,
+    pub truncated: bool,
 }
 
 impl Record {
-    pub(crate) fn body(&self) -> String {
+    pub fn body(&self) -> String {
         let mut text = self.target.clone();
         for span in &self.spans {
             let _ = write!(text, " [{span}]");
@@ -82,7 +91,7 @@ impl Record {
         text
     }
 
-    pub(crate) fn line(&self) -> String {
+    pub fn line(&self) -> String {
         format!(
             "{} {:<5} {}",
             self.timestamp,
@@ -91,8 +100,8 @@ impl Record {
         )
     }
 
-    #[cfg(test)]
-    pub(crate) fn fixture(level: Level, message: impl Into<String>) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture(level: Level, message: impl Into<String>) -> Self {
         Self {
             level,
             timestamp: "[2025-09-26 15:03:45]".into(),
@@ -125,19 +134,20 @@ mod level_json {
 }
 
 /// The log file, without a state directory none.
-pub(crate) fn log_file() -> Option<PathBuf> {
-    crate::preferences::state_dir().map(|dir| dir.join("logs").join(FILE_NAME))
+pub fn log_file() -> Option<PathBuf> {
+    herdr_client::local_path::state_dir().map(|dir| dir.join("logs").join(FILE_NAME))
 }
 
 /// Where `current` goes when it is rotated.
-pub(crate) fn previous_log_file(current: &Path) -> PathBuf {
+pub fn previous_log_file(current: &Path) -> PathBuf {
     current.with_file_name(PREVIOUS_FILE_NAME)
 }
 
 /// Install once, before starting workers. An existing global subscriber is an
 /// error, never silently replaced. No tracing-log bridge is installed. Without a
-/// state directory or writer thread, every event counts as dropped.
-pub(crate) fn init() -> Result<(), tracing::subscriber::SetGlobalDefaultError> {
+/// state directory or writer thread, every event counts as dropped. `targets`
+/// are the crates whose events are kept, each with its modules.
+pub fn init(targets: &'static [&'static str]) -> Result<()> {
     let (lines, queued) = mpsc::sync_channel(QUEUE);
     let counters = Arc::new(Counters::default());
     let path = log_file().and_then(|path| {
@@ -154,7 +164,8 @@ pub(crate) fn init() -> Result<(), tracing::subscriber::SetGlobalDefaultError> {
         flushes: path.as_ref().map(|_| lines.clone()),
         path,
     });
-    tracing::subscriber::set_global_default(subscriber(Capture { lines, counters }))
+    tracing::subscriber::set_global_default(subscriber(Capture { lines, counters }, targets))?;
+    Ok(())
 }
 
 struct Sink {
@@ -173,18 +184,18 @@ enum Queued {
 }
 
 /// The file the writer appends to, when one could be started.
-pub(crate) fn path() -> Option<&'static Path> {
+pub fn path() -> Option<&'static Path> {
     SINK.get()?.path.as_deref()
 }
 
 /// A change hint: advances after each written batch and each dropped line.
-pub(crate) fn generation() -> u64 {
+pub fn generation() -> u64 {
     SINK.get()
         .map_or(0, |sink| sink.counters.generation.load(Ordering::Acquire))
 }
 
 /// Lines this process failed to queue or write.
-pub(crate) fn dropped() -> u64 {
+pub fn dropped() -> u64 {
     SINK.get()
         .map_or(0, |sink| sink.counters.dropped.load(Ordering::Relaxed))
 }
@@ -192,7 +203,7 @@ pub(crate) fn dropped() -> u64 {
 /// Waits, at most `timeout`, until every line this thread queued before the
 /// call was written or dropped. For a crashing process, which would otherwise
 /// end before the writer reaches its last records; nothing else needs to wait.
-pub(crate) fn flush(timeout: Duration) -> bool {
+pub fn flush(timeout: Duration) -> bool {
     SINK.get()
         .and_then(|sink| sink.flushes.as_ref())
         .is_none_or(|flushes| flush_through(flushes, timeout))
@@ -325,7 +336,7 @@ impl LogFile {
 /// Incrementally reads the newest records of a log file, keeping at most
 /// [`TAIL_RECORDS`]. Unparseable lines are skipped. A file shorter than the
 /// read position was rotated or truncated and is read again from its start.
-pub(crate) struct Tail {
+pub struct Tail {
     path: PathBuf,
     offset: Option<u64>,
     partial: Vec<u8>,
@@ -335,7 +346,7 @@ pub(crate) struct Tail {
 }
 
 impl Tail {
-    pub(crate) fn new(path: impl Into<PathBuf>) -> Self {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
             offset: None,
@@ -346,7 +357,7 @@ impl Tail {
     }
 
     /// Reads whatever was appended since the last call. A missing file is empty.
-    pub(crate) fn read(&mut self) -> io::Result<()> {
+    pub fn read(&mut self) -> io::Result<()> {
         let mut file = match File::open(&self.path) {
             Ok(file) => file,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
@@ -415,25 +426,23 @@ impl Tail {
     }
 
     /// Oldest first.
-    pub(crate) fn records(&self) -> Vec<Arc<Record>> {
+    pub fn records(&self) -> Vec<Arc<Record>> {
         self.records.iter().cloned().collect()
     }
 }
 
-fn app_target(target: &str) -> bool {
-    ["herdr_gpui", "herdr_client", "herdr_protocol"]
-        .iter()
-        .any(|root| {
-            target == *root
-                || target
-                    .strip_prefix(root)
-                    .is_some_and(|rest| rest.starts_with("::"))
-        })
+fn kept_target(targets: &[&str], target: &str) -> bool {
+    targets.iter().any(|root| {
+        target == *root
+            || target
+                .strip_prefix(root)
+                .is_some_and(|rest| rest.starts_with("::"))
+    })
 }
 
-fn subscriber(capture: Capture) -> impl Subscriber + Send + Sync {
+fn subscriber(capture: Capture, targets: &'static [&'static str]) -> impl Subscriber + Send + Sync {
     tracing_subscriber::registry().with(capture.with_filter(tracing_subscriber::filter::filter_fn(
-        |meta| app_target(meta.target()),
+        move |meta| kept_target(targets, meta.target()),
     )))
 }
 

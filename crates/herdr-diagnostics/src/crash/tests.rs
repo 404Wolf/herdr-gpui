@@ -35,6 +35,7 @@ fn payloads_read_as_text() {
 #[test]
 fn a_report_names_the_build_place_and_backtrace() {
     let text = report(
+        "1.2.3",
         "2026-10-17 23:05:12.042 +02:00",
         "main",
         "boom",
@@ -43,7 +44,7 @@ fn a_report_names_the_build_place_and_backtrace() {
     );
     for expected in [
         "Herdr UI crash report\n",
-        &format!("version: {}\n", crate::constants::APP_VERSION),
+        "version: 1.2.3\n",
         "thread: main\n",
         "location: src/app.rs:1:2\n",
         "message: boom\n",

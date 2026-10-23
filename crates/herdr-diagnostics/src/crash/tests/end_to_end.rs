@@ -15,8 +15,8 @@ fn crashing_child() {
     let Some(kind) = std::env::var_os(CHILD) else {
         return;
     };
-    crate::diagnostics::init().unwrap();
-    install();
+    crate::init(&["herdr_diagnostics"]).unwrap();
+    install("1.2.3");
     match kind.to_str() {
         Some("panic") => panic!("deliberate test panic"),
         #[cfg(windows)]

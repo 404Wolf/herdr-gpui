@@ -31,6 +31,7 @@ herdr-client.workspace         = true
 herdr-commands.workspace       = true
 herdr-control-protocol.workspace = true
 herdr-credentials.workspace    = true
+herdr-diagnostics.workspace    = true
 herdr-github.workspace         = true
 herdr-orchestrator.workspace   = true
 herdr-remote.workspace         = true
@@ -75,6 +76,7 @@ herdr-client = { features = ["test-support"], workspace = true }
 herdr-commands = { features = ["test-support"], workspace = true }
 herdr-remote = { features = ["test-support"], workspace = true }
 herdr-control-protocol = { features = ["test-support"], workspace = true }
+herdr-diagnostics = { features = ["test-support"], workspace = true }
 herdr-github = { features = ["test-support"], workspace = true }
 herdr-orchestrator = { features = ["test-support"], workspace = true }
 herdr-usage = { features = ["test-support"], workspace = true }
@@ -130,8 +132,7 @@ wry.workspace = true
 
 # `windows-sys` sets the window attributes and reads the
 # system settings GPUI leaves to the app, and opens avatar cache entries without following reparse points. It also
-# registers with Restart Manager (`restart_manager`), writes crash minidumps
-# (`crash::windows`), and sends the
+# registers with Restart Manager (`restart_manager`), and sends the
 # performance fixture its window messages.
 # `clipboard-win` reads the clipboard on a background thread (see
 # `window/clipboard`). `windows` has the shell's COM and WinRT interfaces (the
@@ -155,13 +156,9 @@ windows-sys = { features = [
   "Win32_Graphics_Gdi",
   "Win32_Storage_FileSystem",
   "Win32_System_Console",
-  "Win32_System_Diagnostics_Debug",
-  "Win32_System_Kernel",
-  "Win32_System_Memory",
   "Win32_System_Recovery",
   "Win32_System_Registry",
   "Win32_System_SystemInformation",
-  "Win32_System_Threading",
   "Win32_UI_Accessibility",
   "Win32_UI_WindowsAndMessaging",
 ], workspace = true }

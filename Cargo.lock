@@ -4515,6 +4515,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "herdr-diagnostics"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "herdr-client",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+ "tracing-subscriber",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "herdr-github"
 version = "0.1.0"
 dependencies = [
@@ -4562,6 +4577,7 @@ dependencies = [
  "herdr-commands",
  "herdr-control-protocol",
  "herdr-credentials",
+ "herdr-diagnostics",
  "herdr-github",
  "herdr-orchestrator",
  "herdr-remote",
