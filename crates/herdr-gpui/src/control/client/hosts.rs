@@ -156,6 +156,9 @@ pub(super) fn script_path(file: &std::path::Path) -> crate::Result<String> {
     };
     let path = match file.canonicalize() {
         Ok(path) => path,
+        // Not here: a remote host's file. A Unix absolute path stays as it
+        // is, so a Windows client does not put its own drive in front.
+        Err(_) if file.to_str().is_some_and(|text| text.starts_with('/')) => file.to_owned(),
         Err(_) => std::path::absolute(file)
             .map_err(|error| rejected(format!("Cannot resolve {}: {error}", file.display())))?,
     };

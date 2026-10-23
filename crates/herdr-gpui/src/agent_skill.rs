@@ -347,9 +347,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let app = dir.path().join("Herdr");
         std::fs::write(&app, "").unwrap();
-        std::fs::write(dir.path().join("herdr-automate"), "").unwrap();
+        let automate = dir.path().join(if cfg!(windows) {
+            "herdr-automate.exe"
+        } else {
+            "herdr-automate"
+        });
+        std::fs::write(&automate, "").unwrap();
         let text = automations_text(Some(&app));
-        let automate = dir.path().join("herdr-automate");
         assert!(text.contains(&format!(
             "{} check FILE",
             shell_word(automate.to_str().unwrap())
