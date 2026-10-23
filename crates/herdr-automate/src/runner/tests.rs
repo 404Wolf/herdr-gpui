@@ -213,7 +213,7 @@ fn a_spent_token_budget_halts_and_pauses() {
         ..AgentRow::default()
     };
     store.add_agent(&spent).unwrap();
-    store.update_agent(&spent).unwrap();
+    store.sample_agent(&spent, start_of_day()).unwrap();
     let (_, ended) = run_script(&fixture, &script, &repo, false);
     assert_eq!(ended.state, RunState::Halted);
     assert!(store.switch(&path).unwrap().paused);

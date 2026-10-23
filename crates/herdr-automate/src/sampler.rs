@@ -11,7 +11,7 @@ use crate::{
     logbook::Logbook,
     paths::Paths,
     process::Meter,
-    runner::now,
+    runner::{now, start_of_day},
     store::{AgentRow, Store},
     usage,
 };
@@ -69,6 +69,7 @@ impl Sampler {
         home: &std::path::Path,
     ) -> crate::Result<()> {
         let now = now();
+        let day = start_of_day();
         for mut agent in store.agents(true)? {
             let key = (agent.run, agent.position);
             let pane = herdr.pane_agent(&agent.pane).ok();
@@ -109,7 +110,7 @@ impl Sampler {
                 agent.done_at = Some(now);
                 self.forget(key);
             }
-            store.update_agent(&agent)?;
+            store.sample_agent(&agent, day)?;
         }
         Ok(())
     }

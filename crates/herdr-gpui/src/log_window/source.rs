@@ -176,7 +176,20 @@ impl LogWindow {
                 let due = read_at.is_none_or(|at| at.elapsed() >= INTERVAL);
                 let wanted = this.update(cx, |this, cx| {
                     let refilter = this.generation.is_none();
-                    let fetch = this.following && due;
+                    // Turned off in the settings: show what was read, read
+                    // no more.
+                    let off = crate::automations::LogSources::off(cx);
+                    if off && this.following {
+                        let status = format!(
+                            "{} · not read while automations are turned off",
+                            Source::Automations(log.clone()).label()
+                        );
+                        if this.status != status {
+                            this.status = status;
+                            cx.notify();
+                        }
+                    }
+                    let fetch = this.following && due && !off;
                     (fetch || refilter).then(|| {
                         (
                             fetch,

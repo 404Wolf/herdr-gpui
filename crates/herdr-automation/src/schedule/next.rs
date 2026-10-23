@@ -11,6 +11,8 @@ pub const LATE_AFTER: Duration = Duration::from_secs(120);
 
 /// The most occurrences [`due`] walks to find the latest missed one.
 const MISSED_WALK: usize = 10_000;
+/// The most times [`due`] restarts its walk nearer to now.
+const MISSED_PASSES: usize = 32;
 
 /// A firing the runner should start now.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -141,16 +143,31 @@ pub fn due(
     let mut latest = None;
     let mut after = checked;
     let mut anchor = anchor;
-    for _ in 0..MISSED_WALK {
-        let Some(next) = schedule.next_after(zone, after, anchor) else {
-            break;
-        };
-        if next > now {
+    // Each pass walks at most MISSED_WALK occurrences. One that runs out
+    // short of `now` restarts nearer to it, halving the stretch it has left,
+    // so the firing is the latest missed one, not one days old.
+    for _ in 0..MISSED_PASSES {
+        let start = after;
+        let mut walked = 0;
+        while walked < MISSED_WALK {
+            let Some(next) = schedule.next_after(zone, after, anchor) else {
+                break;
+            };
+            if next > now {
+                break;
+            }
+            latest = Some(next);
+            after = next;
+            anchor = Some(next);
+            walked += 1;
+        }
+        if walked < MISSED_WALK {
             break;
         }
-        latest = Some(next);
-        after = next;
-        anchor = Some(next);
+        let left = now.as_second().saturating_sub(after.as_second());
+        let span = after.as_second().saturating_sub(start.as_second());
+        let skip = left.saturating_sub(span / 2).max(0);
+        after = after.checked_add(skip.seconds()).unwrap_or(after);
     }
     let scheduled = latest?;
     let behind = now.as_second().saturating_sub(scheduled.as_second());

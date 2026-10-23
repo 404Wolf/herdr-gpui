@@ -59,3 +59,35 @@ fn an_interval_fires_once_its_interval_has_passed_since_it_was_turned_on() {
     let (_, run, ended) = finished.recv_timeout(Duration::from_secs(20)).unwrap();
     daemon.finish(&path, run, ended).unwrap();
 }
+
+#[test]
+fn run_now_reads_a_script_approved_since_the_last_scan() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo();
+    let (mut daemon, finished) = daemon(&fixture);
+    daemon.store.add_repo(&repo.to_string_lossy(), 1).unwrap();
+    daemon.refresh(1_000).unwrap();
+    // Written and approved after that scan, then run at once.
+    let script = fixture.script(
+        &repo,
+        "fresh",
+        "herdr.manual(function() notify(\"hi\") end)\n",
+    );
+    let path = script.to_string_lossy().into_owned();
+    let hash = Source::read(&script).unwrap().hash;
+    daemon.store.approve(&path, &hash, "test", 1_001).unwrap();
+    daemon
+        .store
+        .push_request(
+            &RequestKind::RunNow {
+                path: path.clone(),
+                trigger: None,
+            },
+            1_002,
+        )
+        .unwrap();
+    assert!(!daemon.handle_requests(1_002).unwrap());
+    assert!(daemon.live.contains_key(&path), "the run did not start");
+    let (_, run, ended) = finished.recv_timeout(Duration::from_secs(20)).unwrap();
+    daemon.finish(&path, run, ended).unwrap();
+}

@@ -28,7 +28,7 @@ impl LogSource {
 
 /// Every machine with a daemon log to show, in the order windows found them.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct LogSources(pub(crate) Vec<LogSource>);
+pub(crate) struct LogSources(pub(crate) Vec<LogSource>, pub(crate) bool);
 
 impl Global for LogSources {}
 
@@ -56,6 +56,25 @@ impl LogSources {
             }
             (None, false) => {}
         }
+    }
+
+    /// Turned off in the settings: no host is listed, and a Logs window
+    /// reading one stops.
+    pub(super) fn turn_off(cx: &mut App) {
+        let sources = cx.default_global::<Self>();
+        sources.0.clear();
+        sources.1 = true;
+    }
+
+    pub(super) fn turn_on(cx: &mut App) {
+        if cx.try_global::<Self>().is_some_and(|sources| sources.1) {
+            cx.default_global::<Self>().1 = false;
+        }
+    }
+
+    /// Whether automations are turned off, so no host's log may be read.
+    pub(crate) fn off(cx: &App) -> bool {
+        cx.try_global::<Self>().is_some_and(|sources| sources.1)
     }
 
     /// The sources now listed, or none before any window read one.

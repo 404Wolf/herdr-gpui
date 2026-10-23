@@ -56,7 +56,7 @@ fn the_picker_lists_hosts_with_a_daemon_log(cx: &mut TestAppContext) {
     });
     // Nothing to pick until a window found a daemon.
     assert!(cx.debug_bounds("log-sources").is_none());
-    cx.update(|_, cx| cx.set_global(LogSources(vec![ssh_source()])));
+    cx.update(|_, cx| cx.set_global(LogSources(vec![ssh_source()], false)));
     cx.update(|window, cx| {
         window.refresh();
         window.draw(cx).clear(cx);
@@ -75,4 +75,20 @@ fn the_picker_lists_hosts_with_a_daemon_log(cx: &mut TestAppContext) {
     // Picking the shown source again changes nothing.
     view.update(cx, |view, cx| view.pick_source(Source::App, cx));
     view.read_with(cx, |view, _| assert!(view.remote.is_none()));
+}
+
+#[gpui::test]
+fn a_host_log_is_not_read_while_automations_are_off(cx: &mut TestAppContext) {
+    let (view, cx) = cx.add_window_view(LogWindow::new);
+    cx.update(|_, cx| cx.set_global(LogSources(vec![ssh_source()], true)));
+    view.update(cx, |view, cx| {
+        view.pick_source(Source::Automations(ssh_source()), cx);
+    });
+    cx.run_until_parked();
+    view.read_with(cx, |view, _| {
+        assert_eq!(
+            view.status,
+            "Automations on buildbox · not read while automations are turned off"
+        );
+    });
 }

@@ -48,6 +48,10 @@ CREATE TABLE IF NOT EXISTS agents (
     pane TEXT NOT NULL, cwd TEXT NOT NULL, started_at INTEGER NOT NULL, done_at INTEGER,
     input INTEGER, output INTEGER, cache_read INTEGER, cache_write INTEGER,
     cpu_ms INTEGER, peak_memory INTEGER, sampled_at INTEGER, PRIMARY KEY (run, position));
+CREATE TABLE IF NOT EXISTS agent_days (
+    run INTEGER NOT NULL, position INTEGER NOT NULL, day INTEGER NOT NULL,
+    input INTEGER NOT NULL, output INTEGER NOT NULL, cache_read INTEGER NOT NULL,
+    cache_write INTEGER NOT NULL, PRIMARY KEY (run, position, day));
 CREATE TABLE IF NOT EXISTS requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, path TEXT, argument TEXT,
     created_at INTEGER NOT NULL, taken_at INTEGER);
@@ -476,12 +480,32 @@ impl Store {
         Ok(())
     }
 
-    /// Tokens agents started since `since` used, for one script or all.
-    pub fn tokens_since(&self, path: Option<&str>, since: i64) -> Result<Option<Tokens>> {
+    /// Records a sample of an agent taken on the day starting at `day`.
+    /// The first sample of each day first keeps what the agent had used
+    /// before it, so a day's spending counts an agent started the day
+    /// before too.
+    pub fn sample_agent(&self, agent: &AgentRow, day: i64) -> Result<()> {
+        self.connection.execute(
+            "INSERT OR IGNORE INTO agent_days
+                 (run, position, day, input, output, cache_read, cache_write)
+             SELECT run, position, ?3, COALESCE(input, 0), COALESCE(output, 0),
+                 COALESCE(cache_read, 0), COALESCE(cache_write, 0)
+             FROM agents WHERE run = ?1 AND position = ?2",
+            params![agent.run, agent.position, day],
+        )?;
+        self.update_agent(agent)
+    }
+
+    /// Tokens agents used since `day` started, whenever they started, for
+    /// one script or all: what the daily caps count.
+    pub fn tokens_on(&self, path: Option<&str>, day: i64) -> Result<Option<Tokens>> {
         let row = self.connection.query_row(
-            "SELECT SUM(input), SUM(output), SUM(cache_read), SUM(cache_write), COUNT(input)
-             FROM agents WHERE started_at >= ?2 AND (?1 IS NULL OR path = ?1)",
-            params![path, since],
+            "SELECT SUM(COALESCE(a.input, 0) - d.input), SUM(COALESCE(a.output, 0) - d.output),
+                 SUM(COALESCE(a.cache_read, 0) - d.cache_read),
+                 SUM(COALESCE(a.cache_write, 0) - d.cache_write), COUNT(a.input)
+             FROM agent_days d JOIN agents a ON a.run = d.run AND a.position = d.position
+             WHERE d.day = ?2 AND (?1 IS NULL OR a.path = ?1)",
+            params![path, day],
             |row| {
                 Ok((
                     row.get::<_, Option<i64>>(0)?,

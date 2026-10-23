@@ -138,8 +138,9 @@ fn tokens_add_up_per_script_and_stay_unknown_without_samples() {
         started_at,
         ..AgentRow::default()
     };
+    const DAY: i64 = 0;
     store.add_agent(&agent(1, "/a.luau", 1_000)).unwrap();
-    assert_eq!(store.tokens_since(Some("/a.luau"), 0).unwrap(), None);
+    assert_eq!(store.tokens_on(Some("/a.luau"), DAY).unwrap(), None);
     let measured = AgentRow {
         tokens: Some(Tokens {
             input: 10,
@@ -150,29 +151,32 @@ fn tokens_add_up_per_script_and_stay_unknown_without_samples() {
         sampled_at: Some(1_100),
         ..agent(1, "/a.luau", 1_000)
     };
-    store.update_agent(&measured).unwrap();
+    store.sample_agent(&measured, DAY).unwrap();
     store.add_agent(&agent(2, "/b.luau", 1_000)).unwrap();
     store
-        .update_agent(&AgentRow {
-            tokens: Some(Tokens {
-                input: 1,
-                ..Tokens::default()
-            }),
-            ..agent(2, "/b.luau", 1_000)
-        })
+        .sample_agent(
+            &AgentRow {
+                tokens: Some(Tokens {
+                    input: 1,
+                    ..Tokens::default()
+                }),
+                ..agent(2, "/b.luau", 1_000)
+            },
+            DAY,
+        )
         .unwrap();
     assert_eq!(
         store
-            .tokens_since(Some("/a.luau"), 0)
+            .tokens_on(Some("/a.luau"), DAY)
             .unwrap()
             .map(Tokens::total),
         Some(100)
     );
     assert_eq!(
-        store.tokens_since(None, 0).unwrap().map(Tokens::total),
+        store.tokens_on(None, DAY).unwrap().map(Tokens::total),
         Some(101)
     );
-    assert_eq!(store.tokens_since(None, 2_000).unwrap(), None);
+    assert_eq!(store.tokens_on(None, 86_400).unwrap(), None);
     assert_eq!(store.agents(true).unwrap().len(), 2);
     store
         .update_agent(&AgentRow {
@@ -181,6 +185,37 @@ fn tokens_add_up_per_script_and_stay_unknown_without_samples() {
         })
         .unwrap();
     assert_eq!(store.agents(true).unwrap().len(), 1);
+}
+
+#[test]
+fn a_day_counts_what_an_agent_started_the_day_before_spends_in_it() {
+    let (_dir, store) = store();
+    let (yesterday, today) = (0, 86_400);
+    let at = |input: u64| AgentRow {
+        run: 1,
+        position: 1,
+        path: "/a.luau".to_owned(),
+        harness: "claude".to_owned(),
+        pane: "p".to_owned(),
+        cwd: "/w".to_owned(),
+        started_at: today - 60,
+        tokens: Some(Tokens {
+            input,
+            ..Tokens::default()
+        }),
+        ..AgentRow::default()
+    };
+    store.add_agent(&at(0)).unwrap();
+    store.sample_agent(&at(2_000), yesterday).unwrap();
+    store.sample_agent(&at(2_500), today).unwrap();
+    store.sample_agent(&at(3_000), today).unwrap();
+    let on = |day| store.tokens_on(None, day).unwrap().map(Tokens::total);
+    assert_eq!(
+        on(yesterday),
+        Some(3_000),
+        "its whole use, counted from yesterday"
+    );
+    assert_eq!(on(today), Some(1_000), "only what it spent today");
 }
 
 #[test]

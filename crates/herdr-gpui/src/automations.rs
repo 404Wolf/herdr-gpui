@@ -41,7 +41,7 @@ pub(crate) use model::Look;
 
 use crate::{HerdrWindow, sidebar::ActivityPanel, teleport::Host};
 use gpui::{prelude::*, *};
-use herdr_automation::report::{LogText, RunDetail, RunState, Status};
+use herdr_automation::report::{LogText, RunDetail, Status};
 use std::{
     collections::HashMap,
     sync::{
@@ -443,12 +443,14 @@ impl HerdrWindow {
         // Turned off in the settings, nothing is read or started.
         self.forget_closed_automation_dialog();
         if !self.activity_panel_listed(ActivityPanel::Automations) {
+            LogSources::turn_off(cx);
             self.automations.shown = false;
             if self.automations.sync_hosts(Vec::new()) {
                 cx.notify();
             }
             return;
         }
+        LogSources::turn_on(cx);
         let wanted = self.automation_hosts();
         if self.automations.sync_hosts(wanted) {
             cx.notify();
@@ -526,8 +528,8 @@ impl HerdrWindow {
         cx.notify();
     }
 
-    /// Whether `run` was still going at its last read, so its page goes
-    /// stale with every status read.
+    /// Whether `run`'s page may have gone stale since it was read, so it
+    /// is read again with every status read (`model::run_stale`).
     fn automation_run_live(&self, machine: &Machine, run: i64) -> bool {
         let summary = self
             .automations
@@ -535,11 +537,10 @@ impl HerdrWindow {
             .and_then(HostState::status)
             .and_then(|status| model::find_run(status, run));
         let detail = match self.automations.runs.get(&(machine.clone(), run)) {
-            Some(Loaded::Read(detail)) => Some(detail.run.state),
+            Some(Loaded::Read(detail)) => Some(&detail.run),
             _ => None,
         };
-        summary.is_some_and(|run| run.state == RunState::Running)
-            || detail == Some(RunState::Running)
+        model::run_stale(summary, detail, format::now())
     }
 
     /// Reads the version of the `herdr-automate` this app would install,

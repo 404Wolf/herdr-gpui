@@ -131,6 +131,27 @@ pub(crate) fn find_run(status: &Status, id: i64) -> Option<&RunSummary> {
     })
 }
 
+/// How long after a run ends its agents may still be spending: the daemon
+/// counts an agent for at most a day.
+const AGENTS_SPEND_FOR: i64 = 86_400;
+
+/// Whether a run's page, read as `read`, may no longer say what the host
+/// would: the run was still going, its summary in the latest status
+/// differs, or its agents may still be using tokens after it ended.
+pub(crate) fn run_stale(latest: Option<&RunSummary>, read: Option<&RunSummary>, now: i64) -> bool {
+    let running = |run: &RunSummary| run.state == RunState::Running;
+    let changed = latest
+        .zip(read)
+        .is_some_and(|(latest, read)| latest.tokens != read.tokens || latest.state != read.state);
+    let spending = read.is_some_and(|read| {
+        read.agents > 0
+            && read
+                .finished_at
+                .is_some_and(|ended| now.saturating_sub(ended) < AGENTS_SPEND_FOR)
+    });
+    latest.is_some_and(running) || read.is_some_and(running) || changed || spending
+}
+
 /// What the row says beside the schedule: what runs now, why it fails or
 /// waits, or when it fires next.
 pub(crate) fn detail(script: &ScriptStatus, status: &Status, now: i64) -> String {

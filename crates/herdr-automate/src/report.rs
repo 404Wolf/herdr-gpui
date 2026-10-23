@@ -47,7 +47,7 @@ pub fn status(paths: &Paths, store: &Store, settings: &Settings, now: i64) -> Re
         version: daemon::version().to_owned(),
         daemon,
         caps: settings.caps.clone(),
-        today: store.tokens_since(None, today)?.unwrap_or_default(),
+        today: store.tokens_on(None, today)?.unwrap_or_default(),
         scripts,
         runs,
     })
@@ -80,9 +80,7 @@ fn script_status(store: &Store, row: ScriptRow, today: i64) -> Result<ScriptStat
         .transpose()?;
     Ok(ScriptStatus {
         running: store.running(&row.path)?,
-        tokens_today: store
-            .tokens_since(Some(&row.path), today)?
-            .map(Tokens::total),
+        tokens_today: store.tokens_on(Some(&row.path), today)?.map(Tokens::total),
         reason: row.error.or(match state {
             ScriptState::Paused | ScriptState::Disabled => switch.reason,
             ScriptState::AwaitingApproval => Some(if store.approved_hash(&row.path)?.is_some() {

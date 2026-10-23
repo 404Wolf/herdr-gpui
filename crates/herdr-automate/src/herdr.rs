@@ -9,7 +9,10 @@ use std::{
     io::Read,
     path::{Path, PathBuf},
     process::{Output, Stdio},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -41,6 +44,8 @@ pub enum Error {
     PaneNotFound { command: String },
     #[error("herdr {command} was stopped on request")]
     Stopped { command: String },
+    #[error("herdr {command} ran past the step's timeout")]
+    TimedOut { command: String },
     #[error("herdr {command} answered something unexpected: {source}")]
     Answer {
         command: String,
@@ -52,10 +57,18 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// The `herdr` binary and the session to drive.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct Herdr {
     program: PathBuf,
     session: Option<String>,
+    /// Set for one step: every call ends at its deadline or stop request.
+    limit: Option<Limit>,
+}
+
+#[derive(Clone, Debug)]
+struct Limit {
+    stop: Arc<AtomicBool>,
+    deadline: Instant,
 }
 
 /// A new worktree and the shell pane Herdr opened in it.
@@ -101,7 +114,35 @@ impl Herdr {
         Self {
             program: program.unwrap_or_else(find),
             session,
+            limit: None,
         }
+    }
+
+    /// This Herdr for one step: each call, and waiting for a server it
+    /// starts, ends when `stop` is set or `deadline` passes.
+    pub fn bounded(&self, stop: Arc<AtomicBool>, deadline: Instant) -> Self {
+        Self {
+            limit: Some(Limit { stop, deadline }),
+            ..self.clone()
+        }
+    }
+
+    /// Why a bounded step must give up now, if it must.
+    fn limit_reached(&self, command: &str) -> Result<()> {
+        let Some(limit) = &self.limit else {
+            return Ok(());
+        };
+        if limit.stop.load(Ordering::Relaxed) {
+            return Err(Error::Stopped {
+                command: command.to_owned(),
+            });
+        }
+        if Instant::now() >= limit.deadline {
+            return Err(Error::TimedOut {
+                command: command.to_owned(),
+            });
+        }
+        Ok(())
     }
 
     fn command(&self, args: &[&str]) -> std::process::Command {
@@ -115,6 +156,9 @@ impl Herdr {
 
     /// Runs `herdr ARGS` and returns its `result` object.
     fn call(&self, args: &[&str]) -> Result<Value> {
+        if self.limit.is_some() {
+            return self.call_bounded(args);
+        }
         let name = args.iter().take(2).copied().collect::<Vec<_>>().join(" ");
         let output = self
             .command(args)
@@ -126,8 +170,8 @@ impl Herdr {
         answer(&name, &output)
     }
 
-    /// As `call`, for a call that can take hours: a stop request ends it.
-    fn call_until_stopped(&self, args: &[&str], stop: &AtomicBool) -> Result<Value> {
+    /// As `call`, ended by the step's stop request or deadline.
+    fn call_bounded(&self, args: &[&str]) -> Result<Value> {
         let name = args.iter().take(2).copied().collect::<Vec<_>>().join(" ");
         let launch = |source| Error::Launch {
             program: self.program.clone(),
@@ -145,10 +189,10 @@ impl Herdr {
             if let Some(status) = child.try_wait().map_err(launch)? {
                 break status;
             }
-            if stop.load(Ordering::Relaxed) {
+            if let Err(error) = self.limit_reached(&name) {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(Error::Stopped { command: name });
+                return Err(error);
             }
             thread::sleep(POLL);
         };
@@ -193,6 +237,7 @@ impl Herdr {
             if self.running() {
                 return Ok(());
             }
+            self.limit_reached("server")?;
             thread::sleep(Duration::from_millis(500));
         }
         Err(Error::DidNotStart)
@@ -253,6 +298,7 @@ impl Herdr {
                 Err(Error::Failed { message, .. })
                     if message.contains("agent_pane_busy") && Instant::now() < deadline =>
                 {
+                    self.limit_reached("agent start")?;
                     thread::sleep(Duration::from_millis(100));
                 }
                 other => return other.map(drop),
@@ -260,23 +306,18 @@ impl Herdr {
         }
     }
 
-    /// Sends `prompt`; with `wait`, returns once the agent is done,
-    /// `timeout` passes, or `stop` is set. Stopping ends the wait, not the
-    /// agent, which keeps its pane as any agent the daemon started does.
-    pub fn prompt(
-        &self,
-        pane: &str,
-        prompt: &str,
-        wait: Option<Duration>,
-        stop: &AtomicBool,
-    ) -> Result<()> {
+    /// Sends `prompt`; with `wait`, returns once the agent is done or
+    /// `timeout` passes, or, bounded, at the step's stop or deadline.
+    /// Stopping ends the wait, not the agent, which keeps its pane as any
+    /// agent the daemon started does.
+    pub fn prompt(&self, pane: &str, prompt: &str, wait: Option<Duration>) -> Result<()> {
+        let millis;
         let mut args = vec!["agent", "prompt", pane, prompt];
-        let Some(timeout) = wait else {
-            return self.call(&args).map(drop);
-        };
-        let millis = timeout.as_millis().clamp(1_000, 86_400_000).to_string();
-        args.extend(["--wait", "--until", "done", "--timeout", &millis]);
-        self.call_until_stopped(&args, stop).map(drop)
+        if let Some(timeout) = wait {
+            millis = timeout.as_millis().clamp(1_000, 86_400_000).to_string();
+            args.extend(["--wait", "--until", "done", "--timeout", &millis]);
+        }
+        self.call(&args).map(drop)
     }
 
     pub fn notify(&self, title: &str, body: &str) -> Result<()> {

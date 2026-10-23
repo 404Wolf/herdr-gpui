@@ -184,24 +184,8 @@ impl Daemon<'_> {
                 self.refresh(now)?;
                 next_scan = now + SCAN_EVERY;
             }
-            for request in self.store.take_requests(now)? {
-                match request.kind {
-                    RequestKind::RunNow { path, trigger } => {
-                        match self.manual_trigger(&path, trigger.as_deref()) {
-                            Some(index) => self.start(&path, index, Reason::Manual, None),
-                            None => self.log.warn(format!(
-                                "run-now: {path} has no such trigger or is not loaded"
-                            )),
-                        }
-                    }
-                    RequestKind::Stop { run } => {
-                        if let Some(found) = self.live.values().find(|found| found.run == run) {
-                            found.stop.store(true, Ordering::Relaxed);
-                            self.log.info(format!("stopping run {run}"));
-                        }
-                    }
-                    RequestKind::Shutdown => return Ok(()),
-                }
+            if self.handle_requests(now)? {
+                return Ok(());
             }
             let paused_all = self.store.paused_all()?;
             let paths = self.loaded.keys().cloned().collect::<Vec<_>>();
@@ -214,6 +198,41 @@ impl Daemon<'_> {
             }
             thread::sleep(TICK);
         }
+    }
+
+    /// Acts on the requests commands left; whether one asked the daemon to
+    /// shut down.
+    fn handle_requests(&mut self, now: i64) -> Result<bool> {
+        let requests = self.store.take_requests(now)?;
+        // A run-now often follows an approval or an edit by seconds: read
+        // the scripts again first, rather than act on a copy up to a scan
+        // old that lacks the script or has its old hash.
+        if requests
+            .iter()
+            .any(|request| matches!(request.kind, RequestKind::RunNow { .. }))
+        {
+            self.refresh(now)?;
+        }
+        for request in requests {
+            match request.kind {
+                RequestKind::RunNow { path, trigger } => {
+                    match self.manual_trigger(&path, trigger.as_deref()) {
+                        Some(index) => self.start(&path, index, Reason::Manual, None),
+                        None => self.log.warn(format!(
+                            "run-now: {path} has no such trigger or is not loaded"
+                        )),
+                    }
+                }
+                RequestKind::Stop { run } => {
+                    if let Some(found) = self.live.values().find(|found| found.run == run) {
+                        found.stop.store(true, Ordering::Relaxed);
+                        self.log.info(format!("stopping run {run}"));
+                    }
+                }
+                RequestKind::Shutdown => return Ok(true),
+            }
+        }
+        Ok(false)
     }
 
     /// Asks every run to stop and waits a while for them.

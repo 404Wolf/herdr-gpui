@@ -16,8 +16,8 @@ use std::{
     ffi::OsStr,
     io::Write,
     path::{Path, PathBuf},
-    sync::atomic::AtomicBool,
-    time::Duration,
+    sync::{Arc, atomic::AtomicBool},
+    time::{Duration, Instant},
 };
 
 /// Why a step failed before or instead of running its command.
@@ -49,6 +49,7 @@ pub enum Error {
 }
 
 /// Where and for whom a step runs.
+#[derive(Clone, Copy)]
 pub struct StepContext<'a> {
     pub paths: &'a Paths,
     pub store: &'a Store,
@@ -60,7 +61,7 @@ pub struct StepContext<'a> {
     pub repo: Option<&'a Path>,
     /// Its worktree scripts as approved and read when the run started.
     pub worktree: Option<&'a WorktreeScripts>,
-    pub stop: &'a AtomicBool,
+    pub stop: &'a Arc<AtomicBool>,
     /// The host slot the runner reserved for an agent step, released once
     /// the agent is recorded and counts itself.
     pub reserved: &'a Cell<Option<Reservation>>,
@@ -88,6 +89,14 @@ pub fn execute(
     timeout: Duration,
 ) -> StepResult {
     let log = context.paths.step_log(context.run, position);
+    // Herdr calls end with the step too, as its commands do.
+    let herdr = context
+        .herdr
+        .bounded(context.stop.clone(), Instant::now() + timeout);
+    let context = &StepContext {
+        herdr: &herdr,
+        ..*context
+    };
     let result = match &step.call.step {
         Step::Pull { branch } => pull(context, &log, branch, timeout),
         Step::Run { name } => worktree_script(context, &log, name, timeout),
@@ -343,9 +352,7 @@ fn agent(
     };
     context.store.add_agent(&row)?;
     drop(context.reserved.take());
-    context
-        .herdr
-        .prompt(&created.pane, prompt, wait, context.stop)?;
+    context.herdr.prompt(&created.pane, prompt, wait)?;
     let waited = if wait.is_some() {
         ", and it finished"
     } else {

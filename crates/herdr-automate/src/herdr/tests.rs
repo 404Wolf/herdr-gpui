@@ -15,12 +15,7 @@ fn worktrees_and_agents_go_through_the_cli() {
         .start_agent("nightly-1", "claude", &created.pane)
         .unwrap();
     herdr
-        .prompt(
-            &created.pane,
-            "Review main.",
-            Some(Duration::from_secs(60)),
-            &AtomicBool::new(false),
-        )
+        .prompt(&created.pane, "Review main.", Some(Duration::from_secs(60)))
         .unwrap();
     let calls = fixture.calls();
     assert!(
@@ -42,7 +37,7 @@ fn worktrees_and_agents_go_through_the_cli() {
 #[test]
 fn a_stop_request_ends_a_wait_for_the_agent() {
     let fixture = Fixture::new();
-    let stop = std::sync::Arc::new(AtomicBool::new(false));
+    let stop = Arc::new(AtomicBool::new(false));
     let stopper = {
         let stop = stop.clone();
         thread::spawn(move || {
@@ -53,7 +48,8 @@ fn a_stop_request_ends_a_wait_for_the_agent() {
     let started = Instant::now();
     let waited = fixture
         .herdr
-        .prompt("w1p1", "slow", Some(Duration::from_secs(3_600)), &stop);
+        .bounded(stop, Instant::now() + Duration::from_secs(3_600))
+        .prompt("w1p1", "slow", Some(Duration::from_secs(3_600)));
     stopper.join().unwrap();
     assert!(matches!(waited, Err(Error::Stopped { .. })), "{waited:?}");
     assert!(started.elapsed() < Duration::from_secs(10));
@@ -88,4 +84,19 @@ fn a_missing_binary_is_not_running() {
     let herdr = Herdr::new(Some(PathBuf::from("/nonexistent/herdr")), None);
     assert!(!herdr.running());
     assert!(matches!(herdr.notify("t", "b"), Err(Error::Launch { .. })));
+}
+
+#[test]
+fn a_bounded_call_ends_at_its_deadline() {
+    let fixture = Fixture::new();
+    let started = Instant::now();
+    let waited = fixture
+        .herdr
+        .bounded(
+            Arc::new(AtomicBool::new(false)),
+            Instant::now() + Duration::from_millis(300),
+        )
+        .prompt("w1p1", "slow", Some(Duration::from_secs(3_600)));
+    assert!(matches!(waited, Err(Error::TimedOut { .. })), "{waited:?}");
+    assert!(started.elapsed() < Duration::from_secs(10));
 }

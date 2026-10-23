@@ -248,7 +248,7 @@ fn agent_cap(
     let today = start_of_day();
     let used = |path: Option<&str>| {
         store
-            .tokens_since(path, today)
+            .tokens_on(path, today)
             .ok()
             .flatten()
             .map(|tokens| tokens.total())

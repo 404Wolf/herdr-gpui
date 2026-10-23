@@ -135,3 +135,21 @@ fn an_on_time_firing_is_not_late() {
     );
     assert_eq!(nothing, None);
 }
+
+#[test]
+fn a_long_outage_catches_up_with_the_latest_missed_firing() {
+    let checked = at("2026-09-01T00:00:00Z");
+    let now = at("2026-10-01T12:34:30Z");
+    let every = Schedule::Every { seconds: 60 };
+    let due = due(&every, &TimeZone::UTC, checked, Some(checked), now).unwrap();
+    assert_eq!(due.scheduled, at("2026-10-01T12:34:00Z"));
+    let cron = Schedule::Cron {
+        cron: Cron::parse("* * * * *").unwrap(),
+    };
+    let due = due_cron(&cron, checked, now);
+    assert_eq!(due, Some(at("2026-10-01T12:34:00Z")));
+}
+
+fn due_cron(cron: &Schedule, checked: Timestamp, now: Timestamp) -> Option<Timestamp> {
+    due(cron, &TimeZone::UTC, checked, None, now).map(|due| due.scheduled)
+}
