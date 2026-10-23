@@ -80,6 +80,8 @@ pub enum Command {
     ReviewChanges,
     /// The titlebar's Git menu for the focused checkout.
     GitMenu,
+    /// Annotate mode on the page in view.
+    ToggleAnnotate,
     InstallBrowserSkill,
     SplitEditor,
     OpenCode,
@@ -666,6 +668,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         label: "Git Menu",
     },
     CommandInfo {
+        command: Command::ToggleAnnotate,
+        name: "toggle_annotate",
+        label: "Toggle Annotate",
+    },
+    CommandInfo {
         command: Command::InstallBrowserSkill,
         name: "install_browser_skill",
         label: "Install Browser Skill for Agents",
@@ -875,6 +882,7 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         | Command::OpenOrchestrator
         | Command::ReviewChanges
         | Command::GitMenu
+        | Command::ToggleAnnotate
         | Command::InstallBrowserSkill
         | Command::SplitEditor
         | Command::OpenCode

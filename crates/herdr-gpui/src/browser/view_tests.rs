@@ -30,6 +30,9 @@ fn window(cx: &mut gpui::TestAppContext) -> (Entity<HerdrWindow>, &mut VisualTes
     })
 }
 
+/// The `toggle_annotate` binding; only builds that show pages can arm it.
+mod annotate_command;
+
 /// Needs a build that shows pages: elsewhere a new tab opens nothing.
 #[cfg(any(target_os = "macos", windows))]
 mod embedded;

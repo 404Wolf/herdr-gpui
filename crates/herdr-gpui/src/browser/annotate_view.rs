@@ -191,6 +191,15 @@ impl HerdrWindow {
         let _ = id;
     }
 
+    /// Starts or stops annotating the page the zoom keys reach, once it has
+    /// loaded something, for the `toggle_annotate` binding.
+    pub(crate) fn toggle_shown_annotating(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match self.zoomed_tab(cx).filter(|tab| tab.location.is_some()) {
+            Some(tab) => self.toggle_annotating(tab.id, window, cx),
+            None => self.show_flash(Flash::warning("No page to annotate"), cx),
+        }
+    }
+
     pub(crate) fn toggle_annotating(
         &mut self,
         id: TabId,
