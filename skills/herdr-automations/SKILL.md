@@ -97,7 +97,8 @@ take `{ timeout = "30m" }`.
 - `fire.date`, `fire.time`, `log_tail` and `run_id` are tokens such as
   `"{date}"` and `"{log_tail:2}"`: pass them into prompts, names and commands,
   but do not compare them, since the runner fills them in only when a step
-  runs. In `sh` they arrive as quoted `$HERDR_...` variables.
+  runs. In `sh` they arrive as quoted `$HERDR_...` variables (not on
+  Windows, where `sh` runs `cmd` and such a command fails).
 - Branch and worktree names take letters, digits, `. _ / -` and `{date}`.
   `harness` is a lowercase name.
 - `run` takes only `setup` or `run`; other commands go through `sh`.

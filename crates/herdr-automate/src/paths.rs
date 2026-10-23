@@ -1,12 +1,20 @@
 //! Where the daemon keeps its state and finds personal scripts. Everything
 //! lives under the user's home; `HERDR_AUTOMATE_HOME` moves all of it, so
-//! tests never touch a real installation.
+//! tests never touch a real installation. The user service is given the
+//! directories the command that installed it used, as
+//! `HERDR_AUTOMATE_STATE_DIR` and `HERDR_AUTOMATE_CONFIG_DIR`, so the daemon
+//! reads what the user's shell does without that shell's environment.
 
 use crate::{Error, Result};
 use std::{
     env,
     path::{Path, PathBuf},
 };
+
+/// The state directory itself, as the user service is given it.
+pub const STATE_DIR: &str = "HERDR_AUTOMATE_STATE_DIR";
+/// The config directory itself, as the user service is given it.
+pub const CONFIG_DIR: &str = "HERDR_AUTOMATE_CONFIG_DIR";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Paths {
@@ -18,11 +26,18 @@ pub struct Paths {
 
 impl Paths {
     pub fn from_env() -> Result<Self> {
-        let var = |name: &str| {
+        Self::from_vars(|name| {
             env::var_os(name)
                 .filter(|value| !value.is_empty())
                 .map(PathBuf::from)
-        };
+        })
+    }
+
+    /// As `from_env`, reading set, non-empty variables through `var`.
+    fn from_vars(var: impl Fn(&str) -> Option<PathBuf>) -> Result<Self> {
+        if let (Some(state), Some(config)) = (var(STATE_DIR), var(CONFIG_DIR)) {
+            return Ok(Self { state, config });
+        }
         if let Some(root) = var("HERDR_AUTOMATE_HOME") {
             return Ok(Self::under(&root));
         }
@@ -117,3 +132,7 @@ pub fn private_file() -> std::fs::OpenOptions {
 pub fn repository_scripts(repo: &Path) -> PathBuf {
     repo.join(".herdr").join("automations")
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests;

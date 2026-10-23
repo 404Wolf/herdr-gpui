@@ -2,10 +2,12 @@
 //! their session files, CPU and memory from their panes' processes. An
 //! agent counts as done, and stops counting toward the host's agent cap,
 //! when its pane closes, its shell is back at the prompt, Herdr has called
-//! it idle or done for ten minutes, or a day has passed.
+//! it idle or done for ten minutes, or a day has passed. A read that fails
+//! for any other reason, such as Herdr not answering, proves nothing: the
+//! agent keeps counting and is read again next time.
 
 use crate::{
-    herdr::Herdr,
+    herdr::{self, Herdr},
     logbook::Logbook,
     paths::Paths,
     process::Meter,
@@ -70,7 +72,13 @@ impl Sampler {
         for mut agent in store.agents(true)? {
             let key = (agent.run, agent.position);
             let pane = herdr.pane_agent(&agent.pane).ok();
-            let process = herdr.process_info(&agent.pane).ok();
+            let process = herdr.process_info(&agent.pane);
+            let gone = match &process {
+                Ok(process) => process.at_prompt(),
+                Err(herdr::Error::PaneNotFound { .. }) => true,
+                Err(_) => false,
+            };
+            let process = process.ok();
             let session = pane.as_ref().and_then(|pane| pane.agent_session.as_ref());
             if let Some(tokens) =
                 usage::tokens(&agent.harness, &agent.cwd, agent.started_at, session, home)
@@ -96,8 +104,6 @@ impl Sampler {
                 .idle_since
                 .get(&key)
                 .is_some_and(|since| now - since >= IDLE_DONE);
-            let gone =
-                process.is_none() || process.as_ref().is_some_and(|process| process.at_prompt());
             agent.sampled_at = Some(now);
             if gone || idle_long || now - agent.started_at >= AT_MOST {
                 agent.done_at = Some(now);
@@ -122,3 +128,7 @@ pub fn usage_of(agent: &AgentRow) -> herdr_automation::report::Usage {
         peak_memory: agent.peak_memory,
     }
 }
+
+#[cfg(all(test, unix))]
+#[allow(clippy::unwrap_used)]
+mod tests;

@@ -2,6 +2,8 @@ use super::*;
 use crate::testing::Fixture;
 use std::time::Instant;
 
+mod schedule;
+
 /// Waits up to `limit` for `done`, polling.
 fn wait_for(limit: Duration, mut done: impl FnMut() -> bool) -> bool {
     let deadline = Instant::now() + limit;

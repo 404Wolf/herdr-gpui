@@ -102,6 +102,9 @@ Branch and worktree names (`pull`, `worktree`, `agent`'s `worktree` and
 rules (no leading `-`, no `..`); a harness is a lowercase name such as
 `claude` or `codex`.
 
+The plan shows a step's whole command, prompt or notification under its
+summary, every line, with control and invisible characters escaped.
+
 A step that fails stops the run. With `{ check = false }` it returns
 `{ ok, log_tail }` instead (and `run_id` for `agent`) and the script decides.
 Steps also take `{ timeout = "30m" }`. Unknown fields, control characters,
@@ -114,8 +117,13 @@ What a script cannot know reaches it as tokens it can pass along but not
 read: `fire.date` is `"{date}"`, `fire.time` is `"{time}"`, and a result's
 `log_tail` is `"{log_tail:N}"` for step N (`run_id` likewise). The runner fills
 them in only when it runs a step. Step output is untrusted, so in a `sh`
-command an output token becomes a quoted `"$HERDR_LOG_TAIL_N"` variable and
-the value travels in the environment, never in the command text.
+command an output token becomes a reference to a `HERDR_LOG_TAIL_N` variable
+and the value travels in the environment, never in the command text. The
+reference is quoted for where the token sits (`"$HERDR_LOG_TAIL_1"` bare,
+`${HERDR_LOG_TAIL_1}` inside double quotes, closing and reopening single
+quotes), so it always arrives as one word, unglobbed. On Windows, where `sh`
+runs `cmd /C`, a command with an output token fails instead: `cmd` would
+read the value as commands.
 
 ## What a script cannot do
 
@@ -215,7 +223,10 @@ each step and agent pane.
 
 `install-service` writes and loads a launchd agent (macOS), a systemd user
 unit (Linux) or a logon task (Windows), printing what it writes. No admin
-rights are needed. The daemon restarts after a crash; `shutdown` stops it
+rights are needed. The service runs the executable that installed it, with
+that command's `PATH` and state and config directories, so a
+`HERDR_AUTOMATE_HOME` or XDG directory set only in your shell still applies;
+run `install-service` again after moving either. The daemon restarts after a crash; `shutdown` stops it
 after its runs and it stays stopped. On a headless Linux host, a user unit
 only runs while the user is logged in unless lingering is on
 (`loginctl enable-linger`); `install-service` does not change that for you.

@@ -26,8 +26,11 @@ case "$*" in
     mkdir -p '{worktree}'
     echo '{"id":"1","result":{"type":"worktree_created","worktree":{"path":"{worktree}","branch":"b"},"root_pane":{"pane_id":"w1p1"}}}' ;;
   *"agent start"*) echo '{"id":"1","result":{"type":"agent_started"}}' ;;
+  *"agent prompt"*"slow"*"--wait"*) sleep 30; echo '{"id":"1","result":{"type":"agent_prompted"}}' ;;
   *"agent prompt"*) echo '{"id":"1","result":{"type":"agent_prompted"}}' ;;
   *"notification show"*) echo '{"id":"1","result":{"type":"notification_show","shown":true}}' ;;
+  *"process-info --pane gone"*) echo '{"id":"1","error":{"code":"pane_not_found","message":"pane not found"}}' >&2; exit 1 ;;
+  *"process-info --pane flaky"*) echo '{"id":"1","error":{"code":"server_unavailable","message":"no answer"}}' >&2; exit 1 ;;
   *"pane process-info"*) echo '{"id":"1","result":{"process_info":{"pane_id":"w1p1","shell_pid":1,"foreground_process_group_id":2}}}' ;;
   *"pane get"*) echo '{"id":"1","result":{"pane":{"agent":"claude","agent_status":"working"}}}' ;;
   *) echo '{"id":"1","error":{"code":"unknown_command","message":"not faked"}}' >&2; exit 1 ;;

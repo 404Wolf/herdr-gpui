@@ -62,6 +62,37 @@ fn a_stop_request_stops_the_command() {
     assert!(finished.stopped);
 }
 
+#[cfg(unix)]
+#[test]
+fn a_worker_that_ignores_the_stop_is_killed_after_its_parent_exits() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("step.log");
+    let pid = dir.path().join("worker.pid");
+    let stop = AtomicBool::new(false);
+    // The shell exits on TERM; the worker it started ignores it.
+    let script = format!(
+        "( trap '' TERM; sleep 30 ) & echo $! > '{}'; wait",
+        pid.display()
+    );
+    let args = [OsStr::new("-c"), OsStr::new(&script)];
+    let finished = run(&job(&args, &log, Duration::from_millis(500), &stop)).unwrap();
+    assert!(finished.timed_out);
+    let worker = fs::read_to_string(&pid)
+        .unwrap()
+        .trim()
+        .parse::<i32>()
+        .unwrap();
+    let worker = rustix::process::Pid::from_raw(worker).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while rustix::process::test_kill_process(worker).is_ok() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        rustix::process::test_kill_process(worker).is_err(),
+        "the worker outlived the stop"
+    );
+}
+
 #[test]
 fn tails_keep_whole_lines() {
     let dir = tempfile::tempdir().unwrap();

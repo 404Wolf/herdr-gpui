@@ -111,19 +111,32 @@ pub fn run(job: &Job<'_>) -> Result<Finished> {
     })
 }
 
-/// Asks the command's process group to stop, then kills it.
+/// Asks the command's process group to stop, then kills what is left of
+/// it. The command exiting is not enough: a worker it started that ignores
+/// the request would carry on after the run is reported stopped, so the
+/// grace period lasts until the whole group is gone.
 fn end(child: &mut Child) -> std::process::ExitStatus {
     #[cfg(unix)]
     if let Some(group) = rustix::process::Pid::from_raw(i32::try_from(child.id()).unwrap_or(0)) {
-        let _ = rustix::process::kill_process_group(group, rustix::process::Signal::TERM);
+        use rustix::process::{Signal, kill_process_group, test_kill_process_group};
+        let _ = kill_process_group(group, Signal::TERM);
         let deadline = Instant::now() + GRACE;
+        let mut exited = None;
         while Instant::now() < deadline {
-            if let Ok(Some(status)) = child.try_wait() {
-                return status;
+            if exited.is_none()
+                && let Ok(Some(status)) = child.try_wait()
+            {
+                exited = Some(status);
+            }
+            if exited.is_some() && test_kill_process_group(group).is_err() {
+                break;
             }
             thread::sleep(POLL);
         }
-        let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
+        let _ = kill_process_group(group, Signal::KILL);
+        if let Some(status) = exited {
+            return status;
+        }
     }
     let _ = child.kill();
     match child.wait() {

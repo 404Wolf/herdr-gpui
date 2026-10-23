@@ -5,7 +5,7 @@
 
 use crate::{
     daemon::Lock,
-    paths::Paths,
+    paths::{CONFIG_DIR, Paths, STATE_DIR},
     store::{RequestKind, Store},
 };
 use std::{
@@ -78,10 +78,21 @@ pub fn installed() -> bool {
     }
 }
 
+/// What the daemon's environment needs from the installing shell's: its
+/// `PATH`, and the directories this command uses, so a `HERDR_AUTOMATE_HOME`
+/// or XDG directory set only in the shell still applies.
+fn environment(paths: &Paths) -> Vec<(&'static str, String)> {
+    vec![
+        ("PATH", std::env::var("PATH").unwrap_or_default()),
+        (STATE_DIR, paths.state.to_string_lossy().into_owned()),
+        (CONFIG_DIR, paths.config.to_string_lossy().into_owned()),
+    ]
+}
+
 /// The service for `exe`, which runs `exe serve`.
 pub fn describe(exe: &Path, paths: &Paths) -> Result<Service, Error> {
     let exe_text = exe.to_string_lossy().into_owned();
-    let path_var = std::env::var("PATH").unwrap_or_default();
+    let environment = environment(paths);
     if cfg!(target_os = "macos") {
         let uid = user_id();
         let file = file().ok_or(Error::NoHome)?;
@@ -99,14 +110,17 @@ pub fn describe(exe: &Path, paths: &Paths) -> Result<Service, Error> {
   <key>ProgramArguments</key><array><string>{}</string><string>serve</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>{}</string></dict>
+  <key>EnvironmentVariables</key><dict>{}</dict>
   <key>StandardOutPath</key><string>{}</string>
   <key>StandardErrorPath</key><string>{}</string>
 </dict>
 </plist>
 "#,
             xml(&exe_text),
-            xml(&path_var),
+            environment
+                .iter()
+                .map(|(name, value)| format!("<key>{name}</key><string>{}</string>", xml(value)))
+                .collect::<String>(),
             xml(&out),
             xml(&out)
         );
@@ -130,9 +144,17 @@ pub fn describe(exe: &Path, paths: &Paths) -> Result<Service, Error> {
         });
     }
     if cfg!(windows) {
+        // A logon task cannot set variables, so it runs a script that does.
+        let launcher = paths.state.join("serve.cmd");
+        let mut content = String::from("@echo off\r\n");
+        for (name, value) in environment.iter().filter(|(name, _)| *name != "PATH") {
+            // `%` is the only character a batch file expands inside quotes.
+            content.push_str(&format!("set \"{name}={}\"\r\n", value.replace('%', "%%")));
+        }
+        content.push_str(&format!("\"{}\" serve\r\n", exe_text.replace('%', "%%")));
         return Ok(Service {
-            file: None,
-            content: None,
+            file: Some(launcher.clone()),
+            content: Some(content),
             commands: vec![
                 vec![
                     "schtasks".into(),
@@ -145,7 +167,7 @@ pub fn describe(exe: &Path, paths: &Paths) -> Result<Service, Error> {
                     "LIMITED".into(),
                     "/F".into(),
                     "/TR".into(),
-                    format!("\"{exe_text}\" serve"),
+                    format!("\"{}\"", launcher.to_string_lossy()),
                 ],
                 vec!["schtasks".into(), "/Run".into(), "/TN".into(), TASK.into()],
             ],
@@ -154,9 +176,14 @@ pub fn describe(exe: &Path, paths: &Paths) -> Result<Service, Error> {
     let file = file().ok_or(Error::NoHome)?;
     let content = format!(
         "[Unit]\nDescription=herdr-automate: Herdr automations\n\n[Service]\nExecStart=\"{}\" serve\n\
-         Restart=on-failure\nRestartSec=10\nEnvironment=\"PATH={}\"\n\n[Install]\nWantedBy=default.target\n",
-        exe_text.replace('"', "\\\""),
-        path_var.replace('"', "\\\"")
+         Restart=on-failure\nRestartSec=10\n{}\n[Install]\nWantedBy=default.target\n",
+        // `$` would name a variable in a command line, though not in
+        // `Environment=`.
+        systemd_quote(&exe_text).replace('$', "$$"),
+        environment
+            .iter()
+            .map(|(name, value)| format!("Environment=\"{name}={}\"\n", systemd_quote(value)))
+            .collect::<String>(),
     );
     Ok(Service {
         commands: vec![
@@ -172,6 +199,14 @@ pub fn describe(exe: &Path, paths: &Paths) -> Result<Service, Error> {
         file: Some(file),
         content: Some(content),
     })
+}
+
+/// Text inside a systemd double-quoted word: backslashes and quotes are
+/// escaped, and `%` starts a specifier, so it is doubled.
+fn systemd_quote(text: &str) -> String {
+    text.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('%', "%%")
 }
 
 fn xml(text: &str) -> String {
@@ -211,7 +246,7 @@ pub fn install(service: &Service, paths: &Paths) -> Result<(), Error> {
             other => other?,
         }
     }
-    if service.file.is_none() {
+    if cfg!(windows) {
         let marker = paths.state.join("service");
         let _ = fs::create_dir_all(&paths.state);
         fs::write(&marker, TASK).map_err(|source| Error::Io {
@@ -255,6 +290,7 @@ pub fn uninstall(paths: &Paths) -> Result<(), Error> {
         fs::remove_file(&file).map_err(|source| Error::Io { path: file, source })?;
     }
     let _ = fs::remove_file(paths.state.join("service"));
+    let _ = fs::remove_file(paths.state.join("serve.cmd"));
     Ok(())
 }
 
@@ -353,3 +389,7 @@ pub fn shutdown(paths: &Paths, store: &Store) -> crate::Result<bool> {
     }
     Err(Error::StopTimeout.into())
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests;

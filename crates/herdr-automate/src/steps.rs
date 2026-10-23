@@ -7,10 +7,12 @@ use crate::{
     herdr::Herdr,
     paths::{Paths, private_dir, private_file},
     process::{self, Job},
+    runner::Reservation,
     store::{AgentRow, Store},
 };
 use herdr_automation::{Resolved, Step};
 use std::{
+    cell::Cell,
     ffi::OsStr,
     io::Write,
     path::{Path, PathBuf},
@@ -38,6 +40,10 @@ pub enum Error {
     NoRepository,
     #[error(transparent)]
     Run(#[from] crate::Error),
+    #[error(
+        "a command that uses an earlier step's output needs a Unix shell; cmd cannot keep it from being read as commands"
+    )]
+    TokensNeedUnixShell,
     #[error("the checkout is on {current}, not {wanted}; the step does not switch branches")]
     WrongBranch { current: String, wanted: String },
 }
@@ -55,6 +61,9 @@ pub struct StepContext<'a> {
     /// Its worktree scripts as approved and read when the run started.
     pub worktree: Option<&'a WorktreeScripts>,
     pub stop: &'a AtomicBool,
+    /// The host slot the runner reserved for an agent step, released once
+    /// the agent is recorded and counts itself.
+    pub reserved: &'a Cell<Option<Reservation>>,
     pub now: fn() -> i64,
 }
 
@@ -257,6 +266,11 @@ fn shell(
     env: &[(String, String)],
     timeout: Duration,
 ) -> Outcome {
+    // `cmd` expands `%NAME%` before it parses the line, so a value would
+    // be read as commands: refuse rather than hand it over.
+    if cfg!(windows) && !env.is_empty() {
+        return Err(Error::TokensNeedUnixShell);
+    }
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let cwd = context.repo.map(Path::to_path_buf).or(home);
     let mut variables = env.to_vec();
@@ -328,7 +342,10 @@ fn agent(
         ..AgentRow::default()
     };
     context.store.add_agent(&row)?;
-    context.herdr.prompt(&created.pane, prompt, wait)?;
+    drop(context.reserved.take());
+    context
+        .herdr
+        .prompt(&created.pane, prompt, wait, context.stop)?;
     let waited = if wait.is_some() {
         ", and it finished"
     } else {

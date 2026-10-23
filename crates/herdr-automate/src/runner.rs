@@ -17,10 +17,11 @@ use herdr_automation::{
     report::{RunState, StepState},
 };
 use std::{
+    cell::Cell,
     fmt,
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, Mutex, PoisonError,
         atomic::{AtomicBool, Ordering},
     },
     time::Instant,
@@ -68,13 +69,36 @@ impl fmt::Display for Halt {
     }
 }
 
+/// Agents that passed the host's cap but are not recorded yet, across the
+/// daemon's runs. Checking the cap counts them, so two runs starting agents
+/// at once cannot both take the last slot.
+#[derive(Debug, Default)]
+pub struct Slots(Mutex<u32>);
+
+/// A slot held for one agent until its row is recorded or its start fails.
+#[must_use]
+pub struct Reservation(Arc<Slots>);
+
+impl Drop for Reservation {
+    fn drop(&mut self) {
+        let mut starting = self.0.0.lock().unwrap_or_else(PoisonError::into_inner);
+        *starting = starting.saturating_sub(1);
+    }
+}
+
 /// How a run ended, for the store.
 pub struct Ended {
     pub state: RunState,
     pub detail: Option<String>,
 }
 
-pub fn execute(paths: &Paths, settings: &Settings, herdr: &Herdr, job: &Job) -> Result<Ended> {
+pub fn execute(
+    paths: &Paths,
+    settings: &Settings,
+    herdr: &Herdr,
+    slots: &Arc<Slots>,
+    job: &Job,
+) -> Result<Ended> {
     let store = Store::open(&paths.database())?;
     let plan = Plan::build(&job.source, Limits::default())?;
     let Some(trigger) = plan.triggers.get(job.trigger) else {
@@ -85,6 +109,7 @@ pub fn execute(paths: &Paths, settings: &Settings, herdr: &Herdr, job: &Job) -> 
     };
     let mut walker = Walker::new(trigger);
     let deadline = Instant::now() + plan.caps.wall_time;
+    let reserved = Cell::new(None);
     let context = StepContext {
         paths,
         store: &store,
@@ -95,6 +120,7 @@ pub fn execute(paths: &Paths, settings: &Settings, herdr: &Herdr, job: &Job) -> 
         repo: job.repo.as_deref(),
         worktree: job.worktree.as_ref(),
         stop: &job.stop,
+        reserved: &reserved,
         now,
     };
     let mut log_tails = Vec::<Option<String>>::new();
@@ -116,8 +142,9 @@ pub fn execute(paths: &Paths, settings: &Settings, herdr: &Herdr, job: &Job) -> 
                 return Verdict::Halt(Halt::OffPlan);
             }
             if call.step.kind() == Kind::Agent {
-                if let Some(halt) = agent_cap(&store, settings, &plan, &job.path, agents) {
-                    return Verdict::Halt(halt);
+                match agent_cap(&store, settings, slots, &plan, &job.path, agents) {
+                    Ok(slot) => reserved.set(Some(slot)),
+                    Err(halt) => return Verdict::Halt(halt),
                 }
                 agents += 1;
             }
@@ -135,6 +162,8 @@ pub fn execute(paths: &Paths, settings: &Settings, herdr: &Herdr, job: &Job) -> 
                 .timeout
                 .map_or(remaining, |timeout| timeout.min(remaining));
             let result = steps::execute(&context, &resolved, position, timeout);
+            // A start that failed before its row was recorded frees its slot.
+            drop(reserved.take());
             let row = StepRow {
                 run: job.run,
                 position,
@@ -161,6 +190,11 @@ pub fn execute(paths: &Paths, settings: &Settings, herdr: &Herdr, job: &Job) -> 
             log_tails.push(Some(result.log_tail));
             run_ids.push(result.run_id);
             walker.record(result.ok);
+            // A stop that ended the step ends the run, whatever the step's
+            // result would make the script do next.
+            if job.stop.load(Ordering::Relaxed) {
+                return Verdict::Halt(Halt::Stopped);
+            }
             if result.ok {
                 Verdict::Succeeded
             } else {
@@ -199,23 +233,17 @@ pub fn execute(paths: &Paths, settings: &Settings, herdr: &Herdr, job: &Job) -> 
     })
 }
 
-/// The cap an agent step would cross, if any.
+/// A slot for one more agent, or the cap it would cross.
 fn agent_cap(
     store: &Store,
     settings: &Settings,
+    slots: &Arc<Slots>,
     plan: &Plan,
     path: &str,
     started: u32,
-) -> Option<Halt> {
+) -> std::result::Result<Reservation, Halt> {
     if started >= plan.caps.agents_per_run {
-        return Some(Halt::AgentsPerRun);
-    }
-    let live = store
-        .agents(true)
-        .map(|agents| agents.len())
-        .unwrap_or(usize::MAX);
-    if live >= usize::try_from(settings.caps.max_agents).unwrap_or(usize::MAX) {
-        return Some(Halt::HostAgents);
+        return Err(Halt::AgentsPerRun);
     }
     let today = start_of_day();
     let used = |path: Option<&str>| {
@@ -227,12 +255,23 @@ fn agent_cap(
             .unwrap_or(0)
     };
     if used(Some(path)) >= plan.caps.tokens_per_day {
-        return Some(Halt::ScriptTokens);
+        return Err(Halt::ScriptTokens);
     }
     if used(None) >= settings.caps.max_tokens_per_day {
-        return Some(Halt::HostTokens);
+        return Err(Halt::HostTokens);
     }
-    None
+    // Held while counting, so the count and the reservation are one step.
+    let mut starting = slots.0.lock().unwrap_or_else(PoisonError::into_inner);
+    let live = store
+        .agents(true)
+        .map(|agents| agents.len())
+        .unwrap_or(usize::MAX)
+        .saturating_add(usize::try_from(*starting).unwrap_or(usize::MAX));
+    if live >= usize::try_from(settings.caps.max_agents).unwrap_or(usize::MAX) {
+        return Err(Halt::HostAgents);
+    }
+    *starting += 1;
+    Ok(Reservation(slots.clone()))
 }
 
 pub fn now() -> i64 {

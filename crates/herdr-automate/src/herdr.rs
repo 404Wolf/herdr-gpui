@@ -6,8 +6,10 @@
 use serde::Deserialize;
 use serde_json::Value;
 use std::{
+    io::Read,
     path::{Path, PathBuf},
     process::{Output, Stdio},
+    sync::atomic::{AtomicBool, Ordering},
     thread,
     time::{Duration, Instant},
 };
@@ -18,6 +20,10 @@ const AGENT_START_TIMEOUT_MS: &str = "90000";
 const BUSY_RETRY: Duration = Duration::from_secs(10);
 /// How long to wait for a server the daemon started.
 const SERVER_START: Duration = Duration::from_secs(120);
+/// The most of a cancellable call's output kept, per stream.
+const MAX_OUTPUT: u64 = 1024 * 1024;
+/// How often a cancellable call looks at its stop request.
+const POLL: Duration = Duration::from_millis(100);
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -31,6 +37,10 @@ pub enum Error {
     },
     #[error("herdr {command} failed: {message}")]
     Failed { command: String, message: String },
+    #[error("herdr {command}: the pane is gone")]
+    PaneNotFound { command: String },
+    #[error("herdr {command} was stopped on request")]
+    Stopped { command: String },
     #[error("herdr {command} answered something unexpected: {source}")]
     Answer {
         command: String,
@@ -113,6 +123,40 @@ impl Herdr {
                 program: self.program.clone(),
                 source,
             })?;
+        answer(&name, &output)
+    }
+
+    /// As `call`, for a call that can take hours: a stop request ends it.
+    fn call_until_stopped(&self, args: &[&str], stop: &AtomicBool) -> Result<Value> {
+        let name = args.iter().take(2).copied().collect::<Vec<_>>().join(" ");
+        let launch = |source| Error::Launch {
+            program: self.program.clone(),
+            source,
+        };
+        let mut child = self
+            .command(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(launch)?;
+        let stdout = drain(child.stdout.take());
+        let stderr = drain(child.stderr.take());
+        let status = loop {
+            if let Some(status) = child.try_wait().map_err(launch)? {
+                break status;
+            }
+            if stop.load(Ordering::Relaxed) {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(Error::Stopped { command: name });
+            }
+            thread::sleep(POLL);
+        };
+        let output = Output {
+            status,
+            stdout: stdout.join().unwrap_or_default(),
+            stderr: stderr.join().unwrap_or_default(),
+        };
         answer(&name, &output)
     }
 
@@ -216,16 +260,23 @@ impl Herdr {
         }
     }
 
-    /// Sends `prompt`; with `wait`, returns once the agent is done or
-    /// `timeout` passes.
-    pub fn prompt(&self, pane: &str, prompt: &str, wait: Option<Duration>) -> Result<()> {
-        let millis;
+    /// Sends `prompt`; with `wait`, returns once the agent is done,
+    /// `timeout` passes, or `stop` is set. Stopping ends the wait, not the
+    /// agent, which keeps its pane as any agent the daemon started does.
+    pub fn prompt(
+        &self,
+        pane: &str,
+        prompt: &str,
+        wait: Option<Duration>,
+        stop: &AtomicBool,
+    ) -> Result<()> {
         let mut args = vec!["agent", "prompt", pane, prompt];
-        if let Some(timeout) = wait {
-            millis = timeout.as_millis().clamp(1_000, 86_400_000).to_string();
-            args.extend(["--wait", "--until", "done", "--timeout", &millis]);
-        }
-        self.call(&args).map(drop)
+        let Some(timeout) = wait else {
+            return self.call(&args).map(drop);
+        };
+        let millis = timeout.as_millis().clamp(1_000, 86_400_000).to_string();
+        args.extend(["--wait", "--until", "done", "--timeout", &millis]);
+        self.call_until_stopped(&args, stop).map(drop)
     }
 
     pub fn notify(&self, title: &str, body: &str) -> Result<()> {
@@ -260,6 +311,17 @@ impl Herdr {
     }
 }
 
+/// Reads a child's stream while it runs, so a full pipe never blocks it.
+fn drain(stream: Option<impl Read + Send + 'static>) -> thread::JoinHandle<Vec<u8>> {
+    thread::spawn(move || {
+        let mut bytes = Vec::new();
+        if let Some(stream) = stream {
+            let _ = stream.take(MAX_OUTPUT).read_to_end(&mut bytes);
+        }
+        bytes
+    })
+}
+
 /// The `result` of a Herdr answer, or its error. Herdr prints results on
 /// stdout and `{"error": {"code", "message"}}` on stderr.
 fn answer(command: &str, output: &Output) -> Result<Value> {
@@ -272,8 +334,18 @@ fn answer(command: &str, output: &Output) -> Result<Value> {
         return Ok(envelope.get("result").cloned().unwrap_or(envelope));
     }
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let message = serde_json::from_str::<Value>(stderr.trim())
-        .ok()
+    let error = serde_json::from_str::<Value>(stderr.trim()).ok();
+    if error
+        .as_ref()
+        .and_then(|error| error.pointer("/error/code"))
+        .and_then(Value::as_str)
+        == Some("pane_not_found")
+    {
+        return Err(Error::PaneNotFound {
+            command: command.to_owned(),
+        });
+    }
+    let message = error
         .and_then(|error| {
             let code = error
                 .pointer("/error/code")

@@ -50,7 +50,15 @@ fn run_with(
         time: "03:00".to_owned(),
         stop: Arc::new(AtomicBool::new(stop)),
     };
-    let ended = execute(&fixture.paths, &fixture.settings(), &fixture.herdr, &job).unwrap();
+    let slots = Arc::default();
+    let ended = execute(
+        &fixture.paths,
+        &fixture.settings(),
+        &fixture.herdr,
+        &slots,
+        &job,
+    )
+    .unwrap();
     (run, ended)
 }
 
@@ -276,4 +284,47 @@ fn run_uses_the_worktree_scripts_read_when_the_run_started() {
         RunState::Stopped,
         "no snapshot, no worktree script"
     );
+}
+
+#[test]
+fn a_host_slot_is_reserved_until_its_agent_is_recorded_or_fails() {
+    let fixture = Fixture::new();
+    let mut settings = fixture.settings();
+    settings.caps.max_agents = 1;
+    let store = fixture.store();
+    let source = Source::new(
+        "t",
+        "herdr.caps { agents_per_run = 2, tokens_per_day = 1_000, wall_time = \"1h\" }\n\
+         herdr.manual(function() end)\n",
+    );
+    let plan = Plan::build(&source, Limits::default()).unwrap();
+    let slots = Arc::default();
+    // Two runs check the cap before either records its agent: only one
+    // gets the host's last slot.
+    let first = agent_cap(&store, &settings, &slots, &plan, "a", 0).unwrap();
+    assert!(matches!(
+        agent_cap(&store, &settings, &slots, &plan, "b", 0),
+        Err(Halt::HostAgents)
+    ));
+    // A start that fails frees it.
+    drop(first);
+    let second = agent_cap(&store, &settings, &slots, &plan, "b", 0).unwrap();
+    // Once recorded, the agent's row holds the slot instead.
+    store
+        .add_agent(&AgentRow {
+            run: 1,
+            position: 1,
+            path: "b".to_owned(),
+            harness: "claude".to_owned(),
+            pane: "w1p1".to_owned(),
+            cwd: "/tmp".to_owned(),
+            started_at: now(),
+            ..AgentRow::default()
+        })
+        .unwrap();
+    drop(second);
+    assert!(matches!(
+        agent_cap(&store, &settings, &slots, &plan, "a", 0),
+        Err(Halt::HostAgents)
+    ));
 }

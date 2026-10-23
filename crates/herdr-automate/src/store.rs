@@ -231,7 +231,8 @@ impl Store {
 
     // Scheduling cursors
 
-    /// When trigger `index` was last checked and last fired.
+    /// When trigger `index` was last checked, and its anchor: when it last
+    /// fired, or when it started counting.
     pub fn cursor(&self, path: &str, index: usize) -> Result<Option<(i64, Option<i64>)>> {
         Ok(self
             .connection
@@ -515,23 +516,26 @@ impl Store {
         Ok(self.connection.last_insert_rowid())
     }
 
-    /// Takes every waiting request, oldest first.
+    /// Takes every waiting request, oldest first. One statement claims
+    /// and returns them, so a request a command adds meanwhile is either
+    /// taken here or left for the next call, never claimed unread.
     pub fn take_requests(&self, now: i64) -> Result<Vec<Request>> {
         let mut statement = self.connection.prepare(
-            "SELECT id, kind, path, argument, created_at FROM requests WHERE taken_at IS NULL ORDER BY id",
+            "UPDATE requests SET taken_at = ?1 WHERE taken_at IS NULL
+             RETURNING id, kind, path, argument, created_at",
         )?;
-        let requests = statement
-            .query_map([], Request::read)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        self.connection.execute(
-            "UPDATE requests SET taken_at = ?1 WHERE taken_at IS NULL",
-            params![now],
-        )?;
+        let mut requests = statement
+            .query_map(params![now], Request::read)?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        requests.sort_by_key(|request| request.id);
         self.connection.execute(
             "DELETE FROM requests WHERE taken_at IS NOT NULL AND taken_at < ?1",
             params![now - 86_400],
         )?;
-        Ok(requests.into_iter().flatten().collect())
+        Ok(requests)
     }
 
     // The daemon itself

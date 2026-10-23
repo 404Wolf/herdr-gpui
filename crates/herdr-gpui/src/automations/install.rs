@@ -228,9 +228,10 @@ pub(crate) fn install(
         // `start` does nothing while a daemon holds the lock: stop the old
         // one first. It lets its runs finish, which can take a while.
         fetch::act_within(host, &["shutdown"], SHUTDOWN_IDLE, cancelled)?;
-    } else {
-        fetch::act(host, &["install-service"], cancelled)?;
     }
+    // On an update too: the service names the executable it runs, and the
+    // one written before names the old version.
+    fetch::act(host, &["install-service"], cancelled)?;
     let started = fetch::act(host, &["start"], cancelled)?;
     Ok(started.message)
 }

@@ -9,7 +9,7 @@ use crate::{
     herdr::Herdr,
     logbook::Logbook,
     paths::{Paths, private_dir, private_file},
-    runner::{self, Ended, Job},
+    runner::{self, Ended, Job, Slots},
     sampler,
     scan::{self, Found},
     settings::Settings,
@@ -111,6 +111,7 @@ struct Daemon<'a> {
     herdr: Herdr,
     loaded: HashMap<String, Loaded>,
     live: HashMap<String, Live>,
+    slots: Arc<Slots>,
     done: mpsc::Sender<(String, i64, Result<Ended>)>,
 }
 
@@ -151,6 +152,7 @@ pub fn serve(paths: &Paths) -> Result<()> {
         herdr,
         loaded: HashMap::new(),
         live: HashMap::new(),
+        slots: Arc::default(),
         done,
     };
     let served = daemon.serve(started, &finished);
@@ -344,8 +346,10 @@ impl Daemon<'_> {
             let zone = trigger.zone.time_zone();
             let Some((checked, fired)) = self.store.cursor(path, index)?.filter(|_| active) else {
                 // Inactive, or never checked: count from now, so a script
-                // fires nothing for the time it was off.
-                self.store.set_cursor(path, index, now, None)?;
+                // fires nothing for the time it was off. Now is also the
+                // anchor an interval counts from until its first firing;
+                // `checked` moves every tick, so it cannot be.
+                self.store.set_cursor(path, index, now, Some(now))?;
                 continue;
             };
             let found = due(
@@ -437,22 +441,22 @@ impl Daemon<'_> {
             path: path.to_owned(),
             repo: script.repo.clone(),
             source: script.source.clone(),
-            worktree: Fingerprint::of(&script.source, &script.plan, script.repo.as_deref())
-                .worktree,
+            worktree: fingerprint.worktree,
             trigger: index,
             date: local.strftime("%Y-%m-%d").to_string(),
             time: local.strftime("%H:%M").to_string(),
             stop: stop.clone(),
         };
         self.live.insert(path.to_owned(), Live { run, stop });
-        let (paths, settings, herdr, done) = (
+        let (paths, settings, herdr, slots, done) = (
             self.paths.clone(),
             self.settings.clone(),
             self.herdr.clone(),
+            self.slots.clone(),
             self.done.clone(),
         );
         thread::spawn(move || {
-            let ended = runner::execute(&paths, &settings, &herdr, &job);
+            let ended = runner::execute(&paths, &settings, &herdr, &slots, &job);
             let _ = done.send((job.path.clone(), job.run, ended));
         });
     }

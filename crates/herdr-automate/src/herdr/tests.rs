@@ -15,7 +15,12 @@ fn worktrees_and_agents_go_through_the_cli() {
         .start_agent("nightly-1", "claude", &created.pane)
         .unwrap();
     herdr
-        .prompt(&created.pane, "Review main.", Some(Duration::from_secs(60)))
+        .prompt(
+            &created.pane,
+            "Review main.",
+            Some(Duration::from_secs(60)),
+            &AtomicBool::new(false),
+        )
         .unwrap();
     let calls = fixture.calls();
     assert!(
@@ -32,6 +37,26 @@ fn worktrees_and_agents_go_through_the_cli() {
         calls.contains("agent prompt w1p1 Review main. --wait --until done --timeout 60000"),
         "{calls}"
     );
+}
+
+#[test]
+fn a_stop_request_ends_a_wait_for_the_agent() {
+    let fixture = Fixture::new();
+    let stop = std::sync::Arc::new(AtomicBool::new(false));
+    let stopper = {
+        let stop = stop.clone();
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(300));
+            stop.store(true, Ordering::Relaxed);
+        })
+    };
+    let started = Instant::now();
+    let waited = fixture
+        .herdr
+        .prompt("w1p1", "slow", Some(Duration::from_secs(3_600)), &stop);
+    stopper.join().unwrap();
+    assert!(matches!(waited, Err(Error::Stopped { .. })), "{waited:?}");
+    assert!(started.elapsed() < Duration::from_secs(10));
 }
 
 #[test]
