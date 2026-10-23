@@ -1,6 +1,8 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
 
+mod chat_lines;
+
 #[test]
 fn output_is_whole_and_only_a_terminal_loses_controls() {
     let patch = format!("{}\r\n\u{1b}[31mred\u{1b}[0m\n", "+".repeat(2 << 20));

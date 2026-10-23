@@ -9,6 +9,8 @@ mod cloud;
 mod device_theme;
 mod forwards;
 mod menu_width;
+#[cfg(feature = "azure")]
+mod unsynced;
 
 // Endpoint IDs carry the `ssh:` prefix; the profile ID is the rest.
 const HOST: &str = "ssh:0123456789abcdef0123456789abcdef";

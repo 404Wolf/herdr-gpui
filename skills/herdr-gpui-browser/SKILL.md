@@ -211,6 +211,7 @@ for what only Herdr UI shows or keeps.
 | --- | --- |
 | Show a file at a line, read-only | `herdr-gpui code open src/main.rs:42` |
 | Open the review of your uncommitted changes | `herdr-gpui review` |
+| Open px0 to browse, edit, or review your local checkout (macOS/Windows) | `herdr-gpui px0 open` |
 | Get notes the user sent this pane (pages, reviews, terminals) | `herdr-gpui feedback --wait 600` |
 | Keep a note on this worktree (repository and branch) | `herdr-gpui notes set waiting on CI` |
 | Save the working tree before a risky change, and compare later | `herdr-gpui checkpoint create before refactor`, `herdr-gpui checkpoint diff ID` |
@@ -221,6 +222,7 @@ for what only Herdr UI shows or keeps.
 | Show the Automations section: every host's scripts and runs | `herdr-gpui ui panel automations` |
 | Open a dev server in a tab, forwarded when you run on an SSH host | `herdr-gpui ports open 3000` |
 | See the processes under a pane, with CPU and memory | `herdr-gpui processes` |
+| Start a chat with another agent in a new tab, shown as a native chat view | `herdr-gpui chat new claude`, then `herdr-gpui chat` for its status |
 | List or focus the app's windows and its own tabs | `herdr-gpui window`, `herdr-gpui tab`, `herdr-gpui tab focus ID` |
 | Block until something happens in the app | `herdr-gpui wait tab-closed ID --timeout 600`, `herdr-gpui events --follow` |
 | Read or change a Herdr UI setting | `herdr-gpui config get KEY`, `herdr-gpui config set KEY VALUE` |

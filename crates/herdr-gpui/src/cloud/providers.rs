@@ -1,7 +1,7 @@
 //! Every provider described once. A provider is one row of the table at the
 //! bottom: its feature, module, words, logo, how its command is prepared,
-//! whether removing a device can delete the machine there too, and how it
-//! makes a new machine without a dialog. The macro
+//! whether removing a device can delete the machine there too, which sandbox
+//! images it holds, and how it makes a new machine without a dialog. The macro
 //! turns the rows into the `match`es the rest of the app calls, so supporting
 //! another provider adds a row here rather than an arm in each of them.
 
@@ -72,9 +72,26 @@ macro_rules! providers {
             noun: $noun:literal,
             command: $command:ident,
             deletion: $deletion:expr,
+            image: $image:expr,
             provision: $provision:expr $(,)?
         }
     ),* $(,)?) => {
+        /// A provider's own failure, as one variant of the app's root error,
+        /// so supporting a provider never edits that enum.
+        #[derive(Debug, thiserror::Error)]
+        pub enum ProviderError {
+            $(#[cfg(feature = $feature)]
+            #[error(transparent)]
+            $variant(#[from] crate::$module::Error),)*
+        }
+
+        $(#[cfg(feature = $feature)]
+        impl From<crate::$module::Error> for crate::Error {
+            fn from(error: crate::$module::Error) -> Self {
+                Self::Provider(ProviderError::$variant(error))
+            }
+        })*
+
         /// The provider's name, as the UI shows it.
         pub(crate) fn name(provider: CloudProvider) -> &'static str {
             match provider {
@@ -108,6 +125,14 @@ macro_rules! providers {
         pub(crate) fn deletion(provider: CloudProvider) -> Option<Deletion> {
             match provider {
                 $(#[cfg(feature = $feature)] CloudProvider::$variant => $deletion,)*
+            }
+        }
+
+        /// How the provider holds sandbox images built from a project's
+        /// recipe, if it can.
+        pub(crate) fn image(provider: CloudProvider) -> Option<&'static super::image::Support> {
+            match provider {
+                $(#[cfg(feature = $feature)] CloudProvider::$variant => $image,)*
             }
         }
 
@@ -182,6 +207,7 @@ providers! {
             leftovers: ", with its disk and IP,",
             run: crate::azure::destroy::destroy_saved,
         }),
+        image: None,
         provision: Some(crate::azure::create::provision),
     },
     "boat" Boat => {
@@ -196,6 +222,7 @@ providers! {
             leftovers: ", with its snapshots,",
             run: crate::boat::destroy::destroy_saved,
         }),
+        image: None,
         provision: Some(crate::boat::create::provision),
     },
     "coder" Coder => {
@@ -210,7 +237,23 @@ providers! {
             leftovers: ", with its disk,",
             run: crate::coder::setup::destroy_saved,
         }),
+        image: None,
         provision: Some(crate::coder::create::provision),
+    },
+    "container" Container => {
+        module: container,
+        name: "Container",
+        icon: "icons/cloud/container.svg",
+        offer: "Create a Docker or Podman container in Settings",
+        noun: "container",
+        command: plain,
+        deletion: Some(Deletion {
+            noun: |_| "container",
+            leftovers: ", with its home volume,",
+            run: crate::container::destroy_saved,
+        }),
+        image: Some(&crate::container::image::SUPPORT),
+        provision: Some(crate::container::setup::provision),
     },
     // Sandboxes are created in Settings; existing ones cannot be attached yet.
     "daytona" Daytona => {
@@ -225,7 +268,23 @@ providers! {
             leftovers: "",
             run: crate::daytona::destroy::destroy_saved,
         }),
+        image: Some(&crate::daytona::image::SUPPORT),
         provision: Some(crate::daytona::create::provision),
+    },
+    "opensandbox" OpenSandbox => {
+        module: opensandbox,
+        name: "OpenSandbox",
+        icon: "icons/cloud/opensandbox.svg",
+        offer: "Create a sandbox on an OpenSandbox server in Settings",
+        noun: "sandbox",
+        command: plain,
+        deletion: Some(Deletion {
+            noun: |_| "sandbox",
+            leftovers: "",
+            run: crate::opensandbox::destroy_saved,
+        }),
+        image: None,
+        provision: Some(crate::opensandbox::setup::provision),
     },
     "railway" Railway => {
         module: railway,
@@ -235,7 +294,23 @@ providers! {
         noun: "VM",
         command: plain,
         deletion: None,
+        image: None,
         provision: Some(crate::railway::create::provision),
+    },
+    "sprites" Sprites => {
+        module: sprites,
+        name: "Sprites",
+        icon: "icons/cloud/sprites.svg",
+        offer: "Create a Fly sprite in Settings",
+        noun: "sprite",
+        command: plain,
+        deletion: Some(Deletion {
+            noun: |_| "sprite",
+            leftovers: ", with its files and checkpoints,",
+            run: crate::sprites::destroy_saved,
+        }),
+        image: None,
+        provision: Some(crate::sprites::setup::provision),
     },
     // keep-sorted end
 }

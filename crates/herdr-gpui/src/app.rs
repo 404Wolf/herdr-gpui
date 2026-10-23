@@ -209,6 +209,10 @@ pub(crate) fn open_additional_window_then(
 pub(crate) fn run() -> std::process::ExitCode {
     use cli::{LaunchMode, LaunchOptions};
     let mut args: Vec<_> = std::env::args_os().skip(1).collect();
+    #[cfg(target_os = "macos")]
+    if let Some(exit) = crate::window::run_clipboard_helper(&args) {
+        return exit;
+    }
     if let Some(exit) = updater::run_helper(&args) {
         return exit;
     }
@@ -222,6 +226,14 @@ pub(crate) fn run() -> std::process::ExitCode {
     }
     #[cfg(feature = "azure")]
     if let Some(exit) = crate::azure::sandbox::relay::run_helper(&args) {
+        return exit;
+    }
+    #[cfg(feature = "sprites")]
+    if let Some(exit) = crate::sprites::relay::run_helper(&args) {
+        return exit;
+    }
+    #[cfg(feature = "opensandbox")]
+    if let Some(exit) = crate::opensandbox::relay::run_helper(&args) {
         return exit;
     }
     // A control command asked for JSON gets its usage errors as JSON too.
@@ -435,8 +447,11 @@ pub(crate) fn run() -> std::process::ExitCode {
                 crate::window::system_notifications::install(cx);
                 // Nor do they start VS Code.
                 crate::code_server::Launcher::install(cx);
+                crate::px0::Launcher::install(cx);
                 #[cfg(feature = "azure")]
                 crate::azure::install(cx);
+                #[cfg(feature = "container")]
+                crate::container::idle::install(cx);
             }
             cx.set_global(appearance.select(light_appearance(cx)));
             app_icon::install();

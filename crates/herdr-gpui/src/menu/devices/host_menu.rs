@@ -84,6 +84,10 @@ pub(crate) struct HostMenu {
     /// keeps billing.
     #[cfg(feature = "cloud")]
     destroy: bool,
+    /// What the machine holds that is pushed nowhere, looked for when the
+    /// Remove page opens on a device its provider can delete.
+    #[cfg(feature = "cloud")]
+    unsynced: destroy::Unsynced,
     /// The new name while renaming, or the port to forward.
     input: Option<Entity<SearchInput>>,
     renaming: bool,
@@ -213,6 +217,8 @@ impl HerdrWindow {
             forget_github: true,
             #[cfg(feature = "cloud")]
             destroy: true,
+            #[cfg(feature = "cloud")]
+            unsynced: destroy::Unsynced::default(),
             input: None,
             renaming: false,
             error: None,
@@ -304,7 +310,11 @@ impl HerdrWindow {
                 }
                 self.menu.page = Some(Page::ForwardPort);
             }
-            Action::Remove => self.menu.page = Some(Page::RemoveDevice),
+            Action::Remove => {
+                self.menu.page = Some(Page::RemoveDevice);
+                #[cfg(feature = "cloud")]
+                self.check_unsynced(cx);
+            }
         }
         cx.notify();
     }
@@ -390,6 +400,15 @@ impl HerdrWindow {
     /// catalog drops the device, its sidebar header pulses the way a worktree
     /// row does while it is removed; a failure is reported in the status bar.
     fn confirm_remove_device(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        #[cfg(feature = "cloud")]
+        if self
+            .menu
+            .host
+            .as_ref()
+            .is_some_and(HostMenu::awaiting_check)
+        {
+            return;
+        }
         let Some(host) = self.menu.host.take() else {
             tracing::warn!(
                 category = "device_remove",
@@ -716,6 +735,7 @@ impl HerdrWindow {
                     .text_color(rgb(theme.subtext()))
                     .child(removal_note(host)),
             )
+            .children(self.unsynced_note(host))
             .when(github, |body| {
                 body.child(
                     div()
@@ -912,6 +932,10 @@ mod theme;
 #[cfg(not(feature = "cloud"))]
 impl HerdrWindow {
     fn remove_only_button(&self, _: &HostMenu, _: &mut Context<Self>) -> Option<Div> {
+        None
+    }
+
+    fn unsynced_note(&self, _: &HostMenu) -> Option<Div> {
         None
     }
 }

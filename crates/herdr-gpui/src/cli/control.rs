@@ -5,6 +5,7 @@
 mod app;
 mod batch;
 mod browser;
+mod chat;
 mod exec;
 mod hosts;
 mod settings;
@@ -17,6 +18,7 @@ pub use crate::control::{Cursor, EventKind, FontSize, Script, Size, Sound, Switc
 pub use app::{AppCommand, UiCommand, WindowCommand};
 pub use batch::BatchCommand;
 pub use browser::{BrowserCommand, Placement};
+pub use chat::ChatCommand;
 pub use exec::ExecCommand;
 pub use hosts::{
     AutomationCommand, CloudCommand, HostCommand, PortsCommand, PrCommand, SecurityCommand,
@@ -60,6 +62,8 @@ pub enum ControlCommand {
     Devices,
     Orchestrator(OrchestratorCommand),
     Review,
+    Chat(ChatCommand),
+    Px0,
     Notes(NotesCommand),
     /// Every kind of note the user sent this pane: page, review, terminal.
     Feedback {
@@ -157,6 +161,11 @@ pub const FAMILIES: &[(&str, &str)] = &[
         "A repository's issues, pull requests, and runs",
     ),
     ("review", "Open the review of the uncommitted changes"),
+    (
+        "chat",
+        "Native views of herdr-acp chats: start one, list them, show or hide one",
+    ),
+    ("px0", "Open px0 on the caller's local checkout"),
     ("notes", "Notes kept on worktrees"),
     (
         "feedback",
@@ -316,6 +325,11 @@ fn command(family: &'static str, args: &mut Args) -> Result<ControlCommand, CliE
         "review" => {
             tabs::open_only(args)?;
             ControlCommand::Review
+        }
+        "chat" => ControlCommand::Chat(chat::chat(args)?),
+        "px0" => {
+            tabs::open_only(args)?;
+            ControlCommand::Px0
         }
         "notes" => ControlCommand::Notes(work::notes(args)?),
         "feedback" => ControlCommand::Feedback {

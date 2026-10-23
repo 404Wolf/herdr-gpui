@@ -29,6 +29,8 @@ impl Page {
             #[cfg(feature = "coder")]
             Self::AddCoder => "Add Coder workspace",
             Self::AddDevice => "Add device",
+            #[cfg(feature = "cloud")]
+            Self::AddProvider => "Add cloud provider",
             Self::AddWsl => "Add WSL distribution",
             Self::AgentSkill => "Install the agent skill",
             Self::Application => "Menu",

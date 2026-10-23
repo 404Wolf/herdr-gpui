@@ -40,5 +40,16 @@ pub(crate) fn random(prefix: &str, limit: usize) -> String {
     }
 }
 
+/// A reference such as `ubuntu:24.04`, `ghcr.io/org/image@sha256:…`: passed
+/// as one argument, and never one a container engine could read as an option.
+pub(crate) fn image_reference(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 255
+        && !value.starts_with('-')
+        && value.bytes().all(|b| {
+            b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'/' | b':' | b'@')
+        })
+}
+
 #[cfg(test)]
 mod tests;

@@ -11,6 +11,7 @@ pub(crate) mod destroy;
 mod error;
 mod gateway;
 mod http;
+pub(crate) mod image;
 mod settings;
 pub(crate) mod setup;
 mod store;

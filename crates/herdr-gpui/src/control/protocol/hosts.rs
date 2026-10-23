@@ -61,6 +61,11 @@ pub(crate) enum HostOp {
     CloudSetup {
         id: String,
     },
+    /// Build the caller's repository's sandbox images, for `provider` (its
+    /// name or key) or every provider that holds images.
+    CloudImages {
+        provider: Option<String>,
+    },
 }
 
 impl HostOp {
@@ -210,7 +215,8 @@ pub(crate) struct SecurityRepoInfo {
     pub host: String,
     /// Its Dependabot alerts page.
     pub url: String,
-    /// "open", "off" (Dependabot alerts turned off), or "error".
+    /// "open", "off" (Dependabot alerts turned off), "hidden" (this sign-in
+    /// may not read alerts), or "error".
     pub state: String,
     /// Open alerts GitHub counts, which may be more than `alerts` holds.
     pub total: u64,

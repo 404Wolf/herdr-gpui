@@ -266,15 +266,22 @@ pub(crate) fn wheel_rows(
 pub struct WheelTarget {
     pub target: InputTarget,
     pub(crate) mouse_reporting: bool,
+    /// Whether the wheel goes to an application, as mouse reports or as the
+    /// alternate screen's arrow keys, rather than to the scrollback. Herdr
+    /// sends such an application one report per event whatever its count, so
+    /// a count must travel as that many events.
+    stepwise: bool,
     pub(crate) bounds: Bounds<Pixels>,
     position: ClientMousePosition,
     geometry: Option<ClientMouseGeometry>,
 }
 
 impl WheelTarget {
-    /// One event per moving axis, vertical first. Like a terminal wheel event,
-    /// each carries its whole count; Herdr reports one wheel button for it to
-    /// a mouse-reporting application and scrolls host scrollback by the count.
+    /// The events for `steps`, vertical first. Scrollback gets one event per
+    /// moving axis carrying its whole count, which Herdr scrolls by. An
+    /// application reading the wheel gets one single-step event per step,
+    /// since Herdr turns each event into exactly one report or key for it, as
+    /// a terminal sends one report per wheel step.
     pub fn wheel_events(
         &self,
         steps: WheelSteps,
@@ -299,13 +306,29 @@ impl WheelTarget {
         vertical
             .into_iter()
             .chain(horizontal)
-            .map(move |(kind, count)| {
-                let mut event = self.mouse_event(kind, modifiers);
-                if let ClientPaneInputEvent::Mouse { lines, .. } = &mut event {
-                    *lines = count.unsigned_abs();
-                }
-                event
+            .flat_map(move |(kind, count)| {
+                let count = count.unsigned_abs();
+                let (events, each) = if self.stepwise {
+                    (count, 1)
+                } else {
+                    (1, count)
+                };
+                (0..events).map(move |_| {
+                    let mut event = self.mouse_event(kind, modifiers);
+                    if let ClientPaneInputEvent::Mouse { lines, .. } = &mut event {
+                        *lines = each;
+                    }
+                    event
+                })
             })
+    }
+
+    /// The cell under the pointer, also for an application that asked for pixels.
+    pub(crate) fn cell(&self) -> (u16, u16) {
+        match self.position {
+            ClientMousePosition::Cell { column, row }
+            | ClientMousePosition::Pixels { column, row, .. } => (column, row),
+        }
     }
 
     pub(crate) fn mouse_event(
@@ -408,9 +431,16 @@ pub fn wheel_target(
     } else {
         ClientMousePosition::Cell { column, row }
     };
+    // A popup does not say whether it is on the alternate screen.
+    let stepwise = mouse_reporting
+        || matches!(&target, InputTarget::Pane(id) if surface
+            .panes
+            .iter()
+            .any(|pane| &pane.pane_id == id && pane.alternate_screen_active));
     Some(WheelTarget {
         target,
         mouse_reporting,
+        stepwise,
         bounds: Bounds::new(
             point(px(origin_x), px(origin_y)),
             size(

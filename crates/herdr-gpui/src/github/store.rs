@@ -243,7 +243,9 @@ fn keyring_save(_: Option<&SecretString>, _: &Account) -> Result<()> {
     feature = "azure",
     feature = "boat",
     feature = "coder",
-    feature = "daytona"
+    feature = "daytona",
+    feature = "opensandbox",
+    feature = "sprites"
 ))]
 pub(crate) struct Entry {
     // Only the keyrings address entries by these.
@@ -269,7 +271,9 @@ pub(crate) struct Entry {
     feature = "azure",
     feature = "boat",
     feature = "coder",
-    feature = "daytona"
+    feature = "daytona",
+    feature = "opensandbox",
+    feature = "sprites"
 ))]
 impl Store {
     /// The store for another feature's credential, from its own plaintext opt-in.
@@ -306,7 +310,9 @@ fn keychain_save(service: &str, account: &str, token: Option<&SecretString>) -> 
     feature = "azure",
     feature = "boat",
     feature = "coder",
-    feature = "daytona"
+    feature = "daytona",
+    feature = "opensandbox",
+    feature = "sprites"
 ))]
 pub(crate) fn read_entry(store: Store, entry: &Entry) -> Result<Option<SecretString>> {
     match store {
@@ -330,7 +336,9 @@ pub(crate) fn read_entry(store: Store, entry: &Entry) -> Result<Option<SecretStr
     feature = "azure",
     feature = "boat",
     feature = "coder",
-    feature = "daytona"
+    feature = "daytona",
+    feature = "opensandbox",
+    feature = "sprites"
 ))]
 pub(crate) fn save_entry(store: Store, entry: &Entry, token: Option<&SecretString>) -> Result<()> {
     if let Some(token) = token {

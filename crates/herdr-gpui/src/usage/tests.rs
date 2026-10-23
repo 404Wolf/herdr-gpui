@@ -14,12 +14,16 @@ use std::time::{Duration, Instant, SystemTime};
 mod antigravity_consent;
 mod browser_cookies;
 #[cfg(unix)]
+mod claude_base_url;
+#[cfg(unix)]
 mod claude_keychain;
 #[cfg(feature = "azure")]
 mod cloud_load;
 mod footer_fit;
 mod keychain_access;
 mod labels;
+#[cfg(unix)]
+mod linuxbrew_path;
 #[cfg(unix)]
 mod opencode_auth;
 mod pace_exhausted;

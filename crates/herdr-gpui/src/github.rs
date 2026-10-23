@@ -40,7 +40,9 @@ pub(crate) use {
     feature = "azure",
     feature = "boat",
     feature = "coder",
-    feature = "daytona"
+    feature = "daytona",
+    feature = "opensandbox",
+    feature = "sprites"
 ))]
 pub(crate) use store::{Entry, read_entry, save_entry};
 

@@ -109,6 +109,10 @@ mod workspace_click_hover;
 #[cfg(test)]
 mod workspace_menu;
 #[cfg(test)]
+mod workspace_menu_name;
+#[cfg(test)]
+mod worktree_identity;
+#[cfg(test)]
 mod worktree_note_trunk;
 #[cfg(test)]
 mod worktree_notes;
@@ -463,7 +467,9 @@ pub(crate) fn snapshot(workspace_count: usize) -> ClientShellSnapshot {
         })).collect::<Vec<_>>(),
         "panes": [], "commands": [],
         "workspaces": (0..workspace_count).map(|i| serde_json::json!({
-            "workspace_id": format!("w{i}"), "active_tab_id": "t0", "new_workspace_cwd": "/tmp",
+            "workspace_id": format!("w{i}"), "active_tab_id": "t0",
+            // The main checkout's shell stands in its repository, as Herdr opens it.
+            "new_workspace_cwd": if i == 3 { REPO_KEY.trim_end_matches("/.git") } else { "/tmp" },
             "number": i + 1,
             "label": match i { 0 => "herdr", 1 => "herdr-gpui-sidebar-rendering-regression-investigation", 3..=5 => "agent-launcher", _ => "another workspace" },
             "custom_label": false,
@@ -535,6 +541,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
     HerdrWindow {
         _terminal_focus: terminal_focus,
         chrome_region: None,
+        chats: Default::default(),
         sound: Default::default(),
         bell: Default::default(),
         updater: crate::updater::Updater::default(),
@@ -590,9 +597,11 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         config_watch: None,
         config_load_revision: 0,
         git: Default::default(),
+        git_anchor: Default::default(),
         deliveries: Default::default(),
         terminal_notes: Default::default(),
         notes_width: crate::panel_resize::NOTES,
+        notice_overflow: Default::default(),
         review_files_width: crate::panel_resize::REVIEW_FILES,
         reviews: Default::default(),
         code_views: Default::default(),
@@ -665,9 +674,12 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
         pressed_terminal_link: None,
         links: Default::default(),
         terminal_mouse: None,
+        #[cfg(feature = "cloud")]
+        sandbox_image_builds: Default::default(),
         scrollbar_drag: None,
         security: Default::default(),
         automations: Default::default(),
+        security_search: crate::security::SecuritySearch::new(cx),
         split_drag: None,
         split_cursor: None,
         pending_images: Vec::new(),

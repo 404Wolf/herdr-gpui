@@ -3,12 +3,15 @@ use control::BrowserCommand;
 
 mod automation;
 mod browser_zoom;
+mod chat;
 mod cloud_batch;
 mod cloud_exec;
+mod cloud_images;
 mod cloud_setup;
 mod control_commands;
 mod links;
 mod open_command;
+mod px0;
 mod security;
 mod ui_panel;
 

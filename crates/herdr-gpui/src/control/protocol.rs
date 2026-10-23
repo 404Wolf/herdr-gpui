@@ -3,6 +3,7 @@
 //! flat form; every other family sends `{"method", "caller", "op"}` with a
 //! family-specific `op`, and is answered with a family-specific `reply`.
 pub(crate) mod app;
+pub(crate) mod chat;
 pub(crate) mod cloud;
 pub(crate) mod events;
 pub(crate) mod hosts;
@@ -15,9 +16,9 @@ use serde::{Deserialize, Serialize};
 
 /// Raised whenever a request or reply changes shape, so `status` can tell
 /// an outdated app from a refused request. 3: `browser.open` placement.
-/// 4: `link`. 5: the `tab` family's `zoom`. 6: the `cloud` family.
-/// 7: `host` `automation_approve`.
-pub(crate) const PROTOCOL_VERSION: u32 = 7;
+/// 4: `link`. 5: the `tab` family's `zoom`. 6: the `cloud` family. 7: `chat`.
+/// 8: `host` `automation_approve`.
+pub(crate) const PROTOCOL_VERSION: u32 = 8;
 
 /// Older apps and clients know only tabs, so a tab is left off the wire.
 fn is_tab(placement: &Placement) -> bool {
@@ -63,6 +64,8 @@ pub(crate) enum Request {
     Events(Call<events::EventsOp>),
     #[serde(rename = "link")]
     Link(Call<LinkOp>),
+    #[serde(rename = "chat")]
+    Chat(Call<chat::ChatOp>),
     #[serde(rename = "cloud")]
     Cloud(Call<cloud::CloudOp>),
 }
@@ -244,6 +247,9 @@ pub(crate) enum Response {
     },
     Events {
         reply: events::Reply,
+    },
+    Chat {
+        reply: chat::Reply,
     },
     Cloud {
         reply: cloud::Reply,

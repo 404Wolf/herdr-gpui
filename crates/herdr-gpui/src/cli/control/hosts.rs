@@ -24,6 +24,11 @@ pub enum CloudCommand {
     Add,
     /// Run the configured setup script on a saved machine again.
     Setup(String),
+    /// Sandbox images, read from this machine's records.
+    Images,
+    /// Build the caller's repository's sandbox images, for one provider or
+    /// every one that holds images.
+    ImagesBuild(Option<String>),
     /// Machines handled in batches: destroying them, and following that.
     Batch(BatchCommand),
     /// One command on a saved machine.
@@ -126,6 +131,14 @@ pub(super) fn cloud(args: &mut Args) -> Result<CloudCommand, CliError> {
         Some("list") => CloudCommand::List,
         Some("add") => CloudCommand::Add,
         Some("setup") => CloudCommand::Setup(args.required_text("ID")?),
+        Some("images") => match args.verb() {
+            None => CloudCommand::Images,
+            Some(verb) => match verb.to_str() {
+                Some("list") => CloudCommand::Images,
+                Some("build") => CloudCommand::ImagesBuild(args.optional_text()?),
+                _ => return Err(unknown("cloud images", verb)),
+            },
+        },
         Some("exec") => CloudCommand::Exec(exec::parse(args)?),
         _ => return Err(unknown("cloud", verb)),
     })

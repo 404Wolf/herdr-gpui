@@ -1,5 +1,6 @@
 use super::*;
 use crate::boat::Error as BoatError;
+use crate::cloud::ProviderError;
 use crate::cloud::tests::server::{Request as HttpRequest, serve};
 use std::{
     fs,
@@ -68,7 +69,7 @@ fn polling_failures_keep_a_durable_device_before_the_first_poll() {
             |_| panic!("failed polling must not prepare SSH or install Herdr"),
         );
         assert!(
-            matches!(result, Err(crate::Error::Boat(BoatError::Setup { ref id, .. })) if id == ID)
+            matches!(result, Err(crate::Error::Provider(ProviderError::Boat(BoatError::Setup { ref id, .. }))) if id == ID)
         );
         let device = reload(&path);
         assert_eq!(device.account, settings.account());
@@ -105,8 +106,8 @@ fn cancellation_after_creation_saves_the_id_and_does_not_poll() {
         |_| panic!("cancelled setup must not install"),
     );
     assert!(
-        matches!(result, Err(crate::Error::Boat(BoatError::Setup { source, .. }))
-        if matches!(*source, crate::Error::Boat(BoatError::Cancelled)))
+        matches!(result, Err(crate::Error::Provider(ProviderError::Boat(BoatError::Setup { source, .. })))
+        if matches!(*source, crate::Error::Provider(ProviderError::Boat(BoatError::Cancelled))))
     );
     assert_eq!(reload(&path).id, ID);
     assert_eq!(log.lock().unwrap().len(), 2);
@@ -116,9 +117,9 @@ fn cancellation_after_creation_saves_the_id_and_does_not_poll() {
 fn ssh_and_installation_failures_preserve_the_device_and_original_error() {
     use crate::Error as AppError;
     for failure in [
-        AppError::Boat(BoatError::Gateway),
-        AppError::Boat(BoatError::SshMissing(std::io::Error::from(
-            std::io::ErrorKind::NotFound,
+        AppError::Provider(ProviderError::Boat(BoatError::Gateway)),
+        AppError::Provider(ProviderError::Boat(BoatError::SshMissing(
+            std::io::Error::from(std::io::ErrorKind::NotFound),
         ))),
         AppError::Cloud(cloud::Error::Install("fixture installer failure".into())),
         AppError::Cloud(cloud::Error::InstallTimeout),
@@ -148,7 +149,7 @@ fn ssh_and_installation_failures_preserve_the_device_and_original_error() {
         )
         .unwrap_err();
         assert!(error.to_string().contains("Finish setup"));
-        let AppError::Boat(BoatError::Setup { id, source }) = error else {
+        let AppError::Provider(ProviderError::Boat(BoatError::Setup { id, source })) = error else {
             panic!("setup context lost")
         };
         assert_eq!(id, ID);
@@ -236,7 +237,8 @@ fn catalog_save_failures_retain_the_created_id_and_typed_storage_cause() {
         )
         .unwrap_err();
         assert!(error.to_string().contains(ID));
-        let AppError::Boat(BoatError::SaveDevice { id, source }) = error else {
+        let AppError::Provider(ProviderError::Boat(BoatError::SaveDevice { id, source })) = error
+        else {
             panic!("save context lost")
         };
         assert_eq!(id, ID);
@@ -321,5 +323,8 @@ fn recovery_rejects_a_different_account_before_preparing_credentials() {
         &|_| panic!("wrong-account recovery must not start"),
     )
     .unwrap_err();
-    assert!(matches!(error, crate::Error::Boat(BoatError::Account)));
+    assert!(matches!(
+        error,
+        crate::Error::Provider(ProviderError::Boat(BoatError::Account))
+    ));
 }
