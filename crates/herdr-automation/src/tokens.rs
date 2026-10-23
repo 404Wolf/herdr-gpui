@@ -6,7 +6,9 @@
 //!
 //! Step output is untrusted, so it never becomes shell text: in a `sh`
 //! command an output token becomes a quoted environment variable reference
-//! and the value travels in the environment.
+//! and the value travels in the environment. The reference is quoted for
+//! where the token sits, so quotes the script already put around it do not
+//! leave it open to word splitting or globbing.
 
 use crate::step::{Call, Step};
 
@@ -37,19 +39,45 @@ impl Values<'_> {
     /// `text` with every known token replaced. Unknown braces stay as they
     /// are, so a script cannot break a step by writing `{` itself.
     pub fn fill(&self, text: &str) -> String {
-        self.replace(text, false, &mut Vec::new())
+        self.replace(text)
     }
 
-    /// A shell command with output tokens turned into `"$HERDR_..."`
-    /// references; returns the variables to set. Date and time are digits,
-    /// dashes and colons, so they are written in directly.
+    /// A POSIX shell command with each output token turned into a
+    /// reference to a variable, quoted for where it sits: `"$NAME"` bare,
+    /// `${NAME}` inside double quotes, and `'"$NAME"'` inside single quotes,
+    /// which closes and reopens them. Returns the variables to set. Date and
+    /// time are digits, dashes and colons, so they are written in directly.
     pub fn fill_shell(&self, text: &str) -> (String, Vec<(String, String)>) {
         let mut env = Vec::new();
-        let command = self.replace(text, true, &mut env);
-        (command, env)
+        let mut filled = String::with_capacity(text.len());
+        let mut quoting = Quoting::default();
+        let mut rest = text;
+        while let Some(c) = rest.chars().next() {
+            if c == '{'
+                && let Some(close) = rest.find('}')
+                && let token = &rest[..=close]
+                && let Some(value) = self.value(token)
+            {
+                if token == DATE || token == TIME {
+                    filled.push_str(value);
+                } else {
+                    let name = variable(token);
+                    filled.push_str(&quoting.reference(&name));
+                    if !env.iter().any(|(known, _)| *known == name) {
+                        env.push((name, value.to_owned()));
+                    }
+                }
+                rest = &rest[close + 1..];
+                continue;
+            }
+            let step = quoting.read(rest);
+            filled.push_str(&rest[..step]);
+            rest = &rest[step..];
+        }
+        (filled, env)
     }
 
-    fn replace(&self, text: &str, shell: bool, env: &mut Vec<(String, String)>) -> String {
+    fn replace(&self, text: &str) -> String {
         let mut filled = String::with_capacity(text.len());
         let mut rest = text;
         while let Some(open) = rest.find('{') {
@@ -60,17 +88,7 @@ impl Values<'_> {
                 return filled;
             };
             let token = &tail[..=close];
-            match self.value(token) {
-                Some(value) if shell && token != DATE && token != TIME => {
-                    let name = variable(token);
-                    filled.push_str(&format!("\"${name}\""));
-                    if !env.iter().any(|(known, _)| *known == name) {
-                        env.push((name, value.to_owned()));
-                    }
-                }
-                Some(value) => filled.push_str(value),
-                None => filled.push_str(token),
-            }
+            filled.push_str(self.value(token).unwrap_or(token));
             rest = &tail[close + 1..];
         }
         filled.push_str(rest);
@@ -92,6 +110,87 @@ impl Values<'_> {
             _ => return None,
         };
         list.get(index)?.as_deref()
+    }
+}
+
+/// Where a POSIX shell reader is: which quotes are open, inside how many
+/// command substitutions, each of which starts its own quoting.
+#[derive(Debug, Default)]
+struct Quoting {
+    /// Open contexts, innermost last; empty is bare text.
+    open: Vec<Context>,
+    single: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Context {
+    Double,
+    /// `$(`, or a `(` inside one.
+    Paren,
+    Backtick,
+}
+
+impl Quoting {
+    /// A variable reference that expands to exactly its value here.
+    fn reference(&self, name: &str) -> String {
+        if self.single {
+            format!("'\"${name}\"'")
+        } else if self.open.last() == Some(&Context::Double) {
+            format!("${{{name}}}")
+        } else {
+            format!("\"${name}\"")
+        }
+    }
+
+    /// Reads the next character or escape of `text`; returns its length.
+    fn read(&mut self, text: &str) -> usize {
+        let mut chars = text.chars();
+        let Some(c) = chars.next() else {
+            return 0;
+        };
+        let len = c.len_utf8();
+        if self.single {
+            self.single = c != '\'';
+            return len;
+        }
+        let top = self.open.last().copied();
+        match c {
+            // An escaped character is taken as it is, so `\{` is no token.
+            '\\' => len + chars.next().map_or(0, char::len_utf8),
+            '"' if top == Some(Context::Double) => {
+                self.open.pop();
+                len
+            }
+            '"' => {
+                self.open.push(Context::Double);
+                len
+            }
+            '\'' if top != Some(Context::Double) => {
+                self.single = true;
+                len
+            }
+            '$' if text[len..].starts_with('(') => {
+                self.open.push(Context::Paren);
+                len + 1
+            }
+            '(' if top == Some(Context::Paren) => {
+                self.open.push(Context::Paren);
+                len
+            }
+            ')' if top == Some(Context::Paren) => {
+                self.open.pop();
+                len
+            }
+            '`' if top == Some(Context::Backtick) => {
+                self.open.pop();
+                len
+            }
+            '`' => {
+                self.open.push(Context::Backtick);
+                len
+            }
+            _ => len,
+        }
     }
 }
 

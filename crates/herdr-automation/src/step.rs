@@ -271,6 +271,19 @@ impl fmt::Display for Call {
     }
 }
 
+impl Call {
+    /// The text a step's one-line summary shortens or leaves out, which a
+    /// plan shows in full under it: a command, a prompt, a notification.
+    pub fn full_text(&self) -> Option<(&'static str, &str)> {
+        match &self.step {
+            Step::Agent { prompt, .. } => Some(("prompt", prompt)),
+            Step::Notify { text } if shorten(text, 60) != *text => Some(("text", text)),
+            Step::Sh { command } if shorten(command, 60) != *command => Some(("command", command)),
+            _ => None,
+        }
+    }
+}
+
 /// The first line of `text`, at most `limit` characters.
 fn shorten(text: &str, limit: usize) -> String {
     let line = text.lines().next().unwrap_or_default();

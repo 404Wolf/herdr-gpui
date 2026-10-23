@@ -232,6 +232,14 @@ fn write_steps(f: &mut fmt::Formatter<'_>, steps: &[PlannedStep], indent: usize)
         let number = format!("{}.", index + 1);
         writeln!(f, "{pad}{number} {}", step.call)?;
         let under = " ".repeat(indent + number.len() + 1);
+        // Everything that runs is shown before it is approved: the summary
+        // shortens, so the whole text follows, every line escaped.
+        if let Some((label, text)) = step.call.full_text() {
+            writeln!(f, "{under}┆ {label}:")?;
+            for line in text.split('\n') {
+                writeln!(f, "{under}┆ {}", crate::visible(line))?;
+            }
+        }
         match &step.on_failure {
             Failure::Stops => {}
             Failure::Continues => {

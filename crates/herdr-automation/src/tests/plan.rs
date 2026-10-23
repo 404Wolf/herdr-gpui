@@ -51,10 +51,38 @@ test
     2. sh `just ci` (arbitrary command) · the script handles failure
        └ on failure, instead:
          1. agent claude in worktree fix-validation-{date}, prompt 55 chars
+            ┆ prompt:
+            ┆ Nightly validation failed on main:
+            ┆ {log_tail:2}
+            ┆ Fix it.
          2. agent claude in worktree nightly-{date}, prompt 12 chars
+            ┆ prompt:
+            ┆ Review main.
     3. agent claude in worktree nightly-{date}, prompt 12 chars
+       ┆ prompt:
+       ┆ Review main.
 ";
     assert_eq!(text, expected);
+}
+
+#[test]
+fn a_long_or_multiline_command_is_shown_whole() {
+    let text = plan(
+        "herdr.manual(function()\n\
+           sh(\"echo safe\\nrm -rf build\")\n\
+           sh(\"short\")\n\
+         end)",
+    )
+    .to_string();
+    assert!(
+        text.contains("1. sh `echo safe…` (arbitrary command)\n       ┆ command:\n       ┆ echo safe\n       ┆ rm -rf build\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains("2. sh `short` (arbitrary command)\n"),
+        "{text}"
+    );
+    assert!(!text.contains("┆ short"), "{text}");
 }
 
 #[test]

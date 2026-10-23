@@ -74,3 +74,27 @@ fn resolving_a_call_fills_every_field() {
     );
     assert!(resolved.env.is_empty());
 }
+
+#[test]
+fn output_references_are_quoted_for_where_they_sit() {
+    let tails = [Some("a b *".to_owned())];
+    let fill = |command: &str| values(&tails, &[]).fill_shell(command).0;
+    assert_eq!(
+        fill(r#"printf '%s\n' "{log_tail:1}""#),
+        r#"printf '%s\n' "${HERDR_LOG_TAIL_1}""#
+    );
+    assert_eq!(
+        fill("echo 'said: {log_tail:1}!'"),
+        r#"echo 'said: '"$HERDR_LOG_TAIL_1"'!'"#
+    );
+    assert_eq!(
+        fill(r#"echo "$(printf %s {log_tail:1})""#),
+        r#"echo "$(printf %s "$HERDR_LOG_TAIL_1")""#
+    );
+    assert_eq!(
+        fill("echo `echo {log_tail:1}` \"x\" {log_tail:1}"),
+        "echo `echo \"$HERDR_LOG_TAIL_1\"` \"x\" \"$HERDR_LOG_TAIL_1\""
+    );
+    assert_eq!(fill(r"echo \{log_tail:1}"), r"echo \{log_tail:1}");
+    assert_eq!(fill("echo \"it's {date}\""), "echo \"it's 2026-10-22\"");
+}

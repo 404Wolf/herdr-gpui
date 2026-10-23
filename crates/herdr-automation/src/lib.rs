@@ -36,7 +36,7 @@ mod tokens;
 mod vm;
 
 #[cfg(feature = "engine")]
-pub use args::invisible;
+pub use args::{invisible, visible};
 #[cfg(feature = "engine")]
 pub use caps::Caps;
 #[cfg(feature = "engine")]

@@ -98,7 +98,7 @@ impl Fingerprint {
                 Some(script) => {
                     text.push_str(&format!("    {name}:\n"));
                     for line in script.lines() {
-                        text.push_str(&format!("      {}\n", visible(line)));
+                        text.push_str(&format!("      {}\n", herdr_automation::visible(line)));
                     }
                 }
                 None => text.push_str(&format!("    {name}: (none)\n")),
@@ -106,20 +106,6 @@ impl Fingerprint {
         }
         Some(text)
     }
-}
-
-/// A line as it must be reviewed: in full, with control and invisible
-/// characters written as `\u{…}` so a terminal cannot hide or restyle them.
-fn visible(line: &str) -> String {
-    line.chars()
-        .map(|c| {
-            if (c.is_control() && c != '\t') || herdr_automation::invisible(c) {
-                format!("\\u{{{:04x}}}", u32::from(c))
-            } else {
-                c.to_string()
-            }
-        })
-        .collect()
 }
 
 /// Whether any path of the plan has a `run` step.

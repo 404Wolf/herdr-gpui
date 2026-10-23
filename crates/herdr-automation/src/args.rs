@@ -247,6 +247,21 @@ fn is_reference(text: &str) -> bool {
         && !filled.contains("/.")
 }
 
+/// A line as it must be reviewed: in full, with control and invisible
+/// characters written as `\u{…}` so a terminal or label cannot hide or
+/// restyle them.
+pub fn visible(line: &str) -> String {
+    line.chars()
+        .map(|c| {
+            if (c.is_control() && c != '\t') || invisible(c) {
+                format!("\\u{{{:04x}}}", u32::from(c))
+            } else {
+                c.to_string()
+            }
+        })
+        .collect()
+}
+
 /// Characters that change how text reads without showing, or show as
 /// anything: format controls such as bidi overrides and zero-width joiners,
 /// line and paragraph separators, private use, unassigned code points, and
