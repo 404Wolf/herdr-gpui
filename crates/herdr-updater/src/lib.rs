@@ -1,10 +1,17 @@
-//! GUI-local update service. Workers own all transport, staging, and process waits.
+//! Herdr UI's update service. Workers own all transport, staging, and process
+//! waits; the app drives an [`Updater`] from its UI thread and renders its
+//! [`State`]. No GPUI: `scripts/test-updater.py` builds and exercises this
+//! crate on its own.
+
+// Tests start fixtures directly; production children use herdr_client::new_command.
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
+
 mod channel;
 mod error;
 pub use channel::UpdateChannel;
 pub use error::UpdateError;
 use error::{Result, UpdateError as Error};
-pub(crate) use error::{quota_exhausted, rate_limit_reset, retry_hint};
+pub use error::{quota_exhausted, rate_limit_reset, retry_hint};
 #[cfg(unix)]
 mod brew;
 #[cfg(unix)]
@@ -23,7 +30,7 @@ mod windows;
 #[cfg(windows)]
 use windows as install;
 
-pub(crate) use release::{RELEASES_PAGE, release_page};
+pub use release::{RELEASES_PAGE, release_page};
 
 use std::{
     ffi::OsString,
@@ -37,15 +44,28 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// The macOS bundle identifier, also the Linux app ID and Windows
+/// AppUserModelID. The Homebrew relaunch reopens the bundle by it.
+pub const APP_ID: &str = "so.pen.herdr-gpui";
+
+/// Release builds embed the same calendar version (YYYYMMDD.COUNTER) used for
+/// the tag, the bundle, and the downloadable artifacts. Local builds are not
+/// releases, so they carry no version the updater or an issue report could
+/// act on.
+pub const APP_VERSION: &str = match option_env!("HERDR_RELEASE_VERSION") {
+    Some(version) => version,
+    None => "dev",
+};
+
 const CHECK_INTERVAL: Duration = Duration::from_secs(60 * 60);
 
 /// The sample release body the QA preview shows, so the notes section can be
 /// reviewed without waiting for a real release. Shared with the layout test so
 /// the two cannot drift.
-pub(crate) const PREVIEW_NOTES: &str = "### Added\n- Release notes are shown before you update.\n\n### Fixed\n- A sample fix, so the preview shows a realistic body.";
+pub const PREVIEW_NOTES: &str = "### Added\n- Release notes are shown before you update.\n\n### Fixed\n- A sample fix, so the preview shows a realistic body.";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) enum State {
+pub enum State {
     Disabled(String),
     Idle,
     Checking,
@@ -186,7 +206,7 @@ fn prepare(
     install::prepare(offer, cancel, progress).map(Prepared::Standalone)
 }
 
-pub(super) struct Updater {
+pub struct Updater {
     state: State,
     commands: Option<SyncSender<Command>>,
     cancelled: Arc<AtomicBool>,
@@ -226,7 +246,7 @@ impl Default for Updater {
 impl Updater {
     /// Additional windows never run a second update worker: two workers could
     /// stage and restart the same installation at once.
-    pub(super) fn secondary() -> Self {
+    pub fn secondary() -> Self {
         let mut updater = Self::default();
         updater.state = State::Disabled(
             "another window owns app updates in this process. Use the window that was open first."
@@ -235,13 +255,13 @@ impl Updater {
         updater
     }
 
-    pub(super) fn start(channel: UpdateChannel) -> Self {
+    pub fn start(channel: UpdateChannel) -> Self {
         let mut updater = Self::default();
         updater.channel = channel;
         let Some(key) = option_env!("HERDR_UPDATE_PUBLIC_KEY") else {
             return updater;
         };
-        if release::parse_version(crate::APP_VERSION).is_none() || key.is_empty() {
+        if release::parse_version(APP_VERSION).is_none() || key.is_empty() {
             return updater;
         }
         if release::target().is_none() {
@@ -279,7 +299,7 @@ impl Updater {
     /// the next hourly check, and turning them off drops a beta offer, even
     /// one already downloaded or still downloading. Neither direction ever
     /// offers a downgrade.
-    pub(super) fn set_channel(&mut self, channel: UpdateChannel) {
+    pub fn set_channel(&mut self, channel: UpdateChannel) {
         if self.channel == channel {
             return;
         }
@@ -289,17 +309,17 @@ impl Updater {
         }
     }
 
-    pub(super) fn state(&self) -> &State {
+    pub fn state(&self) -> &State {
         &self.state
     }
 
-    pub(super) fn latest_version(&self) -> Option<&str> {
+    pub fn latest_version(&self) -> Option<&str> {
         self.latest_version.as_deref()
     }
 
     /// A newer release is waiting for the user, either still to download or
     /// already staged. Transient checking/downloading states are not a result.
-    pub(super) fn update_available(&self) -> bool {
+    pub fn update_available(&self) -> bool {
         matches!(
             self.state,
             State::Available { .. }
@@ -337,7 +357,7 @@ impl Updater {
 
     /// A staged download is kept rather than rechecked, unless it came from
     /// a channel the user has since left.
-    pub(super) fn check(&mut self) {
+    pub fn check(&mut self) {
         // Package installation has already replaced this executable. Keep its
         // restart offer instead of checking against the old in-memory version.
         if matches!(self.state, State::Restart { .. }) {
@@ -348,7 +368,7 @@ impl Updater {
         }
     }
 
-    pub(super) fn download(&mut self) {
+    pub fn download(&mut self) {
         if matches!(self.state, State::Available { .. }) {
             self.send(
                 Operation::Download,
@@ -360,7 +380,7 @@ impl Updater {
         }
     }
 
-    pub(super) fn install(&mut self) {
+    pub fn install(&mut self) {
         if matches!(self.state, State::Ready { .. }) {
             // Installation cannot be cancelled once a system package transaction
             // starts. The worker publishes its own progress through this state.
@@ -373,7 +393,7 @@ impl Updater {
         }
     }
 
-    pub(super) fn upgrade(&mut self) {
+    pub fn upgrade(&mut self) {
         if matches!(self.state, State::Homebrew { .. }) {
             self.send(
                 Operation::Upgrade,
@@ -384,7 +404,7 @@ impl Updater {
         }
     }
 
-    pub(super) fn restart(&mut self) {
+    pub fn restart(&mut self) {
         if matches!(self.state, State::Restart { .. }) {
             self.send(Operation::Restart, State::Restarting);
         }
@@ -399,7 +419,7 @@ impl Updater {
             )
     }
 
-    pub(super) fn cancel(&mut self) {
+    pub fn cancel(&mut self) {
         if self.interruptible() && !self.committed {
             self.cancelled.store(true, Ordering::Release);
             let Some(sender) = &self.commands else { return };
@@ -421,7 +441,7 @@ impl Updater {
         }
     }
 
-    pub(super) fn poll(&mut self) -> bool {
+    pub fn poll(&mut self) -> bool {
         // Scheduling shares the UI-side generation/cancellation path with manual checks.
         let scheduled = if self.commands.is_some() && Instant::now() >= self.next_check {
             let before = self.state.clone();
@@ -449,7 +469,7 @@ impl Updater {
             | State::Restart { version } => {
                 self.latest_version = Some(version.clone());
             }
-            State::Current => self.latest_version = Some(crate::APP_VERSION.into()),
+            State::Current => self.latest_version = Some(APP_VERSION.into()),
             _ => (),
         }
         self.restart = message.restart;
@@ -457,7 +477,7 @@ impl Updater {
         changed || scheduled
     }
 
-    pub(super) fn commit_restart(&mut self) -> Result<bool> {
+    pub fn commit_restart(&mut self) -> Result<bool> {
         if self.committed {
             return Ok(false);
         }
@@ -587,7 +607,7 @@ fn worker(
                 let homebrew = through_homebrew(channel, cask);
                 installation_format(&cancelled)
                     .and_then(|format| {
-                        release::check(crate::APP_VERSION, key, channel, format, &cancelled)
+                        release::check(APP_VERSION, key, channel, format, &cancelled)
                     })
                     .map(|found| {
                         prepared =
@@ -661,7 +681,7 @@ fn worker(
             Operation::Upgrade => match (&offer, cask()) {
                 (Some(offer), Some(cask)) => brew::upgrade(
                     &cask,
-                    crate::APP_VERSION,
+                    APP_VERSION,
                     &offer.manifest.version,
                     &cancelled,
                     |detail| {
@@ -718,7 +738,7 @@ fn worker(
     }
 }
 
-pub(super) fn run_helper(args: &[OsString]) -> Option<ExitCode> {
+pub fn run_helper(args: &[OsString]) -> Option<ExitCode> {
     #[cfg(target_os = "linux")]
     if let Some(code) = linux::run_helper(args) {
         return Some(code);

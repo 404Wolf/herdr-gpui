@@ -74,14 +74,14 @@ fn publisher() -> Option<&'static str> {
 
 /// Why this build can never update itself, if it cannot. Reads nothing from
 /// disk, so the UI thread may ask.
-pub(in crate::updater) fn missing_publisher() -> Option<Error> {
+pub(crate) fn missing_publisher() -> Option<Error> {
     publisher().is_none().then_some(Error::MissingPublisher)
 }
 
 /// Why this copy cannot update itself, if it cannot. Resolves paths, so only
 /// the update worker asks, before every check, download, and install: the
 /// user may move or replace the installation.
-pub(in crate::updater) fn unsupported() -> Option<Error> {
+pub(crate) fn unsupported() -> Option<Error> {
     missing_publisher().or_else(|| installed_here().err())
 }
 
@@ -106,7 +106,7 @@ fn same_file(left: &Path, right: &Path) -> bool {
 }
 
 /// A verified installer, held open in a private staging directory.
-pub(in crate::updater) struct Prepared {
+pub(crate) struct Prepared {
     // Declared before `stage` so it closes first: the held file shares no
     // deletion, and the stage's removal on drop would fail around it.
     file: File,
@@ -115,7 +115,7 @@ pub(in crate::updater) struct Prepared {
     asset: release::Asset,
 }
 
-pub(in crate::updater) fn prepare(
+pub(crate) fn prepare(
     offer: &release::Offer,
     cancel: &AtomicBool,
     progress: impl FnMut(u64, u64),
@@ -191,14 +191,14 @@ fn remove_stale_stages() {
 
 /// Starts the installer when the app commits to quitting. Dropping it
 /// uncommitted deletes the download.
-pub(in crate::updater) struct RestartGuard {
+pub(crate) struct RestartGuard {
     prepared: Option<Prepared>,
 }
 
 impl RestartGuard {
     /// Call only once the UI has decided to quit. Starting one process is the
     /// only work here; every check already ran on the worker.
-    pub(in crate::updater) fn commit(&mut self) -> Result<()> {
+    pub(crate) fn commit(&mut self) -> Result<()> {
         let Some(prepared) = self.prepared.take() else {
             return Ok(());
         };
@@ -237,10 +237,7 @@ fn installer_args(log: &Path) -> Vec<OsString> {
 }
 
 /// Rechecks the held installer right before the UI may commit.
-pub(in crate::updater) fn install_and_restart(
-    prepared: Prepared,
-    cancel: &AtomicBool,
-) -> Result<RestartGuard> {
+pub(crate) fn install_and_restart(prepared: Prepared, cancel: &AtomicBool) -> Result<RestartGuard> {
     if cancel.load(Ordering::Relaxed) {
         return Err(UpdateError::Cancelled);
     }
@@ -254,16 +251,16 @@ pub(in crate::updater) fn install_and_restart(
 }
 
 /// Homebrew bundles are macOS-only; the cask lookup never gets this far.
-pub(in crate::updater) fn effective_uid() -> Result<u32> {
+pub(crate) fn effective_uid() -> Result<u32> {
     Err(UpdateError::UnsupportedTarget)
 }
 
-pub(in crate::updater) fn mac_bundle(_executable: &Path) -> Result<PathBuf> {
+pub(crate) fn mac_bundle(_executable: &Path) -> Result<PathBuf> {
     Err(UpdateError::NotHerdrBundle)
 }
 
 /// Setup itself replaces the files, so no helper mode exists here.
-pub(in crate::updater) fn run_helper(_args: &[OsString]) -> Option<ExitCode> {
+pub(crate) fn run_helper(_args: &[OsString]) -> Option<ExitCode> {
     None
 }
 

@@ -14,7 +14,7 @@ pub(super) fn retry_minute(reset: DateTime<Utc>) -> DateTime<Utc> {
 }
 
 /// When to try again, in local time, or `Retry later` without a reset time.
-pub(crate) fn retry_hint(reset: Option<DateTime<Utc>>) -> String {
+pub fn retry_hint(reset: Option<DateTime<Utc>>) -> String {
     match reset {
         Some(reset) => format!(
             "Retry after {}",
@@ -28,14 +28,14 @@ pub(crate) fn retry_hint(reset: Option<DateTime<Utc>>) -> String {
 /// permission refusal: GitHub then sends `x-ratelimit-remaining: 0` or a
 /// `retry-after` delay. Lives here so the updater-only test build, which
 /// compiles no other app module, still has it.
-pub(crate) fn quota_exhausted(headers: &ureq::http::HeaderMap) -> bool {
+pub fn quota_exhausted(headers: &ureq::http::HeaderMap) -> bool {
     header_number(headers, "x-ratelimit-remaining") == Some(0)
         || headers.contains_key("retry-after")
 }
 
 /// When GitHub's quota refills: a `retry-after` delay in seconds, else the
 /// `x-ratelimit-reset` epoch. `None` without either, or once it has passed.
-pub(crate) fn rate_limit_reset(
+pub fn rate_limit_reset(
     headers: &ureq::http::HeaderMap,
     now: DateTime<Utc>,
 ) -> Option<DateTime<Utc>> {

@@ -423,7 +423,7 @@ pub(super) fn relaunch(cask: &Cask) -> Result<()> {
     schedule_relaunch(
         std::process::id(),
         &cask.bundle,
-        crate::constants::APP_ID,
+        crate::APP_ID,
         "/usr/bin:/bin",
         RELAUNCH,
     )

@@ -166,7 +166,6 @@ mod theme_picker;
 mod titlebar;
 mod toggles;
 mod update_panel;
-mod updater;
 mod usage;
 mod window;
 mod window_state;
@@ -185,6 +184,10 @@ mod smoke;
 mod test_executable;
 
 pub use error::{Error, Result};
+
+// Its own crate so it builds and is tested without GPUI; the alias keeps the
+// app's `crate::updater` paths.
+use herdr_updater as updater;
 
 pub(crate) use {
     actions::{

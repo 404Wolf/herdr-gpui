@@ -1,5 +1,5 @@
 use super::*;
-use crate::updater::install::location::linux_location;
+use crate::install::location::linux_location;
 
 #[test]
 fn replacement_retains_backup_and_rolls_back_on_spawn_failure() -> anyhow::Result<()> {
@@ -167,7 +167,7 @@ fn real_executable_archive_installs_relaunches_and_rolls_back() -> anyhow::Resul
             Command::new(env::current_exe()?)
                 .args([
                     "--exact",
-                    "updater::install::tests::replacement::real_executable_archive_installs_relaunches_and_rolls_back",
+                    "install::tests::replacement::real_executable_archive_installs_relaunches_and_rolls_back",
                     "--nocapture",
                     "--test-threads=1",
                 ])

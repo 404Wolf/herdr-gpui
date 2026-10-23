@@ -20,13 +20,13 @@ const COMMIT: &[u8; 7] = b"COMMIT\n";
 
 /// UI-safe: committing writes only seven bytes into a fresh pipe. Dropping an
 /// uncommitted guard closes it, so the helper exits without launching anything.
-pub(in crate::updater) struct RestartGuard {
+pub(crate) struct RestartGuard {
     input: ChildStdin,
     committed: bool,
 }
 
 impl RestartGuard {
-    pub(in crate::updater) fn commit(&mut self) -> Result<()> {
+    pub(crate) fn commit(&mut self) -> Result<()> {
         if !self.committed {
             self.input.write_all(COMMIT)?;
             self.committed = true;
@@ -35,7 +35,7 @@ impl RestartGuard {
     }
 }
 
-pub(in crate::updater) fn relaunch(executable: &Path) -> Result<RestartGuard> {
+pub(crate) fn relaunch(executable: &Path) -> Result<RestartGuard> {
     let mut child = herdr_client::new_command(executable)
         .arg(FLAG)
         .arg(std::process::id().to_string())

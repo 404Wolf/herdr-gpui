@@ -25,7 +25,7 @@ const METADATA_LIMIT: usize = 1024 * 1024;
 /// Each listed release carries its full asset metadata (~2 KiB per asset), so
 /// the short page the beta channel reads needs more room than one release.
 const RELEASE_LIST_LIMIT: usize = 4 * 1024 * 1024;
-pub(crate) const RELEASES_PAGE: &str = "https://github.com/penso/herdr-gpui/releases";
+pub const RELEASES_PAGE: &str = "https://github.com/penso/herdr-gpui/releases";
 /// GitHub's latest release is never a prerelease: this is the stable channel.
 const LATEST_URL: &str = "https://api.github.com/repos/penso/herdr-gpui/releases/latest";
 /// The newest published releases of both kinds, for the beta channel.
@@ -222,7 +222,7 @@ fn cancelled(cancel: &AtomicBool) -> Result<()> {
 /// confirmed it, never from the release JSON's `html_url`: unsigned metadata
 /// must not choose the page this opens. Anything that is not a calendar version
 /// gets the release list instead of a guessed tag.
-pub(crate) fn release_page(version: &str) -> String {
+pub fn release_page(version: &str) -> String {
     if parse_version(version).is_none() {
         return RELEASES_PAGE.into();
     }
@@ -251,7 +251,7 @@ fn allowed_url(value: &str) -> bool {
 enum RequestProfile {
     Metadata,
     // Only the POSIX and Windows installers download a release asset; see
-    // `updater::unsupported`.
+    // `unsupported`.
     #[cfg_attr(not(any(unix, windows)), allow(dead_code))]
     Archive,
 }
@@ -551,7 +551,7 @@ fn check_with(
 }
 
 // Only the POSIX and Windows installers download a release asset (see
-// `updater::unsupported`). These stay compiled and tested everywhere because
+// `unsupported`). These stay compiled and tested everywhere because
 // they are portable; they are simply unreachable where the updater is disabled.
 #[cfg_attr(not(any(unix, windows)), allow(dead_code))]
 pub(super) fn copy_archive(
@@ -591,7 +591,7 @@ pub(super) fn copy_archive(
 }
 
 // Only the POSIX and Windows installers download a release asset (see
-// `updater::unsupported`). These stay compiled and tested everywhere because
+// `unsupported`). These stay compiled and tested everywhere because
 // they are portable; they are simply unreachable where the updater is disabled.
 #[cfg_attr(not(any(unix, windows)), allow(dead_code))]
 fn create_archive(destination: &Path) -> Result<File> {
@@ -607,7 +607,7 @@ fn create_archive(destination: &Path) -> Result<File> {
 /// Cancellation is checked between reads; a stalled read can wait for the
 /// remaining ten-minute request deadline. Never wait for this worker on the UI thread.
 // Only the POSIX and Windows installers download a release asset (see
-// `updater::unsupported`). These stay compiled and tested everywhere because
+// `unsupported`). These stay compiled and tested everywhere because
 // they are portable; they are simply unreachable where the updater is disabled.
 #[cfg_attr(not(any(unix, windows)), allow(dead_code))]
 pub(super) fn download(

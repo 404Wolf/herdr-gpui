@@ -2,7 +2,7 @@
 use super::{Error, Result};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(in crate::updater) enum Format {
+pub(crate) enum Format {
     Archive,
     Deb,
     Rpm,
@@ -13,11 +13,10 @@ pub(in crate::updater) enum Format {
 }
 
 /// The Windows targets a release publishes an installer for.
-pub(in crate::updater) const WINDOWS_TARGETS: [&str; 2] =
-    ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"];
+pub(crate) const WINDOWS_TARGETS: [&str; 2] = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"];
 
 impl Format {
-    pub(in crate::updater) fn name(self, version: &str, target: &str) -> Result<String> {
+    pub(crate) fn name(self, version: &str, target: &str) -> Result<String> {
         match self {
             Self::Archive => super::asset_name(version, target),
             Self::Installer if WINDOWS_TARGETS.contains(&target) => {
@@ -41,7 +40,7 @@ impl Format {
         }
     }
 
-    pub(in crate::updater) fn manifest(self) -> (&'static str, &'static str) {
+    pub(crate) fn manifest(self) -> (&'static str, &'static str) {
         match self {
             Self::Archive => ("update-manifest.json", "update-manifest.sig"),
             Self::Installer => ("windows-manifest.json", "windows-manifest.sig"),
@@ -50,7 +49,7 @@ impl Format {
     }
 
     /// The manifest schema that lists this format's assets.
-    pub(in crate::updater) fn schema(self) -> u32 {
+    pub(crate) fn schema(self) -> u32 {
         match self {
             Self::Archive => 1,
             Self::Deb | Self::Rpm | Self::Arch => 2,

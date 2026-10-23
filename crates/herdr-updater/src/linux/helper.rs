@@ -143,7 +143,7 @@ fn apply_request(stage: &Path, key: &str) -> Result<()> {
 #[cfg(test)]
 mod tests;
 
-pub(in crate::updater) fn run_helper(args: &[OsString]) -> Option<ExitCode> {
+pub(crate) fn run_helper(args: &[OsString]) -> Option<ExitCode> {
     if args
         .first()
         .is_none_or(|arg| arg != FLAG && arg != ROOT_FLAG)

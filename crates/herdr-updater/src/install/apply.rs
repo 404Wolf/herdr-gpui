@@ -6,7 +6,7 @@ use super::{
     location::{detect, lock_file, no_links, owned},
     read_request,
 };
-use crate::updater::error::{Result, UpdateError as Error};
+use crate::error::{Result, UpdateError as Error};
 use std::{
     ffi::OsString,
     fs::{self, File, OpenOptions},
@@ -116,7 +116,7 @@ pub(super) fn remove_failed_linux_backup(
 
 /// Pass arguments excluding argv[0], before initializing GPUI. Recognized but
 /// malformed helper invocations fail closed rather than starting the GUI.
-pub(in crate::updater) fn run_helper(args: &[OsString]) -> Option<ExitCode> {
+pub(crate) fn run_helper(args: &[OsString]) -> Option<ExitCode> {
     if args.first().is_none_or(|arg| arg != HELPER) {
         return None;
     }

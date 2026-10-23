@@ -2,7 +2,7 @@
 //! symlink-free location outside any package manager, and the lock files that
 //! keep two updaters off it at once.
 use super::{Installation, Mode, io, output, signing::identity};
-use crate::updater::{
+use crate::{
     error::{Result, UpdateError as Error},
     release,
 };
@@ -107,7 +107,7 @@ pub(super) fn linux_location(
 }
 
 /// The effective UID of this process, as the system reports it.
-pub(in crate::updater) fn effective_uid() -> Result<u32> {
+pub(crate) fn effective_uid() -> Result<u32> {
     uid(&AtomicBool::new(false))
 }
 
@@ -120,7 +120,7 @@ fn uid(cancel: &AtomicBool) -> Result<u32> {
 
 /// The bundle root of a running macOS installation. Defined once: brew
 /// delegation and standalone installation must agree on what "this app" is.
-pub(in crate::updater) fn mac_bundle(executable: &Path) -> Result<PathBuf> {
+pub(crate) fn mac_bundle(executable: &Path) -> Result<PathBuf> {
     let root = executable.ancestors().nth(3).ok_or(Error::NotHerdrBundle)?;
     if root.file_name() != Some("Herdr.app".as_ref())
         || executable != root.join("Contents/MacOS/Herdr")

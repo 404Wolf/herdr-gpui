@@ -90,7 +90,7 @@ fn retry_minute_rounds_any_part_of_a_minute_up() -> anyhow::Result<()> {
         ("2026-10-13T23:59:30Z", "2026-10-14T00:00:00Z"),
     ] {
         assert_eq!(
-            crate::updater::error::retry_minute(at(reset)?),
+            crate::error::retry_minute(at(reset)?),
             at(expected)?,
             "{reset}"
         );
@@ -101,7 +101,7 @@ fn retry_minute_rounds_any_part_of_a_minute_up() -> anyhow::Result<()> {
 #[test]
 fn rate_limit_says_so_instead_of_the_status() -> anyhow::Result<()> {
     let reset = now()?;
-    let local = crate::updater::error::retry_minute(reset)
+    let local = crate::error::retry_minute(reset)
         .with_timezone(&chrono::Local)
         .format("%H:%M");
     assert_eq!(

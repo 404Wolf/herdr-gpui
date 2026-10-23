@@ -1,5 +1,5 @@
 use super::*;
-use crate::updater::install::location::lock_file;
+use crate::install::location::lock_file;
 
 #[test]
 fn process_output_and_cancellation_are_bounded() {

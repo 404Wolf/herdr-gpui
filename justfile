@@ -69,12 +69,12 @@ test-gui binary:
 # Explicit opt-in: reads the real code signature and Homebrew records of an
 # installed app. Never discovers an installation on its own.
 test-update bundle:
-    HERDR_TEST_BUNDLE="{{bundle}}" cargo test --locked -p herdr-gpui updater::install::tests::signing::installed_bundle -- --ignored --nocapture
-    HERDR_TEST_BUNDLE="{{bundle}}" cargo test --locked -p herdr-gpui updater::brew::tests::the_real_cask -- --ignored --nocapture
+    HERDR_TEST_BUNDLE="{{bundle}}" cargo test --locked -p herdr-updater install::tests::signing::installed_bundle -- --ignored --nocapture
+    HERDR_TEST_BUNDLE="{{bundle}}" cargo test --locked -p herdr-updater brew::tests::the_real_cask -- --ignored --nocapture
 
 # Really upgrades the installed app through Homebrew; restart it afterwards.
 test-brew-upgrade bundle expected:
-    HERDR_TEST_BUNDLE="{{bundle}}" HERDR_TEST_BREW_EXPECTED="{{expected}}" HERDR_TEST_BREW_UPGRADE=1 cargo test --locked -p herdr-gpui updater::brew::tests::homebrew_really_installs -- --ignored --nocapture
+    HERDR_TEST_BUNDLE="{{bundle}}" HERDR_TEST_BREW_EXPECTED="{{expected}}" HERDR_TEST_BREW_UPGRADE=1 cargo test --locked -p herdr-updater brew::tests::homebrew_really_installs -- --ignored --nocapture
 
 # Repeat the Linux suite under CPU pressure in a container, where scheduling
 # races reproduce that a fast machine hides. Needs Docker; nothing else.

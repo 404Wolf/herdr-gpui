@@ -10,13 +10,13 @@ pub(super) mod brew {
     use std::{path::Path, sync::atomic::AtomicBool};
 
     /// No cask is ever detected, so this type has no values.
-    pub(in crate::updater) enum Cask {}
+    pub(crate) enum Cask {}
 
-    pub(in crate::updater) fn detect(_bundle: &Path, _uid: u32) -> Option<Cask> {
+    pub(crate) fn detect(_bundle: &Path, _uid: u32) -> Option<Cask> {
         None
     }
 
-    pub(in crate::updater) fn upgrade(
+    pub(crate) fn upgrade(
         _cask: &Cask,
         _current: &str,
         _expected: &str,
@@ -26,7 +26,7 @@ pub(super) mod brew {
         Err(Error::UnsupportedTarget)
     }
 
-    pub(in crate::updater) fn relaunch(_cask: &Cask) -> Result<()> {
+    pub(crate) fn relaunch(_cask: &Cask) -> Result<()> {
         Err(Error::UnsupportedTarget)
     }
 }
@@ -43,26 +43,26 @@ pub(super) mod install {
     };
 
     /// Nothing is ever staged, so this type has no values.
-    pub(in crate::updater) enum Prepared {}
+    pub(crate) enum Prepared {}
 
     /// No restart is ever scheduled, so this type has no values.
-    pub(in crate::updater) enum RestartGuard {}
+    pub(crate) enum RestartGuard {}
 
     impl RestartGuard {
-        pub(in crate::updater) fn commit(&mut self) -> Result<()> {
+        pub(crate) fn commit(&mut self) -> Result<()> {
             Err(Error::UnsupportedTarget)
         }
     }
 
-    pub(in crate::updater) fn effective_uid() -> Result<u32> {
+    pub(crate) fn effective_uid() -> Result<u32> {
         Err(Error::UnsupportedTarget)
     }
 
-    pub(in crate::updater) fn mac_bundle(_executable: &Path) -> Result<PathBuf> {
+    pub(crate) fn mac_bundle(_executable: &Path) -> Result<PathBuf> {
         Err(Error::NotHerdrBundle)
     }
 
-    pub(in crate::updater) fn prepare(
+    pub(crate) fn prepare(
         _offer: &release::Offer,
         _cancel: &AtomicBool,
         _progress: impl FnMut(u64, u64),
@@ -70,7 +70,7 @@ pub(super) mod install {
         Err(Error::UnsupportedTarget)
     }
 
-    pub(in crate::updater) fn install_and_restart(
+    pub(crate) fn install_and_restart(
         _prepared: Prepared,
         _cancel: &AtomicBool,
     ) -> Result<RestartGuard> {
@@ -79,7 +79,7 @@ pub(super) mod install {
 
     /// The helper is spawned by the POSIX installer only, so nothing here
     /// recognizes its arguments and the GUI always starts normally.
-    pub(in crate::updater) fn run_helper(_args: &[OsString]) -> Option<ExitCode> {
+    pub(crate) fn run_helper(_args: &[OsString]) -> Option<ExitCode> {
         None
     }
 }

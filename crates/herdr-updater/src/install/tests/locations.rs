@@ -1,5 +1,5 @@
 use super::*;
-use crate::updater::install::location::{
+use crate::install::location::{
     installation_parent, linux_location, lock_file, system_managed, trusted_mac_parent,
 };
 

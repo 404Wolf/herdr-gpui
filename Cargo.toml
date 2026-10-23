@@ -1,5 +1,5 @@
 [workspace]
-members  = ["crates/embed-resource", "crates/herdr-acp", "crates/herdr-automate", "crates/herdr-automation", "crates/herdr-chat-protocol", "crates/herdr-client", "crates/herdr-gpui", "crates/herdr-gpui-launcher", "crates/herdr-protocol"]
+members  = ["crates/embed-resource", "crates/herdr-acp", "crates/herdr-automate", "crates/herdr-automation", "crates/herdr-chat-protocol", "crates/herdr-client", "crates/herdr-gpui", "crates/herdr-gpui-launcher", "crates/herdr-protocol", "crates/herdr-updater"]
 resolver = "2"
 
 [workspace.package]
@@ -63,6 +63,7 @@ herdr-automation     = { default-features = false, path = "crates/herdr-automati
 herdr-chat-protocol  = { path = "crates/herdr-chat-protocol" }
 herdr-client         = { path = "crates/herdr-client" }
 herdr-protocol       = { path = "crates/herdr-protocol" }
+herdr-updater        = { path = "crates/herdr-updater" }
 interprocess         = "2.4.2"
 # Local interface addresses, so Bonjour discovery skips this machine; the
 # version mdns-sd already uses.
