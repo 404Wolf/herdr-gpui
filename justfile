@@ -52,6 +52,12 @@ test:
     cargo test --locked --workspace
     cargo test --locked --workspace --all-features
 
+# The same suites under cargo-nextest, a process per test (see .config/nextest.toml).
+# Doctests do not run here; `just test` remains the CI gate.
+nextest *args:
+    cargo nextest run --locked --workspace {{args}}
+    cargo nextest run --locked --workspace --all-features {{args}}
+
 # Explicit opt-in: launches and cleans up its own isolated daemon only.
 test-live binary:
     HERDR_TEST_BINARY="{{binary}}" cargo test --locked -p herdr-client --test live -- --ignored --nocapture

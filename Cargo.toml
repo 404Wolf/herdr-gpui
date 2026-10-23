@@ -151,6 +151,12 @@ windows-sys          = { features = ["Win32_Foundation", "Win32_System_Pipes"], 
 winresource          = "0.1.34"
 zeroize              = "=1.9.1"
 
+# Line tables keep file:line in backtraces and crash reports while cutting most
+# of the debug info a full build writes and links for herdr-gpui. Use
+# `CARGO_PROFILE_DEV_DEBUG=full` for a debugger session that needs locals.
+[profile.dev]
+debug = "line-tables-only"
+
 # GPUI's build script embeds its own Windows manifest through embed-resource,
 # which would clash with Herdr's (crates/herdr-gpui/windows.manifest); this
 # no-op stands in for it. See crates/embed-resource.
