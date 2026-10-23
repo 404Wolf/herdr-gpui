@@ -43,11 +43,18 @@ pub(crate) struct Plan {
     pub program: PathBuf,
     pub state_dir: PathBuf,
     pub config: RemoteConfig,
+    /// The Herdr daemon's client socket and the chat socket folder as this
+    /// app resolved them, passed on because a service manager's
+    /// environment may lack the shell's `XDG_CONFIG_HOME` or
+    /// `XDG_STATE_HOME`.
+    pub herdr_socket: Option<PathBuf>,
+    pub chat_dir: Option<PathBuf>,
 }
 
 impl Plan {
     /// `serve --state-dir DIR --port N --bind ADDR [--cert F --key F]
-    /// --privacy generic|excerpt --device-idle-days N`.
+    /// --privacy generic|excerpt --device-idle-days N [--herdr-socket P]
+    /// [--chat-dir D]`.
     pub(crate) fn args(&self) -> Vec<OsString> {
         let config = &self.config;
         let mut args: Vec<OsString> = vec![
@@ -73,6 +80,12 @@ impl Plan {
             "--device-idle-days".into(),
             config.device_idle_days.to_string().into(),
         ]);
+        if let Some(socket) = &self.herdr_socket {
+            args.extend(["--herdr-socket".into(), socket.clone().into()]);
+        }
+        if let Some(dir) = &self.chat_dir {
+            args.extend(["--chat-dir".into(), dir.clone().into()]);
+        }
         args
     }
 }
@@ -313,6 +326,8 @@ pub(crate) fn reconcile(
         program,
         state_dir: host.state_dir.clone(),
         config: config.clone(),
+        herdr_socket: herdr_client::ConnectTarget::Local.socket_path().ok(),
+        chat_dir: herdr_chat_protocol::endpoint_dir(),
     };
     let text = host.manager.text(&plan)?;
     let bytes = host.manager.bytes(&text);

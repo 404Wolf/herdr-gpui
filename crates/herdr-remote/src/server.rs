@@ -22,6 +22,7 @@ use crate::{
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
+    net::IpAddr,
     sync::{Arc, Mutex, RwLock},
     time::{Duration, SystemTime},
 };
@@ -30,7 +31,7 @@ use tokio::sync::watch;
 /// How often the served addresses are checked, so a new network or
 /// Tailscale coming up gets a certificate that names it.
 const ADDRESS_CHECK: Duration = Duration::from_secs(30);
-/// How often idle devices are forgotten.
+/// How often idle devices and expired pictures are forgotten.
 const IDLE_CHECK: Duration = Duration::from_secs(60 * 60);
 /// Who push services may contact about this sender.
 const PUSH_SUBJECT: &str = "https://github.com/penso/herdr-gpui";
@@ -56,14 +57,20 @@ pub(crate) fn registrations_for_tests(
 /// Runs the daemon on the current Tokio runtime until it is told to stop.
 pub async fn run(options: Options) -> Result<()> {
     std::fs::create_dir_all(&options.state_dir)?;
-    let names = Names::current();
-    let (authority, resolver) = match &options.certificate {
+    let bind = options.bind;
+    let (authority, resolver, names) = match &options.certificate {
         Certificate::Own => {
+            let names = Names::current().bound_to(bind);
             let authority = Authority::load_or_create(&options.state_dir)?;
             let resolver = Resolver::issue(&authority, names.clone(), SystemTime::now())?;
-            (Some(authority), resolver)
+            (Some(authority), resolver, names)
         }
-        Certificate::Files { cert, key } => (None, Resolver::from_files(cert, key)?),
+        Certificate::Files { cert, key } => {
+            let resolver = Resolver::from_files(cert, key)?;
+            // Phones reach a user's certificate by the names it lists.
+            let names = Names::from_certificate(resolver.current().cert[0].as_ref()).bound_to(bind);
+            (None, resolver, names)
+        }
     };
     let fingerprint = match &authority {
         Some(authority) => authority.fingerprint().to_owned(),
@@ -76,7 +83,7 @@ pub async fn run(options: Options) -> Result<()> {
         .ok();
     let auth = Auth::load(&options.state_dir, Limits::default())?;
     let apns = crate::apns::Sender::load(&options.state_dir)?;
-    let hub = Hub::start()?;
+    let hub = Hub::start(options.herdr_socket.clone(), options.chat_dir.clone())?;
     let state = Arc::new(State {
         apns,
         auth: Mutex::new(auth),
@@ -89,14 +96,23 @@ pub async fn run(options: Options) -> Result<()> {
         port: options.port,
         privacy: options.privacy,
         push,
+        seen: Mutex::new(web::Origins::load(&options.state_dir)),
         uploads: web::Uploads::new(&options.state_dir),
     });
+    remember_origins(&state);
+    state.uploads.remove_leftovers();
+    // The port first: a second daemon fails here before it touches the
+    // first one's control socket.
+    let tcp = listener::bind(options.bind, options.port)?;
     let (stop, stopped) = watch::channel(false);
     control::serve(&options.state_dir, state.clone(), stop.clone())?;
     tokio::spawn(notifier::run(state.clone()));
-    tokio::spawn(watch_addresses(state.clone(), resolver));
-    tokio::spawn(expire_idle(state.clone(), options.device_idle));
-    let tcp = listener::bind(options.bind, options.port)?;
+    // A user's certificate lists fixed names; only the daemon's own follows
+    // the computer's addresses.
+    if state.authority.is_some() {
+        tokio::spawn(watch_addresses(state.clone(), resolver, bind));
+    }
+    tokio::spawn(expire(state.clone(), options.device_idle));
     let app = web::router(state).into_make_service_with_connect_info::<web::Peer>();
     let mut shutdown = stopped.clone();
     axum::serve(listener::TlsListener::new(tcp, config), app)
@@ -109,11 +125,12 @@ pub async fn run(options: Options) -> Result<()> {
 }
 
 /// Reissues the certificate when the computer's addresses change.
-async fn watch_addresses(state: Arc<State>, resolver: Arc<Resolver>) {
+async fn watch_addresses(state: Arc<State>, resolver: Arc<Resolver>, bind: IpAddr) {
     let mut ticker = tokio::time::interval(ADDRESS_CHECK);
     loop {
         ticker.tick().await;
-        let Ok(names) = tokio::task::spawn_blocking(Names::current).await else {
+        let Ok(names) = tokio::task::spawn_blocking(move || Names::current().bound_to(bind)).await
+        else {
             continue;
         };
         if let Some(authority) = &state.authority
@@ -126,18 +143,36 @@ async fn watch_addresses(state: Arc<State>, resolver: Arc<Resolver>) {
         if let Ok(mut current) = state.names.write() {
             *current = names;
         }
+        let state = state.clone();
+        let _ = tokio::task::spawn_blocking(move || remember_origins(&state)).await;
     }
 }
 
-async fn expire_idle(state: Arc<State>, idle: Duration) {
+/// Adds the origins served now to the ones an installed app may still
+/// send. Blocking; a failure to save only forgets them at the next start.
+fn remember_origins(state: &State) {
+    let origins = state.origins();
+    let _ = state
+        .seen
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remember(&origins);
+}
+
+async fn expire(state: Arc<State>, idle: Duration) {
     let idle_ms = u64::try_from(idle.as_millis()).unwrap_or(u64::MAX);
     let mut ticker = tokio::time::interval(IDLE_CHECK);
     loop {
         ticker.tick().await;
         let state = state.clone();
-        let _ =
-            tokio::task::spawn_blocking(move || state.auth().expire_idle(web::now_ms(), idle_ms))
-                .await;
+        let _ = tokio::task::spawn_blocking(move || {
+            let now = web::now_ms();
+            // Pictures expire on their own schedule, whether or not another
+            // upload comes to sweep them.
+            state.uploads.prune(now);
+            state.auth().expire_idle(now, idle_ms)
+        })
+        .await;
     }
 }
 

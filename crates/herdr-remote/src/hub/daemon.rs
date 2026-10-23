@@ -46,7 +46,10 @@ struct Shared {
 impl Daemon {
     /// Starts the worker, which connects now and again whenever the daemon
     /// goes away.
-    pub(crate) fn start(layout: watch::Sender<Arc<Layout>>) -> std::io::Result<Self> {
+    pub(crate) fn start(
+        layout: watch::Sender<Arc<Layout>>,
+        target: ConnectTarget,
+    ) -> std::io::Result<Self> {
         let shared = Arc::new(Shared {
             handle: Mutex::new(None),
             pending: Mutex::new(HashMap::new()),
@@ -56,7 +59,7 @@ impl Daemon {
         let worker = shared.clone();
         thread::Builder::new()
             .name("herdr-remote-daemon".into())
-            .spawn(move || run(&worker))?;
+            .spawn(move || run(&worker, &target))?;
         Ok(Self { shared })
     }
 
@@ -78,7 +81,7 @@ impl Daemon {
     /// `result`.
     pub(crate) async fn request(&self, method: Method, params: Value) -> Result<Value> {
         let (sender, receiver) = oneshot::channel();
-        {
+        let id = {
             let handle = lock(&self.shared.handle);
             let (handle, boot) = handle.as_ref().ok_or(Error::NotConnected)?;
             let mut pending = lock(&self.shared.pending);
@@ -86,8 +89,15 @@ impl Daemon {
                 return Err(Error::Busy);
             }
             let id = handle.request(boot, method, params)?;
-            pending.insert(id, sender);
-        }
+            pending.insert(id.clone(), sender);
+            id
+        };
+        // A request that times out or whose caller goes away gives its slot
+        // back; one answered was already taken out.
+        let _slot = Slot {
+            pending: &self.shared.pending,
+            id,
+        };
         let response = tokio::time::timeout(RESPONSE_TIMEOUT, receiver)
             .await
             .map_err(|_| Error::Timeout)?
@@ -105,6 +115,18 @@ impl Daemon {
             [ClientPaneInputEvent::TextCommit(line.into()), enter()],
         )?;
         Ok(())
+    }
+}
+
+/// Removes a request from the pending table when dropped.
+struct Slot<'a> {
+    pending: &'a Mutex<HashMap<String, oneshot::Sender<Value>>>,
+    id: String,
+}
+
+impl Drop for Slot<'_> {
+    fn drop(&mut self) {
+        lock(self.pending).remove(&self.id);
     }
 }
 
@@ -151,10 +173,10 @@ fn enter() -> ClientPaneInputEvent {
     }
 }
 
-fn run(shared: &Shared) {
+fn run(shared: &Shared, target: &ConnectTarget) {
     while !shared.stop.load(Ordering::Acquire) {
         if let Ok(client) = herdr_client::connect_with_surface_active(
-            ConnectTarget::Local,
+            target.clone(),
             ConnectOptions::default(),
             false,
         ) {
@@ -209,3 +231,7 @@ fn serve(shared: &Shared, client: herdr_client::Client) {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests;

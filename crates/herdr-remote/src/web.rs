@@ -9,10 +9,12 @@
 mod api;
 mod assets;
 mod fragments;
+mod origins;
 mod render;
 mod stream;
 mod uploads;
 
+pub(crate) use origins::Origins;
 pub(crate) use render::now_ms;
 pub(crate) use uploads::Uploads;
 
@@ -57,6 +59,8 @@ pub(crate) struct State {
     pub(crate) port: u16,
     pub(crate) privacy: Privacy,
     pub(crate) push: Option<Sender>,
+    /// Origins served before, which an installed app may still send.
+    pub(crate) seen: Mutex<Origins>,
     pub(crate) uploads: Uploads,
 }
 
@@ -65,12 +69,22 @@ impl State {
         self.auth.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Every `https://` origin the certificate covers.
+    /// Every `https://` origin the server answers at now.
     pub(crate) fn origins(&self) -> Vec<String> {
         self.names
             .read()
             .unwrap_or_else(PoisonError::into_inner)
             .origins(self.port)
+    }
+
+    /// Whether `origin` may call the API: one served now or before.
+    pub(crate) fn admits(&self, origin: &str) -> bool {
+        allowed_origin(&self.origins(), origin)
+            || self
+                .seen
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .contains(origin)
     }
 
     pub(crate) fn connected(&self) -> MutexGuard<'_, HashMap<DeviceId, usize>> {
@@ -173,7 +187,7 @@ async fn cors(Extract(state): Extract<Shared>, request: Request, next: Next) -> 
     let Some(origin) = origin else {
         return next.run(request).await;
     };
-    if !allowed_origin(&state.origins(), &origin) {
+    if !state.admits(&origin) {
         return (StatusCode::FORBIDDEN, "origin not allowed").into_response();
     }
     let preflight = request.method() == Method::OPTIONS;
@@ -291,4 +305,4 @@ impl IntoResponse for ApiError {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
-mod tests;
+pub(crate) mod tests;

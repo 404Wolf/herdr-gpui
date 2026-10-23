@@ -12,6 +12,8 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+mod advertised;
+
 const DAY: Duration = Duration::from_secs(24 * 60 * 60);
 
 fn ip(text: &str) -> IpAddr {

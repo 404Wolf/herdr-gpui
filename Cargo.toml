@@ -102,6 +102,9 @@ rustls               = { default-features = false, features = ["ring", "std", "t
 # The remote control daemon's own certificate authority and server
 # certificates; ring signs, as rustls does, and x509-parser reloads the CA.
 rcgen                = { default-features = false, features = ["crypto", "pem", "ring", "x509-parser"], version = "0.14.10" }
+# Reads the names a user-supplied remote control certificate lists; rcgen
+# already links it.
+x509-parser          = { default-features = false, version = "0.18" }
 # Checks the remote control daemon's mobileconfig profile in tests.
 roxmltree            = "0.21"
 rusqlite             = { features = ["bundled"], version = "0.40" }

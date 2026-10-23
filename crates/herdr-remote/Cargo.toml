@@ -39,6 +39,7 @@ server = [
     "dep:ureq",
     "dep:url",
     "dep:webpki-roots",
+    "dep:x509-parser",
 ]
 
 [[bin]]
@@ -77,6 +78,7 @@ tokio-rustls   = { optional = true, workspace = true }
 ureq           = { optional = true, workspace = true }
 url            = { optional = true, workspace = true }
 webpki-roots   = { optional = true, workspace = true }
+x509-parser    = { optional = true, workspace = true }
 
 # The host name for the CA's name and `HOSTNAME.local`.
 [target.'cfg(unix)'.dependencies]

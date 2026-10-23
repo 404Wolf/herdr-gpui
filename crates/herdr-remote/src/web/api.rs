@@ -137,7 +137,7 @@ pub(super) async fn command(
     let command = match command {
         Command::Prompt { text, attachments } => Command::Prompt {
             text,
-            attachments: state.uploads.resolve(&attachments)?,
+            attachments: state.uploads.resolve(&attachments, now_ms())?,
         },
         command => command,
     };

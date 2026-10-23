@@ -10,9 +10,9 @@ use crate::{
     push::{Chat, Delivery, Notification, Outcome, Subscription, Throttle, decide},
     web::{State, now_ms},
 };
-use herdr_chat_protocol::Transcript;
+use herdr_chat_protocol::{Cursor, Transcript};
 use std::{collections::HashMap, sync::Arc, time::Duration};
-use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::{broadcast::error::RecvError, mpsc};
 
 /// How often held-back notifications are checked.
 const TICK: Duration = Duration::from_secs(1);
@@ -23,33 +23,45 @@ pub(super) async fn run(state: Arc<State>) {
     }
     let mut live = super::live::LiveActivities::default();
     let mut events = state.hub.subscribe_all();
-    let mut transcripts: HashMap<String, Transcript> = HashMap::new();
+    let mut transcripts: HashMap<String, Base> = HashMap::new();
     let mut throttles: HashMap<DeviceId, Throttle> = HashMap::new();
+    let mut outbox = Outbox::default();
     let mut ticker = tokio::time::interval(TICK);
     loop {
         tokio::select! {
             event = events.recv() => match event {
-                Ok((pane, Event::Reset)) => {
-                    if let Some(link) = state.hub.chat(&pane) {
-                        transcripts.insert(pane, link.view().transcript);
-                    }
+                Ok((pane, Event::Reset { transcript, cursor })) => {
+                    transcripts.insert(pane, Base {
+                        transcript: Transcript::clone(&transcript),
+                        cursor: Some(cursor),
+                    });
                 }
-                Ok((pane, Event::Change { change, .. })) => {
-                    let Some(before) = transcripts.get_mut(&pane) else {
-                        if let Some(link) = state.hub.chat(&pane) {
-                            transcripts.insert(pane, link.view().transcript);
-                        }
+                Ok((pane, Event::Change { change, cursor })) => {
+                    if !transcripts.contains_key(&pane) {
+                        let Some(link) = state.hub.chat(&pane) else {
+                            continue;
+                        };
+                        let (transcript, cursor) = link.base();
+                        transcripts.insert(pane.clone(), Base { transcript, cursor });
+                    }
+                    let Some(base) = transcripts.get_mut(&pane) else {
                         continue;
                     };
+                    // The copy already holds this change.
+                    if base.includes(cursor) {
+                        continue;
+                    }
+                    let before = &mut base.transcript;
                     let notification = notification(&state, &pane, before, &change);
                     live.change(&state, &pane, before, &change);
-                    if before.apply(&change).is_err()
-                        && let Some(link) = state.hub.chat(&pane)
-                    {
-                        *before = link.view().transcript;
+                    if before.apply(&change).is_err() {
+                        // Rebuilt from the next Reset or change.
+                        transcripts.remove(&pane);
+                    } else {
+                        base.cursor = Some(cursor);
                     }
                     if let Some(notification) = notification {
-                        offer(&state, &mut throttles, notification);
+                        offer(&state, &mut throttles, &mut outbox, notification);
                     }
                 }
                 Ok((_, Event::Connection)) => {}
@@ -66,13 +78,28 @@ pub(super) async fn run(state: Arc<State>) {
                     })
                     .collect();
                 for (device, notification) in due {
-                    send(&state, device, notification);
+                    outbox.send(&state, device, notification);
                 }
                 // Forget chats that left the layout.
                 let layout = state.hub.layout();
                 transcripts.retain(|pane, _| layout.chat(pane).is_some());
             }
         }
+    }
+}
+
+/// The notifier's copy of one chat's transcript and the stream position
+/// it includes.
+struct Base {
+    transcript: Transcript,
+    cursor: Option<Cursor>,
+}
+
+impl Base {
+    /// Whether the change that left the stream at `cursor` is in the copy.
+    fn includes(&self, cursor: Cursor) -> bool {
+        self.cursor
+            .is_some_and(|base| base.epoch == cursor.epoch && cursor.seq <= base.seq)
     }
 }
 
@@ -107,6 +134,7 @@ fn notification(
 fn offer(
     state: &Arc<State>,
     throttles: &mut HashMap<DeviceId, Throttle>,
+    outbox: &mut Outbox,
     notification: Notification,
 ) {
     let subscribed: Vec<DeviceId> = state
@@ -118,6 +146,9 @@ fn offer(
         .map(|device| device.id)
         .collect();
     throttles.retain(|device, _| subscribed.contains(device));
+    outbox
+        .queues
+        .retain(|device, _| subscribed.contains(device));
     let now = now_ms();
     for device in subscribed {
         if let Some(passed) = throttles
@@ -125,7 +156,7 @@ fn offer(
             .or_default()
             .offer(notification.clone(), now)
         {
-            send(state, device, passed);
+            outbox.send(state, device, passed);
         }
     }
 }
@@ -141,25 +172,64 @@ pub(super) fn waiting(state: &State) -> u32 {
     u32::try_from(total).unwrap_or(u32::MAX)
 }
 
-fn send(state: &Arc<State>, device: DeviceId, notification: Notification) {
+/// Notifications queued per device before new ones are dropped.
+const OUTBOX: usize = 32;
+
+/// One queue per device, sent in order by its own task: a question and the
+/// clear that follows it share a topic, so the clear must not overtake it.
+#[derive(Default)]
+struct Outbox {
+    queues: HashMap<DeviceId, mpsc::Sender<Notification>>,
+}
+
+impl Outbox {
+    fn send(&mut self, state: &Arc<State>, device: DeviceId, notification: Notification) {
+        let queue = self
+            .queues
+            .entry(device.clone())
+            .or_insert_with(|| deliver(state.clone(), device.clone()));
+        if let Err(mpsc::error::TrySendError::Closed(notification)) = queue.try_send(notification) {
+            let queue = deliver(state.clone(), device.clone());
+            let _ = queue.try_send(notification);
+            self.queues.insert(device, queue);
+        }
+    }
+}
+
+/// Starts the task that sends `device`'s notifications one at a time.
+fn deliver(state: Arc<State>, device: DeviceId) -> mpsc::Sender<Notification> {
+    let (queue, mut pending) = mpsc::channel(OUTBOX);
+    tokio::spawn(async move {
+        while let Some(notification) = pending.recv().await {
+            let state = state.clone();
+            let device = device.clone();
+            let _ = tokio::task::spawn_blocking(move || send(&state, &device, &notification)).await;
+        }
+    });
+    queue
+}
+
+/// Sends one notification. Blocking.
+fn send(state: &State, device: &DeviceId, notification: &Notification) {
+    let Some(sender) = &state.push else {
+        return;
+    };
     let subscription = state
         .auth()
         .devices()
-        .get(&device)
+        .get(device)
         .and_then(|record| record.push.clone())
         .and_then(|value| serde_json::from_value::<Subscription>(value).ok());
     let Some(subscription) = subscription else {
         return;
     };
     let message = notification.message(waiting(state));
-    let delivery = Delivery::for_notification(&notification);
-    let state = state.clone();
-    tokio::task::spawn_blocking(move || {
-        let Some(sender) = &state.push else {
-            return;
-        };
-        if let Ok(Outcome::Gone) = sender.send(&subscription, &message, &delivery) {
-            let _ = state.auth().devices_mut().set_push(&device, None);
-        }
-    });
+    let delivery = Delivery::for_notification(notification);
+    if let Ok(Outcome::Gone) = sender.send(&subscription, &message, &delivery) {
+        let _ = state.auth().devices_mut().set_push(device, None);
+    }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests;

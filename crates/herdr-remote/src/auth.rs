@@ -26,6 +26,7 @@ use std::{
     net::IpAddr,
     path::{Path, PathBuf},
 };
+use tokio::sync::watch;
 
 /// Length of a SEC1 uncompressed P-256 point, as WebCrypto's
 /// `exportKey("raw")` produces.
@@ -256,6 +257,8 @@ pub(crate) struct Auth {
     devices: Devices,
     pair_limit: RateLimiter<IpAddr>,
     pairings: Pairings,
+    /// Bumped whenever sessions end early, so open streams check again.
+    revoked: watch::Sender<u64>,
     sessions: Sessions,
 }
 
@@ -275,8 +278,18 @@ impl Auth {
                 limits.addresses,
             ),
             pairings: Pairings::default(),
+            revoked: watch::Sender::new(0),
             sessions: Sessions::default(),
         })
+    }
+
+    /// Changes whenever a device loses access before its sessions expire.
+    pub(crate) fn watch_revocations(&self) -> watch::Receiver<u64> {
+        self.revoked.subscribe()
+    }
+
+    fn revoked(&self) {
+        self.revoked.send_modify(|revision| *revision += 1);
     }
 
     pub(crate) fn devices(&self) -> &Devices {
@@ -383,6 +396,7 @@ impl Auth {
     /// Forgets a device and ends its sessions at once.
     pub(crate) fn revoke(&mut self, device: &DeviceId) -> Result<bool> {
         self.sessions.end_device(device);
+        self.revoked();
         self.devices.revoke(device)
     }
 
@@ -391,6 +405,9 @@ impl Auth {
         let expired = self.devices.expire_idle(now_ms, idle_ms)?;
         for device in &expired {
             self.sessions.end_device(device);
+        }
+        if !expired.is_empty() {
+            self.revoked();
         }
         Ok(expired)
     }

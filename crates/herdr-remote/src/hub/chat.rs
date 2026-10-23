@@ -40,10 +40,16 @@ const ACK_TIMEOUT: Duration = Duration::from_secs(10);
 #[derive(Clone, Debug)]
 pub(crate) enum Event {
     /// The transcript was replaced (a new connection or a new run): reload.
-    Reset,
-    /// One change to the transcript.
+    /// It carries the snapshot, so a subscriber that rebuilds from it does
+    /// not pick up changes queued after it.
+    Reset {
+        transcript: Arc<Transcript>,
+        cursor: Cursor,
+    },
+    /// One change to the transcript, and where it leaves the stream.
     Change {
         change: Arc<herdr_chat_protocol::Change>,
+        cursor: Cursor,
     },
     /// The program became reachable, or stopped being.
     Connection,
@@ -142,6 +148,13 @@ impl Chat {
             transcript: state.transcript.clone(),
             connected: state.connected,
         }
+    }
+
+    /// The transcript now and the stream position it includes, for a
+    /// subscriber that must skip the queued changes already in it.
+    pub(crate) fn base(&self) -> (Transcript, Option<Cursor>) {
+        let state = lock(&self.state);
+        (state.transcript.clone(), state.cursor)
     }
 
     /// What a list row shows, without copying the transcript.
@@ -280,12 +293,13 @@ impl Chat {
                 true
             }
             ServerMessage::Snapshot { cursor, transcript } => {
+                let transcript = Arc::new(*transcript);
                 {
                     let mut state = lock(&self.state);
                     state.cursor = Some(cursor);
-                    state.transcript = *transcript;
+                    state.transcript = Transcript::clone(&transcript);
                 }
-                self.publish(Event::Reset, all);
+                self.publish(Event::Reset { transcript, cursor }, all);
                 true
             }
             ServerMessage::Change { change, cursor } => {
@@ -299,7 +313,7 @@ impl Chat {
                     }
                     state.cursor = Some(cursor);
                 }
-                self.publish(Event::Change { change }, all);
+                self.publish(Event::Change { change, cursor }, all);
                 true
             }
             ServerMessage::Ack { id, rejected } => {

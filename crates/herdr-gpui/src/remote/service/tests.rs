@@ -11,7 +11,33 @@ fn plan() -> Plan {
             enabled: true,
             ..RemoteConfig::default()
         },
+        herdr_socket: None,
+        chat_dir: None,
     }
+}
+
+#[test]
+fn the_daemon_follows_the_herdr_this_app_resolved() {
+    let mut located = plan();
+    located.herdr_socket = Some("/Users/me/cfg/herdr/herdr-client.sock".into());
+    located.chat_dir = Some("/Users/me/st/herdr/acp".into());
+    let args = located.args();
+    let words = words(&args);
+    assert_eq!(
+        words[words.len() - 4..],
+        [
+            "--herdr-socket",
+            "/Users/me/cfg/herdr/herdr-client.sock",
+            "--chat-dir",
+            "/Users/me/st/herdr/acp",
+        ]
+    );
+    // The same words reach every service file.
+    let unit = files::systemd_unit(&located).unwrap();
+    assert!(
+        unit.contains("\"--herdr-socket\" \"/Users/me/cfg/herdr/herdr-client.sock\""),
+        "{unit}"
+    );
 }
 
 fn words(args: &[OsString]) -> Vec<&str> {

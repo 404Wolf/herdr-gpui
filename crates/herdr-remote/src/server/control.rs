@@ -7,7 +7,7 @@ use crate::{
     web::{State, now_ms},
 };
 use herdr_chat_protocol::{read_frame, write_frame};
-use herdr_client::private_endpoint::Listener;
+use herdr_client::private_endpoint::{Connection, Listener};
 use std::{
     io::{BufReader, BufWriter, Write},
     path::Path,
@@ -19,6 +19,8 @@ use tokio::sync::watch;
 
 /// How long a client may take to send its request.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long the check for a daemon already serving waits.
+const PROBE_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// The version Herdr UI compares to restart an older daemon.
 pub(crate) fn version() -> &'static str {
@@ -31,6 +33,14 @@ pub(super) fn serve(
     stop: watch::Sender<bool>,
 ) -> std::io::Result<()> {
     let address = control::address(state_dir);
+    // A daemon already serving this state answers here; taking its socket
+    // would leave it running where Herdr UI can no longer reach it.
+    if Connection::connect(&address, PROBE_TIMEOUT).is_ok() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AddrInUse,
+            "another herdr-remote serves this state directory",
+        ));
+    }
     control::release(state_dir);
     let listener = Listener::bind(&address)?;
     // Accepts for the life of the process; not joined.

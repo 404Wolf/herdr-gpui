@@ -25,7 +25,14 @@ pub struct Options {
     /// Where to listen: every interface (`[::]`, dual stack) or one address.
     pub bind: IpAddr,
     pub certificate: Certificate,
+    /// The folder chat sockets live in, as Herdr UI resolved it; `None`
+    /// resolves it from this process's environment.
+    pub chat_dir: Option<PathBuf>,
     pub device_idle: Duration,
+    /// The Herdr daemon's client socket, as Herdr UI resolved it; `None`
+    /// discovers it from this process's environment. A service manager's
+    /// environment may lack the shell's `XDG_CONFIG_HOME`.
+    pub herdr_socket: Option<PathBuf>,
     pub port: u16,
     pub privacy: Privacy,
     pub state_dir: PathBuf,
@@ -67,6 +74,8 @@ Options:
   --bind all|ADDRESS       Listen on every interface (default) or one address
   --cert FILE --key FILE   Use this certificate chain and key instead of the
                            daemon's own certificate authority
+  --herdr-socket PATH      The Herdr daemon's client socket (default: discovered)
+  --chat-dir DIR           Where chat sockets live (default: discovered)
   --privacy generic|excerpt
                            Whether notifications may quote the chat (default generic)
   --device-idle-days N     Forget devices unseen this long (default 30)
@@ -88,6 +97,7 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Invocation, Par
     let (mut cert, mut key) = (None, None);
     let mut privacy = Privacy::Generic;
     let mut idle_days = DEFAULT_IDLE_DAYS;
+    let (mut herdr_socket, mut chat_dir) = (None, None);
     while let Some(arg) = args.next() {
         let name = arg.to_str().unwrap_or_default().to_owned();
         let mut value = |option: &'static str| args.next().ok_or(ParseError::Missing(option));
@@ -115,6 +125,8 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Invocation, Par
             }
             "--cert" => cert = Some(PathBuf::from(value("--cert")?)),
             "--key" => key = Some(PathBuf::from(value("--key")?)),
+            "--herdr-socket" => herdr_socket = Some(PathBuf::from(value("--herdr-socket")?)),
+            "--chat-dir" => chat_dir = Some(PathBuf::from(value("--chat-dir")?)),
             "--privacy" => {
                 privacy = match text(value("--privacy")?, "--privacy")?.as_str() {
                     "generic" => Privacy::Generic,
@@ -147,7 +159,9 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Invocation, Par
     Ok(Invocation::Serve(Options {
         bind,
         certificate,
+        chat_dir,
         device_idle: Duration::from_secs(idle_days * 24 * 60 * 60),
+        herdr_socket,
         port,
         privacy,
         state_dir: state_dir.ok_or(ParseError::NoStateDir)?,

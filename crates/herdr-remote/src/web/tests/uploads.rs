@@ -19,7 +19,7 @@ fn an_upload_is_attached_by_id_and_stored_privately() {
     let dir = tempfile::tempdir().unwrap();
     let uploads = Uploads::new(dir.path());
     let id = uploads.store("abc123".into(), PNG, 1_000).unwrap();
-    let resolved = uploads.resolve(&[Attachment { path: id }]).unwrap();
+    let resolved = uploads.resolve(&[Attachment { path: id }], 1_000).unwrap();
     let path = std::path::Path::new(&resolved[0].path);
     assert!(path.starts_with(dir.path().join("uploads")));
     assert_eq!(std::fs::read(path).unwrap(), PNG);
@@ -38,9 +38,12 @@ fn a_phone_cannot_attach_a_path_or_a_non_picture() {
     let dir = tempfile::tempdir().unwrap();
     let uploads = Uploads::new(dir.path());
     assert!(matches!(
-        uploads.resolve(&[Attachment {
-            path: "/etc/passwd".into()
-        }]),
+        uploads.resolve(
+            &[Attachment {
+                path: "/etc/passwd".into()
+            }],
+            0
+        ),
         Err(Error::UnknownUpload)
     ));
     assert!(matches!(
@@ -59,13 +62,34 @@ fn a_phone_cannot_attach_a_path_or_a_non_picture() {
 fn uploads_expire_after_a_day() {
     let dir = tempfile::tempdir().unwrap();
     let uploads = Uploads::new(dir.path());
+    let day = 24 * 60 * 60 * 1000;
     let id = uploads.store("old".into(), PNG, 0).unwrap();
-    let path = uploads.resolve(&[Attachment { path: id.clone() }]).unwrap()[0]
+    let attachment = [Attachment { path: id }];
+    let path = uploads.resolve(&attachment, day - 1).unwrap()[0]
         .path
         .clone();
-    uploads.prune(24 * 60 * 60 * 1000);
-    assert!(uploads.resolve(&[Attachment { path: id }]).is_err());
+    // Past its lifetime it cannot be attached, even before a sweep.
+    assert!(matches!(
+        uploads.resolve(&attachment, day),
+        Err(Error::UnknownUpload)
+    ));
+    uploads.prune(day);
     assert!(!std::path::Path::new(&path).exists());
+}
+
+#[test]
+fn pictures_from_an_earlier_run_are_deleted_at_start() {
+    let dir = tempfile::tempdir().unwrap();
+    let earlier = Uploads::new(dir.path());
+    let id = earlier.store("left".into(), PNG, 0).unwrap();
+    let path = earlier.resolve(&[Attachment { path: id }], 0).unwrap()[0]
+        .path
+        .clone();
+    let restarted = Uploads::new(dir.path());
+    restarted.remove_leftovers();
+    assert!(!std::path::Path::new(&path).exists());
+    // A missing folder is fine.
+    Uploads::new(&dir.path().join("none")).remove_leftovers();
 }
 
 #[tokio::test]

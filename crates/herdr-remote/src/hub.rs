@@ -12,7 +12,7 @@ pub(crate) use chat::{Chat, Event, Summary, View};
 pub(crate) use layout::{Chat as ChatRow, Layout, Workspace};
 
 use herdr_chat_protocol::{Agent, Command, EndpointId, Rejection};
-use herdr_client::Method;
+use herdr_client::{ConnectTarget, Method};
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -57,21 +57,29 @@ pub(crate) struct Hub {
     layout: watch::Receiver<Arc<Layout>>,
     chats: Mutex<HashMap<String, (EndpointId, Arc<Chat>)>>,
     all: broadcast::Sender<(String, Event)>,
+    /// Where chat sockets live; `None` resolves from the environment.
+    chat_dir: Option<PathBuf>,
     program: Option<PathBuf>,
 }
 
 impl Hub {
-    /// Connects to the local daemon and keeps chat connections in step with
-    /// its layout. Must run inside a Tokio runtime.
-    pub(crate) fn start() -> std::io::Result<Arc<Self>> {
+    /// Connects to the local daemon at `socket` (discovered when `None`)
+    /// and keeps chat connections, found in `chat_dir`, in step with its
+    /// layout. Must run inside a Tokio runtime.
+    pub(crate) fn start(
+        socket: Option<PathBuf>,
+        chat_dir: Option<PathBuf>,
+    ) -> std::io::Result<Arc<Self>> {
         let (sender, layout) = watch::channel(Arc::new(Layout::default()));
-        let daemon = daemon::Daemon::start(sender)?;
+        let target = socket.map_or(ConnectTarget::Local, ConnectTarget::Socket);
+        let daemon = daemon::Daemon::start(sender, target)?;
         let (all, _) = broadcast::channel(ALL_QUEUE);
         let hub = Arc::new(Self {
             daemon,
             layout,
             chats: Mutex::new(HashMap::new()),
             all,
+            chat_dir,
             program: locate_program(),
         });
         let follower = hub.clone();
@@ -90,6 +98,7 @@ impl Hub {
             layout: receiver,
             chats: Mutex::new(HashMap::new()),
             all,
+            chat_dir: None,
             program: None,
         })
     }
@@ -227,7 +236,12 @@ impl Hub {
             if chats.contains_key(&chat.pane) {
                 continue;
             }
-            let Some(address) = herdr_chat_protocol::endpoint_address(&chat.endpoint) else {
+            let address = match (&self.chat_dir, cfg!(windows)) {
+                // Windows chats listen on named pipes, not in a folder.
+                (Some(dir), false) => Some(herdr_chat_protocol::endpoint_path(dir, &chat.endpoint)),
+                _ => herdr_chat_protocol::endpoint_address(&chat.endpoint),
+            };
+            let Some(address) = address else {
                 continue;
             };
             if let Ok(link) = Chat::start(chat.pane.clone(), address, self.all.clone()) {

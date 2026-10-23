@@ -4,6 +4,8 @@ use super::{
 };
 use std::{ffi::OsString, net::IpAddr, path::PathBuf};
 
+mod control_socket;
+
 fn args(list: &[&str]) -> Vec<OsString> {
     std::iter::once("herdr-remote")
         .chain(list.iter().copied())
@@ -104,4 +106,28 @@ fn bad_command_lines_are_refused_before_anything_starts() {
 #[test]
 fn fingerprints_read_as_colon_separated_hex() {
     assert_eq!(colon_hex(&[0x5f, 0x2a, 0x01]), "5F:2A:01");
+}
+
+#[test]
+fn serve_takes_the_daemon_and_chat_locations_herdr_ui_resolved() {
+    let options = serve(&["serve", "--state-dir", "/s"]);
+    assert_eq!((options.herdr_socket, options.chat_dir), (None, None));
+    let options = serve(&[
+        "serve",
+        "--state-dir",
+        "/s",
+        "--herdr-socket",
+        "/h/herdr-client.sock",
+        "--chat-dir",
+        "/h/acp",
+    ]);
+    assert_eq!(
+        options.herdr_socket,
+        Some(PathBuf::from("/h/herdr-client.sock"))
+    );
+    assert_eq!(options.chat_dir, Some(PathBuf::from("/h/acp")));
+    assert_eq!(
+        parse(args(&["serve", "--state-dir", "/s", "--chat-dir"])),
+        Err(ParseError::Missing("--chat-dir"))
+    );
 }

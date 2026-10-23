@@ -118,20 +118,38 @@ impl Uploads {
     }
 
     /// The attachments a phone named by id, as the paths the chat program
-    /// reads.
-    pub(crate) fn resolve(&self, attachments: &[Attachment]) -> Result<Vec<Attachment>, Error> {
+    /// reads. An upload past its lifetime is gone even before a sweep.
+    pub(crate) fn resolve(
+        &self,
+        attachments: &[Attachment],
+        now_ms: u64,
+    ) -> Result<Vec<Attachment>, Error> {
         let uploads = self.uploads.lock().unwrap_or_else(PoisonError::into_inner);
         attachments
             .iter()
             .map(|attachment| {
                 uploads
                     .get(&attachment.path)
+                    .filter(|upload| now_ms.saturating_sub(upload.created_ms) < LIFETIME_MS)
                     .map(|upload| Attachment {
                         path: upload.path.to_string_lossy().into_owned(),
                     })
                     .ok_or(Error::UnknownUpload)
             })
             .collect()
+    }
+
+    /// Deletes every picture an earlier run left: their ids died with it,
+    /// so nothing can attach them. Blocking; run before serving.
+    pub(crate) fn remove_leftovers(&self) {
+        let Ok(entries) = std::fs::read_dir(&self.dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            if entry.file_type().is_ok_and(|kind| kind.is_file()) {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
     }
 
     /// Forgets and deletes uploads older than a day. Blocking.

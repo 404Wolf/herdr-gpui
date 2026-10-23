@@ -4,10 +4,11 @@
 //! a change. Bursts coalesce, a lagging stream reloads its view, and the
 //! stream counts as the device being connected.
 
-use super::{Device, Shared, fragments::lists, render};
+use super::{Device, Shared, bearer, fragments::lists, render};
 use crate::{control::DeviceId, hub::Event};
 use axum::{
     extract::{Query, State},
+    http::HeaderMap,
     response::sse::{Event as Sse, KeepAlive, Sse as Stream},
 };
 use futures_lite::stream;
@@ -22,6 +23,9 @@ const CHAT_COALESCE: Duration = Duration::from_millis(120);
 const LIST_COALESCE: Duration = Duration::from_millis(400);
 /// Patches queued for a slow phone before the stream gives up.
 const QUEUE: usize = 32;
+/// How often an open stream checks that its session still holds, so one
+/// that expires ends within this long. A revocation ends it at once.
+const ACCESS_CHECK: Duration = Duration::from_secs(30);
 
 #[derive(Deserialize)]
 pub(super) struct Target {
@@ -58,22 +62,50 @@ impl Drop for Connected {
 pub(super) async fn stream(
     State(state): State<Shared>,
     Device(device): Device,
+    headers: HeaderMap,
     Query(target): Query<Target>,
 ) -> Stream<impl futures_lite::Stream<Item = Result<Sse, Infallible>>> {
     let (sender, receiver) = mpsc::channel(QUEUE);
+    // `Device` accepted this token, so it is present.
+    let token = bearer(&headers).unwrap_or_default().to_owned();
     let guard = Connected::new(state.clone(), device);
     tokio::spawn(async move {
         let _guard = guard;
-        match (target.view.as_str(), target.pane) {
-            ("chat", Some(pane)) => follow_chat(&state, &pane, &sender).await,
-            ("board", _) => follow_lists(&state, true, &sender).await,
-            _ => follow_lists(&state, false, &sender).await,
+        let follow = async {
+            match (target.view.as_str(), target.pane) {
+                ("chat", Some(pane)) => follow_chat(&state, &pane, &sender).await,
+                ("board", _) => follow_lists(&state, true, &sender).await,
+                _ => follow_lists(&state, false, &sender).await,
+            }
+        };
+        tokio::select! {
+            () = follow => {}
+            () = lose_access(&state, &token) => {
+                // Reloading fetches fragments, which ask the phone to sign in.
+                let _ = sender.send(reload()).await;
+            }
         }
     });
     let events = stream::unfold(receiver, |mut receiver| async move {
         receiver.recv().await.map(|event| (Ok(event), receiver))
     });
     Stream::new(events).keep_alive(KeepAlive::new().interval(Duration::from_secs(20)))
+}
+
+/// Returns once the session `token` no longer authenticates: its device
+/// was revoked or forgotten, or the session expired.
+async fn lose_access(state: &Shared, token: &str) {
+    let mut revocations = state.auth().watch_revocations();
+    let mut check = tokio::time::interval(ACCESS_CHECK);
+    loop {
+        tokio::select! {
+            _ = check.tick() => {}
+            changed = revocations.changed() => if changed.is_err() { return },
+        }
+        if state.auth().authenticate(token, render::now_ms()).is_none() {
+            return;
+        }
+    }
 }
 
 fn reload() -> Sse {

@@ -12,14 +12,16 @@ use axum::{
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use tower::ServiceExt;
 
+mod origins;
 mod pairing;
 mod routes;
+mod stream;
 mod uploads;
 
 pub(super) const ORIGIN: &str = "https://192.168.1.20:7443";
 
 /// A server state on a private directory with no daemon behind it.
-pub(super) fn state(dir: &std::path::Path) -> Shared {
+pub(crate) fn state(dir: &std::path::Path) -> Shared {
     let names = Names::new([IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20))], Some("studio"));
     let authority = Authority::load_or_create(dir).unwrap();
     Arc::new(State {
@@ -38,6 +40,7 @@ pub(super) fn state(dir: &std::path::Path) -> Shared {
         port: 7443,
         privacy: Privacy::Generic,
         push: None,
+        seen: Mutex::new(Origins::load(dir)),
         uploads: Uploads::new(dir),
     })
 }
@@ -60,6 +63,50 @@ pub(super) async fn send(
         .await
         .unwrap();
     (status, headers, String::from_utf8_lossy(&body).into_owned())
+}
+
+/// Pairs a phone whose key comes from `seed` straight through `Auth` and
+/// signs it in: its device and bearer token.
+pub(super) fn signed_in(state: &Shared, seed: u8) -> (DeviceId, String) {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    use p256::ecdsa::{Signature, SigningKey, signature::Signer};
+    let key = SigningKey::from_slice(&[seed; 32]).unwrap();
+    let public = key.verifying_key().to_sec1_point(false);
+    let now = now_ms();
+    let mut auth = state.auth();
+    let offer = auth.mint(now, &[ORIGIN.to_owned()], "F").unwrap();
+    let token = offer
+        .url
+        .split_once("t=")
+        .unwrap()
+        .1
+        .split('&')
+        .next()
+        .unwrap();
+    let client = IpAddr::V4(Ipv4Addr::new(10, 0, 0, seed));
+    let claim = auth
+        .claim(
+            client,
+            token,
+            "iPhone",
+            &URL_SAFE_NO_PAD.encode(public.as_bytes()),
+            now,
+        )
+        .unwrap();
+    auth.answer(&offer.id, true, &claim.code, now).unwrap();
+    let device = auth.devices().list(|_| false).last().unwrap().id.clone();
+    let challenge = auth.challenge(client, &device, now).unwrap();
+    let mut message = b"herdr-remote-session\0".to_vec();
+    message.extend_from_slice(&URL_SAFE_NO_PAD.decode(&challenge.nonce).unwrap());
+    let signature: Signature = key.sign(&message);
+    let session = auth
+        .verify(
+            &challenge.id,
+            &URL_SAFE_NO_PAD.encode(signature.to_bytes()),
+            now,
+        )
+        .unwrap();
+    (device, session.token)
 }
 
 pub(super) fn get(path: &str) -> HttpRequest<Body> {

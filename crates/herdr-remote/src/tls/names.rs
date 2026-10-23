@@ -80,6 +80,61 @@ impl Names {
         names
     }
 
+    /// The names a user-supplied leaf certificate lists, as they are: its
+    /// own domain is what phones reach it by. Wildcards are left out, as
+    /// no origin is one; a certificate that cannot be read lists nothing.
+    pub(crate) fn from_certificate(der: &[u8]) -> Self {
+        use x509_parser::extensions::GeneralName;
+        let mut names = Self::default();
+        let Ok((_, certificate)) = x509_parser::parse_x509_certificate(der) else {
+            return names;
+        };
+        let Ok(Some(alternatives)) = certificate.subject_alternative_name() else {
+            return names;
+        };
+        for name in &alternatives.value.general_names {
+            match name {
+                GeneralName::DNSName(dns) if !dns.contains('*') => {
+                    names
+                        .dns
+                        .push(dns.trim_end_matches('.').to_ascii_lowercase());
+                }
+                GeneralName::IPAddress(bytes) => {
+                    let ip = match bytes.len() {
+                        4 => <[u8; 4]>::try_from(*bytes).map(IpAddr::from).ok(),
+                        16 => <[u8; 16]>::try_from(*bytes).map(IpAddr::from).ok(),
+                        _ => None,
+                    };
+                    names.ips.extend(ip);
+                }
+                _ => {}
+            }
+        }
+        names.ips.sort_unstable();
+        names.ips.dedup();
+        names.normalize();
+        names
+    }
+
+    /// Only the names a server listening on `bind` answers at: all of them
+    /// when it listens everywhere, else that address alone, plus the user's
+    /// own domains (`localhost` too when `bind` is loopback). `.local` names
+    /// resolve to every interface, so a single address drops them.
+    pub(crate) fn bound_to(mut self, bind: IpAddr) -> Self {
+        if bind.is_unspecified() {
+            return self;
+        }
+        self.ips.retain(|ip| *ip == bind);
+        self.dns.retain(|name| {
+            if is_local_domain(name) {
+                bind.is_loopback() && reach_of_dns(name) == Reach::Loopback
+            } else {
+                true
+            }
+        });
+        self
+    }
+
     /// Adds a DNS name, such as the Tailscale MagicDNS name, keeping the
     /// list sorted. A name outside [`LOCAL_DOMAINS`] would make the leaf
     /// fail verification, so it is ignored.
