@@ -26,13 +26,13 @@ impl Route {
 /// The tokens a window reads GitHub with. Cheap to clone; the first route is
 /// the main sign-in.
 #[derive(Clone)]
-pub(crate) struct Tokens(Arc<[Route]>);
+pub struct Tokens(Arc<[Route]>);
 
 impl Tokens {
     /// `main` for every owner, except those an additional account covers:
     /// its login, its organizations, and `owners` from its config. The first
     /// listed account covering an owner wins.
-    pub(crate) fn new<'a>(
+    pub fn new<'a>(
         main: &Profile,
         additional: impl IntoIterator<Item = (&'a Profile, &'a [String])>,
     ) -> Self {
@@ -65,23 +65,23 @@ impl Tokens {
     }
 
     /// The token that reads repositories owned by `owner`.
-    pub(crate) fn for_owner(&self, owner: &str) -> &Arc<SecretString> {
+    pub fn for_owner(&self, owner: &str) -> &Arc<SecretString> {
         &self.route(owner).token
     }
 
     /// The main sign-in's token.
-    pub(crate) fn main(&self) -> &Arc<SecretString> {
+    pub fn main(&self) -> &Arc<SecretString> {
         &self.0[0].token
     }
 
     /// The login of the account that reads repositories owned by `owner`.
-    pub(crate) fn login_for(&self, owner: &str) -> &str {
+    pub fn login_for(&self, owner: &str) -> &str {
         &self.route(owner).login
     }
 
     /// The same accounts, owners, and token allocations. A renewed token is a
     /// new allocation, which is how caches notice it, never by its text.
-    pub(crate) fn same(&self, other: &Self) -> bool {
+    pub fn same(&self, other: &Self) -> bool {
         self.0.len() == other.0.len()
             && self.0.iter().zip(other.0.iter()).all(|(this, that)| {
                 Arc::ptr_eq(&this.token, &that.token)
@@ -94,7 +94,7 @@ impl Tokens {
     /// reads: names the account set answers belong to. Moving an owner to
     /// another account is a new set, so no answer or hidden repository the
     /// old account recorded is shown for the new one.
-    pub(crate) fn key(&self) -> String {
+    pub fn key(&self) -> String {
         let routes: Vec<String> = self
             .0
             .iter()
@@ -107,7 +107,7 @@ impl Tokens {
     }
 
     /// Every account's login, main first.
-    pub(crate) fn logins(&self) -> impl Iterator<Item = &str> {
+    pub fn logins(&self) -> impl Iterator<Item = &str> {
         self.0.iter().map(|route| route.login.as_str())
     }
 }

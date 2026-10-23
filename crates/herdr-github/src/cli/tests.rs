@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
-use crate::github::{device::repo_scope, token::Saved};
+use crate::{device::repo_scope, token::Saved};
 use secrecy::ExposeSecret;
 
 #[test]
@@ -54,7 +54,7 @@ fn only_a_missing_repo_scope_is_reported() {
 #[test]
 fn the_saved_marker_is_never_a_token() {
     assert!(matches!(
-        Saved::decode(&crate::github::token::GITHUB_CLI.into()).unwrap(),
+        Saved::decode(&crate::token::GITHUB_CLI.into()).unwrap(),
         Saved::GitHubCli
     ));
     assert!(matches!(
@@ -111,7 +111,7 @@ mod process {
 
     #[test]
     fn the_private_file_keeps_the_marker_and_never_a_token() {
-        use crate::github::{credentials, token::GITHUB_CLI};
+        use crate::{credentials, token::GITHUB_CLI};
         let dir = tempfile::tempdir().unwrap();
         std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
         let name = c"github-credentials";

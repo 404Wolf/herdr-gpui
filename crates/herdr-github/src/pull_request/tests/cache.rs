@@ -38,9 +38,9 @@ struct Peer {
 }
 
 /// The fixture account alone, signed in as `fixture`.
-fn tokens() -> crate::github::Tokens {
-    let profile = crate::github::Profile::fixture("fixture", Arc::new("fixture".into()), &[]);
-    crate::github::Tokens::new(&profile, [])
+fn tokens() -> crate::Tokens {
+    let profile = crate::Profile::fixture("fixture", Arc::new("fixture".into()), &[]);
+    crate::Tokens::new(&profile, [])
 }
 
 fn answered(input: Input, result: Result) -> Batch {
@@ -198,11 +198,7 @@ fn cache_prefetches_without_menu_and_refreshes_at_ttl_with_stale_data() {
         view.value.is_some(),
         "refresh does not replace cached data with loading"
     );
-    peer.complete(
-        due,
-        Err(std::io::Error::other("network unavailable").into()),
-        None,
-    );
+    peer.complete(due, Err(Error::PrTimeout), None);
     peer.cache.present(&input, &mut view, due);
     assert!(view.value.is_some());
     assert!(view.message.is_some());

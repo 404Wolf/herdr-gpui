@@ -15,11 +15,11 @@ fn signout_discards_late_profile_and_auth_without_environment_reactivation() {
     assert!(auth.profile_incoming.is_none());
     assert!(!auth.connected());
     // Reload/reconnect cannot read environment or disk after explicit sign-out.
-    auth.initialize(&crate::config::Config::default());
+    auth.initialize(&crate::config::GitHubConfig::default());
     assert!(!auth.loading_profile());
     auth.poll_with_store(|token| {
         assert!(token.is_none());
-        Err(std::io::Error::other("mock removal failure").into())
+        Err(herdr_credentials::Error::Io(std::io::Error::other("mock removal failure")).into())
     });
     let reply = auth
         .incoming
@@ -31,7 +31,10 @@ fn signout_discards_late_profile_and_auth_without_environment_reactivation() {
     auth.poll_with_store(|_| panic!("no second store operation"));
     assert!(!auth.connected());
     assert!(auth.failed);
-    assert_eq!(auth.message.as_deref(), Some("mock removal failure"));
+    assert_eq!(
+        auth.message.as_deref(),
+        Some("Cannot access private credential file.")
+    );
 }
 
 #[test]

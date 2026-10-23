@@ -144,8 +144,8 @@ pub(crate) fn sync(
             cooldown,
         )
         .map_err(|error| match error {
-            crate::Error::PrCancelled => Error::Cancelled,
-            error => Error::Github(Box::new(error)),
+            herdr_github::Error::PrCancelled => Error::Cancelled,
+            error => Error::Github(Box::new(error.into())),
         })
     };
     let previous = previous.cloned().unwrap_or_default();

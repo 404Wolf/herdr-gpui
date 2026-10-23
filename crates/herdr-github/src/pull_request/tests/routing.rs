@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    github::{Profile, Tokens},
+    Profile, Tokens,
     pull_request::{
         batch::by_token,
         fetch::{Ask, Target},

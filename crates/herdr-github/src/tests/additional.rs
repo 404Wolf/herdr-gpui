@@ -1,12 +1,11 @@
 use super::*;
-use crate::github::{Account, device::organizations};
+use crate::{Account, device::organizations};
 
 fn pasted_profile() -> Profile {
     Profile {
         login: "fabien_microsoft".into(),
-        avatar: None,
+        avatar_url: String::new(),
         token: Arc::new("github_pat_fixture".into()),
-        avatar_updates: None,
         source: Default::default(),
         organizations: Some(vec!["emu-org".into()]),
         access: Default::default(),

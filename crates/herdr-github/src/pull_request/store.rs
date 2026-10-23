@@ -4,7 +4,7 @@
 //! rate limit one window hit pauses the others. Bounded like a single cache.
 
 use super::{Input, Origin, PullRequest};
-use std::{cell::RefCell, rc::Rc, time::Instant};
+use std::time::Instant;
 
 pub(super) const CACHE_LIMIT: usize = 128;
 
@@ -12,10 +12,10 @@ pub(super) const CACHE_LIMIT: usize = 128;
 /// account that read it. A window refreshes only its selected device's view,
 /// and each device's rows show their own view's answers.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct View {
-    pub(crate) origin: Origin,
-    /// The account set's key, as [`crate::github::Tokens::key`] gives it.
-    pub(crate) login: String,
+pub struct View {
+    pub origin: Origin,
+    /// The account set's key, as [`crate::Tokens::key`] gives it.
+    pub login: String,
 }
 
 pub(super) struct Entry {
@@ -47,7 +47,7 @@ pub(super) struct Pause {
 }
 
 #[derive(Default)]
-pub(crate) struct Store {
+pub struct Store {
     pub(super) entries: Vec<Entry>,
     pub(super) hidden: Vec<HiddenRepository>,
     pub(super) pauses: Vec<Pause>,
@@ -57,13 +57,6 @@ pub(crate) struct Store {
     /// when another one records an answer, a pause, or a lookup.
     pub(super) revision: u64,
 }
-
-/// The store the app's windows share, as a GPUI global. It is only touched on
-/// the UI thread.
-#[derive(Default)]
-pub(crate) struct Shared(pub(crate) Rc<RefCell<Store>>);
-
-impl gpui::Global for Shared {}
 
 impl Store {
     pub(super) fn changed(&mut self) {

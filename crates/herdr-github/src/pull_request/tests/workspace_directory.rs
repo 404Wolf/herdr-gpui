@@ -6,9 +6,7 @@ use crate::pull_request::{local_checkout, repository_key, workspace_input};
 use herdr_client::protocol::{ClientShellWorkspace, ClientShellWorktree};
 
 fn workspace(cwd: &str, branch: Option<&str>) -> ClientShellWorkspace {
-    let mut workspace = crate::sidebar::layout_tests::snapshot(1)
-        .workspaces
-        .remove(0);
+    let mut workspace = shell_workspace();
     workspace.new_workspace_cwd = cwd.into();
     workspace.branch = branch.map(Into::into);
     workspace.worktree = None;

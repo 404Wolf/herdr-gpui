@@ -410,7 +410,7 @@ impl Worker {
         );
         self.snapshot.pull_request = Some(PullRequestLookup {
             number,
-            result: Arc::new(result),
+            result: Arc::new(result.map_err(Into::into)),
         });
         self.publish();
     }
@@ -730,8 +730,8 @@ impl Worker {
                         &mut self.cooldown,
                     )
                     .map_err(|error| match error {
-                        crate::Error::PrCancelled => Error::Cancelled,
-                        error => Error::Github(Box::new(error)),
+                        herdr_github::Error::PrCancelled => Error::Cancelled,
+                        error => Error::Github(Box::new(error.into())),
                     })
                 });
                 match statuses {

@@ -12,7 +12,10 @@ impl Drop for Host {
 
 #[test]
 fn a_sign_in_saved_in_credential_manager_is_read_back_after_a_restart() {
-    assert_eq!(select(&crate::config::Config::default()), Store::Keyring);
+    assert_eq!(
+        select(&crate::config::GitHubConfig::default()),
+        Store::Keyring
+    );
     let id = format!("{:032x}", u128::from(std::process::id()) << 64 | 0x7e57);
     let host = Host(Account::host(&id).unwrap());
     assert!(saved_token(Store::Keyring, &host.0).unwrap().is_none());

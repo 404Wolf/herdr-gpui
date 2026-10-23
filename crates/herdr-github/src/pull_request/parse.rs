@@ -109,7 +109,7 @@ pub(super) fn parse_by_number(
     parse_graphql(response, owner, repo, &head.branch, Some(&head))
 }
 
-#[cfg(any(test, all(feature = "integration-test", target_os = "macos")))]
+#[cfg(any(test, feature = "test-support"))]
 pub(super) fn parse(text: &str, owner: &str, repo: &str, branch: &str) -> Result {
     parse_with_owner(text, owner, repo, branch, owner)
 }

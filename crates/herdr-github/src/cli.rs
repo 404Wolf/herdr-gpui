@@ -24,7 +24,7 @@ const OUTPUT_LIMIT: usize = 16 * 1024;
 pub(super) fn token() -> Result<SecretString> {
     let mut command = herdr_client::new_command("gh");
     // An app opened from the Dock or a desktop launcher has a minimal PATH.
-    crate::login_env::apply(&mut command);
+    herdr_client::login_env::apply(&mut command);
     run(&mut command)
 }
 

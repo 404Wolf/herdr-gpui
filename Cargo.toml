@@ -1,5 +1,5 @@
 [workspace]
-members  = ["crates/embed-resource", "crates/herdr-acp", "crates/herdr-automate", "crates/herdr-automation", "crates/herdr-chat-protocol", "crates/herdr-client", "crates/herdr-control-protocol", "crates/herdr-credentials", "crates/herdr-gpui", "crates/herdr-gpui-launcher", "crates/herdr-protocol", "crates/herdr-remote", "crates/herdr-updater", "crates/herdr-usage"]
+members  = ["crates/embed-resource", "crates/herdr-acp", "crates/herdr-automate", "crates/herdr-automation", "crates/herdr-chat-protocol", "crates/herdr-client", "crates/herdr-control-protocol", "crates/herdr-credentials", "crates/herdr-gpui", "crates/herdr-github", "crates/herdr-gpui-launcher", "crates/herdr-protocol", "crates/herdr-remote", "crates/herdr-updater", "crates/herdr-usage"]
 resolver = "2"
 
 [workspace.package]
@@ -64,6 +64,7 @@ herdr-chat-protocol  = { path = "crates/herdr-chat-protocol" }
 herdr-client         = { path = "crates/herdr-client" }
 herdr-control-protocol = { path = "crates/herdr-control-protocol" }
 herdr-credentials    = { path = "crates/herdr-credentials" }
+herdr-github         = { path = "crates/herdr-github" }
 herdr-protocol       = { path = "crates/herdr-protocol" }
 herdr-remote         = { default-features = false, path = "crates/herdr-remote" }
 herdr-updater        = { path = "crates/herdr-updater" }

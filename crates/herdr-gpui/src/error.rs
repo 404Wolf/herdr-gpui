@@ -107,8 +107,6 @@ pub enum Error {
     ConnectionNotReady,
     #[error(transparent)]
     Control(#[from] crate::control::ControlError),
-    #[error("Missing credential directory.")]
-    CredentialDirectory,
     #[error(transparent)]
     Credentials(#[from] herdr_credentials::Error),
     #[error("daemon startup cancelled")]

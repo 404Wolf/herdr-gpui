@@ -126,7 +126,7 @@ fn accepted_token_uses_store_off_thread_and_reports_failure() {
             Some("fixture-token")
         );
         assert_eq!(thread::current().name(), Some("herdr-github-auth"));
-        Err(std::io::Error::other("mock Keychain locked").into())
+        Err(herdr_credentials::Error::Io(std::io::Error::other("mock Keychain locked")).into())
     });
     auth.cancel(); // Accepted commits cannot be cancelled halfway through Keychain I/O.
     let reply = auth
@@ -137,7 +137,10 @@ fn accepted_token_uses_store_off_thread_and_reports_failure() {
         .unwrap();
     deliver(&mut auth, reply);
     auth.poll();
-    assert_eq!(auth.message.as_deref(), Some("mock Keychain locked"));
+    assert_eq!(
+        auth.message.as_deref(),
+        Some("Cannot access private credential file.")
+    );
     assert!(!auth.busy());
 }
 

@@ -50,14 +50,14 @@ impl Default for BatchSize {
 /// The scope includes selection epoch, connection generation and daemon boot.
 /// Token allocation identity is an additional auth generation, never token text.
 #[derive(Default)]
-pub(crate) struct Cache {
+pub struct Cache {
     pub(super) store: Rc<RefCell<Store>>,
     pub(super) prefetch: Prefetch,
     pub(super) queue: std::collections::VecDeque<Input>,
     /// The checkouts of the batch in flight.
     pub(super) active: Vec<Input>,
     pub(super) scope: Option<(u64, u64, String)>,
-    pub(super) token: Option<crate::github::Tokens>,
+    pub(super) token: Option<crate::Tokens>,
     pub(super) view: View,
     pub(super) batch: BatchSize,
     pub(super) next_scan: Option<Instant>,
@@ -107,7 +107,7 @@ impl Cache {
         cache
     }
 
-    #[cfg(any(test, all(feature = "integration-test", target_os = "macos")))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn seed(&mut self, input: Input, value: PullRequest, now: Instant) {
         let mut store = self.store.borrow_mut();
         store
@@ -127,7 +127,7 @@ impl Cache {
     pub fn clear(&mut self) {
         self.suspend();
         if let Ok(mut store) = self.store.try_borrow_mut() {
-            let logins = self.token.iter().flat_map(crate::github::Tokens::logins);
+            let logins = self.token.iter().flat_map(crate::Tokens::logins);
             store.forget(&self.view.login, logins);
         }
         self.scope = None;
@@ -159,7 +159,7 @@ impl Cache {
     pub fn scope(
         &mut self,
         scope: (u64, u64, String),
-        token: impl Into<crate::github::Tokens>,
+        token: impl Into<crate::Tokens>,
         login: &str,
         origin: Origin,
     ) {
@@ -539,7 +539,7 @@ impl Cache {
 /// it stopped. One healthy account keeps the set asking.
 fn pause<'a>(
     store: &'a Store,
-    tokens: &crate::github::Tokens,
+    tokens: &crate::Tokens,
     now: Instant,
 ) -> Option<(Instant, Option<&'a str>)> {
     tokens

@@ -52,3 +52,13 @@ fn origin_base(owner: &str, repo: &str) -> Base {
         fork_owner: None,
     }
 }
+
+/// A daemon workspace with nothing set but its identity, for tests to fill in.
+fn shell_workspace() -> herdr_client::protocol::ClientShellWorkspace {
+    serde_json::from_value(serde_json::json!({
+        "workspace_id": "w0", "active_tab_id": "t0", "new_workspace_cwd": "/tmp",
+        "number": 1, "label": "workspace", "custom_label": false, "branch": null,
+        "worktree": null, "tokens": [], "focused": true, "agent_status": "working"
+    }))
+    .unwrap()
+}

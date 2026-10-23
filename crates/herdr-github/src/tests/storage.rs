@@ -1,13 +1,13 @@
 use super::*;
-use crate::github::store::resolve_token;
+use crate::store::resolve_token;
 
 #[test]
 fn github_sign_ins_follow_the_build_and_the_plaintext_opt_in() {
-    let mut config = crate::config::Config::default();
+    let mut config = crate::config::GitHubConfig::default();
     #[cfg(target_os = "macos")]
     assert_eq!(
         store::select(&config),
-        if crate::RELEASE_BUILD {
+        if herdr_credentials::RELEASE_BUILD {
             Store::Keyring
         } else {
             Store::File
@@ -15,7 +15,7 @@ fn github_sign_ins_follow_the_build_and_the_plaintext_opt_in() {
     );
     #[cfg(any(target_os = "linux", windows))]
     assert_eq!(store::select(&config), Store::Keyring);
-    config.github.allow_plaintext_credentials = true;
+    config.allow_plaintext_credentials = true;
     // macOS picks its store from the build alone and ignores the opt-in.
     #[cfg(target_os = "macos")]
     assert_eq!(
@@ -205,10 +205,10 @@ fn auth_priority_and_storage_errors_never_fall_back_silently() {
             .contains("authentication required")
     );
     assert_eq!(
-        resolve_token(None, None, || Err(std::io::Error::other("locked").into()))
+        resolve_token(None, None, || Err(Error::GitHubToken))
             .unwrap_err()
             .to_string(),
-        "locked"
+        Error::GitHubToken.to_string()
     );
     assert!(resolve_token(Some("bad\nsecret".into()), None, || panic!()).is_err());
     assert!(resolve_token(None, None, || Ok(Some("  ".into()))).is_err());

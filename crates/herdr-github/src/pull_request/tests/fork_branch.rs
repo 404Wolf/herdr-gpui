@@ -1,5 +1,5 @@
 use super::*;
-use crate::{pull_request::parse_numbered, repo_items::fork_branch_number};
+use crate::pull_request::{fork_branch_number, parse_numbered};
 
 fn numbered(pr: serde_json::Value) -> serde_json::Value {
     serde_json::json!({"data":{"repository":{"squashMergeAllowed":true,"pullRequest":pr}}})

@@ -1,36 +1,31 @@
 use super::*;
+use crate::pull_request::Tone;
 
 #[test]
 fn badge_colors_report_readiness_and_preserve_terminal_lifecycles() {
-    let theme = crate::config::Theme::default();
     for (merge, review, checks, expected) in [
-        ("CLEAN", "APPROVED", vec![], theme.palette[2]),
-        ("CLEAN", "", vec!["SUCCESS", "SKIPPED"], theme.palette[2]),
-        ("CLEAN", "", vec!["PENDING"], theme.palette[3]),
-        ("CLEAN", "REVIEW_REQUIRED", vec![], theme.palette[3]),
-        ("CLEAN", "CHANGES_REQUESTED", vec![], theme.palette[1]),
+        ("CLEAN", "APPROVED", vec![], Tone::Ready),
+        ("CLEAN", "", vec!["SUCCESS", "SKIPPED"], Tone::Ready),
+        ("CLEAN", "", vec!["PENDING"], Tone::Waiting),
+        ("CLEAN", "REVIEW_REQUIRED", vec![], Tone::Waiting),
+        ("CLEAN", "CHANGES_REQUESTED", vec![], Tone::Attention),
         (
             "CLEAN",
             "APPROVED",
             vec!["PENDING", "FAILURE"],
-            theme.palette[1],
+            Tone::Attention,
         ),
-        (
-            "DIRTY",
-            "REVIEW_REQUIRED",
-            vec!["PENDING"],
-            theme.palette[1],
-        ),
-        ("UNSTABLE", "", vec![], theme.palette[1]),
-        ("UNSTABLE", "", vec!["SUCCESS", "PENDING"], theme.palette[3]),
-        ("UNSTABLE", "", vec!["PENDING", "FAILURE"], theme.palette[1]),
-        ("BLOCKED", "", vec![], theme.palette[208]),
-        ("BEHIND", "", vec![], theme.palette[208]),
-        ("BLOCKED", "", vec!["PENDING"], theme.palette[3]),
-        ("HAS_HOOKS", "", vec![], theme.palette[3]),
-        ("UNKNOWN", "", vec![], theme.palette[3]),
-        ("FUTURE_STATE", "", vec![], theme.palette[3]),
-        ("DRAFT", "", vec![], theme.palette[3]),
+        ("DIRTY", "REVIEW_REQUIRED", vec!["PENDING"], Tone::Attention),
+        ("UNSTABLE", "", vec![], Tone::Attention),
+        ("UNSTABLE", "", vec!["SUCCESS", "PENDING"], Tone::Waiting),
+        ("UNSTABLE", "", vec!["PENDING", "FAILURE"], Tone::Attention),
+        ("BLOCKED", "", vec![], Tone::Held),
+        ("BEHIND", "", vec![], Tone::Held),
+        ("BLOCKED", "", vec!["PENDING"], Tone::Waiting),
+        ("HAS_HOOKS", "", vec![], Tone::Waiting),
+        ("UNKNOWN", "", vec![], Tone::Waiting),
+        ("FUTURE_STATE", "", vec![], Tone::Waiting),
+        ("DRAFT", "", vec![], Tone::Waiting),
     ] {
         let mut wire = response();
         wire[0]["mergeStateStatus"] = merge.into();
@@ -43,29 +38,25 @@ fn badge_colors_report_readiness_and_preserve_terminal_lifecycles() {
         let mut pr = parse(&wire.to_string(), "example", "project", "feature")
             .unwrap()
             .unwrap();
-        assert_eq!(
-            pr.color(&theme),
-            theme.ink(expected),
-            "{merge}, {review}, {checks:?}"
-        );
+        assert_eq!(pr.tone(), expected, "{merge}, {review}, {checks:?}");
         pr.is_draft = true;
-        assert_eq!(pr.color(&theme), theme.ink(theme.muted));
+        assert_eq!(pr.tone(), Tone::Muted);
         pr.state = State::Merged;
-        assert_eq!(pr.color(&theme), theme.ink(theme.palette[5]));
+        assert_eq!(pr.tone(), Tone::Merged);
         pr.state = State::Closed;
-        assert_eq!(pr.color(&theme), theme.ink(theme.palette[1]));
+        assert_eq!(pr.tone(), Tone::Attention);
     }
     // CheckRun status takes priority over a conclusion until completion, and a
     // failed check wins over pending checks and a nominally clean merge state.
     let mut pr = fixture().unwrap();
     pr.merge_state_status = MergeState::Clean;
     pr.review_decision = Default::default();
-    assert_eq!(pr.color(&theme), theme.ink(theme.palette[1]));
+    assert_eq!(pr.tone(), Tone::Attention);
     pr.status_check_rollup = serde_json::from_value(serde_json::json!([
         {"__typename":"CheckRun", "status":"IN_PROGRESS", "conclusion":"SUCCESS"}
     ]))
     .unwrap();
-    assert_eq!(pr.color(&theme), theme.ink(theme.palette[3]));
+    assert_eq!(pr.tone(), Tone::Waiting);
 }
 
 #[test]

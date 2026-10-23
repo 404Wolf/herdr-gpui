@@ -3,7 +3,7 @@
 //! than cancelled mid-flight, and dropping the handle retires the generation.
 
 use super::{Input, Origin, Origins, PullRequest, batch::Batch, batch::fetch_batch};
-use crate::github::Tokens;
+use crate::Tokens;
 use std::{
     sync::{
         Arc,
@@ -25,7 +25,7 @@ pub(super) struct Worker {
 
 /// One checkout's lookup as a view shows it.
 #[derive(Default)]
-pub(crate) struct Lookup {
+pub struct Lookup {
     pub loading: bool,
     pub value: Option<PullRequest>,
     pub message: Option<String>,

@@ -21,7 +21,7 @@ const PAGE: usize = 100;
 
 /// What a GitHub App sign-in still needs from the user.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) enum Access {
+pub enum Access {
     /// Not checked yet, not a GitHub App token, or the check failed.
     #[default]
     Unknown,
@@ -35,22 +35,22 @@ pub(crate) enum Access {
 
 impl Access {
     /// Whether the account shows the attention dot and its GitHub page row.
-    pub(crate) fn needs_attention(&self) -> bool {
+    pub fn needs_attention(&self) -> bool {
         matches!(self, Self::NotInstalled | Self::Pending(_))
     }
 }
 
 /// One installation waiting for its owner to approve new permissions.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Installation {
-    pub(crate) owner: String,
-    pub(crate) organization: bool,
+pub struct Installation {
+    pub owner: String,
+    pub organization: bool,
     id: u64,
 }
 
 impl Installation {
-    #[cfg(test)]
-    pub(crate) fn fixture(owner: &str, organization: bool, id: u64) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture(owner: &str, organization: bool, id: u64) -> Self {
         Self {
             owner: owner.into(),
             organization,
@@ -60,7 +60,7 @@ impl Installation {
 
     /// Where the owner reviews and approves the request. Built from the id
     /// and a checked login rather than taken from the response.
-    pub(crate) fn url(&self) -> String {
+    pub fn url(&self) -> String {
         if self.organization {
             format!(
                 "https://github.com/organizations/{}/settings/installations/{}",

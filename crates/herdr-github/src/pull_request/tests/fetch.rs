@@ -209,12 +209,12 @@ fn remote_host_drops_credentials_and_path() {
 #[test]
 fn github_origins_are_strictly_validated() {
     assert_eq!(
-        crate::avatars::github_repo("git@github.com:Some-Owner/repo.git"),
+        crate::github_repo("git@github.com:Some-Owner/repo.git"),
         Some(("some-owner".into(), "repo".into()))
     );
     // Enterprise managed users own repositories under an `_shortcode` login.
     assert_eq!(
-        crate::avatars::github_repo("https://github.com/fabienpenso_microsoft/repo"),
+        crate::github_repo("https://github.com/fabienpenso_microsoft/repo"),
         Some(("fabienpenso_microsoft".into(), "repo".into()))
     );
     for remote in [
@@ -223,6 +223,6 @@ fn github_origins_are_strictly_validated() {
         "https://other.test/a/b",
         "https://github.com/a/b?x",
     ] {
-        assert!(crate::avatars::github_repo(remote).is_none());
+        assert!(crate::github_repo(remote).is_none());
     }
 }

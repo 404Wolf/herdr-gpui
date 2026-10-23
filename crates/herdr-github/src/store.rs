@@ -8,7 +8,7 @@ use super::{
     token::{Credential, GITHUB_CLI, Saved},
 };
 use crate::Error;
-pub(crate) use herdr_credentials::{FILE, Store};
+pub use herdr_credentials::{FILE, Store};
 pub(super) use herdr_credentials::{FILE_DEFAULT, KEYRING};
 use herdr_credentials::{OPT_IN, keyring_read, keyring_save};
 use secrecy::{ExposeSecret, SecretString};
@@ -23,16 +23,16 @@ fn transaction<T>(work: impl FnOnce() -> Result<T>) -> Result<T> {
     work()
 }
 
-pub(crate) const PLAINTEXT_WARNING: &str = "WARNING: plaintext credential storage is enabled. GitHub tokens are unencrypted on disk; software running as you and backups can read them.";
-pub(crate) const DEVELOPMENT_WARNING: &str = "WARNING: this development build does not use the macOS Keychain. GitHub tokens are unencrypted beside the GUI config; software running as you and backups can read them.";
+pub const PLAINTEXT_WARNING: &str = "WARNING: plaintext credential storage is enabled. GitHub tokens are unencrypted on disk; software running as you and backups can read them.";
+pub const DEVELOPMENT_WARNING: &str = "WARNING: this development build does not use the macOS Keychain. GitHub tokens are unencrypted beside the GUI config; software running as you and backups can read them.";
 #[cfg(not(any(target_os = "linux", windows)))]
-pub(crate) const KEYRING_NOTICE: &str =
+pub const KEYRING_NOTICE: &str =
     "Credentials are saved in macOS Keychain. macOS may ask you to unlock or approve access.";
 #[cfg(target_os = "linux")]
-pub(crate) const KEYRING_NOTICE: &str =
+pub const KEYRING_NOTICE: &str =
     "Credentials are saved in your desktop keyring (Secret Service). It may ask you to unlock it.";
 #[cfg(windows)]
-pub(crate) const KEYRING_NOTICE: &str =
+pub const KEYRING_NOTICE: &str =
     "Credentials are saved in Windows Credential Manager for your Windows account.";
 
 // The GitHub sign-in's keyring entries: one service, an account per sign-in.
@@ -44,7 +44,7 @@ const LABEL: &str = "Herdr UI GitHub sign-in";
 /// Which saved GitHub sign-in a credential belongs to. Each one is a separate
 /// entry in the same store, so signing one out never touches another.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) enum Account {
+pub enum Account {
     /// The account used on this device, and on any saved host without its own.
     #[default]
     Main,
@@ -58,12 +58,12 @@ pub(crate) enum Account {
 impl Account {
     /// Catalog profile IDs are 32 lowercase hex digits, so they are safe in a
     /// keyring account name and a file name. Anything else is refused.
-    pub(crate) fn host(id: &str) -> Option<Self> {
+    pub fn host(id: &str) -> Option<Self> {
         herdr_client::valid_profile_id(id).then(|| Self::Host(id.to_owned()))
     }
 
     /// The same rule as `host`, for an additional account's config ID.
-    pub(crate) fn additional(id: &str) -> Option<Self> {
+    pub fn additional(id: &str) -> Option<Self> {
         crate::config::valid_account_id(id).then(|| Self::Additional(id.to_owned()))
     }
 
@@ -132,16 +132,16 @@ pub(super) fn environment_token(name: &str) -> Result<Option<SecretString>> {
 }
 
 /// The store for GitHub sign-ins under `config`'s plaintext opt-in.
-pub(crate) fn select(config: &crate::config::Config) -> Store {
+pub fn select(config: &crate::config::GitHubConfig) -> Store {
     Store::choose(
-        config.github.allow_plaintext_credentials && OPT_IN,
+        config.allow_plaintext_credentials && OPT_IN,
         KEYRING,
         FILE_DEFAULT,
     )
 }
 
 /// Credential handling shown in the GitHub menu, so storage is never implicit.
-pub(crate) fn note(store: Store, connected: bool) -> Option<Note> {
+pub fn note(store: Store, connected: bool) -> Option<Note> {
     match store {
         Store::File if FILE_DEFAULT => Some(Note::Warning(DEVELOPMENT_WARNING)),
         Store::File => Some(Note::Warning(PLAINTEXT_WARNING)),
@@ -150,7 +150,7 @@ pub(crate) fn note(store: Store, connected: bool) -> Option<Note> {
     }
 }
 
-pub(crate) enum Note {
+pub enum Note {
     Warning(&'static str),
     Info(&'static str),
 }
@@ -295,11 +295,9 @@ pub(super) fn save_github_cli(store: Store) -> Result<()> {
     save(Some(&GITHUB_CLI.into()), store, &Account::Main)
 }
 
+/// The directory the GUI config, and so the private credential file, lives in.
 pub(super) fn credential_directory() -> Result<std::path::PathBuf> {
-    crate::config::Config::path()?
-        .parent()
-        .map(std::path::Path::to_owned)
-        .ok_or(Error::CredentialDirectory)
+    Ok(herdr_client::local_path::config_root()?.join("herdr"))
 }
 
 pub(super) fn save(token: Option<&SecretString>, store: Store, account: &Account) -> Result<()> {

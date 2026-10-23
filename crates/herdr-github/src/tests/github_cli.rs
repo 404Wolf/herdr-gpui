@@ -1,12 +1,11 @@
 use super::*;
-use crate::github::{Account, Source};
+use crate::{Account, Source};
 
 fn cli_profile(repo_scope: bool) -> Profile {
     Profile {
         login: "cli-user".into(),
-        avatar: None,
+        avatar_url: String::new(),
         token: Arc::new("gho_fixture".into()),
-        avatar_updates: None,
         source: Source::GitHubCli { repo_scope },
         organizations: None,
         access: Default::default(),

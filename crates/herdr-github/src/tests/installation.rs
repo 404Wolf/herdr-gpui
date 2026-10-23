@@ -1,5 +1,5 @@
 use super::*;
-use crate::github::installation::{Access, App, Installation, Listing, assess, check};
+use crate::installation::{Access, App, Installation, Listing, assess, check};
 
 fn listing(installations: Value) -> Listing {
     serde_json::from_value(serde_json::json!({ "installations": installations })).unwrap()

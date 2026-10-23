@@ -4,8 +4,8 @@
 
 use super::{Result, log};
 use crate::Error;
-use crate::updater::{quota_exhausted, rate_limit_reset};
 use chrono::{DateTime, Utc};
+use herdr_updater::{quota_exhausted, rate_limit_reset};
 use secrecy::{ExposeSecret, ExposeSecretMut, SecretBox as Secret, SecretString};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -74,7 +74,7 @@ pub(super) fn response<T: DeserializeOwned>(
     })
 }
 
-pub(crate) fn graphql(
+pub fn graphql(
     context: &'static str,
     token: &SecretString,
     query: &str,
@@ -115,7 +115,7 @@ pub(crate) fn graphql(
 /// repository it would not show beside ones it did. An exhausted quota, or an
 /// error no alias claims, fails the whole request. Pull request lookups are
 /// its only caller, so failures are logged under their context.
-pub(crate) fn graphql_aliases(
+pub fn graphql_aliases(
     token: &SecretString,
     query: &str,
     variables: Value,
@@ -204,7 +204,7 @@ pub(super) fn split_aliases(
 /// or cancelled midway; a refusal carries GitHub's own reason (cleaned and
 /// bounded) because "the branch moved" or "not mergeable" is the answer the
 /// user needs, and a generic failure would invite a blind retry.
-pub(crate) fn mutation(
+pub fn mutation(
     context: &'static str,
     token: &SecretString,
     query: &str,
@@ -227,7 +227,7 @@ pub(crate) fn mutation(
 /// and typed refusals as GraphQL. Callers build `path` from names they have
 /// validated; nothing here escapes it. The answer is read straight into
 /// `T`, so fields `T` leaves out are skipped rather than held.
-pub(crate) fn rest<T: DeserializeOwned>(
+pub fn rest<T: DeserializeOwned>(
     context: &'static str,
     token: &SecretString,
     path: &str,
@@ -263,7 +263,7 @@ fn requested_repository(variables: &Value) -> Option<String> {
 /// App user token only reaches repositories the App is installed on, and no
 /// token reaches another account's private repositories, such as those of an
 /// Enterprise Managed User, which an additional account can read instead.
-pub(crate) fn hidden_hint(app_token: bool) -> &'static str {
+pub fn hidden_hint(app_token: bool) -> &'static str {
     if app_token {
         "This GitHub App sign-in only reaches repositories the App is installed on: install it for the repository's owner and approve the permissions it asks for, or add the account that owns it on the GitHub page."
     } else {
@@ -303,13 +303,13 @@ pub(super) fn query_error(
 
 /// GraphQL endpoints that tests stand in for GitHub, by the token that reads
 /// them, so a test's fake never answers another test's calls.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 static FAKE_GRAPHQL: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
 
 /// Sends GraphQL calls made with `token` to `url` instead of GitHub, for
 /// the rest of the test process.
-#[cfg(test)]
-pub(crate) fn fake_graphql(token: &str, url: String) {
+#[cfg(any(test, feature = "test-support"))]
+pub fn fake_graphql(token: &str, url: String) {
     if let Ok(mut fakes) = FAKE_GRAPHQL.lock() {
         fakes.retain(|(fake, _)| fake != token);
         fakes.push((token.to_owned(), url));
@@ -317,7 +317,7 @@ pub(crate) fn fake_graphql(token: &str, url: String) {
 }
 
 fn graphql_url(token: &SecretString) -> String {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     if let Some((_, url)) = FAKE_GRAPHQL.lock().ok().and_then(|fakes| {
         fakes
             .iter()
@@ -326,7 +326,7 @@ fn graphql_url(token: &SecretString) -> String {
     }) {
         return url;
     }
-    #[cfg(not(test))]
+    #[cfg(not(any(test, feature = "test-support")))]
     let _ = token;
     "https://api.github.com/graphql".to_owned()
 }

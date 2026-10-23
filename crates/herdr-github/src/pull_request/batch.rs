@@ -9,7 +9,7 @@ use super::{
     parse::current,
     parse_graphql, parse_numbered,
 };
-use crate::{Error, github::Tokens};
+use crate::{Error, Tokens};
 use secrecy::SecretString;
 use serde_json::{Value, json};
 use std::{
@@ -97,7 +97,7 @@ pub(super) fn fetch_batch(
         ask(
             targets,
             |query, variables, aliases, cooldown| {
-                crate::github::graphql_aliases(
+                crate::graphql_aliases(
                     &token, query, variables, aliases, TIMEOUT, &cancelled, cooldown,
                 )
             },
@@ -274,7 +274,7 @@ fn crowded(
 ) -> Result {
     let (owner, repo) = (target.owner.as_str(), target.repo.as_str());
     let mut pause = None;
-    let heads = crate::github::graphql(
+    let heads = crate::graphql(
         "pull_request",
         token,
         HEADS,
@@ -290,7 +290,7 @@ fn crowded(
         return Ok(None);
     };
     let mut pause = None;
-    let response = crate::github::graphql(
+    let response = crate::graphql(
         "pull_request",
         token,
         NUMBER_QUERY,

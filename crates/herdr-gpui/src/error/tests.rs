@@ -33,7 +33,7 @@ fn github_failures_keep_typed_sources_and_redact_parser_diagnostics() -> anyhow:
     let source = serde_json::from_str::<u64>("\"fixture-private-value\"")
         .err()
         .ok_or_else(|| anyhow::anyhow!("expected JSON type error"))?;
-    let error = Error::github_json(source);
+    let error = Error::from(herdr_github::Error::github_json(source));
     assert!(matches!(error, Error::GitHubJson(_)));
     assert!(!format!("{error} {error:?}").contains("fixture-private-value"));
     assert!(

@@ -86,7 +86,7 @@ impl Origins {
             "remote.upstream.url",
             timeout,
             cancelled,
-        ) && let Some(repo) = crate::avatars::github_repo(&upstream)
+        ) && let Some(repo) = crate::github_repo(&upstream)
         {
             repo
         } else {
@@ -97,7 +97,7 @@ impl Origins {
                 .ok_or(Error::PrTimeout)?;
             let remote = herdr_client::remote_origin_url(target, key, timeout, cancelled)?
                 .ok_or(Error::PrOrigin)?;
-            crate::avatars::github_repo(&remote).ok_or(Error::PrOrigin)?
+            crate::github_repo(&remote).ok_or(Error::PrOrigin)?
         };
         if self.0.len() == ORIGIN_LIMIT {
             self.0.remove(0);
@@ -114,7 +114,7 @@ pub(super) fn fetch(
     token: &secrecy::SecretString,
     cancelled: impl Fn() -> bool,
 ) -> Result {
-    let tokens = crate::github::Tokens::from(std::sync::Arc::new(token.clone()));
+    let tokens = crate::Tokens::from(std::sync::Arc::new(token.clone()));
     let mut batch = super::batch::fetch_batch(
         vec![input.clone()],
         &Origin::Local,
@@ -168,7 +168,7 @@ pub(super) fn target(
                 Ok((!value.is_empty()).then_some(value))
             })?;
             let head = if head.is_none()
-                && crate::repo_items::fork_branch_number(&input.branch).is_none()
+                && crate::pull_request::fork_branch_number(&input.branch).is_none()
             {
                 git(
                     &checkout,
@@ -178,7 +178,7 @@ pub(super) fn target(
                 )
                 .ok()
                 .as_deref()
-                .and_then(crate::avatars::github_repo)
+                .and_then(crate::github_repo)
                 .filter(|(origin_owner, origin_repo)| {
                     origin_owner != &repository.0 || origin_repo != &repository.1
                 })
@@ -204,7 +204,7 @@ pub(super) fn target(
                 )?)
             })?;
             let head = if head.is_none()
-                && crate::repo_items::fork_branch_number(&input.branch).is_none()
+                && crate::pull_request::fork_branch_number(&input.branch).is_none()
             {
                 let timeout = deadline
                     .checked_duration_since(Instant::now())
@@ -213,7 +213,7 @@ pub(super) fn target(
                     .ok()
                     .flatten()
                     .as_deref()
-                    .and_then(crate::avatars::github_repo)
+                    .and_then(crate::github_repo)
                     .filter(|(origin_owner, origin_repo)| {
                         origin_owner != &repository.0 || origin_repo != &repository.1
                     })
@@ -230,7 +230,7 @@ pub(super) fn target(
     };
     // A fork checkout has no upstream and a local name its PR never uses, so
     // it is found by number instead (see `repo_items::fork_branch`).
-    let ask = match crate::repo_items::fork_branch_number(&input.branch) {
+    let ask = match crate::pull_request::fork_branch_number(&input.branch) {
         Some(number) if head.is_none() => Ask::Number(number),
         _ => Ask::Branch {
             branch: head
@@ -244,7 +244,7 @@ pub(super) fn target(
 
 /// Any pull request of `owner/repo` by its number, for views that list pull
 /// requests rather than follow a branch. Runs on a background worker.
-pub(crate) fn by_number(
+pub fn by_number(
     owner: &str,
     repo: &str,
     number: u64,
@@ -252,7 +252,7 @@ pub(crate) fn by_number(
     cancelled: impl Fn() -> bool,
     cooldown: &mut Option<Duration>,
 ) -> Result {
-    let response = crate::github::graphql(
+    let response = crate::graphql(
         "pull_request",
         token,
         NUMBER_QUERY,
@@ -288,7 +288,7 @@ pub(super) fn upstream_head(
         .filter(|branch| !branch.is_empty())
         .ok_or(Error::PrBranch)?;
     let url = config(&format!("remote.{remote}.url"))?.ok_or(Error::PrOrigin)?;
-    let (owner, repo) = crate::avatars::github_repo(&url).ok_or(Error::PrOrigin)?;
+    let (owner, repo) = crate::github_repo(&url).ok_or(Error::PrOrigin)?;
     Ok(Some(Head {
         owner,
         repo,
@@ -296,7 +296,7 @@ pub(super) fn upstream_head(
     }))
 }
 
-pub(crate) fn local_repository(
+pub fn local_repository(
     input: &Input,
     deadline: Instant,
     cancelled: &impl Fn() -> bool,
@@ -317,7 +317,7 @@ pub(super) fn origin_repository(
         deadline,
         cancelled,
     )?;
-    crate::avatars::github_repo(&remote).ok_or_else(|| {
+    crate::github_repo(&remote).ok_or_else(|| {
         // An SSH host alias for a second account (`github-work:owner/repo`)
         // is the usual reason; only the host is logged, never credentials.
         tracing::debug!(
@@ -343,7 +343,7 @@ pub(super) fn remote_host(remote: &str) -> &str {
 /// The Git common directory a lookup reads: the daemon's key, or, for a local
 /// workspace the daemon has no worktree metadata for, the repository Git finds
 /// at the workspace directory.
-pub(crate) fn repository_key(
+pub fn repository_key(
     input: &Input,
     deadline: Instant,
     cancelled: &impl Fn() -> bool,
@@ -371,7 +371,7 @@ pub(crate) fn repository_key(
 /// Resolve the checkout a daemon workspace names and verify it still is that
 /// repository on that branch. Every local Git operation starts here, so a
 /// renamed branch or a moved worktree cannot be worked on by mistake.
-pub(crate) fn local_checkout(
+pub fn local_checkout(
     input: &Input,
     deadline: Instant,
     cancelled: &impl Fn() -> bool,
@@ -490,7 +490,7 @@ pub(super) fn worktree_checkout(output: &str, branch: &str) -> crate::Result<Str
     Ok(path.into())
 }
 
-pub(crate) fn run(
+pub fn run(
     command: &mut Command,
     deadline: Instant,
     cancelled: &impl Fn() -> bool,
@@ -503,7 +503,7 @@ pub(crate) fn run(
 
 /// [`run`], keeping up to `limit` bytes of output as they came: for output
 /// that may be large, or may not be text.
-pub(crate) fn run_bytes(
+pub fn run_bytes(
     command: &mut Command,
     deadline: Instant,
     cancelled: &impl Fn() -> bool,

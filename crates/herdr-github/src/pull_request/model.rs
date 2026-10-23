@@ -2,7 +2,7 @@
 //! pair a lookup is keyed by. Remote text is untrusted: it is cleaned and
 //! length-bounded before it can reach a label.
 
-#[cfg(any(test, all(feature = "integration-test", target_os = "macos")))]
+#[cfg(any(test, feature = "test-support"))]
 use super::parse::parse;
 use crate::Error;
 use serde::Deserialize;
@@ -11,7 +11,7 @@ use std::path::Path;
 /// Where a workspace's checkout lives, which decides how its GitHub
 /// repository is identified.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) enum Origin {
+pub enum Origin {
     /// This machine: local Git verifies the checkout before trusting it.
     #[default]
     Local,
@@ -24,7 +24,7 @@ pub(crate) enum Origin {
 /// attached no worktree metadata to, where `checkout` is then the workspace
 /// directory and the worker asks Git which repository it belongs to.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Input {
+pub struct Input {
     pub checkout: Option<String>,
     pub repo_key: Option<String>,
     pub branch: String,
@@ -32,7 +32,7 @@ pub(crate) struct Input {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PullRequest {
+pub struct PullRequest {
     pub number: u64,
     pub url: String,
     pub title: String,
@@ -67,17 +67,17 @@ pub(crate) struct PullRequest {
 
 /// How a pull request is merged: GitHub's `PullRequestMergeMethod`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum MergeMethod {
+pub enum MergeMethod {
     Merge,
     Squash,
     Rebase,
 }
 
 impl MergeMethod {
-    pub(crate) const ALL: [Self; 3] = [Self::Merge, Self::Squash, Self::Rebase];
+    pub const ALL: [Self; 3] = [Self::Merge, Self::Squash, Self::Rebase];
 
     /// The enum value the `mergePullRequest` mutation takes.
-    pub(crate) fn graphql(self) -> &'static str {
+    pub fn graphql(self) -> &'static str {
         match self {
             Self::Merge => "MERGE",
             Self::Squash => "SQUASH",
@@ -95,7 +95,7 @@ impl MergeMethod {
     }
 
     /// The confirming button's label, as GitHub words it.
-    pub(crate) fn action(self) -> &'static str {
+    pub fn action(self) -> &'static str {
         match self {
             Self::Merge => "Create a merge commit",
             Self::Squash => "Squash and merge",
@@ -109,7 +109,7 @@ impl MergeMethod {
 /// rather than showing the PR as open.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(from = "String")]
-pub(crate) enum State {
+pub enum State {
     Open,
     Closed,
     Merged,
@@ -134,7 +134,7 @@ impl From<String> for State {
 /// unrecognized string never reaches a label.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(from = "String")]
-pub(crate) enum MergeState {
+pub enum MergeState {
     Clean,
     Dirty,
     Behind,
@@ -147,7 +147,7 @@ pub(crate) enum MergeState {
 }
 
 impl MergeState {
-    pub(crate) fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
             Self::Clean => "No merge conflicts",
             Self::Dirty => "Merge conflicts",
@@ -181,7 +181,7 @@ impl From<String> for MergeState {
 /// GraphQL path does not have to rewrite it first.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(from = "Option<String>")]
-pub(crate) enum ReviewDecision {
+pub enum ReviewDecision {
     Approved,
     ChangesRequested,
     ReviewRequired,
@@ -190,7 +190,7 @@ pub(crate) enum ReviewDecision {
 }
 
 impl ReviewDecision {
-    pub(crate) fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
             Self::Approved => "Approved",
             Self::ChangesRequested => "Changes requested",
@@ -282,7 +282,7 @@ impl From<Option<String>> for CheckStatus {
 /// the summary reads in, and indexes the tally in `checks`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(from = "Option<String>")]
-pub(crate) enum Outcome {
+pub enum Outcome {
     Passed,
     Failed,
     #[default]
@@ -319,21 +319,34 @@ impl From<Option<String>> for Outcome {
     }
 }
 
-impl PullRequest {
-    /// Shared by sidebar and titlebar badges and the workspace menu, inked to
-    /// read on the chrome they sit on.
-    pub fn color(&self, theme: &crate::config::Theme) -> u32 {
-        theme.ink(self.hue(theme))
-    }
+/// What a pull request's badge says about it, before a theme colors it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tone {
+    /// Merged.
+    Merged,
+    /// Closed, or something needs fixing: conflicts, failed checks, or
+    /// requested changes.
+    Attention,
+    /// Draft, or its state is unknown.
+    Muted,
+    /// Checks are running, a review is required, or GitHub has not decided.
+    Waiting,
+    /// Blocked or behind its base.
+    Held,
+    /// Ready to merge.
+    Ready,
+}
 
-    /// Lifecycle takes precedence; an open PR is green only when no known
-    /// blocker remains.
-    fn hue(&self, theme: &crate::config::Theme) -> u32 {
+impl PullRequest {
+    /// Lifecycle takes precedence; an open PR is ready only when no known
+    /// blocker remains. Shared by sidebar and titlebar badges and the
+    /// workspace menu.
+    pub fn tone(&self) -> Tone {
         match self.state {
-            State::Merged => return theme.palette[5],
-            State::Closed => return theme.palette[1],
-            State::Unknown => return theme.muted,
-            State::Open if self.is_draft => return theme.muted,
+            State::Merged => return Tone::Merged,
+            State::Closed => return Tone::Attention,
+            State::Unknown => return Tone::Muted,
+            State::Open if self.is_draft => return Tone::Muted,
             State::Open => {}
         }
         let has_check = |outcome| {
@@ -351,17 +364,15 @@ impl PullRequest {
             || self.review_decision == ReviewDecision::ChangesRequested
             || has_check(Outcome::Failed)
         {
-            return theme.palette[1];
+            return Tone::Attention;
         }
         if running || self.review_decision == ReviewDecision::ReviewRequired {
-            return theme.palette[3];
+            return Tone::Waiting;
         }
         match self.merge_state_status {
-            MergeState::Clean => theme.palette[2],
-            // ANSI's extended orange distinguishes a blocked/behind branch
-            // from pending checks without borrowing a lifecycle color.
-            MergeState::Blocked | MergeState::Behind => theme.palette[208],
-            _ => theme.palette[3],
+            MergeState::Clean => Tone::Ready,
+            MergeState::Blocked | MergeState::Behind => Tone::Held,
+            _ => Tone::Waiting,
         }
     }
 
@@ -419,7 +430,7 @@ impl PullRequest {
 
 /// Daemon worktree metadata as a lookup key. The checkout is resolved later,
 /// from Git's own registry, so a workspace never points work at another tree.
-pub(crate) fn repository_input(
+pub fn repository_input(
     worktree: Option<&herdr_client::protocol::ClientShellWorktree>,
     branch: Option<&str>,
 ) -> crate::Result<Input> {
@@ -445,13 +456,13 @@ pub(crate) fn repository_input(
 /// requiring metadata: their directories are not this machine's. Metadata of
 /// a main checkout whose shell has left that repository names a repository
 /// the workspace is no longer in, so it is not used.
-pub(crate) fn workspace_input(
+pub fn workspace_input(
     workspace: &herdr_client::protocol::ClientShellWorkspace,
     origin: &Origin,
 ) -> crate::Result<Input> {
     let worktree = workspace.worktree.as_ref().filter(|tree| {
         tree.is_linked_worktree
-            || !crate::worktree::left_checkout(&tree.key, &workspace.new_workspace_cwd)
+            || !crate::checkout::left_checkout(&tree.key, &workspace.new_workspace_cwd)
     });
     let branch = workspace.branch.as_deref();
     if worktree.is_some() || *origin != Origin::Local || workspace.new_workspace_cwd.is_empty() {
@@ -476,7 +487,7 @@ fn valid_branch(branch: Option<&str>) -> crate::Result<&str> {
         .ok_or(Error::PrBranch)
 }
 
-pub(crate) fn clean(text: &str) -> String {
+pub fn clean(text: &str) -> String {
     text.chars()
         .take(512)
         .map(|c| {
@@ -489,8 +500,8 @@ pub(crate) fn clean(text: &str) -> String {
         .collect()
 }
 
-#[cfg(any(test, all(feature = "integration-test", target_os = "macos")))]
-pub(crate) fn fixture() -> crate::Result<PullRequest> {
+#[cfg(any(test, feature = "test-support"))]
+pub fn fixture() -> crate::Result<PullRequest> {
     parse(&serde_json::json!([{
         "number": 8, "url": "https://github.com/example/project/pull/8",
         "title": "Improve workspace context menus with a deliberately long PR title for narrow native layouts",
@@ -510,4 +521,13 @@ pub(crate) fn fixture() -> crate::Result<PullRequest> {
         pr
     })
     .ok_or(Error::PrRepository)
+}
+
+/// The pull request number a `pr/<number>` fork branch name carries, if it is one.
+pub fn fork_branch_number(branch: &str) -> Option<u64> {
+    let digits = branch.strip_prefix("pr/")?;
+    if digits.starts_with('0') || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok()
 }

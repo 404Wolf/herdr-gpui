@@ -58,7 +58,9 @@ pub(super) fn read(
         &format!("/repos/{name}/private-vulnerability-reporting"),
         TIMEOUT,
         &cancelled,
-    ) {
+    )
+    .map_err(crate::Error::from)
+    {
         Ok(reporting) => reporting.enabled,
         Err(error) if hidden(&error) => return Ok(Reports::Hidden),
         Err(error) => return Err(Error::Github(Box::new(error))),
@@ -76,7 +78,9 @@ pub(super) fn read(
         ),
         TIMEOUT,
         &cancelled,
-    ) {
+    )
+    .map_err(crate::Error::from)
+    {
         Ok(nodes) => Ok(parse(nodes)),
         Err(error) if hidden(&error) => Ok(Reports::Hidden),
         Err(error) => Err(Error::Github(Box::new(error))),

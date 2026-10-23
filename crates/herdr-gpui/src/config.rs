@@ -77,8 +77,8 @@ use fonts::FontSettings;
 #[cfg(any(test, feature = "integration-test"))]
 pub use fonts::symbol_fallbacks;
 pub use fonts::{FONT_SIZE_RANGE, FONT_SIZE_STEP, FontConfig};
+pub(crate) use github::MAX_ACCOUNTS;
 pub use github::{GitHubAccount, GitHubConfig};
-pub(crate) use github::{MAX_ACCOUNTS, valid_account_id, valid_owner};
 pub use herdr_remote::config::AzureConfig;
 #[cfg(feature = "azure")]
 pub(crate) use herdr_remote::config::AzureFields;

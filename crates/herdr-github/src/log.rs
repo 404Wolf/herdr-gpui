@@ -62,7 +62,7 @@ impl Exchange {
             scopes: header(headers, "x-oauth-scopes").to_owned(),
             sso: public_sso(header(headers, "x-github-sso")).to_owned(),
             remaining: header(headers, "x-ratelimit-remaining").to_owned(),
-            reset: crate::updater::rate_limit_reset(headers, Utc::now()),
+            reset: herdr_updater::rate_limit_reset(headers, Utc::now()),
         }
     }
 }
@@ -203,7 +203,6 @@ pub(super) fn kind(error: &Error) -> &'static str {
             CredentialError::Unsupported => "credential_unsupported",
             CredentialError::Encoding(_) => "encoding",
         },
-        Error::CredentialDirectory => "credential_directory",
         _ => "other",
     }
 }

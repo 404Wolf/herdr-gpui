@@ -108,7 +108,6 @@ mod pane_move;
 mod panel_resize;
 mod plugin_values;
 mod port_forward;
-mod pr_actions;
 mod preferences;
 mod presentation;
 mod private_file;
@@ -171,6 +170,9 @@ pub use error::{Error, Result};
 // Its own crate so it builds and is tested without GPUI; the alias keeps the
 // app's `crate::updater` paths.
 use herdr_updater as updater;
+// GitHub's pull request actions; `github` and `pull_request` are the app's
+// own modules, which add the avatars, the shared store, and badge colors.
+use herdr_github::pr_actions;
 // Shared with herdr-client's own SSH and probe children.
 use herdr_client::{local_path, login_env};
 // Cloud providers, host scripts, and Teleport's core; `cloud` and `teleport`

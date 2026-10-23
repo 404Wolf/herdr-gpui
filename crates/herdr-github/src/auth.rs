@@ -2,7 +2,7 @@
 //! worker thread has finished. Work runs off the UI thread and lands through
 //! a single mailbox, so a late reply from a superseded flow is discarded.
 
-#[cfg(any(test, feature = "integration-test"))]
+#[cfg(any(test, feature = "test-support"))]
 use super::VERIFY_URL;
 use super::{
     Account, Device, Profile, Reply, Result, SETUP_MESSAGE, Store, cli,
@@ -37,7 +37,7 @@ const CLI_PROBE_INTERVAL: Duration = Duration::from_secs(30);
 const ACCESS_RECHECK: Duration = Duration::from_secs(30);
 
 #[derive(Default)]
-pub(crate) struct Auth {
+pub struct Auth {
     pub(super) flow: Option<Flow>,
     pub(super) incoming: Option<mpsc::Receiver<Result<Reply>>>,
     pub(super) cancelled: bool,
@@ -65,29 +65,28 @@ pub(crate) struct Auth {
 
 impl Auth {
     /// A saved host's own sign-in. It starts empty; `initialize` loads it.
-    pub(crate) fn for_account(account: Account) -> Self {
+    pub fn for_account(account: Account) -> Self {
         Self {
             account,
             ..Self::default()
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn complete_profile_fixture(&mut self, result: Result<Option<Profile>>) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn complete_profile_fixture(&mut self, result: Result<Option<Profile>>) {
         let (tx, rx) = mpsc::sync_channel(1);
         let _ = tx.send(result);
         self.profile_incoming = Some(rx);
     }
 
-    #[cfg(any(test, feature = "integration-test"))]
-    pub(crate) fn connected_fixture() -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn connected_fixture() -> Self {
         Self {
             initialized: true,
             profile: Some(Profile {
                 login: "fixture-user".into(),
-                avatar: None,
+                avatar_url: String::new(),
                 token: Arc::new("fixture-token".into()),
-                avatar_updates: None,
                 source: super::Source::Token,
                 organizations: None,
                 access: Default::default(),
@@ -101,7 +100,7 @@ impl Auth {
     pub fn loading_profile(&self) -> bool {
         !self.signed_out && (self.reload_pending || self.profile_incoming.is_some())
     }
-    pub fn initialize(&mut self, config: &crate::config::Config) -> bool {
+    pub fn initialize(&mut self, config: &crate::config::GitHubConfig) -> bool {
         self.initialize_with(super::store::select(config))
     }
     pub(super) fn initialize_with(&mut self, store: Store) -> bool {
@@ -147,8 +146,8 @@ impl Auth {
     }
     /// A main account whose GitHub CLI answered with a sign-in: offered
     /// while signed out, or already in use when `connected`.
-    #[cfg(test)]
-    pub(crate) fn github_cli_fixture(connected: bool) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn github_cli_fixture(connected: bool) -> Self {
         let mut auth = if connected {
             Self::connected_fixture()
         } else {
@@ -160,8 +159,8 @@ impl Auth {
         }
         auth
     }
-    #[cfg(any(test, feature = "integration-test"))]
-    pub(crate) fn fixture(waiting: bool) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture(waiting: bool) -> Self {
         let now = Instant::now();
         Self {
             flow: waiting.then(|| Flow {
@@ -189,8 +188,8 @@ impl Auth {
             ..Self::default()
         }
     }
-    #[cfg(any(test, feature = "integration-test"))]
-    pub(crate) fn requesting_fixture() -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn requesting_fixture() -> Self {
         let (_, incoming) = mpsc::sync_channel(1);
         Self {
             incoming: Some(incoming),
@@ -260,7 +259,7 @@ impl Auth {
         });
         true
     }
-    pub fn start(&mut self, config: &crate::config::Config) {
+    pub fn start(&mut self, config: &crate::config::GitHubConfig) {
         if self.busy() || self.connected() || self.loading_profile() {
             return;
         }
@@ -270,7 +269,7 @@ impl Auth {
         if self.refuse_without_store() {
             return;
         }
-        let client = match config.github.client_id() {
+        let client = match config.client_id() {
             Ok(Some(client)) => client,
             Ok(None) => {
                 tracing::info!(
@@ -317,7 +316,7 @@ impl Auth {
     }
     /// Ask the GitHub CLI whether it is signed in to github.com, at most every
     /// 30 seconds while signed out. The token it prints is dropped unread.
-    pub(crate) fn probe_github_cli(&mut self, now: Instant) {
+    pub fn probe_github_cli(&mut self, now: Instant) {
         self.probe_github_cli_with(now, || cli::token().is_ok());
     }
     pub(super) fn probe_github_cli_with(
@@ -351,7 +350,7 @@ impl Auth {
     }
     /// Use the GitHub CLI's sign-in for the main account. The worker reads
     /// and verifies its token, then saves only a marker, never the token.
-    pub fn use_github_cli(&mut self, config: &crate::config::Config) {
+    pub fn use_github_cli(&mut self, config: &crate::config::GitHubConfig) {
         let store = super::store::select(config);
         self.use_github_cli_with(store, move || {
             let profile = cli::verify(cli::token()?)?;
@@ -390,7 +389,7 @@ impl Auth {
     /// Sign in with a token the user pasted, such as a personal access token
     /// for an account Herdr's GitHub App cannot reach. GitHub checks it
     /// before it is saved, so a mistyped token is never stored.
-    pub fn use_token(&mut self, token: SecretString, config: &crate::config::Config) {
+    pub fn use_token(&mut self, token: SecretString, config: &crate::config::GitHubConfig) {
         let store = super::store::select(config);
         let account = self.account.clone();
         self.use_token_with(store, move || {
@@ -470,7 +469,7 @@ impl Auth {
     /// Check the account again soon, for a user who may just have approved
     /// its GitHub App on GitHub. At most every 30 seconds, and only while
     /// something is waiting on them.
-    pub(crate) fn recheck_access(&mut self, now: Instant) {
+    pub fn recheck_access(&mut self, now: Instant) {
         if self
             .profile
             .as_ref()
@@ -489,7 +488,7 @@ impl Auth {
         self.poll_with_store(move |token| save(token, store, &account))
     }
     /// Credential backend chosen for this build and configuration.
-    pub(crate) fn store(&self) -> Store {
+    pub fn store(&self) -> Store {
         self.store
     }
     pub(super) fn poll_with_store(
@@ -558,19 +557,6 @@ impl Auth {
                 self.cli_probe = None;
                 self.cli_available = Some((now, available));
                 changed = true;
-            }
-        }
-        if let Some(profile) = &mut self.profile
-            && let Some(updates) = &profile.avatar_updates
-        {
-            match updates.try_recv() {
-                Ok(image) => {
-                    profile.avatar = Some(image);
-                    profile.avatar_updates = None;
-                    changed = true;
-                }
-                Err(mpsc::TryRecvError::Disconnected) => profile.avatar_updates = None,
-                Err(mpsc::TryRecvError::Empty) => {}
             }
         }
         if let Some(rx) = &self.profile_incoming {

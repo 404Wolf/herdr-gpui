@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
-use crate::github::{Reply, device::token_reply};
+use crate::{Reply, device::token_reply};
 
 fn credential() -> Credential {
     Credential::new("old-access".into(), Some("old-refresh".into()), "client").unwrap()
@@ -16,9 +16,8 @@ fn profile(token: Arc<SecretString>) -> Result<Profile> {
     }
     Ok(Profile {
         login: "fixture".into(),
-        avatar: None,
+        avatar_url: String::new(),
         token,
-        avatar_updates: None,
         source: Default::default(),
         organizations: None,
         access: Default::default(),

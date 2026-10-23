@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
-use crate::github::token::Credential;
+use crate::token::Credential;
 use herdr_credentials::LIMIT;
 use rustix::process::geteuid;
 use secrecy::ExposeSecret;

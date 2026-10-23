@@ -13,22 +13,22 @@ mod store;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use {
+pub use {
     cache::Cache,
     fetch::{local_checkout, run, run_bytes},
     lookup::Lookup,
     model::{
-        Input, MergeMethod, Origin, Outcome, PullRequest, ReviewDecision, State, clean,
-        repository_input, workspace_input,
+        Input, MergeMethod, Origin, Outcome, PullRequest, ReviewDecision, State, Tone, clean,
+        fork_branch_number, repository_input, workspace_input,
     },
     remote::{Base, Remote, base_repository},
-    store::{Shared, View},
+    store::{Store, View},
 };
 
-pub(crate) use fetch::{by_number, local_repository, repository_key};
-pub(crate) use model::MergeState;
-#[cfg(any(test, all(feature = "integration-test", target_os = "macos")))]
-pub(crate) use model::fixture;
+pub use fetch::{by_number, local_repository, repository_key};
+pub use model::MergeState;
+#[cfg(any(test, feature = "test-support"))]
+pub use model::fixture;
 
 use fetch::Origins;
 use parse::{parse_graphql, parse_numbered};

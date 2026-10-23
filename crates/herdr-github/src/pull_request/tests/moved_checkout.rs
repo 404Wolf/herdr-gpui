@@ -7,9 +7,7 @@ use crate::pull_request::workspace_input;
 use herdr_client::protocol::ClientShellWorktree;
 
 fn moved(linked: bool) -> herdr_client::protocol::ClientShellWorkspace {
-    let mut workspace = crate::sidebar::layout_tests::snapshot(1)
-        .workspaces
-        .remove(0);
+    let mut workspace = shell_workspace();
     let cwd = std::env::temp_dir().join("wgsextract-cli");
     workspace.new_workspace_cwd = cwd.to_str().unwrap().into();
     workspace.branch = Some("main".into());

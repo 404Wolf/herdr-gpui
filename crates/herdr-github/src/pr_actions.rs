@@ -30,7 +30,7 @@ mod tests;
 const API_TIMEOUT: Duration = Duration::from_secs(30);
 /// GitHub accepts far longer bodies; the dialog field is one line, so this is
 /// a sanity bound rather than a product limit.
-pub(crate) const BODY_LIMIT: usize = 4096;
+pub const BODY_LIMIT: usize = 4096;
 /// Comments shown, newest last. The query asks for at most 20 of each kind.
 const COMMENT_LIMIT: usize = 40;
 const AUTHOR_LIMIT: usize = 64;
@@ -63,7 +63,7 @@ const MERGE_MUTATION: &str = r#"mutation($id: ID!, $method: PullRequestMergeMeth
 /// repository, and branch were already verified. Comparing targets compares
 /// the head too, so a pushed branch is a different target to merge.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Target {
+pub struct Target {
     pub owner: String,
     pub repo: String,
     pub number: u64,
@@ -142,7 +142,7 @@ impl Target {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Action {
+pub enum Action {
     Comment(String),
     Merge(MergeMethod),
 }
@@ -158,13 +158,13 @@ impl Action {
 
 /// What an action achieved. `url` is offered as a link, never opened here.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Outcome {
+pub struct Outcome {
     pub message: String,
     pub url: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Review {
+pub enum Review {
     Approved,
     ChangesRequested,
     Commented,
@@ -172,7 +172,7 @@ pub(crate) enum Review {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum CommentKind {
+pub enum CommentKind {
     /// A comment on the pull request's conversation.
     Conversation,
     /// A submitted review, with its verdict.
@@ -216,7 +216,7 @@ impl CommentKind {
 
 /// One entry of the review conversation, display-ready and bounded.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Comment {
+pub struct Comment {
     pub author: String,
     pub kind: CommentKind,
     /// One cleaned line, for compact lists.
@@ -251,7 +251,7 @@ struct Worker {
 /// Client-local action state for one pull request at a time. Dropping it
 /// retires an in-flight read; a running mutation still finishes on GitHub.
 #[derive(Default)]
-pub(crate) struct Actions {
+pub struct Actions {
     worker: Option<Worker>,
     generation: Arc<AtomicU64>,
     busy: bool,
@@ -284,8 +284,8 @@ impl Actions {
     }
 
     /// A conversation as if it had been read, for views' tests.
-    #[cfg(test)]
-    pub(crate) fn set_comments(&mut self, comments: Vec<Comment>) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_comments(&mut self, comments: Vec<Comment>) {
         self.comments = Some(comments.into());
     }
 
@@ -496,7 +496,7 @@ fn spawn(current: Arc<AtomicU64>) -> crate::Result<Worker> {
                     }
                     Job::Run(action) => {
                         Completion::Action(perform(&target, action, |context, query, variables| {
-                            crate::github::mutation(context, &token, query, variables, API_TIMEOUT)
+                            crate::mutation(context, &token, query, variables, API_TIMEOUT)
                         }))
                     }
                 };
@@ -514,7 +514,7 @@ fn conversation(
     token: &SecretString,
     cancelled: impl Fn() -> bool,
 ) -> crate::Result<Vec<Comment>> {
-    let response = crate::github::graphql(
+    let response = crate::graphql(
         "pr_conversation",
         token,
         CONVERSATION_QUERY,

@@ -1,5 +1,5 @@
 use super::*;
-use crate::github::{Profile, Tokens};
+use crate::{Profile, Tokens};
 
 /// `fixture` signed in as the main account and `emu` beside it, reading
 /// the owners `owners` lists.

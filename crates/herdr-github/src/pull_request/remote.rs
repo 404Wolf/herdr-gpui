@@ -8,14 +8,14 @@ use std::time::Instant;
 
 /// A Git remote this client reads pull request refs from.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum Remote {
+pub enum Remote {
     #[default]
     Origin,
     Upstream,
 }
 
 impl Remote {
-    pub(crate) fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Self::Origin => "origin",
             Self::Upstream => "upstream",
@@ -25,7 +25,7 @@ impl Remote {
 
 /// The repository a checkout's pull requests are opened against.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Base {
+pub struct Base {
     pub owner: String,
     pub repo: String,
     pub remote: Remote,
@@ -39,7 +39,7 @@ impl Base {
     /// The `headRefName` a new pull request from `branch`, pushed to
     /// `origin`, names: qualified with the fork's owner when it crosses
     /// repositories, as GitHub requires.
-    pub(crate) fn head(&self, branch: &str) -> crate::Result<String> {
+    pub fn head(&self, branch: &str) -> crate::Result<String> {
         match self.remote {
             Remote::Origin => Ok(branch.to_owned()),
             Remote::Upstream => {
@@ -51,7 +51,7 @@ impl Base {
 
     /// Whether a pull request from `branch` would ask to merge a branch into
     /// itself. Across a fork the same name is two different branches.
-    pub(crate) fn is_own_base(&self, branch: &str, default_branch: &str) -> bool {
+    pub fn is_own_base(&self, branch: &str, default_branch: &str) -> bool {
         self.remote == Remote::Origin && branch == default_branch
     }
 }
@@ -60,7 +60,7 @@ impl Base {
 /// repository than origin, otherwise origin. An `upstream` that is not on
 /// GitHub.com, or that names origin's own repository, is ignored rather than
 /// fatal, so such checkouts keep the ordinary same-repository path.
-pub(crate) fn base_repository(
+pub fn base_repository(
     checkout: &str,
     deadline: Instant,
     cancelled: &impl Fn() -> bool,
@@ -71,7 +71,7 @@ pub(crate) fn base_repository(
         &["config", "--default", "", "--get", "remote.upstream.url"],
         deadline,
         cancelled,
-    ) && let Some((owner, repo)) = crate::avatars::github_repo(&upstream)
+    ) && let Some((owner, repo)) = crate::github_repo(&upstream)
         && !origin
             .as_ref()
             .is_ok_and(|origin| same_repository(origin, (&owner, &repo)))

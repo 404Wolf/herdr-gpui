@@ -17,7 +17,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub(crate) const VERIFY_URL: &str = "https://github.com/login/device";
+pub const VERIFY_URL: &str = "https://github.com/login/device";
 pub(super) const SETUP_MESSAGE: &str = "Connect with Herdr GPUI's GitHub App. Optionally set [github] oauth_client_id in config-gpui.local.toml, or HERDR_GITHUB_OAUTH_CLIENT_ID, to another GitHub App or OAuth App public client ID with Device Flow enabled. Reload GUI config after file edits.";
 
 #[derive(Debug, Deserialize)]
@@ -88,11 +88,12 @@ pub(super) enum Reply {
     Pasted(Profile),
 }
 
-pub(crate) struct Profile {
+pub struct Profile {
     pub login: String,
-    pub avatar: Option<Arc<gpui::Image>>,
+    /// GitHub's address for the account's picture. The app fetches and
+    /// caches it; nothing here downloads it.
+    pub avatar_url: String,
     pub token: Arc<SecretString>,
-    pub(super) avatar_updates: Option<crate::avatars::AvatarUpdates>,
     pub source: Source,
     /// The organizations the account belongs to, read only for an additional
     /// account: the owners it covers besides its own login. `None` until
@@ -102,15 +103,14 @@ pub(crate) struct Profile {
     pub access: super::installation::Access,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Profile {
     /// A signed-in account without an avatar, for tests outside this module.
-    pub(crate) fn fixture(login: &str, token: Arc<SecretString>, organizations: &[&str]) -> Self {
+    pub fn fixture(login: &str, token: Arc<SecretString>, organizations: &[&str]) -> Self {
         Self {
             login: login.into(),
-            avatar: None,
+            avatar_url: String::new(),
             token,
-            avatar_updates: None,
             source: Source::Token,
             organizations: Some(
                 organizations
@@ -125,7 +125,7 @@ impl Profile {
 
 /// Where a signed-in account's token comes from.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum Source {
+pub enum Source {
     /// The environment, or a sign-in saved by this app.
     #[default]
     Token,
@@ -135,7 +135,7 @@ pub(crate) enum Source {
 }
 
 impl Source {
-    pub(crate) fn github_cli(self) -> bool {
+    pub fn github_cli(self) -> bool {
         matches!(self, Self::GitHubCli { .. })
     }
 }
@@ -183,13 +183,10 @@ pub(super) fn profile_from(token: Arc<SecretString>, github_cli: bool) -> Result
         login = user.login.as_str(),
         "GitHub profile loaded"
     );
-    // The image transport receives no Authorization header and follows no redirects.
-    let (avatar, avatar_updates) = crate::avatars::profile_avatar(&user.avatar_url);
     Ok(Profile {
         login: user.login,
-        avatar,
+        avatar_url: user.avatar_url,
         token,
-        avatar_updates,
         source,
         organizations: None,
         access: Default::default(),

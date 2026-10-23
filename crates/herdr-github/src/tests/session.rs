@@ -1,34 +1,6 @@
 use super::*;
 
 #[test]
-fn avatar_refresh_is_scoped_to_the_verified_profile() {
-    let mut auth = Auth::connected_fixture();
-    let (tx, rx) = mpsc::sync_channel(1);
-    auth.profile.as_mut().unwrap().avatar_updates = Some(rx);
-    let image = Arc::new(gpui::Image::empty());
-    tx.send(image.clone()).unwrap();
-    assert!(auth.poll_with_store(|_| panic!("avatar must not access credentials")));
-    assert!(Arc::ptr_eq(
-        auth.profile.as_ref().unwrap().avatar.as_ref().unwrap(),
-        &image
-    ));
-    let (tx, rx) = mpsc::sync_channel(1);
-    auth.profile.as_mut().unwrap().avatar_updates = Some(rx);
-    auth.sign_out();
-    assert!(!auth.connected());
-    assert!(tx.send(image.clone()).is_err());
-    auth.profile = Auth::connected_fixture().profile;
-    assert!(auth.profile.as_ref().unwrap().avatar.is_none());
-    let (tx, rx) = mpsc::sync_channel(1);
-    auth.profile.as_mut().unwrap().avatar_updates = Some(rx);
-    auth.signed_out = false;
-    auth.initialized = false;
-    auth.initialize(&crate::config::Config::default());
-    assert!(!auth.connected());
-    assert!(tx.send(image).is_err());
-}
-
-#[test]
 fn copy_feedback_is_scoped_to_live_flow_and_expires() {
     let mut auth = Auth::fixture(true);
     assert!(!auth.copied());
@@ -148,7 +120,7 @@ fn profile_loading_success_error_and_idle_do_not_start_device_auth() {
     let mut auth = Auth::default();
     for result in [
         Ok(Auth::connected_fixture().profile),
-        Err(std::io::Error::other("mock profile failure").into()),
+        Err(herdr_credentials::Error::Io(std::io::Error::other("mock profile failure")).into()),
         Ok(None),
     ] {
         let (tx, rx) = mpsc::sync_channel(1);

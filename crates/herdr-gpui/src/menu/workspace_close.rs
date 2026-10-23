@@ -165,7 +165,7 @@ impl CloseCheck {
                     if cancellation.load(Ordering::Relaxed) {
                         return;
                     }
-                    let status = input.and_then(|input| {
+                    let status = input.map_err(crate::Error::from).and_then(|input| {
                         if !local {
                             return Err(crate::Error::PrUntrustedEndpoint);
                         }
