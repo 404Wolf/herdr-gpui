@@ -83,6 +83,11 @@ pub async fn run(options: Options) -> Result<()> {
         .ok();
     let auth = Auth::load(&options.state_dir, Limits::default())?;
     let apns = crate::apns::Sender::load(&options.state_dir)?;
+    // Only origins this computer's own authority serves may be remembered.
+    let seen = match &authority {
+        Some(authority) => web::Origins::load(&options.state_dir, authority.fingerprint()),
+        None => web::Origins::none(),
+    };
     let hub = Hub::start(options.herdr_socket.clone(), options.chat_dir.clone())?;
     let state = Arc::new(State {
         apns,
@@ -96,7 +101,7 @@ pub async fn run(options: Options) -> Result<()> {
         port: options.port,
         privacy: options.privacy,
         push,
-        seen: Mutex::new(web::Origins::load(&options.state_dir)),
+        seen: Mutex::new(seen),
         uploads: web::Uploads::new(&options.state_dir),
     });
     remember_origins(&state);

@@ -24,6 +24,7 @@ pub(super) const ORIGIN: &str = "https://192.168.1.20:7443";
 pub(crate) fn state(dir: &std::path::Path) -> Shared {
     let names = Names::new([IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20))], Some("studio"));
     let authority = Authority::load_or_create(dir).unwrap();
+    let seen = Origins::load(dir, authority.fingerprint());
     Arc::new(State {
         apns: None,
         auth: Mutex::new(Auth::load(dir, Limits::default()).unwrap()),
@@ -40,7 +41,7 @@ pub(crate) fn state(dir: &std::path::Path) -> Shared {
         port: 7443,
         privacy: Privacy::Generic,
         push: None,
-        seen: Mutex::new(Origins::load(dir)),
+        seen: Mutex::new(seen),
         uploads: Uploads::new(dir),
     })
 }

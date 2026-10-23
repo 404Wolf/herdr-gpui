@@ -30,15 +30,25 @@ async fn an_origin_served_before_still_passes_cors() {
         send(&state, ping("https://evil.example")).await.0,
         StatusCode::FORBIDDEN
     );
-    // They survive a restart.
-    let reloaded = Origins::load(dir.path());
+    // They survive a restart with the same authority, and no other.
+    let reloaded = Origins::load(dir.path(), &state.fingerprint);
     assert!(reloaded.contains(retired) && reloaded.contains(ORIGIN));
+    assert!(!Origins::load(dir.path(), "AA:BB").contains(retired));
+}
+
+#[test]
+fn a_user_certificate_remembers_no_origins() {
+    let mut origins = Origins::none();
+    origins
+        .remember(&["https://remote.example.com:443".to_owned()])
+        .unwrap();
+    assert!(!origins.contains("https://remote.example.com:443"));
 }
 
 #[test]
 fn only_the_newest_origins_are_kept() {
     let dir = tempfile::tempdir().unwrap();
-    let mut origins = Origins::load(dir.path());
+    let mut origins = Origins::load(dir.path(), "F");
     for n in 0..(crate::web::origins::MAX_ORIGINS + 5) {
         origins
             .remember(&[format!("https://10.0.0.{n}:7443")])
@@ -49,7 +59,7 @@ fn only_the_newest_origins_are_kept() {
         crate::web::origins::MAX_ORIGINS + 4
     )));
     assert!(!origins.contains("https://10.0.0.0:7443"));
-    let reloaded = Origins::load(dir.path());
+    let reloaded = Origins::load(dir.path(), "F");
     assert!(!reloaded.contains("https://10.0.0.4:7443"));
     assert!(reloaded.contains("https://10.0.0.5:7443"));
 }
