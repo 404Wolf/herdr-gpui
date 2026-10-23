@@ -5,7 +5,7 @@ use crate::testing::Fixture;
 fn worktrees_and_agents_go_through_the_cli() {
     let fixture = Fixture::new();
     let herdr = &fixture.herdr;
-    assert!(herdr.running());
+    assert!(herdr.server_running().unwrap());
     let created = herdr
         .create_worktree(Path::new("/repo"), "nightly/2026-10-22", Some("main"))
         .unwrap();
@@ -82,7 +82,7 @@ fn pane_details_parse() {
 #[test]
 fn a_missing_binary_is_not_running() {
     let herdr = Herdr::new(Some(PathBuf::from("/nonexistent/herdr")), None);
-    assert!(!herdr.running());
+    assert!(!herdr.server_running().unwrap());
     assert!(matches!(herdr.notify("t", "b"), Err(Error::Launch { .. })));
 }
 

@@ -197,10 +197,6 @@ impl Herdr {
         })
     }
 
-    pub fn running(&self) -> bool {
-        self.server_running().unwrap_or(false)
-    }
-
     /// Whether Herdr's server answers as running. Only a bounded step's
     /// stop or deadline is an error; any other failure reads as not running.
     fn server_running(&self) -> Result<bool> {
