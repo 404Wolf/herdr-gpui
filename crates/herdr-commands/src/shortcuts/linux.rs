@@ -1,4 +1,4 @@
-use crate::controls::Command;
+use crate::Command;
 
 /// Linux reserves Super for the desktop and Ctrl for terminal programs.
 /// Explicit defaults keep shifted Mac actions from collapsing onto the

@@ -1,10 +1,15 @@
+//! The command catalog: every command the app offers in menus, the palette,
+//! and key bindings, its name and default shortcuts per platform, and the
+//! daemon request a command becomes against a snapshot. No GPUI; the app
+//! binds the shortcuts and runs the commands that stay in the window.
+
 use herdr_client::{Method, protocol::ClientShellSnapshot};
 use serde_json::{Value, json};
 
 mod shortcuts;
-pub(crate) use shortcuts::CTRL_SHORTCUTS;
-#[cfg(test)]
-pub(crate) use shortcuts::platform_default;
+pub use shortcuts::CTRL_SHORTCUTS;
+#[cfg(any(test, feature = "test-support"))]
+pub use shortcuts::platform_default;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Deserialize)]
 pub enum Command {

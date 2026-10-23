@@ -1,5 +1,5 @@
 [workspace]
-members  = ["crates/embed-resource", "crates/herdr-acp", "crates/herdr-automate", "crates/herdr-automation", "crates/herdr-chat-protocol", "crates/herdr-client", "crates/herdr-control-protocol", "crates/herdr-credentials", "crates/herdr-gpui", "crates/herdr-github", "crates/herdr-gpui-launcher", "crates/herdr-protocol", "crates/herdr-remote", "crates/herdr-updater", "crates/herdr-usage", "crates/herdr-vcs"]
+members  = ["crates/embed-resource", "crates/herdr-acp", "crates/herdr-automate", "crates/herdr-automation", "crates/herdr-chat-protocol", "crates/herdr-client", "crates/herdr-commands", "crates/herdr-control-protocol", "crates/herdr-credentials", "crates/herdr-gpui", "crates/herdr-github", "crates/herdr-gpui-launcher", "crates/herdr-protocol", "crates/herdr-remote", "crates/herdr-updater", "crates/herdr-usage", "crates/herdr-vcs"]
 resolver = "2"
 
 [workspace.package]
@@ -62,6 +62,7 @@ wry                  = { package = "lb-wry", version = "=0.53.3" }
 herdr-automation     = { default-features = false, path = "crates/herdr-automation" }
 herdr-chat-protocol  = { path = "crates/herdr-chat-protocol" }
 herdr-client         = { path = "crates/herdr-client" }
+herdr-commands       = { path = "crates/herdr-commands" }
 herdr-control-protocol = { path = "crates/herdr-control-protocol" }
 herdr-credentials    = { path = "crates/herdr-credentials" }
 herdr-github         = { path = "crates/herdr-github" }

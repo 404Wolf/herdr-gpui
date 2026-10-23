@@ -52,7 +52,6 @@ mod connection;
 mod constants;
 mod contrast;
 mod control;
-mod controls;
 mod copy_mode;
 mod crash;
 mod daemon;
@@ -170,6 +169,8 @@ use herdr_updater as updater;
 // GitHub's pull request actions; `github` and `pull_request` are the app's
 // own modules, which add the avatars, the shared store, and badge colors.
 use herdr_github::pr_actions;
+// The command catalog and its default shortcuts, without GPUI.
+use herdr_commands as controls;
 // Git status and writes, checkpoints, and the code index, without GPUI.
 use herdr_vcs::{checkpoint, code_index, git};
 // Shared with herdr-client's own SSH and probe children.

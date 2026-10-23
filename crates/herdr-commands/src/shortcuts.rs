@@ -6,10 +6,10 @@ mod windows;
 
 /// Linux and Windows leave the platform key (Super, Win) to the desktop, so
 /// their shortcuts and text-field edit keys take Ctrl where macOS takes Cmd.
-pub(crate) const CTRL_SHORTCUTS: bool = cfg!(any(target_os = "linux", windows));
+pub const CTRL_SHORTCUTS: bool = cfg!(any(target_os = "linux", windows));
 
 impl CommandInfo {
-    pub(crate) fn default_shortcuts(&self) -> &'static [&'static str] {
+    pub fn default_shortcuts(&self) -> &'static [&'static str] {
         if cfg!(target_os = "linux") {
             linux::defaults(self.command)
         } else if cfg!(target_os = "windows") {
@@ -19,16 +19,16 @@ impl CommandInfo {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn base_shortcuts(&self) -> &'static [&'static str] {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn base_shortcuts(&self) -> &'static [&'static str] {
         macos::defaults(self.command)
     }
 }
 
 /// Existing cross-platform tests name the base catalog key; resolve just
 /// those defaults, never keys explicitly supplied by a test's config.
-#[cfg(test)]
-pub(crate) fn platform_default(base: &str) -> &str {
+#[cfg(any(test, feature = "test-support"))]
+pub fn platform_default(base: &str) -> &str {
     super::COMMANDS
         .iter()
         .find_map(|info| {

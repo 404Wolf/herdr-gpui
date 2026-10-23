@@ -28,6 +28,7 @@ Closing or detaching the GUI must leave the daemon and its terminals running.
 | `crates/herdr-client` | Discovery, socket worker, session transitions, ordered commands, and client-local activity projection |
 | `crates/herdr-gpui` | Native UI, connection bridge, presentation state, semantic input, geometry, and painting |
 | `crates/herdr-control-protocol` | The control socket between `herdr-gpui <command>` and the running app: request and response types, bounds, and the Unix socket or named pipe; no GPUI |
+| `crates/herdr-commands` | The command catalog: each command's name, default shortcuts per platform, and the daemon request it becomes against a snapshot; no GPUI (the app binds the keys and runs window commands) |
 | `crates/herdr-usage` | Plan usage of AI services on a host: the providers, their probes and sign-ins, the registry, and the read worker; no GPUI (the app draws the status bar and panel) |
 | `crates/herdr-credentials` | Where saved sign-ins live: the store policy, the macOS Keychain, Linux Secret Service, Windows Credential Manager, and the private `0600` file; GitHub and the cloud providers keep their secrets here; no GPUI |
 | `crates/herdr-github` | GitHub sign-in (device flow, pasted tokens, the GitHub CLI, additional accounts), its REST and GraphQL transport, the `[github]` config table, the read-only pull request prefetch, and explicit pull request actions; no GPUI (the app keeps the account avatars, the shared PR store, and badge colors) |

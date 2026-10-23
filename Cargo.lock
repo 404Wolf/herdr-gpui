@@ -4476,6 +4476,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "herdr-commands"
+version = "0.1.0"
+dependencies = [
+ "gpui-pre",
+ "herdr-client",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "herdr-control-protocol"
 version = "0.1.0"
 dependencies = [
@@ -4551,6 +4561,7 @@ dependencies = [
  "herdr-automation",
  "herdr-chat-protocol",
  "herdr-client",
+ "herdr-commands",
  "herdr-control-protocol",
  "herdr-credentials",
  "herdr-github",

@@ -1,5 +1,5 @@
 use super::*;
-use crate::controls::{COMMANDS, Command};
+use crate::{COMMANDS, Command};
 use gpui::{Keystroke, Modifiers};
 use std::collections::HashMap;
 

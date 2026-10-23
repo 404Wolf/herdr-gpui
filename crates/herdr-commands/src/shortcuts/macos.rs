@@ -1,4 +1,4 @@
-use crate::controls::Command;
+use crate::Command;
 
 pub(super) fn defaults(command: Command) -> &'static [&'static str] {
     use Command::*;

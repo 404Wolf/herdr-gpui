@@ -1,4 +1,4 @@
-use crate::controls::Command;
+use crate::Command;
 
 /// Windows reserves the Win key for the shell, and Windows Terminal leaves
 /// plain Ctrl to terminal programs with the same Ctrl-Shift conventions as
