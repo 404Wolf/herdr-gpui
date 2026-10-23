@@ -113,6 +113,30 @@ impl Values<'_> {
     }
 }
 
+/// Whether every output token in a shell command sits where [`Quoting`]
+/// can tell its quoting. It models quotes, backslashes, `$(…)` and
+/// backticks; a command that uses an earlier step's output must not hold
+/// what it does not model (comments, heredocs, `$'…'`, `$"…"`, `${…}`),
+/// and must close every quote, or a reference could land unquoted.
+pub(crate) fn shell_tokens_placeable(command: &str) -> bool {
+    if !command.contains("{log_tail:") && !command.contains("{run_id:") {
+        return true;
+    }
+    if ["#", "<<", "$'", "$\"", "${"]
+        .iter()
+        .any(|unmodelled| command.contains(unmodelled))
+    {
+        return false;
+    }
+    let mut quoting = Quoting::default();
+    let mut rest = command;
+    while !rest.is_empty() {
+        let step = quoting.read(rest);
+        rest = &rest[step..];
+    }
+    !quoting.single && quoting.open.is_empty()
+}
+
 /// Where a POSIX shell reader is: which quotes are open, inside how many
 /// command substitutions, each of which starts its own quoting.
 #[derive(Debug, Default)]

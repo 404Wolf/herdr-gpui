@@ -121,7 +121,10 @@ command an output token becomes a reference to a `HERDR_LOG_TAIL_N` variable
 and the value travels in the environment, never in the command text. The
 reference is quoted for where the token sits (`"$HERDR_LOG_TAIL_1"` bare,
 `${HERDR_LOG_TAIL_1}` inside double quotes, closing and reopening single
-quotes), so it always arrives as one word, unglobbed. On Windows, where `sh`
+quotes), so it always arrives as one word, unglobbed. A command that uses
+an output token must close its quotes and hold no comment, heredoc, `$'…'`,
+`$"…"` or `${…}`, whose quoting the runner does not model; `check` refuses it
+otherwise. On Windows, where `sh`
 runs `cmd /C`, a command with an output token fails instead: `cmd` would
 read the value as commands.
 

@@ -98,3 +98,20 @@ fn output_references_are_quoted_for_where_they_sit() {
     assert_eq!(fill(r"echo \{log_tail:1}"), r"echo \{log_tail:1}");
     assert_eq!(fill("echo \"it's {date}\""), "echo \"it's 2026-10-22\"");
 }
+
+#[test]
+fn output_tokens_are_refused_where_their_quoting_cannot_be_told() {
+    use crate::tokens::shell_tokens_placeable as placeable;
+    assert!(placeable("echo # no token here"));
+    assert!(placeable(r#"printf '%s' "{log_tail:1}" | tee 'out'"#));
+    for command in [
+        "echo {log_tail:1} # \"",
+        "cat <<EOF\n{log_tail:1}\nEOF",
+        "echo $'a' {log_tail:1}",
+        "echo ${X:-\"{log_tail:1}\"}",
+        "echo \"open {run_id:1}",
+        "echo 'open {log_tail:1}",
+    ] {
+        assert!(!placeable(command), "{command}");
+    }
+}

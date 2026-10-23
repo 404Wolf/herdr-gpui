@@ -98,7 +98,8 @@ take `{ timeout = "30m" }`.
   `"{date}"` and `"{log_tail:2}"`: pass them into prompts, names and commands,
   but do not compare them, since the runner fills them in only when a step
   runs. In `sh` they arrive as quoted `$HERDR_...` variables (not on
-  Windows, where `sh` runs `cmd` and such a command fails).
+  Windows, where `sh` runs `cmd` and such a command fails). A `sh` command
+  that uses one cannot hold `#`, `<<`, `$'`, `$"` or `${`.
 - Branch and worktree names take letters, digits, `. _ / -` and `{date}`.
   `harness` is a lowercase name.
 - `run` takes only `setup` or `run`; other commands go through `sh`.

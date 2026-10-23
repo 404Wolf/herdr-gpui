@@ -254,3 +254,24 @@ fn calls_read_back_in_plain_words() {
         ]
     );
 }
+
+#[test]
+fn a_command_whose_output_quoting_cannot_be_told_is_refused() {
+    let refused = run_refusal(
+        "local v = sh(\"just ci\", { check = false })\nsh(\"echo \" .. v.log_tail .. \" # done\")",
+    );
+    assert!(
+        matches!(
+            refused,
+            Refusal::Invalid {
+                function: "sh",
+                problem: Problem::Shape {
+                    field: "command",
+                    ..
+                },
+            }
+        ),
+        "{refused:?}"
+    );
+    assert_eq!(calls("sh(\"echo hi # a comment\")").len(), 1);
+}

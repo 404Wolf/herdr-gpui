@@ -188,9 +188,18 @@ impl Call {
                         }
                         Step::Run { name }
                     }
-                    _ => Step::Sh {
-                        command: site.text(first, Text::body("command", 4_096))?,
-                    },
+                    _ => {
+                        let command = site.text(first, Text::body("command", 4_096))?;
+                        if !crate::tokens::shell_tokens_placeable(&command) {
+                            return Err(site.refuse(crate::Problem::Shape {
+                                field: "command",
+                                rule: "free of comments, heredocs, `$'…'`, `$\"…\"` and `${…}`, with \
+                                       every quote closed, when it uses an earlier step's output, \
+                                       so the output can be quoted safely",
+                            }));
+                        }
+                        Step::Sh { command }
+                    }
                 };
                 let (check, timeout) = match second {
                     Value::Nil => (true, None),
