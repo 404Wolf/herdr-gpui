@@ -129,3 +129,25 @@ fn a_host_that_answers_otherwise_still_drops_the_repository() {
     assert!(worker.store.is_none());
     assert_eq!(cached(&worker), None);
 }
+
+#[test]
+fn a_cached_repository_whose_rows_cannot_be_read_reports_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_service, worker, _) = opened(dir.path());
+    let database = worker.site.as_ref().unwrap().database.clone();
+    let request = worker.request.clone();
+    drop(worker);
+    // A saved row this version cannot read: showing the cached repository
+    // fails after it was set, so detection must show it again and fail too.
+    rusqlite::Connection::open(&database)
+        .unwrap()
+        .execute(
+            "INSERT INTO issues (canonical_key, source, provider, host, repository, native_id, \
+             identifier, title, state, labels_json, blocked_by_json) \
+             VALUES ('k', 's', 'nonsense', 'h', 'r', '1', '#1', 't', 'open', '[]', '[]')",
+            [],
+        )
+        .unwrap();
+    let (_service, mut worker, _) = Service::prepare(request);
+    assert!(worker.open().is_err());
+}

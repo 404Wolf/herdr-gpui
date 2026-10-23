@@ -465,7 +465,10 @@ impl Worker {
         if let Some(info) = cached
             && let Err(error) = self.show(info, &host)
         {
+            // `show` may have set the repository before failing: drop it, so
+            // `find` shows it again and reports what failed.
             tracing::debug!(%error, "Cannot show the cached repository");
+            self.forget_repository();
         }
         self.find(&host)
     }
