@@ -10,6 +10,11 @@ with this prompt") and reviewed by a person before they run.
 Herdr UI quits and when Herdr itself is killed, and a command line for
 people, agents, and Herdr UI's Automations section.
 
+Herdr UI's Automations section can be turned off in Settings, Sidebar, Show
+automations (`[sidebar] automations = false`). Herdr UI then leaves the
+section off the activity bar and neither reads nor starts any host's daemon;
+daemons already running keep running their approved scripts.
+
 ## A script
 
 Scripts live in `.herdr/automations/NAME.luau` in a repository, or in

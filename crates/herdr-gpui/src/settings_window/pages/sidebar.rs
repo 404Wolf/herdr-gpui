@@ -180,6 +180,26 @@ impl SettingsWindow {
                     ),
             )
             .child(
+                ui::row(theme, "sidebar-automations", "Show automations")
+                    .description(
+                        "The activity bar's Automations section. Off, Herdr UI neither reads \
+                         nor starts any host's automation daemon.",
+                    )
+                    .switch(
+                        ui::toggle(
+                            theme,
+                            "sidebar-automations-toggle",
+                            self.config.sidebar_style.automations,
+                            ready,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            let mut intent = SidebarIntent::of(&this.config);
+                            intent.style.automations = !intent.style.automations;
+                            this.commit_sidebar(intent, cx);
+                        })),
+                    ),
+            )
+            .child(
                 ui::row(theme, "sidebar-select", "Selection marks")
                     .description("What selecting a workspace highlights beyond its own row.")
                     .control(ui::segmented(

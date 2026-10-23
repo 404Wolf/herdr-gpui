@@ -16,6 +16,7 @@ mod review;
 mod rows;
 mod section;
 mod timeline;
+mod turned_off;
 
 /// Monday 2026-10-19 12:00:00 UTC.
 const NOW: i64 = 1_792_411_200;

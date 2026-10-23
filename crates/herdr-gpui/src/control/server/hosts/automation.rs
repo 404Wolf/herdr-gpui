@@ -18,6 +18,9 @@ pub(super) fn approve(
     window: &mut Window,
     cx: &mut Context<HerdrWindow>,
 ) -> Response {
+    if !view.activity_panel_listed(crate::sidebar::ActivityPanel::Automations) {
+        return refused(&Error::Off);
+    }
     let machine = match host {
         Some(name) => match named(view, name) {
             Some(machine) => machine,
@@ -71,7 +74,7 @@ pub(super) fn code(error: &Error) -> ErrorCode {
     match error {
         Error::UnknownHost(_) | Error::NoScript { .. } => ErrorCode::NotFound,
         Error::NotRead { .. } => ErrorCode::Busy,
-        Error::UnsupportedHost => ErrorCode::Unsupported,
+        Error::Off | Error::UnsupportedHost => ErrorCode::Unsupported,
         _ => ErrorCode::Failed,
     }
 }

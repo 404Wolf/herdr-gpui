@@ -5,6 +5,7 @@ use core::prelude::v1::test;
 
 mod activity_bar;
 mod agents_placement;
+mod automations;
 mod backdrop;
 mod change_counts;
 mod device_icons;

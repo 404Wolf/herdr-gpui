@@ -360,6 +360,11 @@ size = 12
 # Settings sits at its foot. false keeps the plain sidebar.
 # activity_bar = true
 
+# The bar's Automations section, which lists the herdr-automate scripts and
+# runs of every host. false hides it, and Herdr UI then neither reads nor
+# starts any host's automation daemon; daemons already running keep running.
+# automations = true
+
 # A colour per host, keyed by the host's name in the sidebar, as #rgb or
 # #rrggbb. It washes the host's header, its workspace rows, and its agents'
 # rows faintly, so a long list reads by colour. Names with spaces go in quotes.

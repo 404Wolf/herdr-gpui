@@ -8,7 +8,8 @@
 //! listed only once GitHub reports them on for one, Automations the
 //! `herdr-automate` scripts and runs of every host (`crate::automations`),
 //! and Usage the plan limits of every host (`crate::usage::section`).
-//! `[sidebar] activity_bar = false` turns the bar off. With the bar on, the
+//! `[sidebar] activity_bar = false` turns the bar off, and `[sidebar]
+//! automations = false` leaves Automations off it. With the bar on, the
 //! sidebar toggle sits at the end of the Workspaces title, and collapsing the
 //! sidebar keeps the bar, with the compact rail and the toggle beside it.
 
@@ -240,6 +241,23 @@ impl HerdrWindow {
         self.config.sidebar_style.activity_bar
     }
 
+    /// Whether the bar lists `panel`. A section turned off in the settings
+    /// is not listed, and a window left on it shows Workspaces.
+    pub(crate) fn activity_panel_listed(&self, panel: ActivityPanel) -> bool {
+        match panel {
+            ActivityPanel::Automations => self.config.sidebar_style.automations,
+            _ => true,
+        }
+    }
+
+    /// The section the bar marks: the one picked, or Workspaces when that
+    /// one is no longer listed.
+    fn activity_panel(&self) -> ActivityPanel {
+        Some(self.activity.panel)
+            .filter(|panel| self.activity_panel_listed(*panel))
+            .unwrap_or_default()
+    }
+
     /// Whether the bar leads the left column, whatever the sidebar's state:
     /// on, and not set aside by zen mode. The sidebar toggle then lives in
     /// the column rather than the title bar.
@@ -261,7 +279,7 @@ impl HerdrWindow {
     /// Workspaces is shown. Zen mode keeps the terminals.
     pub(crate) fn activity_section(&self) -> Option<ActivityPanel> {
         self.activity_bar_leads()
-            .then_some(self.activity.panel)
+            .then(|| self.activity_panel())
             .filter(|panel| *panel != ActivityPanel::Workspaces)
     }
 
@@ -288,7 +306,7 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) {
         if panel == ActivityPanel::Workspaces
-            && self.activity.panel == panel
+            && self.activity_panel() == panel
             && self.sidebar_visible
         {
             self.toggle_sidebar();
@@ -306,6 +324,9 @@ impl HerdrWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if !self.activity_panel_listed(panel) {
+            return;
+        }
         if panel == ActivityPanel::Workspaces && !self.sidebar_visible {
             self.toggle_sidebar();
         }
@@ -430,8 +451,12 @@ impl HerdrWindow {
             .bg(self.fill().panel(theme.sidebar_background()))
             .border_r_1()
             .border_color(rgb(theme.active));
+        let shown = self.activity_panel();
         for &panel in ActivityPanel::ALL {
-            let state = if panel == self.activity.panel {
+            if !self.activity_panel_listed(panel) {
+                continue;
+            }
+            let state = if panel == shown {
                 BarState::Selected
             } else {
                 BarState::Idle

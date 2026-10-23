@@ -440,7 +440,15 @@ impl HerdrWindow {
     pub(crate) fn poll_automations(&mut self, cx: &mut Context<Self>) {
         // Read with the bar off too: notifications and `automation approve`
         // need the hosts' state whether or not the section can be shown.
+        // Turned off in the settings, nothing is read or started.
         self.forget_closed_automation_dialog();
+        if !self.activity_panel_listed(ActivityPanel::Automations) {
+            self.automations.shown = false;
+            if self.automations.sync_hosts(Vec::new()) {
+                cx.notify();
+            }
+            return;
+        }
         let wanted = self.automation_hosts();
         if self.automations.sync_hosts(wanted) {
             cx.notify();
