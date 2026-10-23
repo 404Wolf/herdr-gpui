@@ -2772,7 +2772,9 @@ come back after a restart; closing a workspace in Herdr removes its tabs.
 ### Annotating A Page
 
 **Annotate** in a browser tab's toolbar lets you pin notes to a page and send
-them to the agent that opened it, so it can change the page.
+them to the agent that opened it, so it can change the page. Bind
+`toggle_annotate` under `[keybindings]` to start or stop annotating the page
+in view from the keyboard; it has no default key.
 
 - Hover to outline an element and click to pick it, or select text. For
   anything else, draw a region: turn on **Region** in the notes panel and
