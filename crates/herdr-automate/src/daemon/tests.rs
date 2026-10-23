@@ -73,7 +73,11 @@ fn the_daemon_runs_an_approved_script_on_request_and_shuts_down() {
         .push_request(&RequestKind::Shutdown, runner::now())
         .unwrap();
     daemon.join().unwrap().unwrap();
-    assert!(!Lock::held(&fixture.paths));
+    // Released on return; a child another test starts at that moment can
+    // hold a copy of the descriptor until it runs its program.
+    assert!(wait_for(Duration::from_secs(5), || !Lock::held(
+        &fixture.paths
+    )));
     assert_eq!(store.daemon().unwrap().and_then(|beat| beat.pid), None);
 }
 
