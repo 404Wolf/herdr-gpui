@@ -160,7 +160,9 @@ fn a_shorter_list_catches_up_to_its_end_on_its_own(cx: &mut TestAppContext) {
 fn a_sent_prompt_shows_whole_with_its_delivered_note(cx: &mut TestAppContext) {
     let (view, _peer, cx) = open(cx, ConnectTarget::Local);
     let program = Program::new();
-    let entries = (1..=40).map(|id| agent(id, "A line of an earlier reply.")).collect();
+    let entries = (1..=40)
+        .map(|id| agent(id, "A line of an earlier reply."))
+        .collect();
     let mut stream = attach_with(&view, &program, snapshot(cursor(1, 0), entries), cx);
     view.update(cx, |view, cx| {
         view.set_chat_layout_with(crate::config::ChatLayoutMode::IMessage, |_| Ok(()), cx)
@@ -192,7 +194,13 @@ fn a_sent_prompt_shows_whole_with_its_delivered_note(cx: &mut TestAppContext) {
     wait_until(|| {
         poll(&view, &program, cx);
         view.read_with(cx, |view, _| {
-            view.chats.pane("w1:p1").unwrap().session.transcript().status == Status::Working
+            view.chats
+                .pane("w1:p1")
+                .unwrap()
+                .session
+                .transcript()
+                .status
+                == Status::Working
         })
     });
     for _ in 0..500 {
@@ -204,5 +212,8 @@ fn a_sent_prompt_shows_whole_with_its_delivered_note(cx: &mut TestAppContext) {
     }
     let delivered = cx.debug_bounds("chat-delivered").unwrap();
     let typing = cx.debug_bounds("chat-typing").unwrap();
-    assert!(delivered.bottom() <= typing.top(), "{delivered:?} above {typing:?}");
+    assert!(
+        delivered.bottom() <= typing.top(),
+        "{delivered:?} above {typing:?}"
+    );
 }
