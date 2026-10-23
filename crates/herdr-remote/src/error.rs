@@ -21,10 +21,10 @@ pub enum Error {
     Json(#[from] serde_json::Error),
     #[error("Herdr UI's config is not available to cloud providers.")]
     NoConfig,
-    #[error("preferences path has no parent")]
-    PreferencesPath,
     #[error(transparent)]
     Path(#[from] herdr_client::local_path::PathError),
+    #[error("preferences path has no parent")]
+    PreferencesPath,
     #[cfg(feature = "cloud")]
     #[error(transparent)]
     Provider(#[from] crate::cloud::ProviderError),
