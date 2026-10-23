@@ -12,6 +12,7 @@ mod app;
 #[cfg(any(target_os = "macos", windows, test))]
 mod app_badge;
 mod app_icon;
+mod automations;
 mod avatars;
 #[cfg(feature = "azure")]
 mod azure;

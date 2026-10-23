@@ -37,6 +37,24 @@ when its usage request fails, so a failure does not switch the shown account.
 SSH hosts and WSL distributions need `python3` or `jq` to read the JSON
 sign-in; detection is skipped when neither parser is available.
 
+## Grok prepaid balance
+
+Legacy and unified Grok accounts use the same CLI billing endpoint. Herdr
+reads the quota and wallet independently, including when the server omits
+the `isUnifiedBillingUser` flag; account migration is not required.
+
+Grok's CLI billing response can report a prepaid balance without an included
+usage percentage. Herdr shows that balance in USD (the
+[Grok billing contract](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-shell/src/extensions/billing.rs)
+sends USD cents),
+including zero balances, and the reported period end in the usage panel.
+Included usage stays **Not reported** until the API supplies a percentage or
+the existing on-demand usage ratio; the wallet does not imply a quota or a
+percentage used. The period end does not imply that purchased credits expire.
+When both quota and balance are available, the panel shows both and the status
+bar continues to show quota usage. Sign in with `grok login` on the selected
+host; no additional credentials are needed.
+
 ## The trait
 
 ```rust

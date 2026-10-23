@@ -1,7 +1,9 @@
-//! `pr`, `host`, `cloud add`, `ports`, `usage`, `system`, and `security`: what the
+//! `pr`, `host`, `cloud add`, `ports`, `usage`, `system`, `security`, and
+//! `automation approve`: what the
 //! window gathers about its hosts, read from the state it already keeps.
 //! Nothing here starts a lookup, a scan, or a sample of its own; a request
 //! answers from the latest one, and says why when there is none.
+mod automation;
 mod ports;
 mod pr;
 mod security;
@@ -56,6 +58,9 @@ pub(super) fn serve(
         HostOp::Security => in_window(caller, cx, |view, _, _| security::alerts(view)),
         HostOp::SecurityOpen { repository, item } => in_window(caller, cx, |view, window, cx| {
             security::open(view, &repository, &item, window, cx)
+        }),
+        HostOp::AutomationApprove { path, host } => in_window(caller, cx, |view, window, cx| {
+            automation::approve(view, caller, &path, host.as_deref(), window, cx)
         }),
         HostOp::Cloud => cloud(caller, cx),
         HostOp::CloudSetup { id } => {

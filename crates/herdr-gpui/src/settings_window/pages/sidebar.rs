@@ -163,7 +163,7 @@ impl SettingsWindow {
                 ui::row(theme, "sidebar-activity-bar", "Show activity bar")
                     .description(
                         "The icon column at the window's left edge that switches between \
-                         workspaces, overview, pull requests, issues and usage.",
+                         workspaces, overview, pull requests, issues, security, automations and usage.",
                     )
                     .switch(
                         ui::toggle(
@@ -175,6 +175,26 @@ impl SettingsWindow {
                         .on_click(cx.listener(|this, _, _, cx| {
                             let mut intent = SidebarIntent::of(&this.config);
                             intent.style.activity_bar = !intent.style.activity_bar;
+                            this.commit_sidebar(intent, cx);
+                        })),
+                    ),
+            )
+            .child(
+                ui::row(theme, "sidebar-automations", "Show automations")
+                    .description(
+                        "The activity bar's Automations section. Off, Herdr UI neither reads \
+                         nor starts any host's automation daemon.",
+                    )
+                    .switch(
+                        ui::toggle(
+                            theme,
+                            "sidebar-automations-toggle",
+                            self.config.sidebar_style.automations,
+                            ready,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            let mut intent = SidebarIntent::of(&this.config);
+                            intent.style.automations = !intent.style.automations;
                             this.commit_sidebar(intent, cx);
                         })),
                     ),

@@ -18,6 +18,8 @@ pub enum Error {
         source: io::Error,
     },
     #[error(transparent)]
+    Automations(#[from] crate::automations::Error),
+    #[error(transparent)]
     Backdrop(#[from] crate::backdrop::Error),
     #[error("Searching the local network failed: {0}")]
     Bonjour(#[from] mdns_sd::Error),
