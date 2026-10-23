@@ -13,12 +13,12 @@ const SERVICE: &str = "dev.herdr.gpui.github";
 const LABEL: &str = "Herdr UI GitHub sign-in";
 
 // `oo7::Error` is several times larger than the crate's other variants.
-fn read_error(error: oo7::Error) -> Error {
-    Error::SecretServiceRead(Box::new(error))
+fn read_error(error: oo7::Error) -> crate::Error {
+    Error::SecretServiceRead(Box::new(error)).into()
 }
 
-fn write_error(error: oo7::Error) -> Error {
-    Error::SecretServiceWrite(Box::new(error))
+fn write_error(error: oo7::Error) -> crate::Error {
+    Error::SecretServiceWrite(Box::new(error)).into()
 }
 
 /// Why a Secret Service could not be opened.
