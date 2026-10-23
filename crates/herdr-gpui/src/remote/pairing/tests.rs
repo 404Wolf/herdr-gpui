@@ -138,8 +138,16 @@ fn a_claim_asks_the_user_and_allow_waits_for_approval() {
     pairing.answer(true);
     pairing.answer(false);
     let at = now + POLL + Duration::from_millis(10);
+    // A daemon still saying Claimed leaves the answer sent and waiting.
     assert_eq!(
-        step(&mut pairing, at, Ok(Response::Done)),
+        step(
+            &mut pairing,
+            at,
+            Ok(Response::Pairing(PairingState::Claimed {
+                device_name: "Fabien's iPhone".into(),
+                code: "428913".into(),
+            })),
+        ),
         Request::Approve {
             id: PairingId("p1".into()),
             allow: true,
@@ -188,7 +196,11 @@ fn deny_ends_the_pairing() {
     );
     pairing.answer(false);
     assert_eq!(
-        step(&mut pairing, now + POLL, Ok(Response::Done)),
+        step(
+            &mut pairing,
+            now + POLL,
+            Ok(Response::Pairing(PairingState::Denied))
+        ),
         Request::Approve {
             id: PairingId("p1".into()),
             allow: false,
@@ -267,6 +279,47 @@ fn an_unreachable_daemon_fails_with_its_reason() {
     assert!(!pairing.cancels_on_close());
     pairing.restart();
     assert_eq!(pairing.phase(), &Phase::Requesting);
+}
+
+#[test]
+fn allow_shows_the_approval_the_daemon_answers_with() {
+    let now = Instant::now();
+    let mut pairing = showing(now);
+    step(
+        &mut pairing,
+        now + POLL,
+        Ok(Response::Pairing(PairingState::Claimed {
+            device_name: "Pixel".into(),
+            code: "000111".into(),
+        })),
+    );
+    pairing.answer(true);
+    step(
+        &mut pairing,
+        now + POLL,
+        Ok(Response::Pairing(PairingState::Approved {
+            device: DeviceId("d1".into()),
+        })),
+    );
+    assert_eq!(
+        pairing.phase(),
+        &Phase::Approved {
+            device_name: "Pixel".into()
+        }
+    );
+    // An approval answered with something else is a failure, not success.
+    let mut pairing = showing(now);
+    step(
+        &mut pairing,
+        now + POLL,
+        Ok(Response::Pairing(PairingState::Claimed {
+            device_name: "Pixel".into(),
+            code: "000111".into(),
+        })),
+    );
+    pairing.answer(true);
+    step(&mut pairing, now + POLL, Ok(Response::Done));
+    assert!(matches!(pairing.phase(), Phase::Failed { .. }));
 }
 
 #[test]

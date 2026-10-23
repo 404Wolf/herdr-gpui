@@ -122,7 +122,9 @@ fn pairing_daemon(_: &Path, request: &Request) -> Result<Response, control::Erro
         }),
         Request::Approve { allow: true, .. } => {
             APPROVED.store(true, Ordering::SeqCst);
-            Response::Done
+            Response::Pairing(PairingState::Approved {
+                device: DeviceId("d1".into()),
+            })
         }
         _ => Response::Done,
     })

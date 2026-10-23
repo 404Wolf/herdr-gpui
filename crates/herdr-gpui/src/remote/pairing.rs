@@ -184,16 +184,17 @@ impl Pairing {
             (Request::Pairing { id }, Response::Pairing(state)) if self.id() == Some(id) => {
                 self.update(state, now);
             }
-            (Request::Approve { allow, .. }, Response::Done) => {
+            // The daemon answers with the pairing's state after the answer.
+            (Request::Approve { id, allow, .. }, Response::Pairing(state))
+                if self.id() == Some(id) =>
+            {
                 if let Phase::Claimed { answer, .. } = &mut self.phase {
                     *answer = Some(Answer {
                         allow: *allow,
                         sent: true,
                     });
                 }
-                if !allow {
-                    self.phase = Phase::Denied;
-                }
+                self.update(state, now);
             }
             // A poll for a pairing since replaced.
             (Request::Pairing { .. }, Response::Pairing(_)) => {}
