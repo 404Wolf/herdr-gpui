@@ -32,7 +32,11 @@ fn automations_are_on_unless_turned_off_and_write_their_key() -> anyhow::Result<
     for config in [Config::default(), Config::parse(DEFAULT_CONFIG)?] {
         assert!(config.sidebar_style.automations);
     }
-    assert!(!Config::parse("[sidebar]\nautomations = false")?.sidebar_style.automations);
+    assert!(
+        !Config::parse("[sidebar]\nautomations = false")?
+            .sidebar_style
+            .automations
+    );
     assert!(Config::parse("[sidebar]\nautomations = \"off\"").is_err());
     let dir = tempfile::tempdir()?;
     let path = dir.path().join("local.toml");

@@ -39,7 +39,10 @@ fn show_automations_is_on_the_sidebar_page_and_saves_the_opposite(cx: &mut TestA
             Some(Preference::SidebarAutomations(!shown))
         );
         view.update(cx, |view, _| {
-            assert_eq!(view.config.sidebar_style.automations, !shown, "shown {shown}");
+            assert_eq!(
+                view.config.sidebar_style.automations, !shown,
+                "shown {shown}"
+            );
         });
     }
 }
