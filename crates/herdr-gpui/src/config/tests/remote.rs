@@ -23,13 +23,22 @@ fn remote_control_is_off_with_its_defaults() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// An absolute path on this platform, for TOML literal strings: `/c.pem`
+/// is relative on Windows, which needs a drive.
+fn absolute(name: &str) -> PathBuf {
+    env::temp_dir().join(name)
+}
+
 #[test]
 fn remote_control_reads_every_key() -> anyhow::Result<()> {
-    let config = Config::parse(
+    let (cert, key) = (absolute("cert.pem"), absolute("key.pem"));
+    let config = Config::parse(&format!(
         "[remote]\nenabled = true\nport = 8443\nbind = '192.168.1.20'\n\
-         certificate = { cert = '/etc/herdr/cert.pem', key = '/etc/herdr/key.pem' }\n\
+         certificate = {{ cert = '{}', key = '{}' }}\n\
          keep_running = false\nnotifications = 'excerpt'\ndevice_idle_days = 7\n",
-    )?;
+        cert.display(),
+        key.display(),
+    ))?;
     assert!(config.unknown_keys.is_empty(), "{:?}", config.unknown_keys);
     let remote = config.remote;
     assert!(remote.enabled);
@@ -37,13 +46,7 @@ fn remote_control_reads_every_key() -> anyhow::Result<()> {
     assert_eq!(remote.port, 8443);
     assert_eq!(remote.bind, Bind::Address("192.168.1.20".parse()?));
     assert_eq!(remote.bind.to_string(), "192.168.1.20");
-    assert_eq!(
-        remote.certificate,
-        Certificate::Files {
-            cert: "/etc/herdr/cert.pem".into(),
-            key: "/etc/herdr/key.pem".into(),
-        }
-    );
+    assert_eq!(remote.certificate, Certificate::Files { cert, key });
     assert_eq!(remote.notifications, Privacy::Excerpt);
     assert_eq!(remote.device_idle_days, 7);
     let ipv6 = Config::parse("[remote]\nbind = '::1'\ncertificate = 'own'")?;
@@ -54,15 +57,25 @@ fn remote_control_reads_every_key() -> anyhow::Result<()> {
 
 #[test]
 fn remote_control_refuses_values_the_daemon_cannot_use() {
+    let (cert, key) = (absolute("c.pem"), absolute("k.pem"));
     for (text, expected) in [
-        ("port = 0", "port"),
-        ("device_idle_days = 0", "idle"),
-        ("device_idle_days = 366", "idle"),
+        ("port = 0".to_owned(), "port"),
+        ("device_idle_days = 0".to_owned(), "idle"),
+        ("device_idle_days = 366".to_owned(), "idle"),
         (
-            "certificate = { cert = 'cert.pem', key = '/k.pem' }",
+            format!(
+                "certificate = {{ cert = 'cert.pem', key = '{}' }}",
+                key.display()
+            ),
             "cert",
         ),
-        ("certificate = { cert = '/c.pem', key = 'key.pem' }", "key"),
+        (
+            format!(
+                "certificate = {{ cert = '{}', key = 'key.pem' }}",
+                cert.display()
+            ),
+            "key",
+        ),
     ] {
         let Err(error) = Config::parse(&format!("[remote]\n{text}")) else {
             panic!("{text} loaded");
@@ -159,7 +172,7 @@ fn invalid_remote_edits_leave_the_file_alone() -> anyhow::Result<()> {
         Edit::DeviceIdleDays(0),
         Edit::Certificate(Certificate::Files {
             cert: "relative.pem".into(),
-            key: "/key.pem".into(),
+            key: absolute("key.pem"),
         }),
     ] {
         assert!(Config::save_preference_path(Preference::Remote(edit), &path).is_err());
