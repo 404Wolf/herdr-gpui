@@ -330,10 +330,7 @@ fn launch_gui_live(binary: &Path) -> Option<(Isolated, ExitStatus)> {
         if let Some(status) = isolated.gui.as_mut().unwrap().try_wait().unwrap() {
             break status;
         }
-        if Instant::now() >= deadline {
-            eprintln!("native GUI timeout (active desktop required)");
-            return None;
-        }
+        // Check the daemon first so a crash at the deadline is never retried.
         assert!(
             isolated
                 .daemon
@@ -344,6 +341,10 @@ fn launch_gui_live(binary: &Path) -> Option<(Isolated, ExitStatus)> {
                 .is_none(),
             "daemon died while GUI was running"
         );
+        if Instant::now() >= deadline {
+            eprintln!("native GUI timeout (active desktop required)");
+            return None;
+        }
         thread::sleep(Duration::from_millis(50));
     };
     Some((isolated, status))
