@@ -21,7 +21,9 @@ pub use batch::BatchCommand;
 pub use browser::{BrowserCommand, Placement};
 pub use chat::ChatCommand;
 pub use exec::ExecCommand;
-pub use hosts::{CloudCommand, HostCommand, PortsCommand, PrCommand, SecurityCommand};
+pub use hosts::{
+    AutomationCommand, CloudCommand, HostCommand, PortsCommand, PrCommand, SecurityCommand,
+};
 pub use remote::RemoteCommand;
 pub use settings::{
     CaffeineCommand, ConfigCommand, IntegrationsCommand, KeybindsCommand, SoundCommand,
@@ -89,6 +91,7 @@ pub enum ControlCommand {
     Usage,
     System,
     Security(SecurityCommand),
+    Automation(AutomationCommand),
     Remote(RemoteCommand),
     Search {
         files: bool,
@@ -200,6 +203,10 @@ pub const FAMILIES: &[(&str, &str)] = &[
     (
         "security",
         "Vulnerability reports and Dependabot alerts of your repositories",
+    ),
+    (
+        "automation",
+        "Open an automation script's approval in Herdr UI; the user approves",
     ),
     (
         "remote",
@@ -356,6 +363,7 @@ fn command(family: &'static str, args: &mut Args) -> Result<ControlCommand, CliE
         "usage" => ControlCommand::Usage,
         "system" => ControlCommand::System,
         "security" => ControlCommand::Security(hosts::security(args)?),
+        "automation" => ControlCommand::Automation(hosts::automation(args)?),
         "remote" => ControlCommand::Remote(remote::remote(args)?),
         "search" => {
             let files = match args.verb().as_ref().and_then(|verb| verb.to_str()) {

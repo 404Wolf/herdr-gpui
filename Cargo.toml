@@ -1,5 +1,5 @@
 [workspace]
-members  = ["crates/embed-resource", "crates/herdr-acp", "crates/herdr-chat-protocol", "crates/herdr-client", "crates/herdr-gpui", "crates/herdr-gpui-launcher", "crates/herdr-protocol", "crates/herdr-remote"]
+members  = ["crates/embed-resource", "crates/herdr-acp", "crates/herdr-automate", "crates/herdr-automation", "crates/herdr-chat-protocol", "crates/herdr-client", "crates/herdr-gpui", "crates/herdr-gpui-launcher", "crates/herdr-protocol", "crates/herdr-remote"]
 resolver = "2"
 
 [workspace.package]
@@ -46,6 +46,8 @@ ed25519-dalek        = { default-features = false, features = ["std"], version =
 flate2               = "1"
 # Use the same strict macOS family lookup as GPUI, including legacy aliases.
 font-kit             = { package = "zed-font-kit", version = "=0.14.1-zed" }
+# Time zone names in automation schedules; the version the lockfile already has.
+jiff                 = "0.2.38"
 # Locates installed font files on Linux, as GPUI's own text system does.
 fontdb               = "0.24"
 foreign-types        = "0.5"
@@ -58,6 +60,8 @@ gpui_platform        = { package = "gpui-pre-platform", version = "=0.3.6" }
 gix                  = { default-features = false, features = ["sha1"], version = "0.89" }
 # The web views behind browser tabs; `browser::page` lays them out in the window.
 wry                  = { package = "lb-wry", version = "=0.53.3" }
+# Reports only by default; the daemon turns on the Luau engine.
+herdr-automation     = { default-features = false, path = "crates/herdr-automation" }
 herdr-chat-protocol  = { path = "crates/herdr-chat-protocol" }
 herdr-client         = { path = "crates/herdr-client" }
 herdr-protocol       = { path = "crates/herdr-protocol" }
@@ -69,6 +73,8 @@ if-addrs             = "0.15"
 # Display and idle holds behind the status bar cup; `bin` would pull in a CLI.
 keepawake            = { default-features = false, version = "0.6.1" }
 image                = { default-features = false, features = ["gif", "jpeg", "png", "webp"], version = "0.25.10" }
+# The sandboxed Luau interpreter behind automation scripts, built from source.
+mlua                 = { features = ["error-send", "luau"], version = "0.12.2" }
 # Mermaid fences in chat answers become diagrams: parse, lay out, and write
 # SVG in pure Rust; GPUI rasterizes the SVG. No CLI and no PNG writer.
 mermaid-rs-renderer  = { default-features = false, version = "0.3.1" }

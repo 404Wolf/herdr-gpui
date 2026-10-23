@@ -62,7 +62,7 @@ fn family(name: &str) -> &'static str {
             "herdr-gpui window [list]\n    The app's windows, with IDs for --window.\nherdr-gpui window new [--session NAME]\n    Open another window: of the caller's own Herdr session, of a named\n    local session, or outside Herdr of the frontmost window's host.\nherdr-gpui window focus ID\nherdr-gpui window fullscreen [on|off|toggle]\nherdr-gpui window size [WIDTHxHEIGHT]\n    Print the window's size, or resize it. Windows cannot be moved.\nherdr-gpui window detach|reconnect\n    Detach from, or reconnect to, the window's selected host."
         }
         "ui" => {
-            "herdr-gpui ui sidebar [on|off|toggle]\nherdr-gpui ui statusbar [on|off|toggle]\nherdr-gpui ui font-size +|-|reset|POINTS\nherdr-gpui ui panel workspaces|overview|pull-requests|issues|security|usage\n    For this window and session; settings are changed with `config`."
+            "herdr-gpui ui sidebar [on|off|toggle]\nherdr-gpui ui statusbar [on|off|toggle]\nherdr-gpui ui font-size +|-|reset|POINTS\nherdr-gpui ui panel workspaces|overview|pull-requests|issues|security|automations|usage\n    For this window and session; settings are changed with `config`."
         }
         "tab" => {
             "herdr-gpui tab [list]\n    The app's own tabs: pages, code, reviews, Devices.\n    Terminal tabs belong to Herdr: use `herdr tab`.\nherdr-gpui tab focus|close ID\n    Show a tab, switching to its workspace, or close it."
@@ -121,6 +121,9 @@ fn family(name: &str) -> &'static str {
         "usage" => "herdr-gpui usage\n    AI plan usage on the window's selected host.",
         "security" => {
             "herdr-gpui security\n    Private vulnerability reports in triage (titles only) and open\n    Dependabot alerts of the github.com repositories the window's\n    workspaces hold, most severe first, as the Security section last read\n    them (sign in to GitHub first). Exits 4 when there are none.\n    `ui panel security` shows the section.\nherdr-gpui security open REPOSITORY ALERT|GHSA\n    Show alert ALERT (its number) or private report GHSA (its GHSA ID) of\n    REPOSITORY (owner/name) in the Security section, beside its list, as\n    the section last read it."
+        }
+        "automation" => {
+            "herdr-gpui automation approve FILE [--host ID]\n    Open the approval of the automation script FILE in Herdr UI: its plan,\n    caps, and content hash, for the user to approve or cancel. Nothing is\n    approved by this command. FILE is the script's path on the host, as\n    `herdr-automate status` lists it; --host names a host by ID or label\n    (default: the caller's host). Exits 5 when the host does not list the\n    script, 6 while a dialog is open. `ui panel automations` shows the\n    section."
         }
         "system" => {
             "herdr-gpui system\n    The window's selected host's load, when Herdr UI samples it."

@@ -26,6 +26,9 @@ gpui.workspace                 = true
 # font-kit (macOS) or a Linux backend, text silently goes to a no-op system.
 gpui_platform                  = { features = ["font-kit", "runtime_shaders", "wayland", "x11"], workspace = true }
 gix.workspace                  = true
+# Only the reports `herdr-automate --json` prints: the workspace entry turns
+# default features off, so no Luau is built here.
+herdr-automation.workspace     = true
 herdr-chat-protocol.workspace  = true
 herdr-client.workspace         = true
 # The remote control daemon's control protocol only, never its server.

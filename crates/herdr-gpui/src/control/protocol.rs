@@ -18,8 +18,8 @@ use serde::{Deserialize, Serialize};
 /// Raised whenever a request or reply changes shape, so `status` can tell
 /// an outdated app from a refused request. 3: `browser.open` placement.
 /// 4: `link`. 5: the `tab` family's `zoom`. 6: the `cloud` family. 7: `chat`.
-/// 8: `remote`.
-pub(crate) const PROTOCOL_VERSION: u32 = 8;
+/// 8: `host` `automation_approve`. 9: `remote`.
+pub(crate) const PROTOCOL_VERSION: u32 = 9;
 
 /// Older apps and clients know only tabs, so a tab is left off the wire.
 fn is_tab(placement: &Placement) -> bool {

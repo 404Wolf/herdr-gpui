@@ -6,9 +6,10 @@ run *args:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ "$(uname -s)" != Darwin ]; then
-        # The app starts chats with the herdr-acp beside its own executable,
-        # and Remote control with the herdr-remote there.
-        cargo build --locked --release -p herdr-acp -p herdr-remote
+        # The app starts chats with the herdr-acp, finds the automation
+        # daemon, and starts Remote control with the herdr-remote, all beside
+        # its own executable.
+        cargo build --locked --release -p herdr-acp -p herdr-automate -p herdr-remote
         exec cargo run --locked --release -p herdr-gpui --features qa-menu -- {{args}}
     fi
     {{just_executable()}} bundle release qa-menu
@@ -30,7 +31,7 @@ run-debug *args:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ "$(uname -s)" != Darwin ]; then
-        cargo build --locked -p herdr-acp -p herdr-remote
+        cargo build --locked -p herdr-acp -p herdr-automate -p herdr-remote
         exec cargo run --locked -p herdr-gpui -- {{args}}
     fi
     {{just_executable()}} bundle debug
@@ -105,13 +106,14 @@ mockup file="" feedback="" capture="":
     exec target/debug/herdr-gpui "${args[@]}"
 
 build-release:
-    cargo build --locked --release -p herdr-gpui -p herdr-acp -p herdr-remote
+    cargo build --locked --release -p herdr-gpui -p herdr-acp -p herdr-automate -p herdr-remote
 
 # Compile and install the release executable into Cargo's bin directory.
 [unix]
 install:
     cargo install --locked --force --path crates/herdr-gpui --bin herdr-gpui
     cargo install --locked --force --path crates/herdr-acp
+    cargo install --locked --force --path crates/herdr-automate
     cargo install --locked --force --path crates/herdr-remote
 
 # Only installation bypasses the POSIX shell used by the other recipes.
@@ -122,6 +124,7 @@ install:
     cargo install --locked --force --path crates/herdr-gpui --bin herdr-gpui || exit /b 1
     cargo install --locked --force --path crates/herdr-gpui-launcher || exit /b 1
     cargo install --locked --force --path crates/herdr-acp || exit /b 1
+    cargo install --locked --force --path crates/herdr-automate || exit /b 1
     cargo install --locked --force --path crates/herdr-remote
 
 # Regenerate circular Linux artwork on any platform (Python standard library).
@@ -138,7 +141,8 @@ icons-windows:
 icons: icons-linux icons-windows
     swift scripts/generate-icons.swift
 
-# Local, unsigned GUI-only bundle. Never installs or packages a daemon.
+# Local, unsigned bundle with the automation daemon's binary beside the app.
+# Never installs or starts a daemon.
 bundle profile="release" features="":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -150,14 +154,17 @@ bundle profile="release" features="":
     esac
     app=target/{{profile}}/Herdr.app
     cargo build --locked $flags --target-dir target -p herdr-gpui --features "{{features}}"
-    cargo build --locked $flags --target-dir target -p herdr-acp -p herdr-remote
+    cargo build --locked $flags --target-dir target -p herdr-acp -p herdr-automate -p herdr-remote
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
     # Replace the executables rather than rewrite them in place: macOS keeps
     # a signed file's old signature with its inode, so reading the rewritten
     # pages kills the reader, and a chat still running the old herdr-acp
     # keeps its own copy.
-    rm -f "$app/Contents/MacOS/Herdr" "$app/Contents/MacOS/herdr-acp" "$app/Contents/MacOS/herdr-remote"
+    rm -f "$app/Contents/MacOS/Herdr" "$app/Contents/MacOS/herdr-acp" "$app/Contents/MacOS/herdr-automate" "$app/Contents/MacOS/herdr-remote"
     cp target/{{profile}}/herdr-gpui "$app/Contents/MacOS/Herdr"
+    # The automation daemon, found beside the app's executable.
+    cp target/{{profile}}/herdr-automate "$app/Contents/MacOS/herdr-automate"
+    codesign --force --sign - "$app/Contents/MacOS/herdr-automate"
     # Chats the app starts run the herdr-acp beside its executable.
     cp target/{{profile}}/herdr-acp "$app/Contents/MacOS/herdr-acp"
     # Remote control runs the herdr-remote beside it as a user service.

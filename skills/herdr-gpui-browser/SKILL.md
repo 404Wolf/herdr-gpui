@@ -1,6 +1,6 @@
 ---
 name: herdr-gpui-browser
-description: "Open a browser tab in Herdr UI beside your terminal to show the user a web page, HTML file, or mockup, and get back their notes and picks. Use it inside Herdr (HERDR_ENV=1) when the user asks to open, start, or show a browser tab, page, preview, or mockup, to explain, demo, or visualize how something works, or to mock up UI variants to pick from; prefer it there over other browser skills, a system browser, or long text explanations. Also use it for what Herdr UI, not the herdr daemon, shows or keeps: a file at a line, a review of your changes, worktree notes, checkpoints and their diffs, your branch's pull request and CI, vulnerability reports and Dependabot alerts, forwarding or opening a port, creating, running commands on, or deleting cloud machines, remote control from a phone, listing or focusing the app's windows and tabs, waiting for a tab to close or the user's notes, Herdr UI settings, themes, and fonts, and keeping the machine awake."
+description: "Open a browser tab in Herdr UI beside your terminal to show the user a web page, HTML file, or mockup, and get back their notes and picks. Use it inside Herdr (HERDR_ENV=1) when the user asks to open, start, or show a browser tab, page, preview, or mockup, to explain, demo, or visualize how something works, or to mock up UI variants to pick from; prefer it there over other browser skills, a system browser, or long text explanations. Also use it for what Herdr UI, not the herdr daemon, shows or keeps: a file at a line, a review of your changes, worktree notes, checkpoints and their diffs, your branch's pull request and CI, vulnerability reports and Dependabot alerts, asking the user to approve an automation script you wrote, forwarding or opening a port, creating, running commands on, or deleting cloud machines, remote control from a phone, listing or focusing the app's windows and tabs, waiting for a tab to close or the user's notes, Herdr UI settings, themes, and fonts, and keeping the machine awake."
 ---
 <!-- herdr-gpui-managed-skill v1: Herdr UI keeps this file up to date. Edit a copy under another name to keep your changes. -->
 
@@ -218,6 +218,8 @@ for what only Herdr UI shows or keeps.
 | Your branch's pull request, its checks, and (with your workspace focused) its comments | `herdr-gpui pr`, `herdr-gpui pr checks`, `herdr-gpui pr comments` |
 | List the vulnerability reports outsiders filed and the open Dependabot alerts of your repositories, most severe first | `herdr-gpui security --json` |
 | Show the user an alert's or a vulnerability report's page in Herdr UI | `herdr-gpui security open OWNER/NAME 42` or `... GHSA-xxxx-xxxx-xxxx` |
+| Ask the user to approve an automation script you wrote (the app shows its plan; the user approves) | `herdr-gpui automation approve .herdr/automations/nightly.luau` |
+| Show the Automations section: every host's scripts and runs | `herdr-gpui ui panel automations` |
 | Open a dev server in a tab, forwarded when you run on an SSH host | `herdr-gpui ports open 3000` |
 | See the processes under a pane, with CPU and memory | `herdr-gpui processes` |
 | Start a chat with another agent in a new tab, shown as a native chat view | `herdr-gpui chat new claude`, then `herdr-gpui chat` for its status |
@@ -232,6 +234,13 @@ for what only Herdr UI shows or keeps.
 | Keep the machine awake during a long job | `herdr-gpui caffeine on --for 2h` |
 | Check whether the app runs, and which windows and hosts it has | `herdr-gpui status` |
 
+Automations are Luau scripts `herdr-automate` runs on a host on a schedule
+or by hand (see `docs/automations.md`). Write one in
+`.herdr/automations/NAME.luau`, check it with `herdr-automate check FILE`
+until its plan is what the user asked for, then run
+`herdr-gpui automation approve FILE`: nothing runs until the user approves
+it in the app.
+
 Add `--json` to any command for machine-readable output; errors then come
 back as `{"error": {"code", "message"}}`. Exit statuses are the ones in the
 table above. A command acts in the window that shows your workspace; it
@@ -240,7 +249,7 @@ exits 5 rather than act in another session's window.
 Some commands only open the app's dialog and the user confirms there:
 restoring a checkpoint, teleporting a worktree, fanning out a prompt, running
 a worktree script the app has not seen, creating or destroying cloud
-machines, and adding a cloud machine. Say so
+machines, adding a cloud machine, and approving an automation script. Say so
 when you run one, instead of waiting for it to finish. Run
 `herdr-gpui --help` to list every command, and `herdr-gpui COMMAND --help`
 for one.

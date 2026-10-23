@@ -153,8 +153,10 @@ export PATH
             .map_err(script(step))
     }
 
-    /// [`Host::run`] without Teleport's step context.
-    fn stream(
+    /// [`Host::run`] without Teleport's step context. Whatever the script
+    /// printed stays in `output` when it fails, for callers whose programs
+    /// explain a failure on stdout.
+    pub(crate) fn stream(
         &self,
         body: &str,
         input: impl Read + Send,
