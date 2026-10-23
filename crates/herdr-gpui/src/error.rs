@@ -823,47 +823,8 @@ pub enum Error {
     UnsupportedCommand,
     #[error("{0}")]
     Update(#[from] UpdateError),
-    #[error("Usage command failed: {0}.")]
-    UsageCommand(&'static str),
-    #[error("Could not reach the usage service from this host.")]
-    UsageConnect,
-    #[error("Saved sign-in cannot be sent as a header.")]
-    UsageHeader(#[source] ureq::http::header::InvalidHeaderValue),
-    /// The body may hold account details, so only the parser's category is kept.
-    #[error("Usage response was not the expected JSON.")]
-    UsageJson(serde_json::error::Category),
-    #[error("Reading this sign-in needs Keychain access, which macOS asks for.")]
-    UsageKeychainAccess,
-    #[error("Keychain access was denied, so this sign-in cannot be read.")]
-    UsageKeychainDenied,
-    #[error("curl is not installed on this host, so usage cannot be read.")]
-    UsageMissingCurl,
-    #[error("Usage request mixes this machine's settings with the remote host's sign-in.")]
-    UsageMixedSecrets,
-    #[error("Usage request failed or timed out.")]
-    UsageNetwork(#[source] ureq::Error),
-    #[error("This account has no plan with usage limits to show.")]
-    UsageNoPlan,
-    #[error("No sign-in found on this host. Set it up under [usage.providers] in the config.")]
-    UsageNotSignedIn,
-    #[error("Could not {operation}.")]
-    UsageProcess {
-        operation: &'static str,
-        #[source]
-        source: io::Error,
-    },
-    #[error("Usage is rate limited. Retrying later.")]
-    UsageRateLimited,
-    #[error("Saved sign-in was rejected. Open the agent to sign in again.")]
-    UsageRejected,
-    #[error("Usage output exceeded the size limit.")]
-    UsageSize,
-    #[error("Usage service returned HTTP {0}.")]
-    UsageStatus(u16),
-    #[error("Usage check timed out.")]
-    UsageTimeout,
-    #[error("Could not reach this host over SSH to read usage.")]
-    UsageUnreachable,
+    #[error(transparent)]
+    Usage(#[from] herdr_usage::Error),
     #[cfg(any(target_os = "macos", windows))]
     #[error("Could not create the page: {0}")]
     WebView(#[from] wry::Error),
