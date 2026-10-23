@@ -156,27 +156,21 @@ impl Herdr {
 
     /// Runs `herdr ARGS` and returns its `result` object.
     fn call(&self, args: &[&str]) -> Result<Value> {
-        if self.limit.is_some() {
-            return self.call_bounded(args);
-        }
-        let name = args.iter().take(2).copied().collect::<Vec<_>>().join(" ");
-        let output = self
-            .command(args)
-            .output()
-            .map_err(|source| Error::Launch {
-                program: self.program.clone(),
-                source,
-            })?;
-        answer(&name, &output)
+        let name = command_name(args);
+        answer(&name, &self.output(args)?)
     }
 
-    /// As `call`, ended by the step's stop request or deadline.
-    fn call_bounded(&self, args: &[&str]) -> Result<Value> {
-        let name = args.iter().take(2).copied().collect::<Vec<_>>().join(" ");
+    /// Runs `herdr ARGS` to its end, or, bounded, until the step's stop
+    /// request or deadline, which kill it.
+    fn output(&self, args: &[&str]) -> Result<Output> {
         let launch = |source| Error::Launch {
             program: self.program.clone(),
             source,
         };
+        if self.limit.is_none() {
+            return self.command(args).output().map_err(launch);
+        }
+        let name = command_name(args);
         let mut child = self
             .command(args)
             .stdout(Stdio::piped())
@@ -196,28 +190,35 @@ impl Herdr {
             }
             thread::sleep(POLL);
         };
-        let output = Output {
+        Ok(Output {
             status,
             stdout: stdout.join().unwrap_or_default(),
             stderr: stderr.join().unwrap_or_default(),
-        };
-        answer(&name, &output)
+        })
     }
 
     pub fn running(&self) -> bool {
-        let Ok(output) = self.command(&["status", "server", "--json"]).output() else {
-            return false;
+        self.server_running().unwrap_or(false)
+    }
+
+    /// Whether Herdr's server answers as running. Only a bounded step's
+    /// stop or deadline is an error; any other failure reads as not running.
+    fn server_running(&self) -> Result<bool> {
+        let output = match self.output(&["status", "server", "--json"]) {
+            Ok(output) => output,
+            Err(error @ (Error::Stopped { .. } | Error::TimedOut { .. })) => return Err(error),
+            Err(_) => return Ok(false),
         };
-        serde_json::from_slice::<Value>(&output.stdout)
+        Ok(serde_json::from_slice::<Value>(&output.stdout)
             .ok()
             .and_then(|status| status.get("running").and_then(Value::as_bool))
-            .unwrap_or(false)
+            .unwrap_or(false))
     }
 
     /// Starts Herdr's headless server if it is not running, and waits for
     /// it. Detached in its own process group, as Herdr starts itself.
     pub fn ensure_server(&self) -> Result<()> {
-        if self.running() {
+        if self.server_running()? {
             return Ok(());
         }
         let mut command = self.command(&["server"]);
@@ -234,7 +235,7 @@ impl Herdr {
         });
         let deadline = Instant::now() + SERVER_START;
         while Instant::now() < deadline {
-            if self.running() {
+            if self.server_running()? {
                 return Ok(());
             }
             self.limit_reached("server")?;
@@ -350,6 +351,11 @@ impl Herdr {
             source,
         })
     }
+}
+
+/// A command's name for messages: its first two words.
+fn command_name(args: &[&str]) -> String {
+    args.iter().take(2).copied().collect::<Vec<_>>().join(" ")
 }
 
 /// Reads a child's stream while it runs, so a full pipe never blocks it.

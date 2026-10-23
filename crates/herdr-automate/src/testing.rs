@@ -21,6 +21,7 @@ pub struct Fixture {
 const FAKE: &str = r#"#!/bin/sh
 echo "$*" >> '{calls}'
 case "$*" in
+  *"--session hung status server"*) sleep 30 ;;
   *"status server"*) echo '{"status":"running","running":true}' ;;
   *"worktree create"*)
     mkdir -p '{worktree}'

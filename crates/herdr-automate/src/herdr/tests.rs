@@ -100,3 +100,25 @@ fn a_bounded_call_ends_at_its_deadline() {
     assert!(matches!(waited, Err(Error::TimedOut { .. })), "{waited:?}");
     assert!(started.elapsed() < Duration::from_secs(10));
 }
+
+#[test]
+fn a_hung_status_check_ends_with_the_step() {
+    let fixture = Fixture::new();
+    // The fake Herdr never answers `status` for this session.
+    let hung = Herdr::new(
+        fixture.herdr.program.clone().into(),
+        Some("hung".to_owned()),
+    );
+    let started = Instant::now();
+    let checked = hung
+        .bounded(
+            Arc::new(AtomicBool::new(false)),
+            Instant::now() + Duration::from_millis(300),
+        )
+        .ensure_server();
+    assert!(
+        matches!(checked, Err(Error::TimedOut { .. })),
+        "{checked:?}"
+    );
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
