@@ -1,9 +1,10 @@
 //! The chat as Apple's Messages draws it: the user's words in blue bubbles
 //! on the right, the agent's in gray ones on the left, the last bubble of
 //! each run ending in a tail toward its speaker, how a turn ended centered
-//! between them as Messages dates a conversation, and "Delivered" under a
-//! prompt the agent has not answered yet. The composer is a round field
-//! with the attach button before it and send inside it.
+//! between them as Messages dates a conversation, "Delivered" under a
+//! prompt the agent has not answered yet, and "typing…" while the agent
+//! works on a turn. The composer is a round field with the attach button
+//! before it and send inside it.
 
 use super::{super::column, ChatLayout, ComposerParts, Look, Row, Side, summary_row};
 use crate::config::mix;
@@ -101,6 +102,22 @@ impl ChatLayout for IMessage {
                 .bg(rgb(look.theme.background))
                 .border_1()
                 .border_color(rgb(look.theme.active)),
+        )
+    }
+
+    /// Muted under the last bubble, where Messages shows that the other
+    /// side is typing; its row stays, empty, between turns.
+    fn working(&self, working: bool, look: &Look<'_>) -> Option<Div> {
+        Some(
+            div()
+                .when(working, |row| row.debug_selector(|| "chat-typing".into()))
+                .when(!working, |row| row.invisible())
+                .px(px(16. + 12. * look.text / TEXT))
+                .pb(px(4.))
+                .text_size(px((look.text - 2.).max(10.)))
+                .italic()
+                .text_color(rgb(look.theme.muted))
+                .child("typing\u{2026}"),
         )
     }
 

@@ -83,3 +83,39 @@ fn attach_sits_before_the_field_and_send_inside_it(cx: &mut TestAppContext) {
     assert!(send.left() >= draft.right(), "send after the draft");
     assert!(settings.top() > draft.bottom(), "settings under the field");
 }
+
+#[gpui::test]
+fn typing_shows_while_the_agent_works(cx: &mut TestAppContext) {
+    let (view, _peer, cx) = open(cx, ConnectTarget::Local);
+    let program = Program::new();
+    let mut transcript = Transcript::new("Claude");
+    transcript.status = Status::Working;
+    transcript.entries = vec![Entry {
+        id: EntryId(1),
+        kind: EntryKind::User {
+            text: "Fix it".into(),
+        },
+    }];
+    let snapshot = ServerMessage::Snapshot {
+        cursor: cursor(1, 0),
+        transcript: Box::new(transcript),
+    };
+    let _stream = attach_with(&view, &program, snapshot, cx);
+    // Other layouts leave it to the header.
+    assert!(cx.debug_bounds("chat-typing").is_none());
+    imessage(&view, &program, cx);
+    let prompt = cx.debug_bounds("chat-imessage-1").unwrap();
+    let typing = cx.debug_bounds("chat-typing").unwrap();
+    assert!(typing.top() >= prompt.bottom(), "under the conversation");
+    let composer = cx.debug_bounds("chat-composer").unwrap();
+    assert!(typing.bottom() <= composer.top(), "above the composer");
+}
+
+#[gpui::test]
+fn typing_is_gone_once_the_turn_ends(cx: &mut TestAppContext) {
+    let (view, _peer, cx) = open(cx, ConnectTarget::Local);
+    let program = Program::new();
+    let _stream = attach_with(&view, &program, conversation(false), cx);
+    imessage(&view, &program, cx);
+    assert!(cx.debug_bounds("chat-typing").is_none());
+}

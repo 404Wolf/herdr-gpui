@@ -286,6 +286,7 @@ impl HerdrWindow {
                             .flex()
                             .flex_col()
                             .child(entries)
+                            .children(self.render_chat_working(chat).map(column))
                             .children(
                                 self.render_chat_permissions(chat, cx)
                                     .into_iter()
@@ -298,6 +299,12 @@ impl HerdrWindow {
                     .children(self.render_chat_rail(chat, bounds)),
             )
             .into_any_element()
+    }
+
+    /// The layout's sign that the agent is working on a turn.
+    fn render_chat_working(&self, chat: &ChatPane) -> Option<Div> {
+        let working = chat.session.transcript().status == Status::Working;
+        layout::layout_for(self.config.chat.layout).working(working, &self.chat_look())
     }
 
     /// The chat's background where no page shows: on macOS, where a page

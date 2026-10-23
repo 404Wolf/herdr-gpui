@@ -127,6 +127,14 @@ pub(super) trait ChatLayout {
         div().h(px(18.)).flex().child(button)
     }
 
+    /// What shows under the conversation for whether the agent is working
+    /// on a turn: by default nothing, as the header already says so. A row
+    /// it draws keeps its height either way, so the list above it does not
+    /// change size as turns start and end.
+    fn working(&self, _working: bool, _look: &Look<'_>) -> Option<Div> {
+        None
+    }
+
     /// How a turn ended, from its description: by default a quiet rule
     /// across the list.
     fn turn(&self, text: &str, look: &Look<'_>) -> Div {
