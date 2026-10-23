@@ -48,6 +48,8 @@ pub(super) struct Row<'a> {
     pub(super) next: Option<Side>,
     /// The agent's display name, as the program reports it.
     pub(super) agent: &'a str,
+    /// The entry is the last while a turn runs, so it may still grow.
+    pub(super) live: bool,
     pub(super) content: Div,
 }
 

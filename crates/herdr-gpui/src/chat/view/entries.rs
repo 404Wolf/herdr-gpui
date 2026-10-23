@@ -118,11 +118,14 @@ impl HerdrWindow {
                 .and_then(|index| entries.get(index))
                 .and_then(|entry| side(&entry.kind))
         };
+        let transcript = chat.session.transcript();
         let row = Row {
             entry,
             previous: near(index.checked_sub(1)),
             next: near(index.checked_add(1)),
             agent: chat.session.agent(),
+            live: index + 1 == entries.len()
+                && transcript.status == herdr_chat_protocol::Status::Working,
             content,
         };
         layout_for(self.config.chat.layout).row(row, &self.chat_look())

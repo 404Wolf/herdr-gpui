@@ -119,3 +119,48 @@ fn typing_is_gone_once_the_turn_ends(cx: &mut TestAppContext) {
     imessage(&view, &program, cx);
     assert!(cx.debug_bounds("chat-typing").is_none());
 }
+
+#[gpui::test]
+fn a_streaming_reply_takes_the_whole_width_until_it_ends(cx: &mut TestAppContext) {
+    let (view, _peer, cx) = open(cx, ConnectTarget::Local);
+    let program = Program::new();
+    let mut transcript = Transcript::new("Claude");
+    transcript.status = Status::Working;
+    transcript.entries = vec![
+        Entry {
+            id: EntryId(1),
+            kind: EntryKind::User {
+                text: "Fix it".into(),
+            },
+        },
+        agent(2, "On it."),
+    ];
+    let snapshot = ServerMessage::Snapshot {
+        cursor: cursor(1, 0),
+        transcript: Box::new(transcript),
+    };
+    let mut stream = attach_with(&view, &program, snapshot, cx);
+    imessage(&view, &program, cx);
+    let streaming = cx.debug_bounds("chat-imessage-2").unwrap();
+    send(
+        &mut stream,
+        &change(
+            Change::Status {
+                status: Status::Idle,
+            },
+            cursor(1, 1),
+        ),
+    );
+    wait_until(|| {
+        poll(&view, &program, cx);
+        view.read_with(cx, |view, _| {
+            let chat = view.chats.pane("w1:p1").unwrap();
+            chat.session.transcript().status == Status::Idle
+        })
+    });
+    let done = cx.debug_bounds("chat-imessage-2").unwrap();
+    assert!(
+        streaming.size.width > done.size.width * 2.,
+        "{streaming:?} then {done:?}"
+    );
+}

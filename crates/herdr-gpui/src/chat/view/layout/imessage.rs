@@ -62,7 +62,14 @@ impl ChatLayout for IMessage {
                 let bubble = bubble(row.content, fill, tail, look)
                     .debug_selector(move || format!("chat-imessage-{id}"))
                     .text_color(rgb(text))
-                    .when_some(message_width(kind, look), |bubble, width| bubble.w(width));
+                    .map(|bubble| match message_width(kind, look) {
+                        // A reply still streaming takes the whole width, so
+                        // it grows only downward rather than reflowing
+                        // sideways with each longer line.
+                        Some(_) if row.live => bubble.w(relative(1.)),
+                        Some(width) => bubble.w(width),
+                        None => bubble,
+                    });
                 div()
                     .flex()
                     .when(side == Side::User, |row| row.justify_end())
