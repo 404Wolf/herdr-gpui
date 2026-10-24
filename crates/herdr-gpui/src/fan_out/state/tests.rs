@@ -40,6 +40,7 @@ fn idle() -> FanOut {
         next_refresh: None,
         journal: Journal::default(),
         id: 0,
+        restored: false,
         wanted: Vec::new(),
     }
 }

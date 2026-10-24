@@ -22,7 +22,9 @@ impl FanOut {
     /// nothing left to come back to are forgotten on the way.
     pub(crate) fn reclaim(journal: &Journal, host: impl Fn(&str) -> Option<Host>) -> Option<Self> {
         loop {
-            let record = journal.claim(|record| host(&record.origin.endpoint_id).is_some())?;
+            let origin =
+                |record: &Record| same(&host, &record.origin.endpoint_id, &record.origin.host);
+            let record = journal.claim(|record| origin(record).is_some())?;
             let id = record.id;
             match Self::restore(record, journal.clone(), &host) {
                 Some(fan_out) => return Some(fan_out),
@@ -32,9 +34,10 @@ impl FanOut {
     }
 
     /// The fan-out `record` describes, as a comparison, with each lane where
-    /// the journal left it. `host` finds an endpoint's host by ID. `None`
-    /// when the origin's host is unknown, a lane cannot be read, or nothing
-    /// was created that could need the user.
+    /// the journal left it. `host` finds an endpoint's host by ID, used only
+    /// when it is the daemon the record saw. `None` when the origin's host
+    /// is unknown, a lane cannot be read, or nothing was created that could
+    /// need the user.
     pub(crate) fn restore(
         record: Record,
         journal: Journal,
@@ -47,7 +50,7 @@ impl FanOut {
         let origin = Origin {
             endpoint_id: saved.endpoint_id.clone(),
             endpoint_label: saved.endpoint_label.clone(),
-            host: host(&saved.endpoint_id)?,
+            host: same(&host, &saved.endpoint_id, &saved.host)?,
             workspace_id: saved.workspace_id.clone(),
             repo_key: saved.repo_key.clone(),
             repo_label: saved.repo_label.clone(),
@@ -62,7 +65,7 @@ impl FanOut {
                 let checkout = saved.checkout.as_ref().and_then(|checkout| {
                     Some(Checkout {
                         endpoint_id: checkout.endpoint_id.clone(),
-                        host: host(&checkout.endpoint_id)?,
+                        host: same(&host, &checkout.endpoint_id, &checkout.host)?,
                         workspace_id: checkout.workspace_id.clone(),
                         path: checkout.path.clone(),
                         pane_id: checkout.pane_id.clone(),
@@ -70,7 +73,7 @@ impl FanOut {
                 });
                 let state = match (&saved.checkout, &checkout, saved.step) {
                     (Some(lost), None, _) => LaneState::Failed(format!(
-                        "{} cannot be scripted here; its worktree stays at {}",
+                        "{} is not the daemon it was, or cannot be scripted here; its worktree stays at {}",
                         lost.endpoint_id, lost.path
                     )),
                     (_, _, Checkpoint::Prompted) => LaneState::Running,
@@ -114,6 +117,7 @@ impl FanOut {
             next_refresh: None,
             journal,
             id: record.id,
+            restored: true,
             wanted: Vec::new(),
         })
     }
@@ -180,4 +184,11 @@ impl FanOut {
         write_later(self.journal.forget(self.id));
         true
     }
+}
+
+/// The host of `endpoint_id`, when it is still the daemon `identity` names.
+/// Workspace and pane IDs repeat across daemons, so another daemon behind
+/// the same endpoint must never be scripted with them.
+fn same(host: &impl Fn(&str) -> Option<Host>, endpoint_id: &str, identity: &str) -> Option<Host> {
+    host(endpoint_id).filter(|host| host.identity() == identity)
 }

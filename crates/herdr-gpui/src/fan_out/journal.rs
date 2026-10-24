@@ -27,21 +27,27 @@ use crate::{state_file, teleport::AgentKind};
 use gpui::{App, Global};
 use serde::{Deserialize, Serialize};
 use std::{
+    fs,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
 };
 
 const FILE: &str = "fan-outs.json";
-/// Fan-outs kept; the oldest is dropped beyond this.
+/// Held for the life of the process that saves fan-outs; see [`Journal::load`].
+const LOCK: &str = "fan-outs.lock";
+/// Where a file that cannot be read is moved, so saving never replaces it.
+const UNREADABLE: &str = "fan-outs.json.unreadable";
+/// Fan-outs kept. None is ever dropped to make room: a launch beyond this is
+/// not journaled, and says so.
 const MAX_RECORDS: usize = 4;
 /// Bytes in one identifier, label, branch, or path. A fan-out with a longer
 /// one is not journaled, and a longer checkout or commit is not recorded.
 const MAX_FIELD_BYTES: usize = 1024;
 /// Bytes of a prompt kept for resuming; a longer prompt is not kept.
 pub(super) const MAX_PROMPT_BYTES: usize = 32 * 1024;
-/// Text fields of one record: the origin's six and the commit, then each
-/// lane's three and its checkout's four.
-const MAX_FIELDS: usize = 7 + MAX_LANES * 7;
+/// Text fields of one record: the origin's seven and the commit, then each
+/// lane's three and its checkout's five.
+const MAX_FIELDS: usize = 8 + MAX_LANES * 8;
 /// JSON escapes a byte to at most six, plus names and punctuation.
 const MAX_FILE_BYTES: u64 =
     (MAX_RECORDS * (6 * (MAX_PROMPT_BYTES + MAX_FIELDS * MAX_FIELD_BYTES) + 4096) + 64) as u64;
@@ -93,6 +99,8 @@ pub(crate) enum Resume {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct SavedOrigin {
     pub(crate) endpoint_id: String,
+    /// The daemon behind the endpoint; see [`crate::teleport::Host::identity`].
+    pub(crate) host: String,
     pub(crate) endpoint_label: String,
     pub(crate) workspace_id: String,
     pub(crate) repo_key: String,
@@ -104,6 +112,7 @@ impl From<&Origin> for SavedOrigin {
     fn from(origin: &Origin) -> Self {
         Self {
             endpoint_id: origin.endpoint_id.clone(),
+            host: origin.host.identity(),
             endpoint_label: origin.endpoint_label.clone(),
             workspace_id: origin.workspace_id.clone(),
             repo_key: origin.repo_key.clone(),
@@ -114,10 +123,13 @@ impl From<&Origin> for SavedOrigin {
 }
 
 /// A lane's checkout without its host, which is found again from the
-/// endpoint when the fan-out is restored.
+/// endpoint when the fan-out is restored, and only when it is the same
+/// daemon: workspace and pane IDs repeat from one daemon to the next.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct SavedCheckout {
     pub(crate) endpoint_id: String,
+    /// The daemon behind the endpoint; see [`crate::teleport::Host::identity`].
+    pub(crate) host: String,
     pub(crate) workspace_id: String,
     pub(crate) path: String,
     pub(crate) pane_id: String,
@@ -127,6 +139,7 @@ impl SavedCheckout {
     fn fits(&self) -> bool {
         [
             &self.endpoint_id,
+            &self.host,
             &self.workspace_id,
             &self.path,
             &self.pane_id,
@@ -140,6 +153,7 @@ impl From<&Checkout> for SavedCheckout {
     fn from(checkout: &Checkout) -> Self {
         Self {
             endpoint_id: checkout.endpoint_id.clone(),
+            host: checkout.host.identity(),
             workspace_id: checkout.workspace_id.clone(),
             path: checkout.path.clone(),
             pane_id: checkout.pane_id.clone(),
@@ -258,6 +272,7 @@ impl Record {
         let origin = &self.origin;
         [
             &origin.endpoint_id,
+            &origin.host,
             &origin.endpoint_label,
             &origin.workspace_id,
             &origin.repo_key,
@@ -287,17 +302,31 @@ fn fits(field: &str) -> bool {
     field.len() <= MAX_FIELD_BYTES
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 struct Saved {
     records: Vec<Record>,
+}
+
+/// The file as read, each record still undecoded so that one damaged record
+/// is dropped alone.
+#[derive(Deserialize)]
+struct Loaded {
+    records: Vec<serde_json::Value>,
 }
 
 /// The saved records. One that is damaged, repeats an ID, or is beyond the
 /// newest [`MAX_RECORDS`] is dropped on its own, so it never costs the others.
 fn parse(bytes: &[u8]) -> Result<Vec<Record>> {
-    let saved: Saved = serde_json::from_slice(bytes).map_err(Error::JournalJson)?;
+    let loaded: Loaded = serde_json::from_slice(bytes).map_err(Error::JournalJson)?;
     let mut records: Vec<Record> = Vec::new();
-    for record in saved.records {
+    for value in loaded.records {
+        let record = match serde_json::from_value::<Record>(value) {
+            Ok(record) => record,
+            Err(error) => {
+                tracing::warn!(%error, "Dropping an unreadable saved fan-out");
+                continue;
+            }
+        };
         if !record.valid() || records.iter().any(|known| known.id == record.id) {
             tracing::warn!(
                 lanes = record.lanes.len(),
@@ -330,11 +359,17 @@ struct State {
     /// Bumped by every change, so an older snapshot never overwrites a newer
     /// one already on disk.
     revision: u64,
+    /// The latest revision taken back by a failed save. A snapshot at or
+    /// below it may hold the step taken back, so it is retaken before
+    /// writing.
+    rewound: u64,
 }
 
 #[derive(Default)]
 struct Shared {
     path: Option<PathBuf>,
+    /// Keeps other app processes from saving over this one's fan-outs.
+    _lock: Option<fs::File>,
     state: Mutex<State>,
     /// The revision on disk, held while writing so writes do not interleave.
     written: Mutex<u64>,
@@ -355,52 +390,108 @@ pub(crate) struct Pending {
 }
 
 impl Pending {
-    /// Save the change unless a newer one is already saved. Blocks on the
-    /// disk, so callers run it off the UI thread.
-    pub(crate) fn write(self) {
+    /// Save the change unless a newer one, which includes it, is already
+    /// saved. Blocks on the disk, so callers run it off the UI thread.
+    pub(crate) fn write(self) -> Result<()> {
+        let journal = self.journal.clone();
+        let mut written = journal.written();
+        self.write_locked(&mut written)
+    }
+
+    fn write_locked(mut self, written: &mut u64) -> Result<()> {
         let Some(path) = &self.journal.0.path else {
-            return;
+            return Ok(());
         };
-        let Ok(mut written) = self.journal.0.written.lock() else {
-            return;
-        };
+        if let Ok(mut state) = self.journal.0.state.lock()
+            && self.revision <= state.rewound
+        {
+            state.revision += 1;
+            self.revision = state.revision;
+            self.records = state.records.clone();
+        }
         if *written >= self.revision {
-            return;
+            return Ok(());
         }
         let saved = Saved {
             records: self.records,
         };
-        match state_file::write(path, &saved) {
-            Ok(()) => *written = self.revision,
-            Err(error) => tracing::warn!(%error, "Cannot save the fan-out journal"),
-        }
+        state_file::write(path, &saved).map_err(|error| {
+            tracing::warn!(%error, "Cannot save the fan-out journal");
+            Error::JournalWrite(Box::new(error))
+        })?;
+        *written = self.revision;
+        Ok(())
     }
 }
 
 impl Journal {
-    /// Called before starting GPUI. A missing or damaged file starts empty.
+    /// Called before starting GPUI. A missing file starts empty.
     pub(crate) fn load() -> Self {
-        Self::at(crate::preferences::state_dir().map(|dir| dir.join(FILE)))
+        crate::preferences::state_dir().map_or_else(Self::default, |dir| Self::locked(&dir))
     }
 
-    pub(super) fn at(path: Option<PathBuf>) -> Self {
-        let records = path
-            .as_deref()
-            .map(read)
-            .transpose()
-            .unwrap_or_else(|error| {
-                tracing::warn!(%error, "Cannot restore the fan-out journal");
-                None
+    /// The journal in `dir`, saved only by the first app process to open
+    /// it. Another one, which would save over the first's fan-outs and
+    /// could restore the same one, journals in memory only.
+    pub(super) fn locked(dir: &Path) -> Self {
+        let lock = fs::create_dir_all(dir)
+            .and_then(|()| {
+                fs::OpenOptions::new()
+                    .create(true)
+                    .truncate(false)
+                    .write(true)
+                    .open(dir.join(LOCK))
             })
-            .unwrap_or_default();
+            .map_err(fs::TryLockError::Error)
+            .and_then(|file| file.try_lock().map(|()| file));
+        match lock {
+            Ok(file) => Self::open(Some(dir.join(FILE)), Some(file)),
+            Err(error) => {
+                tracing::warn!(%error, "Fan-outs are saved by another app process, not this one");
+                Self::default()
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn at(path: Option<PathBuf>) -> Self {
+        Self::open(path, None)
+    }
+
+    /// A file that cannot be read is moved aside rather than saved over;
+    /// when even that fails, nothing is saved.
+    fn open(mut path: Option<PathBuf>, lock: Option<fs::File>) -> Self {
+        let records = match path.as_deref().map(read).transpose() {
+            Ok(records) => records.unwrap_or_default(),
+            Err(error) => {
+                tracing::warn!(%error, "Cannot restore the fan-out journal; setting it aside");
+                let aside = path
+                    .as_deref()
+                    .is_some_and(|path| fs::rename(path, path.with_file_name(UNREADABLE)).is_ok());
+                if !aside {
+                    path = None;
+                }
+                Vec::new()
+            }
+        };
         Self(Arc::new(Shared {
             path,
+            _lock: lock,
             state: Mutex::new(State {
                 records,
                 ..State::default()
             }),
             written: Mutex::new(0),
         }))
+    }
+
+    /// The revision on disk, held while writing. A writer that panicked
+    /// left the file as whole as any other write.
+    fn written(&self) -> MutexGuard<'_, u64> {
+        self.0
+            .written
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     pub(crate) fn install(self, cx: &mut App) {
@@ -429,27 +520,27 @@ impl Journal {
     }
 
     /// Start journaling a launched fan-out, claimed by its window. One with
-    /// a field too long to keep is not journaled.
-    pub(crate) fn begin(&self, record: Record) -> Option<Pending> {
+    /// a field too long to keep, or beyond [`MAX_RECORDS`], is not
+    /// journaled: no saved fan-out is dropped for it.
+    pub(crate) fn begin(&self, record: Record) -> Result<Option<Pending>> {
         if !record.valid() {
-            tracing::warn!("A fan-out field is too long to save; it will not be restored");
-            return None;
+            return Err(Error::JournalFieldTooLong);
         }
-        self.update(|state| {
+        let mut full = false;
+        let pending = self.update(|state| {
             state.records.retain(|known| known.id != record.id);
+            full = state.records.len() >= MAX_RECORDS;
+            if full {
+                return false;
+            }
             state.claimed.push(record.id);
             state.records.push(record);
-            if state.records.len() > MAX_RECORDS {
-                let excess = state.records.len() - MAX_RECORDS;
-                for dropped in state.records.drain(..excess) {
-                    tracing::warn!(
-                        lanes = dropped.lanes.len(),
-                        "Too many fan-outs; forgetting the oldest"
-                    );
-                }
-            }
             true
-        })
+        });
+        if full {
+            return Err(Error::JournalFull);
+        }
+        Ok(pending)
     }
 
     pub(crate) fn advance(&self, id: u64, report: &Report) -> Option<Pending> {
@@ -460,6 +551,50 @@ impl Journal {
                 .find(|record| record.id == id)
                 .is_some_and(|record| record.advance(report))
         })
+    }
+
+    /// Record `report` and save it. On a failed save the lane's step goes
+    /// back to the last one saved, so nothing offers to finish a step whose
+    /// script never ran. Blocks on the disk, so callers run it off the UI
+    /// thread.
+    pub(crate) fn record(&self, id: u64, report: &Report) -> Result<()> {
+        // Held from the change to the rewind, so no other write can save
+        // the step between a failed save and its rewind.
+        let mut written = self.written();
+        let before = match report {
+            Report::Lane(index, _) => self.step(id, *index).map(|step| (*index, step)),
+            Report::Base(_) => None,
+        };
+        let Some(pending) = self.advance(id, report) else {
+            return Ok(());
+        };
+        let saved = pending.write_locked(&mut written);
+        if saved.is_err()
+            && let Some((index, step)) = before
+        {
+            self.rewind(id, index, step);
+        }
+        saved
+    }
+
+    /// Put lane `index` back at `step`, in memory, unless that would break
+    /// its checkout invariant. Every snapshot taken until now may hold the
+    /// step, so each is retaken before it is written.
+    fn rewind(&self, id: u64, index: usize, step: Checkpoint) {
+        let Ok(mut state) = self.0.state.lock() else {
+            return;
+        };
+        state.rewound = state.revision;
+        let lane = state
+            .records
+            .iter_mut()
+            .find(|record| record.id == id)
+            .and_then(|record| record.lanes.get_mut(index));
+        if let Some(lane) = lane
+            && step.has_checkout() == lane.checkout.is_some()
+        {
+            lane.step = step;
+        }
     }
 
     /// The step lane `index` of fan-out `id` last reached.

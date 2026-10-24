@@ -15,10 +15,12 @@ fn journal_until(path: &Path, reports: Vec<Report>) {
     journal
         .begin(Record::new(ID, &origin(), "fix the bug", &lanes))
         .unwrap()
-        .write();
+        .unwrap()
+        .write()
+        .unwrap();
     for report in std::iter::once(Report::Base("c0ffee".into())).chain(reports) {
         if let Some(pending) = journal.advance(ID, &report) {
-            pending.write();
+            pending.write().unwrap();
         }
     }
 }
@@ -301,4 +303,65 @@ fn keeping_a_lane_once_every_other_is_removed_forgets_the_fan_out() {
         Some(("local".to_owned(), "w0".to_owned()))
     );
     assert!(journal.records().is_empty());
+}
+
+#[test]
+fn a_step_that_cannot_be_saved_stops_its_lane_before_its_script() {
+    let dir = tempfile::tempdir().unwrap();
+    let blocker = dir.path().join("not-a-directory");
+    let journal = Journal::at(Some(blocker.join("fan-outs.json")));
+    // Saving fails from now on: the journal's directory is a file.
+    std::fs::write(&blocker, b"").unwrap();
+    let lanes = plan::lanes(&launched().picks, 7)[..1].to_vec();
+    let mut record = Record::new(ID, &origin(), "go", &lanes);
+    record.advance(&Report::Lane(0, Progress::Created(checkout(0))));
+    assert!(journal.begin(record).unwrap().unwrap().write().is_err());
+    let (sender, events) = mpsc::channel();
+    let fan_out_journal = journal.clone();
+    let report = reporter(journal, ID, sender);
+    // Starting the agent would run a host script; the unsaved step stops it
+    // first, so this test touches no host.
+    job::resume(
+        Resume::Start,
+        0,
+        &lanes[0],
+        &checkout(0),
+        "go",
+        &report,
+        &AtomicBool::new(false),
+    );
+    let reports: Vec<Event> = events.try_iter().collect();
+    assert!(matches!(
+        reports.as_slice(),
+        [
+            Event::Report(Report::Lane(0, Progress::StartingAgent)),
+            Event::Report(Report::Lane(0, Progress::Failed(Error::JournalWrite(_)))),
+        ]
+    ));
+    // The agent never started, so a retry starts it rather than prompting.
+    assert_eq!(fan_out_journal.step(ID, 0), Some(Checkpoint::Created));
+}
+
+#[test]
+fn another_daemon_behind_the_same_endpoint_is_never_scripted() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("fan-outs.json");
+    journal_until(&path, steps(2));
+    let journal = Journal::at(Some(path));
+    let other = crate::teleport::host_for(&herdr_client::ConnectTarget::Session {
+        name: "work".into(),
+        development: false,
+    })
+    .unwrap();
+    assert_ne!(other.identity(), origin().host.identity());
+    assert!(FanOut::reclaim(&journal, |_| Some(other.clone())).is_none());
+    assert_eq!(journal.records().len(), 1, "kept for its own daemon");
+    // The origin matches but the lane's checkout was made elsewhere.
+    let mut record = journal.claim(|_| true).unwrap();
+    record.lanes[0].checkout.as_mut().unwrap().host = other.identity();
+    let fan_out = FanOut::restore(record, journal, |_| Some(origin().host)).unwrap();
+    assert!(matches!(&fan_out.lanes[0].state, LaneState::Failed(_)));
+    assert_eq!(fan_out.lanes[0].checkout, None);
+    assert!(fan_out.doomed(1).is_empty(), "nothing is removed there");
+    assert_eq!(fan_out.resumable(0), None);
 }

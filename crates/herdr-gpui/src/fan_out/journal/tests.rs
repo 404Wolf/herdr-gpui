@@ -125,11 +125,12 @@ fn records_survive_a_restart() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join(FILE);
     let journal = Journal::at(Some(path.clone()));
-    journal.begin(record(1)).unwrap().write();
+    journal.begin(record(1)).unwrap().unwrap().write().unwrap();
     journal
         .advance(1, &lane(0, Progress::Created(checkout(1))))
         .unwrap()
-        .write();
+        .write()
+        .unwrap();
     let restarted = Journal::at(Some(path));
     let records = restarted.records();
     assert_eq!(records, journal.records());
@@ -141,12 +142,12 @@ fn an_older_change_never_overwrites_a_newer_one_on_disk() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join(FILE);
     let journal = Journal::at(Some(path.clone()));
-    let older = journal.begin(record(1)).unwrap();
+    let older = journal.begin(record(1)).unwrap().unwrap();
     let newer = journal
         .advance(1, &lane(0, Progress::CreatingWorktree))
         .unwrap();
-    newer.write();
-    older.write();
+    newer.write().unwrap();
+    older.write().unwrap();
     let records = Journal::at(Some(path)).records();
     assert_eq!(records[0].lanes[0].step, Checkpoint::CreatingWorktree);
 }
@@ -154,20 +155,23 @@ fn an_older_change_never_overwrites_a_newer_one_on_disk() {
 #[test]
 fn an_unsaved_journal_has_nothing_to_write() {
     let journal = Journal::default();
-    assert!(journal.begin(record(1)).is_none());
+    assert!(journal.begin(record(1)).unwrap().is_none());
     assert_eq!(journal.records().len(), 1);
     assert!(journal.forget(1).is_none());
     assert!(journal.records().is_empty());
 }
 
 #[test]
-fn the_oldest_fan_out_goes_beyond_the_limit() {
+fn a_full_journal_drops_no_saved_fan_out_for_a_new_one() {
     let journal = Journal::default();
-    for id in 0..=MAX_RECORDS as u64 {
-        let _ = journal.begin(record(id));
+    for id in 0..MAX_RECORDS as u64 {
+        assert!(journal.begin(record(id)).is_ok());
     }
+    assert!(matches!(journal.begin(record(99)), Err(Error::JournalFull)));
     let ids: Vec<u64> = journal.records().iter().map(|r| r.id).collect();
-    assert_eq!(ids, (1..=MAX_RECORDS as u64).collect::<Vec<_>>());
+    assert_eq!(ids, (0..MAX_RECORDS as u64).collect::<Vec<_>>());
+    // Relaunching a journaled fan-out replaces it rather than counting twice.
+    assert!(journal.begin(record(0)).is_ok());
 }
 
 #[test]
@@ -230,7 +234,10 @@ fn a_fan_out_with_a_field_too_long_to_keep_is_not_journaled() {
     let journal = Journal::at(Some(dir.path().join(FILE)));
     let mut long = record(1);
     long.lanes[0].branch = "b".repeat(MAX_FIELD_BYTES + 1);
-    assert!(journal.begin(long).is_none());
+    assert!(matches!(
+        journal.begin(long),
+        Err(Error::JournalFieldTooLong)
+    ));
     assert!(journal.records().is_empty());
 }
 
@@ -298,14 +305,56 @@ fn damaged_records_are_dropped_without_the_others() {
 }
 
 #[test]
-fn a_damaged_or_oversized_file_starts_empty() {
+fn a_damaged_or_oversized_file_is_set_aside_rather_than_saved_over() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join(FILE);
-    std::fs::write(&path, b"{not json").unwrap();
-    assert!(Journal::at(Some(path.clone())).records().is_empty());
-    let file = std::fs::File::create(&path).unwrap();
+    let aside = dir.path().join(UNREADABLE);
+    fs::write(&path, b"{not json").unwrap();
+    let journal = Journal::at(Some(path.clone()));
+    assert!(journal.records().is_empty());
+    assert_eq!(fs::read(&aside).unwrap(), b"{not json");
+    journal.begin(record(1)).unwrap().unwrap().write().unwrap();
+    assert_eq!(fs::read(&aside).unwrap(), b"{not json");
+    let file = fs::File::create(&path).unwrap();
     file.set_len(MAX_FILE_BYTES + 1).unwrap();
     assert!(Journal::at(Some(path)).records().is_empty());
+    assert_eq!(fs::metadata(&aside).unwrap().len(), MAX_FILE_BYTES + 1);
+}
+
+#[test]
+fn only_the_first_process_to_open_the_journal_saves_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = Journal::locked(dir.path());
+    // A second open stands in for another app process: the lock is held
+    // per open file, not per process.
+    let second = Journal::locked(dir.path());
+    assert!(first.begin(record(1)).unwrap().is_some());
+    assert!(second.begin(record(2)).unwrap().is_none(), "kept in memory");
+    drop(first);
+    assert!(
+        Journal::locked(dir.path())
+            .begin(record(3))
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[test]
+fn a_snapshot_taken_before_a_rewind_is_retaken_when_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(FILE);
+    let journal = Journal::at(Some(path.clone()));
+    journal.begin(record(1)).unwrap().unwrap().write().unwrap();
+    let created = lane(0, Progress::Created(checkout(1)));
+    journal.advance(1, &created).unwrap().write().unwrap();
+    // Taken while lane 0 claims an agent start whose save then failed.
+    let stale = journal
+        .advance(1, &lane(0, Progress::StartingAgent))
+        .unwrap();
+    journal.rewind(1, 0, Checkpoint::Created);
+    stale.write().unwrap();
+    let records = Journal::at(Some(path)).records();
+    assert_eq!(records[0].lanes[0].step, Checkpoint::Created);
 }
 
 #[test]
@@ -318,6 +367,7 @@ fn the_largest_valid_journal_fits_the_file_limit() {
         record.commit = Some(field.clone());
         record.origin = SavedOrigin {
             endpoint_id: field.clone(),
+            host: field.clone(),
             endpoint_label: field.clone(),
             workspace_id: field.clone(),
             repo_key: field.clone(),
@@ -331,6 +381,7 @@ fn the_largest_valid_journal_fits_the_file_limit() {
             step: Checkpoint::Prompted,
             checkout: Some(SavedCheckout {
                 endpoint_id: field.clone(),
+                host: field.clone(),
                 workspace_id: field.clone(),
                 path: field.clone(),
                 pane_id: field.clone(),
@@ -341,4 +392,31 @@ fn the_largest_valid_journal_fits_the_file_limit() {
         largest.push(record);
     }
     assert!(saved(largest).len() as u64 <= MAX_FILE_BYTES);
+}
+
+#[test]
+fn an_undecodable_record_is_dropped_without_the_others() {
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&saved(vec![record(1), record(2), record(3)])).unwrap();
+    value["records"][1]["lanes"][0]["step"] = "teleported".into();
+    value["records"][2]["id"] = "three".into();
+    let parsed = parse(&serde_json::to_vec(&value).unwrap()).unwrap();
+    assert_eq!(parsed, vec![record(1)]);
+}
+
+#[test]
+fn a_failed_save_is_returned_with_its_cause() {
+    let dir = tempfile::tempdir().unwrap();
+    let blocker = dir.path().join("not-a-directory");
+    let journal = Journal::at(Some(blocker.join(FILE)));
+    // Saving fails from now on: the journal's directory is a file.
+    fs::write(&blocker, b"").unwrap();
+    let error = journal
+        .begin(record(1))
+        .unwrap()
+        .unwrap()
+        .write()
+        .unwrap_err();
+    assert!(matches!(error, Error::JournalWrite(_)));
+    assert!(std::error::Error::source(&error).is_some());
 }

@@ -41,7 +41,9 @@ fn left_behind(path: &std::path::Path, endpoint_id: &str) -> Journal {
     Journal::at(Some(path.to_owned()))
         .begin(record)
         .unwrap()
-        .write();
+        .unwrap()
+        .write()
+        .unwrap();
     Journal::at(Some(path.to_owned()))
 }
 
@@ -79,4 +81,48 @@ fn an_interrupted_fan_out_comes_back_and_waits_for_the_user(cx: &mut gpui::TestA
         assert_eq!(view.read(cx).menu.page, None);
     });
     assert!(journal.records().is_empty());
+}
+
+#[gpui::test]
+fn a_restored_lane_is_scripted_only_once_its_daemon_shows_its_workspace(
+    cx: &mut gpui::TestAppContext,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("fan-outs.json");
+    let (view, cx) = cx.add_window_view(crate::sidebar::layout_tests::fixture_window);
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.endpoints[0].connection.target = herdr_client::ConnectTarget::Local;
+            view.live.status = crate::state::ConnectionStatus::Connected;
+            left_behind(&path, &view.endpoints[0].id).install(cx);
+            view.poll_fan_out(window, cx);
+            view.menu.page = Some(Page::FanOut);
+            window.focus(&view.menu.focus, cx);
+        })
+    });
+    cx.run_until_parked();
+    // The fixture's daemon has a "w4", but on another branch: a reused ID.
+    let resume = cx.debug_bounds("fan-out-resume-0").unwrap();
+    cx.simulate_click(resume.center(), gpui::Modifiers::none());
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        let fan_out = view.fan_out.as_ref().unwrap();
+        assert_eq!(fan_out.error.as_deref(), Some(super::LANE_NOT_FOUND));
+        assert_eq!(fan_out.interrupted(), 1, "nothing was sent");
+    });
+    cx.update(|_, cx| {
+        view.update(cx, |view, _| {
+            let branch = view.fan_out.as_ref().unwrap().lanes[0].lane.branch.clone();
+            let mut snapshot = crate::sidebar::layout_tests::snapshot(5);
+            snapshot.workspaces[4].branch = Some(branch);
+            view.live.snapshot = Some(std::sync::Arc::new(snapshot));
+            assert!(view.fan_out_lanes_found([0]));
+            view.live.status = crate::state::ConnectionStatus::Disconnected;
+            assert!(
+                !view.fan_out_lanes_found([0]),
+                "an unconnected host shows nothing"
+            );
+        })
+    });
 }

@@ -11,7 +11,7 @@
 //! [`resume`] and [`super::journal`].
 
 use super::{
-    error::Error,
+    error::{Error, Result},
     job::{self, Checkout, HostStats, Progress, Report, Request},
     journal::{Checkpoint, Journal, Pending, Record},
     plan::{self, DiffStat, Lane, Picks},
@@ -162,6 +162,9 @@ pub(crate) struct FanOut {
     journal: Journal,
     /// The fan-out's journal record, once launched.
     id: u64,
+    /// Restored from the journal: its checkouts are scripted only once the
+    /// daemon shows each one still there; see `fan_out_lanes_found`.
+    pub(super) restored: bool,
     /// Agents asked for before the host's agents were known, as
     /// `herdr-gpui fan-out --agent` does; picked once the lookup lands.
     wanted: Vec<(AgentKind, usize)>,
@@ -187,22 +190,25 @@ fn spawn(work: impl FnOnce() + Send + 'static) {
 /// Save a journal change made on the UI thread from a worker.
 fn write_later(pending: Option<Pending>) {
     if let Some(pending) = pending {
-        spawn(move || pending.write());
+        // A failure is logged; nothing waits on this write.
+        spawn(move || {
+            let _ = pending.write();
+        });
     }
 }
 
 /// Journal what host work reports before passing it to the window. Runs on
-/// the worker, so a step is on disk before the script it announces starts.
+/// the worker, so a step is on disk before the script it announces starts;
+/// an error says it is not, and the script must not run.
 fn reporter(
     journal: Journal,
     id: u64,
     sender: mpsc::Sender<Event>,
-) -> impl Fn(Report) + Send + Sync + 'static {
+) -> impl Fn(Report) -> Result<()> + Send + Sync + 'static {
     move |report| {
-        if let Some(pending) = journal.advance(id, &report) {
-            pending.write();
-        }
+        let saved = journal.record(id, &report);
         let _ = sender.send(Event::Report(report));
+        saved
     }
 }
 
@@ -230,6 +236,7 @@ impl FanOut {
             next_refresh: None,
             journal,
             id: 0,
+            restored: false,
             wanted: Vec::new(),
         };
         let host = fan_out.origin.host.clone();
@@ -458,7 +465,12 @@ impl FanOut {
         self.id = seed;
         let begun = self
             .journal
-            .begin(Record::new(seed, &self.origin, &self.prompt, &lanes));
+            .begin(Record::new(seed, &self.origin, &self.prompt, &lanes))
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "fan-out not journaled");
+                self.error = Some(error.to_string());
+                None
+            });
         let request = Request {
             origin: self.origin.fresh(),
             base: self.origin.base.clone(),
@@ -471,7 +483,9 @@ impl FanOut {
         spawn(move || {
             // The fan-out is on disk before anything is created.
             if let Some(begun) = begun {
-                begun.write();
+                // The first step's own write saves the record again, and
+                // stops the lane should that fail too.
+                let _ = begun.write();
             }
             job::launch(&request, &report, &cancelled);
             let _ = sender.send(Event::Launched);
@@ -545,7 +559,7 @@ impl FanOut {
                 gone.push(winner);
             }
             if let Some(pending) = journal.settle(id, &gone) {
-                pending.write();
+                let _ = pending.write();
             }
             let _ = sender.send(Event::Removed(removed));
         });

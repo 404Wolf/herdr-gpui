@@ -23,6 +23,9 @@ use gpui::{prelude::*, *};
 use herdr_client::protocol::ClientShellSnapshot;
 use std::time::Instant;
 
+/// Why a restored lane was not scripted; see `fan_out_lanes_found`.
+const LANE_NOT_FOUND: &str = "A lane's workspace is not shown on its host on its branch; it may be gone or reused. Wait for the host to connect, or Forget.";
+
 impl HerdrWindow {
     /// The snapshot of the host a fan-out runs on, if it is still connected.
     fn fan_out_snapshot(&self, endpoint_id: &str) -> Option<&ClientShellSnapshot> {
@@ -39,6 +42,35 @@ impl HerdrWindow {
         live.snapshot
             .as_deref()
             .filter(|_| live.status.is_connected())
+    }
+
+    /// Whether every lane at `indices` still has its own workspace, by ID and
+    /// branch, in its daemon's snapshot. A restored fan-out's IDs may have
+    /// been handed to other workspaces since, by a daemon that restarted, so
+    /// none is scripted until its daemon shows it. Lanes without a checkout
+    /// are never scripted and pass.
+    fn fan_out_lanes_found(&self, indices: impl IntoIterator<Item = usize>) -> bool {
+        let Some(fan_out) = &self.fan_out else {
+            return false;
+        };
+        if !fan_out.restored {
+            return true;
+        }
+        indices.into_iter().all(|index| {
+            let Some(lane) = fan_out.lanes.get(index) else {
+                return false;
+            };
+            let Some(checkout) = &lane.checkout else {
+                return true;
+            };
+            self.fan_out_snapshot(&checkout.endpoint_id)
+                .is_some_and(|snapshot| {
+                    snapshot.workspaces.iter().any(|workspace| {
+                        workspace.workspace_id == checkout.workspace_id
+                            && workspace.branch.as_deref() == Some(lane.lane.branch.as_str())
+                    })
+                })
+        })
     }
 
     /// Show a journaled fan-out this window has room for: one the app
@@ -162,10 +194,23 @@ impl HerdrWindow {
             .into_iter()
             .filter_map(|endpoint| self.dispatch_destination(&endpoint))
             .collect();
+        // A restored fan-out's other worktrees are removed only once each is
+        // confirmed to still be its lane's.
+        let doomed: Vec<usize> = match self.fan_out.as_ref().map(|fan_out| &fan_out.stage) {
+            Some(Stage::Confirm(winner)) => self
+                .fan_out
+                .iter()
+                .flat_map(|fan_out| fan_out.doomed(*winner))
+                .map(|(index, _)| index)
+                .collect(),
+            _ => Vec::new(),
+        };
+        let found = self.fan_out_lanes_found(doomed);
         let Some(fan_out) = &mut self.fan_out else {
             return;
         };
         match fan_out.stage {
+            Stage::Confirm(_) if !found => fan_out.error = Some(LANE_NOT_FOUND.to_owned()),
             Stage::Compose(_) => {
                 let destination = |endpoint: &str| {
                     destinations
@@ -484,9 +529,14 @@ impl HerdrWindow {
                                 row.child(small("fan-out-resume", index).child(label).on_click(
                                     cx.listener(move |this, _, _, cx| {
                                         cx.stop_propagation();
-                                        if let Some(fan_out) = &mut this.fan_out
-                                            && fan_out.resume(index)
-                                        {
+                                        let found = this.fan_out_lanes_found([index]);
+                                        let Some(fan_out) = &mut this.fan_out else {
+                                            return;
+                                        };
+                                        if !found {
+                                            fan_out.error = Some(LANE_NOT_FOUND.to_owned());
+                                            cx.notify();
+                                        } else if fan_out.resume(index) {
                                             cx.notify();
                                         }
                                     }),
