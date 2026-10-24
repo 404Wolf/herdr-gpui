@@ -124,6 +124,7 @@ pub(crate) fn create(creation: &Creation, report: &Report) -> crate::Result<()> 
     let device = provision(&creation.spec, &|| false, &|step| {
         report.step(DeviceState::Creating, step.text());
     })
+    .map_err(crate::Error::from)
     .inspect_err(|error| {
         if let Some(device) = saved_before(provider, error) {
             report.created(&target(&device));

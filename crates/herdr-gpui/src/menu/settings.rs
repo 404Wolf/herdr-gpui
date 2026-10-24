@@ -244,12 +244,12 @@ impl HerdrWindow {
                 // credential under the settings already in effect.
                 let mut reloaded = false;
                 if this.avatars.is_some() {
-                    reloaded = this.menu.github.initialize(&this.config);
+                    reloaded = this.menu.github.initialize(&this.config.github);
                     for auth in this.menu.github_hosts.values_mut() {
-                        reloaded |= auth.initialize(&this.config);
+                        reloaded |= auth.initialize(&this.config.github);
                     }
                     for account in &mut this.menu.github_accounts {
-                        reloaded |= account.auth.initialize(&this.config);
+                        reloaded |= account.auth.initialize(&this.config.github);
                     }
                     this.sync_github_accounts();
                 }

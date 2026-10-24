@@ -184,9 +184,11 @@ fn only_a_different_scan_changes_what_is_shown() {
     assert!(reading.apply(Ok(found.clone())));
     assert!(!reading.apply(Ok(found.clone())));
     // A failed scan keeps the last ports and is not a change.
-    assert!(!reading.apply(Err(Error::ListeningPorts(Box::new(
-        Error::UsageUnreachable
-    )))));
+    assert!(
+        !reading.apply(Err(Error::ListeningPorts(Box::new(Error::Usage(
+            herdr_usage::Error::Unreachable
+        )))))
+    );
     assert_eq!(reading.ports, found);
     let error = reading.error.clone().unwrap();
     assert!(

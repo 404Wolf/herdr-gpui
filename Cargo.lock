@@ -1113,9 +1113,9 @@ dependencies = [
 
 [[package]]
 name = "clipboard-win"
-version = "5.4.1"
+version = "5.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bde03770d3df201d4fb868f2c9c59e66a3e4e2bd06692a0fe701e7103c7e84d4"
+checksum = "052af7878466feccda12ba7a6a67d019d712f296809559b47c12c8cc196d3a9a"
 dependencies = [
  "error-code",
 ]
@@ -1767,9 +1767,9 @@ dependencies = [
 
 [[package]]
 name = "ctutils"
-version = "0.4.2"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e"
+checksum = "38d28fb6aa7dd680b3ffd1a3e64e115c177bdba63c0ae7f9cd48129ff05c4fa0"
 dependencies = [
  "cmov",
 ]
@@ -4465,6 +4465,7 @@ dependencies = [
  "crossbeam-channel",
  "herdr-protocol",
  "interprocess",
+ "nix",
  "rustix",
  "serde",
  "serde_json",
@@ -4475,22 +4476,93 @@ dependencies = [
 ]
 
 [[package]]
+name = "herdr-commands"
+version = "0.1.0"
+dependencies = [
+ "gpui-pre",
+ "herdr-client",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "herdr-control-protocol"
+version = "0.1.0"
+dependencies = [
+ "herdr-client",
+ "interprocess",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
+name = "herdr-credentials"
+version = "0.1.0"
+dependencies = [
+ "futures-lite",
+ "oo7",
+ "rustix",
+ "secrecy",
+ "security-framework",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+ "windows-sys 0.61.2",
+ "zeroize",
+]
+
+[[package]]
+name = "herdr-diagnostics"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "herdr-client",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+ "tracing-subscriber",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "herdr-github"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "getrandom 0.4.3",
+ "herdr-client",
+ "herdr-credentials",
+ "herdr-updater",
+ "rustix",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+ "ureq",
+ "zeroize",
+]
+
+[[package]]
 name = "herdr-gpui"
 version = "0.1.0"
 dependencies = [
- "aes 0.9.3",
  "ammonia",
  "anyhow",
  "base64 0.23.1",
  "block2 0.6.2",
- "cbc 0.2.1",
  "chrono",
  "clipboard-win",
  "cocoa 0.27.0",
  "config",
  "core-graphics 0.25.0",
  "dispatch2",
- "ed25519-dalek",
  "flate2",
  "fontdb 0.24.0",
  "foreign-types",
@@ -4502,9 +4574,18 @@ dependencies = [
  "herdr-automation",
  "herdr-chat-protocol",
  "herdr-client",
+ "herdr-commands",
+ "herdr-control-protocol",
+ "herdr-credentials",
+ "herdr-diagnostics",
+ "herdr-github",
+ "herdr-orchestrator",
+ "herdr-remote",
+ "herdr-updater",
+ "herdr-usage",
+ "herdr-vcs",
  "if-addrs",
  "image",
- "interprocess",
  "keepawake",
  "lb-wry",
  "mdns-sd",
@@ -4519,26 +4600,20 @@ dependencies = [
  "objc2-user-notifications",
  "objc2-web-kit",
  "oo7",
- "pbkdf2 0.13.0",
  "percent-encoding",
  "pulldown-cmark",
  "raw-window-handle",
  "rodio",
- "rusqlite",
  "rustix",
- "rustls",
  "secrecy",
- "security-framework",
  "serde",
  "serde_ignored",
  "serde_json",
- "sha1",
  "sha2 0.11.0",
  "skrifa 0.48.0",
  "socket2",
  "syntect",
  "sysinfo 0.39.6",
- "tar",
  "tempfile",
  "test-case",
  "thiserror 2.0.21",
@@ -4546,22 +4621,18 @@ dependencies = [
  "toml_edit 0.25.15+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
- "tungstenite",
- "unicode-normalization",
  "unicode-properties",
  "unicode-segmentation",
  "unicode-width",
  "ureq",
  "url",
  "uuid",
- "webpki-roots",
  "windows 0.62.2",
  "windows-registry 0.100.0",
  "windows-result 0.100.0",
  "windows-sys 0.61.2",
  "winresource",
  "zed-font-kit",
- "zeroize",
 ]
 
 [[package]]
@@ -4574,6 +4645,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "herdr-orchestrator"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "gix",
+ "herdr-client",
+ "herdr-github",
+ "herdr-remote",
+ "rusqlite",
+ "rustix",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+ "ureq",
+ "url",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
 name = "herdr-protocol"
 version = "0.1.0"
 dependencies = [
@@ -4582,6 +4676,98 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "herdr-remote"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "chrono",
+ "getrandom 0.4.3",
+ "herdr-client",
+ "herdr-control-protocol",
+ "herdr-credentials",
+ "nix",
+ "percent-encoding",
+ "rustix",
+ "rustls",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.21",
+ "toml 1.1.6+spec-1.1.0",
+ "tracing",
+ "tungstenite",
+ "ureq",
+ "url",
+ "uuid",
+ "webpki-roots",
+ "zeroize",
+]
+
+[[package]]
+name = "herdr-updater"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "ed25519-dalek",
+ "flate2",
+ "herdr-client",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+ "ureq",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "herdr-usage"
+version = "0.1.0"
+dependencies = [
+ "aes 0.9.3",
+ "cbc 0.2.1",
+ "chrono",
+ "herdr-client",
+ "pbkdf2 0.13.0",
+ "rusqlite",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.21",
+ "toml 1.1.6+spec-1.1.0",
+ "tracing",
+ "unicode-normalization",
+ "ureq",
+ "url",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "herdr-vcs"
+version = "0.1.0"
+dependencies = [
+ "herdr-client",
+ "herdr-github",
+ "herdr-usage",
+ "secrecy",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]

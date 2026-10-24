@@ -1,5 +1,5 @@
 [workspace]
-members  = ["crates/embed-resource", "crates/herdr-acp", "crates/herdr-automate", "crates/herdr-automation", "crates/herdr-chat-protocol", "crates/herdr-client", "crates/herdr-gpui", "crates/herdr-gpui-launcher", "crates/herdr-protocol"]
+members  = ["crates/embed-resource", "crates/herdr-acp", "crates/herdr-automate", "crates/herdr-automation", "crates/herdr-chat-protocol", "crates/herdr-client", "crates/herdr-commands", "crates/herdr-control-protocol", "crates/herdr-credentials", "crates/herdr-diagnostics", "crates/herdr-gpui", "crates/herdr-github", "crates/herdr-gpui-launcher", "crates/herdr-orchestrator", "crates/herdr-protocol", "crates/herdr-remote", "crates/herdr-updater", "crates/herdr-usage", "crates/herdr-vcs"]
 resolver = "2"
 
 [workspace.package]
@@ -62,7 +62,17 @@ wry                  = { package = "lb-wry", version = "=0.53.3" }
 herdr-automation     = { default-features = false, path = "crates/herdr-automation" }
 herdr-chat-protocol  = { path = "crates/herdr-chat-protocol" }
 herdr-client         = { path = "crates/herdr-client" }
+herdr-commands       = { path = "crates/herdr-commands" }
+herdr-control-protocol = { path = "crates/herdr-control-protocol" }
+herdr-credentials    = { path = "crates/herdr-credentials" }
+herdr-diagnostics    = { path = "crates/herdr-diagnostics" }
+herdr-github         = { path = "crates/herdr-github" }
+herdr-orchestrator   = { path = "crates/herdr-orchestrator" }
 herdr-protocol       = { path = "crates/herdr-protocol" }
+herdr-remote         = { default-features = false, path = "crates/herdr-remote" }
+herdr-updater        = { path = "crates/herdr-updater" }
+herdr-usage          = { path = "crates/herdr-usage" }
+herdr-vcs            = { path = "crates/herdr-vcs" }
 interprocess         = "2.4.2"
 # Local interface addresses, so Bonjour discovery skips this machine; the
 # version mdns-sd already uses.
@@ -150,6 +160,12 @@ windows-sys          = { features = ["Win32_Foundation", "Win32_System_Pipes"], 
 # dependency, so it runs on the host.
 winresource          = "0.1.34"
 zeroize              = "=1.9.1"
+
+# Line tables keep file:line in backtraces and crash reports while cutting most
+# of the debug info a full build writes and links for herdr-gpui. Use
+# `CARGO_PROFILE_DEV_DEBUG=full` for a debugger session that needs locals.
+[profile.dev]
+debug = "line-tables-only"
 
 # GPUI's build script embeds its own Windows manifest through embed-resource,
 # which would clash with Herdr's (crates/herdr-gpui/windows.manifest); this

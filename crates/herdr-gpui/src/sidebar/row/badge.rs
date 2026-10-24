@@ -214,7 +214,7 @@ impl PrBadge {
     pub(in crate::sidebar) fn new(pr: &crate::pull_request::PullRequest, theme: &Theme) -> Self {
         Self {
             number: format!("#{}", pr.number),
-            color: pr.color(theme),
+            color: crate::pull_request::color(pr, theme),
         }
     }
 }

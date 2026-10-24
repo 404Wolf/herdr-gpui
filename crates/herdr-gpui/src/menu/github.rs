@@ -93,14 +93,14 @@ impl HerdrWindow {
     pub(crate) fn start_github(&mut self) {
         let config = &self.config;
         if let Some(index) = self.selected_github_account_index() {
-            self.menu.github_accounts[index].auth.start(config);
+            self.menu.github_accounts[index].auth.start(&config.github);
             return;
         }
         let host = self.github_host().map(str::to_owned);
         let menu = &mut self.menu;
         host.and_then(|id| menu.github_hosts.get_mut(&id))
             .unwrap_or(&mut menu.github)
-            .start(config);
+            .start(&config.github);
     }
 
     /// The account pull requests on the selected device are read with: the
@@ -143,14 +143,14 @@ impl HerdrWindow {
                 continue;
             };
             let mut auth = Auth::for_account(account);
-            auth.initialize(&self.config);
+            auth.initialize(&self.config.github);
             hosts.insert(endpoint.id.clone(), auth);
         }
     }
 
     /// Start the GitHub CLI's sign-in for the main account.
     fn use_github_cli(&mut self) {
-        self.menu.github.use_github_cli(&self.config);
+        self.menu.github.use_github_cli(&self.config.github);
     }
 
     pub(crate) fn poll_github(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -178,6 +178,13 @@ impl HerdrWindow {
         for account in &mut self.menu.github_accounts {
             changed |= account.auth.poll();
         }
+        let menu = &mut self.menu;
+        let avatars = std::iter::once(&menu.github)
+            .chain(menu.github_hosts.values())
+            .chain(menu.github_accounts.iter().map(|account| &account.auth))
+            .filter_map(|auth| auth.profile.as_ref())
+            .map(|profile| profile.avatar_url.as_str());
+        changed |= menu.github_avatars.poll(avatars);
         if changed {
             // An additional account stays shown, with the owners it reads.
             if !connected
@@ -479,11 +486,10 @@ impl HerdrWindow {
                             // Round the image itself: GPUI 0.2.2 clips overflow
                             // to the box, not to its corner radii.
                             .debug_selector(|| "github-avatar".into())
-                            .child(match &profile.avatar {
-                                Some(image) => img(image.clone())
-                                    .size_full()
-                                    .rounded_full()
-                                    .into_any_element(),
+                            .child(match self.menu.github_avatars.get(&profile.avatar_url) {
+                                Some(image) => {
+                                    img(image).size_full().rounded_full().into_any_element()
+                                }
                                 None => crate::sidebar::github_mark(theme.muted)
                                     .size_full()
                                     .into_any_element(),
@@ -594,7 +600,7 @@ impl HerdrWindow {
                     .child(note),
             );
         }
-        if let Some(note) = auth.store().note(auth.connected()) {
+        if let Some(note) = crate::github::store_note(auth.store(), auth.connected()) {
             let (color, text) = match note {
                 crate::github::Note::Warning(text) => (theme.ink(theme.palette[1]), text),
                 crate::github::Note::Info(text) => (theme.muted, text),

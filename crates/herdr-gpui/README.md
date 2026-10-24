@@ -4605,7 +4605,7 @@ the same store under their own service names. A secret larger than Credential
 Manager's 2,560-byte limit is refused with an error rather than truncated. There
 is no private-file store here, so `allow_plaintext_credentials` changes nothing,
 and `GH_TOKEN` / `GITHUB_TOKEN` still take precedence for the main account. The
-`Cred*` calls are the only `unsafe` code involved (`github/credential_manager.rs`):
+`Cred*` calls are the only `unsafe` code involved (`crates/herdr-credentials/src/credential_manager.rs`):
 neither the standard library nor the workspace's dependencies wrap them, and the
 maintained wrapper crates would add a second `windows-sys` version.
 

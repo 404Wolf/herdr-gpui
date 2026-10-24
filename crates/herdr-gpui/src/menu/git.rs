@@ -405,7 +405,7 @@ impl HerdrWindow {
                     .gap(px(8.))
                     .child(
                         div()
-                            .text_color(rgb(pr.color(theme)))
+                            .text_color(rgb(crate::pull_request::color(&pr, theme)))
                             .child(format!("#{}", pr.number)),
                     )
                     .child(
@@ -414,7 +414,7 @@ impl HerdrWindow {
                             .py(px(2.))
                             .rounded(px(crate::config::corners::CONTROL))
                             .bg(rgb(theme.active))
-                            .text_color(rgb(pr.color(theme)))
+                            .text_color(rgb(crate::pull_request::color(&pr, theme)))
                             .child(pr.lifecycle()),
                     )
                     .child(div().flex_1())

@@ -59,28 +59,13 @@ mod zen;
 
 pub use accent::Accent;
 pub use agents_placement::AgentsPlacement;
-pub use azure::AzureConfig;
-#[cfg(feature = "azure")]
-pub(crate) use azure::AzureFields;
 pub use backdrop::{Backdrop, Material};
-pub use boat::BoatConfig;
-#[cfg(feature = "boat")]
-pub(crate) use boat::BoatFields;
 pub use chat::ChatLayoutMode;
 pub use cloud::CloudConfig;
-pub use coder::CoderConfig;
-#[cfg(feature = "coder")]
-pub(crate) use coder::CoderFields;
-pub use container::ContainerConfig;
-#[cfg(feature = "container")]
-pub(crate) use container::ContainerFields;
 #[cfg(test)]
 use daemon::MAX_DAEMON_CONFIG_BYTES;
 pub(crate) use daemon::daemon_config_path;
 use daemon::{Daemon, daemon_settings};
-pub use daytona::DaytonaConfig;
-#[cfg(feature = "daytona")]
-pub(crate) use daytona::DaytonaFields;
 use devices::MAX_DEVICES;
 pub(crate) use devices::{DeviceSettings, KeybindingSource};
 pub(crate) use edit::{Layer, parse_value};
@@ -92,17 +77,35 @@ use fonts::FontSettings;
 #[cfg(any(test, feature = "integration-test"))]
 pub use fonts::symbol_fallbacks;
 pub use fonts::{FONT_SIZE_RANGE, FONT_SIZE_STEP, FontConfig};
+pub(crate) use github::MAX_ACCOUNTS;
 pub use github::{GitHubAccount, GitHubConfig};
-pub(crate) use github::{MAX_ACCOUNTS, valid_account_id, valid_owner};
+pub use herdr_remote::config::AzureConfig;
+#[cfg(feature = "azure")]
+pub(crate) use herdr_remote::config::AzureFields;
+pub use herdr_remote::config::BoatConfig;
+#[cfg(feature = "boat")]
+pub(crate) use herdr_remote::config::BoatFields;
+pub use herdr_remote::config::CoderConfig;
+#[cfg(feature = "coder")]
+pub(crate) use herdr_remote::config::CoderFields;
+pub use herdr_remote::config::ContainerConfig;
+#[cfg(feature = "container")]
+pub(crate) use herdr_remote::config::ContainerFields;
+pub use herdr_remote::config::DaytonaConfig;
+#[cfg(feature = "daytona")]
+pub(crate) use herdr_remote::config::DaytonaFields;
+pub use herdr_remote::config::OpenSandboxConfig;
+#[cfg(feature = "opensandbox")]
+pub(crate) use herdr_remote::config::OpenSandboxFields;
+pub use herdr_remote::config::SpritesConfig;
+#[cfg(feature = "sprites")]
+pub(crate) use herdr_remote::config::SpritesFields;
 pub use layout::{Density, Layout, LayoutMode, Style};
 pub(crate) use notifications::NotificationDelivery;
 pub use notifications::{
     BellConfig, ClipboardToast, ClipboardToastPosition, NotificationConfig, SoundConfig,
 };
 use notifications::{ClipboardToastSettings, NotificationSettings};
-pub use opensandbox::OpenSandboxConfig;
-#[cfg(feature = "opensandbox")]
-pub(crate) use opensandbox::OpenSandboxFields;
 pub use option_as_alt::{OptionAsAlt, OptionKeys};
 pub use padding::Padding;
 pub(crate) use padding::{Axis, MAX_PADDING, Side, Sides};
@@ -113,14 +116,11 @@ pub(crate) use sidebar::{
 };
 pub(crate) use sidebar_style::{ChangeCounts, DeviceFooter};
 pub use sidebar_style::{SelectMode, SidebarOverrides, SidebarStyle};
-pub use sprites::SpritesConfig;
-#[cfg(feature = "sprites")]
-pub(crate) use sprites::SpritesFields;
 pub use status_bar::StatusBar;
 pub use status_icons::StatusIcons;
 use std::{
     collections::BTreeMap,
-    env, fs,
+    fs,
     io::ErrorKind,
     path::{Path, PathBuf},
 };
@@ -513,17 +513,7 @@ struct Settings {
 
 /// Windows sets `USERPROFILE` rather than `HOME`, and upstream Herdr reads both.
 pub(crate) fn home() -> Result<PathBuf> {
-    let variable = |name| env::var_os(name).filter(|value: &std::ffi::OsString| !value.is_empty());
-    variable("HOME")
-        .or_else(|| {
-            if cfg!(windows) {
-                variable("USERPROFILE")
-            } else {
-                None
-            }
-        })
-        .map(PathBuf::from)
-        .ok_or(Error::MissingHome)
+    herdr_client::local_path::home_dir().ok_or(Error::MissingHome)
 }
 
 /// The directory holding this app's `herdr` configuration directory. Upstream
@@ -531,28 +521,29 @@ pub(crate) fn home() -> Result<PathBuf> {
 /// the daemon's, so the same root has to be used on both sides, including the
 /// login shell's `XDG_CONFIG_HOME` for a launch that did not inherit it.
 fn config_root() -> Result<PathBuf> {
-    match herdr_client::local_var("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
-        Some(value) => {
-            let path = PathBuf::from(value);
-            if !path.is_absolute() {
-                return Err(Error::RelativeConfigRoot);
-            }
-            Ok(path)
-        }
-        None => {
-            #[cfg(windows)]
-            if let Some(roaming) = env::var_os("APPDATA").filter(|value| !value.is_empty()) {
-                return Ok(PathBuf::from(roaming));
-            }
-            #[cfg(windows)]
-            return Ok(home()?.join("AppData").join("Roaming"));
-            #[cfg(not(windows))]
-            Ok(home()?.join(".config"))
-        }
-    }
+    use herdr_client::local_path::PathError;
+    herdr_client::local_path::config_root().map_err(|error| match error {
+        PathError::MissingHome => Error::MissingHome,
+        PathError::RelativeConfigRoot => Error::RelativeConfigRoot,
+    })
 }
 
 impl Config {
+    /// The provider tables `herdr-remote` reads, from a full load.
+    pub(crate) fn load_remote()
+    -> std::result::Result<herdr_remote::config::Sections, herdr_remote::config::LoadError> {
+        let config = Self::load()?;
+        Ok(herdr_remote::config::Sections {
+            azure: config.azure,
+            boat: config.boat,
+            coder: config.coder,
+            container: config.container,
+            daytona: config.daytona,
+            opensandbox: config.opensandbox,
+            sprites: config.sprites,
+        })
+    }
+
     pub fn path() -> Result<PathBuf> {
         Ok(config_root()?.join("herdr/config-gpui.toml"))
     }
