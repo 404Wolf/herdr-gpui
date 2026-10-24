@@ -2,7 +2,7 @@ import Foundation
 
 /// The changing part of a chat's Live Activity: `ChatActivityAttributes`'s
 /// `ContentState`. The daemon writes the same keys as `content-state` in
-/// its APNs payloads (`crates/herdr-remote/src/apns/payload.rs`), and the
+/// its APNs payloads (`crates/herdr-remote-control/src/apns/payload.rs`), and the
 /// fixtures in `Tests/HerdrRemoteCoreTests/Fixtures` hold both sides to it:
 ///
 /// | Key | Type | |

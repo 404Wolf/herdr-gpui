@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{HerdrWindow, menu::Page};
 use gpui::{prelude::*, *};
-use herdr_remote::control::Device;
+use herdr_remote_control::control::Device;
 
 /// The device the revoke question is about.
 pub(crate) struct Revoke {

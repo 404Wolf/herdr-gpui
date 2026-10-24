@@ -38,7 +38,7 @@ pub(super) fn serve(
     if Connection::connect(&address, PROBE_TIMEOUT).is_ok() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::AddrInUse,
-            "another herdr-remote serves this state directory",
+            "another herdr-remote-control serves this state directory",
         ));
     }
     control::release(state_dir);

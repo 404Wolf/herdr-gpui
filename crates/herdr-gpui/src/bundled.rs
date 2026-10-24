@@ -1,5 +1,5 @@
 //! Finding the programs that ship with this app, such as `herdr-acp` and
-//! `herdr-remote`: beside its executable, as the bundle and `cargo build`
+//! `herdr-remote-control`: beside its executable, as the bundle and `cargo build`
 //! lay them out, else on the login shell's `PATH`.
 
 use std::{

@@ -1,6 +1,6 @@
 use super::*;
 use crate::control::protocol::remote::Reply;
-use herdr_remote::control::{Device, DeviceId, Status};
+use herdr_remote_control::control::{Device, DeviceId, Status};
 
 fn status() -> Status {
     Status {

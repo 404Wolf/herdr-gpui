@@ -39,7 +39,7 @@ pub enum Error {
     Daemon(String),
     #[error("Herdr is not running on this computer")]
     NotConnected,
-    #[error("herdr-acp was not found beside herdr-remote or on PATH")]
+    #[error("herdr-acp was not found beside herdr-remote-control or on PATH")]
     ProgramMissing,
     #[error(transparent)]
     Request(#[from] herdr_client::Error),

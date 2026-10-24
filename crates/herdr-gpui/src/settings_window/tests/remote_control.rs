@@ -16,7 +16,7 @@ use crate::{
         ui::NumberChange,
     },
 };
-use herdr_remote::control::{self, Device, DeviceId, Request, Response, Status};
+use herdr_remote_control::control::{self, Device, DeviceId, Request, Response, Status};
 use std::path::Path;
 
 fn status() -> Status {

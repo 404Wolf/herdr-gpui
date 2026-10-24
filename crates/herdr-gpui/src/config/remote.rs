@@ -1,5 +1,5 @@
 //! The `[remote]` table: remote control from a phone, served by the
-//! `herdr-remote` daemon that Herdr UI installs as a user service.
+//! `herdr-remote-control` daemon that Herdr UI installs as a user service.
 //!
 //! ```toml
 //! [remote]

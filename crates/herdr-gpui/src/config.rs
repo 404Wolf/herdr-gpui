@@ -225,7 +225,7 @@ pub struct Config {
     /// reason.
     pub(crate) pane_keys: PaneKeys,
     pub(crate) px0: crate::px0::Config,
-    /// Remote control from a phone, through the `herdr-remote` daemon.
+    /// Remote control from a phone, through the `herdr-remote-control` daemon.
     pub remote: RemoteConfig,
     /// Whether a linked worktree whose pull request is merged is removed, and
     /// its workspace closed, without asking. The focused workspace still asks.

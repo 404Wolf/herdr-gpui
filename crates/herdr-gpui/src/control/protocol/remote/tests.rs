@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
 use crate::control::protocol::{Call, Caller, Request, Response};
-use herdr_remote::control::DeviceId;
+use herdr_remote_control::control::DeviceId;
 
 #[test]
 fn remote_requests_have_a_stable_wire_form() {
@@ -92,7 +92,9 @@ fn remote_replies_round_trip() {
 #[test]
 fn daemon_requests_wait_for_the_daemon_and_pairing_does_not() {
     assert_eq!(RemoteOp::Pair.wait_seconds(), 0);
-    assert!(RemoteOp::Status.wait_seconds() > herdr_remote::control::RESPONSE_TIMEOUT.as_secs());
+    assert!(
+        RemoteOp::Status.wait_seconds() > herdr_remote_control::control::RESPONSE_TIMEOUT.as_secs()
+    );
     let revoke = RemoteOp::Revoke { device: "d".into() };
-    assert!(revoke.wait_seconds() > 2 * herdr_remote::control::RESPONSE_TIMEOUT.as_secs());
+    assert!(revoke.wait_seconds() > 2 * herdr_remote_control::control::RESPONSE_TIMEOUT.as_secs());
 }

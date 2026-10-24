@@ -8,7 +8,7 @@
 use super::service::{self, Outcome};
 use crate::config::RemoteConfig;
 use gpui::{App, BackgroundExecutor, Global, Task};
-use herdr_remote::control::{self, Device, DeviceId, Request, Response, Status};
+use herdr_remote_control::control::{self, Device, DeviceId, Request, Response, Status};
 use std::{
     cell::Cell,
     path::{Path, PathBuf},

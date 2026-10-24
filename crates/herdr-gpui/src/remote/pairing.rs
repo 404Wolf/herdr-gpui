@@ -8,7 +8,9 @@
 //! phone's name and matching code and waits for Allow or Deny.
 
 use super::qr::Qr;
-use herdr_remote::control::{self, ErrorCode, Offer, PairingId, PairingState, Request, Response};
+use herdr_remote_control::control::{
+    self, ErrorCode, Offer, PairingId, PairingState, Request, Response,
+};
 use std::{
     sync::Arc,
     time::{Duration, Instant},

@@ -27,7 +27,7 @@ Closing or detaching the GUI must leave the daemon and its terminals running.
 | `crates/herdr-chat-protocol` | Attach wire between `herdr-acp` and its clients: transcript model, the shared change reducer, framing, and endpoint discovery; no ACP or GPUI types |
 | `crates/herdr-client` | Discovery, socket worker, session transitions, ordered commands, and client-local activity projection |
 | `crates/herdr-gpui` | Native UI, connection bridge, presentation state, semantic input, geometry, and painting |
-| `crates/herdr-remote` | Remote control daemon: serves this machine's chats to paired phones over HTTPS (own CA, dual-approval pairing, Web Push), plus the control protocol Herdr UI uses without the `server` feature, so Tokio stays out of the GUI |
+| `crates/herdr-remote-control` | Remote control daemon: serves this machine's chats to paired phones over HTTPS (own CA, dual-approval pairing, Web Push), plus the control protocol Herdr UI uses without the `server` feature, so Tokio stays out of the GUI |
 | `crates/herdr-gpui-launcher` | Windows-only windowed launcher that starts `herdr-gpui.exe` without a console window; std plus `MessageBoxW` for start failures |
 | `crates/herdr-automation` | Automation scripts (`docs/automations.md`): the sandboxed Luau state, the step catalog, schedules, caps, and the plan a person approves; no GPUI or runtime |
 | `crates/herdr-automate` | The automation daemon and its command line: schedules approved scripts per host, runs their steps through the `herdr` CLI, keeps state in SQLite, and answers `--json` reports for Herdr UI |

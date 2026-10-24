@@ -1,6 +1,6 @@
 # Remote control daemon
 
-`herdr-remote` serves this machine's `herdr-acp` chats to paired phones over
+`herdr-remote-control` serves this machine's `herdr-acp` chats to paired phones over
 HTTPS: a mobile web app (installable as a PWA) that lists workspaces, follows
 chats, answers agent questions, and receives push notifications. The plan is
 `docs/remote-control-plan.md`.

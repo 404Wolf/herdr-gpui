@@ -14,7 +14,7 @@ use crate::{
     config::{RemoteConfig, remote::Certificate},
     remote::{Error, Result},
 };
-use herdr_remote::control::{Request, Response};
+use herdr_remote_control::control::{Request, Response};
 use std::{
     ffi::OsString,
     fs, io,
@@ -24,14 +24,14 @@ use std::{
 /// The LaunchAgent's label, under the app's bundle identifier.
 pub(crate) const LABEL: &str = "so.pen.herdr-gpui.remote";
 /// The systemd unit's name.
-pub(crate) const UNIT: &str = "herdr-remote.service";
+pub(crate) const UNIT: &str = "herdr-remote-control.service";
 /// The Task Scheduler task's name.
 pub(crate) const TASK: &str = "Herdr UI Remote Control";
 /// The daemon's file name on this platform.
 pub(crate) const PROGRAM: &str = if cfg!(windows) {
-    "herdr-remote.exe"
+    "herdr-remote-control.exe"
 } else {
-    "herdr-remote"
+    "herdr-remote-control"
 };
 /// How much of a failed command's own message is kept.
 const STDERR_LIMIT: usize = 512;
@@ -300,7 +300,7 @@ pub(crate) enum Outcome {
 pub(crate) fn reconcile(
     config: &RemoteConfig,
     host: &Host,
-    send: impl Fn(&Request) -> Result<Response, herdr_remote::control::Error>,
+    send: impl Fn(&Request) -> Result<Response, herdr_remote_control::control::Error>,
     mut run: impl FnMut(&Step) -> crate::Result<()>,
 ) -> crate::Result<Outcome> {
     let installed = host.file.exists();

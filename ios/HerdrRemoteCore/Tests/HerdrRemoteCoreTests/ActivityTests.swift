@@ -2,7 +2,7 @@ import XCTest
 @testable import HerdrRemoteCore
 
 /// The fixtures are the payloads the daemon's tests produce
-/// (`crates/herdr-remote/src/apns/tests/payload.rs`).
+/// (`crates/herdr-remote-control/src/apns/tests/payload.rs`).
 final class ActivityTests: XCTestCase {
     private func aps(_ name: String) throws -> [String: Any] {
         let url = try XCTUnwrap(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Fixtures"))

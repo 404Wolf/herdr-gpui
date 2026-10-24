@@ -1,10 +1,10 @@
-//! `herdr-remote serve`: the remote control daemon. Herdr UI installs it as
+//! `herdr-remote-control serve`: the remote control daemon. Herdr UI installs it as
 //! a user service when Remote control is on; see `--help`.
 // On Windows the logon task would otherwise open a console window for the
 // life of the daemon. The cost: `--help` and errors print nowhere there.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-use herdr_remote::server::{self, Invocation};
+use herdr_remote_control::server::{self, Invocation};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -15,7 +15,7 @@ fn main() -> ExitCode {
             return ExitCode::SUCCESS;
         }
         Ok(Invocation::Version) => {
-            println!("herdr-remote {}", env!("CARGO_PKG_VERSION"));
+            println!("herdr-remote-control {}", env!("CARGO_PKG_VERSION"));
             return ExitCode::SUCCESS;
         }
         Err(error) => {
@@ -25,7 +25,7 @@ fn main() -> ExitCode {
     };
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .thread_name("herdr-remote")
+        .thread_name("herdr-remote-control")
         .build()
     {
         Ok(runtime) => runtime,

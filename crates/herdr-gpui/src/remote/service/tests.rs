@@ -1,11 +1,11 @@
 use super::*;
 use crate::config::remote::{Bind, Privacy};
-use herdr_remote::control::{Error as ControlError, Status};
+use herdr_remote_control::control::{Error as ControlError, Status};
 use std::{cell::RefCell, path::Path};
 
 fn plan() -> Plan {
     Plan {
-        program: "/Applications/Herdr UI.app/Contents/MacOS/herdr-remote".into(),
+        program: "/Applications/Herdr UI.app/Contents/MacOS/herdr-remote-control".into(),
         state_dir: "/Users/me/.local/state/herdr/gpui/remote".into(),
         config: RemoteConfig {
             enabled: true,
@@ -108,7 +108,7 @@ fn the_launch_agent_starts_at_login_and_stays_down_after_a_clean_exit() {
     assert!(text.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"));
     assert!(text.contains("<key>Label</key>\n\t<string>so.pen.herdr-gpui.remote</string>"));
     assert!(text.contains(
-        "\t\t<string>/Applications/Herdr UI.app/Contents/MacOS/herdr-remote</string>\n\
+        "\t\t<string>/Applications/Herdr UI.app/Contents/MacOS/herdr-remote-control</string>\n\
          \t\t<string>serve</string>\n"
     ));
     // Text is escaped, not taken as markup.
@@ -123,11 +123,11 @@ fn the_launch_agent_starts_at_login_and_stays_down_after_a_clean_exit() {
 #[test]
 fn the_systemd_unit_quotes_every_word_and_restarts_only_on_failure() {
     let mut plan = plan();
-    plan.program = "/home/me/my apps/herdr-remote".into();
+    plan.program = "/home/me/my apps/herdr-remote-control".into();
     plan.state_dir = "/home/me/100%/$HOME/\"x\"\\y".into();
     let text = files::systemd_unit(&plan).unwrap();
     assert!(text.contains(
-        "ExecStart=\"/home/me/my apps/herdr-remote\" \"serve\" \"--state-dir\" \
+        "ExecStart=\"/home/me/my apps/herdr-remote-control\" \"serve\" \"--state-dir\" \
          \"/home/me/100%%/$$HOME/\\\"x\\\"\\\\y\" \"--port\" \"7443\""
     ));
     assert!(text.contains("\nRestart=on-failure\n"));
@@ -164,7 +164,7 @@ fn windows_arguments_survive_the_command_line_round_trip() {
 #[test]
 fn the_scheduled_task_runs_at_sign_in_without_a_time_limit() {
     let mut plan = plan();
-    plan.program = "C:\\Program Files\\Herdr UI\\herdr-remote.exe".into();
+    plan.program = "C:\\Program Files\\Herdr UI\\herdr-remote-control.exe".into();
     plan.state_dir = "C:\\Users\\Me\\AppData\\Local\\herdr\\gpui\\remote".into();
     let text = files::scheduled_task(&plan, "PC\\Me & You").unwrap();
     assert!(text.starts_with("<?xml version=\"1.0\" encoding=\"UTF-16\"?>\r\n"));
@@ -174,7 +174,9 @@ fn the_scheduled_task_runs_at_sign_in_without_a_time_limit() {
     assert!(text.contains("<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>"));
     assert!(text.contains("<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>"));
     assert!(text.contains("<RunLevel>LeastPrivilege</RunLevel>"));
-    assert!(text.contains("<Command>C:\\Program Files\\Herdr UI\\herdr-remote.exe</Command>"));
+    assert!(
+        text.contains("<Command>C:\\Program Files\\Herdr UI\\herdr-remote-control.exe</Command>")
+    );
     assert!(text.contains(
         "<Arguments>serve --state-dir C:\\Users\\Me\\AppData\\Local\\herdr\\gpui\\remote \
          --port 7443 --bind all --privacy generic --device-idle-days 30</Arguments>"
@@ -198,7 +200,7 @@ fn each_manager_files_its_definition_where_it_looks() {
     );
     assert_eq!(
         Manager::Systemd.file(home, config, state),
-        Path::new("/home/me/.config/systemd/user/herdr-remote.service")
+        Path::new("/home/me/.config/systemd/user/herdr-remote-control.service")
     );
     assert_eq!(
         Manager::ScheduledTask { user: "me".into() }.file(home, config, state),
@@ -244,13 +246,13 @@ fn managers_load_start_and_unload_with_their_own_commands() {
         commands(Manager::Systemd.load(file)),
         [
             "systemctl --user daemon-reload",
-            "systemctl --user enable herdr-remote.service",
-            "systemctl --user restart herdr-remote.service"
+            "systemctl --user enable herdr-remote-control.service",
+            "systemctl --user restart herdr-remote-control.service"
         ]
     );
     assert_eq!(
         commands(Manager::Systemd.unload()),
-        ["systemctl --user disable --now herdr-remote.service"]
+        ["systemctl --user disable --now herdr-remote-control.service"]
     );
     assert_eq!(
         commands(Manager::Systemd.unloaded()),
@@ -278,9 +280,9 @@ fn managers_load_start_and_unload_with_their_own_commands() {
 fn host(dir: &Path) -> Host {
     Host {
         manager: Manager::Systemd,
-        file: dir.join("units/herdr-remote.service"),
+        file: dir.join("units/herdr-remote-control.service"),
         state_dir: dir.join("state/remote"),
-        program: Some("/bin/herdr-remote".into()),
+        program: Some("/bin/herdr-remote-control".into()),
     }
 }
 
@@ -362,7 +364,7 @@ fn turning_it_on_writes_the_unit_and_loads_it_once() {
     assert_eq!(outcome, Outcome::Started);
     assert_eq!(
         *ran.borrow(),
-        ["systemctl --user start herdr-remote.service"]
+        ["systemctl --user start herdr-remote-control.service"]
     );
 }
 
@@ -391,7 +393,7 @@ fn a_changed_setting_rewrites_and_restarts() {
     assert!(fs::read_to_string(&host.file).unwrap().contains("\"9000\""));
     assert_eq!(
         ran.borrow().last().map(String::as_str),
-        Some("systemctl --user restart herdr-remote.service")
+        Some("systemctl --user restart herdr-remote-control.service")
     );
 }
 
@@ -426,7 +428,7 @@ fn turning_it_off_shuts_the_daemon_down_and_removes_the_service() {
     assert_eq!(
         *ran.borrow(),
         [
-            "systemctl --user disable --now herdr-remote.service",
+            "systemctl --user disable --now herdr-remote-control.service",
             "systemctl --user daemon-reload"
         ]
     );

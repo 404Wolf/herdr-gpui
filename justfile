@@ -7,9 +7,9 @@ run *args:
     set -euo pipefail
     if [ "$(uname -s)" != Darwin ]; then
         # The app starts chats with the herdr-acp, finds the automation
-        # daemon, and starts Remote control with the herdr-remote, all beside
+        # daemon, and starts Remote control with the herdr-remote-control, all beside
         # its own executable.
-        cargo build --locked --release -p herdr-acp -p herdr-automate -p herdr-remote
+        cargo build --locked --release -p herdr-acp -p herdr-automate -p herdr-remote-control
         exec cargo run --locked --release -p herdr-gpui --features qa-menu -- {{args}}
     fi
     {{just_executable()}} bundle release qa-menu
@@ -31,7 +31,7 @@ run-debug *args:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ "$(uname -s)" != Darwin ]; then
-        cargo build --locked -p herdr-acp -p herdr-automate -p herdr-remote
+        cargo build --locked -p herdr-acp -p herdr-automate -p herdr-remote-control
         exec cargo run --locked -p herdr-gpui -- {{args}}
     fi
     {{just_executable()}} bundle debug
@@ -106,7 +106,7 @@ mockup file="" feedback="" capture="":
     exec target/debug/herdr-gpui "${args[@]}"
 
 build-release:
-    cargo build --locked --release -p herdr-gpui -p herdr-acp -p herdr-automate -p herdr-remote
+    cargo build --locked --release -p herdr-gpui -p herdr-acp -p herdr-automate -p herdr-remote-control
 
 # Compile and install the release executable into Cargo's bin directory.
 [unix]
@@ -114,7 +114,7 @@ install:
     cargo install --locked --force --path crates/herdr-gpui --bin herdr-gpui
     cargo install --locked --force --path crates/herdr-acp
     cargo install --locked --force --path crates/herdr-automate
-    cargo install --locked --force --path crates/herdr-remote
+    cargo install --locked --force --path crates/herdr-remote-control
 
 # Only installation bypasses the POSIX shell used by the other recipes.
 [windows]
@@ -125,7 +125,7 @@ install:
     cargo install --locked --force --path crates/herdr-gpui-launcher || exit /b 1
     cargo install --locked --force --path crates/herdr-acp || exit /b 1
     cargo install --locked --force --path crates/herdr-automate || exit /b 1
-    cargo install --locked --force --path crates/herdr-remote
+    cargo install --locked --force --path crates/herdr-remote-control
 
 # Regenerate circular Linux artwork on any platform (Python standard library).
 icons-linux:
@@ -154,21 +154,21 @@ bundle profile="release" features="":
     esac
     app=target/{{profile}}/Herdr.app
     cargo build --locked $flags --target-dir target -p herdr-gpui --features "{{features}}"
-    cargo build --locked $flags --target-dir target -p herdr-acp -p herdr-automate -p herdr-remote
+    cargo build --locked $flags --target-dir target -p herdr-acp -p herdr-automate -p herdr-remote-control
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
     # Replace the executables rather than rewrite them in place: macOS keeps
     # a signed file's old signature with its inode, so reading the rewritten
     # pages kills the reader, and a chat still running the old herdr-acp
     # keeps its own copy.
-    rm -f "$app/Contents/MacOS/Herdr" "$app/Contents/MacOS/herdr-acp" "$app/Contents/MacOS/herdr-automate" "$app/Contents/MacOS/herdr-remote"
+    rm -f "$app/Contents/MacOS/Herdr" "$app/Contents/MacOS/herdr-acp" "$app/Contents/MacOS/herdr-automate" "$app/Contents/MacOS/herdr-remote-control"
     cp target/{{profile}}/herdr-gpui "$app/Contents/MacOS/Herdr"
     # The automation daemon, found beside the app's executable.
     cp target/{{profile}}/herdr-automate "$app/Contents/MacOS/herdr-automate"
     codesign --force --sign - "$app/Contents/MacOS/herdr-automate"
     # Chats the app starts run the herdr-acp beside its executable.
     cp target/{{profile}}/herdr-acp "$app/Contents/MacOS/herdr-acp"
-    # Remote control runs the herdr-remote beside it as a user service.
-    cp target/{{profile}}/herdr-remote "$app/Contents/MacOS/herdr-remote"
+    # Remote control runs the herdr-remote-control beside it as a user service.
+    cp target/{{profile}}/herdr-remote-control "$app/Contents/MacOS/herdr-remote-control"
     cp assets/macos/Info.plist "$app/Contents/Info.plist"
     # LaunchServices and the Dock cache icons by bundle ID, so every worktree
     # build sharing the release ID competed with the installed app's icon.
@@ -203,7 +203,7 @@ sort:
 # Compile the remote control web app's stylesheet (commit the result) with
 # the Tailwind standalone CLI v4, so building the crate needs no Node.
 web-css:
-    tailwindcss --input crates/herdr-remote/src/web/assets/input.css --output crates/herdr-remote/src/web/assets/app.css --minify
+    tailwindcss --input crates/herdr-remote-control/src/web/assets/input.css --output crates/herdr-remote-control/src/web/assets/app.css --minify
 
 test-mockup-wait:
     python3 .claude/skills/gpui-mockup/scripts/test_wait.py

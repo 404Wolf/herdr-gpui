@@ -8,7 +8,7 @@ use crate::{
         remote::{RemoteOp, Reply},
     },
 };
-use herdr_remote::control::{Device, Status};
+use herdr_remote_control::control::{Device, Status};
 
 pub(super) fn remote(command: RemoteCommand, context: &Context) -> crate::Result<Output> {
     let op = match command {

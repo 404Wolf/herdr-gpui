@@ -8,7 +8,7 @@ pub enum Error {
     #[error("remote.certificate {which} must be an absolute UTF-8 path")]
     CertificatePath { which: &'static str },
     #[error(transparent)]
-    Control(#[from] herdr_remote::control::Error),
+    Control(#[from] herdr_remote_control::control::Error),
     #[error("remote.device_idle_days must be between 1 and 365")]
     IdleDays,
     #[error("Could not {operation} {}", path.display())]
@@ -24,7 +24,7 @@ pub enum Error {
     PathText { path: PathBuf },
     #[error("remote.port must be between 1 and 65535")]
     Port,
-    #[error("herdr-remote was not found beside Herdr UI or on PATH")]
+    #[error("herdr-remote-control was not found beside Herdr UI or on PATH")]
     ProgramMissing,
     #[error("The pairing link does not fit in a QR code")]
     Qr(#[source] qrcode::types::QrError),

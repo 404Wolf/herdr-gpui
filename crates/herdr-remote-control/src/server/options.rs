@@ -63,7 +63,7 @@ pub enum Invocation {
 }
 
 pub const USAGE: &str = "\
-Usage: herdr-remote serve --state-dir DIR [options]
+Usage: herdr-remote-control serve --state-dir DIR [options]
 
 Serves this computer's Herdr chats to paired phones over HTTPS. Herdr UI
 starts it when Remote control is on.

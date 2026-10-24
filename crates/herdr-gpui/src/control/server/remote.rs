@@ -11,7 +11,7 @@ use crate::{
     remote::Supervisor,
 };
 use gpui::App;
-use herdr_remote::control::{Device, Request};
+use herdr_remote_control::control::{Device, Request};
 use std::time::Duration;
 
 const OFF: &str = "Remote control is off; turn it on in Settings > Remote control";
@@ -70,7 +70,7 @@ pub(super) fn serve(
             let request = client.request(Request::Status);
             cx.spawn(async move |_| {
                 let (status, error) = match request.await {
-                    Ok(herdr_remote::control::Response::Status(status)) => {
+                    Ok(herdr_remote_control::control::Response::Status(status)) => {
                         (Some(Box::new(status)), None)
                     }
                     Ok(_) => (None, Some(crate::remote::Error::Unexpected.to_string())),
@@ -128,10 +128,10 @@ pub(super) fn serve(
 }
 
 fn devices(
-    answer: Result<herdr_remote::control::Response, herdr_remote::control::Error>,
+    answer: Result<herdr_remote_control::control::Response, herdr_remote_control::control::Error>,
 ) -> Result<Vec<Device>, Response> {
     match answer {
-        Ok(herdr_remote::control::Response::Devices { devices }) => Ok(devices),
+        Ok(herdr_remote_control::control::Response::Devices { devices }) => Ok(devices),
         Ok(_) => Err(Response::error(
             ErrorCode::Failed,
             crate::remote::Error::Unexpected.to_string(),

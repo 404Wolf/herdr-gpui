@@ -85,7 +85,7 @@ revoke each on its own.
 
 ## APNs key for the daemon
 
-The daemon (`herdr-remote`) sends Live Activity pushes with your own APNs
+The daemon (`herdr-remote-control`) sends Live Activity pushes with your own APNs
 token key. Without it, everything else works and activities never appear.
 
 1. In the Apple Developer site, Certificates, Identifiers & Profiles > Keys,
@@ -119,7 +119,7 @@ token key. Without it, everything else works and activities never appear.
 `STATE_DIR` is the remote control daemon's private state directory (its
 `--state-dir`), the one holding `devices.json` and `push/vapid.pem`.
 
-The daemon side is built (`crates/herdr-remote/src/apns`) but not yet wired
+The daemon side is built (`crates/herdr-remote-control/src/apns`) but not yet wired
 into the server's `POST /api/apns` route and notifier; until it is, the app
 pairs and uploads tokens, and the upload is answered 404.
 
@@ -136,7 +136,7 @@ and the daemon then forgets it, so switch both together.
 ## What the daemon sends
 
 Payloads follow `ChatActivityState` (`HerdrRemoteCore`) and
-`crates/herdr-remote/src/apns/payload.rs`; the fixtures in
+`crates/herdr-remote-control/src/apns/payload.rs`; the fixtures in
 `HerdrRemoteCore/Tests/HerdrRemoteCoreTests/Fixtures` are tested on both
 sides. A turn starting sends `start` through the push-to-start token; tool
 calls, plan steps, and questions send `update` (questions at priority 10, with

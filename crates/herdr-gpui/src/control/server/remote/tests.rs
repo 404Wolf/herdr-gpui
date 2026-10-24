@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
-use herdr_remote::control::DeviceId;
+use herdr_remote_control::control::DeviceId;
 
 fn device(id: &str, name: &str) -> Device {
     Device {
@@ -50,7 +50,7 @@ fn a_device_is_named_by_its_id_or_its_one_name() {
 #[test]
 fn a_daemon_answer_becomes_devices_or_a_failure() {
     assert_eq!(
-        devices(Ok(herdr_remote::control::Response::Devices {
+        devices(Ok(herdr_remote_control::control::Response::Devices {
             devices: vec![device("d1", "Pixel")]
         }))
         .unwrap()
@@ -58,11 +58,11 @@ fn a_daemon_answer_becomes_devices_or_a_failure() {
         1
     );
     assert_eq!(
-        code(&devices(Ok(herdr_remote::control::Response::Done)).unwrap_err()),
+        code(&devices(Ok(herdr_remote_control::control::Response::Done)).unwrap_err()),
         Some(ErrorCode::Failed)
     );
     assert_eq!(
-        code(&devices(Err(herdr_remote::control::Error::NoAnswer)).unwrap_err()),
+        code(&devices(Err(herdr_remote_control::control::Error::NoAnswer)).unwrap_err()),
         Some(ErrorCode::Failed)
     );
 }

@@ -12,7 +12,7 @@ rules apply throughout.
 | Question | Decision |
 | --- | --- |
 | Scope | Chats only. Workspaces are listed, switched, and created. Terminal tabs are listed but disabled ("Not available yet"). |
-| Server stack | axum + Tokio, isolated in a new `herdr-remote` crate. No Tokio in `herdr-client` or `herdr-gpui`. |
+| Server stack | axum + Tokio, isolated in a new `herdr-remote-control` crate. No Tokio in `herdr-client` or `herdr-gpui`. |
 | Lifecycle | A user service that outlives Herdr UI. The settings toggle installs and starts it, or stops and removes it. |
 | Pairing | Dual approval: the phone scans a short-lived QR, then the desktop confirms the device with a matching code. Both sides prove themselves cryptographically. |
 | TLS | The daemon's own certificate authority, trusted once on the phone. Works by IP address on the LAN and over Tailscale; no DNS name is required. |
@@ -24,15 +24,15 @@ rules apply throughout.
 ## Architecture
 
 ```
-phone PWA ──HTTPS──▶ herdr-remote ──private endpoint──▶ herdr-acp (one per chat pane)
+phone PWA ──HTTPS──▶ herdr-remote-control ──private endpoint──▶ herdr-acp (one per chat pane)
                          │  ▲
                          │  └── control endpoint ◀── Herdr UI (toggle, QR, approval, devices)
                          └──── Herdr daemon API (snapshot, workspace.create, tab.create)
 ```
 
-### `crates/herdr-remote`
+### `crates/herdr-remote-control`
 
-A library plus a `herdr-remote` binary. It depends on `herdr-chat-protocol`
+A library plus a `herdr-remote-control` binary. It depends on `herdr-chat-protocol`
 and `herdr-client`, never on GPUI, keeping the UI → client → protocol
 direction.
 
@@ -76,7 +76,7 @@ The phone must trust the certificate fully: service workers, PWA install,
 and Web Push all refuse an untrusted one. A name like `*.ts.net` is not
 required.
 
-- On first start `herdr-remote` creates its own **certificate authority**
+- On first start `herdr-remote-control` creates its own **certificate authority**
   (`rcgen`, P-256, key 0600 in its private state directory) and issues a
   server certificate whose SANs list every address it serves on: the LAN
   IPv4/IPv6 addresses, `HOSTNAME.local`, and, when Tailscale is up, the
@@ -89,7 +89,7 @@ required.
   the serverAuth EKU, so a stolen CA key cannot vouch for public sites or
   sign anything but TLS servers.
 - On macOS with the application firewall on, the first start asks whether
-  `herdr-remote` may accept incoming connections; until the user allows it,
+  `herdr-remote-control` may accept incoming connections; until the user allows it,
   LAN and Tailscale requests hang (loopback works). The settings page says
   so.
 - The phone installs the CA once during pairing: a `.mobileconfig` profile on
@@ -327,7 +327,7 @@ the APNs key):
 - **Push tokens**: the push-to-start token goes to every paired computer and
   each activity's token to its own, through `POST /api/apns` with
   `{push_to_start, activities: [{pane, token}]}`.
-- **Daemon**: `crates/herdr-remote/src/apns` loads `STATE_DIR/apns/AuthKey.p8`
+- **Daemon**: `crates/herdr-remote-control/src/apns` loads `STATE_DIR/apns/AuthKey.p8`
   and `config.json` (absent: off), signs the ES256 provider token (renewed
   every fifty minutes), decides start, update, or end from the same inputs as
   `push::decide`, paces step updates to one per ten seconds per chat, and
@@ -371,7 +371,7 @@ push-to-start on a device with a real key, and an app icon.
      installed PWA on iOS.
    - Several service worker registrations, each with its own push
      subscription, in one installed iOS PWA.
-1. **MVP**: `herdr-remote` service, own CA and leaf reissue, pairing with
+1. **MVP**: `herdr-remote-control` service, own CA and leaf reissue, pairing with
    dual approval, devices and revoke, workspaces and tabs (terminals
    disabled), chat view with every chat command, new workspace with a chat,
    Settings page and dialog, `remote` CLI commands.

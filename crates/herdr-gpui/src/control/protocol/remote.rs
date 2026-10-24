@@ -1,7 +1,7 @@
 //! Remote control: the daemon's status and devices, the pairing dialog, and
 //! the revoke confirmation. The daemon's own types are reused as they are;
 //! no pairing token ever crosses this socket.
-use herdr_remote::control::{Device, Status};
+use herdr_remote_control::control::{Device, Status};
 use serde::{Deserialize, Serialize};
 
 /// Asking the daemon, and for `revoke` the device list first, takes up to

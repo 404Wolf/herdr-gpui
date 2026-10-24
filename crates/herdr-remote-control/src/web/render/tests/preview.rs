@@ -1,5 +1,5 @@
 //! Writes the views with demo data as standalone pages, to look at them in
-//! a browser: `HERDR_REMOTE_PREVIEW=DIR cargo test -p herdr-remote preview
+//! a browser: `HERDR_REMOTE_PREVIEW=DIR cargo test -p herdr-remote-control preview
 //! -- --ignored`. The pages link `app.css`, copied beside them.
 
 use super::*;
@@ -61,7 +61,7 @@ fn demo_transcript() -> Transcript {
             status: ToolStatus::InProgress,
             title: "just check-file-size".into(),
         })),
-        entry(7, EntryKind::Agent { text: "The plan covers pairing with **dual approval**, the private CA for LAN and Tailscale, and push.\n\n- `herdr-remote` daemon\n- mobile web app".into() }),
+        entry(7, EntryKind::Agent { text: "The plan covers pairing with **dual approval**, the private CA for LAN and Tailscale, and push.\n\n- `herdr-remote-control` daemon\n- mobile web app".into() }),
     ];
     transcript.plan = vec![
         PlanEntry {

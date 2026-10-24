@@ -32,7 +32,7 @@ herdr-automation.workspace     = true
 herdr-chat-protocol.workspace  = true
 herdr-client.workspace         = true
 # The remote control daemon's control protocol only, never its server.
-herdr-remote.workspace         = true
+herdr-remote-control.workspace         = true
 if-addrs.workspace             = true
 image                          = { features = ["bmp", "tiff"], workspace = true }
 keepawake.workspace            = true

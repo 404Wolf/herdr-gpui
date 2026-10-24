@@ -18,7 +18,7 @@ use crate::{
     },
 };
 use gpui::{prelude::*, *};
-use herdr_remote::control::{Device, DeviceId};
+use herdr_remote_control::control::{Device, DeviceId};
 use std::path::PathBuf;
 
 /// The page's state while it shows.

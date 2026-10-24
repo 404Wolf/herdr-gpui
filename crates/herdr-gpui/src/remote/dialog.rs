@@ -10,7 +10,7 @@ use super::{
 };
 use crate::{HerdrWindow, config::Theme, fonts::StyledFont, menu::Page};
 use gpui::{prelude::*, *};
-use herdr_remote::control::Request;
+use herdr_remote_control::control::Request;
 use std::{
     sync::Arc,
     time::{Duration, Instant},

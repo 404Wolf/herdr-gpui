@@ -7,7 +7,7 @@ use std::{ffi::OsString, net::IpAddr, path::PathBuf};
 mod control_socket;
 
 fn args(list: &[&str]) -> Vec<OsString> {
-    std::iter::once("herdr-remote")
+    std::iter::once("herdr-remote-control")
         .chain(list.iter().copied())
         .map(OsString::from)
         .collect()

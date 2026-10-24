@@ -2,7 +2,7 @@
 description            = "Serves Herdr chats to paired phones over HTTPS, with push notifications"
 edition.workspace      = true
 license.workspace      = true
-name                   = "herdr-remote"
+name                   = "herdr-remote-control"
 publish.workspace      = true
 rust-version.workspace = true
 version.workspace      = true
@@ -43,7 +43,7 @@ server = [
 ]
 
 [[bin]]
-name              = "herdr-remote"
+name              = "herdr-remote-control"
 path              = "src/main.rs"
 required-features = ["server"]
 

@@ -1,7 +1,7 @@
-//! Remote control, Herdr UI's side: the `herdr-remote` daemon serves this
+//! Remote control, Herdr UI's side: the `herdr-remote-control` daemon serves this
 //! machine's chats to paired phones, and Herdr UI installs it as a user
 //! service, watches it, pairs devices, and revokes them. Only the daemon's
-//! control protocol is used here (`herdr_remote::control`), from background
+//! control protocol is used here (`herdr_remote_control::control`), from background
 //! threads; Tokio never reaches the app.
 //!
 //! [`service`] writes and loads the service, [`supervisor`] keeps it in line

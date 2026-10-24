@@ -468,7 +468,7 @@ size = 12
 
 # Remote control from a phone or any browser: over HTTPS on the local network
 # and, when Tailscale runs, from anywhere. Turning it on installs the
-# herdr-remote daemon as a user service (a LaunchAgent on macOS, a systemd user
+# herdr-remote-control daemon as a user service (a LaunchAgent on macOS, a systemd user
 # unit on Linux, a logon task on Windows); turning it off stops and removes it.
 # Settings > Remote control edits these and pairs devices. Device keys and the
 # certificate authority stay in the daemon's own state directory, never here.

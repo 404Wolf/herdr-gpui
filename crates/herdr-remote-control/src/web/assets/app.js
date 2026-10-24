@@ -52,7 +52,7 @@ function fromB64url(text) {
 
 function keyStore(mode, action) {
   return new Promise((resolve, reject) => {
-    const open = indexedDB.open("herdr-remote", 1);
+    const open = indexedDB.open("herdr-remote-control", 1);
     open.onupgradeneeded = () => open.result.createObjectStore("keys");
     open.onerror = () => reject(open.error);
     open.onsuccess = () => {

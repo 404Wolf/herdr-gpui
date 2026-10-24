@@ -1,4 +1,4 @@
-//! `herdr-remote serve`: loads the state directory (certificate authority,
+//! `herdr-remote-control serve`: loads the state directory (certificate authority,
 //! devices, VAPID key), connects to the local Herdr daemon, and serves the
 //! web app over HTTPS until Herdr UI asks it to stop.
 

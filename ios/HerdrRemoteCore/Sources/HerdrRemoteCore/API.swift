@@ -1,6 +1,6 @@
 import Foundation
 
-/// The JSON the daemon's API takes and returns (`crates/herdr-remote/src/web/api.rs`).
+/// The JSON the daemon's API takes and returns (`crates/herdr-remote-control/src/web/api.rs`).
 public enum API {
     /// `POST /api/pair/claim`.
     public struct ClaimRequest: Encodable, Equatable, Sendable {

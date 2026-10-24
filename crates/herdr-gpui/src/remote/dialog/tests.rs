@@ -3,7 +3,9 @@ use super::*;
 use crate::{config::RemoteConfig, remote::revoke::Revoke, sidebar::layout_tests::fixture_window};
 use core::prelude::v1::test;
 use gpui::{TestAppContext, VisualTestContext};
-use herdr_remote::control::{self, Device, DeviceId, Offer, PairingId, PairingState, Response};
+use herdr_remote_control::control::{
+    self, Device, DeviceId, Offer, PairingId, PairingState, Response,
+};
 use std::{
     path::Path,
     sync::{

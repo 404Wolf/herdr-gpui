@@ -284,7 +284,7 @@ The change applies live; `config get focus_follows_mouse` reads it back.
 | `remote revoke DEVICE` | Ask in the window to revoke a paired device, named by its ID from `remote devices` or its name (a name two devices share is refused); the user confirms there |
 
 Remote control is turned on in Settings > Remote control, or with
-`config set remote.enabled true`; the app then installs the `herdr-remote`
+`config set remote.enabled true`; the app then installs the `herdr-remote-control`
 daemon as a user service and keeps it in line with the `[remote]` settings.
 While it is off, `remote status` says so and exits 0; `pair`, `devices`, and
 `revoke` exit 1. A dialog already open in the window refuses `pair` and

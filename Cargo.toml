@@ -1,5 +1,5 @@
 [workspace]
-members  = ["crates/embed-resource", "crates/herdr-acp", "crates/herdr-automate", "crates/herdr-automation", "crates/herdr-chat-protocol", "crates/herdr-client", "crates/herdr-gpui", "crates/herdr-gpui-launcher", "crates/herdr-protocol", "crates/herdr-remote"]
+members  = ["crates/embed-resource", "crates/herdr-acp", "crates/herdr-automate", "crates/herdr-automation", "crates/herdr-chat-protocol", "crates/herdr-client", "crates/herdr-gpui", "crates/herdr-gpui-launcher", "crates/herdr-protocol", "crates/herdr-remote-control"]
 resolver = "2"
 
 [workspace.package]
@@ -65,7 +65,7 @@ herdr-automation     = { default-features = false, path = "crates/herdr-automati
 herdr-chat-protocol  = { path = "crates/herdr-chat-protocol" }
 herdr-client         = { path = "crates/herdr-client" }
 herdr-protocol       = { path = "crates/herdr-protocol" }
-herdr-remote         = { default-features = false, path = "crates/herdr-remote" }
+herdr-remote-control         = { default-features = false, path = "crates/herdr-remote-control" }
 interprocess         = "2.4.2"
 # Local interface addresses, so Bonjour discovery skips this machine; the
 # version mdns-sd already uses.
@@ -145,15 +145,15 @@ tar                  = "0.4"
 tempfile             = "3"
 test-case            = "3"
 thiserror            = "2"
-# The remote control daemon's runtime and web server; only herdr-remote uses them.
+# The remote control daemon's runtime and web server; only herdr-remote-control uses them.
 tokio                = { features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"], version = "1" }
 # Server-rendered HTML for the remote control web app, escaped by default.
 maud                 = "0.27"
 axum                 = { default-features = false, features = ["http1", "json", "query", "tokio"], version = "0.8" }
-# Drives herdr-remote's router in tests without a socket; axum already links it.
+# Drives herdr-remote-control's router in tests without a socket; axum already links it.
 tower                = { default-features = false, features = ["util"], version = "0.5" }
 tokio-rustls         = { default-features = false, features = ["ring", "tls12"], version = "0.26" }
-# herdr-remote's APNs sender for iOS Live Activities: APNs speaks only
+# herdr-remote-control's APNs sender for iOS Live Activities: APNs speaks only
 # HTTP/2, which ureq lacks. hyper's own HTTP/2 client (plus h2) over the
 # tokio-rustls above on the daemon's Tokio runtime is the smallest maintained
 # stack for it: axum already links hyper, hyper-util, and http-body-util, so
