@@ -285,15 +285,11 @@ pub(super) fn check_close_confirmation(
     });
     cx.simulate_keystrokes(crate::controls::platform_default("cmd-w"));
     cx.update(|_, cx| assert!(view.read(cx).menu.page == Some(crate::menu::Page::ConfirmClose)));
-    cx.simulate_keystrokes("enter");
-    cx.update(|_, cx| {
-        assert!(
-            view.read(cx).menu.page.is_none(),
-            "Enter defaults to Cancel"
-        )
-    });
+    cx.simulate_keystrokes("escape");
+    cx.update(|_, cx| assert!(view.read(cx).menu.page.is_none(), "Escape cancels"));
+    // Close is the default, so Enter alone confirms.
     cx.simulate_keystrokes(&format!(
-        "{} tab enter",
+        "{} enter",
         crate::controls::platform_default("cmd-shift-w")
     ));
     cx.update(|window, cx| {

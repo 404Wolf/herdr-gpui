@@ -189,8 +189,8 @@ fn every_focus_changing_command_fences_immediate_input_until_ack_and_surface(
                         );
                         crate::menu::workspace_tests::submit_dialog(view, window, cx);
                     }
+                    // Close is the default, so Enter alone confirms.
                     Command::ClosePane | Command::CloseTab if confirm_close => {
-                        view.close_confirmation_key(&key("tab"), window, cx);
                         view.close_confirmation_key(&key("enter"), window, cx);
                     }
                     Command::WorkspacePicker => view.palette_key(&key("enter"), window, cx),

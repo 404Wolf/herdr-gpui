@@ -22,6 +22,7 @@ pub(super) struct CloseConfirmation {
     tab: String,
     pane: Option<String>,
     label: String,
+    /// Close starts selected, so Enter confirms; Tab or an arrow moves to Cancel.
     confirm_selected: bool,
     /// Pane closes only: confirming also saves `confirm_close_pane = false`.
     do_not_ask_again: bool,
@@ -49,7 +50,7 @@ impl CloseConfirmation {
             tab: tab.tab_id.clone(),
             pane: None,
             label: tab.label.clone(),
-            confirm_selected: false,
+            confirm_selected: true,
             do_not_ask_again: false,
             error: None,
         })
@@ -82,7 +83,7 @@ impl CloseConfirmation {
             label: pane
                 .map(|pane| pane.label.clone().unwrap_or_else(|| pane.pane_id.clone()))
                 .unwrap_or_else(|| tab.label.clone()),
-            confirm_selected: false,
+            confirm_selected: true,
             do_not_ask_again: false,
             error: None,
         })

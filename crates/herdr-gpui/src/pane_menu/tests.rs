@@ -225,7 +225,7 @@ fn menu_isolation_rename_composition_close_and_endpoint_fences(cx: &mut TestAppC
             assert_eq!(v.menu.page, Some(Page::ConfirmClose));
         })
     });
-    cx.simulate_keystrokes("enter");
+    cx.simulate_keystrokes("escape");
     assert!(view.read_with(cx, |v, _| v.menu.page.is_none()));
     for button in [MouseButton::Left, MouseButton::Right] {
         cx.update(|window, cx| {

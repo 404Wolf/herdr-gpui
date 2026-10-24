@@ -61,8 +61,8 @@ fn do_not_ask_again_is_a_pane_only_checkbox_and_a_refused_close_saves_nothing(
             assert!(!ticked(view));
             view.close_confirmation_key(&space, window, cx);
             assert!(ticked(view));
-            // Cancel stays selected: Space must not move the button selection.
-            assert!(!view.menu.close.as_ref().unwrap().confirm_selected);
+            // Close stays selected: Space must not move the button selection.
+            assert!(view.menu.close.as_ref().unwrap().confirm_selected);
         })
     });
     cx.update(|window, cx| window.draw(cx).clear(cx));

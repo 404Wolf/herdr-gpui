@@ -105,7 +105,7 @@ fn tab_icon_bounds_and_inactive_cross_confirmation(cx: &mut TestAppContext) {
             assert!(view.menu.page == Some(Page::ConfirmClose));
             let close = view.menu.close.as_ref().unwrap();
             assert_eq!(close.tab, "inactive");
-            assert!(!close.confirm_selected);
+            assert!(close.confirm_selected);
             assert_eq!(
                 close.request(view.live.snapshot.as_ref().unwrap()).unwrap(),
                 (Method::TabClose, json!({"tab_id": "inactive"}))
@@ -134,7 +134,7 @@ fn tab_icon_bounds_and_inactive_cross_confirmation(cx: &mut TestAppContext) {
                 });
             });
         }
-        cx.simulate_keystrokes("enter");
+        cx.simulate_keystrokes("escape");
         assert!(view.read_with(cx, |view, _| view.menu.page.is_none()));
         cx.update(|window, cx| window.draw(cx).clear(cx));
     }
@@ -214,7 +214,7 @@ fn explicit_pane_close_retains_inactive_target_and_membership() {
     pane.pane_id = "inactive".into();
     snapshot.panes.push(pane);
     let close = CloseConfirmation::capture_pane(&snapshot, "inactive").unwrap();
-    assert!(!close.confirm_selected);
+    assert!(close.confirm_selected);
     snapshot.focused_pane_id = None;
     assert_eq!(
         close.request(&snapshot).unwrap(),
@@ -249,7 +249,7 @@ fn explicit_tab_close_does_not_follow_focus() -> anyhow::Result<()> {
     snapshot.tabs.push(inactive);
     let close = CloseConfirmation::capture_tab(&snapshot, "inactive")
         .ok_or_else(|| anyhow::anyhow!("missing tab"))?;
-    assert!(!close.confirm_selected);
+    assert!(close.confirm_selected);
     assert_eq!(
         close.request(&snapshot)?,
         (Method::TabClose, json!({"tab_id":"inactive"}))
@@ -266,7 +266,7 @@ fn close_retains_original_target_and_rejects_replaced_sessions() -> anyhow::Resu
     for command in [Command::ClosePane, Command::CloseTab] {
         let close = CloseConfirmation::capture(command, &snapshot)
             .ok_or_else(|| anyhow::anyhow!("missing target"))?;
-        assert!(!close.confirm_selected, "Cancel is the safe default");
+        assert!(close.confirm_selected, "Close is the default");
         let expected = close.request(&snapshot)?;
         let original = snapshot.clone();
         snapshot.focused_pane_id = None;
