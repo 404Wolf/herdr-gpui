@@ -19,21 +19,20 @@ pub fn sync(
     source: &SourceKey,
     cancelled: &AtomicBool,
 ) -> Result<(Vec<Item>, Checkpoint)> {
-    let flags = safety_flags(host, &source.repository, cancelled)?;
-    let list = run(
-        host,
-        &source.repository,
-        &flags,
-        &["list", "--json", "--all", "--limit", "0"],
-        cancelled,
-    )?;
-    let blocked = run(
-        host,
-        &source.repository,
-        &flags,
-        &["blocked", "--json"],
-        cancelled,
-    )?;
+    let (list, blocked) = if host.is_local() {
+        let flags = safety_flags(host, &source.repository, cancelled)?;
+        let list = run(host, &source.repository, &flags, &LIST, cancelled)?;
+        let blocked = run(host, &source.repository, &flags, &BLOCKED, cancelled)?;
+        (list, blocked)
+    } else {
+        // One connection rather than three: sshd may drop a burst of them.
+        let separator = super::prompt::nonce();
+        let body = sync_script(&source.repository, &separator);
+        split(
+            &capture(host, &body, "Reading Beads", cancelled)?,
+            &separator,
+        )?
+    };
     let items = parse(source, &list, &blocked)?;
     let checkpoint = Checkpoint {
         updated_at: items.iter().filter_map(|item| item.updated_at).max(),
@@ -41,6 +40,50 @@ pub fn sync(
         ..Checkpoint::default()
     };
     Ok((items, checkpoint))
+}
+
+const LIST: [&str; 5] = ["list", "--json", "--all", "--limit", "0"];
+const BLOCKED: [&str; 2] = ["blocked", "--json"];
+
+/// What [`sync`] runs on an SSH host in one connection: `bd`'s options read
+/// as [`flags_from_help`] reads them, then the list and the blocked beads,
+/// printed with a `separator` line between them. Any step's failure ends
+/// the script with its status, as each one's own script would.
+pub fn sync_script(root: &str, separator: &str) -> String {
+    let words = |args: &[&str]| {
+        args.iter()
+            .map(|arg| shell_quote(arg))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let flags = FLAGS.join(" ");
+    let (list, blocked) = (words(&LIST), words(&BLOCKED));
+    let separator = shell_quote(separator);
+    format!(
+        r#"{prefix}help=$(bd --help 2>&1) || exit $?
+words=" $(printf '%s' "$help" | tr '\n\t\r' '   ') "
+flags=
+for flag in {flags}; do
+    case $words in *" $flag "*) flags="$flags $flag" ;; esac
+done
+list=$(bd $flags {list}) || exit $?
+blocked=$(bd $flags {blocked}) || exit $?
+printf '%s\n%s\n%s\n' "$list" {separator} "$blocked"
+"#,
+        prefix = prefix(root)
+    )
+}
+
+/// The list and the blocked beads in [`sync_script`]'s `output`.
+pub fn split(output: &[u8], separator: &str) -> Result<(Vec<u8>, Vec<u8>)> {
+    let line = format!("\n{separator}\n");
+    let at = output
+        .windows(line.len())
+        .position(|window| window == line.as_bytes())
+        .ok_or(Error::Output {
+            operation: "Reading Beads",
+        })?;
+    Ok((output[..at].to_vec(), output[at + line.len()..].to_vec()))
 }
 
 /// Deletes one bead for good, which `bd` cannot do read-only.
@@ -77,6 +120,9 @@ fn prefix(root: &str) -> String {
     )
 }
 
+/// The safety flags `bd` is run with when its help names them.
+const FLAGS: [&str; 2] = ["--readonly", "--sandbox"];
+
 fn safety_flags(host: &Host, root: &str, cancelled: &AtomicBool) -> Result<Vec<&'static str>> {
     const READING: &str = "Reading bd's options";
     // `bd`'s help goes to stdout, which is all a local run reads.
@@ -91,7 +137,7 @@ fn safety_flags(host: &Host, root: &str, cancelled: &AtomicBool) -> Result<Vec<&
 
 pub fn flags_from_help(help: &str) -> Vec<&'static str> {
     let words: Vec<_> = help.split_whitespace().collect();
-    ["--readonly", "--sandbox"]
+    FLAGS
         .into_iter()
         .filter(|flag| words.contains(flag))
         .collect()

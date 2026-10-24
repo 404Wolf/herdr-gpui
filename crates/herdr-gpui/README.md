@@ -2218,7 +2218,9 @@ hold: their GitHub issues and pull requests or GitLab issues, their
 `.beads` folder, and the agent runs dispatched for them. Folders outside Git
 are quietly skipped unless they have a `.beads` folder; **Refresh** checks
 skipped folders again. Git and SSH discovery failures still show their errors.
-The repositories on one SSH host share at most four connections to it at a
+Opening a repository on an SSH host takes one connection, which also finds
+the agents installed there and its branches, and Beads reads in one more. The
+repositories on one SSH host share at most four connections to it at a
 time, so many of them stay under sshd's default `MaxStartups`; a connection
 the host drops before key exchange is tried once more a second later. While
 an SSH host cannot be reached, a project keeps what it last listed, with the
