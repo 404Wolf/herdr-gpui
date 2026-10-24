@@ -240,10 +240,19 @@ struct SettingsWindow {
     boat_card: Option<cloud_devices::BoatCard>,
     #[cfg(feature = "coder")]
     coder_card: Option<cloud_devices::CoderCard>,
+    #[cfg(feature = "container")]
+    container_card: Option<cloud_devices::ContainerCard>,
     #[cfg(feature = "daytona")]
     daytona_card: Option<cloud_devices::DaytonaCard>,
+    #[cfg(feature = "opensandbox")]
+    opensandbox_card: Option<cloud_devices::OpenSandboxCard>,
     #[cfg(feature = "railway")]
     railway_card: Option<cloud_devices::RailwayCard>,
+    /// Sandbox images, for the cards of providers that hold them.
+    #[cfg(any(feature = "container", feature = "daytona"))]
+    sandbox_images: cloud_devices::SandboxImages,
+    #[cfg(feature = "sprites")]
+    sprites_card: Option<cloud_devices::SpritesCard>,
     theme_loading: bool,
     theme_waiting: bool,
     theme_light: bool,
@@ -371,10 +380,18 @@ impl SettingsWindow {
             boat_card: None,
             #[cfg(feature = "coder")]
             coder_card: None,
+            #[cfg(feature = "container")]
+            container_card: None,
             #[cfg(feature = "daytona")]
             daytona_card: None,
+            #[cfg(feature = "opensandbox")]
+            opensandbox_card: None,
             #[cfg(feature = "railway")]
             railway_card: None,
+            #[cfg(any(feature = "container", feature = "daytona"))]
+            sandbox_images: Default::default(),
+            #[cfg(feature = "sprites")]
+            sprites_card: None,
             theme_loading: false,
             theme_waiting: false,
             theme_light: false,

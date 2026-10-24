@@ -16,6 +16,7 @@ mod boat;
 pub(crate) mod chat;
 mod cloud;
 mod coder;
+mod container;
 mod daemon;
 mod daytona;
 mod devices;
@@ -29,11 +30,13 @@ mod keybindings;
 mod layout;
 mod notifications;
 mod omarchy;
+mod opensandbox;
 mod option_as_alt;
 mod padding;
 pub(crate) mod preferences;
 pub(crate) mod sidebar;
 mod sidebar_style;
+mod sprites;
 pub(crate) mod status_bar;
 mod status_icons;
 pub(crate) mod tab_layout;
@@ -41,7 +44,10 @@ pub(crate) mod tab_layout;
     feature = "azure",
     feature = "boat",
     feature = "coder",
-    feature = "daytona"
+    feature = "container",
+    feature = "daytona",
+    feature = "opensandbox",
+    feature = "sprites"
 ))]
 mod table;
 pub(crate) use sidebar_style::parse_hex;
@@ -53,25 +59,13 @@ mod zen;
 
 pub use accent::Accent;
 pub use agents_placement::AgentsPlacement;
-pub use azure::AzureConfig;
-#[cfg(feature = "azure")]
-pub(crate) use azure::AzureFields;
 pub use backdrop::{Backdrop, Material};
-pub use boat::BoatConfig;
-#[cfg(feature = "boat")]
-pub(crate) use boat::BoatFields;
 pub use chat::ChatLayoutMode;
 pub use cloud::CloudConfig;
-pub use coder::CoderConfig;
-#[cfg(feature = "coder")]
-pub(crate) use coder::CoderFields;
 #[cfg(test)]
 use daemon::MAX_DAEMON_CONFIG_BYTES;
 pub(crate) use daemon::daemon_config_path;
 use daemon::{Daemon, daemon_settings};
-pub use daytona::DaytonaConfig;
-#[cfg(feature = "daytona")]
-pub(crate) use daytona::DaytonaFields;
 use devices::MAX_DEVICES;
 pub(crate) use devices::{DeviceSettings, KeybindingSource};
 pub(crate) use edit::{Layer, parse_value};
@@ -83,8 +77,29 @@ use fonts::FontSettings;
 #[cfg(any(test, feature = "integration-test"))]
 pub use fonts::symbol_fallbacks;
 pub use fonts::{FONT_SIZE_RANGE, FONT_SIZE_STEP, FontConfig};
+pub(crate) use github::MAX_ACCOUNTS;
 pub use github::{GitHubAccount, GitHubConfig};
-pub(crate) use github::{MAX_ACCOUNTS, valid_account_id, valid_owner};
+pub use herdr_remote::config::AzureConfig;
+#[cfg(feature = "azure")]
+pub(crate) use herdr_remote::config::AzureFields;
+pub use herdr_remote::config::BoatConfig;
+#[cfg(feature = "boat")]
+pub(crate) use herdr_remote::config::BoatFields;
+pub use herdr_remote::config::CoderConfig;
+#[cfg(feature = "coder")]
+pub(crate) use herdr_remote::config::CoderFields;
+pub use herdr_remote::config::ContainerConfig;
+#[cfg(feature = "container")]
+pub(crate) use herdr_remote::config::ContainerFields;
+pub use herdr_remote::config::DaytonaConfig;
+#[cfg(feature = "daytona")]
+pub(crate) use herdr_remote::config::DaytonaFields;
+pub use herdr_remote::config::OpenSandboxConfig;
+#[cfg(feature = "opensandbox")]
+pub(crate) use herdr_remote::config::OpenSandboxFields;
+pub use herdr_remote::config::SpritesConfig;
+#[cfg(feature = "sprites")]
+pub(crate) use herdr_remote::config::SpritesFields;
 pub use layout::{Density, Layout, LayoutMode, Style};
 pub(crate) use notifications::NotificationDelivery;
 pub use notifications::{
@@ -105,7 +120,7 @@ pub use status_bar::StatusBar;
 pub use status_icons::StatusIcons;
 use std::{
     collections::BTreeMap,
-    env, fs,
+    fs,
     io::ErrorKind,
     path::{Path, PathBuf},
 };
@@ -162,6 +177,8 @@ pub struct Config {
     /// Whether a workspace close shows its dialog when the check finds no
     /// unpublished work. Uncommitted or unpushed work always asks.
     pub confirm_close_workspace: bool,
+    /// How new containers on this computer's Docker or Podman engine are made.
+    pub container: ContainerConfig,
     /// How far the app's own marks and labels stand off its chrome.
     pub contrast: Contrast,
     pub daytona: DaytonaConfig,
@@ -198,6 +215,8 @@ pub struct Config {
     /// Where a link-modifier click on a printed file path opens it.
     pub open_files_in: FileTarget,
     pub open_links_in: LinkTarget,
+    /// The self-hosted OpenSandbox server whose sandboxes are devices.
+    pub opensandbox: OpenSandboxConfig,
     pub option_as_alt: OptionAsAlt,
     pub palette: crate::palette::PaletteConfig,
     /// The `[pane_keys]` table `keybindings` was built from, for the same
@@ -239,6 +258,8 @@ pub struct Config {
     pub smooth_scroll: bool,
     /// How loud agent notification sounds play.
     pub sound: SoundConfig,
+    /// The Fly Sprites account whose sprites are devices.
+    pub sprites: SpritesConfig,
     /// Which status bar items show, and how compactly.
     pub status_bar: StatusBar,
     /// The set agent status is drawn with.
@@ -362,6 +383,7 @@ impl Default for Config {
             confirm_close_pane: true,
             confirm_close_tab: true,
             confirm_close_workspace: true,
+            container: ContainerConfig::default(),
             contrast: Contrast::default(),
             daytona: DaytonaConfig::default(),
             devices: BTreeMap::new(),
@@ -381,6 +403,7 @@ impl Default for Config {
             notifications: NotificationConfig::default(),
             open_files_in: FileTarget::default(),
             open_links_in: LinkTarget::default(),
+            opensandbox: OpenSandboxConfig::default(),
             option_as_alt: OptionAsAlt::default(),
             palette: crate::palette::PaletteConfig::default(),
             pane_keys: PaneKeys::new(),
@@ -400,6 +423,7 @@ impl Default for Config {
             sidebar_style: SidebarStyle::default(),
             smooth_scroll: true,
             sound: SoundConfig::default(),
+            sprites: SpritesConfig::default(),
             status_bar: StatusBar::default(),
             status_icons: StatusIcons::default(),
             tab_layout: TabLayoutMode::default(),
@@ -439,6 +463,7 @@ struct Settings {
     confirm_close_pane: Option<bool>,
     confirm_close_tab: Option<bool>,
     confirm_close_workspace: Option<bool>,
+    container: ContainerConfig,
     contrast: Contrast,
     daytona: DaytonaConfig,
     devices: BTreeMap<String, DeviceSettings>,
@@ -453,6 +478,7 @@ struct Settings {
     notifications: NotificationSettings,
     open_files_in: FileTarget,
     open_links_in: LinkTarget,
+    opensandbox: OpenSandboxConfig,
     option_as_alt: OptionAsAlt,
     palette: crate::palette::PaletteConfig,
     pane_keys: PaneKeys,
@@ -470,6 +496,7 @@ struct Settings {
     sidebar: sidebar_style::SidebarSettings,
     smooth_scroll: Option<bool>,
     sound: SoundConfig,
+    sprites: SpritesConfig,
     status_bar: StatusBar,
     status_icons: Option<status_icons::SavedIcons>,
     tab_layout: TabLayoutMode,
@@ -486,17 +513,7 @@ struct Settings {
 
 /// Windows sets `USERPROFILE` rather than `HOME`, and upstream Herdr reads both.
 pub(crate) fn home() -> Result<PathBuf> {
-    let variable = |name| env::var_os(name).filter(|value: &std::ffi::OsString| !value.is_empty());
-    variable("HOME")
-        .or_else(|| {
-            if cfg!(windows) {
-                variable("USERPROFILE")
-            } else {
-                None
-            }
-        })
-        .map(PathBuf::from)
-        .ok_or(Error::MissingHome)
+    herdr_client::local_path::home_dir().ok_or(Error::MissingHome)
 }
 
 /// The directory holding this app's `herdr` configuration directory. Upstream
@@ -504,28 +521,29 @@ pub(crate) fn home() -> Result<PathBuf> {
 /// the daemon's, so the same root has to be used on both sides, including the
 /// login shell's `XDG_CONFIG_HOME` for a launch that did not inherit it.
 fn config_root() -> Result<PathBuf> {
-    match herdr_client::local_var("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
-        Some(value) => {
-            let path = PathBuf::from(value);
-            if !path.is_absolute() {
-                return Err(Error::RelativeConfigRoot);
-            }
-            Ok(path)
-        }
-        None => {
-            #[cfg(windows)]
-            if let Some(roaming) = env::var_os("APPDATA").filter(|value| !value.is_empty()) {
-                return Ok(PathBuf::from(roaming));
-            }
-            #[cfg(windows)]
-            return Ok(home()?.join("AppData").join("Roaming"));
-            #[cfg(not(windows))]
-            Ok(home()?.join(".config"))
-        }
-    }
+    use herdr_client::local_path::PathError;
+    herdr_client::local_path::config_root().map_err(|error| match error {
+        PathError::MissingHome => Error::MissingHome,
+        PathError::RelativeConfigRoot => Error::RelativeConfigRoot,
+    })
 }
 
 impl Config {
+    /// The provider tables `herdr-remote` reads, from a full load.
+    pub(crate) fn load_remote()
+    -> std::result::Result<herdr_remote::config::Sections, herdr_remote::config::LoadError> {
+        let config = Self::load()?;
+        Ok(herdr_remote::config::Sections {
+            azure: config.azure,
+            boat: config.boat,
+            coder: config.coder,
+            container: config.container,
+            daytona: config.daytona,
+            opensandbox: config.opensandbox,
+            sprites: config.sprites,
+        })
+    }
+
     pub fn path() -> Result<PathBuf> {
         Ok(config_root()?.join("herdr/config-gpui.toml"))
     }
@@ -741,9 +759,18 @@ impl Config {
         #[cfg(feature = "coder")]
         settings.coder.check()?;
         config.coder = settings.coder;
+        #[cfg(feature = "container")]
+        settings.container.settings()?;
+        config.container = settings.container;
         #[cfg(feature = "daytona")]
         settings.daytona.settings_with(|_| None)?;
         config.daytona = settings.daytona;
+        #[cfg(feature = "opensandbox")]
+        settings.opensandbox.settings_with(|_| None)?;
+        config.opensandbox = settings.opensandbox;
+        #[cfg(feature = "sprites")]
+        settings.sprites.settings_with(|_| None)?;
+        config.sprites = settings.sprites;
         config.features = settings.features;
         config.notification_overrides = settings.notifications;
         config.notifications = settings

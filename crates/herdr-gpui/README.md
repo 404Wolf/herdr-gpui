@@ -225,9 +225,12 @@ Remote hosts need an installed Herdr supporting the session commands and
 noninteractive SSH authentication. The GUI does not install or update it.
 
 **Add Device…** opens one dialog for every kind of device. A rail on its left
-lists SSH hosts (then WSL distributions on Windows) and, under **Cloud**, each cloud
-provider the build includes, shown by its logo: a green dot marks a provider
-whose account is configured, and **Set up** one that is not. Each entry keeps
+lists SSH hosts (then WSL distributions on Windows) and, under **Cloud**, the
+cloud providers in use here, shown by their logos with a green dot: those whose
+account is configured, and those with a saved device. **Add provider** follows
+while any provider is left out; its pane shows the rest as tiles, each opening
+that provider's Settings tab, and **Open Settings…** opens Cloud devices. Once
+set up, a provider joins the rail. Each entry keeps
 its own form, so switching between them keeps what was typed. **Ctrl-Tab** and
 **Ctrl-Shift-Tab** move through the rail from any field. In a narrow window the
 rail shows only the logos.
@@ -294,16 +297,21 @@ edits only the local catalog: the host's own Herdr keeps running. When the
 device has its own GitHub sign-in, the confirmation also offers to delete it,
 since its account panel goes away with the device. Local has no such menu.
 
-A cloud device's header (Azure, Boat, Coder, Daytona, or Railway) has a menu
-too: **Rename…** changes the name the sidebar shows, falling back to the
-machine's name when left empty; **Cloud device settings…** opens its provider
-under Settings > Cloud devices; and **Remove device…** removes it from this
-computer. For an Azure machine, a Boat or Daytona sandbox, or a Coder
-workspace, it deletes the machine at the provider by default, with **Remove
-from Herdr only** beside it; a Railway VM is left as it is and expires on its
-own. `herdr-gpui cloud destroy` asks the same for several devices at once,
-and `herdr-gpui cloud create` asks to make several (see `docs/cli.md`). Port forwards and server keybindings need a saved SSH
-host, so a cloud device does not offer them.
+A cloud device's header (Azure, Boat, Coder, Container, Daytona, OpenSandbox,
+Railway, or Sprites) has a menu too: **Rename…** changes the name the sidebar
+shows, falling back to the machine's name when left empty; **Cloud device
+settings…** opens its provider under Settings > Cloud devices; and **Remove
+device…** removes it from this computer. For an Azure machine, a Boat,
+Daytona, or OpenSandbox sandbox, a Coder workspace, a container, or a sprite,
+it deletes the machine at the provider by default, with **Remove from Herdr
+only** beside it; a Railway VM is left as it is and expires on its own. Before
+deleting, the dialog searches the machine's home directory for Git checkouts
+with changed or untracked files or commits on no remote; when it finds some,
+it names them and the button becomes **Delete anyway**, and a machine it
+cannot reach is said to be unchecked. `herdr-gpui cloud destroy` asks the same
+for several devices at once, and `herdr-gpui cloud create` asks to make
+several (see `docs/cli.md`). Port forwards and server keybindings need a saved
+SSH host, so a cloud device does not offer them.
 
 **Forward port…** in the same menu forwards one of the host's ports, such as a
 dev server an agent started there, to this computer. Each forward has its own
@@ -397,14 +405,15 @@ the app.
 ### Coder workspaces
 
 Settings > **Cloud devices** holds accounts with providers that create machines
-to use as devices: Coder, Daytona, and Railway. Coder's card edits the `[coder]`
-keys (see `config-gpui.example.toml`), saves the OAuth client secret to the
+to use as devices: Azure, Boat, Coder, Container, Daytona, OpenSandbox,
+Railway, and Sprites.
+Coder's card edits the `[coder]` keys (see `config-gpui.example.toml`), saves the OAuth client secret to the
 credential store rather than the config file, signs in and out, and lists the
 saved Coder devices with a Remove action. A secret set in the config file or
 `HERDR_CODER_OAUTH_CLIENT_SECRET` takes precedence over the saved one.
 
 Once Coder is configured, **Coder** in **Add Device…** shows its form; before
-that, it points to this Settings card. The form signs in with Coder's
+that, its **Add provider** tile opens this Settings card. The form signs in with Coder's
 OAuth2 provider (authorization code with PKCE; the browser returns to the
 configured loopback redirect), then lists the account's templates, their presets,
 and existing workspaces. It opens with the first template, its default preset,
@@ -498,8 +507,9 @@ credential store (`HERDR_DAYTONA_API_KEY` takes precedence). **Create sandbox**
 creates one with a generated name and, when the **Install Herdr** switch is on
 (the default), installs Herdr in it if it is missing; the device picker shows
 its progress and a toast says when it is ready. **Daytona** in **Add Device…**
-opens this tab. Removing a device leaves
-its sandbox in Daytona.
+(its **Add provider** tile until configured) opens this tab. Removing a device leaves
+its sandbox in Daytona. A dispatch can also make a sandbox, from the
+repository's [sandbox image](#sandbox-images) when it has one.
 
 Each connection starts a stopped sandbox, asks the API for a 10-minute SSH
 token for it, and runs Herdr's remote bridge through Daytona's SSH gateway.
@@ -511,10 +521,98 @@ and are unavailable on Windows. This provider is a proof of concept: the API
 path is covered by tests against a scripted server, but not yet exercised
 against a live Daytona account.
 
+### Containers (Docker or Podman)
+
+Settings > **Cloud devices** > **Container** makes containers on this
+computer's Docker or Podman engine and uses each as a device: a private Linux
+machine with its own Herdr daemon, so agents in it work on their own checkout
+(Teleport, Fan-out, and dispatch reach it like any other device) without seeing
+this computer's files or each other's. The card edits `[container]` (engine,
+image, CPUs, memory) and shows which engine is running. **Create container**
+pulls the image if needed, pins it to its digest, and creates a container with
+a generated name, its own `<name>-home` volume, an init process,
+`no-new-privileges`, and CPU, memory, and process limits; agents run as an
+unprivileged `herdr` user. It then installs Herdr when the **Install Herdr**
+switch is on (the default) and saves the device; a failure removes whatever
+was made. A connection starts a stopped container and runs Herdr's bridge
+through `docker exec` or `podman exec`. **Stop** in the card stops a container
+and keeps its files, and no window reconnects to it on its own until you
+reconnect the device yourself or restart the app. **Remove** there only
+forgets a device; deleting a container with its volume is **Remove device…**
+in its sidebar menu, which checks it for unpushed work first.
+
+`[container] auto_stop`, such as `30m`, stops a running container once none of
+its agents has worked or waited for input that long. A closed window does not
+count: agents keep working without one, so each minute the container's own
+Herdr lists its agents, and one working, waiting for input, or in a state
+Herdr cannot tell keeps the container, as does a list that cannot be read. A
+container the app has not watched since launch starts its timeout rather than
+stopping. Other processes, such as a dev server in a plain shell, do not
+count, so leave `auto_stop` unset where those matter. Its files stay in its
+volume; as with **Stop**, reconnecting the device starts it again.
+`[container] max_containers` (8 unless set) refuses a new container, from
+Settings or a dispatch, once that many are saved or being made. A container is
+never created over, or deleted from, a name the app did not label as that
+device's. A container the app made but has no device for, such as one left
+when the app quit while making it, is listed under **Not saved here** with
+**Add**, which starts it, installs Herdr when it is missing and the **Install
+Herdr** switch is on, and saves it as a device again.
+
+The image needs `curl` to install Herdr and `git` for checkouts; the default,
+`buildpack-deps:bookworm`, has both and common build tools. Containers share
+this computer's kernel: they keep honest agents apart, not hostile code, for
+which a VM provider such as Azure is the better choice. Containers are
+unavailable on Windows, like every cloud device. How sandboxes fit together, and which
+providers were evaluated, is in [docs/sandbox.md](../../docs/sandbox.md).
+
+### Fly Sprites (experimental)
+
+Settings > **Cloud devices** > **Sprites** holds a Fly Sprites account: the API
+URL (`https://api.sprites.dev` for Fly's service), saved to `[sprites]`, and an
+API token saved to the credential store (`HERDR_SPRITES_TOKEN` takes
+precedence, and `HERDR_SPRITES_API_URL` replaces the URL). **Create sprite**
+makes a sprite with a generated name, installs Herdr in it when the **Install
+Herdr** switch is on (the default), registers `herdr server` as the sprite's
+service so it is running again whenever the sprite wakes, and saves the device;
+a failure deletes the sprite again. Sprites sleep when idle and wake on the
+next command, keeping their files. Once a sprite device exists, Smart
+Dispatch's dialogs offer **New sprite** like **New container**.
+
+A sprite has no SSH server, so the app runs itself as a relay
+(`herdr-gpui __sprites-exec`) between Herdr's bridge and the API's exec stream,
+a WebSocket whose binary frames carry stdin, stdout, stderr, and the exit code
+unchanged. The token stays on this computer. Sprites are unavailable on
+Windows, like every cloud device. This provider is tested against a scripted
+exec stream and API replies, but not yet against a live Sprites account.
+
+### OpenSandbox (experimental)
+
+Settings > **Cloud devices** > **OpenSandbox** holds a self-hosted
+[OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) server: its
+URL (`https`, or `http` on this computer, such as a server started with
+`uvx opensandbox-server`), and the image, CPU, and memory new sandboxes get,
+saved to `[opensandbox]`, with the server's API key in the credential store
+(`HERDR_OPENSANDBOX_API_KEY` takes precedence, and `HERDR_OPENSANDBOX_API_URL`
+replaces the URL). **Create sandbox** makes a sandbox with no expiry whose
+main process keeps Herdr's server running once Herdr is installed, installs
+Herdr when the **Install Herdr** switch is on, and saves the device; a failure
+deletes the sandbox again. A paused sandbox is resumed on connect. Once one
+exists, Smart Dispatch's dialogs offer **New sandbox**.
+
+The app reaches a sandbox by running itself as a relay
+(`herdr-gpui __opensandbox-exec`) over execd's command stream. That stream has
+no way to end a command's input, which Teleport's scripts need, so the relay
+sends input in length-prefixed frames to a small shell wrapper that feeds the
+command through a FIFO and ends its input on an empty frame. Frames are read
+with GNU `head` where the image has it and with `dd`, a byte at a time and
+slower, where it does not. A relay that disappears stops sending heartbeats,
+and under bash the wrapper then ends the command's input. Tested against a
+local `opensandbox-server` on Docker; not against a Kubernetes deployment.
+
 ### Railway free VMs (experimental)
 
 Settings > **Cloud devices** > **Railway**, which **Railway** in **Add Device…**
-also opens, sets up the temporary Linux VM that
+(under **Add provider** until it has a device) also opens, sets up the temporary Linux VM that
 `ssh railway.new` gives out without an account. The SSH key is its identity, so
 pick an existing private key or generate one by name (an ed25519 key without a
 passphrase, in `~/.ssh` when that exists, otherwise in Herdr's state directory;
@@ -528,6 +626,53 @@ file. Removing a device keeps its key files. Connections run
 host key on first use (`railway_known_hosts`). The VM is temporary: Railway
 limits its lifetime and how many a network can create. Needs
 `ssh` and `ssh-keygen` on the PATH; unavailable on Windows.
+
+### Sandbox images
+
+A project can describe the machine its agents need, so a new container or
+Daytona sandbox for it starts with its tools and Herdr already installed.
+Commit a Dockerfile as `.herdr/sandbox/Dockerfile`, with that folder as its
+build context:
+
+```dockerfile
+FROM rust:1.90-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends ripgrep
+COPY setup.sh /usr/local/bin/project-setup
+```
+
+Without one, a dev container is used: `.devcontainer/devcontainer.json` (or
+`.devcontainer.json`) and the Dockerfile and context its `build` names, or the
+`image` it names. Only the image is built: dev container features, lifecycle
+scripts, and Docker Compose definitions are not.
+
+Herdr UI adds a last layer that installs Herdr in `/usr/local/bin` (the image
+needs `curl`), then gives the image back the user its last stage chose. Each
+image is filed by project, so clones and worktrees of one repository share
+it, and by provider, under a key hashed from everything the build reads: the
+Dockerfile, the files its `COPY` and `ADD` lines name, `.dockerignore`, and
+the platform. Files are read from the checkout's host with Git, so ignored
+files and symbolic links never leave it. While the key matches, new machines
+reuse the image; any change builds a new one, which replaces the old. A base
+image tag that moves upstream does not change the key: pin a digest, or use
+**Reset**.
+
+A dispatch to a new container or sandbox builds the image first when it is
+missing, and the dialog shows the build's steps. **Build sandbox images** in a
+workspace's menu builds ahead, for every provider you have a device from that
+holds images. Settings > **Cloud devices** > **Container** or **Daytona** lists
+each project's image there with its progress while it builds, **Log**,
+**Build now**, and **Reset**, which deletes the image so the next machine
+builds it afresh. Builds keep running when Settings closes.
+
+- **Containers** build with `docker build` or `podman build` on this
+  computer, tagged `herdr-<project>:<key>` and labelled
+  `dev.herdr-gpui.image`; only labelled images are ever deleted.
+- **Daytona** builds a snapshot named `herdr-<project>-<key>` on its own
+  runners. Uploading build context files is not supported yet, so a Daytona
+  image's Dockerfile cannot `COPY` or `ADD` files from the project.
+
+`herdr-gpui cloud images` lists the images, and `herdr-gpui cloud images
+build [PROVIDER]` builds the current repository's.
 
 ### Setup scripts for new cloud devices
 
@@ -1993,6 +2138,20 @@ Setups of several such worktrees wait their turn; one whose host is not shown
 within two minutes is given up on, with a warning. A
 new workspace opens the repository's main checkout on that host.
 
+Once you have a container device (see [Containers](#containers-docker-or-podman)),
+a Daytona sandbox, a sprite, or an OpenSandbox sandbox, the dialogs also offer
+a **New container**, **New sprite**, or **New sandbox** tile, even with one
+host connected. A container or Daytona sandbox starts from the repository's
+[sandbox image](#sandbox-images) when it has a recipe, building it first if
+needed.
+Creating with it makes a container with the `[container]` settings and Herdr
+installed, starts Herdr's server in it, saves it as a device, then creates the
+checkout there as above, cloning the repository first; the dialog shows each
+step. The container stays a device if a later step fails, so you can retry on
+it or remove it. It runs the cloud setup script once it is shown, like one made
+in Settings. Fan-out lanes are not offered new containers yet: a new container
+has no signed-in agent to start.
+
 The fan-out dialog offers Spread agents across hosts. Each lane then goes to
 the host with the most room left, a lane counting as a core, and its host chip
 opens every host, best first, to move that lane. Each other host is set up once
@@ -2618,7 +2777,9 @@ come back after a restart; closing a workspace in Herdr removes its tabs.
 ### Annotating A Page
 
 **Annotate** in a browser tab's toolbar lets you pin notes to a page and send
-them to the agent that opened it, so it can change the page.
+them to the agent that opened it, so it can change the page. Bind
+`toggle_annotate` under `[keybindings]` to start or stop annotating the page
+in view from the keyboard; it has no default key.
 
 - Hover to outline an element and click to pick it, or select text. For
   anything else, draw a region: turn on **Region** in the notes panel and
@@ -4449,7 +4610,7 @@ the same store under their own service names. A secret larger than Credential
 Manager's 2,560-byte limit is refused with an error rather than truncated. There
 is no private-file store here, so `allow_plaintext_credentials` changes nothing,
 and `GH_TOKEN` / `GITHUB_TOKEN` still take precedence for the main account. The
-`Cred*` calls are the only `unsafe` code involved (`github/credential_manager.rs`):
+`Cred*` calls are the only `unsafe` code involved (`crates/herdr-credentials/src/credential_manager.rs`):
 neither the standard library nor the workspace's dependencies wrap them, and the
 maintained wrapper crates would add a second `windows-sys` version.
 

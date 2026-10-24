@@ -124,6 +124,7 @@ pub(crate) fn create(creation: &Creation, report: &Report) -> crate::Result<()> 
     let device = provision(&creation.spec, &|| false, &|step| {
         report.step(DeviceState::Creating, step.text());
     })
+    .map_err(crate::Error::from)
     .inspect_err(|error| {
         if let Some(device) = saved_before(provider, error) {
             report.created(&target(&device));
@@ -183,7 +184,10 @@ fn saved_before(provider: CloudProvider, error: &crate::Error) -> Option<SavedDe
 #[cfg(feature = "boat")]
 fn saved_id(error: &crate::Error) -> Option<&str> {
     match error {
-        crate::Error::Boat(crate::boat::Error::Setup { id, .. }) => Some(id),
+        crate::Error::Provider(cloud::ProviderError::Boat(crate::boat::Error::Setup {
+            id,
+            ..
+        })) => Some(id),
         _ => None,
     }
 }

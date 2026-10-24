@@ -60,6 +60,9 @@ pub(crate) struct MenuState {
     /// record it rather than open a Settings window, which reads the disk.
     #[cfg(all(test, feature = "cloud"))]
     pub(super) settings_opened: Option<crate::cloud::CloudProvider>,
+    /// Whether Add provider asked for Settings > Cloud devices itself.
+    #[cfg(all(test, feature = "cloud"))]
+    pub(super) cloud_settings_opened: bool,
     pub(super) wsl_setup: Option<super::devices::WslSetup>,
     /// The saved distribution the removal confirmation names.
     pub(super) wsl_remove: Option<String>,
@@ -140,6 +143,8 @@ pub(crate) struct MenuState {
     pub(crate) github_hosts: std::collections::HashMap<String, crate::github::Auth>,
     /// One sign-in per `[github] accounts` entry, in config order.
     pub(crate) github_accounts: Vec<github::AdditionalAccount>,
+    /// Every signed-in account's picture, by GitHub's avatar address.
+    pub(crate) github_avatars: crate::avatars::ProfileAvatars,
     /// The additional account the GitHub page shows, by ID; `None` shows
     /// the device's own account.
     pub(super) github_account: Option<String>,
@@ -321,6 +326,8 @@ impl MenuState {
             device_setup: None,
             #[cfg(all(test, feature = "cloud"))]
             settings_opened: None,
+            #[cfg(all(test, feature = "cloud"))]
+            cloud_settings_opened: false,
             wsl_setup: None,
             wsl_remove: None,
             session_edit: None,
@@ -374,6 +381,7 @@ impl MenuState {
             github: Default::default(),
             github_hosts: Default::default(),
             github_accounts: Vec::new(),
+            github_avatars: Default::default(),
             github_account: None,
             github_adding: None,
             github_token: None,

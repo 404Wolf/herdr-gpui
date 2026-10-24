@@ -401,6 +401,16 @@ impl HerdrWindow {
                 self.open_git_menu(anchor, window, cx);
                 return;
             }
+            Command::ToggleAnnotate => {
+                #[cfg(any(target_os = "macos", windows))]
+                self.toggle_shown_annotating(window, cx);
+                #[cfg(not(any(target_os = "macos", windows)))]
+                self.show_flash(
+                    Flash::warning("Annotating pages needs macOS or Windows"),
+                    cx,
+                );
+                return;
+            }
             Command::SplitEditor => {
                 self.split_active_group(window, cx);
                 return;
@@ -796,10 +806,10 @@ impl HerdrWindow {
             .debug_selector(|| "agent-skill-offer".into())
             .child(div().p(px(8.)).child("Let agents show you pages?"))
             .child(div().p(px(8.)).child(
-                "Agents in your panes can open pages and HTML drafts in browser tabs here, and read the notes you pin on them. A skill teaches them how.",
+                "Agents in your panes can open pages and HTML drafts in browser tabs here, read the notes you pin on them, and write automations for you to approve. Skills teach them how.",
             ))
             .child(div().p(px(8.)).text_color(rgb(theme.muted)).child(
-                "Install writes herdr-gpui-browser/SKILL.md into ~/.claude/skills and ~/.agents/skills, whichever exist, and keeps it up to date. A skill of that name you wrote yourself is left alone. Remove it any time in Settings.",
+                "Install writes herdr-gpui-browser/SKILL.md and herdr-automations/SKILL.md into ~/.claude/skills and ~/.agents/skills, whichever exist, and keeps them up to date. A skill of either name you wrote yourself is left alone. Remove them any time in Settings.",
             ))
             .child(
                 div()

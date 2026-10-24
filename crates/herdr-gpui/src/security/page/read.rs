@@ -157,7 +157,7 @@ pub(super) fn alert(
         cancelled,
         &mut cooldown,
     )
-    .map_err(|error| Error::Github(Box::new(error)))?;
+    .map_err(|error| Error::Github(Box::new(error.into())))?;
     parse_alert(&response)
 }
 
@@ -177,7 +177,7 @@ pub(super) fn report(
     let token = tokens.for_owner(owner);
     let path = format!("/repos/{name}/security-advisories/{advisory}");
     let node: AdvisoryNode = crate::github::rest("security", token, &path, TIMEOUT, &cancelled)
-        .map_err(|error| Error::Github(Box::new(error)))?;
+        .map_err(|error| Error::Github(Box::new(error.into())))?;
     let count = node.comments;
     let mut page = node.into_page();
     if count != Some(0) {

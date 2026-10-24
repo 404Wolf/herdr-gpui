@@ -13,6 +13,7 @@
 mod cards;
 mod classic;
 mod compact;
+mod outline;
 mod pills;
 mod underline;
 
@@ -280,6 +281,7 @@ pub(crate) fn layout_for(mode: TabLayoutMode) -> &'static dyn TabLayout {
         TabLayoutMode::Cards => &cards::Cards,
         TabLayoutMode::Classic => &classic::Classic,
         TabLayoutMode::Compact => &compact::Compact,
+        TabLayoutMode::Outline => &outline::Outline,
         TabLayoutMode::Pills => &pills::Pills,
         TabLayoutMode::Underline => &underline::Underline,
     }

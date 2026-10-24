@@ -13,6 +13,9 @@ pub(crate) enum Page {
     #[cfg(feature = "coder")]
     AddCoder,
     AddDevice,
+    /// Add Device's tiles of the cloud providers its rail leaves out.
+    #[cfg(feature = "cloud")]
+    AddProvider,
     /// Picking a WSL distribution to save as a device.
     AddWsl,
     /// The one-time offer to install the agent skill for browser tabs.
@@ -20,6 +23,8 @@ pub(crate) enum Page {
     /// The Linux window's application menu, from the native menu definitions.
     Application,
     AppUpdate,
+    /// Approving an automation script, or enabling automations on a host.
+    Automation,
     /// Reviewing, then following, a move of the pane menu's pane to another
     /// device.
     CarryPane,
@@ -134,6 +139,9 @@ pub(crate) enum WorkspaceMenuAction {
     Script(crate::worktree_scripts::ScriptKind),
     /// Show the repository's issues in the activity bar.
     Orchestrator,
+    /// Build the repository's sandbox images ahead of a dispatch.
+    #[cfg(feature = "cloud")]
+    SandboxImages,
 }
 
 impl Page {
@@ -200,6 +208,8 @@ impl WorkspaceMenuAction {
             Self::Checkpoints => "icons/refresh.svg",
             Self::FanOut => "icons/fan-out.svg",
             Self::Orchestrator => "icons/github.svg",
+            #[cfg(feature = "cloud")]
+            Self::SandboxImages => "icons/cloud/container.svg",
             Self::Script(crate::worktree_scripts::ScriptKind::Setup) => "icons/refresh.svg",
             Self::Script(_) => "icons/play.svg",
             Self::PullRequest => return None,

@@ -605,19 +605,13 @@ fn mark_slot(selector: String, width: f32, height: f32, color: u32, text: &str) 
 
 fn agent_icon(selector: String, size: f32, color: u32, path: &'static str) -> Div {
     div()
+        .debug_selector(move || selector)
         .flex_none()
         .size(px(size))
         .flex()
         .items_center()
         .justify_center()
-        .child(
-            svg()
-                .debug_selector(move || selector)
-                .path(path)
-                .size(px(size))
-                .flex_none()
-                .text_color(rgb(color)),
-        )
+        .child(crate::icons::icon(path, size, color))
 }
 
 fn dot_slot(selector: String, width: f32, height: f32, mark: Div) -> Div {

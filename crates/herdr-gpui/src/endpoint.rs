@@ -284,6 +284,9 @@ impl Endpoint {
     }
 
     fn connect(&mut self, options: ConnectOptions, active: bool) {
+        if self.suspended() {
+            return;
+        }
         self.stop();
         self.detached = false;
         self.initial_surface = active;
@@ -402,9 +405,19 @@ impl Endpoint {
         Duration::from_millis(500u64 << self.attempts.min(8)).min(MAX_RETRY_DELAY)
     }
 
+    fn suspended(&self) -> bool {
+        #[cfg(feature = "container")]
+        if crate::container::lifecycle::suspended(&self.connection.target) {
+            return true;
+        }
+        false
+    }
+
     pub fn status(&self) -> &'static str {
         if !self.enabled {
             "disabled"
+        } else if self.suspended() {
+            "stopped"
         } else if self.detached {
             "detached"
         } else if let Some(mismatch) = &self.version_mismatch {
@@ -478,6 +491,8 @@ impl HerdrWindow {
         }
         self.install_warning_shown = false;
         self.version_notice_shown = false;
+        #[cfg(feature = "container")]
+        crate::container::lifecycle::resume(&self.endpoints[index].connection.target);
         self.endpoints[index].attempts = 0;
         self.endpoints[index].connect(self.options, index == 0);
         self.reset_selected(cx);

@@ -384,13 +384,7 @@ impl HerdrWindow {
             .hover(|style| style.bg(rgb(theme.active)))
             .when(shelf != Shelf::Active, |row| row.opacity(0.7))
             .child(div().w(px(12.)).flex().justify_center().child(glyph))
-            .child(
-                svg()
-                    .path(icon)
-                    .size(px(15.))
-                    .flex_none()
-                    .text_color(rgb(theme.foreground)),
-            )
+            .child(crate::icons::icon(icon, 15., theme.foreground))
             .child(
                 div()
                     .debug_selector(move || title_selector.clone())

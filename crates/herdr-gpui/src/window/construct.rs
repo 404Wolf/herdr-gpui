@@ -142,6 +142,7 @@ impl HerdrWindow {
             app_update_notes: Default::default(),
             app_update_notes_scroll: ScrollHandle::new(),
             arrival: None,
+            automations: Default::default(),
             avatars: None,
             backdrop: Default::default(),
             bell: crate::bell::Bell::default(),
@@ -245,6 +246,8 @@ impl HerdrWindow {
             resize_mode: false,
             review_files_width: crate::panel_resize::REVIEW_FILES,
             reviews: Default::default(),
+            #[cfg(feature = "cloud")]
+            sandbox_image_builds: Default::default(),
             scrollbar_drag: None,
             security: Default::default(),
             security_search,

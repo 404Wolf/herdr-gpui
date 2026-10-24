@@ -109,6 +109,7 @@ impl HerdrWindow {
             }
             if endpoint.enabled
                 && !endpoint.detached
+                && !endpoint.suspended()
                 && endpoint.connection.handle.is_none()
                 && Instant::now() >= endpoint.retry_at
             {

@@ -16,8 +16,14 @@ cloud = []
 azure = ["cloud"]
 boat = ["cloud"]
 coder = ["cloud"]
+container = ["cloud"]
 daytona = ["cloud"]
+opensandbox = ["cloud"]
 railway = ["cloud"]
+sprites = ["cloud"]
+# `login_env::probe_for_tests`, for the app's tests that start from a bare
+# desktop environment.
+test-support = []
 
 [dependencies]
 base64.workspace            = true
@@ -46,3 +52,7 @@ windows-sys = { features = [
   "Win32_System_IO",
   "Win32_System_Threading",
 ], workspace = true }
+
+# `login_env`'s tests bind a socket that never listens.
+[target.'cfg(unix)'.dev-dependencies]
+nix.workspace = true

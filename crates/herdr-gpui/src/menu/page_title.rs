@@ -29,10 +29,13 @@ impl Page {
             #[cfg(feature = "coder")]
             Self::AddCoder => "Add Coder workspace",
             Self::AddDevice => "Add device",
+            #[cfg(feature = "cloud")]
+            Self::AddProvider => "Add cloud provider",
             Self::AddWsl => "Add WSL distribution",
             Self::AgentSkill => "Install the agent skill",
             Self::Application => "Menu",
             Self::AppUpdate | Self::Update => "Update",
+            Self::Automation => "Automations",
             Self::CarryPane => "Move pane to another device",
             Self::Checkpoints => "Checkpoints",
             Self::CodeSearch => "Go to symbol or file",
