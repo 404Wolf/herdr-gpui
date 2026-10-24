@@ -157,9 +157,10 @@ keep_selection_after_copy = true
 layout = "normal"
 # How tab strips draw their tabs: "classic" (even cells divided by a rule),
 # "pills" (rounded pills led by the agent's logo, the status after the title),
-# "underline" (flat titles, a bar under the chosen one), "cards" (browser-like,
-# the chosen tab joined to its terminal), or "compact" (icons only, the chosen
-# tab named). View > Tab Layout lists them all.
+# "outline" (bare titles, the chosen one in an outlined pill with its close
+# button), "underline" (flat titles, a bar under the chosen one), "cards"
+# (browser-like, the chosen tab joined to its terminal), or "compact" (icons
+# only, the chosen tab named). View > Tab Layout lists them all.
 tab_layout = "classic"
 
 [palette]
