@@ -1,0 +1,29 @@
+[package]
+edition.workspace      = true
+license.workspace      = true
+name                   = "herdr-gitea"
+publish.workspace      = true
+rust-version.workspace = true
+version.workspace      = true
+
+[lints]
+workspace = true
+
+[dependencies]
+herdr-client.workspace = true
+percent-encoding.workspace = true
+secrecy.workspace      = true
+serde.workspace        = true
+serde_json.workspace   = true
+thiserror.workspace    = true
+tracing.workspace      = true
+ureq.workspace         = true
+url.workspace          = true
+zeroize.workspace      = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[features]
+# A local Gitea stand-in for the other crates' tests.
+test-support = []
