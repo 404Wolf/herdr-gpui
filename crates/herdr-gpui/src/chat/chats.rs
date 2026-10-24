@@ -75,6 +75,8 @@ pub(crate) struct ChatPane {
     pub(crate) history: herdr_chat_protocol::assist::History,
     /// Bumped for each connection, so nothing of an earlier one is applied.
     generation: u64,
+    /// How the list follows a streaming reply.
+    pub(crate) glide: super::glide::Glide,
     link: Option<(u64, Link)>,
     pub(crate) list: ListState,
     list_keys: Vec<(EntryId, u64)>,
@@ -99,8 +101,10 @@ pub(crate) struct ChatPane {
 
 impl ChatPane {
     fn new(target: Target) -> Self {
-        let list = ListState::new(0, ListAlignment::Bottom, px(OVERDRAW));
-        list.set_follow_mode(gpui::FollowMode::Tail);
+        // `glide` follows the end rather than the list's own tail mode,
+        // which jumps there with each chunk.
+        let list = ListState::new(0, ListAlignment::Top, px(OVERDRAW));
+        let glide = super::glide::Glide::new(&list);
         Self {
             attachments: Vec::new(),
             completion: 0,
@@ -110,6 +114,7 @@ impl ChatPane {
             expanded: HashSet::new(),
             failures: 0,
             generation: 0,
+            glide,
             history: Default::default(),
             link: None,
             list,
@@ -236,14 +241,18 @@ impl ChatPane {
             self.list_snapshots = self.session.snapshots();
             self.prepared.clear();
             self.list.reset(keys.len());
+            self.glide.reset(&self.list);
         } else {
             match list::splices(&self.list_keys, &keys) {
                 Some(splices) => {
                     for Splice { range, count } in splices {
-                        self.list.splice(range, count);
+                        super::glide::splice_in_place(&self.list, range, count);
                     }
                 }
-                None => self.list.reset(keys.len()),
+                None => {
+                    self.list.reset(keys.len());
+                    self.glide.reset(&self.list);
+                }
             }
         }
         self.prepared.update(self.session.transcript(), &keys);
@@ -253,7 +262,7 @@ impl ChatPane {
     /// Redraws one entry, such as a thought folding open.
     pub(crate) fn remeasure(&self, id: EntryId) {
         if let Some(index) = self.list_keys.iter().position(|(entry, _)| *entry == id) {
-            self.list.splice(index..index + 1, 1);
+            super::glide::splice_in_place(&self.list, index..index + 1, 1);
         }
     }
 }
@@ -301,6 +310,17 @@ impl Chats {
             pane.list.remeasure();
         }
         true
+    }
+
+    /// Moves each list a frame's step toward its end while it follows a
+    /// reply, or with `smooth` off all the way there, and says whether to
+    /// draw another frame.
+    pub(crate) fn glide(&mut self, now: Instant, smooth: bool) -> bool {
+        let mut more = false;
+        for pane in &mut self.panes {
+            more |= pane.glide.tick(&pane.list, now, smooth);
+        }
+        more
     }
 
     /// Attaches to `targets` and detaches from every other pane, then
