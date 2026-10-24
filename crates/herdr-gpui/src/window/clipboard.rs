@@ -150,6 +150,9 @@ fn read_with(
 
 // Exercise the Unix process policy on macOS as well, without reading a real clipboard.
 #[cfg(any(target_os = "linux", all(test, unix)))]
+mod linux_media;
+
+#[cfg(any(target_os = "linux", all(test, unix)))]
 mod linux {
     use super::*;
     use std::{
@@ -162,18 +165,25 @@ mod linux {
 
     #[cfg(target_os = "linux")]
     pub(super) fn read(image_only: bool) -> Result<Option<ClipboardItem>> {
-        read_commands(
-            image_only,
-            std::env::var_os("WAYLAND_DISPLAY").is_some(),
-            std::env::var_os("DISPLAY").is_some(),
-            |program, args, limit, deadline| {
-                output(
-                    herdr_client::new_command(program).args(args),
-                    limit,
-                    deadline,
-                )
-            },
-        )
+        let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
+        let x11 = std::env::var_os("DISPLAY").is_some();
+        let mut run = |program: &str, args: &[&str], limit, deadline| {
+            output(
+                herdr_client::new_command(program).args(args),
+                limit,
+                deadline,
+            )
+        };
+        // Copied files and video, which text and image reads would miss.
+        let exists = |path: &std::path::Path| path.is_file();
+        if !image_only
+            && let Some(item) =
+                linux_media::read(wayland, x11, &mut run, &exists, &mut linux_media::spill)?
+        {
+            return Ok(Some(item));
+        }
+        let item = read_commands(image_only, wayland, x11, run)?;
+        Ok(item.map(|item| linux_media::text_paths(item, &exists)))
     }
 
     fn read_commands(

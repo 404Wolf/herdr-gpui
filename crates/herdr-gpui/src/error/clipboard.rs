@@ -16,6 +16,8 @@ pub enum ClipboardError {
     Process(#[source] io::Error),
     #[error("Clipboard content exceeds the {limit}-byte limit.")]
     Size { limit: usize },
+    #[error("Could not save the copied video for pasting.")]
+    Spill(#[source] io::Error),
     #[error("Clipboard acquisition timed out.")]
     Timeout,
     #[error("Remote clipboard acquisition is not supported on this platform.")]

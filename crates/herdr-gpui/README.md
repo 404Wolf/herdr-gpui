@@ -2395,7 +2395,13 @@ file or a log. The existing format priority, revision check, and paste ordering
 are preserved. AppKit may still materialize data inside the reader before its
 size can be checked. Linux uses `wl-paste` (Wayland) or
 `xclip` (X11) for explicit Ctrl-V image acquisition, with bounded output and a
-three-second acquisition deadline. Ordinary Linux paste retains GPUI's native
+three-second acquisition deadline. Before text, the Linux reader lists the
+offered types: a `text/uri-list` of local files (a file manager's or capture
+tool's copy, which `wl-copy` also offers as text) pastes those files as a
+drop would, and copied video bytes (`video/mp4`, `video/webm`, and similar)
+are saved under `$XDG_RUNTIME_DIR/herdr-gpui/paste` and pasted as that file.
+Plain text that is only `file://` URIs of existing local images or videos
+pastes the same way; any other text stays text. Ordinary Linux paste retains GPUI's native
 clipboard reader and needs no helper; that existing synchronous API can still
 materialize image data on the UI thread. Install the matching utility for
 background image paste. Regular-file reads use bounded
