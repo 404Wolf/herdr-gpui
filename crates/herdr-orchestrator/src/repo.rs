@@ -3,7 +3,7 @@
 //! issues and pull requests the orchestrator lists.
 
 use super::{Error, Provider, Repository, Result, SourceKey, error::script};
-use herdr_client::{ConnectTarget, shell_quote};
+use herdr_client::{ConnectTarget, ScriptLimits, shell_quote};
 use herdr_remote::teleport::Host;
 use std::{
     path::{Path, PathBuf},
@@ -97,19 +97,51 @@ pub fn detect_opening(
     if host.is_local() {
         return Ok((detect_local(target, checkout)?, Extras::default()));
     }
-    let output = host
-        .capture(&opening_script(checkout, programs), cancelled)
-        .map_err(script("Reading the repository"))?;
-    let output = String::from_utf8(output).map_err(|_| Error::Output {
-        operation: "Reading the repository",
-    })?;
-    Ok((parse(target, &output)?, extras(&output, programs)))
+    let limits = ScriptLimits {
+        output: Host::QUERY_OUTPUT,
+        idle: Host::QUERY_IDLE,
+    };
+    let mut output = Vec::new();
+    let ran = host.stream(
+        &opening_script(checkout, programs),
+        &[][..],
+        &mut output,
+        limits,
+        cancelled,
+    );
+    opened(target, ran.map(drop), &output, programs)
 }
 
-/// [`detection_script`] that also prints which `programs` the host has,
-/// after a `programs` line, and the branches named here, each on a `branch`
-/// line after a `branches` line. Each marker is printed only when its step
-/// worked, and neither step can fail the detection.
+/// What [`opening_script`] printed in `output` before it ended as `ran`.
+pub fn opened(
+    target: &ConnectTarget,
+    ran: herdr_client::Result<()>,
+    output: &[u8],
+    programs: &[&str],
+) -> Result<(RepoInfo, Extras)> {
+    let output = std::str::from_utf8(output).map_err(|_| Error::Output {
+        operation: "Reading the repository",
+    })?;
+    match ran {
+        Ok(_) => {}
+        // The repository was read before an optional step stalled: keep it,
+        // and leave what that step reads to be read on its own.
+        Err(herdr_client::Error::ScriptTimeout) if output.lines().any(|line| line == "found") => {
+            tracing::debug!(
+                category = "orchestrator",
+                "A step after reading the repository stalled; reading it on its own"
+            );
+        }
+        Err(error) => return Err(script("Reading the repository")(error)),
+    }
+    Ok((parse(target, output)?, extras(output, programs)))
+}
+
+/// [`detection_script`] that prints a `found` line once the repository is
+/// printed, then which `programs` the host has, followed by a `programs`
+/// line, and the branches named here, each on a `branch` line, followed by
+/// a `branches` line. Each marker follows a step that worked, so a step cut
+/// short reads as not read, and neither step can fail the detection.
 pub fn opening_script(checkout: &str, programs: &[&str]) -> String {
     let query = super::naming::branch_query()
         .iter()
@@ -121,16 +153,13 @@ pub fn opening_script(checkout: &str, programs: &[&str]) -> String {
         checkout,
         &format!(
             r#"after() {{
-    if ( {probe} ); then printf 'programs
-'; fi
+    printf 'found\n'
+    if ( {probe} ); then printf 'programs\n'; fi
     if [ -n "$1" ] && refs=$(git -C "$1" {query}); then
-        printf 'branches
-'
-        printf '%s
-' "$refs" | while IFS= read -r ref; do
-            [ -z "$ref" ] || printf 'branch	%s
-' "$ref"
+        printf '%s\n' "$refs" | while IFS= read -r ref; do
+            [ -z "$ref" ] || printf 'branch\t%s\n' "$ref"
         done
+        printf 'branches\n'
     fi
 }}
 "#

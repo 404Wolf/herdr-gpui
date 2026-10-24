@@ -46,9 +46,11 @@ const LIST: [&str; 5] = ["list", "--json", "--all", "--limit", "0"];
 const BLOCKED: [&str; 2] = ["blocked", "--json"];
 
 /// What [`sync`] runs on an SSH host in one connection: `bd`'s options read
-/// as [`flags_from_help`] reads them, then the list and the blocked beads,
-/// printed with a `separator` line between them. Any step's failure ends
-/// the script with its status, as each one's own script would.
+/// as [`flags_from_help`] reads them, printed on a `flags` line, then the
+/// list and the blocked beads as `bd` prints them, with a `separator` line
+/// between them. Each step prints as soon as it ends, so each has the idle
+/// limit to itself, as in its own script. Any step's failure ends the
+/// script with its status, as its own script would.
 pub fn sync_script(root: &str, separator: &str) -> String {
     let words = |args: &[&str]| {
         args.iter()
@@ -66,9 +68,10 @@ flags=
 for flag in {flags}; do
     case $words in *" $flag "*) flags="$flags $flag" ;; esac
 done
-list=$(bd $flags {list}) || exit $?
-blocked=$(bd $flags {blocked}) || exit $?
-printf '%s\n%s\n%s\n' "$list" {separator} "$blocked"
+printf 'flags%s\n' "$flags"
+bd $flags {list} || exit $?
+printf '\n%s\n' {separator}
+bd $flags {blocked} || exit $?
 "#,
         prefix = prefix(root)
     )
@@ -76,13 +79,22 @@ printf '%s\n%s\n%s\n' "$list" {separator} "$blocked"
 
 /// The list and the blocked beads in [`sync_script`]'s `output`.
 pub fn split(output: &[u8], separator: &str) -> Result<(Vec<u8>, Vec<u8>)> {
+    let unexpected = || Error::Output {
+        operation: "Reading Beads",
+    };
+    let output = output
+        .strip_prefix(b"flags")
+        .and_then(|rest| {
+            rest.iter()
+                .position(|&byte| byte == b'\n')
+                .map(|end| &rest[end..])
+        })
+        .ok_or_else(unexpected)?;
     let line = format!("\n{separator}\n");
     let at = output
         .windows(line.len())
         .position(|window| window == line.as_bytes())
-        .ok_or(Error::Output {
-            operation: "Reading Beads",
-        })?;
+        .ok_or_else(unexpected)?;
     Ok((output[..at].to_vec(), output[at + line.len()..].to_vec()))
 }
 

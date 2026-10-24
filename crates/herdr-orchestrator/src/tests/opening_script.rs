@@ -4,14 +4,23 @@
 use super::*;
 use crate::repo::{self, Extras};
 use crate::test_executable;
-use herdr_client::ConnectTarget;
-use herdr_remote::teleport::Host;
+use herdr_client::{ConnectTarget, ScriptLimits, run_script_command};
 use std::{path::Path, process::Command, sync::atomic::AtomicBool, time::Duration};
 
 const PROGRAMS: [&str; 2] = ["claude", "codex"];
 
 /// Runs the opening script for `checkout` with `bin` first on `PATH`.
 fn open(dir: &Path, checkout: &Path, bin: &Path) -> Result<(repo::RepoInfo, Extras)> {
+    open_within(dir, checkout, bin, Duration::from_secs(10))
+}
+
+/// [`open`], ended once it prints nothing for `idle`.
+fn open_within(
+    dir: &Path,
+    checkout: &Path,
+    bin: &Path,
+    idle: Duration,
+) -> Result<(repo::RepoInfo, Extras)> {
     let mut command = Command::new("/bin/sh");
     command
         .args([
@@ -23,17 +32,65 @@ fn open(dir: &Path, checkout: &Path, bin: &Path) -> Result<(repo::RepoInfo, Extr
         .env("HOME", dir)
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", dir.join("gitconfig"));
-    let output = Host::capture_command(command, Duration::from_secs(10), &AtomicBool::new(false))
-        .map_err(error::script("Reading the repository"))?;
-    let output = String::from_utf8(output).unwrap();
+    let limits = ScriptLimits {
+        output: 1 << 20,
+        idle,
+    };
+    let mut output = Vec::new();
+    let ran = run_script_command(
+        command,
+        std::io::empty(),
+        &mut output,
+        limits,
+        &AtomicBool::new(false),
+    );
     let target = ConnectTarget::Ssh {
         target: "fixture".into(),
         session: "default".into(),
     };
-    Ok((
-        repo::parse(&target, &output)?,
-        repo::extras(&output, &PROGRAMS),
-    ))
+    repo::opened(&target, ran.map(drop), &output, &PROGRAMS)
+}
+
+/// Everything the opening script prints for `checkout`, run to its end.
+fn printed(dir: &Path, checkout: &Path, bin: &Path) -> Vec<u8> {
+    let mut command = Command::new("/bin/sh");
+    command
+        .args([
+            "-c",
+            &repo::opening_script(&checkout.to_string_lossy(), &PROGRAMS),
+        ])
+        .env_clear()
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        .env("HOME", dir)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", dir.join("gitconfig"));
+    let limits = ScriptLimits {
+        output: 1 << 20,
+        idle: Duration::from_secs(10),
+    };
+    let mut output = Vec::new();
+    run_script_command(
+        command,
+        std::io::empty(),
+        &mut output,
+        limits,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+    output
+}
+
+/// A `git` that runs the real one, except that `stalled`, one of its
+/// subcommands, prints nothing for a long while first.
+fn stalling_git(bin: &Path, stalled: &str) {
+    test_executable::write(
+        bin.join("git"),
+        format!(
+            "#!/bin/sh\nfor arg; do [ \"$arg\" = {stalled} ] && sleep 30; done\nexec /usr/bin/git \"$@\"\n"
+        ),
+        0o755,
+    )
+    .unwrap();
 }
 
 fn git(checkout: &Path, args: &[&str]) {
@@ -135,4 +192,59 @@ fn a_folder_outside_git_and_beads_is_still_skipped() {
         open(dir.path(), &checkout, &bin),
         Err(Error::NotARepository)
     ));
+}
+
+#[test]
+fn a_step_that_stalls_after_the_repository_keeps_it() {
+    let (dir, checkout, bin) = fixture();
+    git(&checkout, &["init", "-q"]);
+    let output = printed(dir.path(), &checkout, &bin);
+    let target = ConnectTarget::Ssh {
+        target: "fixture".into(),
+        session: "default".into(),
+    };
+    // The script marks the repository read.
+    let found = output
+        .windows(b"\nfound\n".len())
+        .position(|window| window == b"\nfound\n")
+        .unwrap()
+        + 1;
+    // Cut where a stalled probe would have left it.
+    let timeout = || Err(herdr_client::Error::ScriptTimeout);
+    let (info, extras) = repo::opened(
+        &target,
+        timeout(),
+        &output[..found + b"found\n".len()],
+        &PROGRAMS,
+    )
+    .unwrap();
+    assert!(info.remote.is_none());
+    assert_eq!(extras, Extras::default(), "both are read on their own");
+    // Cut before the repository was read: nothing to keep.
+    let error = repo::opened(&target, timeout(), &output[..found], &PROGRAMS).unwrap_err();
+    assert!(matches!(
+        error,
+        Error::Script {
+            source: herdr_client::Error::ScriptTimeout,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn a_detection_that_stalls_is_a_timeout() {
+    let (dir, checkout, bin) = fixture();
+    git(&checkout, &["init", "-q"]);
+    stalling_git(&bin, "rev-parse");
+    let error = open_within(dir.path(), &checkout, &bin, Duration::from_secs(1)).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            Error::Script {
+                source: herdr_client::Error::ScriptTimeout,
+                ..
+            }
+        ),
+        "{error:?}"
+    );
 }

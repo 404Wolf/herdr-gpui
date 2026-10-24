@@ -52,6 +52,8 @@ pub struct Host {
 impl Host {
     /// How long a query may go without output.
     pub const QUERY_IDLE: Duration = QUERY_IDLE;
+    /// Most a query may print.
+    pub const QUERY_OUTPUT: u64 = QUERY_OUTPUT;
 
     /// A host for `target`. Custom sockets are refused: the CLI could not be
     /// pointed at them without also trusting that socket's daemon identity.

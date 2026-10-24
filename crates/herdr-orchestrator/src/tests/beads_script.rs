@@ -12,6 +12,11 @@ const SEPARATOR: &str = "0123456789ab";
 /// Runs the sync script in a folder whose `bd` is `fake`, and returns its
 /// output and the arguments each `bd` call had.
 fn sync_with(fake: &str) -> (herdr_client::Result<Vec<u8>>, String) {
+    sync_within(fake, Duration::from_secs(10))
+}
+
+/// [`sync_with`], ended once it prints nothing for `idle`.
+fn sync_within(fake: &str, idle: Duration) -> (herdr_client::Result<Vec<u8>>, String) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("project with 'quotes'");
     std::fs::create_dir_all(root.join(".beads")).unwrap();
@@ -25,7 +30,7 @@ fn sync_with(fake: &str) -> (herdr_client::Result<Vec<u8>>, String) {
         .env_clear()
         .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
         .env("CALLS", &calls);
-    let output = Host::capture_command(command, Duration::from_secs(10), &AtomicBool::new(false));
+    let output = Host::capture_command(command, idle, &AtomicBool::new(false));
     (output, std::fs::read_to_string(calls).unwrap_or_default())
 }
 
@@ -42,8 +47,11 @@ esac
 fn one_script_reads_the_options_the_list_and_the_blockers() {
     let (output, calls) = sync_with(FAKE);
     let (list, blocked) = split(&output.unwrap(), SEPARATOR).unwrap();
-    assert_eq!(list, br#"[{"id":"hg-1","title":"One","status":"open"}]"#);
-    assert_eq!(blocked, b"{\"issues\":[]}\n");
+    assert_eq!(
+        list.trim_ascii(),
+        br#"[{"id":"hg-1","title":"One","status":"open"}]"#
+    );
+    assert_eq!(blocked.trim_ascii(), br#"{"issues":[]}"#);
     let calls: Vec<_> = calls
         .lines()
         .map(|line| line.split('|').next().unwrap())
@@ -79,7 +87,30 @@ fn a_failing_step_ends_the_script_with_its_status() {
 #[test]
 fn output_without_the_separator_is_unexpected() {
     assert!(matches!(
-        split(b"[]\n{}\n", SEPARATOR),
+        split(b"flags\n[]\n{}\n", SEPARATOR),
+        Err(Error::Output { .. })
+    ));
+}
+
+#[test]
+fn each_step_has_the_idle_limit_to_itself() {
+    // Quiet for most of the limit each, and for longer than it together:
+    // each step's output ends the quiet before the next one starts.
+    let fake = FAKE
+        .replace("*list*) printf", "*list*) sleep 2.5; printf")
+        .replace("*blocked*) printf", "*blocked*) sleep 2.5; printf");
+    assert_ne!(fake, FAKE);
+    let (output, _) = sync_within(&fake, Duration::from_secs(4));
+    let (list, blocked) = split(&output.unwrap(), SEPARATOR).unwrap();
+    let items = crate::beads::parse(&beads(), &list, &blocked).unwrap();
+    assert_eq!(items.len(), 1);
+}
+
+#[test]
+fn output_without_the_flags_line_is_unexpected() {
+    let output = format!("[]\n{SEPARATOR}\n{{}}\n");
+    assert!(matches!(
+        split(output.as_bytes(), SEPARATOR),
         Err(Error::Output { .. })
     ));
 }
