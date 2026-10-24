@@ -105,6 +105,7 @@ impl Render for HerdrWindow {
         self.sync_device_themes(cx);
         let fill = self.fill();
         let ground = self.ground();
+        let popup_chrome = PopupChrome::new(&self.theme);
         self.viewport_width = f32::from(window.viewport_size().width);
         let font = self.config.terminal.font();
         // Parked groups paint with the same face as the window's terminal.
@@ -614,11 +615,21 @@ impl Render for HerdrWindow {
                                             cell_width,
                                             cell_height,
                                         );
+                                        popup_chrome.paint(
+                                            bounds,
+                                            popup_grid(
+                                                &popup.frame,
+                                                bounds.origin + offset,
+                                                cell_width,
+                                                cell_height,
+                                            ),
+                                            window,
+                                        );
                                         painter.borrow_mut().paint_frame(
                                             &popup.frame,
                                             bounds.origin + offset,
                                             None,
-                                            Ground::Opaque,
+                                            Ground::Backdrop,
                                             cell_width,
                                             &font,
                                             &popup_highlights,

@@ -11,8 +11,8 @@ pub(crate) use selection::{MAX_SELECTION_BYTES, Selection};
 
 use crate::{config::Theme, keymap::PaneKey};
 use gpui::{
-    Bounds, KeyDownEvent, Keystroke, Modifiers, Pixels, Point, ScrollDelta, ScrollWheelEvent,
-    TouchPhase, point, px, size,
+    BorderStyle, Bounds, BoxShadow, KeyDownEvent, Keystroke, Modifiers, Pixels, Point, ScrollDelta,
+    ScrollWheelEvent, TouchPhase, Window, fill, hsla, point, px, quad, rgb, rgba, size,
 };
 use herdr_client::protocol::{
     CellData, ClientKeyCode, ClientKeyKind, ClientMouseGeometry, ClientMouseKind,
@@ -57,6 +57,78 @@ pub(crate) fn cursor_offset(
         px(cursor.x as f32 * cell_width),
         px(cursor.y as f32 * cell_height),
     )
+}
+
+/// Where a popup's cells are drawn, from the origin `popup_origin` placed.
+pub(crate) fn popup_grid(
+    popup: &FrameData,
+    origin: Point<Pixels>,
+    cell_width: f32,
+    cell_height: f32,
+) -> Bounds<Pixels> {
+    Bounds::new(
+        origin,
+        size(
+            px(f32::from(popup.width) * cell_width),
+            px(f32::from(popup.height) * cell_height),
+        ),
+    )
+}
+
+/// How far a popup's panel reaches past its grid on every side.
+const POPUP_PADDING: f32 = 8.;
+
+/// The native dialog look behind a daemon popup (`[[keys.command]]` popups
+/// and plugin popups): the window dimmed beneath it, then a raised panel in
+/// the dialogs' surface color, border, corners and shadow. The panel sits
+/// around the grid, never under its cells' offsets, so `popup_origin` and
+/// every hit test stay on the grid. Paint the popup over it with
+/// `Ground::Backdrop`, so cells on the default background show the panel.
+#[derive(Clone, Copy)]
+pub(crate) struct PopupChrome {
+    background: u32,
+    surface: u32,
+    border: u32,
+}
+
+impl PopupChrome {
+    pub(crate) fn new(theme: &Theme) -> Self {
+        Self {
+            background: theme.background,
+            surface: theme.surface,
+            border: theme.active,
+        }
+    }
+
+    /// Dims `area`, the terminal the popup covers, and paints the panel
+    /// around `grid`, the popup's cells.
+    pub(crate) fn paint(self, area: Bounds<Pixels>, grid: Bounds<Pixels>, window: &mut Window) {
+        // The same veil a native dialog lays over the window.
+        window.paint_quad(fill(area, rgba((self.background << 8) | 0xb0)));
+        let panel = grid.dilate(px(POPUP_PADDING));
+        let corners = px(crate::config::corners::PANEL).into();
+        // `shadow_lg`, as the dialogs and pickers lift themselves.
+        window.paint_drop_shadows(
+            panel,
+            corners,
+            &[
+                BoxShadow::new(px(0.), px(10.), hsla(0., 0., 0., 0.1))
+                    .blur_radius(px(15.))
+                    .spread_radius(px(-3.)),
+                BoxShadow::new(px(0.), px(4.), hsla(0., 0., 0., 0.1))
+                    .blur_radius(px(6.))
+                    .spread_radius(px(-4.)),
+            ],
+        );
+        window.paint_quad(quad(
+            panel,
+            corners,
+            rgb(self.surface),
+            px(1.),
+            rgb(self.border),
+            BorderStyle::Solid,
+        ));
+    }
 }
 
 pub(crate) fn input_cursor_bounds(

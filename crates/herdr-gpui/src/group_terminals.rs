@@ -20,7 +20,7 @@ use crate::{
     connection::ConnectionBridge,
     presentation::{Picture, Presentation},
     state::{ConnectionStatus, LiveState},
-    terminal::{popup_origin, viewport},
+    terminal::{PopupChrome, popup_grid, popup_origin, viewport},
     terminal_painter::{Ground, ImageTarget, PlacedImages},
     window::reasserts,
 };
@@ -581,6 +581,7 @@ impl HerdrWindow {
         let painter = self.painter.clone();
         let cell_width = self.cell_width;
         let ground = self.ground();
+        let popup_chrome = PopupChrome::new(&self.theme);
         self.config
             .terminal_padding
             .pad(div())
@@ -635,11 +636,21 @@ impl HerdrWindow {
                                     cell_width,
                                     cell_height,
                                 );
+                                popup_chrome.paint(
+                                    bounds,
+                                    popup_grid(
+                                        &popup.frame,
+                                        bounds.origin + offset,
+                                        cell_width,
+                                        cell_height,
+                                    ),
+                                    window,
+                                );
                                 painter.borrow_mut().paint_frame(
                                     &popup.frame,
                                     bounds.origin + offset,
                                     None,
-                                    Ground::Opaque,
+                                    Ground::Backdrop,
                                     cell_width,
                                     &font,
                                     &[],

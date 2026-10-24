@@ -7,12 +7,12 @@ use herdr_client::protocol::FrameData;
 /// What a frame's cells on the theme's default background paint.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Ground {
-    /// The theme's background, as in an opaque window, and always for a
-    /// popup, whose cells must hide the pane beneath.
+    /// The theme's background, as in an opaque window.
     #[default]
     Opaque,
     /// Nothing: the window's translucent backdrop is already that color, and
-    /// painting it again would stack its alpha.
+    /// painting it again would stack its alpha. A popup paints this way too,
+    /// over the opaque panel `PopupChrome` draws to hide the pane beneath.
     Backdrop,
 }
 
