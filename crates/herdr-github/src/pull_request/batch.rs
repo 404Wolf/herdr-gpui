@@ -78,6 +78,8 @@ pub(super) fn fetch_batch(
     cancelled: impl Fn() -> bool,
 ) -> Batch {
     let mut batch = Batch::default();
+    // Checkouts on a configured Gitea host are answered there.
+    let inputs = super::gitea::claim(inputs, origin, &mut batch, &cancelled);
     let targets = prepare(
         inputs,
         Instant::now() + PREPARE,

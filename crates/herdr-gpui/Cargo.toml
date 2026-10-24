@@ -33,6 +33,7 @@ herdr-control-protocol.workspace = true
 herdr-credentials.workspace    = true
 herdr-diagnostics.workspace    = true
 herdr-github.workspace         = true
+herdr-gitea.workspace          = true
 herdr-orchestrator.workspace   = true
 herdr-remote.workspace         = true
 herdr-updater.workspace        = true
@@ -78,6 +79,7 @@ herdr-remote = { features = ["test-support"], workspace = true }
 herdr-control-protocol = { features = ["test-support"], workspace = true }
 herdr-diagnostics = { features = ["test-support"], workspace = true }
 herdr-github = { features = ["test-support"], workspace = true }
+herdr-gitea = { features = ["test-support"], workspace = true }
 herdr-orchestrator = { features = ["test-support"], workspace = true }
 herdr-usage = { features = ["test-support"], workspace = true }
 herdr-vcs = { features = ["test-support"], workspace = true }

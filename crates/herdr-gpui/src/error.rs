@@ -322,6 +322,10 @@ pub enum Error {
     GitPullRequestTitle,
     #[error("Git worker stopped. Retry the operation.")]
     GitWorker,
+    #[error(transparent)]
+    Gitea(#[from] herdr_gitea::Error),
+    #[error(transparent)]
+    GiteaConfig(#[from] herdr_gitea::config::ConfigError),
     #[error("Oversized GIF, WebP, and animated PNG images cannot be resized safely.")]
     ImageAnimationResize,
     #[error("Could not decode the oversized image.")]

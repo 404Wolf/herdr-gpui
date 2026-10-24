@@ -45,6 +45,7 @@ impl From<GitHub> for Error {
             GitHub::GitHubToken => Self::GitHubToken,
             GitHub::GitHubTokenType => Self::GitHubTokenType,
             GitHub::GitHubWorker(value) => Self::GitHubWorker(value),
+            GitHub::Gitea(value) => Self::Gitea(value),
             GitHub::InvalidClientId(value) => Self::InvalidClientId(value),
             GitHub::Path(PathError::MissingHome) => Self::MissingHome,
             GitHub::Path(PathError::RelativeConfigRoot) => Self::RelativeConfigRoot,

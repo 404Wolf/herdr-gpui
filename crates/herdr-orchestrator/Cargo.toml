@@ -14,6 +14,7 @@ chrono.workspace       = true
 gix.workspace          = true
 herdr-client.workspace = true
 herdr-github.workspace = true
+herdr-gitea.workspace = true
 herdr-remote.workspace = true
 rusqlite.workspace     = true
 secrecy.workspace      = true
@@ -32,6 +33,7 @@ rustix.workspace = true
 [dev-dependencies]
 herdr-client = { features = ["test-support"], workspace = true }
 herdr-github = { features = ["test-support"], workspace = true }
+herdr-gitea = { features = ["test-support"], workspace = true }
 herdr-remote = { features = ["test-support"], workspace = true }
 tempfile.workspace = true
 
