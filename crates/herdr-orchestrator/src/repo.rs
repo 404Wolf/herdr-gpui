@@ -354,7 +354,9 @@ pub fn parse_remote_url(value: &str) -> Result<SourceKey> {
         return Err(invalid());
     }
     let host = host.to_ascii_lowercase();
-    let provider = if host.contains("gitlab") {
+    let provider = if super::gitea::is_host(&host) {
+        Provider::Gitea
+    } else if host.contains("gitlab") {
         Provider::Gitlab
     } else if host.contains("github") || host.contains("ghe") {
         Provider::Github

@@ -625,7 +625,7 @@ pub(super) fn source_mark(look: &Look, provider: Provider) -> AnyElement {
     let icon = match provider {
         Provider::Github => "icons/github.svg",
         Provider::Beads => "icons/beads.svg",
-        Provider::Gitlab => "icons/git-branch.svg",
+        Provider::Gitlab | Provider::Gitea => "icons/git-branch.svg",
     };
     look.icon(icon, 12., look.theme.muted).into_any_element()
 }

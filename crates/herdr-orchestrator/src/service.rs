@@ -862,6 +862,7 @@ impl Worker {
                     count,
                 })
             }
+            Provider::Gitea => self.sync_gitea(key),
             Provider::Gitlab => {
                 let token = self
                     .gitlab_token
@@ -927,6 +928,7 @@ fn spawn_action(
         .spawn(move || action(&AtomicBool::new(false)))
 }
 
+mod gitea_sync;
 #[cfg(test)]
 mod tests;
 
@@ -964,6 +966,7 @@ pub fn sources(info: &RepoInfo) -> Vec<(SourceKey, bool)> {
         let supported = match remote.source.provider {
             Provider::Github => remote.source.host == "github.com",
             Provider::Gitlab => true,
+            Provider::Gitea => super::gitea::repo(&remote.source).is_some(),
             Provider::Beads => false,
         };
         (remote.source.clone(), supported)

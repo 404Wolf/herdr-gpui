@@ -74,6 +74,8 @@ pub enum Error {
     Github(#[source] Box<herdr_github::Error>),
     #[error(transparent)]
     Gitlab(#[from] super::gitlab::Error),
+    #[error(transparent)]
+    Gitea(#[from] herdr_gitea::Error),
     #[error("Cancelled")]
     Cancelled,
     #[error("Could not start the orchestrator's worker: {0}")]

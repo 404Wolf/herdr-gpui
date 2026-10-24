@@ -14,6 +14,8 @@ pub enum Provider {
     Github,
     Gitlab,
     Beads,
+    /// A Gitea or Forgejo host configured under `[gitea]`.
+    Gitea,
 }
 
 impl Provider {
@@ -22,6 +24,7 @@ impl Provider {
             Self::Github => "github",
             Self::Gitlab => "gitlab",
             Self::Beads => "beads",
+            Self::Gitea => "gitea",
         }
     }
 }
@@ -34,6 +37,7 @@ impl FromStr for Provider {
             "github" => Ok(Self::Github),
             "gitlab" => Ok(Self::Gitlab),
             "beads" => Ok(Self::Beads),
+            "gitea" => Ok(Self::Gitea),
             other => Err(Error::Provider(other.to_owned())),
         }
     }
