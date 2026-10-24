@@ -420,7 +420,7 @@ impl HerdrWindow {
         #[cfg(feature = "cloud")]
         let deletion = host.deletion().filter(|_| host.destroy);
         let store = self.menu.github_hosts.get(&host.id).map_or_else(
-            || crate::github::Store::select(&self.config),
+            || crate::github::select_store(&self.config.github),
             |auth| auth.store(),
         );
         let HostMenu {
@@ -440,7 +440,7 @@ impl HerdrWindow {
                     let _claim = setup::claim_saved(&target, &session)?;
                     setup::remove(&profile)?;
                     Ok::<_, crate::Error>(match Account::host(&profile).filter(|_| forget) {
-                        Some(account) => crate::github::forget(store, &account),
+                        Some(account) => crate::github::forget(store, &account).map_err(Into::into),
                         None => Ok(()),
                     })
                 }

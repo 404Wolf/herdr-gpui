@@ -2772,7 +2772,9 @@ come back after a restart; closing a workspace in Herdr removes its tabs.
 ### Annotating A Page
 
 **Annotate** in a browser tab's toolbar lets you pin notes to a page and send
-them to the agent that opened it, so it can change the page.
+them to the agent that opened it, so it can change the page. Bind
+`toggle_annotate` under `[keybindings]` to start or stop annotating the page
+in view from the keyboard; it has no default key.
 
 - Hover to outline an element and click to pick it, or select text. For
   anything else, draw a region: turn on **Region** in the notes panel and
@@ -4603,7 +4605,7 @@ the same store under their own service names. A secret larger than Credential
 Manager's 2,560-byte limit is refused with an error rather than truncated. There
 is no private-file store here, so `allow_plaintext_credentials` changes nothing,
 and `GH_TOKEN` / `GITHUB_TOKEN` still take precedence for the main account. The
-`Cred*` calls are the only `unsafe` code involved (`github/credential_manager.rs`):
+`Cred*` calls are the only `unsafe` code involved (`crates/herdr-credentials/src/credential_manager.rs`):
 neither the standard library nor the workspace's dependencies wrap them, and the
 maintained wrapper crates would add a second `windows-sys` version.
 

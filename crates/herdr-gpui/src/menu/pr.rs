@@ -166,7 +166,7 @@ impl HerdrWindow {
                     branch: branch.clone(),
                 })
             }
-            _ => workspace_input(workspace, origin),
+            _ => Ok(workspace_input(workspace, origin)?),
         }
     }
 
@@ -343,7 +343,10 @@ impl HerdrWindow {
                             .flex()
                             .items_center()
                             .gap(px(8.))
-                            .child(pill(value.lifecycle().into(), value.color(theme)))
+                            .child(pill(
+                                value.lifecycle().into(),
+                                crate::pull_request::color(value, theme),
+                            ))
                             .child(
                                 div()
                                     .id("workspace-pr-title")

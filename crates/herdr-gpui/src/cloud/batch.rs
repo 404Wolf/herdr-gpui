@@ -7,7 +7,7 @@
 pub(crate) mod create;
 pub(crate) mod destroy;
 
-use super::CloudProvider;
+use crate::cloud::CloudProvider;
 use crate::control::batch::{BatchInfo, BatchKind, DeviceInfo, DeviceState, Phase};
 use std::{
     collections::VecDeque,
@@ -28,7 +28,7 @@ const HANDOFF: Duration = Duration::from_secs(30);
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
-    Exec(#[from] super::exec::Error),
+    Exec(#[from] crate::cloud::exec::Error),
     #[error("{0} machines cannot be created from the command line.")]
     NotOffered(&'static str),
     #[error("{}", setup_message(*.code, .output))]

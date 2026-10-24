@@ -298,12 +298,8 @@ pub(super) fn mark(row: Div, state: RowState, colors: (Rgba, Rgba), theme: &Them
     }
 }
 
-pub(super) fn icon(path: impl Into<SharedString>, size: f32, color: u32) -> Svg {
-    svg()
-        .path(path)
-        .size(px(size))
-        .flex_none()
-        .text_color(rgb(color))
+pub(super) fn icon(path: impl Into<SharedString>, size: f32, color: u32) -> AnyElement {
+    crate::icons::icon(path, size, color)
 }
 
 /// The status dot, or the pulse that replaces it while a checkout is deleted.

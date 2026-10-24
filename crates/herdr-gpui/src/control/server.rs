@@ -315,7 +315,7 @@ fn keep_undelivered(request: super::protocol::FeedbackRequest, text: String, cx:
 /// Starts answering requests. A second app instance leaves the first one's
 /// socket alone and simply does not listen.
 pub(crate) fn install(cx: &mut App) {
-    let server = match socket_path().and_then(|path| socket::Server::bind(&path)) {
+    let server = match socket_path().and_then(|path| Ok(socket::Server::bind(&path)?)) {
         Ok(server) => server,
         Err(error) => {
             tracing::warn!(%error, "Control socket unavailable");

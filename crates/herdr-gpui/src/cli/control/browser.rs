@@ -1,4 +1,6 @@
 //! `browser ...`: page tabs, and the notes the user sends from them.
+pub use herdr_control_protocol::Placement;
+
 use super::{Args, CliError, ZoomChange};
 use std::ffi::OsString;
 
@@ -47,17 +49,6 @@ pub enum BrowserCommand {
         id: u64,
         change: ZoomChange,
     },
-}
-
-/// Where `browser open` puts a new page.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Placement {
-    /// A tab of the group in use, which takes the window's view.
-    #[default]
-    Tab,
-    /// A group beside the caller's terminal, so both stay in view.
-    Beside,
 }
 
 fn utf8(value: OsString) -> Result<String, CliError> {

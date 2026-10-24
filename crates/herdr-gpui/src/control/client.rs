@@ -1,6 +1,7 @@
 //! The caller's side: build a request from the command line, send it to
 //! the running app (or read the app's files), and print the answer as text
 //! or, with `--json`, as one JSON document.
+use crate::control::ControlError;
 mod app;
 mod browser;
 mod chat;
@@ -142,7 +143,10 @@ impl Context {
         });
         match send(&request)? {
             Response::Error { code, message } => {
-                Err(crate::Error::ControlRejected { code, message })
+                Err(crate::Error::Control(ControlError::Rejected {
+                    code,
+                    message,
+                }))
             }
             response => Ok(response),
         }
@@ -173,12 +177,12 @@ fn caller_daemon() -> crate::Result<Option<String>> {
 /// Notes must never fall back to pane-only routing, even in the default session.
 fn notes_daemon() -> crate::Result<String> {
     let path = herdr_client::ConnectTarget::Local.socket_path()?;
-    path.into_os_string()
-        .into_string()
-        .map_err(|_| crate::Error::ControlRejected {
+    path.into_os_string().into_string().map_err(|_| {
+        crate::Error::Control(ControlError::Rejected {
             code: ErrorCode::InvalidRequest,
             message: "The daemon socket must be UTF-8 for control requests".into(),
         })
+    })
 }
 
 pub(super) fn env_id(name: &str) -> Option<String> {
@@ -195,11 +199,11 @@ fn caller(workspace: Option<String>) -> crate::Result<Caller> {
 }
 
 fn send(request: &Request) -> crate::Result<Response> {
-    socket::call(&socket_path()?, request)
+    Ok(socket::call(&socket_path()?, request)?)
 }
 
 /// Hands a `herdr-gpui://` link to the running app; what it did, for a
-/// person. [`crate::Error::ControlUnavailable`] means no app is running.
+/// person. [`ControlError::Unavailable`](ControlError::Unavailable) means no app is running.
 pub(crate) fn send_link(link: &crate::link::Link) -> crate::Result<String> {
     hand_off(&Request::Link(Call {
         caller: Caller::default(),
@@ -208,7 +212,7 @@ pub(crate) fn send_link(link: &crate::link::Link) -> crate::Result<String> {
 }
 
 /// Brings the running app's window forward, for a plain launch while it
-/// runs; what it did, for a person. [`crate::Error::ControlUnavailable`]
+/// runs; what it did, for a person. [`ControlError::Unavailable`](ControlError::Unavailable)
 /// means no app is running.
 #[cfg(windows)]
 pub(crate) fn send_focus() -> crate::Result<String> {
@@ -252,7 +256,9 @@ fn allow_foreground() {
 
 fn rejected(response: Response) -> crate::Error {
     match response {
-        Response::Error { code, message } => crate::Error::ControlRejected { code, message },
+        Response::Error { code, message } => {
+            crate::Error::Control(ControlError::Rejected { code, message })
+        }
         response => unexpected(response),
     }
 }
@@ -260,7 +266,7 @@ fn rejected(response: Response) -> crate::Error {
 /// An answer of another kind than asked for: an app of another version.
 pub(crate) fn unexpected(response: Response) -> crate::Error {
     tracing::debug!(?response, "Unexpected control response");
-    crate::Error::ControlNoResponse
+    crate::Error::Control(ControlError::NoResponse)
 }
 
 /// Sends the user's notes to the agent in this process's Herdr pane, through
@@ -269,10 +275,10 @@ pub(crate) fn unexpected(response: Response) -> crate::Error {
 pub(crate) fn send_notes(text: String) -> crate::Result<super::NotesTo> {
     let mut caller = caller(None)?;
     if caller.pane_id.is_none() {
-        return Err(crate::Error::ControlRejected {
+        return Err(crate::Error::Control(ControlError::Rejected {
             code: ErrorCode::InvalidRequest,
             message: "Not running in a Herdr pane".into(),
-        });
+        }));
     }
     caller.daemon_socket = Some(notes_daemon()?);
     match send(&Request::Notes(super::protocol::NotesRequest {
@@ -288,8 +294,8 @@ pub(crate) fn send_notes(text: String) -> crate::Result<super::NotesTo> {
 pub(crate) fn status(error: &crate::Error) -> u8 {
     match error {
         crate::Error::InvalidBrowserUrl | crate::Error::InvalidLocalPage => exit::USAGE,
-        crate::Error::ControlUnavailable { .. } => exit::NOT_RUNNING,
-        crate::Error::ControlRejected { code, .. } => match code {
+        crate::Error::Control(ControlError::Unavailable { .. }) => exit::NOT_RUNNING,
+        crate::Error::Control(ControlError::Rejected { code, .. }) => match code {
             ErrorCode::InvalidUrl => exit::USAGE,
             ErrorCode::NotFound | ErrorCode::WorkspaceNotFound | ErrorCode::NoWindow => {
                 exit::NOT_FOUND

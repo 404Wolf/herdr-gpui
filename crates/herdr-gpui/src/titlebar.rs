@@ -66,7 +66,7 @@ impl HerdrWindow {
         let pr = self.git_pull_request().map(|pr| {
             (
                 format!("#{}", pr.number),
-                pr.color(theme),
+                crate::pull_request::color(&pr, theme),
                 pr.additions,
                 pr.deletions,
                 pr.url.clone(),
@@ -300,7 +300,9 @@ impl HerdrWindow {
     /// What ends the bar: git actions, the account, and the window controls
     /// a client-decorated window draws.
     fn titlebar_end(&self, window: &Window, cx: &mut Context<Self>) -> Div {
-        let image = self.pr_profile().and_then(|p| p.avatar.clone());
+        let image = self
+            .pr_profile()
+            .and_then(|profile| self.menu.github_avatars.get(&profile.avatar_url));
         let attention = self.github_needs_attention();
         div()
             .flex()
@@ -553,6 +555,9 @@ mod tests {
         size,
     };
 
+    /// A signed-in fixture account's picture address, shown without loading it.
+    pub(super) const AVATAR_URL: &str = "https://avatars.githubusercontent.com/u/1";
+
     /// The fixture window with Herdr's tab bar at the bottom, so it keeps the
     /// full-width header these tests measure.
     pub(crate) fn header_window(
@@ -605,10 +610,14 @@ mod tests {
                         };
                         view.menu.github.failed = state == 1;
                         if let Some(profile) = view.menu.github.profile.as_mut() {
-                            profile.avatar = Some(std::sync::Arc::new(gpui::Image::from_bytes(
-                                gpui::ImageFormat::Svg,
-                                include_bytes!("../../../assets/icons/user.svg").to_vec(),
-                            )));
+                            profile.avatar_url = AVATAR_URL.into();
+                            view.menu.github_avatars.show(
+                                AVATAR_URL,
+                                std::sync::Arc::new(gpui::Image::from_bytes(
+                                    gpui::ImageFormat::Svg,
+                                    include_bytes!("../../../assets/icons/user.svg").to_vec(),
+                                )),
+                            );
                         }
                         cx.notify();
                     });
@@ -747,10 +756,14 @@ mod native_chrome_tests {
                     view.update(cx, |view, cx| {
                         view.menu.github = crate::github::Auth::connected_fixture();
                         if let Some(profile) = view.menu.github.profile.as_mut() {
-                            profile.avatar = Some(std::sync::Arc::new(gpui::Image::from_bytes(
-                                gpui::ImageFormat::Svg,
-                                include_bytes!("../../../assets/icons/user.svg").to_vec(),
-                            )));
+                            profile.avatar_url = super::tests::AVATAR_URL.into();
+                            view.menu.github_avatars.show(
+                                super::tests::AVATAR_URL,
+                                std::sync::Arc::new(gpui::Image::from_bytes(
+                                    gpui::ImageFormat::Svg,
+                                    include_bytes!("../../../assets/icons/user.svg").to_vec(),
+                                )),
+                            );
                         }
                         cx.notify();
                     })

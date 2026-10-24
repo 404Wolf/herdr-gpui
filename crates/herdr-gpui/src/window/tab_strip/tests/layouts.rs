@@ -186,6 +186,26 @@ fn pills_show_close_buttons_while_the_strip_takes_tab_focus(cx: &mut TestAppCont
     assert!(cx.debug_bounds("close-tab-w1:t1").is_some());
 }
 
+/// A working pill's spinner draws in the mark layer, which never sees the
+/// pill's hover opacity, so the layer leaves it out while the pointer is
+/// over the pill rather than spinning it under the close button.
+#[gpui::test]
+fn the_pointer_over_a_pill_hides_its_moving_status_under_the_close_button(cx: &mut TestAppContext) {
+    let (_view, cx) = strip(cx, TabLayoutMode::Pills);
+    let spinning = |cx: &mut VisualTestContext| cx.debug_bounds("status-orbit").is_some();
+    assert!(spinning(cx), "the working pill spins in the layer");
+    let status = cx.debug_bounds("tab-status-w1:t1").unwrap();
+    let point_at = |position: Point<Pixels>, cx: &mut VisualTestContext| {
+        cx.simulate_mouse_move(position, None, Modifiers::default());
+        cx.run_until_parked();
+        cx.update(|window, cx| crate::sidebar::layout_tests::full_draw(window, cx).clear(cx));
+    };
+    point_at(status.center(), cx);
+    assert!(!spinning(cx), "the close button shows alone");
+    point_at(point(px(1500.), px(400.)), cx);
+    assert!(spinning(cx), "it spins again once the pointer leaves");
+}
+
 #[gpui::test]
 fn a_tab_layout_read_from_the_config_file_moves_the_menu_check(cx: &mut TestAppContext) {
     let (view, cx) = strip(cx, TabLayoutMode::Classic);

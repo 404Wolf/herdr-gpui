@@ -211,7 +211,7 @@ fn alerts(name: &str, tokens: &Tokens, cancelled: &AtomicBool) -> Result<Alerts,
         || cancelled.load(Ordering::Relaxed),
         &mut cooldown,
     )
-    .map_err(|error| Error::Github(Box::new(error)))?;
+    .map_err(|error| Error::Github(Box::new(error.into())))?;
     let alerts = parse(&response)?;
     if !matches!(alerts, Alerts::Open { total: 0, .. }) {
         return Ok(alerts);
@@ -223,7 +223,7 @@ fn alerts(name: &str, tokens: &Tokens, cancelled: &AtomicBool) -> Result<Alerts,
         TIMEOUT,
         || cancelled.load(Ordering::Relaxed),
     );
-    Ok(checked(alerts, check.map(drop)))
+    Ok(checked(alerts, check.map(drop).map_err(Into::into)))
 }
 
 /// An empty listing as REST's `check` of it says: whatever else goes wrong

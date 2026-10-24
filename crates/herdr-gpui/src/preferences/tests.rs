@@ -1,8 +1,7 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
+use std::env;
 use std::time::{Duration, Instant};
-
-mod state_directory;
 
 struct TestDirectory(PathBuf);
 

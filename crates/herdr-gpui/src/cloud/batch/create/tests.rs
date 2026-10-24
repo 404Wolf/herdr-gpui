@@ -128,7 +128,7 @@ fn a_failed_setup_says_how_it_ended() {
 fn a_boat_sandbox_saved_before_setup_failed_is_still_named() {
     let failed: crate::Error = crate::boat::Error::Setup {
         id: "sandbox-1".into(),
-        source: Box::new(Error::NotOffered("Boat").into()),
+        source: Box::new(herdr_remote::cloud::Error::Cancelled.into()),
     }
     .into();
     assert_eq!(saved_id(&failed), Some("sandbox-1"));

@@ -147,6 +147,8 @@ pub(crate) struct MenuState {
     pub(crate) github_hosts: std::collections::HashMap<String, crate::github::Auth>,
     /// One sign-in per `[github] accounts` entry, in config order.
     pub(crate) github_accounts: Vec<github::AdditionalAccount>,
+    /// Every signed-in account's picture, by GitHub's avatar address.
+    pub(crate) github_avatars: crate::avatars::ProfileAvatars,
     /// The additional account the GitHub page shows, by ID; `None` shows
     /// the device's own account.
     pub(super) github_account: Option<String>,
@@ -385,6 +387,7 @@ impl MenuState {
             github: Default::default(),
             github_hosts: Default::default(),
             github_accounts: Vec::new(),
+            github_avatars: Default::default(),
             github_account: None,
             github_adding: None,
             github_token: None,

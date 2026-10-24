@@ -201,7 +201,7 @@ fn a_failed_change_waits_for_retry(cx: &mut TestAppContext) {
         let failure = Supervisor::failure(cx).unwrap();
         assert!(matches!(
             *failure,
-            crate::Error::Remote(crate::remote::Error::ProgramMissing)
+            crate::Error::RemoteControl(crate::remote::Error::ProgramMissing)
         ));
         assert!(!Supervisor::busy(cx));
         cx.global_mut::<Supervisor>().reconcile = |_, _| Ok(Outcome::Installed);

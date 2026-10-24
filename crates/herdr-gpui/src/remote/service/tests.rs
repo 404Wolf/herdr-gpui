@@ -447,7 +447,7 @@ fn without_the_daemon_nothing_is_installed() {
         ..RemoteConfig::default()
     };
     let error = reconcile(&on, &host, |_| unreachable(), |_| panic!("ran")).unwrap_err();
-    assert!(matches!(error, crate::Error::Remote(Error::ProgramMissing)));
+    assert!(matches!(error, crate::Error::RemoteControl(Error::ProgramMissing)));
     assert!(!host.file.exists());
 }
 
@@ -472,7 +472,7 @@ fn a_failed_load_is_reported_with_its_cause() {
         },
     )
     .unwrap_err();
-    let crate::Error::Remote(Error::Spawn { program, .. }) = &error else {
+    let crate::Error::RemoteControl(Error::Spawn { program, .. }) = &error else {
         panic!("{error:?}");
     };
     assert_eq!(*program, "systemctl");

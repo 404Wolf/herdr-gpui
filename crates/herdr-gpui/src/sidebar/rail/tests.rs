@@ -15,6 +15,8 @@ use gpui::{
 use herdr_client::ConnectTarget;
 use std::sync::Arc;
 
+mod omo;
+
 fn rail_window(
     cx: &mut TestAppContext,
     hosts: usize,
