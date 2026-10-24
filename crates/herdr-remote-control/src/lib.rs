@@ -1,9 +1,11 @@
 //! Remote control: a daemon that serves this machine's `herdr-acp` chats to
-//! paired phones over HTTPS, and the control protocol Herdr UI uses to run it.
+//! paired phones over HTTPS, the control protocol Herdr UI uses to run it,
+//! and Herdr UI's side without the server ([`app`]).
 #![doc = include_str!("../README.md")]
 
 #[cfg(feature = "server")]
 mod apns;
+pub mod app;
 #[cfg(feature = "server")]
 mod auth;
 pub mod control;

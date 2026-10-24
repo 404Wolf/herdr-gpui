@@ -2,15 +2,15 @@
 //! where it sits in a square, and the runs of dark modules the dialog paints
 //! as quads. Pure, so the geometry is tested without a window.
 
-use crate::remote::{Error, Result};
+use crate::app::{Error, Result};
 use qrcode::{Color, EcLevel, QrCode};
 
 /// Blank modules around the code, which scanners need to find its edges.
-pub(crate) const QUIET_ZONE: usize = 4;
+pub const QUIET_ZONE: usize = 4;
 
 /// The code's modules, row by row; `true` is dark.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Qr {
+pub struct Qr {
     width: usize,
     dark: Vec<bool>,
     /// The dark modules as rows of runs, worked out once for painting.
@@ -20,7 +20,7 @@ pub(crate) struct Qr {
 impl Qr {
     /// Medium error correction: a link of a hundred-odd characters stays a
     /// small, easily scanned code while a smudged screen still reads.
-    pub(crate) fn encode(text: &str) -> Result<Self> {
+    pub fn encode(text: &str) -> Result<Self> {
         let code = QrCode::with_error_correction_level(text, EcLevel::M).map_err(Error::Qr)?;
         let mut qr = Self {
             width: code.width(),
@@ -36,17 +36,17 @@ impl Qr {
     }
 
     /// Modules along a side.
-    pub(crate) fn width(&self) -> usize {
+    pub fn width(&self) -> usize {
         self.width
     }
 
-    pub(crate) fn is_dark(&self, x: usize, y: usize) -> bool {
+    pub fn is_dark(&self, x: usize, y: usize) -> bool {
         x < self.width && self.dark.get(y * self.width + x).copied().unwrap_or(false)
     }
 
     /// Each row's dark modules joined into runs, so a code takes a few
     /// hundred quads rather than one per module.
-    pub(crate) fn runs(&self) -> &[Run] {
+    pub fn runs(&self) -> &[Run] {
         &self.runs
     }
 
@@ -75,7 +75,7 @@ impl Qr {
 
 /// Dark modules side by side in one row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Run {
+pub struct Run {
     pub row: usize,
     pub column: usize,
     pub length: usize,
@@ -83,7 +83,7 @@ pub(crate) struct Run {
 
 /// Where a code sits in a square, in pixels from the square's edge.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct Layout {
+pub struct Layout {
     /// One module's side: whole pixels, so every edge is crisp.
     pub module: f32,
     /// The first module's offset, past the margin and the quiet zone.
@@ -96,7 +96,7 @@ pub(crate) struct Layout {
 
 /// The largest whole-pixel module that fits `modules` and the quiet zone in
 /// a square of `side`, centred. `None` when not even one pixel a module fits.
-pub(crate) fn layout(side: f32, modules: usize) -> Option<Layout> {
+pub fn layout(side: f32, modules: usize) -> Option<Layout> {
     if modules == 0 || !side.is_finite() {
         return None;
     }

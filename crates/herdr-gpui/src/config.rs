@@ -34,7 +34,7 @@ mod opensandbox;
 mod option_as_alt;
 mod padding;
 pub(crate) mod preferences;
-pub(crate) mod remote;
+pub(crate) use herdr_remote_control::app::config as remote;
 pub(crate) mod sidebar;
 mod sidebar_style;
 mod sprites;

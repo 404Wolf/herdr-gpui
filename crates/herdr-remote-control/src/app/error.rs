@@ -8,7 +8,7 @@ pub enum Error {
     #[error("remote.certificate {which} must be an absolute UTF-8 path")]
     CertificatePath { which: &'static str },
     #[error(transparent)]
-    Control(#[from] herdr_remote_control::control::Error),
+    Control(#[from] crate::control::Error),
     #[error("remote.device_idle_days must be between 1 and 365")]
     IdleDays,
     #[error("Could not {operation} {}", path.display())]

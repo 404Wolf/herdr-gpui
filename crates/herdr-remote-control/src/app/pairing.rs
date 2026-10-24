@@ -8,19 +8,17 @@
 //! phone's name and matching code and waits for Allow or Deny.
 
 use super::qr::Qr;
-use herdr_remote_control::control::{
-    self, ErrorCode, Offer, PairingId, PairingState, Request, Response,
-};
+use crate::control::{self, ErrorCode, Offer, PairingId, PairingState, Request, Response};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
 
 /// How often the dialog asks where the pairing stands.
-pub(crate) const POLL: Duration = Duration::from_secs(1);
+pub const POLL: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum Phase {
+pub enum Phase {
     /// Remote control is off in Settings, so there is no daemon to ask.
     Off,
     /// Asking the daemon for a QR, the first or a fresh one.
@@ -56,20 +54,20 @@ pub(crate) enum Phase {
 
 /// The user's answer to a claim, and whether it has gone to the daemon.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Answer {
+pub struct Answer {
     pub allow: bool,
     pub sent: bool,
 }
 
 /// One request in flight, so its answer is matched to the state that sent it.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Ticket {
+pub struct Ticket {
     epoch: u64,
     pub request: Request,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Pairing {
+pub struct Pairing {
     phase: Phase,
     /// Raised by every change the user makes, so an answer to a request sent
     /// before it is dropped.
@@ -80,7 +78,7 @@ pub(crate) struct Pairing {
 
 impl Pairing {
     /// `enabled` is whether remote control is on in Settings.
-    pub(crate) fn new(enabled: bool) -> Self {
+    pub fn new(enabled: bool) -> Self {
         Self {
             phase: if enabled {
                 Phase::Requesting
@@ -93,12 +91,12 @@ impl Pairing {
         }
     }
 
-    pub(crate) fn phase(&self) -> &Phase {
+    pub fn phase(&self) -> &Phase {
         &self.phase
     }
 
     /// The pairing the daemon holds open for this dialog, if any.
-    pub(crate) fn id(&self) -> Option<&PairingId> {
+    pub fn id(&self) -> Option<&PairingId> {
         match &self.phase {
             Phase::Showing { offer, .. } | Phase::Claimed { offer, .. } => Some(&offer.id),
             _ => None,
@@ -107,12 +105,12 @@ impl Pairing {
 
     /// Whether closing the dialog should cancel its pairing: it is still
     /// open at the daemon, and no device came of it.
-    pub(crate) fn cancels_on_close(&self) -> bool {
+    pub fn cancels_on_close(&self) -> bool {
         self.id().is_some()
     }
 
     /// The request to send now, if any. At most one is in flight.
-    pub(crate) fn next(&mut self, now: Instant) -> Option<Ticket> {
+    pub fn next(&mut self, now: Instant) -> Option<Ticket> {
         if self.in_flight {
             return None;
         }
@@ -150,7 +148,7 @@ impl Pairing {
 
     /// Takes the answer to `ticket`. One sent before the user changed
     /// something is dropped.
-    pub(crate) fn receive(
+    pub fn receive(
         &mut self,
         ticket: &Ticket,
         result: Result<Response, control::Error>,
@@ -202,7 +200,7 @@ impl Pairing {
             (Request::Pairing { .. }, Response::Pairing(_)) => {}
             _ => {
                 self.phase = Phase::Failed {
-                    message: super::Error::Unexpected.to_string(),
+                    message: crate::app::Error::Unexpected.to_string(),
                 };
             }
         }
@@ -276,7 +274,7 @@ impl Pairing {
     }
 
     /// The user's Allow or Deny for the claimed device.
-    pub(crate) fn answer(&mut self, allow: bool) {
+    pub fn answer(&mut self, allow: bool) {
         if let Phase::Claimed { answer, .. } = &mut self.phase
             && answer.is_none()
         {
@@ -287,7 +285,7 @@ impl Pairing {
     }
 
     /// A dialog that cannot reach a daemon at all, saying why.
-    pub(crate) fn failed(message: impl Into<String>) -> Self {
+    pub fn failed(message: impl Into<String>) -> Self {
         Self {
             phase: Phase::Failed {
                 message: message.into(),
@@ -297,7 +295,7 @@ impl Pairing {
     }
 
     /// Starts over with a fresh QR, after an expiry or a failure.
-    pub(crate) fn restart(&mut self) {
+    pub fn restart(&mut self) {
         if matches!(self.phase, Phase::Off) {
             return;
         }
@@ -308,7 +306,7 @@ impl Pairing {
     }
 
     /// How long the QR has left, and that as a share of its lifetime.
-    pub(crate) fn countdown(&self, now: Instant) -> Option<(Duration, f32)> {
+    pub fn countdown(&self, now: Instant) -> Option<(Duration, f32)> {
         let Phase::Showing {
             deadline, lifetime, ..
         } = &self.phase
@@ -326,7 +324,7 @@ impl Pairing {
 }
 
 /// The matching code as people read it: `428913` as `428 913`.
-pub(crate) fn spaced(code: &str) -> String {
+pub fn spaced(code: &str) -> String {
     let chars: Vec<char> = code.chars().filter(|c| !c.is_whitespace()).collect();
     if chars.len() != 6 {
         return code.to_owned();

@@ -8,6 +8,8 @@ pub enum Error {
     #[cfg(feature = "server")]
     #[error(transparent)]
     Apns(#[from] crate::apns::Error),
+    #[error(transparent)]
+    App(#[from] crate::app::Error),
     #[cfg(feature = "server")]
     #[error(transparent)]
     Auth(#[from] crate::auth::Error),

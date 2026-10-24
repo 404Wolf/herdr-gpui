@@ -12,7 +12,7 @@ workspace = true
 
 [features]
 # The daemon itself. Herdr UI depends on this crate without it, for the
-# control protocol alone, so Tokio never reaches the GUI.
+# control protocol and `app` alone, so Tokio never reaches the GUI.
 default = ["server"]
 server = [
     "dep:aes-gcm",
@@ -29,7 +29,6 @@ server = [
     "dep:p256",
     "dep:pulldown-cmark",
     "dep:rcgen",
-    "dep:rustix",
     "dep:rustls",
     "dep:sha2",
     "dep:socket2",
@@ -50,9 +49,16 @@ required-features = ["server"]
 [dependencies]
 herdr-chat-protocol.workspace = true
 herdr-client.workspace        = true
+# The pairing dialog's QR code, drawn by Herdr UI.
+qrcode.workspace              = true
+# The macOS user ID the LaunchAgent loads under, and the server's host name.
+rustix                        = { features = ["system"], workspace = true }
 serde.workspace               = true
 serde_json.workspace          = true
 thiserror.workspace           = true
+# Settings edits to the `[remote]` table.
+toml_edit.workspace           = true
+tracing.workspace             = true
 uuid.workspace                = true
 
 aes-gcm        = { optional = true, workspace = true }
@@ -82,7 +88,6 @@ x509-parser    = { optional = true, workspace = true }
 
 # The host name for the CA's name and `HOSTNAME.local`.
 [target.'cfg(unix)'.dependencies]
-rustix = { features = ["system"], optional = true, workspace = true }
 
 [dev-dependencies]
 p256.workspace      = true

@@ -136,6 +136,7 @@ fn reconcile_host(config: &RemoteConfig, send: Send) -> crate::Result<Outcome> {
         |request| send(&address, request),
         service::run,
     )
+    .map_err(Into::into)
 }
 
 impl Supervisor {

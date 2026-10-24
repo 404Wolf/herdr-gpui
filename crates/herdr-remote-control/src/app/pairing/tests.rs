@@ -1,5 +1,5 @@
 use super::*;
-use herdr_remote_control::control::DeviceId;
+use crate::control::DeviceId;
 
 fn offer(id: &str) -> Offer {
     Offer {

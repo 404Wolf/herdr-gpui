@@ -4,23 +4,19 @@
 //! control protocol is used here (`herdr_remote_control::control`), from background
 //! threads; Tokio never reaches the app.
 //!
-//! [`service`] writes and loads the service, [`supervisor`] keeps it in line
-//! with `[remote]` and polls its status, [`pairing`] and [`qr`] are the
-//! pairing dialog's state and drawing, and [`dialog`], [`revoke`], and
-//! [`indicator`] put them in the window.
+//! The service, the `[remote]` table, and the pairing state and QR code live
+//! in `herdr_remote_control::app`, with no GPUI. Here, [`supervisor`] keeps
+//! the service in line with `[remote]` and polls its status, and
+//! [`dialog`], [`revoke`], and [`indicator`] put them in the window.
 
 mod dialog;
-mod error;
 mod indicator;
-pub(crate) mod pairing;
-pub(crate) mod qr;
 mod revoke;
-pub(crate) mod service;
 pub(crate) mod supervisor;
 
 pub(crate) use dialog::{PairingDialog, addresses};
-pub use error::Error;
-pub(crate) use error::Result;
+pub use herdr_remote_control::app::Error;
+pub(crate) use herdr_remote_control::app::{Result, pairing, qr, service};
 pub(crate) use revoke::Revoke;
 pub(crate) use supervisor::{Health, Supervisor};
 
@@ -48,6 +44,7 @@ fn host(state_dir: PathBuf) -> crate::Result<service::Host> {
         manager,
         state_dir,
         program: crate::bundled::locate(service::PROGRAM),
+        release: crate::RELEASE_BUILD.then(|| crate::APP_VERSION.to_owned()),
     })
 }
 

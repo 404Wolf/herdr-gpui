@@ -1,6 +1,6 @@
 use super::*;
-use crate::config::remote::{Bind, Privacy};
-use herdr_remote_control::control::{Error as ControlError, Status};
+use crate::app::config::{Bind, Privacy};
+use crate::control::{Error as ControlError, Status};
 use std::{cell::RefCell, path::Path};
 
 fn plan() -> Plan {
@@ -283,6 +283,7 @@ fn host(dir: &Path) -> Host {
         file: dir.join("units/herdr-remote-control.service"),
         state_dir: dir.join("state/remote"),
         program: Some("/bin/herdr-remote-control".into()),
+        release: None,
     }
 }
 
@@ -447,7 +448,7 @@ fn without_the_daemon_nothing_is_installed() {
         ..RemoteConfig::default()
     };
     let error = reconcile(&on, &host, |_| unreachable(), |_| panic!("ran")).unwrap_err();
-    assert!(matches!(error, crate::Error::RemoteControl(Error::ProgramMissing)));
+    assert!(matches!(error, Error::ProgramMissing));
     assert!(!host.file.exists());
 }
 
@@ -467,14 +468,15 @@ fn a_failed_load_is_reported_with_its_cause() {
             Err(Error::Spawn {
                 program: "systemctl",
                 source: io::Error::from(io::ErrorKind::NotFound),
-            }
-            .into())
+            })
         },
     )
     .unwrap_err();
-    let crate::Error::RemoteControl(Error::Spawn { program, .. }) = &error else {
+    let Error::Spawn { program, .. } = &error else {
         panic!("{error:?}");
     };
     assert_eq!(*program, "systemctl");
     assert!(std::error::Error::source(&error).is_some());
 }
+
+mod release;

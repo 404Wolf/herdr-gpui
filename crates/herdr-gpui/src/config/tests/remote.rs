@@ -83,9 +83,10 @@ fn remote_control_refuses_values_the_daemon_cannot_use() {
         let matched = match (&error, expected) {
             (Error::RemoteControl(crate::remote::Error::Port), "port") => true,
             (Error::RemoteControl(crate::remote::Error::IdleDays), "idle") => true,
-            (Error::RemoteControl(crate::remote::Error::CertificatePath { which }), which_expected) => {
-                *which == which_expected
-            }
+            (
+                Error::RemoteControl(crate::remote::Error::CertificatePath { which }),
+                which_expected,
+            ) => *which == which_expected,
             _ => false,
         };
         assert!(matched, "{text}: {error:?}");

@@ -15,14 +15,14 @@
 //! Secrets and device keys never go here: the daemon keeps them in its own
 //! private state directory.
 
-use crate::remote::Error;
+use crate::app::Error;
 use serde::Deserialize;
 use std::{fmt, net::IpAddr, ops::RangeInclusive, path::PathBuf};
 
-pub(crate) const DEFAULT_PORT: u16 = 7443;
+pub const DEFAULT_PORT: u16 = 7443;
 const DEFAULT_IDLE_DAYS: u16 = 30;
 /// How long a paired device may stay away before the daemon forgets it.
-pub(crate) const IDLE_DAYS: RangeInclusive<u16> = 1..=365;
+pub const IDLE_DAYS: RangeInclusive<u16> = 1..=365;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(default)]
@@ -59,7 +59,7 @@ impl Default for RemoteConfig {
 
 impl RemoteConfig {
     /// Refuses values the daemon could not start with.
-    pub(super) fn check(&self) -> Result<(), Error> {
+    pub fn check(&self) -> Result<(), Error> {
         if self.port == 0 {
             return Err(Error::Port);
         }
@@ -160,7 +160,7 @@ pub enum Privacy {
 
 impl Privacy {
     /// As the config file and the daemon's `--privacy` write it.
-    pub(crate) const fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             Self::Generic => "generic",
             Self::Excerpt => "excerpt",
@@ -170,7 +170,7 @@ impl Privacy {
 
 /// One change to the `[remote]` table, from Settings.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Edit {
+pub enum Edit {
     Bind(Bind),
     Certificate(Certificate),
     DeviceIdleDays(u16),
@@ -182,7 +182,7 @@ pub(crate) enum Edit {
 
 impl Edit {
     /// The key and value the edit writes, or why it may not.
-    pub(super) fn entry(self) -> Result<(&'static str, toml_edit::Value), Error> {
+    pub fn entry(self) -> Result<(&'static str, toml_edit::Value), Error> {
         Ok(match self {
             Self::Bind(bind) => ("bind", bind.to_string().into()),
             Self::Certificate(Certificate::Own) => ("certificate", "own".into()),

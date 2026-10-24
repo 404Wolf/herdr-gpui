@@ -8,13 +8,13 @@
 //! - Linux: a systemd user unit, `systemctl --user enable` and `restart`.
 //! - Windows: a Task Scheduler task that runs at sign-in.
 
-pub(crate) mod files;
+pub mod files;
 
-use crate::{
-    config::{RemoteConfig, remote::Certificate},
-    remote::{Error, Result},
+use crate::app::{
+    Error, Result,
+    config::{Certificate, RemoteConfig},
 };
-use herdr_remote_control::control::{Request, Response};
+use crate::control::{Request, Response};
 use std::{
     ffi::OsString,
     fs, io,
@@ -22,13 +22,13 @@ use std::{
 };
 
 /// The LaunchAgent's label, under the app's bundle identifier.
-pub(crate) const LABEL: &str = "so.pen.herdr-gpui.remote";
+pub const LABEL: &str = "so.pen.herdr-gpui.remote";
 /// The systemd unit's name.
-pub(crate) const UNIT: &str = "herdr-remote-control.service";
+pub const UNIT: &str = "herdr-remote-control.service";
 /// The Task Scheduler task's name.
-pub(crate) const TASK: &str = "Herdr UI Remote Control";
+pub const TASK: &str = "Herdr UI Remote Control";
 /// The daemon's file name on this platform.
-pub(crate) const PROGRAM: &str = if cfg!(windows) {
+pub const PROGRAM: &str = if cfg!(windows) {
     "herdr-remote-control.exe"
 } else {
     "herdr-remote-control"
@@ -39,7 +39,7 @@ const STDERR_LIMIT: usize = 512;
 /// What the service runs: the daemon, its state, and the settings it serves
 /// with.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Plan {
+pub struct Plan {
     pub program: PathBuf,
     pub state_dir: PathBuf,
     pub config: RemoteConfig,
@@ -55,7 +55,7 @@ impl Plan {
     /// `serve --state-dir DIR --port N --bind ADDR [--cert F --key F]
     /// --privacy generic|excerpt --device-idle-days N [--herdr-socket P]
     /// [--chat-dir D]`.
-    pub(crate) fn args(&self) -> Vec<OsString> {
+    pub fn args(&self) -> Vec<OsString> {
         let config = &self.config;
         let mut args: Vec<OsString> = vec![
             "serve".into(),
@@ -92,7 +92,7 @@ impl Plan {
 
 /// One command a service manager is asked to run.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Step {
+pub struct Step {
     pub program: &'static str,
     pub args: Vec<OsString>,
     /// Whether its failure fails the whole change. Unloading something not
@@ -113,7 +113,7 @@ fn step<const N: usize>(program: &'static str, args: [&str; N], required: bool) 
 /// files on every platform.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(not(test), allow(dead_code))]
-pub(crate) enum Manager {
+pub enum Manager {
     LaunchAgent {
         uid: u32,
     },
@@ -126,7 +126,7 @@ pub(crate) enum Manager {
 
 impl Manager {
     /// This platform's manager. Reads the user's identity; no I/O beyond.
-    pub(crate) fn current() -> Result<Self> {
+    pub fn current() -> Result<Self> {
         #[cfg(target_os = "macos")]
         return Ok(Self::LaunchAgent {
             uid: rustix::process::getuid().as_raw(),
@@ -150,7 +150,7 @@ impl Manager {
 
     /// Where the service definition goes. Task Scheduler keeps its own copy;
     /// ours stays in the state directory to compare the next change with.
-    pub(crate) fn file(&self, home: &Path, config_home: &Path, state_dir: &Path) -> PathBuf {
+    pub fn file(&self, home: &Path, config_home: &Path, state_dir: &Path) -> PathBuf {
         match self {
             Self::LaunchAgent { .. } => home
                 .join("Library/LaunchAgents")
@@ -161,7 +161,7 @@ impl Manager {
     }
 
     /// The definition's text for `plan`.
-    pub(crate) fn text(&self, plan: &Plan) -> Result<String> {
+    pub fn text(&self, plan: &Plan) -> Result<String> {
         match self {
             Self::LaunchAgent { .. } => files::launch_agent(plan),
             Self::Systemd => files::systemd_unit(plan),
@@ -179,7 +179,7 @@ impl Manager {
 
     /// Loads a written or rewritten definition, restarting a daemon that runs
     /// with the old one.
-    pub(crate) fn load(&self, file: &Path) -> Vec<Step> {
+    pub fn load(&self, file: &Path) -> Vec<Step> {
         match self {
             Self::LaunchAgent { uid } => {
                 let domain = format!("gui/{uid}");
@@ -222,7 +222,7 @@ impl Manager {
 
     /// Starts the installed daemon that is not running, as after it was
     /// asked to stop when Herdr UI quit.
-    pub(crate) fn start(&self, file: &Path) -> Vec<Step> {
+    pub fn start(&self, file: &Path) -> Vec<Step> {
         match self {
             Self::LaunchAgent { uid } => {
                 let domain = format!("gui/{uid}");
@@ -246,7 +246,7 @@ impl Manager {
     }
 
     /// Stops and unregisters the service; the definition is removed after.
-    pub(crate) fn unload(&self) -> Vec<Step> {
+    pub fn unload(&self) -> Vec<Step> {
         match self {
             Self::LaunchAgent { uid } => vec![step(
                 "launchctl",
@@ -266,7 +266,7 @@ impl Manager {
     }
 
     /// What runs once the definition is gone.
-    pub(crate) fn unloaded(&self) -> Vec<Step> {
+    pub fn unloaded(&self) -> Vec<Step> {
         match self {
             Self::Systemd => vec![step("systemctl", ["--user", "daemon-reload"], false)],
             Self::LaunchAgent { .. } | Self::ScheduledTask { .. } => Vec::new(),
@@ -276,18 +276,22 @@ impl Manager {
 
 /// Where this user's service goes and what it runs.
 #[derive(Clone, Debug)]
-pub(crate) struct Host {
+pub struct Host {
     pub manager: Manager,
     /// The service definition's path.
     pub file: PathBuf,
     pub state_dir: PathBuf,
     /// The daemon, once found.
     pub program: Option<PathBuf>,
+    /// A release app's version: a daemon of another version is restarted,
+    /// so the binary beside the app is the one serving. `None` in
+    /// development builds, which leave a running daemon alone.
+    pub release: Option<String>,
 }
 
 /// What a change did, for the log.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Outcome {
+pub enum Outcome {
     /// Nothing to do: off and not installed, or on and running as configured.
     Unchanged,
     Installed,
@@ -297,12 +301,12 @@ pub(crate) enum Outcome {
 
 /// Brings the installed service in line with `config`. `send` asks the
 /// daemon over its control endpoint; `run` runs a manager's command.
-pub(crate) fn reconcile(
+pub fn reconcile(
     config: &RemoteConfig,
     host: &Host,
-    send: impl Fn(&Request) -> Result<Response, herdr_remote_control::control::Error>,
-    mut run: impl FnMut(&Step) -> crate::Result<()>,
-) -> crate::Result<Outcome> {
+    send: impl Fn(&Request) -> Result<Response, crate::control::Error>,
+    mut run: impl FnMut(&Step) -> Result<()>,
+) -> Result<Outcome> {
     let installed = host.file.exists();
     if !config.enabled {
         if !installed {
@@ -344,7 +348,10 @@ pub(crate) fn reconcile(
         // A release's daemon from another release than this app's is
         // restarted, so the binary beside the app is the one serving.
         Ok(Response::Status(status))
-            if crate::RELEASE_BUILD && status.version != crate::APP_VERSION =>
+            if host
+                .release
+                .as_ref()
+                .is_some_and(|version| *version != status.version) =>
         {
             for step in host.manager.load(&host.file) {
                 run(&step)?;
@@ -362,7 +369,7 @@ pub(crate) fn reconcile(
 }
 
 /// Runs one manager command through `herdr_client::new_command`.
-pub(crate) fn run(step: &Step) -> crate::Result<()> {
+pub fn run(step: &Step) -> Result<()> {
     let output = herdr_client::new_command(step.program)
         .args(&step.args)
         .stdin(std::process::Stdio::null())
@@ -379,8 +386,7 @@ pub(crate) fn run(step: &Step) -> crate::Result<()> {
         program: step.program,
         status: output.status,
         stderr: stderr.trim().chars().take(STDERR_LIMIT).collect(),
-    }
-    .into())
+    })
 }
 
 /// The daemon's state directory, private to this user.

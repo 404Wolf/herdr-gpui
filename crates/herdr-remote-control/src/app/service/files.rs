@@ -3,7 +3,7 @@
 //! tested on every platform.
 
 use super::{LABEL, Plan};
-use crate::remote::{Error, Result};
+use crate::app::{Error, Result};
 use std::path::Path;
 
 /// Where the daemon writes what it prints, beside its state.
@@ -51,7 +51,7 @@ fn xml(text: &str) -> String {
 /// A macOS LaunchAgent: started at login and when loaded, restarted if it
 /// crashes, and left stopped after it exits cleanly, as it does when Herdr
 /// UI asks it to shut down.
-pub(crate) fn launch_agent(plan: &Plan) -> Result<String> {
+pub fn launch_agent(plan: &Plan) -> Result<String> {
     let arguments: String = words(plan)?
         .iter()
         .map(|word| format!("\t\t<string>{}</string>\n", xml(word)))
@@ -106,7 +106,7 @@ fn systemd_word(word: &str) -> String {
 
 /// A systemd user unit, enabled for the user's default target. It restarts
 /// only after a failure, so a requested shutdown stays down.
-pub(crate) fn systemd_unit(plan: &Plan) -> Result<String> {
+pub fn systemd_unit(plan: &Plan) -> Result<String> {
     let command: Vec<String> = words(plan)?.iter().map(|word| systemd_word(word)).collect();
     Ok(format!(
         "[Unit]\n\
@@ -126,7 +126,7 @@ pub(crate) fn systemd_unit(plan: &Plan) -> Result<String> {
 /// One argument as the C runtime's `CommandLineToArgvW` rules read it back:
 /// bare when it has no space, tab, or quote; otherwise quoted, with quotes
 /// escaped and the backslashes before them doubled.
-pub(crate) fn windows_word(word: &str) -> String {
+pub fn windows_word(word: &str) -> String {
     if !word.is_empty() && !word.contains([' ', '\t', '"']) {
         return word.to_owned();
     }
@@ -157,7 +157,7 @@ pub(crate) fn windows_word(word: &str) -> String {
 /// Written as XML rather than through `schtasks /TR` because that limits
 /// the command to 261 characters, and because only XML can lift the
 /// default three-day run limit and the battery rules that would stop it.
-pub(crate) fn scheduled_task(plan: &Plan, user: &str) -> Result<String> {
+pub fn scheduled_task(plan: &Plan, user: &str) -> Result<String> {
     let mut words = words(plan)?.into_iter();
     let command = xml(&words.next().unwrap_or_default());
     let arguments = xml(&words
@@ -206,7 +206,7 @@ pub(crate) fn scheduled_task(plan: &Plan, user: &str) -> Result<String> {
 
 /// The bytes `schtasks /XML` reads: UTF-16 little-endian with its mark, as
 /// the declaration says.
-pub(crate) fn utf16(text: &str) -> Vec<u8> {
+pub fn utf16(text: &str) -> Vec<u8> {
     [0xFEFF_u16]
         .into_iter()
         .chain(text.encode_utf16())

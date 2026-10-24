@@ -35,7 +35,7 @@ herdr-diagnostics.workspace    = true
 herdr-github.workspace         = true
 herdr-orchestrator.workspace   = true
 herdr-remote.workspace         = true
-# The remote control daemon's control protocol only, never its server.
+# Remote control without its server: the control protocol and `app`.
 herdr-remote-control.workspace         = true
 herdr-updater.workspace        = true
 herdr-usage.workspace          = true
@@ -48,7 +48,6 @@ mermaid-rs-renderer.workspace  = true
 nucleo-matcher.workspace       = true
 percent-encoding.workspace     = true
 pulldown-cmark.workspace       = true
-qrcode.workspace               = true
 rodio.workspace                = true
 secrecy.workspace              = true
 serde.workspace                = true
