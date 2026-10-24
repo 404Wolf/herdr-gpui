@@ -119,6 +119,19 @@ impl SettingsWindow {
                         }),
                     ))
             }))
+            .children(self.config.features.acp_chats.then(|| {
+                ui::row(theme, "general-chat-glide", "Smooth chat scrolling")
+                    .description(
+                        "Scroll smoothly to a reply's new text as it streams in. Off, the \
+                         chat jumps to it as each chunk lands.",
+                    )
+                    .switch(self.preference_toggle(
+                        "general-chat-glide-toggle",
+                        self.config.chat.glide,
+                        Preference::ChatGlide(!self.config.chat.glide),
+                        cx,
+                    ))
+            }))
             .children(self.render_chat_env_controls(cx))
             .child(ui::section(theme, "Clipboard", None))
             .child(

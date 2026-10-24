@@ -16,6 +16,7 @@
 
 mod chats;
 mod discovery;
+mod glide;
 mod harnesses;
 mod link;
 mod list;

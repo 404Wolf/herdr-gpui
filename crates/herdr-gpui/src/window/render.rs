@@ -99,6 +99,9 @@ impl Render for HerdrWindow {
         self.leave_vanished_region(window, cx);
         self.sync_backdrop(window, cx);
         self.tick_chrome(window, cx);
+        if self.chats.glide(Instant::now(), self.config.chat.glide) {
+            window.request_animation_frame();
+        }
         self.sync_device_themes(cx);
         let fill = self.fill();
         let ground = self.ground();
