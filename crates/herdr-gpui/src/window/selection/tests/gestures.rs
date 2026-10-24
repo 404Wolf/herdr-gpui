@@ -97,10 +97,10 @@ fn application_mouse_takes_precedence_shift_keeps_copy_and_the_link_modifier_lin
     );
     assert!(cx.opened_url().is_none());
     assert!(!view.read_with(cx, |view, _| view.terminal_notes.composing()));
-    // Shift selects and never opens; the link modifier claims a click on a
-    // link from the application and opens it.
+    // A Shift-drag selects and never opens; a Shift-click on the link opens
+    // it, as kitty's does, and so does the link modifier.
     cx.simulate_click(at(1.), shift);
-    assert!(cx.opened_url().is_none());
+    assert_eq!(cx.opened_url().as_deref(), Some(url));
     cx.simulate_click(at(1.), Modifiers::secondary_key());
     assert_eq!(cx.opened_url().as_deref(), Some(url));
 }

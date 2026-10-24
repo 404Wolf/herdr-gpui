@@ -2455,8 +2455,10 @@ tests remain useful for cancellation and ordering, but do not exercise NSPastebo
 
 ## Terminal Links
 
-Cmd-click (Ctrl-click elsewhere) a link in a pane to open it. A click without
-the modifier opens nothing: it selects, focuses, or goes to the application.
+Cmd-click (Ctrl-click elsewhere) a link in a pane to open it. A Shift-click
+on a link opens it too, as in kitty, even in an application that reads the
+mouse; a Shift-drag still selects. A click without either opens nothing: it
+selects, focuses, or goes to the application.
 
 Each visual element has one meaning:
 

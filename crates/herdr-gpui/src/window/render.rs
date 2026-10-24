@@ -410,7 +410,10 @@ impl Render for HerdrWindow {
                         event.modifiers.shift,
                         cx,
                     );
-                    if this.pressed_terminal_link.is_some() {
+                    // The link modifier makes the press the link's alone; a
+                    // Shift press still focuses and selects as usual, and
+                    // opens the link only if it is released there.
+                    if this.pressed_terminal_link.is_some() && event.modifiers.secondary() {
                         cx.stop_propagation();
                         return;
                     }
