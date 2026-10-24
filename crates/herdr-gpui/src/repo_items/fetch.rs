@@ -33,6 +33,9 @@ pub(super) fn list(
     cooldown: &mut Option<Duration>,
 ) -> crate::Result<(Origin, Vec<Item>)> {
     let deadline = Instant::now() + TIMEOUT;
+    if let Some(listing) = super::gitea::list(input, deadline, &cancelled) {
+        return listing;
+    }
     let origin = Origin::from(local_repository(input, deadline, &cancelled)?);
     // The account that reads the listed repository's owner, which is the
     // upstream owner in a fork checkout.

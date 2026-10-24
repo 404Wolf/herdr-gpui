@@ -6,6 +6,7 @@
 mod branches;
 mod context;
 mod fetch;
+mod gitea;
 mod lookup;
 mod model;
 
