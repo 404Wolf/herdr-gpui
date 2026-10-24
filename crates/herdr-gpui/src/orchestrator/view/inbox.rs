@@ -691,6 +691,7 @@ pub(super) fn provider_name(provider: Provider) -> &'static str {
         Provider::Github => "GitHub",
         Provider::Beads => "Beads",
         Provider::Gitlab => "GitLab",
+        Provider::Gitea => "Gitea",
     }
 }
 
@@ -721,6 +722,7 @@ pub(super) fn provider_mark(look: &Look, provider: Provider) -> AnyElement {
             .into_any_element(),
         Provider::Beads => look.badge("bd", MAGENTA).into_any_element(),
         Provider::Gitlab => look.badge("gl", RED).into_any_element(),
+        Provider::Gitea => look.badge("gt", GREEN).into_any_element(),
     }
 }
 

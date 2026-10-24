@@ -16,6 +16,7 @@ pub mod beads;
 pub mod cache;
 mod error;
 pub mod git;
+pub mod gitea;
 pub mod github;
 pub mod gitlab;
 pub mod location;
