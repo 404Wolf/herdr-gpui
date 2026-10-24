@@ -193,6 +193,8 @@ pub struct Config {
     /// Focus the split terminal pane under the pointer without clicking.
     pub focus_follows_mouse: bool,
     pub github: GitHubConfig,
+    /// Gitea and Forgejo hosts whose remotes get pull request details.
+    pub gitea: herdr_gitea::Config,
     /// Font resolution searched for an icon font for the terminal and found
     /// none installed, so Private Use Area glyphs draw as missing-glyph boxes.
     /// Never set when the config names the terminal's `fallback` itself.
@@ -392,6 +394,7 @@ impl Default for Config {
             features: Features::default(),
             focus_follows_mouse: true,
             github: GitHubConfig::default(),
+            gitea: herdr_gitea::Config::default(),
             icon_font_missing: false,
             keep_selection_after_copy: true,
             keybinding_overrides: BTreeMap::new(),
@@ -472,6 +475,7 @@ struct Settings {
     features: Features,
     focus_follows_mouse: Option<bool>,
     github: GitHubConfig,
+    gitea: herdr_gitea::Config,
     keep_selection_after_copy: Option<bool>,
     keybindings: BTreeMap<String, Binding>,
     layout: Layout,
@@ -596,12 +600,14 @@ impl Config {
 
     pub fn load() -> Result<Self> {
         Self::load_path(&Self::path()?, &daemon_config_path(herdr_client::local_var))
+            .inspect(|config| herdr_gitea::configure(&config.gitea))
     }
 
     /// First-frame settings only: no lock, migration, writes, or fsync. The
     /// background load performs maintenance after the window has appeared.
     pub(crate) fn load_startup() -> Result<Self> {
         Self::load_startup_path(&Self::path()?, &daemon_config_path(herdr_client::local_var))
+            .inspect(|config| herdr_gitea::configure(&config.gitea))
     }
 
     fn load_startup_path(path: &Path, daemon: &Path) -> Result<Self> {
@@ -732,6 +738,14 @@ impl Config {
         {
             return Err(Error::GitHubSecretInConfig(name));
         }
+        // A `[gitea]` host is given a command that prints its token, never
+        // the token itself, so one pasted in is refused the same way.
+        if unknown_keys.iter().any(|key| {
+            key.strip_prefix("gitea.")
+                .is_some_and(|rest| rest.rsplit('.').next() == Some("token"))
+        }) {
+            return Err(Error::GiteaSecretInConfig);
+        }
         // A newer build may keep more accounts or owners than this one.
         unknown_keys.extend(settings.github.limit_accounts());
         unknown_keys.extend(settings.cloud.retain_known());
@@ -744,6 +758,8 @@ impl Config {
         settings.github.client_id_with_override(None)?;
         settings.github.check_accounts()?;
         config.github = settings.github;
+        settings.gitea.check()?;
+        config.gitea = settings.gitea;
         #[cfg(feature = "azure")]
         settings.azure.check()?;
         config.azure = settings.azure;

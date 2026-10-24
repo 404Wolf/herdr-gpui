@@ -434,7 +434,7 @@ impl HerdrWindow {
             if !source.checkouts.listed {
                 self.list_checkouts();
             }
-            if self.menu.github.connected() {
+            if self.forge_connected() {
                 self.list_repo_items();
             }
         }
@@ -452,7 +452,7 @@ impl HerdrWindow {
         window: &mut gpui::Window,
         cx: &mut Context<Self>,
     ) {
-        if tab.kind().is_some() && !self.menu.github.connected() {
+        if tab.kind().is_some() && !self.forge_connected() {
             return;
         }
         let Some(source) = &mut self.menu.worktree else {
@@ -631,6 +631,7 @@ impl HerdrWindow {
         let input = self.local_repository_input()?;
         let tokens = self
             .main_tokens()
+            .or_else(crate::pull_request::signed_out_tokens)
             .ok_or(crate::Error::GitHubAuthentication)?;
         Ok((input, tokens))
     }

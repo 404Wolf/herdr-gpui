@@ -27,6 +27,7 @@ mod focus_follows_mouse;
 mod font_aliases;
 mod font_weight;
 mod fonts;
+mod gitea;
 mod github;
 mod github_accounts;
 mod icon_font;

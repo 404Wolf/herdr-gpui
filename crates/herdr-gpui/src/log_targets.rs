@@ -10,6 +10,7 @@ pub(crate) const LOG_TARGETS: &[&str] = &[
     "herdr_control_protocol",
     "herdr_credentials",
     "herdr_diagnostics",
+    "herdr_gitea",
     "herdr_github",
     "herdr_gpui",
     "herdr_orchestrator",

@@ -108,8 +108,22 @@ impl HerdrWindow {
 
     /// The tokens pull requests on the selected device are read with: its
     /// account (see `pr_profile`) and every signed-in additional account.
+    /// Whether pull requests and issues can be listed: signed in to GitHub,
+    /// or with Gitea hosts configured.
+    pub(crate) fn forge_connected(&self) -> bool {
+        self.menu.github.connected() || herdr_gitea::configured()
+    }
+
+    /// Whether workspaces get pull request lookups: signed in to GitHub, or
+    /// with Gitea hosts configured, which read with their own tokens.
+    pub(crate) fn pr_lookups(&self) -> bool {
+        self.pr_profile().is_some() || herdr_gitea::configured()
+    }
+
     pub(crate) fn pr_tokens(&self) -> Option<Tokens> {
-        self.pr_profile().map(|main| self.tokens_over(main))
+        self.pr_profile()
+            .map(|main| self.tokens_over(main))
+            .or_else(crate::pull_request::signed_out_tokens)
     }
 
     /// The same with this computer's main account, for work that reads only

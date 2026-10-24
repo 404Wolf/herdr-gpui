@@ -831,7 +831,7 @@ impl HerdrWindow {
             .into_iter()
             .map(|(action, _)| action)
             .collect();
-        if self.pr_profile().is_some() && self.menu.pr.value.is_some() {
+        if self.pr_lookups() && self.menu.pr.value.is_some() {
             actions.push(WorkspaceMenuAction::PullRequest);
         }
         actions

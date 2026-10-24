@@ -21,7 +21,7 @@ impl HerdrWindow {
         self.pr_actions.track(target);
         let mut changed = self.pr_actions.poll();
         if self.pr_actions.take_settled() {
-            if self.menu.github.connected()
+            if self.forge_connected()
                 && let Some(input) = self.git_input()
             {
                 self.sync_pr_scope();
