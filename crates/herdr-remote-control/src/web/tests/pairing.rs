@@ -101,10 +101,10 @@ async fn a_phone_pairs_with_the_desktops_approval_and_signs_in() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{session}");
-    let token = serde_json::from_str::<Value>(&session).unwrap()["token"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let session: Value = serde_json::from_str(&session).unwrap();
+    // Each sign-in brings the addresses served now.
+    assert_eq!(session["origins"], json!(state.origins()));
+    let token = session["token"].as_str().unwrap().to_owned();
 
     let request = HttpRequest::get("/f/home")
         .header(header::AUTHORIZATION, format!("Bearer {token}"))

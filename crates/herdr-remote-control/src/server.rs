@@ -35,6 +35,9 @@ const ADDRESS_CHECK: Duration = Duration::from_secs(30);
 const IDLE_CHECK: Duration = Duration::from_secs(60 * 60);
 /// Who push services may contact about this sender.
 const PUSH_SUBJECT: &str = "https://github.com/penso/herdr-gpui";
+/// How long shutdown waits for open connections, such as phones' live
+/// streams, before the daemon exits anyway.
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
 /// The control endpoint's answer, for other modules' tests.
 #[cfg(test)]
@@ -105,12 +108,15 @@ pub async fn run(options: Options) -> Result<()> {
         uploads: web::Uploads::new(&options.state_dir),
     });
     remember_origins(&state);
-    state.uploads.remove_leftovers();
     // The port first: a second daemon fails here before it touches the
     // first one's control socket.
     let tcp = listener::bind(options.bind, options.port)?;
     let (stop, stopped) = watch::channel(false);
     control::serve(&options.state_dir, state.clone(), stop.clone())?;
+    // Only once this daemon owns the port and the control socket: a second
+    // copy started on the same state must not delete the first one's
+    // pictures.
+    state.uploads.remove_leftovers();
     tokio::spawn(notifier::run(state.clone()));
     // A user's certificate lists fixed names; only the daemon's own follows
     // the computer's addresses.
@@ -120,13 +126,31 @@ pub async fn run(options: Options) -> Result<()> {
     tokio::spawn(expire(state.clone(), options.device_idle));
     let app = web::router(state).into_make_service_with_connect_info::<web::Peer>();
     let mut shutdown = stopped.clone();
-    axum::serve(listener::TlsListener::new(tcp, config), app)
+    let serve = axum::serve(listener::TlsListener::new(tcp, config), app)
         .with_graceful_shutdown(async move {
             let _ = shutdown.wait_for(|stop| *stop).await;
         })
-        .await?;
+        .into_future();
+    until_stopped(serve, stopped, SHUTDOWN_GRACE).await?;
     crate::control::release(&options.state_dir);
     Ok(())
+}
+
+/// Runs `serve` until it ends, or until `grace` after a stop. A phone's
+/// live stream never ends on its own, so graceful shutdown waits only so
+/// long for open connections before the daemon exits anyway.
+async fn until_stopped(
+    serve: impl Future<Output = std::io::Result<()>>,
+    mut stopped: watch::Receiver<bool>,
+    grace: Duration,
+) -> std::io::Result<()> {
+    tokio::select! {
+        served = serve => served,
+        () = async move {
+            let _ = stopped.wait_for(|stop| *stop).await;
+            tokio::time::sleep(grace).await;
+        } => Ok(()),
+    }
 }
 
 /// Reissues the certificate when the computer's addresses change.

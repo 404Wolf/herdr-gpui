@@ -169,9 +169,16 @@ impl Names {
             .collect();
         // Stable, so each group keeps the sorted order.
         ranked.sort_by_key(|(reach, _)| *reach);
+        // Written as browsers send `Origin`, which leaves out HTTPS's own
+        // port, so exact comparison accepts them.
+        let port = if port == 443 {
+            String::new()
+        } else {
+            format!(":{port}")
+        };
         ranked
             .into_iter()
-            .map(|(_, host)| format!("https://{host}:{port}"))
+            .map(|(_, host)| format!("https://{host}{port}"))
             .collect()
     }
 

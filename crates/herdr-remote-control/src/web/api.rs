@@ -121,9 +121,12 @@ pub(super) async fn session(
         )?)
     })
     .await?;
+    // The addresses served now, so an installed app that paired on another
+    // network can still find this computer later.
     Ok(Json(json!({
         "token": session.token,
         "expires_ms": session.expires_ms,
+        "origins": state.origins(),
     })))
 }
 

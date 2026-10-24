@@ -40,15 +40,24 @@ fn a_user_certificate_advertises_the_names_it_lists() {
     assert_eq!(names.ips, [ip("203.0.113.7")]);
     assert_eq!(
         names.clone().bound_to(ip("::")).origins(443),
-        ["https://203.0.113.7:443", "https://remote.example.com:443"]
+        ["https://203.0.113.7", "https://remote.example.com"]
     );
     // Bound to one address, the certificate's own domain still reaches it.
     assert_eq!(
         names.bound_to(ip("192.168.1.20")).origins(443),
-        ["https://remote.example.com:443"]
+        ["https://remote.example.com"]
     );
     assert_eq!(
         Names::from_certificate(b"not a certificate"),
         Names::default()
+    );
+}
+
+#[test]
+fn port_443_origins_read_as_browsers_send_them() {
+    let loopback = lan_names().bound_to(ip("127.0.0.1"));
+    assert_eq!(
+        loopback.origins(443),
+        ["https://127.0.0.1", "https://localhost"]
     );
 }

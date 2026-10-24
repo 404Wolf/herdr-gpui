@@ -5,6 +5,8 @@
 "use strict";
 
 const DEVICE = "herdr.device"; // { id, origins, fingerprint, computer }
+/// The most addresses a phone keeps for its computer.
+const MAX_ORIGINS = 16;
 const TOKEN = "herdr.session"; // { token, expires, origin }
 const SIGN_PREFIX = "herdr-remote-session\0";
 
@@ -149,6 +151,18 @@ async function signIn() {
   ).json();
   app.session = { token: session.token, expires: session.expires_ms, origin: app.origin };
   writeJson(sessionStorage, TOKEN, app.session);
+  rememberOrigins(session.origins);
+}
+
+/// Keeps the addresses the computer serves now first, then the ones known
+/// before, which may work again on another network.
+function rememberOrigins(current) {
+  if (!Array.isArray(current) || !app.device) return;
+  const known = [...current, ...(app.device.origins || [])].filter(
+    (origin, index, all) => typeof origin === "string" && origin.startsWith("https://") && all.indexOf(origin) === index,
+  );
+  app.device = { ...app.device, origins: known.slice(0, MAX_ORIGINS) };
+  writeJson(localStorage, DEVICE, app.device);
 }
 
 // ---- views ----
@@ -381,37 +395,47 @@ function showModifiers() {
   }
 }
 
+/// Keys and pastes leave in the order typed, each to the pane shown when it
+/// was typed, even when the page has moved on to another pane meanwhile.
 function sendKeys(keys) {
-  if (!keys.length) return;
-  term.queue.push(...keys);
-  flushKeys();
+  const pane = termPane();
+  if (!pane || !keys.length) return;
+  for (const key of keys) term.queue.push({ pane, key });
+  flushInput();
 }
 
-async function flushKeys() {
+function pasteText(text) {
+  const pane = termPane();
+  if (!pane || !text) return;
+  term.queue.push({ pane, text });
+  flushInput();
+}
+
+/// The next request: one paste, or up to 64 keys in a row for one pane.
+function nextInput() {
+  const first = term.queue.shift();
+  if (first.text !== undefined) return { pane: first.pane, kind: "paste", body: { text: first.text } };
+  const keys = [first.key];
+  while (keys.length < 64 && term.queue.length && term.queue[0].pane === first.pane && term.queue[0].key !== undefined) {
+    keys.push(term.queue.shift().key);
+  }
+  return { pane: first.pane, kind: "keys", body: { keys } };
+}
+
+async function flushInput() {
   if (term.sending) return;
   term.sending = true;
   while (term.queue.length) {
-    const pane = termPane();
-    const keys = term.queue.splice(0, 64);
-    if (!pane) break;
+    const { pane, kind, body } = nextInput();
     try {
-      await api(`/api/term/${encodeURIComponent(pane)}/keys`, { method: "POST", body: { keys } });
+      await api(`/api/term/${encodeURIComponent(pane)}/${kind}`, { method: "POST", body });
     } catch (error) {
+      // What followed was typed after it; sent alone, it would mean something else.
       term.queue = [];
       flash(error.message);
     }
   }
   term.sending = false;
-}
-
-async function pasteText(text) {
-  const pane = termPane();
-  if (!pane || !text) return;
-  try {
-    await api(`/api/term/${encodeURIComponent(pane)}/paste`, { method: "POST", body: { text } });
-  } catch (error) {
-    flash(error.message);
-  }
 }
 
 /// Fits the widest line to the screen's width, unless the text was made
