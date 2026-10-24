@@ -114,3 +114,11 @@ fn output_without_the_flags_line_is_unexpected() {
         Err(Error::Output { .. })
     ));
 }
+
+#[test]
+fn the_script_has_room_for_both_responses_at_their_own_limits() {
+    // Each was its own script's output once, with the separator and the
+    // flags line around them now.
+    let lines = format!("flags --readonly --sandbox\n\n{SEPARATOR}\n").len() as u64;
+    assert!(crate::beads::SYNC_OUTPUT >= 2 * Host::QUERY_OUTPUT + lines);
+}
