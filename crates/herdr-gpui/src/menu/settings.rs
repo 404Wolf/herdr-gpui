@@ -366,6 +366,8 @@ impl HerdrWindow {
                 | Command::Forward
                 | Command::PreviousWorkspace
                 | Command::NextWorkspace
+                | Command::PreviousGroup
+                | Command::NextGroup
                 | Command::WorkspaceNumber(_)
                 | Command::PreviousAgent
                 | Command::NextAgent

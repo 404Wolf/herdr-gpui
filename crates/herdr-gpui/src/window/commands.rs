@@ -660,6 +660,8 @@ impl HerdrWindow {
             }
             Command::PreviousWorkspace
             | Command::NextWorkspace
+            | Command::PreviousGroup
+            | Command::NextGroup
             | Command::WorkspaceNumber(_)
             | Command::PreviousAgent
             | Command::NextAgent
@@ -719,9 +721,12 @@ impl HerdrWindow {
         let current = rows
             .iter()
             .position(|&(host, id)| host == selected && Some(id) == focused);
-        let Some(&(host, id)) = crate::sidebar::sidebar_step(&rows, current, selected, command)
-            .and_then(|index| rows.get(index))
-        else {
+        let index = if matches!(command, Command::PreviousGroup | Command::NextGroup) {
+            crate::sidebar::sidebar_group_step(&self.sidebar_group_starts(), current, command)
+        } else {
+            crate::sidebar::sidebar_step(&rows, current, selected, command)
+        };
+        let Some(&(host, id)) = index.and_then(|index| rows.get(index)) else {
             return;
         };
         let id = id.to_owned();

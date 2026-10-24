@@ -125,6 +125,20 @@ const ACTIONS: &[(&str, Target, &str)] = &[
         Target::Command(Command::NextWorkspace),
         "",
     ),
+    // Not Herdr actions: the GUI's own. Listed before swap_pane_up/down so
+    // these defaults take their chords here (the first binding of a chord
+    // wins); a swap key set in config.toml still takes them back. Herdr
+    // warns about these names if config.toml sets them.
+    (
+        "previous_group",
+        Target::Command(Command::PreviousGroup),
+        "prefix+shift+k",
+    ),
+    (
+        "next_group",
+        Target::Command(Command::NextGroup),
+        "prefix+shift+j",
+    ),
     (
         "previous_agent",
         Target::Command(Command::PreviousAgent),

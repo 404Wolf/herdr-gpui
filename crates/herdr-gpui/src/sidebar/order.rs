@@ -2,7 +2,7 @@
 //! next, and numbered shortcuts step through, as Herdr's TUI steps through
 //! its own sidebar: every listed host's rows, top to bottom.
 
-use super::{agents::panel_agents, visible_workspace_entries};
+use super::{agents::panel_agents, visible_workspace_entries, workspaces::grouped_keys};
 use crate::{HerdrWindow, controls::Command, state::LiveState};
 use herdr_client::protocol::{ClientShellAgent, ClientShellSnapshot};
 
@@ -47,6 +47,39 @@ impl HerdrWindow {
                 visible_workspace_entries(&snapshot.workspaces, collapsed)
                     .into_iter()
                     .map(move |(row, _, _)| (index, snapshot.workspaces[row].workspace_id.as_str()))
+            })
+            .collect()
+    }
+
+    /// For each row `sidebar_workspaces` returns, whether it starts a group:
+    /// a repository with its worktrees, or a workspace on its own. A group
+    /// never spans two hosts.
+    pub(crate) fn sidebar_group_starts(&self) -> Vec<bool> {
+        let multi = self.endpoints.len() > 1;
+        self.listed_hosts()
+            .filter(|(index, _)| !(multi && self.endpoints[*index].collapsed))
+            .flat_map(|(index, snapshot)| {
+                let collapsed = if index == 0 {
+                    &self.collapsed_repos
+                } else {
+                    &self.endpoints[index].collapsed_repos
+                };
+                let grouped = grouped_keys(&snapshot.workspaces);
+                let mut last: Option<&str> = None;
+                visible_workspace_entries(&snapshot.workspaces, collapsed)
+                    .into_iter()
+                    .enumerate()
+                    .map(move |(position, (row, _, _))| {
+                        let key = snapshot.workspaces[row]
+                            .worktree
+                            .as_ref()
+                            .map(|tree| tree.key.as_str())
+                            .filter(|key| grouped.contains(key));
+                        let start = position == 0 || key.is_none() || key != last;
+                        last = key;
+                        start
+                    })
+                    .collect::<Vec<_>>()
             })
             .collect()
     }
@@ -103,9 +136,78 @@ pub(crate) fn step(
     }
 }
 
+/// Which row a group step lands on: the first row of the group after, or
+/// before, the focused row's, wrapping around. `starts` marks each row that
+/// begins a group. With nothing focused, next takes the first group and
+/// previous the last.
+pub(crate) fn group_step(
+    starts: &[bool],
+    current: Option<usize>,
+    command: Command,
+) -> Option<usize> {
+    let len = starts.len();
+    if len == 0 {
+        return None;
+    }
+    let start_at = |from: usize, forward: bool| {
+        (1..=len)
+            .map(|k| {
+                if forward {
+                    (from + k) % len
+                } else {
+                    (from + len - k) % len
+                }
+            })
+            .find(|&index| starts[index])
+    };
+    match command {
+        Command::NextGroup => match current {
+            Some(current) => start_at(current, true),
+            None => Some(0),
+        },
+        Command::PreviousGroup => {
+            // From the focused row's own group start, or past the end.
+            let from = match current {
+                Some(current) => (0..=current)
+                    .rev()
+                    .find(|&index| starts[index])
+                    .unwrap_or(0),
+                None => 0,
+            };
+            start_at(from, false)
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn group_steps_land_on_group_starts_and_wrap() {
+        // Groups: [0], [1, 2, 3], [4, 5].
+        let starts = [true, true, false, false, true, false];
+        for (command, current, expected) in [
+            (Command::NextGroup, Some(0), Some(1)),
+            (Command::NextGroup, Some(2), Some(4)),
+            (Command::NextGroup, Some(5), Some(0)),
+            (Command::NextGroup, None, Some(0)),
+            (Command::PreviousGroup, Some(3), Some(0)),
+            (Command::PreviousGroup, Some(1), Some(0)),
+            (Command::PreviousGroup, Some(0), Some(4)),
+            (Command::PreviousGroup, Some(5), Some(1)),
+            (Command::PreviousGroup, None, Some(4)),
+        ] {
+            assert_eq!(
+                group_step(&starts, current, command),
+                expected,
+                "{command:?} {current:?}"
+            );
+        }
+        assert_eq!(group_step(&[], None, Command::NextGroup), None);
+        assert_eq!(group_step(&starts, Some(0), Command::NextWorkspace), None);
+    }
 
     #[test]
     fn steps_wrap_and_start_from_an_end() {

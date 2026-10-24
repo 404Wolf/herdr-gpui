@@ -115,6 +115,10 @@ pub enum Command {
     MovePane,
     PreviousWorkspace,
     NextWorkspace,
+    /// The first workspace of the sidebar group above or below the focused
+    /// one: a repository with its worktrees, or a workspace on its own.
+    PreviousGroup,
+    NextGroup,
     WorkspaceNumber(u8),
     RenameWorkspace,
     CloseWorkspace,
@@ -186,6 +190,16 @@ pub const COMMANDS: &[CommandInfo] = &[
         command: Command::NextWorkspace,
         name: "next_workspace",
         label: "Next Workspace",
+    },
+    CommandInfo {
+        command: Command::PreviousGroup,
+        name: "previous_group",
+        label: "Previous Group",
+    },
+    CommandInfo {
+        command: Command::NextGroup,
+        name: "next_group",
+        label: "Next Group",
     },
     CommandInfo {
         command: Command::WorkspaceNumber(1),
@@ -907,6 +921,8 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         | Command::MovePane
         | Command::PreviousWorkspace
         | Command::NextWorkspace
+        | Command::PreviousGroup
+        | Command::NextGroup
         | Command::WorkspaceNumber(_)
         | Command::RenameWorkspace
         | Command::CloseWorkspace

@@ -63,6 +63,8 @@ fn leaves_page(command: Command) -> bool {
             | Command::MoveTabNext
             | Command::NextWorkspace
             | Command::PreviousWorkspace
+            | Command::PreviousGroup
+            | Command::NextGroup
             | Command::WorkspaceNumber(_)
             | Command::NextAgent
             | Command::PreviousAgent

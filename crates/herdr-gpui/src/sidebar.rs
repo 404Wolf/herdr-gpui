@@ -50,7 +50,7 @@ pub(crate) use {
 };
 
 pub(crate) use layout::SidebarMetrics;
-pub(crate) use order::step as sidebar_step;
+pub(crate) use order::{group_step as sidebar_group_step, step as sidebar_step};
 
 #[cfg(any(test, feature = "integration-test"))]
 pub(crate) use metrics::LABEL_WIDTH;

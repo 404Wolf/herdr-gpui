@@ -22,6 +22,8 @@ fn catalog_has_all_native_commands_and_gpui_shortcuts() {
         (EditWorktreeNote, &[]),
         (PreviousWorkspace, &[]),
         (NextWorkspace, &[]),
+        (PreviousGroup, &[]),
+        (NextGroup, &[]),
         (WorkspaceNumber(1), &[]),
         (WorkspaceNumber(2), &[]),
         (WorkspaceNumber(3), &[]),
