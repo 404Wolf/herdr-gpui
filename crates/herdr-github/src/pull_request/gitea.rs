@@ -24,6 +24,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// The prefix of the opaque ID a Gitea pull request carries, which tells the
+/// action worker to answer it over Gitea rather than GitHub's GraphQL.
+pub(crate) const ID_PREFIX: &str = "gitea:";
+
 /// How long a remote device's remotes are trusted before SSH reads them again.
 const REMOTE_TTL: Duration = Duration::from_secs(10 * 60);
 const REMOTE_LIMIT: usize = 64;
