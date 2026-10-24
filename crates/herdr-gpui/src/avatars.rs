@@ -86,14 +86,32 @@ enum Slot {
     Pending { asked: Instant },
     /// The owner's avatar, or `None` for a checkout without a GitHub owner.
     Resolved(Option<Arc<Image>>),
+    /// A repository on a configured Gitea host, which shows the Gitea mark.
+    Gitea,
     /// The host could not be read; asked again from `retry_at`, or as soon as
     /// its device reconnects.
     Unreachable { retry_at: Instant },
 }
 
+/// What a worker found for one checkout.
+#[derive(Clone, Debug)]
+enum Found {
+    /// The GitHub owner's avatar, or `None` for no GitHub owner or none cached.
+    Avatar(Option<Arc<Image>>),
+    /// A repository on a configured Gitea host.
+    Gitea,
+}
+
+/// Whose repository a checkout's remote names.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Owner {
+    GitHub(String),
+    Gitea,
+}
+
 /// A worker's answer for one checkout: an error only when the host could
 /// not be read, never when it was read and has no GitHub owner.
-type Lookup = herdr_client::Result<Option<Arc<Image>>>;
+type Lookup = herdr_client::Result<Found>;
 
 type Results = mpsc::SyncSender<(Checkout<String>, Lookup)>;
 type Refresh = mpsc::SyncSender<(Checkout<String>, String)>;
@@ -130,7 +148,9 @@ impl Avatars {
                     .or_insert_with(|| download(&agent, &url))
                     .clone();
                 if let Some(image) = image
-                    && updated.send((checkout, Ok(Some(image)))).is_err()
+                    && updated
+                        .send((checkout, Ok(Found::Avatar(Some(image)))))
+                        .is_err()
                 {
                     break;
                 }
@@ -207,7 +227,8 @@ impl Avatars {
             // asked again here rather than waiting for another snapshot.
             let reconnected = lookup.is_err() && self.reconnected_since_asked(checkout.as_deref());
             let slot = match lookup {
-                Ok(image) => Slot::Resolved(image),
+                Ok(Found::Avatar(image)) => Slot::Resolved(image),
+                Ok(Found::Gitea) => Slot::Gitea,
                 // Stopped because its device disconnected: due again as soon
                 // as one is connected, since only then is it asked for.
                 Err(herdr_client::Error::SshCancelled) => Slot::Unreachable { retry_at: now },
@@ -230,8 +251,14 @@ impl Avatars {
     pub(crate) fn image(&self, checkout: Checkout<&str>) -> Option<Arc<Image>> {
         match self.slot(checkout)? {
             Slot::Resolved(image) => image.clone(),
-            Slot::Pending { .. } | Slot::Unreachable { .. } => None,
+            Slot::Gitea | Slot::Pending { .. } | Slot::Unreachable { .. } => None,
         }
+    }
+
+    /// Whether the checkout's repository is on a configured Gitea host, so
+    /// its row shows the Gitea mark rather than GitHub's.
+    pub(crate) fn gitea(&self, checkout: Checkout<&str>) -> bool {
+        matches!(self.slot(checkout), Some(Slot::Gitea))
     }
 
     fn slot(&self, checkout: Checkout<&str>) -> Option<&Slot> {
@@ -266,15 +293,20 @@ fn answer(
     refresh: &Refresh,
 ) -> bool {
     let url = match repo_owner(checkout.as_deref(), offline) {
-        Ok(owner) => {
-            owner.map(|owner| format!("https://avatars.githubusercontent.com/{owner}?size=48"))
-        }
+        Ok(Some(Owner::Gitea)) => return outgoing.send((checkout, Ok(Found::Gitea))).is_ok(),
+        Ok(Some(Owner::GitHub(owner))) => Some(format!(
+            "https://avatars.githubusercontent.com/{owner}?size=48"
+        )),
+        Ok(None) => None,
         Err(error) => return outgoing.send((checkout, Err(error))).is_ok(),
     };
     let cached = url.as_deref().and_then(cached_image);
     let fresh = cached.as_ref().is_some_and(|(_, fresh)| *fresh);
     if outgoing
-        .send((checkout.clone(), Ok(cached.map(|(image, _)| image))))
+        .send((
+            checkout.clone(),
+            Ok(Found::Avatar(cached.map(|(image, _)| image))),
+        ))
         .is_err()
     {
         return false;
@@ -285,13 +317,14 @@ fn answer(
     true
 }
 
-/// The GitHub owner behind a checkout's `upstream` remote, else its `origin`.
+/// The GitHub owner behind a checkout's `upstream` remote, else its `origin`,
+/// or a configured Gitea host's repository there.
 /// Fails only when a remote host could not be read, or went offline before
 /// or during the read; local Git failures and absent remotes are `None`.
 fn repo_owner(
     checkout: Checkout<&str>,
     offline: &links::Offline,
-) -> herdr_client::Result<Option<String>> {
+) -> herdr_client::Result<Option<Owner>> {
     let deadline = Instant::now() + REMOTE_TIMEOUT;
     for key in ["remote.upstream.url", "remote.origin.url"] {
         let url = match checkout {
@@ -312,7 +345,7 @@ fn repo_owner(
                 || links::is_offline(offline, target),
             )?,
         };
-        if let Some(owner) = url.as_deref().and_then(github_owner) {
+        if let Some(owner) = url.as_deref().and_then(remote_owner) {
             return Ok(Some(owner));
         }
     }
@@ -331,6 +364,18 @@ fn local_config(cwd: &str, key: &str) -> Option<String> {
 
 fn github_owner(remote: &str) -> Option<String> {
     github_repo(remote).map(|(owner, _)| owner)
+}
+
+fn remote_owner(remote: &str) -> Option<Owner> {
+    remote_owner_in(&herdr_gitea::hosts(), remote)
+}
+
+/// GitHub first, as before; one of `hosts`, the configured Gitea hosts,
+/// otherwise.
+fn remote_owner_in(hosts: &[herdr_gitea::Host], remote: &str) -> Option<Owner> {
+    github_owner(remote)
+        .map(Owner::GitHub)
+        .or_else(|| herdr_gitea::repo_in(hosts, remote).map(|_| Owner::Gitea))
 }
 
 fn cached_image(url: &str) -> Option<(Arc<Image>, bool)> {

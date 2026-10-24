@@ -99,3 +99,9 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+The icon assets/icons/gitea.svg is adapted from the Gitea logo,
+Copyright (c) 2016 The Gitea Authors and (c) 2015 The Gogs Authors, from
+https://github.com/go-gitea/gitea at revision
+8abda623122ae187df3d8ed339cfd656a86c29be, MIT License; assets/icons/LICENSE-gitea has the
+changes and the full license text.

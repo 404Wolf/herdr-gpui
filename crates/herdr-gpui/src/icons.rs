@@ -255,6 +255,7 @@ embedded_icons! {
     "fan-out.svg",
     "file.svg",
     "git-branch.svg",
+    "gitea.svg",
     "github.svg",
     "globe.svg",
     "issue.svg",

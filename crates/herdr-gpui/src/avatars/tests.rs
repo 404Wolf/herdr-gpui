@@ -87,10 +87,10 @@ fn profile_avatar_urls_never_accept_credentials_or_other_hosts() {
 fn loads_local_repository_owner_avatar() {
     let cwd = std::env::var("HERDR_AVATAR_TEST_REPO").expect("set a local GitHub repository path");
     let checkout = Checkout::Local(cwd.as_str());
-    let owner = repo_owner(checkout, &Default::default())
-        .ok()
-        .flatten()
-        .expect("repository has a GitHub origin");
+    let Some(Owner::GitHub(owner)) = repo_owner(checkout, &Default::default()).ok().flatten()
+    else {
+        panic!("repository has a GitHub origin");
+    };
     let mut avatars = Avatars::new();
     avatars.request(checkout, Instant::now());
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -227,12 +227,15 @@ fn deduplicates_pending_hits_and_misses_and_drains_results() {
     let image = Arc::new(Image::empty());
     assert!(
         outgoing
-            .send((Checkout::Local("hit".into()), Ok(Some(image.clone()))))
+            .send((
+                Checkout::Local("hit".into()),
+                Ok(Found::Avatar(Some(image.clone())))
+            ))
             .is_ok()
     );
     assert!(
         outgoing
-            .send((Checkout::Local("miss".into()), Ok(None)))
+            .send((Checkout::Local("miss".into()), Ok(Found::Avatar(None))))
             .is_ok()
     );
     assert!(avatars.poll(now));
@@ -245,5 +248,63 @@ fn deduplicates_pending_hits_and_misses_and_drains_results() {
     assert!(avatars.image(Checkout::Local("miss")).is_none());
     avatars.request(Checkout::Local("hit"), now);
     avatars.request(Checkout::Local("miss"), now);
+    assert!(incoming.try_recv().is_err());
+}
+
+#[test]
+fn gitea_remotes_name_the_gitea_mark_and_github_keeps_its_owner() {
+    let hosts: Vec<_> = [herdr_gitea::HostConfig {
+        host: "gitea.example.com".into(),
+        ..herdr_gitea::HostConfig::default()
+    }]
+    .iter()
+    .filter_map(herdr_gitea::Host::from_config)
+    .collect();
+    for remote in [
+        "git@gitea.example.com:team/app.git",
+        "ssh://git@gitea.example.com:2222/team/app.git",
+        "https://gitea.example.com/team/app",
+    ] {
+        assert_eq!(
+            remote_owner_in(&hosts, remote),
+            Some(Owner::Gitea),
+            "{remote}"
+        );
+    }
+    assert_eq!(
+        remote_owner_in(&hosts, "git@github.com:octo/app.git"),
+        Some(Owner::GitHub("octo".into()))
+    );
+    // A host nobody configured is neither.
+    assert_eq!(
+        remote_owner_in(&hosts, "git@gitea.other.com:team/app.git"),
+        None
+    );
+    assert_eq!(
+        remote_owner_in(&[], "git@gitea.example.com:team/app.git"),
+        None
+    );
+}
+
+#[test]
+fn a_gitea_answer_resolves_without_an_avatar() {
+    let (mut avatars, incoming, outgoing) = detached();
+    let now = Instant::now();
+    avatars.request(Checkout::Local("gitea"), now);
+    assert_eq!(
+        incoming.try_recv().ok(),
+        Some(Checkout::Local("gitea".into()))
+    );
+    assert!(!avatars.gitea(Checkout::Local("gitea")));
+    assert!(
+        outgoing
+            .send((Checkout::Local("gitea".into()), Ok(Found::Gitea)))
+            .is_ok()
+    );
+    assert!(avatars.poll(now));
+    assert!(avatars.gitea(Checkout::Local("gitea")));
+    assert!(avatars.image(Checkout::Local("gitea")).is_none());
+    // Resolved, so it is not asked for again.
+    avatars.request(Checkout::Local("gitea"), now);
     assert!(incoming.try_recv().is_err());
 }

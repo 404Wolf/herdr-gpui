@@ -29,7 +29,8 @@ pub(super) use configured::{
 };
 
 /// What a row shows in its leading icon slot: a repository owner's avatar when
-/// one is cached, the GitHub mark while it is not, an empty slot for a folder
+/// one is cached, the GitHub mark while it is not (the Gitea mark for a
+/// repository on a configured Gitea host), an empty slot for a folder
 /// that is not a Git checkout, so its name lines up with the rows around it,
 /// and nothing for a row that reserves no slot at all: a child row, or any
 /// row while the repository icons are turned off. A linked worktree that is
@@ -39,6 +40,7 @@ pub(super) enum RowIcon {
     None,
     Blank,
     Mark,
+    GiteaMark,
     Avatar(Arc<Image>),
     Worktree(u32),
 }
@@ -46,12 +48,16 @@ pub(super) enum RowIcon {
 impl RowIcon {
     /// Whether the slot shows something; a blank one only keeps the room.
     pub(super) fn draws(&self) -> bool {
-        matches!(self, Self::Mark | Self::Avatar(_) | Self::Worktree(_))
+        matches!(
+            self,
+            Self::Mark | Self::GiteaMark | Self::Avatar(_) | Self::Worktree(_)
+        )
     }
 
     fn slot(self, key: &str, font: &FontConfig, color: u32) -> Div {
         let probe = match self {
             Self::Worktree(_) => "worktree-icon",
+            Self::GiteaMark => "gitea",
             _ => "github",
         };
         div()
@@ -71,6 +77,7 @@ impl RowIcon {
         match self {
             Self::None | Self::Blank => Empty.into_any_element(),
             Self::Mark => github_mark(color).size_full().into_any_element(),
+            Self::GiteaMark => gitea_mark(color).size_full().into_any_element(),
             Self::Worktree(hue) => svg()
                 .path("icons/git-branch.svg")
                 .size_full()
@@ -91,6 +98,14 @@ impl RowIcon {
 pub(crate) fn github_mark(color: u32) -> Svg {
     svg()
         .path("icons/github.svg")
+        .flex_none()
+        .text_color(rgb(color))
+}
+
+/// Gitea's mark, tinted like GitHub's, for repositories on a Gitea host.
+pub(crate) fn gitea_mark(color: u32) -> Svg {
+    svg()
+        .path("icons/gitea.svg")
         .flex_none()
         .text_color(rgb(color))
 }
