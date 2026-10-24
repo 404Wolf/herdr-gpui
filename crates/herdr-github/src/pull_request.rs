@@ -4,6 +4,7 @@
 mod batch;
 mod cache;
 mod fetch;
+mod gitea;
 mod lookup;
 mod model;
 mod parse;
