@@ -363,7 +363,7 @@ fn a_batch_answers_gitea_checkouts_and_passes_the_rest_on() {
             .found
             .iter()
             .find(|(asked, _)| asked == input)
-            .map(|(_, result)| result.as_ref().map(Option::clone))
+            .map(|(_, result)| result.as_ref().ok().cloned())
     };
     let pr = found(&gitea.input("feature")).unwrap().unwrap().unwrap();
     assert_eq!(pr.number, 7);

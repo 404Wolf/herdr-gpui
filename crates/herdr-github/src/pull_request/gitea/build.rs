@@ -3,14 +3,13 @@
 //! assembled in the shape GitHub's GraphQL answers deserialize from, then held
 //! to the same identity checks and cleaning a GitHub lookup gets.
 
-use super::super::{MergeMethod, PullRequest, clean, parse::object_id};
+use super::{
+    super::{MergeMethod, PullRequest, clean, parse::object_id},
+    ID_PREFIX,
+};
 use crate::Error;
 use herdr_gitea::{CombinedStatus, PullRequest as GiteaPull, Repo, Repository, Review};
 use serde_json::{Value, json};
-
-/// The prefix of the opaque ID a Gitea pull request carries, which tells the
-/// action worker to answer it over Gitea rather than GitHub's GraphQL.
-pub(crate) const ID_PREFIX: &str = "gitea:";
 
 /// Whether `pr` is from `branch` as pushed under `owner`. A head whose fork
 /// was deleted has no owner to check and matches only by name.

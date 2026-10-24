@@ -24,6 +24,7 @@ use std::{
     time::Duration,
 };
 
+mod gitea;
 #[cfg(test)]
 mod tests;
 
@@ -108,6 +109,9 @@ impl TryFrom<&PullRequest> for Target {
 
 impl Target {
     fn of(pr: &PullRequest, writable: bool) -> crate::Result<Self> {
+        if let Some(target) = gitea::target(pr, writable) {
+            return target;
+        }
         if pr.id.is_empty() || pr.head_ref_oid.is_empty() {
             return Err(Error::PrActionTarget);
         }
@@ -490,6 +494,13 @@ fn spawn(current: Arc<AtomicU64>) -> crate::Result<Worker> {
         .spawn(move || {
             for (generation, target, job, token) in incoming {
                 let cancelled = || current.load(Ordering::Relaxed) != generation;
+                if gitea::owns(&target) {
+                    let completion = gitea::complete(&target, job, cancelled);
+                    if outgoing.send((generation, target, completion)).is_err() {
+                        break;
+                    }
+                    continue;
+                }
                 let completion = match job {
                     Job::Conversation => {
                         Completion::Conversation(conversation(&target, &token, cancelled))
