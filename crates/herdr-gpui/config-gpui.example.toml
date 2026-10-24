@@ -494,6 +494,24 @@ size = 12
 # every other repository with the main sign-in. At most 8 accounts.
 # accounts = [{ id = "0123456789abcdef0123456789abcdef", owners = ["my-emu-org"] }]
 
+# Gitea and Forgejo hosts. A checkout whose origin (or upstream) remote names a
+# host listed here gets its pull request, checks, and reviews from that host,
+# in the same badges, menus, and actions as GitHub, plus its open pull requests
+# and issues in the worktree picker and its issues in the Orchestrator. Remotes
+# match by host name, ignoring the SSH user and port. Give each host a command
+# that prints its API token (a "token" here is refused); without one, only
+# public repositories are read. A token is never sent over plain http://.
+# [[gitea.hosts]]
+# host = "gitea.example.com"
+# Web address Gitea is served at, which the API lives under; default https://<host>.
+# url = "https://gitea.example.com"
+# Other names remotes reach the same instance by, such as an SSH host alias.
+# aliases = ["gitea-ssh"]
+# A PEM file of certificate authorities to trust beyond the system's CA bundle,
+# for an instance signed by a private CA the system does not trust.
+# ca_file = "/etc/ssl/certs/my-ca.pem"
+# token_command = ["cat", "/run/secrets/gitea-token"]
+
 # A Coder deployment whose workspaces can be created and added as devices from
 # the device picker's "Add Coder Workspace…". Settings > Cloud devices edits
 # these keys and saves the client secret to the credential store, so editing

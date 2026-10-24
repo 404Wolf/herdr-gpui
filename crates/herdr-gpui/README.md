@@ -2209,6 +2209,43 @@ to need you. When each section was last open is remembered per daemon between
 runs. Agent states are timed from when this client first saw them, so after a
 restart an agent already waiting on you counts as new once.
 
+## Gitea and Forgejo
+
+Repositories on a Gitea or Forgejo host listed under `[[gitea.hosts]]` in
+`config-gpui.local.toml` get the same pull request features as GitHub ones:
+the sidebar and title bar badges, the workspace menu's pull request details
+(checks, review decision, merge state), its review conversation, commenting,
+and merging; the worktree picker's open pull requests and issues; and the
+Orchestrator's issue listing.
+
+```toml
+[[gitea.hosts]]
+host = "gitea.example.com"
+token_command = ["cat", "/run/secrets/gitea-token"]
+```
+
+A checkout belongs to a host when its `origin` remote (or, in a fork
+checkout, its `upstream` remote) names that host in any form Git accepts:
+`git@host:owner/repo`, `ssh://user@host:2222/owner/repo`, or
+`https://host/owner/repo`. `url` sets the web address when Gitea is served
+somewhere other than `https://<host>`, such as under a path, and `aliases`
+lists other names remotes use for it. Certificates are checked against the
+system's CA bundle, so an instance signed by a private CA the system trusts
+works as is; `ca_file` adds one the system does not. The token comes from
+`token_command`,
+run on this computer and kept in memory for five minutes; a token written into
+the file is refused. Without a command, public repositories are still read.
+
+Gitea's REST API is read once per repository per refresh for its open pull
+requests, then once more per pull request for its checks (the commit's
+combined status, where Gitea Actions report) and reviews. The review decision
+is each reviewer's latest verdict: requested changes outweigh approvals, and
+with neither a pending review request reads as "Review required". Gitea says
+only whether a pull request merges cleanly, so "behind" and "blocked" never
+appear. A merge names the head commit shown, so Gitea refuses it if the branch
+moved since. GitHub-only features, such as the Security tab, the GitHub App's
+installations, and the account menus, are not shown for Gitea repositories.
+
 ## Orchestrator
 
 The activity bar's **Pull requests** and **Issues** sections list, across the
