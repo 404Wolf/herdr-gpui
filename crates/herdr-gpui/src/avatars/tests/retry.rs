@@ -32,7 +32,7 @@ fn an_unreachable_host_is_asked_again_only_after_the_retry_interval() {
     let image = Arc::new(Image::empty());
     assert!(
         outgoing
-            .send((DEVBOX.to_owned(), Ok(Some(image.clone()))))
+            .send((DEVBOX.to_owned(), Ok(Found::Avatar(Some(image.clone())))))
             .is_ok()
     );
     assert!(avatars.poll(start + RETRY_AFTER));
@@ -48,7 +48,11 @@ fn a_host_read_without_a_github_owner_is_never_asked_again() {
     let (mut avatars, incoming, outgoing) = detached();
     let start = Instant::now();
     avatars.request(DEVBOX, start);
-    assert!(outgoing.send((DEVBOX.to_owned(), Ok(None))).is_ok());
+    assert!(
+        outgoing
+            .send((DEVBOX.to_owned(), Ok(Found::Avatar(None))))
+            .is_ok()
+    );
     assert!(avatars.poll(start));
     assert_eq!(incoming.try_iter().count(), 1);
     avatars.request(DEVBOX, start + RETRY_AFTER * 10);

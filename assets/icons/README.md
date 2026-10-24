@@ -172,6 +172,10 @@ identity or GitHub logo. All of them are embedded through a
 minimal GPUI asset source. GPUI renders them as SVG masks tinted with the current
 theme foreground, rather than fixed-color cached images.
 
+`gitea.svg` is the Gitea logo's cup and branch, kept as one tinted path for
+repositories on a configured Gitea or Forgejo host; MIT licensed, with the
+source revision in `LICENSE-gitea`.
+
 `vscode.svg`, `error.svg`, and `pass.svg` are Codicons from Microsoft's
 vscode-codicons, unchanged, under CC BY 4.0; `LICENSE-codicons` has the source
 revision, the license, and the trademark notice. `vscode.svg` marks the VS Code

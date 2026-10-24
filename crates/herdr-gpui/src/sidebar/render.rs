@@ -407,8 +407,15 @@ impl HerdrWindow {
                             self.avatars
                                 .as_ref()
                                 .zip(Checkout::of(endpoint_index == 0, target, workspace))
-                                .and_then(|(avatars, checkout)| avatars.image(checkout))
-                                .map_or(RowIcon::Mark, RowIcon::Avatar)
+                                .map_or(RowIcon::Mark, |(avatars, checkout)| {
+                                    if avatars.gitea(checkout) {
+                                        RowIcon::GiteaMark
+                                    } else {
+                                        avatars
+                                            .image(checkout)
+                                            .map_or(RowIcon::Mark, RowIcon::Avatar)
+                                    }
+                                })
                         },
                         fold,
                         grouped,

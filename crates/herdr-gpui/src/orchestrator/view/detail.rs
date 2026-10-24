@@ -330,7 +330,12 @@ impl OrchestratorView {
             .child(
                 step(
                     "orchestrator-crumb-repo",
-                    "icons/github.svg",
+                    // A Gitea item's repository is on that host, not GitHub.
+                    if item.key.source.provider == crate::orchestrator::Provider::Gitea {
+                        super::list::source_icon(item.key.source.provider)
+                    } else {
+                        "icons/github.svg"
+                    },
                     repo.to_owned(),
                 )
                 .on_click(cx.listener(|this, _, _, cx| {

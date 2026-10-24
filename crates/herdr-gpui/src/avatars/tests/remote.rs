@@ -84,10 +84,14 @@ fn remote_avatars_are_kept_per_host_and_apart_from_local_paths() {
     let image = Arc::new(Image::empty());
     assert!(
         outgoing
-            .send((devbox.to_owned(), Ok(Some(image.clone()))))
+            .send((devbox.to_owned(), Ok(Found::Avatar(Some(image.clone())))))
             .is_ok()
     );
-    assert!(outgoing.send((other.to_owned(), Ok(None))).is_ok());
+    assert!(
+        outgoing
+            .send((other.to_owned(), Ok(Found::Avatar(None))))
+            .is_ok()
+    );
     assert!(avatars.poll(now));
     assert!(
         avatars
