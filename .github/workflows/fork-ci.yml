@@ -1,0 +1,76 @@
+name: Fork CI
+
+# The upstream workflows only run in penso/herdr-gpui, so this fork checks its
+# own branch here: the Linux half of upstream's "Format, lint, and test" job,
+# plus the Nix package the fork is consumed through.
+
+on:
+  push:
+    branches: [wolf]
+  pull_request:
+    branches: [wolf]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: fork-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_PROFILE_DEV_DEBUG: '0'
+
+jobs:
+  test:
+    name: Format, lint, and test (${{ matrix.features }})
+    strategy:
+      fail-fast: false
+      matrix:
+        features: [default, all]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Linux build dependencies
+        run: bash scripts/install-linux-deps.sh
+      - name: Install pinned Rust toolchain
+        run: rustup show
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: ${{ matrix.features }}
+      - name: Check formatting
+        if: matrix.features == 'default'
+        run: cargo fmt --all -- --check
+      - name: Check source file sizes
+        if: matrix.features == 'default'
+        run: bash scripts/check-file-size.sh
+      - name: Lint every target and feature
+        if: matrix.features == 'all'
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - name: Lint without default features
+        if: matrix.features == 'default'
+        run: cargo clippy --locked --workspace --all-targets --no-default-features -- -D warnings
+      - name: Test default features
+        if: matrix.features == 'default'
+        run: cargo test --locked --workspace
+      - name: Test all features
+        if: matrix.features == 'all'
+        run: cargo test --locked --workspace --all-features
+
+  nix:
+    name: Nix package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+      - name: Build the package
+        run: nix build -L .#default
