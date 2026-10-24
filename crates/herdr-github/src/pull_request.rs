@@ -33,6 +33,7 @@ pub use model::fixture;
 
 use fetch::Origins;
 pub(crate) use gitea::{ID_PREFIX as GITEA_ID_PREFIX, from_gitea as gitea_from};
+pub use gitea::{from_gitea as gitea_from_error, local_gitea_repository, signed_out_tokens};
 use parse::{parse_graphql, parse_numbered};
 
 /// Absence is a successful lookup with no PR, not an error.

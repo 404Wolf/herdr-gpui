@@ -39,12 +39,38 @@ pub(super) struct Located {
     pub repo: Repo,
     pub head_owner: String,
     pub branch: String,
+    /// Whether the base is the `upstream` remote, with `origin` a fork.
+    pub upstream: bool,
 }
 
 /// Remote devices' `origin`/`upstream` URLs and branch merge refs, keyed by
 /// SSH target, Git directory, and branch, so a refresh does not dial again.
 type Remotes = Vec<(String, String, String, Instant, Option<Located>)>;
 static REMOTES: Mutex<Remotes> = Mutex::new(Vec::new());
+
+/// The Gitea repository a verified local checkout's pull requests and issues
+/// belong to, and, when that is its `upstream`, the owner of the fork behind
+/// `origin`. `None` for a checkout on no configured Gitea host.
+pub fn local_gitea_repository(
+    input: &Input,
+    deadline: Instant,
+    cancelled: &impl Fn() -> bool,
+) -> crate::Result<Option<(Repo, Option<String>)>> {
+    let hosts = herdr_gitea::hosts();
+    if hosts.is_empty() {
+        return Ok(None);
+    }
+    Ok(locate(&hosts, input, &Origin::Local, deadline, cancelled)?
+        .map(|located| (located.repo, located.upstream.then_some(located.head_owner))))
+}
+
+/// Tokens for a window signed out of GitHub while Gitea hosts are configured:
+/// their checkouts are read with each host's own token, so the prefetch and
+/// actions run without a GitHub sign-in, and GitHub checkouts are not asked.
+pub fn signed_out_tokens() -> Option<crate::Tokens> {
+    herdr_gitea::configured()
+        .then(|| crate::Tokens::from(std::sync::Arc::new(secrecy::SecretString::default())))
+}
 
 /// Answers every input on a Gitea host into `batch` and returns the rest.
 /// With no host configured nothing is read, so GitHub-only setups pay nothing.
@@ -168,14 +194,14 @@ pub(super) fn resolve(
         .as_deref()
         .and_then(|url| herdr_gitea::repo_in(hosts, url))
         .filter(|upstream| origin.as_ref().is_none_or(|origin| !origin.same(upstream)));
-    let (repo, head_owner) = match (upstream, origin) {
+    let (repo, head_owner, upstream) = match (upstream, origin) {
         (Some(upstream), origin) => {
             let owner = origin.map_or_else(|| upstream.owner.clone(), |origin| origin.owner);
-            (upstream, owner)
+            (upstream, owner, true)
         }
         (None, Some(origin)) => {
             let owner = origin.owner.clone();
-            (origin, owner)
+            (origin, owner, false)
         }
         (None, None) => return Ok(None),
     };
@@ -189,6 +215,7 @@ pub(super) fn resolve(
         repo,
         head_owner,
         branch,
+        upstream,
     }))
 }
 
@@ -331,7 +358,7 @@ fn lookup(
 
 /// Gitea's failure as this crate's, keeping cancellation and timeouts the
 /// variants the batch logic already treats specially.
-pub(crate) fn from_gitea(error: herdr_gitea::Error) -> Error {
+pub fn from_gitea(error: herdr_gitea::Error) -> Error {
     match error {
         herdr_gitea::Error::Cancelled => Error::PrCancelled,
         herdr_gitea::Error::Timeout => Error::PrTimeout,

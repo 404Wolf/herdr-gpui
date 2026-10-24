@@ -80,6 +80,14 @@ pub(super) fn fetch_batch(
     let mut batch = Batch::default();
     // Checkouts on a configured Gitea host are answered there.
     let inputs = super::gitea::claim(inputs, origin, &mut batch, &cancelled);
+    if secrecy::ExposeSecret::expose_secret(tokens.main().as_ref()).is_empty() {
+        // Signed out of GitHub (see `gitea::signed_out_tokens`).
+        let signed_out = inputs
+            .into_iter()
+            .map(|input| (input, Err(Error::GitHubAuthentication)));
+        batch.found.extend(signed_out);
+        return batch;
+    }
     let targets = prepare(
         inputs,
         Instant::now() + PREPARE,

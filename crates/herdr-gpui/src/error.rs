@@ -326,6 +326,10 @@ pub enum Error {
     Gitea(#[from] herdr_gitea::Error),
     #[error(transparent)]
     GiteaConfig(#[from] herdr_gitea::config::ConfigError),
+    #[error(
+        "[gitea] token must not be in the config. Give the host a token_command that prints it."
+    )]
+    GiteaSecretInConfig,
     #[error("Oversized GIF, WebP, and animated PNG images cannot be resized safely.")]
     ImageAnimationResize,
     #[error("Could not decode the oversized image.")]
