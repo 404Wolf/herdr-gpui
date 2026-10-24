@@ -63,12 +63,8 @@ impl Look {
         })
     }
 
-    pub(crate) fn icon(&self, path: &'static str, size: f32, color: u32) -> Svg {
-        svg()
-            .flex_none()
-            .size(px(size))
-            .path(path)
-            .text_color(rgb(color))
+    pub(crate) fn icon(&self, path: &'static str, size: f32, color: u32) -> AnyElement {
+        crate::icons::icon(path, size, color)
     }
 
     pub(crate) fn dot(&self, color: u32, size: f32) -> Div {

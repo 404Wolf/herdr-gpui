@@ -2,7 +2,6 @@ use crate::{HerdrWindow, config::Config};
 use chrono::{DateTime, Utc};
 use gpui::*;
 use std::collections::HashMap;
-use std::env;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -234,32 +233,7 @@ impl Drop for Preferences {
     }
 }
 
-/// The GPUI client's own state directory, shared by preferences and logs.
-pub(crate) fn state_dir() -> Option<PathBuf> {
-    state_dir_with(|name| env::var_os(name))
-}
-
-fn state_dir_with(var: impl Fn(&str) -> Option<std::ffi::OsString>) -> Option<PathBuf> {
-    let var = |name| var(name).filter(|value| !value.is_empty());
-    let root = var("XDG_STATE_HOME").map(PathBuf::from).or_else(|| {
-        // Existing Windows installations with HOME already store preferences
-        // here. Keep selecting the same directory after an upgrade.
-        if let Some(home) = var("HOME") {
-            return Some(PathBuf::from(home).join(".local").join("state"));
-        }
-        #[cfg(windows)]
-        {
-            if let Some(local) = var("LOCALAPPDATA") {
-                return Some(PathBuf::from(local));
-            }
-            if let Some(profile) = var("USERPROFILE") {
-                return Some(PathBuf::from(profile).join("AppData").join("Local"));
-            }
-        }
-        None
-    });
-    root.map(|root| root.join("herdr").join("gpui"))
-}
+pub(crate) use herdr_client::local_path::state_dir;
 
 fn endpoint_path(dir: &Path, socket: &Path) -> PathBuf {
     let mut hash = 0xcbf29ce484222325_u64;

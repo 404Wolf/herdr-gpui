@@ -86,7 +86,7 @@ verification.
 
 ## Authentication Contract
 
-The source of truth is `crates/herdr-gpui/src/updater/release.rs`. Release assets
+The source of truth is `crates/herdr-updater/src/release.rs`. Release assets
 include `update-manifest.json` and `update-manifest.sig`. Example JSON, formatted
 here only for readability:
 
@@ -320,8 +320,8 @@ python3 scripts/test-updater.py
 python3 scripts/test-updater.py --offline
 ```
 
-The harness uses the real updater sources and the pinned toolchain/dependencies,
-without GPUI's desktop build dependencies. On Linux it also exercises a signed
+The harness builds and tests the `herdr-updater` crate from the workspace lock
+and fails if GPUI is among its dependencies. On Linux it also exercises a signed
 helper handoff, actual standalone replacement/relaunch, tampering refusal,
 cancellation, and rollback in private temporary installations under a test HOME.
 It does not build or test the complete Linux GUI or prove macOS Gatekeeper acceptance.

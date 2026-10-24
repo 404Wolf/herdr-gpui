@@ -97,7 +97,7 @@ impl HerdrWindow {
     /// group in use shows. Only a tab a page draws zooms: a web page, a
     /// local page, or a blank tab waiting for one. Tabs the app draws
     /// itself, such as a review, follow the terminal font instead.
-    fn zoomed_tab(&self, cx: &App) -> Option<Tab> {
+    pub(super) fn zoomed_tab(&self, cx: &App) -> Option<Tab> {
         if !super::EMBEDDED {
             return None;
         }

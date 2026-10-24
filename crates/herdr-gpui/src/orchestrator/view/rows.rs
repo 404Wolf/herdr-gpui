@@ -136,20 +136,7 @@ impl Status {
     }
 }
 
-/// An agent Herdr shows on one of the client's connected hosts.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct LiveAgent {
-    /// The endpoint it is on, by index in the window's list.
-    pub(crate) endpoint: usize,
-    /// `None` on this machine, else the SSH destination.
-    pub(crate) host: Option<String>,
-    pub(crate) session: Option<String>,
-    pub(crate) workspace_id: String,
-    pub(crate) pane_id: String,
-    pub(crate) status: AgentStatus,
-    /// The agent's own summary of what it is doing, if it gave one.
-    pub(crate) title: Option<String>,
-}
+pub(crate) use herdr_orchestrator::model::LiveAgent;
 
 /// The live agent a run's session names, if a connected host shows it.
 pub(crate) fn live_for<'a>(session: &HerdrSession, live: &'a [LiveAgent]) -> Option<&'a LiveAgent> {

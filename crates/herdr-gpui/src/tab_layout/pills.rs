@@ -107,36 +107,37 @@ impl TabLayout for Pills {
                     })
                     .child(close_button(close, &probe, END, text, cx)),
             );
-        base.group(hover)
-            .px(px(MARGIN_X))
-            .py(px(MARGIN_Y))
-            .flex_none()
+        // The pill, not its margin, is the hover group, so the close button
+        // shows exactly where the layer hides a moving status under it.
+        let pill = div()
+            .group(hover)
             .flex()
-            .cursor_pointer()
+            .items_center()
+            .gap(px(GAP))
+            .min_w(px(crate::TAB_WIDTH - 2. * MARGIN_X))
+            .h_full()
+            .pl(px(PAD_LEFT))
+            .pr(px(PAD_RIGHT))
+            .rounded(px(corners::CONTROL))
+            .bg(cx.fill.over(cx.theme.surface, background))
+            .when(!state.selected, |pill| pill.hover(move |s| s.bg(rgb(wash))))
+            .text_color(rgb(text))
+            .child(chip)
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(GAP))
-                    .min_w(px(crate::TAB_WIDTH - 2. * MARGIN_X))
-                    .h_full()
-                    .pl(px(PAD_LEFT))
-                    .pr(px(PAD_RIGHT))
-                    .rounded(px(corners::CONTROL))
-                    .bg(cx.fill.over(cx.theme.surface, background))
-                    .when(!state.selected, |pill| pill.hover(move |s| s.bg(rgb(wash))))
-                    .text_color(rgb(text))
-                    .child(chip)
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(DOT_GAP))
-                            .child(label)
-                            .children(zoom_mark(zoomed, &probe, text, cx)),
-                    )
-                    .child(end),
+                    .gap(px(DOT_GAP))
+                    .child(label)
+                    .children(zoom_mark(zoomed, &probe, text, cx)),
             )
+            .child(end);
+        base.px(px(MARGIN_X))
+            .py(px(MARGIN_Y))
+            .flex_none()
+            .flex()
+            .cursor_pointer()
+            .child(crate::mark_layer::hidden_under_pointer(pill))
     }
 
     fn padding(&self) -> f32 {

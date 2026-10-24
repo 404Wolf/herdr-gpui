@@ -157,9 +157,10 @@ keep_selection_after_copy = true
 layout = "normal"
 # How tab strips draw their tabs: "classic" (even cells divided by a rule),
 # "pills" (rounded pills led by the agent's logo, the status after the title),
-# "underline" (flat titles, a bar under the chosen one), "cards" (browser-like,
-# the chosen tab joined to its terminal), or "compact" (icons only, the chosen
-# tab named). View > Tab Layout lists them all.
+# "outline" (bare titles, the chosen one in an outlined pill with its close
+# button), "underline" (flat titles, a bar under the chosen one), "cards"
+# (browser-like, the chosen tab joined to its terminal), or "compact" (icons
+# only, the chosen tab named). View > Tab Layout lists them all.
 tab_layout = "classic"
 
 [palette]
@@ -281,7 +282,7 @@ project_roots = []
 # cycle_windows = "cmd-`"
 # close_window = "cmd-alt-shift-w"
 # Unbound by default: themes, reconnect, logs, about, worktree_notes,
-# edit_worktree_note, review_changes, git_menu.
+# edit_worktree_note, review_changes, git_menu, toggle_annotate.
 
 # What the focused pane receives instead of a keystroke, as Ghostty's text:
 # binds do. The value is a key a terminal can receive (ctrl-a, home, alt-b,
@@ -359,6 +360,11 @@ size = 12
 # show the focused workspace's orchestrator across the window on that list.
 # Settings sits at its foot. false keeps the plain sidebar.
 # activity_bar = true
+
+# The bar's Automations section, which lists the herdr-automate scripts and
+# runs of every host. false hides it, and Herdr UI then neither reads nor
+# starts any host's automation daemon; daemons already running keep running.
+# automations = true
 
 # A colour per host, keyed by the host's name in the sidebar, as #rgb or
 # #rrggbb. It washes the host's header, its workspace rows, and its agents'

@@ -213,7 +213,9 @@ fn a_removal_pulses_the_host_header_until_the_device_leaves(cx: &mut TestAppCont
                 HOST,
                 "m5max-ms",
                 true,
-                Ok(Err(crate::Error::CredentialPolicy)),
+                Ok(Err(crate::Error::Credentials(
+                    herdr_credentials::Error::Policy,
+                ))),
                 cx,
             );
             assert!(!view.menu.github_hosts.contains_key(HOST));

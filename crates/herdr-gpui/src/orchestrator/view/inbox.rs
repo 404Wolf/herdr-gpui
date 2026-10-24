@@ -418,7 +418,11 @@ impl OrchestratorView {
             .items_center()
             .justify_center()
             .child(
-                look.icon("icons/refresh.svg", 14., look.theme.muted)
+                svg()
+                    .path("icons/refresh.svg")
+                    .size(px(14.))
+                    .flex_none()
+                    .text_color(rgb(look.theme.muted))
                     .with_animation(
                         "orchestrator-refresh-spin",
                         Animation::new(SPIN).repeat(),

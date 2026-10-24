@@ -21,6 +21,8 @@ pub enum Error {
         source: io::Error,
     },
     #[error(transparent)]
+    Automations(#[from] crate::automations::Error),
+    #[error(transparent)]
     Backdrop(#[from] crate::backdrop::Error),
     #[error("Searching the local network failed: {0}")]
     Bonjour(#[from] mdns_sd::Error),
@@ -32,14 +34,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[error("Could not keep the machine awake: {0}")]
-    Caffeine(#[source] keepawake::Error),
-    #[error("No agent is working, so there is nothing to stay awake for")]
-    CaffeineNoWorkingAgents,
-    #[error("Could not start the keep-awake thread")]
-    CaffeineThread(#[source] io::Error),
-    #[error("The keep-awake thread stopped; the display may sleep")]
-    CaffeineWorkerStopped,
+    #[error(transparent)]
+    Caffeine(#[from] crate::caffeine::Failure),
     #[error(transparent)]
     Chat(#[from] crate::chat::Error),
     #[error("That checkpoint was taken on another branch. Check that branch out to restore it.")]
@@ -109,46 +105,10 @@ pub enum Error {
     ConnectionBusy,
     #[error("The connection is not ready. Try again.")]
     ConnectionNotReady,
-    #[error("Control request or response exceeds {limit} bytes")]
-    ControlMessageSize { limit: usize },
-    #[error("Herdr UI closed the control connection without answering")]
-    ControlNoResponse,
-    #[error("{} is held by something other than this user's Herdr UI, so it is not used", path.display())]
-    ControlPipeForeign { path: PathBuf },
-    #[error("{message}")]
-    ControlRejected {
-        code: crate::control::ErrorCode,
-        message: String,
-    },
-    #[error("Another Herdr UI already serves {}", path.display())]
-    ControlSocketInUse { path: PathBuf },
-    #[error("Herdr UI is not running, or its control socket {} is unreachable: {source}", path.display())]
-    ControlUnavailable {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error("Could not identify the Windows user: {0}")]
-    ControlUser(#[source] io::Error),
-    #[error("Missing credential directory.")]
-    CredentialDirectory,
-    #[error("Cannot access private credential file.")]
-    CredentialIo(#[source] io::Error),
-    #[cfg(windows)]
     #[error(transparent)]
-    CredentialManager(#[from] crate::github::CredentialManagerError),
-    #[error(
-        "Cannot access private credential file. Require an owned directory and regular 0600 file; symlinks are rejected."
-    )]
-    CredentialPermissions,
-    #[error(
-        "No secure credential store configured. Explicitly opt in with allow_plaintext_credentials = true in the [github] or [coder] table, or use GH_TOKEN / GITHUB_TOKEN for GitHub."
-    )]
-    CredentialPolicy,
-    #[error(
-        "No GitHub credential store is available on this platform. Use GH_TOKEN / GITHUB_TOKEN."
-    )]
-    CredentialUnsupported,
+    Control(#[from] crate::control::ControlError),
+    #[error(transparent)]
+    Credentials(#[from] herdr_credentials::Error),
     #[error("daemon startup cancelled")]
     DaemonCancelled,
     #[error("herdr server exited before accepting connections: {0}. Check the Herdr server log.")]
@@ -477,12 +437,6 @@ pub enum Error {
     Io(#[from] io::Error),
     #[error("{0}")]
     Json(#[from] serde_json::Error),
-    #[cfg(target_os = "macos")]
-    #[error("Cannot read GitHub Keychain entry. Unlock your login Keychain or set GH_TOKEN.")]
-    KeychainRead(#[source] security_framework::base::Error),
-    #[cfg(target_os = "macos")]
-    #[error("GitHub Keychain update failed. Unlock your login Keychain and try again.")]
-    KeychainWrite(#[source] security_framework::base::Error),
     #[error(
         "keybindings.{command}: {keystroke:?} needs a cmd, ctrl, alt, or fn modifier so typing still reaches the terminal"
     )]
@@ -698,6 +652,9 @@ pub enum Error {
     Px0(#[from] crate::px0::Error),
     #[error("XDG_CONFIG_HOME must be an absolute path")]
     RelativeConfigRoot,
+    /// What `herdr-remote` reports that the app has no variant of its own for.
+    #[error(transparent)]
+    Remote(herdr_remote::Error),
     #[error("Could not install the agent tools on the SSH host: {0}")]
     RemoteAgentTools(#[source] herdr_client::Error),
     #[error("{method}: {source}")]
@@ -723,19 +680,6 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[cfg(target_os = "linux")]
-    #[error(
-        "Cannot read GitHub sign-in from the desktop keyring. Unlock your keyring or set GH_TOKEN."
-    )]
-    SecretServiceRead(#[source] Box<oo7::Error>),
-    #[cfg(target_os = "linux")]
-    #[error(
-        "No desktop keyring (Secret Service) is running. Start GNOME Keyring, KWallet, or KeePassXC, or set [github] allow_plaintext_credentials = true, or use GH_TOKEN / GITHUB_TOKEN."
-    )]
-    SecretServiceUnavailable,
-    #[cfg(target_os = "linux")]
-    #[error("GitHub keyring update failed. Unlock your desktop keyring and try again.")]
-    SecretServiceWrite(#[source] Box<oo7::Error>),
     #[error("The selection reaches rows the pane no longer shows.")]
     SelectionOffscreen,
     #[error("Selection is too large to copy.")]
@@ -846,47 +790,9 @@ pub enum Error {
     UnsupportedCommand,
     #[error("{0}")]
     Update(#[from] UpdateError),
-    #[error("Usage command failed: {0}.")]
-    UsageCommand(&'static str),
-    #[error("Could not reach the usage service from this host.")]
-    UsageConnect,
-    #[error("Saved sign-in cannot be sent as a header.")]
-    UsageHeader(#[source] ureq::http::header::InvalidHeaderValue),
-    /// The body may hold account details, so only the parser's category is kept.
-    #[error("Usage response was not the expected JSON.")]
-    UsageJson(serde_json::error::Category),
-    #[error("Reading this sign-in needs Keychain access, which macOS asks for.")]
-    UsageKeychainAccess,
-    #[error("Keychain access was denied, so this sign-in cannot be read.")]
-    UsageKeychainDenied,
-    #[error("curl is not installed on this host, so usage cannot be read.")]
-    UsageMissingCurl,
-    #[error("Usage request mixes this machine's settings with the remote host's sign-in.")]
-    UsageMixedSecrets,
-    #[error("Usage request failed or timed out.")]
-    UsageNetwork(#[source] ureq::Error),
-    #[error("This account has no plan with usage limits to show.")]
-    UsageNoPlan,
-    #[error("No sign-in found on this host. Set it up under [usage.providers] in the config.")]
-    UsageNotSignedIn,
-    #[error("Could not {operation}.")]
-    UsageProcess {
-        operation: &'static str,
-        #[source]
-        source: io::Error,
-    },
-    #[error("Usage is rate limited. Retrying later.")]
-    UsageRateLimited,
-    #[error("Saved sign-in was rejected. Open the agent to sign in again.")]
-    UsageRejected,
-    #[error("Usage output exceeded the size limit.")]
-    UsageSize,
-    #[error("Usage service returned HTTP {0}.")]
-    UsageStatus(u16),
-    #[error("Usage check timed out.")]
-    UsageTimeout,
-    #[error("Could not reach this host over SSH to read usage.")]
-    UsageUnreachable,
+    /// A usage read failed; see `error/usage.rs` for what is folded elsewhere.
+    #[error(transparent)]
+    Usage(herdr_usage::Error),
     #[cfg(any(target_os = "macos", windows))]
     #[error("Could not create the page: {0}")]
     WebView(#[from] wry::Error),
@@ -946,7 +852,10 @@ mod config;
 mod daemon;
 mod github;
 mod path;
+mod remote;
 mod theme;
+mod usage;
+mod vcs;
 
 #[cfg(test)]
 mod tests;

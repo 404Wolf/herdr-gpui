@@ -1,9 +1,9 @@
 //! Building a project's image ahead of a dispatch, from a workspace's menu or
 //! Settings. The main window owns these builds, so closing Settings does not
-//! cancel one; the shared [`super::builds`] registry shows their progress
+//! cancel one; the shared [`crate::cloud::image::builds`] registry shows their progress
 //! wherever it is drawn, and a notice reports how each ended.
 
-use super::{Checkout, Error, builds};
+use crate::cloud::image::{Checkout, Error, builds};
 use crate::{
     HerdrWindow,
     cloud::{
@@ -62,7 +62,7 @@ impl HerdrWindow {
                     label: &label,
                 };
                 let stopped = || cancelled.load(std::sync::atomic::Ordering::Acquire);
-                let ended = match super::read(&checkout, cancelled) {
+                let ended = match crate::cloud::image::read(&checkout, cancelled) {
                     Ok(None) => Ended::NoRecipe,
                     Ok(Some(recipe)) => {
                         match builds::ensure(provider, support, &recipe, &stopped, &|_| {}) {

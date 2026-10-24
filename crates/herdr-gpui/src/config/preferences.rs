@@ -56,6 +56,8 @@ pub(crate) enum Preference {
     SidebarSelect(SelectMode),
     /// `[sidebar] activity_bar`: whether the icon column leads the window.
     SidebarActivityBar(bool),
+    /// `[sidebar] automations`: whether the bar shows Automations.
+    SidebarAutomations(bool),
     /// `[sidebar] device_footer`: when the sidebar draws its device footer.
     SidebarDeviceFooter(DeviceFooter),
     /// `[sidebar] change_counts`: whose line counts a worktree row shows.
@@ -214,6 +216,9 @@ impl Config {
                 ),
                 Preference::SidebarActivityBar(value) => {
                     (Some("sidebar"), "activity_bar", Some(value.into()))
+                }
+                Preference::SidebarAutomations(value) => {
+                    (Some("sidebar"), "automations", Some(value.into()))
                 }
                 Preference::SidebarDeviceFooter(footer) => (
                     Some("sidebar"),
