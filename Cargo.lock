@@ -4530,6 +4530,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "herdr-gitea"
+version = "0.1.0"
+dependencies = [
+ "herdr-client",
+ "percent-encoding",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+ "ureq",
+ "url",
+ "zeroize",
+]
+
+[[package]]
 name = "herdr-github"
 version = "0.1.0"
 dependencies = [
@@ -4537,6 +4554,7 @@ dependencies = [
  "getrandom 0.4.3",
  "herdr-client",
  "herdr-credentials",
+ "herdr-gitea",
  "herdr-updater",
  "rustix",
  "secrecy",
@@ -4578,6 +4596,7 @@ dependencies = [
  "herdr-control-protocol",
  "herdr-credentials",
  "herdr-diagnostics",
+ "herdr-gitea",
  "herdr-github",
  "herdr-orchestrator",
  "herdr-remote",
@@ -4651,6 +4670,7 @@ dependencies = [
  "chrono",
  "gix",
  "herdr-client",
+ "herdr-gitea",
  "herdr-github",
  "herdr-remote",
  "rusqlite",
