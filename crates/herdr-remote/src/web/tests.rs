@@ -16,6 +16,7 @@ mod origins;
 mod pairing;
 mod routes;
 mod stream;
+mod terminal;
 mod uploads;
 
 pub(super) const ORIGIN: &str = "https://192.168.1.20:7443";

@@ -12,6 +12,7 @@ mod fragments;
 mod origins;
 mod render;
 mod stream;
+mod terminal;
 mod uploads;
 
 pub(crate) use origins::Origins;
@@ -106,6 +107,7 @@ pub(crate) fn router(state: Shared) -> Router {
         .route("/new-chat", get(assets::shell))
         .route("/pair", get(assets::shell))
         .route("/settings", get(assets::shell))
+        .route("/term/{pane}", get(assets::shell))
         .route("/sw.js", get(assets::service_worker))
         .route("/manifest.webmanifest", get(assets::manifest))
         .route("/assets/{file}", get(assets::asset))
@@ -132,6 +134,9 @@ pub(crate) fn router(state: Shared) -> Router {
             "/api/apns",
             post(api::register_apns).layer(DefaultBodyLimit::max(16 * 1024)),
         )
+        .route("/api/term/{pane}/keys", post(terminal::keys))
+        .route("/api/term/{pane}/paste", post(terminal::paste))
+        .route("/api/term/{pane}/action", post(terminal::action))
         .route("/api/stream", get(stream::stream))
         .route("/f/home", get(fragments::home))
         .route("/f/board", get(fragments::board))
@@ -140,6 +145,7 @@ pub(crate) fn router(state: Shared) -> Router {
         .route("/f/new", get(fragments::new_workspace))
         .route("/f/new-chat", get(fragments::new_chat))
         .route("/f/settings", get(fragments::settings))
+        .route("/f/term/{pane}", get(terminal::fragment))
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
         .layer(middleware::from_fn_with_state(state.clone(), cors))
         .layer(middleware::from_fn(security_headers))

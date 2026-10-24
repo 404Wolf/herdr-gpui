@@ -4,15 +4,17 @@
 //! derives, in this user's private directory, never at a path read from
 //! daemon data: the same trust boundary as Herdr UI's chat views.
 
+mod api;
 mod chat;
 mod daemon;
 mod layout;
 
+pub(crate) use api::ApiMethod;
 pub(crate) use chat::{Chat, Event, Summary, View};
-pub(crate) use layout::{Chat as ChatRow, Layout, Workspace};
+pub(crate) use layout::{Chat as ChatRow, Layout, Terminal, TerminalPane, Workspace};
 
 use herdr_chat_protocol::{Agent, Command, EndpointId, Rejection};
-use herdr_client::{ConnectTarget, Method};
+use herdr_client::ConnectTarget;
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -53,7 +55,9 @@ pub enum Error {
 }
 
 pub(crate) struct Hub {
-    daemon: daemon::Daemon,
+    api: api::Api,
+    /// Owns the worker that projects the layout; dropping it disconnects.
+    _daemon: daemon::Daemon,
     layout: watch::Receiver<Arc<Layout>>,
     chats: Mutex<HashMap<String, (EndpointId, Arc<Chat>)>>,
     all: broadcast::Sender<(String, Event)>,
@@ -71,11 +75,13 @@ impl Hub {
         chat_dir: Option<PathBuf>,
     ) -> std::io::Result<Arc<Self>> {
         let (sender, layout) = watch::channel(Arc::new(Layout::default()));
+        let api = api::Api::new(socket.clone());
         let target = socket.map_or(ConnectTarget::Local, ConnectTarget::Socket);
         let daemon = daemon::Daemon::start(sender, target)?;
         let (all, _) = broadcast::channel(ALL_QUEUE);
         let hub = Arc::new(Self {
-            daemon,
+            api,
+            _daemon: daemon,
             layout,
             chats: Mutex::new(HashMap::new()),
             all,
@@ -94,7 +100,10 @@ impl Hub {
         let (sender, receiver) = watch::channel(Arc::new(layout));
         let (all, _) = broadcast::channel(ALL_QUEUE);
         Arc::new(Self {
-            daemon: daemon::Daemon::offline(sender),
+            // No socket answers here, so a request fails rather than reach
+            // a real Herdr.
+            api: api::Api::new(Some(PathBuf::from("/nonexistent/herdr-client.sock"))),
+            _daemon: daemon::Daemon::offline(sender),
             layout: receiver,
             chats: Mutex::new(HashMap::new()),
             all,
@@ -146,14 +155,14 @@ impl Hub {
             .cwd
             .clone();
         let response = self
-            .daemon
-            .request(
-                Method::TabCreate,
+            .api
+            .call(
+                ApiMethod::TabCreate,
                 tab_params(workspace, cwd.unwrap_or(&folder), agent, program),
             )
             .await?;
         let (tab, pane) = created_tab(&response).ok_or(Error::Response)?;
-        self.daemon.type_line(&pane, &command_line(agent))?;
+        self.run_line(&pane, &command_line(agent)).await?;
         Ok(tab)
     }
 
@@ -167,8 +176,11 @@ impl Hub {
     ) -> Result<String> {
         let program = self.program.as_deref().ok_or(Error::ProgramMissing)?;
         let opened = self
-            .daemon
-            .request(Method::WorkspaceCreate, json!({"cwd": cwd, "focus": false}))
+            .api
+            .call(
+                ApiMethod::WorkspaceCreate,
+                json!({"cwd": cwd, "focus": false}),
+            )
             .await?;
         let workspace = opened["workspace"]["workspace_id"]
             .as_str()
@@ -177,20 +189,20 @@ impl Hub {
             .to_owned();
         let Some(branch) = branch else {
             let response = self
-                .daemon
-                .request(
-                    Method::TabCreate,
+                .api
+                .call(
+                    ApiMethod::TabCreate,
                     tab_params(&workspace, cwd, agent, program),
                 )
                 .await?;
             let (_, pane) = created_tab(&response).ok_or(Error::Response)?;
-            self.daemon.type_line(&pane, &command_line(agent))?;
+            self.run_line(&pane, &command_line(agent)).await?;
             return Ok(workspace);
         };
         let created = self
-            .daemon
-            .request(
-                Method::WorktreeCreate,
+            .api
+            .call(
+                ApiMethod::WorktreeCreate,
                 json!({"workspace_id": workspace, "branch": branch, "focus": false}),
             )
             .await?;
@@ -203,9 +215,25 @@ impl Hub {
             .to_owned();
         // The worktree's first pane is a shell in its folder; the program
         // path rides in this line because the pane was not made with it.
-        self.daemon
-            .type_line(pane, &direct_command_line(program, agent))?;
+        self.run_line(pane, &direct_command_line(program, agent))
+            .await?;
         Ok(worktree)
+    }
+
+    /// Types `line` and Enter into `pane`, as Herdr UI starts a chat.
+    async fn run_line(&self, pane: &str, line: &str) -> Result<()> {
+        self.api
+            .call(
+                ApiMethod::PaneSendInput,
+                json!({"pane_id": pane, "text": line, "keys": ["Enter"]}),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Calls Herdr's public API, for the terminal views.
+    pub(crate) async fn call(&self, method: ApiMethod, params: Value) -> Result<Value> {
+        self.api.call(method, params).await
     }
 
     /// Starts connections for new chat panes and closes those whose pane
@@ -326,11 +354,18 @@ fn direct_command_line(program: &Path, agent: Agent) -> String {
 
 /// A terminal row, for other modules' tests.
 #[cfg(test)]
-pub(crate) fn layout_terminal(tab: &str, label: &str) -> layout::Terminal {
-    layout::Terminal {
+pub(crate) fn layout_terminal(tab: &str, label: &str) -> Terminal {
+    Terminal {
         tab: tab.into(),
         label: label.into(),
         cwd: None,
+        panes: vec![TerminalPane {
+            pane: format!("{tab}-p1"),
+            label: None,
+            cwd: None,
+            focused: true,
+        }],
+        zoomed: false,
     }
 }
 

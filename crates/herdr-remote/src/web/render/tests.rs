@@ -7,10 +7,12 @@ use herdr_chat_protocol::{
 use herdr_client::protocol::AgentStatus;
 use std::collections::HashMap;
 
+mod ansi;
 mod chat_view;
 mod lists;
 mod markup;
 mod preview;
+mod terminal_view;
 
 pub(super) fn row(pane: &str) -> ChatRow {
     ChatRow {

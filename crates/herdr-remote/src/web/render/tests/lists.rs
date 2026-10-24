@@ -21,14 +21,15 @@ fn lists_html(summaries: HashMap<String, Summary>, board_view: bool) -> String {
 }
 
 #[test]
-fn home_lists_chats_and_disabled_terminals_under_the_computer() {
+fn home_lists_chats_and_terminals_under_the_computer() {
     let html = lists_html(HashMap::new(), false);
     assert!(html.contains("MacBook Pro"));
     assert!(html.contains("herdr-gpui"));
     assert!(html.contains(r#"href="/chat/p1""#));
     assert!(html.contains("zsh"));
-    assert!(html.contains("Soon"));
-    assert!(html.contains(r#"aria-disabled="true""#));
+    // A terminal opens on its focused pane.
+    assert!(html.contains(r#"href="/term/"#), "{html}");
+    assert!(!html.contains("Soon"));
 }
 
 #[test]

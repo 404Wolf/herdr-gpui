@@ -175,6 +175,8 @@ function flash(text) {
 function routeOf(path, search) {
   const chat = path.match(/^\/chat\/([^/]+)$/);
   if (chat) return { fragment: `/f/chat/${chat[1]}`, stream: `view=chat&pane=${chat[1]}` };
+  const term = path.match(/^\/term\/([^/]+)$/);
+  if (term) return { fragment: `/f/term/${term[1]}`, stream: `view=term&pane=${term[1]}` };
   const routes = {
     "/": { fragment: "/f/home", stream: "view=home" },
     "/board": { fragment: "/f/board", stream: "view=board" },
@@ -198,6 +200,7 @@ async function route() {
     if (app.routing !== routing) return;
     view().innerHTML = html;
     window.scrollTo(0, location.pathname.startsWith("/chat/") ? document.body.scrollHeight : 0);
+    fitTerminal();
     if (target.stream) startStream(target.stream);
   } catch (error) {
     if (app.routing !== routing || routing.signal.aborted) return;
@@ -273,6 +276,7 @@ function handleEvent(block) {
     const atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     element.outerHTML = html;
     if (atBottom && id === "chat-turn") window.scrollTo(0, document.body.scrollHeight);
+    if (id === "term-screen") fitTerminal();
   }
 }
 
@@ -303,6 +307,7 @@ document.addEventListener("click", (event) => {
     command(button.dataset.pane, JSON.parse(button.dataset.command)).finally(() => (button.disabled = false));
   }
   if (event.target.closest("[data-retry]")) start();
+  terminalClick(event);
 });
 
 document.addEventListener("change", (event) => {
@@ -340,6 +345,203 @@ document.addEventListener("submit", async (event) => {
 });
 
 window.addEventListener("popstate", route);
+
+// ---- terminal tabs: the screen arrives as patches; what is typed goes to
+// the pane key by key, in Herdr's key syntax, in order ----
+
+const term = { ctrl: false, alt: false, queue: [], sending: false, zoomed: false };
+
+const termPane = () => document.getElementById("term")?.dataset.pane;
+const termInput = () => document.getElementById("term-input");
+
+/// The key name Herdr reads for one typed character.
+function keyOf(char) {
+  if (char === " ") return "space";
+  if (char === "+") return "plus";
+  if (char === "\n" || char === "\r") return "enter";
+  if (char === "\t") return "tab";
+  return char;
+}
+
+/// `key` with the held modifiers, which a key then releases.
+function modified(key) {
+  let name = key;
+  if (term.ctrl) name = `ctrl+${name.length === 1 ? name.toLowerCase() : name}`;
+  if (term.alt) name = `alt+${name}`;
+  if (term.ctrl || term.alt) {
+    term.ctrl = term.alt = false;
+    showModifiers();
+  }
+  return name;
+}
+
+function showModifiers() {
+  for (const button of document.querySelectorAll("[data-mod]")) {
+    button.classList.toggle("on", Boolean(term[button.dataset.mod]));
+  }
+}
+
+function sendKeys(keys) {
+  if (!keys.length) return;
+  term.queue.push(...keys);
+  flushKeys();
+}
+
+async function flushKeys() {
+  if (term.sending) return;
+  term.sending = true;
+  while (term.queue.length) {
+    const pane = termPane();
+    const keys = term.queue.splice(0, 64);
+    if (!pane) break;
+    try {
+      await api(`/api/term/${encodeURIComponent(pane)}/keys`, { method: "POST", body: { keys } });
+    } catch (error) {
+      term.queue = [];
+      flash(error.message);
+    }
+  }
+  term.sending = false;
+}
+
+async function pasteText(text) {
+  const pane = termPane();
+  if (!pane || !text) return;
+  try {
+    await api(`/api/term/${encodeURIComponent(pane)}/paste`, { method: "POST", body: { text } });
+  } catch (error) {
+    flash(error.message);
+  }
+}
+
+/// Fits the widest line to the screen's width, unless the text was made
+/// large; Herdr keeps the pane at the desktop's size.
+function fitTerminal() {
+  const screen = document.getElementById("term-screen");
+  if (!screen) return;
+  const page = document.getElementById("term");
+  if (term.zoomed) {
+    page.style.setProperty("--term-size", "13px");
+  } else {
+    const columns = Math.max(40, Number(screen.dataset.columns) || 0);
+    const size = Math.min(13, Math.max(6, (screen.clientWidth - 16) / (columns * 0.61)));
+    page.style.setProperty("--term-size", `${size.toFixed(2)}px`);
+  }
+  screen.scrollTop = screen.scrollHeight;
+}
+
+/// Keeps the terminal above the on-screen keyboard.
+function followViewport() {
+  const viewport = window.visualViewport;
+  if (!viewport) return;
+  document.documentElement.style.setProperty("--vvh", `${viewport.height}px`);
+  const page = document.getElementById("term");
+  if (page) page.style.transform = `translateY(${viewport.offsetTop}px)`;
+  fitTerminal();
+}
+window.visualViewport?.addEventListener("resize", followViewport);
+window.visualViewport?.addEventListener("scroll", followViewport);
+
+function terminalClick(event) {
+  if (!document.getElementById("term")) return;
+  if (event.target.closest("#term-screen")) termInput()?.focus({ preventScroll: true });
+  const key = event.target.closest("[data-key]");
+  if (key) sendKeys([modified(key.dataset.key)]);
+  const modifier = event.target.closest("[data-mod]");
+  if (modifier) {
+    term[modifier.dataset.mod] = !term[modifier.dataset.mod];
+    showModifiers();
+  }
+  if (event.target.closest("[data-term-keyboard]")) {
+    const input = termInput();
+    if (document.activeElement === input) input.blur();
+    else input?.focus({ preventScroll: true });
+  }
+  if (event.target.closest("[data-term-zoom]")) {
+    term.zoomed = !term.zoomed;
+    fitTerminal();
+  }
+  const action = event.target.closest("[data-term-action]");
+  if (action) termAction(action.dataset.termAction);
+}
+
+async function termAction(action) {
+  const pane = termPane();
+  if (!pane) return;
+  if (action === "close_pane" && !confirm("Close this pane? Its program stops.")) return;
+  if (action === "close_tab" && !confirm("Close this tab and every pane in it?")) return;
+  try {
+    const answer = await (
+      await api(`/api/term/${encodeURIComponent(pane)}/action`, { method: "POST", body: { action } })
+    ).json();
+    navigate(answer.location || "/");
+  } catch (error) {
+    flash(error.message);
+  }
+}
+
+// Keys above the keyboard keep the field focused, so the keyboard stays up.
+document.addEventListener("pointerdown", (event) => {
+  if (event.target.closest(".tkey")) event.preventDefault();
+});
+
+document.addEventListener("beforeinput", (event) => {
+  if (event.target.id !== "term-input") return;
+  switch (event.inputType) {
+    case "insertText":
+    case "insertReplacementText":
+      sendKeys([...(event.data || "")].map((char, index) => (index === 0 ? modified(keyOf(char)) : keyOf(char))));
+      break;
+    case "insertLineBreak":
+    case "insertParagraph":
+      sendKeys([modified("enter")]);
+      break;
+    case "deleteContentBackward":
+      sendKeys([modified("backspace")]);
+      break;
+    case "insertFromPaste":
+      pasteText(event.dataTransfer?.getData("text/plain") || event.data || "");
+      break;
+    case "insertCompositionText":
+      // An input method is composing; its text comes at compositionend.
+      return;
+    default:
+      break;
+  }
+  event.preventDefault();
+});
+
+document.addEventListener("compositionend", (event) => {
+  if (event.target.id !== "term-input") return;
+  sendKeys([...(event.data || "")].map(keyOf));
+  event.target.value = "";
+});
+
+const HARDWARE_KEYS = {
+  Enter: "enter",
+  Backspace: "backspace",
+  Tab: "tab",
+  Escape: "esc",
+  ArrowUp: "up",
+  ArrowDown: "down",
+  ArrowLeft: "left",
+  ArrowRight: "right",
+};
+
+// A hardware keyboard: named keys and Ctrl or Alt chords. Plain characters
+// arrive as input events, which input methods also use.
+document.addEventListener("keydown", (event) => {
+  if (event.target.id !== "term-input" || event.isComposing) return;
+  const named = HARDWARE_KEYS[event.key];
+  const chord = (event.ctrlKey || event.altKey) && event.key.length === 1;
+  if (!named && !chord) return;
+  event.preventDefault();
+  let key = named || keyOf(event.key.toLowerCase());
+  if (event.shiftKey && named === "tab") key = "shift+tab";
+  if (event.altKey) key = `alt+${key}`;
+  if (event.ctrlKey) key = `ctrl+${key}`;
+  sendKeys([named && !chord ? modified(key) : key]);
+});
 
 // ---- pairing ----
 
@@ -524,6 +726,16 @@ document.addEventListener("alpine:init", () => {
         this.grow();
       }
       this.mark();
+    },
+  }));
+  Alpine.data("terminal", () => ({
+    sheet: false,
+    openSheet() {
+      termInput()?.blur();
+      this.sheet = true;
+    },
+    closeSheet() {
+      this.sheet = false;
     },
   }));
   Alpine.data("settings", () => ({

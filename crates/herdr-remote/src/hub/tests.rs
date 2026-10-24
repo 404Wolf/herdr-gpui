@@ -1,6 +1,7 @@
 use super::*;
 use herdr_client::protocol::ClientShellSnapshot;
 
+mod api_socket;
 mod chat_link;
 mod projection;
 
@@ -59,12 +60,12 @@ fn a_tab_created_answer_names_its_tab_and_pane() {
 }
 
 #[test]
-fn daemon_errors_keep_a_bounded_message() {
+fn herdr_errors_keep_a_bounded_message() {
     let long = "x".repeat(500);
-    let error = daemon::result(json!({"error": {"message": long}})).unwrap_err();
+    let error = api::result(json!({"error": {"message": long}})).unwrap_err();
     assert!(matches!(error, Error::Daemon(message) if message.len() == 200));
     assert_eq!(
-        daemon::result(json!({"result": {"type": "ok"}})).unwrap(),
+        api::result(json!({"result": {"type": "ok"}})).unwrap(),
         json!({"type": "ok"})
     );
 }

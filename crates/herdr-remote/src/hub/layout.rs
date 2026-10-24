@@ -41,12 +41,34 @@ pub(crate) struct Chat {
     pub(crate) status: AgentStatus,
 }
 
-/// A tab with no chat in it, listed but not yet controllable.
+/// A tab with no chat in it: a terminal a phone shows one pane at a time.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Terminal {
     pub(crate) tab: String,
     pub(crate) label: String,
     pub(crate) cwd: Option<String>,
+    /// Its panes in the snapshot's order; never empty for a listed tab.
+    pub(crate) panes: Vec<TerminalPane>,
+    pub(crate) zoomed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct TerminalPane {
+    pub(crate) pane: String,
+    pub(crate) label: Option<String>,
+    pub(crate) cwd: Option<String>,
+    /// The tab's focused pane, which a phone opens first.
+    pub(crate) focused: bool,
+}
+
+impl Terminal {
+    /// The pane a phone opens first: the focused one, else the first.
+    pub(crate) fn first_pane(&self) -> Option<&TerminalPane> {
+        self.panes
+            .iter()
+            .find(|pane| pane.focused)
+            .or_else(|| self.panes.first())
+    }
 }
 
 impl Layout {
@@ -62,6 +84,22 @@ impl Layout {
 
     pub(crate) fn workspace(&self, id: &str) -> Option<&Workspace> {
         self.workspaces.iter().find(|workspace| workspace.id == id)
+    }
+
+    /// The terminal tab holding `pane`, with its workspace.
+    pub(crate) fn terminal(&self, pane: &str) -> Option<(&Workspace, &Terminal)> {
+        self.workspaces.iter().find_map(|workspace| {
+            workspace
+                .terminals
+                .iter()
+                .find(|terminal| {
+                    terminal
+                        .panes
+                        .iter()
+                        .any(|candidate| candidate.pane == pane)
+                })
+                .map(|terminal| (workspace, terminal))
+        })
     }
 
     pub(crate) fn chats(&self) -> impl Iterator<Item = &Chat> {
@@ -125,14 +163,27 @@ pub(crate) fn project(snapshot: &ClientShellSnapshot) -> Layout {
                 .iter()
                 .filter(|tab| &tab.workspace_id == id)
                 .filter(|tab| !chats.iter().any(|chat| chat.tab == tab.tab_id))
-                .map(|tab| Terminal {
-                    tab: tab.tab_id.clone(),
-                    label: tab.label.clone(),
-                    cwd: snapshot
+                .filter_map(|tab| {
+                    let panes: Vec<TerminalPane> = snapshot
                         .panes
                         .iter()
-                        .find(|pane| pane.tab_id == tab.tab_id)
-                        .and_then(|pane| pane.foreground_cwd.clone().or_else(|| pane.cwd.clone())),
+                        .filter(|pane| pane.tab_id == tab.tab_id)
+                        .map(|pane| TerminalPane {
+                            pane: pane.pane_id.clone(),
+                            label: pane.label.clone().filter(|label| !label.trim().is_empty()),
+                            cwd: pane.foreground_cwd.clone().or_else(|| pane.cwd.clone()),
+                            focused: pane.focused,
+                        })
+                        .collect();
+                    let terminal = Terminal {
+                        tab: tab.tab_id.clone(),
+                        label: tab.label.clone(),
+                        cwd: None,
+                        zoomed: tab.zoomed,
+                        panes,
+                    };
+                    let cwd = terminal.first_pane()?.cwd.clone();
+                    Some(Terminal { cwd, ..terminal })
                 })
                 .collect();
             Workspace {

@@ -19,6 +19,9 @@
   --amber: #f2b33d;
   --green: #4fd18b;
   --red: #ff6b6b;
+  --term-bg: #0b0d10; --term-fg: #d6dae3;
+  --t0: #1c1f24; --t1: #ff6b6b; --t2: #4fd18b; --t3: #f2b33d; --t4: #7c9cff; --t5: #c792ea; --t6: #5fd7d7; --t7: #d6dae3;
+  --t8: #5b6273; --t9: #ff8787; --t10: #7ee2a8; --t11: #ffd27a; --t12: #a3b8ff; --t13: #dcb0f5; --t14: #8ae6e6; --t15: #ffffff;
   color-scheme: dark;
 }
 
@@ -35,6 +38,9 @@
     --amber: #c98a0b;
     --green: #1f9d5c;
     --red: #d64545;
+    --term-bg: #fbfbfc; --term-fg: #1d222b;
+    --t0: #1d222b; --t1: #c62828; --t2: #1f8a4c; --t3: #9a6b00; --t4: #2f54c8; --t5: #8e3fb5; --t6: #127e86; --t7: #5d6576;
+    --t8: #8b93a5; --t9: #e04848; --t10: #2aa865; --t11: #b98500; --t12: #4a6fe0; --t13: #a95ccd; --t14: #1a9aa3; --t15: #1d222b;
     color-scheme: light;
   }
 }
@@ -147,6 +153,63 @@
   .prose h1, .prose h2, .prose h3 { @apply font-bold mt-3 mb-1; }
   .prose table { @apply block overflow-x-auto text-sm my-2; }
   .prose td, .prose th { @apply border border-line px-2 py-1; }
+  /* Terminal tabs. The page fills the visual viewport, which app.js keeps
+     at the height above the keyboard. */
+  .term-page {
+    @apply fixed left-0 right-0 top-0 flex flex-col bg-bg z-10;
+    height: var(--vvh, 100dvh);
+    padding-top: env(safe-area-inset-top);
+  }
+  .term-screen {
+    @apply flex-1 min-h-0 overflow-auto m-0 px-2 py-1.5 whitespace-pre;
+    font: var(--term-size, 11px)/1.32 ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--term-bg); color: var(--term-fg);
+  }
+  .term-input {
+    @apply fixed bottom-0 left-0 w-px h-px opacity-0 pointer-events-none;
+    /* 16px keeps Safari from zooming the page when it takes focus. */
+    font-size: 16px;
+  }
+  .tbtn { @apply w-8 h-8 rounded-full grid place-items-center bg-raised text-[13px] font-semibold shrink-0; }
+  .tbtn.herdr { @apply bg-accent text-white; }
+  .tchip { @apply shrink-0 text-xs px-2.5 py-1 rounded-full bg-raised whitespace-nowrap; }
+  .tchip.on { @apply bg-accent text-white; }
+  .tkeys { @apply flex flex-col gap-1 px-1.5 pt-1.5 bg-surface border-t border-line; padding-bottom: 6px; }
+  .tkeys-row { @apply flex gap-1; }
+  .tkey {
+    @apply shrink-0 min-w-[30px] h-[34px] px-1.5 rounded-lg bg-raised font-mono text-[12.5px] font-semibold grid place-items-center;
+    touch-action: manipulation;
+  }
+  .tkey.on { @apply bg-accent text-white; }
+  .tkey.stop { @apply bg-red text-white; }
+  .tkeys-row .grow { @apply flex-1; }
+  .sheet-backdrop { @apply fixed inset-0 z-30 bg-black/45; }
+  .tsheet {
+    @apply fixed left-0 right-0 bottom-0 z-40 bg-surface rounded-t-3xl px-3 pt-2 shadow-2xl;
+    padding-bottom: calc(18px + env(safe-area-inset-bottom));
+    animation: rise .22s ease-out;
+  }
+  .tsheet .grab { @apply w-9 h-1 rounded-full bg-line mx-auto mb-2; }
+  .tsheet h4 { @apply text-xs uppercase tracking-wider text-muted font-semibold mb-2 px-0.5; }
+  .tiles { @apply grid grid-cols-4 gap-2; }
+  .tile { @apply flex flex-col items-center gap-1 bg-raised rounded-xl py-2.5 text-[11.5px]; }
+  .tile i { @apply not-italic text-lg; }
+  .tile.danger { @apply text-red; }
+  .tsheet-list { @apply grid gap-px mt-3 rounded-xl overflow-hidden; }
+  .tsheet-list > * { @apply flex justify-between bg-raised px-3 py-3 text-[14px] text-left w-full; }
+  /* The 16-color palette, from the theme; 256-color and RGB values come
+     inline. */
+  .t-fg0 { color: var(--t0); } .t-fg1 { color: var(--t1); } .t-fg2 { color: var(--t2); } .t-fg3 { color: var(--t3); }
+  .t-fg4 { color: var(--t4); } .t-fg5 { color: var(--t5); } .t-fg6 { color: var(--t6); } .t-fg7 { color: var(--t7); }
+  .t-fg8 { color: var(--t8); } .t-fg9 { color: var(--t9); } .t-fg10 { color: var(--t10); } .t-fg11 { color: var(--t11); }
+  .t-fg12 { color: var(--t12); } .t-fg13 { color: var(--t13); } .t-fg14 { color: var(--t14); } .t-fg15 { color: var(--t15); }
+  .t-bg0 { background: var(--t0); } .t-bg1 { background: var(--t1); } .t-bg2 { background: var(--t2); } .t-bg3 { background: var(--t3); }
+  .t-bg4 { background: var(--t4); } .t-bg5 { background: var(--t5); } .t-bg6 { background: var(--t6); } .t-bg7 { background: var(--t7); }
+  .t-bg8 { background: var(--t8); } .t-bg9 { background: var(--t9); } .t-bg10 { background: var(--t10); } .t-bg11 { background: var(--t11); }
+  .t-bg12 { background: var(--t12); } .t-bg13 { background: var(--t13); } .t-bg14 { background: var(--t14); } .t-bg15 { background: var(--t15); }
+  .t-fg-bg { color: var(--term-bg); } .t-bg-fg { background: var(--term-fg); }
+  .t-b { font-weight: 700; } .t-d { opacity: .6; } .t-i { font-style: italic; }
+  .t-u { text-decoration: underline; } .t-s { text-decoration: line-through; } .t-h { visibility: hidden; }
   .banner { @apply fixed top-0 left-0 right-0 z-40 text-center text-xs py-1 bg-amber text-black; padding-top: calc(4px + env(safe-area-inset-top)); }
 }
 

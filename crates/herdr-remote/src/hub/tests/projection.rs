@@ -23,6 +23,15 @@ fn chat_panes_and_terminal_tabs_are_listed_per_workspace() {
     assert_eq!(workspace.terminals.len(), 1);
     assert_eq!(workspace.terminals[0].label, "zsh");
     assert_eq!(workspace.terminals[0].cwd.as_deref(), Some("/code/app/src"));
+    // It lists its panes, and a phone opens the first when none is focused.
+    let terminal = &workspace.terminals[0];
+    assert_eq!(terminal.panes.len(), 1);
+    assert_eq!(terminal.first_pane().unwrap().pane, "p2");
+    assert_eq!(layout.terminal("p2").unwrap().1.tab, "t2");
+    assert!(
+        layout.terminal("p1").is_none(),
+        "a chat's pane is no terminal"
+    );
 }
 
 #[test]

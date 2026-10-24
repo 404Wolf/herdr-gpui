@@ -198,8 +198,9 @@ committed; Alpine's CSP build is vendored; everything is embedded with
   under it each workspace as an inset grouped list with ⊕ (new chat there)
   and a collapse chevron. Rows carry the agent's icon with an unread or
   question dot, the chat title, and `•••` while working. Terminal tabs show
-  their process icon, dimmed, tagged "Soon". A floating glass toolbar holds
-  settings, the eye, and ＋ (new workspace), with search apart.
+  a terminal icon and open the terminal view (see Terminal tabs). A
+  floating glass toolbar holds settings, the eye, and ＋ (new workspace),
+  with search apart.
 - **Workspaces and tabs, the attention board** (mockup 1D, behind the eye):
   chats across every computer grouped by state, "Needs you" first (with
   inline Allow once / Deny for a simple permission), then "Working" with
@@ -223,6 +224,39 @@ committed; Alpine's CSP build is vendored; everything is embedded with
 - System light or dark, colors exported from the desktop theme as CSS
   variables, 44 px touch targets, Dynamic Type sizes, a thin "Reconnecting"
   banner. Nothing but the app shell is cached at rest.
+
+## Terminal tabs
+
+Mockups: `docs/mockups/remote-control/terminal.html`. Picks: **typing B**
+(two fixed key rows above the keyboard), **actions A** (an action sheet),
+**size D** (fit to start, size for phone on demand).
+
+Herdr gives each tab one geometry controller, the last active client to
+type, focus, or navigate in it, and only that client's size reaches the
+PTYs; an inactive client may neither type nor send endpoint requests
+(`surface_inactive`). So the daemon does not drive terminals through its
+shell connection. It uses Herdr's public API socket (`herdr.sock` beside
+`herdr-client.sock`, newline-delimited JSON), whose pane methods neither
+focus nor resize anything:
+
+- **Screen**: `pane.read {source: visible, format: ansi}` while a phone
+  shows the pane, every 300 ms, sent as a patch only when it changed. The
+  ANSI (SGR only) becomes escaped spans on the server. No cursor position
+  comes with it.
+- **Typing**: one key at a time with `pane.send_keys` (Herdr's key syntax:
+  `ctrl+c`, `esc`, `up`, `pageup`), because `pane.send_text` arrives as a
+  bracketed paste, which an editor inserts rather than runs; a paste uses
+  `pane.send_text`.
+- **Actions** (the sheet): `pane.split {direction: right|down, focus:
+  false}`, `pane.zoom`, `pane.close`, `tab.create {focus: false}`,
+  `tab.close`, and moving between panes on the phone only.
+- The same socket now carries New workspace and New chat, which the
+  inactive shell connection could never send.
+
+**Size**: the pane keeps its desktop size and the text shrinks to fit the
+width, with a zoom toggle. "Size for phone" (an active surface that takes
+the tab's geometry while the phone types) is a later step; until then the
+phone never disturbs the desktop's layout.
 
 ## Several computers
 
@@ -348,7 +382,7 @@ push-to-start on a device with a real key, and an app icon.
    users with their own domain.
 4. **iOS companion**: Live Activities and Dynamic Island through
    ActivityKit and APNs.
-5. **Later**: terminal tabs (read-only first).
+5. **Terminal tabs**: built (see Terminal tabs); "Size for phone" later.
 
 ## Tests
 

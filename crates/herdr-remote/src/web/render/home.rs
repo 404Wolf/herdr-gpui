@@ -1,5 +1,5 @@
 //! Home: questions waiting on top, then this computer's workspaces as
-//! grouped lists of chats and (not yet controllable) terminal tabs. The
+//! grouped lists of chats and terminal tabs. The
 //! board is the same chats grouped by state, behind the toolbar's eye.
 
 use super::{agent_icon, display_folder, elapsed, nav, status_word};
@@ -77,15 +77,22 @@ pub(crate) fn home(lists: &Lists<'_>) -> Markup {
                             }
                         }
                         @for terminal in &workspace.terminals {
-                            li class="row opacity-50" aria-disabled="true" {
-                                span class="grid place-items-center w-[30px] h-[30px] rounded-lg bg-raised text-green font-mono text-[11px] font-bold shrink-0" { "›_" }
-                                span class="flex-1 min-w-0 truncate" {
-                                    (terminal.label)
-                                    @if let Some(cwd) = &terminal.cwd {
-                                        small class="text-muted ml-1" { (display_folder(cwd)) }
-                                    }
+                            @if let Some(pane) = terminal.first_pane() {
+                                li {
+                                    (nav(&format!("/term/{}", urlencode(&pane.pane)), "row", html! {
+                                        span class="grid place-items-center w-[30px] h-[30px] rounded-lg bg-raised text-green font-mono text-[11px] font-bold shrink-0" { "›_" }
+                                        span class="flex-1 min-w-0 truncate" {
+                                            (terminal.label)
+                                            @if let Some(cwd) = &terminal.cwd {
+                                                small class="text-muted ml-1" { (display_folder(cwd)) }
+                                            }
+                                        }
+                                        @if terminal.panes.len() > 1 {
+                                            span class="text-muted text-xs" { (terminal.panes.len()) " panes" }
+                                        }
+                                        span class="text-faint text-lg" aria-hidden="true" { "›" }
+                                    }))
                                 }
-                                span class="badge" { "Soon" }
                             }
                         }
                     }

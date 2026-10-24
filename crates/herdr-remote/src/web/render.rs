@@ -4,13 +4,17 @@
 //! markup. Fragments carry no secrets: they are fetched with a bearer token
 //! and swapped into the app shell by id.
 
+mod ansi;
 mod chat;
 mod home;
 mod pages;
+mod terminal;
 
+pub(crate) use ansi::screen;
 pub(crate) use chat::{chat, chat_history, chat_patches};
-pub(crate) use home::{Lists, board, home};
+pub(crate) use home::{Lists, board, home, urlencode};
 pub(crate) use pages::{Folders, devices, new_chat, new_workspace};
+pub(crate) use terminal::{terminal, terminal_screen};
 
 use herdr_chat_protocol::{Status, display};
 use maud::{Markup, PreEscaped, html};

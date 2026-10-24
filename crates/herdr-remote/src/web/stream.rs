@@ -21,6 +21,8 @@ use tokio::sync::{broadcast::error::RecvError, mpsc};
 const CHAT_COALESCE: Duration = Duration::from_millis(120);
 /// How long list changes gather before one patch goes out.
 const LIST_COALESCE: Duration = Duration::from_millis(400);
+/// How often a terminal's screen is read while a phone shows it.
+const SCREEN_INTERVAL: Duration = Duration::from_millis(300);
 /// Patches queued for a slow phone before the stream gives up.
 const QUEUE: usize = 32;
 /// How often an open stream checks that its session still holds, so one
@@ -74,6 +76,7 @@ pub(super) async fn stream(
         let follow = async {
             match (target.view.as_str(), target.pane) {
                 ("chat", Some(pane)) => follow_chat(&state, &pane, &sender).await,
+                ("term", Some(pane)) => follow_terminal(&state, &pane, &sender).await,
                 ("board", _) => follow_lists(&state, true, &sender).await,
                 _ => follow_lists(&state, false, &sender).await,
             }
@@ -161,6 +164,49 @@ async fn follow_chat(state: &Shared, pane: &str, sender: &mpsc::Sender<Sse>) {
         tokio::time::sleep(CHAT_COALESCE).await;
         // Whatever else arrived meanwhile is in the next render.
         while events.try_recv().is_ok() {}
+    }
+}
+
+/// Sends the pane's screen whenever it changes, read every
+/// [`SCREEN_INTERVAL`]: Herdr's API has no output events. Reading stops
+/// with the stream, so an idle phone costs nothing.
+async fn follow_terminal(state: &Shared, pane: &str, sender: &mpsc::Sender<Sse>) {
+    let mut last = None;
+    let mut failures = 0;
+    loop {
+        if state.hub.layout().terminal(pane).is_none() {
+            let _ = sender.send(reload()).await;
+            return;
+        }
+        match super::terminal::read_screen(state, pane).await {
+            Ok(text) => {
+                failures = 0;
+                if last.as_ref() != Some(&text) {
+                    let screen = render::screen(&text);
+                    let markup = render::terminal_screen(&screen).into_string();
+                    if sender
+                        .send(patch(vec![("term-screen", markup)], None))
+                        .await
+                        .is_err()
+                    {
+                        return;
+                    }
+                    last = Some(text);
+                }
+            }
+            // A pane that closed, or Herdr gone: the view reloads to say so.
+            Err(_) => {
+                failures += 1;
+                if failures >= 3 {
+                    let _ = sender.send(reload()).await;
+                    return;
+                }
+            }
+        }
+        tokio::select! {
+            () = tokio::time::sleep(SCREEN_INTERVAL) => {}
+            () = sender.closed() => return,
+        }
     }
 }
 
