@@ -1,5 +1,8 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
+use crate::control::ControlError;
+
+mod chat_lines;
 
 #[test]
 fn output_is_whole_and_only_a_terminal_loses_controls() {
@@ -13,10 +16,23 @@ fn output_is_whole_and_only_a_terminal_loses_controls() {
 }
 
 #[test]
+fn a_plain_launch_asks_for_the_frontmost_window_as_app_focus_does() {
+    let Request::App(Call { caller, op }) = focus_request() else {
+        panic!("not an app request");
+    };
+    assert_eq!(op, crate::control::protocol::app::AppOp::Focus);
+    // No pane, workspace, or daemon of a terminal the launch came from: the
+    // shell starts it, so the frontmost window comes forward.
+    assert_eq!(caller, Caller::default());
+}
+
+#[test]
 fn every_error_code_has_one_exit_status() {
-    let rejected = |code| crate::Error::ControlRejected {
-        code,
-        message: String::new(),
+    let rejected = |code| {
+        crate::Error::Control(ControlError::Rejected {
+            code,
+            message: String::new(),
+        })
     };
     for (code, expected) in [
         (ErrorCode::InvalidUrl, exit::USAGE),

@@ -19,6 +19,7 @@ use super::{
 };
 use crate::{
     Command, HerdrWindow, NavigationTarget,
+    avatars::Checkout,
     config::{AgentsPlacement, FontConfig, Theme},
     fonts::StyledFont,
 };
@@ -69,6 +70,8 @@ impl HerdrWindow {
         let mut spaces = div()
             .id("spaces-scroll")
             .debug_selector(|| "spaces-scroll".into())
+            .role(Role::List)
+            .aria_label(if devices { "Devices" } else { "Workspaces" })
             .flex()
             .flex_col()
             .flex_1()
@@ -77,6 +80,8 @@ impl HerdrWindow {
         let mut agents = div()
             .id("agents-scroll")
             .debug_selector(|| "agents-scroll".into())
+            .role(Role::List)
+            .aria_label("Agents")
             .flex()
             .flex_col()
             .flex_1()
@@ -118,6 +123,7 @@ impl HerdrWindow {
         // A lifted device folds the list to its headers.
         let device_plan = headed.then(|| self.device_plan(devices, &query)).flatten();
         let mut sliding = device_plan.as_ref().is_some_and(|plan| plan.sliding);
+        let worktree_glyph = self.config.worktrees.glyph(theme);
         for (endpoint_index, endpoint) in self.displayed_devices() {
             if !self.device_visible(&endpoint.id)
                 || (devices && !self.device_listed(endpoint_index, &query))
@@ -173,6 +179,7 @@ impl HerdrWindow {
             let Some(snapshot) = &live.snapshot else {
                 continue;
             };
+            let pr_view = self.endpoint_pr_view(endpoint_index);
             let collapsed_repos = if endpoint_index == 0 {
                 &self.collapsed_repos
             } else {
@@ -225,6 +232,7 @@ impl HerdrWindow {
                     break;
                 }
                 let workspace = &snapshot.workspaces[index];
+                let linked = crate::worktree_identity::is_linked(workspace);
                 if selected && workspace.focused {
                     highlighted[0] = Some(space_rows);
                 }
@@ -261,28 +269,16 @@ impl HerdrWindow {
                     (true, false) => RowTree::Child,
                     (true, true) => RowTree::LastChild,
                 };
+                let fold_toggle = group.clone().map(|key| (endpoint_id.clone(), key));
                 let fold = group.map(|key| Fold {
                     id: SharedString::from(format!("collapse-{endpoint_id}-{id}")).into(),
                     index,
                     collapsed: collapsed_repos.contains(&key),
                     toggle: Box::new(cx.listener(move |this, _, _, cx| {
-                        let collapsed = if collapse_endpoint == crate::endpoint::LOCAL {
-                            &mut this.collapsed_repos
-                        } else if let Some(endpoint) = this
-                            .endpoints
-                            .iter_mut()
-                            .find(|e| e.id == collapse_endpoint)
-                        {
-                            &mut endpoint.collapsed_repos
-                        } else {
-                            return;
-                        };
-                        if !collapsed.remove(&key) {
-                            collapsed.insert(key.clone());
-                        }
-                        cx.notify();
+                        this.toggle_repository(&collapse_endpoint, &key, cx);
                     })),
                 });
+                let folds = fold.as_ref().map(|fold| fold.collapsed).zip(fold_toggle);
                 let label = workspace_label(workspace, indented);
                 let shown_status = if self.config.usage.inline {
                     displayed_workspace_status(&snapshot.workspaces, workspace, collapsed_repos)
@@ -395,22 +391,34 @@ impl HerdrWindow {
                         workspace,
                         label,
                         tree,
-                        icon: if indented || !self.config.show_repository_icons {
+                        // A child hangs from the main checkout on the guide
+                        // lines; one standing alone has no line to hang from,
+                        // so it takes the branch glyph where the owner's
+                        // avatar sat.
+                        icon: if let Some(glyph) = worktree_glyph.filter(|_| linked && !indented) {
+                            RowIcon::Worktree(glyph)
+                        } else if indented || !self.config.show_repository_icons {
                             RowIcon::None
+                        } else if workspace.branch.is_none() {
+                            // Not a Git checkout, so no mark that reads as one.
+                            RowIcon::Blank
                         } else {
+                            let target = &endpoint.connection.target;
                             self.avatars
                                 .as_ref()
-                                .filter(|_| endpoint_index == 0)
-                                .and_then(|avatars| avatars.image(&workspace.new_workspace_cwd))
+                                .zip(Checkout::of(endpoint_index == 0, target, workspace))
+                                .and_then(|(avatars, checkout)| avatars.image(checkout))
                                 .map_or(RowIcon::Mark, RowIcon::Avatar)
                         },
                         fold,
                         grouped,
                         badge: workspace_badge(
                             workspace,
-                            (endpoint_index == self.selected_endpoint)
-                                .then_some(&self.menu.pr_cache),
-                            &self.git,
+                            pr_view.as_ref().map(|view| (&self.menu.pr_cache, view)),
+                            (
+                                (endpoint_index == 0).then_some(&self.git),
+                                self.config.sidebar_style.change_counts,
+                            ),
                             (&self.teleport_marks, &endpoint.id),
                             note.as_deref(),
                             theme,
@@ -494,6 +502,15 @@ impl HerdrWindow {
                     },
                 )
                 .id(SharedString::from(format!("workspace-{endpoint_id}-{id}")))
+                .map(|row| {
+                    let name = super::accessibility::workspace_name(
+                        label,
+                        linked,
+                        shown_status,
+                        row_cx.host,
+                    );
+                    self.workspace_item(row, name, selected && workspace.focused, folds, cx)
+                })
                 .when(multi, |row| {
                     row.debug_selector(|| format!("workspace-{endpoint_id}-{id}"))
                 })
@@ -671,6 +688,8 @@ impl HerdrWindow {
         div()
             .id("sidebar")
             .debug_selector(|| "sidebar".into())
+            .role(Role::Navigation)
+            .aria_label("Sidebar")
             .relative()
             .w(px(width))
             .flex_none()
@@ -745,6 +764,7 @@ impl HerdrWindow {
                             .child(
                                 div()
                                     .id("new-workspace")
+                                    .map(|button| self.sidebar_button(button, "New workspace"))
                                     .cursor_pointer()
                                     .hover(|s| s.text_color(rgb(theme.foreground)))
                                     .child("new")
@@ -756,6 +776,7 @@ impl HerdrWindow {
                                 div()
                                     .id("sidebar-menu")
                                     .debug_selector(|| "sidebar-menu".into())
+                                    .map(|button| self.sidebar_button(button, "Menu"))
                                     .cursor_pointer()
                                     .hover(|s| s.text_color(rgb(theme.foreground)))
                                     .child(label_text("menu"))

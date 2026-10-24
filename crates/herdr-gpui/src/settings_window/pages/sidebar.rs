@@ -3,8 +3,8 @@
 use super::{SettingsWindow, on_value, ui};
 use crate::{
     config::{
-        AgentsPlacement, Config, DeviceFooter, LayoutMode, SelectMode, SidebarOverrides,
-        preferences::Preference,
+        AgentsPlacement, ChangeCounts, Config, DeviceFooter, LayoutMode, SelectMode,
+        SidebarOverrides, preferences::Preference,
     },
     settings_window::{
         inputs::{DropdownField, NumberField},
@@ -160,6 +160,46 @@ impl SettingsWindow {
                     .control(self.layout_dropdown(ready, cx)),
             )
             .child(
+                ui::row(theme, "sidebar-activity-bar", "Show activity bar")
+                    .description(
+                        "The icon column at the window's left edge that switches between \
+                         workspaces, overview, pull requests, issues, security, automations and usage.",
+                    )
+                    .switch(
+                        ui::toggle(
+                            theme,
+                            "sidebar-activity-bar-toggle",
+                            self.config.sidebar_style.activity_bar,
+                            ready,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            let mut intent = SidebarIntent::of(&this.config);
+                            intent.style.activity_bar = !intent.style.activity_bar;
+                            this.commit_sidebar(intent, cx);
+                        })),
+                    ),
+            )
+            .child(
+                ui::row(theme, "sidebar-automations", "Show automations")
+                    .description(
+                        "The activity bar's Automations section. Off, Herdr UI neither reads \
+                         nor starts any host's automation daemon.",
+                    )
+                    .switch(
+                        ui::toggle(
+                            theme,
+                            "sidebar-automations-toggle",
+                            self.config.sidebar_style.automations,
+                            ready,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            let mut intent = SidebarIntent::of(&this.config);
+                            intent.style.automations = !intent.style.automations;
+                            this.commit_sidebar(intent, cx);
+                        })),
+                    ),
+            )
+            .child(
                 ui::row(theme, "sidebar-select", "Selection marks")
                     .description("What selecting a workspace highlights beyond its own row.")
                     .control(ui::segmented(
@@ -203,9 +243,31 @@ impl SettingsWindow {
                     )),
             )
             .child(
+                ui::row(theme, "sidebar-change-counts", "Change counts")
+                    .description(
+                        "The +added/-deleted lines under a worktree: its pull request's, or \
+                         its uncommitted changes against HEAD.",
+                    )
+                    .control(ui::segmented(
+                        theme,
+                        "sidebar-change-counts-control",
+                        &[
+                            (ChangeCounts::PullRequest, "Pull request"),
+                            (ChangeCounts::Local, "Uncommitted"),
+                        ],
+                        Some(self.config.sidebar_style.change_counts),
+                        ready,
+                        on_value(cx, |this, counts, _, cx| {
+                            let mut intent = SidebarIntent::of(&this.config);
+                            intent.style.change_counts = counts;
+                            this.commit_sidebar(intent, cx);
+                        }),
+                    )),
+            )
+            .child(
                 ui::row(theme, "sidebar-show-agents", "Show agents")
                     .description("List running agents in the sidebar.")
-                    .control(
+                    .switch(
                         ui::toggle(
                             theme,
                             "sidebar-show-agents-toggle",
@@ -223,7 +285,7 @@ impl SettingsWindow {
                     .description(
                         "The Agents title row with the sort toggle. Hidden, the order follows Herdr's ui.agent_panel_sort unless a plugin sets the agent view, which keeps the row.",
                     )
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         "sidebar-show-agents-header-toggle",
                         self.config.show_agents_header,
                         Preference::ShowAgentsHeader(!self.config.show_agents_header),
@@ -253,7 +315,7 @@ impl SettingsWindow {
             .child(
                 ui::row(theme, "sidebar-show-search", "Show search")
                     .description("The search field above the workspaces.")
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         "sidebar-show-search-toggle",
                         self.config.show_sidebar_search,
                         Preference::ShowSidebarSearch(!self.config.show_sidebar_search),
@@ -265,7 +327,7 @@ impl SettingsWindow {
                     .description(
                         "The repository owner's avatar at the start of each workspace row.",
                     )
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         "sidebar-repository-icons-toggle",
                         self.config.show_repository_icons,
                         Preference::ShowRepositoryIcons(!self.config.show_repository_icons),
@@ -277,7 +339,7 @@ impl SettingsWindow {
                     .description(
                         "A mark before each device's name: this machine, a cloud provider or SSH.",
                     )
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         "sidebar-device-icons-toggle",
                         self.config.show_device_icons,
                         Preference::ShowDeviceIcons(!self.config.show_device_icons),

@@ -184,6 +184,7 @@ impl HerdrWindow {
             .as_ref()
             .map(|input| input.text.clone())
             .unwrap_or_default();
+        let current = self.fan_out_origin_current();
         // Other hosts are described before the fan-out is borrowed to launch.
         let destinations: Vec<_> = self
             .fan_out
@@ -211,6 +212,12 @@ impl HerdrWindow {
         };
         match fan_out.stage {
             Stage::Confirm(_) if !found => fan_out.error = Some(LANE_NOT_FOUND.to_owned()),
+            Stage::Compose(_) if !current => {
+                fan_out.error = Some(
+                    "This workspace has moved to another repository since the fan-out opened"
+                        .to_owned(),
+                );
+            }
             Stage::Compose(_) => {
                 let destination = |endpoint: &str| {
                     destinations
@@ -347,13 +354,8 @@ impl HerdrWindow {
                                     .items_center()
                                     .gap(px(10.))
                                     .child(
-                                        svg()
-                                            .path(
-                                                AgentIcon::from_identity(Some(kind.name())).path(),
-                                            )
-                                            .size(px(14.))
-                                            .flex_none()
-                                            .text_color(rgb(theme.foreground)),
+                                        AgentIcon::from_identity(Some(kind.name()))
+                                            .element(14., theme.foreground),
                                     )
                                     .child(div().flex_1().min_w_0().truncate().child(kind.name()))
                                     .when(count > 0, |row| {
@@ -481,14 +483,8 @@ impl HerdrWindow {
                             .items_center()
                             .gap(px(10.))
                             .child(
-                                svg()
-                                    .path(
-                                        AgentIcon::from_identity(Some(lane.lane.kind.name()))
-                                            .path(),
-                                    )
-                                    .size(px(16.))
-                                    .flex_none()
-                                    .text_color(rgb(theme.foreground)),
+                                AgentIcon::from_identity(Some(lane.lane.kind.name()))
+                                    .element(16., theme.foreground),
                             )
                             .child(
                                 div()

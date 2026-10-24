@@ -54,14 +54,20 @@ for reproducible builds and matching cross-architecture PR metadata.
 
 ## Packaging Commands
 
-Before dispatch, `just release` and the release workflow both run
-`scripts/release/check-ci.py` against the exact release SHA. A successful CI
-workflow alone is insufficient: every platform check, native Windows test job,
-and optimized build must have completed successfully in the same owner-triggered
-push or manual run on `main`. Skipped or missing jobs fail the gate.
-For documentation-only commits, start a full run with
-`gh workflow run ci.yml --repo penso/herdr-gpui --ref main`, then retry
-`just release`; it waits for a pending run and checks its jobs before dispatching.
+The release workflow's `ci-gate` job runs `scripts/release/check-ci.py` against
+the exact release SHA, waiting for a CI run that is still going. A successful
+CI workflow alone is insufficient: every platform check (both its
+default-features and all-features legs), native Windows test job, and Linux
+optimized build must have completed successfully in the same owner-triggered
+push or manual run on `main`. Skipped or missing jobs fail the gate. CI runs
+the macOS optimized builds on pull requests only, where the final gate requires
+them: on `main` they would hold the account-wide macOS runners this workflow's
+own macOS builds wait for. `just release` dispatches without waiting, so the
+release builds overlap CI; `sign`, `windows-sign`, and everything after them
+wait behind `ci-gate`, so nothing is signed or published before CI passes. CI
+never cancels a run on `main`, so a later merge cannot strand a release commit
+without one. For documentation-only commits, start a full run with
+`gh workflow run ci.yml --repo penso/herdr-gpui --ref main` before releasing.
 
 ```sh
 cargo install cargo-about --version 0.9.2 --locked --features cli
@@ -80,8 +86,9 @@ The package floor is macOS 14.2 (`LSMinimumSystemVersion`; Homebrew can only
 express `:sonoma`). The binary strongly links CoreAudio's process-tap functions,
 introduced in 14.2, through rodio's cpal backend, so dyld refuses to launch it
 on 14.0 and 14.1. GPUI checks for macOS 15 at runtime before using its newer
-window behavior. The `macos-14` CI job runs the workspace tests on that floor;
-release builds still run on `macos-15` runners. Build release inputs with
+window behavior. The `macos-14` CI job that ran the workspace tests on that
+floor is commented out in `ci.yml` to save macOS runners; re-enable it if a
+macOS 14 regression appears. Release builds run on `macos-15` runners. Build release inputs with
 `MACOSX_DEPLOYMENT_TARGET=14.2` to match the plist; do not supply binaries
 targeting a newer OS.
 
@@ -165,7 +172,7 @@ replace or alter the manual archive's desktop/icon/license tree. Both native
 Linux builds and both macOS builds embed `HERDR_UPDATE_PUBLIC_KEY` and the
 validated `HERDR_RELEASE_VERSION` before packaging.
 
-The experimental Windows targets are `x86_64-pc-windows-msvc` and
+The Windows targets are `x86_64-pc-windows-msvc` and
 `aarch64-pc-windows-msvc`, built natively on `windows-2025` and
 `windows-11-arm` after clippy, the protocol/client suites and the CLI tests pass
 there. `scripts/release/package-windows.py VERSION TARGET BINARY LAUNCHER
@@ -502,7 +509,8 @@ original actor, or source repository to be the owner. An owner rerun only change
 `github.triggering_actor`; approval does not change the other identities.
 Pushes and manual dispatches remain restricted to owner-triggered `main` runs.
 The final **Format, lint, and test** gate requires successful platform checks for
-code changes and permits skipped platform jobs only for confirmed non-code edits.
+code changes, and the macOS optimized builds on pull requests, and permits
+skipped platform jobs only for confirmed non-code edits.
 
 Fork PR execution uses GitHub-hosted runners and read-only permissions. GitHub
 withholds repository secrets from fork `pull_request` runs, including after

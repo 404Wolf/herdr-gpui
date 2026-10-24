@@ -88,6 +88,7 @@ impl HerdrWindow {
         // Starts the thread that reads and saves the marks file.
         let teleport_marks = crate::teleport::Marks::start();
         let sidebar_search = sidebar::SidebarSearch::new(cx);
+        let security_search = crate::security::SecuritySearch::new(cx);
         let surface_signal = cx.new(|_| SurfaceSignal);
         let sidebar_invalidation = Self::invalidate_sidebar(cx);
         let host_theme = Self::observe_host_theme(cx);
@@ -120,6 +121,7 @@ impl HerdrWindow {
             cx.notify();
         });
         let window_closed = Self::give_back_torn_tabs(cx);
+        let terminal_focus = Self::leave_region_with_terminal(&focus, window, cx);
         let mut this = Self {
             // keep-sorted start
             _activation: activation,
@@ -129,6 +131,7 @@ impl HerdrWindow {
             _poll: poll,
             _prefix_interceptor: prefix_interceptor,
             _sidebar_invalidation: sidebar_invalidation,
+            _terminal_focus: terminal_focus,
             _window_closed: window_closed,
             _worktree_notes: worktree_notes,
             activation_deadline: None,
@@ -139,6 +142,7 @@ impl HerdrWindow {
             app_update_notes: Default::default(),
             app_update_notes_scroll: ScrollHandle::new(),
             arrival: None,
+            automations: Default::default(),
             avatars: None,
             backdrop: Default::default(),
             bell: crate::bell::Bell::default(),
@@ -146,7 +150,9 @@ impl HerdrWindow {
             browser,
             catalog,
             cell_width: 9.,
+            chats: Default::default(),
             checkpoints: Default::default(),
+            chrome_region: None,
             #[cfg(feature = "cloud")]
             cloud_jobs: Default::default(),
             #[cfg(feature = "cloud")]
@@ -184,6 +190,7 @@ impl HerdrWindow {
             flash: None,
             focus,
             git: git::Git::default(),
+            git_anchor: Default::default(),
             gui_config_diagnostic,
             held_keys: Default::default(),
             hover: None,
@@ -208,9 +215,12 @@ impl HerdrWindow {
             marked_selection: None,
             menu,
             merged_cleanup: Default::default(),
+            #[cfg(feature = "integration-test")]
+            navigations: Default::default(),
             network_quality_seen: 0,
             next_orchestrator: 0,
             notes_width: crate::panel_resize::NOTES,
+            notice_overflow: Default::default(),
             options: ConnectOptions::default(),
             orchestrator_events: Vec::new(),
             orchestrator_live: Default::default(),
@@ -236,7 +246,11 @@ impl HerdrWindow {
             resize_mode: false,
             review_files_width: crate::panel_resize::REVIEW_FILES,
             reviews: Default::default(),
+            #[cfg(feature = "cloud")]
+            sandbox_image_builds: Default::default(),
             scrollbar_drag: None,
+            security: Default::default(),
+            security_search,
             selected_endpoint: 0,
             selected_generation: 0,
             selection: None,

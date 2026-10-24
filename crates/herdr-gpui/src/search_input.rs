@@ -3,9 +3,9 @@ use std::ops::Range;
 
 use gpui::{
     App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, EntityInputHandler,
-    EventEmitter, FocusHandle, Focusable, KeyDownEvent, MouseButton, Pixels, Point, ShapedLine,
-    TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window, canvas, div, fill, point,
-    prelude::*, px, rgb, size,
+    EventEmitter, FocusHandle, Focusable, KeyDownEvent, MouseButton, Pixels, Point, Role,
+    ShapedLine, SharedString, TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window, canvas,
+    div, fill, point, prelude::*, px, rgb, size,
 };
 
 use crate::config::{Config, FontConfig, Theme};
@@ -180,6 +180,25 @@ impl SearchInput {
 
     pub fn text(&self) -> &str {
         &self.edit.text
+    }
+
+    /// Replaces the text with the cursor at byte `cursor`, moved back to a
+    /// character boundary, and nothing selected.
+    pub(crate) fn set_text_at(&mut self, text: &str, cursor: usize, cx: &mut Context<Self>) {
+        let text = single_line(text);
+        let mut cursor = cursor.min(text.len());
+        while !text.is_char_boundary(cursor) {
+            cursor -= 1;
+        }
+        let changed = self.edit.text != text;
+        self.edit = Editing {
+            anchor: cursor,
+            cursor,
+            text,
+            ..Editing::default()
+        };
+        self.selecting = false;
+        self.did_edit(changed, cx);
     }
 
     pub(super) fn set_text_selected(&mut self, text: &str, cx: &mut Context<Self>) {
@@ -513,6 +532,21 @@ impl Render for SearchInput {
         let height = px(self.font.line_height());
         div()
             .debug_selector(|| "theme-search".into())
+            .id("search-input")
+            .map(|field| {
+                // A masked field is a secret: its role says so and it reports
+                // no value, so a screen reader never reads it out.
+                let field = if self.masked {
+                    field.role(Role::PasswordInput)
+                } else {
+                    field
+                        .role(Role::TextInput)
+                        .aria_value(SharedString::from(self.edit.text.clone()))
+                };
+                field.when(!self.placeholder.is_empty(), |field| {
+                    field.aria_label(SharedString::from(self.placeholder.clone()))
+                })
+            })
             .w_full()
             .when(self.framed, |field| {
                 field
@@ -587,7 +621,7 @@ impl Render for SearchInput {
                         let completion = input
                             .shown_completion()
                             .filter(|_| !placeholder && input.focus.is_focused(window));
-                        let text: gpui::SharedString = if placeholder {
+                        let text: SharedString = if placeholder {
                             input.placeholder.clone().into()
                         } else if input.masked {
                             "*".repeat(input.text().chars().count()).into()

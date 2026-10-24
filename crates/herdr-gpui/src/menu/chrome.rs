@@ -508,13 +508,18 @@ impl HerdrWindow {
                         | Page::VersionMismatch
                         | Page::OpenCheckout
                         | Page::OpenLink
-                ),
+                ) || self.cloud_batch_open(),
                 |panel| {
                     panel
                         .w((viewport.width - px(24.)).max(px(0.)).min(px(420.)))
                         .max_h((viewport.height - px(24.)).max(px(0.)))
                 },
             )
+            .when(self.automation_dialog_open(), |panel| {
+                panel
+                    .w((viewport.width - px(24.)).max(px(0.)).min(px(560.)))
+                    .max_h((viewport.height - px(24.)).max(px(0.)))
+            })
             .when(
                 matches!(
                     page,
@@ -557,6 +562,11 @@ impl HerdrWindow {
                     div()
                         .id(item)
                         .debug_selector(move || format!("menu-{item}"))
+                        .role(Role::MenuItem)
+                        .aria_label(item)
+                        .when(Some(index) == self.menu.selected, |row| {
+                            row.aria_active_descendant()
+                        })
                         .min_h(px(font.line_height() + 12.))
                         .px(px(8.))
                         .flex()
@@ -667,6 +677,10 @@ impl HerdrWindow {
             panel = panel.child(self.render_worktree_script(cx));
         } else if page == Page::OpenLink {
             panel = panel.child(self.render_open_link(cx));
+        } else if let Some(body) = self.cloud_batch_page(cx) {
+            panel = panel.child(body);
+        } else if let Some(body) = self.automation_dialog_page(cx) {
+            panel = panel.child(body);
         } else if page == Page::OpenCheckout {
             panel = panel.child(self.render_open_checkout(cx));
         } else if page == Page::Install {
@@ -741,6 +755,10 @@ impl HerdrWindow {
         div()
             .id("menu-overlay")
             .debug_selector(|| "menu-overlay".into())
+            // Focus stays here while the popup is open, so this is the menu
+            // or dialog a screen reader announces.
+            .role(page.accessible_role())
+            .aria_label(page.accessible_name())
             .absolute()
             .top_0()
             .left_0()

@@ -16,6 +16,7 @@ use std::{
     sync::atomic::AtomicU64,
 };
 
+mod atomic_projection;
 mod close_pane;
 mod close_sequence;
 mod dead_keys;
@@ -24,9 +25,11 @@ mod file_paste;
 mod focus_fences;
 mod focus_follows_mouse;
 mod focus_follows_mouse_render;
+mod focus_pipeline;
 mod function_keys;
 mod group_navigation_choices;
 mod group_page_move;
+mod held_paste;
 mod horizontal_wheel;
 mod image_paste;
 mod image_paste_native;
@@ -40,15 +43,20 @@ mod mouse_frame_gap;
 mod mouse_gestures;
 mod mouse_targets;
 mod plugin_selection;
+mod popup_projection;
 mod prompts;
 mod reconnect_backoff;
 mod remote_drop;
 mod resize_reassert;
 mod scrollbar_drag;
+mod shift_select_hint;
 mod shifted_keys;
 mod smooth_scroll_off;
 mod sounds;
 mod split_drag;
+mod split_equalize;
+mod staged_release;
+mod temporary_drop;
 mod toast_handoff;
 mod toast_navigation;
 mod wheel_slides;
@@ -167,6 +175,10 @@ fn wait_until(mut ready: impl FnMut() -> bool) {
 }
 
 fn connected_endpoint(id: &str) -> (Endpoint, Server) {
+    connected_endpoint_reporting(id, None)
+}
+
+fn connected_endpoint_reporting(id: &str, server_version: Option<&str>) -> (Endpoint, Server) {
     static SERIAL: AtomicU64 = AtomicU64::new(0);
     let path = std::env::temp_dir().join(format!(
         "hg-{}-{}.sock",
@@ -208,6 +220,9 @@ fn connected_endpoint(id: &str) -> (Endpoint, Server) {
         "../../../herdr-protocol/tests/fixtures/endpoint-welcome-v1.json"
     ))
     .unwrap();
+    if let Some(version) = server_version {
+        welcome.server_version = version.into();
+    }
     welcome.capabilities.extend([
         "surface_interest".into(),
         "presentation_effects_fence".into(),
@@ -318,6 +333,10 @@ fn prepare_mouse(view: &mut HerdrWindow, endpoint: Endpoint, cx: &mut Context<He
         point(px(100.), px(50.)),
         size(px(800.), px(24. * view.config.terminal.line_height())),
     );
+    // The reducer owns the same coherent fixture the window hit tests.
+    let mut inbox = view.endpoints[1].connection.inbox.lock().unwrap();
+    inbox.snapshot = view.live.snapshot.clone();
+    inbox.surface = view.live.surface.clone();
     assert!(view.input_ready());
 }
 

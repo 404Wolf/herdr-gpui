@@ -203,6 +203,8 @@ fn a_reservation_expiring_behind_an_inbound_frame_waits_for_the_frame() {
         .try_send(Command {
             boot_id: "boot-v1".into(),
             bytes: Vec::new(),
+            input_pane: None,
+            written: Default::default(),
             request: None,
             image: Some(ImageSlot {
                 receiver,

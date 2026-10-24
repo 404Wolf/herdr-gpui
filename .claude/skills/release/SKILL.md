@@ -37,15 +37,18 @@ failure is not a surprise:
 | `origin` is `penso/herdr-gpui` | `git remote get-url origin` |
 | `gh` authenticated as `penso` | `gh api user --jq .login` |
 | Local HEAD == `origin/main` on GitHub | compare `git rev-parse HEAD` with `gh api repos/penso/herdr-gpui/git/ref/heads/main --jq .object.sha` |
-| Full CI passed on that commit (a release only) | `python3 scripts/release/check-ci.py "$(git rev-parse HEAD)"` |
-
-The release workflow runs no test suites of its own: its `validate` job
+The release workflow runs no test suites of its own: its `ci-gate` job
 requires a successful owner-triggered push or manual CI run on main with every
-platform check and optimized build completed successfully. A green run with
-skipped checks does not qualify. While a run is still going, `dispatch.sh` waits
-for it before checking its jobs. For a documentation-only commit whose push CI
-skipped the suites, run `gh workflow run ci.yml --repo penso/herdr-gpui --ref main`
-to test the full commit before retrying the release.
+platform check and Linux optimized build completed successfully. A green run
+with skipped checks does not qualify. CI builds macOS release binaries on pull
+requests only, so the release's macOS builds get the macOS runners. `dispatch.sh` does not wait for CI: the
+release builds while CI runs, and `ci-gate` holds `sign` and `windows-sign`
+until CI passes, so a failed or cancelled CI run fails the release at `ci-gate`.
+If a CI job fails on a known flake, rerun it (`gh run rerun <id> --failed`)
+while `ci-gate` waits. For a documentation-only commit whose push CI skipped
+the suites, run `gh workflow run ci.yml --repo penso/herdr-gpui --ref main`
+before dispatching. Apple's notary and stapler calls retry ten times in
+`sign-macos.sh`, so a dropped connection there rarely needs a rerun.
 
 The script never fetches or checks out for you: if HEAD does not match, stop and
 tell the owner rather than pulling on their behalf.
@@ -155,7 +158,7 @@ will print the published tag. Confirm with
 (`cliff.toml`) and `publish` passes it to `gh release create --notes-file`. Do
 not hand-write notes, and do not edit a published body to add them: fix the
 commit subjects instead, since those are the entries. The standing preamble
-about GUI-only DMG, experimental Linux packages and Windows zips, and the required daemon lives in
+about GUI-only DMG, Linux packages, Windows installers and zips, and the required daemon lives in
 `scripts/release/generate-changelog.sh`.
 
 `CHANGELOG.md` is generated too, but it is **not** a release asset — the asset

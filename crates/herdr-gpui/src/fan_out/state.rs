@@ -213,6 +213,10 @@ fn reporter(
 }
 
 impl FanOut {
+    pub(crate) fn origin(&self) -> &Origin {
+        &self.origin
+    }
+
     /// Opens on the prompt at once, looking up the host's agents meanwhile.
     pub(crate) fn start(origin: Origin, journal: Journal) -> Self {
         let (sender, events) = mpsc::channel();

@@ -7,7 +7,7 @@ approval. Updating the GUI must not stop or upgrade the daemon or its terminals.
 
 The protected release pipeline builds macOS on Apple Silicon and Intel, combining
 both executables into a universal app, and Linux on native Ubuntu 24.04 x86_64 and
-ARM64 runners. Linux remains experimental. Package-managed installs are updated
+ARM64 runners. Package-managed installs are updated
 through their package manager, never by overwriting managed files: a macOS
 Homebrew cask is upgraded by running Homebrew (see [Homebrew Casks](#homebrew-casks)),
 and Linux `.deb`, `.rpm`, and Arch installations use their owning package manager
@@ -86,7 +86,7 @@ verification.
 
 ## Authentication Contract
 
-The source of truth is `crates/herdr-gpui/src/updater/release.rs`. Release assets
+The source of truth is `crates/herdr-updater/src/release.rs`. Release assets
 include `update-manifest.json` and `update-manifest.sig`. Example JSON, formatted
 here only for readability:
 
@@ -148,8 +148,11 @@ General > Install beta releases) it instead reads the ten newest releases from
 highest calendar version among published releases of either kind, ignoring drafts
 and non-calendar tags; that listing is bounded at 4 MiB. A beta carries the same
 signed manifest as any release, so the channel changes which release is offered,
-never how it is authenticated. A Homebrew-managed installation always checks the
-stable channel, since the tap only receives stable releases. Switching channels
+never how it is authenticated. The tap only receives stable releases, so a
+Homebrew-managed installation upgrades through Homebrew on the stable channel
+only; on the beta channel it downloads and installs the signed release in place
+like a standalone installation, and Homebrew takes the bundle back at its next
+upgrade. Switching channels
 rechecks at once and never downgrades. That recheck also covers a beta that is
 already downloaded or still downloading: leaving the beta channel discards it
 unless stable now offers the same release. Manifest, signature,
@@ -317,8 +320,8 @@ python3 scripts/test-updater.py
 python3 scripts/test-updater.py --offline
 ```
 
-The harness uses the real updater sources and the pinned toolchain/dependencies,
-without GPUI's desktop build dependencies. On Linux it also exercises a signed
+The harness builds and tests the `herdr-updater` crate from the workspace lock
+and fails if GPUI is among its dependencies. On Linux it also exercises a signed
 helper handoff, actual standalone replacement/relaunch, tampering refusal,
 cancellation, and rollback in private temporary installations under a test HOME.
 It does not build or test the complete Linux GUI or prove macOS Gatekeeper acceptance.

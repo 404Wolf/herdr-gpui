@@ -1,6 +1,7 @@
 //! Process bootstrap and window opening. CLI parsing and the updater helper
 //! run before GPUI starts, so an invalid option or `--build-info` exits without
 //! ever creating a window.
+use crate::control::ControlError;
 
 use crate::{
     APP_VERSION, HerdrWindow, Hide, HideOthers, Quit, ShowAll, ShowLogs, WINDOW_TITLE, app_icon,
@@ -209,6 +210,10 @@ pub(crate) fn open_additional_window_then(
 pub(crate) fn run() -> std::process::ExitCode {
     use cli::{LaunchMode, LaunchOptions};
     let mut args: Vec<_> = std::env::args_os().skip(1).collect();
+    #[cfg(target_os = "macos")]
+    if let Some(exit) = crate::window::run_clipboard_helper(&args) {
+        return exit;
+    }
     if let Some(exit) = updater::run_helper(&args) {
         return exit;
     }
@@ -222,6 +227,14 @@ pub(crate) fn run() -> std::process::ExitCode {
     }
     #[cfg(feature = "azure")]
     if let Some(exit) = crate::azure::sandbox::relay::run_helper(&args) {
+        return exit;
+    }
+    #[cfg(feature = "sprites")]
+    if let Some(exit) = crate::sprites::relay::run_helper(&args) {
+        return exit;
+    }
+    #[cfg(feature = "opensandbox")]
+    if let Some(exit) = crate::opensandbox::relay::run_helper(&args) {
         return exit;
     }
     // A control command asked for JSON gets its usage errors as JSON too.
@@ -250,7 +263,7 @@ pub(crate) fn run() -> std::process::ExitCode {
     if let LaunchMode::Link(link) = mode {
         match crate::control::send_link(&link) {
             Ok(_) => return std::process::ExitCode::SUCCESS,
-            Err(crate::Error::ControlUnavailable { .. }) => {
+            Err(crate::Error::Control(ControlError::Unavailable { .. })) => {
                 pending_link = Some(link);
                 mode = LaunchMode::Normal;
             }
@@ -260,6 +273,16 @@ pub(crate) fn run() -> std::process::ExitCode {
                 return std::process::ExitCode::from(crate::control::exit_status(&error));
             }
         }
+    }
+    // On Windows a plain second launch, from the Start menu or the launcher,
+    // brings the running app forward rather than starting another beside it
+    // that could not take the control pipe. A link it could not hand over
+    // starts the app with that link instead.
+    #[cfg(windows)]
+    if pending_link.is_none()
+        && let Some(exit) = focus_running(&mode, &target, crate::control::send_focus)
+    {
+        return exit;
     }
     // A separate app of its own: no daemon, control socket, stores, or updater.
     #[cfg(feature = "mockup")]
@@ -305,15 +328,16 @@ pub(crate) fn run() -> std::process::ExitCode {
         smoke::EXIT_CODE.store(1, std::sync::atomic::Ordering::SeqCst);
     }
     let startup_failed = std::rc::Rc::new(std::cell::Cell::new(false));
-    if let Err(error) = diagnostics::init() {
+    if let Err(error) = diagnostics::init(crate::log_targets::LOG_TARGETS) {
         eprintln!("Unable to initialize diagnostics: {error}");
         return std::process::ExitCode::FAILURE;
     }
     // After the log, which a panic's record goes to.
-    crate::crash::install();
+    crate::crash::install(APP_VERSION);
     // SSH children use the login shell's `ssh` and agent, as the daemon does:
     // launchd's would miss keys such as a security key held by another agent.
     herdr_client::set_command_environment(crate::login_env::apply);
+    herdr_remote::config::set_loader(Config::load_remote);
     tracing::info!(
         version = APP_VERSION,
         os = std::env::consts::OS,
@@ -432,8 +456,9 @@ pub(crate) fn run() -> std::process::ExitCode {
                 crate::window::system_notifications::install(cx);
                 // Nor do they start VS Code.
                 crate::code_server::Launcher::install(cx);
-                #[cfg(feature = "azure")]
-                crate::azure::install(cx);
+                crate::px0::Launcher::install(cx);
+                #[cfg(feature = "cloud")]
+                crate::cloud::install_idle_checks(cx);
             }
             cx.set_global(appearance.select(light_appearance(cx)));
             app_icon::install();
@@ -516,12 +541,37 @@ pub(crate) fn run() -> std::process::ExitCode {
     }
 }
 
+/// For a plain launch, the Local target with nothing else asked, asks the
+/// running app to come forward with `send` and returns this process's exit
+/// status once it has. `None` starts the app: none answers, or the one that
+/// does could not come forward (another version, or a hung window), and a
+/// second app beats leaving the click with nothing to show.
+#[cfg(any(windows, test))]
+fn focus_running(
+    mode: &cli::LaunchMode,
+    target: &ConnectTarget,
+    send: impl FnOnce() -> crate::Result<String>,
+) -> Option<std::process::ExitCode> {
+    if *mode != cli::LaunchMode::Normal || *target != ConnectTarget::Local {
+        return None;
+    }
+    match send() {
+        Ok(_) => Some(std::process::ExitCode::SUCCESS),
+        Err(crate::Error::Control(ControlError::Unavailable { .. })) => None,
+        Err(error) => {
+            tracing::warn!(%error, "The running app did not come forward");
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Config, InitialAppearance, StartupAppearance, Theme};
     #[cfg(feature = "integration-test")]
     use super::{ConnectTarget, HerdrWindow};
     use crate::config::LayoutMode;
+    use crate::control::ControlError;
     #[cfg(feature = "integration-test")]
     use gpui::px;
 
@@ -563,6 +613,48 @@ mod tests {
             assert_eq!(appearance.theme, Theme::default());
             assert!(appearance.error.is_some());
         }
+    }
+
+    #[test]
+    fn only_a_plain_launch_hands_off_to_the_running_app() {
+        use super::{ConnectTarget, focus_running};
+        use crate::cli::LaunchMode;
+        use std::process::ExitCode;
+        let focused = || Ok(String::from("Brought Herdr UI forward"));
+        let local = ConnectTarget::Local;
+        assert_eq!(
+            focus_running(&LaunchMode::Normal, &local, focused),
+            Some(ExitCode::SUCCESS)
+        );
+        // Another target, or another mode, is never handed off, nor asked.
+        let session = ConnectTarget::Session {
+            name: "work".into(),
+            development: false,
+        };
+        let unasked = || -> crate::Result<String> { panic!("asked the running app") };
+        assert_eq!(focus_running(&LaunchMode::Normal, &session, unasked), None);
+        assert_eq!(focus_running(&LaunchMode::Help, &local, unasked), None);
+        assert_eq!(focus_running(&LaunchMode::BuildInfo, &local, unasked), None);
+        // No app answers, or the one that does cannot come forward: start one.
+        let unavailable = || {
+            Err(crate::Error::Control(ControlError::Unavailable {
+                path: "pipe".into(),
+                source: std::io::ErrorKind::NotFound.into(),
+            }))
+        };
+        assert_eq!(
+            focus_running(&LaunchMode::Normal, &local, unavailable),
+            None
+        );
+        let refused = || {
+            Err(crate::Error::Control(ControlError::Rejected {
+                code: crate::control::ErrorCode::NoWindow,
+                message: "Herdr UI has no window".into(),
+            }))
+        };
+        assert_eq!(focus_running(&LaunchMode::Normal, &local, refused), None);
+        let silent = || Err(crate::Error::Control(ControlError::NoResponse));
+        assert_eq!(focus_running(&LaunchMode::Normal, &local, silent), None);
     }
 
     #[test]

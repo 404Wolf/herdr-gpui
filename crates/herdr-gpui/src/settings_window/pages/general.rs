@@ -1,11 +1,11 @@
 //! General: interface toggles, the optional `[features]` flags, clipboard
 //! feedback, merged worktrees, the browser skill, launch at login (Windows)
 //! and the update channel.
-use super::{CLIPBOARD_POSITIONS, SettingsWindow, on_off, ui};
+use super::{CLIPBOARD_POSITIONS, SettingsWindow, on_off, on_value, ui};
 use crate::settings_window::inputs::DropdownField;
 use crate::{
     agent_skill::{AgentSkill, Choice},
-    config::{ClipboardToast, Feature, UpdateChannel, preferences::Preference},
+    config::{ChatLayoutMode, ClipboardToast, Feature, UpdateChannel, preferences::Preference},
     herdr_settings::Edit,
 };
 use gpui::{prelude::*, *};
@@ -53,7 +53,7 @@ impl SettingsWindow {
             .child(
                 ui::row(theme, "general-ports", "Show listening ports")
                     .description("Port chips on workspaces with a dev server.")
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         "general-ports-toggle",
                         self.config.show_listening_ports,
                         Preference::ShowListeningPorts(!self.config.show_listening_ports),
@@ -63,7 +63,7 @@ impl SettingsWindow {
             .child(
                 ui::row(theme, "general-checkpoints", "Checkpoint agent turns")
                     .description("Snapshot the worktree after each agent turn.")
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         "general-checkpoints-toggle",
                         self.config.agent_checkpoints,
                         Preference::AgentCheckpoints(!self.config.agent_checkpoints),
@@ -73,15 +73,66 @@ impl SettingsWindow {
             .child(
                 ui::row(theme, "general-smooth-scroll", "Smooth scrolling")
                     .description("Scroll terminal history between rows; off steps whole rows.")
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         "general-smooth-scroll-toggle",
                         self.config.smooth_scroll,
                         Preference::SmoothScroll(!self.config.smooth_scroll),
                         cx,
                     )),
             )
+            .when(cfg!(target_os = "linux"), |page| {
+                page.child(
+                    ui::row(theme, "general-window-controls", "Show window controls")
+                        .description(
+                            "Draw minimize, maximize, and close buttons in the menu bar. Disable \
+                             server-side decorations in your window manager to avoid a double bar.",
+                        )
+                        .switch(self.preference_toggle(
+                            "general-window-controls-toggle",
+                            self.config.show_window_controls,
+                            Preference::ShowWindowControls(!self.config.show_window_controls),
+                            cx,
+                        )),
+                )
+            })
             .child(ui::section(theme, "Features", None))
             .children(self.feature_rows(cx))
+            .children(self.config.features.acp_chats.then(|| {
+                let layouts: Vec<_> = ChatLayoutMode::ALL
+                    .iter()
+                    .map(|&mode| (mode, mode.label()))
+                    .collect();
+                ui::row(theme, "general-chat-layout", "Chat layout")
+                    .description(
+                        "How chat views draw messages and the composer: on a timeline, as \
+                         bubbles like Claude's app, as Claude Code's terminal screen, as a \
+                         document, or as one card per turn. The button in a chat's header steps through them too.",
+                    )
+                    .control(ui::segmented(
+                        theme,
+                        "general-chat-layout-control",
+                        &layouts,
+                        Some(self.config.chat.layout),
+                        !self.quitting && self.closing.is_none(),
+                        on_value(cx, |this, mode, _, cx| {
+                            this.save_preference(Preference::ChatLayout(mode), cx)
+                        }),
+                    ))
+            }))
+            .children(self.config.features.acp_chats.then(|| {
+                ui::row(theme, "general-chat-glide", "Smooth chat scrolling")
+                    .description(
+                        "Scroll smoothly to a reply's new text as it streams in. Off, the \
+                         chat jumps to it as each chunk lands.",
+                    )
+                    .switch(self.preference_toggle(
+                        "general-chat-glide-toggle",
+                        self.config.chat.glide,
+                        Preference::ChatGlide(!self.config.chat.glide),
+                        cx,
+                    ))
+            }))
+            .children(self.render_chat_env_controls(cx))
             .child(ui::section(theme, "Clipboard", None))
             .child(
                 self.gate_shared(
@@ -89,7 +140,7 @@ impl SettingsWindow {
                         .tag(ui::Source::Herdr)
                         .description("Off: \u{2318}C / Ctrl-C copies the highlighted selection."),
                 )
-                .control(
+                .switch(
                     ui::toggle(theme, "general-copy-on-select-toggle", copy, ready).when(
                         ready,
                         |toggle| {
@@ -133,7 +184,7 @@ impl SettingsWindow {
                     "Deletes a clean linked worktree and closes its workspace once its PR is \
                      merged. The focused workspace asks first.",
                 )
-                .control(self.preference_toggle(
+                .switch(self.preference_toggle(
                     "general-merged-worktrees-toggle",
                     merged,
                     Preference::RemoveMergedWorktrees(!merged),
@@ -163,9 +214,9 @@ impl SettingsWindow {
                 ui::row(theme, "general-update-beta", "Install beta releases")
                     .description(
                         "Betas ship before they are promoted to stable. Turning this off never \
-                         downgrades; Homebrew installations always follow stable.",
+                         downgrades; Homebrew installations update in place while it is on.",
                     )
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         "general-update-beta-toggle",
                         beta,
                         Preference::UpdateChannel(if beta {
@@ -200,7 +251,7 @@ impl SettingsWindow {
                 let on = features.enabled(feature);
                 ui::row(&self.theme, id, feature.label())
                     .description(feature.description())
-                    .control(self.preference_toggle(
+                    .switch(self.preference_toggle(
                         format!("{id}-toggle"),
                         on,
                         Preference::Feature(feature, !on),

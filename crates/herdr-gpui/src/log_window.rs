@@ -8,6 +8,8 @@ use gpui::{prelude::*, *};
 use std::{sync::Arc, time::Duration};
 use tracing::Level;
 
+mod source;
+
 const LEVELS: [Level; 5] = [
     Level::TRACE,
     Level::DEBUG,
@@ -122,6 +124,12 @@ struct LogWindow {
     scroll: ListState,
     selected: Option<Arc<Record>>,
     status: String,
+    /// What the status line says about the app's own log file.
+    app_status: String,
+    /// The log shown: the app's, or a host's automation daemon.
+    source: source::Source,
+    /// The host log being followed, while one is shown.
+    remote: Option<source::Remote>,
     exporting: bool,
     _search: Subscription,
     _poll: Task<()>,
@@ -236,16 +244,21 @@ impl LogWindow {
             let mut tail = diagnostics::path().map(diagnostics::Tail::new);
             loop {
                 let request = this.update(cx, |this, cx| {
-                    (this.generation.is_none()
-                        || (this.following && this.generation != Some(diagnostics::generation())))
-                    .then(|| {
-                        (
-                            this.search.read(cx).text().to_owned(),
-                            this.minimum,
-                            this.following,
-                            (!this.following).then(|| (this.retained.clone(), this.dropped)),
-                        )
-                    })
+                    (this.source == source::Source::App)
+                        .then_some(())
+                        .filter(|()| {
+                            this.generation.is_none()
+                                || (this.following
+                                    && this.generation != Some(diagnostics::generation()))
+                        })
+                        .map(|()| {
+                            (
+                                this.search.read(cx).text().to_owned(),
+                                this.minimum,
+                                this.following,
+                                (!this.following).then(|| (this.retained.clone(), this.dropped)),
+                            )
+                        })
                 });
                 let Ok(request) = request else { break };
                 if let Some((query, minimum, following, frozen)) = request {
@@ -280,7 +293,8 @@ impl LogWindow {
                     tail = returned;
                     if this
                         .update(cx, |this, cx| {
-                            if this.search.read(cx).text() != query
+                            if this.source != source::Source::App
+                                || this.search.read(cx).text() != query
                                 || this.minimum != minimum
                                 || this.following != following
                             {
@@ -318,6 +332,10 @@ impl LogWindow {
                     .await;
             }
         });
+        let app_status = match diagnostics::path() {
+            Some(path) => format!("Saved to {}. Review before sharing.", path.display()),
+            None => "Not saved: no state directory. Review before sharing.".into(),
+        };
         Self {
             appearance,
             caption: Default::default(),
@@ -335,10 +353,10 @@ impl LogWindow {
             following: true,
             scroll: ListState::new(0, ListAlignment::Top, px(100.)),
             selected: None,
-            status: match diagnostics::path() {
-                Some(path) => format!("Saved to {}. Review before sharing.", path.display()),
-                None => "Not saved: no state directory. Review before sharing.".into(),
-            },
+            status: app_status.clone(),
+            app_status,
+            source: source::Source::App,
+            remote: None,
             exporting: false,
             _search: subscription,
             _poll: poll,
@@ -418,18 +436,27 @@ impl LogWindow {
     }
 }
 
-fn button(id: &'static str, label: impl Into<SharedString>, theme: &Theme) -> Stateful<Div> {
+fn button(
+    id: impl Into<SharedString>,
+    label: impl Into<SharedString>,
+    theme: &Theme,
+) -> Stateful<Div> {
     let active = theme.active;
+    let label = label.into();
+    let id = id.into();
+    let selector = id.clone();
     div()
         .id(id)
-        .debug_selector(move || id.into())
+        .debug_selector(move || selector.to_string())
+        .role(Role::Button)
+        .aria_label(label.clone())
         .px_2()
         .py_1()
         .rounded(px(crate::config::corners::CONTROL))
         .bg(rgb(theme.surface))
         .cursor_pointer()
         .hover(move |style| style.bg(rgb(active)))
-        .child(label.into())
+        .child(label)
 }
 
 fn styled_body(record: &Record, theme: &Theme) -> StyledText {
@@ -531,6 +558,7 @@ impl Render for LogWindow {
                             .text_size(px(config.ui.size + 4.))
                             .child("Logs"),
                     )
+                    .children(self.render_sources(cx))
                     .child(self.search.clone())
                     .child(
                         div()
@@ -555,6 +583,7 @@ impl Render for LogWindow {
                                         deferred(
                                             anchored().child(
                                                 div().id("level-menu").debug_selector(|| "level-menu".into())
+                                                    .role(Role::Menu).aria_label("Minimum level")
                                                     .absolute().top_full().left_0().w(px(180.))
                                                     .p_1().bg(rgb(theme.surface)).border_1().border_color(rgb(theme.active))
                                                     .occlude().track_focus(&self.menu_focus)
@@ -565,6 +594,10 @@ impl Render for LogWindow {
                                                     .children(LEVELS.iter().enumerate().map(|(index, level)| {
                                                         let level = *level;
                                                         div().id(("level-option", index)).debug_selector(move || format!("level-option-{index}"))
+                                                            .role(Role::MenuItemRadio)
+                                                            .aria_label(level.to_string())
+                                                            .aria_toggled(if self.minimum == level { Toggled::True } else { Toggled::False })
+                                                            .when(index == selected, |el| el.aria_active_descendant())
                                                             .px_2().py_1().cursor_pointer()
                                                             .when(index == selected, |el| el.bg(rgb(theme.active)))
                                                             .child(format!("{} {}", if self.minimum == level { "*" } else { " " }, level))
@@ -618,6 +651,9 @@ impl Render for LogWindow {
             )
             .child(
                 div()
+                    .id("log-rows")
+                    .role(Role::List)
+                    .aria_label("Log entries")
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
@@ -640,6 +676,14 @@ impl Render for LogWindow {
                                     div()
                                         .id(index)
                                         .debug_selector(move || format!("log-row-{index}"))
+                                        .role(Role::ListItem)
+                                        .aria_label(format!(
+                                            "{} {} {}: {}",
+                                            record.timestamp,
+                                            record.level.as_str(),
+                                            record.target,
+                                            record.message
+                                        ))
                                         .flex()
                                         .w_full()
                                         .py(px(1.))
@@ -691,6 +735,8 @@ impl Render for LogWindow {
                     div()
                         .id("log-detail")
                         .debug_selector(|| "log-detail".into())
+                        .role(Role::Label)
+                        .aria_value(record.line())
                         .flex_none()
                         .h((window.viewport_size().height * 0.2).min(px(100.)))
                         .overflow_y_scroll()
@@ -703,21 +749,25 @@ impl Render for LogWindow {
                         .child(record.line()),
                 )
             })
-            .child(
+            .child({
+                let summary = format!(
+                    "{} shown | {} dropped | {} | {}",
+                    self.rows.len(),
+                    self.dropped,
+                    if self.following { "LIVE" } else { "PAUSED" },
+                    self.status
+                );
                 div()
+                    .id("log-status")
+                    .role(Role::Status)
+                    .aria_label(summary.clone())
                     .flex_none()
                     .p_3()
                     .border_t_1()
                     .border_color(rgb(theme.active))
                     .truncate()
-                    .child(format!(
-                        "{} shown | {} dropped | {} | {}",
-                        self.rows.len(),
-                        self.dropped,
-                        if self.following { "LIVE" } else { "PAUSED" },
-                        self.status
-                    )),
-            );
+                    .child(summary)
+            });
         let border = theme.active;
         crate::titlebar::frame(window, border, root)
     }

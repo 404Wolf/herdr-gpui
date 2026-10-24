@@ -9,16 +9,18 @@ import sys
 
 REPO = "penso/herdr-gpui"
 # Job names are the API contract with ci.yml. Missing/renamed jobs fail closed.
-# Windows packaging is path-selected and also runs in the release workflow.
+# Windows packaging is path-selected and also runs in the release workflow;
+# the macOS release builds run on pull requests only, since the release
+# workflow builds those targets itself.
 REQUIRED_JOBS = frozenset({
     "Workflow Security", "Commit messages", "Format, lint, and test",
-    *(f"Format, lint, and test ({runner})" for runner in
-      ("macos-14", "macos-15", "ubuntu-24.04", "ubuntu-24.04-arm")),
-    *(f"{job} ({runner})" for job in ("Windows check", "Windows native GUI")
-      for runner in ("windows-2025", "windows-11-arm")),
+    *(f"Format, lint, and test ({runner}, {features})" for runner in
+      ("macos-15", "ubuntu-24.04", "ubuntu-24.04-arm") for features in ("default", "all")),
+    *(f"Windows check ({runner}, {features})" for runner in ("windows-2025", "windows-11-arm")
+      for features in ("default", "all")),
+    *(f"Windows native GUI ({runner})" for runner in ("windows-2025", "windows-11-arm")),
     *(f"Release ({target})" for target in
-      ("aarch64-apple-darwin", "x86_64-apple-darwin",
-       "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu")),
+      ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu")),
 })
 
 
@@ -67,7 +69,9 @@ def require_ci(sha, wait=False):
         pending = next((run for run in candidates if run["status"] != "completed"), None)
         if pending:
             print(f"Waiting for CI: https://github.com/{REPO}/actions/runs/{pending['id']}", flush=True)
-            gh("run", "watch", str(pending["id"]), "--repo", REPO, "--exit-status",
+            # The release's ci-gate job can watch for over an hour on the
+            # workflow token's hourly API budget; poll every 30s, not 3s.
+            gh("run", "watch", str(pending["id"]), "--repo", REPO, "--exit-status", "--interval", "30",
                check=False, stdout=subprocess.DEVNULL)
             # Re-query jobs even when watch succeeds: the run may have skipped them.
             return require_ci(sha)

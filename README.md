@@ -130,7 +130,7 @@ Then install the latest stable release:
 | --- | --- |
 | macOS | `brew install penso/tap/herdr-gpui` |
 | Linux (APT, DNF or pacman) | `curl -fsSL https://herdrui.dev/install.sh \| sh` |
-| Windows (PowerShell, experimental) | `irm https://herdrui.dev/install.ps1 \| iex` |
+| Windows (PowerShell) | `irm https://herdrui.dev/install.ps1 \| iex` |
 
 Details, manual downloads, and other methods follow. Coding agents can read
 [herdrui.dev/llms.txt](https://herdrui.dev/llms.txt) for the same steps.
@@ -158,13 +158,14 @@ release workflow. A cask install updates itself through Homebrew: the in-app
 updater detects that Homebrew owns the bundle and runs `brew upgrade --cask
 herdr-gpui` for you, so Homebrew's records stay correct. If its metadata is stale,
 the updater runs `brew update` and retries once. The update panel shows progress
-throughout. macOS `.dmg`, experimental Linux packages, and experimental Windows installers
+throughout. macOS `.dmg`, Linux packages, and Windows installers
 and `.zip`s are also published on [Releases](https://github.com/penso/herdr-gpui/releases).
 
 Betas are published as GitHub prereleases before being promoted to stable. To try
-them in a standalone install, turn on **Settings > General > Install beta releases**
-(`[updates] channel = "beta"`); turning it off never downgrades. Homebrew installs
-always follow stable releases.
+them, turn on **Settings > General > Install beta releases**
+(`[updates] channel = "beta"`); turning it off never downgrades. Betas never reach
+the Homebrew tap, so a Homebrew install updates in place while the setting is on,
+and Homebrew takes it back at its next upgrade.
 
 ### Linux packages
 
@@ -213,7 +214,7 @@ nix run github:penso/herdr-gpui
 The flake builds with the toolchain pinned in `rust-toolchain.toml` on x86_64 and
 ARM64 Linux. Like the packages, it never updates itself.
 
-### Windows (experimental)
+### Windows installers
 
 In PowerShell, on x86_64 or ARM64:
 
@@ -308,7 +309,7 @@ audio player is required. Custom notification sounds are MP3 only. See
 
 ### Windows
 
-Windows is experimental, and now tested natively. On every change, CI checks
+Windows is tested natively. On every change, CI checks
 formatting, lints every target and feature, and runs workspace tests with default
 and all features on `windows-2025` (x86_64) and `windows-11-arm` (ARM64). On the
 same two runners it also opens real windows in a desktop session for the native
@@ -342,7 +343,7 @@ Ctrl+Shift+Q); see
 [keyboard shortcuts](crates/herdr-gpui/README.md#keyboard-shortcuts). The
 taskbar button shows a badge while agents need you and progress for long
 operations, the jump list offers recent workspaces and devices, clicking a
-notification brings its pane forward, and the installer registers
+notification brings its pane forward, and both installers register
 `herdr-gpui://` links that open a checkout or a device in the running app; see
 [Windows shell](crates/herdr-gpui/README.md#windows-shell).
 
@@ -365,7 +366,7 @@ signatures; until then they ship unsigned, are not submitted to winget, and do
 not update themselves (see
 [`scripts/release/README.md`](scripts/release/README.md#windows-signing)). A
 signed copy installed by the installer, winget, or the
-[install script](#windows-experimental) updates itself in the app: the
+[install script](#windows-installers) updates itself in the app: the
 installer it downloads must match the release's
 Ed25519-signed `windows-manifest.json` and carry a valid signature from Herdr
 UI's publisher, or it never runs (see

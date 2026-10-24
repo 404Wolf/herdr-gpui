@@ -38,12 +38,8 @@ repo=penso/herdr-gpui
 sha=$(git rev-parse HEAD)
 [[ "$(gh api "repos/$repo/git/ref/heads/main" --jq .object.sha)" == "$sha" ]] || fail 'HEAD does not match origin main on GitHub; no fetch or checkout was performed'
 
-# The release workflow builds and packages but leaves the test suites to CI,
-# and its validate job refuses a commit CI has not passed. Wait for that here
-# rather than dispatching a run that is bound to stop.
-if [[ $workflow == release.yml ]]; then
-    python3 scripts/release/check-ci.py "$sha" --wait
-fi
+# No CI wait here: the release builds while CI runs, and its ci-gate job
+# holds signing and publishing until CI has passed on this commit.
 
 # A nonce avoids confusing this dispatch with another run for the same SHA.
 request_id=$(openssl rand -hex 16)
