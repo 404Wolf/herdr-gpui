@@ -274,8 +274,7 @@ impl HerdrWindow {
     ) {
         self.links.pointer = Some((position, modifiers));
         let mut examined = false;
-        let local = modifiers
-            .secondary()
+        let local = opens_links(modifiers)
             .then(|| self.local_link_at(position))
             .flatten()
             .and_then(|link| {
@@ -302,7 +301,7 @@ impl HerdrWindow {
             self.links.local = local;
             cx.notify();
         }
-        let cell = (modifiers.secondary() && self.live.supports_link_resolve)
+        let cell = (opens_links(modifiers) && self.live.supports_link_resolve)
             .then(|| self.link_cell_at(position))
             .flatten();
         if cell == self.links.hover {
@@ -432,7 +431,7 @@ impl HerdrWindow {
         position: Point<Pixels>,
         modifiers: Modifiers,
     ) -> Option<PressedLink> {
-        if !modifiers.secondary() {
+        if !opens_links(modifiers) {
             return None;
         }
         let url = self.terminal_link_at(position);
@@ -592,3 +591,16 @@ impl HerdrWindow {
 
 #[cfg(test)]
 mod tests;
+
+/// Whether a click with `modifiers` acts on links: the platform's link
+/// modifier, or Shift alone. Shift already keeps a press from an application
+/// that reads the mouse, so, as in kitty, a Shift-click on a link opens it
+/// there; a Shift-drag that leaves the link still selects.
+pub(crate) fn opens_links(modifiers: Modifiers) -> bool {
+    modifiers.secondary()
+        || (modifiers.shift
+            && !modifiers.control
+            && !modifiers.alt
+            && !modifiers.platform
+            && !modifiers.function)
+}

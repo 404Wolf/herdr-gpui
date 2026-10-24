@@ -61,7 +61,7 @@ impl HerdrWindow {
         modifiers: gpui::Modifiers,
     ) -> bool {
         modifiers.shift
-            || (modifiers.secondary()
+            || (super::links::opens_links(modifiers)
                 && (self.terminal_link_at(position).is_some()
                     || self.daemon_link_at(position).is_some()
                     || self
@@ -78,7 +78,7 @@ impl HerdrWindow {
         position: Point<Pixels>,
         modifiers: gpui::Modifiers,
     ) -> bool {
-        modifiers.secondary()
+        super::links::opens_links(modifiers)
             && (self.terminal_link_at(position).is_some()
                 || self.daemon_link_at(position).is_some()
                 || self.terminal_hyperlink_at(position)
